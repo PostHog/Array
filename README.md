@@ -10,20 +10,27 @@ Free product engineers from distractions so they can focus on what they love: bu
 
 ### Prerequisites
 
-- Node.js 18+
-- npm or yarn
+- Node.js 22+
+- pnpm 9+
 
 ### Setup
 
 ```bash
+# Install pnpm if you haven't already
+npm install -g pnpm
+
 # Install dependencies
-npm install
+pnpm install
 
 # Run in development mode
-npm run dev
+pnpm run dev
 
 # Build for production
-npm run build
+pnpm run build
+
+# Other useful commands
+pnpm run typecheck  # Type checking
+pnpm run lint       # Linting
 ```
 
 ### Environment Variables

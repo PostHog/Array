@@ -70,7 +70,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
             <div>
               <h3 className="text-sm font-medium text-dark-text-muted mb-1">Status</h3>
               <span className="px-3 py-1 bg-dark-surface rounded-md text-dark-text">
-                {task.current_stage?.name || 'Backlog'}
+                {task.current_stage || 'Backlog'}
               </span>
             </div>
             

@@ -19,10 +19,12 @@ export function TaskList({ onSelectTask }: TaskListProps) {
     fetchTasks();
   }, [fetchTasks]);
   
-  const filteredTasks = tasks.filter(task => 
-    task.title.toLowerCase().includes(filter.toLowerCase()) ||
-    task.description?.toLowerCase().includes(filter.toLowerCase())
-  );
+  const filteredTasks = tasks
+    .filter(task => 
+      task.title.toLowerCase().includes(filter.toLowerCase()) ||
+      task.description?.toLowerCase().includes(filter.toLowerCase())
+    )
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   
   const handleKeyNavigation = useCallback((direction: 'up' | 'down') => {
     setSelectedIndex(prev => {
@@ -148,24 +150,19 @@ function TaskItem({ task, isSelected, onClick, onMouseEnter }: TaskItemProps) {
   return (
     <div
       className={clsx(
-        'px-4 py-3 border-b border-dark-border cursor-pointer transition-colors',
+        'px-2 py-1 border-b border-dark-border cursor-pointer transition-colors font-mono text-sm',
         isSelected ? 'bg-dark-surface' : 'hover:bg-dark-surface/50'
       )}
       onClick={onClick}
       onMouseEnter={onMouseEnter}
     >
-      <div className="flex items-start justify-between mb-1">
-        <h3 className="font-medium text-dark-text flex-1 mr-2 line-clamp-1">
-          {task.title}
-        </h3>
-        <span className="text-xs text-dark-text-muted whitespace-nowrap">
-          {timeAgo}
+      <div className="flex items-center gap-2">
+        <span className="text-dark-text-muted">
+          {isSelected ? '[•]' : '[ ]'}
         </span>
-      </div>
-      
-      <div className="flex items-center gap-2 text-xs">
+        
         <span className={clsx(
-          'px-2 py-0.5 rounded',
+          'px-1 py-0 rounded text-xs min-w-fit',
           status === 'Backlog' 
             ? 'bg-gray-800 text-gray-300'
             : 'bg-posthog-900/30 text-posthog-400'
@@ -173,17 +170,19 @@ function TaskItem({ task, isSelected, onClick, onMouseEnter }: TaskItemProps) {
           {status}
         </span>
         
+        <span className="text-dark-text flex-1 truncate">
+          {task.title}
+        </span>
+        
         {task.repository_config && (
-          <span className="text-dark-text-muted">
+          <span className="text-dark-text-muted text-xs">
             {task.repository_config.organization}/{task.repository_config.repository}
           </span>
         )}
         
-        {task.origin_product && (
-          <span className="text-dark-text-muted">
-            via {task.origin_product.replace('_', ' ')}
-          </span>
-        )}
+        <span className="text-xs text-dark-text-muted whitespace-nowrap">
+          {timeAgo}
+        </span>
       </div>
     </div>
   );
