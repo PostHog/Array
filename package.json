@@ -67,7 +67,8 @@
       "output": "release"
     },
     "files": [
-      "dist/**/*"
+      "dist/**/*",
+      "src/main/**/*"
     ],
     "mac": {
       "category": "public.app-category.developer-tools"

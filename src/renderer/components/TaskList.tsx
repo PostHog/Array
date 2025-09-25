@@ -117,7 +117,6 @@ export function TaskList({ onSelectTask }: TaskListProps) {
                 setSelectedIndex(index);
                 onSelectTask(task);
               }}
-              onMouseEnter={() => setSelectedIndex(index)}
             />
           ))
         )}
@@ -137,10 +136,9 @@ interface TaskItemProps {
   task: Task;
   isSelected: boolean;
   onClick: () => void;
-  onMouseEnter: () => void;
 }
 
-function TaskItem({ task, isSelected, onClick, onMouseEnter }: TaskItemProps) {
+function TaskItem({ task, isSelected, onClick }: TaskItemProps) {
   const createdAt = new Date(task.created_at);
   const timeAgo = formatDistanceToNow(createdAt, { addSuffix: true });
   
@@ -154,7 +152,6 @@ function TaskItem({ task, isSelected, onClick, onMouseEnter }: TaskItemProps) {
         isSelected ? 'bg-dark-surface' : 'hover:bg-dark-surface/50'
       )}
       onClick={onClick}
-      onMouseEnter={onMouseEnter}
     >
       <div className="flex items-center gap-2">
         <span className="text-dark-text-muted">
