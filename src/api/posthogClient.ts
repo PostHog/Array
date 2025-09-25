@@ -126,4 +126,17 @@ export class PostHogAPIClient {
     
     return [];
   }
+  
+  async getWorkflowStages(workflowId: string): Promise<any[]> {
+    const teamId = await this.getTeamId();
+    const { data } = await this.api.get(`/api/environments/${teamId}/workflows/${workflowId}/stages/`);
+    
+    if (Array.isArray(data)) {
+      return data;
+    } else if (data.results) {
+      return data.results;
+    }
+    
+    return [];
+  }
 }

@@ -1,14 +1,10 @@
-# Mission Control
+# PostHog - Array
 
-PostHog Mission Control - An engineer-first desktop app for managing tasks and automating workflows.
+The PostHog desktop task manager
 
-## Features
+## The Goal
 
-- 🚀 Fast, keyboard-first navigation
-- 📋 Centralized task management
-- 🤖 Local and cloud agent execution
-- 📊 Real-time activity logs
-- 🔐 Secure API key storage
+Free product engineers from distractions so they can focus on what they love: building great features. By using agents to transform all data collected across PostHog’s products into actionable “tasks,” then exposing them with that context through a single interface, we can automate all the chores and save developers hours every day, giving them more time to ship.
 
 ## Development
 
@@ -43,7 +39,7 @@ You can set these environment variables instead of entering credentials in the a
 - **React** - UI framework
 - **TypeScript** - Type safety
 - **Tailwind CSS** - Styling
-- **Zustand** - State management
+- **Zustand** - State management - we should probably switch to kea
 - **Vite** - Build tool
 
 ## Project Structure
@@ -66,7 +62,3 @@ mission-control/
 - `⌘R` - Refresh task list
 - `⌘⇧[/]` - Switch between tabs
 - `⌘W` - Close current tab
-
-## License
-
-MIT

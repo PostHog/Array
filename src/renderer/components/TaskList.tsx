@@ -142,7 +142,8 @@ function TaskItem({ task, isSelected, onClick, onMouseEnter }: TaskItemProps) {
   const createdAt = new Date(task.created_at);
   const timeAgo = formatDistanceToNow(createdAt, { addSuffix: true });
   
-  const status = task.current_stage?.name || 'Backlog';
+  // TODO: Look up stage name from workflow data
+  const status = 'Backlog';
   
   return (
     <div

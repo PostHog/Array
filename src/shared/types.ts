@@ -6,15 +6,8 @@ export interface Task {
   updated_at: string;
   origin_product: string;
   status?: string;
-  current_stage?: {
-    id: string;
-    name: string;
-    key: string;
-  };
-  workflow?: {
-    id: string;
-    name: string;
-  };
+  current_stage?: string;  // Stage ID
+  workflow?: string;  // Workflow ID
   repository_config?: {
     organization: string;
     repository: string;
@@ -35,9 +28,15 @@ export interface Workflow {
 
 export interface WorkflowStage {
   id: string;
+  workflow: string;
   name: string;
   key: string;
-  order: number;
+  position: number;
+  color: string;
+  agent_name?: string;
+  is_manual_only: boolean;
+  is_archived: boolean;
+  fallback_stage?: string;
 }
 
 export interface AuthConfig {
@@ -64,7 +63,7 @@ export interface LogEntry {
 
 export interface TabState {
   id: string;
-  type: 'task-list' | 'task-detail';
+  type: 'task-list' | 'task-detail' | 'workflow' | 'backlog';
   title: string;
   data?: any;
 }

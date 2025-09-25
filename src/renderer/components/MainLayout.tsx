@@ -1,6 +1,7 @@
 import React from 'react';
 import { TaskList } from './TaskList';
 import { TaskDetail } from './TaskDetail';
+import { WorkflowView } from './WorkflowView';
 import { TabBar } from './TabBar';
 import { useTabStore } from '../stores/tabStore';
 import { Task } from '@shared/types';
@@ -40,6 +41,12 @@ export function MainLayout() {
         
         {activeTab?.type === 'task-detail' && activeTab.data && (
           <TaskDetail task={activeTab.data} />
+        )}
+        
+        {activeTab?.type === 'workflow' && (
+          <div className="h-full px-6">
+            <WorkflowView onSelectTask={handleSelectTask} />
+          </div>
         )}
       </div>
     </div>

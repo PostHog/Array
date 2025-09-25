@@ -11,16 +11,22 @@ interface TabStore {
   setActiveTab: (tabId: string) => void;
 }
 
-// Create initial task list tab
-const initialTab: TabState = {
+// Create initial tabs
+const taskListTab: TabState = {
   id: uuidv4(),
   type: 'task-list',
   title: 'Tasks',
 };
 
+const workflowTab: TabState = {
+  id: uuidv4(),
+  type: 'workflow',
+  title: 'Workflow',
+};
+
 export const useTabStore = create<TabStore>((set, get) => ({
-  tabs: [initialTab],
-  activeTabId: initialTab.id,
+  tabs: [taskListTab, workflowTab],
+  activeTabId: taskListTab.id,
   
   createTab: (tabData) => {
     const newTab: TabState = {
