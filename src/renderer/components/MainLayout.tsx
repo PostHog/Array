@@ -1,14 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Flex, Box } from '@radix-ui/themes';
 import { TaskList } from './TaskList';
 import { TaskDetail } from './TaskDetail';
 import { WorkflowView } from './WorkflowView';
 import { TabBar } from './TabBar';
+import { CommandMenu } from './command';
 import { useTabStore } from '../stores/tabStore';
+import { useHotkeys } from 'react-hotkeys-hook';
 import { Task } from '@shared/types';
 
 export function MainLayout() {
   const { activeTabId, tabs, createTab, setActiveTab } = useTabStore();
+  const [commandMenuOpen, setCommandMenuOpen] = useState(false);
+
+  useHotkeys('mod+k', () => setCommandMenuOpen(prev => !prev));
+  useHotkeys('mod+t', () => setCommandMenuOpen(prev => !prev));
 
   const handleSelectTask = (task: Task) => {
     // Check if task is already open in a tab
@@ -50,6 +56,11 @@ export function MainLayout() {
           </Box>
         )}
       </Box>
+
+      <CommandMenu
+        open={commandMenuOpen}
+        onOpenChange={setCommandMenuOpen}
+      />
     </Flex>
   );
 }
