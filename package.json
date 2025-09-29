@@ -49,6 +49,7 @@
     "wait-on": "^7.2.0"
   },
   "dependencies": {
+    "@posthog/code-agent": "^0.2.0",
     "@radix-ui/react-tabs": "^1.0.4",
     "axios": "^1.6.7",
     "clsx": "^2.1.0",

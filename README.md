@@ -52,7 +52,7 @@ You can set these environment variables instead of entering credentials in the a
 ## Project Structure
 
 ```
-mission-control/
+array/
 ├── src/
 │   ├── main/           # Electron main process
 │   ├── renderer/       # React app

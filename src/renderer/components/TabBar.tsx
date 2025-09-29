@@ -28,7 +28,7 @@ export function TabBar() {
   }, [tabs, activeTabId, closeTab]);
 
   return (
-    <div className="flex bg-dark-surface border-b border-dark-border h-10 overflow-x-auto">
+    <div className="drag flex bg-dark-surface border-b border-dark-border h-10 overflow-x-auto">
       {/* Spacer for macOS window controls */}
       <div className="w-20 shrink-0" />
 
@@ -36,7 +36,7 @@ export function TabBar() {
         <div
           key={tab.id}
           className={clsx(
-            'flex items-center px-4 cursor-pointer border-r border-dark-border group min-w-0',
+            'no-drag flex items-center px-4 cursor-pointer border-r border-dark-border group min-w-0',
             tab.id === activeTabId
               ? 'bg-dark-bg text-dark-text'
               : 'hover:bg-dark-bg/50 text-dark-text-muted'

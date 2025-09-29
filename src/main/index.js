@@ -1,15 +1,19 @@
-const { app, BrowserWindow, ipcMain, safeStorage, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, Menu, dialog } = require('electron');
 const path = require('path');
+const { registerPosthogIpc } = require('./services/posthog');
+const { registerOsIpc } = require('./services/os');
+const { registerAgentIpc } = require('./services/agent');
 
 const isDev = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
 
 let mainWindow = null;
+const taskControllers = new Map();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 800,
+    width: 900,
+    height: 600,
+    minWidth: 900,
     minHeight: 600,
     backgroundColor: '#0a0a0a',
     titleBarStyle: 'hiddenInset',
@@ -23,7 +27,7 @@ function createWindow() {
   // Set up menu for keyboard shortcuts
   const template = [
     {
-      label: 'Mission Control',
+      label: 'Array',
       submenu: [
         { role: 'about' },
         { type: 'separator' },
@@ -63,7 +67,6 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
@@ -87,24 +90,7 @@ app.on('activate', () => {
   }
 });
 
-// IPC handlers for secure storage
-ipcMain.handle('store-api-key', async (_, apiKey) => {
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = safeStorage.encryptString(apiKey);
-    // Store encrypted buffer as base64 string
-    return encrypted.toString('base64');
-  }
-  return apiKey;
-});
-
-ipcMain.handle('retrieve-api-key', async (_, encryptedKey) => {
-  if (safeStorage.isEncryptionAvailable()) {
-    try {
-      const buffer = Buffer.from(encryptedKey, 'base64');
-      return safeStorage.decryptString(buffer);
-    } catch {
-      return null;
-    }
-  }
-  return encryptedKey;
-});
+// Register IPC handlers via services
+registerPosthogIpc();
+registerOsIpc(() => mainWindow);
+registerAgentIpc(taskControllers, () => mainWindow);
