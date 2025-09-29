@@ -12,6 +12,7 @@ module.exports = {
     'plugin:@typescript-eslint/recommended',
   ],
   parser: '@typescript-eslint/parser',
+  ignorePatterns: ['src/api/generated.ts'],
   parserOptions: {
     ecmaFeatures: {
       jsx: true,

@@ -1,18 +1,17 @@
-import axios, { AxiosInstance } from 'axios';
-import { Task, Workflow, User } from '@shared/types';
+
+import { buildApiFetcher } from './fetcher';
+import { createApiClient, type Schemas } from './generated';
 
 export class PostHogAPIClient {
-  private api: AxiosInstance;
+  private api: ReturnType<typeof createApiClient>;
   private _teamId: number | null = null;
-  
+
   constructor(private apiKey: string, private apiHost: string) {
-    this.api = axios.create({
-      baseURL: apiHost.endsWith('/') ? apiHost.slice(0, -1) : apiHost,
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    const baseUrl = apiHost.endsWith('/') ? apiHost.slice(0, -1) : apiHost;
+    this.api = createApiClient(
+      buildApiFetcher({ apiToken: apiKey }),
+      baseUrl
+    );
   }
   
   private async getTeamId(): Promise<number> {
@@ -20,9 +19,11 @@ export class PostHogAPIClient {
       return this._teamId;
     }
     
-    const { data: user } = await this.api.get<User>('/api/users/@me');
+    const user = await this.api.get("/api/users/{uuid}/", {
+      path: {uuid: "@me"}
+    });
     
-    if (user.team?.id) {
+    if (user?.team?.id) {
       this._teamId = user.team.id;
       return this._teamId;
     }
@@ -30,12 +31,14 @@ export class PostHogAPIClient {
     throw new Error('No team found for user');
   }
   
-  async getCurrentUser(): Promise<User> {
-    const { data } = await this.api.get<User>('/api/users/@me');
+  async getCurrentUser() {
+    const data = await this.api.get('/api/users/{uuid}/', {
+      path: {uuid: "@me"}
+    });
     return data;
   }
   
-  async getTasks(repositoryOrg?: string, repositoryName?: string): Promise<Task[]> {
+  async getTasks(repositoryOrg?: string, repositoryName?: string) {
     const teamId = await this.getTeamId();
     const params: Record<string, string> = {};
     
@@ -44,23 +47,19 @@ export class PostHogAPIClient {
       params['repository_config__repository'] = repositoryName;
     }
     
-    const { data } = await this.api.get(`/api/projects/${teamId}/tasks/`, { params });
+    const data = await this.api.get(`/api/projects/{project_id}/tasks/`, {
+      path: {project_id: teamId.toString()},
+      query: params
+    });
     
-    // Handle different response formats
-    if (Array.isArray(data)) {
-      return data;
-    } else if (data.results) {
-      return data.results;
-    } else if (data.data) {
-      return data.data;
-    }
-    
-    return [];
+    return data.results ?? []
   }
   
-  async getTask(taskId: string): Promise<Task> {
+  async getTask(taskId: string) {
     const teamId = await this.getTeamId();
-    const { data } = await this.api.get<Task>(`/api/projects/${teamId}/tasks/${taskId}/`);
+    const data = await this.api.get(`/api/projects/{project_id}/tasks/{id}/`, {
+      path: {project_id: teamId.toString(), id: taskId}
+    });
     return data;
   }
   
@@ -68,7 +67,7 @@ export class PostHogAPIClient {
     title: string, 
     description: string,
     repositoryConfig?: { organization: string; repository: string }
-  ): Promise<Task> {
+  ) {
     const teamId = await this.getTeamId();
     
     const payload = {
@@ -78,65 +77,61 @@ export class PostHogAPIClient {
       ...(repositoryConfig && { repository_config: repositoryConfig }),
     };
     
-    const { data } = await this.api.post<Task>(
-      `/api/projects/${teamId}/tasks/`,
-      payload
-    );
+    const data = await this.api.post(`/api/projects/{project_id}/tasks/`, {
+      path: {project_id: teamId.toString()},
+      body: payload
+    });
     
     return data;
   }
   
-  async updateTask(taskId: string, updates: Partial<Task>): Promise<Task> {
+  async updateTask(taskId: string, updates: Partial<Schemas.Task>) {
     const teamId = await this.getTeamId();
-    const { data } = await this.api.patch<Task>(
-      `/api/projects/${teamId}/tasks/${taskId}/`,
-      updates
-    );
+    const data = await this.api.patch(`/api/projects/{project_id}/tasks/{id}/`, {
+      path: {project_id: teamId.toString(), id: taskId},
+      body: updates
+    });
+
     return data;
   }
   
-  async runTask(taskId: string, mode: 'local' | 'cloud' = 'local'): Promise<{ id: string; status: string }> {
+  async runTask(taskId: string) {
+    // TODO: Pull this out and handle local and API calls
     const teamId = await this.getTeamId();
-    const { data } = await this.api.post(
-      `/api/projects/${teamId}/tasks/${taskId}/run`,
-      { mode }
+    const data = await this.api.patch(
+      `/api/projects/{project_id}/tasks/{id}/update_stage/`,
+      { path: {project_id: teamId.toString(), id: taskId}, body: { current_stage: "running" } }
     );
+
     return data;
   }
   
   async getTaskLogs(taskId: string): Promise<string> {
     const teamId = await this.getTeamId();
-    const { data } = await this.api.get(
-      `/api/projects/${teamId}/tasks/${taskId}/logs`
+    const data = await this.api.get(
+      `/api/projects/{project_id}/tasks/{id}/progress/`,
+      { path: {project_id: teamId.toString(), id: taskId}}
     );
-    return data;
+    return data.output_log ?? "";
   }
   
-  async getWorkflows(): Promise<Workflow[]> {
+  async getWorkflows() {
     const teamId = await this.getTeamId();
-    const { data } = await this.api.get(`/api/projects/${teamId}/workflows/`);
+    const data = await this.api.get(`/api/projects/{project_id}/workflows/`, {
+      path: { project_id: teamId.toString() },
+      query: { limit: 100, offset: 0 }
+    });
     
-    if (Array.isArray(data)) {
-      return data;
-    } else if (data.results) {
-      return data.results;
-    } else if (data.data) {
-      return data.data;
-    }
-    
-    return [];
+    return data.results ?? []
   }
   
-  async getWorkflowStages(workflowId: string): Promise<any[]> {
+  async getWorkflowStages(workflowId: string) {
     const teamId = await this.getTeamId();
-    const { data } = await this.api.get(`/api/projects/${teamId}/workflows/${workflowId}/stages/`);
+    const data = await this.api.get(`/api/projects/{project_id}/workflows/{workflow_id}/stages/`, {
+      path: { project_id: teamId.toString(), workflow_id: workflowId },
+      query: { limit: 100, offset: 0 }
+    });
     
-    if (Array.isArray(data)) {
-      return data;
-    } else if (data.results) {
-      return data.results;
-    }
-    
-    return [];
+    return data.results ?? []
   }
 }
