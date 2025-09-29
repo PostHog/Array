@@ -21,11 +21,17 @@ function createWindow(): void {
     minHeight: 600,
     backgroundColor: '#0a0a0a',
     titleBarStyle: 'hiddenInset',
+    show: false, 
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.maximize();
+    mainWindow?.show();
   });
 
   // Set up menu for keyboard shortcuts
