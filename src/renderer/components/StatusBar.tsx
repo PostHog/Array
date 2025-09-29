@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flex, Text, Kbd, Badge, Code } from '@radix-ui/themes';
+import { Flex, Kbd, Badge, Code, Box } from '@radix-ui/themes';
 import { useStatusBarStore } from '../stores/statusBarStore';
 import { StatusBarMenu } from './StatusBarMenu';
 
@@ -15,22 +15,13 @@ export function StatusBar({ showKeyHints = true }: StatusBarProps) {
   const version = '0.1.0'; // You can get this from package.json or env vars
 
   return (
-    <div
-      className="border-t border-gray-6 bg-gray-2"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '8px 16px',
-        minHeight: '32px',
-        boxSizing: 'border-box',
-        position: 'relative'
-      }}
+    <Box
+      className="border-t border-gray-6 bg-gray-2 flex flex-row items-center justify-between py-2 px-4 "
     >
       <Flex align="center" gap="2">
         <StatusBarMenu />
         <Code size="1" variant="ghost" color="gray">
-          {statusText}
+          {statusText && '- '}{statusText}
         </Code>
       </Flex>
 
@@ -63,6 +54,6 @@ export function StatusBar({ showKeyHints = true }: StatusBarProps) {
           <Code size="1" variant="ghost">v{version}</Code>
         </Badge>
       </Flex>
-    </div>
+    </Box>
   );
 }

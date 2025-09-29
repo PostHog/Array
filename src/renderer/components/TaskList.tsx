@@ -193,7 +193,7 @@ function TaskItem({ task, isSelected, onClick }: TaskItemProps) {
       onClick={onClick}
     >
       <Flex align="center" gap="2">
-        <Text color="gray" size="2">
+        <Text color="gray" size="1">
           {isSelected ? '[•]' : '[ ]'}
         </Text>
 
@@ -204,7 +204,7 @@ function TaskItem({ task, isSelected, onClick }: TaskItemProps) {
           {status}
         </Badge>
 
-        <Text className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+        <Text size="2" className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
           {task.title}
         </Text>
 

@@ -34,6 +34,7 @@ function createWindow(): void {
     mainWindow?.show();
   });
 
+
   // Set up menu for keyboard shortcuts
   const template: MenuItemConstructorOptions[] = [
     {

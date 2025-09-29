@@ -5,6 +5,7 @@ import { useTaskStore } from '../stores/taskStore';
 import { useStatusBarStore } from '../stores/statusBarStore';
 import { Task, WorkflowStage } from '@shared/types';
 import { formatDistanceToNow } from 'date-fns';
+import { AsciiArt } from './AsciiArt';
 
 interface WorkflowViewProps {
   onSelectTask: (task: Task) => void;
@@ -81,49 +82,57 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
   }
 
   return (
-    <Box height="100%" p="2">
-      <Flex direction="column" height="100%">
-        {/* Workflow selector */}
-        <Box p="4" className="border-b border-gray-6">
-          <Flex align="center" justify="between">
-            <Heading size="4">Workflow View</Heading>
-            <Select.Root
-              value={selectedWorkflowId || ''}
-              onValueChange={(value) => selectWorkflow(value || null)}
-            >
-              <Select.Trigger />
-              <Select.Content>
-                {workflows.filter(w => w.is_active).map(workflow => (
-                  <Select.Item key={workflow.id} value={workflow.id}>
-                    {workflow.name} {workflow.is_default && '(Default)'}
-                  </Select.Item>
-                ))}
-              </Select.Content>
-            </Select.Root>
-          </Flex>
-          {selectedWorkflow?.description && (
-            <Text size="2" color="gray">
-              {selectedWorkflow.description}
-            </Text>
-          )}
-        </Box>
+    <Box height="100%" style={{ position: 'relative' }}>
+      {/* Background ASCII Art */}
+      <Box style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
+        <AsciiArt scale={1} opacity={0.1} />
+      </Box>
 
-        <Box flexGrow="1" p="4" overflowX="auto">
-          <Flex gap="4" height="100%">
-            {selectedWorkflow?.stages
-              .filter(stage => !stage.is_archived)
-              .sort((a, b) => a.position - b.position)
-              .map(stage => (
-                <WorkflowColumn
-                  key={stage.id}
-                  stage={stage}
-                  tasks={tasksByStage.get(stage.id) || []}
-                  onSelectTask={onSelectTask}
-                />
-              ))}
-          </Flex>
-        </Box>
-      </Flex>
+      {/* Foreground Content */}
+      <Box height="100%" p="2" style={{ position: 'relative', zIndex: 1 }}>
+        <Flex direction="column" height="100%">
+          {/* Workflow selector */}
+          <Box p="4" className="border-b border-gray-6">
+            <Flex align="center" justify="between">
+              <Heading size="4">Workflow View</Heading>
+              <Select.Root
+                value={selectedWorkflowId || ''}
+                onValueChange={(value) => selectWorkflow(value || null)}
+              >
+                <Select.Trigger />
+                <Select.Content>
+                  {workflows.filter(w => w.is_active).map(workflow => (
+                    <Select.Item key={workflow.id} value={workflow.id}>
+                      {workflow.name} {workflow.is_default && '(Default)'}
+                    </Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            </Flex>
+            {selectedWorkflow?.description && (
+              <Text size="2" color="gray">
+                {selectedWorkflow.description}
+              </Text>
+            )}
+          </Box>
+
+          <Box flexGrow="1" p="4" overflowX="auto">
+            <Flex gap="4" height="100%">
+              {selectedWorkflow?.stages
+                .filter(stage => !stage.is_archived)
+                .sort((a, b) => a.position - b.position)
+                .map(stage => (
+                  <WorkflowColumn
+                    key={stage.id}
+                    stage={stage}
+                    tasks={tasksByStage.get(stage.id) || []}
+                    onSelectTask={onSelectTask}
+                  />
+                ))}
+            </Flex>
+          </Box>
+        </Flex>
+      </Box>
     </Box>
   );
 }

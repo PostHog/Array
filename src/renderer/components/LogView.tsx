@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Flex, Box, Heading, Text, Code, Button, IconButton } from '@radix-ui/themes';
+import { Flex, Box, Heading, Text, Code, IconButton } from '@radix-ui/themes';
 import { TrashIcon } from '@radix-ui/react-icons';
 import { LogEntry, formatTime } from '../types/log';
 import { ToolCallView } from './log/ToolCallView';
@@ -27,7 +27,6 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
       <Flex direction="column" align="center" justify="center" height="100%" p="8">
         <Flex direction="column" align="center" gap="2">
           <Text color="gray">No activity yet</Text>
-          <Text size="2" color="gray">Run the task to see logs here</Text>
         </Flex>
       </Flex>
     );

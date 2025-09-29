@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { Flex, Box, Text, Badge, Button, Link, SegmentedControl, DataList, Code } from '@radix-ui/themes';
+import { Flex, Box, Badge, Button, Link, SegmentedControl, DataList, Code } from '@radix-ui/themes';
+import { Pencil1Icon } from '@radix-ui/react-icons';
 import { Task } from '@shared/types';
 import { format } from 'date-fns';
 import { useStatusBarStore } from '../stores/statusBarStore';
@@ -91,7 +92,13 @@ export function TaskDetail({ task }: TaskDetailProps) {
               <DataList.Item>
                 <DataList.Label>Remote Repository</DataList.Label>
                 <DataList.Value>
-                  {task.repository_config.organization}/{task.repository_config.repository}
+                  <Link
+                    href={`https://github.com/${task.repository_config.organization}/${task.repository_config.repository}`}
+                    target="_blank"
+                    size="2"
+                  >
+                    {task.repository_config.organization}/{task.repository_config.repository} →
+                  </Link>
                 </DataList.Value>
               </DataList.Item>
             )}
@@ -132,7 +139,15 @@ export function TaskDetail({ task }: TaskDetailProps) {
               <DataList.Label>Working Directory</DataList.Label>
               <DataList.Value>
                 {repoPath ? (
-                  <Text size="2">{repoPath}</Text>
+                  <Button
+                    size="1"
+                    variant="ghost"
+                    onClick={handleSelectRepo}
+                    className="group cursor-pointer"
+                  >
+                    <Code variant="ghost" size="2">{repoPath}</Code>
+                    <Pencil1Icon className="opacity-0 group-hover:opacity-100 transition-opacity ml-2" />
+                  </Button>
                 ) : (
                   <Button size="1" variant="outline" onClick={handleSelectRepo}>
                     Choose folder

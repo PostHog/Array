@@ -38,6 +38,7 @@ interface TaskExecutionStore {
   unsubscribeFromAgentEvents: (taskId: string) => void;
 }
 
+
 const defaultTaskState: TaskExecutionState = {
   isRunning: false,
   logs: [],

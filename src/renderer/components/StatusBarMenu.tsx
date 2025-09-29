@@ -1,6 +1,6 @@
 import React from 'react';
-import { Flex, Text, DropdownMenu, Switch } from '@radix-ui/themes';
-import { ChevronUpIcon, ExitIcon } from '@radix-ui/react-icons';
+import { Flex, Text, DropdownMenu, Switch, Code, Button } from '@radix-ui/themes';
+import { ExitIcon } from '@radix-ui/react-icons';
 import { useThemeStore } from '../stores/themeStore';
 import { useAuthStore } from '../stores/authStore';
 
@@ -12,21 +12,12 @@ export function StatusBarMenu() {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>
-        <button
-          className="text-gray-9 hover:text-gray-11"
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: '8px',
-            margin: '-8px',
-            display: 'flex',
-            alignItems: 'center',
-            transition: 'color 0.15s'
-          }}
+        <Button
+          size="1"
+          variant="ghost"
         >
-          <ChevronUpIcon className="w-3 h-3" />
-        </button>
+          <Code size="1" color="gray" variant="ghost">ARRAY</Code>
+        </Button>
       </DropdownMenu.Trigger>
 
       <DropdownMenu.Content >
