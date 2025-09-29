@@ -20,8 +20,6 @@ export function registerAgentIpc(taskControllers: Map<string, TaskController>, g
             throw new Error('prompt and repoPath are required');
         }
 
-        // Now using top-level import since we're compiling to ES modules
-
         const agent = createAgent(
             new ClaudeCodeAgent({
                 permissionMode: 'bypassPermissions'
@@ -97,8 +95,8 @@ export function registerAgentIpc(taskControllers: Map<string, TaskController>, g
         const { taskId, stream } = await agent.run({
             prompt: fullPrompt,
             repoPath,
-            signal: abortController.signal,
-        } as any);
+            permissionMode: 'auto',
+        });
 
         const channel = `agent-event:${taskId}`;
 
