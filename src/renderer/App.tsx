@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Flex, Text, Spinner } from '@radix-ui/themes';
 import { AuthScreen } from './components/AuthScreen';
 import { MainLayout } from './components/MainLayout';
 import { useAuthStore } from './stores/authStore';
@@ -13,9 +14,12 @@ function App() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-dark-bg">
-        <div className="text-dark-text-muted">Loading...</div>
-      </div>
+      <Flex align="center" justify="center" minHeight="100vh">
+        <Flex align="center" gap="3">
+          <Spinner size="3" />
+          <Text color="gray">Loading...</Text>
+        </Flex>
+      </Flex>
     );
   }
 

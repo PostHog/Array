@@ -1,4 +1,5 @@
 import React from 'react';
+import { Box, Flex, Text } from '@radix-ui/themes';
 
 interface DiffViewProps {
   file: string;
@@ -19,32 +20,32 @@ export function DiffView({ file, patch, added, removed }: DiffViewProps) {
   const lines = (patch || '').split(/\r?\n/);
 
   return (
-    <div className="border border-dark-border rounded-md overflow-hidden">
-      <div className="px-3 py-2 bg-dark-bg flex items-center justify-between">
-        <div className="text-sm">
-          <span className="text-dark-text-muted">{dir}</span>
-          <span className="text-dark-text font-medium">{base}</span>
-        </div>
-        <div className="text-xs text-dark-text-muted">
+    <Box className="border border-gray-6 rounded-3 overflow-hidden">
+      <Flex align="center" justify="between" p="3" className="bg-gray-2">
+        <Box>
+          <Text color="gray">{dir}</Text>
+          <Text weight="medium">{base}</Text>
+        </Box>
+        <Box>
           {typeof added === 'number' && typeof removed === 'number' ? (
-            <span>+{added} / -{removed}</span>
+            <Text size="1" color="gray">+{added} / -{removed}</Text>
           ) : null}
-        </div>
-      </div>
-      <pre className="text-sm leading-relaxed whitespace-pre overflow-auto p-3 bg-dark-surface">
+        </Box>
+      </Flex>
+      <Box p="3" className="bg-gray-1 font-mono text-sm whitespace-pre overflow-x-auto">
         {lines.map((line, i) => {
-          let cls = 'text-dark-text';
-          if (line.startsWith('+++') || line.startsWith('---')) cls = 'text-dark-text-muted';
-          else if (line.startsWith('@@')) cls = 'text-blue-400';
-          else if (line.startsWith('+')) cls = 'text-green-400';
-          else if (line.startsWith('-')) cls = 'text-red-400';
-          else if (line.startsWith('diff ') || line.startsWith('index ')) cls = 'text-dark-text-muted';
+          let color: string | undefined = undefined;
+          if (line.startsWith('+++') || line.startsWith('---')) color = 'gray';
+          else if (line.startsWith('@@')) color = 'blue';
+          else if (line.startsWith('+')) color = 'green';
+          else if (line.startsWith('-')) color = 'red';
+          else if (line.startsWith('diff ') || line.startsWith('index ')) color = 'gray';
           return (
-            <div key={i} className={cls}>{line || '\u00A0'}</div>
+            <Text key={i} color={color}>{line || '\u00A0'}</Text>
           );
         })}
-      </pre>
-    </div>
+      </Box>
+    </Box>
   );
 }
 

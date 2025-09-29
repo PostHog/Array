@@ -1,9 +1,9 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
+import { Flex, Box, Text, TextField, Button, Badge, Spinner, Kbd } from '@radix-ui/themes';
 import { Task } from '@shared/types';
 import { useTaskStore } from '../stores/taskStore';
 import { formatDistanceToNow } from 'date-fns';
-import clsx from 'clsx';
 
 interface TaskListProps {
   onSelectTask: (task: Task) => void;
@@ -67,46 +67,46 @@ export function TaskList({ onSelectTask }: TaskListProps) {
   
   if (isLoading && tasks.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-dark-text-muted">Loading tasks...</div>
-      </div>
+      <Flex align="center" justify="center" >
+        <Flex align="center" gap="3">
+          <Spinner size="3" />
+          <Text color="gray">Loading tasks...</Text>
+        </Flex>
+      </Flex>
     );
   }
-  
+
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full p-8">
-        <div className="text-red-400 mb-4">{error}</div>
-        <button
-          onClick={() => fetchTasks()}
-          className="px-4 py-2 bg-dark-surface hover:bg-dark-border rounded-md transition-colors"
-        >
+      <Flex direction="column" align="center" justify="center">
+        <Text color="red">{error}</Text>
+        <Button onClick={() => fetchTasks()}>
           Retry
-        </button>
-      </div>
+        </Button>
+      </Flex>
     );
   }
   
   return (
-    <div className="flex flex-col h-full bg-dark-bg">
-      <div className="py-4 border-b border-dark-border">
-        <input
-          type="text"
+    <Flex direction="column" height="100%">
+      <Box py="4" className="border-b border-gray-6">
+        <TextField.Root
           value={filter}
           onChange={(e) => {
             setFilter(e.target.value);
             setSelectedIndex(0);
           }}
           placeholder="Filter tasks..."
-          className="w-full px-3 py-2 bg-dark-surface border border-dark-border rounded-md text-dark-text placeholder-dark-text-muted focus:ring-2 focus:ring-posthog-500 focus:border-transparent"
         />
-      </div>
-      
-      <div ref={listRef} className="flex-1 overflow-y-auto">
+      </Box>
+
+      <Box ref={listRef} flexGrow="1" overflowY="auto">
         {filteredTasks.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-dark-text-muted">
-            {filter ? 'No tasks match your filter' : 'No tasks found'}
-          </div>
+          <Flex align="center" justify="center" height="100%">
+            <Text color="gray">
+              {filter ? 'No tasks match your filter' : 'No tasks found'}
+            </Text>
+          </Flex>
         ) : (
           filteredTasks.map((task, index) => (
             <TaskItem
@@ -120,15 +120,24 @@ export function TaskList({ onSelectTask }: TaskListProps) {
             />
           ))
         )}
-      </div>
-      
-      <div className="p-2 border-t border-dark-border text-xs text-dark-text-muted">
-        <div className="flex justify-between">
-          <span>{filteredTasks.length} tasks</span>
-          <span>↑↓ Navigate · ↵ Open · ⌘R Refresh</span>
-        </div>
-      </div>
-    </div>
+      </Box>
+
+      <Box p="2" className="border-t border-gray-6">
+        <Flex justify="between">
+          <Text size="1" color="gray">{filteredTasks.length} tasks</Text>
+          <Flex align="center" gap="2">
+            <Kbd>↑↓</Kbd>
+            <Text size="1" color="gray">Navigate</Text>
+            <Text size="1" color="gray">·</Text>
+            <Kbd>↵</Kbd>
+            <Text size="1" color="gray">Open</Text>
+            <Text size="1" color="gray">·</Text>
+            <Kbd>⌘R</Kbd>
+            <Text size="1" color="gray">Refresh</Text>
+          </Flex>
+        </Flex>
+      </Box>
+    </Flex>
   );
 }
 
@@ -141,46 +150,44 @@ interface TaskItemProps {
 function TaskItem({ task, isSelected, onClick }: TaskItemProps) {
   const createdAt = new Date(task.created_at);
   const timeAgo = formatDistanceToNow(createdAt, { addSuffix: true });
-  
+
   // TODO: Look up stage name from workflow data
   const status = 'Backlog';
-  
+
   return (
-    <div
-      className={clsx(
-        'px-2 py-1 border-b border-dark-border cursor-pointer transition-colors font-mono text-sm',
-        isSelected ? 'bg-dark-surface' : 'hover:bg-dark-surface/50'
-      )}
+    <Box
+      p="2"
+      className={`border-b border-gray-6 cursor-pointer font-mono ${
+        isSelected ? 'bg-gray-3' : ''
+      }`}
       onClick={onClick}
     >
-      <div className="flex items-center gap-2">
-        <span className="text-dark-text-muted">
+      <Flex align="center" gap="2">
+        <Text color="gray" size="2">
           {isSelected ? '[•]' : '[ ]'}
-        </span>
-        
-        <span className={clsx(
-          'px-1 py-0 rounded text-xs min-w-fit',
-          status === 'Backlog' 
-            ? 'bg-gray-800 text-gray-300'
-            : 'bg-posthog-900/30 text-posthog-400'
-        )}>
+        </Text>
+
+        <Badge
+          color={status === 'Backlog' ? 'gray' : 'orange'}
+          size="1"
+        >
           {status}
-        </span>
-        
-        <span className="text-dark-text flex-1 truncate">
+        </Badge>
+
+        <Text className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
           {task.title}
-        </span>
-        
+        </Text>
+
         {task.repository_config && (
-          <span className="text-dark-text-muted text-xs">
+          <Text size="1" color="gray">
             {task.repository_config.organization}/{task.repository_config.repository}
-          </span>
+          </Text>
         )}
-        
-        <span className="text-xs text-dark-text-muted whitespace-nowrap">
+
+        <Text size="1" color="gray" className="whitespace-nowrap">
           {timeAgo}
-        </span>
-      </div>
-    </div>
+        </Text>
+      </Flex>
+    </Box>
   );
 }

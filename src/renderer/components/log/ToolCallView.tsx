@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Box, Flex, Text, Button } from '@radix-ui/themes';
 
 interface ToolCallViewProps {
   toolName: string;
@@ -21,25 +22,26 @@ export function ToolCallView({ toolName, callId, args }: ToolCallViewProps) {
   const [expanded, setExpanded] = useState(true);
 
   return (
-    <div className="border border-dark-border rounded-md overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 bg-dark-bg">
-        <div className="text-dark-text">
-          <span className="font-medium">{toolName}</span>
-          {callId ? <span className="text-dark-text-muted ml-2">[{callId}]</span> : null}
-        </div>
-        <button
-          className="text-xs px-2 py-1 bg-dark-surface hover:bg-dark-border rounded text-dark-text"
+    <Box className="border border-gray-6 rounded-3 overflow-hidden">
+      <Flex align="center" justify="between" p="3" className="bg-gray-2">
+        <Box>
+          <Text weight="medium">{toolName}</Text>
+          {callId ? <Text color="gray" ml="2">[{callId}]</Text> : null}
+        </Box>
+        <Button
+          size="1"
+          variant="outline"
           onClick={() => setExpanded(v => !v)}
         >
           {expanded ? 'Hide args' : 'Show args'}
-        </button>
-      </div>
+        </Button>
+      </Flex>
       {expanded && args !== undefined && (
-        <pre className="whitespace-pre-wrap p-3 text-sm text-dark-text bg-dark-surface overflow-x-auto">
-{stringify(args)}
-        </pre>
+        <Box p="3" className="bg-gray-1 font-mono text-sm whitespace-pre-wrap overflow-x-auto">
+          <Text size="1">{stringify(args)}</Text>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }
 

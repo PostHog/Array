@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Container, Flex, Card, Heading, Text, TextField, Button, Callout } from '@radix-ui/themes';
 import { useAuthStore } from '../stores/authStore';
 
 export function AuthScreen() {
@@ -24,62 +25,66 @@ export function AuthScreen() {
   };
   
   return (
-    <div className="min-h-screen flex items-center justify-center bg-dark-bg">
-      <div className="w-full max-w-md p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-dark-text mb-2">Mission Control</h1>
-          <p className="text-dark-text-muted">Sign in to your PostHog account</p>
-        </div>
-        
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label htmlFor="apiKey" className="block text-sm font-medium text-dark-text mb-2">
-              Personal API Key
-            </label>
-            <input
-              id="apiKey"
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="w-full px-3 py-2 bg-dark-surface border border-dark-border rounded-md text-dark-text focus:ring-2 focus:ring-posthog-500 focus:border-transparent"
-              placeholder="phx_..."
-              required
-            />
-            <p className="mt-1 text-xs text-dark-text-muted">
-              Get your API key from PostHog settings
-            </p>
-          </div>
-          
-          <div>
-            <label htmlFor="apiHost" className="block text-sm font-medium text-dark-text mb-2">
-              PostHog Instance URL
-            </label>
-            <input
-              id="apiHost"
-              type="url"
-              value={apiHost}
-              onChange={(e) => setApiHost(e.target.value)}
-              className="w-full px-3 py-2 bg-dark-surface border border-dark-border rounded-md text-dark-text focus:ring-2 focus:ring-posthog-500 focus:border-transparent"
-              placeholder="https://app.posthog.com"
-              required
-            />
-          </div>
-          
-          {error && (
-            <div className="p-3 bg-red-900/20 border border-red-800 rounded-md text-red-400 text-sm">
-              {error}
-            </div>
-          )}
-          
-          <button
-            type="submit"
-            disabled={isLoading || !apiKey}
-            className="w-full py-2 px-4 bg-posthog-500 hover:bg-posthog-600 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors"
-          >
-            {isLoading ? 'Connecting...' : 'Connect'}
-          </button>
-        </form>
-      </div>
-    </div>
+    <Container size="1">
+      <Flex direction="column" align="center" justify="center" minHeight="100vh">
+        <Card size="3" maxWidth="400px" width="100%">
+          <Flex direction="column" gap="6">
+            <Flex direction="column" align="center" gap="2">
+              <Heading size="8">Mission Control</Heading>
+              <Text color="gray">Sign in to your PostHog account</Text>
+            </Flex>
+
+            <form onSubmit={handleSubmit}>
+              <Flex direction="column" gap="4">
+                <Flex direction="column" gap="2">
+                  <Text as="label" htmlFor="apiKey" size="2" weight="medium">
+                    Personal API Key
+                  </Text>
+                  <TextField.Root
+                    id="apiKey"
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="phx_..."
+                    required
+                  />
+                  <Text size="1" color="gray">
+                    Get your API key from PostHog settings
+                  </Text>
+                </Flex>
+
+                <Flex direction="column" gap="2">
+                  <Text as="label" htmlFor="apiHost" size="2" weight="medium">
+                    PostHog Instance URL
+                  </Text>
+                  <TextField.Root
+                    id="apiHost"
+                    type="url"
+                    value={apiHost}
+                    onChange={(e) => setApiHost(e.target.value)}
+                    placeholder="https://app.posthog.com"
+                    required
+                  />
+                </Flex>
+
+                {error && (
+                  <Callout.Root color="red">
+                    <Callout.Text>{error}</Callout.Text>
+                  </Callout.Root>
+                )}
+
+                <Button
+                  type="submit"
+                  size="3"
+                  disabled={isLoading || !apiKey}
+                >
+                  {isLoading ? 'Connecting...' : 'Connect'}
+                </Button>
+              </Flex>
+            </form>
+          </Flex>
+        </Card>
+      </Flex>
+    </Container>
   );
 }

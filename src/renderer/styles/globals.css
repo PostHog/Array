@@ -2,46 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  * {
-    @apply border-dark-border;
-  }
-  
-  body {
-    @apply antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-      sans-serif;
-  }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
-  /* Custom scrollbar */
-  ::-webkit-scrollbar {
-    @apply w-2 h-2;
-  }
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
 
-  ::-webkit-scrollbar-track {
-    @apply bg-dark-surface;
-  }
+::-webkit-scrollbar-track {
+  background: var(--gray-3);
+}
 
-  ::-webkit-scrollbar-thumb {
-    @apply bg-dark-border rounded-full hover:bg-gray-600;
-  }
+::-webkit-scrollbar-thumb {
+  background: var(--gray-8);
+  border-radius: 4px;
+}
 
-  /* Focus styles */
-  :focus {
-    @apply outline-none;
-  }
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-9);
+}
 
-  :focus-visible {
-    @apply ring-2 ring-posthog-500 ring-offset-2 ring-offset-dark-bg;
-  }
+:focus {
+  outline: none;
+}
 
-  /* Electron draggable regions */
-  .drag {
-    -webkit-app-region: drag;
-  }
+:focus-visible {
+  outline: 2px solid var(--accent-8);
+  outline-offset: 2px;
+}
 
-  .no-drag {
-    -webkit-app-region: no-drag;
-  }
+.drag {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
 }

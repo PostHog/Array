@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { Flex, Box, Heading, Text, Select, Card, Badge, Spinner } from '@radix-ui/themes';
 import { useWorkflowStore } from '../stores/workflowStore';
 import { useTaskStore } from '../stores/taskStore';
 import { Task, WorkflowStage } from '@shared/types';
 import { formatDistanceToNow } from 'date-fns';
-import clsx from 'clsx';
 
 interface WorkflowViewProps {
   onSelectTask: (task: Task) => void;
@@ -29,51 +29,58 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
 
   if (isLoading && workflows.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-dark-text-muted">Loading workflows...</div>
-      </div>
+      <Flex align="center" justify="center">
+        <Flex align="center" gap="3">
+          <Spinner size="3" />
+          <Text color="gray">Loading workflows...</Text>
+        </Flex>
+      </Flex>
     );
   }
 
   if (workflows.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <p className="text-dark-text-muted mb-4">No workflows found</p>
-          <p className="text-sm text-dark-text-muted">
+      <Flex align="center" justify="center">
+        <Flex direction="column" align="center" gap="2">
+          <Text color="gray">No workflows found</Text>
+          <Text size="2" color="gray">
             Create workflows in PostHog to organize your tasks
-          </p>
-        </div>
-      </div>
+          </Text>
+        </Flex>
+      </Flex>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-dark-bg">
+    <Flex direction="column" height="100%">
       {/* Workflow selector */}
-      <div className="p-4 border-b border-dark-border">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-medium text-dark-text">Workflow View</h2>
-          <select
+      <Box p="4" className="border-b border-gray-6">
+        <Flex align="center" justify="between">
+          <Heading size="4">Workflow View</Heading>
+          <Select.Root
             value={selectedWorkflowId || ''}
-            onChange={(e) => selectWorkflow(e.target.value || null)}
-            className="px-3 py-1 bg-dark-surface border border-dark-border rounded-md text-dark-text focus:ring-2 focus:ring-posthog-500 focus:border-transparent"
+            onValueChange={(value) => selectWorkflow(value || null)}
           >
-            {workflows.filter(w => w.is_active).map(workflow => (
-              <option key={workflow.id} value={workflow.id}>
-                {workflow.name} {workflow.is_default && '(Default)'}
-              </option>
-            ))}
-          </select>
-        </div>
+            <Select.Trigger />
+            <Select.Content>
+              {workflows.filter(w => w.is_active).map(workflow => (
+                <Select.Item key={workflow.id} value={workflow.id}>
+                  {workflow.name} {workflow.is_default && '(Default)'}
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
+        </Flex>
         {selectedWorkflow?.description && (
-          <p className="mt-2 text-sm text-dark-text-muted">{selectedWorkflow.description}</p>
+          <Text size="2" color="gray">
+            {selectedWorkflow.description}
+          </Text>
         )}
-      </div>
+      </Box>
 
       {/* Kanban board */}
-      <div className="flex-1 p-4 overflow-x-auto">
-        <div className="flex gap-4 h-full">
+      <Box flexGrow="1" p="4" overflowX="auto">
+        <Flex gap="4" height="100%">
           {/* Workflow stages */}
           {selectedWorkflow?.stages
             .filter(stage => !stage.is_archived)
@@ -86,9 +93,9 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
                 onSelectTask={onSelectTask}
               />
             ))}
-        </div>
-      </div>
-    </div>
+        </Flex>
+      </Box>
+    </Flex>
   );
 }
 
@@ -100,32 +107,40 @@ interface WorkflowColumnProps {
 
 function WorkflowColumn({ stage, tasks, onSelectTask }: WorkflowColumnProps) {
   return (
-    <div className="flex-shrink-0 w-80 flex flex-col">
-      <div
-        className="p-3 rounded-t-lg border-b-2"
+    <Flex direction="column" flexShrink="0" width="320px">
+      <Box
+        p="3"
+        className="rounded-t-3"
         style={{
           backgroundColor: `${stage.color}20`,
-          borderBottomColor: stage.color,
+          borderBottom: `2px solid ${stage.color}`,
         }}
       >
-        <div className="flex items-center justify-between">
-          <h3 className="font-medium text-dark-text">{stage.name}</h3>
-          <span className="text-sm text-dark-text-muted">{tasks.length}</span>
-        </div>
+        <Flex align="center" justify="between">
+          <Text weight="medium">{stage.name}</Text>
+          <Text size="2" color="gray">{tasks.length}</Text>
+        </Flex>
         {stage.agent_name && (
-          <span className="text-xs text-dark-text-muted">
+          <Text size="1" color="gray">
             Automated by {stage.agent_name}
-          </span>
+          </Text>
         )}
-      </div>
+      </Box>
 
-      <div className="flex-1 bg-dark-surface rounded-b-lg p-2 overflow-y-auto">
+      <Box
+        flexGrow="1"
+        p="2"
+        overflowY="auto"
+        className="bg-panel-solid rounded-b-3"
+      >
         {tasks.length === 0 ? (
-          <div className="text-center py-8 text-dark-text-muted text-sm">
-            No tasks in {stage.name}
-          </div>
+          <Flex align="center" justify="center" py="8">
+            <Text size="2" color="gray">
+              No tasks in {stage.name}
+            </Text>
+          </Flex>
         ) : (
-          <div className="space-y-2">
+          <Flex direction="column" gap="2">
             {tasks.map(task => (
               <WorkflowTaskCard
                 key={task.id}
@@ -133,10 +148,10 @@ function WorkflowColumn({ stage, tasks, onSelectTask }: WorkflowColumnProps) {
                 onClick={() => onSelectTask(task)}
               />
             ))}
-          </div>
+          </Flex>
         )}
-      </div>
-    </div>
+      </Box>
+    </Flex>
   );
 }
 
@@ -150,29 +165,29 @@ function WorkflowTaskCard({ task, onClick }: WorkflowTaskCardProps) {
   const timeAgo = formatDistanceToNow(createdAt, { addSuffix: true });
 
   return (
-    <div
-      className="p-3 bg-dark-bg rounded-md border border-dark-border hover:border-posthog-500 cursor-pointer transition-colors"
+    <Card
+      className="cursor-pointer transition-colors duration-200"
       onClick={onClick}
     >
-      <h4 className="font-medium text-dark-text text-sm mb-1 line-clamp-2">
+      <Text weight="medium" size="2" mb="1" className="leading-tight">
         {task.title}
-      </h4>
-      
-      <div className="flex items-center gap-2 text-xs text-dark-text-muted">
-        <span>{timeAgo}</span>
-        
+      </Text>
+
+      <Flex align="center" gap="2" mb="1">
+        <Text size="1" color="gray">{timeAgo}</Text>
+
         {task.origin_product && (
-          <span className="px-1.5 py-0.5 bg-dark-surface rounded">
+          <Badge size="1" color="gray">
             {task.origin_product.replace('_', ' ')}
-          </span>
+          </Badge>
         )}
-      </div>
-      
+      </Flex>
+
       {task.repository_config && (
-        <div className="mt-1 text-xs text-dark-text-muted">
+        <Text size="1" color="gray" className="font-mono">
           {task.repository_config.organization}/{task.repository_config.repository}
-        </div>
+        </Text>
       )}
-    </div>
+    </Card>
   );
 }

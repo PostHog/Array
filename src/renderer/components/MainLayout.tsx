@@ -1,4 +1,5 @@
 import React from 'react';
+import { Flex, Box } from '@radix-ui/themes';
 import { TaskList } from './TaskList';
 import { TaskDetail } from './TaskDetail';
 import { WorkflowView } from './WorkflowView';
@@ -8,13 +9,13 @@ import { Task } from '@shared/types';
 
 export function MainLayout() {
   const { activeTabId, tabs, createTab, setActiveTab } = useTabStore();
-  
+
   const handleSelectTask = (task: Task) => {
     // Check if task is already open in a tab
-    const existingTab = tabs.find(tab => 
+    const existingTab = tabs.find(tab =>
       tab.type === 'task-detail' && tab.data?.id === task.id
     );
-    
+
     if (existingTab) {
       setActiveTab(existingTab.id);
     } else {
@@ -25,30 +26,30 @@ export function MainLayout() {
       });
     }
   };
-  
+
   const activeTab = tabs.find(tab => tab.id === activeTabId);
-  
+
   return (
-    <div className="flex flex-col h-screen bg-dark-bg">
+    <Flex direction="column" height="100vh">
       <TabBar />
-      
-      <div className="flex-1 overflow-hidden">
+
+      <Box flexGrow="1" overflow="hidden">
         {activeTab?.type === 'task-list' && (
-          <div className="h-full px-6">
+          <Box height="100%" p="6">
             <TaskList onSelectTask={handleSelectTask} />
-          </div>
+          </Box>
         )}
-        
+
         {activeTab?.type === 'task-detail' && activeTab.data && (
           <TaskDetail task={activeTab.data} />
         )}
-        
+
         {activeTab?.type === 'workflow' && (
-          <div className="h-full px-6">
+          <Box height="100%" p="6">
             <WorkflowView onSelectTask={handleSelectTask} />
-          </div>
+          </Box>
         )}
-      </div>
-    </div>
+      </Box>
+    </Flex>
   );
 }

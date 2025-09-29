@@ -1,5 +1,8 @@
+const { radixThemePreset } = require('radix-themes-tw');
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  presets: [radixThemePreset],
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",

@@ -1,6 +1,7 @@
 import React from 'react';
+import { Flex, Box, Text, IconButton } from '@radix-ui/themes';
+import { Cross2Icon } from '@radix-ui/react-icons';
 import { useTabStore } from '../stores/tabStore';
-import clsx from 'clsx';
 import { useHotkeys } from 'react-hotkeys-hook';
 
 export function TabBar() {
@@ -28,46 +29,46 @@ export function TabBar() {
   }, [tabs, activeTabId, closeTab]);
 
   return (
-    <div className="drag flex bg-dark-surface border-b border-dark-border h-10 overflow-x-auto">
+    <Flex className="drag border-b border-gray-6" height="40px">
       {/* Spacer for macOS window controls */}
-      <div className="w-20 shrink-0" />
+      <Box width="80px" flexShrink="0" />
 
       {tabs.map((tab) => (
-        <div
+        <Flex
           key={tab.id}
-          className={clsx(
-            'no-drag flex items-center px-4 cursor-pointer border-r border-dark-border group min-w-0',
-            tab.id === activeTabId
-              ? 'bg-dark-bg text-dark-text'
-              : 'hover:bg-dark-bg/50 text-dark-text-muted'
-          )}
+          className={`no-drag cursor-pointer border-r border-gray-6 transition-colors group ${tab.id === activeTabId
+              ? 'bg-accent-3 text-accent-12 border-b-2 border-b-accent-8 font-medium'
+              : 'text-gray-11 hover:bg-gray-3 hover:text-gray-12'
+            }`}
+          align="center"
+          px="4"
           onClick={() => setActiveTab(tab.id)}
         >
-          <span className="text-sm truncate max-w-[200px] mr-2">
+          <Text
+            size="2"
+            className={`max-w-[200px] overflow-hidden select-none text-ellipsis whitespace-nowrap ${tab.id === activeTabId ? 'font-medium' : ''
+              }`}
+            mr="2"
+          >
             {tab.title}
-          </span>
+          </Text>
 
           {tabs.length > 1 && (
-            <button
-              className="ml-auto opacity-0 group-hover:opacity-100 hover:text-dark-text transition-opacity"
+            <IconButton
+              size="1"
+              variant="ghost"
+              color={tab.id === activeTabId ? "accent" : "gray"}
+              className="opacity-0 group-hover:opacity-100 transition-opacity"
               onClick={(e) => {
                 e.stopPropagation();
                 closeTab(tab.id);
               }}
             >
-              <svg fill="#FFFFFF" height="12" width="12" version="1.1"
-                viewBox="0 0 460.775 460.775">
-                <path d="M285.08,230.397L456.218,59.27c6.076-6.077,6.076-15.911,0-21.986L423.511,4.565c-2.913-2.911-6.866-4.55-10.992-4.55
-	c-4.127,0-8.08,1.639-10.993,4.55l-171.138,171.14L59.25,4.565c-2.913-2.911-6.866-4.55-10.993-4.55
-	c-4.126,0-8.08,1.639-10.992,4.55L4.558,37.284c-6.077,6.075-6.077,15.909,0,21.986l171.138,171.128L4.575,401.505
-	c-6.074,6.077-6.074,15.911,0,21.986l32.709,32.719c2.911,2.911,6.865,4.55,10.992,4.55c4.127,0,8.08-1.639,10.994-4.55
-	l171.117-171.12l171.118,171.12c2.913,2.911,6.866,4.55,10.993,4.55c4.128,0,8.081-1.639,10.992-4.55l32.709-32.719
-	c6.074-6.075,6.074-15.909,0-21.986L285.08,230.397z"/>
-              </svg>
-            </button>
+              <Cross2Icon />
+            </IconButton>
           )}
-        </div>
+        </Flex>
       ))}
-    </div>
+    </Flex>
   );
 }

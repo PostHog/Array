@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Flex, Box, Heading, Text, Badge, Button, Card, Link, SegmentedControl } from '@radix-ui/themes';
 import { Task } from '@shared/types';
 import { format } from 'date-fns';
 import { useAuthStore } from '../stores/authStore';
@@ -16,7 +17,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const unsubscribeRef = useRef<null | (() => void)>(null);
   const [runMode, setRunMode] = useState<'local' | 'cloud'>('local');
-  
+
   // Safely stringify values for log preview
   const previewJson = (value: any, maxLength: number = 600): string => {
     try {
@@ -34,7 +35,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
       }
     }
   };
-  
+
   const handleSelectRepo = async () => {
     try {
       const selected = await window.electronAPI.selectDirectory();
@@ -68,10 +69,10 @@ export function TaskDetail({ task }: TaskDetailProps) {
       setLogs(prev => [...prev, `Error selecting directory: ${err instanceof Error ? err.message : String(err)}`]);
     }
   };
-  
+
   const handleRunTask = async () => {
     if (isRunning) return;
-    
+
     // Ensure repo path is selected
     let effectiveRepoPath = repoPath;
     if (!effectiveRepoPath) {
@@ -104,7 +105,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
       }
       return;
     }
-    
+
     // Build a helpful prompt for the agent
     const promptLines: string[] = [];
     promptLines.push(`Task: ${task.title}`);
@@ -113,13 +114,13 @@ export function TaskDetail({ task }: TaskDetailProps) {
       promptLines.push(task.description);
     }
     const prompt = promptLines.join('\n');
-    
+
     setIsRunning(true);
     setLogs([
       { type: 'text', ts: Date.now(), content: `Starting ${runMode} Claude Code agent...` },
       { type: 'text', ts: Date.now(), content: `Repo: ${effectiveRepoPath}` },
     ]);
-    
+
     try {
       const { taskId, channel } = await window.electronAPI.agentStart({
         prompt,
@@ -127,7 +128,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
         model: 'claude-4-sonnet',
       });
       setCurrentTaskId(taskId);
-      
+
       // Subscribe to streaming events
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
@@ -209,7 +210,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
     if (!currentTaskId) return;
     try {
       await window.electronAPI.agentCancel(currentTaskId);
-    } catch {}
+    } catch { }
     setIsRunning(false);
     if (unsubscribeRef.current) {
       unsubscribeRef.current();
@@ -225,128 +226,117 @@ export function TaskDetail({ task }: TaskDetailProps) {
       }
     };
   }, []);
-  
+
   return (
-    <div className="flex flex-1 h-full">
+    <Flex height="100%">
       {/* Left pane - Task details */}
-      <div className="w-1/2 border-r border-dark-border overflow-y-auto">
-        <div className="p-6">
-          <h1 className="text-2xl font-bold text-dark-text mb-4">{task.title}</h1>
-          
-          <div className="space-y-4">
+      <Box width="50%" className="border-r border-gray-6" overflowY="auto">
+        <Box p="6">
+          <Heading size="6" mb="4">{task.title}</Heading>
+
+          <Flex direction="column" gap="4">
             {/* Status */}
-            <div>
-              <h3 className="text-sm font-medium text-dark-text-muted mb-1">Status</h3>
-              <span className="px-3 py-1 bg-dark-surface rounded-md text-dark-text">
+            <Box>
+              <Text size="2" color="gray" weight="medium" >Status</Text>
+              <Badge color="gray">
                 {task.current_stage || 'Backlog'}
-              </span>
-            </div>
-            
+              </Badge>
+            </Box>
+
             {/* Repository */}
             {task.repository_config && (
-              <div>
-                <h3 className="text-sm font-medium text-dark-text-muted mb-1">Repository</h3>
-                <p className="text-dark-text font-mono text-sm">
+              <Box>
+                <Text size="2" color="gray" weight="medium" >Repository</Text>
+                <Text size="2">
                   {task.repository_config.organization}/{task.repository_config.repository}
-                </p>
-              </div>
+                </Text>
+              </Box>
             )}
-            
+
             {/* GitHub Links */}
             {(task.github_branch || task.github_pr_url) && (
-              <div>
-                <h3 className="text-sm font-medium text-dark-text-muted mb-1">GitHub</h3>
+              <Box>
+                <Text size="2" color="gray" weight="medium" >GitHub</Text>
                 {task.github_branch && (
-                  <p className="text-dark-text text-sm">Branch: {task.github_branch}</p>
+                  <Text size="2">Branch: {task.github_branch}</Text>
                 )}
                 {task.github_pr_url && (
-                  <a 
-                    href={task.github_pr_url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-posthog-400 hover:text-posthog-300 text-sm"
-                  >
+                  <Link href={task.github_pr_url} target="_blank" size="2">
                     View Pull Request →
-                  </a>
+                  </Link>
                 )}
-              </div>
+              </Box>
             )}
-            
+
             {/* Dates */}
-            <div>
-              <h3 className="text-sm font-medium text-dark-text-muted mb-1">Created</h3>
-              <p className="text-dark-text text-sm">
+            <Box>
+              <Text size="2" color="gray" weight="medium" >Created</Text>
+              <Text size="2">
                 {format(new Date(task.created_at), 'PPP p')}
-              </p>
-            </div>
-            
+              </Text>
+            </Box>
+
             {/* Description */}
-            <div>
-              <h3 className="text-sm font-medium text-dark-text-muted mb-2">Description</h3>
-              <div className="bg-dark-surface rounded-md p-4">
-                <p className="text-dark-text whitespace-pre-wrap">
+            <Box>
+              <Text size="2" color="gray" weight="medium" >Description</Text>
+              <Card>
+                <Text>
                   {task.description || 'No description provided'}
-                </p>
-              </div>
-            </div>
-            
+                </Text>
+              </Card>
+            </Box>
+
             {/* Actions */}
-            <div className="pt-4 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-dark-text-muted truncate">
-                  {repoPath ? `Repo: ${repoPath}` : 'No repository selected'}
-                </div>
-                <button
-                  onClick={handleSelectRepo}
-                  className="py-1 px-2 bg-dark-surface hover:bg-dark-border text-dark-text text-xs rounded-md"
-                >
-                  Choose folder
-                </button>
-              </div>
+            <Box>
+              <Flex direction="column" gap="3">
+                <Flex align="center" justify="between" gap="2">
+                  <Text size="1" color="gray">
+                    {repoPath ? `Repo: ${repoPath}` : 'No repository selected'}
+                  </Text>
+                  <Button size="1" variant="outline" onClick={handleSelectRepo}>
+                    Choose folder
+                  </Button>
+                </Flex>
 
-              <div className="flex items-center gap-2">
-                <div className="text-xs text-dark-text-muted">Mode</div>
-                <div className="inline-flex rounded-md overflow-hidden border border-dark-border">
-                  <button
-                    onClick={() => setRunMode('local')}
-                    className={`px-3 py-1 text-sm ${runMode === 'local' ? 'bg-posthog-500 text-white' : 'bg-dark-surface text-dark-text hover:bg-dark-border'}`}
+                <Flex align="center" gap="2">
+                  <Text size="1" color="gray">Mode</Text>
+                  <SegmentedControl.Root
+                    value={runMode}
+                    onValueChange={(value) => setRunMode(value as 'local' | 'cloud')}
                   >
-                    Local
-                  </button>
-                  <button
-                    onClick={() => setRunMode('cloud')}
-                    className={`px-3 py-1 text-sm border-l border-dark-border ${runMode === 'cloud' ? 'bg-posthog-500 text-white' : 'bg-dark-surface text-dark-text hover:bg-dark-border'}`}
-                  >
-                    Cloud
-                  </button>
-                </div>
-              </div>
+                    <SegmentedControl.Item value="local">Local</SegmentedControl.Item>
+                    <SegmentedControl.Item value="cloud">Cloud</SegmentedControl.Item>
+                  </SegmentedControl.Root>
+                </Flex>
 
-              <button
-                onClick={handleRunTask}
-                disabled={isRunning}
-                className="w-full py-2 px-4 bg-posthog-500 hover:bg-posthog-600 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors"
-              >
-                {isRunning ? 'Running...' : 'Run Agent'}
-              </button>
-
-              {isRunning && (
-                <button
-                  onClick={handleCancel}
-                  className="w-full py-2 px-4 bg-red-600 hover:bg-red-700 text-white font-medium rounded-md transition-colors"
+                <Button
+                  variant='classic'
+                  onClick={handleRunTask}
+                  disabled={isRunning}
+                  size="3"
                 >
-                  Cancel
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-      
+                  {isRunning ? 'Running...' : 'Run Agent'}
+                </Button>
+
+                {isRunning && (
+                  <Button
+                    onClick={handleCancel}
+                    color="red"
+                    size="3"
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </Flex>
+            </Box>
+          </Flex>
+        </Box>
+      </Box>
+
       {/* Right pane - Logs */}
-      <div className="w-1/2 bg-dark-surface">
+      <Box width="50%" className="bg-panel-solid">
         <LogView logs={logs} isRunning={isRunning} />
-      </div>
-    </div>
+      </Box>
+    </Flex>
   );
 }
