@@ -2,17 +2,19 @@
   "name": "array",
   "version": "0.1.0",
   "description": "Array - PostHog desktop task manager",
-  "main": "src/main/index.js",
+  "main": "dist/main/index.js",
   "engines": {
     "node": ">=22.0.0",
     "pnpm": ">=9.0.0"
   },
   "packageManager": "pnpm@10.14.0",
   "scripts": {
-    "dev": "concurrently -k \"pnpm run dev:vite\" \"pnpm run dev:electron\"",
+    "dev": "concurrently -k \"pnpm run dev:vite\" \"pnpm run dev:main\" \"pnpm run dev:electron\"",
     "dev:vite": "vite",
-    "dev:electron": "wait-on tcp:5173 && electron . --dev",
-    "build": "pnpm run build:vite && pnpm run build:electron",
+    "dev:main": "tsc -p tsconfig.json --watch",
+    "dev:electron": "wait-on tcp:5173 && wait-on dist/main/index.js && electron . --dev",
+    "build": "pnpm run build:main && pnpm run build:vite && pnpm run build:electron",
+    "build:main": "tsc -p tsconfig.json && tsc -p tsconfig.preload.json && echo '{\"type\":\"module\"}' > dist/main/package.json",
     "build:vite": "vite build",
     "build:electron": "electron-builder",
     "preview": "vite preview",
@@ -68,8 +70,7 @@
       "output": "release"
     },
     "files": [
-      "dist/**/*",
-      "src/main/**/*"
+      "dist/**/*"
     ],
     "mac": {
       "category": "public.app-category.developer-tools"

@@ -1,15 +1,19 @@
-const { app, BrowserWindow, ipcMain, safeStorage, Menu, dialog } = require('electron');
-const path = require('path');
-const { registerPosthogIpc } = require('./services/posthog');
-const { registerOsIpc } = require('./services/os');
-const { registerAgentIpc } = require('./services/agent');
+import { app, BrowserWindow, Menu, MenuItemConstructorOptions } from 'electron';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { registerPosthogIpc } from './services/posthog.js';
+import { registerOsIpc } from './services/os.js';
+import { registerAgentIpc } from './services/agent.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const isDev = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
 
-let mainWindow = null;
-const taskControllers = new Map();
+let mainWindow: BrowserWindow | null = null;
+const taskControllers = new Map<string, any>();
 
-function createWindow() {
+function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 900,
     height: 600,
@@ -25,7 +29,7 @@ function createWindow() {
   });
 
   // Set up menu for keyboard shortcuts
-  const template = [
+  const template: MenuItemConstructorOptions[] = [
     {
       label: 'Array',
       submenu: [

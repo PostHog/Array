@@ -1,17 +1,10 @@
 // Stub GitHub service for future use
 // In the future we can add: listBranches, createBranch, createPR, getRepoInfo, etc.
 
-async function listBranches() {
+export async function listBranches(): Promise<string[]> {
   return [];
 }
 
-async function createPullRequest() {
+export async function createPullRequest(): Promise<{ url: string }> {
   return { url: '' };
 }
-
-module.exports = {
-  listBranches,
-  createPullRequest,
-};
-
-

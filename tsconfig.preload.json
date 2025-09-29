@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "ESNext",
+    "module": "CommonJS",
     "lib": ["ES2020"],
     "moduleResolution": "node",
     "esModuleInterop": true,
@@ -12,6 +12,6 @@
     "rootDir": "src/main",
     "types": ["node"]
   },
-  "include": ["src/main/**/*"],
-  "exclude": ["node_modules", "src/main/preload.ts"]
+  "include": ["src/main/preload.ts"],
+  "exclude": ["node_modules"]
 }

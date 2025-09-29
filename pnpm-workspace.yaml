@@ -1,3 +1,6 @@
 onlyBuiltDependencies:
   - electron
   - esbuild
+
+overrides:
+  '@posthog/code-agent': link:../../Library/pnpm/global/5/node_modules/@posthog/code-agent

@@ -1,18 +1,31 @@
-const { ipcMain } = require('electron');
-const { getCurrentBranch } = require('./git');
+import { ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron';
+import { getCurrentBranch } from './git.js';
+import { createAgent, ClaudeCodeAgent } from '@posthog/code-agent';
 
-function registerAgentIpc(taskControllers, getMainWindow) {
-    ipcMain.handle('agent-start', async (_event, { prompt, repoPath, model }) => {
+interface AgentStartParams {
+    prompt: string;
+    repoPath: string;
+    model?: string;
+}
+
+interface TaskController {
+    abortController: AbortController;
+    agent: any;
+    channel: string;
+}
+
+export function registerAgentIpc(taskControllers: Map<string, TaskController>, getMainWindow: () => BrowserWindow | null): void {
+    ipcMain.handle('agent-start', async (_event: IpcMainInvokeEvent, { prompt, repoPath, model }: AgentStartParams): Promise<{ taskId: string; channel: string }> => {
         if (!prompt || !repoPath) {
             throw new Error('prompt and repoPath are required');
         }
 
-        const { createAgent, ClaudeCodeAgent } = await import('@posthog/code-agent');
+        // Now using top-level import since we're compiling to ES modules
 
         const agent = createAgent(
             new ClaudeCodeAgent({
                 permissionMode: 'bypassPermissions'
-            })
+            } as any)
         );
 
         const abortController = new AbortController();
@@ -85,7 +98,7 @@ function registerAgentIpc(taskControllers, getMainWindow) {
             prompt: fullPrompt,
             repoPath,
             signal: abortController.signal,
-        });
+        } as any);
 
         const channel = `agent-event:${taskId}`;
 
@@ -121,7 +134,7 @@ function registerAgentIpc(taskControllers, getMainWindow) {
         return { taskId, channel };
     });
 
-    ipcMain.handle('agent-cancel', async (_event, taskId) => {
+    ipcMain.handle('agent-cancel', async (_event: IpcMainInvokeEvent, taskId: string): Promise<boolean> => {
         const entry = taskControllers.get(taskId);
         if (!entry) return false;
         try {
@@ -137,7 +150,3 @@ function registerAgentIpc(taskControllers, getMainWindow) {
         }
     });
 }
-
-module.exports = { registerAgentIpc };
-
-
