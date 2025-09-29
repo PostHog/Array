@@ -44,7 +44,7 @@ export class PostHogAPIClient {
       params['repository_config__repository'] = repositoryName;
     }
     
-    const { data } = await this.api.get(`/api/environments/${teamId}/tasks/`, { params });
+    const { data } = await this.api.get(`/api/projects/${teamId}/tasks/`, { params });
     
     // Handle different response formats
     if (Array.isArray(data)) {
@@ -60,7 +60,7 @@ export class PostHogAPIClient {
   
   async getTask(taskId: string): Promise<Task> {
     const teamId = await this.getTeamId();
-    const { data } = await this.api.get<Task>(`/api/environments/${teamId}/tasks/${taskId}/`);
+    const { data } = await this.api.get<Task>(`/api/projects/${teamId}/tasks/${taskId}/`);
     return data;
   }
   
@@ -79,7 +79,7 @@ export class PostHogAPIClient {
     };
     
     const { data } = await this.api.post<Task>(
-      `/api/environments/${teamId}/tasks/`,
+      `/api/projects/${teamId}/tasks/`,
       payload
     );
     
@@ -89,7 +89,7 @@ export class PostHogAPIClient {
   async updateTask(taskId: string, updates: Partial<Task>): Promise<Task> {
     const teamId = await this.getTeamId();
     const { data } = await this.api.patch<Task>(
-      `/api/environments/${teamId}/tasks/${taskId}/`,
+      `/api/projects/${teamId}/tasks/${taskId}/`,
       updates
     );
     return data;
@@ -98,7 +98,7 @@ export class PostHogAPIClient {
   async runTask(taskId: string, mode: 'local' | 'cloud' = 'local'): Promise<{ id: string; status: string }> {
     const teamId = await this.getTeamId();
     const { data } = await this.api.post(
-      `/api/environments/${teamId}/tasks/${taskId}/run`,
+      `/api/projects/${teamId}/tasks/${taskId}/run`,
       { mode }
     );
     return data;
@@ -107,14 +107,14 @@ export class PostHogAPIClient {
   async getTaskLogs(taskId: string): Promise<string> {
     const teamId = await this.getTeamId();
     const { data } = await this.api.get(
-      `/api/environments/${teamId}/tasks/${taskId}/logs`
+      `/api/projects/${teamId}/tasks/${taskId}/logs`
     );
     return data;
   }
   
   async getWorkflows(): Promise<Workflow[]> {
     const teamId = await this.getTeamId();
-    const { data } = await this.api.get(`/api/environments/${teamId}/workflows/`);
+    const { data } = await this.api.get(`/api/projects/${teamId}/workflows/`);
     
     if (Array.isArray(data)) {
       return data;
@@ -129,7 +129,7 @@ export class PostHogAPIClient {
   
   async getWorkflowStages(workflowId: string): Promise<any[]> {
     const teamId = await this.getTeamId();
-    const { data } = await this.api.get(`/api/environments/${teamId}/workflows/${workflowId}/stages/`);
+    const { data } = await this.api.get(`/api/projects/${teamId}/workflows/${workflowId}/stages/`);
     
     if (Array.isArray(data)) {
       return data;
