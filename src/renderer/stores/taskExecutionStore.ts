@@ -31,6 +31,7 @@ interface TaskExecutionStore {
   selectRepositoryForTask: (taskId: string) => Promise<void>;
   runTask: (taskId: string, task: { id: string; title: string; description?: string }) => Promise<void>;
   cancelTask: (taskId: string) => Promise<void>;
+  clearTaskLogs: (taskId: string) => void;
 
   // Event subscription management
   subscribeToAgentEvents: (taskId: string, channel: string) => void;
@@ -344,6 +345,10 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
         store.setRunning(taskId, false);
         store.unsubscribeFromAgentEvents(taskId);
+      },
+
+      clearTaskLogs: (taskId: string) => {
+        get().setLogs(taskId, []);
       },
     }),
     {

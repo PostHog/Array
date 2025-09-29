@@ -5,6 +5,7 @@ import { Task } from '@shared/types';
 import { useTaskStore } from '../stores/taskStore';
 import { useStatusBarStore } from '../stores/statusBarStore';
 import { formatDistanceToNow } from 'date-fns';
+import { AsciiArt } from './AsciiArt';
 
 interface TaskListProps {
   onSelectTask: (task: Task) => void;
@@ -123,39 +124,48 @@ export function TaskList({ onSelectTask }: TaskListProps) {
   }
 
   return (
-    <Box height="100%" p="4">
-      <Flex direction="column" height="100%">
-        <Box py="4" className="border-b border-gray-6" width="30vw">
-          <TextField.Root
-            value={filter}
-            onChange={(e) => {
-              setFilter(e.target.value);
-              setSelectedIndex(0);
-            }}
-            placeholder="Filter tasks..."
-          />
+    <Box height="100%">
+      <Flex height="100%">
+        {/* Left pane - Task list */}
+        <Box width="50%" p="4" className="border-r border-gray-6">
+          <Flex direction="column" height="100%">
+            <Box py="4" className="border-b border-gray-6">
+              <TextField.Root
+                value={filter}
+                onChange={(e) => {
+                  setFilter(e.target.value);
+                  setSelectedIndex(0);
+                }}
+                placeholder="Filter tasks..."
+              />
+            </Box>
+
+            <Box ref={listRef} flexGrow="1" overflowY="auto">
+              {filteredTasks.length === 0 ? (
+                <Flex align="center" justify="center" height="100%">
+                  <Text color="gray">
+                    {filter ? 'No tasks match your filter' : 'No tasks found'}
+                  </Text>
+                </Flex>
+              ) : (
+                filteredTasks.map((task, index) => (
+                  <TaskItem
+                    key={task.id}
+                    task={task}
+                    isSelected={index === selectedIndex}
+                    onClick={() => {
+                      setSelectedIndex(index);
+                      onSelectTask(task);
+                    }}
+                  />
+                ))
+              )}
+            </Box>
+          </Flex>
         </Box>
 
-        <Box ref={listRef} flexGrow="1" overflowY="auto">
-          {filteredTasks.length === 0 ? (
-            <Flex align="center" justify="center" height="100%">
-              <Text color="gray">
-                {filter ? 'No tasks match your filter' : 'No tasks found'}
-              </Text>
-            </Flex>
-          ) : (
-            filteredTasks.map((task, index) => (
-              <TaskItem
-                key={task.id}
-                task={task}
-                isSelected={index === selectedIndex}
-                onClick={() => {
-                  setSelectedIndex(index);
-                  onSelectTask(task);
-                }}
-              />
-            ))
-          )}
+        <Box width="50%" height="100%">
+          <AsciiArt scale={1} />
         </Box>
       </Flex>
     </Box>
@@ -211,3 +221,4 @@ function TaskItem({ task, isSelected, onClick }: TaskItemProps) {
     </Box>
   );
 }
+

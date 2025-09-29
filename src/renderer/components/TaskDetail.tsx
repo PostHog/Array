@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import { useStatusBarStore } from '../stores/statusBarStore';
 import { useTaskExecutionStore } from '../stores/taskExecutionStore';
 import { LogView } from './LogView';
+import { AsciiArt } from './AsciiArt';
 
 interface TaskDetailProps {
   task: Task;
@@ -18,6 +19,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
     selectRepositoryForTask,
     runTask,
     cancelTask,
+    clearTaskLogs,
   } = useTaskExecutionStore();
 
   // Get persistent state for this task
@@ -60,6 +62,10 @@ export function TaskDetail({ task }: TaskDetailProps) {
 
   const handleRunModeChange = (value: string) => {
     setStoreRunMode(task.id, value as 'local' | 'cloud');
+  };
+
+  const handleClearLogs = () => {
+    clearTaskLogs(task.id);
   };
 
   return (
@@ -187,8 +193,15 @@ export function TaskDetail({ task }: TaskDetailProps) {
       </Box>
 
       {/* Right pane - Logs */}
-      <Box width="50%" className="bg-panel-solid">
-        <LogView logs={logs} isRunning={isRunning} />
+      <Box width="50%" className="bg-panel-solid" style={{ position: 'relative' }}>
+        {/* Background ASCII Art */}
+        <Box style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
+          <AsciiArt scale={1} opacity={0.1} />
+        </Box>
+        {/* Foreground LogView */}
+        <Box style={{ position: 'relative', zIndex: 1, height: '100%' }}>
+          <LogView logs={logs} isRunning={isRunning} onClearLogs={handleClearLogs} />
+        </Box>
       </Box>
     </Flex>
   );

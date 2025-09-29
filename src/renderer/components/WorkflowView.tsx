@@ -108,10 +108,8 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
           )}
         </Box>
 
-        {/* Kanban board */}
         <Box flexGrow="1" p="4" overflowX="auto">
           <Flex gap="4" height="100%">
-            {/* Workflow stages */}
             {selectedWorkflow?.stages
               .filter(stage => !stage.is_archived)
               .sort((a, b) => a.position - b.position)
@@ -139,49 +137,48 @@ interface WorkflowColumnProps {
 function WorkflowColumn({ stage, tasks, onSelectTask }: WorkflowColumnProps) {
   return (
     <Flex direction="column" flexShrink="0" width="320px">
-      <Box
-        p="3"
-        className="rounded-t-3"
-        style={{
-          backgroundColor: `${stage.color}20`,
-          borderBottom: `2px solid ${stage.color}`,
-        }}
-      >
-        <Flex align="center" justify="between">
-          <Text weight="medium">{stage.name}</Text>
-          <Text size="2" color="gray">{tasks.length}</Text>
-        </Flex>
-        {stage.agent_name && (
-          <Text size="1" color="gray">
-            Automated by {stage.agent_name}
-          </Text>
-        )}
-      </Box>
+      <Card>
 
-      <Box
-        flexGrow="1"
-        p="2"
-        overflowY="auto"
-        className="bg-panel-solid rounded-b-3"
-      >
-        {tasks.length === 0 ? (
-          <Flex align="center" justify="center" py="8">
-            <Text size="2" color="gray">
-              No tasks in {stage.name}
-            </Text>
+        <Box
+          p="3"
+          className="rounded-t-3"
+        >
+          <Flex align="center" justify="between">
+            <Text weight="medium">{stage.name}</Text>
+            <Text size="2" color="gray">{tasks.length}</Text>
           </Flex>
-        ) : (
-          <Flex direction="column" gap="2">
-            {tasks.map(task => (
-              <WorkflowTaskCard
-                key={task.id}
-                task={task}
-                onClick={() => onSelectTask(task)}
-              />
-            ))}
-          </Flex>
-        )}
-      </Box>
+
+          <Text size="1" color="gray">
+            {stage.agent_name ? 'Automated by ' + stage.agent_name : '\u00A0'}
+          </Text>
+
+        </Box>
+
+        <Box
+          flexGrow="1"
+          p="2"
+          overflowY="auto"
+        >
+          {tasks.length === 0 ? (
+            <Flex align="center" justify="center" py="8">
+              <Text size="2" color="gray">
+                No tasks in {stage.name}
+              </Text>
+            </Flex>
+          ) : (
+            <Flex direction="column" gap="2">
+              {tasks.map(task => (
+                <WorkflowTaskCard
+                  key={task.id}
+                  task={task}
+                  onClick={() => onSelectTask(task)}
+                />
+              ))}
+            </Flex>
+          )}
+        </Box>
+      </Card>
+
     </Flex>
   );
 }

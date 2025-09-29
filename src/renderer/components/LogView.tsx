@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { Flex, Box, Heading, Text, Code } from '@radix-ui/themes';
+import { Flex, Box, Heading, Text, Code, Button, IconButton } from '@radix-ui/themes';
+import { TrashIcon } from '@radix-ui/react-icons';
 import { LogEntry, formatTime } from '../types/log';
 import { ToolCallView } from './log/ToolCallView';
 import { DiffView } from './log/DiffView';
@@ -8,9 +9,10 @@ import { MetricView } from './log/MetricView';
 interface LogViewProps {
   logs: Array<string | LogEntry>;
   isRunning: boolean;
+  onClearLogs?: () => void;
 }
 
-export function LogView({ logs, isRunning }: LogViewProps) {
+export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new logs arrive
@@ -36,16 +38,29 @@ export function LogView({ logs, isRunning }: LogViewProps) {
       <Box p="4" className="border-b border-gray-6">
         <Flex align="center" justify="between">
           <Heading size="3">Activity Log</Heading>
-          {isRunning && (
-            <Flex align="center" gap="2">
-              <Box
-                width="8px"
-                height="8px"
-                className="bg-green-9 rounded-full animate-pulse"
-              />
-              <Text size="2" color="gray">Running</Text>
-            </Flex>
-          )}
+          <Flex align="center" gap="2">
+            {isRunning && (
+              <Flex align="center" gap="2">
+                <Box
+                  width="8px"
+                  height="8px"
+                  className="bg-green-9 rounded-full animate-pulse"
+                />
+                <Text size="2" color="gray">Running</Text>
+              </Flex>
+            )}
+            {logs.length > 0 && onClearLogs && (
+              <IconButton
+                size="1"
+                variant="ghost"
+                color="gray"
+                onClick={onClearLogs}
+                title="Clear logs"
+              >
+                <TrashIcon />
+              </IconButton>
+            )}
+          </Flex>
         </Flex>
       </Box>
 

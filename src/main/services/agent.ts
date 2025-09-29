@@ -95,7 +95,7 @@ export function registerAgentIpc(taskControllers: Map<string, TaskController>, g
         const { taskId, stream } = await agent.run({
             prompt: fullPrompt,
             repoPath,
-            permissionMode: 'auto',
+            permissionMode: 'permissive',
         });
 
         const channel = `agent-event:${taskId}`;
