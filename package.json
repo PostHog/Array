@@ -67,8 +67,8 @@
     "zustand": "^4.5.0"
   },
   "build": {
-    "appId": "com.posthog.missioncontrol",
-    "productName": "Mission Control",
+    "appId": "com.posthog.array",
+    "productName": "Array",
     "directories": {
       "output": "release"
     },

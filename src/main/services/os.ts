@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow, IpcMainInvokeEvent, MessageBoxOptions } from 'electron';
+import { ipcMain, dialog, BrowserWindow, IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { promisify } from 'util';
@@ -61,7 +61,7 @@ export function registerOsIpc(getMainWindow: () => BrowserWindow | null): void {
 
     const result = await dialog.showMessageBox(win, {
       type: options?.type || 'info',
-      title: options?.title || 'Mission Control',
+      title: options?.title || 'Array',
       message: options?.message || '',
       detail: options?.detail,
       buttons: Array.isArray(options?.buttons) && options.buttons.length > 0 ? options.buttons : ['OK'],

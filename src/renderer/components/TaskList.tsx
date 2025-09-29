@@ -3,6 +3,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { Flex, Box, Text, TextField, Button, Badge, Spinner, Kbd } from '@radix-ui/themes';
 import { Task } from '@shared/types';
 import { useTaskStore } from '../stores/taskStore';
+import { useStatusBarStore } from '../stores/statusBarStore';
 import { formatDistanceToNow } from 'date-fns';
 
 interface TaskListProps {
@@ -11,21 +12,51 @@ interface TaskListProps {
 
 export function TaskList({ onSelectTask }: TaskListProps) {
   const { tasks, fetchTasks, isLoading, error } = useTaskStore();
+  const { setStatusBar, reset } = useStatusBarStore();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [filter, setFilter] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
-  
+
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
-  
+
   const filteredTasks = tasks
-    .filter(task => 
+    .filter(task =>
       task.title.toLowerCase().includes(filter.toLowerCase()) ||
       task.description?.toLowerCase().includes(filter.toLowerCase())
     )
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  
+
+  useEffect(() => {
+    setStatusBar({
+      statusText: `${filteredTasks.length} task${filteredTasks.length === 1 ? '' : 's'}`,
+      keyHints: [
+        {
+          keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'K'],
+          description: 'Command'
+        },
+        {
+          keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'R'],
+          description: 'Refresh'
+        },
+        {
+          keys: ['↑', '↓'],
+          description: 'Navigate'
+        },
+        {
+          keys: ['Enter'],
+          description: 'Select'
+        }
+      ],
+      mode: 'replace'
+    });
+
+    return () => {
+      reset();
+    };
+  }, [setStatusBar, reset, filteredTasks.length]);
+
   const handleKeyNavigation = useCallback((direction: 'up' | 'down') => {
     setSelectedIndex(prev => {
       if (direction === 'up') {
@@ -67,28 +98,33 @@ export function TaskList({ onSelectTask }: TaskListProps) {
   
   if (isLoading && tasks.length === 0) {
     return (
-      <Flex align="center" justify="center" >
-        <Flex align="center" gap="3">
-          <Spinner size="3" />
-          <Text color="gray">Loading tasks...</Text>
+      <Box height="100%" p="6">
+        <Flex align="center" justify="center" height="100%">
+          <Flex align="center" gap="3">
+            <Spinner size="3" />
+            <Text color="gray">Loading tasks...</Text>
+          </Flex>
         </Flex>
-      </Flex>
+      </Box>
     );
   }
 
   if (error) {
     return (
-      <Flex direction="column" align="center" justify="center">
-        <Text color="red">{error}</Text>
-        <Button onClick={() => fetchTasks()}>
-          Retry
-        </Button>
-      </Flex>
+      <Box height="100%" p="6">
+        <Flex direction="column" align="center" justify="center" height="100%">
+          <Text color="red">{error}</Text>
+          <Button onClick={() => fetchTasks()}>
+            Retry
+          </Button>
+        </Flex>
+      </Box>
     );
   }
-  
+
   return (
-    <Flex direction="column" height="100%">
+    <Box height="100%" p="6">
+      <Flex direction="column" height="100%">
       <Box py="4" className="border-b border-gray-6">
         <TextField.Root
           value={filter}
@@ -121,23 +157,8 @@ export function TaskList({ onSelectTask }: TaskListProps) {
           ))
         )}
       </Box>
-
-      <Box p="2" className="border-t border-gray-6">
-        <Flex justify="between">
-          <Text size="1" color="gray">{filteredTasks.length} tasks</Text>
-          <Flex align="center" gap="2">
-            <Kbd>↑↓</Kbd>
-            <Text size="1" color="gray">Navigate</Text>
-            <Text size="1" color="gray">·</Text>
-            <Kbd>↵</Kbd>
-            <Text size="1" color="gray">Open</Text>
-            <Text size="1" color="gray">·</Text>
-            <Kbd>⌘R</Kbd>
-            <Text size="1" color="gray">Refresh</Text>
-          </Flex>
-        </Flex>
-      </Box>
     </Flex>
+    </Box>
   );
 }
 

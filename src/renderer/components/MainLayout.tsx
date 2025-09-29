@@ -4,6 +4,7 @@ import { TaskList } from './TaskList';
 import { TaskDetail } from './TaskDetail';
 import { WorkflowView } from './WorkflowView';
 import { TabBar } from './TabBar';
+import { StatusBar } from './StatusBar';
 import { CommandMenu } from './command';
 import { useTabStore } from '../stores/tabStore';
 import { useHotkeys } from 'react-hotkeys-hook';
@@ -13,8 +14,9 @@ export function MainLayout() {
   const { activeTabId, tabs, createTab, setActiveTab } = useTabStore();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
 
-  useHotkeys('mod+k', () => setCommandMenuOpen(prev => !prev));
-  useHotkeys('mod+t', () => setCommandMenuOpen(prev => !prev));
+  useHotkeys('mod+k', () => setCommandMenuOpen(prev => !prev), { enabled: !commandMenuOpen });
+  useHotkeys('mod+t', () => setCommandMenuOpen(prev => !prev), { enabled: !commandMenuOpen });
+  useHotkeys('mod+p', () => setCommandMenuOpen(prev => !prev), { enabled: !commandMenuOpen });
 
   const handleSelectTask = (task: Task) => {
     // Check if task is already open in a tab
@@ -41,9 +43,7 @@ export function MainLayout() {
 
       <Box flexGrow="1" overflow="hidden">
         {activeTab?.type === 'task-list' && (
-          <Box height="100%" p="6">
-            <TaskList onSelectTask={handleSelectTask} />
-          </Box>
+          <TaskList onSelectTask={handleSelectTask} />
         )}
 
         {activeTab?.type === 'task-detail' && activeTab.data && (
@@ -51,11 +51,11 @@ export function MainLayout() {
         )}
 
         {activeTab?.type === 'workflow' && (
-          <Box height="100%" p="6">
-            <WorkflowView onSelectTask={handleSelectTask} />
-          </Box>
+          <WorkflowView onSelectTask={handleSelectTask} />
         )}
       </Box>
+
+      <StatusBar />
 
       <CommandMenu
         open={commandMenuOpen}

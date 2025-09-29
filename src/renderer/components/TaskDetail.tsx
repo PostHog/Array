@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Flex, Box, Heading, Text, Badge, Button, Card, Link, SegmentedControl } from '@radix-ui/themes';
+import { Flex, Box, Heading, Text, Badge, Button, Link, SegmentedControl, DataList } from '@radix-ui/themes';
 import { Task } from '@shared/types';
 import { format } from 'date-fns';
 import { useAuthStore } from '../stores/authStore';
+import { useStatusBarStore } from '../stores/statusBarStore';
 import { LogView } from './LogView';
 
 interface TaskDetailProps {
@@ -11,6 +12,7 @@ interface TaskDetailProps {
 
 export function TaskDetail({ task }: TaskDetailProps) {
   const { client } = useAuthStore();
+  const { setStatusBar, reset } = useStatusBarStore();
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
   const [repoPath, setRepoPath] = useState<string | null>(null);
@@ -18,23 +20,26 @@ export function TaskDetail({ task }: TaskDetailProps) {
   const unsubscribeRef = useRef<null | (() => void)>(null);
   const [runMode, setRunMode] = useState<'local' | 'cloud'>('local');
 
-  // Safely stringify values for log preview
-  const previewJson = (value: any, maxLength: number = 600): string => {
-    try {
-      const serialized = JSON.stringify(value, null, 2);
-      if (!serialized) return '';
-      return serialized.length > maxLength
-        ? serialized.slice(0, maxLength) + '…'
-        : serialized;
-    } catch {
-      try {
-        const str = String(value);
-        return str.length > maxLength ? str.slice(0, maxLength) + '…' : str;
-      } catch {
-        return '';
-      }
-    }
-  };
+  useEffect(() => {
+    setStatusBar({
+      statusText: isRunning ? 'Agent running...' : 'Task details',
+      keyHints: [
+        {
+          keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'K'],
+          description: 'Command'
+        },
+        {
+          keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'R'],
+          description: 'Refresh'
+        }
+      ],
+      mode: 'replace'
+    });
+
+    return () => {
+      reset();
+    };
+  }, [setStatusBar, reset, isRunning]);
 
   const handleSelectRepo = async () => {
     try {
@@ -80,7 +85,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
       effectiveRepoPath = repoPath;
     }
     if (!effectiveRepoPath) {
-      setLogs(prev => [...prev, 'No repository folder selected.']);
+      setLogs(prev => [...prev, 'No repository folder selected. ']);
       return;
     }
     const isRepo = await window.electronAPI.validateRepo(effectiveRepoPath);
@@ -232,83 +237,98 @@ export function TaskDetail({ task }: TaskDetailProps) {
       {/* Left pane - Task details */}
       <Box width="50%" className="border-r border-gray-6" overflowY="auto">
         <Box p="6">
-          <Heading size="6" mb="4">{task.title}</Heading>
+          <Heading size="5" mb="4">{task.title}</Heading>
 
-          <Flex direction="column" gap="4">
-            {/* Status */}
-            <Box>
-              <Text size="2" color="gray" weight="medium" >Status</Text>
-              <Badge color="gray">
-                {task.current_stage || 'Backlog'}
-              </Badge>
-            </Box>
+          <DataList.Root>
+            <DataList.Item>
+              <DataList.Label>Status</DataList.Label>
+              <DataList.Value>
+                <Badge color="gray">
+                  {task.current_stage || 'Backlog'}
+                </Badge>
+              </DataList.Value>
+            </DataList.Item>
 
-            {/* Repository */}
             {task.repository_config && (
-              <Box>
-                <Text size="2" color="gray" weight="medium" >Repository</Text>
-                <Text size="2">
+              <DataList.Item>
+                <DataList.Label>Remote Repository</DataList.Label>
+                <DataList.Value>
                   {task.repository_config.organization}/{task.repository_config.repository}
-                </Text>
-              </Box>
+                </DataList.Value>
+              </DataList.Item>
             )}
 
-            {/* GitHub Links */}
-            {(task.github_branch || task.github_pr_url) && (
-              <Box>
-                <Text size="2" color="gray" weight="medium" >GitHub</Text>
-                {task.github_branch && (
-                  <Text size="2">Branch: {task.github_branch}</Text>
-                )}
-                {task.github_pr_url && (
+            {task.github_branch && (
+              <DataList.Item>
+                <DataList.Label>Branch</DataList.Label>
+                <DataList.Value>{task.github_branch}</DataList.Value>
+              </DataList.Item>
+            )}
+
+            {task.github_pr_url && (
+              <DataList.Item>
+                <DataList.Label>Pull Request</DataList.Label>
+                <DataList.Value>
                   <Link href={task.github_pr_url} target="_blank" size="2">
                     View Pull Request →
                   </Link>
-                )}
-              </Box>
+                </DataList.Value>
+              </DataList.Item>
             )}
 
-            {/* Dates */}
-            <Box>
-              <Text size="2" color="gray" weight="medium" >Created</Text>
-              <Text size="2">
+            <DataList.Item>
+              <DataList.Label>Created</DataList.Label>
+              <DataList.Value>
                 {format(new Date(task.created_at), 'PPP p')}
-              </Text>
-            </Box>
+              </DataList.Value>
+            </DataList.Item>
 
-            {/* Description */}
-            <Box>
-              <Text size="2" color="gray" weight="medium" >Description</Text>
-              <Card>
-                <Text>
-                  {task.description || 'No description provided'}
-                </Text>
-              </Card>
-            </Box>
+            <DataList.Item>
+              <DataList.Label>Description</DataList.Label>
+              <DataList.Value>
+                {task.description || 'No description provided'}
+              </DataList.Value>
+            </DataList.Item>
 
-            {/* Actions */}
-            <Box>
-              <Flex direction="column" gap="3">
-                <Flex align="center" justify="between" gap="2">
-                  <Text size="1" color="gray">
-                    {repoPath ? `Repo: ${repoPath}` : 'No repository selected'}
-                  </Text>
+            <DataList.Item>
+              <DataList.Label>Working Directory</DataList.Label>
+              <DataList.Value>
+                {repoPath ? (
+                  <Text size="2">{repoPath}</Text>
+                ) : (
                   <Button size="1" variant="outline" onClick={handleSelectRepo}>
                     Choose folder
                   </Button>
-                </Flex>
+                )}
+              </DataList.Value>
+            </DataList.Item>
 
-                <Flex align="center" gap="2">
-                  <Text size="1" color="gray">Mode</Text>
-                  <SegmentedControl.Root
-                    value={runMode}
-                    onValueChange={(value) => setRunMode(value as 'local' | 'cloud')}
-                  >
-                    <SegmentedControl.Item value="local">Local</SegmentedControl.Item>
-                    <SegmentedControl.Item value="cloud">Cloud</SegmentedControl.Item>
-                  </SegmentedControl.Root>
-                </Flex>
+            <DataList.Item>
+              <DataList.Label>Mode</DataList.Label>
+              <DataList.Value>
+                <SegmentedControl.Root
+                  value={runMode}
+                  onValueChange={(value) => setRunMode(value as 'local' | 'cloud')}
+                >
+                  <SegmentedControl.Item value="local">Local</SegmentedControl.Item>
+                  <SegmentedControl.Item value="cloud">Cloud</SegmentedControl.Item>
+                </SegmentedControl.Root>
+              </DataList.Value>
+            </DataList.Item>
+          </DataList.Root>
 
+          <Box mt="6">
+            <Flex direction="column" gap="3">
+
+              {!repoPath ? (
+                <Button
+                  variant='classic'
+                  onClick={handleSelectRepo}
+                  size="3"
+                >
+                  Choose working folder
+                </Button>
+              ) : (
                 <Button
                   variant='classic'
                   onClick={handleRunTask}
@@ -317,19 +337,19 @@ export function TaskDetail({ task }: TaskDetailProps) {
                 >
                   {isRunning ? 'Running...' : 'Run Agent'}
                 </Button>
+              )}
 
-                {isRunning && (
-                  <Button
-                    onClick={handleCancel}
-                    color="red"
-                    size="3"
-                  >
-                    Cancel
-                  </Button>
-                )}
-              </Flex>
-            </Box>
-          </Flex>
+              {isRunning && (
+                <Button
+                  onClick={handleCancel}
+                  color="red"
+                  size="3"
+                >
+                  Cancel
+                </Button>
+              )}
+            </Flex>
+          </Box>
         </Box>
       </Box>
 

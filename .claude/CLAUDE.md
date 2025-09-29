@@ -1,0 +1,3 @@
+- Use Radix UI/theme for styling. Prefer prestyled components and primitives over HTML elements.
+- Use Tailwind CSS for styling.
+- Use zustand for state management, not React context.

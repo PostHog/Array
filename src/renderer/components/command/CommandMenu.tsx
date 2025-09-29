@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { Flex, Text } from '@radix-ui/themes';
 import { Command } from './Command';
 import { CommandKeyHints } from './CommandKeyHints';
@@ -23,8 +23,31 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     }
   }, [open, fetchTasks]);
 
-  // Close on escape
-  useHotkeys('escape', () => onOpenChange(false), { enabled: open });
+  // Close handlers
+  const handleClose = useCallback(() => {
+    onOpenChange(false);
+  }, [onOpenChange]);
+
+  useHotkeys('escape', handleClose, {
+    enabled: open,
+    enableOnContentEditable: true,
+    enableOnFormTags: true,
+    preventDefault: true
+  });
+
+  useHotkeys('mod+k', handleClose, {
+    enabled: open,
+    enableOnContentEditable: true,
+    enableOnFormTags: true,
+    preventDefault: true
+  });
+
+  useHotkeys('mod+p', handleClose, {
+    enabled: open,
+    enableOnContentEditable: true,
+    enableOnFormTags: true,
+    preventDefault: true
+  });
 
   // Handle click outside
   useEffect(() => {

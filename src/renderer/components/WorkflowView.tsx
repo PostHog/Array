@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Flex, Box, Heading, Text, Select, Card, Badge, Spinner } from '@radix-ui/themes';
 import { useWorkflowStore } from '../stores/workflowStore';
 import { useTaskStore } from '../stores/taskStore';
+import { useStatusBarStore } from '../stores/statusBarStore';
 import { Task, WorkflowStage } from '@shared/types';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -12,6 +13,7 @@ interface WorkflowViewProps {
 export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
   const { workflows, selectedWorkflowId, fetchWorkflows, selectWorkflow, getTasksByStage, isLoading } = useWorkflowStore();
   const { fetchTasks } = useTaskStore();
+  const { setStatusBar, reset } = useStatusBarStore();
   const [tasksByStage, setTasksByStage] = useState<Map<string, Task[]>>(new Map());
 
   useEffect(() => {
@@ -27,32 +29,60 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
 
   const selectedWorkflow = workflows.find(w => w.id === selectedWorkflowId);
 
+  useEffect(() => {
+    const totalTasks = Array.from(tasksByStage.values()).reduce((sum, tasks) => sum + tasks.length, 0);
+
+    setStatusBar({
+      statusText: selectedWorkflow ? `Workflow: ${selectedWorkflow.name} (${totalTasks} tasks)` : 'Workflow view',
+      keyHints: [
+        {
+          keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'K'],
+          description: 'Command'
+        },
+        {
+          keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'R'],
+          description: 'Refresh'
+        }
+      ],
+      mode: 'replace'
+    });
+
+    return () => {
+      reset();
+    };
+  }, [setStatusBar, reset, selectedWorkflow, tasksByStage]);
+
   if (isLoading && workflows.length === 0) {
     return (
-      <Flex align="center" justify="center">
-        <Flex align="center" gap="3">
-          <Spinner size="3" />
-          <Text color="gray">Loading workflows...</Text>
+      <Box height="100%" p="6">
+        <Flex align="center" justify="center" height="100%">
+          <Flex align="center" gap="3">
+            <Spinner size="3" />
+            <Text color="gray">Loading workflows...</Text>
+          </Flex>
         </Flex>
-      </Flex>
+      </Box>
     );
   }
 
   if (workflows.length === 0) {
     return (
-      <Flex align="center" justify="center">
-        <Flex direction="column" align="center" gap="2">
-          <Text color="gray">No workflows found</Text>
-          <Text size="2" color="gray">
-            Create workflows in PostHog to organize your tasks
-          </Text>
+      <Box height="100%" p="6">
+        <Flex align="center" justify="center" height="100%">
+          <Flex direction="column" align="center" gap="2">
+            <Text color="gray">No workflows found</Text>
+            <Text size="2" color="gray">
+              Create workflows in PostHog to organize your tasks
+            </Text>
+          </Flex>
         </Flex>
-      </Flex>
+      </Box>
     );
   }
 
   return (
-    <Flex direction="column" height="100%">
+    <Box height="100%" p="6">
+      <Flex direction="column" height="100%">
       {/* Workflow selector */}
       <Box p="4" className="border-b border-gray-6">
         <Flex align="center" justify="between">
@@ -96,6 +126,7 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
         </Flex>
       </Box>
     </Flex>
+    </Box>
   );
 }
 
