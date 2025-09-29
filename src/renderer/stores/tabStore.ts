@@ -5,10 +5,11 @@ import { v4 as uuidv4 } from 'uuid';
 interface TabStore {
   tabs: TabState[];
   activeTabId: string;
-  
+
   createTab: (tab: Omit<TabState, 'id'>) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
+  reorderTabs: (fromIndex: number, toIndex: number) => void;
 }
 
 // Create initial tabs
@@ -63,5 +64,14 @@ export const useTabStore = create<TabStore>((set, get) => ({
   
   setActiveTab: (tabId) => {
     set({ activeTabId: tabId });
+  },
+
+  reorderTabs: (fromIndex, toIndex) => {
+    set(state => {
+      const newTabs = [...state.tabs];
+      const [movedTab] = newTabs.splice(fromIndex, 1);
+      newTabs.splice(toIndex, 0, movedTab);
+      return { tabs: newTabs };
+    });
   },
 }));

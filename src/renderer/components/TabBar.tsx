@@ -1,11 +1,14 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Flex, Box, Text, IconButton, Kbd } from '@radix-ui/themes';
 import { Cross2Icon } from '@radix-ui/react-icons';
 import { useTabStore } from '../stores/tabStore';
 import { useHotkeys } from 'react-hotkeys-hook';
 
 export function TabBar() {
-  const { tabs, activeTabId, setActiveTab, closeTab } = useTabStore();
+  const { tabs, activeTabId, setActiveTab, closeTab, reorderTabs } = useTabStore();
+  const [draggedTab, setDraggedTab] = useState<string | null>(null);
+  const [dragOverTab, setDragOverTab] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<'left' | 'right' | null>(null);
 
   // Keyboard navigation handlers
   const handlePrevTab = useCallback(() => {
@@ -75,53 +78,135 @@ export function TabBar() {
     }
   }, [handlePrevTab, handleNextTab, handleCloseTab, handleSwitchToTab]);
 
+  const handleDragStart = useCallback((e: React.DragEvent, tabId: string) => {
+    setDraggedTab(tabId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', tabId);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, tabId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const midpoint = rect.left + rect.width / 2;
+    const mouseX = e.clientX;
+
+    setDragOverTab(tabId);
+    setDropPosition(mouseX < midpoint ? 'left' : 'right');
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverTab(null);
+    setDropPosition(null);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, targetTabId: string) => {
+    e.preventDefault();
+    const sourceTabId = e.dataTransfer.getData('text/plain');
+
+    if (sourceTabId && sourceTabId !== targetTabId) {
+      const sourceIndex = tabs.findIndex(tab => tab.id === sourceTabId);
+      let targetIndex = tabs.findIndex(tab => tab.id === targetTabId);
+
+      if (sourceIndex !== -1 && targetIndex !== -1) {
+        // Adjust target index based on drop position
+        if (dropPosition === 'right') {
+          targetIndex = targetIndex + 1;
+        }
+
+        // If moving to the right, adjust for the source being removed
+        if (sourceIndex < targetIndex) {
+          targetIndex = targetIndex - 1;
+        }
+
+        reorderTabs(sourceIndex, targetIndex);
+      }
+    }
+
+    setDraggedTab(null);
+    setDragOverTab(null);
+    setDropPosition(null);
+  }, [tabs, reorderTabs, dropPosition]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedTab(null);
+    setDragOverTab(null);
+    setDropPosition(null);
+  }, []);
+
   return (
     <Flex className="drag border-b border-gray-6" height="40px">
       {/* Spacer for macOS window controls */}
       <Box width="80px" flexShrink="0" />
 
-      {tabs.map((tab, index) => (
-        <Flex
-          key={tab.id}
-          className={`no-drag cursor-pointer border-r border-gray-6 transition-colors group ${tab.id === activeTabId
-            ? 'bg-accent-3 text-accent-12 border-b-2 border-b-accent-8 font-medium'
-            : 'text-gray-11 hover:bg-gray-3 hover:text-gray-12'
-            }`}
-          align="center"
-          px="4"
-          onClick={() => setActiveTab(tab.id)}
-        >
-          {index < 9 && (
-            <Kbd size="1" className="mr-2 opacity-70">
-              {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl+'}{index + 1}
-            </Kbd>
-          )}
+      {tabs.map((tab, index) => {
+        const isDragging = draggedTab === tab.id;
+        const isDragOver = dragOverTab === tab.id;
+        const showLeftIndicator = isDragOver && dropPosition === 'left';
+        const showRightIndicator = isDragOver && dropPosition === 'right';
 
-          <Text
-            size="2"
-            className={`max-w-[200px] overflow-hidden select-none text-ellipsis whitespace-nowrap ${tab.id === activeTabId ? 'font-medium' : ''
-              }`}
-            mr="2"
+        return (
+          <Flex
+            key={tab.id}
+            className={`no-drag cursor-pointer border-r border-gray-6 border-b-2 transition-colors group relative ${tab.id === activeTabId
+              ? 'bg-accent-3 text-accent-12 border-b-accent-8'
+              : 'text-gray-11 hover:bg-gray-3 hover:text-gray-12 border-b-transparent'
+              } ${isDragging ? 'opacity-50' : ''}`}
+            align="center"
+            px="4"
+            draggable
+            onClick={() => setActiveTab(tab.id)}
+            onDragStart={(e) => handleDragStart(e, tab.id)}
+            onDragOver={(e) => handleDragOver(e, tab.id)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, tab.id)}
+            onDragEnd={handleDragEnd}
           >
-            {tab.title}
-          </Text>
+            {showLeftIndicator && (
+              <Box
+                className="absolute left-0 top-0 bottom-0 w-0.5 bg-accent-8 z-10"
+                style={{ marginLeft: '-1px' }}
+              />
+            )}
 
-          {tabs.length > 1 && (
-            <IconButton
-              size="1"
-              variant="ghost"
-              color={tab.id === activeTabId ? "accent" : "gray"}
-              className="opacity-0 group-hover:opacity-100 transition-opacity"
-              onClick={(e) => {
-                e.stopPropagation();
-                closeTab(tab.id);
-              }}
+            {showRightIndicator && (
+              <Box
+                className="absolute right-0 top-0 bottom-0 w-0.5 bg-accent-8 z-10"
+                style={{ marginRight: '-1px' }}
+              />
+            )}
+            {index < 9 && (
+              <Kbd size="1" className="mr-2 opacity-70">
+                {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl+'}{index + 1}
+              </Kbd>
+            )}
+
+            <Text
+              size="2"
+              className="max-w-[200px] overflow-hidden select-none text-ellipsis whitespace-nowrap"
+              mr="2"
             >
-              <Cross2Icon />
-            </IconButton>
-          )}
-        </Flex>
-      ))}
+              {tab.title}
+            </Text>
+
+            {tabs.length > 1 && (
+              <IconButton
+                size="1"
+                variant="ghost"
+                color={tab.id === activeTabId ? "accent" : "gray"}
+                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeTab(tab.id);
+                }}
+              >
+                <Cross2Icon />
+              </IconButton>
+            )}
+          </Flex>
+        );
+      })}
     </Flex>
   );
 }
