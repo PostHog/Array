@@ -136,7 +136,7 @@ export function TabBar() {
   }, []);
 
   return (
-    <Flex className="drag border-b border-gray-6" height="40px">
+    <Flex className="drag border-b border-gray-6" height="40px" minHeight="40px">
       {/* Spacer for macOS window controls */}
       <Box width="80px" flexShrink="0" />
 
