@@ -1,0 +1,18 @@
+procs:
+  vite:
+    cmd: ["pnpm", "run", "dev:vite"]
+    cwd: .
+    color: blue
+
+  main:
+    cmd: ["pnpm", "run", "dev:main"]
+    cwd: .
+    color: green
+
+  electron:
+    cmd: ["pnpm", "run", "dev:electron"]
+    cwd: .
+    color: yellow
+    depends_on:
+      - vite
+      - main
