@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Flex, Box, Heading, Text } from '@radix-ui/themes';
+import { Flex, Box, Heading, Text, Code } from '@radix-ui/themes';
 import { LogEntry, formatTime } from '../types/log';
 import { ToolCallView } from './log/ToolCallView';
 import { DiffView } from './log/DiffView';
@@ -54,17 +54,16 @@ export function LogView({ logs, isRunning }: LogViewProps) {
         flexGrow="1"
         overflowY="auto"
         p="4"
-        className="font-mono text-sm whitespace-pre-wrap"
       >
         {logs.map((log, index) => {
           // Backward compat for plain strings
           if (typeof log === 'string') {
             return (
-              <Box key={index} >
-                <Text color="gray" >
+              <Box key={index} mb="2">
+                <Code size="1" color="gray" variant="ghost">
                   {new Date().toLocaleTimeString()}
-                </Text>
-                <Text>{log}</Text>
+                </Code>
+                <Code size="2" variant="ghost" className="ml-2">{log}</Code>
               </Box>
             );
           }
@@ -73,87 +72,97 @@ export function LogView({ logs, isRunning }: LogViewProps) {
             case 'text':
               return (
                 <Box key={index} mb="2">
-                  <Text color="gray" mr="2">
+                  <Code size="1" color="gray" variant="ghost">
                     {formatTime(log.ts)}
-                  </Text>
-                  <Text color={log.level === 'error' ? 'red' : undefined}>
+                  </Code>
+                  <Code size="2" color={log.level === 'error' ? 'red' : undefined} variant="ghost" className="ml-2">
                     {log.content}
-                  </Text>
+                  </Code>
                 </Box>
               );
             case 'status':
               return (
                 <Box key={index} mb="2">
-                  <Text color="gray" mr="2">
+                  <Code size="1" color="gray" variant="ghost">
                     {formatTime(log.ts)}
-                  </Text>
-                  <Text>status: {log.phase}</Text>
+                  </Code>
+                  <Code size="2" variant="ghost" className="ml-2">status: {log.phase}</Code>
                 </Box>
               );
             case 'tool_call':
               return (
-                <Box key={index} mb="2">
-                  <Text size="1" color="gray" >
+                <Box key={index} mb="3">
+                  <Code size="1" color="gray" variant="ghost">
                     {formatTime(log.ts)} tool_call
-                  </Text>
-                  <ToolCallView toolName={log.toolName} callId={log.callId} args={log.args} />
+                  </Code>
+                  <Box mt="1">
+                    <ToolCallView toolName={log.toolName} callId={log.callId} args={log.args} />
+                  </Box>
                 </Box>
               );
             case 'tool_result':
               return (
-                <Box key={index} mb="2">
-                  <Text size="1" color="gray" >
+                <Box key={index} mb="3">
+                  <Code size="1" color="gray" variant="ghost">
                     {formatTime(log.ts)} tool_result
-                  </Text>
-                  <ToolCallView toolName={log.toolName} callId={log.callId} args={log.result} />
+                  </Code>
+                  <Box mt="1">
+                    <ToolCallView toolName={log.toolName} callId={log.callId} args={log.result} />
+                  </Box>
                 </Box>
               );
             case 'diff':
               return (
-                <Box key={index} mb="2">
-                  <Text size="1" color="gray" >
+                <Box key={index} mb="3">
+                  <Code size="1" color="gray" variant="ghost">
                     {formatTime(log.ts)} diff
-                  </Text>
-                  <DiffView file={log.file} patch={log.patch} added={log.summary?.added} removed={log.summary?.removed} />
+                  </Code>
+                  <Box mt="1">
+                    <DiffView file={log.file} patch={log.patch} added={log.summary?.added} removed={log.summary?.removed} />
+                  </Box>
                 </Box>
               );
             case 'file_write':
               return (
                 <Box key={index} mb="2">
-                  <Text color="gray" mr="2">
+                  <Code size="1" color="gray" variant="ghost">
                     {formatTime(log.ts)}
-                  </Text>
-                  <Text>file_write: {log.path}</Text>
-                  {typeof log.bytes === 'number' && (
-                    <Text color="gray"> ({log.bytes} bytes)</Text>
-                  )}
+                  </Code>
+                  <Code size="2" variant="ghost" className="ml-2">
+                    file_write: {log.path}
+                    {typeof log.bytes === 'number' && (
+                      <Code size="1" color="gray" variant="ghost"> ({log.bytes} bytes)</Code>
+                    )}
+                  </Code>
                 </Box>
               );
             case 'metric':
               return (
-                <Box key={index} mb="2">
-                  <Text size="1" color="gray" >
+                <Box key={index} mb="3">
+                  <Code size="1" color="gray" variant="ghost">
                     {formatTime(log.ts)} metric
-                  </Text>
-                  <MetricView keyName={log.key} value={log.value} unit={log.unit} />
+                  </Code>
+                  <Box mt="1">
+                    <MetricView keyName={log.key} value={log.value} unit={log.unit} />
+                  </Box>
                 </Box>
               );
             case 'artifact':
               return (
                 <Box key={index} mb="2">
-                  <Text color="gray" mr="2">
+                  <Code size="1" color="gray" variant="ghost">
                     {formatTime(log.ts)}
-                  </Text>
-                  <Text>artifact: {/* simple preview */}</Text>
+                  </Code>
+                  <Code size="2" variant="ghost" className="ml-2">artifact</Code>
                 </Box>
               );
             default:
               return (
                 <Box key={index} mb="2">
-                  <Text color="gray" mr="2">
+                  <Code size="1" color="gray" variant="ghost">
                     {new Date().toLocaleTimeString()}
-                  </Text>
-                  <Text>{JSON.stringify(log)}</Text>
+                  </Code>
+                  <Code size="2" variant="ghost" className="ml-2">{JSON.stringify(log)}</Code>
                 </Box>
               );
           }

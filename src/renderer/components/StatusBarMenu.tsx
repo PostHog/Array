@@ -30,7 +30,13 @@ export function StatusBarMenu() {
       </DropdownMenu.Trigger>
 
       <DropdownMenu.Content >
-        <DropdownMenu.Item onSelect={(e) => e.preventDefault()} className='px-1'>
+        <DropdownMenu.Item
+          onSelect={(e) => {
+            e.preventDefault();
+            toggleDarkMode();
+          }}
+          className='px-1'
+        >
           <Flex align="center" justify="between" gap="4">
             <Text size="2">Dark Mode</Text>
             <Switch

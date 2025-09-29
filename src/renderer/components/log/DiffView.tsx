@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Flex, Text } from '@radix-ui/themes';
+import { Box, Flex, Text, Code } from '@radix-ui/themes';
 
 interface DiffViewProps {
   file: string;
@@ -23,16 +23,16 @@ export function DiffView({ file, patch, added, removed }: DiffViewProps) {
     <Box className="border border-gray-6 rounded-3 overflow-hidden">
       <Flex align="center" justify="between" p="3" className="bg-gray-2">
         <Box>
-          <Text color="gray">{dir}</Text>
-          <Text weight="medium">{base}</Text>
+          <Code size="2" color="gray" variant="ghost">{dir}</Code>
+          <Code size="2" weight="medium" variant="ghost">{base}</Code>
         </Box>
         <Box>
           {typeof added === 'number' && typeof removed === 'number' ? (
-            <Text size="1" color="gray">+{added} / -{removed}</Text>
+            <Code size="1" color="gray" variant="ghost">+{added} / -{removed}</Code>
           ) : null}
         </Box>
       </Flex>
-      <Box p="3" className="bg-gray-1 font-mono text-sm whitespace-pre overflow-x-auto">
+      <Code size="2" variant="surface" className="block p-3 whitespace-pre overflow-x-auto">
         {lines.map((line, i) => {
           let color: string | undefined = undefined;
           if (line.startsWith('+++') || line.startsWith('---')) color = 'gray';
@@ -41,10 +41,12 @@ export function DiffView({ file, patch, added, removed }: DiffViewProps) {
           else if (line.startsWith('-')) color = 'red';
           else if (line.startsWith('diff ') || line.startsWith('index ')) color = 'gray';
           return (
-            <Text key={i} color={color}>{line || '\u00A0'}</Text>
+            <div key={i}>
+              <Code size="1" color={color} variant="ghost">{line || '\u00A0'}</Code>
+            </div>
           );
         })}
-      </Box>
+      </Code>
     </Box>
   );
 }

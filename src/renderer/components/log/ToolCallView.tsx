@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, Flex, Text, Button } from '@radix-ui/themes';
+import { Box, Flex, Button, Code } from '@radix-ui/themes';
 
 interface ToolCallViewProps {
   toolName: string;
@@ -25,8 +25,8 @@ export function ToolCallView({ toolName, callId, args }: ToolCallViewProps) {
     <Box className="border border-gray-6 rounded-3 overflow-hidden">
       <Flex align="center" justify="between" p="3" className="bg-gray-2">
         <Box>
-          <Text weight="medium">{toolName}</Text>
-          {callId ? <Text color="gray" ml="2">[{callId}]</Text> : null}
+          <Code size="2" weight="medium" variant="ghost">{toolName}</Code>
+          {callId ? <Code size="2" color="gray" variant="ghost" className="ml-2">[{callId}]</Code> : null}
         </Box>
         <Button
           size="1"
@@ -37,9 +37,9 @@ export function ToolCallView({ toolName, callId, args }: ToolCallViewProps) {
         </Button>
       </Flex>
       {expanded && args !== undefined && (
-        <Box p="3" className="bg-gray-1 font-mono text-sm whitespace-pre-wrap overflow-x-auto">
-          <Text size="1">{stringify(args)}</Text>
-        </Box>
+        <Code size="2" variant="outline" className="block p-3 whitespace-pre-wrap overflow-x-auto">
+          {stringify(args)}
+        </Code>
       )}
     </Box>
   );

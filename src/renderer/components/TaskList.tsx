@@ -1,6 +1,6 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { Flex, Box, Text, TextField, Button, Badge, Spinner, Kbd } from '@radix-ui/themes';
+import { Flex, Box, Text, TextField, Button, Badge, Spinner } from '@radix-ui/themes';
 import { Task } from '@shared/types';
 import { useTaskStore } from '../stores/taskStore';
 import { useStatusBarStore } from '../stores/statusBarStore';
@@ -66,28 +66,28 @@ export function TaskList({ onSelectTask }: TaskListProps) {
       }
     });
   }, [filteredTasks.length]);
-  
+
   const handleSelectCurrent = useCallback(() => {
     if (filteredTasks[selectedIndex]) {
       onSelectTask(filteredTasks[selectedIndex]);
     }
   }, [filteredTasks, selectedIndex, onSelectTask]);
-  
+
   // Keyboard shortcuts
   useHotkeys('up', () => handleKeyNavigation('up'), [handleKeyNavigation]);
   useHotkeys('down', () => handleKeyNavigation('down'), [handleKeyNavigation]);
   useHotkeys('enter', handleSelectCurrent, [handleSelectCurrent]);
   useHotkeys('cmd+r, ctrl+r', () => fetchTasks(), [fetchTasks]);
-  
+
   // Scroll selected item into view
   useEffect(() => {
     const container = listRef.current;
     const selectedElement = container?.children[selectedIndex] as HTMLElement;
-    
+
     if (selectedElement && container) {
       const containerRect = container.getBoundingClientRect();
       const elementRect = selectedElement.getBoundingClientRect();
-      
+
       if (elementRect.bottom > containerRect.bottom) {
         selectedElement.scrollIntoView({ block: 'end', behavior: 'smooth' });
       } else if (elementRect.top < containerRect.top) {
@@ -95,7 +95,7 @@ export function TaskList({ onSelectTask }: TaskListProps) {
       }
     }
   }, [selectedIndex]);
-  
+
   if (isLoading && tasks.length === 0) {
     return (
       <Box height="100%" p="6">
@@ -123,41 +123,41 @@ export function TaskList({ onSelectTask }: TaskListProps) {
   }
 
   return (
-    <Box height="100%" p="6">
+    <Box height="100%" p="4">
       <Flex direction="column" height="100%">
-      <Box py="4" className="border-b border-gray-6">
-        <TextField.Root
-          value={filter}
-          onChange={(e) => {
-            setFilter(e.target.value);
-            setSelectedIndex(0);
-          }}
-          placeholder="Filter tasks..."
-        />
-      </Box>
+        <Box py="4" className="border-b border-gray-6" width="30vw">
+          <TextField.Root
+            value={filter}
+            onChange={(e) => {
+              setFilter(e.target.value);
+              setSelectedIndex(0);
+            }}
+            placeholder="Filter tasks..."
+          />
+        </Box>
 
-      <Box ref={listRef} flexGrow="1" overflowY="auto">
-        {filteredTasks.length === 0 ? (
-          <Flex align="center" justify="center" height="100%">
-            <Text color="gray">
-              {filter ? 'No tasks match your filter' : 'No tasks found'}
-            </Text>
-          </Flex>
-        ) : (
-          filteredTasks.map((task, index) => (
-            <TaskItem
-              key={task.id}
-              task={task}
-              isSelected={index === selectedIndex}
-              onClick={() => {
-                setSelectedIndex(index);
-                onSelectTask(task);
-              }}
-            />
-          ))
-        )}
-      </Box>
-    </Flex>
+        <Box ref={listRef} flexGrow="1" overflowY="auto">
+          {filteredTasks.length === 0 ? (
+            <Flex align="center" justify="center" height="100%">
+              <Text color="gray">
+                {filter ? 'No tasks match your filter' : 'No tasks found'}
+              </Text>
+            </Flex>
+          ) : (
+            filteredTasks.map((task, index) => (
+              <TaskItem
+                key={task.id}
+                task={task}
+                isSelected={index === selectedIndex}
+                onClick={() => {
+                  setSelectedIndex(index);
+                  onSelectTask(task);
+                }}
+              />
+            ))
+          )}
+        </Box>
+      </Flex>
     </Box>
   );
 }
@@ -178,9 +178,8 @@ function TaskItem({ task, isSelected, onClick }: TaskItemProps) {
   return (
     <Box
       p="2"
-      className={`border-b border-gray-6 cursor-pointer font-mono ${
-        isSelected ? 'bg-gray-3' : ''
-      }`}
+      className={`border-b border-gray-6 cursor-pointer font-mono ${isSelected ? 'bg-gray-3' : ''
+        }`}
       onClick={onClick}
     >
       <Flex align="center" gap="2">

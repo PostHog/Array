@@ -79,6 +79,9 @@ export function AuthScreen() {
                 <Button
                   type="submit"
                   disabled={isLoading || !apiKey}
+                  variant='classic'
+                  size="3"
+                  mt="4"
                 >
                   {isLoading ? 'Connecting...' : 'Connect'}
                 </Button>

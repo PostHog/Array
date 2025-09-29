@@ -14,7 +14,7 @@ const CommandRoot = React.forwardRef<
   return (
     <CmdkCommand
       ref={ref}
-      className={`bg-panel-solid border border-gray-6 rounded-2 shadow-6 overflow-hidden ${className || ''}`}
+      className={`bg-gray-1 border border-gray-6 rounded-2 shadow-6 overflow-hidden ${className || ''}`}
       {...props}
     />
   );

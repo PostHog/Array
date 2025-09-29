@@ -67,7 +67,7 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
 
   if (workflows.length === 0) {
     return (
-      <Box height="100%" p="6">
+      <Box height="100%" p="2">
         <Flex align="center" justify="center" height="100%">
           <Flex direction="column" align="center" gap="2">
             <Text color="gray">No workflows found</Text>
@@ -81,51 +81,51 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
   }
 
   return (
-    <Box height="100%" p="6">
+    <Box height="100%" p="2">
       <Flex direction="column" height="100%">
-      {/* Workflow selector */}
-      <Box p="4" className="border-b border-gray-6">
-        <Flex align="center" justify="between">
-          <Heading size="4">Workflow View</Heading>
-          <Select.Root
-            value={selectedWorkflowId || ''}
-            onValueChange={(value) => selectWorkflow(value || null)}
-          >
-            <Select.Trigger />
-            <Select.Content>
-              {workflows.filter(w => w.is_active).map(workflow => (
-                <Select.Item key={workflow.id} value={workflow.id}>
-                  {workflow.name} {workflow.is_default && '(Default)'}
-                </Select.Item>
-              ))}
-            </Select.Content>
-          </Select.Root>
-        </Flex>
-        {selectedWorkflow?.description && (
-          <Text size="2" color="gray">
-            {selectedWorkflow.description}
-          </Text>
-        )}
-      </Box>
+        {/* Workflow selector */}
+        <Box p="4" className="border-b border-gray-6">
+          <Flex align="center" justify="between">
+            <Heading size="4">Workflow View</Heading>
+            <Select.Root
+              value={selectedWorkflowId || ''}
+              onValueChange={(value) => selectWorkflow(value || null)}
+            >
+              <Select.Trigger />
+              <Select.Content>
+                {workflows.filter(w => w.is_active).map(workflow => (
+                  <Select.Item key={workflow.id} value={workflow.id}>
+                    {workflow.name} {workflow.is_default && '(Default)'}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </Flex>
+          {selectedWorkflow?.description && (
+            <Text size="2" color="gray">
+              {selectedWorkflow.description}
+            </Text>
+          )}
+        </Box>
 
-      {/* Kanban board */}
-      <Box flexGrow="1" p="4" overflowX="auto">
-        <Flex gap="4" height="100%">
-          {/* Workflow stages */}
-          {selectedWorkflow?.stages
-            .filter(stage => !stage.is_archived)
-            .sort((a, b) => a.position - b.position)
-            .map(stage => (
-              <WorkflowColumn
-                key={stage.id}
-                stage={stage}
-                tasks={tasksByStage.get(stage.id) || []}
-                onSelectTask={onSelectTask}
-              />
-            ))}
-        </Flex>
-      </Box>
-    </Flex>
+        {/* Kanban board */}
+        <Box flexGrow="1" p="4" overflowX="auto">
+          <Flex gap="4" height="100%">
+            {/* Workflow stages */}
+            {selectedWorkflow?.stages
+              .filter(stage => !stage.is_archived)
+              .sort((a, b) => a.position - b.position)
+              .map(stage => (
+                <WorkflowColumn
+                  key={stage.id}
+                  stage={stage}
+                  tasks={tasksByStage.get(stage.id) || []}
+                  onSelectTask={onSelectTask}
+                />
+              ))}
+          </Flex>
+        </Box>
+      </Flex>
     </Box>
   );
 }

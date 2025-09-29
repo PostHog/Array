@@ -236,7 +236,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
     <Flex height="100%">
       {/* Left pane - Task details */}
       <Box width="50%" className="border-r border-gray-6" overflowY="auto">
-        <Box p="6">
+        <Box p="4">
           <Heading size="5" mb="4">{task.title}</Heading>
 
           <DataList.Root>
@@ -344,6 +344,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
                   onClick={handleCancel}
                   color="red"
                   size="3"
+                  variant='outline'
                 >
                   Cancel
                 </Button>
