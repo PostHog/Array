@@ -1,7 +1,6 @@
-name: Type check
+name: Typecheck
 
 on:
-  push:
   pull_request:
 
 jobs:
