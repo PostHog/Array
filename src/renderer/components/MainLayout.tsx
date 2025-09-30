@@ -27,7 +27,12 @@ export function MainLayout() {
   const handleSelectTask = (task: Task) => {
     // Check if task is already open in a tab
     const existingTab = tabs.find(
-      (tab) => tab.type === "task-detail" && tab.data?.id === task.id,
+      (tab) =>
+        tab.type === "task-detail" &&
+        tab.data &&
+        typeof tab.data === "object" &&
+        "id" in tab.data &&
+        tab.data.id === task.id,
     );
 
     if (existingTab) {
@@ -52,9 +57,9 @@ export function MainLayout() {
           <TaskList onSelectTask={handleSelectTask} />
         )}
 
-        {activeTab?.type === "task-detail" && activeTab.data && (
-          <TaskDetail task={activeTab.data} />
-        )}
+        {activeTab?.type === "task-detail" && activeTab.data ? (
+          <TaskDetail task={activeTab.data as Task} />
+        ) : null}
 
         {activeTab?.type === "workflow" && (
           <WorkflowView onSelectTask={handleSelectTask} />

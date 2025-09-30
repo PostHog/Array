@@ -134,7 +134,8 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         // Create new subscription that persists even when component unmounts
         const unsubscribeFn = window.electronAPI?.onAgentEvent(
           channel,
-          (ev: unknown) => {
+          // biome-ignore lint/suspicious/noExplicitAny: I have no idea what the type is, but it's coming from the agent.
+          (ev: any) => {
             const currentStore = get();
 
             switch (ev?.type) {

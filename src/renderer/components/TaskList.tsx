@@ -211,7 +211,7 @@ function TaskItem({ task, isSelected, onClick }: TaskItemProps) {
           {isSelected ? "[•]" : "[ ]"}
         </Text>
 
-        <Badge color={status === "Backlog" ? "gray" : "orange"} size="1">
+        <Badge color={status === "Backlog" ? "gray" : undefined} size="1">
           {status}
         </Badge>
 
@@ -222,12 +222,15 @@ function TaskItem({ task, isSelected, onClick }: TaskItemProps) {
           {task.title}
         </Text>
 
-        {task.repository_config && (
+        {task.repository_config &&
+        typeof task.repository_config === "object" &&
+        "organization" in task.repository_config &&
+        "repository" in task.repository_config ? (
           <Text size="1" color="gray">
-            {task.repository_config.organization}/
-            {task.repository_config.repository}
+            {String(task.repository_config.organization)}/
+            {String(task.repository_config.repository)}
           </Text>
-        )}
+        ) : null}
 
         <Text size="1" color="gray" className="whitespace-nowrap">
           {timeAgo}

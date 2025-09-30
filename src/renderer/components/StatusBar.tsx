@@ -10,7 +10,7 @@ export function StatusBar({ showKeyHints = true }: StatusBarProps) {
   const { statusText, keyHints } = useStatusBarStore();
 
   // Determine if we're in development mode
-  const isDev = process.env.NODE_ENV === "development";
+  const isDev = import.meta.env.DEV;
   const version = "0.1.0"; // You can get this from package.json or env vars
 
   return (

@@ -6,14 +6,11 @@ export interface Task {
   updated_at: string;
   origin_product: string;
   status?: string;
-  current_stage?: string; // Stage ID
-  workflow?: string; // Workflow ID
-  repository_config?: {
-    organization: string;
-    repository: string;
-  };
-  github_branch?: string;
-  github_pr_url?: string;
+  current_stage?: string | null; // Stage ID
+  workflow?: string | null; // Workflow ID
+  repository_config?: unknown;
+  github_branch?: string | null;
+  github_pr_url?: string | null;
   tags?: string[];
 }
 
@@ -21,8 +18,8 @@ export interface Workflow {
   id: string;
   name: string;
   description?: string;
-  is_default: boolean;
-  is_active: boolean;
+  is_default?: boolean;
+  is_active?: boolean;
   stages: WorkflowStage[];
 }
 
@@ -32,11 +29,11 @@ export interface WorkflowStage {
   name: string;
   key: string;
   position: number;
-  color: string;
-  agent_name?: string;
-  is_manual_only: boolean;
-  is_archived: boolean;
-  fallback_stage?: string;
+  color?: string;
+  agent_name?: string | null;
+  is_manual_only?: boolean;
+  is_archived?: boolean;
+  fallback_stage?: string | null;
 }
 
 export interface AuthConfig {

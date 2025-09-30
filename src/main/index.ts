@@ -6,7 +6,7 @@ import {
   Menu,
   type MenuItemConstructorOptions,
 } from "electron";
-import { registerAgentIpc } from "./services/agent.js";
+import { registerAgentIpc, type TaskController } from "./services/agent.js";
 import { registerOsIpc } from "./services/os.js";
 import { registerPosthogIpc } from "./services/posthog.js";
 
@@ -15,12 +15,6 @@ const __dirname = path.dirname(__filename);
 
 const isDev =
   process.env.NODE_ENV === "development" || process.argv.includes("--dev");
-
-interface TaskController {
-  abortController: AbortController;
-  agent: unknown;
-  channel: string;
-}
 
 let mainWindow: BrowserWindow | null = null;
 const taskControllers = new Map<string, TaskController>();

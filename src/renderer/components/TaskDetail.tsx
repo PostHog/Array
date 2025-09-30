@@ -95,21 +95,24 @@ export function TaskDetail({ task }: TaskDetailProps) {
               </DataList.Value>
             </DataList.Item>
 
-            {task.repository_config && (
+            {task.repository_config &&
+            typeof task.repository_config === "object" &&
+            "organization" in task.repository_config &&
+            "repository" in task.repository_config ? (
               <DataList.Item>
                 <DataList.Label>Remote Repository</DataList.Label>
                 <DataList.Value>
                   <Link
-                    href={`https://github.com/${task.repository_config.organization}/${task.repository_config.repository}`}
+                    href={`https://github.com/${String(task.repository_config.organization)}/${String(task.repository_config.repository)}`}
                     target="_blank"
                     size="2"
                   >
-                    {task.repository_config.organization}/
-                    {task.repository_config.repository} →
+                    {String(task.repository_config.organization)}/
+                    {String(task.repository_config.repository)} →
                   </Link>
                 </DataList.Value>
               </DataList.Item>
-            )}
+            ) : null}
 
             {task.github_branch && (
               <DataList.Item>

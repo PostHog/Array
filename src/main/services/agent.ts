@@ -1,4 +1,4 @@
-import { ClaudeCodeAgent, createAgent } from "@posthog/code-agent";
+import { type Agent, ClaudeCodeAgent, createAgent } from "@posthog/code-agent";
 import { type BrowserWindow, type IpcMainInvokeEvent, ipcMain } from "electron";
 import { getCurrentBranch } from "./git.js";
 
@@ -8,9 +8,9 @@ interface AgentStartParams {
   model?: string;
 }
 
-interface TaskController {
+export interface TaskController {
   abortController: AbortController;
-  agent: Awaited<ReturnType<typeof createAgent>>;
+  agent: Agent;
   channel: string;
 }
 
@@ -28,7 +28,7 @@ export function registerAgentIpc(
         throw new Error("prompt and repoPath are required");
       }
 
-      const agent = await createAgent(new ClaudeCodeAgent());
+      const agent = createAgent(new ClaudeCodeAgent());
 
       const abortController = new AbortController();
 

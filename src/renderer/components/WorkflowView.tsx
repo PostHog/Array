@@ -239,12 +239,15 @@ function WorkflowTaskCard({ task, onClick }: WorkflowTaskCardProps) {
         )}
       </Flex>
 
-      {task.repository_config && (
+      {task.repository_config &&
+      typeof task.repository_config === "object" &&
+      "organization" in task.repository_config &&
+      "repository" in task.repository_config ? (
         <Text size="1" color="gray" className="font-mono">
-          {task.repository_config.organization}/
-          {task.repository_config.repository}
+          {String(task.repository_config.organization)}/
+          {String(task.repository_config.repository)}
         </Text>
-      )}
+      ) : null}
     </Card>
   );
 }

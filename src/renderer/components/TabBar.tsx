@@ -217,7 +217,7 @@ export function TabBar() {
               <IconButton
                 size="1"
                 variant="ghost"
-                color={tab.id === activeTabId ? "accent" : "gray"}
+                color={tab.id !== activeTabId ? "gray" : undefined}
                 className="opacity-0 transition-opacity group-hover:opacity-100"
                 onClick={(e) => {
                   e.stopPropagation();

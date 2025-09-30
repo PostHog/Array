@@ -6,6 +6,7 @@ import {
 import { Flex, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import type { Task } from "@/shared/types";
 import { useTabStore } from "../../stores/tabStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { Command } from "./Command";
@@ -105,7 +106,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   }) => {
     // Check if task is already open in a tab
     const existingTab = tabs.find(
-      (tab) => tab.type === "task-detail" && tab.data?.id === task.id,
+      (tab) => tab.type === "task-detail" && (tab.data as Task)?.id === task.id,
     );
 
     if (existingTab) {

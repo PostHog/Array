@@ -39,11 +39,11 @@ export function DiffView({ file, patch, added, removed }: DiffViewProps) {
       </Flex>
       <Code
         size="2"
-        variant="surface"
+        variant="soft"
         className="block overflow-x-auto whitespace-pre p-3"
       >
         {lines.map((line, i) => {
-          let color: string | undefined;
+          let color: "gray" | "blue" | "green" | "red" | undefined;
           if (line.startsWith("+++") || line.startsWith("---")) color = "gray";
           else if (line.startsWith("@@")) color = "blue";
           else if (line.startsWith("+")) color = "green";
