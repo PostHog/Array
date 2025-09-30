@@ -1,21 +1,39 @@
-import React, { useEffect, useState } from 'react';
-import { Flex, Box, Heading, Text, Select, Card, Badge, Spinner } from '@radix-ui/themes';
-import { useWorkflowStore } from '../stores/workflowStore';
-import { useTaskStore } from '../stores/taskStore';
-import { useStatusBarStore } from '../stores/statusBarStore';
-import { Task, WorkflowStage } from '@shared/types';
-import { formatDistanceToNow } from 'date-fns';
-import { AsciiArt } from './AsciiArt';
+import {
+  Badge,
+  Box,
+  Card,
+  Flex,
+  Heading,
+  Select,
+  Spinner,
+  Text,
+} from "@radix-ui/themes";
+import type { Task, WorkflowStage } from "@shared/types";
+import { formatDistanceToNow } from "date-fns";
+import { useEffect, useState } from "react";
+import { useStatusBarStore } from "../stores/statusBarStore";
+import { useTaskStore } from "../stores/taskStore";
+import { useWorkflowStore } from "../stores/workflowStore";
+import { AsciiArt } from "./AsciiArt";
 
 interface WorkflowViewProps {
   onSelectTask: (task: Task) => void;
 }
 
 export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
-  const { workflows, selectedWorkflowId, fetchWorkflows, selectWorkflow, getTasksByStage, isLoading } = useWorkflowStore();
+  const {
+    workflows,
+    selectedWorkflowId,
+    fetchWorkflows,
+    selectWorkflow,
+    getTasksByStage,
+    isLoading,
+  } = useWorkflowStore();
   const { fetchTasks } = useTaskStore();
   const { setStatusBar, reset } = useStatusBarStore();
-  const [tasksByStage, setTasksByStage] = useState<Map<string, Task[]>>(new Map());
+  const [tasksByStage, setTasksByStage] = useState<Map<string, Task[]>>(
+    new Map(),
+  );
 
   useEffect(() => {
     fetchWorkflows();
@@ -28,24 +46,29 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
     }
   }, [selectedWorkflowId, getTasksByStage]);
 
-  const selectedWorkflow = workflows.find(w => w.id === selectedWorkflowId);
+  const selectedWorkflow = workflows.find((w) => w.id === selectedWorkflowId);
 
   useEffect(() => {
-    const totalTasks = Array.from(tasksByStage.values()).reduce((sum, tasks) => sum + tasks.length, 0);
+    const totalTasks = Array.from(tasksByStage.values()).reduce(
+      (sum, tasks) => sum + tasks.length,
+      0,
+    );
 
     setStatusBar({
-      statusText: selectedWorkflow ? `Workflow: ${selectedWorkflow.name} (${totalTasks} tasks)` : 'Workflow view',
+      statusText: selectedWorkflow
+        ? `Workflow: ${selectedWorkflow.name} (${totalTasks} tasks)`
+        : "Workflow view",
       keyHints: [
         {
-          keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'K'],
-          description: 'Command'
+          keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "K"],
+          description: "Command",
         },
         {
-          keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'R'],
-          description: 'Refresh'
-        }
+          keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "R"],
+          description: "Refresh",
+        },
       ],
-      mode: 'replace'
+      mode: "replace",
     });
 
     return () => {
@@ -82,30 +105,32 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
   }
 
   return (
-    <Box height="100%" style={{ position: 'relative' }}>
+    <Box height="100%" style={{ position: "relative" }}>
       {/* Background ASCII Art */}
-      <Box style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
+      <Box style={{ position: "absolute", inset: 0, zIndex: 0 }}>
         <AsciiArt scale={1} opacity={0.1} />
       </Box>
 
       {/* Foreground Content */}
-      <Box height="100%" p="2" style={{ position: 'relative', zIndex: 1 }}>
+      <Box height="100%" p="2" style={{ position: "relative", zIndex: 1 }}>
         <Flex direction="column" height="100%">
           {/* Workflow selector */}
-          <Box p="4" className="border-b border-gray-6">
+          <Box p="4" className="border-gray-6 border-b">
             <Flex align="center" justify="between">
               <Heading size="4">Workflow View</Heading>
               <Select.Root
-                value={selectedWorkflowId || ''}
+                value={selectedWorkflowId || ""}
                 onValueChange={(value) => selectWorkflow(value || null)}
               >
                 <Select.Trigger />
                 <Select.Content>
-                  {workflows.filter(w => w.is_active).map(workflow => (
-                    <Select.Item key={workflow.id} value={workflow.id}>
-                      {workflow.name} {workflow.is_default && '(Default)'}
-                    </Select.Item>
-                  ))}
+                  {workflows
+                    .filter((w) => w.is_active)
+                    .map((workflow) => (
+                      <Select.Item key={workflow.id} value={workflow.id}>
+                        {workflow.name} {workflow.is_default && "(Default)"}
+                      </Select.Item>
+                    ))}
                 </Select.Content>
               </Select.Root>
             </Flex>
@@ -119,9 +144,9 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
           <Box flexGrow="1" p="4" overflowX="auto">
             <Flex gap="4" height="100%">
               {selectedWorkflow?.stages
-                .filter(stage => !stage.is_archived)
+                .filter((stage) => !stage.is_archived)
                 .sort((a, b) => a.position - b.position)
-                .map(stage => (
+                .map((stage) => (
                   <WorkflowColumn
                     key={stage.id}
                     stage={stage}
@@ -147,27 +172,20 @@ function WorkflowColumn({ stage, tasks, onSelectTask }: WorkflowColumnProps) {
   return (
     <Flex direction="column" flexShrink="0" width="320px">
       <Card>
-
-        <Box
-          p="3"
-          className="rounded-t-3"
-        >
+        <Box p="3" className="rounded-t-3">
           <Flex align="center" justify="between">
             <Text weight="medium">{stage.name}</Text>
-            <Text size="2" color="gray">{tasks.length}</Text>
+            <Text size="2" color="gray">
+              {tasks.length}
+            </Text>
           </Flex>
 
           <Text size="1" color="gray">
-            {stage.agent_name ? 'Automated by ' + stage.agent_name : '\u00A0'}
+            {stage.agent_name ? `Automated by ${stage.agent_name}` : "\u00A0"}
           </Text>
-
         </Box>
 
-        <Box
-          flexGrow="1"
-          p="2"
-          overflowY="auto"
-        >
+        <Box flexGrow="1" p="2" overflowY="auto">
           {tasks.length === 0 ? (
             <Flex align="center" justify="center" py="8">
               <Text size="2" color="gray">
@@ -176,7 +194,7 @@ function WorkflowColumn({ stage, tasks, onSelectTask }: WorkflowColumnProps) {
             </Flex>
           ) : (
             <Flex direction="column" gap="2">
-              {tasks.map(task => (
+              {tasks.map((task) => (
                 <WorkflowTaskCard
                   key={task.id}
                   task={task}
@@ -187,7 +205,6 @@ function WorkflowColumn({ stage, tasks, onSelectTask }: WorkflowColumnProps) {
           )}
         </Box>
       </Card>
-
     </Flex>
   );
 }
@@ -211,20 +228,26 @@ function WorkflowTaskCard({ task, onClick }: WorkflowTaskCardProps) {
       </Text>
 
       <Flex align="center" gap="2" mb="1">
-        <Text size="1" color="gray">{timeAgo}</Text>
+        <Text size="1" color="gray">
+          {timeAgo}
+        </Text>
 
         {task.origin_product && (
           <Badge size="1" color="gray">
-            {task.origin_product.replace('_', ' ')}
+            {task.origin_product.replace("_", " ")}
           </Badge>
         )}
       </Flex>
 
-      {task.repository_config && (
+      {task.repository_config &&
+      typeof task.repository_config === "object" &&
+      "organization" in task.repository_config &&
+      "repository" in task.repository_config ? (
         <Text size="1" color="gray" className="font-mono">
-          {task.repository_config.organization}/{task.repository_config.repository}
+          {String(task.repository_config.organization)}/
+          {String(task.repository_config.repository)}
         </Text>
-      )}
+      ) : null}
     </Card>
   );
 }

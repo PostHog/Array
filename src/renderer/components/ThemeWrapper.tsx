@@ -1,13 +1,13 @@
-import React from 'react';
-import { Theme } from '@radix-ui/themes';
-import { useThemeStore } from '../stores/themeStore';
+import { Theme } from "@radix-ui/themes";
+import type React from "react";
+import { useThemeStore } from "../stores/themeStore";
 
 export function ThemeWrapper({ children }: { children: React.ReactNode }) {
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
 
   return (
     <Theme
-      appearance={isDarkMode ? 'dark' : 'light'}
+      appearance={isDarkMode ? "dark" : "light"}
       accentColor="orange"
       grayColor="slate"
       panelBackground="solid"

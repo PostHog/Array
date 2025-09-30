@@ -12,14 +12,17 @@
     "dev": "mprocs",
     "dev:vite": "vite",
     "dev:node": "tsc -p tsconfig.node.json --watch",
+    "dev:preload": "tsc -p tsconfig.preload.json --watch",
     "dev:electron": "wait-on tcp:5173 && wait-on dist/main/index.js && electron . --dev",
     "build": "pnpm run build:node && pnpm run build:vite && pnpm run build:electron",
-    "build:node": "tsc -p tsconfig.node.json",
+    "build:node": "tsc -p tsconfig.node.json && tsc -p tsconfig.preload.json && cp src/main/package.json dist/main/package.json",
     "build:vite": "vite build",
     "build:electron": "electron-builder",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
-    "lint": "eslint src --ext .ts,.tsx",
+    "lint": "biome check --fix",
+    "format": "biome format --fix",
+    "check": "pnpm run lint && pnpm run typecheck",
     "generate-client": "tsx scripts/update-openapi-client.ts"
   },
   "keywords": [
@@ -31,6 +34,7 @@
   "author": "PostHog",
   "license": "MIT",
   "devDependencies": {
+    "@biomejs/biome": "2.2.4",
     "@types/node": "^20.11.5",
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",

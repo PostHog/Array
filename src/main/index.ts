@@ -1,17 +1,23 @@
-import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { registerPosthogIpc } from './services/posthog.js';
-import { registerOsIpc } from './services/os.js';
-import { registerAgentIpc } from './services/agent.js';
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  type MenuItemConstructorOptions,
+} from "electron";
+import { registerAgentIpc, type TaskController } from "./services/agent.js";
+import { registerOsIpc } from "./services/os.js";
+import { registerPosthogIpc } from "./services/posthog.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const isDev = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
+const isDev =
+  process.env.NODE_ENV === "development" || process.argv.includes("--dev");
 
 let mainWindow: BrowserWindow | null = null;
-const taskControllers = new Map<string, any>();
+const taskControllers = new Map<string, TaskController>();
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -19,56 +25,51 @@ function createWindow(): void {
     height: 600,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: '#0a0a0a',
-    titleBarStyle: 'hiddenInset',
-    show: false, 
+    backgroundColor: "#0a0a0a",
+    titleBarStyle: "hiddenInset",
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, "preload.js"),
     },
   });
 
-  mainWindow.once('ready-to-show', () => {
+  mainWindow.once("ready-to-show", () => {
     mainWindow?.maximize();
     mainWindow?.show();
   });
 
-
   // Set up menu for keyboard shortcuts
   const template: MenuItemConstructorOptions[] = [
     {
-      label: 'Array',
+      label: "Array",
+      submenu: [{ role: "about" }, { type: "separator" }, { role: "quit" }],
+    },
+    {
+      label: "Edit",
       submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        { role: 'quit' },
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "selectAll" },
       ],
     },
     {
-      label: 'Edit',
+      label: "View",
       submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
-        { role: 'selectAll' },
-      ],
-    },
-    {
-      label: 'View',
-      submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' },
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
       ],
     },
   ];
@@ -77,25 +78,25 @@ function createWindow(): void {
   Menu.setApplicationMenu(menu);
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL("http://localhost:5173");
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
 
-  mainWindow.on('closed', () => {
+  mainWindow.on("closed", () => {
     mainWindow = null;
   });
 }
 
 app.whenReady().then(createWindow);
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
     app.quit();
   }
 });
 
-app.on('activate', () => {
+app.on("activate", () => {
   if (mainWindow === null) {
     createWindow();
   }

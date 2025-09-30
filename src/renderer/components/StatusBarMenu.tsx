@@ -1,8 +1,14 @@
-import React from 'react';
-import { Flex, Text, DropdownMenu, Switch, Code, Button } from '@radix-ui/themes';
-import { ExitIcon } from '@radix-ui/react-icons';
-import { useThemeStore } from '../stores/themeStore';
-import { useAuthStore } from '../stores/authStore';
+import { ExitIcon } from "@radix-ui/react-icons";
+import {
+  Button,
+  Code,
+  DropdownMenu,
+  Flex,
+  Switch,
+  Text,
+} from "@radix-ui/themes";
+import { useAuthStore } from "../stores/authStore";
+import { useThemeStore } from "../stores/themeStore";
 
 export function StatusBarMenu() {
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
@@ -12,21 +18,20 @@ export function StatusBarMenu() {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>
-        <Button
-          size="1"
-          variant="ghost"
-        >
-          <Code size="1" color="gray" variant="ghost">ARRAY</Code>
+        <Button size="1" variant="ghost">
+          <Code size="1" color="gray" variant="ghost">
+            ARRAY
+          </Code>
         </Button>
       </DropdownMenu.Trigger>
 
-      <DropdownMenu.Content >
+      <DropdownMenu.Content>
         <DropdownMenu.Item
           onSelect={(e) => {
             e.preventDefault();
             toggleDarkMode();
           }}
-          className='px-1'
+          className="px-1"
         >
           <Flex align="center" justify="between" gap="4">
             <Text size="2">Dark Mode</Text>
@@ -38,9 +43,9 @@ export function StatusBarMenu() {
           </Flex>
         </DropdownMenu.Item>
 
-        <DropdownMenu.Separator className='mx-1' />
+        <DropdownMenu.Separator className="mx-1" />
 
-        <DropdownMenu.Item onSelect={logout} className='px-1'>
+        <DropdownMenu.Item onSelect={logout} className="px-1">
           <Flex align="center" gap="2">
             <ExitIcon />
             <Text size="2">Logout</Text>

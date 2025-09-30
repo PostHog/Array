@@ -1,11 +1,16 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import { Flex, Text } from '@radix-ui/themes';
-import { Command } from './Command';
-import { CommandKeyHints } from './CommandKeyHints';
-import { useTabStore } from '../../stores/tabStore';
-import { useTaskStore } from '../../stores/taskStore';
-import { useHotkeys } from 'react-hotkeys-hook';
-import { ListBulletIcon, ComponentInstanceIcon, FileTextIcon } from '@radix-ui/react-icons';
+import {
+  ComponentInstanceIcon,
+  FileTextIcon,
+  ListBulletIcon,
+} from "@radix-ui/react-icons";
+import { Flex, Text } from "@radix-ui/themes";
+import { useCallback, useEffect, useRef } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
+import type { Task } from "@/shared/types";
+import { useTabStore } from "../../stores/tabStore";
+import { useTaskStore } from "../../stores/taskStore";
+import { Command } from "./Command";
+import { CommandKeyHints } from "./CommandKeyHints";
 
 interface CommandMenuProps {
   open: boolean;
@@ -28,25 +33,25 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     onOpenChange(false);
   }, [onOpenChange]);
 
-  useHotkeys('escape', handleClose, {
+  useHotkeys("escape", handleClose, {
     enabled: open,
     enableOnContentEditable: true,
     enableOnFormTags: true,
-    preventDefault: true
+    preventDefault: true,
   });
 
-  useHotkeys('mod+k', handleClose, {
+  useHotkeys("mod+k", handleClose, {
     enabled: open,
     enableOnContentEditable: true,
     enableOnFormTags: true,
-    preventDefault: true
+    preventDefault: true,
   });
 
-  useHotkeys('mod+p', handleClose, {
+  useHotkeys("mod+p", handleClose, {
     enabled: open,
     enableOnContentEditable: true,
     enableOnFormTags: true,
-    preventDefault: true
+    preventDefault: true,
   });
 
   // Handle click outside
@@ -54,54 +59,61 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     if (!open) return;
 
     const handleClickOutside = (event: MouseEvent) => {
-      if (commandRef.current && !commandRef.current.contains(event.target as Node)) {
+      if (
+        commandRef.current &&
+        !commandRef.current.contains(event.target as Node)
+      ) {
         onOpenChange(false);
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [open, onOpenChange]);
 
   const handleNavigateToTasks = () => {
-    const tasksTab = tabs.find(tab => tab.type === 'task-list');
+    const tasksTab = tabs.find((tab) => tab.type === "task-list");
     if (tasksTab) {
       setActiveTab(tasksTab.id);
     } else {
       createTab({
-        type: 'task-list',
-        title: 'Tasks',
+        type: "task-list",
+        title: "Tasks",
       });
     }
     onOpenChange(false);
   };
 
   const handleNavigateToWorkflow = () => {
-    const workflowTab = tabs.find(tab => tab.type === 'workflow');
+    const workflowTab = tabs.find((tab) => tab.type === "workflow");
     if (workflowTab) {
       setActiveTab(workflowTab.id);
     } else {
       createTab({
-        type: 'workflow',
-        title: 'Workflow',
+        type: "workflow",
+        title: "Workflow",
       });
     }
     onOpenChange(false);
   };
 
-  const handleNavigateToTask = (task: { id: string; title: string; description?: string }) => {
+  const handleNavigateToTask = (task: {
+    id: string;
+    title: string;
+    description?: string;
+  }) => {
     // Check if task is already open in a tab
-    const existingTab = tabs.find(tab =>
-      tab.type === 'task-detail' && tab.data?.id === task.id
+    const existingTab = tabs.find(
+      (tab) => tab.type === "task-detail" && (tab.data as Task)?.id === task.id,
     );
 
     if (existingTab) {
       setActiveTab(existingTab.id);
     } else {
       createTab({
-        type: 'task-detail',
+        type: "task-detail",
         title: task.title,
         data: task,
       });
@@ -112,7 +124,12 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   if (!open) return null;
 
   return (
-    <Flex align="start" justify="center" className="fixed inset-0 z-50 bg-black/20" pt="9">
+    <Flex
+      align="start"
+      justify="center"
+      className="fixed inset-0 z-50 bg-black/20"
+      pt="9"
+    >
       <Command.Root ref={commandRef} className="w-[640px] max-w-[90vw]">
         <Command.Input
           placeholder="Search for tasks, navigate to sections..."
@@ -124,12 +141,12 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
 
           <Command.Group heading="Navigation">
             <Command.Item value="tasks" onSelect={handleNavigateToTasks}>
-              <ListBulletIcon className="w-4 h-4 mr-3 text-gray-11" />
+              <ListBulletIcon className="mr-3 h-4 w-4 text-gray-11" />
               <Text size="2">Tasks</Text>
             </Command.Item>
 
             <Command.Item value="workflow" onSelect={handleNavigateToWorkflow}>
-              <ComponentInstanceIcon className="w-4 h-4 mr-3 text-gray-11" />
+              <ComponentInstanceIcon className="mr-3 h-4 w-4 text-gray-11" />
               <Text size="2">Workflow</Text>
             </Command.Item>
           </Command.Group>
@@ -143,11 +160,13 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                   onSelect={() => handleNavigateToTask(task)}
                   className="items-start"
                 >
-                  <FileTextIcon className="w-4 h-4 mr-3 mt-0.5 text-gray-11 flex-shrink-0" />
+                  <FileTextIcon className="mt-0.5 mr-3 h-4 w-4 flex-shrink-0 text-gray-11" />
                   <Flex direction="column" flexGrow="1" className="min-w-0">
-                    <Text size="2" weight="medium" className="truncate">{task.title}</Text>
+                    <Text size="2" weight="medium" className="truncate">
+                      {task.title}
+                    </Text>
                     {task.description && (
-                      <Text size="1" color="gray" className="truncate mt-1">
+                      <Text size="1" color="gray" className="mt-1 truncate">
                         {task.description}
                       </Text>
                     )}

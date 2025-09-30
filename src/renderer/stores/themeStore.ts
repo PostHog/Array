@@ -1,5 +1,5 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 interface ThemeStore {
   isDarkMode: boolean;
@@ -15,7 +15,7 @@ export const useThemeStore = create<ThemeStore>()(
       setDarkMode: (isDarkMode) => set({ isDarkMode }),
     }),
     {
-      name: 'theme-storage', // name of the storage key
-    }
-  )
+      name: "theme-storage", // name of the storage key
+    },
+  ),
 );
