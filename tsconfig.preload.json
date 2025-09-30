@@ -4,11 +4,10 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "noEmit": false,
-    "module": "ES2022",
+    "module": "CommonJS",
     "moduleResolution": "node",
     "types": ["node"]
   },
-  "exclude": ["src/renderer/**/*", "src/main/preload.ts"],
   "extends": "./tsconfig.json",
-  "include": ["src/main/**/*", "src/shared/**/*", "src/api/**/*"]
+  "include": ["src/main/preload.ts"]
 }

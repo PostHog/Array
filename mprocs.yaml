@@ -9,6 +9,11 @@ procs:
     cwd: .
     color: green
 
+  preload:
+    cmd: ["pnpm", "run", "dev:preload"]
+    cwd: .
+    color: cyan
+
   electron:
     cmd: ["pnpm", "run", "dev:electron"]
     cwd: .
@@ -16,3 +21,4 @@ procs:
     depends_on:
       - vite
       - node
+      - preload
