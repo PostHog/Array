@@ -19,7 +19,8 @@
     "build:electron": "electron-builder",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --ext .ts,.tsx"
+    "lint": "eslint src --ext .ts,.tsx",
+    "generate-client": "tsx scripts/update-openapi-client.ts"
   },
   "keywords": [
     "posthog",
@@ -46,9 +47,12 @@
     "mprocs": "^0.7.3",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.20.6",
+    "typed-openapi": "^2.2.2",
     "typescript": "^5.3.3",
     "vite": "^5.0.12",
-    "wait-on": "^7.2.0"
+    "wait-on": "^7.2.0",
+    "yaml": "^2.8.1"
   },
   "dependencies": {
     "@posthog/code-agent": "^0.2.0",
