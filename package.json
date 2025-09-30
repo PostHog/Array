@@ -20,9 +20,9 @@
     "build:electron": "electron-builder",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
-    "lint": "biome check --fix",
-    "format": "biome format --fix",
-    "check": "pnpm run lint && pnpm run typecheck",
+    "lint:write": "biome check --write --unsafe",
+    "format:write": "biome format --write --unsafe",
+    "check:write": "pnpm run lint:write && pnpm run typecheck",
     "generate-client": "tsx scripts/update-openapi-client.ts"
   },
   "keywords": [

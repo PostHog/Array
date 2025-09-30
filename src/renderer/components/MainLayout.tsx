@@ -6,6 +6,7 @@ import { useTabStore } from "../stores/tabStore";
 import { CommandMenu } from "./command";
 import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
+import { TaskCreate } from "./TaskCreate";
 import { TaskDetail } from "./TaskDetail";
 import { TaskList } from "./TaskList";
 import { WorkflowView } from "./WorkflowView";
@@ -13,6 +14,7 @@ import { WorkflowView } from "./WorkflowView";
 export function MainLayout() {
   const { activeTabId, tabs, createTab, setActiveTab } = useTabStore();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
+  const [taskCreateOpen, setTaskCreateOpen] = useState(false);
 
   useHotkeys("mod+k", () => setCommandMenuOpen((prev) => !prev), {
     enabled: !commandMenuOpen,
@@ -23,6 +25,7 @@ export function MainLayout() {
   useHotkeys("mod+p", () => setCommandMenuOpen((prev) => !prev), {
     enabled: !commandMenuOpen,
   });
+  useHotkeys("mod+n", () => setTaskCreateOpen(true));
 
   const handleSelectTask = (task: Task) => {
     // Check if task is already open in a tab
@@ -54,7 +57,10 @@ export function MainLayout() {
 
       <Box flexGrow="1" overflow="hidden">
         {activeTab?.type === "task-list" && (
-          <TaskList onSelectTask={handleSelectTask} />
+          <TaskList
+            onSelectTask={handleSelectTask}
+            onNewTask={() => setTaskCreateOpen(true)}
+          />
         )}
 
         {activeTab?.type === "task-detail" && activeTab.data ? (
@@ -68,7 +74,12 @@ export function MainLayout() {
 
       <StatusBar />
 
-      <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+      <CommandMenu
+        open={commandMenuOpen}
+        onOpenChange={setCommandMenuOpen}
+        onCreateTask={() => setTaskCreateOpen(true)}
+      />
+      <TaskCreate open={taskCreateOpen} onOpenChange={setTaskCreateOpen} />
     </Flex>
   );
 }

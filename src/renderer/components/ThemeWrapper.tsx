@@ -10,7 +10,7 @@ export function ThemeWrapper({ children }: { children: React.ReactNode }) {
       appearance={isDarkMode ? "dark" : "light"}
       accentColor="orange"
       grayColor="slate"
-      panelBackground="solid"
+      panelBackground="translucent"
       radius="none"
       scaling="90%"
     >

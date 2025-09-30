@@ -15,9 +15,14 @@ import { CommandKeyHints } from "./CommandKeyHints";
 interface CommandMenuProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onCreateTask?: () => void;
 }
 
-export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
+export function CommandMenu({
+  open,
+  onOpenChange,
+  onCreateTask,
+}: CommandMenuProps) {
   const { tabs, setActiveTab, createTab } = useTabStore();
   const { tasks, fetchTasks } = useTaskStore();
   const commandRef = useRef<HTMLDivElement>(null);
@@ -99,6 +104,11 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     onOpenChange(false);
   };
 
+  const handleCreateTask = () => {
+    onOpenChange(false);
+    onCreateTask?.();
+  };
+
   const handleNavigateToTask = (task: {
     id: string;
     title: string;
@@ -139,15 +149,25 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         <Command.List>
           <Command.Empty>No results found.</Command.Empty>
 
+          <Command.Group heading="Actions">
+            <Command.Item value="Create new task" onSelect={handleCreateTask}>
+              <FileTextIcon className="mr-3 h-4 w-4 text-gray-11" />
+              <Text size="2">Create new task</Text>
+            </Command.Item>
+          </Command.Group>
+
           <Command.Group heading="Navigation">
-            <Command.Item value="tasks" onSelect={handleNavigateToTasks}>
+            <Command.Item value="Go to tasks" onSelect={handleNavigateToTasks}>
               <ListBulletIcon className="mr-3 h-4 w-4 text-gray-11" />
-              <Text size="2">Tasks</Text>
+              <Text size="2">Go to tasks</Text>
             </Command.Item>
 
-            <Command.Item value="workflow" onSelect={handleNavigateToWorkflow}>
+            <Command.Item
+              value="Go to workflows"
+              onSelect={handleNavigateToWorkflow}
+            >
               <ComponentInstanceIcon className="mr-3 h-4 w-4 text-gray-11" />
-              <Text size="2">Workflow</Text>
+              <Text size="2">Go to workflows</Text>
             </Command.Item>
           </Command.Group>
 
@@ -156,7 +176,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
               {tasks.map((task) => (
                 <Command.Item
                   key={task.id}
-                  value={task.title}
+                  value={`${task.id} ${task.title}`}
                   onSelect={() => handleNavigateToTask(task)}
                   className="items-start"
                 >

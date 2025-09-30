@@ -1,3 +1,8 @@
+export interface RepositoryConfig {
+  organization: string;
+  repository: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -8,7 +13,7 @@ export interface Task {
   status?: string;
   current_stage?: string | null; // Stage ID
   workflow?: string | null; // Workflow ID
-  repository_config?: unknown;
+  repository_config?: RepositoryConfig;
   github_branch?: string | null;
   github_pr_url?: string | null;
   tags?: string[];
