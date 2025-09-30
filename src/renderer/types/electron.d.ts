@@ -5,7 +5,7 @@ export interface IElectronAPI {
   validateRepo: (directoryPath: string) => Promise<boolean>;
   checkWriteAccess: (directoryPath: string) => Promise<boolean>;
   showMessageBox: (options: {
-    type?: 'none' | 'info' | 'error' | 'question' | 'warning';
+    type?: "none" | "info" | "error" | "question" | "warning";
     title?: string;
     message?: string;
     detail?: string;
@@ -13,9 +13,16 @@ export interface IElectronAPI {
     defaultId?: number;
     cancelId?: number;
   }) => Promise<{ response: number }>;
-  agentStart: (params: { prompt: string; repoPath: string; model?: string }) => Promise<{ taskId: string; channel: string }>;
+  agentStart: (params: {
+    prompt: string;
+    repoPath: string;
+    model?: string;
+  }) => Promise<{ taskId: string; channel: string }>;
   agentCancel: (taskId: string) => Promise<boolean>;
-  onAgentEvent: (channel: string, listener: (event: any) => void) => () => void;
+  onAgentEvent: (
+    channel: string,
+    listener: (event: unknown) => void,
+  ) => () => void;
 }
 
 declare global {

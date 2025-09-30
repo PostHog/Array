@@ -6,5 +6,5 @@ export async function listBranches(): Promise<string[]> {
 }
 
 export async function createPullRequest(): Promise<{ url: string }> {
-  return { url: '' };
+  return { url: "" };
 }

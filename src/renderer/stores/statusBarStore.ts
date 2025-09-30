@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 
 interface KeyHint {
   keys: string[];
@@ -8,50 +8,50 @@ interface KeyHint {
 interface StatusBarState {
   statusText: string;
   keyHints: KeyHint[];
-  mode: 'replace' | 'append';
+  mode: "replace" | "append";
 }
 
 interface StatusBarStore {
   statusText: string;
   keyHints: KeyHint[];
-  mode: 'replace' | 'append';
+  mode: "replace" | "append";
 
   setStatus: (text: string) => void;
-  setKeyHints: (hints: KeyHint[], mode?: 'replace' | 'append') => void;
+  setKeyHints: (hints: KeyHint[], mode?: "replace" | "append") => void;
   setStatusBar: (config: Partial<StatusBarState>) => void;
   reset: () => void;
 }
 
 const defaultKeyHints: KeyHint[] = [
   {
-    keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'K'],
-    description: 'Command'
+    keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "K"],
+    description: "Command",
   },
   {
-    keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'R'],
-    description: 'Refresh'
-  }
+    keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "R"],
+    description: "Refresh",
+  },
 ];
 
-export const useStatusBarStore = create<StatusBarStore>((set, get) => ({
-  statusText: 'Ready',
+export const useStatusBarStore = create<StatusBarStore>((set, _get) => ({
+  statusText: "Ready",
   keyHints: defaultKeyHints,
-  mode: 'replace',
+  mode: "replace",
 
   setStatus: (text) => {
     set({ statusText: text });
   },
 
-  setKeyHints: (hints, mode = 'replace') => {
-    if (mode === 'append') {
+  setKeyHints: (hints, mode = "replace") => {
+    if (mode === "append") {
       set({
         keyHints: [...defaultKeyHints, ...hints],
-        mode
+        mode,
       });
     } else {
       set({
         keyHints: hints,
-        mode
+        mode,
       });
     }
   },
@@ -59,7 +59,7 @@ export const useStatusBarStore = create<StatusBarStore>((set, get) => ({
   setStatusBar: (config) => {
     const newState: Partial<StatusBarState> = { ...config };
 
-    if (config.keyHints && config.mode === 'append') {
+    if (config.keyHints && config.mode === "append") {
       newState.keyHints = [...defaultKeyHints, ...config.keyHints];
     }
 
@@ -68,9 +68,9 @@ export const useStatusBarStore = create<StatusBarStore>((set, get) => ({
 
   reset: () => {
     set({
-      statusText: 'Ready',
+      statusText: "Ready",
       keyHints: defaultKeyHints,
-      mode: 'replace'
+      mode: "replace",
     });
-  }
+  },
 }));

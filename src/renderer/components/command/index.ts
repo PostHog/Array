@@ -1,4 +1,4 @@
-export { CommandMenu } from './CommandMenu';
-export { Command } from './Command';
-export { KeyHint } from './KeyHint';
-export { CommandKeyHints } from './CommandKeyHints';
+export { Command } from "./Command";
+export { CommandKeyHints } from "./CommandKeyHints";
+export { CommandMenu } from "./CommandMenu";
+export { KeyHint } from "./KeyHint";

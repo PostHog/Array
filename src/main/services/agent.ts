@@ -1,36 +1,44 @@
-import { ipcMain, BrowserWindow, type IpcMainInvokeEvent } from 'electron';
-import { getCurrentBranch } from './git.js';
-import { createAgent, ClaudeCodeAgent } from '@posthog/code-agent';
+import { ClaudeCodeAgent, createAgent } from "@posthog/code-agent";
+import { type BrowserWindow, type IpcMainInvokeEvent, ipcMain } from "electron";
+import { getCurrentBranch } from "./git.js";
 
 interface AgentStartParams {
-    prompt: string;
-    repoPath: string;
-    model?: string;
+  prompt: string;
+  repoPath: string;
+  model?: string;
 }
 
 interface TaskController {
-    abortController: AbortController;
-    agent: any;
-    channel: string;
+  abortController: AbortController;
+  agent: ReturnType<typeof createAgent>;
+  channel: string;
 }
 
-export function registerAgentIpc(taskControllers: Map<string, TaskController>, getMainWindow: () => BrowserWindow | null): void {
-    ipcMain.handle('agent-start', async (_event: IpcMainInvokeEvent, { prompt, repoPath }: AgentStartParams): Promise<{ taskId: string; channel: string }> => {
-        if (!prompt || !repoPath) {
-            throw new Error('prompt and repoPath are required');
-        }
+export function registerAgentIpc(
+  taskControllers: Map<string, TaskController>,
+  getMainWindow: () => BrowserWindow | null,
+): void {
+  ipcMain.handle(
+    "agent-start",
+    async (
+      _event: IpcMainInvokeEvent,
+      { prompt, repoPath }: AgentStartParams,
+    ): Promise<{ taskId: string; channel: string }> => {
+      if (!prompt || !repoPath) {
+        throw new Error("prompt and repoPath are required");
+      }
 
-        const agent = createAgent(
-            new ClaudeCodeAgent({
-                permissionMode: 'bypassPermissions'
-            } as any)
-        );
+      const agent = createAgent(
+        new ClaudeCodeAgent({
+          permissionMode: "bypassPermissions",
+        }),
+      );
 
-        const abortController = new AbortController();
+      const abortController = new AbortController();
 
-        const currentBranch = (await getCurrentBranch(repoPath)) || 'unknown';
+      const currentBranch = (await getCurrentBranch(repoPath)) || "unknown";
 
-        const fullPrompt = `
+      const fullPrompt = `
     <context>
       Repository: ${repoPath}
       Branch: ${currentBranch}
@@ -92,59 +100,63 @@ export function registerAgentIpc(taskControllers: Map<string, TaskController>, g
     </thinking>
     `;
 
-        const { taskId, stream } = await agent.run({
-            prompt: fullPrompt,
-            repoPath,
-            permissionMode: 'permissive',
-        });
+      const { taskId, stream } = await agent.run({
+        prompt: fullPrompt,
+        repoPath,
+        permissionMode: "permissive",
+      });
 
-        const channel = `agent-event:${taskId}`;
+      const channel = `agent-event:${taskId}`;
 
-        taskControllers.set(taskId, { abortController, agent, channel });
+      taskControllers.set(taskId, { abortController, agent, channel });
 
-        // Forward streaming events to renderer
-        (async () => {
-            try {
-                for await (const ev of stream) {
-                    const win = getMainWindow && getMainWindow();
-                    if (win && !win.isDestroyed()) {
-                        win.webContents.send(channel, ev);
-                    }
-                }
-                const win = getMainWindow && getMainWindow();
-                if (win && !win.isDestroyed()) {
-                    win.webContents.send(channel, { type: 'done', success: true });
-                }
-            } catch (err) {
-                const win = getMainWindow && getMainWindow();
-                if (win && !win.isDestroyed()) {
-                    win.webContents.send(channel, {
-                        type: 'error',
-                        message: err instanceof Error ? err.message : String(err),
-                    });
-                    win.webContents.send(channel, { type: 'done', success: false });
-                }
-            } finally {
-                taskControllers.delete(taskId);
-            }
-        })();
-
-        return { taskId, channel };
-    });
-
-    ipcMain.handle('agent-cancel', async (_event: IpcMainInvokeEvent, taskId: string): Promise<boolean> => {
-        const entry = taskControllers.get(taskId);
-        if (!entry) return false;
+      // Forward streaming events to renderer
+      (async () => {
         try {
-            entry.abortController.abort();
-            if (entry.agent && typeof entry.agent.cancel === 'function') {
-                try {
-                    await entry.agent.cancel(taskId);
-                } catch { }
+          for await (const ev of stream) {
+            const win = getMainWindow?.();
+            if (win && !win.isDestroyed()) {
+              win.webContents.send(channel, ev);
             }
-            return true;
+          }
+          const win = getMainWindow?.();
+          if (win && !win.isDestroyed()) {
+            win.webContents.send(channel, { type: "done", success: true });
+          }
+        } catch (err) {
+          const win = getMainWindow?.();
+          if (win && !win.isDestroyed()) {
+            win.webContents.send(channel, {
+              type: "error",
+              message: err instanceof Error ? err.message : String(err),
+            });
+            win.webContents.send(channel, { type: "done", success: false });
+          }
         } finally {
-            taskControllers.delete(taskId);
+          taskControllers.delete(taskId);
         }
-    });
+      })();
+
+      return { taskId, channel };
+    },
+  );
+
+  ipcMain.handle(
+    "agent-cancel",
+    async (_event: IpcMainInvokeEvent, taskId: string): Promise<boolean> => {
+      const entry = taskControllers.get(taskId);
+      if (!entry) return false;
+      try {
+        entry.abortController.abort();
+        if (entry.agent && typeof entry.agent.cancel === "function") {
+          try {
+            await entry.agent.cancel(taskId);
+          } catch {}
+        }
+        return true;
+      } finally {
+        taskControllers.delete(taskId);
+      }
+    },
+  );
 }

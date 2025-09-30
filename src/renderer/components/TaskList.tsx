@@ -1,11 +1,19 @@
-import React, { useEffect, useCallback, useState, useRef } from 'react';
-import { useHotkeys } from 'react-hotkeys-hook';
-import { Flex, Box, Text, TextField, Button, Badge, Spinner } from '@radix-ui/themes';
-import { Task } from '@shared/types';
-import { useTaskStore } from '../stores/taskStore';
-import { useStatusBarStore } from '../stores/statusBarStore';
-import { formatDistanceToNow } from 'date-fns';
-import { AsciiArt } from './AsciiArt';
+import {
+  Badge,
+  Box,
+  Button,
+  Flex,
+  Spinner,
+  Text,
+  TextField,
+} from "@radix-ui/themes";
+import type { Task } from "@shared/types";
+import { formatDistanceToNow } from "date-fns";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
+import { useStatusBarStore } from "../stores/statusBarStore";
+import { useTaskStore } from "../stores/taskStore";
+import { AsciiArt } from "./AsciiArt";
 
 interface TaskListProps {
   onSelectTask: (task: Task) => void;
@@ -15,7 +23,7 @@ export function TaskList({ onSelectTask }: TaskListProps) {
   const { tasks, fetchTasks, isLoading, error } = useTaskStore();
   const { setStatusBar, reset } = useStatusBarStore();
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [filter, setFilter] = useState('');
+  const [filter, setFilter] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -23,34 +31,38 @@ export function TaskList({ onSelectTask }: TaskListProps) {
   }, [fetchTasks]);
 
   const filteredTasks = tasks
-    .filter(task =>
-      task.title.toLowerCase().includes(filter.toLowerCase()) ||
-      task.description?.toLowerCase().includes(filter.toLowerCase())
+    .filter(
+      (task) =>
+        task.title.toLowerCase().includes(filter.toLowerCase()) ||
+        task.description?.toLowerCase().includes(filter.toLowerCase()),
     )
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
 
   useEffect(() => {
     setStatusBar({
-      statusText: `${filteredTasks.length} task${filteredTasks.length === 1 ? '' : 's'}`,
+      statusText: `${filteredTasks.length} task${filteredTasks.length === 1 ? "" : "s"}`,
       keyHints: [
         {
-          keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'K'],
-          description: 'Command'
+          keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "K"],
+          description: "Command",
         },
         {
-          keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'R'],
-          description: 'Refresh'
+          keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "R"],
+          description: "Refresh",
         },
         {
-          keys: ['↑', '↓'],
-          description: 'Navigate'
+          keys: ["↑", "↓"],
+          description: "Navigate",
         },
         {
-          keys: ['Enter'],
-          description: 'Select'
-        }
+          keys: ["Enter"],
+          description: "Select",
+        },
       ],
-      mode: 'replace'
+      mode: "replace",
     });
 
     return () => {
@@ -58,15 +70,18 @@ export function TaskList({ onSelectTask }: TaskListProps) {
     };
   }, [setStatusBar, reset, filteredTasks.length]);
 
-  const handleKeyNavigation = useCallback((direction: 'up' | 'down') => {
-    setSelectedIndex(prev => {
-      if (direction === 'up') {
-        return Math.max(0, prev - 1);
-      } else {
-        return Math.min(filteredTasks.length - 1, prev + 1);
-      }
-    });
-  }, [filteredTasks.length]);
+  const handleKeyNavigation = useCallback(
+    (direction: "up" | "down") => {
+      setSelectedIndex((prev) => {
+        if (direction === "up") {
+          return Math.max(0, prev - 1);
+        } else {
+          return Math.min(filteredTasks.length - 1, prev + 1);
+        }
+      });
+    },
+    [filteredTasks.length],
+  );
 
   const handleSelectCurrent = useCallback(() => {
     if (filteredTasks[selectedIndex]) {
@@ -75,10 +90,10 @@ export function TaskList({ onSelectTask }: TaskListProps) {
   }, [filteredTasks, selectedIndex, onSelectTask]);
 
   // Keyboard shortcuts
-  useHotkeys('up', () => handleKeyNavigation('up'), [handleKeyNavigation]);
-  useHotkeys('down', () => handleKeyNavigation('down'), [handleKeyNavigation]);
-  useHotkeys('enter', handleSelectCurrent, [handleSelectCurrent]);
-  useHotkeys('cmd+r, ctrl+r', () => fetchTasks(), [fetchTasks]);
+  useHotkeys("up", () => handleKeyNavigation("up"), [handleKeyNavigation]);
+  useHotkeys("down", () => handleKeyNavigation("down"), [handleKeyNavigation]);
+  useHotkeys("enter", handleSelectCurrent, [handleSelectCurrent]);
+  useHotkeys("cmd+r, ctrl+r", () => fetchTasks(), [fetchTasks]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -90,9 +105,9 @@ export function TaskList({ onSelectTask }: TaskListProps) {
       const elementRect = selectedElement.getBoundingClientRect();
 
       if (elementRect.bottom > containerRect.bottom) {
-        selectedElement.scrollIntoView({ block: 'end', behavior: 'smooth' });
+        selectedElement.scrollIntoView({ block: "end", behavior: "smooth" });
       } else if (elementRect.top < containerRect.top) {
-        selectedElement.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        selectedElement.scrollIntoView({ block: "start", behavior: "smooth" });
       }
     }
   }, [selectedIndex]);
@@ -115,9 +130,7 @@ export function TaskList({ onSelectTask }: TaskListProps) {
       <Box height="100%" p="6">
         <Flex direction="column" align="center" justify="center" height="100%">
           <Text color="red">{error}</Text>
-          <Button onClick={() => fetchTasks()}>
-            Retry
-          </Button>
+          <Button onClick={() => fetchTasks()}>Retry</Button>
         </Flex>
       </Box>
     );
@@ -127,9 +140,9 @@ export function TaskList({ onSelectTask }: TaskListProps) {
     <Box height="100%">
       <Flex height="100%">
         {/* Left pane - Task list */}
-        <Box width="50%" p="4" className="border-r border-gray-6">
+        <Box width="50%" p="4" className="border-gray-6 border-r">
           <Flex direction="column" height="100%">
-            <Box py="4" className="border-b border-gray-6">
+            <Box py="4" className="border-gray-6 border-b">
               <TextField.Root
                 value={filter}
                 onChange={(e) => {
@@ -144,7 +157,7 @@ export function TaskList({ onSelectTask }: TaskListProps) {
               {filteredTasks.length === 0 ? (
                 <Flex align="center" justify="center" height="100%">
                   <Text color="gray">
-                    {filter ? 'No tasks match your filter' : 'No tasks found'}
+                    {filter ? "No tasks match your filter" : "No tasks found"}
                   </Text>
                 </Flex>
               ) : (
@@ -183,34 +196,36 @@ function TaskItem({ task, isSelected, onClick }: TaskItemProps) {
   const timeAgo = formatDistanceToNow(createdAt, { addSuffix: true });
 
   // TODO: Look up stage name from workflow data
-  const status = 'Backlog';
+  const status = "Backlog";
 
   return (
     <Box
       p="2"
-      className={`border-b border-gray-6 cursor-pointer font-mono ${isSelected ? 'bg-gray-3' : ''
-        }`}
+      className={`cursor-pointer border-gray-6 border-b font-mono ${
+        isSelected ? "bg-gray-3" : ""
+      }`}
       onClick={onClick}
     >
       <Flex align="center" gap="2">
         <Text color="gray" size="1">
-          {isSelected ? '[•]' : '[ ]'}
+          {isSelected ? "[•]" : "[ ]"}
         </Text>
 
-        <Badge
-          color={status === 'Backlog' ? 'gray' : 'orange'}
-          size="1"
-        >
+        <Badge color={status === "Backlog" ? "gray" : "orange"} size="1">
           {status}
         </Badge>
 
-        <Text size="2" className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+        <Text
+          size="2"
+          className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+        >
           {task.title}
         </Text>
 
         {task.repository_config && (
           <Text size="1" color="gray">
-            {task.repository_config.organization}/{task.repository_config.repository}
+            {task.repository_config.organization}/
+            {task.repository_config.repository}
           </Text>
         )}
 
@@ -221,4 +236,3 @@ function TaskItem({ task, isSelected, onClick }: TaskItemProps) {
     </Box>
   );
 }
-

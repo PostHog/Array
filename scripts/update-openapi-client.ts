@@ -9,96 +9,98 @@ const TEMP_SCHEMA_PATH = "temp-openapi.yaml";
 const OUTPUT_PATH = "src/api/generated.ts";
 
 const INCLUDED_ENDPOINT_PREFIXES = [
-	"/api/projects/{project_id}/tasks",
-	"/api/projects/{project_id}/workflows",
-	"/api/users/",
+  "/api/projects/{project_id}/tasks",
+  "/api/projects/{project_id}/workflows",
+  "/api/users/",
 ];
 
 async function fetchSchema() {
-	console.log("Fetching OpenAPI schema from PostHog API...");
+  console.log("Fetching OpenAPI schema from PostHog API...");
 
-	try {
-		const response = await fetch(SCHEMA_URL);
-		if (!response.ok) {
-			throw new Error(`Failed to fetch schema: ${response.status} ${response.statusText}`);
-		}
+  try {
+    const response = await fetch(SCHEMA_URL);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch schema: ${response.status} ${response.statusText}`,
+      );
+    }
 
-		const schemaText = await response.text();
-		const schema = yaml.parse(schemaText);
+    const schemaText = await response.text();
+    const schema = yaml.parse(schemaText);
 
-		filterEndpoints(schema);
+    filterEndpoints(schema);
 
-		fs.writeFileSync(TEMP_SCHEMA_PATH, yaml.stringify(schema), "utf-8");
-		console.log(`✓ Schema saved to ${TEMP_SCHEMA_PATH}`);
+    fs.writeFileSync(TEMP_SCHEMA_PATH, yaml.stringify(schema), "utf-8");
+    console.log(`✓ Schema saved to ${TEMP_SCHEMA_PATH}`);
 
-		return true;
-	} catch (error) {
-		console.error("Error fetching schema:", error);
-		return false;
-	}
+    return true;
+  } catch (error) {
+    console.error("Error fetching schema:", error);
+    return false;
+  }
 }
 
-function filterEndpoints(schema: any) {
-	if (!schema.paths) return;
+function filterEndpoints(schema: { paths?: Record<string, unknown> }) {
+  if (!schema.paths) return;
 
-	const filteredPaths: Record<string, any> = {};
+  const filteredPaths: Record<string, unknown> = {};
 
-	for (const [path, pathItem] of Object.entries(schema.paths)) {
-		if (INCLUDED_ENDPOINT_PREFIXES.some((prefix) => path.startsWith(prefix))) {
-			filteredPaths[path] = pathItem;
-		}
-	}
+  for (const [path, pathItem] of Object.entries(schema.paths)) {
+    if (INCLUDED_ENDPOINT_PREFIXES.some((prefix) => path.startsWith(prefix))) {
+      filteredPaths[path] = pathItem;
+    }
+  }
 
-	schema.paths = filteredPaths;
-	console.log(`✓ Filtered to ${Object.keys(filteredPaths).length} endpoints`);
+  schema.paths = filteredPaths;
+  console.log(`✓ Filtered to ${Object.keys(filteredPaths).length} endpoints`);
 }
 
 function generateClient() {
-	console.log("Generating TypeScript client...");
+  console.log("Generating TypeScript client...");
 
-	try {
-		execSync(`pnpm typed-openapi ${TEMP_SCHEMA_PATH} --output ${OUTPUT_PATH}`, {
-			stdio: "inherit",
-		});
-		console.log(`✓ Client generated at ${OUTPUT_PATH}`);
-		return true;
-	} catch (error) {
-		console.error("Error generating client:", error);
-		return false;
-	}
+  try {
+    execSync(`pnpm typed-openapi ${TEMP_SCHEMA_PATH} --output ${OUTPUT_PATH}`, {
+      stdio: "inherit",
+    });
+    console.log(`✓ Client generated at ${OUTPUT_PATH}`);
+    return true;
+  } catch (error) {
+    console.error("Error generating client:", error);
+    return false;
+  }
 }
 
 function cleanup() {
-	try {
-		if (fs.existsSync(TEMP_SCHEMA_PATH)) {
-			fs.unlinkSync(TEMP_SCHEMA_PATH);
-			console.log("✓ Cleaned up temporary schema file");
-		}
-	} catch (error) {
-		console.error("Warning: Could not clean up temporary file:", error);
-	}
+  try {
+    if (fs.existsSync(TEMP_SCHEMA_PATH)) {
+      fs.unlinkSync(TEMP_SCHEMA_PATH);
+      console.log("✓ Cleaned up temporary schema file");
+    }
+  } catch (error) {
+    console.error("Warning: Could not clean up temporary file:", error);
+  }
 }
 
 async function main() {
-	console.log("Starting OpenAPI client update...\n");
+  console.log("Starting OpenAPI client update...\n");
 
-	const schemaFetched = await fetchSchema();
-	if (!schemaFetched) {
-		process.exit(1);
-	}
+  const schemaFetched = await fetchSchema();
+  if (!schemaFetched) {
+    process.exit(1);
+  }
 
-	const clientGenerated = generateClient();
+  const clientGenerated = generateClient();
 
-	cleanup();
+  cleanup();
 
-	if (!clientGenerated) {
-		process.exit(1);
-	}
+  if (!clientGenerated) {
+    process.exit(1);
+  }
 
-	console.log("\n✅ OpenAPI client successfully updated!");
+  console.log("\n✅ OpenAPI client successfully updated!");
 }
 
 main().catch((error) => {
-	console.error("Unexpected error:", error);
-	process.exit(1);
+  console.error("Unexpected error:", error);
+  process.exit(1);
 });
