@@ -6,7 +6,7 @@ export class PostHogAPIClient {
   private api: ReturnType<typeof createApiClient>;
   private _teamId: number | null = null;
 
-  constructor(private apiKey: string, private apiHost: string) {
+  constructor(apiKey: string, apiHost: string) {
     const baseUrl = apiHost.endsWith('/') ? apiHost.slice(0, -1) : apiHost;
     this.api = createApiClient(
       buildApiFetcher({ apiToken: apiKey }),
@@ -64,24 +64,24 @@ export class PostHogAPIClient {
   }
   
   async createTask(
-    title: string, 
+    title: string,
     description: string,
     repositoryConfig?: { organization: string; repository: string }
   ) {
     const teamId = await this.getTeamId();
-    
+
     const payload = {
       title,
       description,
-      origin_product: 'user_created',
+      origin_product: 'user_created' as const,
       ...(repositoryConfig && { repository_config: repositoryConfig }),
     };
-    
+
     const data = await this.api.post(`/api/projects/{project_id}/tasks/`, {
       path: {project_id: teamId.toString()},
-      body: payload
+      body: payload as Schemas.Task
     });
-    
+
     return data;
   }
   

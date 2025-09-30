@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { registerPosthogIpc } from './services/posthog.js';

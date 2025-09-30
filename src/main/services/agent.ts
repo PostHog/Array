@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron';
+import { ipcMain, BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 import { getCurrentBranch } from './git.js';
 import { createAgent, ClaudeCodeAgent } from '@posthog/code-agent';
 
@@ -15,7 +15,7 @@ interface TaskController {
 }
 
 export function registerAgentIpc(taskControllers: Map<string, TaskController>, getMainWindow: () => BrowserWindow | null): void {
-    ipcMain.handle('agent-start', async (_event: IpcMainInvokeEvent, { prompt, repoPath, model }: AgentStartParams): Promise<{ taskId: string; channel: string }> => {
+    ipcMain.handle('agent-start', async (_event: IpcMainInvokeEvent, { prompt, repoPath }: AgentStartParams): Promise<{ taskId: string; channel: string }> => {
         if (!prompt || !repoPath) {
             throw new Error('prompt and repoPath are required');
         }

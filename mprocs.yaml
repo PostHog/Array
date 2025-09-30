@@ -4,8 +4,8 @@ procs:
     cwd: .
     color: blue
 
-  main:
-    cmd: ["pnpm", "run", "dev:main"]
+  node:
+    cmd: ["pnpm", "run", "dev:node"]
     cwd: .
     color: green
 
@@ -15,4 +15,4 @@ procs:
     color: yellow
     depends_on:
       - vite
-      - main
+      - node

@@ -1,4 +1,4 @@
-import { ipcMain, safeStorage, IpcMainInvokeEvent } from 'electron';
+import { ipcMain, safeStorage, type IpcMainInvokeEvent } from 'electron';
 
 export function registerPosthogIpc(): void {
   // IPC handlers for secure storage

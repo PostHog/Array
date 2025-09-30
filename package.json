@@ -11,14 +11,14 @@
   "scripts": {
     "dev": "mprocs",
     "dev:vite": "vite",
-    "dev:main": "tsc -p tsconfig.json --watch & tsc -p tsconfig.preload.json --watch",
+    "dev:node": "tsc -p tsconfig.node.json --watch",
     "dev:electron": "wait-on tcp:5173 && wait-on dist/main/index.js && electron . --dev",
-    "build": "pnpm run build:main && pnpm run build:vite && pnpm run build:electron",
-    "build:main": "tsc -p tsconfig.json && tsc -p tsconfig.preload.json && echo '{\"type\":\"module\"}' > dist/main/package.json",
+    "build": "pnpm run build:node && pnpm run build:vite && pnpm run build:electron",
+    "build:node": "tsc -p tsconfig.node.json",
     "build:vite": "vite build",
     "build:electron": "electron-builder",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
     "generate-client": "tsx scripts/update-openapi-client.ts"
   },
