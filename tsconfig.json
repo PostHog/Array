@@ -1,17 +1,51 @@
 {
+  "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "lib": ["ES2020"],
-    "moduleResolution": "node",
+    "allowJs": true,
+    "baseUrl": "./src",
+    "declaration": true,
+    "declarationMap": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "inlineSources": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "paths": {
+      "@/*": [
+        "./*"
+      ],
+      "@api/*": [
+        "api/*"
+      ],
+      "@main/*": [
+        "main/*"
+      ],
+      "@renderer/*": [
+        "renderer/*"
+      ],
+      "@shared/*": [
+        "shared/*"
+      ]
+    },
     "resolveJsonModule": true,
-    "outDir": "dist/main",
-    "rootDir": "src/main",
-    "types": ["node"]
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "strict": true,
+    "target": "esnext"
   },
-  "include": ["src/main/**/*"],
-  "exclude": ["node_modules", "src/main/preload.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "release"
+  ],
+  "include": [
+    "src/**/*"
+  ]
 }

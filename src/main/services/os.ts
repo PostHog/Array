@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow, IpcMainInvokeEvent } from 'electron';
+import { ipcMain, dialog, BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { promisify } from 'util';
