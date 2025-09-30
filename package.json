@@ -19,7 +19,9 @@
     "build:electron": "electron-builder",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
-    "lint": "eslint src --ext .ts,.tsx",
+    "lint": "biome check --write",
+    "format": "biome format --write",
+    "check": "pnpm run lint && pnpm run typecheck",
     "generate-client": "tsx scripts/update-openapi-client.ts"
   },
   "keywords": [
@@ -31,6 +33,7 @@
   "author": "PostHog",
   "license": "MIT",
   "devDependencies": {
+    "@biomejs/biome": "2.2.4",
     "@types/node": "^20.11.5",
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",

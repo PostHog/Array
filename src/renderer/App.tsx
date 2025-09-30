@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { Flex, Text, Spinner } from '@radix-ui/themes';
-import { AuthScreen } from './components/AuthScreen';
-import { MainLayout } from './components/MainLayout';
-import { useAuthStore } from './stores/authStore';
+import { Flex, Spinner, Text } from "@radix-ui/themes";
+import { useEffect, useState } from "react";
+import { AuthScreen } from "./components/AuthScreen";
+import { MainLayout } from "./components/MainLayout";
+import { useAuthStore } from "./stores/authStore";
 
 function App() {
   const { isAuthenticated, checkAuth } = useAuthStore();

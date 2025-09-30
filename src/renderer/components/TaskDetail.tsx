@@ -1,12 +1,21 @@
-import React, { useEffect } from 'react';
-import { Flex, Box, Badge, Button, Link, SegmentedControl, DataList, Code } from '@radix-ui/themes';
-import { Pencil1Icon } from '@radix-ui/react-icons';
-import { Task } from '@shared/types';
-import { format } from 'date-fns';
-import { useStatusBarStore } from '../stores/statusBarStore';
-import { useTaskExecutionStore } from '../stores/taskExecutionStore';
-import { LogView } from './LogView';
-import { AsciiArt } from './AsciiArt';
+import { Pencil1Icon } from "@radix-ui/react-icons";
+import {
+  Badge,
+  Box,
+  Button,
+  Code,
+  DataList,
+  Flex,
+  Link,
+  SegmentedControl,
+} from "@radix-ui/themes";
+import type { Task } from "@shared/types";
+import { format } from "date-fns";
+import { useEffect } from "react";
+import { useStatusBarStore } from "../stores/statusBarStore";
+import { useTaskExecutionStore } from "../stores/taskExecutionStore";
+import { AsciiArt } from "./AsciiArt";
+import { LogView } from "./LogView";
 
 interface TaskDetailProps {
   task: Task;
@@ -29,18 +38,18 @@ export function TaskDetail({ task }: TaskDetailProps) {
 
   useEffect(() => {
     setStatusBar({
-      statusText: isRunning ? 'Agent running...' : 'Task details',
+      statusText: isRunning ? "Agent running..." : "Task details",
       keyHints: [
         {
-          keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'K'],
-          description: 'Command'
+          keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "K"],
+          description: "Command",
         },
         {
-          keys: [navigator.platform.includes('Mac') ? '⌘' : 'Ctrl', 'R'],
-          description: 'Refresh'
-        }
+          keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "R"],
+          description: "Refresh",
+        },
       ],
-      mode: 'replace'
+      mode: "replace",
     });
 
     return () => {
@@ -62,7 +71,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
   };
 
   const handleRunModeChange = (value: string) => {
-    setStoreRunMode(task.id, value as 'local' | 'cloud');
+    setStoreRunMode(task.id, value as "local" | "cloud");
   };
 
   const handleClearLogs = () => {
@@ -72,7 +81,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
   return (
     <Flex height="100%">
       {/* Left pane - Task details */}
-      <Box width="50%" className="border-r border-gray-6" overflowY="auto">
+      <Box width="50%" className="border-gray-6 border-r" overflowY="auto">
         <Box p="4">
           <Box mb="4">
             <Code size="5">{task.title}</Code>
@@ -82,9 +91,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
             <DataList.Item>
               <DataList.Label>Status</DataList.Label>
               <DataList.Value>
-                <Badge color="gray">
-                  {task.current_stage || 'Backlog'}
-                </Badge>
+                <Badge color="gray">{task.current_stage || "Backlog"}</Badge>
               </DataList.Value>
             </DataList.Item>
 
@@ -97,7 +104,8 @@ export function TaskDetail({ task }: TaskDetailProps) {
                     target="_blank"
                     size="2"
                   >
-                    {task.repository_config.organization}/{task.repository_config.repository} →
+                    {task.repository_config.organization}/
+                    {task.repository_config.repository} →
                   </Link>
                 </DataList.Value>
               </DataList.Item>
@@ -124,14 +132,14 @@ export function TaskDetail({ task }: TaskDetailProps) {
             <DataList.Item>
               <DataList.Label>Created</DataList.Label>
               <DataList.Value>
-                {format(new Date(task.created_at), 'PPP p')}
+                {format(new Date(task.created_at), "PPP p")}
               </DataList.Value>
             </DataList.Item>
 
             <DataList.Item>
               <DataList.Label>Description</DataList.Label>
               <DataList.Value>
-                {task.description || 'No description provided'}
+                {task.description || "No description provided"}
               </DataList.Value>
             </DataList.Item>
 
@@ -145,8 +153,10 @@ export function TaskDetail({ task }: TaskDetailProps) {
                     onClick={handleSelectRepo}
                     className="group cursor-pointer"
                   >
-                    <Code variant="ghost" size="2">{repoPath}</Code>
-                    <Pencil1Icon className="opacity-0 group-hover:opacity-100 transition-opacity ml-2" />
+                    <Code variant="ghost" size="2">
+                      {repoPath}
+                    </Code>
+                    <Pencil1Icon className="ml-2 opacity-0 transition-opacity group-hover:opacity-100" />
                   </Button>
                 ) : (
                   <Button size="1" variant="outline" onClick={handleSelectRepo}>
@@ -163,8 +173,12 @@ export function TaskDetail({ task }: TaskDetailProps) {
                   value={runMode}
                   onValueChange={handleRunModeChange}
                 >
-                  <SegmentedControl.Item value="local">Local</SegmentedControl.Item>
-                  <SegmentedControl.Item value="cloud">Cloud</SegmentedControl.Item>
+                  <SegmentedControl.Item value="local">
+                    Local
+                  </SegmentedControl.Item>
+                  <SegmentedControl.Item value="cloud">
+                    Cloud
+                  </SegmentedControl.Item>
                 </SegmentedControl.Root>
               </DataList.Value>
             </DataList.Item>
@@ -172,23 +186,18 @@ export function TaskDetail({ task }: TaskDetailProps) {
 
           <Box mt="6">
             <Flex direction="column" gap="3">
-
               {!repoPath ? (
-                <Button
-                  variant='classic'
-                  onClick={handleSelectRepo}
-                  size="3"
-                >
+                <Button variant="classic" onClick={handleSelectRepo} size="3">
                   Choose working folder
                 </Button>
               ) : (
                 <Button
-                  variant='classic'
+                  variant="classic"
                   onClick={handleRunTask}
                   disabled={isRunning}
                   size="3"
                 >
-                  {isRunning ? 'Running...' : 'Run Agent'}
+                  {isRunning ? "Running..." : "Run Agent"}
                 </Button>
               )}
 
@@ -197,7 +206,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
                   onClick={handleCancel}
                   color="red"
                   size="3"
-                  variant='outline'
+                  variant="outline"
                 >
                   Cancel
                 </Button>
@@ -208,14 +217,22 @@ export function TaskDetail({ task }: TaskDetailProps) {
       </Box>
 
       {/* Right pane - Logs */}
-      <Box width="50%" className="bg-panel-solid" style={{ position: 'relative' }}>
+      <Box
+        width="50%"
+        className="bg-panel-solid"
+        style={{ position: "relative" }}
+      >
         {/* Background ASCII Art */}
-        <Box style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
+        <Box style={{ position: "absolute", inset: 0, zIndex: 0 }}>
           <AsciiArt scale={1} opacity={0.1} />
         </Box>
         {/* Foreground LogView */}
-        <Box style={{ position: 'relative', zIndex: 1, height: '100%' }}>
-          <LogView logs={logs} isRunning={isRunning} onClearLogs={handleClearLogs} />
+        <Box style={{ position: "relative", zIndex: 1, height: "100%" }}>
+          <LogView
+            logs={logs}
+            isRunning={isRunning}
+            onClearLogs={handleClearLogs}
+          />
         </Box>
       </Box>
     </Flex>

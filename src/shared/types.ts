@@ -6,8 +6,8 @@ export interface Task {
   updated_at: string;
   origin_product: string;
   status?: string;
-  current_stage?: string;  // Stage ID
-  workflow?: string;  // Workflow ID
+  current_stage?: string; // Stage ID
+  workflow?: string; // Workflow ID
   repository_config?: {
     organization: string;
     repository: string;
@@ -56,14 +56,14 @@ export interface User {
 export interface LogEntry {
   id: string;
   timestamp: string;
-  level: 'info' | 'warning' | 'error' | 'success';
+  level: "info" | "warning" | "error" | "success";
   message: string;
-  data?: any;
+  data?: unknown;
 }
 
 export interface TabState {
   id: string;
-  type: 'task-list' | 'task-detail' | 'workflow' | 'backlog';
+  type: "task-list" | "task-detail" | "workflow" | "backlog";
   title: string;
-  data?: any;
+  data?: Task | unknown;
 }

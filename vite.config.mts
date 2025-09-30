@@ -1,15 +1,15 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
-  base: './',
+  base: "./",
   build: {
-    outDir: 'dist/renderer',
+    outDir: "dist/renderer",
     emptyOutDir: true,
   },
   server: {
@@ -18,11 +18,11 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@main': path.resolve(__dirname, './src/main'),
-      '@renderer': path.resolve(__dirname, './src/renderer'),
-      '@shared': path.resolve(__dirname, './src/shared'),
-      '@api': path.resolve(__dirname, './src/api'),
+      "@": path.resolve(__dirname, "./src"),
+      "@main": path.resolve(__dirname, "./src/main"),
+      "@renderer": path.resolve(__dirname, "./src/renderer"),
+      "@shared": path.resolve(__dirname, "./src/shared"),
+      "@api": path.resolve(__dirname, "./src/api"),
     },
   },
 });

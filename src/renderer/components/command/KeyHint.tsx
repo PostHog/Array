@@ -1,5 +1,4 @@
-import React from 'react';
-import { Kbd } from '@radix-ui/themes';
+import { Kbd } from "@radix-ui/themes";
 
 interface KeyHintProps {
   keys: string[];
@@ -8,9 +7,9 @@ interface KeyHintProps {
 
 export function KeyHint({ keys, className }: KeyHintProps) {
   return (
-    <div className={`flex gap-1 ${className || ''}`}>
-      {keys.map((key, index) => (
-        <Kbd key={index} size="1" className="text-gray-9">
+    <div className={`flex gap-1 ${className || ""}`}>
+      {keys.map((key) => (
+        <Kbd key={key} size="1" className="text-gray-9">
           {key}
         </Kbd>
       ))}
