@@ -1,3 +1,4 @@
+import type { RepositoryConfig } from "@shared/types";
 import { buildApiFetcher } from "./fetcher";
 import { createApiClient, type Schemas } from "./generated";
 
@@ -92,6 +93,22 @@ export class PostHogAPIClient {
     );
 
     return data;
+  }
+
+  async deleteTask(taskId: string) {
+    const teamId = await this.getTeamId();
+    await this.api.delete(`/api/projects/{project_id}/tasks/{id}/`, {
+      path: { project_id: teamId.toString(), id: taskId },
+    });
+  }
+
+  async duplicateTask(taskId: string) {
+    const task = await this.getTask(taskId);
+    return this.createTask(
+      `${task.title} (copy)`,
+      task.description,
+      task.repository_config as RepositoryConfig | undefined,
+    );
   }
 
   async runTask(taskId: string) {
