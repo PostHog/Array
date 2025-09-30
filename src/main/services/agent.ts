@@ -10,7 +10,7 @@ interface AgentStartParams {
 
 interface TaskController {
   abortController: AbortController;
-  agent: ReturnType<typeof createAgent>;
+  agent: Awaited<ReturnType<typeof createAgent>>;
   channel: string;
 }
 
@@ -28,11 +28,7 @@ export function registerAgentIpc(
         throw new Error("prompt and repoPath are required");
       }
 
-      const agent = createAgent(
-        new ClaudeCodeAgent({
-          permissionMode: "bypassPermissions",
-        }),
-      );
+      const agent = await createAgent(new ClaudeCodeAgent());
 
       const abortController = new AbortController();
 
