@@ -47,7 +47,9 @@ function TaskItemComponent({
   const duplicateTask = useTaskStore((state) => state.duplicateTask);
   const setSelectedIndex = useTaskStore((state) => state.setSelectedIndex);
   const setHoveredIndex = useTaskStore((state) => state.setHoveredIndex);
-  const setContextMenuIndex = useTaskStore((state) => state.setContextMenuIndex);
+  const setContextMenuIndex = useTaskStore(
+    (state) => state.setContextMenuIndex,
+  );
   const selectedIndex = useTaskStore((state) => state.selectedIndex);
   const contextMenuIndex = useTaskStore((state) => state.contextMenuIndex);
   const createdAt = new Date(task.created_at);
@@ -223,16 +225,33 @@ function TaskItemComponent({
           <ContextMenu.Sub>
             <ContextMenu.SubTrigger>Move</ContextMenu.SubTrigger>
             <ContextMenu.SubContent>
-              <ContextMenu.Item onSelect={() => onMoveTask(index, 0)} shortcut="⌥ ⇧ ↑">
+              <ContextMenu.Item
+                onSelect={() => onMoveTask(index, 0)}
+                shortcut="⌥ ⇧ ↑"
+              >
                 Move to top
               </ContextMenu.Item>
-              <ContextMenu.Item onSelect={() => onMoveTask(index, Math.max(0, index - 1))} shortcut="⌥ ↑">
+              <ContextMenu.Item
+                onSelect={() => onMoveTask(index, Math.max(0, index - 1))}
+                shortcut="⌥ ↑"
+              >
                 Move up
               </ContextMenu.Item>
-              <ContextMenu.Item onSelect={() => onMoveTask(index, Math.min(filteredTasksLength - 1, index + 1))} shortcut="⌥ ↓">
+              <ContextMenu.Item
+                onSelect={() =>
+                  onMoveTask(
+                    index,
+                    Math.min(filteredTasksLength - 1, index + 1),
+                  )
+                }
+                shortcut="⌥ ↓"
+              >
                 Move down
               </ContextMenu.Item>
-              <ContextMenu.Item onSelect={() => onMoveTask(index, filteredTasksLength - 1)} shortcut="⌥ ⇧ ↓">
+              <ContextMenu.Item
+                onSelect={() => onMoveTask(index, filteredTasksLength - 1)}
+                shortcut="⌥ ⇧ ↓"
+              >
                 Move to bottom
               </ContextMenu.Item>
             </ContextMenu.SubContent>

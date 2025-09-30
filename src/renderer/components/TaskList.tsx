@@ -39,17 +39,14 @@ export function TaskList({ onSelectTask, onNewTask }: TaskListInternalProps) {
   // Move drag state to local state for better performance
   const [draggedTaskId, setDraggedTaskIdLocal] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndexLocal] = useState<number | null>(null);
-  const [dropPosition, setDropPositionLocal] = useState<"top" | "bottom" | null>(null);
+  const [dropPosition, setDropPositionLocal] = useState<
+    "top" | "bottom" | null
+  >(null);
 
   const fetchTasks = useTaskStore((state) => state.fetchTasks);
-  const deleteTask = useTaskStore((state) => state.deleteTask);
-  const duplicateTask = useTaskStore((state) => state.duplicateTask);
   const moveTask = useTaskStore((state) => state.moveTask);
   const setSelectedIndex = useTaskStore((state) => state.setSelectedIndex);
   const setHoveredIndex = useTaskStore((state) => state.setHoveredIndex);
-  const setContextMenuIndex = useTaskStore(
-    (state) => state.setContextMenuIndex,
-  );
   const setFilter = useTaskStore((state) => state.setFilter);
 
   const { setStatusBar, reset } = useStatusBarStore();
@@ -94,29 +91,23 @@ export function TaskList({ onSelectTask, onNewTask }: TaskListInternalProps) {
     [filteredTasks, moveTask],
   );
 
-  const handleDragStart = useCallback(
-    (e: React.DragEvent, taskId: string) => {
-      setDraggedTaskIdLocal(taskId);
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", taskId);
-    },
-    [],
-  );
+  const handleDragStart = useCallback((e: React.DragEvent, taskId: string) => {
+    setDraggedTaskIdLocal(taskId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", taskId);
+  }, []);
 
-  const handleDragOver = useCallback(
-    (e: React.DragEvent, index: number) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
 
-      const rect = e.currentTarget.getBoundingClientRect();
-      const midpoint = rect.top + rect.height / 2;
-      const mouseY = e.clientY;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+    const mouseY = e.clientY;
 
-      setDragOverIndexLocal(index);
-      setDropPositionLocal(mouseY < midpoint ? "top" : "bottom");
-    },
-    [],
-  );
+    setDragOverIndexLocal(index);
+    setDropPositionLocal(mouseY < midpoint ? "top" : "bottom");
+  }, []);
 
   const handleDragLeave = useCallback(() => {
     setDragOverIndexLocal(null);
@@ -162,7 +153,6 @@ export function TaskList({ onSelectTask, onNewTask }: TaskListInternalProps) {
     setDragOverIndexLocal(null);
     setDropPositionLocal(null);
   }, []);
-
 
   useEffect(() => {
     setStatusBar({
