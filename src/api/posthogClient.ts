@@ -214,4 +214,121 @@ export class PostHogAPIClient {
       repository: repoName,
     }));
   }
+
+  async createWorkflow(data: {
+    name: string;
+    description?: string;
+    color?: string;
+    is_default?: boolean;
+  }) {
+    const teamId = await this.getTeamId();
+    return await this.api.post("/api/projects/{project_id}/workflows/", {
+      path: { project_id: teamId.toString() },
+      body: {
+        name: data.name,
+        description: data.description,
+        color: data.color,
+        is_default: data.is_default ?? false,
+        is_active: true,
+      } as Schemas.TaskWorkflow,
+    });
+  }
+
+  async updateWorkflow(
+    workflowId: string,
+    data: {
+      name?: string;
+      description?: string;
+      color?: string;
+      is_default?: boolean;
+      is_active?: boolean;
+    },
+  ) {
+    const teamId = await this.getTeamId();
+    return await this.api.patch("/api/projects/{project_id}/workflows/{id}/", {
+      path: { project_id: teamId.toString(), id: workflowId },
+      body: data,
+    });
+  }
+
+  async deactivateWorkflow(workflowId: string) {
+    const teamId = await this.getTeamId();
+    return await this.api.post(
+      "/api/projects/{project_id}/workflows/{id}/deactivate/",
+      {
+        path: { project_id: teamId.toString(), id: workflowId },
+      },
+    );
+  }
+
+  async createStage(
+    workflowId: string,
+    data: {
+      name: string;
+      key: string;
+      position: number;
+      color?: string;
+      agent_name?: string | null;
+      is_manual_only?: boolean;
+    },
+  ) {
+    const teamId = await this.getTeamId();
+    return await this.api.post(
+      "/api/projects/{project_id}/workflows/{workflow_id}/stages/",
+      {
+        path: {
+          project_id: teamId.toString(),
+          workflow_id: workflowId,
+        },
+        body: {
+          ...data,
+          workflow: workflowId,
+        } as Schemas.WorkflowStage,
+      },
+    );
+  }
+
+  async updateStage(
+    workflowId: string,
+    stageId: string,
+    data: {
+      name?: string;
+      key?: string;
+      position?: number;
+      color?: string;
+      agent_name?: string | null;
+      is_manual_only?: boolean;
+      is_archived?: boolean;
+    },
+  ) {
+    const teamId = await this.getTeamId();
+    return await this.api.patch(
+      "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/",
+      {
+        path: {
+          project_id: teamId.toString(),
+          workflow_id: workflowId,
+          id: stageId,
+        },
+        body: data,
+      },
+    );
+  }
+
+  async getAgents() {
+    const teamId = await this.getTeamId();
+    const url = new URL(`${this.api.baseUrl}/api/projects/${teamId}/agents/`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/projects/${teamId}/agents/`,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch agents: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.results ?? data ?? [];
+  }
 }

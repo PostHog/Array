@@ -10,6 +10,7 @@ import { TabBar } from "./TabBar";
 import { TaskCreate } from "./TaskCreate";
 import { TaskDetail } from "./TaskDetail";
 import { TaskList } from "./TaskList";
+import { WorkflowForm } from "./WorkflowForm";
 import { WorkflowView } from "./WorkflowView";
 
 export function MainLayout() {
@@ -17,6 +18,7 @@ export function MainLayout() {
   const { fetchIntegrations } = useIntegrationStore();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [taskCreateOpen, setTaskCreateOpen] = useState(false);
+  const [workflowCreateOpen, setWorkflowCreateOpen] = useState(false);
 
   useEffect(() => {
     fetchIntegrations();
@@ -32,6 +34,7 @@ export function MainLayout() {
     enabled: !commandMenuOpen,
   });
   useHotkeys("mod+n", () => setTaskCreateOpen(true));
+  useHotkeys("mod+shift+n", () => setWorkflowCreateOpen(true));
 
   const handleSelectTask = (task: Task) => {
     // Check if task is already open in a tab
@@ -66,6 +69,7 @@ export function MainLayout() {
           <TaskList
             onSelectTask={handleSelectTask}
             onNewTask={() => setTaskCreateOpen(true)}
+            onNewWorkflow={() => setWorkflowCreateOpen(true)}
           />
         )}
 
@@ -86,6 +90,10 @@ export function MainLayout() {
         onCreateTask={() => setTaskCreateOpen(true)}
       />
       <TaskCreate open={taskCreateOpen} onOpenChange={setTaskCreateOpen} />
+      <WorkflowForm
+        open={workflowCreateOpen}
+        onOpenChange={setWorkflowCreateOpen}
+      />
     </Flex>
   );
 }

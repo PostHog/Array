@@ -98,7 +98,7 @@ export function CommandMenu({
     } else {
       createTab({
         type: "workflow",
-        title: "Workflow",
+        title: "Workflows",
       });
     }
     onOpenChange(false);

@@ -23,7 +23,7 @@ const taskListTab: TabState = {
 const workflowTab: TabState = {
   id: uuidv4(),
   type: "workflow",
-  title: "Workflow",
+  title: "Workflows",
 };
 
 export const useTabStore = create<TabStore>((set, get) => ({
