@@ -297,7 +297,10 @@ export function WorkflowForm({
                     aria-describedby="alert-dialog-description"
                   >
                     <AlertDialog.Title>Delete Workflow</AlertDialog.Title>
-                    <AlertDialog.Description size="2" id="alert-dialog-description">
+                    <AlertDialog.Description
+                      size="2"
+                      id="alert-dialog-description"
+                    >
                       Are you sure you want to delete this workflow?
                       <br /> This action cannot be undone.
                     </AlertDialog.Description>
