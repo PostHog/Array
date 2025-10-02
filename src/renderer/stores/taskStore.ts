@@ -170,7 +170,10 @@ export const useTaskStore = create<TaskState>()(
         if (!client) return;
 
         try {
-          await client.updateTask(taskId, updates as any);
+          await client.updateTask(
+            taskId,
+            updates as Parameters<typeof client.updateTask>[1],
+          );
           const tasks = get().tasks.map((task) =>
             task.id === taskId ? { ...task, ...updates } : task,
           );

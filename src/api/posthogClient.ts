@@ -196,7 +196,13 @@ export class PostHogAPIClient {
     const data = await response.json();
 
     const integrations = await this.getIntegrations();
-    const integration = integrations.find((i: any) => i.id === integrationId);
+    const integration = integrations.find(
+      (i: {
+        id: number | string;
+        display_name?: string;
+        config?: { account?: { login?: string } };
+      }) => i.id === integrationId,
+    );
     const organization =
       integration?.display_name ||
       integration?.config?.account?.login ||

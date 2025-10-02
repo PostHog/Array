@@ -55,7 +55,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   const titleRef = useRef<HTMLElement>(null);
   const originalTitleRef = useRef(task.title);
-  const descriptionRef = useRef<HTMLElement>(null);
+  const descriptionRef = useRef<HTMLDivElement>(null);
   const originalDescriptionRef = useRef(task.description || "");
 
   useEffect(() => {
@@ -285,7 +285,11 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   spellCheck={false}
                   onBlur={handleDescriptionBlur}
                   onKeyDown={handleDescriptionKeyDown}
-                  style={{ cursor: "text", outline: "none", minHeight: "1.5em" }}
+                  style={{
+                    cursor: "text",
+                    outline: "none",
+                    minHeight: "1.5em",
+                  }}
                 >
                   {task.description || "No description provided"}
                 </Box>
