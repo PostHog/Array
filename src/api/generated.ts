@@ -4811,6 +4811,7 @@ export namespace Schemas {
       | undefined;
     fingerprint?: (string | null) | undefined;
     goal?: (ExperimentMetricGoal | null) | undefined;
+    ignore_zeros?: (boolean | null) | undefined;
     kind?: string | undefined;
     lower_bound_percentile?: (number | null) | undefined;
     metric_type?: string | undefined;
@@ -4981,6 +4982,7 @@ export namespace Schemas {
     active?: boolean | undefined;
     created_by: UserBasic & unknown;
     created_at?: string | undefined;
+    updated_at: string | null;
     version?: number | undefined;
     last_modified_by: UserBasic & unknown;
     is_simple_flag: boolean;
@@ -5759,6 +5761,7 @@ export namespace Schemas {
     created_at: string;
     uuid: string;
   };
+  export type NamedQueryLastExecutionTimesRequest = { names: Array<string> };
   export type NamedQueryRequest = Partial<{
     description: string | null;
     is_active: boolean | null;
@@ -7493,6 +7496,7 @@ export namespace Schemas {
     active: boolean;
     created_by: UserBasic & unknown;
     created_at: string;
+    updated_at: string | null;
     version: number;
     last_modified_by: UserBasic & unknown;
     is_simple_flag: boolean;
@@ -9430,6 +9434,2864 @@ export namespace Schemas {
 export namespace Endpoints {
   // <Endpoints>
 
+  export type get_Environments_app_metrics_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/app_metrics/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_app_metrics_error_details_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/app_metrics/{id}/error_details/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_app_metrics_historical_exports_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/app_metrics/{plugin_config_id}/historical_exports/";
+    requestFormat: "json";
+    parameters: {
+      path: { plugin_config_id: string; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_app_metrics_historical_exports_retrieve_2 = {
+    method: "GET";
+    path: "/api/environments/{project_id}/app_metrics/{plugin_config_id}/historical_exports/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; plugin_config_id: string; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_batch_exports_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/batch_exports/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedBatchExportList };
+  };
+  export type post_Environments_batch_exports_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/batch_exports/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.BatchExport;
+    };
+    responses: { 201: Schemas.BatchExport };
+  };
+  export type get_Environments_batch_exports_backfills_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/batch_exports/{batch_export_id}/backfills/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ cursor: string; ordering: string }>;
+      path: { batch_export_id: string; project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedBatchExportBackfillList };
+  };
+  export type post_Environments_batch_exports_backfills_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/batch_exports/{batch_export_id}/backfills/";
+    requestFormat: "json";
+    parameters: {
+      path: { batch_export_id: string; project_id: string };
+
+      body: Schemas.BatchExportBackfill;
+    };
+    responses: { 201: Schemas.BatchExportBackfill };
+  };
+  export type get_Environments_batch_exports_backfills_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/batch_exports/{batch_export_id}/backfills/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { batch_export_id: string; id: string; project_id: string };
+    };
+    responses: { 200: Schemas.BatchExportBackfill };
+  };
+  export type post_Environments_batch_exports_backfills_cancel_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/batch_exports/{batch_export_id}/backfills/{id}/cancel/";
+    requestFormat: "json";
+    parameters: {
+      path: { batch_export_id: string; id: string; project_id: string };
+
+      body: Schemas.BatchExportBackfill;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_batch_exports_runs_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/batch_exports/{batch_export_id}/runs/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ cursor: string; ordering: string }>;
+      path: { batch_export_id: string; project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedBatchExportRunList };
+  };
+  export type get_Environments_batch_exports_runs_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/batch_exports/{batch_export_id}/runs/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { batch_export_id: string; id: string; project_id: string };
+    };
+    responses: { 200: Schemas.BatchExportRun };
+  };
+  export type post_Environments_batch_exports_runs_cancel_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/batch_exports/{batch_export_id}/runs/{id}/cancel/";
+    requestFormat: "json";
+    parameters: {
+      path: { batch_export_id: string; id: string; project_id: string };
+
+      body: Schemas.BatchExportRun;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_batch_exports_runs_logs_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/batch_exports/{batch_export_id}/runs/{id}/logs/";
+    requestFormat: "json";
+    parameters: {
+      path: { batch_export_id: string; id: string; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_batch_exports_runs_retry_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/batch_exports/{batch_export_id}/runs/{id}/retry/";
+    requestFormat: "json";
+    parameters: {
+      path: { batch_export_id: string; id: string; project_id: string };
+
+      body: Schemas.BatchExportRun;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_batch_exports_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/batch_exports/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.BatchExport };
+  };
+  export type put_Environments_batch_exports_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/batch_exports/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.BatchExport;
+    };
+    responses: { 200: Schemas.BatchExport };
+  };
+  export type patch_Environments_batch_exports_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/batch_exports/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedBatchExport;
+    };
+    responses: { 200: Schemas.BatchExport };
+  };
+  export type delete_Environments_batch_exports_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/batch_exports/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type post_Environments_batch_exports_backfill_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/batch_exports/{id}/backfill/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.BatchExport;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_batch_exports_logs_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/batch_exports/{id}/logs/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_batch_exports_pause_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/batch_exports/{id}/pause/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.BatchExport;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_batch_exports_run_test_step_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/batch_exports/{id}/run_test_step/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.BatchExport;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_batch_exports_unpause_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/batch_exports/{id}/unpause/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.BatchExport;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_batch_exports_run_test_step_new_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/batch_exports/run_test_step_new/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.BatchExport;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_batch_exports_test_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/batch_exports/test/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_dashboards_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/dashboards/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "json" | "txt"; limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedDashboardBasicList };
+  };
+  export type post_Environments_dashboards_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/dashboards/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "json" | "txt" }>;
+      path: { project_id: string };
+
+      body: Schemas.Dashboard;
+    };
+    responses: { 201: Schemas.Dashboard };
+  };
+  export type get_Environments_dashboards_collaborators_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/dashboards/{dashboard_id}/collaborators/";
+    requestFormat: "json";
+    parameters: {
+      path: { dashboard_id: number; project_id: string };
+    };
+    responses: { 200: Array<Schemas.DashboardCollaborator> };
+  };
+  export type post_Environments_dashboards_collaborators_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/dashboards/{dashboard_id}/collaborators/";
+    requestFormat: "json";
+    parameters: {
+      path: { dashboard_id: number; project_id: string };
+
+      body: Schemas.DashboardCollaborator;
+    };
+    responses: { 201: Schemas.DashboardCollaborator };
+  };
+  export type delete_Environments_dashboards_collaborators_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/dashboards/{dashboard_id}/collaborators/{user__uuid}/";
+    requestFormat: "json";
+    parameters: {
+      path: { dashboard_id: number; project_id: string; user__uuid: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type get_Environments_dashboards_sharing_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/dashboards/{dashboard_id}/sharing/";
+    requestFormat: "json";
+    parameters: {
+      path: { dashboard_id: number; project_id: string };
+    };
+    responses: { 200: Array<Schemas.SharingConfiguration> };
+  };
+  export type post_Environments_dashboards_sharing_passwords_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/dashboards/{dashboard_id}/sharing/passwords/";
+    requestFormat: "json";
+    parameters: {
+      path: { dashboard_id: number; project_id: string };
+
+      body: Schemas.SharingConfiguration;
+    };
+    responses: { 200: Schemas.SharingConfiguration };
+  };
+  export type delete_Environments_dashboards_sharing_passwords_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/dashboards/{dashboard_id}/sharing/passwords/{password_id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { dashboard_id: number; password_id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type post_Environments_dashboards_sharing_refresh_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/dashboards/{dashboard_id}/sharing/refresh/";
+    requestFormat: "json";
+    parameters: {
+      path: { dashboard_id: number; project_id: string };
+
+      body: Schemas.SharingConfiguration;
+    };
+    responses: { 200: Schemas.SharingConfiguration };
+  };
+  export type get_Environments_dashboards_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/dashboards/{id}/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "json" | "txt" }>;
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: Schemas.Dashboard };
+  };
+  export type put_Environments_dashboards_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/dashboards/{id}/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "json" | "txt" }>;
+      path: { id: number; project_id: string };
+
+      body: Schemas.Dashboard;
+    };
+    responses: { 200: Schemas.Dashboard };
+  };
+  export type patch_Environments_dashboards_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/dashboards/{id}/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "json" | "txt" }>;
+      path: { id: number; project_id: string };
+
+      body: Schemas.PatchedDashboard;
+    };
+    responses: { 200: Schemas.Dashboard };
+  };
+  export type delete_Environments_dashboards_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/dashboards/{id}/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "json" | "txt" }>;
+      path: { id: number; project_id: string };
+    };
+    responses: { 405: unknown };
+  };
+  export type patch_Environments_dashboards_move_tile_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/dashboards/{id}/move_tile/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "json" | "txt" }>;
+      path: { id: number; project_id: string };
+
+      body: Schemas.PatchedDashboard;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_dashboards_stream_tiles_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/dashboards/{id}/stream_tiles/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "json" | "txt" }>;
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_dashboards_create_from_template_json_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/dashboards/create_from_template_json/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "json" | "txt" }>;
+      path: { project_id: string };
+
+      body: Schemas.Dashboard;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_data_color_themes_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/data_color_themes/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedDataColorThemeList };
+  };
+  export type post_Environments_data_color_themes_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/data_color_themes/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.DataColorTheme;
+    };
+    responses: { 201: Schemas.DataColorTheme };
+  };
+  export type get_Environments_data_color_themes_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/data_color_themes/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: Schemas.DataColorTheme };
+  };
+  export type put_Environments_data_color_themes_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/data_color_themes/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+
+      body: Schemas.DataColorTheme;
+    };
+    responses: { 200: Schemas.DataColorTheme };
+  };
+  export type patch_Environments_data_color_themes_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/data_color_themes/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+
+      body: Schemas.PatchedDataColorTheme;
+    };
+    responses: { 200: Schemas.DataColorTheme };
+  };
+  export type delete_Environments_data_color_themes_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/data_color_themes/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type get_Environments_dataset_items_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/dataset_items/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ dataset: string; limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedDatasetItemList };
+  };
+  export type post_Environments_dataset_items_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/dataset_items/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.DatasetItem;
+    };
+    responses: { 201: Schemas.DatasetItem };
+  };
+  export type get_Environments_dataset_items_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/dataset_items/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.DatasetItem };
+  };
+  export type put_Environments_dataset_items_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/dataset_items/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.DatasetItem;
+    };
+    responses: { 200: Schemas.DatasetItem };
+  };
+  export type patch_Environments_dataset_items_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/dataset_items/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedDatasetItem;
+    };
+    responses: { 200: Schemas.DatasetItem };
+  };
+  export type delete_Environments_dataset_items_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/dataset_items/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 405: unknown };
+  };
+  export type get_Environments_datasets_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/datasets/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{
+        id__in: Array<string>;
+        limit: number;
+        offset: number;
+        order_by: Array<
+          "-created_at" | "-updated_at" | "created_at" | "updated_at"
+        >;
+        search: string;
+      }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedDatasetList };
+  };
+  export type post_Environments_datasets_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/datasets/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.Dataset;
+    };
+    responses: { 201: Schemas.Dataset };
+  };
+  export type get_Environments_datasets_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/datasets/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.Dataset };
+  };
+  export type put_Environments_datasets_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/datasets/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.Dataset;
+    };
+    responses: { 200: Schemas.Dataset };
+  };
+  export type patch_Environments_datasets_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/datasets/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedDataset;
+    };
+    responses: { 200: Schemas.Dataset };
+  };
+  export type delete_Environments_datasets_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/datasets/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 405: unknown };
+  };
+  export type get_Environments_error_tracking_assignment_rules_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/error_tracking/assignment_rules/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedErrorTrackingAssignmentRuleList };
+  };
+  export type post_Environments_error_tracking_assignment_rules_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/error_tracking/assignment_rules/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.ErrorTrackingAssignmentRule;
+    };
+    responses: { 201: Schemas.ErrorTrackingAssignmentRule };
+  };
+  export type get_Environments_error_tracking_assignment_rules_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.ErrorTrackingAssignmentRule };
+  };
+  export type put_Environments_error_tracking_assignment_rules_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.ErrorTrackingAssignmentRule;
+    };
+    responses: { 200: Schemas.ErrorTrackingAssignmentRule };
+  };
+  export type patch_Environments_error_tracking_assignment_rules_partial_update =
+    {
+      method: "PATCH";
+      path: "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/";
+      requestFormat: "json";
+      parameters: {
+        path: { id: string; project_id: string };
+
+        body: Schemas.PatchedErrorTrackingAssignmentRule;
+      };
+      responses: { 200: Schemas.ErrorTrackingAssignmentRule };
+    };
+  export type delete_Environments_error_tracking_assignment_rules_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type patch_Environments_error_tracking_assignment_rules_reorder_partial_update =
+    {
+      method: "PATCH";
+      path: "/api/environments/{project_id}/error_tracking/assignment_rules/reorder/";
+      requestFormat: "json";
+      parameters: {
+        path: { project_id: string };
+
+        body: Schemas.PatchedErrorTrackingAssignmentRule;
+      };
+      responses: { 200: unknown };
+    };
+  export type get_Environments_error_tracking_fingerprints_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/error_tracking/fingerprints/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedErrorTrackingFingerprintList };
+  };
+  export type get_Environments_error_tracking_fingerprints_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/error_tracking/fingerprints/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.ErrorTrackingFingerprint };
+  };
+  export type delete_Environments_error_tracking_fingerprints_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/error_tracking/fingerprints/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 405: unknown };
+  };
+  export type get_Environments_error_tracking_grouping_rules_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/error_tracking/grouping_rules/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedErrorTrackingGroupingRuleList };
+  };
+  export type post_Environments_error_tracking_grouping_rules_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/error_tracking/grouping_rules/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.ErrorTrackingGroupingRule;
+    };
+    responses: { 201: Schemas.ErrorTrackingGroupingRule };
+  };
+  export type get_Environments_error_tracking_grouping_rules_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.ErrorTrackingGroupingRule };
+  };
+  export type put_Environments_error_tracking_grouping_rules_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.ErrorTrackingGroupingRule;
+    };
+    responses: { 200: Schemas.ErrorTrackingGroupingRule };
+  };
+  export type patch_Environments_error_tracking_grouping_rules_partial_update =
+    {
+      method: "PATCH";
+      path: "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/";
+      requestFormat: "json";
+      parameters: {
+        path: { id: string; project_id: string };
+
+        body: Schemas.PatchedErrorTrackingGroupingRule;
+      };
+      responses: { 200: Schemas.ErrorTrackingGroupingRule };
+    };
+  export type delete_Environments_error_tracking_grouping_rules_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type patch_Environments_error_tracking_grouping_rules_reorder_partial_update =
+    {
+      method: "PATCH";
+      path: "/api/environments/{project_id}/error_tracking/grouping_rules/reorder/";
+      requestFormat: "json";
+      parameters: {
+        path: { project_id: string };
+
+        body: Schemas.PatchedErrorTrackingGroupingRule;
+      };
+      responses: { 200: unknown };
+    };
+  export type get_Environments_error_tracking_releases_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/error_tracking/releases/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedErrorTrackingReleaseList };
+  };
+  export type post_Environments_error_tracking_releases_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/error_tracking/releases/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.ErrorTrackingRelease;
+    };
+    responses: { 201: Schemas.ErrorTrackingRelease };
+  };
+  export type get_Environments_error_tracking_releases_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/error_tracking/releases/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.ErrorTrackingRelease };
+  };
+  export type put_Environments_error_tracking_releases_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/error_tracking/releases/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.ErrorTrackingRelease;
+    };
+    responses: { 200: Schemas.ErrorTrackingRelease };
+  };
+  export type patch_Environments_error_tracking_releases_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/error_tracking/releases/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedErrorTrackingRelease;
+    };
+    responses: { 200: Schemas.ErrorTrackingRelease };
+  };
+  export type delete_Environments_error_tracking_releases_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/error_tracking/releases/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type get_Environments_error_tracking_suppression_rules_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/error_tracking/suppression_rules/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedErrorTrackingSuppressionRuleList };
+  };
+  export type post_Environments_error_tracking_suppression_rules_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/error_tracking/suppression_rules/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.ErrorTrackingSuppressionRule;
+    };
+    responses: { 201: Schemas.ErrorTrackingSuppressionRule };
+  };
+  export type get_Environments_error_tracking_suppression_rules_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.ErrorTrackingSuppressionRule };
+  };
+  export type put_Environments_error_tracking_suppression_rules_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.ErrorTrackingSuppressionRule;
+    };
+    responses: { 200: Schemas.ErrorTrackingSuppressionRule };
+  };
+  export type patch_Environments_error_tracking_suppression_rules_partial_update =
+    {
+      method: "PATCH";
+      path: "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/";
+      requestFormat: "json";
+      parameters: {
+        path: { id: string; project_id: string };
+
+        body: Schemas.PatchedErrorTrackingSuppressionRule;
+      };
+      responses: { 200: Schemas.ErrorTrackingSuppressionRule };
+    };
+  export type delete_Environments_error_tracking_suppression_rules_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type patch_Environments_error_tracking_suppression_rules_reorder_partial_update =
+    {
+      method: "PATCH";
+      path: "/api/environments/{project_id}/error_tracking/suppression_rules/reorder/";
+      requestFormat: "json";
+      parameters: {
+        path: { project_id: string };
+
+        body: Schemas.PatchedErrorTrackingSuppressionRule;
+      };
+      responses: { 200: unknown };
+    };
+  export type get_Environments_error_tracking_symbol_sets_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/error_tracking/symbol_sets/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedErrorTrackingSymbolSetList };
+  };
+  export type post_Environments_error_tracking_symbol_sets_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/error_tracking/symbol_sets/";
+    requestFormat: "form-data";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.ErrorTrackingSymbolSet;
+    };
+    responses: { 201: Schemas.ErrorTrackingSymbolSet };
+  };
+  export type get_Environments_error_tracking_symbol_sets_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.ErrorTrackingSymbolSet };
+  };
+  export type put_Environments_error_tracking_symbol_sets_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/";
+    requestFormat: "form-data";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.ErrorTrackingSymbolSet;
+    };
+    responses: { 200: Schemas.ErrorTrackingSymbolSet };
+  };
+  export type patch_Environments_error_tracking_symbol_sets_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/";
+    requestFormat: "form-data";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedErrorTrackingSymbolSet;
+    };
+    responses: { 200: Schemas.ErrorTrackingSymbolSet };
+  };
+  export type delete_Environments_error_tracking_symbol_sets_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type put_Environments_error_tracking_symbol_sets_finish_upload_update =
+    {
+      method: "PUT";
+      path: "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/finish_upload/";
+      requestFormat: "json";
+      parameters: {
+        path: { id: string; project_id: string };
+
+        body: Schemas.ErrorTrackingSymbolSet;
+      };
+      responses: { 200: unknown };
+    };
+  export type post_Environments_error_tracking_symbol_sets_bulk_finish_upload_create =
+    {
+      method: "POST";
+      path: "/api/environments/{project_id}/error_tracking/symbol_sets/bulk_finish_upload/";
+      requestFormat: "json";
+      parameters: {
+        path: { project_id: string };
+
+        body: Schemas.ErrorTrackingSymbolSet;
+      };
+      responses: { 200: unknown };
+    };
+  export type post_Environments_error_tracking_symbol_sets_bulk_start_upload_create =
+    {
+      method: "POST";
+      path: "/api/environments/{project_id}/error_tracking/symbol_sets/bulk_start_upload/";
+      requestFormat: "json";
+      parameters: {
+        path: { project_id: string };
+
+        body: Schemas.ErrorTrackingSymbolSet;
+      };
+      responses: { 200: unknown };
+    };
+  export type post_Environments_error_tracking_symbol_sets_start_upload_create =
+    {
+      method: "POST";
+      path: "/api/environments/{project_id}/error_tracking/symbol_sets/start_upload/";
+      requestFormat: "form-data";
+      parameters: {
+        path: { project_id: string };
+
+        body: Schemas.ErrorTrackingSymbolSet;
+      };
+      responses: { 200: unknown };
+    };
+  export type get_Environments_events_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/events/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{
+        after: string;
+        before: string;
+        distinct_id: number;
+        event: string;
+        format: "csv" | "json";
+        limit: number;
+        offset: number;
+        person_id: number;
+        properties: Array<Schemas.Property>;
+        select: Array<string>;
+        where: Array<string>;
+      }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedClickhouseEventList };
+  };
+  export type get_Environments_events_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/events/{id}/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.ClickhouseEvent };
+  };
+  export type get_Environments_events_values_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/events/values/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_exports_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/exports/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedExportedAssetList };
+  };
+  export type post_Environments_exports_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/exports/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.ExportedAsset;
+    };
+    responses: { 201: Schemas.ExportedAsset };
+  };
+  export type get_Environments_exports_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/exports/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: Schemas.ExportedAsset };
+  };
+  export type get_Environments_exports_content_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/exports/{id}/content/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_file_system_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/file_system/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number; search: string }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedFileSystemList };
+  };
+  export type post_Environments_file_system_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/file_system/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.FileSystem;
+    };
+    responses: { 201: Schemas.FileSystem };
+  };
+  export type get_Environments_file_system_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/file_system/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.FileSystem };
+  };
+  export type put_Environments_file_system_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/file_system/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.FileSystem;
+    };
+    responses: { 200: Schemas.FileSystem };
+  };
+  export type patch_Environments_file_system_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/file_system/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedFileSystem;
+    };
+    responses: { 200: Schemas.FileSystem };
+  };
+  export type delete_Environments_file_system_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/file_system/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type post_Environments_file_system_count_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/file_system/{id}/count/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.FileSystem;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_file_system_link_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/file_system/{id}/link/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.FileSystem;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_file_system_move_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/file_system/{id}/move/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.FileSystem;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_file_system_count_by_path_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/file_system/count_by_path/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.FileSystem;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_file_system_unfiled_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/file_system/unfiled/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_file_system_shortcut_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/file_system_shortcut/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedFileSystemShortcutList };
+  };
+  export type post_Environments_file_system_shortcut_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/file_system_shortcut/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.FileSystemShortcut;
+    };
+    responses: { 201: Schemas.FileSystemShortcut };
+  };
+  export type get_Environments_file_system_shortcut_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/file_system_shortcut/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.FileSystemShortcut };
+  };
+  export type put_Environments_file_system_shortcut_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/file_system_shortcut/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.FileSystemShortcut;
+    };
+    responses: { 200: Schemas.FileSystemShortcut };
+  };
+  export type patch_Environments_file_system_shortcut_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/file_system_shortcut/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedFileSystemShortcut;
+    };
+    responses: { 200: Schemas.FileSystemShortcut };
+  };
+  export type delete_Environments_file_system_shortcut_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/file_system_shortcut/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type get_Environments_groups_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/groups/";
+    requestFormat: "json";
+    parameters: {
+      query: {
+        cursor?: string | undefined;
+        group_type_index: number;
+        search: string;
+      };
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedGroupList };
+  };
+  export type post_Environments_groups_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/groups/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.CreateGroup;
+    };
+    responses: { 201: Schemas.Group };
+  };
+  export type get_Environments_groups_activity_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/groups/activity/";
+    requestFormat: "json";
+    parameters: {
+      query: { group_type_index: number; id: string };
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_groups_delete_property_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/groups/delete_property/";
+    requestFormat: "json";
+    parameters: {
+      query: { group_key: string; group_type_index: number };
+      path: { project_id: string };
+
+      body: Schemas.Group;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_groups_find_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/groups/find/";
+    requestFormat: "json";
+    parameters: {
+      query: { group_key: string; group_type_index: number };
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_groups_property_definitions_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/groups/property_definitions/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_groups_property_values_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/groups/property_values/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_groups_related_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/groups/related/";
+    requestFormat: "json";
+    parameters: {
+      query: { group_type_index: number; id: string };
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_groups_update_property_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/groups/update_property/";
+    requestFormat: "json";
+    parameters: {
+      query: { group_key: string; group_type_index: number };
+      path: { project_id: string };
+
+      body: Schemas.Group;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_hog_functions_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/hog_functions/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{
+        created_at: string;
+        created_by: number;
+        enabled: boolean;
+        id: string;
+        limit: number;
+        offset: number;
+        search: string;
+        type: Array<string>;
+        updated_at: string;
+      }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedHogFunctionMinimalList };
+  };
+  export type post_Environments_hog_functions_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/hog_functions/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.HogFunction;
+    };
+    responses: { 201: Schemas.HogFunction };
+  };
+  export type get_Environments_hog_functions_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/hog_functions/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.HogFunction };
+  };
+  export type put_Environments_hog_functions_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/hog_functions/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.HogFunction;
+    };
+    responses: { 200: Schemas.HogFunction };
+  };
+  export type patch_Environments_hog_functions_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/hog_functions/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedHogFunction;
+    };
+    responses: { 200: Schemas.HogFunction };
+  };
+  export type delete_Environments_hog_functions_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/hog_functions/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 405: unknown };
+  };
+  export type post_Environments_hog_functions_broadcast_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/hog_functions/{id}/broadcast/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.HogFunction;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_hog_functions_invocations_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/hog_functions/{id}/invocations/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.HogFunction;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_hog_functions_logs_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/hog_functions/{id}/logs/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_hog_functions_metrics_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/hog_functions/{id}/metrics/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_hog_functions_metrics_totals_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/hog_functions/{id}/metrics/totals/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_hog_functions_icon_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/hog_functions/icon/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_hog_functions_icons_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/hog_functions/icons/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type patch_Environments_hog_functions_rearrange_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/hog_functions/rearrange/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.PatchedHogFunction;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_insights_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/insights/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{
+        basic: boolean;
+        created_by: number;
+        format: "csv" | "json";
+        limit: number;
+        offset: number;
+        refresh:
+          | "async"
+          | "async_except_on_cache_miss"
+          | "blocking"
+          | "force_async"
+          | "force_blocking"
+          | "force_cache"
+          | "lazy_async";
+        short_id: string;
+      }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedInsightList };
+  };
+  export type post_Environments_insights_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/insights/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+
+      body: Schemas.Insight;
+    };
+    responses: { 201: Schemas.Insight };
+  };
+  export type get_Environments_insights_sharing_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/insights/{insight_id}/sharing/";
+    requestFormat: "json";
+    parameters: {
+      path: { insight_id: number; project_id: string };
+    };
+    responses: { 200: Array<Schemas.SharingConfiguration> };
+  };
+  export type post_Environments_insights_sharing_passwords_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/insights/{insight_id}/sharing/passwords/";
+    requestFormat: "json";
+    parameters: {
+      path: { insight_id: number; project_id: string };
+
+      body: Schemas.SharingConfiguration;
+    };
+    responses: { 200: Schemas.SharingConfiguration };
+  };
+  export type delete_Environments_insights_sharing_passwords_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/insights/{insight_id}/sharing/passwords/{password_id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { insight_id: number; password_id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type post_Environments_insights_sharing_refresh_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/insights/{insight_id}/sharing/refresh/";
+    requestFormat: "json";
+    parameters: {
+      path: { insight_id: number; project_id: string };
+
+      body: Schemas.SharingConfiguration;
+    };
+    responses: { 200: Schemas.SharingConfiguration };
+  };
+  export type get_Environments_insights_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/insights/{id}/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{
+        format: "csv" | "json";
+        from_dashboard: number;
+        refresh:
+          | "async"
+          | "async_except_on_cache_miss"
+          | "blocking"
+          | "force_async"
+          | "force_blocking"
+          | "force_cache"
+          | "lazy_async";
+      }>;
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: Schemas.Insight };
+  };
+  export type put_Environments_insights_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/insights/{id}/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+
+      body: Schemas.Insight;
+    };
+    responses: { 200: Schemas.Insight };
+  };
+  export type patch_Environments_insights_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/insights/{id}/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+
+      body: Schemas.PatchedInsight;
+    };
+    responses: { 200: Schemas.Insight };
+  };
+  export type delete_Environments_insights_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/insights/{id}/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+    };
+    responses: { 405: unknown };
+  };
+  export type get_Environments_insights_activity_retrieve_2 = {
+    method: "GET";
+    path: "/api/environments/{project_id}/insights/{id}/activity/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_insights_viewed_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/insights/{id}/viewed/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+
+      body: Schemas.Insight;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_insights_activity_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/insights/activity/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_insights_cancel_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/insights/cancel/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+
+      body: Schemas.Insight;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_insights_my_last_viewed_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/insights/my_last_viewed/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_logs_attributes_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/logs/attributes/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_logs_query_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/logs/query/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_logs_sparkline_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/logs/sparkline/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_logs_values_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/logs/values/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_max_tools_create_and_query_insight_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/max_tools/create_and_query_insight/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_named_query_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/named_query/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_named_query_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/named_query/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.NamedQueryRequest;
+    };
+    responses: { 201: unknown };
+  };
+  export type get_Environments_named_query_retrieve_2 = {
+    method: "GET";
+    path: "/api/environments/{project_id}/named_query/{name}/";
+    requestFormat: "json";
+    parameters: {
+      path: { name: string; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type put_Environments_named_query_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/named_query/{name}/";
+    requestFormat: "json";
+    parameters: {
+      path: { name: string; project_id: string };
+
+      body: Schemas.NamedQueryRequest;
+    };
+    responses: { 200: unknown };
+  };
+  export type patch_Environments_named_query_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/named_query/{name}/";
+    requestFormat: "json";
+    parameters: {
+      path: { name: string; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type delete_Environments_named_query_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/named_query/{name}/";
+    requestFormat: "json";
+    parameters: {
+      path: { name: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type get_Environments_named_query_run_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/named_query/{name}/run/";
+    requestFormat: "json";
+    parameters: {
+      path: { name: string; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_named_query_run_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/named_query/{name}/run/";
+    requestFormat: "json";
+    parameters: {
+      path: { name: string; project_id: string };
+
+      body: Schemas.NamedQueryRunRequest;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_named_query_last_execution_times_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/named_query/last_execution_times/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.NamedQueryLastExecutionTimesRequest;
+    };
+    responses: { 200: Schemas.QueryStatusResponse };
+  };
+  export type get_Environments_persisted_folder_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persisted_folder/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedPersistedFolderList };
+  };
+  export type post_Environments_persisted_folder_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/persisted_folder/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.PersistedFolder;
+    };
+    responses: { 201: Schemas.PersistedFolder };
+  };
+  export type get_Environments_persisted_folder_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persisted_folder/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.PersistedFolder };
+  };
+  export type put_Environments_persisted_folder_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/persisted_folder/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PersistedFolder;
+    };
+    responses: { 200: Schemas.PersistedFolder };
+  };
+  export type patch_Environments_persisted_folder_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/persisted_folder/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedPersistedFolder;
+    };
+    responses: { 200: Schemas.PersistedFolder };
+  };
+  export type delete_Environments_persisted_folder_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/persisted_folder/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type get_Environments_persons_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persons/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{
+        distinct_id: string;
+        email: string;
+        format: "csv" | "json";
+        limit: number;
+        offset: number;
+        properties: Array<Schemas.Property>;
+        search: string;
+      }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedPersonList };
+  };
+  export type get_Environments_persons_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persons/{id}/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: Schemas.Person };
+  };
+  export type put_Environments_persons_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/persons/{id}/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+
+      body: Schemas.Person;
+    };
+    responses: { 200: Schemas.Person };
+  };
+  export type patch_Environments_persons_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/persons/{id}/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+
+      body: Schemas.PatchedPerson;
+    };
+    responses: { 200: Schemas.Person };
+  };
+  export type delete_Environments_persons_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/persons/{id}/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ delete_events: boolean; format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type get_Environments_persons_activity_retrieve_2 = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persons/{id}/activity/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_persons_delete_events_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/persons/{id}/delete_events/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+
+      body: Schemas.Person;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_persons_delete_property_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/persons/{id}/delete_property/";
+    requestFormat: "json";
+    parameters: {
+      query: { $unset: string; format?: ("csv" | "json") | undefined };
+      path: { id: number; project_id: string };
+
+      body: Schemas.Person;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_persons_delete_recordings_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/persons/{id}/delete_recordings/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+
+      body: Schemas.Person;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_persons_properties_timeline_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persons/{id}/properties_timeline/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_persons_split_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/persons/{id}/split/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { id: number; project_id: string };
+
+      body: Schemas.Person;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_persons_update_property_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/persons/{id}/update_property/";
+    requestFormat: "json";
+    parameters: {
+      query: {
+        format?: ("csv" | "json") | undefined;
+        key: string;
+        value: unknown;
+      };
+      path: { id: number; project_id: string };
+
+      body: Schemas.Person;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_persons_activity_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persons/activity/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_persons_bulk_delete_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/persons/bulk_delete/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{
+        delete_events: boolean;
+        distinct_ids: Record<string, unknown>;
+        format: "csv" | "json";
+        ids: Record<string, unknown>;
+      }>;
+      path: { project_id: string };
+
+      body: Schemas.Person;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_persons_cohorts_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persons/cohorts/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_persons_funnel_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persons/funnel/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_persons_funnel_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/persons/funnel/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+
+      body: Schemas.Person;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_persons_funnel_correlation_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persons/funnel/correlation/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_persons_funnel_correlation_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/persons/funnel/correlation/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+
+      body: Schemas.Person;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_persons_lifecycle_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persons/lifecycle/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_persons_reset_person_distinct_id_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/persons/reset_person_distinct_id/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+
+      body: Schemas.Person;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_persons_stickiness_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persons/stickiness/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_persons_trends_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persons/trends/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_persons_values_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/persons/values/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_plugin_configs_logs_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/plugin_configs/{plugin_config_id}/logs/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { plugin_config_id: string; project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedPluginLogEntryList };
+  };
+  export type post_Environments_query_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/query/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.QueryRequest;
+    };
+    responses: { 200: Schemas.QueryResponseAlternative };
+  };
+  export type get_Environments_query_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/query/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.QueryStatusResponse };
+  };
+  export type delete_Environments_query_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/query/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type get_Environments_query_log_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/query/{id}/log/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Record<string, unknown> };
+  };
+  export type post_Environments_query_check_auth_for_async_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/query/check_auth_for_async/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_query_draft_sql_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/query/draft_sql/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_query_upgrade_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/query/upgrade/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.QueryUpgradeRequest;
+    };
+    responses: { 200: Schemas.QueryUpgradeResponse };
+  };
+  export type get_Environments_session_recording_playlists_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/session_recording_playlists/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{
+        created_by: number;
+        limit: number;
+        offset: number;
+        short_id: string;
+      }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedSessionRecordingPlaylistList };
+  };
+  export type post_Environments_session_recording_playlists_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/session_recording_playlists/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.SessionRecordingPlaylist;
+    };
+    responses: { 201: Schemas.SessionRecordingPlaylist };
+  };
+  export type get_Environments_session_recording_playlists_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/session_recording_playlists/{short_id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string; short_id: string };
+    };
+    responses: { 200: Schemas.SessionRecordingPlaylist };
+  };
+  export type put_Environments_session_recording_playlists_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/session_recording_playlists/{short_id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string; short_id: string };
+
+      body: Schemas.SessionRecordingPlaylist;
+    };
+    responses: { 200: Schemas.SessionRecordingPlaylist };
+  };
+  export type patch_Environments_session_recording_playlists_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/session_recording_playlists/{short_id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string; short_id: string };
+
+      body: Schemas.PatchedSessionRecordingPlaylist;
+    };
+    responses: { 200: Schemas.SessionRecordingPlaylist };
+  };
+  export type delete_Environments_session_recording_playlists_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/session_recording_playlists/{short_id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string; short_id: string };
+    };
+    responses: { 405: unknown };
+  };
+  export type get_Environments_session_recording_playlists_recordings_retrieve =
+    {
+      method: "GET";
+      path: "/api/environments/{project_id}/session_recording_playlists/{short_id}/recordings/";
+      requestFormat: "json";
+      parameters: {
+        path: { project_id: string; short_id: string };
+      };
+      responses: { 200: unknown };
+    };
+  export type post_Environments_session_recording_playlists_recordings_create =
+    {
+      method: "POST";
+      path: "/api/environments/{project_id}/session_recording_playlists/{short_id}/recordings/{session_recording_id}/";
+      requestFormat: "json";
+      parameters: {
+        path: {
+          project_id: string;
+          session_recording_id: string;
+          short_id: string;
+        };
+
+        body: Schemas.SessionRecordingPlaylist;
+      };
+      responses: { 200: unknown };
+    };
+  export type delete_Environments_session_recording_playlists_recordings_destroy =
+    {
+      method: "DELETE";
+      path: "/api/environments/{project_id}/session_recording_playlists/{short_id}/recordings/{session_recording_id}/";
+      requestFormat: "json";
+      parameters: {
+        path: {
+          project_id: string;
+          session_recording_id: string;
+          short_id: string;
+        };
+      };
+      responses: { 204: unknown };
+    };
+  export type get_Environments_session_recordings_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/session_recordings/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedSessionRecordingList };
+  };
+  export type get_Environments_session_recordings_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/session_recordings/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.SessionRecording };
+  };
+  export type put_Environments_session_recordings_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/session_recordings/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.SessionRecording;
+    };
+    responses: { 200: Schemas.SessionRecording };
+  };
+  export type patch_Environments_session_recordings_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/session_recordings/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedSessionRecording;
+    };
+    responses: { 200: Schemas.SessionRecording };
+  };
+  export type delete_Environments_session_recordings_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/session_recordings/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type get_Environments_session_recordings_sharing_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/session_recordings/{recording_id}/sharing/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string; recording_id: string };
+    };
+    responses: { 200: Array<Schemas.SharingConfiguration> };
+  };
+  export type post_Environments_session_recordings_sharing_passwords_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/session_recordings/{recording_id}/sharing/passwords/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string; recording_id: string };
+
+      body: Schemas.SharingConfiguration;
+    };
+    responses: { 200: Schemas.SharingConfiguration };
+  };
+  export type delete_Environments_session_recordings_sharing_passwords_destroy =
+    {
+      method: "DELETE";
+      path: "/api/environments/{project_id}/session_recordings/{recording_id}/sharing/passwords/{password_id}/";
+      requestFormat: "json";
+      parameters: {
+        path: { password_id: string; project_id: string; recording_id: string };
+      };
+      responses: { 204: unknown };
+    };
+  export type post_Environments_session_recordings_sharing_refresh_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/session_recordings/{recording_id}/sharing/refresh/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string; recording_id: string };
+
+      body: Schemas.SharingConfiguration;
+    };
+    responses: { 200: Schemas.SharingConfiguration };
+  };
+  export type post_Create_session_summaries = {
+    method: "POST";
+    path: "/api/environments/{project_id}/session_summaries/create_session_summaries/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.SessionSummaries;
+    };
+    responses: { 200: Schemas.SessionSummaries };
+  };
+  export type get_Environments_sessions_property_definitions_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/sessions/property_definitions/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_sessions_values_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/sessions/values/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_subscriptions_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/subscriptions/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedSubscriptionList };
+  };
+  export type post_Environments_subscriptions_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/subscriptions/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.Subscription;
+    };
+    responses: { 201: Schemas.Subscription };
+  };
+  export type get_Environments_subscriptions_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/subscriptions/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: Schemas.Subscription };
+  };
+  export type put_Environments_subscriptions_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/subscriptions/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+
+      body: Schemas.Subscription;
+    };
+    responses: { 200: Schemas.Subscription };
+  };
+  export type patch_Environments_subscriptions_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/subscriptions/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+
+      body: Schemas.PatchedSubscription;
+    };
+    responses: { 200: Schemas.Subscription };
+  };
+  export type delete_Environments_subscriptions_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/subscriptions/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 405: unknown };
+  };
+  export type get_Environments_user_interviews_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/user_interviews/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedUserInterviewList };
+  };
+  export type post_Environments_user_interviews_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/user_interviews/";
+    requestFormat: "form-data";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.UserInterview;
+    };
+    responses: { 201: Schemas.UserInterview };
+  };
+  export type get_Environments_user_interviews_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/user_interviews/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.UserInterview };
+  };
+  export type put_Environments_user_interviews_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/user_interviews/{id}/";
+    requestFormat: "form-data";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.UserInterview;
+    };
+    responses: { 200: Schemas.UserInterview };
+  };
+  export type patch_Environments_user_interviews_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/user_interviews/{id}/";
+    requestFormat: "form-data";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedUserInterview;
+    };
+    responses: { 200: Schemas.UserInterview };
+  };
+  export type delete_Environments_user_interviews_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/user_interviews/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type get_Environments_warehouse_saved_queries_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/warehouse_saved_queries/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ page: number; search: string }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedDataWarehouseSavedQueryList };
+  };
+  export type post_Environments_warehouse_saved_queries_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/warehouse_saved_queries/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.DataWarehouseSavedQuery;
+    };
+    responses: { 201: Schemas.DataWarehouseSavedQuery };
+  };
+  export type get_Environments_warehouse_saved_queries_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/warehouse_saved_queries/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.DataWarehouseSavedQuery };
+  };
+  export type put_Environments_warehouse_saved_queries_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/warehouse_saved_queries/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.DataWarehouseSavedQuery;
+    };
+    responses: { 200: Schemas.DataWarehouseSavedQuery };
+  };
+  export type patch_Environments_warehouse_saved_queries_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/warehouse_saved_queries/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedDataWarehouseSavedQuery;
+    };
+    responses: { 200: Schemas.DataWarehouseSavedQuery };
+  };
+  export type delete_Environments_warehouse_saved_queries_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/warehouse_saved_queries/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type get_Environments_warehouse_saved_queries_activity_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/warehouse_saved_queries/{id}/activity/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.DataWarehouseSavedQuery };
+  };
+  export type post_Environments_warehouse_saved_queries_ancestors_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/warehouse_saved_queries/{id}/ancestors/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.DataWarehouseSavedQuery;
+    };
+    responses: { 200: Schemas.DataWarehouseSavedQuery };
+  };
+  export type post_Environments_warehouse_saved_queries_cancel_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/warehouse_saved_queries/{id}/cancel/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.DataWarehouseSavedQuery;
+    };
+    responses: { 200: Schemas.DataWarehouseSavedQuery };
+  };
+  export type post_Environments_warehouse_saved_queries_descendants_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/warehouse_saved_queries/{id}/descendants/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.DataWarehouseSavedQuery;
+    };
+    responses: { 200: Schemas.DataWarehouseSavedQuery };
+  };
+  export type post_Environments_warehouse_saved_queries_revert_materialization_create =
+    {
+      method: "POST";
+      path: "/api/environments/{project_id}/warehouse_saved_queries/{id}/revert_materialization/";
+      requestFormat: "json";
+      parameters: {
+        path: { id: string; project_id: string };
+
+        body: Schemas.DataWarehouseSavedQuery;
+      };
+      responses: { 200: Schemas.DataWarehouseSavedQuery };
+    };
+  export type post_Environments_warehouse_saved_queries_run_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/warehouse_saved_queries/{id}/run/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.DataWarehouseSavedQuery;
+    };
+    responses: { 200: Schemas.DataWarehouseSavedQuery };
+  };
+  export type get_Environments_warehouse_tables_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/warehouse_tables/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number; search: string }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedTableList };
+  };
+  export type post_Environments_warehouse_tables_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/warehouse_tables/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.Table;
+    };
+    responses: { 201: Schemas.Table };
+  };
+  export type get_Environments_warehouse_tables_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/warehouse_tables/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.Table };
+  };
+  export type put_Environments_warehouse_tables_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/warehouse_tables/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.Table;
+    };
+    responses: { 200: Schemas.Table };
+  };
+  export type patch_Environments_warehouse_tables_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/warehouse_tables/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedTable;
+    };
+    responses: { 200: Schemas.Table };
+  };
+  export type delete_Environments_warehouse_tables_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/warehouse_tables/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type post_Environments_warehouse_tables_refresh_schema_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/warehouse_tables/{id}/refresh_schema/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.Table;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_warehouse_tables_update_schema_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/warehouse_tables/{id}/update_schema/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.Table;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_warehouse_tables_file_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/warehouse_tables/file/";
+    requestFormat: "form-data";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.Table;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_web_vitals_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/web_vitals/";
+    requestFormat: "json";
+    parameters: {
+      query: { pathname: string };
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
   export type get_Tasks_list = {
     method: "GET";
     path: "/api/projects/{project_id}/tasks/";
@@ -9898,6 +12760,113 @@ export namespace Endpoints {
 // <EndpointByMethod>
 export type EndpointByMethod = {
   get: {
+    "/api/environments/{project_id}/app_metrics/{id}/": Endpoints.get_Environments_app_metrics_retrieve;
+    "/api/environments/{project_id}/app_metrics/{id}/error_details/": Endpoints.get_Environments_app_metrics_error_details_retrieve;
+    "/api/environments/{project_id}/app_metrics/{plugin_config_id}/historical_exports/": Endpoints.get_Environments_app_metrics_historical_exports_retrieve;
+    "/api/environments/{project_id}/app_metrics/{plugin_config_id}/historical_exports/{id}/": Endpoints.get_Environments_app_metrics_historical_exports_retrieve_2;
+    "/api/environments/{project_id}/batch_exports/": Endpoints.get_Environments_batch_exports_list;
+    "/api/environments/{project_id}/batch_exports/{batch_export_id}/backfills/": Endpoints.get_Environments_batch_exports_backfills_list;
+    "/api/environments/{project_id}/batch_exports/{batch_export_id}/backfills/{id}/": Endpoints.get_Environments_batch_exports_backfills_retrieve;
+    "/api/environments/{project_id}/batch_exports/{batch_export_id}/runs/": Endpoints.get_Environments_batch_exports_runs_list;
+    "/api/environments/{project_id}/batch_exports/{batch_export_id}/runs/{id}/": Endpoints.get_Environments_batch_exports_runs_retrieve;
+    "/api/environments/{project_id}/batch_exports/{batch_export_id}/runs/{id}/logs/": Endpoints.get_Environments_batch_exports_runs_logs_retrieve;
+    "/api/environments/{project_id}/batch_exports/{id}/": Endpoints.get_Environments_batch_exports_retrieve;
+    "/api/environments/{project_id}/batch_exports/{id}/logs/": Endpoints.get_Environments_batch_exports_logs_retrieve;
+    "/api/environments/{project_id}/batch_exports/test/": Endpoints.get_Environments_batch_exports_test_retrieve;
+    "/api/environments/{project_id}/dashboards/": Endpoints.get_Environments_dashboards_list;
+    "/api/environments/{project_id}/dashboards/{dashboard_id}/collaborators/": Endpoints.get_Environments_dashboards_collaborators_list;
+    "/api/environments/{project_id}/dashboards/{dashboard_id}/sharing/": Endpoints.get_Environments_dashboards_sharing_list;
+    "/api/environments/{project_id}/dashboards/{id}/": Endpoints.get_Environments_dashboards_retrieve;
+    "/api/environments/{project_id}/dashboards/{id}/stream_tiles/": Endpoints.get_Environments_dashboards_stream_tiles_retrieve;
+    "/api/environments/{project_id}/data_color_themes/": Endpoints.get_Environments_data_color_themes_list;
+    "/api/environments/{project_id}/data_color_themes/{id}/": Endpoints.get_Environments_data_color_themes_retrieve;
+    "/api/environments/{project_id}/dataset_items/": Endpoints.get_Environments_dataset_items_list;
+    "/api/environments/{project_id}/dataset_items/{id}/": Endpoints.get_Environments_dataset_items_retrieve;
+    "/api/environments/{project_id}/datasets/": Endpoints.get_Environments_datasets_list;
+    "/api/environments/{project_id}/datasets/{id}/": Endpoints.get_Environments_datasets_retrieve;
+    "/api/environments/{project_id}/error_tracking/assignment_rules/": Endpoints.get_Environments_error_tracking_assignment_rules_list;
+    "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/": Endpoints.get_Environments_error_tracking_assignment_rules_retrieve;
+    "/api/environments/{project_id}/error_tracking/fingerprints/": Endpoints.get_Environments_error_tracking_fingerprints_list;
+    "/api/environments/{project_id}/error_tracking/fingerprints/{id}/": Endpoints.get_Environments_error_tracking_fingerprints_retrieve;
+    "/api/environments/{project_id}/error_tracking/grouping_rules/": Endpoints.get_Environments_error_tracking_grouping_rules_list;
+    "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/": Endpoints.get_Environments_error_tracking_grouping_rules_retrieve;
+    "/api/environments/{project_id}/error_tracking/releases/": Endpoints.get_Environments_error_tracking_releases_list;
+    "/api/environments/{project_id}/error_tracking/releases/{id}/": Endpoints.get_Environments_error_tracking_releases_retrieve;
+    "/api/environments/{project_id}/error_tracking/suppression_rules/": Endpoints.get_Environments_error_tracking_suppression_rules_list;
+    "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/": Endpoints.get_Environments_error_tracking_suppression_rules_retrieve;
+    "/api/environments/{project_id}/error_tracking/symbol_sets/": Endpoints.get_Environments_error_tracking_symbol_sets_list;
+    "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/": Endpoints.get_Environments_error_tracking_symbol_sets_retrieve;
+    "/api/environments/{project_id}/events/": Endpoints.get_Environments_events_list;
+    "/api/environments/{project_id}/events/{id}/": Endpoints.get_Environments_events_retrieve;
+    "/api/environments/{project_id}/events/values/": Endpoints.get_Environments_events_values_retrieve;
+    "/api/environments/{project_id}/exports/": Endpoints.get_Environments_exports_list;
+    "/api/environments/{project_id}/exports/{id}/": Endpoints.get_Environments_exports_retrieve;
+    "/api/environments/{project_id}/exports/{id}/content/": Endpoints.get_Environments_exports_content_retrieve;
+    "/api/environments/{project_id}/file_system/": Endpoints.get_Environments_file_system_list;
+    "/api/environments/{project_id}/file_system/{id}/": Endpoints.get_Environments_file_system_retrieve;
+    "/api/environments/{project_id}/file_system/unfiled/": Endpoints.get_Environments_file_system_unfiled_retrieve;
+    "/api/environments/{project_id}/file_system_shortcut/": Endpoints.get_Environments_file_system_shortcut_list;
+    "/api/environments/{project_id}/file_system_shortcut/{id}/": Endpoints.get_Environments_file_system_shortcut_retrieve;
+    "/api/environments/{project_id}/groups/": Endpoints.get_Environments_groups_list;
+    "/api/environments/{project_id}/groups/activity/": Endpoints.get_Environments_groups_activity_retrieve;
+    "/api/environments/{project_id}/groups/find/": Endpoints.get_Environments_groups_find_retrieve;
+    "/api/environments/{project_id}/groups/property_definitions/": Endpoints.get_Environments_groups_property_definitions_retrieve;
+    "/api/environments/{project_id}/groups/property_values/": Endpoints.get_Environments_groups_property_values_retrieve;
+    "/api/environments/{project_id}/groups/related/": Endpoints.get_Environments_groups_related_retrieve;
+    "/api/environments/{project_id}/hog_functions/": Endpoints.get_Environments_hog_functions_list;
+    "/api/environments/{project_id}/hog_functions/{id}/": Endpoints.get_Environments_hog_functions_retrieve;
+    "/api/environments/{project_id}/hog_functions/{id}/logs/": Endpoints.get_Environments_hog_functions_logs_retrieve;
+    "/api/environments/{project_id}/hog_functions/{id}/metrics/": Endpoints.get_Environments_hog_functions_metrics_retrieve;
+    "/api/environments/{project_id}/hog_functions/{id}/metrics/totals/": Endpoints.get_Environments_hog_functions_metrics_totals_retrieve;
+    "/api/environments/{project_id}/hog_functions/icon/": Endpoints.get_Environments_hog_functions_icon_retrieve;
+    "/api/environments/{project_id}/hog_functions/icons/": Endpoints.get_Environments_hog_functions_icons_retrieve;
+    "/api/environments/{project_id}/insights/": Endpoints.get_Environments_insights_list;
+    "/api/environments/{project_id}/insights/{insight_id}/sharing/": Endpoints.get_Environments_insights_sharing_list;
+    "/api/environments/{project_id}/insights/{id}/": Endpoints.get_Environments_insights_retrieve;
+    "/api/environments/{project_id}/insights/{id}/activity/": Endpoints.get_Environments_insights_activity_retrieve_2;
+    "/api/environments/{project_id}/insights/activity/": Endpoints.get_Environments_insights_activity_retrieve;
+    "/api/environments/{project_id}/insights/my_last_viewed/": Endpoints.get_Environments_insights_my_last_viewed_retrieve;
+    "/api/environments/{project_id}/logs/attributes/": Endpoints.get_Environments_logs_attributes_retrieve;
+    "/api/environments/{project_id}/logs/values/": Endpoints.get_Environments_logs_values_retrieve;
+    "/api/environments/{project_id}/named_query/": Endpoints.get_Environments_named_query_retrieve;
+    "/api/environments/{project_id}/named_query/{name}/": Endpoints.get_Environments_named_query_retrieve_2;
+    "/api/environments/{project_id}/named_query/{name}/run/": Endpoints.get_Environments_named_query_run_retrieve;
+    "/api/environments/{project_id}/persisted_folder/": Endpoints.get_Environments_persisted_folder_list;
+    "/api/environments/{project_id}/persisted_folder/{id}/": Endpoints.get_Environments_persisted_folder_retrieve;
+    "/api/environments/{project_id}/persons/": Endpoints.get_Environments_persons_list;
+    "/api/environments/{project_id}/persons/{id}/": Endpoints.get_Environments_persons_retrieve;
+    "/api/environments/{project_id}/persons/{id}/activity/": Endpoints.get_Environments_persons_activity_retrieve_2;
+    "/api/environments/{project_id}/persons/{id}/properties_timeline/": Endpoints.get_Environments_persons_properties_timeline_retrieve;
+    "/api/environments/{project_id}/persons/activity/": Endpoints.get_Environments_persons_activity_retrieve;
+    "/api/environments/{project_id}/persons/cohorts/": Endpoints.get_Environments_persons_cohorts_retrieve;
+    "/api/environments/{project_id}/persons/funnel/": Endpoints.get_Environments_persons_funnel_retrieve;
+    "/api/environments/{project_id}/persons/funnel/correlation/": Endpoints.get_Environments_persons_funnel_correlation_retrieve;
+    "/api/environments/{project_id}/persons/lifecycle/": Endpoints.get_Environments_persons_lifecycle_retrieve;
+    "/api/environments/{project_id}/persons/stickiness/": Endpoints.get_Environments_persons_stickiness_retrieve;
+    "/api/environments/{project_id}/persons/trends/": Endpoints.get_Environments_persons_trends_retrieve;
+    "/api/environments/{project_id}/persons/values/": Endpoints.get_Environments_persons_values_retrieve;
+    "/api/environments/{project_id}/plugin_configs/{plugin_config_id}/logs/": Endpoints.get_Environments_plugin_configs_logs_list;
+    "/api/environments/{project_id}/query/{id}/": Endpoints.get_Environments_query_retrieve;
+    "/api/environments/{project_id}/query/{id}/log/": Endpoints.get_Environments_query_log_retrieve;
+    "/api/environments/{project_id}/query/draft_sql/": Endpoints.get_Environments_query_draft_sql_retrieve;
+    "/api/environments/{project_id}/session_recording_playlists/": Endpoints.get_Environments_session_recording_playlists_list;
+    "/api/environments/{project_id}/session_recording_playlists/{short_id}/": Endpoints.get_Environments_session_recording_playlists_retrieve;
+    "/api/environments/{project_id}/session_recording_playlists/{short_id}/recordings/": Endpoints.get_Environments_session_recording_playlists_recordings_retrieve;
+    "/api/environments/{project_id}/session_recordings/": Endpoints.get_Environments_session_recordings_list;
+    "/api/environments/{project_id}/session_recordings/{id}/": Endpoints.get_Environments_session_recordings_retrieve;
+    "/api/environments/{project_id}/session_recordings/{recording_id}/sharing/": Endpoints.get_Environments_session_recordings_sharing_list;
+    "/api/environments/{project_id}/sessions/property_definitions/": Endpoints.get_Environments_sessions_property_definitions_retrieve;
+    "/api/environments/{project_id}/sessions/values/": Endpoints.get_Environments_sessions_values_retrieve;
+    "/api/environments/{project_id}/subscriptions/": Endpoints.get_Environments_subscriptions_list;
+    "/api/environments/{project_id}/subscriptions/{id}/": Endpoints.get_Environments_subscriptions_retrieve;
+    "/api/environments/{project_id}/user_interviews/": Endpoints.get_Environments_user_interviews_list;
+    "/api/environments/{project_id}/user_interviews/{id}/": Endpoints.get_Environments_user_interviews_retrieve;
+    "/api/environments/{project_id}/warehouse_saved_queries/": Endpoints.get_Environments_warehouse_saved_queries_list;
+    "/api/environments/{project_id}/warehouse_saved_queries/{id}/": Endpoints.get_Environments_warehouse_saved_queries_retrieve;
+    "/api/environments/{project_id}/warehouse_saved_queries/{id}/activity/": Endpoints.get_Environments_warehouse_saved_queries_activity_retrieve;
+    "/api/environments/{project_id}/warehouse_tables/": Endpoints.get_Environments_warehouse_tables_list;
+    "/api/environments/{project_id}/warehouse_tables/{id}/": Endpoints.get_Environments_warehouse_tables_retrieve;
+    "/api/environments/{project_id}/web_vitals/": Endpoints.get_Environments_web_vitals_retrieve;
     "/api/projects/{project_id}/tasks/": Endpoints.get_Tasks_list;
     "/api/projects/{project_id}/tasks/{id}/": Endpoints.get_Tasks_retrieve;
     "/api/projects/{project_id}/tasks/{id}/progress/": Endpoints.get_Tasks_progress_retrieve;
@@ -9914,6 +12883,86 @@ export type EndpointByMethod = {
     "/api/users/{uuid}/two_factor_status/": Endpoints.get_Users_two_factor_status_retrieve;
   };
   post: {
+    "/api/environments/{project_id}/batch_exports/": Endpoints.post_Environments_batch_exports_create;
+    "/api/environments/{project_id}/batch_exports/{batch_export_id}/backfills/": Endpoints.post_Environments_batch_exports_backfills_create;
+    "/api/environments/{project_id}/batch_exports/{batch_export_id}/backfills/{id}/cancel/": Endpoints.post_Environments_batch_exports_backfills_cancel_create;
+    "/api/environments/{project_id}/batch_exports/{batch_export_id}/runs/{id}/cancel/": Endpoints.post_Environments_batch_exports_runs_cancel_create;
+    "/api/environments/{project_id}/batch_exports/{batch_export_id}/runs/{id}/retry/": Endpoints.post_Environments_batch_exports_runs_retry_create;
+    "/api/environments/{project_id}/batch_exports/{id}/backfill/": Endpoints.post_Environments_batch_exports_backfill_create;
+    "/api/environments/{project_id}/batch_exports/{id}/pause/": Endpoints.post_Environments_batch_exports_pause_create;
+    "/api/environments/{project_id}/batch_exports/{id}/run_test_step/": Endpoints.post_Environments_batch_exports_run_test_step_create;
+    "/api/environments/{project_id}/batch_exports/{id}/unpause/": Endpoints.post_Environments_batch_exports_unpause_create;
+    "/api/environments/{project_id}/batch_exports/run_test_step_new/": Endpoints.post_Environments_batch_exports_run_test_step_new_create;
+    "/api/environments/{project_id}/dashboards/": Endpoints.post_Environments_dashboards_create;
+    "/api/environments/{project_id}/dashboards/{dashboard_id}/collaborators/": Endpoints.post_Environments_dashboards_collaborators_create;
+    "/api/environments/{project_id}/dashboards/{dashboard_id}/sharing/passwords/": Endpoints.post_Environments_dashboards_sharing_passwords_create;
+    "/api/environments/{project_id}/dashboards/{dashboard_id}/sharing/refresh/": Endpoints.post_Environments_dashboards_sharing_refresh_create;
+    "/api/environments/{project_id}/dashboards/create_from_template_json/": Endpoints.post_Environments_dashboards_create_from_template_json_create;
+    "/api/environments/{project_id}/data_color_themes/": Endpoints.post_Environments_data_color_themes_create;
+    "/api/environments/{project_id}/dataset_items/": Endpoints.post_Environments_dataset_items_create;
+    "/api/environments/{project_id}/datasets/": Endpoints.post_Environments_datasets_create;
+    "/api/environments/{project_id}/error_tracking/assignment_rules/": Endpoints.post_Environments_error_tracking_assignment_rules_create;
+    "/api/environments/{project_id}/error_tracking/grouping_rules/": Endpoints.post_Environments_error_tracking_grouping_rules_create;
+    "/api/environments/{project_id}/error_tracking/releases/": Endpoints.post_Environments_error_tracking_releases_create;
+    "/api/environments/{project_id}/error_tracking/suppression_rules/": Endpoints.post_Environments_error_tracking_suppression_rules_create;
+    "/api/environments/{project_id}/error_tracking/symbol_sets/": Endpoints.post_Environments_error_tracking_symbol_sets_create;
+    "/api/environments/{project_id}/error_tracking/symbol_sets/bulk_finish_upload/": Endpoints.post_Environments_error_tracking_symbol_sets_bulk_finish_upload_create;
+    "/api/environments/{project_id}/error_tracking/symbol_sets/bulk_start_upload/": Endpoints.post_Environments_error_tracking_symbol_sets_bulk_start_upload_create;
+    "/api/environments/{project_id}/error_tracking/symbol_sets/start_upload/": Endpoints.post_Environments_error_tracking_symbol_sets_start_upload_create;
+    "/api/environments/{project_id}/exports/": Endpoints.post_Environments_exports_create;
+    "/api/environments/{project_id}/file_system/": Endpoints.post_Environments_file_system_create;
+    "/api/environments/{project_id}/file_system/{id}/count/": Endpoints.post_Environments_file_system_count_create;
+    "/api/environments/{project_id}/file_system/{id}/link/": Endpoints.post_Environments_file_system_link_create;
+    "/api/environments/{project_id}/file_system/{id}/move/": Endpoints.post_Environments_file_system_move_create;
+    "/api/environments/{project_id}/file_system/count_by_path/": Endpoints.post_Environments_file_system_count_by_path_create;
+    "/api/environments/{project_id}/file_system_shortcut/": Endpoints.post_Environments_file_system_shortcut_create;
+    "/api/environments/{project_id}/groups/": Endpoints.post_Environments_groups_create;
+    "/api/environments/{project_id}/groups/delete_property/": Endpoints.post_Environments_groups_delete_property_create;
+    "/api/environments/{project_id}/groups/update_property/": Endpoints.post_Environments_groups_update_property_create;
+    "/api/environments/{project_id}/hog_functions/": Endpoints.post_Environments_hog_functions_create;
+    "/api/environments/{project_id}/hog_functions/{id}/broadcast/": Endpoints.post_Environments_hog_functions_broadcast_create;
+    "/api/environments/{project_id}/hog_functions/{id}/invocations/": Endpoints.post_Environments_hog_functions_invocations_create;
+    "/api/environments/{project_id}/insights/": Endpoints.post_Environments_insights_create;
+    "/api/environments/{project_id}/insights/{insight_id}/sharing/passwords/": Endpoints.post_Environments_insights_sharing_passwords_create;
+    "/api/environments/{project_id}/insights/{insight_id}/sharing/refresh/": Endpoints.post_Environments_insights_sharing_refresh_create;
+    "/api/environments/{project_id}/insights/{id}/viewed/": Endpoints.post_Environments_insights_viewed_create;
+    "/api/environments/{project_id}/insights/cancel/": Endpoints.post_Environments_insights_cancel_create;
+    "/api/environments/{project_id}/logs/query/": Endpoints.post_Environments_logs_query_create;
+    "/api/environments/{project_id}/logs/sparkline/": Endpoints.post_Environments_logs_sparkline_create;
+    "/api/environments/{project_id}/max_tools/create_and_query_insight/": Endpoints.post_Environments_max_tools_create_and_query_insight_create;
+    "/api/environments/{project_id}/named_query/": Endpoints.post_Environments_named_query_create;
+    "/api/environments/{project_id}/named_query/{name}/run/": Endpoints.post_Environments_named_query_run_create;
+    "/api/environments/{project_id}/named_query/last_execution_times/": Endpoints.post_Environments_named_query_last_execution_times_create;
+    "/api/environments/{project_id}/persisted_folder/": Endpoints.post_Environments_persisted_folder_create;
+    "/api/environments/{project_id}/persons/{id}/delete_events/": Endpoints.post_Environments_persons_delete_events_create;
+    "/api/environments/{project_id}/persons/{id}/delete_property/": Endpoints.post_Environments_persons_delete_property_create;
+    "/api/environments/{project_id}/persons/{id}/delete_recordings/": Endpoints.post_Environments_persons_delete_recordings_create;
+    "/api/environments/{project_id}/persons/{id}/split/": Endpoints.post_Environments_persons_split_create;
+    "/api/environments/{project_id}/persons/{id}/update_property/": Endpoints.post_Environments_persons_update_property_create;
+    "/api/environments/{project_id}/persons/bulk_delete/": Endpoints.post_Environments_persons_bulk_delete_create;
+    "/api/environments/{project_id}/persons/funnel/": Endpoints.post_Environments_persons_funnel_create;
+    "/api/environments/{project_id}/persons/funnel/correlation/": Endpoints.post_Environments_persons_funnel_correlation_create;
+    "/api/environments/{project_id}/persons/reset_person_distinct_id/": Endpoints.post_Environments_persons_reset_person_distinct_id_create;
+    "/api/environments/{project_id}/query/": Endpoints.post_Environments_query_create;
+    "/api/environments/{project_id}/query/check_auth_for_async/": Endpoints.post_Environments_query_check_auth_for_async_create;
+    "/api/environments/{project_id}/query/upgrade/": Endpoints.post_Environments_query_upgrade_create;
+    "/api/environments/{project_id}/session_recording_playlists/": Endpoints.post_Environments_session_recording_playlists_create;
+    "/api/environments/{project_id}/session_recording_playlists/{short_id}/recordings/{session_recording_id}/": Endpoints.post_Environments_session_recording_playlists_recordings_create;
+    "/api/environments/{project_id}/session_recordings/{recording_id}/sharing/passwords/": Endpoints.post_Environments_session_recordings_sharing_passwords_create;
+    "/api/environments/{project_id}/session_recordings/{recording_id}/sharing/refresh/": Endpoints.post_Environments_session_recordings_sharing_refresh_create;
+    "/api/environments/{project_id}/session_summaries/create_session_summaries/": Endpoints.post_Create_session_summaries;
+    "/api/environments/{project_id}/subscriptions/": Endpoints.post_Environments_subscriptions_create;
+    "/api/environments/{project_id}/user_interviews/": Endpoints.post_Environments_user_interviews_create;
+    "/api/environments/{project_id}/warehouse_saved_queries/": Endpoints.post_Environments_warehouse_saved_queries_create;
+    "/api/environments/{project_id}/warehouse_saved_queries/{id}/ancestors/": Endpoints.post_Environments_warehouse_saved_queries_ancestors_create;
+    "/api/environments/{project_id}/warehouse_saved_queries/{id}/cancel/": Endpoints.post_Environments_warehouse_saved_queries_cancel_create;
+    "/api/environments/{project_id}/warehouse_saved_queries/{id}/descendants/": Endpoints.post_Environments_warehouse_saved_queries_descendants_create;
+    "/api/environments/{project_id}/warehouse_saved_queries/{id}/revert_materialization/": Endpoints.post_Environments_warehouse_saved_queries_revert_materialization_create;
+    "/api/environments/{project_id}/warehouse_saved_queries/{id}/run/": Endpoints.post_Environments_warehouse_saved_queries_run_create;
+    "/api/environments/{project_id}/warehouse_tables/": Endpoints.post_Environments_warehouse_tables_create;
+    "/api/environments/{project_id}/warehouse_tables/{id}/refresh_schema/": Endpoints.post_Environments_warehouse_tables_refresh_schema_create;
+    "/api/environments/{project_id}/warehouse_tables/{id}/update_schema/": Endpoints.post_Environments_warehouse_tables_update_schema_create;
+    "/api/environments/{project_id}/warehouse_tables/file/": Endpoints.post_Environments_warehouse_tables_file_create;
     "/api/projects/{project_id}/tasks/": Endpoints.post_Tasks_create;
     "/api/projects/{project_id}/tasks/bulk_reorder/": Endpoints.post_Tasks_bulk_reorder_create;
     "/api/projects/{project_id}/workflows/": Endpoints.post_Workflows_create;
@@ -9931,12 +12980,64 @@ export type EndpointByMethod = {
     "/api/users/verify_email/": Endpoints.post_Users_verify_email_create;
   };
   put: {
+    "/api/environments/{project_id}/batch_exports/{id}/": Endpoints.put_Environments_batch_exports_update;
+    "/api/environments/{project_id}/dashboards/{id}/": Endpoints.put_Environments_dashboards_update;
+    "/api/environments/{project_id}/data_color_themes/{id}/": Endpoints.put_Environments_data_color_themes_update;
+    "/api/environments/{project_id}/dataset_items/{id}/": Endpoints.put_Environments_dataset_items_update;
+    "/api/environments/{project_id}/datasets/{id}/": Endpoints.put_Environments_datasets_update;
+    "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/": Endpoints.put_Environments_error_tracking_assignment_rules_update;
+    "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/": Endpoints.put_Environments_error_tracking_grouping_rules_update;
+    "/api/environments/{project_id}/error_tracking/releases/{id}/": Endpoints.put_Environments_error_tracking_releases_update;
+    "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/": Endpoints.put_Environments_error_tracking_suppression_rules_update;
+    "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/": Endpoints.put_Environments_error_tracking_symbol_sets_update;
+    "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/finish_upload/": Endpoints.put_Environments_error_tracking_symbol_sets_finish_upload_update;
+    "/api/environments/{project_id}/file_system/{id}/": Endpoints.put_Environments_file_system_update;
+    "/api/environments/{project_id}/file_system_shortcut/{id}/": Endpoints.put_Environments_file_system_shortcut_update;
+    "/api/environments/{project_id}/hog_functions/{id}/": Endpoints.put_Environments_hog_functions_update;
+    "/api/environments/{project_id}/insights/{id}/": Endpoints.put_Environments_insights_update;
+    "/api/environments/{project_id}/named_query/{name}/": Endpoints.put_Environments_named_query_update;
+    "/api/environments/{project_id}/persisted_folder/{id}/": Endpoints.put_Environments_persisted_folder_update;
+    "/api/environments/{project_id}/persons/{id}/": Endpoints.put_Environments_persons_update;
+    "/api/environments/{project_id}/session_recording_playlists/{short_id}/": Endpoints.put_Environments_session_recording_playlists_update;
+    "/api/environments/{project_id}/session_recordings/{id}/": Endpoints.put_Environments_session_recordings_update;
+    "/api/environments/{project_id}/subscriptions/{id}/": Endpoints.put_Environments_subscriptions_update;
+    "/api/environments/{project_id}/user_interviews/{id}/": Endpoints.put_Environments_user_interviews_update;
+    "/api/environments/{project_id}/warehouse_saved_queries/{id}/": Endpoints.put_Environments_warehouse_saved_queries_update;
+    "/api/environments/{project_id}/warehouse_tables/{id}/": Endpoints.put_Environments_warehouse_tables_update;
     "/api/projects/{project_id}/tasks/{id}/": Endpoints.put_Tasks_update;
     "/api/projects/{project_id}/workflows/{id}/": Endpoints.put_Workflows_update;
     "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/": Endpoints.put_Workflows_stages_update;
     "/api/users/{uuid}/": Endpoints.put_Users_update;
   };
   patch: {
+    "/api/environments/{project_id}/batch_exports/{id}/": Endpoints.patch_Environments_batch_exports_partial_update;
+    "/api/environments/{project_id}/dashboards/{id}/": Endpoints.patch_Environments_dashboards_partial_update;
+    "/api/environments/{project_id}/dashboards/{id}/move_tile/": Endpoints.patch_Environments_dashboards_move_tile_partial_update;
+    "/api/environments/{project_id}/data_color_themes/{id}/": Endpoints.patch_Environments_data_color_themes_partial_update;
+    "/api/environments/{project_id}/dataset_items/{id}/": Endpoints.patch_Environments_dataset_items_partial_update;
+    "/api/environments/{project_id}/datasets/{id}/": Endpoints.patch_Environments_datasets_partial_update;
+    "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/": Endpoints.patch_Environments_error_tracking_assignment_rules_partial_update;
+    "/api/environments/{project_id}/error_tracking/assignment_rules/reorder/": Endpoints.patch_Environments_error_tracking_assignment_rules_reorder_partial_update;
+    "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/": Endpoints.patch_Environments_error_tracking_grouping_rules_partial_update;
+    "/api/environments/{project_id}/error_tracking/grouping_rules/reorder/": Endpoints.patch_Environments_error_tracking_grouping_rules_reorder_partial_update;
+    "/api/environments/{project_id}/error_tracking/releases/{id}/": Endpoints.patch_Environments_error_tracking_releases_partial_update;
+    "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/": Endpoints.patch_Environments_error_tracking_suppression_rules_partial_update;
+    "/api/environments/{project_id}/error_tracking/suppression_rules/reorder/": Endpoints.patch_Environments_error_tracking_suppression_rules_reorder_partial_update;
+    "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/": Endpoints.patch_Environments_error_tracking_symbol_sets_partial_update;
+    "/api/environments/{project_id}/file_system/{id}/": Endpoints.patch_Environments_file_system_partial_update;
+    "/api/environments/{project_id}/file_system_shortcut/{id}/": Endpoints.patch_Environments_file_system_shortcut_partial_update;
+    "/api/environments/{project_id}/hog_functions/{id}/": Endpoints.patch_Environments_hog_functions_partial_update;
+    "/api/environments/{project_id}/hog_functions/rearrange/": Endpoints.patch_Environments_hog_functions_rearrange_partial_update;
+    "/api/environments/{project_id}/insights/{id}/": Endpoints.patch_Environments_insights_partial_update;
+    "/api/environments/{project_id}/named_query/{name}/": Endpoints.patch_Environments_named_query_partial_update;
+    "/api/environments/{project_id}/persisted_folder/{id}/": Endpoints.patch_Environments_persisted_folder_partial_update;
+    "/api/environments/{project_id}/persons/{id}/": Endpoints.patch_Environments_persons_partial_update;
+    "/api/environments/{project_id}/session_recording_playlists/{short_id}/": Endpoints.patch_Environments_session_recording_playlists_partial_update;
+    "/api/environments/{project_id}/session_recordings/{id}/": Endpoints.patch_Environments_session_recordings_partial_update;
+    "/api/environments/{project_id}/subscriptions/{id}/": Endpoints.patch_Environments_subscriptions_partial_update;
+    "/api/environments/{project_id}/user_interviews/{id}/": Endpoints.patch_Environments_user_interviews_partial_update;
+    "/api/environments/{project_id}/warehouse_saved_queries/{id}/": Endpoints.patch_Environments_warehouse_saved_queries_partial_update;
+    "/api/environments/{project_id}/warehouse_tables/{id}/": Endpoints.patch_Environments_warehouse_tables_partial_update;
     "/api/projects/{project_id}/tasks/{id}/": Endpoints.patch_Tasks_partial_update;
     "/api/projects/{project_id}/tasks/{id}/update_position/": Endpoints.patch_Tasks_update_position_partial_update;
     "/api/projects/{project_id}/tasks/{id}/update_stage/": Endpoints.patch_Tasks_update_stage_partial_update;
@@ -9947,6 +13048,36 @@ export type EndpointByMethod = {
     "/api/users/cancel_email_change_request/": Endpoints.patch_Users_cancel_email_change_request_partial_update;
   };
   delete: {
+    "/api/environments/{project_id}/batch_exports/{id}/": Endpoints.delete_Environments_batch_exports_destroy;
+    "/api/environments/{project_id}/dashboards/{dashboard_id}/collaborators/{user__uuid}/": Endpoints.delete_Environments_dashboards_collaborators_destroy;
+    "/api/environments/{project_id}/dashboards/{dashboard_id}/sharing/passwords/{password_id}/": Endpoints.delete_Environments_dashboards_sharing_passwords_destroy;
+    "/api/environments/{project_id}/dashboards/{id}/": Endpoints.delete_Environments_dashboards_destroy;
+    "/api/environments/{project_id}/data_color_themes/{id}/": Endpoints.delete_Environments_data_color_themes_destroy;
+    "/api/environments/{project_id}/dataset_items/{id}/": Endpoints.delete_Environments_dataset_items_destroy;
+    "/api/environments/{project_id}/datasets/{id}/": Endpoints.delete_Environments_datasets_destroy;
+    "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/": Endpoints.delete_Environments_error_tracking_assignment_rules_destroy;
+    "/api/environments/{project_id}/error_tracking/fingerprints/{id}/": Endpoints.delete_Environments_error_tracking_fingerprints_destroy;
+    "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/": Endpoints.delete_Environments_error_tracking_grouping_rules_destroy;
+    "/api/environments/{project_id}/error_tracking/releases/{id}/": Endpoints.delete_Environments_error_tracking_releases_destroy;
+    "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/": Endpoints.delete_Environments_error_tracking_suppression_rules_destroy;
+    "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/": Endpoints.delete_Environments_error_tracking_symbol_sets_destroy;
+    "/api/environments/{project_id}/file_system/{id}/": Endpoints.delete_Environments_file_system_destroy;
+    "/api/environments/{project_id}/file_system_shortcut/{id}/": Endpoints.delete_Environments_file_system_shortcut_destroy;
+    "/api/environments/{project_id}/hog_functions/{id}/": Endpoints.delete_Environments_hog_functions_destroy;
+    "/api/environments/{project_id}/insights/{insight_id}/sharing/passwords/{password_id}/": Endpoints.delete_Environments_insights_sharing_passwords_destroy;
+    "/api/environments/{project_id}/insights/{id}/": Endpoints.delete_Environments_insights_destroy;
+    "/api/environments/{project_id}/named_query/{name}/": Endpoints.delete_Environments_named_query_destroy;
+    "/api/environments/{project_id}/persisted_folder/{id}/": Endpoints.delete_Environments_persisted_folder_destroy;
+    "/api/environments/{project_id}/persons/{id}/": Endpoints.delete_Environments_persons_destroy;
+    "/api/environments/{project_id}/query/{id}/": Endpoints.delete_Environments_query_destroy;
+    "/api/environments/{project_id}/session_recording_playlists/{short_id}/": Endpoints.delete_Environments_session_recording_playlists_destroy;
+    "/api/environments/{project_id}/session_recording_playlists/{short_id}/recordings/{session_recording_id}/": Endpoints.delete_Environments_session_recording_playlists_recordings_destroy;
+    "/api/environments/{project_id}/session_recordings/{id}/": Endpoints.delete_Environments_session_recordings_destroy;
+    "/api/environments/{project_id}/session_recordings/{recording_id}/sharing/passwords/{password_id}/": Endpoints.delete_Environments_session_recordings_sharing_passwords_destroy;
+    "/api/environments/{project_id}/subscriptions/{id}/": Endpoints.delete_Environments_subscriptions_destroy;
+    "/api/environments/{project_id}/user_interviews/{id}/": Endpoints.delete_Environments_user_interviews_destroy;
+    "/api/environments/{project_id}/warehouse_saved_queries/{id}/": Endpoints.delete_Environments_warehouse_saved_queries_destroy;
+    "/api/environments/{project_id}/warehouse_tables/{id}/": Endpoints.delete_Environments_warehouse_tables_destroy;
     "/api/projects/{project_id}/tasks/{id}/": Endpoints.delete_Tasks_destroy;
     "/api/projects/{project_id}/workflows/{id}/": Endpoints.delete_Workflows_destroy;
     "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/": Endpoints.delete_Workflows_stages_destroy;
@@ -10647,7 +13778,7 @@ export class ApiClient {
     const withResponse = requestParams?.withResponse;
     const {
       withResponse: _,
-      throwOnStatusError = !withResponse,
+      throwOnStatusError = withResponse ? false : true,
       overrides,
       ...fetchParams
     } = requestParams || {};

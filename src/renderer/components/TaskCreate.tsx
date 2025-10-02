@@ -14,8 +14,10 @@ import {
 } from "@radix-ui/themes";
 import { useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useIntegrationStore } from "../stores/integrationStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskStore } from "../stores/taskStore";
+import { Combobox } from "./Combobox";
 
 interface TaskCreateProps {
   open: boolean;
@@ -25,8 +27,10 @@ interface TaskCreateProps {
 export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const { createTask, isLoading } = useTaskStore();
   const { createTab } = useTabStore();
+  const { repositories } = useIntegrationStore();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [selectedRepo, setSelectedRepo] = useState<string>("");
   const [isExpanded, setIsExpanded] = useState(false);
   const [createMore, setCreateMore] = useState(false);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -35,7 +39,18 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const handleCreate = async () => {
     if (!title.trim() || !description.trim()) return;
 
-    const newTask = await createTask(title, description);
+    let repositoryConfig:
+      | { organization: string; repository: string }
+      | undefined;
+
+    if (selectedRepo && selectedRepo !== "__none__") {
+      const [organization, repository] = selectedRepo.split("/");
+      if (organization && repository) {
+        repositoryConfig = { organization, repository };
+      }
+    }
+
+    const newTask = await createTask(title, description, repositoryConfig);
     if (newTask) {
       createTab({
         type: "task-detail",
@@ -44,6 +59,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       });
       setTitle("");
       setDescription("");
+      setSelectedRepo("");
       if (!createMore) {
         onOpenChange(false);
       }
@@ -134,6 +150,24 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                 }}
               />
             </Flex>
+
+            {repositories.length > 0 && (
+              <Flex direction="column" gap="2" width="50%">
+                <Combobox
+                  items={repositories.map((repo) => ({
+                    value: `${repo.organization}/${repo.repository}`,
+                    label: `${repo.organization}/${repo.repository}`,
+                  }))}
+                  value={selectedRepo}
+                  onValueChange={setSelectedRepo}
+                  placeholder="Select a repository..."
+                  searchPlaceholder="Search repositories..."
+                  emptyMessage="No repositories found"
+                  size="2"
+                  side="top"
+                />
+              </Flex>
+            )}
 
             <Flex gap="3" justify="end" align="end">
               <Text as="label" size="1" style={{ cursor: "pointer" }}>

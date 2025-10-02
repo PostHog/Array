@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("check-write-access", directoryPath),
   showMessageBox: (options: MessageBoxOptions): Promise<{ response: number }> =>
     ipcRenderer.invoke("show-message-box", options),
+  openExternal: (url: string): Promise<void> =>
+    ipcRenderer.invoke("open-external", url),
   agentStart: async (
     params: AgentStartParams,
   ): Promise<{ taskId: string; channel: string }> =>

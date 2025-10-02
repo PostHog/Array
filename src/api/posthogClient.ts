@@ -156,4 +156,56 @@ export class PostHogAPIClient {
 
     return data.results ?? [];
   }
+
+  async getIntegrations() {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/integrations/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/environments/${teamId}/integrations/`,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch integrations: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.results ?? data ?? [];
+  }
+
+  async getGithubRepositories(integrationId: string | number) {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/integrations/${integrationId}/github_repos/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/environments/${teamId}/integrations/${integrationId}/github_repos/`,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch GitHub repositories: ${response.statusText}`,
+      );
+    }
+
+    const data = await response.json();
+
+    const integrations = await this.getIntegrations();
+    const integration = integrations.find((i: any) => i.id === integrationId);
+    const organization =
+      integration?.display_name ||
+      integration?.config?.account?.login ||
+      "unknown";
+
+    const repoNames = data.repositories ?? data.results ?? data ?? [];
+    return repoNames.map((repoName: string) => ({
+      organization,
+      repository: repoName,
+    }));
+  }
 }

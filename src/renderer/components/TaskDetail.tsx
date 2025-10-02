@@ -1,4 +1,4 @@
-import { Pencil1Icon } from "@radix-ui/react-icons";
+import { ExternalLinkIcon, Pencil1Icon } from "@radix-ui/react-icons";
 import {
   Badge,
   Box,
@@ -11,17 +11,21 @@ import {
 } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { format } from "date-fns";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useIntegrationStore } from "../stores/integrationStore";
 import { useStatusBarStore } from "../stores/statusBarStore";
+import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
+import { useTaskStore } from "../stores/taskStore";
 import { AsciiArt } from "./AsciiArt";
+import { Combobox } from "./Combobox";
 import { LogView } from "./LogView";
 
 interface TaskDetailProps {
   task: Task;
 }
 
-export function TaskDetail({ task }: TaskDetailProps) {
+export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const { setStatusBar, reset } = useStatusBarStore();
   const {
     getTaskState,
@@ -31,10 +35,43 @@ export function TaskDetail({ task }: TaskDetailProps) {
     cancelTask,
     clearTaskLogs,
   } = useTaskExecutionStore();
+  const { repositories } = useIntegrationStore();
+  const { updateTask, tasks } = useTaskStore();
+  const { updateTabTitle, activeTabId } = useTabStore();
+
+  // Get the latest task data from the store
+  const task = tasks.find((t) => t.id === initialTask.id) || initialTask;
 
   // Get persistent state for this task
   const taskState = getTaskState(task.id);
   const { isRunning, logs, repoPath, runMode } = taskState;
+
+  const [selectedRepo, setSelectedRepo] = useState<string>(() => {
+    if (task.repository_config) {
+      return `${task.repository_config.organization}/${task.repository_config.repository}`;
+    }
+    return "";
+  });
+
+  const titleRef = useRef<HTMLElement>(null);
+  const originalTitleRef = useRef(task.title);
+  const descriptionRef = useRef<HTMLElement>(null);
+  const originalDescriptionRef = useRef(task.description || "");
+
+  useEffect(() => {
+    if (titleRef.current && titleRef.current.textContent !== task.title) {
+      titleRef.current.textContent = task.title;
+      originalTitleRef.current = task.title;
+    }
+  }, [task.title]);
+
+  useEffect(() => {
+    const desc = task.description || "";
+    if (descriptionRef.current && descriptionRef.current.textContent !== desc) {
+      descriptionRef.current.textContent = desc;
+      originalDescriptionRef.current = desc;
+    }
+  }, [task.description]);
 
   useEffect(() => {
     setStatusBar({
@@ -78,13 +115,90 @@ export function TaskDetail({ task }: TaskDetailProps) {
     clearTaskLogs(task.id);
   };
 
+  const handleRepositoryChange = async (value: string) => {
+    setSelectedRepo(value);
+
+    let repositoryConfig:
+      | { organization: string; repository: string }
+      | undefined;
+
+    if (value && value !== "__none__") {
+      const [organization, repository] = value.split("/");
+      if (organization && repository) {
+        repositoryConfig = { organization, repository };
+      }
+    }
+
+    await updateTask(task.id, { repository_config: repositoryConfig });
+  };
+
+  const handleTitleBlur = async () => {
+    const newTitle = titleRef.current?.textContent?.trim() || "";
+    if (newTitle && newTitle !== originalTitleRef.current) {
+      await updateTask(task.id, { title: newTitle });
+      originalTitleRef.current = newTitle;
+      if (activeTabId) {
+        updateTabTitle(activeTabId, newTitle);
+      }
+    } else if (!newTitle) {
+      if (titleRef.current) {
+        titleRef.current.textContent = originalTitleRef.current;
+      }
+    }
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      titleRef.current?.blur();
+    } else if (e.key === "Escape") {
+      if (titleRef.current) {
+        titleRef.current.textContent = originalTitleRef.current;
+      }
+      titleRef.current?.blur();
+    }
+  };
+
+  const handleDescriptionBlur = async () => {
+    const newDescription = descriptionRef.current?.textContent?.trim() || "";
+    if (newDescription !== originalDescriptionRef.current) {
+      await updateTask(task.id, {
+        description: newDescription || undefined,
+      });
+      originalDescriptionRef.current = newDescription;
+    }
+  };
+
+  const handleDescriptionKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      descriptionRef.current?.blur();
+    } else if (e.key === "Escape") {
+      if (descriptionRef.current) {
+        descriptionRef.current.textContent = originalDescriptionRef.current;
+      }
+      descriptionRef.current?.blur();
+    }
+  };
+
   return (
     <Flex height="100%">
       {/* Left pane - Task details */}
       <Box width="50%" className="border-gray-6 border-r" overflowY="auto">
         <Box p="4">
           <Box mb="4">
-            <Code size="5">{task.title}</Code>
+            <Code
+              ref={titleRef}
+              size="5"
+              contentEditable
+              suppressContentEditableWarning
+              spellCheck={false}
+              onBlur={handleTitleBlur}
+              onKeyDown={handleTitleKeyDown}
+              style={{ cursor: "text", outline: "none" }}
+            >
+              {task.title}
+            </Code>
           </Box>
 
           <DataList.Root>
@@ -95,24 +209,46 @@ export function TaskDetail({ task }: TaskDetailProps) {
               </DataList.Value>
             </DataList.Item>
 
-            {task.repository_config &&
-            typeof task.repository_config === "object" &&
-            "organization" in task.repository_config &&
-            "repository" in task.repository_config ? (
-              <DataList.Item>
-                <DataList.Label>Remote Repository</DataList.Label>
-                <DataList.Value>
-                  <Link
-                    href={`https://github.com/${String(task.repository_config.organization)}/${String(task.repository_config.repository)}`}
-                    target="_blank"
-                    size="2"
-                  >
-                    {String(task.repository_config.organization)}/
-                    {String(task.repository_config.repository)} →
-                  </Link>
-                </DataList.Value>
-              </DataList.Item>
-            ) : null}
+            <DataList.Item>
+              <DataList.Label>Repository</DataList.Label>
+              <DataList.Value>
+                <Flex gap="2" align="center">
+                  {repositories.length > 0 ? (
+                    <Combobox
+                      items={repositories.map((repo) => ({
+                        value: `${repo.organization}/${repo.repository}`,
+                        label: `${repo.organization}/${repo.repository}`,
+                      }))}
+                      value={selectedRepo}
+                      onValueChange={handleRepositoryChange}
+                      placeholder="Select a repository..."
+                      searchPlaceholder="Search repositories..."
+                      emptyMessage="No repositories found"
+                      size="2"
+                    />
+                  ) : selectedRepo ? (
+                    <Code size="2">{selectedRepo}</Code>
+                  ) : (
+                    <Code size="2" color="gray">
+                      None
+                    </Code>
+                  )}
+                  {selectedRepo && selectedRepo !== "__none__" && (
+                    <Button
+                      size="1"
+                      variant="ghost"
+                      onClick={() =>
+                        window.electronAPI.openExternal(
+                          `https://github.com/${selectedRepo}`,
+                        )
+                      }
+                    >
+                      <ExternalLinkIcon />
+                    </Button>
+                  )}
+                </Flex>
+              </DataList.Value>
+            </DataList.Item>
 
             {task.github_branch && (
               <DataList.Item>
@@ -142,7 +278,17 @@ export function TaskDetail({ task }: TaskDetailProps) {
             <DataList.Item>
               <DataList.Label>Description</DataList.Label>
               <DataList.Value>
-                {task.description || "No description provided"}
+                <Box
+                  ref={descriptionRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  spellCheck={false}
+                  onBlur={handleDescriptionBlur}
+                  onKeyDown={handleDescriptionKeyDown}
+                  style={{ cursor: "text", outline: "none", minHeight: "1.5em" }}
+                >
+                  {task.description || "No description provided"}
+                </Box>
               </DataList.Value>
             </DataList.Item>
 
