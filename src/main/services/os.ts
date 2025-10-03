@@ -7,6 +7,7 @@ import {
   dialog,
   type IpcMainInvokeEvent,
   ipcMain,
+  shell,
 } from "electron";
 
 const fsPromises = fs.promises;
@@ -103,6 +104,13 @@ export function registerOsIpc(getMainWindow: () => BrowserWindow | null): void {
         cancelId: options?.cancelId ?? 1,
       });
       return { response: result.response };
+    },
+  );
+
+  ipcMain.handle(
+    "open-external",
+    async (_event: IpcMainInvokeEvent, url: string): Promise<void> => {
+      await shell.openExternal(url);
     },
   );
 }

@@ -13,6 +13,7 @@ export interface IElectronAPI {
     defaultId?: number;
     cancelId?: number;
   }) => Promise<{ response: number }>;
+  openExternal: (url: string) => Promise<void>;
   agentStart: (params: {
     prompt: string;
     repoPath: string;

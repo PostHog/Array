@@ -27,6 +27,7 @@ interface TaskState {
   ) => Promise<Task | null>;
   deleteTask: (taskId: string) => Promise<void>;
   duplicateTask: (taskId: string) => Promise<Task | null>;
+  updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
   setTaskOrder: (order: Record<string, number>) => void;
   moveTask: (
     taskId: string,
@@ -161,6 +162,24 @@ export const useTaskStore = create<TaskState>()(
             isLoading: false,
           });
           return null;
+        }
+      },
+
+      updateTask: async (taskId: string, updates: Partial<Task>) => {
+        const client = useAuthStore.getState().client;
+        if (!client) return;
+
+        try {
+          await client.updateTask(
+            taskId,
+            updates as Parameters<typeof client.updateTask>[1],
+          );
+          const tasks = get().tasks.map((task) =>
+            task.id === taskId ? { ...task, ...updates } : task,
+          );
+          set({ tasks });
+        } catch (error) {
+          console.error("Failed to update task:", error);
         }
       },
 
