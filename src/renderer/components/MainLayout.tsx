@@ -24,6 +24,10 @@ export function MainLayout() {
     fetchIntegrations();
   }, [fetchIntegrations]);
 
+  useEffect(() => {
+    fetchIntegrations();
+  }, [fetchIntegrations]);
+
   useHotkeys("mod+k", () => setCommandMenuOpen((prev) => !prev), {
     enabled: !commandMenuOpen,
   });
