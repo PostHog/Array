@@ -41,6 +41,12 @@ export interface WorkflowStage {
   fallback_stage?: string | null;
 }
 
+export interface AgentDefinition {
+  id: string;
+  name: string;
+  description?: string;
+}
+
 export interface AuthConfig {
   apiKey: string;
   apiHost: string;

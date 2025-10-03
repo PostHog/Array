@@ -1,9 +1,11 @@
+import { Pencil1Icon } from "@radix-ui/react-icons";
 import {
   Badge,
   Box,
   Card,
   Flex,
   Heading,
+  IconButton,
   Select,
   Spinner,
   Text,
@@ -15,6 +17,7 @@ import { useStatusBarStore } from "../stores/statusBarStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useWorkflowStore } from "../stores/workflowStore";
 import { AsciiArt } from "./AsciiArt";
+import { WorkflowForm } from "./WorkflowForm";
 
 interface WorkflowViewProps {
   onSelectTask: (task: Task) => void;
@@ -28,17 +31,21 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
     selectWorkflow,
     getTasksByStage,
     isLoading,
+    agents,
+    fetchAgents,
   } = useWorkflowStore();
   const { fetchTasks } = useTaskStore();
   const { setStatusBar, reset } = useStatusBarStore();
   const [tasksByStage, setTasksByStage] = useState<Map<string, Task[]>>(
     new Map(),
   );
+  const [workflowFormOpen, setWorkflowFormOpen] = useState(false);
 
   useEffect(() => {
     fetchWorkflows();
     fetchTasks();
-  }, [fetchWorkflows, fetchTasks]);
+    fetchAgents();
+  }, [fetchWorkflows, fetchTasks, fetchAgents]);
 
   useEffect(() => {
     if (selectedWorkflowId) {
@@ -117,7 +124,21 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
           {/* Workflow selector */}
           <Box p="4" className="border-gray-6 border-b">
             <Flex align="center" justify="between">
-              <Heading size="4">Workflow View</Heading>
+              <Flex align="center" gap="2">
+                <Heading size="4">
+                  {selectedWorkflow?.name || "Workflow View"}
+                </Heading>
+                {selectedWorkflow && (
+                  <IconButton
+                    size="1"
+                    variant="ghost"
+                    onClick={() => setWorkflowFormOpen(true)}
+                    title="Edit workflow"
+                  >
+                    <Pencil1Icon />
+                  </IconButton>
+                )}
+              </Flex>
               <Select.Root
                 value={selectedWorkflowId || ""}
                 onValueChange={(value) => selectWorkflow(value || null)}
@@ -151,6 +172,7 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
                     key={stage.id}
                     stage={stage}
                     tasks={tasksByStage.get(stage.id) || []}
+                    agents={agents}
                     onSelectTask={onSelectTask}
                   />
                 ))}
@@ -158,6 +180,12 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
           </Box>
         </Flex>
       </Box>
+
+      <WorkflowForm
+        open={workflowFormOpen}
+        onOpenChange={setWorkflowFormOpen}
+        workflow={selectedWorkflow}
+      />
     </Box>
   );
 }
@@ -165,10 +193,20 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
 interface WorkflowColumnProps {
   stage: WorkflowStage;
   tasks: Task[];
+  agents: Array<{ id: string; name: string }>;
   onSelectTask: (task: Task) => void;
 }
 
-function WorkflowColumn({ stage, tasks, onSelectTask }: WorkflowColumnProps) {
+function WorkflowColumn({
+  stage,
+  tasks,
+  agents,
+  onSelectTask,
+}: WorkflowColumnProps) {
+  const agentName = stage.agent_name
+    ? agents.find((a) => a.id === stage.agent_name)?.name || stage.agent_name
+    : null;
+
   return (
     <Flex direction="column" flexShrink="0" width="320px">
       <Card>
@@ -181,7 +219,7 @@ function WorkflowColumn({ stage, tasks, onSelectTask }: WorkflowColumnProps) {
           </Flex>
 
           <Text size="1" color="gray">
-            {stage.agent_name ? `Automated by ${stage.agent_name}` : "\u00A0"}
+            {agentName ? `Automated by ${agentName}` : "\u00A0"}
           </Text>
         </Box>
 
