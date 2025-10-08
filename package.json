@@ -21,7 +21,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "lint:write": "biome check --write --unsafe",
-    "format:write": "biome format --write --unsafe",
+    "format:write": "biome format --write",
     "check:write": "pnpm run lint:write && pnpm run typecheck",
     "generate-client": "tsx scripts/update-openapi-client.ts"
   },

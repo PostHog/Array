@@ -281,11 +281,19 @@ export function TaskList({
   if (error) {
     return (
       <Box height="100%" p="6">
-        <Flex direction="column" align="center" justify="center" height="100%" gap="4">
+        <Flex
+          direction="column"
+          align="center"
+          justify="center"
+          height="100%"
+          gap="4"
+        >
           <Text color="red">{error}</Text>
           <Flex gap="2">
             <Button onClick={() => fetchTasks()}>Retry</Button>
-            <Button variant="outline" onClick={logout}>Logout</Button>
+            <Button variant="outline" onClick={logout}>
+              Logout
+            </Button>
           </Flex>
         </Flex>
       </Box>
