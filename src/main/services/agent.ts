@@ -1,10 +1,15 @@
-import { type Agent, ClaudeCodeAgent, createAgent } from "@posthog/code-agent";
+import { Agent, PermissionMode } from "@posthog/agent";
 import { type BrowserWindow, type IpcMainInvokeEvent, ipcMain } from "electron";
-import { getCurrentBranch } from "./git.js";
+import { randomUUID } from "node:crypto";
 
 interface AgentStartParams {
-  prompt: string;
+  taskId: string;
+  workflowId: string;
   repoPath: string;
+  apiKey: string;
+  apiHost: string;
+  permissionMode?: PermissionMode | string;
+  autoProgress?: boolean;
   model?: string;
 }
 
@@ -12,6 +17,22 @@ export interface TaskController {
   abortController: AbortController;
   agent: Agent;
   channel: string;
+  taskId: string;
+  poller?: NodeJS.Timeout;
+}
+
+function resolvePermissionMode(
+  mode: AgentStartParams["permissionMode"],
+): PermissionMode {
+  if (!mode) return PermissionMode.ACCEPT_EDITS;
+  if (typeof mode !== "string") return mode;
+
+  const normalized = mode.trim().toLowerCase();
+  const match = (Object.values(PermissionMode) as string[]).find(
+    (value) => value.toLowerCase() === normalized,
+  );
+
+  return (match as PermissionMode | undefined) ?? PermissionMode.ACCEPT_EDITS;
 }
 
 export function registerAgentIpc(
@@ -22,113 +43,167 @@ export function registerAgentIpc(
     "agent-start",
     async (
       _event: IpcMainInvokeEvent,
-      { prompt, repoPath }: AgentStartParams,
+      {
+        taskId: posthogTaskId,
+        workflowId,
+        repoPath,
+        apiKey,
+        apiHost,
+        permissionMode,
+        autoProgress,
+        model,
+      }: AgentStartParams,
     ): Promise<{ taskId: string; channel: string }> => {
-      if (!prompt || !repoPath) {
-        throw new Error("prompt and repoPath are required");
+      if (!posthogTaskId || !workflowId || !repoPath) {
+        throw new Error("taskId, workflowId, and repoPath are required");
       }
 
-      const agent = createAgent(new ClaudeCodeAgent());
+      if (!apiKey || !apiHost) {
+        throw new Error("PostHog API credentials are required");
+      }
 
-      const abortController = new AbortController();
+      // Provide credentials to the PostHog MCP server used inside the agent runtime.
+      process.env.POSTHOG_API_KEY = apiKey;
+      process.env.POSTHOG_API_HOST = apiHost;
 
-      const currentBranch = (await getCurrentBranch(repoPath)) || "unknown";
-
-      const fullPrompt = `
-    <context>
-      Repository: ${repoPath}
-      Branch: ${currentBranch}
-      You have access to the local repository files for fast read/write operations.
-      You also have access to GitHub via the GitHub MCP server for additional repository operations.
-      Work with local files for your main implementation, and use GitHub MCP for any additional repository queries.
-      Commit changes to the repository regularly.
-    </context>
-
-    <role>
-      PostHog AI Coding Agent — autonomously transform a ticket into a merge-ready pull request that follows existing project conventions.
-    </role>
-
-    <tools>
-      Local file system (for main implementation work)
-      PostHog MCP server (for PostHog operations)
-    </tools>
-
-    <constraints>
-      - Follow existing style and patterns you discover in the repo.
-      - Try not to add new external dependencies, only if needed.
-      - Implement structured logging and error handling; never log secrets.
-      - Avoid destructive shell commands.
-      - ALWAYS create appropriate .gitignore files to exclude build artifacts, dependencies, and temporary files.
-    </constraints>
-
-    <checklist>
-      - Created or updated .gitignore file with appropriate exclusions
-      - Created dependency files (requirements.txt, package.json, etc.) with exact versions
-      - Added clear setup/installation instructions to README.md
-      - Code compiles and tests pass.
-      - Added or updated tests.
-      - Captured meaningful events with PostHog SDK.
-      - Wrapped new logic in an PostHog feature flag.
-      - Updated docs, readme or type hints if needed.
-      - Verified no build artifacts or dependencies are being committed
-    </checklist>
-
-    <ticket>
-      ${prompt}
-    </ticket>
-
-    <task>
-      Complete the ticket in a thoughtful step by step manner. Plan thoroughly and make sure to add logging and error handling as well as cover edge cases.
-    </task>
-
-    <workflow>
-    - first make a plan and create a todo list
-    - execute the todo list one by one
-    - test the changes
-    </workflow>
-
-    <output_format>
-      Once finished respond with a summary of changes made
-    </output_format>
-
-    <thinking>
-      Use this area as a private scratch-pad for step-by-step reasoning; erase before final output.
-    </thinking>
-    `;
-
-      const { taskId, stream } = await agent.run({
-        prompt: fullPrompt,
-        repoPath,
-        permissionMode: "permissive",
-      });
-
+      const taskId = randomUUID();
       const channel = `agent-event:${taskId}`;
 
-      taskControllers.set(taskId, { abortController, agent, channel });
+      const abortController = new AbortController();
+      const stderrBuffer: string[] = [];
 
-      // Forward streaming events to renderer
-      (async () => {
-        try {
-          for await (const ev of stream) {
-            const win = getMainWindow?.();
-            if (win && !win.isDestroyed()) {
-              win.webContents.send(channel, ev);
+      const emitToRenderer = (payload: unknown) => {
+        const win = getMainWindow?.();
+        if (!win || win.isDestroyed()) return;
+        win.webContents.send(channel, payload);
+      };
+
+      const forwardClaudeStderr = (chunk: string | Buffer) => {
+        const text = chunk.toString().trim();
+        if (!text) return;
+        stderrBuffer.push(text);
+        if (stderrBuffer.length > 50) {
+          stderrBuffer.shift();
+        }
+        console.error(`[agent][claude-stderr] ${text}`);
+        emitToRenderer({
+          type: "status",
+          ts: Date.now(),
+          message: `[Claude stderr] ${text}`,
+        });
+      };
+
+      const agent = new Agent({
+        workingDirectory: repoPath,
+        posthogApiKey: apiKey,
+        posthogApiUrl: apiHost,
+        onEvent: (event) => {
+          console.log("agent event", event);
+          if (!event || abortController.signal.aborted) return;
+          const payload =
+            event.type === "done" ? { ...event, success: true } : event;
+          emitToRenderer(payload);
+        },
+        debug: true,
+      });
+
+      const controllerEntry: TaskController = {
+        abortController,
+        agent,
+        channel,
+        taskId: posthogTaskId,
+      };
+
+      taskControllers.set(taskId, controllerEntry);
+
+      const posthogClient = agent.getPostHogClient();
+      if (posthogClient) {
+        const pollTaskProgress = async () => {
+          if (abortController.signal.aborted) return;
+          try {
+            const progress = await posthogClient.getTaskProgress(posthogTaskId);
+            if (progress?.has_progress) {
+              emitToRenderer({
+                type: "progress",
+                ts: Date.now(),
+                progress,
+              });
             }
+          } catch (err) {
+            console.warn("[agent] failed to fetch task progress", err);
           }
-          const win = getMainWindow?.();
-          if (win && !win.isDestroyed()) {
-            win.webContents.send(channel, { type: "done", success: true });
-          }
+        };
+
+        void pollTaskProgress();
+        controllerEntry.poller = setInterval(() => {
+          void pollTaskProgress();
+        }, 5000);
+      }
+
+      emitToRenderer({
+        type: "status",
+        ts: Date.now(),
+        phase: "workflow_start",
+        workflowId,
+        taskId: posthogTaskId,
+      });
+
+      (async () => {
+        const resolvedPermission = resolvePermissionMode(permissionMode);
+        try {
+          const envOverrides = {
+            ...process.env,
+            POSTHOG_API_KEY: apiKey,
+            POSTHOG_API_HOST: apiHost,
+            POSTHOG_AUTH_HEADER: `Bearer ${apiKey}`,
+          };
+
+          const mcpOverrides = {};
+
+          await agent.runWorkflow(posthogTaskId, workflowId, {
+            repositoryPath: repoPath,
+            permissionMode: resolvedPermission,
+            autoProgress: autoProgress ?? true,
+            queryOverrides: {
+              abortController,
+              ...(model ? { model } : {}),
+              stderr: forwardClaudeStderr,
+              env: envOverrides,
+              mcpServers: mcpOverrides,
+            },
+          });
+          emitToRenderer({ type: "done", success: true, ts: Date.now() });
         } catch (err) {
-          const win = getMainWindow?.();
-          if (win && !win.isDestroyed()) {
-            win.webContents.send(channel, {
+          console.error("[agent] workflow execution failed", err);
+          let errorMessage =
+            err instanceof Error ? err.message : String(err);
+          const cause =
+            err instanceof Error && "cause" in err && err.cause
+              ? ` (cause: ${String(err.cause)})`
+              : "";
+          if (!abortController.signal.aborted) {
+            if (stderrBuffer.length > 0) {
+              const stderrSummary = stderrBuffer.slice(-5).join("\n");
+              errorMessage += `\nLast Claude stderr:\n${stderrSummary}`;
+            }
+            emitToRenderer({
               type: "error",
-              message: err instanceof Error ? err.message : String(err),
+              message: `${errorMessage}${cause}`,
+              ts: Date.now(),
             });
-            win.webContents.send(channel, { type: "done", success: false });
+            emitToRenderer({ type: "done", success: false, ts: Date.now() });
+          } else {
+            emitToRenderer({
+              type: "status",
+              ts: Date.now(),
+              phase: "canceled",
+            });
+            emitToRenderer({ type: "done", success: false, ts: Date.now() });
           }
         } finally {
+          if (controllerEntry.poller) {
+            clearInterval(controllerEntry.poller);
+          }
           taskControllers.delete(taskId);
         }
       })();
@@ -144,10 +219,9 @@ export function registerAgentIpc(
       if (!entry) return false;
       try {
         entry.abortController.abort();
-        if (entry.agent && typeof entry.agent.cancel === "function") {
-          try {
-            await entry.agent.cancel(taskId);
-          } catch {}
+        entry.agent.cancelTask(entry.taskId);
+        if (entry.poller) {
+          clearInterval(entry.poller);
         }
         return true;
       } finally {

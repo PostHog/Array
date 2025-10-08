@@ -1,4 +1,5 @@
 import path from "node:path";
+import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   app,
@@ -6,6 +7,7 @@ import {
   Menu,
   type MenuItemConstructorOptions,
 } from "electron";
+import dns from "node:dns";
 import { registerAgentIpc, type TaskController } from "./services/agent.js";
 import { registerOsIpc } from "./services/os.js";
 import { registerPosthogIpc } from "./services/posthog.js";
@@ -18,6 +20,21 @@ const isDev =
 
 let mainWindow: BrowserWindow | null = null;
 const taskControllers = new Map<string, TaskController>();
+
+// Force IPv4 resolution when "localhost" is used so the agent hits 127.0.0.1
+// instead of ::1. This matches how the renderer already reaches the PostHog API.
+dns.setDefaultResultOrder("ipv4first");
+
+function ensureClaudeConfigDir(): void {
+  const existing = process.env.CLAUDE_CONFIG_DIR;
+  if (existing) return;
+
+  const userDataDir = app.getPath("userData");
+  const claudeDir = path.join(userDataDir, "claude");
+
+  mkdirSync(claudeDir, { recursive: true });
+  process.env.CLAUDE_CONFIG_DIR = claudeDir;
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -89,6 +106,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(createWindow);
+app.whenReady().then(ensureClaudeConfigDir);
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

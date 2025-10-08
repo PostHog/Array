@@ -1,6 +1,54 @@
+import type { Task } from "@shared/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { LogEntry } from "../types/log";
+import { useAuthStore } from "./authStore";
+import { useTaskStore } from "./taskStore";
+import { useWorkflowStore } from "./workflowStore";
+
+type AgentTaskProgress = {
+  has_progress?: boolean;
+  status?: "started" | "in_progress" | "completed" | "failed";
+  current_step?: string | null;
+  completed_steps?: number | null;
+  total_steps?: number | null;
+  progress_percentage?: number | null;
+  message?: string | null;
+  output_log?: string | null;
+};
+
+const createProgressSignature = (progress: AgentTaskProgress): string =>
+  [
+    progress.status ?? "",
+    progress.current_step ?? "",
+    progress.completed_steps ?? "",
+    progress.total_steps ?? "",
+    progress.progress_percentage ?? "",
+    progress.message ?? "",
+    progress.output_log ?? "",
+  ].join("|");
+
+const formatProgressLog = (progress: AgentTaskProgress): string => {
+  const statusLabel =
+    progress.status?.replace(/_/g, " ") ?? "in progress";
+  const completed =
+    typeof progress.completed_steps === "number"
+      ? progress.completed_steps
+      : 0;
+  const total =
+    typeof progress.total_steps === "number" && progress.total_steps >= 0
+      ? progress.total_steps
+      : "?";
+  const step =
+    typeof progress.current_step === "string" && progress.current_step.length > 0
+      ? progress.current_step
+      : "-";
+  const percentage =
+    typeof progress.progress_percentage === "number"
+      ? ` ${Math.round(progress.progress_percentage)}%`
+      : "";
+  return `📊 Progress: ${statusLabel} | step=${step} (${completed}/${total})${percentage}`;
+};
 
 interface TaskExecutionState {
   isRunning: boolean;
@@ -9,6 +57,8 @@ interface TaskExecutionState {
   currentTaskId: string | null;
   runMode: "local" | "cloud";
   unsubscribe: (() => void) | null;
+  progress: AgentTaskProgress | null;
+  progressSignature: string | null;
 }
 
 interface TaskExecutionStore {
@@ -28,14 +78,12 @@ interface TaskExecutionStore {
   setCurrentTaskId: (taskId: string, currentTaskId: string | null) => void;
   setRunMode: (taskId: string, runMode: "local" | "cloud") => void;
   setUnsubscribe: (taskId: string, unsubscribe: (() => void) | null) => void;
+  setProgress: (taskId: string, progress: AgentTaskProgress | null) => void;
   clearTaskState: (taskId: string) => void;
 
   // High-level task execution actions
   selectRepositoryForTask: (taskId: string) => Promise<void>;
-  runTask: (
-    taskId: string,
-    task: { id: string; title: string; description?: string },
-  ) => Promise<void>;
+  runTask: (taskId: string, task: Task) => Promise<void>;
   cancelTask: (taskId: string) => Promise<void>;
   clearTaskLogs: (taskId: string) => void;
 
@@ -51,6 +99,8 @@ const defaultTaskState: TaskExecutionState = {
   currentTaskId: null,
   runMode: "local",
   unsubscribe: null,
+  progress: null,
+  progressSignature: null,
 };
 
 export const useTaskExecutionStore = create<TaskExecutionStore>()(
@@ -109,6 +159,13 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         get().updateTaskState(taskId, { unsubscribe });
       },
 
+      setProgress: (taskId: string, progress: AgentTaskProgress | null) => {
+        get().updateTaskState(taskId, {
+          progress,
+          progressSignature: progress ? createProgressSignature(progress) : null,
+        });
+      },
+
       clearTaskState: (taskId: string) => {
         const state = get();
         const taskState = state.taskStates[taskId];
@@ -151,6 +208,26 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
                   });
                 }
                 break;
+              case "progress": {
+                const rawProgress = ev.progress as AgentTaskProgress | undefined;
+                if (
+                  rawProgress &&
+                  typeof rawProgress === "object" &&
+                  rawProgress.has_progress
+                ) {
+                  const previousState = currentStore.getTaskState(taskId);
+                  const nextSignature = createProgressSignature(rawProgress);
+                  if (previousState.progressSignature !== nextSignature) {
+                    currentStore.setProgress(taskId, rawProgress);
+                    currentStore.addLog(taskId, {
+                      type: "text",
+                      ts: ev.ts || Date.now(),
+                      content: formatProgressLog(rawProgress),
+                    });
+                  }
+                }
+                break;
+              }
               case "status":
                 if (ev.phase) {
                   currentStore.addLog(taskId, {
@@ -307,14 +384,34 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         }
       },
 
-      runTask: async (
-        taskId: string,
-        task: { id: string; title: string; description?: string },
-      ) => {
+      runTask: async (taskId: string, fallbackTask: Task) => {
         const store = get();
         const taskState = store.getTaskState(taskId);
 
         if (taskState.isRunning) return;
+
+        const currentTask =
+          useTaskStore
+            .getState()
+            .tasks.find((candidate) => candidate.id === taskId) ??
+          fallbackTask;
+
+        if (!currentTask.workflow) {
+          store.addLog(
+            taskId,
+            "Select a PostHog workflow before running the agent.",
+          );
+          return;
+        }
+
+        const { apiKey, apiHost } = useAuthStore.getState();
+        if (!apiKey) {
+          store.addLog(
+            taskId,
+            "No PostHog API key found. Sign in to PostHog to run workflows.",
+          );
+          return;
+        }
 
         // Ensure repo path is selected
         let effectiveRepoPath = taskState.repoPath;
@@ -363,42 +460,52 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           return;
         }
 
-        // Build prompt
-        const promptLines: string[] = [];
-        promptLines.push(`Task: ${task.title}`);
-        if (task.description) {
-          promptLines.push("Description:");
-          promptLines.push(task.description);
-        }
-        const prompt = promptLines.join("\n");
-
         const currentTaskState = store.getTaskState(taskId);
+        const workflowName =
+          useWorkflowStore
+            .getState()
+            .workflows.find((w) => w.id === currentTask.workflow)?.name ??
+          currentTask.workflow;
+        const permissionMode =
+          currentTaskState.runMode === "cloud" ? "default" : "acceptEdits";
 
+        store.setProgress(taskId, null);
         store.setRunning(taskId, true);
+        const startTs = Date.now();
         store.setLogs(taskId, [
           {
             type: "text",
-            ts: Date.now(),
-            content: `Starting ${currentTaskState.runMode} Claude Code agent...`,
+            ts: startTs,
+            content: `Starting workflow run (${workflowName})...`,
           },
           {
             type: "text",
-            ts: Date.now(),
+            ts: startTs,
+            content: `Permission mode: ${permissionMode}`,
+          },
+          {
+            type: "text",
+            ts: startTs,
             content: `Repo: ${effectiveRepoPath}`,
           },
         ]);
 
         try {
           const result = await window.electronAPI?.agentStart({
-            prompt,
+            taskId: currentTask.id,
+            workflowId: currentTask.workflow,
             repoPath: effectiveRepoPath,
-            model: "claude-4-sonnet",
+            apiKey,
+            apiHost,
+            permissionMode,
+            autoProgress: true,
           });
           if (!result) {
             store.addLog(
               taskId,
               "Failed to start agent: electronAPI not available",
             );
+            store.setRunning(taskId, false);
             return;
           }
           const { taskId: executionTaskId, channel } = result;
