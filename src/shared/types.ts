@@ -41,6 +41,16 @@ export interface WorkflowStage {
   fallback_stage?: string | null;
 }
 
+export type DataSource = "posthog" | "call_recording";
+
+export interface SourceConfig {
+  enabledSources: DataSource[];
+  posthog?: {
+    apiKey: string;
+    apiHost: string;
+  };
+}
+
 export interface AuthConfig {
   apiKey: string;
   apiHost: string;
@@ -65,7 +75,33 @@ export interface LogEntry {
 
 export interface TabState {
   id: string;
-  type: "task-list" | "task-detail" | "workflow" | "backlog";
+  type:
+    | "task-list"
+    | "task-detail"
+    | "workflow"
+    | "backlog"
+    | "sources"
+    | "recordings";
   title: string;
   data?: Task | unknown;
+}
+
+export interface ExtractedTask {
+  title: string;
+  description: string;
+}
+
+export interface Recording {
+  id: string;
+  filename: string;
+  duration: number; // in seconds
+  created_at: string;
+  file_path: string;
+  transcription?: {
+    text: string;
+    status: "pending" | "processing" | "completed" | "error";
+    error?: string;
+    summary?: string | null;
+    extracted_tasks?: ExtractedTask[];
+  };
 }
