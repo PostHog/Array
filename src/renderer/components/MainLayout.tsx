@@ -1,9 +1,12 @@
 import { Box, Flex } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useAuthStore } from "../stores/authStore";
 import { useTabStore } from "../stores/tabStore";
 import { CommandMenu } from "./command";
+import { RecordingsView } from "./RecordingsView";
+import { SourcesView } from "./SourcesView";
 import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
 import { TaskCreate } from "./TaskCreate";
@@ -12,9 +15,39 @@ import { TaskList } from "./TaskList";
 import { WorkflowView } from "./WorkflowView";
 
 export function MainLayout() {
-  const { activeTabId, tabs, createTab, setActiveTab } = useTabStore();
+  const { enabledSources } = useAuthStore();
+  const { activeTabId, tabs, createTab, setActiveTab, initializeTabs } =
+    useTabStore();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [taskCreateOpen, setTaskCreateOpen] = useState(false);
+  const [startRecordingTrigger, setStartRecordingTrigger] = useState(0);
+
+  // Initialize tabs based on enabled sources
+  useEffect(() => {
+    initializeTabs(enabledSources);
+  }, [enabledSources, initializeTabs]);
+
+  // Listen for meeting detection notifications
+  useEffect(() => {
+    if (!window.electronAPI.onMeetingDetected) {
+      return;
+    }
+
+    const cleanup = window.electronAPI.onMeetingDetected(() => {
+      // Switch to recordings tab
+      const recordingsTab = tabs.find((tab) => tab.type === "recordings");
+      if (recordingsTab) {
+        setActiveTab(recordingsTab.id);
+      }
+
+      // Trigger recording start
+      setStartRecordingTrigger((prev) => prev + 1);
+    });
+
+    return () => {
+      cleanup();
+    };
+  }, [tabs, setActiveTab]);
 
   useHotkeys("mod+k", () => setCommandMenuOpen((prev) => !prev), {
     enabled: !commandMenuOpen,
@@ -26,6 +59,31 @@ export function MainLayout() {
     enabled: !commandMenuOpen,
   });
   useHotkeys("mod+n", () => setTaskCreateOpen(true));
+
+  // Keyboard shortcuts for tabs
+  useHotkeys("mod+1", () => {
+    const tasksTab = tabs.find((tab) => tab.type === "task-list");
+    if (tasksTab) setActiveTab(tasksTab.id);
+  });
+
+  useHotkeys("mod+2", () => {
+    const workflowTab = tabs.find((tab) => tab.type === "workflow");
+    if (workflowTab) setActiveTab(workflowTab.id);
+  });
+
+  useHotkeys("mod+3", () => {
+    const sourcesTab = tabs.find((tab) => tab.type === "sources");
+    if (sourcesTab) {
+      setActiveTab(sourcesTab.id);
+    } else {
+      createTab({ type: "sources", title: "Sources" });
+    }
+  });
+
+  useHotkeys("mod+4", () => {
+    const recordingsTab = tabs.find((tab) => tab.type === "recordings");
+    if (recordingsTab) setActiveTab(recordingsTab.id);
+  });
 
   const handleSelectTask = (task: Task) => {
     // Check if task is already open in a tab
@@ -69,6 +127,12 @@ export function MainLayout() {
 
         {activeTab?.type === "workflow" && (
           <WorkflowView onSelectTask={handleSelectTask} />
+        )}
+
+        {activeTab?.type === "sources" && <SourcesView />}
+
+        {activeTab?.type === "recordings" && (
+          <RecordingsView startRecordingTrigger={startRecordingTrigger} />
         )}
       </Box>
 

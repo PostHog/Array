@@ -10,6 +10,7 @@ interface TabStore {
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
+  initializeTabs: (enabledSources: string[]) => void;
 }
 
 // Create initial tabs
@@ -25,9 +26,42 @@ const workflowTab: TabState = {
   title: "Workflow",
 };
 
+const sourcesTab: TabState = {
+  id: uuidv4(),
+  type: "sources",
+  title: "Sources",
+};
+
+const recordingsTab: TabState = {
+  id: uuidv4(),
+  type: "recordings",
+  title: "Recordings",
+};
+
 export const useTabStore = create<TabStore>((set, get) => ({
-  tabs: [taskListTab, workflowTab],
+  tabs: [taskListTab, workflowTab, sourcesTab],
   activeTabId: taskListTab.id,
+
+  initializeTabs: (enabledSources: string[]) => {
+    const state = get();
+    const hasRecordingsTab = state.tabs.some((tab) => tab.type === "recordings");
+    const shouldHaveRecordingsTab = enabledSources.includes("call_recording");
+
+    if (shouldHaveRecordingsTab && !hasRecordingsTab) {
+      // Add recordings tab
+      set((state) => ({
+        tabs: [...state.tabs, recordingsTab],
+      }));
+    } else if (!shouldHaveRecordingsTab && hasRecordingsTab) {
+      // Remove recordings tab
+      const recordingsTabToRemove = state.tabs.find(
+        (tab) => tab.type === "recordings",
+      );
+      if (recordingsTabToRemove) {
+        get().closeTab(recordingsTabToRemove.id);
+      }
+    }
+  },
 
   createTab: (tabData) => {
     const newTab: TabState = {
