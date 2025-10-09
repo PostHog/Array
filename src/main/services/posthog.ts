@@ -30,4 +30,5 @@ export function registerPosthogIpc(): void {
       return encryptedKey;
     },
   );
+
 }

@@ -1,3 +1,5 @@
+import type { Recording } from "@shared/types";
+
 export interface IElectronAPI {
   storeApiKey: (apiKey: string) => Promise<string>;
   retrieveApiKey: (encryptedKey: string) => Promise<string | null>;
@@ -23,6 +25,25 @@ export interface IElectronAPI {
     channel: string,
     listener: (event: unknown) => void,
   ) => () => void;
+  recordingStart: () => Promise<{ recordingId: string; startTime: string }>;
+  recordingStop: (
+    recordingId: string,
+    audioData: Uint8Array,
+    duration: number,
+  ) => Promise<Recording>;
+  recordingList: () => Promise<Recording[]>;
+  recordingDelete: (recordingId: string) => Promise<boolean>;
+  recordingGetFile: (recordingId: string) => Promise<ArrayBuffer>;
+  recordingTranscribe: (
+    recordingId: string,
+    openaiApiKey: string,
+  ) => Promise<{
+    status: string;
+    text: string;
+    summary?: string | null;
+    extracted_tasks?: Array<{ title: string; description: string }>
+  }>;
+  onMeetingDetected: (listener: () => void) => () => void;
 }
 
 declare global {

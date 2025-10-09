@@ -44,4 +44,35 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on(channel, wrapped);
     return () => ipcRenderer.removeListener(channel, wrapped);
   },
+  recordingStart: (): Promise<{ recordingId: string; startTime: string }> =>
+    ipcRenderer.invoke("recording:start"),
+  recordingStop: (
+    recordingId: string,
+    audioData: Uint8Array,
+    duration: number,
+  ): Promise<unknown> =>
+    ipcRenderer.invoke("recording:stop", recordingId, audioData, duration),
+  recordingList: (): Promise<unknown[]> =>
+    ipcRenderer.invoke("recording:list"),
+  recordingDelete: (recordingId: string): Promise<boolean> =>
+    ipcRenderer.invoke("recording:delete", recordingId),
+  recordingGetFile: (recordingId: string): Promise<ArrayBuffer> =>
+    ipcRenderer.invoke("recording:get-file", recordingId),
+  recordingTranscribe: (
+    recordingId: string,
+    openaiApiKey: string,
+  ): Promise<{
+    status: string;
+    text: string;
+    summary?: string | null;
+    extracted_tasks?: Array<{ title: string; description: string }>
+  }> =>
+    ipcRenderer.invoke("recording:transcribe", recordingId, openaiApiKey),
+  onMeetingDetected: (
+    listener: () => void,
+  ): (() => void) => {
+    const wrapped = (_event: IpcRendererEvent) => listener();
+    ipcRenderer.on("meeting:start-recording", wrapped);
+    return () => ipcRenderer.removeListener("meeting:start-recording", wrapped);
+  },
 });

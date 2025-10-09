@@ -9,6 +9,8 @@ import {
 import { registerAgentIpc, type TaskController } from "./services/agent.js";
 import { registerOsIpc } from "./services/os.js";
 import { registerPosthogIpc } from "./services/posthog.js";
+import { registerRecordingIpc } from "./services/recording.js";
+import { MeetingDetector } from "./services/meeting-detector.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,6 +20,7 @@ const isDev =
 
 let mainWindow: BrowserWindow | null = null;
 const taskControllers = new Map<string, TaskController>();
+let meetingDetector: MeetingDetector | null = null;
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -88,7 +91,18 @@ function createWindow(): void {
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+
+  const handleStartRecording = () => {
+    if (mainWindow) {
+      mainWindow.webContents.send("meeting:start-recording");
+    }
+  };
+
+  meetingDetector = new MeetingDetector(() => mainWindow, handleStartRecording);
+  meetingDetector.start();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
@@ -106,3 +120,4 @@ app.on("activate", () => {
 registerPosthogIpc();
 registerOsIpc(() => mainWindow);
 registerAgentIpc(taskControllers, () => mainWindow);
+registerRecordingIpc();
