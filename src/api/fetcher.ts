@@ -30,12 +30,22 @@ export const buildApiFetcher: (config: {
         }
       }
 
-      const response = await fetch(input.url, {
-        method: input.method.toUpperCase(),
-        ...(body && { body }),
-        headers,
-        ...input.overrides,
-      });
+      let response: Response;
+      try {
+        response = await fetch(input.url, {
+          method: input.method.toUpperCase(),
+          ...(body && { body }),
+          headers,
+          ...input.overrides,
+        });
+      } catch (err) {
+        throw new Error(
+          `Network request failed for ${input.method.toUpperCase()} ${input.url}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          { cause: err instanceof Error ? err : undefined },
+        );
+      }
 
       if (!response.ok) {
         const errorResponse = await response.json();

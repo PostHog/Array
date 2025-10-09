@@ -11,8 +11,13 @@ interface MessageBoxOptions {
 }
 
 interface AgentStartParams {
-  prompt: string;
+  taskId: string;
+  workflowId: string;
   repoPath: string;
+  apiKey: string;
+  apiHost: string;
+  permissionMode?: string;
+  autoProgress?: boolean;
   model?: string;
 }
 

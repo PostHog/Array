@@ -23,3 +23,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+AGENTS.md
+.claude/
+.claude-config/

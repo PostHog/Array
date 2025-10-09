@@ -15,8 +15,13 @@ export interface IElectronAPI {
   }) => Promise<{ response: number }>;
   openExternal: (url: string) => Promise<void>;
   agentStart: (params: {
-    prompt: string;
+    taskId: string;
+    workflowId: string;
     repoPath: string;
+    apiKey: string;
+    apiHost: string;
+    permissionMode?: string;
+    autoProgress?: boolean;
     model?: string;
   }) => Promise<{ taskId: string; channel: string }>;
   agentCancel: (taskId: string) => Promise<boolean>;

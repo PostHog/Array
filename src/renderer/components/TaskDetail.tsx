@@ -8,15 +8,17 @@ import {
   Flex,
   Link,
   SegmentedControl,
+  Text,
 } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { format } from "date-fns";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useIntegrationStore } from "../stores/integrationStore";
 import { useStatusBarStore } from "../stores/statusBarStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
 import { useTaskStore } from "../stores/taskStore";
+import { useWorkflowStore } from "../stores/workflowStore";
 import { AsciiArt } from "./AsciiArt";
 import { Combobox } from "./Combobox";
 import { LogView } from "./LogView";
@@ -38,13 +40,23 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const { repositories } = useIntegrationStore();
   const { updateTask, tasks } = useTaskStore();
   const { updateTabTitle, activeTabId } = useTabStore();
+  const workflows = useWorkflowStore((state) => state.workflows);
+  const fetchWorkflows = useWorkflowStore((state) => state.fetchWorkflows);
+  const workflowOptions = useMemo(
+    () =>
+      workflows.map((workflow) => ({
+        value: workflow.id,
+        label: workflow.name,
+      })),
+    [workflows],
+  );
 
   // Get the latest task data from the store
   const task = tasks.find((t) => t.id === initialTask.id) || initialTask;
 
   // Get persistent state for this task
   const taskState = getTaskState(task.id);
-  const { isRunning, logs, repoPath, runMode } = taskState;
+  const { isRunning, logs, repoPath, runMode, progress } = taskState;
 
   const [selectedRepo, setSelectedRepo] = useState<string>(() => {
     if (task.repository_config) {
@@ -72,6 +84,12 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       originalDescriptionRef.current = desc;
     }
   }, [task.description]);
+
+  useEffect(() => {
+    if (!workflows.length) {
+      void fetchWorkflows({ skipLoadingState: true });
+    }
+  }, [workflows.length, fetchWorkflows]);
 
   useEffect(() => {
     setStatusBar({
@@ -113,6 +131,12 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   const handleClearLogs = () => {
     clearTaskLogs(task.id);
+  };
+
+  const handleWorkflowChange = async (value: string) => {
+    const nextWorkflow =
+      !value || value === "__none__" ? null : (value as string);
+    await updateTask(task.id, { workflow: nextWorkflow });
   };
 
   const handleRepositoryChange = async (value: string) => {
@@ -206,6 +230,67 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
               <DataList.Label>Status</DataList.Label>
               <DataList.Value>
                 <Badge color="gray">{task.current_stage || "Backlog"}</Badge>
+              </DataList.Value>
+            </DataList.Item>
+
+            <DataList.Item>
+              <DataList.Label>Progress</DataList.Label>
+              <DataList.Value>
+                {progress?.has_progress ? (
+                  <Flex direction="column" gap="1">
+                    <Badge
+                      color={
+                        progress.status === "completed"
+                          ? "green"
+                          : progress.status === "failed"
+                            ? "red"
+                            : "blue"
+                      }
+                    >
+                      {progress.status?.replace(/_/g, " ") ?? "in progress"}
+                    </Badge>
+                    <Text size="2" color="gray">
+                      Steps {progress.completed_steps ?? 0}/
+                      {typeof progress.total_steps === "number"
+                        ? progress.total_steps
+                        : "?"}
+                      {typeof progress.progress_percentage === "number"
+                        ? ` · ${Math.round(progress.progress_percentage)}%`
+                        : ""}
+                    </Text>
+                    {progress.current_step && (
+                      <Text size="2" color="gray">
+                        Current step: {progress.current_step}
+                      </Text>
+                    )}
+                  </Flex>
+                ) : (
+                  <Code size="2" color="gray">
+                    No progress yet
+                  </Code>
+                )}
+              </DataList.Value>
+            </DataList.Item>
+
+            <DataList.Item>
+              <DataList.Label>Workflow</DataList.Label>
+              <DataList.Value>
+                {workflowOptions.length > 0 ? (
+                  <Combobox
+                    items={workflowOptions}
+                    value={task.workflow ?? "__none__"}
+                    onValueChange={handleWorkflowChange}
+                    placeholder="Select a workflow..."
+                    searchPlaceholder="Search workflows..."
+                    emptyMessage="No workflows found"
+                    noneLabel="No workflow"
+                    size="2"
+                  />
+                ) : (
+                  <Code size="2" color="gray">
+                    No workflows available
+                  </Code>
+                )}
               </DataList.Value>
             </DataList.Item>
 
