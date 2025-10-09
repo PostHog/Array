@@ -12,6 +12,7 @@ import type { Task } from "@shared/types";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useAuthStore } from "../stores/authStore";
 import { useStatusBarStore } from "../stores/statusBarStore";
 import { useTaskStore } from "../stores/taskStore";
 import { AsciiArt } from "./AsciiArt";
@@ -55,6 +56,7 @@ export function TaskList({
   const setFilter = useTaskStore((state) => state.setFilter);
 
   const { setStatusBar, reset } = useStatusBarStore();
+  const { logout } = useAuthStore();
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -279,9 +281,20 @@ export function TaskList({
   if (error) {
     return (
       <Box height="100%" p="6">
-        <Flex direction="column" align="center" justify="center" height="100%">
+        <Flex
+          direction="column"
+          align="center"
+          justify="center"
+          height="100%"
+          gap="4"
+        >
           <Text color="red">{error}</Text>
-          <Button onClick={() => fetchTasks()}>Retry</Button>
+          <Flex gap="2">
+            <Button onClick={() => fetchTasks()}>Retry</Button>
+            <Button variant="outline" onClick={logout}>
+              Logout
+            </Button>
+          </Flex>
         </Flex>
       </Box>
     );
