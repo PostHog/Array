@@ -29,18 +29,16 @@ const createProgressSignature = (progress: AgentTaskProgress): string =>
   ].join("|");
 
 const formatProgressLog = (progress: AgentTaskProgress): string => {
-  const statusLabel =
-    progress.status?.replace(/_/g, " ") ?? "in progress";
+  const statusLabel = progress.status?.replace(/_/g, " ") ?? "in progress";
   const completed =
-    typeof progress.completed_steps === "number"
-      ? progress.completed_steps
-      : 0;
+    typeof progress.completed_steps === "number" ? progress.completed_steps : 0;
   const total =
     typeof progress.total_steps === "number" && progress.total_steps >= 0
       ? progress.total_steps
       : "?";
   const step =
-    typeof progress.current_step === "string" && progress.current_step.length > 0
+    typeof progress.current_step === "string" &&
+    progress.current_step.length > 0
       ? progress.current_step
       : "-";
   const percentage =
@@ -162,7 +160,9 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
       setProgress: (taskId: string, progress: AgentTaskProgress | null) => {
         get().updateTaskState(taskId, {
           progress,
-          progressSignature: progress ? createProgressSignature(progress) : null,
+          progressSignature: progress
+            ? createProgressSignature(progress)
+            : null,
         });
       },
 
@@ -209,7 +209,9 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
                 }
                 break;
               case "progress": {
-                const rawProgress = ev.progress as AgentTaskProgress | undefined;
+                const rawProgress = ev.progress as
+                  | AgentTaskProgress
+                  | undefined;
                 if (
                   rawProgress &&
                   typeof rawProgress === "object" &&
@@ -393,8 +395,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         const currentTask =
           useTaskStore
             .getState()
-            .tasks.find((candidate) => candidate.id === taskId) ??
-          fallbackTask;
+            .tasks.find((candidate) => candidate.id === taskId) ?? fallbackTask;
 
         if (!currentTask.workflow) {
           store.addLog(
