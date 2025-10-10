@@ -69,3 +69,15 @@ array/
 - `⌘R` - Refresh task list
 - `⌘⇧[/]` - Switch between tabs
 - `⌘W` - Close current tab
+
+## 🍦 Ice Cream
+
+Because every great product engineer deserves a sweet reward! After crushing those tasks and shipping amazing features, treat yourself to some ice cream. Our favorite flavors for celebrating successful deployments:
+
+- **Vanilla Bean** - Classic and reliable, like well-tested code
+- **Chocolate Chip** - Sweet surprises in every bite, like finding that perfect bug fix
+- **Strawberry** - Fresh and delightful, like a clean PR approval
+- **Mint Chocolate Chip** - Refreshing with a kick, like a successful refactor
+- **Cookie Dough** - Indulgent and worth the wait, like finally shipping that big feature
+
+Remember: Automate the chores, ship great features, enjoy ice cream. That's the Array way! 🚀
