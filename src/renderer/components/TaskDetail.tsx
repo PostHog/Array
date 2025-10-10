@@ -17,7 +17,7 @@ import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
 import { useTasks, useUpdateTask } from "../hooks/useTasks";
-import { useWorkflows } from "../hooks/useWorkflows";
+import { useWorkflows, useWorkflowStages } from "../hooks/useWorkflows";
 import { useStatusBarStore } from "../stores/statusBarStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
@@ -52,6 +52,10 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const { updateTabTitle, activeTabId } = useTabStore();
   const { data: workflows = [] } = useWorkflows();
 
+  const task = tasks.find((t) => t.id === initialTask.id) || initialTask;
+
+  const { data: workflowStages = [] } = useWorkflowStages(task.workflow || "");
+
   const workflowOptions = useMemo(
     () =>
       workflows.map((workflow) => ({
@@ -61,7 +65,11 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     [workflows],
   );
 
-  const task = tasks.find((t) => t.id === initialTask.id) || initialTask;
+  const currentStageName = useMemo(() => {
+    if (!task.current_stage) return "Backlog";
+    const stage = workflowStages.find((s) => s.id === task.current_stage);
+    return stage?.name || task.current_stage;
+  }, [task.current_stage, workflowStages]);
 
   const taskState = getTaskState(task.id);
   
@@ -192,7 +200,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
             <DataList.Item>
               <DataList.Label>Status</DataList.Label>
               <DataList.Value>
-                <Badge color="gray">{task.current_stage || "Backlog"}</Badge>
+                <Badge color="gray">{currentStageName}</Badge>
               </DataList.Value>
             </DataList.Item>
 
