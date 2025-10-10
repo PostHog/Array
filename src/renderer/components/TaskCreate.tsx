@@ -12,11 +12,11 @@ import {
   Text,
   TextArea,
 } from "@radix-ui/themes";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useIntegrationStore } from "../stores/integrationStore";
+import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
+import { useCreateTask } from "../hooks/useTasks";
 import { useTabStore } from "../stores/tabStore";
-import { useTaskStore } from "../stores/taskStore";
 import { Combobox } from "./Combobox";
 
 interface TaskCreateProps {
@@ -25,9 +25,16 @@ interface TaskCreateProps {
 }
 
 export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
-  const { createTask, isLoading } = useTaskStore();
+  const { mutate: createTask, isPending: isLoading } = useCreateTask();
   const { createTab } = useTabStore();
-  const { repositories } = useIntegrationStore();
+  const { data: integrations = [] } = useIntegrations();
+
+  const githubIntegration = useMemo(
+    () => integrations.find((i) => i.kind === "github"),
+    [integrations],
+  );
+
+  const { data: repositories = [] } = useRepositories(githubIntegration?.id);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [selectedRepo, setSelectedRepo] = useState<string>("");
@@ -36,7 +43,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
     if (!title.trim() || !description.trim()) return;
 
     let repositoryConfig:
@@ -50,20 +57,24 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       }
     }
 
-    const newTask = await createTask(title, description, repositoryConfig);
-    if (newTask) {
-      createTab({
-        type: "task-detail",
-        title: newTask.title,
-        data: newTask,
-      });
-      setTitle("");
-      setDescription("");
-      setSelectedRepo("");
-      if (!createMore) {
-        onOpenChange(false);
-      }
-    }
+    createTask(
+      { title, description, repositoryConfig },
+      {
+        onSuccess: (newTask) => {
+          createTab({
+            type: "task-detail",
+            title: newTask.title,
+            data: newTask,
+          });
+          setTitle("");
+          setDescription("");
+          setSelectedRepo("");
+          if (!createMore) {
+            onOpenChange(false);
+          }
+        },
+      },
+    );
   };
 
   useHotkeys("mod+enter", handleCreate, {

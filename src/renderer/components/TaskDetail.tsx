@@ -9,16 +9,18 @@ import {
   Link,
   SegmentedControl,
   Text,
+  TextArea,
 } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { format } from "date-fns";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useIntegrationStore } from "../stores/integrationStore";
+import { useEffect, useMemo, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
+import { useTasks, useUpdateTask } from "../hooks/useTasks";
+import { useWorkflows } from "../hooks/useWorkflows";
 import { useStatusBarStore } from "../stores/statusBarStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
-import { useTaskStore } from "../stores/taskStore";
-import { useWorkflowStore } from "../stores/workflowStore";
 import { AsciiArt } from "./AsciiArt";
 import { Combobox } from "./Combobox";
 import { LogView } from "./LogView";
@@ -39,11 +41,17 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     getRepoWorkingDir,
     setRepoPath,
   } = useTaskExecutionStore();
-  const { repositories } = useIntegrationStore();
-  const { updateTask, tasks } = useTaskStore();
+  const { data: integrations = [] } = useIntegrations();
+  const githubIntegration = useMemo(
+    () => integrations.find((i) => i.kind === "github"),
+    [integrations],
+  );
+  const { data: repositories = [] } = useRepositories(githubIntegration?.id);
+  const { data: tasks = [] } = useTasks();
+  const { mutate: updateTask } = useUpdateTask();
   const { updateTabTitle, activeTabId } = useTabStore();
-  const workflows = useWorkflowStore((state) => state.workflows);
-  const fetchWorkflows = useWorkflowStore((state) => state.fetchWorkflows);
+  const { data: workflows = [] } = useWorkflows();
+
   const workflowOptions = useMemo(
     () =>
       workflows.map((workflow) => ({
@@ -53,12 +61,17 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     [workflows],
   );
 
-  // Get the latest task data from the store
   const task = tasks.find((t) => t.id === initialTask.id) || initialTask;
 
-  // Get persistent state for this task
   const taskState = getTaskState(task.id);
   const { isRunning, logs, repoPath, runMode, progress } = taskState;
+
+  const { register, handleSubmit, reset: resetForm, control } = useForm({
+    defaultValues: {
+      title: task.title,
+      description: task.description || "",
+    },
+  });
 
   const [selectedRepo, setSelectedRepo] = useState<string>(() => {
     if (task.repository_config) {
@@ -67,7 +80,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     return "";
   });
 
-  // Initialize repoPath from mapping if task has repository_config
   useEffect(() => {
     if (task.repository_config && !repoPath) {
       const repoKey = `${task.repository_config.organization}/${task.repository_config.repository}`;
@@ -78,38 +90,18 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     }
   }, [task.id, task.repository_config, repoPath, getRepoWorkingDir, setRepoPath]);
 
-  const titleRef = useRef<HTMLElement>(null);
-  const originalTitleRef = useRef(task.title);
-  const descriptionRef = useRef<HTMLDivElement>(null);
-  const originalDescriptionRef = useRef(task.description || "");
-
   useEffect(() => {
-    if (titleRef.current && titleRef.current.textContent !== task.title) {
-      titleRef.current.textContent = task.title;
-      originalTitleRef.current = task.title;
-    }
-  }, [task.title]);
+    resetForm({
+      title: task.title,
+      description: task.description || "",
+    });
+  }, [task.title, task.description, resetForm]);
 
-  useEffect(() => {
-    const desc = task.description || "";
-    if (descriptionRef.current && descriptionRef.current.textContent !== desc) {
-      descriptionRef.current.textContent = desc;
-      originalDescriptionRef.current = desc;
-    }
-  }, [task.description]);
-
-  useEffect(() => {
-    if (!workflows.length) {
-      void fetchWorkflows({ skipLoadingState: true });
-    }
-  }, [workflows.length, fetchWorkflows]);
-
-  // Default to first workflow if not set
   useEffect(() => {
     if (workflows.length > 0 && !task.workflow) {
       const defaultWorkflow = workflows.find((w) => w.is_active && w.is_default) || workflows[0];
       if (defaultWorkflow) {
-        void updateTask(task.id, { workflow: defaultWorkflow.id });
+        updateTask({ taskId: task.id, updates: { workflow: defaultWorkflow.id } });
       }
     }
   }, [workflows, task.workflow, task.id, updateTask]);
@@ -157,13 +149,13 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     clearTaskLogs(task.id);
   };
 
-  const handleWorkflowChange = async (value: string) => {
+  const handleWorkflowChange = (value: string) => {
     const nextWorkflow =
       !value || value === "__none__" ? null : (value as string);
-    await updateTask(task.id, { workflow: nextWorkflow });
+    updateTask({ taskId: task.id, updates: { workflow: nextWorkflow } });
   };
 
-  const handleRepositoryChange = async (value: string) => {
+  const handleRepositoryChange = (value: string) => {
     setSelectedRepo(value);
 
     let repositoryConfig:
@@ -177,57 +169,23 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       }
     }
 
-    await updateTask(task.id, { repository_config: repositoryConfig });
+    updateTask({ taskId: task.id, updates: { repository_config: repositoryConfig } });
   };
 
-  const handleTitleBlur = async () => {
-    const newTitle = titleRef.current?.textContent?.trim() || "";
-    if (newTitle && newTitle !== originalTitleRef.current) {
-      await updateTask(task.id, { title: newTitle });
-      originalTitleRef.current = newTitle;
+  const onSubmit = handleSubmit((data) => {
+    if (data.title !== task.title) {
+      updateTask({ taskId: task.id, updates: { title: data.title } });
       if (activeTabId) {
-        updateTabTitle(activeTabId, newTitle);
-      }
-    } else if (!newTitle) {
-      if (titleRef.current) {
-        titleRef.current.textContent = originalTitleRef.current;
+        updateTabTitle(activeTabId, data.title);
       }
     }
-  };
-
-  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      titleRef.current?.blur();
-    } else if (e.key === "Escape") {
-      if (titleRef.current) {
-        titleRef.current.textContent = originalTitleRef.current;
-      }
-      titleRef.current?.blur();
-    }
-  };
-
-  const handleDescriptionBlur = async () => {
-    const newDescription = descriptionRef.current?.textContent?.trim() || "";
-    if (newDescription !== originalDescriptionRef.current) {
-      await updateTask(task.id, {
-        description: newDescription || undefined,
+    if (data.description !== task.description) {
+      updateTask({
+        taskId: task.id,
+        updates: { description: data.description || undefined },
       });
-      originalDescriptionRef.current = newDescription;
     }
-  };
-
-  const handleDescriptionKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      descriptionRef.current?.blur();
-    } else if (e.key === "Escape") {
-      if (descriptionRef.current) {
-        descriptionRef.current.textContent = originalDescriptionRef.current;
-      }
-      descriptionRef.current?.blur();
-    }
-  };
+  });
 
   return (
     <Flex height="100%">
@@ -235,18 +193,27 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       <Box width="50%" className="border-gray-6 border-r" overflowY="auto">
         <Box p="4">
           <Box mb="4">
-            <Code
-              ref={titleRef}
-              size="5"
-              contentEditable
-              suppressContentEditableWarning
-              spellCheck={false}
-              onBlur={handleTitleBlur}
-              onKeyDown={handleTitleKeyDown}
-              style={{ cursor: "text", outline: "none" }}
-            >
-              {task.title}
-            </Code>
+            <Controller
+              name="title"
+              control={control}
+              render={({ field }) => (
+                <Code
+                  size="5"
+                  contentEditable
+                  suppressContentEditableWarning
+                  ref={(el) => {
+                    if (el && el.textContent !== field.value) {
+                      el.textContent = field.value;
+                    }
+                  }}
+                  onBlur={(e) => {
+                    field.onChange(e.currentTarget.textContent || "");
+                    onSubmit();
+                  }}
+                  style={{ cursor: "text", outline: "none", display: "block" }}
+                />
+              )}
+            />
           </Box>
 
           <DataList.Root>
@@ -387,21 +354,13 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
             <DataList.Item>
               <DataList.Label>Description</DataList.Label>
               <DataList.Value>
-                <Box
-                  ref={descriptionRef}
-                  contentEditable
-                  suppressContentEditableWarning
-                  spellCheck={false}
-                  onBlur={handleDescriptionBlur}
-                  onKeyDown={handleDescriptionKeyDown}
-                  style={{
-                    cursor: "text",
-                    outline: "none",
-                    minHeight: "1.5em",
-                  }}
-                >
-                  {task.description || "No description provided"}
-                </Box>
+                <TextArea
+                  {...register("description")}
+                  onBlur={onSubmit}
+                  placeholder="No description provided"
+                  rows={3}
+                  style={{ resize: "vertical" }}
+                />
               </DataList.Value>
             </DataList.Item>
 
