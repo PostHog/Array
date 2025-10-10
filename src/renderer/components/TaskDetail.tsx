@@ -13,6 +13,7 @@ import {
 import type { Task } from "@shared/types";
 import { format } from "date-fns";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useAuthStore } from "../stores/authStore";
 import { useIntegrationStore } from "../stores/integrationStore";
 import { useStatusBarStore } from "../stores/statusBarStore";
 import { useTabStore } from "../stores/tabStore";
@@ -40,6 +41,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const { repositories } = useIntegrationStore();
   const { updateTask, tasks } = useTaskStore();
   const { updateTabTitle, activeTabId } = useTabStore();
+  const { user, apiHost } = useAuthStore();
   const workflows = useWorkflowStore((state) => state.workflows);
   const fetchWorkflows = useWorkflowStore((state) => state.fetchWorkflows);
   const workflowOptions = useMemo(
@@ -59,7 +61,11 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const { isRunning, logs, repoPath, runMode, progress } = taskState;
 
   const [selectedRepo, setSelectedRepo] = useState<string>(() => {
-    if (task.repository_config) {
+    if (
+      task.repository_config &&
+      task.repository_config.organization &&
+      task.repository_config.repository
+    ) {
       return `${task.repository_config.organization}/${task.repository_config.repository}`;
     }
     return "";
@@ -299,37 +305,53 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
               <DataList.Value>
                 <Flex gap="2" align="center">
                   {repositories.length > 0 ? (
-                    <Combobox
-                      items={repositories.map((repo) => ({
-                        value: `${repo.organization}/${repo.repository}`,
-                        label: `${repo.organization}/${repo.repository}`,
-                      }))}
-                      value={selectedRepo}
-                      onValueChange={handleRepositoryChange}
-                      placeholder="Select a repository..."
-                      searchPlaceholder="Search repositories..."
-                      emptyMessage="No repositories found"
-                      size="2"
-                    />
-                  ) : selectedRepo ? (
-                    <Code size="2">{selectedRepo}</Code>
+                    <>
+                      <Combobox
+                        items={repositories.map((repo) => ({
+                          value: `${repo.organization}/${repo.repository}`,
+                          label: `${repo.organization}/${repo.repository}`,
+                        }))}
+                        value={selectedRepo}
+                        onValueChange={handleRepositoryChange}
+                        placeholder="Select a repository..."
+                        searchPlaceholder="Search repositories..."
+                        emptyMessage="No repositories found"
+                        size="2"
+                      />
+                      {selectedRepo && selectedRepo !== "__none__" && (
+                        <Button
+                          size="1"
+                          variant="ghost"
+                          onClick={() =>
+                            window.electronAPI.openExternal(
+                              `https://github.com/${selectedRepo}`,
+                            )
+                          }
+                        >
+                          <ExternalLinkIcon />
+                        </Button>
+                      )}
+                    </>
                   ) : (
-                    <Code size="2" color="gray">
-                      None
-                    </Code>
-                  )}
-                  {selectedRepo && selectedRepo !== "__none__" && (
-                    <Button
-                      size="1"
-                      variant="ghost"
-                      onClick={() =>
-                        window.electronAPI.openExternal(
-                          `https://github.com/${selectedRepo}`,
-                        )
-                      }
-                    >
-                      <ExternalLinkIcon />
-                    </Button>
+                    <Flex direction="column" gap="2">
+                      <Code size="2" color="gray">
+                        No GitHub integration configured
+                      </Code>
+                      {user?.team?.id && (
+                        <Button
+                          size="1"
+                          variant="outline"
+                          onClick={() =>
+                            window.electronAPI.openExternal(
+                              `${apiHost}/project/${user.team.id}/settings/environment-integrations`,
+                            )
+                          }
+                        >
+                          Set up GitHub integration
+                          <ExternalLinkIcon />
+                        </Button>
+                      )}
+                    </Flex>
                   )}
                 </Flex>
               </DataList.Value>
