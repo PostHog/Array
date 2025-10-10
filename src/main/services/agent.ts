@@ -1,6 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { Agent, PermissionMode } from "@posthog/agent";
 import { type BrowserWindow, type IpcMainInvokeEvent, ipcMain } from "electron";
-import { randomUUID } from "node:crypto";
 
 interface AgentStartParams {
   taskId: string;
@@ -175,8 +175,7 @@ export function registerAgentIpc(
           emitToRenderer({ type: "done", success: true, ts: Date.now() });
         } catch (err) {
           console.error("[agent] workflow execution failed", err);
-          let errorMessage =
-            err instanceof Error ? err.message : String(err);
+          let errorMessage = err instanceof Error ? err.message : String(err);
           const cause =
             err instanceof Error && "cause" in err && err.cause
               ? ` (cause: ${String(err.cause)})`
