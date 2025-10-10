@@ -64,16 +64,17 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const task = tasks.find((t) => t.id === initialTask.id) || initialTask;
 
   const taskState = getTaskState(task.id);
+  
   const { isRunning, logs, repoPath, runMode, progress } = taskState;
 
   const { register, handleSubmit, reset: resetForm, control, watch } = useForm({
     defaultValues: {
       title: task.title,
       description: task.description || "",
-      workflow: task.workflow ?? "__none__",
+      workflow: task.workflow || "",
       repository: task.repository_config
         ? `${task.repository_config.organization}/${task.repository_config.repository}`
-        : "__none__",
+        : "",
     },
   });
 
@@ -93,21 +94,12 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     resetForm({
       title: task.title,
       description: task.description || "",
-      workflow: task.workflow ?? "__none__",
+      workflow: task.workflow || "",
       repository: task.repository_config
         ? `${task.repository_config.organization}/${task.repository_config.repository}`
-        : "__none__",
+        : "",
     });
   }, [task.title, task.description, task.workflow, task.repository_config, resetForm]);
-
-  useEffect(() => {
-    if (workflows.length > 0 && !task.workflow) {
-      const defaultWorkflow = workflows.find((w) => w.is_active && w.is_default) || workflows[0];
-      if (defaultWorkflow) {
-        updateTask({ taskId: task.id, updates: { workflow: defaultWorkflow.id } });
-      }
-    }
-  }, [workflows, task.workflow, task.id, updateTask]);
 
   useEffect(() => {
     setStatusBar({
@@ -132,7 +124,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   // Simple event handlers that delegate to store actions
   const handleSelectRepo = () => {
-    const repoKey = repositoryValue && repositoryValue !== "__none__" ? repositoryValue : undefined;
+    const repoKey = repositoryValue || undefined;
     selectRepositoryForTask(task.id, repoKey);
   };
 
@@ -250,23 +242,21 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   <Controller
                     name="workflow"
                     control={control}
+                    rules={{ required: true }}
                     render={({ field }) => (
                       <Combobox
                         items={workflowOptions}
                         value={field.value}
                         onValueChange={(value) => {
                           field.onChange(value);
-                          const nextWorkflow =
-                            !value || value === "__none__" ? null : value;
                           updateTask({
                             taskId: task.id,
-                            updates: { workflow: nextWorkflow },
+                            updates: { workflow: value },
                           });
                         }}
                         placeholder="Select a workflow..."
                         searchPlaceholder="Search workflows..."
                         emptyMessage="No workflows found"
-                        noneLabel="No workflow"
                         size="2"
                       />
                     )}
@@ -301,7 +291,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                               | { organization: string; repository: string }
                               | undefined;
 
-                            if (value && value !== "__none__") {
+                            if (value) {
                               const [organization, repository] = value.split("/");
                               if (organization && repository) {
                                 repositoryConfig = { organization, repository };
@@ -320,14 +310,14 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                         />
                       )}
                     />
-                  ) : repositoryValue && repositoryValue !== "__none__" ? (
+                  ) : repositoryValue ? (
                     <Code size="2">{repositoryValue}</Code>
                   ) : (
                     <Code size="2" color="gray">
                       None
                     </Code>
                   )}
-                  {repositoryValue && repositoryValue !== "__none__" && (
+                  {repositoryValue && (
                     <Button
                       size="1"
                       variant="ghost"
@@ -377,7 +367,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   onBlur={onSubmit}
                   placeholder="No description provided"
                   rows={3}
-                  style={{ resize: "vertical" }}
+                  style={{ resize: "vertical", width: "100%" }}
                 />
               </DataList.Value>
             </DataList.Item>

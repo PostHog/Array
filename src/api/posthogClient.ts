@@ -64,6 +64,7 @@ export class PostHogAPIClient {
     title: string,
     description: string,
     repositoryConfig?: { organization: string; repository: string },
+    workflowId?: string,
   ) {
     const teamId = await this.getTeamId();
 
@@ -72,6 +73,7 @@ export class PostHogAPIClient {
       description,
       origin_product: "user_created" as const,
       ...(repositoryConfig && { repository_config: repositoryConfig }),
+      ...(workflowId && { workflow: workflowId }),
     };
 
     const data = await this.api.post(`/api/projects/{project_id}/tasks/`, {

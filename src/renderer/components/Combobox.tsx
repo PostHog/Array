@@ -17,8 +17,6 @@ interface ComboboxProps {
   emptyMessage?: string;
   size?: "1" | "2" | "3";
   variant?: "classic" | "surface" | "soft" | "ghost";
-  allowNone?: boolean;
-  noneLabel?: string;
   renderItem?: (item: ComboboxItem) => ReactNode;
   side?: "top" | "bottom" | "left" | "right";
   align?: "start" | "center" | "end";
@@ -33,8 +31,6 @@ export function Combobox({
   emptyMessage = "No items found",
   size = "2",
   variant = "surface",
-  allowNone = true,
-  noneLabel = "None",
   renderItem,
   side = "bottom",
   align = "start",
@@ -42,22 +38,14 @@ export function Combobox({
   const [open, setOpen] = useState(false);
 
   const selectedItem = useMemo(() => {
-    if (!value || value === "__none__") return null;
+    if (!value) return null;
     return items.find((item) => item.value === value);
   }, [value, items]);
 
-  const displayValue = selectedItem
-    ? selectedItem.label
-    : value === "__none__"
-      ? noneLabel
-      : placeholder;
+  const displayValue = selectedItem ? selectedItem.label : placeholder;
 
   const handleSelect = (selectedValue: string) => {
-    if (selectedValue === value) {
-      onValueChange("__none__");
-    } else {
-      onValueChange(selectedValue);
-    }
+    onValueChange(selectedValue);
     setOpen(false);
   };
 
@@ -77,24 +65,6 @@ export function Combobox({
           <Command.List>
             <Command.Empty>{emptyMessage}</Command.Empty>
             <Command.Group>
-              {allowNone && (
-                <Command.Item
-                  value="__none__"
-                  onSelect={() => handleSelect("__none__")}
-                >
-                  <Flex justify="between" align="center" gap="2" width="100%">
-                    <Text size={size} color="gray">
-                      {noneLabel}
-                    </Text>
-                    <CheckIcon
-                      className="mr-2 h-4 w-4"
-                      style={{
-                        opacity: value === "__none__" ? 1 : 0,
-                      }}
-                    />
-                  </Flex>
-                </Command.Item>
-              )}
               {items.map((item) => {
                 const isSelected = value === item.value;
                 return (

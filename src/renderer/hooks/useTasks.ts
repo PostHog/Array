@@ -52,17 +52,21 @@ export function useCreateTask() {
       title,
       description,
       repositoryConfig,
+      workflow,
     }: {
       title: string;
       description: string;
       repositoryConfig?: { organization: string; repository: string };
+      workflow: string;
     }) => {
       if (!client) throw new Error("Not authenticated");
-      return (await client.createTask(
+      const task = (await client.createTask(
         title,
         description,
         repositoryConfig,
+        workflow,
       )) as Task;
+      return task;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
