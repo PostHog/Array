@@ -62,6 +62,8 @@ interface TaskExecutionState {
 interface TaskExecutionStore {
   // State per task ID
   taskStates: Record<string, TaskExecutionState>;
+  // Repository (org/repo) to working directory mapping
+  repoToCwd: Record<string, string>;
 
   // Basic state accessors
   getTaskState: (taskId: string) => TaskExecutionState;
@@ -79,8 +81,12 @@ interface TaskExecutionStore {
   setProgress: (taskId: string, progress: AgentTaskProgress | null) => void;
   clearTaskState: (taskId: string) => void;
 
+  // Repository to working directory mapping
+  getRepoWorkingDir: (repoKey: string) => string | null;
+  setRepoWorkingDir: (repoKey: string, path: string) => void;
+
   // High-level task execution actions
-  selectRepositoryForTask: (taskId: string) => Promise<void>;
+  selectRepositoryForTask: (taskId: string, repoKey?: string) => Promise<void>;
   runTask: (taskId: string, task: Task) => Promise<void>;
   cancelTask: (taskId: string) => Promise<void>;
   clearTaskLogs: (taskId: string) => void;
@@ -105,10 +111,24 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
   persist(
     (set, get) => ({
       taskStates: {},
+      repoToCwd: {},
 
       getTaskState: (taskId: string) => {
         const state = get();
         return state.taskStates[taskId] || { ...defaultTaskState };
+      },
+
+      getRepoWorkingDir: (repoKey: string) => {
+        return get().repoToCwd[repoKey] || null;
+      },
+
+      setRepoWorkingDir: (repoKey: string, path: string) => {
+        set((state) => ({
+          repoToCwd: {
+            ...state.repoToCwd,
+            [repoKey]: path,
+          },
+        }));
       },
 
       updateTaskState: (
@@ -338,7 +358,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
       },
 
       // High-level task execution actions
-      selectRepositoryForTask: async (taskId: string) => {
+      selectRepositoryForTask: async (taskId: string, repoKey?: string) => {
         const store = get();
         try {
           const selected = await window.electronAPI?.selectDirectory();
@@ -372,11 +392,15 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
               const { response } = result;
               if (response === 0) {
                 // Let user reselect and validate again
-                return store.selectRepositoryForTask(taskId);
+                return store.selectRepositoryForTask(taskId, repoKey);
               }
               return;
             }
             store.setRepoPath(taskId, selected);
+            // Save mapping for future tasks with the same repository
+            if (repoKey) {
+              store.setRepoWorkingDir(repoKey, selected);
+            }
           }
         } catch (err) {
           store.addLog(

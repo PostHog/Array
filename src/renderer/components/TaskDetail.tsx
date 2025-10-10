@@ -36,6 +36,8 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     runTask,
     cancelTask,
     clearTaskLogs,
+    getRepoWorkingDir,
+    setRepoPath,
   } = useTaskExecutionStore();
   const { repositories } = useIntegrationStore();
   const { updateTask, tasks } = useTaskStore();
@@ -65,6 +67,17 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     return "";
   });
 
+  // Initialize repoPath from mapping if task has repository_config
+  useEffect(() => {
+    if (task.repository_config && !repoPath) {
+      const repoKey = `${task.repository_config.organization}/${task.repository_config.repository}`;
+      const savedPath = getRepoWorkingDir(repoKey);
+      if (savedPath) {
+        setRepoPath(task.id, savedPath);
+      }
+    }
+  }, [task.id, task.repository_config, repoPath, getRepoWorkingDir, setRepoPath]);
+
   const titleRef = useRef<HTMLElement>(null);
   const originalTitleRef = useRef(task.title);
   const descriptionRef = useRef<HTMLDivElement>(null);
@@ -91,6 +104,16 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     }
   }, [workflows.length, fetchWorkflows]);
 
+  // Default to first workflow if not set
+  useEffect(() => {
+    if (workflows.length > 0 && !task.workflow) {
+      const defaultWorkflow = workflows.find((w) => w.is_active && w.is_default) || workflows[0];
+      if (defaultWorkflow) {
+        void updateTask(task.id, { workflow: defaultWorkflow.id });
+      }
+    }
+  }, [workflows, task.workflow, task.id, updateTask]);
+
   useEffect(() => {
     setStatusBar({
       statusText: isRunning ? "Agent running..." : "Task details",
@@ -114,7 +137,8 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   // Simple event handlers that delegate to store actions
   const handleSelectRepo = () => {
-    selectRepositoryForTask(task.id);
+    const repoKey = selectedRepo && selectedRepo !== "__none__" ? selectedRepo : undefined;
+    selectRepositoryForTask(task.id, repoKey);
   };
 
   const handleRunTask = () => {
