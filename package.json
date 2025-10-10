@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "mprocs",
     "dev:vite": "vite",
-    "dev:node": "tsc -p tsconfig.node.json --watch",
+    "dev:node": "cp src/main/package.json dist/main/package.json && tsc -p tsconfig.node.json --watch",
     "dev:preload": "tsc -p tsconfig.preload.json --watch",
     "dev:electron": "wait-on tcp:5173 && wait-on dist/main/index.js && electron . --dev",
     "build": "pnpm run build:node && pnpm run build:vite && pnpm run build:electron",
