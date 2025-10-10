@@ -13,7 +13,7 @@ import {
 } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { format } from "date-fns";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
 import { useTasks, useUpdateTask } from "../hooks/useTasks";
@@ -66,19 +66,18 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const taskState = getTaskState(task.id);
   const { isRunning, logs, repoPath, runMode, progress } = taskState;
 
-  const { register, handleSubmit, reset: resetForm, control } = useForm({
+  const { register, handleSubmit, reset: resetForm, control, watch } = useForm({
     defaultValues: {
       title: task.title,
       description: task.description || "",
+      workflow: task.workflow ?? "__none__",
+      repository: task.repository_config
+        ? `${task.repository_config.organization}/${task.repository_config.repository}`
+        : "__none__",
     },
   });
 
-  const [selectedRepo, setSelectedRepo] = useState<string>(() => {
-    if (task.repository_config) {
-      return `${task.repository_config.organization}/${task.repository_config.repository}`;
-    }
-    return "";
-  });
+  const repositoryValue = watch("repository");
 
   useEffect(() => {
     if (task.repository_config && !repoPath) {
@@ -94,8 +93,12 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     resetForm({
       title: task.title,
       description: task.description || "",
+      workflow: task.workflow ?? "__none__",
+      repository: task.repository_config
+        ? `${task.repository_config.organization}/${task.repository_config.repository}`
+        : "__none__",
     });
-  }, [task.title, task.description, resetForm]);
+  }, [task.title, task.description, task.workflow, task.repository_config, resetForm]);
 
   useEffect(() => {
     if (workflows.length > 0 && !task.workflow) {
@@ -129,7 +132,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   // Simple event handlers that delegate to store actions
   const handleSelectRepo = () => {
-    const repoKey = selectedRepo && selectedRepo !== "__none__" ? selectedRepo : undefined;
+    const repoKey = repositoryValue && repositoryValue !== "__none__" ? repositoryValue : undefined;
     selectRepositoryForTask(task.id, repoKey);
   };
 
@@ -147,29 +150,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   const handleClearLogs = () => {
     clearTaskLogs(task.id);
-  };
-
-  const handleWorkflowChange = (value: string) => {
-    const nextWorkflow =
-      !value || value === "__none__" ? null : (value as string);
-    updateTask({ taskId: task.id, updates: { workflow: nextWorkflow } });
-  };
-
-  const handleRepositoryChange = (value: string) => {
-    setSelectedRepo(value);
-
-    let repositoryConfig:
-      | { organization: string; repository: string }
-      | undefined;
-
-    if (value && value !== "__none__") {
-      const [organization, repository] = value.split("/");
-      if (organization && repository) {
-        repositoryConfig = { organization, repository };
-      }
-    }
-
-    updateTask({ taskId: task.id, updates: { repository_config: repositoryConfig } });
   };
 
   const onSubmit = handleSubmit((data) => {
@@ -267,15 +247,29 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
               <DataList.Label>Workflow</DataList.Label>
               <DataList.Value>
                 {workflowOptions.length > 0 ? (
-                  <Combobox
-                    items={workflowOptions}
-                    value={task.workflow ?? "__none__"}
-                    onValueChange={handleWorkflowChange}
-                    placeholder="Select a workflow..."
-                    searchPlaceholder="Search workflows..."
-                    emptyMessage="No workflows found"
-                    noneLabel="No workflow"
-                    size="2"
+                  <Controller
+                    name="workflow"
+                    control={control}
+                    render={({ field }) => (
+                      <Combobox
+                        items={workflowOptions}
+                        value={field.value}
+                        onValueChange={(value) => {
+                          field.onChange(value);
+                          const nextWorkflow =
+                            !value || value === "__none__" ? null : value;
+                          updateTask({
+                            taskId: task.id,
+                            updates: { workflow: nextWorkflow },
+                          });
+                        }}
+                        placeholder="Select a workflow..."
+                        searchPlaceholder="Search workflows..."
+                        emptyMessage="No workflows found"
+                        noneLabel="No workflow"
+                        size="2"
+                      />
+                    )}
                   />
                 ) : (
                   <Code size="2" color="gray">
@@ -290,32 +284,56 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
               <DataList.Value>
                 <Flex gap="2" align="center">
                   {repositories.length > 0 ? (
-                    <Combobox
-                      items={repositories.map((repo) => ({
-                        value: `${repo.organization}/${repo.repository}`,
-                        label: `${repo.organization}/${repo.repository}`,
-                      }))}
-                      value={selectedRepo}
-                      onValueChange={handleRepositoryChange}
-                      placeholder="Select a repository..."
-                      searchPlaceholder="Search repositories..."
-                      emptyMessage="No repositories found"
-                      size="2"
+                    <Controller
+                      name="repository"
+                      control={control}
+                      render={({ field }) => (
+                        <Combobox
+                          items={repositories.map((repo) => ({
+                            value: `${repo.organization}/${repo.repository}`,
+                            label: `${repo.organization}/${repo.repository}`,
+                          }))}
+                          value={field.value}
+                          onValueChange={(value) => {
+                            field.onChange(value);
+
+                            let repositoryConfig:
+                              | { organization: string; repository: string }
+                              | undefined;
+
+                            if (value && value !== "__none__") {
+                              const [organization, repository] = value.split("/");
+                              if (organization && repository) {
+                                repositoryConfig = { organization, repository };
+                              }
+                            }
+
+                            updateTask({
+                              taskId: task.id,
+                              updates: { repository_config: repositoryConfig },
+                            });
+                          }}
+                          placeholder="Select a repository..."
+                          searchPlaceholder="Search repositories..."
+                          emptyMessage="No repositories found"
+                          size="2"
+                        />
+                      )}
                     />
-                  ) : selectedRepo ? (
-                    <Code size="2">{selectedRepo}</Code>
+                  ) : repositoryValue && repositoryValue !== "__none__" ? (
+                    <Code size="2">{repositoryValue}</Code>
                   ) : (
                     <Code size="2" color="gray">
                       None
                     </Code>
                   )}
-                  {selectedRepo && selectedRepo !== "__none__" && (
+                  {repositoryValue && repositoryValue !== "__none__" && (
                     <Button
                       size="1"
                       variant="ghost"
                       onClick={() =>
                         window.electronAPI.openExternal(
-                          `https://github.com/${selectedRepo}`,
+                          `https://github.com/${repositoryValue}`,
                         )
                       }
                     >
