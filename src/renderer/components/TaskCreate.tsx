@@ -12,7 +12,7 @@ import {
   Text,
   TextArea,
 } from "@radix-ui/themes";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
@@ -42,8 +42,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [createMore, setCreateMore] = useState(false);
   const [repoPath, setRepoPath] = useState<string | null>(null);
-  const [description, setDescription] = useState("");
-  const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
 
   const defaultWorkflow = useMemo(
     () => workflows.find((w) => w.is_active && w.is_default) || workflows[0],
@@ -174,101 +172,129 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                 />
               </Flex>
               <Flex
-              direction="column"
-              gap="2"
-              flexGrow="1"
-              style={{ minHeight: 0 }}
-            >
-              <RichTextEditor
-                value={description}
-                onChange={setDescription}
-                repoPath={repoPath}
-                placeholder="Add description... Use @ to mention files, or try **bold**, *italic*, `code`, and more!"
-                showToolbar={true}
-                minHeight={isExpanded ? "200px" : "120px"}
-                style={{
-                  height: isExpanded ? "100%" : "auto",
-                  overflow: isExpanded ? "auto" : "visible",
-                }}
-              />
-            </Flex>
-
-            <Flex gap="2" align="end">
-              {repositories.length > 0 && (
-                <Flex direction="column" gap="2" flexGrow="1">
-                  <Combobox
-                    items={repositories.map((repo) => ({
-                      value: `${repo.organization}/${repo.repository}`,
-                      label: `${repo.organization}/${repo.repository}`,
-                    }))}
-                    value={selectedRepo}
-                    onValueChange={setSelectedRepo}
-                    placeholder="Select a repository..."
-                    searchPlaceholder="Search repositories..."
-                    emptyMessage="No repositories found"
-                    size="2"
-                    side="top"
-                  />
-                </Flex>
-              )}
-              <Button
-                variant="soft"
-                size="2"
-                onClick={async () => {
-                  const selected = await window.electronAPI?.selectDirectory();
-                  if (selected) {
-                    setRepoPath(selected);
-                  }
-                }}
+                direction="column"
+                gap="2"
+                flexGrow="1"
+                style={{ minHeight: 0 }}
               >
-                {repoPath ? "Change Local Repo" : "Select Local Repo for @"}
-              </Button>
-
-              <Flex direction="column" gap="2" width="50%">
-                {workflowOptions.length > 0 && (
-                  <Controller
-                    name="workflow"
-                    control={control}
-                    rules={{ required: true }}
-                    render={({ field }) => (
-                      <Combobox
-                        items={workflowOptions}
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        placeholder="Select a workflow..."
-                        searchPlaceholder="Search workflows..."
-                        emptyMessage="No workflows found"
-                        size="2"
-                        side="top"
-                      />
-                    )}
-                  />
-                )}
+                <Controller
+                  name="description"
+                  control={control}
+                  rules={{
+                    required: true,
+                    validate: (v) => v.trim().length > 0,
+                  }}
+                  render={({ field }) => (
+                    <RichTextEditor
+                      value={field.value}
+                      onChange={field.onChange}
+                      repoPath={repoPath}
+                      placeholder="Add description... Use @ to mention files, or try **bold**, *italic*, `code`, and more!"
+                      showToolbar={true}
+                      minHeight={isExpanded ? "200px" : "120px"}
+                      style={{
+                        height: isExpanded ? "100%" : "auto",
+                        overflow: isExpanded ? "auto" : "visible",
+                      }}
+                    />
+                  )}
+                />
               </Flex>
 
-              {repositories.length > 0 && (
-                <Flex direction="column" gap="2" width="50%">
-                  <Controller
-                    name="repository"
-                    control={control}
-                    render={({ field }) => (
-                      <Combobox
-                        items={repositories.map((repo) => ({
-                          value: `${repo.organization}/${repo.repository}`,
-                          label: `${repo.organization}/${repo.repository}`,
-                        }))}
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        placeholder="Select a repository..."
-                        searchPlaceholder="Search repositories..."
-                        emptyMessage="No repositories found"
-                        size="2"
-                        side="top"
-                      />
+              {/* Local Working Directory - Primary Step */}
+              <Flex direction="column" gap="3">
+                <Flex direction="column" gap="2">
+                  <Text size="2" weight="medium" color="gray">
+                    Local Working Directory
+                  </Text>
+                  <Button
+                    variant={repoPath ? "soft" : "classic"}
+                    size="3"
+                    onClick={async () => {
+                      const selected = await window.electronAPI?.selectDirectory();
+                      if (selected) {
+                        setRepoPath(selected);
+                      }
+                    }}
+                    style={{
+                      justifyContent: "flex-start",
+                      backgroundColor: repoPath ? "var(--gray-a3)" : undefined,
+                    }}
+                  >
+                    {repoPath ? (
+                      <>
+                        📁 {repoPath.split('/').pop() || repoPath}
+                        <Text size="1" color="gray" ml="2">
+                          (Click to change)
+                        </Text>
+                      </>
+                    ) : (
+                      "Choose Local Directory"
                     )}
-                  />
+                  </Button>
                 </Flex>
-              )}
+
+                {/* Configuration Row */}
+                <Flex gap="3" wrap="wrap">
+                  {/* Workflow Selection */}
+
+                  {workflowOptions.length > 0 && (
+                    <Flex direction="column" gap="2" style={{ minWidth: "200px", flex: 1 }}>
+                      <Text size="2" weight="medium" color="gray">
+                        Workflow *
+                      </Text>
+                      <Controller
+                        name="workflow"
+                        control={control}
+                        rules={{ required: true }}
+                        render={({ field }) => (
+                          <Combobox
+                            items={workflowOptions}
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            placeholder="Select a workflow..."
+                            searchPlaceholder="Search workflows..."
+                            emptyMessage="No workflows found"
+                            size="2"
+                            side="top"
+                          />
+                        )}
+                      />
+                    </Flex>
+                  )}
+
+                  {/* GitHub Repository Integration */}
+                  {repositories.length > 0 && (
+                    <Flex direction="column" gap="2" style={{ minWidth: "200px", flex: 1 }}>
+                      <Text size="2" weight="medium" color="gray">
+                        GitHub Repository
+                        <Text size="1" color="gray" ml="1">
+                          (For PRs & tracking)
+                        </Text>
+                      </Text>
+                      <Controller
+                        name="repository"
+                        control={control}
+                        render={({ field }) => (
+                          <Combobox
+                            items={repositories.map((repo) => ({
+                              value: `${repo.organization}/${repo.repository}`,
+                              label: `${repo.organization}/${repo.repository}`,
+                            }))}
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            placeholder="Select GitHub repo..."
+                            searchPlaceholder="Search repositories..."
+                            emptyMessage="No repositories found"
+                            size="2"
+                            side="top"
+                          />
+                        )}
+                      />
+                    </Flex>
+                  )}
+                </Flex>
+              </Flex>
 
               <Flex gap="3" justify="end" align="end">
                 <Text as="label" size="1" style={{ cursor: "pointer" }}>
@@ -287,7 +313,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                   {isLoading ? "Creating..." : "Create task"}
                 </Button>
               </Flex>
-            </Flex>
             </Flex>
           </form>
         </Flex>

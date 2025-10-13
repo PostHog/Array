@@ -140,24 +140,13 @@ export const FileMentionList = forwardRef(
             className={`file-mention-item ${index === selectedIndex ? "is-selected" : ""}`}
             onClick={() => selectItem(index)}
             onMouseEnter={() => setSelectedIndex(index)}
-              style={{
-                padding: "var(--space-2)",
-                cursor: "pointer",
-                backgroundColor:
-                  index === selectedIndex ? "var(--accent-a3)" : "transparent",
-                borderRadius: "var(--radius-2)",
-                transition: "background-color 0.1s",
-              }}
-            >
-              <Flex direction="column" gap="1">
-                <Text size="2" weight="medium" style={{ color: "var(--gray-12)" }}>
-                  {item.name}
-                </Text>
-                <Text size="1" color="gray">
-                  {item.path}
-                </Text>
-              </Flex>
+          >
+            <Flex direction="column" gap="1">
+              <Text size="1">
+                {item.path}
+              </Text>
             </Flex>
+          </Flex>
         ))}
       </Box>
     );
