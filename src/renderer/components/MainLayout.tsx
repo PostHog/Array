@@ -5,6 +5,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { useIntegrations } from "../hooks/useIntegrations";
 import { useTabStore } from "../stores/tabStore";
 import { CommandMenu } from "./command";
+import { SettingsView } from "./SettingsView";
 import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
 import { TaskCreate } from "./TaskCreate";
@@ -33,7 +34,6 @@ export function MainLayout() {
   useHotkeys("mod+shift+n", () => setWorkflowCreateOpen(true));
 
   const handleSelectTask = (task: Task) => {
-    // Check if task is already open in a tab
     const existingTab = tabs.find(
       (tab) =>
         tab.type === "task-detail" &&
@@ -50,6 +50,19 @@ export function MainLayout() {
         type: "task-detail",
         title: task.title,
         data: task,
+      });
+    }
+  };
+
+  const handleOpenSettings = () => {
+    const existingTab = tabs.find((tab) => tab.type === "settings");
+
+    if (existingTab) {
+      setActiveTab(existingTab.id);
+    } else {
+      createTab({
+        type: "settings",
+        title: "Settings",
       });
     }
   };
@@ -76,9 +89,11 @@ export function MainLayout() {
         {activeTab?.type === "workflow" && (
           <WorkflowView onSelectTask={handleSelectTask} />
         )}
+
+        {activeTab?.type === "settings" && <SettingsView />}
       </Box>
 
-      <StatusBar />
+      <StatusBar onOpenSettings={handleOpenSettings} />
 
       <CommandMenu
         open={commandMenuOpen}

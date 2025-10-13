@@ -9,6 +9,7 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
+import { useMutation } from "@tanstack/react-query";
 import type React from "react";
 import { useId, useState } from "react";
 import { useAuthStore } from "../stores/authStore";
@@ -19,23 +20,18 @@ export function AuthScreen() {
   const apiHostId = useId();
   const [apiKey, setApiKey] = useState("");
   const [apiHost, setApiHost] = useState("https://app.posthog.com");
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
 
   const { setCredentials } = useAuthStore();
 
+  const authMutation = useMutation({
+    mutationFn: async ({ apiKey, host }: { apiKey: string; host: string }) => {
+      await setCredentials(apiKey, host);
+    },
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setIsLoading(true);
-
-    try {
-      await setCredentials(apiKey, apiHost);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to authenticate");
-    } finally {
-      setIsLoading(false);
-    }
+    authMutation.mutate({ apiKey, host: apiHost });
   };
 
   return (
@@ -102,20 +98,25 @@ export function AuthScreen() {
                       </Flex>
                     </Flex>
 
-                    {error && (
+                    {authMutation.isError && (
                       <Callout.Root color="red">
-                        <Callout.Text>{error}</Callout.Text>
+                        <Callout.Text>
+                          {authMutation.error instanceof Error
+                            ? authMutation.error.message
+                            : "Failed to authenticate"}
+                        </Callout.Text>
                       </Callout.Root>
                     )}
 
                     <Button
                       type="submit"
-                      disabled={isLoading || !apiKey}
+                      disabled={authMutation.isPending || !apiKey}
                       variant="classic"
                       size="3"
                       mt="4"
+                      loading={authMutation.isPending}
                     >
-                      {isLoading ? "Connecting..." : "Connect"}
+                      {authMutation.isPending ? "Connecting..." : "Connect"}
                     </Button>
                   </Flex>
                 </form>
