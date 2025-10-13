@@ -169,8 +169,24 @@ export function WorkflowForm({
           },
         });
 
+        const currentStageIds = new Set(stages.map((s) => s.id));
         const existingStageIds = new Set(workflow.stages.map((s) => s.id));
 
+        // Step 1: Archive stages that were removed from the form
+        const stagesToArchive = workflow.stages.filter(
+          (s) => !currentStageIds.has(s.id) && !s.is_archived
+        );
+        for (const stage of stagesToArchive) {
+          await updateStageAPI({
+            workflowId: workflow.id,
+            stageId: stage.id,
+            data: {
+              is_archived: true,
+            },
+          });
+        }
+
+        // Step 2: Update all existing stages
         for (let i = 0; i < stages.length; i++) {
           const stage = stages[i];
           const isComplete = i === stages.length - 1;
@@ -188,7 +204,16 @@ export function WorkflowForm({
                 agent_name: isComplete ? null : stage.agentId,
               },
             });
-          } else {
+          }
+        }
+
+        // Step 3: Create new stages
+        for (let i = 0; i < stages.length; i++) {
+          const stage = stages[i];
+          const isComplete = i === stages.length - 1;
+          const isExistingStage = existingStageIds.has(stage.id);
+
+          if (!isExistingStage) {
             await createStage({
               workflowId: workflow.id,
               data: {

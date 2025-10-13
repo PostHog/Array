@@ -79,11 +79,13 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
       ],
       mode: "replace",
     });
+  }, [setStatusBar, selectedWorkflow, tasks.length]);
 
+  useEffect(() => {
     return () => {
       reset();
     };
-  }, [setStatusBar, reset, selectedWorkflow, tasksByStage]);
+  }, [reset]);
 
   if (isLoading && workflows.length === 0) {
     return (
