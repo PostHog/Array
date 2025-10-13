@@ -46,18 +46,12 @@ export function WorkflowForm({
   workflow,
 }: WorkflowFormProps) {
   const { data: agents = [] } = useAgents();
-  const {
-    mutateAsync: createWorkflow,
-    isPending: isCreatingWorkflow,
-  } = useCreateWorkflow();
-  const {
-    mutateAsync: updateWorkflow,
-    isPending: isUpdatingWorkflow,
-  } = useUpdateWorkflow();
-  const {
-    mutateAsync: deactivateWorkflow,
-    isPending: isDeactivating,
-  } = useDeactivateWorkflow();
+  const { mutateAsync: createWorkflow, isPending: isCreatingWorkflow } =
+    useCreateWorkflow();
+  const { mutateAsync: updateWorkflow, isPending: isUpdatingWorkflow } =
+    useUpdateWorkflow();
+  const { mutateAsync: deactivateWorkflow, isPending: isDeactivating } =
+    useDeactivateWorkflow();
   const { mutateAsync: createStage, isPending: isCreatingStage } =
     useCreateStage();
   const { mutateAsync: updateStageAPI, isPending: isUpdatingStage } =

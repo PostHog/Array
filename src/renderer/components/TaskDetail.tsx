@@ -94,6 +94,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   const repositoryValue = watch("repository");
 
+  // Initialize repoPath from mapping if task has repository_config
   useEffect(() => {
     if (task.repository_config && !repoPath) {
       const repoKey = `${task.repository_config.organization}/${task.repository_config.repository}`;
@@ -126,6 +127,20 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     task.repository_config,
     resetForm,
   ]);
+
+  // Default to first workflow if not set
+  useEffect(() => {
+    if (workflows.length > 0 && !task.workflow) {
+      const defaultWorkflow =
+        workflows.find((w) => w.is_active && w.is_default) || workflows[0];
+      if (defaultWorkflow) {
+        updateTask({
+          taskId: task.id,
+          updates: { workflow: defaultWorkflow.id },
+        });
+      }
+    }
+  }, [workflows, task.workflow, task.id, updateTask]);
 
   useEffect(() => {
     setStatusBar({
@@ -208,7 +223,11 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                     field.onChange(e.currentTarget.textContent || "");
                     onSubmit();
                   }}
-                  style={{ cursor: "text", outline: "none", width: "fit-content" }}
+                  style={{
+                    cursor: "text",
+                    outline: "none",
+                    width: "fit-content",
+                  }}
                 />
               )}
             />
