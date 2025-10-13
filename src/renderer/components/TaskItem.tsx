@@ -5,6 +5,7 @@ import { formatDistanceToNow } from "date-fns";
 import type React from "react";
 import { memo, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useDeleteTask, useDuplicateTask } from "../hooks/useTasks";
 import { useTaskStore } from "../stores/taskStore";
 import { TaskDragPreview } from "./TaskDragPreview";
 
@@ -42,9 +43,8 @@ function TaskItemComponent({
   filteredTasksLength,
 }: TaskItemProps) {
   // Get store actions
-  const fetchTasks = useTaskStore((state) => state.fetchTasks);
-  const deleteTask = useTaskStore((state) => state.deleteTask);
-  const duplicateTask = useTaskStore((state) => state.duplicateTask);
+  const { mutate: deleteTask } = useDeleteTask();
+  const { mutate: duplicateTask } = useDuplicateTask();
   const setSelectedIndex = useTaskStore((state) => state.setSelectedIndex);
   const setHoveredIndex = useTaskStore((state) => state.setHoveredIndex);
   const setContextMenuIndex = useTaskStore(
@@ -66,14 +66,12 @@ function TaskItemComponent({
     onDragStart(e, task.id);
   };
 
-  const handleDelete = async () => {
-    await deleteTask(task.id);
-    await fetchTasks();
+  const handleDelete = () => {
+    deleteTask(task.id);
   };
 
-  const handleDuplicate = async () => {
-    await duplicateTask(task.id);
-    await fetchTasks();
+  const handleDuplicate = () => {
+    duplicateTask(task.id);
   };
 
   useHotkeys(

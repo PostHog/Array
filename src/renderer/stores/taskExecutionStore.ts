@@ -3,8 +3,6 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { LogEntry } from "../types/log";
 import { useAuthStore } from "./authStore";
-import { useTaskStore } from "./taskStore";
-import { useWorkflowStore } from "./workflowStore";
 
 type AgentTaskProgress = {
   has_progress?: boolean;
@@ -29,18 +27,16 @@ const createProgressSignature = (progress: AgentTaskProgress): string =>
   ].join("|");
 
 const formatProgressLog = (progress: AgentTaskProgress): string => {
-  const statusLabel =
-    progress.status?.replace(/_/g, " ") ?? "in progress";
+  const statusLabel = progress.status?.replace(/_/g, " ") ?? "in progress";
   const completed =
-    typeof progress.completed_steps === "number"
-      ? progress.completed_steps
-      : 0;
+    typeof progress.completed_steps === "number" ? progress.completed_steps : 0;
   const total =
     typeof progress.total_steps === "number" && progress.total_steps >= 0
       ? progress.total_steps
       : "?";
   const step =
-    typeof progress.current_step === "string" && progress.current_step.length > 0
+    typeof progress.current_step === "string" &&
+    progress.current_step.length > 0
       ? progress.current_step
       : "-";
   const percentage =
@@ -64,6 +60,8 @@ interface TaskExecutionState {
 interface TaskExecutionStore {
   // State per task ID
   taskStates: Record<string, TaskExecutionState>;
+  // Repository (org/repo) to working directory mapping
+  repoToCwd: Record<string, string>;
 
   // Basic state accessors
   getTaskState: (taskId: string) => TaskExecutionState;
@@ -81,8 +79,12 @@ interface TaskExecutionStore {
   setProgress: (taskId: string, progress: AgentTaskProgress | null) => void;
   clearTaskState: (taskId: string) => void;
 
+  // Repository to working directory mapping
+  getRepoWorkingDir: (repoKey: string) => string | null;
+  setRepoWorkingDir: (repoKey: string, path: string) => void;
+
   // High-level task execution actions
-  selectRepositoryForTask: (taskId: string) => Promise<void>;
+  selectRepositoryForTask: (taskId: string, repoKey?: string) => Promise<void>;
   runTask: (taskId: string, task: Task) => Promise<void>;
   cancelTask: (taskId: string) => Promise<void>;
   clearTaskLogs: (taskId: string) => void;
@@ -107,10 +109,24 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
   persist(
     (set, get) => ({
       taskStates: {},
+      repoToCwd: {},
 
       getTaskState: (taskId: string) => {
         const state = get();
         return state.taskStates[taskId] || { ...defaultTaskState };
+      },
+
+      getRepoWorkingDir: (repoKey: string) => {
+        return get().repoToCwd[repoKey] || null;
+      },
+
+      setRepoWorkingDir: (repoKey: string, path: string) => {
+        set((state) => ({
+          repoToCwd: {
+            ...state.repoToCwd,
+            [repoKey]: path,
+          },
+        }));
       },
 
       updateTaskState: (
@@ -162,7 +178,9 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
       setProgress: (taskId: string, progress: AgentTaskProgress | null) => {
         get().updateTaskState(taskId, {
           progress,
-          progressSignature: progress ? createProgressSignature(progress) : null,
+          progressSignature: progress
+            ? createProgressSignature(progress)
+            : null,
         });
       },
 
@@ -209,7 +227,9 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
                 }
                 break;
               case "progress": {
-                const rawProgress = ev.progress as AgentTaskProgress | undefined;
+                const rawProgress = ev.progress as
+                  | AgentTaskProgress
+                  | undefined;
                 if (
                   rawProgress &&
                   typeof rawProgress === "object" &&
@@ -336,7 +356,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
       },
 
       // High-level task execution actions
-      selectRepositoryForTask: async (taskId: string) => {
+      selectRepositoryForTask: async (taskId: string, repoKey?: string) => {
         const store = get();
         try {
           const selected = await window.electronAPI?.selectDirectory();
@@ -370,11 +390,15 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
               const { response } = result;
               if (response === 0) {
                 // Let user reselect and validate again
-                return store.selectRepositoryForTask(taskId);
+                return store.selectRepositoryForTask(taskId, repoKey);
               }
               return;
             }
             store.setRepoPath(taskId, selected);
+            // Save mapping for future tasks with the same repository
+            if (repoKey) {
+              store.setRepoWorkingDir(repoKey, selected);
+            }
           }
         } catch (err) {
           store.addLog(
@@ -384,19 +408,13 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         }
       },
 
-      runTask: async (taskId: string, fallbackTask: Task) => {
+      runTask: async (taskId: string, task: Task) => {
         const store = get();
         const taskState = store.getTaskState(taskId);
 
         if (taskState.isRunning) return;
 
-        const currentTask =
-          useTaskStore
-            .getState()
-            .tasks.find((candidate) => candidate.id === taskId) ??
-          fallbackTask;
-
-        if (!currentTask.workflow) {
+        if (!task.workflow) {
           store.addLog(
             taskId,
             "Select a PostHog workflow before running the agent.",
@@ -461,11 +479,6 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         }
 
         const currentTaskState = store.getTaskState(taskId);
-        const workflowName =
-          useWorkflowStore
-            .getState()
-            .workflows.find((w) => w.id === currentTask.workflow)?.name ??
-          currentTask.workflow;
         const permissionMode =
           currentTaskState.runMode === "cloud" ? "default" : "acceptEdits";
 
@@ -476,7 +489,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           {
             type: "text",
             ts: startTs,
-            content: `Starting workflow run (${workflowName})...`,
+            content: `Starting workflow run...`,
           },
           {
             type: "text",
@@ -492,8 +505,8 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
         try {
           const result = await window.electronAPI?.agentStart({
-            taskId: currentTask.id,
-            workflowId: currentTask.workflow,
+            taskId: task.id,
+            workflowId: task.workflow,
             repoPath: effectiveRepoPath,
             apiKey,
             apiHost,
@@ -534,6 +547,12 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         } catch {
           // Ignore cancellation errors
         }
+
+        store.addLog(taskId, {
+          type: "text",
+          ts: Date.now(),
+          content: "Run cancelled",
+        });
 
         store.setRunning(taskId, false);
         store.unsubscribeFromAgentEvents(taskId);

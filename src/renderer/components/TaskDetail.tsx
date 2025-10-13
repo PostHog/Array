@@ -1,25 +1,32 @@
-import { ExternalLinkIcon, Pencil1Icon } from "@radix-ui/react-icons";
 import {
-  Badge,
+  DiamondIcon,
+  FilesIcon,
+  GitBranchIcon,
+  GithubLogoIcon,
+} from "@phosphor-icons/react";
+import { GearIcon, GlobeIcon } from "@radix-ui/react-icons";
+import {
   Box,
   Button,
-  Code,
   DataList,
   Flex,
+  Heading,
+  IconButton,
   Link,
-  SegmentedControl,
   Text,
+  Tooltip,
 } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
-import { format } from "date-fns";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useAuthStore } from "../stores/authStore";
-import { useIntegrationStore } from "../stores/integrationStore";
+import { format, formatDistanceToNow } from "date-fns";
+import { useEffect, useMemo } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { useBlurOnEscape } from "../hooks/useBlurOnEscape";
+import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
+import { useTasks, useUpdateTask } from "../hooks/useTasks";
+import { useWorkflowStages, useWorkflows } from "../hooks/useWorkflows";
 import { useStatusBarStore } from "../stores/statusBarStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
-import { useTaskStore } from "../stores/taskStore";
-import { useWorkflowStore } from "../stores/workflowStore";
 import { AsciiArt } from "./AsciiArt";
 import { Combobox } from "./Combobox";
 import { LogView } from "./LogView";
@@ -38,13 +45,24 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     runTask,
     cancelTask,
     clearTaskLogs,
+    getRepoWorkingDir,
+    setRepoPath,
   } = useTaskExecutionStore();
-  const { repositories } = useIntegrationStore();
-  const { updateTask, tasks } = useTaskStore();
+  const { data: integrations = [] } = useIntegrations();
+  const githubIntegration = useMemo(
+    () => integrations.find((i) => i.kind === "github"),
+    [integrations],
+  );
+  useRepositories(githubIntegration?.id);
+  const { data: tasks = [] } = useTasks();
+  const { mutate: updateTask } = useUpdateTask();
   const { updateTabTitle, activeTabId } = useTabStore();
-  const { user, apiHost } = useAuthStore();
-  const workflows = useWorkflowStore((state) => state.workflows);
-  const fetchWorkflows = useWorkflowStore((state) => state.fetchWorkflows);
+  const { data: workflows = [] } = useWorkflows();
+
+  const task = tasks.find((t) => t.id === initialTask.id) || initialTask;
+
+  const { data: workflowStages = [] } = useWorkflowStages(task.workflow || "");
+
   const workflowOptions = useMemo(
     () =>
       workflows.map((workflow) => ({
@@ -54,49 +72,95 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     [workflows],
   );
 
-  // Get the latest task data from the store
-  const task = tasks.find((t) => t.id === initialTask.id) || initialTask;
+  const currentStageName = useMemo(() => {
+    if (!task.current_stage) return "Backlog";
+    const stage = workflowStages.find((s) => s.id === task.current_stage);
+    return stage?.name || task.current_stage;
+  }, [task.current_stage, workflowStages]);
 
-  // Get persistent state for this task
   const taskState = getTaskState(task.id);
+
   const { isRunning, logs, repoPath, runMode, progress } = taskState;
 
-  const [selectedRepo, setSelectedRepo] = useState<string>(() => {
-    if (
-      task.repository_config &&
-      task.repository_config.organization &&
-      task.repository_config.repository
-    ) {
-      return `${task.repository_config.organization}/${task.repository_config.repository}`;
-    }
-    return "";
+  const {
+    handleSubmit,
+    reset: resetForm,
+    control,
+    watch,
+  } = useForm({
+    defaultValues: {
+      title: task.title,
+      description: task.description || "",
+      workflow: task.workflow || "",
+      repository:
+        task.repository_config?.organization &&
+        task.repository_config.repository
+          ? `${task.repository_config.organization}/${task.repository_config.repository}`
+          : "",
+    },
   });
 
-  const titleRef = useRef<HTMLElement>(null);
-  const originalTitleRef = useRef(task.title);
-  const [description, setDescription] = useState(task.description || "");
-  const originalDescriptionRef = useRef(task.description || "");
+  const repositoryValue = watch("repository");
+
+  const displayRepoPath = useMemo(() => {
+    if (!repoPath) return null;
+    // Replace home directory with ~
+    const homeDirPattern = /^\/Users\/[^/]+/; // macOS/Linux pattern
+    if (homeDirPattern.test(repoPath)) {
+      return repoPath.replace(homeDirPattern, "~");
+    }
+    return repoPath;
+  }, [repoPath]);
+
+  // Initialize repoPath from mapping if task has repository_config
+  useEffect(() => {
+    if (task.repository_config && !repoPath) {
+      const repoKey = `${task.repository_config.organization}/${task.repository_config.repository}`;
+      const savedPath = getRepoWorkingDir(repoKey);
+      if (savedPath) {
+        setRepoPath(task.id, savedPath);
+      }
+    }
+  }, [
+    task.id,
+    task.repository_config,
+    repoPath,
+    getRepoWorkingDir,
+    setRepoPath,
+  ]);
 
   useEffect(() => {
-    if (titleRef.current && titleRef.current.textContent !== task.title) {
-      titleRef.current.textContent = task.title;
-      originalTitleRef.current = task.title;
-    }
-  }, [task.title]);
+    resetForm({
+      title: task.title,
+      description: task.description || "",
+      workflow: task.workflow || "",
+      repository:
+        task.repository_config?.organization &&
+        task.repository_config.repository
+          ? `${task.repository_config.organization}/${task.repository_config.repository}`
+          : "",
+    });
+  }, [
+    task.title,
+    task.description,
+    task.workflow,
+    task.repository_config,
+    resetForm,
+  ]);
 
+  // Default to first workflow if not set
   useEffect(() => {
-    const desc = task.description || "";
-    if (desc !== description) {
-      setDescription(desc);
-      originalDescriptionRef.current = desc;
+    if (workflows.length > 0 && !task.workflow) {
+      const defaultWorkflow =
+        workflows.find((w) => w.is_active && w.is_default) || workflows[0];
+      if (defaultWorkflow) {
+        updateTask({
+          taskId: task.id,
+          updates: { workflow: defaultWorkflow.id },
+        });
+      }
     }
-  }, [task.description]);
-
-  useEffect(() => {
-    if (!workflows.length) {
-      void fetchWorkflows({ skipLoadingState: true });
-    }
-  }, [workflows.length, fetchWorkflows]);
+  }, [workflows, task.workflow, task.id, updateTask]);
 
   useEffect(() => {
     setStatusBar({
@@ -119,9 +183,12 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     };
   }, [setStatusBar, reset, isRunning]);
 
+  useBlurOnEscape();
+
   // Simple event handlers that delegate to store actions
   const handleSelectRepo = () => {
-    selectRepositoryForTask(task.id);
+    const repoKey = repositoryValue || undefined;
+    selectRepositoryForTask(task.id, repoKey);
   };
 
   const handleRunTask = () => {
@@ -140,317 +207,248 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     clearTaskLogs(task.id);
   };
 
-  const handleWorkflowChange = async (value: string) => {
-    const nextWorkflow =
-      !value || value === "__none__" ? null : (value as string);
-    await updateTask(task.id, { workflow: nextWorkflow });
-  };
-
-  const handleRepositoryChange = async (value: string) => {
-    setSelectedRepo(value);
-
-    let repositoryConfig:
-      | { organization: string; repository: string }
-      | undefined;
-
-    if (value && value !== "__none__") {
-      const [organization, repository] = value.split("/");
-      if (organization && repository) {
-        repositoryConfig = { organization, repository };
-      }
-    }
-
-    await updateTask(task.id, { repository_config: repositoryConfig });
-  };
-
-  const handleTitleBlur = async () => {
-    const newTitle = titleRef.current?.textContent?.trim() || "";
-    if (newTitle && newTitle !== originalTitleRef.current) {
-      await updateTask(task.id, { title: newTitle });
-      originalTitleRef.current = newTitle;
+  const onSubmit = handleSubmit((data) => {
+    if (data.title !== task.title) {
+      updateTask({ taskId: task.id, updates: { title: data.title } });
       if (activeTabId) {
-        updateTabTitle(activeTabId, newTitle);
-      }
-    } else if (!newTitle) {
-      if (titleRef.current) {
-        titleRef.current.textContent = originalTitleRef.current;
+        updateTabTitle(activeTabId, data.title);
       }
     }
-  };
-
-  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      titleRef.current?.blur();
-    } else if (e.key === "Escape") {
-      if (titleRef.current) {
-        titleRef.current.textContent = originalTitleRef.current;
-      }
-      titleRef.current?.blur();
-    }
-  };
-
-  const handleDescriptionBlur = async () => {
-    if (description !== originalDescriptionRef.current) {
-      await updateTask(task.id, {
-        description: description || undefined,
+    if (data.description !== task.description) {
+      updateTask({
+        taskId: task.id,
+        updates: { description: data.description || undefined },
       });
-      originalDescriptionRef.current = description;
     }
-  };
+  });
 
   return (
-    <Flex height="100%">
-      {/* Left pane - Task details */}
-      <Box width="50%" className="border-gray-6 border-r" overflowY="auto">
-        <Box p="4">
-          <Box mb="4">
-            <Code
-              ref={titleRef}
-              size="5"
-              contentEditable
-              suppressContentEditableWarning
-              spellCheck={false}
-              onBlur={handleTitleBlur}
-              onKeyDown={handleTitleKeyDown}
-              style={{ cursor: "text", outline: "none" }}
-            >
-              {task.title}
-            </Code>
-          </Box>
-
-          <DataList.Root>
-            <DataList.Item>
-              <DataList.Label>Status</DataList.Label>
-              <DataList.Value>
-                <Badge color="gray">{task.current_stage || "Backlog"}</Badge>
-              </DataList.Value>
-            </DataList.Item>
-
-            <DataList.Item>
-              <DataList.Label>Progress</DataList.Label>
-              <DataList.Value>
-                {progress?.has_progress ? (
-                  <Flex direction="column" gap="1">
-                    <Badge
-                      color={
-                        progress.status === "completed"
-                          ? "green"
-                          : progress.status === "failed"
-                            ? "red"
-                            : "blue"
+    <Flex direction="column" height="100%">
+      <Flex height="100%" style={{ flex: 1 }}>
+        <Box width="50%" className="border-gray-6 border-r" overflowY="auto">
+          <Box p="4">
+            <Flex direction="column" gap="4">
+              <Controller
+                name="title"
+                control={control}
+                render={({ field }) => (
+                  <Heading
+                    size="5"
+                    contentEditable
+                    suppressContentEditableWarning
+                    ref={(el) => {
+                      if (el && el.textContent !== field.value) {
+                        el.textContent = field.value;
                       }
-                    >
-                      {progress.status?.replace(/_/g, " ") ?? "in progress"}
-                    </Badge>
-                    <Text size="2" color="gray">
-                      Steps {progress.completed_steps ?? 0}/
-                      {typeof progress.total_steps === "number"
-                        ? progress.total_steps
-                        : "?"}
-                      {typeof progress.progress_percentage === "number"
-                        ? ` · ${Math.round(progress.progress_percentage)}%`
-                        : ""}
-                    </Text>
-                    {progress.current_step && (
-                      <Text size="2" color="gray">
-                        Current step: {progress.current_step}
-                      </Text>
-                    )}
-                  </Flex>
-                ) : (
-                  <Code size="2" color="gray">
-                    No progress yet
-                  </Code>
-                )}
-              </DataList.Value>
-            </DataList.Item>
-
-            <DataList.Item>
-              <DataList.Label>Workflow</DataList.Label>
-              <DataList.Value>
-                {workflowOptions.length > 0 ? (
-                  <Combobox
-                    items={workflowOptions}
-                    value={task.workflow ?? "__none__"}
-                    onValueChange={handleWorkflowChange}
-                    placeholder="Select a workflow..."
-                    searchPlaceholder="Search workflows..."
-                    emptyMessage="No workflows found"
-                    noneLabel="No workflow"
-                    size="2"
+                    }}
+                    onBlur={(e) => {
+                      field.onChange(e.currentTarget.textContent || "");
+                      onSubmit();
+                    }}
+                    style={{
+                      cursor: "text",
+                      outline: "none",
+                      width: "100%",
+                    }}
                   />
-                ) : (
-                  <Code size="2" color="gray">
-                    No workflows available
-                  </Code>
                 )}
-              </DataList.Value>
-            </DataList.Item>
+              />
 
-            <DataList.Item>
-              <DataList.Label>Repository</DataList.Label>
-              <DataList.Value>
-                <Flex gap="2" align="center">
-                  {repositories.length > 0 ? (
-                    <>
-                      <Combobox
-                        items={repositories.map((repo) => ({
-                          value: `${repo.organization}/${repo.repository}`,
-                          label: `${repo.organization}/${repo.repository}`,
-                        }))}
-                        value={selectedRepo}
-                        onValueChange={handleRepositoryChange}
-                        placeholder="Select a repository..."
-                        searchPlaceholder="Search repositories..."
-                        emptyMessage="No repositories found"
-                        size="2"
+               <Flex direction="column">
+                 <Controller
+                   name="description"
+                   control={control}
+                   render={({ field }) => (
+                     <RichTextEditor
+                       value={field.value}
+                       onChange={field.onChange}
+                       repoPath={repoPath}
+                       placeholder="No description provided. Use @ to mention files, or format text with markdown."
+                       onBlur={onSubmit}
+                       showToolbar={true}
+                       minHeight="100px"
+                       style={{
+                         minHeight: "100px",
+                       }}
+                     />
+                   )}
+                 />
+
+                 <Box className="border-gray-6 border-t" mt="4" />
+               </Flex>
+
+              <DataList.Root>
+                <DataList.Item>
+                  <DataList.Label>Status</DataList.Label>
+                  <DataList.Value>
+                    <Button size="1" color="gray">
+                      {currentStageName}
+                    </Button>
+                  </DataList.Value>
+                </DataList.Item>
+
+                {progress?.has_progress && (
+                  <DataList.Item>
+                    <DataList.Label>Progress</DataList.Label>
+                    <DataList.Value>
+                      <Text size="2">
+                        {progress.completed_steps ?? 0}/
+                        {typeof progress.total_steps === "number"
+                          ? progress.total_steps
+                          : "-"}
+                        {typeof progress.progress_percentage === "number" &&
+                          ` · ${Math.round(progress.progress_percentage)}%`}
+                        {progress.current_step && ` · ${progress.current_step}`}
+                      </Text>
+                    </DataList.Value>
+                  </DataList.Item>
+                )}
+
+                {workflowOptions.length > 0 && (
+                  <DataList.Item>
+                    <DataList.Label>Workflow</DataList.Label>
+                    <DataList.Value>
+                      <Controller
+                        name="workflow"
+                        control={control}
+                        rules={{ required: true }}
+                        render={({ field }) => (
+                          <Combobox
+                            items={workflowOptions}
+                            value={field.value}
+                            onValueChange={(value) => {
+                              field.onChange(value);
+                              updateTask({
+                                taskId: task.id,
+                                updates: { workflow: value },
+                              });
+                            }}
+                            placeholder="Select a workflow..."
+                            searchPlaceholder="Search workflows..."
+                            emptyMessage="No workflows found"
+                            size="1"
+                            variant="outline"
+                            icon={<DiamondIcon />}
+                          />
+                        )}
                       />
-                      {selectedRepo && selectedRepo !== "__none__" && (
-                        <Button
-                          size="1"
-                          variant="ghost"
-                          onClick={() =>
-                            window.electronAPI.openExternal(
-                              `https://github.com/${selectedRepo}`,
-                            )
-                          }
-                        >
-                          <ExternalLinkIcon />
-                        </Button>
-                      )}
-                    </>
-                  ) : (
-                    <Flex direction="column" gap="2">
-                      <Code size="2" color="gray">
-                        No GitHub integration configured
-                      </Code>
-                      {user?.team?.id && (
-                        <Button
-                          size="1"
-                          variant="outline"
-                          onClick={() =>
-                            window.electronAPI.openExternal(
-                              `${apiHost}/project/${user.team.id}/settings/environment-integrations`,
-                            )
-                          }
-                        >
-                          Set up GitHub integration
-                          <ExternalLinkIcon />
-                        </Button>
-                      )}
-                    </Flex>
-                  )}
-                </Flex>
-              </DataList.Value>
-            </DataList.Item>
-
-            {task.github_branch && (
-              <DataList.Item>
-                <DataList.Label>Branch</DataList.Label>
-                <DataList.Value>{task.github_branch}</DataList.Value>
-              </DataList.Item>
-            )}
-
-            {task.github_pr_url && (
-              <DataList.Item>
-                <DataList.Label>Pull Request</DataList.Label>
-                <DataList.Value>
-                  <Link href={task.github_pr_url} target="_blank" size="2">
-                    View Pull Request →
-                  </Link>
-                </DataList.Value>
-              </DataList.Item>
-            )}
-
-            <DataList.Item>
-              <DataList.Label>Created</DataList.Label>
-              <DataList.Value>
-                {format(new Date(task.created_at), "PPP p")}
-              </DataList.Value>
-            </DataList.Item>
-
-            <DataList.Item>
-              <DataList.Label>Description</DataList.Label>
-              <DataList.Value>
-                <RichTextEditor
-                  value={description}
-                  onChange={setDescription}
-                  repoPath={repoPath}
-                  placeholder="No description provided. Use @ to mention files, or format text with markdown."
-                  onBlur={handleDescriptionBlur}
-                  showToolbar={true}
-                  minHeight="80px"
-                  style={{
-                    minHeight: "80px",
-                  }}
-                />
-              </DataList.Value>
-            </DataList.Item>
-
-            <DataList.Item>
-              <DataList.Label>Working Directory</DataList.Label>
-              <DataList.Value>
-                {repoPath ? (
-                  <Button
-                    size="1"
-                    variant="ghost"
-                    onClick={handleSelectRepo}
-                    className="group cursor-pointer"
-                  >
-                    <Code variant="ghost" size="2">
-                      {repoPath}
-                    </Code>
-                    <Pencil1Icon className="ml-2 opacity-0 transition-opacity group-hover:opacity-100" />
-                  </Button>
-                ) : (
-                  <Button size="1" variant="outline" onClick={handleSelectRepo}>
-                    Choose folder
-                  </Button>
+                    </DataList.Value>
+                  </DataList.Item>
                 )}
-              </DataList.Value>
-            </DataList.Item>
 
-            <DataList.Item>
-              <DataList.Label>Mode</DataList.Label>
-              <DataList.Value>
-                <SegmentedControl.Root
-                  value={runMode}
-                  onValueChange={handleRunModeChange}
+                <DataList.Item>
+                  <DataList.Label>Repository</DataList.Label>
+                  <DataList.Value>
+                    <Button size="1" variant="outline" color="gray">
+                      <GithubLogoIcon />
+                      {repositoryValue || "No repository connected"}
+                    </Button>
+                  </DataList.Value>
+                </DataList.Item>
+
+                <DataList.Item>
+                  <DataList.Label>Working Directory</DataList.Label>
+                  <DataList.Value>
+                    {repoPath ? (
+                      <Button
+                        size="1"
+                        variant="outline"
+                        color="gray"
+                        onClick={handleSelectRepo}
+                      >
+                        <FilesIcon />
+                        {displayRepoPath}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="1"
+                        variant="outline"
+                        color="gray"
+                        onClick={handleSelectRepo}
+                      >
+                        <FilesIcon />
+                        Choose folder
+                      </Button>
+                    )}
+                  </DataList.Value>
+                </DataList.Item>
+
+                {task.github_branch && (
+                  <DataList.Item>
+                    <DataList.Label>Branch</DataList.Label>
+                    <DataList.Value>
+                      <Button size="1" variant="outline" color="gray">
+                        <GitBranchIcon />
+                        {task.github_branch}
+                      </Button>
+                    </DataList.Value>
+                  </DataList.Item>
+                )}
+              </DataList.Root>
+
+              {task.github_pr_url && (
+                <Link href={task.github_pr_url} target="_blank" size="2">
+                  View Pull Request
+                </Link>
+              )}
+
+              <Tooltip content={format(new Date(task.created_at), "PPP p")}>
+                <Button
+                  size="1"
+                  variant="ghost"
+                  color="gray"
+                  style={{ width: "fit-content" }}
                 >
-                  <SegmentedControl.Item value="local">
-                    Local
-                  </SegmentedControl.Item>
-                  <SegmentedControl.Item value="cloud">
-                    Cloud
-                  </SegmentedControl.Item>
-                </SegmentedControl.Root>
-              </DataList.Value>
-            </DataList.Item>
-          </DataList.Root>
+                  Created{" "}
+                  {formatDistanceToNow(new Date(task.created_at), {
+                    addSuffix: true,
+                  })}
+                </Button>
+              </Tooltip>
+            </Flex>
 
-          <Box mt="6">
-            <Flex direction="column" gap="3">
+            <Flex direction="column" gap="3" mt="4">
               {!repoPath ? (
-                <Button variant="classic" onClick={handleSelectRepo} size="3">
+                <Button variant="classic" onClick={handleSelectRepo} size="2">
                   Choose working folder
                 </Button>
               ) : (
-                <Button
-                  variant="classic"
-                  onClick={handleRunTask}
-                  disabled={isRunning}
-                  size="3"
-                >
-                  {isRunning ? "Running..." : "Run Agent"}
-                </Button>
+                <Flex gap="2">
+                  <Button
+                    variant="classic"
+                    onClick={handleRunTask}
+                    disabled={isRunning}
+                    size="2"
+                    style={{ flex: 1 }}
+                  >
+                    {isRunning
+                      ? "Running..."
+                      : runMode === "cloud"
+                        ? "Run Agent"
+                        : "Run Agent (Local)"}
+                  </Button>
+                  <Tooltip content="Toggle between Local or Cloud Agent">
+                    <IconButton
+                      size="2"
+                      variant="classic"
+                      color={runMode === "cloud" ? "blue" : "gray"}
+                      onClick={() =>
+                        handleRunModeChange(
+                          runMode === "local" ? "cloud" : "local",
+                        )
+                      }
+                    >
+                      {runMode === "cloud" ? <GlobeIcon /> : <GearIcon />}
+                    </IconButton>
+                  </Tooltip>
+                </Flex>
               )}
 
               {isRunning && (
                 <Button
                   onClick={handleCancel}
                   color="red"
-                  size="3"
+                  size="2"
                   variant="outline"
                 >
                   Cancel
@@ -459,27 +457,27 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
             </Flex>
           </Box>
         </Box>
-      </Box>
 
-      {/* Right pane - Logs */}
-      <Box
-        width="50%"
-        className="bg-panel-solid"
-        style={{ position: "relative" }}
-      >
-        {/* Background ASCII Art */}
-        <Box style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-          <AsciiArt scale={1} opacity={0.1} />
+        {/* Right pane - Logs */}
+        <Box
+          width="50%"
+          className="bg-panel-solid"
+          style={{ position: "relative" }}
+        >
+          {/* Background ASCII Art */}
+          <Box style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+            <AsciiArt scale={1} opacity={0.1} />
+          </Box>
+          {/* Foreground LogView */}
+          <Box style={{ position: "relative", zIndex: 1, height: "100%" }}>
+            <LogView
+              logs={logs}
+              isRunning={isRunning}
+              onClearLogs={handleClearLogs}
+            />
+          </Box>
         </Box>
-        {/* Foreground LogView */}
-        <Box style={{ position: "relative", zIndex: 1, height: "100%" }}>
-          <LogView
-            logs={logs}
-            isRunning={isRunning}
-            onClearLogs={handleClearLogs}
-          />
-        </Box>
-      </Box>
+      </Flex>
     </Flex>
   );
 }

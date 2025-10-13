@@ -10,6 +10,15 @@ import {
 import type { Workflow } from "@shared/types";
 import { useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import {
+  useAgents,
+  useCreateStage,
+  useCreateWorkflow,
+  useDeactivateWorkflow,
+  useUpdateStage,
+  useUpdateWorkflow,
+  useWorkflows,
+} from "../hooks/useWorkflows";
 import { useTabStore } from "../stores/tabStore";
 import { useWorkflowStore } from "../stores/workflowStore";
 import { WorkflowBasicInfoStep } from "./workflow/WorkflowBasicInfoStep";
@@ -37,16 +46,20 @@ export function WorkflowForm({
   onOpenChange,
   workflow,
 }: WorkflowFormProps) {
-  const {
-    createWorkflow,
-    updateWorkflow,
-    deactivateWorkflow,
-    isLoading,
-    agents,
-    fetchAgents,
-    selectWorkflow,
-  } = useWorkflowStore();
+  const { data: agents = [] } = useAgents();
+  const { mutateAsync: createWorkflow, isPending: isCreatingWorkflow } =
+    useCreateWorkflow();
+  const { mutateAsync: updateWorkflow, isPending: isUpdatingWorkflow } =
+    useUpdateWorkflow();
+  const { mutateAsync: deactivateWorkflow, isPending: isDeactivating } =
+    useDeactivateWorkflow();
+  const { mutateAsync: createStage, isPending: isCreatingStage } =
+    useCreateStage();
+  const { mutateAsync: updateStageAPI, isPending: isUpdatingStage } =
+    useUpdateStage();
   const { tabs, setActiveTab, createTab } = useTabStore();
+  const { selectWorkflow } = useWorkflowStore();
+  const { data: workflows = [] } = useWorkflows();
   const [currentStep, setCurrentStep] = useState<"info" | "stages">("info");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -54,26 +67,29 @@ export function WorkflowForm({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const isEditMode = !!workflow;
+  const isSubmitting =
+    isCreatingWorkflow ||
+    isUpdatingWorkflow ||
+    isDeactivating ||
+    isCreatingStage ||
+    isUpdatingStage;
 
   useEffect(() => {
-    if (open) {
-      fetchAgents();
-      if (workflow) {
-        setName(workflow.name);
-        setDescription(workflow.description || "");
-        setStages(
-          workflow.stages
-            .filter((s) => !s.is_archived)
-            .sort((a, b) => a.position - b.position)
-            .map((s) => ({
-              id: s.id,
-              name: s.name,
-              agentId: s.agent_name || null,
-            })),
-        );
-      }
+    if (open && workflow) {
+      setName(workflow.name);
+      setDescription(workflow.description || "");
+      setStages(
+        workflow.stages
+          .filter((s) => !s.is_archived)
+          .sort((a, b) => a.position - b.position)
+          .map((s) => ({
+            id: s.id,
+            name: s.name,
+            agentId: s.agent_name || null,
+          })),
+      );
     }
-  }, [open, fetchAgents, workflow]);
+  }, [open, workflow]);
 
   const addStage = () => {
     const newStage: StageFormData = {
@@ -125,6 +141,16 @@ export function WorkflowForm({
       setDeleteDialogOpen(false);
       resetForm();
       onOpenChange(false);
+
+      // Switch to the next available workflow
+      const remainingWorkflows = workflows.filter(
+        (w) => w.id !== workflow.id && w.is_active,
+      );
+      if (remainingWorkflows.length > 0) {
+        selectWorkflow(remainingWorkflows[0].id);
+      } else {
+        selectWorkflow(null);
+      }
     } catch (error) {
       console.error("Failed to delete workflow:", error);
     }
@@ -134,41 +160,72 @@ export function WorkflowForm({
     if (!name.trim() || stages.length < 2) return;
 
     try {
-      const workflowStore = useWorkflowStore.getState();
-
       if (isEditMode && workflow) {
-        await updateWorkflow(workflow.id, {
-          name: name.trim(),
-          description: description.trim() || undefined,
+        await updateWorkflow({
+          workflowId: workflow.id,
+          data: {
+            name: name.trim(),
+            description: description.trim() || undefined,
+          },
         });
 
+        const currentStageIds = new Set(stages.map((s) => s.id));
         const existingStageIds = new Set(workflow.stages.map((s) => s.id));
 
+        // Step 1: Archive stages that were removed from the form
+        const stagesToArchive = workflow.stages.filter(
+          (s) => !currentStageIds.has(s.id) && !s.is_archived,
+        );
+        for (const stage of stagesToArchive) {
+          await updateStageAPI({
+            workflowId: workflow.id,
+            stageId: stage.id,
+            data: {
+              is_archived: true,
+            },
+          });
+        }
+
+        // Step 2: Update all existing stages
         for (let i = 0; i < stages.length; i++) {
           const stage = stages[i];
           const isComplete = i === stages.length - 1;
           const isExistingStage = existingStageIds.has(stage.id);
 
           if (isExistingStage) {
-            await workflowStore.updateStage(workflow.id, stage.id, {
-              name: stage.name,
-              key: generateKey(stage.name),
-              position: i,
-              is_manual_only: isComplete || !stage.agentId,
-              agent_name: isComplete ? null : stage.agentId,
-            });
-          } else {
-            await workflowStore.createStage(workflow.id, {
-              name: stage.name,
-              key: generateKey(stage.name),
-              position: i,
-              is_manual_only: isComplete || !stage.agentId,
-              agent_name: isComplete ? null : stage.agentId,
+            await updateStageAPI({
+              workflowId: workflow.id,
+              stageId: stage.id,
+              data: {
+                name: stage.name,
+                key: generateKey(stage.name),
+                position: i,
+                is_manual_only: isComplete || !stage.agentId,
+                agent_name: isComplete ? null : stage.agentId,
+              },
             });
           }
         }
 
-        await workflowStore.fetchWorkflows({ skipLoadingState: true });
+        // Step 3: Create new stages
+        for (let i = 0; i < stages.length; i++) {
+          const stage = stages[i];
+          const isComplete = i === stages.length - 1;
+          const isExistingStage = existingStageIds.has(stage.id);
+
+          if (!isExistingStage) {
+            await createStage({
+              workflowId: workflow.id,
+              data: {
+                name: stage.name,
+                key: generateKey(stage.name),
+                position: i,
+                is_manual_only: isComplete || !stage.agentId,
+                agent_name: isComplete ? null : stage.agentId,
+              },
+            });
+          }
+        }
       } else {
         const newWorkflow = await createWorkflow({
           name: name.trim(),
@@ -179,21 +236,22 @@ export function WorkflowForm({
           const stage = stages[i];
           const isComplete = i === stages.length - 1;
 
-          await workflowStore.createStage(newWorkflow.id, {
-            name: stage.name,
-            key: generateKey(stage.name),
-            position: i,
-            is_manual_only: isComplete || !stage.agentId,
-            agent_name: isComplete ? null : stage.agentId,
+          await createStage({
+            workflowId: newWorkflow.id,
+            data: {
+              name: stage.name,
+              key: generateKey(stage.name),
+              position: i,
+              is_manual_only: isComplete || !stage.agentId,
+              agent_name: isComplete ? null : stage.agentId,
+            },
           });
         }
 
         selectWorkflow(newWorkflow.id);
-        await workflowStore.fetchWorkflows({ skipLoadingState: true });
         navigateToWorkflowTab();
       }
 
-      useWorkflowStore.setState({ isLoading: false });
       resetForm();
       onOpenChange(false);
     } catch (error) {
@@ -341,7 +399,7 @@ export function WorkflowForm({
                   variant="classic"
                   onClick={handleSubmit}
                   disabled={!canCreateWorkflow}
-                  loading={isLoading}
+                  loading={isSubmitting}
                 >
                   {isEditMode ? "Update workflow" : "Create workflow"}
                 </Button>

@@ -1,5 +1,6 @@
-import path from "node:path";
+import dns from "node:dns";
 import { mkdirSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   app,
@@ -7,7 +8,6 @@ import {
   Menu,
   type MenuItemConstructorOptions,
 } from "electron";
-import dns from "node:dns";
 import { registerAgentIpc, type TaskController } from "./services/agent.js";
 import { registerOsIpc } from "./services/os.js";
 import { registerPosthogIpc } from "./services/posthog.js";
