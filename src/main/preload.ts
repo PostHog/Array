@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("show-message-box", options),
   openExternal: (url: string): Promise<void> =>
     ipcRenderer.invoke("open-external", url),
+  listRepoFiles: (
+    repoPath: string,
+    query?: string,
+  ): Promise<Array<{ path: string; name: string }>> =>
+    ipcRenderer.invoke("list-repo-files", repoPath, query),
   agentStart: async (
     params: AgentStartParams,
   ): Promise<{ taskId: string; channel: string }> =>

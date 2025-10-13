@@ -18,6 +18,7 @@ import { useIntegrationStore } from "../stores/integrationStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskStore } from "../stores/taskStore";
 import { Combobox } from "./Combobox";
+import { RichTextEditor } from "./RichTextEditor";
 
 interface TaskCreateProps {
   open: boolean;
@@ -33,8 +34,8 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const [selectedRepo, setSelectedRepo] = useState<string>("");
   const [isExpanded, setIsExpanded] = useState(false);
   const [createMore, setCreateMore] = useState(false);
+  const [repoPath, setRepoPath] = useState<string | null>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
-  const descriptionRef = useRef<HTMLTextAreaElement>(null);
 
   const handleCreate = async () => {
     if (!title.trim() || !description.trim()) return;
@@ -129,45 +130,51 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
               flexGrow="1"
               style={{ minHeight: 0 }}
             >
-              <TextArea
-                ref={descriptionRef}
+              <RichTextEditor
                 value={description}
-                onChange={(e) => {
-                  setDescription(e.target.value);
-                  if (descriptionRef.current && !isExpanded) {
-                    descriptionRef.current.style.height = "auto";
-                    descriptionRef.current.style.height = `${descriptionRef.current.scrollHeight}px`;
-                  }
-                }}
-                placeholder="Add description..."
-                size="3"
-                rows={3}
+                onChange={setDescription}
+                repoPath={repoPath}
+                placeholder="Add description... Use @ to mention files, or try **bold**, *italic*, `code`, and more!"
+                showToolbar={true}
+                minHeight={isExpanded ? "200px" : "120px"}
                 style={{
-                  resize: "none",
-                  overflow: isExpanded ? "auto" : "hidden",
-                  minHeight: "auto",
                   height: isExpanded ? "100%" : "auto",
+                  overflow: isExpanded ? "auto" : "visible",
                 }}
               />
             </Flex>
 
-            {repositories.length > 0 && (
-              <Flex direction="column" gap="2" width="50%">
-                <Combobox
-                  items={repositories.map((repo) => ({
-                    value: `${repo.organization}/${repo.repository}`,
-                    label: `${repo.organization}/${repo.repository}`,
-                  }))}
-                  value={selectedRepo}
-                  onValueChange={setSelectedRepo}
-                  placeholder="Select a repository..."
-                  searchPlaceholder="Search repositories..."
-                  emptyMessage="No repositories found"
-                  size="2"
-                  side="top"
-                />
-              </Flex>
-            )}
+            <Flex gap="2" align="end">
+              {repositories.length > 0 && (
+                <Flex direction="column" gap="2" flexGrow="1">
+                  <Combobox
+                    items={repositories.map((repo) => ({
+                      value: `${repo.organization}/${repo.repository}`,
+                      label: `${repo.organization}/${repo.repository}`,
+                    }))}
+                    value={selectedRepo}
+                    onValueChange={setSelectedRepo}
+                    placeholder="Select a repository..."
+                    searchPlaceholder="Search repositories..."
+                    emptyMessage="No repositories found"
+                    size="2"
+                    side="top"
+                  />
+                </Flex>
+              )}
+              <Button
+                variant="soft"
+                size="2"
+                onClick={async () => {
+                  const selected = await window.electronAPI?.selectDirectory();
+                  if (selected) {
+                    setRepoPath(selected);
+                  }
+                }}
+              >
+                {repoPath ? "Change Local Repo" : "Select Local Repo for @"}
+              </Button>
+            </Flex>
 
             <Flex gap="3" justify="end" align="end">
               <Text as="label" size="1" style={{ cursor: "pointer" }}>

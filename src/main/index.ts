@@ -11,6 +11,7 @@ import dns from "node:dns";
 import { registerAgentIpc, type TaskController } from "./services/agent.js";
 import { registerOsIpc } from "./services/os.js";
 import { registerPosthogIpc } from "./services/posthog.js";
+import { registerFsIpc } from "./services/fs.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -124,3 +125,4 @@ app.on("activate", () => {
 registerPosthogIpc();
 registerOsIpc(() => mainWindow);
 registerAgentIpc(taskControllers, () => mainWindow);
+registerFsIpc();

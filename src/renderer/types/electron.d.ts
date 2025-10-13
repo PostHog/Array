@@ -14,6 +14,10 @@ export interface IElectronAPI {
     cancelId?: number;
   }) => Promise<{ response: number }>;
   openExternal: (url: string) => Promise<void>;
+  listRepoFiles: (
+    repoPath: string,
+    query?: string,
+  ) => Promise<Array<{ path: string; name: string }>>;
   agentStart: (params: {
     taskId: string;
     workflowId: string;

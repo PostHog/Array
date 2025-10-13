@@ -23,6 +23,7 @@ import { useWorkflowStore } from "../stores/workflowStore";
 import { AsciiArt } from "./AsciiArt";
 import { Combobox } from "./Combobox";
 import { LogView } from "./LogView";
+import { RichTextEditor } from "./RichTextEditor";
 
 interface TaskDetailProps {
   task: Task;
@@ -73,7 +74,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   const titleRef = useRef<HTMLElement>(null);
   const originalTitleRef = useRef(task.title);
-  const descriptionRef = useRef<HTMLDivElement>(null);
+  const [description, setDescription] = useState(task.description || "");
   const originalDescriptionRef = useRef(task.description || "");
 
   useEffect(() => {
@@ -85,8 +86,8 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   useEffect(() => {
     const desc = task.description || "";
-    if (descriptionRef.current && descriptionRef.current.textContent !== desc) {
-      descriptionRef.current.textContent = desc;
+    if (desc !== description) {
+      setDescription(desc);
       originalDescriptionRef.current = desc;
     }
   }, [task.description]);
@@ -190,24 +191,11 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   };
 
   const handleDescriptionBlur = async () => {
-    const newDescription = descriptionRef.current?.textContent?.trim() || "";
-    if (newDescription !== originalDescriptionRef.current) {
+    if (description !== originalDescriptionRef.current) {
       await updateTask(task.id, {
-        description: newDescription || undefined,
+        description: description || undefined,
       });
-      originalDescriptionRef.current = newDescription;
-    }
-  };
-
-  const handleDescriptionKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      descriptionRef.current?.blur();
-    } else if (e.key === "Escape") {
-      if (descriptionRef.current) {
-        descriptionRef.current.textContent = originalDescriptionRef.current;
-      }
-      descriptionRef.current?.blur();
+      originalDescriptionRef.current = description;
     }
   };
 
@@ -385,21 +373,18 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
             <DataList.Item>
               <DataList.Label>Description</DataList.Label>
               <DataList.Value>
-                <Box
-                  ref={descriptionRef}
-                  contentEditable
-                  suppressContentEditableWarning
-                  spellCheck={false}
+                <RichTextEditor
+                  value={description}
+                  onChange={setDescription}
+                  repoPath={repoPath}
+                  placeholder="No description provided. Use @ to mention files, or format text with markdown."
                   onBlur={handleDescriptionBlur}
-                  onKeyDown={handleDescriptionKeyDown}
+                  showToolbar={true}
+                  minHeight="80px"
                   style={{
-                    cursor: "text",
-                    outline: "none",
-                    minHeight: "1.5em",
+                    minHeight: "80px",
                   }}
-                >
-                  {task.description || "No description provided"}
-                </Box>
+                />
               </DataList.Value>
             </DataList.Item>
 
