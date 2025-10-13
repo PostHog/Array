@@ -16,8 +16,9 @@ interface ComboboxProps {
   searchPlaceholder?: string;
   emptyMessage?: string;
   size?: "1" | "2" | "3";
-  variant?: "classic" | "surface" | "soft" | "ghost";
+  variant?: "classic" | "surface" | "soft" | "ghost" | "outline";
   renderItem?: (item: ComboboxItem) => ReactNode;
+  icon?: ReactNode;
   side?: "top" | "bottom" | "left" | "right";
   align?: "start" | "center" | "end";
 }
@@ -32,6 +33,7 @@ export function Combobox({
   size = "2",
   variant = "surface",
   renderItem,
+  icon,
   side = "bottom",
   align = "start",
 }: ComboboxProps) {
@@ -54,7 +56,10 @@ export function Combobox({
       <Popover.Trigger>
         <Button variant={variant} size={size} color="gray">
           <Flex justify="between" align="center" gap="2" width="100%">
-            <Text size={size}>{displayValue}</Text>
+            <Flex align="center" gap="2">
+              {icon}
+              <Text size={size}>{displayValue}</Text>
+            </Flex>
             <ChevronDownIcon />
           </Flex>
         </Button>

@@ -1,3 +1,4 @@
+import { ArrowSquareRight } from "@phosphor-icons/react";
 import { FileTextIcon, PlusIcon } from "@radix-ui/react-icons";
 import {
   Box,
@@ -402,7 +403,9 @@ export function TaskList({
               {onNewWorkflow && (
                 <Box onClick={onNewWorkflow}>
                   <ShortcutCard
-                    icon={<FileTextIcon className="h-4 w-4 text-gray-11" />}
+                    icon={
+                      <ArrowSquareRight size={16} className="text-gray-11" />
+                    }
                     title="New workflow"
                     keys={[
                       navigator.platform.includes("Mac") ? "⌘" : "Ctrl",
