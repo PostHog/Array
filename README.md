@@ -38,7 +38,7 @@ pnpm run lint       # Linting
 You can set these environment variables instead of entering credentials in the app:
 
 - `POSTHOG_API_KEY` - Your PostHog personal API key
-- `POSTHOG_API_HOST` - PostHog instance URL (defaults to https://app.posthog.com)
+- `POSTHOG_API_HOST` - PostHog instance URL (defaults to https://us.posthog.com)
 
 ## Architecture
 

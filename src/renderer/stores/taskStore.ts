@@ -1,14 +1,10 @@
 import type { Task } from "@shared/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { useAuthStore } from "./authStore";
 
 interface TaskState {
-  tasks: Task[];
   taskOrder: Record<string, number>;
   selectedTaskId: string | null;
-  isLoading: boolean;
-  error: string | null;
   draggedTaskId: string | null;
   dragOverIndex: number | null;
   dropPosition: "top" | "bottom" | null;
@@ -17,17 +13,7 @@ interface TaskState {
   contextMenuIndex: number | null;
   filter: string;
 
-  fetchTasks: () => Promise<void>;
   selectTask: (taskId: string | null) => void;
-  refreshTask: (taskId: string) => Promise<void>;
-  createTask: (
-    title: string,
-    description: string,
-    repositoryConfig?: { organization: string; repository: string },
-  ) => Promise<Task | null>;
-  deleteTask: (taskId: string) => Promise<void>;
-  duplicateTask: (taskId: string) => Promise<Task | null>;
-  updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
   setTaskOrder: (order: Record<string, number>) => void;
   moveTask: (
     taskId: string,
@@ -49,12 +35,9 @@ interface TaskState {
 
 export const useTaskStore = create<TaskState>()(
   persist(
-    (set, get) => ({
-      tasks: [],
+    (set) => ({
       taskOrder: {},
       selectedTaskId: null,
-      isLoading: false,
-      error: null,
       draggedTaskId: null,
       dragOverIndex: null,
       dropPosition: null,
@@ -63,124 +46,8 @@ export const useTaskStore = create<TaskState>()(
       contextMenuIndex: null,
       filter: "",
 
-      fetchTasks: async () => {
-        const client = useAuthStore.getState().client;
-        if (!client) return;
-
-        set({ isLoading: true, error: null });
-
-        try {
-          const tasks = await client.getTasks();
-          set({ tasks: tasks as Task[], isLoading: false });
-        } catch (error) {
-          set({
-            error:
-              error instanceof Error ? error.message : "Failed to fetch tasks",
-            isLoading: false,
-          });
-        }
-      },
-
       selectTask: (taskId: string | null) => {
         set({ selectedTaskId: taskId });
-      },
-
-      refreshTask: async (taskId: string) => {
-        const client = useAuthStore.getState().client;
-        if (!client) return;
-
-        try {
-          const updatedTask = await client.getTask(taskId);
-          const tasks = get().tasks.map((task) =>
-            task.id === taskId ? (updatedTask as Task) : task,
-          );
-          set({ tasks });
-        } catch (error) {
-          console.error("Failed to refresh task:", error);
-        }
-      },
-
-      createTask: async (
-        title: string,
-        description: string,
-        repositoryConfig?: { organization: string; repository: string },
-      ) => {
-        const client = useAuthStore.getState().client;
-        if (!client) return null;
-
-        set({ isLoading: true, error: null });
-
-        try {
-          const newTask = await client.createTask(
-            title,
-            description,
-            repositoryConfig,
-          );
-          const tasks = [newTask as Task, ...get().tasks];
-          set({ tasks, isLoading: false });
-          return newTask as Task;
-        } catch (error) {
-          set({
-            error:
-              error instanceof Error ? error.message : "Failed to create task",
-            isLoading: false,
-          });
-          return null;
-        }
-      },
-
-      deleteTask: async (taskId: string) => {
-        const client = useAuthStore.getState().client;
-        if (!client) return;
-
-        try {
-          await client.deleteTask(taskId);
-          const tasks = get().tasks.filter((task) => task.id !== taskId);
-          set({ tasks });
-        } catch (error) {
-          console.error("Failed to delete task:", error);
-        }
-      },
-
-      duplicateTask: async (taskId: string) => {
-        const client = useAuthStore.getState().client;
-        if (!client) return null;
-
-        set({ isLoading: true, error: null });
-
-        try {
-          const duplicatedTask = await client.duplicateTask(taskId);
-          const tasks = [duplicatedTask as Task, ...get().tasks];
-          set({ tasks, isLoading: false });
-          return duplicatedTask as Task;
-        } catch (error) {
-          set({
-            error:
-              error instanceof Error
-                ? error.message
-                : "Failed to duplicate task",
-            isLoading: false,
-          });
-          return null;
-        }
-      },
-
-      updateTask: async (taskId: string, updates: Partial<Task>) => {
-        const client = useAuthStore.getState().client;
-        if (!client) return;
-
-        try {
-          await client.updateTask(
-            taskId,
-            updates as Parameters<typeof client.updateTask>[1],
-          );
-          const tasks = get().tasks.map((task) =>
-            task.id === taskId ? { ...task, ...updates } : task,
-          );
-          set({ tasks });
-        } catch (error) {
-          console.error("Failed to update task:", error);
-        }
       },
 
       setTaskOrder: (order: Record<string, number>) => {

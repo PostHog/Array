@@ -1,8 +1,8 @@
 import { Box, Flex } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useIntegrationStore } from "../stores/integrationStore";
+import { useIntegrations } from "../hooks/useIntegrations";
 import { useTabStore } from "../stores/tabStore";
 import { CommandMenu } from "./command";
 import { StatusBar } from "./StatusBar";
@@ -15,18 +15,10 @@ import { WorkflowView } from "./WorkflowView";
 
 export function MainLayout() {
   const { activeTabId, tabs, createTab, setActiveTab } = useTabStore();
-  const { fetchIntegrations } = useIntegrationStore();
+  useIntegrations();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [taskCreateOpen, setTaskCreateOpen] = useState(false);
   const [workflowCreateOpen, setWorkflowCreateOpen] = useState(false);
-
-  useEffect(() => {
-    fetchIntegrations();
-  }, [fetchIntegrations]);
-
-  useEffect(() => {
-    fetchIntegrations();
-  }, [fetchIntegrations]);
 
   useHotkeys("mod+k", () => setCommandMenuOpen((prev) => !prev), {
     enabled: !commandMenuOpen,

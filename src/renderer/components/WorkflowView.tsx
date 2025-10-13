@@ -12,9 +12,10 @@ import {
 } from "@radix-ui/themes";
 import type { Task, WorkflowStage } from "@shared/types";
 import { formatDistanceToNow } from "date-fns";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useTasks } from "../hooks/useTasks";
+import { useAgents, useWorkflows } from "../hooks/useWorkflows";
 import { useStatusBarStore } from "../stores/statusBarStore";
-import { useTaskStore } from "../stores/taskStore";
 import { useWorkflowStore } from "../stores/workflowStore";
 import { AsciiArt } from "./AsciiArt";
 import { WorkflowForm } from "./WorkflowForm";
@@ -24,36 +25,37 @@ interface WorkflowViewProps {
 }
 
 export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
-  const {
-    workflows,
-    selectedWorkflowId,
-    fetchWorkflows,
-    selectWorkflow,
-    getTasksByStage,
-    isLoading,
-    agents,
-    fetchAgents,
-  } = useWorkflowStore();
-  const { fetchTasks } = useTaskStore();
+  const { data: workflows = [], isLoading: workflowsLoading } = useWorkflows();
+  const { data: tasks = [] } = useTasks();
+  const { data: agents = [] } = useAgents();
+  const { selectedWorkflowId, selectWorkflow, getTasksByStage } =
+    useWorkflowStore();
   const { setStatusBar, reset } = useStatusBarStore();
-  const [tasksByStage, setTasksByStage] = useState<Map<string, Task[]>>(
-    new Map(),
-  );
   const [workflowFormOpen, setWorkflowFormOpen] = useState(false);
 
-  useEffect(() => {
-    fetchWorkflows();
-    fetchTasks();
-    fetchAgents();
-  }, [fetchWorkflows, fetchTasks, fetchAgents]);
+  const selectedWorkflow = useMemo(
+    () => workflows.find((w) => w.id === selectedWorkflowId),
+    [workflows, selectedWorkflowId],
+  );
+
+  const tasksByStage = useMemo(() => {
+    if (!selectedWorkflowId) return new Map<string, Task[]>();
+    return getTasksByStage(selectedWorkflowId, workflows, tasks);
+  }, [selectedWorkflowId, workflows, tasks, getTasksByStage]);
+
+  const isLoading = workflowsLoading;
 
   useEffect(() => {
-    if (selectedWorkflowId) {
-      setTasksByStage(getTasksByStage(selectedWorkflowId));
+    if (workflows.length > 0 && !selectedWorkflowId) {
+      const defaultWorkflow =
+        workflows.find((w) => w.is_active && w.is_default) ||
+        workflows.find((w) => w.is_active) ||
+        workflows[0];
+      if (defaultWorkflow) {
+        selectWorkflow(defaultWorkflow.id);
+      }
     }
-  }, [selectedWorkflowId, getTasksByStage]);
-
-  const selectedWorkflow = workflows.find((w) => w.id === selectedWorkflowId);
+  }, [workflows, selectedWorkflowId, selectWorkflow]);
 
   useEffect(() => {
     const totalTasks = Array.from(tasksByStage.values()).reduce(

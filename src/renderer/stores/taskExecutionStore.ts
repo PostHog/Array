@@ -3,8 +3,6 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { LogEntry } from "../types/log";
 import { useAuthStore } from "./authStore";
-import { useTaskStore } from "./taskStore";
-import { useWorkflowStore } from "./workflowStore";
 
 type AgentTaskProgress = {
   has_progress?: boolean;
@@ -410,18 +408,13 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         }
       },
 
-      runTask: async (taskId: string, fallbackTask: Task) => {
+      runTask: async (taskId: string, task: Task) => {
         const store = get();
         const taskState = store.getTaskState(taskId);
 
         if (taskState.isRunning) return;
 
-        const currentTask =
-          useTaskStore
-            .getState()
-            .tasks.find((candidate) => candidate.id === taskId) ?? fallbackTask;
-
-        if (!currentTask.workflow) {
+        if (!task.workflow) {
           store.addLog(
             taskId,
             "Select a PostHog workflow before running the agent.",
@@ -486,11 +479,6 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         }
 
         const currentTaskState = store.getTaskState(taskId);
-        const workflowName =
-          useWorkflowStore
-            .getState()
-            .workflows.find((w) => w.id === currentTask.workflow)?.name ??
-          currentTask.workflow;
         const permissionMode =
           currentTaskState.runMode === "cloud" ? "default" : "acceptEdits";
 
@@ -501,7 +489,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           {
             type: "text",
             ts: startTs,
-            content: `Starting workflow run (${workflowName})...`,
+            content: `Starting workflow run...`,
           },
           {
             type: "text",
@@ -517,8 +505,8 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
         try {
           const result = await window.electronAPI?.agentStart({
-            taskId: currentTask.id,
-            workflowId: currentTask.workflow,
+            taskId: task.id,
+            workflowId: task.workflow,
             repoPath: effectiveRepoPath,
             apiKey,
             apiHost,

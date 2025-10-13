@@ -12,6 +12,7 @@ import type { Task } from "@shared/types";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useTasks } from "../hooks/useTasks";
 import { useAuthStore } from "../stores/authStore";
 import { useStatusBarStore } from "../stores/statusBarStore";
 import { useTaskStore } from "../stores/taskStore";
@@ -33,23 +34,19 @@ export function TaskList({
   onNewTask,
   onNewWorkflow,
 }: TaskListInternalProps) {
-  const tasks = useTaskStore((state) => state.tasks);
+  const { data: tasks = [], isLoading, error, refetch } = useTasks();
   const taskOrder = useTaskStore((state) => state.taskOrder);
   const filter = useTaskStore((state) => state.filter);
-  const isLoading = useTaskStore((state) => state.isLoading);
-  const error = useTaskStore((state) => state.error);
   const selectedIndex = useTaskStore((state) => state.selectedIndex);
   const hoveredIndex = useTaskStore((state) => state.hoveredIndex);
   const contextMenuIndex = useTaskStore((state) => state.contextMenuIndex);
 
-  // Move drag state to local state for better performance
   const [draggedTaskId, setDraggedTaskIdLocal] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndexLocal] = useState<number | null>(null);
   const [dropPosition, setDropPositionLocal] = useState<
     "top" | "bottom" | null
   >(null);
 
-  const fetchTasks = useTaskStore((state) => state.fetchTasks);
   const moveTask = useTaskStore((state) => state.moveTask);
   const setSelectedIndex = useTaskStore((state) => state.setSelectedIndex);
   const setHoveredIndex = useTaskStore((state) => state.setHoveredIndex);
@@ -58,10 +55,6 @@ export function TaskList({
   const { setStatusBar, reset } = useStatusBarStore();
   const { logout } = useAuthStore();
   const listRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
 
   const filteredTasks = useMemo(() => {
     // Sort tasks by custom order or creation date
@@ -234,7 +227,7 @@ export function TaskList({
     { enableOnFormTags: false, enabled: contextMenuIndex === null },
     [handleSelectCurrent, contextMenuIndex],
   );
-  useHotkeys("cmd+r, ctrl+r", () => fetchTasks(), [fetchTasks]);
+  useHotkeys("cmd+r, ctrl+r", () => refetch(), [refetch]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -288,9 +281,11 @@ export function TaskList({
           height="100%"
           gap="4"
         >
-          <Text color="red">{error}</Text>
+          <Text color="red">
+            {error instanceof Error ? error.message : "Failed to load tasks"}
+          </Text>
           <Flex gap="2">
-            <Button onClick={() => fetchTasks()}>Retry</Button>
+            <Button onClick={() => refetch()}>Retry</Button>
             <Button variant="outline" onClick={logout}>
               Logout
             </Button>

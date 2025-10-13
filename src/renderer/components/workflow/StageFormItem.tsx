@@ -24,10 +24,13 @@ export function StageFormItem({
   onAgentChange,
   onDelete,
 }: StageFormItemProps) {
-  const agentItems = agents.map((agent) => ({
-    value: agent.id,
-    label: agent.name,
-  }));
+  const agentItems = [
+    { value: "__none__", label: "No agent (manual)" },
+    ...agents.map((agent) => ({
+      value: agent.id,
+      label: agent.name,
+    })),
+  ];
 
   return (
     <Box>
@@ -56,9 +59,7 @@ export function StageFormItem({
               placeholder="Select agent..."
               searchPlaceholder="Search agents..."
               emptyMessage="No agents found"
-              noneLabel="No agent (manual)"
               size="2"
-              allowNone
             />
           )}
           {isComplete && (

@@ -15,7 +15,7 @@ export const useThemeStore = create<ThemeStore>()(
       setDarkMode: (isDarkMode) => set({ isDarkMode }),
     }),
     {
-      name: "theme-storage", // name of the storage key
+      name: "theme-storage",
     },
   ),
 );

@@ -96,7 +96,7 @@ export function AuthScreen() {
                           type="url"
                           value={apiHost}
                           onChange={(e) => setApiHost(e.target.value)}
-                          placeholder="https://app.posthog.com"
+                          placeholder="https://us.posthog.com"
                           required
                         />
                       </Flex>
