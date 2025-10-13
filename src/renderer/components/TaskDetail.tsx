@@ -17,7 +17,7 @@ import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
 import { useTasks, useUpdateTask } from "../hooks/useTasks";
-import { useWorkflows, useWorkflowStages } from "../hooks/useWorkflows";
+import { useWorkflowStages, useWorkflows } from "../hooks/useWorkflows";
 import { useStatusBarStore } from "../stores/statusBarStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
@@ -72,10 +72,16 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   }, [task.current_stage, workflowStages]);
 
   const taskState = getTaskState(task.id);
-  
+
   const { isRunning, logs, repoPath, runMode, progress } = taskState;
 
-  const { register, handleSubmit, reset: resetForm, control, watch } = useForm({
+  const {
+    register,
+    handleSubmit,
+    reset: resetForm,
+    control,
+    watch,
+  } = useForm({
     defaultValues: {
       title: task.title,
       description: task.description || "",
@@ -96,7 +102,13 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
         setRepoPath(task.id, savedPath);
       }
     }
-  }, [task.id, task.repository_config, repoPath, getRepoWorkingDir, setRepoPath]);
+  }, [
+    task.id,
+    task.repository_config,
+    repoPath,
+    getRepoWorkingDir,
+    setRepoPath,
+  ]);
 
   useEffect(() => {
     resetForm({
@@ -107,7 +119,13 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
         ? `${task.repository_config.organization}/${task.repository_config.repository}`
         : "",
     });
-  }, [task.title, task.description, task.workflow, task.repository_config, resetForm]);
+  }, [
+    task.title,
+    task.description,
+    task.workflow,
+    task.repository_config,
+    resetForm,
+  ]);
 
   useEffect(() => {
     setStatusBar({
@@ -190,7 +208,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                     field.onChange(e.currentTarget.textContent || "");
                     onSubmit();
                   }}
-                  style={{ cursor: "text", outline: "none", display: "block" }}
+                  style={{ cursor: "text", outline: "none", width: "fit-content" }}
                 />
               )}
             />
@@ -300,7 +318,8 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                               | undefined;
 
                             if (value) {
-                              const [organization, repository] = value.split("/");
+                              const [organization, repository] =
+                                value.split("/");
                               if (organization && repository) {
                                 repositoryConfig = { organization, repository };
                               }

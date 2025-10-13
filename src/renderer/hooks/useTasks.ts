@@ -87,7 +87,10 @@ export function useUpdateTask() {
       updates: Partial<Task>;
     }) => {
       if (!client) throw new Error("Not authenticated");
-      return await client.updateTask(taskId, updates as Parameters<typeof client.updateTask>[1]);
+      return await client.updateTask(
+        taskId,
+        updates as Parameters<typeof client.updateTask>[1],
+      );
     },
     onSuccess: (_, { taskId }) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });

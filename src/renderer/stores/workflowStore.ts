@@ -5,7 +5,11 @@ interface WorkflowState {
   selectedWorkflowId: string | null;
 
   selectWorkflow: (workflowId: string | null) => void;
-  getTasksByStage: (workflowId: string, workflows: Workflow[], tasks: Task[]) => Map<string, Task[]>;
+  getTasksByStage: (
+    workflowId: string,
+    workflows: Workflow[],
+    tasks: Task[],
+  ) => Map<string, Task[]>;
 }
 
 export const useWorkflowStore = create<WorkflowState>((set) => ({
@@ -15,7 +19,11 @@ export const useWorkflowStore = create<WorkflowState>((set) => ({
     set({ selectedWorkflowId: workflowId });
   },
 
-  getTasksByStage: (workflowId: string, workflows: Workflow[], tasks: Task[]) => {
+  getTasksByStage: (
+    workflowId: string,
+    workflows: Workflow[],
+    tasks: Task[],
+  ) => {
     const workflow = workflows.find((w) => w.id === workflowId);
 
     const tasksByStage = new Map<string, Task[]>();

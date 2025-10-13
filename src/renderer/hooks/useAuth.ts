@@ -24,7 +24,9 @@ export function useCheckAuth() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (client: NonNullable<ReturnType<typeof useAuthStore.getState>["client"]>) => {
+    mutationFn: async (
+      client: NonNullable<ReturnType<typeof useAuthStore.getState>["client"]>,
+    ) => {
       const user = (await client.getCurrentUser()) as User;
       return user;
     },

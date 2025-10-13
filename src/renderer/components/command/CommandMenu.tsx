@@ -7,8 +7,8 @@ import { Flex, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import type { Task } from "@/shared/types";
+import { useTasks } from "../../hooks/useTasks";
 import { useTabStore } from "../../stores/tabStore";
-import { useTaskStore } from "../../stores/taskStore";
 import { Command } from "./Command";
 import { CommandKeyHints } from "./CommandKeyHints";
 
@@ -24,14 +24,8 @@ export function CommandMenu({
   onCreateTask,
 }: CommandMenuProps) {
   const { tabs, setActiveTab, createTab } = useTabStore();
-  const { tasks, fetchTasks } = useTaskStore();
+  const { data: tasks = [] } = useTasks();
   const commandRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (open) {
-      fetchTasks();
-    }
-  }, [open, fetchTasks]);
 
   // Close handlers
   const handleClose = useCallback(() => {

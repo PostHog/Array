@@ -281,7 +281,9 @@ export function TaskList({
           height="100%"
           gap="4"
         >
-          <Text color="red">{error instanceof Error ? error.message : "Failed to load tasks"}</Text>
+          <Text color="red">
+            {error instanceof Error ? error.message : "Failed to load tasks"}
+          </Text>
           <Flex gap="2">
             <Button onClick={() => refetch()}>Retry</Button>
             <Button variant="outline" onClick={logout}>

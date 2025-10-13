@@ -70,7 +70,8 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     repository: string;
     workflow: string;
   }) => {
-    if (!data.title.trim() || !data.description.trim() || !data.workflow) return;
+    if (!data.title.trim() || !data.description.trim() || !data.workflow)
+      return;
 
     let repositoryConfig:
       | { organization: string; repository: string }
@@ -84,7 +85,12 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     }
 
     createTask(
-      { title: data.title, description: data.description, repositoryConfig, workflow: data.workflow },
+      {
+        title: data.title,
+        description: data.description,
+        repositoryConfig,
+        workflow: data.workflow,
+      },
       {
         onSuccess: (newTask) => {
           createTab({
@@ -141,11 +147,17 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
             </Flex>
           </Flex>
 
-          <form onSubmit={handleSubmit(onSubmit)} style={{ display: "contents" }}>
+          <form
+            onSubmit={handleSubmit(onSubmit)}
+            style={{ display: "contents" }}
+          >
             <Flex direction="column" gap="4" mt="4" flexGrow="1">
               <Flex direction="column" gap="2">
                 <TextArea
-                  {...register("title", { required: true, validate: (v) => v.trim().length > 0 })}
+                  {...register("title", {
+                    required: true,
+                    validate: (v) => v.trim().length > 0,
+                  })}
                   placeholder="Task title..."
                   size="3"
                   autoFocus
@@ -158,93 +170,92 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                 />
               </Flex>
 
-            <Flex
-              direction="column"
-              gap="2"
-              flexGrow="1"
-              style={{ minHeight: 0 }}
-            >
-              <TextArea
-                {...register("description", { required: true, validate: (v) => v.trim().length > 0 })}
-                placeholder="Add description..."
-                size="3"
-                rows={3}
-                style={{
-                  resize: "none",
-                  overflow: isExpanded ? "auto" : "hidden",
-                  minHeight: "auto",
-                  height: isExpanded ? "100%" : "auto",
-                }}
-              />
-            </Flex>
-
-            <Flex direction="column" gap="2" width="50%">
-              {workflowOptions.length > 0 && (
-                <Controller
-                  name="workflow"
-                  control={control}
-                  rules={{ required: true }}
-                  render={({ field }) => (
-                    <Combobox
-                      items={workflowOptions}
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      placeholder="Select a workflow..."
-                      searchPlaceholder="Search workflows..."
-                      emptyMessage="No workflows found"
-                      size="2"
-                      side="top"
-                    />
-                  )}
-                />
-              )}
-            </Flex>
-
-            {repositories.length > 0 && (
-              <Flex direction="column" gap="2" width="50%">
-                <Controller
-                  name="repository"
-                  control={control}
-                  render={({ field }) => (
-                    <Combobox
-                      items={repositories.map((repo) => ({
-                        value: `${repo.organization}/${repo.repository}`,
-                        label: `${repo.organization}/${repo.repository}`,
-                      }))}
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      placeholder="Select a repository..."
-                      searchPlaceholder="Search repositories..."
-                      emptyMessage="No repositories found"
-                      size="2"
-                      side="top"
-                    />
-                  )}
+              <Flex
+                direction="column"
+                gap="2"
+                flexGrow="1"
+                style={{ minHeight: 0 }}
+              >
+                <TextArea
+                  {...register("description", {
+                    required: true,
+                    validate: (v) => v.trim().length > 0,
+                  })}
+                  placeholder="Add description..."
+                  size="3"
+                  rows={3}
+                  style={{
+                    resize: "none",
+                    overflow: isExpanded ? "auto" : "hidden",
+                    minHeight: "auto",
+                    height: isExpanded ? "100%" : "auto",
+                  }}
                 />
               </Flex>
-            )}
 
-            <Flex gap="3" justify="end" align="end">
-              <Text as="label" size="1" style={{ cursor: "pointer" }}>
-                <Flex gap="2" align="center" mb="2">
-                  <Switch
-                    checked={createMore}
-                    onCheckedChange={setCreateMore}
-                    size="1"
+              <Flex direction="column" gap="2" width="50%">
+                {workflowOptions.length > 0 && (
+                  <Controller
+                    name="workflow"
+                    control={control}
+                    rules={{ required: true }}
+                    render={({ field }) => (
+                      <Combobox
+                        items={workflowOptions}
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        placeholder="Select a workflow..."
+                        searchPlaceholder="Search workflows..."
+                        emptyMessage="No workflows found"
+                        size="2"
+                        side="top"
+                      />
+                    )}
                   />
-                  <Text size="1" color="gray" className="select-none">
-                    Create more
-                  </Text>
+                )}
+              </Flex>
+
+              {repositories.length > 0 && (
+                <Flex direction="column" gap="2" width="50%">
+                  <Controller
+                    name="repository"
+                    control={control}
+                    render={({ field }) => (
+                      <Combobox
+                        items={repositories.map((repo) => ({
+                          value: `${repo.organization}/${repo.repository}`,
+                          label: `${repo.organization}/${repo.repository}`,
+                        }))}
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        placeholder="Select a repository..."
+                        searchPlaceholder="Search repositories..."
+                        emptyMessage="No repositories found"
+                        size="2"
+                        side="top"
+                      />
+                    )}
+                  />
                 </Flex>
-              </Text>
-              <Button
-                type="submit"
-                variant="classic"
-                disabled={isLoading}
-              >
-                {isLoading ? "Creating..." : "Create task"}
-              </Button>
-            </Flex>
+              )}
+
+              <Flex gap="3" justify="end" align="end">
+                <Text as="label" size="1" style={{ cursor: "pointer" }}>
+                  <Flex gap="2" align="center" mb="2">
+                    <Switch
+                      checked={createMore}
+                      onCheckedChange={setCreateMore}
+                      size="1"
+                    />
+                    <Text size="1" color="gray" className="select-none">
+                      Create more
+                    </Text>
+                  </Flex>
+                </Text>
+                <Button type="submit" variant="classic" disabled={isLoading}>
+                  {isLoading ? "Creating..." : "Create task"}
+                </Button>
+              </Flex>
             </Flex>
           </form>
         </Flex>

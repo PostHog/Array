@@ -8,7 +8,8 @@ export const workflowKeys = {
   list: () => [...workflowKeys.lists()] as const,
   details: () => [...workflowKeys.all, "detail"] as const,
   detail: (id: string) => [...workflowKeys.details(), id] as const,
-  stages: (workflowId: string) => [...workflowKeys.all, "stages", workflowId] as const,
+  stages: (workflowId: string) =>
+    [...workflowKeys.all, "stages", workflowId] as const,
 };
 
 export const agentKeys = {
@@ -141,7 +142,9 @@ export function useCreateStage() {
     },
     onSuccess: (_, { workflowId }) => {
       queryClient.invalidateQueries({ queryKey: workflowKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: workflowKeys.stages(workflowId) });
+      queryClient.invalidateQueries({
+        queryKey: workflowKeys.stages(workflowId),
+      });
     },
   });
 }
@@ -169,11 +172,17 @@ export function useUpdateStage() {
       };
     }) => {
       if (!client) throw new Error("Not authenticated");
-      return (await client.updateStage(workflowId, stageId, data)) as WorkflowStage;
+      return (await client.updateStage(
+        workflowId,
+        stageId,
+        data,
+      )) as WorkflowStage;
     },
     onSuccess: (_, { workflowId }) => {
       queryClient.invalidateQueries({ queryKey: workflowKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: workflowKeys.stages(workflowId) });
+      queryClient.invalidateQueries({
+        queryKey: workflowKeys.stages(workflowId),
+      });
     },
   });
 }
