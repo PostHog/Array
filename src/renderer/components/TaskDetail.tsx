@@ -20,6 +20,7 @@ import type { Task } from "@shared/types";
 import { format, formatDistanceToNow } from "date-fns";
 import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
+import { useBlurOnEscape } from "../hooks/useBlurOnEscape";
 import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
 import { useTasks, useUpdateTask } from "../hooks/useTasks";
 import { useWorkflowStages, useWorkflows } from "../hooks/useWorkflows";
@@ -184,25 +185,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     };
   }, [setStatusBar, reset, isRunning]);
 
-  useEffect(() => {
-    const handleKeydown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      if (
-        e.key === "Enter" &&
-        (e.metaKey || e.ctrlKey) &&
-        document.activeElement instanceof HTMLElement
-      ) {
-        document.activeElement.blur();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeydown);
-    return () => {
-      document.removeEventListener("keydown", handleKeydown);
-    };
-  }, []);
+  useBlurOnEscape();
 
   // Simple event handlers that delegate to store actions
   const handleSelectRepo = () => {
@@ -322,18 +305,15 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   <DataList.Item>
                     <DataList.Label>Progress</DataList.Label>
                     <DataList.Value>
-                      <Button
-                        size="1"
-                        color={
-                          progress.status === "completed"
-                            ? "green"
-                            : progress.status === "failed"
-                              ? "red"
-                              : "blue"
-                        }
-                      >
-                        {progress.status?.replace(/_/g, " ") ?? "in progress"}
-                      </Button>
+                      <Text size="2">
+                        {progress.completed_steps ?? 0}/
+                        {typeof progress.total_steps === "number"
+                          ? progress.total_steps
+                          : "-"}
+                        {typeof progress.progress_percentage === "number" &&
+                          ` · ${Math.round(progress.progress_percentage)}%`}
+                        {progress.current_step && ` · ${progress.current_step}`}
+                      </Text>
                     </DataList.Value>
                   </DataList.Item>
                 )}
@@ -420,31 +400,10 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                 )}
               </DataList.Root>
 
-              <Box className="border-gray-6 border-t" />
-
               {task.github_pr_url && (
                 <Link href={task.github_pr_url} target="_blank" size="2">
                   View Pull Request
                 </Link>
-              )}
-
-              {progress?.has_progress && (
-                <Flex direction="column" gap="1">
-                  <Text size="2" color="gray">
-                    Steps {progress.completed_steps ?? 0}/
-                    {typeof progress.total_steps === "number"
-                      ? progress.total_steps
-                      : "?"}
-                    {typeof progress.progress_percentage === "number"
-                      ? ` · ${Math.round(progress.progress_percentage)}%`
-                      : ""}
-                  </Text>
-                  {progress.current_step && (
-                    <Text size="2" color="gray">
-                      Current step: {progress.current_step}
-                    </Text>
-                  )}
-                </Flex>
               )}
 
               <Tooltip content={format(new Date(task.created_at), "PPP p")}>

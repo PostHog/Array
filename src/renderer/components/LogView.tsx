@@ -62,6 +62,37 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
     <ContextMenu.Root>
       <ContextMenu.Trigger>
         <Flex direction="column" height="100%">
+          <Box p="4" className="border-gray-6 border-b">
+            <Flex align="center" justify="between">
+              <Heading size="3">Activity Log</Heading>
+              <Flex align="center" gap="2">
+                {isRunning && (
+                  <Flex align="center" gap="2">
+                    <Box
+                      width="8px"
+                      height="8px"
+                      className="animate-pulse rounded-full bg-green-9"
+                    />
+                    <Text size="2" color="gray">
+                      Running
+                    </Text>
+                  </Flex>
+                )}
+                {!isRunning && logs.length > 0 && (
+                  <Flex align="center" gap="2">
+                    <Box
+                      width="8px"
+                      height="8px"
+                      className="rounded-full bg-orange-9"
+                    />
+                    <Text size="2" color="gray">
+                      Idle
+                    </Text>
+                  </Flex>
+                )}
+              </Flex>
+            </Flex>
+          </Box>
           <Box ref={scrollRef} flexGrow="1" overflowY="auto" p="4">
         {logs.map((log, index) => {
           const key =

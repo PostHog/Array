@@ -548,6 +548,12 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           // Ignore cancellation errors
         }
 
+        store.addLog(taskId, {
+          type: "text",
+          ts: Date.now(),
+          content: "Run cancelled",
+        });
+
         store.setRunning(taskId, false);
         store.unsubscribeFromAgentEvents(taskId);
       },
