@@ -1,12 +1,12 @@
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { type SuggestionKeyDownProps } from "@tiptap/suggestion";
+import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 import {
+  type ForwardedRef,
   forwardRef,
   useEffect,
   useImperativeHandle,
   useRef,
   useState,
-  type ForwardedRef,
 } from "react";
 
 export interface FileMentionListProps {
@@ -19,10 +19,7 @@ export interface FileMentionListRef {
 }
 
 export const FileMentionList = forwardRef(
-  (
-    props: FileMentionListProps,
-    ref: ForwardedRef<FileMentionListRef>,
-  ) => {
+  (props: FileMentionListProps, ref: ForwardedRef<FileMentionListRef>) => {
     const [selectedIndex, setSelectedIndex] = useState(0);
     const containerRef = useRef<HTMLDivElement>(null);
     const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -30,15 +27,15 @@ export const FileMentionList = forwardRef(
     const scrollIntoView = (index: number) => {
       const container = containerRef.current;
       const item = itemRefs.current[index];
-      
+
       if (!container || !item) return;
-      
+
       const containerTop = container.scrollTop;
       const containerBottom = containerTop + container.clientHeight;
-      
+
       const itemTop = item.offsetTop;
       const itemBottom = itemTop + item.offsetHeight;
-      
+
       if (itemTop < containerTop) {
         // Item is above visible area
         container.scrollTop = itemTop;
@@ -56,7 +53,8 @@ export const FileMentionList = forwardRef(
     };
 
     const upHandler = () => {
-      const newIndex = (selectedIndex + props.items.length - 1) % props.items.length;
+      const newIndex =
+        (selectedIndex + props.items.length - 1) % props.items.length;
       setSelectedIndex(newIndex);
       setTimeout(() => scrollIntoView(newIndex), 0);
     };
@@ -71,8 +69,8 @@ export const FileMentionList = forwardRef(
       selectItem(selectedIndex);
     };
 
-    useEffect(() => setSelectedIndex(0), [props.items]);
-    
+    useEffect(() => setSelectedIndex(0), []);
+
     useEffect(() => {
       // Initialize refs array to match items length
       itemRefs.current = itemRefs.current.slice(0, props.items.length);
@@ -136,15 +134,15 @@ export const FileMentionList = forwardRef(
         {props.items.map((item, index) => (
           <Flex
             key={item.path}
-            ref={(el) => (itemRefs.current[index] = el)}
+            ref={(el) => {
+              itemRefs.current[index] = el;
+            }}
             className={`file-mention-item ${index === selectedIndex ? "is-selected" : ""}`}
             onClick={() => selectItem(index)}
             onMouseEnter={() => setSelectedIndex(index)}
           >
             <Flex direction="column" gap="1">
-              <Text size="1">
-                {item.path}
-              </Text>
+              <Text size="1">{item.path}</Text>
             </Flex>
           </Flex>
         ))}
@@ -154,4 +152,3 @@ export const FileMentionList = forwardRef(
 );
 
 FileMentionList.displayName = "FileMentionList";
-

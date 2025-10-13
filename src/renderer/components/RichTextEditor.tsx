@@ -1,20 +1,17 @@
 import { Box } from "@radix-ui/themes";
-import { Mention } from "@tiptap/extension-mention";
 import { Link } from "@tiptap/extension-link";
-import { Underline } from "@tiptap/extension-underline";
-import { Typography } from "@tiptap/extension-typography";
+import { Mention } from "@tiptap/extension-mention";
 import { Placeholder } from "@tiptap/extension-placeholder";
+import { Typography } from "@tiptap/extension-typography";
+import { Underline } from "@tiptap/extension-underline";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useEffect, useRef, useState } from "react";
 import type { SuggestionOptions } from "@tiptap/suggestion";
-import { markdownToTiptap, tiptapToMarkdown } from "../utils/tiptap-converter";
-import {
-  FileMentionList,
-  type FileMentionListRef,
-} from "./FileMentionList";
-import { FormattingToolbar } from "./FormattingToolbar";
+import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { markdownToTiptap, tiptapToMarkdown } from "../utils/tiptap-converter";
+import { FileMentionList, type FileMentionListRef } from "./FileMentionList";
+import { FormattingToolbar } from "./FormattingToolbar";
 
 interface RichTextEditorProps {
   value: string;
@@ -119,7 +116,7 @@ export function RichTextEditor({
                       root.unmount();
                       root = null;
                     }
-                    if (popup && popup.parentNode) {
+                    if (popup?.parentNode) {
                       popup.parentNode.removeChild(popup);
                     }
                     popup = null;
@@ -215,50 +212,51 @@ export function RichTextEditor({
         // Custom keyboard shortcuts
         if (event.ctrlKey || event.metaKey) {
           switch (event.key) {
-            case 'b':
+            case "b":
               event.preventDefault();
               editor?.chain().focus().toggleBold().run();
               return true;
-            case 'i':
+            case "i":
               event.preventDefault();
               editor?.chain().focus().toggleItalic().run();
               return true;
-            case 'u':
+            case "u":
               event.preventDefault();
               editor?.chain().focus().toggleUnderline().run();
               return true;
-            case 'e':
+            case "e":
               event.preventDefault();
               editor?.chain().focus().toggleCode().run();
               return true;
-            case 'k':
+            case "k": {
               event.preventDefault();
-              const url = window.prompt('Enter URL:');
+              const url = window.prompt("Enter URL:");
               if (url) {
                 editor?.chain().focus().setLink({ href: url }).run();
               }
               return true;
+            }
           }
-          
+
           if (event.shiftKey) {
             switch (event.key) {
-              case 'X':
+              case "X":
                 event.preventDefault();
                 editor?.chain().focus().toggleStrike().run();
                 return true;
-              case 'C':
+              case "C":
                 event.preventDefault();
                 editor?.chain().focus().toggleCodeBlock().run();
                 return true;
-              case 'B':
+              case "B":
                 event.preventDefault();
                 editor?.chain().focus().toggleBlockquote().run();
                 return true;
-              case '*':
+              case "*":
                 event.preventDefault();
                 editor?.chain().focus().toggleBulletList().run();
                 return true;
-              case '&': // Shift+7 = &
+              case "&": // Shift+7 = &
                 event.preventDefault();
                 editor?.chain().focus().toggleOrderedList().run();
                 return true;
@@ -276,7 +274,10 @@ export function RichTextEditor({
       const { from, to } = editor.state.selection;
       editor.commands.setContent(markdownToTiptap(value));
       // Try to restore selection
-      editor.commands.setTextSelection({ from: Math.min(from, editor.state.doc.content.size), to: Math.min(to, editor.state.doc.content.size) });
+      editor.commands.setTextSelection({
+        from: Math.min(from, editor.state.doc.content.size),
+        to: Math.min(to, editor.state.doc.content.size),
+      });
     }
   }, [value, editor]);
 
@@ -295,4 +296,3 @@ export function RichTextEditor({
     </Box>
   );
 }
-

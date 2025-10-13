@@ -1,7 +1,7 @@
+import { exec } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { exec } from "node:child_process";
 import { type IpcMainInvokeEvent, ipcMain } from "electron";
 
 const execAsync = promisify(exec);
@@ -123,7 +123,7 @@ export function registerFsIpc(): void {
         }
 
         // Filter by query if provided
-        if (query && query.trim()) {
+        if (query?.trim()) {
           const lowerQuery = query.toLowerCase();
           return allFiles
             .filter(
@@ -142,4 +142,3 @@ export function registerFsIpc(): void {
     },
   );
 }
-

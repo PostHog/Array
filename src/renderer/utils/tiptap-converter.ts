@@ -26,23 +26,32 @@ function nodeToMarkdown(node: JSONContent): string {
       return `<file path="${node.attrs?.id || ""}" />`;
     case "hardBreak":
       return "\n";
-    case "heading":
+    case "heading": {
       const level = node.attrs?.level || 1;
-      const headingText = node.content ? node.content.map(nodeToMarkdown).join("") : "";
+      const headingText = node.content
+        ? node.content.map(nodeToMarkdown).join("")
+        : "";
       return `${"#".repeat(level)} ${headingText}`;
+    }
     case "bulletList":
       return listToMarkdown(node, "bullet");
     case "orderedList":
       return listToMarkdown(node, "ordered");
     case "listItem":
       return listItemToMarkdown(node);
-    case "blockquote":
-      const quoteContent = node.content ? node.content.map(nodeToMarkdown).join("\n") : "";
+    case "blockquote": {
+      const quoteContent = node.content
+        ? node.content.map(nodeToMarkdown).join("\n")
+        : "";
       return `> ${quoteContent.replace(/\n/g, "\n> ")}`;
-    case "codeBlock":
+    }
+    case "codeBlock": {
       const language = node.attrs?.language || "";
-      const codeContent = node.content ? node.content.map(nodeToMarkdown).join("") : "";
+      const codeContent = node.content
+        ? node.content.map(nodeToMarkdown).join("")
+        : "";
       return `\`\`\`${language}\n${codeContent}\n\`\`\``;
+    }
     case "horizontalRule":
       return "---";
     default:
@@ -56,7 +65,7 @@ function nodeToMarkdown(node: JSONContent): string {
 
 function formatTextNode(node: JSONContent): string {
   let text = node.text || "";
-  
+
   if (node.marks) {
     for (const mark of node.marks) {
       switch (mark.type) {
@@ -75,24 +84,27 @@ function formatTextNode(node: JSONContent): string {
         case "code":
           text = `\`${text}\``;
           break;
-        case "link":
+        case "link": {
           const href = mark.attrs?.href || "";
           text = `[${text}](${href})`;
           break;
+        }
       }
     }
   }
-  
+
   return text;
 }
 
 function listToMarkdown(node: JSONContent, type: "bullet" | "ordered"): string {
   if (!node.content) return "";
-  
-  return node.content.map((item, index) => {
-    const marker = type === "bullet" ? "- " : `${index + 1}. `;
-    return marker + nodeToMarkdown(item).replace(/^\n+|\n+$/g, "");
-  }).join("\n");
+
+  return node.content
+    .map((item, index) => {
+      const marker = type === "bullet" ? "- " : `${index + 1}. `;
+      return marker + nodeToMarkdown(item).replace(/^\n+|\n+$/g, "");
+    })
+    .join("\n");
 }
 
 function listItemToMarkdown(node: JSONContent): string {
@@ -131,10 +143,13 @@ export function markdownToTiptap(markdown: string): JSONContent {
 
   while (i < lines.length) {
     const line = lines[i].trim();
-    
+
     if (line === "") {
       // Skip empty lines but add paragraph break if needed
-      if (content.length > 0 && content[content.length - 1].type !== "paragraph") {
+      if (
+        content.length > 0 &&
+        content[content.length - 1].type !== "paragraph"
+      ) {
         content.push({ type: "paragraph", content: [] });
       }
       i++;
@@ -156,7 +171,10 @@ export function markdownToTiptap(markdown: string): JSONContent {
     // Blockquotes
     if (line.startsWith("> ")) {
       const quoteLines = [];
-      while (i < lines.length && (lines[i].startsWith("> ") || lines[i].trim() === "")) {
+      while (
+        i < lines.length &&
+        (lines[i].startsWith("> ") || lines[i].trim() === "")
+      ) {
         if (lines[i].startsWith("> ")) {
           quoteLines.push(lines[i].substring(2));
         } else if (lines[i].trim() === "") {
@@ -164,7 +182,7 @@ export function markdownToTiptap(markdown: string): JSONContent {
         }
         i++;
       }
-      
+
       const quoteContent = parseBlockContent(quoteLines.join("\n"));
       content.push({
         type: "blockquote",
@@ -178,13 +196,13 @@ export function markdownToTiptap(markdown: string): JSONContent {
       const language = line.substring(3).trim();
       const codeLines = [];
       i++; // Skip opening ```
-      
+
       while (i < lines.length && !lines[i].startsWith("```")) {
         codeLines.push(lines[i]);
         i++;
       }
       i++; // Skip closing ```
-      
+
       content.push({
         type: "codeBlock",
         attrs: language ? { language } : {},
@@ -201,18 +219,22 @@ export function markdownToTiptap(markdown: string): JSONContent {
     // Lists
     const bulletMatch = line.match(/^[-*+]\s+(.+)$/);
     const orderedMatch = line.match(/^\d+\.\s+(.+)$/);
-    
+
     if (bulletMatch || orderedMatch) {
       const isBullet = !!bulletMatch;
       const listItems = [];
-      
+
       while (i < lines.length) {
         const currentLine = lines[i].trim();
         const currentBulletMatch = currentLine.match(/^[-*+]\s+(.+)$/);
         const currentOrderedMatch = currentLine.match(/^\d+\.\s+(.+)$/);
-        
-        if ((isBullet && currentBulletMatch) || (!isBullet && currentOrderedMatch)) {
-          const itemText = (currentBulletMatch || currentOrderedMatch)?.[1] || "";
+
+        if (
+          (isBullet && currentBulletMatch) ||
+          (!isBullet && currentOrderedMatch)
+        ) {
+          const itemText =
+            (currentBulletMatch || currentOrderedMatch)?.[1] || "";
           listItems.push({
             type: "listItem",
             content: [
@@ -227,7 +249,7 @@ export function markdownToTiptap(markdown: string): JSONContent {
           break;
         }
       }
-      
+
       content.push({
         type: isBullet ? "bulletList" : "orderedList",
         content: listItems,
@@ -253,14 +275,15 @@ export function markdownToTiptap(markdown: string): JSONContent {
 
   return {
     type: "doc",
-    content: content.length > 0 ? content : [{ type: "paragraph", content: [] }],
+    content:
+      content.length > 0 ? content : [{ type: "paragraph", content: [] }],
   };
 }
 
 function parseBlockContent(text: string): JSONContent[] {
   // For simplicity, treat block content as paragraphs
-  const lines = text.split("\n").filter(line => line.trim() !== "");
-  return lines.map(line => ({
+  const lines = text.split("\n").filter((line) => line.trim() !== "");
+  return lines.map((line) => ({
     type: "paragraph",
     content: parseInlineContent(line),
   }));
@@ -268,13 +291,13 @@ function parseBlockContent(text: string): JSONContent[] {
 
 function parseInlineContent(text: string): JSONContent[] {
   const nodes: JSONContent[] = [];
-  
+
   // Parse inline formatting and file mentions
   // This is a simplified parser - for production use a proper markdown parser
-  
+
   let i = 0;
   let currentText = "";
-  
+
   const flushText = () => {
     if (currentText) {
       nodes.push({ type: "text", text: currentText });
@@ -408,10 +431,11 @@ export function extractFilePaths(markdown: string): string[] {
   const paths: string[] = [];
   let match: RegExpExecArray | null;
 
-  while ((match = fileTagRegex.exec(markdown)) !== null) {
+  match = fileTagRegex.exec(markdown);
+  while (match !== null) {
     paths.push(match[1]);
+    match = fileTagRegex.exec(markdown);
   }
 
   return paths;
 }
-

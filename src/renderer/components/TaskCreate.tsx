@@ -1,8 +1,4 @@
-import {
-  DiamondIcon,
-  FilesIcon,
-  GithubLogoIcon,
-} from "@phosphor-icons/react";
+import { DiamondIcon, FilesIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import {
   Cross2Icon,
   EnterFullScreenIcon,
@@ -42,7 +38,8 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const { data: integrations = [] } = useIntegrations();
   const { data: workflows = [] } = useWorkflows();
   const { client, isAuthenticated } = useAuthStore();
-  const { setRepoPath: saveRepoPath, setRepoWorkingDir } = useTaskExecutionStore();
+  const { setRepoPath: saveRepoPath, setRepoWorkingDir } =
+    useTaskExecutionStore();
 
   const githubIntegration = useMemo(
     () => integrations.find((i) => i.kind === "github"),
@@ -93,11 +90,10 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     repository: string;
     workflow: string;
   }) => {
-    
     if (!isAuthenticated || !client) {
       return;
     }
-    
+
     if (!data.title.trim() || !data.description.trim() || !data.workflow) {
       return;
     }
@@ -122,18 +118,17 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       },
       {
         onSuccess: (newTask) => {
-          
           // Save the local working directory to the task execution store
           if (repoPath) {
             saveRepoPath(newTask.id, repoPath);
-            
+
             // Also save the mapping for GitHub repos to reuse later
             if (repositoryConfig) {
               const repoKey = `${repositoryConfig.organization}/${repositoryConfig.repository}`;
               setRepoWorkingDir(repoKey, repoPath);
             }
           }
-          
+
           createTab({
             type: "task-detail",
             title: newTask.title,
@@ -255,7 +250,8 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                         variant="outline"
                         color="gray"
                         onClick={async () => {
-                          const selected = await window.electronAPI?.selectDirectory();
+                          const selected =
+                            await window.electronAPI?.selectDirectory();
                           if (selected) {
                             setRepoPath(selected);
                           }
@@ -270,7 +266,8 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                         variant="outline"
                         color="gray"
                         onClick={async () => {
-                          const selected = await window.electronAPI?.selectDirectory();
+                          const selected =
+                            await window.electronAPI?.selectDirectory();
                           if (selected) {
                             setRepoPath(selected);
                           }
@@ -343,7 +340,8 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
               {error && (
                 <Callout.Root color="red" size="1">
                   <Callout.Text>
-                    Failed to create task: {error instanceof Error ? error.message : "Unknown error"}
+                    Failed to create task:{" "}
+                    {error instanceof Error ? error.message : "Unknown error"}
                   </Callout.Text>
                 </Callout.Root>
               )}
@@ -377,10 +375,12 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                     </Text>
                   </Flex>
                 </Text>
-                <Button 
-                  type="submit" 
-                  variant="classic" 
-                  disabled={isLoading || !isAuthenticated || workflows.length === 0}
+                <Button
+                  type="submit"
+                  variant="classic"
+                  disabled={
+                    isLoading || !isAuthenticated || workflows.length === 0
+                  }
                 >
                   {isLoading ? "Creating..." : "Create task"}
                 </Button>

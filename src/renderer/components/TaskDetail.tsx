@@ -254,28 +254,28 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                 )}
               />
 
-               <Flex direction="column">
-                 <Controller
-                   name="description"
-                   control={control}
-                   render={({ field }) => (
-                     <RichTextEditor
-                       value={field.value}
-                       onChange={field.onChange}
-                       repoPath={repoPath}
-                       placeholder="No description provided. Use @ to mention files, or format text with markdown."
-                       onBlur={onSubmit}
-                       showToolbar={true}
-                       minHeight="100px"
-                       style={{
-                         minHeight: "100px",
-                       }}
-                     />
-                   )}
-                 />
+              <Flex direction="column">
+                <Controller
+                  name="description"
+                  control={control}
+                  render={({ field }) => (
+                    <RichTextEditor
+                      value={field.value}
+                      onChange={field.onChange}
+                      repoPath={repoPath}
+                      placeholder="No description provided. Use @ to mention files, or format text with markdown."
+                      onBlur={onSubmit}
+                      showToolbar={true}
+                      minHeight="100px"
+                      style={{
+                        minHeight: "100px",
+                      }}
+                    />
+                  )}
+                />
 
-                 <Box className="border-gray-6 border-t" mt="4" />
-               </Flex>
+                <Box className="border-gray-6 border-t" mt="4" />
+              </Flex>
 
               <DataList.Root>
                 <DataList.Item>
