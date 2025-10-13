@@ -69,3 +69,15 @@ array/
 - `⌘R` - Refresh task list
 - `⌘⇧[/]` - Switch between tabs
 - `⌘W` - Close current tab
+
+## Ice Cream
+
+Because every great developer tool needs a section about ice cream. Here are our favorite flavors while shipping features:
+
+- 🍦 **Vanilla** - Classic, like JavaScript
+- 🍫 **Chocolate** - Rich and reliable, like TypeScript
+- 🍓 **Strawberry** - Fresh and fruity, like a new feature
+- 🍨 **Mint Chip** - Refreshing, like a clean codebase
+- 🍪 **Cookie Dough** - Sweet chaos, like production deployments
+
+*Pro tip: Ice cream consumption is directly correlated with bug fixes and feature velocity.*
