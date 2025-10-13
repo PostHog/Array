@@ -20,6 +20,7 @@ import {
 } from "../hooks/useWorkflows";
 import { useTabStore } from "../stores/tabStore";
 import { useWorkflowStore } from "../stores/workflowStore";
+import { useWorkflows } from "../hooks/useWorkflows";
 import { WorkflowBasicInfoStep } from "./workflow/WorkflowBasicInfoStep";
 import {
   type StageFormData,
@@ -56,8 +57,9 @@ export function WorkflowForm({
     useCreateStage();
   const { mutateAsync: updateStageAPI, isPending: isUpdatingStage } =
     useUpdateStage();
-  const { selectWorkflow } = useWorkflowStore();
   const { tabs, setActiveTab, createTab } = useTabStore();
+  const { selectWorkflow } = useWorkflowStore();
+  const { data: workflows = [] } = useWorkflows();
   const [currentStep, setCurrentStep] = useState<"info" | "stages">("info");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -139,6 +141,16 @@ export function WorkflowForm({
       setDeleteDialogOpen(false);
       resetForm();
       onOpenChange(false);
+
+      // Switch to the next available workflow
+      const remainingWorkflows = workflows.filter(
+        (w) => w.id !== workflow.id && w.is_active,
+      );
+      if (remainingWorkflows.length > 0) {
+        selectWorkflow(remainingWorkflows[0].id);
+      } else {
+        selectWorkflow(null);
+      }
     } catch (error) {
       console.error("Failed to delete workflow:", error);
     }

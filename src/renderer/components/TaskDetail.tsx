@@ -1,18 +1,23 @@
-import { ExternalLinkIcon, Pencil1Icon } from "@radix-ui/react-icons";
 import {
-  Badge,
+  DiamondIcon,
+  FilesIcon,
+  GitBranchIcon,
+  GithubLogoIcon,
+} from "@phosphor-icons/react";
+import { GearIcon, GlobeIcon } from "@radix-ui/react-icons";
+import {
   Box,
   Button,
-  Code,
   DataList,
   Flex,
+  Heading,
+  IconButton,
   Link,
-  SegmentedControl,
   Text,
-  TextArea,
+  Tooltip,
 } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
@@ -86,13 +91,26 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       title: task.title,
       description: task.description || "",
       workflow: task.workflow || "",
-      repository: task.repository_config
-        ? `${task.repository_config.organization}/${task.repository_config.repository}`
-        : "",
+      repository:
+        task.repository_config &&
+        task.repository_config.organization &&
+        task.repository_config.repository
+          ? `${task.repository_config.organization}/${task.repository_config.repository}`
+          : "",
     },
   });
 
   const repositoryValue = watch("repository");
+
+  const displayRepoPath = useMemo(() => {
+    if (!repoPath) return null;
+    // Replace home directory with ~
+    const homeDirPattern = /^\/Users\/[^/]+/; // macOS/Linux pattern
+    if (homeDirPattern.test(repoPath)) {
+      return repoPath.replace(homeDirPattern, "~");
+    }
+    return repoPath;
+  }, [repoPath]);
 
   // Initialize repoPath from mapping if task has repository_config
   useEffect(() => {
@@ -116,9 +134,12 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       title: task.title,
       description: task.description || "",
       workflow: task.workflow || "",
-      repository: task.repository_config
-        ? `${task.repository_config.organization}/${task.repository_config.repository}`
-        : "",
+      repository:
+        task.repository_config &&
+        task.repository_config.organization &&
+        task.repository_config.repository
+          ? `${task.repository_config.organization}/${task.repository_config.repository}`
+          : "",
     });
   }, [
     task.title,
@@ -163,6 +184,26 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     };
   }, [setStatusBar, reset, isRunning]);
 
+  useEffect(() => {
+    const handleKeydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      if (
+        e.key === "Enter" &&
+        (e.metaKey || e.ctrlKey) &&
+        document.activeElement instanceof HTMLElement
+      ) {
+        document.activeElement.blur();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeydown);
+    return () => {
+      document.removeEventListener("keydown", handleKeydown);
+    };
+  }, []);
+
   // Simple event handlers that delegate to store actions
   const handleSelectRepo = () => {
     const repoKey = repositoryValue || undefined;
@@ -201,286 +242,268 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   });
 
   return (
-    <Flex height="100%">
-      {/* Left pane - Task details */}
-      <Box width="50%" className="border-gray-6 border-r" overflowY="auto">
-        <Box p="4">
-          <Box mb="4">
-            <Controller
-              name="title"
-              control={control}
-              render={({ field }) => (
-                <Code
-                  size="5"
-                  contentEditable
-                  suppressContentEditableWarning
-                  ref={(el) => {
-                    if (el && el.textContent !== field.value) {
-                      el.textContent = field.value;
-                    }
-                  }}
-                  onBlur={(e) => {
-                    field.onChange(e.currentTarget.textContent || "");
-                    onSubmit();
-                  }}
-                  style={{
-                    cursor: "text",
-                    outline: "none",
-                    width: "fit-content",
-                  }}
-                />
-              )}
-            />
-          </Box>
-
-          <DataList.Root>
-            <DataList.Item>
-              <DataList.Label>Status</DataList.Label>
-              <DataList.Value>
-                <Badge color="gray">{currentStageName}</Badge>
-              </DataList.Value>
-            </DataList.Item>
-
-            <DataList.Item>
-              <DataList.Label>Progress</DataList.Label>
-              <DataList.Value>
-                {progress?.has_progress ? (
-                  <Flex direction="column" gap="1">
-                    <Badge
-                      color={
-                        progress.status === "completed"
-                          ? "green"
-                          : progress.status === "failed"
-                            ? "red"
-                            : "blue"
+    <Flex direction="column" height="100%">
+      <Flex height="100%" style={{ flex: 1 }}>
+        <Box width="50%" className="border-gray-6 border-r" overflowY="auto">
+          <Box p="4">
+            <Flex direction="column" gap="4">
+              <Controller
+                name="title"
+                control={control}
+                render={({ field }) => (
+                  <Heading
+                    size="5"
+                    contentEditable
+                    suppressContentEditableWarning
+                    ref={(el) => {
+                      if (el && el.textContent !== field.value) {
+                        el.textContent = field.value;
                       }
-                    >
-                      {progress.status?.replace(/_/g, " ") ?? "in progress"}
-                    </Badge>
-                    <Text size="2" color="gray">
-                      Steps {progress.completed_steps ?? 0}/
-                      {typeof progress.total_steps === "number"
-                        ? progress.total_steps
-                        : "?"}
-                      {typeof progress.progress_percentage === "number"
-                        ? ` · ${Math.round(progress.progress_percentage)}%`
-                        : ""}
-                    </Text>
-                    {progress.current_step && (
-                      <Text size="2" color="gray">
-                        Current step: {progress.current_step}
-                      </Text>
-                    )}
-                  </Flex>
-                ) : (
-                  <Code size="2" color="gray">
-                    No progress yet
-                  </Code>
-                )}
-              </DataList.Value>
-            </DataList.Item>
-
-            <DataList.Item>
-              <DataList.Label>Workflow</DataList.Label>
-              <DataList.Value>
-                {workflowOptions.length > 0 ? (
-                  <Controller
-                    name="workflow"
-                    control={control}
-                    rules={{ required: true }}
-                    render={({ field }) => (
-                      <Combobox
-                        items={workflowOptions}
-                        value={field.value}
-                        onValueChange={(value) => {
-                          field.onChange(value);
-                          updateTask({
-                            taskId: task.id,
-                            updates: { workflow: value },
-                          });
-                        }}
-                        placeholder="Select a workflow..."
-                        searchPlaceholder="Search workflows..."
-                        emptyMessage="No workflows found"
-                        size="2"
-                      />
-                    )}
+                    }}
+                    onBlur={(e) => {
+                      field.onChange(e.currentTarget.textContent || "");
+                      onSubmit();
+                    }}
+                    style={{
+                      cursor: "text",
+                      outline: "none",
+                      width: "100%",
+                    }}
                   />
-                ) : (
-                  <Code size="2" color="gray">
-                    No workflows available
-                  </Code>
                 )}
-              </DataList.Value>
-            </DataList.Item>
+              />
 
-            <DataList.Item>
-              <DataList.Label>Repository</DataList.Label>
-              <DataList.Value>
-                <Flex gap="2" align="center">
-                  {repositories.length > 0 ? (
-                    <Controller
-                      name="repository"
-                      control={control}
-                      render={({ field }) => (
-                        <Combobox
-                          items={repositories.map((repo) => ({
-                            value: `${repo.organization}/${repo.repository}`,
-                            label: `${repo.organization}/${repo.repository}`,
-                          }))}
-                          value={field.value}
-                          onValueChange={(value) => {
-                            field.onChange(value);
-
-                            let repositoryConfig:
-                              | { organization: string; repository: string }
-                              | undefined;
-
-                            if (value) {
-                              const [organization, repository] =
-                                value.split("/");
-                              if (organization && repository) {
-                                repositoryConfig = { organization, repository };
-                              }
-                            }
-
-                            updateTask({
-                              taskId: task.id,
-                              updates: { repository_config: repositoryConfig },
-                            });
-                          }}
-                          placeholder="Select a repository..."
-                          searchPlaceholder="Search repositories..."
-                          emptyMessage="No repositories found"
-                          size="2"
-                        />
-                      )}
-                    />
-                  ) : repositoryValue ? (
-                    <Code size="2">{repositoryValue}</Code>
-                  ) : (
-                    <Code size="2" color="gray">
-                      None
-                    </Code>
-                  )}
-                  {repositoryValue && (
-                    <Button
-                      size="1"
-                      variant="ghost"
-                      onClick={() =>
-                        window.electronAPI.openExternal(
-                          `https://github.com/${repositoryValue}`,
-                        )
-                      }
+              <Flex direction="column">
+                <Controller
+                  name="description"
+                  control={control}
+                  render={({ field }) => (
+                    <Text
+                      size="3"
+                      contentEditable
+                      suppressContentEditableWarning
+                      ref={(el) => {
+                        if (el && el.textContent !== field.value) {
+                          el.textContent = field.value;
+                        }
+                      }}
+                      onBlur={(e) => {
+                        field.onChange(e.currentTarget.textContent || "");
+                        onSubmit();
+                      }}
+                      style={{
+                        cursor: "text",
+                        outline: "none",
+                        width: "100%",
+                        minHeight: "3em",
+                        whiteSpace: "pre-wrap",
+                      }}
+                      color={field.value ? undefined : "gray"}
                     >
-                      <ExternalLinkIcon />
+                      {field.value || "No description provided"}
+                    </Text>
+                  )}
+                />
+
+                <Box className="border-gray-6 border-t" mt="4" />
+              </Flex>
+
+              <DataList.Root>
+                <DataList.Item>
+                  <DataList.Label>Status</DataList.Label>
+                  <DataList.Value>
+                    <Button size="1" color="gray">
+                      {currentStageName}
                     </Button>
+                  </DataList.Value>
+                </DataList.Item>
+
+                {progress?.has_progress && (
+                  <DataList.Item>
+                    <DataList.Label>Progress</DataList.Label>
+                    <DataList.Value>
+                      <Button
+                        size="1"
+                        color={
+                          progress.status === "completed"
+                            ? "green"
+                            : progress.status === "failed"
+                              ? "red"
+                              : "blue"
+                        }
+                      >
+                        {progress.status?.replace(/_/g, " ") ?? "in progress"}
+                      </Button>
+                    </DataList.Value>
+                  </DataList.Item>
+                )}
+
+                {workflowOptions.length > 0 && (
+                  <DataList.Item>
+                    <DataList.Label>Workflow</DataList.Label>
+                    <DataList.Value>
+                      <Controller
+                        name="workflow"
+                        control={control}
+                        rules={{ required: true }}
+                        render={({ field }) => (
+                          <Combobox
+                            items={workflowOptions}
+                            value={field.value}
+                            onValueChange={(value) => {
+                              field.onChange(value);
+                              updateTask({
+                                taskId: task.id,
+                                updates: { workflow: value },
+                              });
+                            }}
+                            placeholder="Select a workflow..."
+                            searchPlaceholder="Search workflows..."
+                            emptyMessage="No workflows found"
+                            size="1"
+                            variant="outline"
+                            icon={<DiamondIcon />}
+                          />
+                        )}
+                      />
+                    </DataList.Value>
+                  </DataList.Item>
+                )}
+
+                <DataList.Item>
+                  <DataList.Label>Repository</DataList.Label>
+                  <DataList.Value>
+                    <Button size="1" variant="outline" color="gray">
+                      <GithubLogoIcon />
+                      {repositoryValue || "No repository connected"}
+                    </Button>
+                  </DataList.Value>
+                </DataList.Item>
+
+                <DataList.Item>
+                  <DataList.Label>Working Directory</DataList.Label>
+                  <DataList.Value>
+                    {repoPath ? (
+                      <Button
+                        size="1"
+                        variant="outline"
+                        color="gray"
+                        onClick={handleSelectRepo}
+                      >
+                        <FilesIcon />
+                        {displayRepoPath}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="1"
+                        variant="outline"
+                        color="gray"
+                        onClick={handleSelectRepo}
+                      >
+                        <FilesIcon />
+                        Choose folder
+                      </Button>
+                    )}
+                  </DataList.Value>
+                </DataList.Item>
+
+                {task.github_branch && (
+                  <DataList.Item>
+                    <DataList.Label>Branch</DataList.Label>
+                    <DataList.Value>
+                      <Button size="1" variant="outline" color="gray">
+                        <GitBranchIcon />
+                        {task.github_branch}
+                      </Button>
+                    </DataList.Value>
+                  </DataList.Item>
+                )}
+              </DataList.Root>
+
+              <Box className="border-gray-6 border-t" />
+
+              {task.github_pr_url && (
+                <Link href={task.github_pr_url} target="_blank" size="2">
+                  View Pull Request
+                </Link>
+              )}
+
+              {progress?.has_progress && (
+                <Flex direction="column" gap="1">
+                  <Text size="2" color="gray">
+                    Steps {progress.completed_steps ?? 0}/
+                    {typeof progress.total_steps === "number"
+                      ? progress.total_steps
+                      : "?"}
+                    {typeof progress.progress_percentage === "number"
+                      ? ` · ${Math.round(progress.progress_percentage)}%`
+                      : ""}
+                  </Text>
+                  {progress.current_step && (
+                    <Text size="2" color="gray">
+                      Current step: {progress.current_step}
+                    </Text>
                   )}
                 </Flex>
-              </DataList.Value>
-            </DataList.Item>
+              )}
 
-            {task.github_branch && (
-              <DataList.Item>
-                <DataList.Label>Branch</DataList.Label>
-                <DataList.Value>{task.github_branch}</DataList.Value>
-              </DataList.Item>
-            )}
-
-            {task.github_pr_url && (
-              <DataList.Item>
-                <DataList.Label>Pull Request</DataList.Label>
-                <DataList.Value>
-                  <Link href={task.github_pr_url} target="_blank" size="2">
-                    View Pull Request →
-                  </Link>
-                </DataList.Value>
-              </DataList.Item>
-            )}
-
-            <DataList.Item>
-              <DataList.Label>Created</DataList.Label>
-              <DataList.Value>
-                {format(new Date(task.created_at), "PPP p")}
-              </DataList.Value>
-            </DataList.Item>
-
-            <DataList.Item>
-              <DataList.Label>Description</DataList.Label>
-              <DataList.Value>
-                <TextArea
-                  {...register("description")}
-                  onBlur={onSubmit}
-                  placeholder="No description provided"
-                  rows={3}
-                  style={{ resize: "vertical", width: "100%" }}
-                />
-              </DataList.Value>
-            </DataList.Item>
-
-            <DataList.Item>
-              <DataList.Label>Working Directory</DataList.Label>
-              <DataList.Value>
-                {repoPath ? (
-                  <Button
-                    size="1"
-                    variant="ghost"
-                    onClick={handleSelectRepo}
-                    className="group cursor-pointer"
-                  >
-                    <Code variant="ghost" size="2">
-                      {repoPath}
-                    </Code>
-                    <Pencil1Icon className="ml-2 opacity-0 transition-opacity group-hover:opacity-100" />
-                  </Button>
-                ) : (
-                  <Button size="1" variant="outline" onClick={handleSelectRepo}>
-                    Choose folder
-                  </Button>
-                )}
-              </DataList.Value>
-            </DataList.Item>
-
-            <DataList.Item>
-              <DataList.Label>Mode</DataList.Label>
-              <DataList.Value>
-                <SegmentedControl.Root
-                  value={runMode}
-                  onValueChange={handleRunModeChange}
+              <Tooltip content={format(new Date(task.created_at), "PPP p")}>
+                <Button
+                  size="1"
+                  variant="ghost"
+                  color="gray"
+                  style={{ width: "fit-content" }}
                 >
-                  <SegmentedControl.Item value="local">
-                    Local
-                  </SegmentedControl.Item>
-                  <SegmentedControl.Item value="cloud">
-                    Cloud
-                  </SegmentedControl.Item>
-                </SegmentedControl.Root>
-              </DataList.Value>
-            </DataList.Item>
-          </DataList.Root>
+                  Created{" "}
+                  {formatDistanceToNow(new Date(task.created_at), {
+                    addSuffix: true,
+                  })}
+                </Button>
+              </Tooltip>
+            </Flex>
 
-          <Box mt="6">
-            <Flex direction="column" gap="3">
+            <Flex direction="column" gap="3" mt="4">
               {!repoPath ? (
-                <Button variant="classic" onClick={handleSelectRepo} size="3">
+                <Button variant="classic" onClick={handleSelectRepo} size="2">
                   Choose working folder
                 </Button>
               ) : (
-                <Button
-                  variant="classic"
-                  onClick={handleRunTask}
-                  disabled={isRunning}
-                  size="3"
-                >
-                  {isRunning ? "Running..." : "Run Agent"}
-                </Button>
+                <Flex gap="2">
+                  <Button
+                    variant="classic"
+                    onClick={handleRunTask}
+                    disabled={isRunning}
+                    size="2"
+                    style={{ flex: 1 }}
+                  >
+                    {isRunning
+                      ? "Running..."
+                      : runMode === "cloud"
+                        ? "Run Agent"
+                        : "Run Agent (Local)"}
+                  </Button>
+                  <Tooltip content="Toggle between Local or Cloud Agent">
+                    <IconButton
+                      size="2"
+                      variant="classic"
+                      color={runMode === "cloud" ? "accent" : "gray"}
+                      onClick={() =>
+                        handleRunModeChange(
+                          runMode === "local" ? "cloud" : "local",
+                        )
+                      }
+                    >
+                      {runMode === "cloud" ? <GlobeIcon /> : <GearIcon />}
+                    </IconButton>
+                  </Tooltip>
+                </Flex>
               )}
 
               {isRunning && (
                 <Button
                   onClick={handleCancel}
                   color="red"
-                  size="3"
+                  size="2"
                   variant="outline"
                 >
                   Cancel
@@ -489,27 +512,27 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
             </Flex>
           </Box>
         </Box>
-      </Box>
 
-      {/* Right pane - Logs */}
-      <Box
-        width="50%"
-        className="bg-panel-solid"
-        style={{ position: "relative" }}
-      >
-        {/* Background ASCII Art */}
-        <Box style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-          <AsciiArt scale={1} opacity={0.1} />
+        {/* Right pane - Logs */}
+        <Box
+          width="50%"
+          className="bg-panel-solid"
+          style={{ position: "relative" }}
+        >
+          {/* Background ASCII Art */}
+          <Box style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+            <AsciiArt scale={1} opacity={0.1} />
+          </Box>
+          {/* Foreground LogView */}
+          <Box style={{ position: "relative", zIndex: 1, height: "100%" }}>
+            <LogView
+              logs={logs}
+              isRunning={isRunning}
+              onClearLogs={handleClearLogs}
+            />
+          </Box>
         </Box>
-        {/* Foreground LogView */}
-        <Box style={{ position: "relative", zIndex: 1, height: "100%" }}>
-          <LogView
-            logs={logs}
-            isRunning={isRunning}
-            onClearLogs={handleClearLogs}
-          />
-        </Box>
-      </Box>
+      </Flex>
     </Flex>
   );
 }

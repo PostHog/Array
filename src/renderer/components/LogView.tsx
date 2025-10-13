@@ -1,5 +1,13 @@
 import { TrashIcon } from "@radix-ui/react-icons";
-import { Box, Code, Flex, Heading, IconButton, Text } from "@radix-ui/themes";
+import {
+  Box,
+  Code,
+  ContextMenu,
+  Flex,
+  Heading,
+  IconButton,
+  Text,
+} from "@radix-ui/themes";
 import { useEffect, useRef } from "react";
 import { formatTime, type LogEntry } from "../types/log";
 import { DiffView } from "./log/DiffView";
@@ -38,40 +46,23 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
     );
   }
 
-  return (
-    <Flex direction="column" height="100%">
-      <Box p="4" className="border-gray-6 border-b">
-        <Flex align="center" justify="between">
-          <Heading size="3">Activity Log</Heading>
-          <Flex align="center" gap="2">
-            {isRunning && (
-              <Flex align="center" gap="2">
-                <Box
-                  width="8px"
-                  height="8px"
-                  className="animate-pulse rounded-full bg-green-9"
-                />
-                <Text size="2" color="gray">
-                  Running
-                </Text>
-              </Flex>
-            )}
-            {logs.length > 0 && onClearLogs && (
-              <IconButton
-                size="1"
-                variant="ghost"
-                color="gray"
-                onClick={onClearLogs}
-                title="Clear logs"
-              >
-                <TrashIcon />
-              </IconButton>
-            )}
-          </Flex>
-        </Flex>
-      </Box>
+  const handleCopyLogs = () => {
+    const logsText = logs
+      .map((log) => {
+        if (typeof log === "string") return log;
+        if (log.type === "output") return log.content;
+        if (log.type === "error") return `Error: ${log.content}`;
+        return "";
+      })
+      .join("\n");
+    navigator.clipboard.writeText(logsText);
+  };
 
-      <Box ref={scrollRef} flexGrow="1" overflowY="auto" p="4">
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger>
+        <Flex direction="column" height="100%">
+          <Box ref={scrollRef} flexGrow="1" overflowY="auto" p="4">
         {logs.map((log, index) => {
           const key =
             typeof log === "string"
@@ -222,7 +213,17 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
               );
           }
         })}
-      </Box>
-    </Flex>
+          </Box>
+        </Flex>
+      </ContextMenu.Trigger>
+      <ContextMenu.Content>
+        <ContextMenu.Item onClick={handleCopyLogs}>Copy</ContextMenu.Item>
+        {onClearLogs && (
+          <ContextMenu.Item onClick={onClearLogs} color="red">
+            Clear
+          </ContextMenu.Item>
+        )}
+      </ContextMenu.Content>
+    </ContextMenu.Root>
   );
 }
