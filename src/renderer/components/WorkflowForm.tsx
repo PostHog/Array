@@ -17,10 +17,10 @@ import {
   useDeactivateWorkflow,
   useUpdateStage,
   useUpdateWorkflow,
+  useWorkflows,
 } from "../hooks/useWorkflows";
 import { useTabStore } from "../stores/tabStore";
 import { useWorkflowStore } from "../stores/workflowStore";
-import { useWorkflows } from "../hooks/useWorkflows";
 import { WorkflowBasicInfoStep } from "./workflow/WorkflowBasicInfoStep";
 import {
   type StageFormData,
@@ -174,7 +174,7 @@ export function WorkflowForm({
 
         // Step 1: Archive stages that were removed from the form
         const stagesToArchive = workflow.stages.filter(
-          (s) => !currentStageIds.has(s.id) && !s.is_archived
+          (s) => !currentStageIds.has(s.id) && !s.is_archived,
         );
         for (const stage of stagesToArchive) {
           await updateStageAPI({

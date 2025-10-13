@@ -52,7 +52,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     () => integrations.find((i) => i.kind === "github"),
     [integrations],
   );
-  const { data: repositories = [] } = useRepositories(githubIntegration?.id);
+  useRepositories(githubIntegration?.id);
   const { data: tasks = [] } = useTasks();
   const { mutate: updateTask } = useUpdateTask();
   const { updateTabTitle, activeTabId } = useTabStore();
@@ -82,7 +82,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const { isRunning, logs, repoPath, runMode, progress } = taskState;
 
   const {
-    register,
     handleSubmit,
     reset: resetForm,
     control,
@@ -93,8 +92,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       description: task.description || "",
       workflow: task.workflow || "",
       repository:
-        task.repository_config &&
-        task.repository_config.organization &&
+        task.repository_config?.organization &&
         task.repository_config.repository
           ? `${task.repository_config.organization}/${task.repository_config.repository}`
           : "",
@@ -136,8 +134,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       description: task.description || "",
       workflow: task.workflow || "",
       repository:
-        task.repository_config &&
-        task.repository_config.organization &&
+        task.repository_config?.organization &&
         task.repository_config.repository
           ? `${task.repository_config.organization}/${task.repository_config.repository}`
           : "",
@@ -445,7 +442,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                     <IconButton
                       size="2"
                       variant="classic"
-                      color={runMode === "cloud" ? "accent" : "gray"}
+                      color={runMode === "cloud" ? "blue" : "gray"}
                       onClick={() =>
                         handleRunModeChange(
                           runMode === "local" ? "cloud" : "local",
