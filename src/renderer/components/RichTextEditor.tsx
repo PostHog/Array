@@ -244,10 +244,46 @@ export function RichTextEditor({
                 event.preventDefault();
                 editor?.chain().focus().toggleStrike().run();
                 return true;
-              case "C":
+              case "C": {
                 event.preventDefault();
-                editor?.chain().focus().toggleCodeBlock().run();
+                // Use the same logic as the toolbar button
+                const { from } = editor?.state.selection || { from: 0 };
+                const $from = editor?.state.doc.resolve(from);
+                const currentNode = $from?.parent;
+                let hasMentions = false;
+
+                if (editor?.isActive("codeBlock")) {
+                  editor.chain().focus().toggleCodeBlock().run();
+                } else if (currentNode?.content) {
+                  currentNode.content.forEach((node) => {
+                    if (node.type.name === "mention") {
+                      hasMentions = true;
+                    }
+                  });
+
+                  if (hasMentions) {
+                    // If there are mentions, create code block on a new line after current paragraph
+                    const endOfParagraph = $from?.end($from.depth) || 0;
+
+                    editor
+                      ?.chain()
+                      .focus()
+                      .setTextSelection(endOfParagraph)
+                      .insertContent([
+                        {
+                          type: "codeBlock",
+                          content: [{ type: "text", text: "" }],
+                        },
+                      ])
+                      .run();
+                  } else {
+                    editor?.chain().focus().toggleCodeBlock().run();
+                  }
+                } else {
+                  editor?.chain().focus().toggleCodeBlock().run();
+                }
                 return true;
+              }
               case "B":
                 event.preventDefault();
                 editor?.chain().focus().toggleBlockquote().run();

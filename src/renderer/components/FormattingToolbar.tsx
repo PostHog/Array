@@ -21,7 +21,49 @@ export function FormattingToolbar({ editor }: FormattingToolbarProps) {
   const toggleUnderline = () => editor.chain().focus().toggleUnderline().run();
   const toggleStrike = () => editor.chain().focus().toggleStrike().run();
   const toggleCode = () => editor.chain().focus().toggleCode().run();
-  const toggleCodeBlock = () => editor.chain().focus().toggleCodeBlock().run();
+  const toggleCodeBlock = () => {
+    const { from } = editor.state.selection;
+
+    // Check if we're in a code block already
+    if (editor.isActive("codeBlock")) {
+      // If we're in a code block, convert back to paragraph
+      editor.chain().focus().toggleCodeBlock().run();
+    } else {
+      // Check if current node contains mentions
+      const $from = editor.state.doc.resolve(from);
+      const currentNode = $from.parent;
+      let hasMentions = false;
+
+      // Check if the current paragraph has mention nodes
+      if (currentNode.content) {
+        currentNode.content.forEach((node) => {
+          if (node.type.name === "mention") {
+            hasMentions = true;
+          }
+        });
+      }
+
+      if (hasMentions) {
+        // If there are mentions, create code block on a new line after current paragraph
+        const endOfParagraph = $from.end($from.depth);
+
+        editor
+          .chain()
+          .focus()
+          .setTextSelection(endOfParagraph)
+          .insertContent([
+            {
+              type: "codeBlock",
+              content: [{ type: "text", text: "" }],
+            },
+          ])
+          .run();
+      } else {
+        // No mentions, use the normal toggle
+        editor.chain().focus().toggleCodeBlock().run();
+      }
+    }
+  };
   const toggleBlockquote = () =>
     editor.chain().focus().toggleBlockquote().run();
   const toggleBulletList = () =>
@@ -37,7 +79,30 @@ export function FormattingToolbar({ editor }: FormattingToolbarProps) {
   };
 
   const setHeading = (level: 1 | 2 | 3 | 4 | 5 | 6) => {
-    editor.chain().focus().toggleHeading({ level }).run();
+    const { from, to } = editor.state.selection;
+
+    // If there's a text selection, wrap it in a new paragraph and convert to heading
+    if (from !== to) {
+      const selectedText = editor.state.doc.textBetween(from, to);
+      editor
+        .chain()
+        .focus()
+        .deleteSelection()
+        .insertContent([
+          {
+            type: "heading",
+            attrs: { level },
+            content: [{ type: "text", text: selectedText }],
+          },
+          {
+            type: "paragraph",
+          },
+        ])
+        .run();
+    } else {
+      // No selection, toggle heading for current block
+      editor.chain().focus().toggleHeading({ level }).run();
+    }
   };
 
   const getCurrentHeading = () => {
@@ -70,7 +135,29 @@ export function FormattingToolbar({ editor }: FormattingToolbarProps) {
         value={getCurrentHeading()}
         onValueChange={(value) => {
           if (value === "paragraph") {
-            editor.chain().focus().setParagraph().run();
+            const { from, to } = editor.state.selection;
+
+            // If there's a text selection, wrap it in a new paragraph
+            if (from !== to) {
+              const selectedText = editor.state.doc.textBetween(from, to);
+              editor
+                .chain()
+                .focus()
+                .deleteSelection()
+                .insertContent([
+                  {
+                    type: "paragraph",
+                    content: [{ type: "text", text: selectedText }],
+                  },
+                  {
+                    type: "paragraph",
+                  },
+                ])
+                .run();
+            } else {
+              // No selection, set current block to paragraph
+              editor.chain().focus().setParagraph().run();
+            }
           } else {
             setHeading(parseInt(value, 10) as 1 | 2 | 3 | 4 | 5 | 6);
           }
