@@ -1,10 +1,17 @@
 import {
+  DiamondIcon,
+  FilesIcon,
+  GithubLogoIcon,
+} from "@phosphor-icons/react";
+import {
   Cross2Icon,
   EnterFullScreenIcon,
   ExitFullScreenIcon,
 } from "@radix-ui/react-icons";
 import {
   Button,
+  Callout,
+  DataList,
   Dialog,
   Flex,
   IconButton,
@@ -18,7 +25,9 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
 import { useCreateTask } from "../hooks/useTasks";
 import { useWorkflows } from "../hooks/useWorkflows";
+import { useAuthStore } from "../stores/authStore";
 import { useTabStore } from "../stores/tabStore";
+import { useTaskExecutionStore } from "../stores/taskExecutionStore";
 import { Combobox } from "./Combobox";
 import { RichTextEditor } from "./RichTextEditor";
 
@@ -28,10 +37,12 @@ interface TaskCreateProps {
 }
 
 export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
-  const { mutate: createTask, isPending: isLoading } = useCreateTask();
+  const { mutate: createTask, isPending: isLoading, error } = useCreateTask();
   const { createTab } = useTabStore();
   const { data: integrations = [] } = useIntegrations();
   const { data: workflows = [] } = useWorkflows();
+  const { client, isAuthenticated } = useAuthStore();
+  const { setRepoPath: saveRepoPath, setRepoWorkingDir } = useTaskExecutionStore();
 
   const githubIntegration = useMemo(
     () => integrations.find((i) => i.kind === "github"),
@@ -57,6 +68,16 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     [workflows],
   );
 
+  const displayRepoPath = useMemo(() => {
+    if (!repoPath) return null;
+    // Replace home directory with ~
+    const homeDirPattern = /^\/Users\/[^/]+/; // macOS/Linux pattern
+    if (homeDirPattern.test(repoPath)) {
+      return repoPath.replace(homeDirPattern, "~");
+    }
+    return repoPath;
+  }, [repoPath]);
+
   const { register, handleSubmit, reset, control } = useForm({
     defaultValues: {
       title: "",
@@ -72,8 +93,14 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     repository: string;
     workflow: string;
   }) => {
-    if (!data.title.trim() || !data.description.trim() || !data.workflow)
+    
+    if (!isAuthenticated || !client) {
       return;
+    }
+    
+    if (!data.title.trim() || !data.description.trim() || !data.workflow) {
+      return;
+    }
 
     let repositoryConfig:
       | { organization: string; repository: string }
@@ -95,15 +122,31 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       },
       {
         onSuccess: (newTask) => {
+          
+          // Save the local working directory to the task execution store
+          if (repoPath) {
+            saveRepoPath(newTask.id, repoPath);
+            
+            // Also save the mapping for GitHub repos to reuse later
+            if (repositoryConfig) {
+              const repoKey = `${repositoryConfig.organization}/${repositoryConfig.repository}`;
+              setRepoWorkingDir(repoKey, repoPath);
+            }
+          }
+          
           createTab({
             type: "task-detail",
             title: newTask.title,
             data: newTask,
           });
           reset();
+          setRepoPath(null); // Reset the local repo path for next task
           if (!createMore) {
             onOpenChange(false);
           }
+        },
+        onError: (error) => {
+          console.error("Failed to create task:", error);
         },
       },
     );
@@ -201,48 +244,49 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                 />
               </Flex>
 
-              {/* Local Working Directory - Primary Step */}
-              <Flex direction="column" gap="3">
-                <Flex direction="column" gap="2">
-                  <Text size="2" weight="medium" color="gray">
-                    Local Working Directory
-                  </Text>
-                  <Button
-                    variant={repoPath ? "soft" : "classic"}
-                    size="3"
-                    onClick={async () => {
-                      const selected = await window.electronAPI?.selectDirectory();
-                      if (selected) {
-                        setRepoPath(selected);
-                      }
-                    }}
-                    style={{
-                      justifyContent: "flex-start",
-                      backgroundColor: repoPath ? "var(--gray-a3)" : undefined,
-                    }}
-                  >
+              {/* Configuration */}
+              <DataList.Root>
+                <DataList.Item>
+                  <DataList.Label>Working Directory</DataList.Label>
+                  <DataList.Value>
                     {repoPath ? (
-                      <>
-                        📁 {repoPath.split('/').pop() || repoPath}
-                        <Text size="1" color="gray" ml="2">
-                          (Click to change)
-                        </Text>
-                      </>
+                      <Button
+                        size="1"
+                        variant="outline"
+                        color="gray"
+                        onClick={async () => {
+                          const selected = await window.electronAPI?.selectDirectory();
+                          if (selected) {
+                            setRepoPath(selected);
+                          }
+                        }}
+                      >
+                        <FilesIcon />
+                        {displayRepoPath}
+                      </Button>
                     ) : (
-                      "Choose Local Directory"
+                      <Button
+                        size="1"
+                        variant="outline"
+                        color="gray"
+                        onClick={async () => {
+                          const selected = await window.electronAPI?.selectDirectory();
+                          if (selected) {
+                            setRepoPath(selected);
+                          }
+                        }}
+                      >
+                        <FilesIcon />
+                        Choose folder
+                      </Button>
                     )}
-                  </Button>
-                </Flex>
+                  </DataList.Value>
+                </DataList.Item>
 
-                {/* Configuration Row */}
-                <Flex gap="3" wrap="wrap">
-                  {/* Workflow Selection */}
-
-                  {workflowOptions.length > 0 && (
-                    <Flex direction="column" gap="2" style={{ minWidth: "200px", flex: 1 }}>
-                      <Text size="2" weight="medium" color="gray">
-                        Workflow *
-                      </Text>
+                {workflowOptions.length > 0 && (
+                  <DataList.Item>
+                    <DataList.Label>Workflow</DataList.Label>
+                    <DataList.Value>
                       <Controller
                         name="workflow"
                         control={control}
@@ -255,23 +299,21 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                             placeholder="Select a workflow..."
                             searchPlaceholder="Search workflows..."
                             emptyMessage="No workflows found"
-                            size="2"
+                            size="1"
+                            variant="outline"
+                            icon={<DiamondIcon />}
                             side="top"
                           />
                         )}
                       />
-                    </Flex>
-                  )}
+                    </DataList.Value>
+                  </DataList.Item>
+                )}
 
-                  {/* GitHub Repository Integration */}
-                  {repositories.length > 0 && (
-                    <Flex direction="column" gap="2" style={{ minWidth: "200px", flex: 1 }}>
-                      <Text size="2" weight="medium" color="gray">
-                        GitHub Repository
-                        <Text size="1" color="gray" ml="1">
-                          (For PRs & tracking)
-                        </Text>
-                      </Text>
+                {repositories.length > 0 && (
+                  <DataList.Item>
+                    <DataList.Label>Repository</DataList.Label>
+                    <DataList.Value>
                       <Controller
                         name="repository"
                         control={control}
@@ -286,15 +328,41 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                             placeholder="Select GitHub repo..."
                             searchPlaceholder="Search repositories..."
                             emptyMessage="No repositories found"
-                            size="2"
+                            size="1"
+                            variant="outline"
+                            icon={<GithubLogoIcon />}
                             side="top"
                           />
                         )}
                       />
-                    </Flex>
-                  )}
-                </Flex>
-              </Flex>
+                    </DataList.Value>
+                  </DataList.Item>
+                )}
+              </DataList.Root>
+
+              {error && (
+                <Callout.Root color="red" size="1">
+                  <Callout.Text>
+                    Failed to create task: {error instanceof Error ? error.message : "Unknown error"}
+                  </Callout.Text>
+                </Callout.Root>
+              )}
+
+              {!isAuthenticated && (
+                <Callout.Root color="orange" size="1">
+                  <Callout.Text>
+                    Not authenticated - please check your connection
+                  </Callout.Text>
+                </Callout.Root>
+              )}
+
+              {workflows.length === 0 && (
+                <Callout.Root color="orange" size="1">
+                  <Callout.Text>
+                    No workflows available - please create a workflow first
+                  </Callout.Text>
+                </Callout.Root>
+              )}
 
               <Flex gap="3" justify="end" align="end">
                 <Text as="label" size="1" style={{ cursor: "pointer" }}>
@@ -309,7 +377,11 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                     </Text>
                   </Flex>
                 </Text>
-                <Button type="submit" variant="classic" disabled={isLoading}>
+                <Button 
+                  type="submit" 
+                  variant="classic" 
+                  disabled={isLoading || !isAuthenticated || workflows.length === 0}
+                >
                   {isLoading ? "Creating..." : "Create task"}
                 </Button>
               </Flex>
