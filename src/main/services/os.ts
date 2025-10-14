@@ -1,5 +1,6 @@
 import { exec } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import {
@@ -111,6 +112,50 @@ export function registerOsIpc(getMainWindow: () => BrowserWindow | null): void {
     "open-external",
     async (_event: IpcMainInvokeEvent, url: string): Promise<void> => {
       await shell.openExternal(url);
+    },
+  );
+
+  ipcMain.handle(
+    "search-directories",
+    async (_event: IpcMainInvokeEvent, query: string): Promise<string[]> => {
+      if (!query?.trim()) {
+        return [];
+      }
+
+      let searchPath = query.trim();
+      if (searchPath.startsWith("~")) {
+        searchPath = searchPath.replace(/^~/, os.homedir());
+      }
+
+      const lastSlashIdx = searchPath.lastIndexOf("/");
+      const basePath =
+        lastSlashIdx === -1 ? "" : searchPath.substring(0, lastSlashIdx + 1);
+      const searchTerm =
+        lastSlashIdx === -1
+          ? searchPath
+          : searchPath.substring(lastSlashIdx + 1);
+      const pathToRead = basePath || os.homedir();
+
+      try {
+        const entries = await fsPromises.readdir(pathToRead, {
+          withFileTypes: true,
+        });
+        let directories = entries.filter((entry) => entry.isDirectory());
+
+        if (searchTerm) {
+          const searchLower = searchTerm.toLowerCase();
+          directories = directories.filter((dir) =>
+            dir.name.toLowerCase().includes(searchLower),
+          );
+        }
+
+        return directories
+          .map((dir) => path.join(pathToRead, dir.name))
+          .sort((a, b) => path.basename(a).localeCompare(path.basename(b)))
+          .slice(0, 20);
+      } catch {
+        return [];
+      }
     },
   );
 }

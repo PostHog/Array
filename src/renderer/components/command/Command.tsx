@@ -1,5 +1,3 @@
-import { MagnifyingGlassIcon } from "@radix-ui/react-icons";
-import { Flex } from "@radix-ui/themes";
 import { Command as CmdkCommand } from "cmdk";
 import React from "react";
 
@@ -14,7 +12,7 @@ const CommandRoot = React.forwardRef<
   return (
     <CmdkCommand
       ref={ref}
-      className={`overflow-hidden rounded-2 border border-gray-6 bg-gray-1 shadow-6 ${className || ""}`}
+      className={`flex h-full w-full flex-col overflow-hidden ${className || ""}`}
       {...props}
     />
   );
@@ -25,36 +23,13 @@ CommandRoot.displayName = "CommandRoot";
 interface CommandInputProps
   extends React.ComponentProps<typeof CmdkCommand.Input> {
   className?: string;
-  showIcon?: boolean;
-  autoFocus?: boolean;
 }
 
 const CommandInput = React.forwardRef<
   React.ElementRef<typeof CmdkCommand.Input>,
   CommandInputProps
->(({ className, showIcon = true, autoFocus = false, ...props }, ref) => {
-  if (showIcon) {
-    return (
-      <Flex align="center" className="border-gray-6 border-b" px="3">
-        <MagnifyingGlassIcon className="mr-2 h-4 w-4 text-gray-9" />
-        <CmdkCommand.Input
-          ref={ref}
-          autoFocus={autoFocus}
-          className={`w-full bg-transparent py-3 text-sm outline-none placeholder:text-gray-9 focus:outline-none ${className || ""}`}
-          {...props}
-        />
-      </Flex>
-    );
-  }
-
-  return (
-    <CmdkCommand.Input
-      ref={ref}
-      autoFocus={autoFocus}
-      className={`w-full border-gray-6 border-b bg-transparent px-3 py-3 text-sm outline-none placeholder:text-gray-9 focus:outline-none ${className || ""}`}
-      {...props}
-    />
-  );
+>(({ className, ...props }, ref) => {
+  return <CmdkCommand.Input ref={ref} className={className} {...props} />;
 });
 
 CommandInput.displayName = "CommandInput";
@@ -64,28 +39,40 @@ interface CommandListProps
   className?: string;
 }
 
-function CommandList({ className, ...props }: CommandListProps) {
+const CommandList = React.forwardRef<
+  React.ElementRef<typeof CmdkCommand.List>,
+  CommandListProps
+>(({ className, ...props }, ref) => {
   return (
     <CmdkCommand.List
-      className={`max-h-[300px] overflow-y-auto p-2 ${className || ""}`}
+      ref={ref}
+      className={`overflow-y-auto ${className || ""}`}
       {...props}
     />
   );
-}
+});
+
+CommandList.displayName = "CommandList";
 
 interface CommandItemProps
   extends React.ComponentProps<typeof CmdkCommand.Item> {
   className?: string;
 }
 
-function CommandItem({ className, ...props }: CommandItemProps) {
+const CommandItem = React.forwardRef<
+  React.ElementRef<typeof CmdkCommand.Item>,
+  CommandItemProps
+>(({ className, ...props }, ref) => {
   return (
     <CmdkCommand.Item
-      className={`flex cursor-pointer items-center rounded-1 px-3 py-2 text-gray-12 hover:bg-gray-3 aria-selected:bg-accent-3 ${className || ""}`}
+      ref={ref}
+      className={`relative flex cursor-pointer select-none items-center px-3 py-2 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected=true]:bg-accent-3 data-[disabled=true]:opacity-50 ${className || ""}`}
       {...props}
     />
   );
-}
+});
+
+CommandItem.displayName = "CommandItem";
 
 interface CommandGroupProps
   extends React.ComponentProps<typeof CmdkCommand.Group> {
@@ -93,41 +80,47 @@ interface CommandGroupProps
   heading?: string;
 }
 
-function CommandGroup({
-  className,
-  heading,
-  children,
-  ...props
-}: CommandGroupProps) {
+const CommandGroup = React.forwardRef<
+  React.ElementRef<typeof CmdkCommand.Group>,
+  CommandGroupProps
+>(({ className, heading, children, ...props }, ref) => {
   return (
-    <CmdkCommand.Group className={className} {...props}>
+    <CmdkCommand.Group
+      ref={ref}
+      className={`p-1 ${className || ""}`}
+      {...props}
+    >
       {heading && (
-        <Flex
-          px="3"
-          py="2"
-          className="font-medium text-gray-9 text-xs uppercase tracking-wide"
-        >
+        <div className="px-2 py-1.5 font-medium text-gray-11 text-xs">
           {heading}
-        </Flex>
+        </div>
       )}
       {children}
     </CmdkCommand.Group>
   );
-}
+});
+
+CommandGroup.displayName = "CommandGroup";
 
 interface CommandEmptyProps
   extends React.ComponentProps<typeof CmdkCommand.Empty> {
   className?: string;
 }
 
-function CommandEmpty({ className, ...props }: CommandEmptyProps) {
+const CommandEmpty = React.forwardRef<
+  React.ElementRef<typeof CmdkCommand.Empty>,
+  CommandEmptyProps
+>(({ className, ...props }, ref) => {
   return (
     <CmdkCommand.Empty
-      className={`px-3 py-6 text-center text-gray-9 text-sm ${className || ""}`}
+      ref={ref}
+      className={`py-6 text-center text-sm ${className || ""}`}
       {...props}
     />
   );
-}
+});
+
+CommandEmpty.displayName = "CommandEmpty";
 
 export const Command = {
   Root: CommandRoot,
