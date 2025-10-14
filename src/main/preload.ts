@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("retrieve-api-key", encryptedKey),
   selectDirectory: (): Promise<string | null> =>
     ipcRenderer.invoke("select-directory"),
+  searchDirectories: (query: string, searchRoot?: string): Promise<string[]> =>
+    ipcRenderer.invoke("search-directories", query, searchRoot),
   validateRepo: (directoryPath: string): Promise<boolean> =>
     ipcRenderer.invoke("validate-repo", directoryPath),
   checkWriteAccess: (directoryPath: string): Promise<boolean> =>

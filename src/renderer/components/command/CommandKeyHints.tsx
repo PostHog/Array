@@ -9,6 +9,7 @@ export function CommandKeyHints() {
       gap="4"
       px="3"
       py="2"
+      style={{ flexShrink: 0 }}
       className="border-gray-6 border-t bg-gray-1"
     >
       <Flex align="center" gap="2">

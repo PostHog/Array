@@ -40,7 +40,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const {
     getTaskState,
     setRunMode: setStoreRunMode,
-    selectRepositoryForTask,
     runTask,
     cancelTask,
     clearTaskLogs,
@@ -183,12 +182,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   }, [setStatusBar, reset, isRunning]);
 
   useBlurOnEscape();
-
-  // Simple event handlers that delegate to store actions
-  const handleSelectRepo = () => {
-    const repoKey = repositoryValue || undefined;
-    selectRepositoryForTask(task.id, repoKey);
-  };
 
   const handleRunTask = () => {
     runTask(task.id, task);
@@ -361,25 +354,14 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   <DataList.Label>Working Directory</DataList.Label>
                   <DataList.Value>
                     {repoPath ? (
-                      <Button
-                        size="1"
-                        variant="outline"
-                        color="gray"
-                        onClick={handleSelectRepo}
-                      >
+                      <Button size="1" variant="outline" color="gray">
                         <FilesIcon />
                         {displayRepoPath}
                       </Button>
                     ) : (
-                      <Button
-                        size="1"
-                        variant="outline"
-                        color="gray"
-                        onClick={handleSelectRepo}
-                      >
-                        <FilesIcon />
-                        Choose folder
-                      </Button>
+                      <Text size="2" color="gray">
+                        Not set
+                      </Text>
                     )}
                   </DataList.Value>
                 </DataList.Item>
@@ -419,41 +401,35 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
             </Flex>
 
             <Flex direction="column" gap="3" mt="4">
-              {!repoPath ? (
-                <Button variant="classic" onClick={handleSelectRepo} size="2">
-                  Choose working folder
+              <Flex gap="2">
+                <Button
+                  variant="classic"
+                  onClick={handleRunTask}
+                  disabled={isRunning}
+                  size="2"
+                  style={{ flex: 1 }}
+                >
+                  {isRunning
+                    ? "Running..."
+                    : runMode === "cloud"
+                      ? "Run Agent"
+                      : "Run Agent (Local)"}
                 </Button>
-              ) : (
-                <Flex gap="2">
-                  <Button
-                    variant="classic"
-                    onClick={handleRunTask}
-                    disabled={isRunning}
+                <Tooltip content="Toggle between Local or Cloud Agent">
+                  <IconButton
                     size="2"
-                    style={{ flex: 1 }}
+                    variant="classic"
+                    color={runMode === "cloud" ? "blue" : "gray"}
+                    onClick={() =>
+                      handleRunModeChange(
+                        runMode === "local" ? "cloud" : "local",
+                      )
+                    }
                   >
-                    {isRunning
-                      ? "Running..."
-                      : runMode === "cloud"
-                        ? "Run Agent"
-                        : "Run Agent (Local)"}
-                  </Button>
-                  <Tooltip content="Toggle between Local or Cloud Agent">
-                    <IconButton
-                      size="2"
-                      variant="classic"
-                      color={runMode === "cloud" ? "blue" : "gray"}
-                      onClick={() =>
-                        handleRunModeChange(
-                          runMode === "local" ? "cloud" : "local",
-                        )
-                      }
-                    >
-                      {runMode === "cloud" ? <GlobeIcon /> : <GearIcon />}
-                    </IconButton>
-                  </Tooltip>
-                </Flex>
-              )}
+                    {runMode === "cloud" ? <GlobeIcon /> : <GearIcon />}
+                  </IconButton>
+                </Tooltip>
+              </Flex>
 
               {isRunning && (
                 <Button

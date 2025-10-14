@@ -1,3 +1,4 @@
+import { ArrowSquareRight } from "@phosphor-icons/react";
 import {
   Cross2Icon,
   EnterFullScreenIcon,
@@ -19,7 +20,9 @@ import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
 import { useCreateTask } from "../hooks/useTasks";
 import { useWorkflows } from "../hooks/useWorkflows";
 import { useTabStore } from "../stores/tabStore";
+import { useTaskExecutionStore } from "../stores/taskExecutionStore";
 import { Combobox } from "./Combobox";
+import { FolderPicker } from "./FolderPicker";
 
 interface TaskCreateProps {
   open: boolean;
@@ -29,6 +32,7 @@ interface TaskCreateProps {
 export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const { mutate: createTask, isPending: isLoading } = useCreateTask();
   const { createTab } = useTabStore();
+  const { setRepoPath } = useTaskExecutionStore();
   const { data: integrations = [] } = useIntegrations();
   const { data: workflows = [] } = useWorkflows();
 
@@ -61,6 +65,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       description: "",
       repository: "",
       workflow: defaultWorkflow?.id || "",
+      folderPath: "",
     },
   });
 
@@ -69,6 +74,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     description: string;
     repository: string;
     workflow: string;
+    folderPath: string;
   }) => {
     if (!data.title.trim() || !data.description.trim() || !data.workflow)
       return;
@@ -93,6 +99,9 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       },
       {
         onSuccess: (newTask) => {
+          if (data.folderPath && data.folderPath.trim().length > 0) {
+            setRepoPath(newTask.id, data.folderPath);
+          }
           createTab({
             type: "task-detail",
             title: newTask.title,
@@ -209,6 +218,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                         emptyMessage="No workflows found"
                         size="2"
                         side="top"
+                        icon={<ArrowSquareRight size={16} weight="regular" />}
                       />
                     )}
                   />
@@ -238,6 +248,21 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                   />
                 </Flex>
               )}
+
+              <Flex direction="column" gap="2" width="50%">
+                <Controller
+                  name="folderPath"
+                  control={control}
+                  render={({ field }) => (
+                    <FolderPicker
+                      value={field.value}
+                      onChange={field.onChange}
+                      placeholder="Choose working folder..."
+                      size="2"
+                    />
+                  )}
+                />
+              </Flex>
 
               <Flex gap="3" justify="end" align="end">
                 <Text as="label" size="1" style={{ cursor: "pointer" }}>
