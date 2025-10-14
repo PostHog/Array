@@ -80,6 +80,12 @@
     "uuid": "^9.0.1",
     "zustand": "^4.5.0"
   },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "biome check --write --unsafe --files-ignore-unknown=true --no-errors-on-unmatched",
+      "bash -c 'pnpm typecheck'"
+    ]
+  },
   "build": {
     "appId": "com.posthog.array",
     "productName": "Array",
