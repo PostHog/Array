@@ -303,12 +303,12 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                     <DataList.Label>Progress</DataList.Label>
                     <DataList.Value>
                       <Text size="2">
-                        {progress.completed_steps ?? 0}/
+                        {(progress.completed_steps ?? 0) + 1}/
                         {typeof progress.total_steps === "number"
                           ? progress.total_steps
                           : "-"}
-                        {typeof progress.progress_percentage === "number" &&
-                          ` · ${Math.round(progress.progress_percentage)}%`}
+                        {typeof progress.total_steps === "number" &&
+                          ` · ${Math.round((((progress.completed_steps ?? 0) + 1) / progress.total_steps) * 100)}%`}
                         {progress.current_step && ` · ${progress.current_step}`}
                       </Text>
                     </DataList.Value>

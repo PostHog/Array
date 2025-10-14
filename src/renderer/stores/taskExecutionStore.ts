@@ -28,8 +28,10 @@ const createProgressSignature = (progress: AgentTaskProgress): string =>
 
 const formatProgressLog = (progress: AgentTaskProgress): string => {
   const statusLabel = progress.status?.replace(/_/g, " ") ?? "in progress";
-  const completed =
-    typeof progress.completed_steps === "number" ? progress.completed_steps : 0;
+  const currentStep =
+    typeof progress.completed_steps === "number"
+      ? progress.completed_steps + 1
+      : 1;
   const total =
     typeof progress.total_steps === "number" && progress.total_steps >= 0
       ? progress.total_steps
@@ -40,10 +42,10 @@ const formatProgressLog = (progress: AgentTaskProgress): string => {
       ? progress.current_step
       : "-";
   const percentage =
-    typeof progress.progress_percentage === "number"
-      ? ` ${Math.round(progress.progress_percentage)}%`
+    typeof progress.total_steps === "number" && progress.total_steps > 0
+      ? ` ${Math.round((currentStep / progress.total_steps) * 100)}%`
       : "";
-  return `📊 Progress: ${statusLabel} | step=${step} (${completed}/${total})${percentage}`;
+  return `📊 Progress: ${statusLabel} | step=${step} (${currentStep}/${total})${percentage}`;
 };
 
 interface TaskExecutionState {
