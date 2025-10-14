@@ -36,7 +36,6 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
       </Flex>
     );
   }
-  asdf;
 
   const handleCopyLogs = () => {
     const logsText = logs
