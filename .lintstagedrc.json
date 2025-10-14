@@ -1,0 +1,6 @@
+{
+  "*.{ts,tsx,js,jsx}": [
+    "biome check --write --unsafe --files-ignore-unknown=true --no-errors-on-unmatched",
+    "bash -c 'pnpm typecheck'"
+  ]
+}
