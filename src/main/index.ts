@@ -7,6 +7,7 @@ import {
   BrowserWindow,
   Menu,
   type MenuItemConstructorOptions,
+  shell,
 } from "electron";
 import { registerAgentIpc, type TaskController } from "./services/agent.js";
 import { registerOsIpc } from "./services/os.js";
@@ -36,6 +37,21 @@ function ensureClaudeConfigDir(): void {
   process.env.CLAUDE_CONFIG_DIR = claudeDir;
 }
 
+function setupExternalLinkHandlers(window: BrowserWindow): void {
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+
+  window.webContents.on("will-navigate", (event, url) => {
+    const appUrl = isDev ? "http://localhost:5173" : "file://";
+    if (!url.startsWith(appUrl)) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 900,
@@ -56,6 +72,8 @@ function createWindow(): void {
     mainWindow?.maximize();
     mainWindow?.show();
   });
+
+  setupExternalLinkHandlers(mainWindow);
 
   // Set up menu for keyboard shortcuts
   const template: MenuItemConstructorOptions[] = [
