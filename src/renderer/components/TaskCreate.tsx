@@ -6,6 +6,7 @@ import {
 } from "@radix-ui/react-icons";
 import {
   Button,
+  Callout,
   Dialog,
   Flex,
   IconButton,
@@ -13,14 +14,19 @@ import {
   Text,
   TextArea,
 } from "@radix-ui/themes";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
+import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
 import { useCreateTask } from "../hooks/useTasks";
 import { useWorkflows } from "../hooks/useWorkflows";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
+import {
+  formatRepoKey,
+  parseRepoKey,
+  REPO_NOT_IN_INTEGRATION_WARNING,
+} from "../utils/repository";
 import { Combobox } from "./Combobox";
 import { FolderPicker } from "./FolderPicker";
 
@@ -33,17 +39,12 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const { mutate: createTask, isPending: isLoading } = useCreateTask();
   const { createTab } = useTabStore();
   const { setRepoPath } = useTaskExecutionStore();
-  const { data: integrations = [] } = useIntegrations();
+  const { repositories, isRepoInIntegration } = useRepositoryIntegration();
   const { data: workflows = [] } = useWorkflows();
 
-  const githubIntegration = useMemo(
-    () => integrations.find((i) => i.kind === "github"),
-    [integrations],
-  );
-
-  const { data: repositories = [] } = useRepositories(githubIntegration?.id);
   const [isExpanded, setIsExpanded] = useState(false);
   const [createMore, setCreateMore] = useState(false);
+  const [repoWarning, setRepoWarning] = useState<string | null>(null);
 
   const defaultWorkflow = useMemo(
     () => workflows.find((w) => w.is_active && w.is_default) || workflows[0],
@@ -59,7 +60,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     [workflows],
   );
 
-  const { register, handleSubmit, reset, control } = useForm({
+  const { register, handleSubmit, reset, control, setValue, watch } = useForm({
     defaultValues: {
       title: "",
       description: "",
@@ -68,6 +69,42 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       folderPath: "",
     },
   });
+
+  const folderPath = watch("folderPath");
+
+  useEffect(() => {
+    const detectRepoFromFolder = async () => {
+      if (!folderPath?.trim()) {
+        setRepoWarning(null);
+        return;
+      }
+
+      try {
+        const repoInfo = await window.electronAPI?.detectRepo(folderPath);
+        if (repoInfo) {
+          const repoKey = formatRepoKey(
+            repoInfo.organization,
+            repoInfo.repository,
+          );
+          setValue("repository", repoKey);
+
+          if (!isRepoInIntegration(repoKey)) {
+            setRepoWarning(
+              `Repository ${repoKey} ${REPO_NOT_IN_INTEGRATION_WARNING}`,
+            );
+          } else {
+            setRepoWarning(null);
+          }
+        } else {
+          setRepoWarning(null);
+        }
+      } catch {
+        setRepoWarning(null);
+      }
+    };
+
+    detectRepoFromFolder();
+  }, [folderPath, isRepoInIntegration, setValue]);
 
   const onSubmit = (data: {
     title: string;
@@ -79,16 +116,9 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     if (!data.title.trim() || !data.description.trim() || !data.workflow)
       return;
 
-    let repositoryConfig:
-      | { organization: string; repository: string }
-      | undefined;
-
-    if (data.repository) {
-      const [organization, repository] = data.repository.split("/");
-      if (organization && repository) {
-        repositoryConfig = { organization, repository };
-      }
-    }
+    const repositoryConfig = data.repository
+      ? (parseRepoKey(data.repository) ?? undefined)
+      : undefined;
 
     createTask(
       {
@@ -99,7 +129,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       },
       {
         onSuccess: (newTask) => {
-          if (data.folderPath && data.folderPath.trim().length > 0) {
+          if (data.folderPath?.trim()) {
             setRepoPath(newTask.id, data.folderPath);
           }
           createTab({
@@ -232,10 +262,16 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                     control={control}
                     render={({ field }) => (
                       <Combobox
-                        items={repositories.map((repo) => ({
-                          value: `${repo.organization}/${repo.repository}`,
-                          label: `${repo.organization}/${repo.repository}`,
-                        }))}
+                        items={repositories.map((repo) => {
+                          const repoKey = formatRepoKey(
+                            repo.organization,
+                            repo.repository,
+                          );
+                          return {
+                            value: repoKey,
+                            label: repoKey,
+                          };
+                        })}
                         value={field.value}
                         onValueChange={field.onChange}
                         placeholder="Select a repository..."
@@ -263,6 +299,12 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                   )}
                 />
               </Flex>
+
+              {repoWarning && (
+                <Callout.Root color="orange" size="1">
+                  <Callout.Text>{repoWarning}</Callout.Text>
+                </Callout.Root>
+              )}
 
               <Flex gap="3" justify="end" align="end">
                 <Text as="label" size="1" style={{ cursor: "pointer" }}>

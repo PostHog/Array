@@ -34,6 +34,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("validate-repo", directoryPath),
   checkWriteAccess: (directoryPath: string): Promise<boolean> =>
     ipcRenderer.invoke("check-write-access", directoryPath),
+  detectRepo: (
+    directoryPath: string,
+  ): Promise<{
+    organization: string;
+    repository: string;
+    branch?: string;
+    remote?: string;
+  } | null> => ipcRenderer.invoke("detect-repo", directoryPath),
   showMessageBox: (options: MessageBoxOptions): Promise<{ response: number }> =>
     ipcRenderer.invoke("show-message-box", options),
   openExternal: (url: string): Promise<void> =>
