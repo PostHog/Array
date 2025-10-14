@@ -1,12 +1,25 @@
-import { Badge, Box, Code, Flex, Kbd } from "@radix-ui/themes";
+import { GearIcon } from "@radix-ui/react-icons";
+import {
+  Badge,
+  Box,
+  Code,
+  Flex,
+  IconButton,
+  Kbd,
+  Tooltip,
+} from "@radix-ui/themes";
 import { useStatusBarStore } from "../stores/statusBarStore";
 import { StatusBarMenu } from "./StatusBarMenu";
 
 interface StatusBarProps {
   showKeyHints?: boolean;
+  onOpenSettings?: () => void;
 }
 
-export function StatusBar({ showKeyHints = true }: StatusBarProps) {
+export function StatusBar({
+  showKeyHints = true,
+  onOpenSettings,
+}: StatusBarProps) {
   const { statusText, keyHints } = useStatusBarStore();
 
   // Determine if we're in development mode
@@ -55,6 +68,18 @@ export function StatusBar({ showKeyHints = true }: StatusBarProps) {
             v{version}
           </Code>
         </Badge>
+        {onOpenSettings && (
+          <Tooltip content="Settings">
+            <IconButton
+              size="1"
+              variant="ghost"
+              color="gray"
+              onClick={onOpenSettings}
+            >
+              <GearIcon />
+            </IconButton>
+          </Tooltip>
+        )}
       </Flex>
     </Box>
   );
