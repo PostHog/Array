@@ -23,7 +23,8 @@
     "lint": "biome check --write --unsafe",
     "format": "biome format --write",
     "check:write": "pnpm run lint && pnpm run typecheck",
-    "generate-client": "tsx scripts/update-openapi-client.ts"
+    "generate-client": "tsx scripts/update-openapi-client.ts",
+    "prepare": "husky"
   },
   "keywords": [
     "posthog",
@@ -48,6 +49,8 @@
     "eslint": "^8.56.0",
     "eslint-plugin-react": "^7.33.2",
     "eslint-plugin-react-hooks": "^4.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
     "mprocs": "^0.7.3",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",
@@ -85,6 +88,12 @@
     "socket.io-client": "^4.7.4",
     "uuid": "^9.0.1",
     "zustand": "^4.5.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "biome check --write --unsafe --files-ignore-unknown=true --no-errors-on-unmatched",
+      "bash -c 'pnpm typecheck'"
+    ]
   },
   "build": {
     "appId": "com.posthog.array",

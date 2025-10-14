@@ -2,6 +2,7 @@ export interface IElectronAPI {
   storeApiKey: (apiKey: string) => Promise<string>;
   retrieveApiKey: (encryptedKey: string) => Promise<string | null>;
   selectDirectory: () => Promise<string | null>;
+  searchDirectories: (query: string, searchRoot?: string) => Promise<string[]>;
   validateRepo: (directoryPath: string) => Promise<boolean>;
   checkWriteAccess: (directoryPath: string) => Promise<boolean>;
   showMessageBox: (options: {

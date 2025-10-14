@@ -71,7 +71,10 @@ export interface LogEntry {
 
 export interface TabState {
   id: string;
-  type: "task-list" | "task-detail" | "workflow" | "backlog";
+  type: "task-list" | "task-detail" | "workflow" | "backlog" | "settings";
   title: string;
   data?: Task | unknown;
 }
+// Test comment
+// Test comment for speed
+// Test comment for package.json config

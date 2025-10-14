@@ -1,5 +1,5 @@
 import { CheckIcon, ChevronDownIcon } from "@radix-ui/react-icons";
-import { Button, Flex, Popover, Text } from "@radix-ui/themes";
+import { Box, Button, Flex, Popover, Text, TextField } from "@radix-ui/themes";
 import { type ReactNode, useMemo, useState } from "react";
 import { Command } from "./command";
 
@@ -38,6 +38,7 @@ export function Combobox({
   align = "start",
 }: ComboboxProps) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
 
   const selectedItem = useMemo(() => {
     if (!value) return null;
@@ -49,10 +50,24 @@ export function Combobox({
   const handleSelect = (selectedValue: string) => {
     onValueChange(selectedValue);
     setOpen(false);
+    setSearch("");
   };
 
+  const filteredItems = useMemo(() => {
+    if (!search) return items;
+    return items.filter((item) =>
+      item.label.toLowerCase().includes(search.toLowerCase()),
+    );
+  }, [items, search]);
+
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Root
+      open={open}
+      onOpenChange={(newOpen) => {
+        setOpen(newOpen);
+        if (!newOpen) setSearch("");
+      }}
+    >
       <Popover.Trigger>
         <Button variant={variant} size={size} color="gray">
           <Flex justify="between" align="center" gap="2" width="100%">
@@ -65,18 +80,31 @@ export function Combobox({
         </Button>
       </Popover.Trigger>
       <Popover.Content side={side} align={align} style={{ padding: 0 }}>
-        <Command.Root>
-          <Command.Input placeholder={searchPlaceholder} autoFocus />
-          <Command.List>
-            <Command.Empty>{emptyMessage}</Command.Empty>
+        <Command.Root shouldFilter={false}>
+          <Box p="2" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
+            <TextField.Root
+              placeholder={searchPlaceholder}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              autoFocus
+              size={size}
+            />
+          </Box>
+          <Command.List style={{ maxHeight: "300px", overflowY: "auto" }}>
+            <Command.Empty>
+              <Box p="4">
+                <Text size="2" color="gray">
+                  {emptyMessage}
+                </Text>
+              </Box>
+            </Command.Empty>
             <Command.Group>
-              {items.map((item) => {
+              {filteredItems.map((item) => {
                 const isSelected = value === item.value;
                 return (
                   <Command.Item
                     key={item.value}
                     value={item.value}
-                    keywords={[item.label]}
                     onSelect={() => handleSelect(item.value)}
                   >
                     <Flex justify="between" align="center" gap="2" width="100%">

@@ -79,7 +79,7 @@ export function WorkflowView({ onSelectTask }: WorkflowViewProps) {
       ],
       mode: "replace",
     });
-  }, [setStatusBar, selectedWorkflow, tasksByStage.values]);
+  }, [setStatusBar, selectedWorkflow, tasksByStage]);
 
   useEffect(() => {
     return () => {
