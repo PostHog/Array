@@ -10,6 +10,7 @@ import {
   shell,
 } from "electron";
 import { registerAgentIpc, type TaskController } from "./services/agent.js";
+import { registerFsIpc } from "./services/fs.js";
 import { registerOsIpc } from "./services/os.js";
 import { registerPosthogIpc } from "./services/posthog.js";
 
@@ -142,3 +143,4 @@ app.on("activate", () => {
 registerPosthogIpc();
 registerOsIpc(() => mainWindow);
 registerAgentIpc(taskControllers, () => mainWindow);
+registerFsIpc();

@@ -30,6 +30,7 @@ import { useTaskExecutionStore } from "../stores/taskExecutionStore";
 import { AsciiArt } from "./AsciiArt";
 import { Combobox } from "./Combobox";
 import { LogView } from "./LogView";
+import { RichTextEditor } from "./RichTextEditor";
 
 interface TaskDetailProps {
   task: Task;
@@ -251,30 +252,18 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   name="description"
                   control={control}
                   render={({ field }) => (
-                    <Text
-                      size="3"
-                      contentEditable
-                      suppressContentEditableWarning
-                      ref={(el) => {
-                        if (el && el.textContent !== field.value) {
-                          el.textContent = field.value;
-                        }
-                      }}
-                      onBlur={(e) => {
-                        field.onChange(e.currentTarget.textContent || "");
-                        onSubmit();
-                      }}
+                    <RichTextEditor
+                      value={field.value}
+                      onChange={field.onChange}
+                      repoPath={repoPath}
+                      placeholder="No description provided. Use @ to mention files, or format text with markdown."
+                      onBlur={onSubmit}
+                      showToolbar={true}
+                      minHeight="100px"
                       style={{
-                        cursor: "text",
-                        outline: "none",
-                        width: "100%",
-                        minHeight: "3em",
-                        whiteSpace: "pre-wrap",
+                        minHeight: "100px",
                       }}
-                      color={field.value ? undefined : "gray"}
-                    >
-                      {field.value || "No description provided"}
-                    </Text>
+                    />
                   )}
                 />
 
