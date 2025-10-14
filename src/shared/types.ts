@@ -75,3 +75,26 @@ export interface TabState {
   title: string;
   data?: Task | unknown;
 }
+
+// URL mention types for RichTextEditor
+export type MentionType = 'file' | 'error' | 'experiment' | 'insight' | 'feature_flag' | 'generic';
+
+export interface MentionItem {
+  // File items
+  path?: string;
+  name?: string;
+  // URL items
+  url?: string;
+  type?: MentionType;
+  label?: string;
+  id?: string;
+  urlId?: string;
+}
+
+export interface PostHogUrlInfo {
+  type: MentionType;
+  id?: string;
+  projectId?: string;
+  url: string;
+  label?: string;
+}

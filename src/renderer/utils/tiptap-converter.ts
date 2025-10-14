@@ -22,8 +22,31 @@ function nodeToMarkdown(node: JSONContent): string {
     case "text":
       return formatTextNode(node);
     case "mention":
-      // File mention - convert to XML tag
-      return `<file path="${node.attrs?.id || ""}" />`;
+      // Check if this is a file or URL mention based on attributes
+      const mentionId = node.attrs?.id || "";
+      const mentionType = node.attrs?.type;
+      const urlId = node.attrs?.urlId;
+      
+      if (mentionType && mentionType !== 'file') {
+        // PostHog resource mentions use specific tag names
+        switch (mentionType) {
+          case 'error':
+            return `<error id="${urlId || mentionId}" />`;
+          case 'experiment':
+            return `<experiment id="${urlId || mentionId}" />`;
+          case 'insight':
+            return `<insight id="${urlId || mentionId}" />`;
+          case 'feature_flag':
+            return `<feature_flag id="${urlId || mentionId}" />`;
+          case 'generic':
+          default:
+            // Generic URLs use href
+            return `<url href="${mentionId}" />`;
+        }
+      } else {
+        // File mention - convert to XML tag
+        return `<file path="${mentionId}" />`;
+      }
     case "hardBreak":
       return "\n";
     case "heading": {
@@ -306,6 +329,48 @@ function parseInlineContent(text: string): JSONContent[] {
   };
 
   while (i < text.length) {
+    // PostHog resource mentions: <error id="..." />, <experiment id="..." />, etc.
+    const resourceMatch = text.substring(i).match(/^<(error|experiment|insight|feature_flag)\s+id="([^"]+)"\s*\/>/);
+    if (resourceMatch) {
+      flushText();
+      const [fullMatch, type, id] = resourceMatch;
+      nodes.push({
+        type: "mention",
+        attrs: {
+          id: '', // We'll store the URL in the id later if needed
+          label: `${type} ${id.slice(0, 8)}...`,
+          type,
+          urlId: id,
+        },
+      });
+      i += fullMatch.length;
+      continue;
+    }
+
+    // Generic URL mentions: <url href="..." />
+    if (text.substring(i).match(/^<url\s+href="([^"]+)"\s*\/>/)) {
+      const match = text.substring(i).match(/^<url\s+href="([^"]+)"\s*\/>/);
+      if (match) {
+        flushText();
+        const [fullMatch, href] = match;
+        try {
+          const urlObj = new URL(href);
+          nodes.push({
+            type: "mention",
+            attrs: {
+              id: href,
+              label: urlObj.hostname,
+              type: 'generic',
+            },
+          });
+        } catch {
+          // Invalid URL, skip
+        }
+        i += fullMatch.length;
+        continue;
+      }
+    }
+
     // File mentions: <file path="..." />
     if (text.substring(i).match(/^<file\s+path="([^"]+)"\s*\/>/)) {
       const match = text.substring(i).match(/^<file\s+path="([^"]+)"\s*\/>/);
@@ -317,6 +382,7 @@ function parseInlineContent(text: string): JSONContent[] {
           attrs: {
             id: filePath,
             label: filePath.split("/").pop() || filePath,
+            type: 'file',
           },
         });
         i += match[0].length;
@@ -439,3 +505,4 @@ export function extractFilePaths(markdown: string): string[] {
 
   return paths;
 }
+
