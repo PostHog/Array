@@ -10,8 +10,10 @@ import type { SuggestionOptions } from "@tiptap/suggestion";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { markdownToTiptap, tiptapToMarkdown } from "../utils/tiptap-converter";
-import { FileMentionList, type FileMentionListRef } from "./FileMentionList";
+import { parsePostHogUrl, isUrl, extractUrlFromMarkdown } from "../utils/posthog-url-parser";
+import { MentionList, type MentionListRef } from "./FileMentionList";
 import { FormattingToolbar } from "./FormattingToolbar";
+import type { MentionItem } from "@shared/types";
 
 interface RichTextEditorProps {
   value: string;
@@ -38,15 +40,15 @@ export function RichTextEditor({
   showToolbar = true,
   minHeight = "100px",
 }: RichTextEditorProps) {
-  const [files, setFiles] = useState<Array<{ path: string; name: string }>>([]);
-  const filesRef = useRef(files);
+  const [mentionItems, setMentionItems] = useState<MentionItem[]>([]);
+  const mentionItemsRef = useRef(mentionItems);
   const onChangeRef = useRef(onChange);
   const repoPathRef = useRef(repoPath);
 
   // Keep refs updated
   useEffect(() => {
-    filesRef.current = files;
-  }, [files]);
+    mentionItemsRef.current = mentionItems;
+  }, [mentionItems]);
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -75,26 +77,116 @@ export function RichTextEditor({
       Placeholder.configure({
         placeholder,
       }),
-      Mention.configure({
+      Mention.extend({
+        addAttributes() {
+          return {
+            id: {
+              default: null,
+            },
+            label: {
+              default: null,
+            },
+            type: {
+              default: 'file',
+            },
+            urlId: {
+              default: null,
+            },
+          };
+        },
+        renderText({ node }) {
+          // Use the label for display, fallback to id
+          return `@${node.attrs.label || node.attrs.id}`;
+        },
+      }).configure({
         HTMLAttributes: {
           class: "file-mention",
         },
         suggestion: {
-          items: async ({ query }: { query: string }) => {
-            if (!repoPathRef.current) return [];
-
-            try {
-              const results = await window.electronAPI?.listRepoFiles(
-                repoPathRef.current,
-                query,
-              );
-              const fileList = results || [];
-              setFiles(fileList);
-              return fileList;
-            } catch (error) {
-              console.error("Error fetching files:", error);
-              return [];
+          char: '@',
+          allowSpaces: true,
+          command: ({ editor, range, props }) => {
+            // Insert mention with all attributes
+            const nodeAfter = editor.view.state.selection.$to.nodeAfter;
+            const overrideSpace = nodeAfter?.text?.startsWith(' ');
+            
+            if (overrideSpace) {
+              range.to += 1;
             }
+            
+            editor
+              .chain()
+              .focus()
+              .insertContentAt(range, [
+                {
+                  type: 'mention',
+                  attrs: {
+                    id: props.id,
+                    label: props.label,
+                    type: props.type || 'file',
+                    urlId: props.urlId,
+                  },
+                },
+                {
+                  type: 'text',
+                  text: ' ',
+                },
+              ])
+              .run();
+          },
+          items: async ({ query }: { query: string }) => {
+            const items: MentionItem[] = [];
+
+            // Extract URL from markdown link syntax if present: [text](url)
+            const urlToCheck = extractUrlFromMarkdown(query);
+
+            // Check if the query looks like a URL
+            if (isUrl(urlToCheck)) {
+              const postHogInfo = parsePostHogUrl(urlToCheck);
+              if (postHogInfo) {
+                // It's a PostHog URL
+                items.push({
+                  url: urlToCheck,
+                  type: postHogInfo.type,
+                  label: postHogInfo.label,
+                  id: postHogInfo.id,
+                  urlId: postHogInfo.id,
+                });
+              } else {
+                // It's a generic URL
+                try {
+                  const urlObj = new URL(urlToCheck);
+                  items.push({
+                    url: urlToCheck,
+                    type: 'generic',
+                    label: urlObj.hostname,
+                  });
+                } catch {
+                  // Invalid URL, ignore
+                }
+              }
+            }
+
+            // Only search for files if we haven't detected a URL
+            if (repoPathRef.current && query.length > 0 && !isUrl(urlToCheck)) {
+              try {
+                const results = await window.electronAPI?.listRepoFiles(
+                  repoPathRef.current,
+                  query,
+                );
+                const fileItems = (results || []).map((file) => ({
+                  path: file.path,
+                  name: file.name,
+                  type: 'file' as const,
+                }));
+                items.push(...fileItems);
+              } catch (error) {
+                console.error("Error fetching files:", error);
+              }
+            }
+
+            setMentionItems(items);
+            return items;
           },
           render: () => {
             let component: { destroy: () => void } | null = null;
@@ -123,13 +215,13 @@ export function RichTextEditor({
                   },
                 };
 
-                const ref: { current: FileMentionListRef | null } = {
+                const ref: { current: MentionListRef | null } = {
                   current: null,
                 };
 
                 root.render(
-                  <FileMentionList
-                    items={filesRef.current}
+                  <MentionList
+                    items={mentionItemsRef.current}
                     command={props.command}
                     ref={(instance) => {
                       ref.current = instance;
@@ -144,13 +236,13 @@ export function RichTextEditor({
               onUpdate: (props: any) => {
                 if (!root) return;
 
-                const ref: { current: FileMentionListRef | null } = {
+                const ref: { current: MentionListRef | null } = {
                   current: null,
                 };
 
                 root.render(
-                  <FileMentionList
-                    items={filesRef.current}
+                  <MentionList
+                    items={mentionItemsRef.current}
                     command={props.command}
                     ref={(instance) => {
                       ref.current = instance;
@@ -207,6 +299,50 @@ export function RichTextEditor({
       attributes: {
         class: "rich-text-editor-content",
         style: `outline: none; min-height: ${minHeight}; padding: var(--space-3);`,
+      },
+      handlePaste: (view, event) => {
+        // Check if we're in a mention context (text before cursor has @)
+        const { state } = view;
+        const { selection } = state;
+        const { $from } = selection;
+        
+        // Get text before cursor in current paragraph
+        const textBefore = $from.parent.textBetween(
+          Math.max(0, $from.parentOffset - 500),
+          $from.parentOffset,
+          undefined,
+          '\ufffc'
+        );
+        
+        // Check if there's an @ symbol before the cursor without any whitespace before it
+        // or if @ is the last character before cursor (just typed @)
+        const lastAtIndex = textBefore.lastIndexOf('@');
+        if (lastAtIndex !== -1) {
+          const textAfterAt = textBefore.substring(lastAtIndex + 1);
+          
+          // We're in mention mode if:
+          // 1. There's no space between @ and cursor, OR
+          // 2. @ is immediately before cursor
+          if (!textAfterAt.includes(' ') || lastAtIndex === textBefore.length - 1) {
+            const clipboardData = event.clipboardData;
+            if (clipboardData) {
+              const pastedText = clipboardData.getData('text/plain').trim();
+              
+              // If pasted content is a URL, prevent default paste and insert as plain text
+              if (pastedText && isUrl(pastedText)) {
+                event.preventDefault();
+                
+                // Insert the URL as plain text to trigger mention suggestion
+                const transaction = state.tr.insertText(pastedText);
+                view.dispatch(transaction);
+                
+                return true;
+              }
+            }
+          }
+        }
+        
+        return false;
       },
       handleKeyDown: (_view, event) => {
         // Custom keyboard shortcuts

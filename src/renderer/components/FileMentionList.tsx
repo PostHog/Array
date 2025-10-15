@@ -1,4 +1,5 @@
 import { Box, Flex, Text } from "@radix-ui/themes";
+import type { MentionItem } from "@shared/types";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 import {
   type ForwardedRef,
@@ -9,17 +10,22 @@ import {
   useState,
 } from "react";
 
-export interface FileMentionListProps {
-  items: Array<{ path: string; name: string }>;
-  command: (item: { id: string; label: string }) => void;
+export interface MentionListProps {
+  items: MentionItem[];
+  command: (item: {
+    id: string;
+    label: string;
+    type?: string;
+    urlId?: string;
+  }) => void;
 }
 
-export interface FileMentionListRef {
+export interface MentionListRef {
   onKeyDown: (props: SuggestionKeyDownProps) => boolean;
 }
 
-export const FileMentionList = forwardRef(
-  (props: FileMentionListProps, ref: ForwardedRef<FileMentionListRef>) => {
+export const MentionList = forwardRef(
+  (props: MentionListProps, ref: ForwardedRef<MentionListRef>) => {
     const [selectedIndex, setSelectedIndex] = useState(0);
     const containerRef = useRef<HTMLDivElement>(null);
     const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -48,7 +54,22 @@ export const FileMentionList = forwardRef(
     const selectItem = (index: number) => {
       const item = props.items[index];
       if (item) {
-        props.command({ id: item.path, label: item.name });
+        if (item.path) {
+          // File item
+          props.command({
+            id: item.path,
+            label: item.name || item.path.split("/").pop() || item.path,
+            type: "file",
+          });
+        } else if (item.url) {
+          // URL item
+          props.command({
+            id: item.url,
+            label: item.label || item.url,
+            type: item.type || "generic",
+            urlId: item.urlId,
+          });
+        }
       }
     };
 
@@ -131,24 +152,51 @@ export const FileMentionList = forwardRef(
           overflow: "auto",
         }}
       >
-        {props.items.map((item, index) => (
-          <Flex
-            key={item.path}
-            ref={(el) => {
-              itemRefs.current[index] = el;
-            }}
-            className={`file-mention-item ${index === selectedIndex ? "is-selected" : ""}`}
-            onClick={() => selectItem(index)}
-            onMouseEnter={() => setSelectedIndex(index)}
-          >
-            <Flex direction="column" gap="1">
-              <Text size="1">{item.path}</Text>
+        {props.items.map((item, index) => {
+          const key = item.path || item.url || `item-${index}`;
+          const displayText = item.path
+            ? item.path
+            : item.label || item.url || "Unknown item";
+          const itemType = item.type === "file" ? "File" : item.type || "URL";
+
+          return (
+            <Flex
+              key={key}
+              ref={(el) => {
+                itemRefs.current[index] = el;
+              }}
+              className={`file-mention-item ${index === selectedIndex ? "is-selected" : ""}`}
+              onClick={() => selectItem(index)}
+              onMouseEnter={() => setSelectedIndex(index)}
+              style={{
+                padding: "var(--space-2)",
+                cursor: "pointer",
+                backgroundColor:
+                  index === selectedIndex ? "var(--gray-3)" : "transparent",
+                color:
+                  index === selectedIndex ? "var(--gray-12)" : "var(--gray-11)",
+                borderRadius: "var(--radius-1)",
+              }}
+            >
+              <Flex direction="column" gap="1">
+                <Text size="2" weight="medium">
+                  {displayText}
+                </Text>
+                {item.type && item.type !== "file" && (
+                  <Text size="1">{itemType}</Text>
+                )}
+              </Flex>
             </Flex>
-          </Flex>
-        ))}
+          );
+        })}
       </Box>
     );
   },
 );
 
-FileMentionList.displayName = "FileMentionList";
+MentionList.displayName = "MentionList";
+
+// Backward compatibility export
+export const FileMentionList = MentionList;
+export type FileMentionListRef = MentionListRef;
+export type FileMentionListProps = MentionListProps;

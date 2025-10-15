@@ -50,6 +50,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const { data: repositories = [] } = useRepositories(githubIntegration?.id);
   const [isExpanded, setIsExpanded] = useState(false);
   const [createMore, setCreateMore] = useState(false);
+  const [_repoPath, setRepoPath] = useState<string | null>(null);
 
   const defaultWorkflow = useMemo(
     () => workflows.find((w) => w.is_active && w.is_default) || workflows[0],
@@ -129,6 +130,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
             data: newTask,
           });
           reset();
+          setRepoPath(null); // Reset the local repo path for next task
           if (!createMore) {
             onOpenChange(false);
           }
