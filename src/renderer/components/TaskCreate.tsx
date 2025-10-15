@@ -1,4 +1,4 @@
-import { DiamondIcon, FilesIcon, GithubLogoIcon } from "@phosphor-icons/react";
+import { DiamondIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import {
   Cross2Icon,
   EnterFullScreenIcon,
@@ -25,6 +25,7 @@ import { useAuthStore } from "../stores/authStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
 import { Combobox } from "./Combobox";
+import { FolderPicker } from "./FolderPicker";
 import { RichTextEditor } from "./RichTextEditor";
 
 interface TaskCreateProps {
@@ -49,7 +50,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const { data: repositories = [] } = useRepositories(githubIntegration?.id);
   const [isExpanded, setIsExpanded] = useState(false);
   const [createMore, setCreateMore] = useState(false);
-  const [repoPath, setRepoPath] = useState<string | null>(null);
+  const [_repoPath, setRepoPath] = useState<string | null>(null);
 
   const defaultWorkflow = useMemo(
     () => workflows.find((w) => w.is_active && w.is_default) || workflows[0],
@@ -65,30 +66,24 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     [workflows],
   );
 
-  const displayRepoPath = useMemo(() => {
-    if (!repoPath) return null;
-    // Replace home directory with ~
-    const homeDirPattern = /^\/Users\/[^/]+/; // macOS/Linux pattern
-    if (homeDirPattern.test(repoPath)) {
-      return repoPath.replace(homeDirPattern, "~");
-    }
-    return repoPath;
-  }, [repoPath]);
-
-  const { register, handleSubmit, reset, control } = useForm({
+  const { register, handleSubmit, reset, control, watch } = useForm({
     defaultValues: {
       title: "",
       description: "",
       repository: "",
       workflow: defaultWorkflow?.id || "",
+      folderPath: "",
     },
   });
+
+  const folderPath = watch("folderPath");
 
   const onSubmit = (data: {
     title: string;
     description: string;
     repository: string;
     workflow: string;
+    folderPath: string;
   }) => {
     if (!isAuthenticated || !client) {
       return;
@@ -119,13 +114,13 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       {
         onSuccess: (newTask) => {
           // Save the local working directory to the task execution store
-          if (repoPath) {
-            saveRepoPath(newTask.id, repoPath);
+          if (data.folderPath && data.folderPath.trim().length > 0) {
+            saveRepoPath(newTask.id, data.folderPath);
 
             // Also save the mapping for GitHub repos to reuse later
             if (repositoryConfig) {
               const repoKey = `${repositoryConfig.organization}/${repositoryConfig.repository}`;
-              setRepoWorkingDir(repoKey, repoPath);
+              setRepoWorkingDir(repoKey, data.folderPath);
             }
           }
 
@@ -226,7 +221,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                     <RichTextEditor
                       value={field.value}
                       onChange={field.onChange}
-                      repoPath={repoPath}
+                      repoPath={folderPath}
                       placeholder="Add description... Use @ to mention files, or try **bold**, *italic*, `code`, and more!"
                       showToolbar={true}
                       minHeight={isExpanded ? "200px" : "120px"}
@@ -244,39 +239,18 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                 <DataList.Item>
                   <DataList.Label>Working Directory</DataList.Label>
                   <DataList.Value>
-                    {repoPath ? (
-                      <Button
-                        size="1"
-                        variant="outline"
-                        color="gray"
-                        onClick={async () => {
-                          const selected =
-                            await window.electronAPI?.selectDirectory();
-                          if (selected) {
-                            setRepoPath(selected);
-                          }
-                        }}
-                      >
-                        <FilesIcon />
-                        {displayRepoPath}
-                      </Button>
-                    ) : (
-                      <Button
-                        size="1"
-                        variant="outline"
-                        color="gray"
-                        onClick={async () => {
-                          const selected =
-                            await window.electronAPI?.selectDirectory();
-                          if (selected) {
-                            setRepoPath(selected);
-                          }
-                        }}
-                      >
-                        <FilesIcon />
-                        Choose folder
-                      </Button>
-                    )}
+                    <Controller
+                      name="folderPath"
+                      control={control}
+                      render={({ field }) => (
+                        <FolderPicker
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Choose working folder..."
+                          size="1"
+                        />
+                      )}
+                    />
                   </DataList.Value>
                 </DataList.Item>
 

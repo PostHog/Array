@@ -71,13 +71,19 @@ export interface LogEntry {
 
 export interface TabState {
   id: string;
-  type: "task-list" | "task-detail" | "workflow" | "backlog";
+  type: "task-list" | "task-detail" | "workflow" | "backlog" | "settings";
   title: string;
   data?: Task | unknown;
 }
 
 // URL mention types for RichTextEditor
-export type MentionType = 'file' | 'error' | 'experiment' | 'insight' | 'feature_flag' | 'generic';
+export type MentionType =
+  | "file"
+  | "error"
+  | "experiment"
+  | "insight"
+  | "feature_flag"
+  | "generic";
 
 export interface MentionItem {
   // File items

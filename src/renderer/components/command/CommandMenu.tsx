@@ -134,65 +134,76 @@ export function CommandMenu({
       className="fixed inset-0 z-50 bg-black/20"
       pt="9"
     >
-      <Command.Root ref={commandRef} className="w-[640px] max-w-[90vw]">
-        <Command.Input
-          placeholder="Search for tasks, navigate to sections..."
-          autoFocus={true}
-        />
+      <div
+        ref={commandRef}
+        className="flex w-[640px] max-w-[90vw] flex-col overflow-hidden rounded-2 border border-gray-6 bg-gray-1 shadow-6"
+      >
+        <Command.Root className="min-h-0 flex-1">
+          <div className="flex items-center border-gray-6 border-b px-3">
+            <Command.Input
+              placeholder="Search for tasks, navigate to sections..."
+              autoFocus={true}
+              className="w-full bg-transparent py-3 text-sm outline-none placeholder:text-gray-9"
+            />
+          </div>
 
-        <Command.List>
-          <Command.Empty>No results found.</Command.Empty>
+          <Command.List style={{ maxHeight: "400px" }}>
+            <Command.Empty>No results found.</Command.Empty>
 
-          <Command.Group heading="Actions">
-            <Command.Item value="Create new task" onSelect={handleCreateTask}>
-              <FileTextIcon className="mr-3 h-4 w-4 text-gray-11" />
-              <Text size="2">Create new task</Text>
-            </Command.Item>
-          </Command.Group>
-
-          <Command.Group heading="Navigation">
-            <Command.Item value="Go to tasks" onSelect={handleNavigateToTasks}>
-              <ListBulletIcon className="mr-3 h-4 w-4 text-gray-11" />
-              <Text size="2">Go to tasks</Text>
-            </Command.Item>
-
-            <Command.Item
-              value="Go to workflows"
-              onSelect={handleNavigateToWorkflow}
-            >
-              <ComponentInstanceIcon className="mr-3 h-4 w-4 text-gray-11" />
-              <Text size="2">Go to workflows</Text>
-            </Command.Item>
-          </Command.Group>
-
-          {tasks.length > 0 && (
-            <Command.Group heading="Tasks">
-              {tasks.map((task) => (
-                <Command.Item
-                  key={task.id}
-                  value={`${task.id} ${task.title}`}
-                  onSelect={() => handleNavigateToTask(task)}
-                  className="items-start"
-                >
-                  <FileTextIcon className="mt-0.5 mr-3 h-4 w-4 flex-shrink-0 text-gray-11" />
-                  <Flex direction="column" flexGrow="1" className="min-w-0">
-                    <Text size="2" weight="medium" className="truncate">
-                      {task.title}
-                    </Text>
-                    {task.description && (
-                      <Text size="1" color="gray" className="mt-1 truncate">
-                        {task.description}
-                      </Text>
-                    )}
-                  </Flex>
-                </Command.Item>
-              ))}
+            <Command.Group heading="Actions">
+              <Command.Item value="Create new task" onSelect={handleCreateTask}>
+                <FileTextIcon className="mr-3 h-4 w-4 text-gray-11" />
+                <Text size="2">Create new task</Text>
+              </Command.Item>
             </Command.Group>
-          )}
-        </Command.List>
+
+            <Command.Group heading="Navigation">
+              <Command.Item
+                value="Go to tasks"
+                onSelect={handleNavigateToTasks}
+              >
+                <ListBulletIcon className="mr-3 h-4 w-4 text-gray-11" />
+                <Text size="2">Go to tasks</Text>
+              </Command.Item>
+
+              <Command.Item
+                value="Go to workflows"
+                onSelect={handleNavigateToWorkflow}
+              >
+                <ComponentInstanceIcon className="mr-3 h-4 w-4 text-gray-11" />
+                <Text size="2">Go to workflows</Text>
+              </Command.Item>
+            </Command.Group>
+
+            {tasks.length > 0 && (
+              <Command.Group heading="Tasks">
+                {tasks.map((task) => (
+                  <Command.Item
+                    key={task.id}
+                    value={`${task.id} ${task.title}`}
+                    onSelect={() => handleNavigateToTask(task)}
+                    className="items-start"
+                  >
+                    <FileTextIcon className="mt-0.5 mr-3 h-4 w-4 flex-shrink-0 text-gray-11" />
+                    <Flex direction="column" flexGrow="1" className="min-w-0">
+                      <Text size="2" weight="medium" className="truncate">
+                        {task.title}
+                      </Text>
+                      {task.description && (
+                        <Text size="1" color="gray" className="mt-1 truncate">
+                          {task.description}
+                        </Text>
+                      )}
+                    </Flex>
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            )}
+          </Command.List>
+        </Command.Root>
 
         <CommandKeyHints />
-      </Command.Root>
+      </div>
     </Flex>
   );
 }
