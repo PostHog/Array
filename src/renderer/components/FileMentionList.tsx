@@ -1,4 +1,5 @@
 import { Box, Flex, Text } from "@radix-ui/themes";
+import type { MentionItem } from "@shared/types";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 import {
   type ForwardedRef,
@@ -8,11 +9,15 @@ import {
   useRef,
   useState,
 } from "react";
-import type { MentionItem } from "@shared/types";
 
 export interface MentionListProps {
   items: MentionItem[];
-  command: (item: { id: string; label: string; type?: string; urlId?: string }) => void;
+  command: (item: {
+    id: string;
+    label: string;
+    type?: string;
+    urlId?: string;
+  }) => void;
 }
 
 export interface MentionListRef {
@@ -51,18 +56,18 @@ export const MentionList = forwardRef(
       if (item) {
         if (item.path) {
           // File item
-          props.command({ 
-            id: item.path, 
-            label: item.name || item.path.split('/').pop() || item.path,
-            type: 'file'
+          props.command({
+            id: item.path,
+            label: item.name || item.path.split("/").pop() || item.path,
+            type: "file",
           });
         } else if (item.url) {
           // URL item
-          props.command({ 
-            id: item.url, 
+          props.command({
+            id: item.url,
             label: item.label || item.url,
-            type: item.type || 'generic',
-            urlId: item.urlId
+            type: item.type || "generic",
+            urlId: item.urlId,
           });
         }
       }
@@ -149,9 +154,11 @@ export const MentionList = forwardRef(
       >
         {props.items.map((item, index) => {
           const key = item.path || item.url || `item-${index}`;
-          const displayText = item.path ? item.path : (item.label || item.url || 'Unknown item');
-          const itemType = item.type === 'file' ? 'File' : (item.type || 'URL');
-          
+          const displayText = item.path
+            ? item.path
+            : item.label || item.url || "Unknown item";
+          const itemType = item.type === "file" ? "File" : item.type || "URL";
+
           return (
             <Flex
               key={key}
@@ -164,14 +171,19 @@ export const MentionList = forwardRef(
               style={{
                 padding: "var(--space-2)",
                 cursor: "pointer",
-                backgroundColor: index === selectedIndex ? "var(--gray-a3)" : "transparent",
+                backgroundColor:
+                  index === selectedIndex ? "var(--gray-3)" : "transparent",
+                color:
+                  index === selectedIndex ? "var(--gray-12)" : "var(--gray-11)",
                 borderRadius: "var(--radius-1)",
               }}
             >
               <Flex direction="column" gap="1">
-                <Text size="2" weight="medium">{displayText}</Text>
-                {item.type && item.type !== 'file' && (
-                  <Text size="1" color="gray">{itemType}</Text>
+                <Text size="2" weight="medium">
+                  {displayText}
+                </Text>
+                {item.type && item.type !== "file" && (
+                  <Text size="1">{itemType}</Text>
                 )}
               </Flex>
             </Flex>

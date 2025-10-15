@@ -40,7 +40,7 @@ body {
 .file-mention-item {
   padding: var(--space-2);
   cursor: pointer;
-  background-color: transparent;
+  background-color: white;
   border-radius: var(--radius-2);
   transition: background-color 0.1s ease;
 }
