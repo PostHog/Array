@@ -1,3 +1,5 @@
+import type { AgentEvent } from "@posthog/agent";
+
 export interface IElectronAPI {
   storeApiKey: (apiKey: string) => Promise<string>;
   retrieveApiKey: (encryptedKey: string) => Promise<string | null>;
@@ -32,7 +34,7 @@ export interface IElectronAPI {
   agentCancel: (taskId: string) => Promise<boolean>;
   onAgentEvent: (
     channel: string,
-    listener: (event: unknown) => void,
+    listener: (event: AgentEvent) => void,
   ) => () => void;
 }
 
