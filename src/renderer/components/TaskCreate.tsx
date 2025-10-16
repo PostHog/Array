@@ -7,6 +7,7 @@ import {
 import {
   Button,
   Callout,
+  Code,
   DataList,
   Dialog,
   Flex,
@@ -94,9 +95,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
           setValue("repository", repoKey);
 
           if (!isRepoInIntegration(repoKey)) {
-            setRepoWarning(
-              `Repository ${repoKey} ${REPO_NOT_IN_INTEGRATION_WARNING}`,
-            );
+            setRepoWarning(repoKey);
           } else {
             setRepoWarning(null);
           }
@@ -348,8 +347,11 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
               </DataList.Root>
 
               {repoWarning && (
-                <Callout.Root color="orange" size="1">
-                  <Callout.Text>{repoWarning}</Callout.Text>
+                <Callout.Root color="blue" size="1">
+                  <Callout.Text>
+                    <Code size="2">{repoWarning}</Code>{" "}
+                    {REPO_NOT_IN_INTEGRATION_WARNING}
+                  </Callout.Text>
                 </Callout.Root>
               )}
 
