@@ -40,9 +40,7 @@ export namespace Schemas {
     email: string;
     is_email_verified?: (boolean | null) | undefined;
     hedgehog_config: Record<string, unknown> | null;
-    role_at_organization?:
-      | ((RoleAtOrganizationEnum | BlankEnum | NullEnum) | null)
-      | undefined;
+    role_at_organization?: ((RoleAtOrganizationEnum | BlankEnum | NullEnum) | null) | undefined;
   };
   export type Action = {
     id: number;
@@ -63,6 +61,7 @@ export namespace Schemas {
     pinned_at?: (string | null) | undefined;
     creation_context: string;
     _create_in_folder?: string | undefined;
+    user_access_level: string | null;
   };
   export type ActionConversionGoal = { actionId: number };
   export type PropertyOperator =
@@ -94,18 +93,14 @@ export namespace Schemas {
     label?: (string | null) | undefined;
     operator?: (PropertyOperator | null) | undefined;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type PersonPropertyFilter = {
     key: string;
     label?: (string | null) | undefined;
     operator: PropertyOperator;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type Key = "tag_name" | "text" | "href" | "selector";
   export type ElementPropertyFilter = {
@@ -113,27 +108,21 @@ export namespace Schemas {
     label?: (string | null) | undefined;
     operator: PropertyOperator;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type EventMetadataPropertyFilter = {
     key: string;
     label?: (string | null) | undefined;
     operator: PropertyOperator;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type SessionPropertyFilter = {
     key: string;
     label?: (string | null) | undefined;
     operator: PropertyOperator;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type CohortPropertyFilter = {
     cohort_name?: (string | null) | undefined;
@@ -149,18 +138,14 @@ export namespace Schemas {
     label?: (string | null) | undefined;
     operator: PropertyOperator;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type LogEntryPropertyFilter = {
     key: string;
     label?: (string | null) | undefined;
     operator: PropertyOperator;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type GroupPropertyFilter = {
     group_type_index?: (number | null) | undefined;
@@ -168,18 +153,14 @@ export namespace Schemas {
     label?: (string | null) | undefined;
     operator: PropertyOperator;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type FeaturePropertyFilter = {
     key: string;
     label?: (string | null) | undefined;
     operator: PropertyOperator;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type FlagPropertyFilter = {
     key: string;
@@ -192,9 +173,7 @@ export namespace Schemas {
     key: string;
     label?: (string | null) | undefined;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type EmptyPropertyFilter = Partial<{}>;
   export type DataWarehousePropertyFilter = {
@@ -202,45 +181,35 @@ export namespace Schemas {
     label?: (string | null) | undefined;
     operator: PropertyOperator;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type DataWarehousePersonPropertyFilter = {
     key: string;
     label?: (string | null) | undefined;
     operator: PropertyOperator;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type ErrorTrackingIssueFilter = {
     key: string;
     label?: (string | null) | undefined;
     operator: PropertyOperator;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type LogPropertyFilter = {
     key: string;
     label?: (string | null) | undefined;
     operator: PropertyOperator;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type RevenueAnalyticsPropertyFilter = {
     key: string;
     label?: (string | null) | undefined;
     operator: PropertyOperator;
     type?: string | undefined;
-    value?:
-      | (Array<string | number | boolean> | string | number | boolean | null)
-      | undefined;
+    value?: (Array<string | number | boolean> | string | number | boolean | null) | undefined;
   };
   export type BaseMathType =
     | "total"
@@ -250,20 +219,8 @@ export namespace Schemas {
     | "unique_session"
     | "first_time_for_user"
     | "first_matching_event_for_user";
-  export type FunnelMathType =
-    | "total"
-    | "first_time_for_user"
-    | "first_time_for_user_with_filters";
-  export type PropertyMathType =
-    | "avg"
-    | "sum"
-    | "min"
-    | "max"
-    | "median"
-    | "p75"
-    | "p90"
-    | "p95"
-    | "p99";
+  export type FunnelMathType = "total" | "first_time_for_user" | "first_time_for_user_with_filters";
+  export type PropertyMathType = "avg" | "sum" | "min" | "max" | "median" | "p75" | "p90" | "p95" | "p99";
   export type CountPerActorMathType =
     | "avg_count_per_actor"
     | "min_count_per_actor"
@@ -438,10 +395,7 @@ export namespace Schemas {
     | "YER"
     | "ZAR"
     | "ZMW";
-  export type RevenueCurrencyPropertyConfig = Partial<{
-    property: string | null;
-    static: CurrencyCode | null;
-  }>;
+  export type RevenueCurrencyPropertyConfig = Partial<{ property: string | null; static: CurrencyCode | null }>;
   export type ActionsNode = {
     custom_name?: (string | null) | undefined;
     fixedProperties?:
@@ -485,9 +439,7 @@ export namespace Schemas {
     math_hogql?: (string | null) | undefined;
     math_multiplier?: (number | null) | undefined;
     math_property?: (string | null) | undefined;
-    math_property_revenue_currency?:
-      | (RevenueCurrencyPropertyConfig | null)
-      | undefined;
+    math_property_revenue_currency?: (RevenueCurrencyPropertyConfig | null) | undefined;
     math_property_type?: (string | null) | undefined;
     name?: (string | null) | undefined;
     optionalInFunnel?: (boolean | null) | undefined;
@@ -516,10 +468,7 @@ export namespace Schemas {
     response?: (Record<string, unknown> | null) | undefined;
     version?: (number | null) | undefined;
   };
-  export type ActionsPie = Partial<{
-    disableHoverOffset: boolean | null;
-    hideAggregation: boolean | null;
-  }>;
+  export type ActionsPie = Partial<{ disableHoverOffset: boolean | null; hideAggregation: boolean | null }>;
   export type ActivityLog = {
     id: string;
     user: UserBasic;
@@ -533,10 +482,7 @@ export namespace Schemas {
     detail?: (unknown | null) | undefined;
     created_at?: string | undefined;
   };
-  export type BounceRatePageViewMode =
-    | "count_pageviews"
-    | "uniq_urls"
-    | "uniq_page_screen_autocaptures";
+  export type BounceRatePageViewMode = "count_pageviews" | "uniq_urls" | "uniq_page_screen_autocaptures";
   export type FilterLogicalOperator = "AND" | "OR";
   export type CustomChannelField =
     | "utm_source"
@@ -573,16 +519,8 @@ export namespace Schemas {
     table_name: string;
     timestamp_field: string;
   };
-  export type InCohortVia =
-    | "auto"
-    | "leftjoin"
-    | "subquery"
-    | "leftjoin_conjoined";
-  export type MaterializationMode =
-    | "auto"
-    | "legacy_null_as_string"
-    | "legacy_null_as_null"
-    | "disabled";
+  export type InCohortVia = "auto" | "leftjoin" | "subquery" | "leftjoin_conjoined";
+  export type MaterializationMode = "auto" | "legacy_null_as_string" | "legacy_null_as_null" | "disabled";
   export type PersonsArgMaxVersion = "auto" | "v1" | "v2";
   export type PersonsJoinMode = "inner" | "left";
   export type PersonsOnEventsMode =
@@ -642,10 +580,7 @@ export namespace Schemas {
     task_id?: (string | null) | undefined;
     team_id: number;
   };
-  export type ResolvedDateRangeResponse = {
-    date_from: string;
-    date_to: string;
-  };
+  export type ResolvedDateRangeResponse = { date_from: string; date_to: string };
   export type ActorsPropertyTaxonomyResponse = {
     sample_count: number;
     sample_values: Array<string | number | boolean | number>;
@@ -657,15 +592,10 @@ export namespace Schemas {
     modifiers?: (HogQLQueryModifiers | null) | undefined;
     query_status?: (QueryStatus | null) | undefined;
     resolved_date_range?: (ResolvedDateRangeResponse | null) | undefined;
-    results:
-      | ActorsPropertyTaxonomyResponse
-      | Array<ActorsPropertyTaxonomyResponse>;
+    results: ActorsPropertyTaxonomyResponse | Array<ActorsPropertyTaxonomyResponse>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryLogTags = Partial<{
-    productKey: string | null;
-    scene: string | null;
-  }>;
+  export type QueryLogTags = Partial<{ productKey: string | null; scene: string | null }>;
   export type ActorsPropertyTaxonomyQuery = {
     groupTypeIndex?: (number | null) | undefined;
     kind?: string | undefined;
@@ -753,21 +683,11 @@ export namespace Schemas {
     breakdown_type: BreakdownType | null;
     breakdowns: Array<Breakdown> | null;
   }>;
-  export type CompareFilter = Partial<{
-    compare: boolean | null;
-    compare_to: string | null;
-  }>;
+  export type CompareFilter = Partial<{ compare: boolean | null; compare_to: string | null }>;
   export type CustomEventConversionGoal = { customEventName: string };
-  export type DateRange = Partial<{
-    date_from: string | null;
-    date_to: string | null;
-    explicitDate: boolean | null;
-  }>;
+  export type DateRange = Partial<{ date_from: string | null; date_to: string | null; explicitDate: boolean | null }>;
   export type IntervalType = "minute" | "hour" | "day" | "week" | "month";
-  export type PropertyGroupFilter = {
-    type: FilterLogicalOperator;
-    values: Array<PropertyGroupFilterValue>;
-  };
+  export type PropertyGroupFilter = { type: FilterLogicalOperator; values: Array<PropertyGroupFilterValue> };
   export type TrendsQueryResponse = {
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -891,9 +811,7 @@ export namespace Schemas {
     math_hogql?: (string | null) | undefined;
     math_multiplier?: (number | null) | undefined;
     math_property?: (string | null) | undefined;
-    math_property_revenue_currency?:
-      | (RevenueCurrencyPropertyConfig | null)
-      | undefined;
+    math_property_revenue_currency?: (RevenueCurrencyPropertyConfig | null) | undefined;
     math_property_type?: (string | null) | undefined;
     name?: (string | null) | undefined;
     optionalInFunnel?: (boolean | null) | undefined;
@@ -945,10 +863,7 @@ export namespace Schemas {
     | "ActionsTable"
     | "WorldMap"
     | "CalendarHeatmap";
-  export type TrendsFormulaNode = {
-    custom_name?: (string | null) | undefined;
-    formula: string;
-  };
+  export type TrendsFormulaNode = { custom_name?: (string | null) | undefined; formula: string };
   export type GoalLine = {
     borderColor?: (string | null) | undefined;
     displayIfCrossed?: (boolean | null) | undefined;
@@ -1001,10 +916,7 @@ export namespace Schemas {
     minDecimalPlaces: number | null;
     movingAverageIntervals: number | null;
     resultCustomizationBy: ResultCustomizationBy | null;
-    resultCustomizations:
-      | Record<string, unknown>
-      | Record<string, unknown>
-      | null;
+    resultCustomizations: Record<string, unknown> | Record<string, unknown> | null;
     showAlertThresholdLines: boolean | null;
     showConfidenceIntervals: boolean | null;
     showLabelsOnSeries: boolean | null;
@@ -1021,9 +933,7 @@ export namespace Schemas {
     aggregation_group_type_index?: (number | null) | undefined;
     breakdownFilter?: (BreakdownFilter | null) | undefined;
     compareFilter?: (CompareFilter | null) | undefined;
-    conversionGoal?:
-      | (ActionConversionGoal | CustomEventConversionGoal | null)
-      | undefined;
+    conversionGoal?: (ActionConversionGoal | CustomEventConversionGoal | null) | undefined;
     dataColorTheme?: (number | null) | undefined;
     dateRange?: (DateRange | null) | undefined;
     filterTestAccounts?: (boolean | null) | undefined;
@@ -1063,11 +973,7 @@ export namespace Schemas {
     trendsFilter?: (TrendsFilter | null) | undefined;
     version?: (number | null) | undefined;
   };
-  export type BreakdownAttributionType =
-    | "first_touch"
-    | "last_touch"
-    | "all_events"
-    | "step";
+  export type BreakdownAttributionType = "first_touch" | "last_touch" | "all_events" | "step";
   export type FunnelExclusionEventsNode = {
     custom_name?: (string | null) | undefined;
     event?: (string | null) | undefined;
@@ -1114,9 +1020,7 @@ export namespace Schemas {
     math_hogql?: (string | null) | undefined;
     math_multiplier?: (number | null) | undefined;
     math_property?: (string | null) | undefined;
-    math_property_revenue_currency?:
-      | (RevenueCurrencyPropertyConfig | null)
-      | undefined;
+    math_property_revenue_currency?: (RevenueCurrencyPropertyConfig | null) | undefined;
     math_property_type?: (string | null) | undefined;
     name?: (string | null) | undefined;
     optionalInFunnel?: (boolean | null) | undefined;
@@ -1191,9 +1095,7 @@ export namespace Schemas {
     math_hogql?: (string | null) | undefined;
     math_multiplier?: (number | null) | undefined;
     math_property?: (string | null) | undefined;
-    math_property_revenue_currency?:
-      | (RevenueCurrencyPropertyConfig | null)
-      | undefined;
+    math_property_revenue_currency?: (RevenueCurrencyPropertyConfig | null) | undefined;
     math_property_type?: (string | null) | undefined;
     name?: (string | null) | undefined;
     optionalInFunnel?: (boolean | null) | undefined;
@@ -1225,21 +1127,13 @@ export namespace Schemas {
   export type StepOrderValue = "strict" | "unordered" | "ordered";
   export type FunnelStepReference = "total" | "previous";
   export type FunnelVizType = "steps" | "time_to_convert" | "trends";
-  export type FunnelConversionWindowTimeUnit =
-    | "second"
-    | "minute"
-    | "hour"
-    | "day"
-    | "week"
-    | "month";
+  export type FunnelConversionWindowTimeUnit = "second" | "minute" | "hour" | "day" | "week" | "month";
   export type FunnelLayout = "horizontal" | "vertical";
   export type FunnelsFilter = Partial<{
     binCount: number | null;
     breakdownAttributionType: BreakdownAttributionType | null;
     breakdownAttributionValue: number | null;
-    exclusions: Array<
-      FunnelExclusionEventsNode | FunnelExclusionActionsNode
-    > | null;
+    exclusions: Array<FunnelExclusionEventsNode | FunnelExclusionActionsNode> | null;
     funnelAggregateByHogQL: string | null;
     funnelFromStep: number | null;
     funnelOrderType: StepOrderValue | null;
@@ -1307,10 +1201,7 @@ export namespace Schemas {
     tags?: (QueryLogTags | null) | undefined;
     version?: (number | null) | undefined;
   };
-  export type RetentionValue = {
-    count: number;
-    label?: (string | null) | undefined;
-  };
+  export type RetentionValue = { count: number; label?: (string | null) | undefined };
   export type RetentionResult = {
     breakdown_value?: (string | number | null) | undefined;
     date: string;
@@ -1326,23 +1217,13 @@ export namespace Schemas {
     results: Array<RetentionResult>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type RetentionDashboardDisplayType =
-    | "table_only"
-    | "graph_only"
-    | "all";
+  export type RetentionDashboardDisplayType = "table_only" | "graph_only" | "all";
   export type MeanRetentionCalculation = "simple" | "weighted" | "none";
   export type RetentionPeriod = "Hour" | "Day" | "Week" | "Month";
   export type RetentionReference = "total" | "previous";
-  export type RetentionType =
-    | "retention_recurring"
-    | "retention_first_time"
-    | "retention_first_ever_occurrence";
+  export type RetentionType = "retention_recurring" | "retention_first_time" | "retention_first_ever_occurrence";
   export type RetentionEntityKind = "ActionsNode" | "EventsNode";
-  export type EntityType =
-    | "actions"
-    | "events"
-    | "data_warehouse"
-    | "new_entity";
+  export type EntityType = "actions" | "events" | "data_warehouse" | "new_entity";
   export type RetentionEntity = Partial<{
     custom_name: string | null;
     id: string | number | null;
@@ -1372,6 +1253,7 @@ export namespace Schemas {
     type: EntityType | null;
     uuid: string | null;
   }>;
+  export type TimeWindowMode = "strict_calendar_dates" | "24_hour_windows";
   export type RetentionFilter = Partial<{
     cumulative: boolean | null;
     dashboardDisplay: RetentionDashboardDisplayType | null;
@@ -1384,6 +1266,7 @@ export namespace Schemas {
     returningEntity: RetentionEntity | null;
     showTrendLines: boolean | null;
     targetEntity: RetentionEntity | null;
+    timeWindowMode: TimeWindowMode | null;
     totalIntervals: number | null;
   }>;
   export type RetentionQuery = {
@@ -1426,21 +1309,14 @@ export namespace Schemas {
     tags?: (QueryLogTags | null) | undefined;
     version?: (number | null) | undefined;
   };
-  export type FunnelPathType =
-    | "funnel_path_before_step"
-    | "funnel_path_between_steps"
-    | "funnel_path_after_step";
+  export type FunnelPathType = "funnel_path_before_step" | "funnel_path_between_steps" | "funnel_path_after_step";
   export type FunnelPathsFilter = {
     funnelPathType?: (FunnelPathType | null) | undefined;
     funnelSource: FunnelsQuery;
     funnelStep?: (number | null) | undefined;
   };
   export type PathType = "$pageview" | "$screen" | "custom_event" | "hogql";
-  export type PathCleaningFilter = Partial<{
-    alias: string | null;
-    order: number | null;
-    regex: string | null;
-  }>;
+  export type PathCleaningFilter = Partial<{ alias: string | null; order: number | null; regex: string | null }>;
   export type PathsFilter = Partial<{
     edgeLimit: number | null;
     endPoint: string | null;
@@ -1458,12 +1334,7 @@ export namespace Schemas {
     startPoint: string | null;
     stepLimit: number | null;
   }>;
-  export type PathsLink = {
-    average_conversion_time: number;
-    source: string;
-    target: string;
-    value: number;
-  };
+  export type PathsLink = { average_conversion_time: number; source: string; target: string; value: number };
   export type PathsQueryResponse = {
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
@@ -1524,19 +1395,13 @@ export namespace Schemas {
   };
   export type StickinessComputationMode = "non_cumulative" | "cumulative";
   export type StickinessOperator = "gte" | "lte" | "exact";
-  export type StickinessCriteria = {
-    operator: StickinessOperator;
-    value: number;
-  };
+  export type StickinessCriteria = { operator: StickinessOperator; value: number };
   export type StickinessFilter = Partial<{
     computedAs: StickinessComputationMode | null;
     display: ChartDisplayType | null;
     hiddenLegendIndexes: Array<number> | null;
     resultCustomizationBy: ResultCustomizationBy | null;
-    resultCustomizations:
-      | Record<string, unknown>
-      | Record<string, unknown>
-      | null;
+    resultCustomizations: Record<string, unknown> | Record<string, unknown> | null;
     showLegend: boolean | null;
     showMultipleYAxes: boolean | null;
     showValuesOnSeries: boolean | null;
@@ -1584,11 +1449,7 @@ export namespace Schemas {
     tags?: (QueryLogTags | null) | undefined;
     version?: (number | null) | undefined;
   };
-  export type LifecycleToggle =
-    | "new"
-    | "resurrecting"
-    | "returning"
-    | "dormant";
+  export type LifecycleToggle = "new" | "resurrecting" | "returning" | "dormant";
   export type LifecycleFilter = Partial<{
     showLegend: boolean | null;
     showValuesOnSeries: boolean | null;
@@ -1655,23 +1516,14 @@ export namespace Schemas {
     modifiers?: (HogQLQueryModifiers | null) | undefined;
     response?: (ActorsQueryResponse | null) | undefined;
     series?: (number | null) | undefined;
-    source:
-      | TrendsQuery
-      | FunnelsQuery
-      | RetentionQuery
-      | PathsQuery
-      | StickinessQuery
-      | LifecycleQuery;
+    source: TrendsQuery | FunnelsQuery | RetentionQuery | PathsQuery | StickinessQuery | LifecycleQuery;
     status?: (string | null) | undefined;
     tags?: (QueryLogTags | null) | undefined;
     version?: (number | null) | undefined;
   };
   export type FunnelsActorsQuery = {
-    funnelCustomSteps?: (Array<number> | null) | undefined;
     funnelStep?: (number | null) | undefined;
-    funnelStepBreakdown?:
-      | (number | string | number | Array<number | string | number> | null)
-      | undefined;
+    funnelStepBreakdown?: (number | string | number | Array<number | string | number> | null) | undefined;
     funnelTrendsDropOff?: (boolean | null) | undefined;
     funnelTrendsEntrancePeriodStart?: (string | null) | undefined;
     includeRecordings?: (boolean | null) | undefined;
@@ -1682,16 +1534,9 @@ export namespace Schemas {
     tags?: (QueryLogTags | null) | undefined;
     version?: (number | null) | undefined;
   };
-  export type FunnelCorrelationResultsType =
-    | "events"
-    | "properties"
-    | "event_with_properties";
+  export type FunnelCorrelationResultsType = "events" | "properties" | "event_with_properties";
   export type CorrelationType = "success" | "failure";
-  export type EventDefinition = {
-    elements: Array<unknown>;
-    event: string;
-    properties: Record<string, unknown>;
-  };
+  export type EventDefinition = { elements: Array<unknown>; event: string; properties: Record<string, unknown> };
   export type EventOddsRatioSerialized = {
     correlation_type: CorrelationType;
     event: EventDefinition;
@@ -1699,10 +1544,7 @@ export namespace Schemas {
     odds_ratio: number;
     success_count: number;
   };
-  export type FunnelCorrelationResult = {
-    events: Array<EventOddsRatioSerialized>;
-    skewed: boolean;
-  };
+  export type FunnelCorrelationResult = { events: Array<EventOddsRatioSerialized>; skewed: boolean };
   export type FunnelCorrelationResponse = {
     columns?: (Array<unknown> | null) | undefined;
     error?: (string | null) | undefined;
@@ -1718,9 +1560,7 @@ export namespace Schemas {
     types?: (Array<unknown> | null) | undefined;
   };
   export type FunnelCorrelationQuery = {
-    funnelCorrelationEventExcludePropertyNames?:
-      | (Array<string> | null)
-      | undefined;
+    funnelCorrelationEventExcludePropertyNames?: (Array<string> | null) | undefined;
     funnelCorrelationEventNames?: (Array<string> | null) | undefined;
     funnelCorrelationExcludeEventNames?: (Array<string> | null) | undefined;
     funnelCorrelationExcludeNames?: (Array<string> | null) | undefined;
@@ -1733,9 +1573,7 @@ export namespace Schemas {
   };
   export type FunnelCorrelationActorsQuery = {
     funnelCorrelationPersonConverted?: (boolean | null) | undefined;
-    funnelCorrelationPersonEntity?:
-      | (EventsNode | ActionsNode | DataWarehouseNode | null)
-      | undefined;
+    funnelCorrelationPersonEntity?: (EventsNode | ActionsNode | DataWarehouseNode | null) | undefined;
     funnelCorrelationPropertyValues?:
       | (Array<
           | EventPropertyFilter
@@ -1858,10 +1696,7 @@ export namespace Schemas {
   };
   export type ActorsQuery = Partial<{
     fixedProperties: Array<
-      | PersonPropertyFilter
-      | CohortPropertyFilter
-      | HogQLPropertyFilter
-      | EmptyPropertyFilter
+      PersonPropertyFilter | CohortPropertyFilter | HogQLPropertyFilter | EmptyPropertyFilter
     > | null;
     kind: string;
     limit: number | null;
@@ -1869,12 +1704,7 @@ export namespace Schemas {
     offset: number | null;
     orderBy: Array<string> | null;
     properties:
-      | Array<
-          | PersonPropertyFilter
-          | CohortPropertyFilter
-          | HogQLPropertyFilter
-          | EmptyPropertyFilter
-        >
+      | Array<PersonPropertyFilter | CohortPropertyFilter | HogQLPropertyFilter | EmptyPropertyFilter>
       | PropertyGroupFilterValue
       | null;
     response: ActorsQueryResponse | null;
@@ -1900,12 +1730,7 @@ export namespace Schemas {
   };
   export type AgentListResponse = { results: Array<AgentDefinition> };
   export type CreationTypeEnum = "USR" | "GIT";
-  export type AnnotationScopeEnum =
-    | "dashboard_item"
-    | "dashboard"
-    | "project"
-    | "organization"
-    | "recording";
+  export type AnnotationScopeEnum = "dashboard_item" | "dashboard" | "project" | "organization" | "recording";
   export type Annotation = {
     id: number;
     content?: (string | null) | undefined;
@@ -1923,6 +1748,46 @@ export namespace Schemas {
     deleted?: boolean | undefined;
     scope?: AnnotationScopeEnum | undefined;
   };
+  export type AnthropicMessagesRequestServiceTierEnum = "auto" | "standard_only";
+  export type AnthropicMessagesRequest = {
+    model: string;
+    messages: Array<Record<string, unknown>>;
+    max_tokens?: number | undefined;
+    temperature?: number | undefined;
+    top_p?: number | undefined;
+    top_k?: number | undefined;
+    stream?: boolean | undefined;
+    stop_sequences?: Array<string> | undefined;
+    system?: unknown | undefined;
+    metadata?: unknown | undefined;
+    thinking?: unknown | undefined;
+    tools?: Array<unknown> | undefined;
+    tool_choice?: unknown | undefined;
+    service_tier?: AnthropicMessagesRequestServiceTierEnum | undefined;
+  };
+  export type AnthropicMessagesResponseTypeEnum = "message";
+  export type AnthropicMessagesResponseRoleEnum = "assistant";
+  export type StopReasonEnum = "end_turn" | "max_tokens" | "stop_sequence" | "tool_use" | "pause_turn" | "refusal";
+  export type AnthropicUsageServiceTierEnum = "standard" | "priority" | "batch";
+  export type AnthropicUsage = {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens?: (number | null) | undefined;
+    cache_read_input_tokens?: (number | null) | undefined;
+    server_tool_use?: (unknown | null) | undefined;
+    service_tier?: ((AnthropicUsageServiceTierEnum | NullEnum) | null) | undefined;
+  };
+  export type AnthropicMessagesResponse = {
+    id: string;
+    type: AnthropicMessagesResponseTypeEnum;
+    role: AnthropicMessagesResponseRoleEnum;
+    content: Array<Record<string, unknown>>;
+    model: string;
+    stop_reason: (StopReasonEnum | NullEnum) | null;
+    stop_sequence?: (string | null) | undefined;
+    usage: AnthropicUsage;
+  };
+  export type AttributionModeEnum = "first_touch" | "last_touch";
   export type AutocompleteCompletionItemKind =
     | "Method"
     | "Function"
@@ -2197,28 +2062,11 @@ export namespace Schemas {
     batch_export: string;
   };
   export type BreakdownItem = { label: string; value: string | number };
-  export type ByweekdayEnum =
-    | "monday"
-    | "tuesday"
-    | "wednesday"
-    | "thursday"
-    | "friday"
-    | "saturday"
-    | "sunday";
+  export type ByweekdayEnum = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
   export type CalendarHeatmapFilter = Partial<{ dummy: string | null }>;
-  export type EventsHeatMapColumnAggregationResult = {
-    column: number;
-    value: number;
-  };
-  export type EventsHeatMapDataResult = {
-    column: number;
-    row: number;
-    value: number;
-  };
-  export type EventsHeatMapRowAggregationResult = {
-    row: number;
-    value: number;
-  };
+  export type EventsHeatMapColumnAggregationResult = { column: number; value: number };
+  export type EventsHeatMapDataResult = { column: number; row: number; value: number };
+  export type EventsHeatMapRowAggregationResult = { row: number; value: number };
   export type EventsHeatMapStructuredResult = {
     allAggregations: number;
     columnAggregations: Array<EventsHeatMapColumnAggregationResult>;
@@ -2238,9 +2086,7 @@ export namespace Schemas {
   export type CalendarHeatmapQuery = {
     aggregation_group_type_index?: (number | null) | undefined;
     calendarHeatmapFilter?: (CalendarHeatmapFilter | null) | undefined;
-    conversionGoal?:
-      | (ActionConversionGoal | CustomEventConversionGoal | null)
-      | undefined;
+    conversionGoal?: (ActionConversionGoal | CustomEventConversionGoal | null) | undefined;
     dataColorTheme?: (number | null) | undefined;
     dateRange?: (DateRange | null) | undefined;
     filterTestAccounts?: (boolean | null) | undefined;
@@ -2295,14 +2141,8 @@ export namespace Schemas {
     style: Style | null;
     suffix: string | null;
   }>;
-  export type Settings = Partial<{
-    display: ChartSettingsDisplay | null;
-    formatting: ChartSettingsFormatting | null;
-  }>;
-  export type ChartAxis = {
-    column: string;
-    settings?: (Settings | null) | undefined;
-  };
+  export type Settings = Partial<{ display: ChartSettingsDisplay | null; formatting: ChartSettingsFormatting | null }>;
+  export type ChartAxis = { column: string; settings?: (Settings | null) | undefined };
   export type Scale = "linear" | "logarithmic";
   export type YAxisSettings = Partial<{
     scale: Scale | null;
@@ -2325,6 +2165,69 @@ export namespace Schemas {
     yAxis: Array<ChartAxis> | null;
     yAxisAtZero: boolean | null;
   }>;
+  export type ChatCompletionMessageRoleEnum = "system" | "user" | "assistant" | "function" | "tool" | "developer";
+  export type ChatCompletionMessage = {
+    role: ChatCompletionMessageRoleEnum;
+    content?: (string | null) | undefined;
+    name?: string | undefined;
+    function_call?: unknown | undefined;
+    tool_calls?: Array<unknown> | undefined;
+  };
+  export type ChatCompletionChoice = { index: number; message: ChatCompletionMessage; finish_reason: string | null };
+  export type ModalitiesEnum = "text" | "audio";
+  export type ReasoningEffortEnum = "none" | "minimal" | "low" | "medium" | "high" | "default";
+  export type VerbosityEnum = "concise" | "standard" | "verbose";
+  export type ChatCompletionRequest = {
+    model: string;
+    messages: Array<Record<string, unknown>>;
+    temperature?: number | undefined;
+    top_p?: number | undefined;
+    n?: number | undefined;
+    stream?: boolean | undefined;
+    stream_options?: unknown | undefined;
+    stop?: Array<string> | undefined;
+    max_tokens?: number | undefined;
+    max_completion_tokens?: number | undefined;
+    presence_penalty?: number | undefined;
+    frequency_penalty?: number | undefined;
+    logit_bias?: unknown | undefined;
+    user?: string | undefined;
+    tools?: Array<unknown> | undefined;
+    tool_choice?: unknown | undefined;
+    parallel_tool_calls?: boolean | undefined;
+    response_format?: unknown | undefined;
+    seed?: number | undefined;
+    logprobs?: boolean | undefined;
+    top_logprobs?: number | undefined;
+    modalities?: Array<ModalitiesEnum> | undefined;
+    prediction?: unknown | undefined;
+    audio?: unknown | undefined;
+    reasoning_effort?: ReasoningEffortEnum | undefined;
+    verbosity?: VerbosityEnum | undefined;
+    store?: boolean | undefined;
+    web_search_options?: unknown | undefined;
+    functions?: Array<unknown> | undefined;
+    function_call?: unknown | undefined;
+  };
+  export type ObjectEnum = "chat.completion";
+  export type ChatCompletionUsage = {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    completion_tokens_details?: (unknown | null) | undefined;
+    prompt_tokens_details?: (unknown | null) | undefined;
+  };
+  export type ChatCompletionResponseServiceTierEnum = "auto" | "default" | "flex" | "scale" | "priority";
+  export type ChatCompletionResponse = {
+    id: string;
+    object: ObjectEnum;
+    created: number;
+    model: string;
+    choices: Array<ChatCompletionChoice>;
+    usage?: ((ChatCompletionUsage & (unknown | null)) | null) | undefined;
+    system_fingerprint?: (string | null) | undefined;
+    service_tier?: ((ChatCompletionResponseServiceTierEnum | NullEnum) | null) | undefined;
+  };
   export type ClickhouseEvent = {
     id: string;
     distinct_id: string;
@@ -2335,11 +2238,7 @@ export namespace Schemas {
     elements: string;
     elements_chain: string;
   };
-  export type CohortTypeEnum =
-    | "static"
-    | "person_property"
-    | "behavioral"
-    | "analytical";
+  export type CohortTypeEnum = "static" | "person_property" | "behavioral" | "analytical";
   export type Cohort = {
     id: number;
     name?: (string | null) | undefined;
@@ -2362,12 +2261,7 @@ export namespace Schemas {
   };
   export type ColorMode = "light" | "dark";
   export type CompareItem = { label: string; value: string };
-  export type ConclusionEnum =
-    | "won"
-    | "lost"
-    | "inconclusive"
-    | "stopped_early"
-    | "invalid";
+  export type ConclusionEnum = "won" | "lost" | "inconclusive" | "stopped_early" | "invalid";
   export type ConditionalFormattingRule = {
     bytecode: Array<unknown>;
     color: string;
@@ -2423,9 +2317,7 @@ export namespace Schemas {
     math_hogql?: (string | null) | undefined;
     math_multiplier?: (number | null) | undefined;
     math_property?: (string | null) | undefined;
-    math_property_revenue_currency?:
-      | (RevenueCurrencyPropertyConfig | null)
-      | undefined;
+    math_property_revenue_currency?: (RevenueCurrencyPropertyConfig | null) | undefined;
     math_property_type?: (string | null) | undefined;
     name?: (string | null) | undefined;
     optionalInFunnel?: (boolean | null) | undefined;
@@ -2501,9 +2393,7 @@ export namespace Schemas {
     math_hogql?: (string | null) | undefined;
     math_multiplier?: (number | null) | undefined;
     math_property?: (string | null) | undefined;
-    math_property_revenue_currency?:
-      | (RevenueCurrencyPropertyConfig | null)
-      | undefined;
+    math_property_revenue_currency?: (RevenueCurrencyPropertyConfig | null) | undefined;
     math_property_type?: (string | null) | undefined;
     name?: (string | null) | undefined;
     optionalInFunnel?: (boolean | null) | undefined;
@@ -2581,9 +2471,7 @@ export namespace Schemas {
     math_hogql?: (string | null) | undefined;
     math_multiplier?: (number | null) | undefined;
     math_property?: (string | null) | undefined;
-    math_property_revenue_currency?:
-      | (RevenueCurrencyPropertyConfig | null)
-      | undefined;
+    math_property_revenue_currency?: (RevenueCurrencyPropertyConfig | null) | undefined;
     math_property_type?: (string | null) | undefined;
     name?: (string | null) | undefined;
     optionalInFunnel?: (boolean | null) | undefined;
@@ -2737,16 +2625,10 @@ export namespace Schemas {
     created_by?: (number | null) | undefined;
     image_url?: (string | null) | undefined;
     team_id: number | null;
-    scope?:
-      | ((DashboardTemplateScopeEnum | BlankEnum | NullEnum) | null)
-      | undefined;
+    scope?: ((DashboardTemplateScopeEnum | BlankEnum | NullEnum) | null) | undefined;
     availability_contexts?: (Array<string> | null) | undefined;
   };
-  export type DashboardTileBasic = {
-    id: number;
-    dashboard_id: number;
-    deleted?: (boolean | null) | undefined;
-  };
+  export type DashboardTileBasic = { id: number; dashboard_id: number; deleted?: (boolean | null) | undefined };
   export type DataColorTheme = {
     id: number;
     name: string;
@@ -2755,9 +2637,7 @@ export namespace Schemas {
     created_at: string | null;
     created_by: UserBasic & unknown;
   };
-  export type DataTableNodeViewPropsContextType =
-    | "event_definition"
-    | "team_columns";
+  export type DataTableNodeViewPropsContextType = "event_definition" | "team_columns";
   export type DataTableNodeViewPropsContext = {
     eventDefinitionId?: (string | null) | undefined;
     type: DataTableNodeViewPropsContextType;
@@ -2824,11 +2704,7 @@ export namespace Schemas {
     timings?: (Array<QueryTiming> | null) | undefined;
     types?: (Array<unknown> | null) | undefined;
   };
-  export type WebAnalyticsItemKind =
-    | "unit"
-    | "duration_s"
-    | "percentage"
-    | "currency";
+  export type WebAnalyticsItemKind = "unit" | "duration_s" | "percentage" | "currency";
   export type WebOverviewItem = {
     changeFromPreviousPct?: (number | null) | undefined;
     isIncreaseBad?: (boolean | null) | undefined;
@@ -2838,10 +2714,7 @@ export namespace Schemas {
     usedPreAggregatedTables?: (boolean | null) | undefined;
     value?: (number | null) | undefined;
   };
-  export type SamplingRate = {
-    denominator?: (number | null) | undefined;
-    numerator: number;
-  };
+  export type SamplingRate = { denominator?: (number | null) | undefined; numerator: number };
   export type Response4 = {
     dateFrom?: (string | null) | undefined;
     dateTo?: (string | null) | undefined;
@@ -2886,10 +2759,7 @@ export namespace Schemas {
     timings?: (Array<QueryTiming> | null) | undefined;
     types?: (Array<unknown> | null) | undefined;
   };
-  export type WebVitalsPathBreakdownResultItem = {
-    path: string;
-    value: number;
-  };
+  export type WebVitalsPathBreakdownResultItem = { path: string; value: number };
   export type WebVitalsPathBreakdownResult = {
     good: Array<WebVitalsPathBreakdownResultItem>;
     needs_improvements: Array<WebVitalsPathBreakdownResultItem>;
@@ -2955,14 +2825,8 @@ export namespace Schemas {
     results: Array<RevenueAnalyticsMRRQueryResultItem>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type RevenueAnalyticsOverviewItemKey =
-    | "revenue"
-    | "paying_customer_count"
-    | "avg_revenue_per_customer";
-  export type RevenueAnalyticsOverviewItem = {
-    key: RevenueAnalyticsOverviewItemKey;
-    value: number;
-  };
+  export type RevenueAnalyticsOverviewItemKey = "revenue" | "paying_customer_count" | "avg_revenue_per_customer";
+  export type RevenueAnalyticsOverviewItem = { key: RevenueAnalyticsOverviewItemKey; value: number };
   export type Response13 = {
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
@@ -3020,6 +2884,16 @@ export namespace Schemas {
     timings?: (Array<QueryTiming> | null) | undefined;
     types?: (Array<unknown> | null) | undefined;
   };
+  export type Response18 = {
+    error?: (string | null) | undefined;
+    hogql?: (string | null) | undefined;
+    modifiers?: (HogQLQueryModifiers | null) | undefined;
+    query_status?: (QueryStatus | null) | undefined;
+    resolved_date_range?: (ResolvedDateRangeResponse | null) | undefined;
+    results: Record<string, unknown>;
+    samplingRate?: (SamplingRate | null) | undefined;
+    timings?: (Array<QueryTiming> | null) | undefined;
+  };
   export type VolumeBucket = { label: string; value: number };
   export type ErrorTrackingIssueAggregations = {
     occurrences: number;
@@ -3029,10 +2903,7 @@ export namespace Schemas {
     volume_buckets: Array<VolumeBucket>;
   };
   export type ErrorTrackingIssueAssigneeType = "user" | "role";
-  export type ErrorTrackingIssueAssignee = {
-    id: string | number;
-    type: ErrorTrackingIssueAssigneeType;
-  };
+  export type ErrorTrackingIssueAssignee = { id: string | number; type: ErrorTrackingIssueAssigneeType };
   export type IntegrationKind =
     | "slack"
     | "salesforce"
@@ -3050,40 +2921,23 @@ export namespace Schemas {
     | "github"
     | "meta-ads"
     | "clickup"
-    | "reddit-ads";
-  export type ErrorTrackingExternalReferenceIntegration = {
-    display_name: string;
-    id: number;
-    kind: IntegrationKind;
-  };
+    | "reddit-ads"
+    | "databricks"
+    | "tiktok-ads";
+  export type ErrorTrackingExternalReferenceIntegration = { display_name: string; id: number; kind: IntegrationKind };
   export type ErrorTrackingExternalReference = {
     external_url: string;
     id: string;
     integration: ErrorTrackingExternalReferenceIntegration;
   };
-  export type FirstEvent = {
-    properties: string;
-    timestamp: string;
-    uuid: string;
-  };
-  export type LastEvent = {
-    properties: string;
-    timestamp: string;
-    uuid: string;
-  };
-  export type Status =
-    | "archived"
-    | "active"
-    | "resolved"
-    | "pending_release"
-    | "suppressed";
+  export type FirstEvent = { properties: string; timestamp: string; uuid: string };
+  export type LastEvent = { properties: string; timestamp: string; uuid: string };
+  export type Status = "archived" | "active" | "resolved" | "pending_release" | "suppressed";
   export type ErrorTrackingIssue = {
     aggregations?: (ErrorTrackingIssueAggregations | null) | undefined;
     assignee?: (ErrorTrackingIssueAssignee | null) | undefined;
     description?: (string | null) | undefined;
-    external_issues?:
-      | (Array<ErrorTrackingExternalReference> | null)
-      | undefined;
+    external_issues?: (Array<ErrorTrackingExternalReference> | null) | undefined;
     first_event?: (FirstEvent | null) | undefined;
     first_seen: string;
     id: string;
@@ -3091,9 +2945,10 @@ export namespace Schemas {
     last_seen: string;
     library?: (string | null) | undefined;
     name?: (string | null) | undefined;
+    revenue?: (number | null) | undefined;
     status: Status;
   };
-  export type Response18 = {
+  export type Response19 = {
     columns?: (Array<string> | null) | undefined;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -3106,19 +2961,12 @@ export namespace Schemas {
     results: Array<ErrorTrackingIssue>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type Population = {
-    both: number;
-    exception_only: number;
-    neither: number;
-    success_only: number;
-  };
+  export type Population = { both: number; exception_only: number; neither: number; success_only: number };
   export type ErrorTrackingCorrelatedIssue = {
     assignee?: (ErrorTrackingIssueAssignee | null) | undefined;
     description?: (string | null) | undefined;
     event: string;
-    external_issues?:
-      | (Array<ErrorTrackingExternalReference> | null)
-      | undefined;
+    external_issues?: (Array<ErrorTrackingExternalReference> | null) | undefined;
     first_seen: string;
     id: string;
     last_seen: string;
@@ -3128,7 +2976,7 @@ export namespace Schemas {
     population: Population;
     status: Status;
   };
-  export type Response19 = {
+  export type Response20 = {
     columns?: (Array<string> | null) | undefined;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -3147,12 +2995,8 @@ export namespace Schemas {
     | "low_win_probability"
     | "high_loss"
     | "high_p_value";
-  export type ExperimentVariantFunnelsBaseStats = {
-    failure_count: number;
-    key: string;
-    success_count: number;
-  };
-  export type Response20 = {
+  export type ExperimentVariantFunnelsBaseStats = { failure_count: number; key: string; success_count: number };
+  export type Response21 = {
     credible_intervals: Record<string, Array<number>>;
     expected_loss: number;
     funnels_query?: (FunnelsQuery | null) | undefined;
@@ -3170,7 +3014,7 @@ export namespace Schemas {
     exposure: number;
     key: string;
   };
-  export type Response21 = {
+  export type Response22 = {
     count_query?: (TrendsQuery | null) | undefined;
     credible_intervals: Record<string, Array<number>>;
     exposure_query?: (TrendsQuery | null) | undefined;
@@ -3210,7 +3054,7 @@ export namespace Schemas {
     totalLatency?: (number | null) | undefined;
     traceName?: (string | null) | undefined;
   };
-  export type Response22 = {
+  export type Response23 = {
     columns?: (Array<string> | null) | undefined;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -3414,9 +3258,7 @@ export namespace Schemas {
     modifiers?: (HogQLQueryModifiers | null) | undefined;
     offset?: (number | null) | undefined;
     orderBy?: (Array<string> | null) | undefined;
-    properties?:
-      | (Array<GroupPropertyFilter | HogQLPropertyFilter> | null)
-      | undefined;
+    properties?: (Array<GroupPropertyFilter | HogQLPropertyFilter> | null) | undefined;
     response?: (GroupsQueryResponse | null) | undefined;
     search?: (string | null) | undefined;
     select?: (Array<string> | null) | undefined;
@@ -3451,27 +3293,18 @@ export namespace Schemas {
     timings?: (Array<QueryTiming> | null) | undefined;
     usedPreAggregatedTables?: (boolean | null) | undefined;
   };
-  export type WebAnalyticsSampling = Partial<{
-    enabled: boolean | null;
-    forceSamplingRate: SamplingRate | null;
-  }>;
+  export type WebAnalyticsSampling = Partial<{ enabled: boolean | null; forceSamplingRate: SamplingRate | null }>;
   export type WebOverviewQuery = {
     compareFilter?: (CompareFilter | null) | undefined;
-    conversionGoal?:
-      | (ActionConversionGoal | CustomEventConversionGoal | null)
-      | undefined;
+    conversionGoal?: (ActionConversionGoal | CustomEventConversionGoal | null) | undefined;
     dateRange?: (DateRange | null) | undefined;
     doPathCleaning?: (boolean | null) | undefined;
     filterTestAccounts?: (boolean | null) | undefined;
     includeRevenue?: (boolean | null) | undefined;
     kind?: string | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
-    orderBy?:
-      | (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null)
-      | undefined;
-    properties: Array<
-      EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter
-    >;
+    orderBy?: (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null) | undefined;
+    properties: Array<EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter>;
     response?: (WebOverviewQueryResponse | null) | undefined;
     sampling?: (WebAnalyticsSampling | null) | undefined;
     tags?: (QueryLogTags | null) | undefined;
@@ -3522,9 +3355,7 @@ export namespace Schemas {
   export type WebStatsTableQuery = {
     breakdownBy: WebStatsBreakdown;
     compareFilter?: (CompareFilter | null) | undefined;
-    conversionGoal?:
-      | (ActionConversionGoal | CustomEventConversionGoal | null)
-      | undefined;
+    conversionGoal?: (ActionConversionGoal | CustomEventConversionGoal | null) | undefined;
     dateRange?: (DateRange | null) | undefined;
     doPathCleaning?: (boolean | null) | undefined;
     filterTestAccounts?: (boolean | null) | undefined;
@@ -3535,12 +3366,8 @@ export namespace Schemas {
     limit?: (number | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
     offset?: (number | null) | undefined;
-    orderBy?:
-      | (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null)
-      | undefined;
-    properties: Array<
-      EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter
-    >;
+    orderBy?: (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null) | undefined;
+    properties: Array<EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter>;
     response?: (WebStatsTableQueryResponse | null) | undefined;
     sampling?: (WebAnalyticsSampling | null) | undefined;
     tags?: (QueryLogTags | null) | undefined;
@@ -3564,9 +3391,7 @@ export namespace Schemas {
   };
   export type WebExternalClicksTableQuery = {
     compareFilter?: (CompareFilter | null) | undefined;
-    conversionGoal?:
-      | (ActionConversionGoal | CustomEventConversionGoal | null)
-      | undefined;
+    conversionGoal?: (ActionConversionGoal | CustomEventConversionGoal | null) | undefined;
     dateRange?: (DateRange | null) | undefined;
     doPathCleaning?: (boolean | null) | undefined;
     filterTestAccounts?: (boolean | null) | undefined;
@@ -3574,12 +3399,8 @@ export namespace Schemas {
     kind?: string | undefined;
     limit?: (number | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
-    orderBy?:
-      | (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null)
-      | undefined;
-    properties: Array<
-      EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter
-    >;
+    orderBy?: (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null) | undefined;
+    properties: Array<EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter>;
     response?: (WebExternalClicksTableQueryResponse | null) | undefined;
     sampling?: (WebAnalyticsSampling | null) | undefined;
     stripQueryParams?: (boolean | null) | undefined;
@@ -3604,9 +3425,7 @@ export namespace Schemas {
   };
   export type WebGoalsQuery = {
     compareFilter?: (CompareFilter | null) | undefined;
-    conversionGoal?:
-      | (ActionConversionGoal | CustomEventConversionGoal | null)
-      | undefined;
+    conversionGoal?: (ActionConversionGoal | CustomEventConversionGoal | null) | undefined;
     dateRange?: (DateRange | null) | undefined;
     doPathCleaning?: (boolean | null) | undefined;
     filterTestAccounts?: (boolean | null) | undefined;
@@ -3614,12 +3433,8 @@ export namespace Schemas {
     kind?: string | undefined;
     limit?: (number | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
-    orderBy?:
-      | (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null)
-      | undefined;
-    properties: Array<
-      EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter
-    >;
+    orderBy?: (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null) | undefined;
+    properties: Array<EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter>;
     response?: (WebGoalsQueryResponse | null) | undefined;
     sampling?: (WebAnalyticsSampling | null) | undefined;
     tags?: (QueryLogTags | null) | undefined;
@@ -3628,30 +3443,18 @@ export namespace Schemas {
   };
   export type WebVitalsQuery = {
     compareFilter?: (CompareFilter | null) | undefined;
-    conversionGoal?:
-      | (ActionConversionGoal | CustomEventConversionGoal | null)
-      | undefined;
+    conversionGoal?: (ActionConversionGoal | CustomEventConversionGoal | null) | undefined;
     dateRange?: (DateRange | null) | undefined;
     doPathCleaning?: (boolean | null) | undefined;
     filterTestAccounts?: (boolean | null) | undefined;
     includeRevenue?: (boolean | null) | undefined;
     kind?: string | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
-    orderBy?:
-      | (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null)
-      | undefined;
-    properties: Array<
-      EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter
-    >;
+    orderBy?: (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null) | undefined;
+    properties: Array<EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter>;
     response?: (WebGoalsQueryResponse | null) | undefined;
     sampling?: (WebAnalyticsSampling | null) | undefined;
-    source:
-      | TrendsQuery
-      | FunnelsQuery
-      | RetentionQuery
-      | PathsQuery
-      | StickinessQuery
-      | LifecycleQuery;
+    source: TrendsQuery | FunnelsQuery | RetentionQuery | PathsQuery | StickinessQuery | LifecycleQuery;
     tags?: (QueryLogTags | null) | undefined;
     useSessionsTable?: (boolean | null) | undefined;
     version?: (number | null) | undefined;
@@ -3669,9 +3472,7 @@ export namespace Schemas {
   };
   export type WebVitalsPathBreakdownQuery = {
     compareFilter?: (CompareFilter | null) | undefined;
-    conversionGoal?:
-      | (ActionConversionGoal | CustomEventConversionGoal | null)
-      | undefined;
+    conversionGoal?: (ActionConversionGoal | CustomEventConversionGoal | null) | undefined;
     dateRange?: (DateRange | null) | undefined;
     doPathCleaning?: (boolean | null) | undefined;
     filterTestAccounts?: (boolean | null) | undefined;
@@ -3679,13 +3480,9 @@ export namespace Schemas {
     kind?: string | undefined;
     metric: WebVitalsMetric;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
-    orderBy?:
-      | (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null)
-      | undefined;
+    orderBy?: (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null) | undefined;
     percentile: WebVitalsPercentile;
-    properties: Array<
-      EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter
-    >;
+    properties: Array<EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter>;
     response?: (WebVitalsPathBreakdownQueryResponse | null) | undefined;
     sampling?: (WebAnalyticsSampling | null) | undefined;
     tags?: (QueryLogTags | null) | undefined;
@@ -3693,10 +3490,7 @@ export namespace Schemas {
     useSessionsTable?: (boolean | null) | undefined;
     version?: (number | null) | undefined;
   };
-  export type Filters = Partial<{
-    dateRange: DateRange | null;
-    properties: Array<SessionPropertyFilter> | null;
-  }>;
+  export type Filters = Partial<{ dateRange: DateRange | null; properties: Array<SessionPropertyFilter> | null }>;
   export type SessionAttributionGroupBy =
     | "ChannelType"
     | "Medium"
@@ -3730,10 +3524,7 @@ export namespace Schemas {
     tags?: (QueryLogTags | null) | undefined;
     version?: (number | null) | undefined;
   };
-  export type RevenueAnalyticsBreakdown = {
-    property: string;
-    type?: string | undefined;
-  };
+  export type RevenueAnalyticsBreakdown = { property: string; type?: string | undefined };
   export type SimpleIntervalType = "day" | "month";
   export type RevenueAnalyticsGrossRevenueQueryResponse = {
     columns?: (Array<string> | null) | undefined;
@@ -3901,19 +3692,10 @@ export namespace Schemas {
   };
   export type MarketingAnalyticsTableQuery = {
     compareFilter?: (CompareFilter | null) | undefined;
-    conversionGoal?:
-      | (ActionConversionGoal | CustomEventConversionGoal | null)
-      | undefined;
+    conversionGoal?: (ActionConversionGoal | CustomEventConversionGoal | null) | undefined;
     dateRange?: (DateRange | null) | undefined;
     doPathCleaning?: (boolean | null) | undefined;
-    draftConversionGoal?:
-      | (
-          | ConversionGoalFilter1
-          | ConversionGoalFilter2
-          | ConversionGoalFilter3
-          | null
-        )
-      | undefined;
+    draftConversionGoal?: (ConversionGoalFilter1 | ConversionGoalFilter2 | ConversionGoalFilter3 | null) | undefined;
     filterTestAccounts?: (boolean | null) | undefined;
     includeAllConversions?: (boolean | null) | undefined;
     includeRevenue?: (boolean | null) | undefined;
@@ -3921,12 +3703,8 @@ export namespace Schemas {
     limit?: (number | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
     offset?: (number | null) | undefined;
-    orderBy?:
-      | (Array<Array<string | MarketingAnalyticsOrderByEnum>> | null)
-      | undefined;
-    properties: Array<
-      EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter
-    >;
+    orderBy?: (Array<Array<string | MarketingAnalyticsOrderByEnum>> | null) | undefined;
+    properties: Array<EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter>;
     response?: (MarketingAnalyticsTableQueryResponse | null) | undefined;
     sampling?: (WebAnalyticsSampling | null) | undefined;
     select?: (Array<string> | null) | undefined;
@@ -3934,12 +3712,35 @@ export namespace Schemas {
     useSessionsTable?: (boolean | null) | undefined;
     version?: (number | null) | undefined;
   };
-  export type OrderBy =
-    | "last_seen"
-    | "first_seen"
-    | "occurrences"
-    | "users"
-    | "sessions";
+  export type MarketingAnalyticsAggregatedQueryResponse = {
+    error?: (string | null) | undefined;
+    hogql?: (string | null) | undefined;
+    modifiers?: (HogQLQueryModifiers | null) | undefined;
+    query_status?: (QueryStatus | null) | undefined;
+    resolved_date_range?: (ResolvedDateRangeResponse | null) | undefined;
+    results: Record<string, unknown>;
+    samplingRate?: (SamplingRate | null) | undefined;
+    timings?: (Array<QueryTiming> | null) | undefined;
+  };
+  export type MarketingAnalyticsAggregatedQuery = {
+    compareFilter?: (CompareFilter | null) | undefined;
+    conversionGoal?: (ActionConversionGoal | CustomEventConversionGoal | null) | undefined;
+    dateRange?: (DateRange | null) | undefined;
+    doPathCleaning?: (boolean | null) | undefined;
+    draftConversionGoal?: (ConversionGoalFilter1 | ConversionGoalFilter2 | ConversionGoalFilter3 | null) | undefined;
+    filterTestAccounts?: (boolean | null) | undefined;
+    includeRevenue?: (boolean | null) | undefined;
+    kind?: string | undefined;
+    modifiers?: (HogQLQueryModifiers | null) | undefined;
+    properties: Array<EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter>;
+    response?: (MarketingAnalyticsAggregatedQueryResponse | null) | undefined;
+    sampling?: (WebAnalyticsSampling | null) | undefined;
+    select?: (Array<string> | null) | undefined;
+    tags?: (QueryLogTags | null) | undefined;
+    useSessionsTable?: (boolean | null) | undefined;
+    version?: (number | null) | undefined;
+  };
+  export type OrderBy = "last_seen" | "first_seen" | "occurrences" | "users" | "sessions" | "revenue";
   export type OrderDirection = "ASC" | "DESC";
   export type ErrorTrackingQueryResponse = {
     columns?: (Array<string> | null) | undefined;
@@ -3954,13 +3755,9 @@ export namespace Schemas {
     results: Array<ErrorTrackingIssue>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type Status2 =
-    | "archived"
-    | "active"
-    | "resolved"
-    | "pending_release"
-    | "suppressed"
-    | "all";
+  export type RevenueEntity = "person" | "group_0" | "group_1" | "group_2" | "group_3" | "group_4";
+  export type RevenuePeriod = "all_time" | "last_30_days";
+  export type Status2 = "archived" | "active" | "resolved" | "pending_release" | "suppressed" | "all";
   export type ErrorTrackingQuery = {
     assignee?: (ErrorTrackingIssueAssignee | null) | undefined;
     dateRange: DateRange;
@@ -3971,9 +3768,12 @@ export namespace Schemas {
     limit?: (number | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
     offset?: (number | null) | undefined;
-    orderBy?: (OrderBy | null) | undefined;
+    orderBy: OrderBy;
     orderDirection?: (OrderDirection | null) | undefined;
+    personId?: (string | null) | undefined;
     response?: (ErrorTrackingQueryResponse | null) | undefined;
+    revenueEntity?: (RevenueEntity | null) | undefined;
+    revenuePeriod?: (RevenuePeriod | null) | undefined;
     searchQuery?: (string | null) | undefined;
     status?: (Status2 | null) | undefined;
     tags?: (QueryLogTags | null) | undefined;
@@ -4018,6 +3818,7 @@ export namespace Schemas {
   };
   export type ExperimentFunnelsQuery = {
     experiment_id?: (number | null) | undefined;
+    fingerprint?: (string | null) | undefined;
     funnels_query: FunnelsQuery;
     kind?: string | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
@@ -4044,6 +3845,7 @@ export namespace Schemas {
     count_query: TrendsQuery;
     experiment_id?: (number | null) | undefined;
     exposure_query?: (TrendsQuery | null) | undefined;
+    fingerprint?: (string | null) | undefined;
     kind?: string | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
     name?: (string | null) | undefined;
@@ -4072,6 +3874,7 @@ export namespace Schemas {
     limit: number | null;
     modifiers: HogQLQueryModifiers | null;
     offset: number | null;
+    personId: string | null;
     properties: Array<
       | EventPropertyFilter
       | PersonPropertyFilter
@@ -4176,6 +3979,7 @@ export namespace Schemas {
           | Response20
           | Response21
           | Response22
+          | Response23
           | null
         )
       | undefined;
@@ -4188,9 +3992,7 @@ export namespace Schemas {
     showHogQLEditor?: (boolean | null) | undefined;
     showOpenEditorButton?: (boolean | null) | undefined;
     showPersistentColumnConfigurator?: (boolean | null) | undefined;
-    showPropertyFilter?:
-      | (boolean | Array<TaxonomicFilterGroupType> | null)
-      | undefined;
+    showPropertyFilter?: (boolean | Array<TaxonomicFilterGroupType> | null) | undefined;
     showReload?: (boolean | null) | undefined;
     showResultsTable?: (boolean | null) | undefined;
     showSavedFilters?: (boolean | null) | undefined;
@@ -4220,12 +4022,14 @@ export namespace Schemas {
       | RevenueExampleEventsQuery
       | RevenueExampleDataWarehouseTablesQuery
       | MarketingAnalyticsTableQuery
+      | MarketingAnalyticsAggregatedQuery
       | ErrorTrackingQuery
       | ErrorTrackingIssueCorrelationQuery
       | ExperimentFunnelsQuery
       | ExperimentTrendsQuery
       | TracesQuery
       | TraceQuery;
+    tags?: (QueryLogTags | null) | undefined;
     version?: (number | null) | undefined;
   };
   export type TableSettings = Partial<{
@@ -4240,12 +4044,7 @@ export namespace Schemas {
     tableSettings?: (TableSettings | null) | undefined;
     version?: (number | null) | undefined;
   };
-  export type DataWarehouseSavedQueryStatusEnum =
-    | "Cancelled"
-    | "Modified"
-    | "Completed"
-    | "Failed"
-    | "Running";
+  export type DataWarehouseSavedQueryStatusEnum = "Cancelled" | "Modified" | "Completed" | "Failed" | "Running";
   export type DataWarehouseSavedQuery = {
     id: string;
     deleted?: (boolean | null) | undefined;
@@ -4291,6 +4090,7 @@ export namespace Schemas {
     id: number;
     is_email_verified?: (unknown | null) | undefined;
     last_name?: (string | null) | undefined;
+    role_at_organization?: (string | null) | undefined;
     uuid: string;
   };
   export type DataWarehouseViewLink = {
@@ -4412,10 +4212,7 @@ export namespace Schemas {
     row_count?: (number | null) | undefined;
     type?: string | undefined;
   };
-  export type DatabaseSchemaQueryResponse = {
-    joins: Array<DataWarehouseViewLink>;
-    tables: Record<string, unknown>;
-  };
+  export type DatabaseSchemaQueryResponse = { joins: Array<DataWarehouseViewLink>; tables: Record<string, unknown> };
   export type DatabaseSchemaQuery = Partial<{
     kind: string;
     modifiers: HogQLQueryModifiers | null;
@@ -4464,18 +4261,10 @@ export namespace Schemas {
     ensure_experience_continuity?: (boolean | null) | undefined;
     has_encrypted_payloads?: (boolean | null) | undefined;
     version?: (number | null) | undefined;
-    evaluation_runtime?:
-      | ((EvaluationRuntimeEnum | BlankEnum | NullEnum) | null)
-      | undefined;
+    evaluation_runtime?: ((EvaluationRuntimeEnum | BlankEnum | NullEnum) | null) | undefined;
     evaluation_tags: Array<string>;
   };
-  export type StageEnum =
-    | "draft"
-    | "concept"
-    | "alpha"
-    | "beta"
-    | "general-availability"
-    | "archived";
+  export type StageEnum = "draft" | "concept" | "alpha" | "beta" | "general-availability" | "archived";
   export type EarlyAccessFeature = {
     id: string;
     feature_flag: MinimalFeatureFlag & unknown;
@@ -4508,7 +4297,38 @@ export namespace Schemas {
     tag_name: string;
     text?: (string | null) | undefined;
   };
-  export type ErrorResponse = { error: string };
+  export type EndpointLastExecutionTimesRequest = { names: Array<string> };
+  export type EndpointRequest = Partial<{
+    description: string | null;
+    is_active: boolean | null;
+    name: string | null;
+    query:
+      | HogQLQuery
+      | TrendsQuery
+      | FunnelsQuery
+      | RetentionQuery
+      | PathsQuery
+      | StickinessQuery
+      | LifecycleQuery
+      | null;
+  }>;
+  export type RefreshType =
+    | "async"
+    | "async_except_on_cache_miss"
+    | "blocking"
+    | "force_async"
+    | "force_blocking"
+    | "force_cache"
+    | "lazy_async";
+  export type EndpointRunRequest = Partial<{
+    client_query_id: string | null;
+    filters_override: DashboardFilter | null;
+    query_override: Record<string, unknown> | null;
+    refresh: RefreshType | null;
+    variables_override: Record<string, Record<string, unknown>> | null;
+    variables_values: Record<string, unknown> | null;
+  }>;
+  export type ErrorResponse = { error: Record<string, unknown> };
   export type ErrorTrackingAssignmentRule = {
     id: string;
     filters: unknown;
@@ -4516,10 +4336,7 @@ export namespace Schemas {
     order_key: number;
     disabled_data?: (unknown | null) | undefined;
   };
-  export type ErrorTrackingFingerprint = {
-    fingerprint: string;
-    issue_id: string;
-  };
+  export type ErrorTrackingFingerprint = { fingerprint: string; issue_id: string };
   export type ErrorTrackingGroupingRule = {
     id: string;
     filters: unknown;
@@ -4536,11 +4353,7 @@ export namespace Schemas {
     version: string;
     project: string;
   };
-  export type ErrorTrackingSuppressionRule = {
-    id: string;
-    filters: unknown;
-    order_key: number;
-  };
+  export type ErrorTrackingSuppressionRule = { id: string; filters: unknown; order_key: number };
   export type ErrorTrackingSymbolSet = {
     id: string;
     ref: string;
@@ -4549,11 +4362,19 @@ export namespace Schemas {
     storage_ptr?: (string | null) | undefined;
     failure_reason?: (string | null) | undefined;
   };
-  export type EventTaxonomyItem = {
-    property: string;
-    sample_count: number;
-    sample_values: Array<string>;
+  export type Evaluation = {
+    id: string;
+    name: string;
+    description?: string | undefined;
+    enabled?: boolean | undefined;
+    prompt: string;
+    conditions?: unknown | undefined;
+    created_at: string;
+    updated_at: string;
+    created_by: UserBasic & unknown;
+    deleted?: boolean | undefined;
   };
+  export type EventTaxonomyItem = { property: string; sample_count: number; sample_values: Array<string> };
   export type EventTaxonomyQueryResponse = {
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
@@ -4643,6 +4464,7 @@ export namespace Schemas {
     conclusion_comment?: (string | null) | undefined;
     primary_metrics_ordered_uuids?: (unknown | null) | undefined;
     secondary_metrics_ordered_uuids?: (unknown | null) | undefined;
+    user_access_level: string | null;
   };
   export type ExperimentDataWarehouseNode = {
     custom_name?: (string | null) | undefined;
@@ -4688,9 +4510,7 @@ export namespace Schemas {
     math_hogql?: (string | null) | undefined;
     math_multiplier?: (number | null) | undefined;
     math_property?: (string | null) | undefined;
-    math_property_revenue_currency?:
-      | (RevenueCurrencyPropertyConfig | null)
-      | undefined;
+    math_property_revenue_currency?: (RevenueCurrencyPropertyConfig | null) | undefined;
     math_property_type?: (string | null) | undefined;
     name?: (string | null) | undefined;
     optionalInFunnel?: (boolean | null) | undefined;
@@ -4749,24 +4569,47 @@ export namespace Schemas {
   };
   export type MultipleVariantHandling = "exclude" | "first_seen";
   export type ExperimentExposureCriteria = Partial<{
-    exposure_config: ExperimentEventExposureConfig | null;
+    exposure_config: ExperimentEventExposureConfig | ActionsNode | null;
     filterTestAccounts: boolean | null;
     multiple_variant_handling: MultipleVariantHandling | null;
+  }>;
+  export type FeatureFlagGroupType = Partial<{
+    description: string | null;
+    properties: Array<
+      | EventPropertyFilter
+      | PersonPropertyFilter
+      | ElementPropertyFilter
+      | EventMetadataPropertyFilter
+      | SessionPropertyFilter
+      | CohortPropertyFilter
+      | RecordingPropertyFilter
+      | LogEntryPropertyFilter
+      | GroupPropertyFilter
+      | FeaturePropertyFilter
+      | FlagPropertyFilter
+      | HogQLPropertyFilter
+      | EmptyPropertyFilter
+      | DataWarehousePropertyFilter
+      | DataWarehousePersonPropertyFilter
+      | ErrorTrackingIssueFilter
+      | LogPropertyFilter
+      | RevenueAnalyticsPropertyFilter
+    > | null;
+    rollout_percentage: number | null;
+    sort_key: string | null;
+    users_affected: number | null;
+    variant: string | null;
   }>;
   export type ExperimentHoldoutType = {
     created_at?: (string | null) | undefined;
     created_by?: (UserBasicType | null) | undefined;
     description?: (string | null) | undefined;
-    filters: Record<string, unknown>;
+    filters: Array<FeatureFlagGroupType>;
     id?: (number | null) | undefined;
     name: string;
     updated_at?: (string | null) | undefined;
   };
-  export type ExperimentExposureTimeSeries = {
-    days: Array<string>;
-    exposure_counts: Array<number>;
-    variant: string;
-  };
+  export type ExperimentExposureTimeSeries = { days: Array<string>; exposure_counts: Array<number>; variant: string };
   export type ExperimentExposureQueryResponse = {
     date_range: DateRange;
     kind?: string | undefined;
@@ -4790,9 +4633,7 @@ export namespace Schemas {
   export type ExperimentMetricGoal = "increase" | "decrease";
   export type ExperimentFunnelMetric = {
     conversion_window?: (number | null) | undefined;
-    conversion_window_unit?:
-      | (FunnelConversionWindowTimeUnit | null)
-      | undefined;
+    conversion_window_unit?: (FunnelConversionWindowTimeUnit | null) | undefined;
     fingerprint?: (string | null) | undefined;
     funnel_order_type?: (StepOrderValue | null) | undefined;
     goal?: (ExperimentMetricGoal | null) | undefined;
@@ -4806,9 +4647,7 @@ export namespace Schemas {
   };
   export type ExperimentMeanMetric = {
     conversion_window?: (number | null) | undefined;
-    conversion_window_unit?:
-      | (FunnelConversionWindowTimeUnit | null)
-      | undefined;
+    conversion_window_unit?: (FunnelConversionWindowTimeUnit | null) | undefined;
     fingerprint?: (string | null) | undefined;
     goal?: (ExperimentMetricGoal | null) | undefined;
     ignore_zeros?: (boolean | null) | undefined;
@@ -4824,9 +4663,7 @@ export namespace Schemas {
   };
   export type ExperimentRatioMetric = {
     conversion_window?: (number | null) | undefined;
-    conversion_window_unit?:
-      | (FunnelConversionWindowTimeUnit | null)
-      | undefined;
+    conversion_window_unit?: (FunnelConversionWindowTimeUnit | null) | undefined;
     denominator: EventsNode | ActionsNode | ExperimentDataWarehouseNode;
     fingerprint?: (string | null) | undefined;
     goal?: (ExperimentMetricGoal | null) | undefined;
@@ -4838,11 +4675,7 @@ export namespace Schemas {
     uuid?: (string | null) | undefined;
     version?: (number | null) | undefined;
   };
-  export type SessionData = {
-    event_uuid: string;
-    person_id: string;
-    session_id: string;
-  };
+  export type SessionData = { event_uuid: string; person_id: string; session_id: string };
   export type ExperimentStatsValidationFailure =
     | "not-enough-exposures"
     | "baseline-mean-is-zero"
@@ -4857,9 +4690,7 @@ export namespace Schemas {
     step_sessions?: (Array<Array<SessionData>> | null) | undefined;
     sum: number;
     sum_squares: number;
-    validation_failures?:
-      | (Array<ExperimentStatsValidationFailure> | null)
-      | undefined;
+    validation_failures?: (Array<ExperimentStatsValidationFailure> | null) | undefined;
   };
   export type ExperimentVariantResultFrequentist = {
     confidence_interval?: (Array<number> | null) | undefined;
@@ -4875,9 +4706,7 @@ export namespace Schemas {
     step_sessions?: (Array<Array<SessionData>> | null) | undefined;
     sum: number;
     sum_squares: number;
-    validation_failures?:
-      | (Array<ExperimentStatsValidationFailure> | null)
-      | undefined;
+    validation_failures?: (Array<ExperimentStatsValidationFailure> | null) | undefined;
   };
   export type ExperimentVariantResultBayesian = {
     chance_to_win?: (number | null) | undefined;
@@ -4893,41 +4722,26 @@ export namespace Schemas {
     step_sessions?: (Array<Array<SessionData>> | null) | undefined;
     sum: number;
     sum_squares: number;
-    validation_failures?:
-      | (Array<ExperimentStatsValidationFailure> | null)
-      | undefined;
+    validation_failures?: (Array<ExperimentStatsValidationFailure> | null) | undefined;
   };
   export type ExperimentQueryResponse = Partial<{
     baseline: ExperimentStatsBaseValidated | null;
     credible_intervals: Record<string, Array<number>> | null;
     insight: Array<Record<string, unknown>> | null;
     kind: string;
-    metric:
-      | ExperimentMeanMetric
-      | ExperimentFunnelMetric
-      | ExperimentRatioMetric
-      | null;
+    metric: ExperimentMeanMetric | ExperimentFunnelMetric | ExperimentRatioMetric | null;
     p_value: number | null;
     probability: Record<string, number> | null;
     significance_code: ExperimentSignificanceCode | null;
     significant: boolean | null;
     stats_version: number | null;
-    variant_results:
-      | Array<ExperimentVariantResultFrequentist>
-      | Array<ExperimentVariantResultBayesian>
-      | null;
-    variants:
-      | Array<ExperimentVariantTrendsBaseStats>
-      | Array<ExperimentVariantFunnelsBaseStats>
-      | null;
+    variant_results: Array<ExperimentVariantResultFrequentist> | Array<ExperimentVariantResultBayesian> | null;
+    variants: Array<ExperimentVariantTrendsBaseStats> | Array<ExperimentVariantFunnelsBaseStats> | null;
   }>;
   export type ExperimentQuery = {
     experiment_id?: (number | null) | undefined;
     kind?: string | undefined;
-    metric:
-      | ExperimentMeanMetric
-      | ExperimentFunnelMetric
-      | ExperimentRatioMetric;
+    metric: ExperimentMeanMetric | ExperimentFunnelMetric | ExperimentRatioMetric;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
     name?: (string | null) | undefined;
     response?: (ExperimentQueryResponse | null) | undefined;
@@ -4965,13 +4779,8 @@ export namespace Schemas {
     expires_after?: (string | null) | undefined;
     exception: string | null;
   };
-  export type ExternalQueryErrorCode =
-    | "platform_access_required"
-    | "query_execution_failed";
-  export type ExternalQueryError = {
-    code: ExternalQueryErrorCode;
-    detail: string;
-  };
+  export type ExternalQueryErrorCode = "platform_access_required" | "query_execution_failed";
+  export type ExternalQueryError = { code: ExternalQueryErrorCode; detail: string };
   export type ExternalQueryStatus = "success" | "error";
   export type FeatureFlag = {
     id: number;
@@ -5004,9 +4813,8 @@ export namespace Schemas {
     is_remote_configuration?: (boolean | null) | undefined;
     has_encrypted_payloads?: (boolean | null) | undefined;
     status: string;
-    evaluation_runtime?:
-      | ((EvaluationRuntimeEnum | BlankEnum | NullEnum) | null)
-      | undefined;
+    evaluation_runtime?: ((EvaluationRuntimeEnum | BlankEnum | NullEnum) | null) | undefined;
+    last_called_at?: (string | null) | undefined;
     _create_in_folder?: string | undefined;
     _should_create_usage_dashboard?: boolean | undefined;
   };
@@ -5187,12 +4995,7 @@ export namespace Schemas {
     status: (HogFunctionStatus & (unknown | null)) | null;
     execution_order: number | null;
   };
-  export type HogLanguage =
-    | "hog"
-    | "hogJson"
-    | "hogQL"
-    | "hogQLExpr"
-    | "hogTemplate";
+  export type HogLanguage = "hog" | "hogJson" | "hogQL" | "hogQLExpr" | "hogTemplate";
   export type HogQLASTQuery = {
     explain?: (boolean | null) | undefined;
     filters?: (HogQLFilters | null) | undefined;
@@ -5227,11 +5030,7 @@ export namespace Schemas {
   export type InsightActorsQueryOptions = {
     kind?: string | undefined;
     response?: (InsightActorsQueryOptionsResponse | null) | undefined;
-    source:
-      | InsightActorsQuery
-      | FunnelsActorsQuery
-      | FunnelCorrelationActorsQuery
-      | StickinessActorsQuery;
+    source: InsightActorsQuery | FunnelsActorsQuery | FunnelCorrelationActorsQuery | StickinessActorsQuery;
     version?: (number | null) | undefined;
   };
   export type TimelineEntry = {
@@ -5287,9 +5086,7 @@ export namespace Schemas {
   };
   export type WebPageURLSearchQuery = {
     compareFilter?: (CompareFilter | null) | undefined;
-    conversionGoal?:
-      | (ActionConversionGoal | CustomEventConversionGoal | null)
-      | undefined;
+    conversionGoal?: (ActionConversionGoal | CustomEventConversionGoal | null) | undefined;
     dateRange?: (DateRange | null) | undefined;
     doPathCleaning?: (boolean | null) | undefined;
     filterTestAccounts?: (boolean | null) | undefined;
@@ -5297,12 +5094,8 @@ export namespace Schemas {
     kind?: string | undefined;
     limit?: (number | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
-    orderBy?:
-      | (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null)
-      | undefined;
-    properties: Array<
-      EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter
-    >;
+    orderBy?: (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null) | undefined;
+    properties: Array<EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter>;
     response?: (WebPageURLSearchQueryResponse | null) | undefined;
     sampling?: (WebAnalyticsSampling | null) | undefined;
     searchTerm?: (string | null) | undefined;
@@ -5349,9 +5142,7 @@ export namespace Schemas {
   };
   export type WebTrendsQuery = {
     compareFilter?: (CompareFilter | null) | undefined;
-    conversionGoal?:
-      | (ActionConversionGoal | CustomEventConversionGoal | null)
-      | undefined;
+    conversionGoal?: (ActionConversionGoal | CustomEventConversionGoal | null) | undefined;
     dateRange?: (DateRange | null) | undefined;
     doPathCleaning?: (boolean | null) | undefined;
     filterTestAccounts?: (boolean | null) | undefined;
@@ -5362,12 +5153,8 @@ export namespace Schemas {
     metrics: Array<WebTrendsMetric>;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
     offset?: (number | null) | undefined;
-    orderBy?:
-      | (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null)
-      | undefined;
-    properties: Array<
-      EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter
-    >;
+    orderBy?: (Array<WebAnalyticsOrderByFields | WebAnalyticsOrderByDirection> | null) | undefined;
+    properties: Array<EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter>;
     response?: (WebTrendsQueryResponse | null) | undefined;
     sampling?: (WebAnalyticsSampling | null) | undefined;
     tags?: (QueryLogTags | null) | undefined;
@@ -5382,9 +5169,7 @@ export namespace Schemas {
   export type WebAnalyticsExternalSummaryQuery = {
     dateRange: DateRange;
     kind?: string | undefined;
-    properties: Array<
-      EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter
-    >;
+    properties: Array<EventPropertyFilter | PersonPropertyFilter | SessionPropertyFilter>;
     response?: (WebAnalyticsExternalSummaryQueryResponse | null) | undefined;
     version?: (number | null) | undefined;
   };
@@ -5402,13 +5187,7 @@ export namespace Schemas {
     results: unknown;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type LogSeverityLevel =
-    | "trace"
-    | "debug"
-    | "info"
-    | "warn"
-    | "error"
-    | "fatal";
+  export type LogSeverityLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
   export type LogsQuery = {
     dateRange: DateRange;
     filterGroup: PropertyGroupFilter;
@@ -5434,13 +5213,11 @@ export namespace Schemas {
     | "click_count"
     | "keypress_count"
     | "mouse_activity_count"
-    | "activity_score";
+    | "activity_score"
+    | "recording_ttl";
   export type RecordingOrderDirection = "ASC" | "DESC";
   export type MatchedRecordingEvent = { uuid: string };
-  export type MatchedRecording = {
-    events: Array<MatchedRecordingEvent>;
-    session_id?: (string | null) | undefined;
-  };
+  export type MatchedRecording = { events: Array<MatchedRecordingEvent>; session_id?: (string | null) | undefined };
   export type PersonType = {
     created_at?: (string | null) | undefined;
     distinct_ids: Array<string>;
@@ -5462,6 +5239,7 @@ export namespace Schemas {
     distinct_id?: (string | null) | undefined;
     email?: (string | null) | undefined;
     end_time: string;
+    expiry_time?: (string | null) | undefined;
     id: string;
     inactive_seconds?: (number | null) | undefined;
     keypress_count?: (number | null) | undefined;
@@ -5470,6 +5248,7 @@ export namespace Schemas {
     ongoing?: (boolean | null) | undefined;
     person?: (PersonType | null) | undefined;
     recording_duration: number;
+    recording_ttl?: (number | null) | undefined;
     retention_period_days?: (number | null) | undefined;
     snapshot_source: SnapshotSource;
     start_time: string;
@@ -5479,10 +5258,7 @@ export namespace Schemas {
     viewed: boolean;
     viewers: Array<string>;
   };
-  export type RecordingsQueryResponse = {
-    has_next: boolean;
-    results: Array<SessionRecordingType>;
-  };
+  export type RecordingsQueryResponse = { has_next: boolean; results: Array<SessionRecordingType> };
   export type RecordingsQuery = Partial<{
     actions: Array<Record<string, unknown>> | null;
     comment_text: RecordingPropertyFilter | null;
@@ -5565,6 +5341,37 @@ export namespace Schemas {
     tags?: (QueryLogTags | null) | undefined;
     version?: (number | null) | undefined;
   };
+  export type UsageMetricDisplay = "number" | "sparkline";
+  export type UsageMetricFormat = "numeric" | "currency";
+  export type UsageMetric = {
+    change_from_previous_pct?: (number | null) | undefined;
+    display: UsageMetricDisplay;
+    format: UsageMetricFormat;
+    id: string;
+    interval: number;
+    name: string;
+    previous: number;
+    value: number;
+  };
+  export type UsageMetricsQueryResponse = {
+    error?: (string | null) | undefined;
+    hogql?: (string | null) | undefined;
+    modifiers?: (HogQLQueryModifiers | null) | undefined;
+    query_status?: (QueryStatus | null) | undefined;
+    resolved_date_range?: (ResolvedDateRangeResponse | null) | undefined;
+    results: Array<UsageMetric>;
+    timings?: (Array<QueryTiming> | null) | undefined;
+  };
+  export type UsageMetricsQuery = Partial<{
+    group_key: string | null;
+    group_type_index: number | null;
+    kind: string;
+    modifiers: HogQLQueryModifiers | null;
+    person_id: string | null;
+    response: UsageMetricsQueryResponse | null;
+    tags: QueryLogTags | null;
+    version: number | null;
+  }>;
   export type HogQLMetadata = {
     debug?: (boolean | null) | undefined;
     filters?: (HogQLFilters | null) | undefined;
@@ -5595,6 +5402,7 @@ export namespace Schemas {
           | RevenueAnalyticsOverviewQuery
           | RevenueAnalyticsTopCustomersQuery
           | MarketingAnalyticsTableQuery
+          | MarketingAnalyticsAggregatedQuery
           | WebOverviewQuery
           | WebStatsTableQuery
           | WebExternalClicksTableQuery
@@ -5617,6 +5425,7 @@ export namespace Schemas {
           | TracesQuery
           | TraceQuery
           | VectorSearchQuery
+          | UsageMetricsQuery
           | null
         )
       | undefined;
@@ -5654,6 +5463,7 @@ export namespace Schemas {
           | RevenueAnalyticsOverviewQuery
           | RevenueAnalyticsTopCustomersQuery
           | MarketingAnalyticsTableQuery
+          | MarketingAnalyticsAggregatedQuery
           | WebOverviewQuery
           | WebStatsTableQuery
           | WebExternalClicksTableQuery
@@ -5676,6 +5486,7 @@ export namespace Schemas {
           | TracesQuery
           | TraceQuery
           | VectorSearchQuery
+          | UsageMetricsQuery
           | null
         )
       | undefined;
@@ -5718,16 +5529,14 @@ export namespace Schemas {
     types: string;
     _create_in_folder?: string | undefined;
     alerts: string;
+    last_viewed_at: string;
   };
   export type RETENTION = Partial<{
     hideLineGraph: boolean | null;
     hideSizeColumn: boolean | null;
     useSmallLayout: boolean | null;
   }>;
-  export type VizSpecificOptions = Partial<{
-    ActionsPie: ActionsPie | null;
-    RETENTION: RETENTION | null;
-  }>;
+  export type VizSpecificOptions = Partial<{ ActionsPie: ActionsPie | null; RETENTION: RETENTION | null }>;
   export type InsightVizNode = {
     embedded?: (boolean | null) | undefined;
     full?: (boolean | null) | undefined;
@@ -5741,16 +5550,40 @@ export namespace Schemas {
     showLastComputationRefresh?: (boolean | null) | undefined;
     showResults?: (boolean | null) | undefined;
     showTable?: (boolean | null) | undefined;
-    source:
-      | TrendsQuery
-      | FunnelsQuery
-      | RetentionQuery
-      | PathsQuery
-      | StickinessQuery
-      | LifecycleQuery;
+    source: TrendsQuery | FunnelsQuery | RetentionQuery | PathsQuery | StickinessQuery | LifecycleQuery;
     suppressSessionAnalysisWarning?: (boolean | null) | undefined;
     version?: (number | null) | undefined;
     vizSpecificOptions?: (VizSpecificOptions | null) | undefined;
+  };
+  export type KindEnum =
+    | "slack"
+    | "salesforce"
+    | "hubspot"
+    | "google-pubsub"
+    | "google-cloud-storage"
+    | "google-ads"
+    | "google-sheets"
+    | "snapchat"
+    | "linkedin-ads"
+    | "reddit-ads"
+    | "tiktok-ads"
+    | "intercom"
+    | "email"
+    | "linear"
+    | "github"
+    | "meta-ads"
+    | "twilio"
+    | "clickup"
+    | "vercel"
+    | "databricks";
+  export type Integration = {
+    id: number;
+    kind: KindEnum;
+    config?: unknown | undefined;
+    created_at: string;
+    created_by: UserBasic & unknown;
+    errors: string;
+    display_name: string;
   };
   export type MembershipLevelEnum = 1 | 8 | 15;
   export type MinimalPerson = {
@@ -5761,37 +5594,6 @@ export namespace Schemas {
     created_at: string;
     uuid: string;
   };
-  export type NamedQueryLastExecutionTimesRequest = { names: Array<string> };
-  export type NamedQueryRequest = Partial<{
-    description: string | null;
-    is_active: boolean | null;
-    name: string | null;
-    query:
-      | HogQLQuery
-      | TrendsQuery
-      | FunnelsQuery
-      | RetentionQuery
-      | PathsQuery
-      | StickinessQuery
-      | LifecycleQuery
-      | null;
-  }>;
-  export type RefreshType =
-    | "async"
-    | "async_except_on_cache_miss"
-    | "blocking"
-    | "force_async"
-    | "force_blocking"
-    | "force_cache"
-    | "lazy_async";
-  export type NamedQueryRunRequest = Partial<{
-    client_query_id: string | null;
-    filters_override: DashboardFilter | null;
-    query_override: Record<string, unknown> | null;
-    refresh: RefreshType | null;
-    variables_override: Record<string, Record<string, unknown>> | null;
-    variables_values: Record<string, unknown> | null;
-  }>;
   export type Notebook = {
     id: string;
     short_id: string;
@@ -5859,9 +5661,7 @@ export namespace Schemas {
     allow_publicly_shared_resources?: boolean | undefined;
     member_count: string;
     is_ai_data_processing_approved?: (boolean | null) | undefined;
-    default_experiment_stats_method?:
-      | ((DefaultExperimentStatsMethodEnum | BlankEnum | NullEnum) | null)
-      | undefined;
+    default_experiment_stats_method?: ((DefaultExperimentStatsMethodEnum | BlankEnum | NullEnum) | null) | undefined;
     default_role_id?: (string | null) | undefined;
   };
   export type OrganizationBasic = {
@@ -5952,10 +5752,7 @@ export namespace Schemas {
     previous?: (string | null) | undefined;
     results: Array<BatchExportRun>;
   };
-  export type PaginatedClickhouseEventList = Partial<{
-    next: string | null;
-    results: Array<ClickhouseEvent>;
-  }>;
+  export type PaginatedClickhouseEventList = Partial<{ next: string | null; results: Array<ClickhouseEvent> }>;
   export type PaginatedCohortList = {
     count: number;
     next?: (string | null) | undefined;
@@ -6040,6 +5837,12 @@ export namespace Schemas {
     previous?: (string | null) | undefined;
     results: Array<ErrorTrackingSymbolSet>;
   };
+  export type PaginatedEvaluationList = {
+    count: number;
+    next?: (string | null) | undefined;
+    previous?: (string | null) | undefined;
+    results: Array<Evaluation>;
+  };
   export type PaginatedExperimentHoldoutList = {
     count: number;
     next?: (string | null) | undefined;
@@ -6105,6 +5908,12 @@ export namespace Schemas {
     previous?: (string | null) | undefined;
     results: Array<Insight>;
   };
+  export type PaginatedIntegrationList = {
+    count: number;
+    next?: (string | null) | undefined;
+    previous?: (string | null) | undefined;
+    results: Array<Integration>;
+  };
   export type PaginatedNotebookMinimalList = {
     count: number;
     next?: (string | null) | undefined;
@@ -6157,12 +5966,7 @@ export namespace Schemas {
     results: Array<Person>;
   }>;
   export type PluginLogEntrySourceEnum = "SYSTEM" | "PLUGIN" | "CONSOLE";
-  export type PluginLogEntryTypeEnum =
-    | "DEBUG"
-    | "LOG"
-    | "INFO"
-    | "WARN"
-    | "ERROR";
+  export type PluginLogEntryTypeEnum = "DEBUG" | "LOG" | "INFO" | "WARN" | "ERROR";
   export type PluginLogEntry = {
     id: string;
     team_id: number;
@@ -6796,19 +6600,12 @@ export namespace Schemas {
     previous?: (string | null) | undefined;
     results: Array<ProjectBackwardCompatBasic>;
   };
-  export type PropertyTypeEnum =
-    | "DateTime"
-    | "String"
-    | "Numeric"
-    | "Boolean"
-    | "Duration";
+  export type PropertyTypeEnum = "DateTime" | "String" | "Numeric" | "Boolean" | "Duration";
   export type PropertyDefinition = {
     id: string;
     name: string;
     is_numerical?: boolean | undefined;
-    property_type?:
-      | ((PropertyTypeEnum | BlankEnum | NullEnum) | null)
-      | undefined;
+    property_type?: ((PropertyTypeEnum | BlankEnum | NullEnum) | null) | undefined;
     tags?: Array<unknown> | undefined;
     is_seen_on_filtered_events: string;
   };
@@ -6891,6 +6688,8 @@ export namespace Schemas {
     person?: MinimalPerson | undefined;
     storage: string;
     retention_period_days: number | null;
+    expiry_time: string;
+    recording_ttl: string;
     snapshot_source: string | null;
     ongoing: boolean;
     activity_score: number | null;
@@ -6981,13 +6780,12 @@ export namespace Schemas {
     current_iteration?: (number | null) | undefined;
     current_iteration_start_date?: (string | null) | undefined;
     response_sampling_start_date?: (string | null) | undefined;
-    response_sampling_interval_type?:
-      | ((ResponseSamplingIntervalTypeEnum | BlankEnum | NullEnum) | null)
-      | undefined;
+    response_sampling_interval_type?: ((ResponseSamplingIntervalTypeEnum | BlankEnum | NullEnum) | null) | undefined;
     response_sampling_interval?: (number | null) | undefined;
     response_sampling_limit?: (number | null) | undefined;
     response_sampling_daily_limits?: (unknown | null) | undefined;
     enable_partial_responses?: (boolean | null) | undefined;
+    user_access_level: string | null;
   };
   export type PaginatedSurveyList = {
     count: number;
@@ -6995,13 +6793,7 @@ export namespace Schemas {
     previous?: (string | null) | undefined;
     results: Array<Survey>;
   };
-  export type TableFormatEnum =
-    | "CSV"
-    | "CSVWithNames"
-    | "Parquet"
-    | "JSONEachRow"
-    | "Delta"
-    | "DeltaS3Wrapper";
+  export type TableFormatEnum = "CSV" | "CSVWithNames" | "Parquet" | "JSONEachRow" | "Delta" | "DeltaS3Wrapper";
   export type SourceTypeEnum =
     | "Stripe"
     | "Hubspot"
@@ -7028,7 +6820,9 @@ export namespace Schemas {
     | "Polar"
     | "RevenueCat"
     | "LinkedinAds"
-    | "RedditAds";
+    | "RedditAds"
+    | "TikTokAds"
+    | "Shopify";
   export type SimpleExternalDataSourceSerializers = {
     id: string;
     created_at: string;
@@ -7057,6 +6851,8 @@ export namespace Schemas {
   };
   export type Task = {
     id: string;
+    task_number: number | null;
+    slug: string;
     title: string;
     description: string;
     origin_product: OriginProductEnum;
@@ -7077,6 +6873,30 @@ export namespace Schemas {
     next?: (string | null) | undefined;
     previous?: (string | null) | undefined;
     results: Array<Task>;
+  };
+  export type TaskProgressDetailStatusEnum = "started" | "in_progress" | "completed" | "failed";
+  export type TaskProgressDetail = {
+    id: string;
+    task: string;
+    status?: TaskProgressDetailStatusEnum | undefined;
+    current_step?: string | undefined;
+    completed_steps?: number | undefined;
+    total_steps?: number | undefined;
+    progress_percentage: string;
+    output_log?: string | undefined;
+    error_message?: string | undefined;
+    workflow_id?: string | undefined;
+    workflow_run_id?: string | undefined;
+    activity_id?: string | undefined;
+    created_at: string;
+    updated_at: string;
+    completed_at: string | null;
+  };
+  export type PaginatedTaskProgressDetailList = {
+    count: number;
+    next?: (string | null) | undefined;
+    previous?: (string | null) | undefined;
+    results: Array<TaskProgressDetail>;
   };
   export type WorkflowStage = {
     id: string;
@@ -7148,10 +6968,7 @@ export namespace Schemas {
     results: Array<UserInterview>;
   };
   export type ToolbarModeEnum = "disabled" | "toolbar";
-  export type ScenePersonalisationBasic = {
-    scene: string;
-    dashboard?: (number | null) | undefined;
-  };
+  export type ScenePersonalisationBasic = { scene: string; dashboard?: (number | null) | undefined };
   export type ThemeModeEnum = "light" | "dark" | "system";
   export type User = {
     date_joined: string;
@@ -7164,9 +6981,7 @@ export namespace Schemas {
     is_email_verified: boolean | null;
     notification_settings?: Record<string, unknown> | undefined;
     anonymize_data?: (boolean | null) | undefined;
-    toolbar_mode?:
-      | ((ToolbarModeEnum | BlankEnum | NullEnum) | null)
-      | undefined;
+    toolbar_mode?: ((ToolbarModeEnum | BlankEnum | NullEnum) | null) | undefined;
     has_password: boolean;
     id: number;
     is_staff?: boolean | undefined;
@@ -7234,10 +7049,9 @@ export namespace Schemas {
     pinned_at: string | null;
     creation_context: string;
     _create_in_folder: string;
+    user_access_level: string | null;
   }>;
-  export type PatchedAddPersonsToStaticCohortRequest = Partial<{
-    person_ids: Array<string>;
-  }>;
+  export type PatchedAddPersonsToStaticCohortRequest = Partial<{ person_ids: Array<string> }>;
   export type PatchedAnnotation = Partial<{
     id: number;
     content: string | null;
@@ -7423,11 +7237,7 @@ export namespace Schemas {
     version: string;
     project: string;
   }>;
-  export type PatchedErrorTrackingSuppressionRule = Partial<{
-    id: string;
-    filters: unknown;
-    order_key: number;
-  }>;
+  export type PatchedErrorTrackingSuppressionRule = Partial<{ id: string; filters: unknown; order_key: number }>;
   export type PatchedErrorTrackingSymbolSet = Partial<{
     id: string;
     ref: string;
@@ -7435,6 +7245,18 @@ export namespace Schemas {
     created_at: string;
     storage_ptr: string | null;
     failure_reason: string | null;
+  }>;
+  export type PatchedEvaluation = Partial<{
+    id: string;
+    name: string;
+    description: string;
+    enabled: boolean;
+    prompt: string;
+    conditions: unknown;
+    created_at: string;
+    updated_at: string;
+    created_by: UserBasic & unknown;
+    deleted: boolean;
   }>;
   export type PatchedExperiment = Partial<{
     id: number;
@@ -7467,6 +7289,7 @@ export namespace Schemas {
     conclusion_comment: string | null;
     primary_metrics_ordered_uuids: unknown | null;
     secondary_metrics_ordered_uuids: unknown | null;
+    user_access_level: string | null;
   }>;
   export type PatchedExperimentHoldout = Partial<{
     id: number;
@@ -7519,6 +7342,7 @@ export namespace Schemas {
     has_encrypted_payloads: boolean | null;
     status: string;
     evaluation_runtime: (EvaluationRuntimeEnum | BlankEnum | NullEnum) | null;
+    last_called_at: string | null;
     _create_in_folder: string;
     _should_create_usage_dashboard: boolean;
   }>;
@@ -7618,6 +7442,7 @@ export namespace Schemas {
     types: string;
     _create_in_folder: string;
     alerts: string;
+    last_viewed_at: string;
   }>;
   export type PatchedNotebook = Partial<{
     id: string;
@@ -7655,9 +7480,7 @@ export namespace Schemas {
     allow_publicly_shared_resources: boolean;
     member_count: string;
     is_ai_data_processing_approved: boolean | null;
-    default_experiment_stats_method:
-      | (DefaultExperimentStatsMethodEnum | BlankEnum | NullEnum)
-      | null;
+    default_experiment_stats_method: (DefaultExperimentStatsMethodEnum | BlankEnum | NullEnum) | null;
     default_role_id: string | null;
   }>;
   export type PatchedOrganizationDomain = Partial<{
@@ -7706,9 +7529,7 @@ export namespace Schemas {
     name: string;
     product_description: string | null;
     created_at: string;
-    effective_membership_level:
-      | (EffectiveMembershipLevelEnum & (unknown | null))
-      | null;
+    effective_membership_level: (EffectiveMembershipLevelEnum & (unknown | null)) | null;
     has_group_types: boolean;
     group_types: Array<Record<string, unknown>>;
     live_events_token: string | null;
@@ -7808,6 +7629,8 @@ export namespace Schemas {
     person: MinimalPerson;
     storage: string;
     retention_period_days: number | null;
+    expiry_time: string;
+    recording_ttl: string;
     snapshot_source: string | null;
     ongoing: boolean;
     activity_score: number | null;
@@ -7878,9 +7701,7 @@ export namespace Schemas {
     current_iteration: number | null;
     current_iteration_start_date: string | null;
     response_sampling_start_date: string | null;
-    response_sampling_interval_type:
-      | (ResponseSamplingIntervalTypeEnum | BlankEnum | NullEnum)
-      | null;
+    response_sampling_interval_type: (ResponseSamplingIntervalTypeEnum | BlankEnum | NullEnum) | null;
     response_sampling_interval: number | null;
     response_sampling_limit: number | null;
     response_sampling_daily_limits: unknown | null;
@@ -7902,6 +7723,8 @@ export namespace Schemas {
   }>;
   export type PatchedTask = Partial<{
     id: string;
+    task_number: number | null;
+    slug: string;
     title: string;
     description: string;
     origin_product: OriginProductEnum;
@@ -7917,10 +7740,25 @@ export namespace Schemas {
     created_at: string;
     updated_at: string;
   }>;
-  export type PatchedTaskUpdatePositionRequest = Partial<{ position: number }>;
-  export type PatchedTaskUpdateStageRequest = Partial<{
-    current_stage: string;
+  export type PatchedTaskProgressDetail = Partial<{
+    id: string;
+    task: string;
+    status: TaskProgressDetailStatusEnum;
+    current_step: string;
+    completed_steps: number;
+    total_steps: number;
+    progress_percentage: string;
+    output_log: string;
+    error_message: string;
+    workflow_id: string;
+    workflow_run_id: string;
+    activity_id: string;
+    created_at: string;
+    updated_at: string;
+    completed_at: string | null;
   }>;
+  export type PatchedTaskUpdatePositionRequest = Partial<{ position: number }>;
+  export type PatchedTaskUpdateStageRequest = Partial<{ current_stage: string }>;
   export type PatchedTaskWorkflow = Partial<{
     id: string;
     name: string;
@@ -7945,6 +7783,8 @@ export namespace Schemas {
   export type TeamMarketingAnalyticsConfig = Partial<{
     sources_map: unknown;
     conversion_goals: unknown;
+    attribution_window_days: number;
+    attribution_mode: AttributionModeEnum;
   }>;
   export type PatchedTeam = Partial<{
     id: number;
@@ -7998,9 +7838,7 @@ export namespace Schemas {
     primary_dashboard: number | null;
     live_events_columns: Array<string> | null;
     recording_domains: Array<string | null> | null;
-    cookieless_server_hash_mode:
-      | (CookielessServerHashModeEnum | NullEnum)
-      | null;
+    cookieless_server_hash_mode: (CookielessServerHashModeEnum | NullEnum) | null;
     human_friendly_comparison_periods: boolean | null;
     inject_web_apps: boolean | null;
     extra_settings: unknown | null;
@@ -8011,6 +7849,7 @@ export namespace Schemas {
     flags_persistence_default: boolean | null;
     feature_flag_confirmation_enabled: boolean | null;
     feature_flag_confirmation_message: string | null;
+    default_evaluation_environments_enabled: boolean | null;
     capture_dead_clicks: boolean | null;
     default_data_theme: number | null;
     revenue_analytics_config: TeamRevenueAnalyticsConfig;
@@ -8018,9 +7857,8 @@ export namespace Schemas {
     onboarding_tasks: unknown | null;
     base_currency: BaseCurrencyEnum & unknown;
     web_analytics_pre_aggregated_tables_enabled: boolean | null;
-    effective_membership_level:
-      | (EffectiveMembershipLevelEnum & (unknown | null))
-      | null;
+    experiment_recalculation_time: string | null;
+    effective_membership_level: (EffectiveMembershipLevelEnum & (unknown | null)) | null;
     has_group_types: boolean;
     group_types: Array<Record<string, unknown>>;
     live_events_token: string | null;
@@ -8097,9 +7935,7 @@ export namespace Schemas {
     name?: string | undefined;
     product_description?: (string | null) | undefined;
     created_at: string;
-    effective_membership_level:
-      | (EffectiveMembershipLevelEnum & (unknown | null))
-      | null;
+    effective_membership_level: (EffectiveMembershipLevelEnum & (unknown | null)) | null;
     has_group_types: boolean;
     group_types: Array<Record<string, unknown>>;
     live_events_token: string | null;
@@ -8128,13 +7964,9 @@ export namespace Schemas {
     capture_performance_opt_in?: (boolean | null) | undefined;
     session_recording_opt_in?: boolean | undefined;
     session_recording_sample_rate?: (string | null) | undefined;
-    session_recording_minimum_duration_milliseconds?:
-      | (number | null)
-      | undefined;
+    session_recording_minimum_duration_milliseconds?: (number | null) | undefined;
     session_recording_linked_flag?: (unknown | null) | undefined;
-    session_recording_network_payload_capture_config?:
-      | (unknown | null)
-      | undefined;
+    session_recording_network_payload_capture_config?: (unknown | null) | undefined;
     session_recording_masking_config?: (unknown | null) | undefined;
     session_replay_config?: (unknown | null) | undefined;
     survey_config?: (unknown | null) | undefined;
@@ -8184,10 +8016,7 @@ export namespace Schemas {
     operator?: ((OperatorEnum | BlankEnum | NullEnum) | null) | undefined;
     type?: (PropertyItemTypeEnum | BlankEnum) | undefined;
   };
-  export type Property = {
-    type?: (PropertyTypeEnum & unknown) | undefined;
-    values: Array<PropertyItem>;
-  };
+  export type Property = { type?: (PropertyTypeEnum & unknown) | undefined; values: Array<PropertyItem> };
   export type SavedInsightNode = {
     allowSorting?: (boolean | null) | undefined;
     context?: (DataTableNodeViewPropsContext | null) | undefined;
@@ -8213,9 +8042,7 @@ export namespace Schemas {
     showLastComputationRefresh?: (boolean | null) | undefined;
     showOpenEditorButton?: (boolean | null) | undefined;
     showPersistentColumnConfigurator?: (boolean | null) | undefined;
-    showPropertyFilter?:
-      | (boolean | Array<TaxonomicFilterGroupType> | null)
-      | undefined;
+    showPropertyFilter?: (boolean | Array<TaxonomicFilterGroupType> | null) | undefined;
     showReload?: (boolean | null) | undefined;
     showResults?: (boolean | null) | undefined;
     showResultsTable?: (boolean | null) | undefined;
@@ -8298,6 +8125,7 @@ export namespace Schemas {
       | RevenueAnalyticsOverviewQuery
       | RevenueAnalyticsTopCustomersQuery
       | MarketingAnalyticsTableQuery
+      | MarketingAnalyticsAggregatedQuery
       | DataVisualizationNode
       | DataTableNode
       | SavedInsightNode
@@ -8317,11 +8145,10 @@ export namespace Schemas {
       | ActorsPropertyTaxonomyQuery
       | TracesQuery
       | TraceQuery
-      | VectorSearchQuery;
+      | VectorSearchQuery
+      | UsageMetricsQuery;
     refresh?: (RefreshType | null) | undefined;
-    variables_override?:
-      | (Record<string, Record<string, unknown>> | null)
-      | undefined;
+    variables_override?: (Record<string, Record<string, unknown>> | null) | undefined;
   };
   export type QueryResponseAlternative1 = {
     columns: Array<unknown>;
@@ -8494,24 +8321,14 @@ export namespace Schemas {
     credible_intervals: Record<string, Array<number>> | null;
     insight: Array<Record<string, unknown>> | null;
     kind: string;
-    metric:
-      | ExperimentMeanMetric
-      | ExperimentFunnelMetric
-      | ExperimentRatioMetric
-      | null;
+    metric: ExperimentMeanMetric | ExperimentFunnelMetric | ExperimentRatioMetric | null;
     p_value: number | null;
     probability: Record<string, number> | null;
     significance_code: ExperimentSignificanceCode | null;
     significant: boolean | null;
     stats_version: number | null;
-    variant_results:
-      | Array<ExperimentVariantResultFrequentist>
-      | Array<ExperimentVariantResultBayesian>
-      | null;
-    variants:
-      | Array<ExperimentVariantTrendsBaseStats>
-      | Array<ExperimentVariantFunnelsBaseStats>
-      | null;
+    variant_results: Array<ExperimentVariantResultFrequentist> | Array<ExperimentVariantResultBayesian> | null;
+    variants: Array<ExperimentVariantTrendsBaseStats> | Array<ExperimentVariantFunnelsBaseStats> | null;
   }>;
   export type QueryResponseAlternative18 = {
     date_range: DateRange;
@@ -8653,6 +8470,16 @@ export namespace Schemas {
     types?: (Array<unknown> | null) | undefined;
   };
   export type QueryResponseAlternative32 = {
+    error?: (string | null) | undefined;
+    hogql?: (string | null) | undefined;
+    modifiers?: (HogQLQueryModifiers | null) | undefined;
+    query_status?: (QueryStatus | null) | undefined;
+    resolved_date_range?: (ResolvedDateRangeResponse | null) | undefined;
+    results: Record<string, unknown>;
+    samplingRate?: (SamplingRate | null) | undefined;
+    timings?: (Array<QueryTiming> | null) | undefined;
+  };
+  export type QueryResponseAlternative33 = {
     columns: Array<unknown>;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -8666,7 +8493,7 @@ export namespace Schemas {
     timings?: (Array<QueryTiming> | null) | undefined;
     types: Array<string>;
   };
-  export type QueryResponseAlternative33 = {
+  export type QueryResponseAlternative34 = {
     columns: Array<unknown>;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -8681,7 +8508,7 @@ export namespace Schemas {
     timings?: (Array<QueryTiming> | null) | undefined;
     types?: (Array<string> | null) | undefined;
   };
-  export type QueryResponseAlternative34 = {
+  export type QueryResponseAlternative35 = {
     columns: Array<unknown>;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -8696,7 +8523,7 @@ export namespace Schemas {
     timings?: (Array<QueryTiming> | null) | undefined;
     types: Array<string>;
   };
-  export type QueryResponseAlternative35 = {
+  export type QueryResponseAlternative36 = {
     clickhouse?: (string | null) | undefined;
     columns?: (Array<unknown> | null) | undefined;
     error?: (string | null) | undefined;
@@ -8714,7 +8541,7 @@ export namespace Schemas {
     timings?: (Array<QueryTiming> | null) | undefined;
     types?: (Array<unknown> | null) | undefined;
   };
-  export type QueryResponseAlternative36 = {
+  export type QueryResponseAlternative37 = {
     dateFrom?: (string | null) | undefined;
     dateTo?: (string | null) | undefined;
     error?: (string | null) | undefined;
@@ -8725,22 +8552,6 @@ export namespace Schemas {
     results: Array<WebOverviewItem>;
     samplingRate?: (SamplingRate | null) | undefined;
     timings?: (Array<QueryTiming> | null) | undefined;
-    usedPreAggregatedTables?: (boolean | null) | undefined;
-  };
-  export type QueryResponseAlternative37 = {
-    columns?: (Array<unknown> | null) | undefined;
-    error?: (string | null) | undefined;
-    hasMore?: (boolean | null) | undefined;
-    hogql?: (string | null) | undefined;
-    limit?: (number | null) | undefined;
-    modifiers?: (HogQLQueryModifiers | null) | undefined;
-    offset?: (number | null) | undefined;
-    query_status?: (QueryStatus | null) | undefined;
-    resolved_date_range?: (ResolvedDateRangeResponse | null) | undefined;
-    results: Array<unknown>;
-    samplingRate?: (SamplingRate | null) | undefined;
-    timings?: (Array<QueryTiming> | null) | undefined;
-    types?: (Array<unknown> | null) | undefined;
     usedPreAggregatedTables?: (boolean | null) | undefined;
   };
   export type QueryResponseAlternative38 = {
@@ -8757,8 +8568,24 @@ export namespace Schemas {
     samplingRate?: (SamplingRate | null) | undefined;
     timings?: (Array<QueryTiming> | null) | undefined;
     types?: (Array<unknown> | null) | undefined;
+    usedPreAggregatedTables?: (boolean | null) | undefined;
   };
-  export type QueryResponseAlternative40 = {
+  export type QueryResponseAlternative39 = {
+    columns?: (Array<unknown> | null) | undefined;
+    error?: (string | null) | undefined;
+    hasMore?: (boolean | null) | undefined;
+    hogql?: (string | null) | undefined;
+    limit?: (number | null) | undefined;
+    modifiers?: (HogQLQueryModifiers | null) | undefined;
+    offset?: (number | null) | undefined;
+    query_status?: (QueryStatus | null) | undefined;
+    resolved_date_range?: (ResolvedDateRangeResponse | null) | undefined;
+    results: Array<unknown>;
+    samplingRate?: (SamplingRate | null) | undefined;
+    timings?: (Array<QueryTiming> | null) | undefined;
+    types?: (Array<unknown> | null) | undefined;
+  };
+  export type QueryResponseAlternative41 = {
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
@@ -8767,7 +8594,7 @@ export namespace Schemas {
     results: Array<WebVitalsPathBreakdownResult>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative41 = {
+  export type QueryResponseAlternative42 = {
     columns?: (Array<unknown> | null) | undefined;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -8781,7 +8608,7 @@ export namespace Schemas {
     timings?: (Array<QueryTiming> | null) | undefined;
     types?: (Array<unknown> | null) | undefined;
   };
-  export type QueryResponseAlternative42 = {
+  export type QueryResponseAlternative43 = {
     columns?: (Array<string> | null) | undefined;
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
@@ -8791,7 +8618,7 @@ export namespace Schemas {
     results: Array<unknown>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative43 = {
+  export type QueryResponseAlternative44 = {
     columns?: (Array<string> | null) | undefined;
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
@@ -8801,7 +8628,7 @@ export namespace Schemas {
     results: unknown;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative44 = {
+  export type QueryResponseAlternative45 = {
     columns?: (Array<string> | null) | undefined;
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
@@ -8811,7 +8638,7 @@ export namespace Schemas {
     results: Array<RevenueAnalyticsMRRQueryResultItem>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative45 = {
+  export type QueryResponseAlternative46 = {
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
@@ -8820,7 +8647,7 @@ export namespace Schemas {
     results: Array<RevenueAnalyticsOverviewItem>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative46 = {
+  export type QueryResponseAlternative47 = {
     columns?: (Array<string> | null) | undefined;
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
@@ -8830,7 +8657,7 @@ export namespace Schemas {
     results: unknown;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative47 = {
+  export type QueryResponseAlternative48 = {
     columns?: (Array<unknown> | null) | undefined;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -8844,7 +8671,7 @@ export namespace Schemas {
     timings?: (Array<QueryTiming> | null) | undefined;
     types?: (Array<unknown> | null) | undefined;
   };
-  export type QueryResponseAlternative49 = {
+  export type QueryResponseAlternative50 = {
     columns?: (Array<unknown> | null) | undefined;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -8859,7 +8686,17 @@ export namespace Schemas {
     timings?: (Array<QueryTiming> | null) | undefined;
     types?: (Array<unknown> | null) | undefined;
   };
-  export type QueryResponseAlternative50 = {
+  export type QueryResponseAlternative51 = {
+    error?: (string | null) | undefined;
+    hogql?: (string | null) | undefined;
+    modifiers?: (HogQLQueryModifiers | null) | undefined;
+    query_status?: (QueryStatus | null) | undefined;
+    resolved_date_range?: (ResolvedDateRangeResponse | null) | undefined;
+    results: Record<string, unknown>;
+    samplingRate?: (SamplingRate | null) | undefined;
+    timings?: (Array<QueryTiming> | null) | undefined;
+  };
+  export type QueryResponseAlternative52 = {
     columns?: (Array<string> | null) | undefined;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -8872,7 +8709,7 @@ export namespace Schemas {
     results: Array<ErrorTrackingIssue>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative52 = {
+  export type QueryResponseAlternative54 = {
     credible_intervals: Record<string, Array<number>>;
     expected_loss: number;
     funnels_query?: (FunnelsQuery | null) | undefined;
@@ -8884,7 +8721,7 @@ export namespace Schemas {
     stats_version?: (number | null) | undefined;
     variants: Array<ExperimentVariantFunnelsBaseStats>;
   };
-  export type QueryResponseAlternative53 = {
+  export type QueryResponseAlternative55 = {
     count_query?: (TrendsQuery | null) | undefined;
     credible_intervals: Record<string, Array<number>>;
     exposure_query?: (TrendsQuery | null) | undefined;
@@ -8897,7 +8734,7 @@ export namespace Schemas {
     stats_version?: (number | null) | undefined;
     variants: Array<ExperimentVariantTrendsBaseStats>;
   };
-  export type QueryResponseAlternative54 = {
+  export type QueryResponseAlternative56 = {
     columns?: (Array<string> | null) | undefined;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -8910,7 +8747,7 @@ export namespace Schemas {
     results: Array<LLMTrace>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative55 = {
+  export type QueryResponseAlternative57 = {
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
     hogql?: (string | null) | undefined;
@@ -8920,7 +8757,7 @@ export namespace Schemas {
     results: Array<Record<string, unknown>>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative56 = {
+  export type QueryResponseAlternative58 = {
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
     isUdf?: (boolean | null) | undefined;
@@ -8930,7 +8767,7 @@ export namespace Schemas {
     results: unknown;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative57 = {
+  export type QueryResponseAlternative59 = {
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
@@ -8939,7 +8776,7 @@ export namespace Schemas {
     results: Array<RetentionResult>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative58 = {
+  export type QueryResponseAlternative60 = {
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
@@ -8948,7 +8785,7 @@ export namespace Schemas {
     results: Array<PathsLink>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative59 = {
+  export type QueryResponseAlternative61 = {
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
@@ -8957,7 +8794,7 @@ export namespace Schemas {
     results: Array<Record<string, unknown>>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative61 = {
+  export type QueryResponseAlternative63 = {
     columns?: (Array<unknown> | null) | undefined;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -8971,11 +8808,8 @@ export namespace Schemas {
     timings?: (Array<QueryTiming> | null) | undefined;
     types?: (Array<unknown> | null) | undefined;
   };
-  export type QueryResponseAlternative62 = {
-    joins: Array<DataWarehouseViewLink>;
-    tables: Record<string, unknown>;
-  };
-  export type QueryResponseAlternative63 = {
+  export type QueryResponseAlternative64 = { joins: Array<DataWarehouseViewLink>; tables: Record<string, unknown> };
+  export type QueryResponseAlternative65 = {
     columns?: (Array<string> | null) | undefined;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -8988,8 +8822,8 @@ export namespace Schemas {
     results: unknown;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative64 = { questions: Array<string> };
-  export type QueryResponseAlternative65 = {
+  export type QueryResponseAlternative66 = { questions: Array<string> };
+  export type QueryResponseAlternative67 = {
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
@@ -8998,7 +8832,7 @@ export namespace Schemas {
     results: Array<TeamTaxonomyItem>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative66 = {
+  export type QueryResponseAlternative68 = {
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
@@ -9007,18 +8841,16 @@ export namespace Schemas {
     results: Array<EventTaxonomyItem>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative67 = {
+  export type QueryResponseAlternative69 = {
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
     query_status?: (QueryStatus | null) | undefined;
     resolved_date_range?: (ResolvedDateRangeResponse | null) | undefined;
-    results:
-      | ActorsPropertyTaxonomyResponse
-      | Array<ActorsPropertyTaxonomyResponse>;
+    results: ActorsPropertyTaxonomyResponse | Array<ActorsPropertyTaxonomyResponse>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative68 = {
+  export type QueryResponseAlternative70 = {
     columns?: (Array<string> | null) | undefined;
     error?: (string | null) | undefined;
     hasMore?: (boolean | null) | undefined;
@@ -9031,13 +8863,22 @@ export namespace Schemas {
     results: Array<LLMTrace>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
-  export type QueryResponseAlternative70 = {
+  export type QueryResponseAlternative72 = {
     error?: (string | null) | undefined;
     hogql?: (string | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
     query_status?: (QueryStatus | null) | undefined;
     resolved_date_range?: (ResolvedDateRangeResponse | null) | undefined;
     results: Array<VectorSearchResponseItem>;
+    timings?: (Array<QueryTiming> | null) | undefined;
+  };
+  export type QueryResponseAlternative73 = {
+    error?: (string | null) | undefined;
+    hogql?: (string | null) | undefined;
+    modifiers?: (HogQLQueryModifiers | null) | undefined;
+    query_status?: (QueryStatus | null) | undefined;
+    resolved_date_range?: (ResolvedDateRangeResponse | null) | undefined;
+    results: Array<UsageMetric>;
     timings?: (Array<QueryTiming> | null) | undefined;
   };
   export type QueryResponseAlternative =
@@ -9070,15 +8911,15 @@ export namespace Schemas {
     | QueryResponseAlternative29
     | QueryResponseAlternative30
     | QueryResponseAlternative31
-    | unknown
     | QueryResponseAlternative32
+    | unknown
     | QueryResponseAlternative33
     | QueryResponseAlternative34
     | QueryResponseAlternative35
     | QueryResponseAlternative36
     | QueryResponseAlternative37
     | QueryResponseAlternative38
-    | QueryResponseAlternative40
+    | QueryResponseAlternative39
     | QueryResponseAlternative41
     | QueryResponseAlternative42
     | QueryResponseAlternative43
@@ -9086,25 +8927,28 @@ export namespace Schemas {
     | QueryResponseAlternative45
     | QueryResponseAlternative46
     | QueryResponseAlternative47
-    | QueryResponseAlternative49
+    | QueryResponseAlternative48
     | QueryResponseAlternative50
+    | QueryResponseAlternative51
     | QueryResponseAlternative52
-    | QueryResponseAlternative53
     | QueryResponseAlternative54
     | QueryResponseAlternative55
     | QueryResponseAlternative56
     | QueryResponseAlternative57
     | QueryResponseAlternative58
     | QueryResponseAlternative59
+    | QueryResponseAlternative60
     | QueryResponseAlternative61
-    | QueryResponseAlternative62
     | QueryResponseAlternative63
     | QueryResponseAlternative64
     | QueryResponseAlternative65
     | QueryResponseAlternative66
     | QueryResponseAlternative67
     | QueryResponseAlternative68
-    | QueryResponseAlternative70;
+    | QueryResponseAlternative69
+    | QueryResponseAlternative70
+    | QueryResponseAlternative72
+    | QueryResponseAlternative73;
   export type QueryStatusResponse = { query_status: QueryStatus };
   export type QueryUpgradeRequest = {
     query:
@@ -9146,6 +8990,7 @@ export namespace Schemas {
       | RevenueAnalyticsOverviewQuery
       | RevenueAnalyticsTopCustomersQuery
       | MarketingAnalyticsTableQuery
+      | MarketingAnalyticsAggregatedQuery
       | DataVisualizationNode
       | DataTableNode
       | SavedInsightNode
@@ -9165,7 +9010,8 @@ export namespace Schemas {
       | ActorsPropertyTaxonomyQuery
       | TracesQuery
       | TraceQuery
-      | VectorSearchQuery;
+      | VectorSearchQuery
+      | UsageMetricsQuery;
   };
   export type QueryUpgradeResponse = {
     query:
@@ -9207,6 +9053,7 @@ export namespace Schemas {
       | RevenueAnalyticsOverviewQuery
       | RevenueAnalyticsTopCustomersQuery
       | MarketingAnalyticsTableQuery
+      | MarketingAnalyticsAggregatedQuery
       | DataVisualizationNode
       | DataTableNode
       | SavedInsightNode
@@ -9226,12 +9073,10 @@ export namespace Schemas {
       | ActorsPropertyTaxonomyQuery
       | TracesQuery
       | TraceQuery
-      | VectorSearchQuery;
+      | VectorSearchQuery
+      | UsageMetricsQuery;
   };
-  export type SessionSummaries = {
-    session_ids: Array<string>;
-    focus_area?: string | undefined;
-  };
+  export type SessionSummaries = { session_ids: Array<string>; focus_area?: string | undefined };
   export type SharingConfiguration = {
     created_at: string;
     enabled?: boolean | undefined;
@@ -9240,11 +9085,7 @@ export namespace Schemas {
     password_required?: boolean | undefined;
     share_passwords: string;
   };
-  export type Status219Enum =
-    | "started"
-    | "in_progress"
-    | "completed"
-    | "failed";
+  export type Status219Enum = "started" | "in_progress" | "completed" | "failed";
   export type SurveySerializerCreateUpdateOnly = {
     id: string;
     name: string;
@@ -9273,22 +9114,16 @@ export namespace Schemas {
     current_iteration?: (number | null) | undefined;
     current_iteration_start_date?: (string | null) | undefined;
     response_sampling_start_date?: (string | null) | undefined;
-    response_sampling_interval_type?:
-      | ((ResponseSamplingIntervalTypeEnum | BlankEnum | NullEnum) | null)
-      | undefined;
+    response_sampling_interval_type?: ((ResponseSamplingIntervalTypeEnum | BlankEnum | NullEnum) | null) | undefined;
     response_sampling_interval?: (number | null) | undefined;
     response_sampling_limit?: (number | null) | undefined;
     response_sampling_daily_limits?: (unknown | null) | undefined;
     enable_partial_responses?: (boolean | null) | undefined;
     _create_in_folder?: string | undefined;
   };
-  export type TaskBulkReorderRequest = {
-    columns: Record<string, Array<string>>;
-  };
-  export type TaskBulkReorderResponse = {
-    updated: number;
-    tasks: Array<Record<string, unknown>>;
-  };
+  export type TaskAttachPullRequestRequest = { pr_url: string; branch?: string | undefined };
+  export type TaskBulkReorderRequest = { columns: Record<string, Array<string>> };
+  export type TaskBulkReorderResponse = { updated: number; tasks: Array<Record<string, unknown>> };
   export type TaskProgressResponse = {
     has_progress: boolean;
     id?: string | undefined;
@@ -9318,10 +9153,9 @@ export namespace Schemas {
     updated_at: string;
     workflow_id: string;
   };
-  export type TaskProgressStreamResponse = {
-    progress_updates: Array<TaskProgressUpdate>;
-    server_time: string;
-  };
+  export type TaskProgressStreamResponse = { progress_updates: Array<TaskProgressUpdate>; server_time: string };
+  export type TaskProgressTaskRequest = Partial<{ next_stage_id: string; auto: boolean }>;
+  export type TaskSetBranchRequest = { branch: string };
   export type Team = {
     id: number;
     uuid: string;
@@ -9359,36 +9193,22 @@ export namespace Schemas {
     capture_performance_opt_in?: (boolean | null) | undefined;
     session_recording_opt_in?: boolean | undefined;
     session_recording_sample_rate?: (string | null) | undefined;
-    session_recording_minimum_duration_milliseconds?:
-      | (number | null)
-      | undefined;
+    session_recording_minimum_duration_milliseconds?: (number | null) | undefined;
     session_recording_linked_flag?: (unknown | null) | undefined;
-    session_recording_network_payload_capture_config?:
-      | (unknown | null)
-      | undefined;
+    session_recording_network_payload_capture_config?: (unknown | null) | undefined;
     session_recording_masking_config?: (unknown | null) | undefined;
-    session_recording_url_trigger_config?:
-      | (Array<unknown | null> | null)
-      | undefined;
-    session_recording_url_blocklist_config?:
-      | (Array<unknown | null> | null)
-      | undefined;
-    session_recording_event_trigger_config?:
-      | (Array<string | null> | null)
-      | undefined;
+    session_recording_url_trigger_config?: (Array<unknown | null> | null) | undefined;
+    session_recording_url_blocklist_config?: (Array<unknown | null> | null) | undefined;
+    session_recording_event_trigger_config?: (Array<string | null> | null) | undefined;
     session_recording_trigger_match_type_config?: (string | null) | undefined;
-    session_recording_retention_period?:
-      | SessionRecordingRetentionPeriodEnum
-      | undefined;
+    session_recording_retention_period?: SessionRecordingRetentionPeriodEnum | undefined;
     session_replay_config?: (unknown | null) | undefined;
     survey_config?: (unknown | null) | undefined;
     week_start_day?: ((WeekStartDayEnum | NullEnum) | null) | undefined;
     primary_dashboard?: (number | null) | undefined;
     live_events_columns?: (Array<string> | null) | undefined;
     recording_domains?: (Array<string | null> | null) | undefined;
-    cookieless_server_hash_mode?:
-      | ((CookielessServerHashModeEnum | NullEnum) | null)
-      | undefined;
+    cookieless_server_hash_mode?: ((CookielessServerHashModeEnum | NullEnum) | null) | undefined;
     human_friendly_comparison_periods?: (boolean | null) | undefined;
     inject_web_apps?: (boolean | null) | undefined;
     extra_settings?: (unknown | null) | undefined;
@@ -9399,6 +9219,7 @@ export namespace Schemas {
     flags_persistence_default?: (boolean | null) | undefined;
     feature_flag_confirmation_enabled?: (boolean | null) | undefined;
     feature_flag_confirmation_message?: (string | null) | undefined;
+    default_evaluation_environments_enabled?: (boolean | null) | undefined;
     capture_dead_clicks?: (boolean | null) | undefined;
     default_data_theme?: (number | null) | undefined;
     revenue_analytics_config?: TeamRevenueAnalyticsConfig | undefined;
@@ -9406,18 +9227,14 @@ export namespace Schemas {
     onboarding_tasks?: (unknown | null) | undefined;
     base_currency?: (BaseCurrencyEnum & unknown) | undefined;
     web_analytics_pre_aggregated_tables_enabled?: (boolean | null) | undefined;
-    effective_membership_level:
-      | (EffectiveMembershipLevelEnum & (unknown | null))
-      | null;
+    experiment_recalculation_time?: (string | null) | undefined;
+    effective_membership_level: (EffectiveMembershipLevelEnum & (unknown | null)) | null;
     has_group_types: boolean;
     group_types: Array<Record<string, unknown>>;
     live_events_token: string | null;
     product_intents: string;
   };
-  export type WebAnalyticsBreakdownResponse = {
-    next?: (string | null) | undefined;
-    results: Array<unknown>;
-  };
+  export type WebAnalyticsBreakdownResponse = { next?: (string | null) | undefined; results: Array<unknown> };
   export type WebAnalyticsOverviewResponse = {
     visitors: number;
     views: number;
@@ -9995,9 +9812,7 @@ export namespace Endpoints {
         id__in: Array<string>;
         limit: number;
         offset: number;
-        order_by: Array<
-          "-created_at" | "-updated_at" | "created_at" | "updated_at"
-        >;
+        order_by: Array<"-created_at" | "-updated_at" | "created_at" | "updated_at">;
         search: string;
       }>;
       path: { project_id: string };
@@ -10055,6 +9870,95 @@ export namespace Endpoints {
     };
     responses: { 405: unknown };
   };
+  export type get_Environments_endpoints_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/endpoints/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_endpoints_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/endpoints/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.EndpointRequest;
+    };
+    responses: { 201: unknown };
+  };
+  export type get_Environments_endpoints_retrieve_2 = {
+    method: "GET";
+    path: "/api/environments/{project_id}/endpoints/{name}/";
+    requestFormat: "json";
+    parameters: {
+      path: { name: string; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type put_Environments_endpoints_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/endpoints/{name}/";
+    requestFormat: "json";
+    parameters: {
+      path: { name: string; project_id: string };
+
+      body: Schemas.EndpointRequest;
+    };
+    responses: { 200: unknown };
+  };
+  export type patch_Environments_endpoints_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/endpoints/{name}/";
+    requestFormat: "json";
+    parameters: {
+      path: { name: string; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type delete_Environments_endpoints_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/endpoints/{name}/";
+    requestFormat: "json";
+    parameters: {
+      path: { name: string; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type get_Environments_endpoints_run_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/endpoints/{name}/run/";
+    requestFormat: "json";
+    parameters: {
+      path: { name: string; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_endpoints_run_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/endpoints/{name}/run/";
+    requestFormat: "json";
+    parameters: {
+      path: { name: string; project_id: string };
+
+      body: Schemas.EndpointRunRequest;
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_endpoints_last_execution_times_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/endpoints/last_execution_times/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.EndpointLastExecutionTimesRequest;
+    };
+    responses: { 200: Schemas.QueryStatusResponse };
+  };
   export type get_Environments_error_tracking_assignment_rules_list = {
     method: "GET";
     path: "/api/environments/{project_id}/error_tracking/assignment_rules/";
@@ -10096,18 +10000,17 @@ export namespace Endpoints {
     };
     responses: { 200: Schemas.ErrorTrackingAssignmentRule };
   };
-  export type patch_Environments_error_tracking_assignment_rules_partial_update =
-    {
-      method: "PATCH";
-      path: "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/";
-      requestFormat: "json";
-      parameters: {
-        path: { id: string; project_id: string };
+  export type patch_Environments_error_tracking_assignment_rules_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
 
-        body: Schemas.PatchedErrorTrackingAssignmentRule;
-      };
-      responses: { 200: Schemas.ErrorTrackingAssignmentRule };
+      body: Schemas.PatchedErrorTrackingAssignmentRule;
     };
+    responses: { 200: Schemas.ErrorTrackingAssignmentRule };
+  };
   export type delete_Environments_error_tracking_assignment_rules_destroy = {
     method: "DELETE";
     path: "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/";
@@ -10117,18 +10020,17 @@ export namespace Endpoints {
     };
     responses: { 204: unknown };
   };
-  export type patch_Environments_error_tracking_assignment_rules_reorder_partial_update =
-    {
-      method: "PATCH";
-      path: "/api/environments/{project_id}/error_tracking/assignment_rules/reorder/";
-      requestFormat: "json";
-      parameters: {
-        path: { project_id: string };
+  export type patch_Environments_error_tracking_assignment_rules_reorder_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/error_tracking/assignment_rules/reorder/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
 
-        body: Schemas.PatchedErrorTrackingAssignmentRule;
-      };
-      responses: { 200: unknown };
+      body: Schemas.PatchedErrorTrackingAssignmentRule;
     };
+    responses: { 200: unknown };
+  };
   export type get_Environments_error_tracking_fingerprints_list = {
     method: "GET";
     path: "/api/environments/{project_id}/error_tracking/fingerprints/";
@@ -10198,18 +10100,17 @@ export namespace Endpoints {
     };
     responses: { 200: Schemas.ErrorTrackingGroupingRule };
   };
-  export type patch_Environments_error_tracking_grouping_rules_partial_update =
-    {
-      method: "PATCH";
-      path: "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/";
-      requestFormat: "json";
-      parameters: {
-        path: { id: string; project_id: string };
+  export type patch_Environments_error_tracking_grouping_rules_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
 
-        body: Schemas.PatchedErrorTrackingGroupingRule;
-      };
-      responses: { 200: Schemas.ErrorTrackingGroupingRule };
+      body: Schemas.PatchedErrorTrackingGroupingRule;
     };
+    responses: { 200: Schemas.ErrorTrackingGroupingRule };
+  };
   export type delete_Environments_error_tracking_grouping_rules_destroy = {
     method: "DELETE";
     path: "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/";
@@ -10219,18 +10120,17 @@ export namespace Endpoints {
     };
     responses: { 204: unknown };
   };
-  export type patch_Environments_error_tracking_grouping_rules_reorder_partial_update =
-    {
-      method: "PATCH";
-      path: "/api/environments/{project_id}/error_tracking/grouping_rules/reorder/";
-      requestFormat: "json";
-      parameters: {
-        path: { project_id: string };
+  export type patch_Environments_error_tracking_grouping_rules_reorder_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/error_tracking/grouping_rules/reorder/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
 
-        body: Schemas.PatchedErrorTrackingGroupingRule;
-      };
-      responses: { 200: unknown };
+      body: Schemas.PatchedErrorTrackingGroupingRule;
     };
+    responses: { 200: unknown };
+  };
   export type get_Environments_error_tracking_releases_list = {
     method: "GET";
     path: "/api/environments/{project_id}/error_tracking/releases/";
@@ -10333,18 +10233,17 @@ export namespace Endpoints {
     };
     responses: { 200: Schemas.ErrorTrackingSuppressionRule };
   };
-  export type patch_Environments_error_tracking_suppression_rules_partial_update =
-    {
-      method: "PATCH";
-      path: "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/";
-      requestFormat: "json";
-      parameters: {
-        path: { id: string; project_id: string };
+  export type patch_Environments_error_tracking_suppression_rules_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
 
-        body: Schemas.PatchedErrorTrackingSuppressionRule;
-      };
-      responses: { 200: Schemas.ErrorTrackingSuppressionRule };
+      body: Schemas.PatchedErrorTrackingSuppressionRule;
     };
+    responses: { 200: Schemas.ErrorTrackingSuppressionRule };
+  };
   export type delete_Environments_error_tracking_suppression_rules_destroy = {
     method: "DELETE";
     path: "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/";
@@ -10354,18 +10253,17 @@ export namespace Endpoints {
     };
     responses: { 204: unknown };
   };
-  export type patch_Environments_error_tracking_suppression_rules_reorder_partial_update =
-    {
-      method: "PATCH";
-      path: "/api/environments/{project_id}/error_tracking/suppression_rules/reorder/";
-      requestFormat: "json";
-      parameters: {
-        path: { project_id: string };
+  export type patch_Environments_error_tracking_suppression_rules_reorder_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/error_tracking/suppression_rules/reorder/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
 
-        body: Schemas.PatchedErrorTrackingSuppressionRule;
-      };
-      responses: { 200: unknown };
+      body: Schemas.PatchedErrorTrackingSuppressionRule;
     };
+    responses: { 200: unknown };
+  };
   export type get_Environments_error_tracking_symbol_sets_list = {
     method: "GET";
     path: "/api/environments/{project_id}/error_tracking/symbol_sets/";
@@ -10427,54 +10325,127 @@ export namespace Endpoints {
     };
     responses: { 204: unknown };
   };
-  export type put_Environments_error_tracking_symbol_sets_finish_upload_update =
-    {
-      method: "PUT";
-      path: "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/finish_upload/";
-      requestFormat: "json";
-      parameters: {
-        path: { id: string; project_id: string };
+  export type put_Environments_error_tracking_symbol_sets_finish_upload_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/finish_upload/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
 
-        body: Schemas.ErrorTrackingSymbolSet;
-      };
-      responses: { 200: unknown };
+      body: Schemas.ErrorTrackingSymbolSet;
     };
-  export type post_Environments_error_tracking_symbol_sets_bulk_finish_upload_create =
-    {
-      method: "POST";
-      path: "/api/environments/{project_id}/error_tracking/symbol_sets/bulk_finish_upload/";
-      requestFormat: "json";
-      parameters: {
-        path: { project_id: string };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_error_tracking_symbol_sets_bulk_finish_upload_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/error_tracking/symbol_sets/bulk_finish_upload/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
 
-        body: Schemas.ErrorTrackingSymbolSet;
-      };
-      responses: { 200: unknown };
+      body: Schemas.ErrorTrackingSymbolSet;
     };
-  export type post_Environments_error_tracking_symbol_sets_bulk_start_upload_create =
-    {
-      method: "POST";
-      path: "/api/environments/{project_id}/error_tracking/symbol_sets/bulk_start_upload/";
-      requestFormat: "json";
-      parameters: {
-        path: { project_id: string };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_error_tracking_symbol_sets_bulk_start_upload_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/error_tracking/symbol_sets/bulk_start_upload/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
 
-        body: Schemas.ErrorTrackingSymbolSet;
-      };
-      responses: { 200: unknown };
+      body: Schemas.ErrorTrackingSymbolSet;
     };
-  export type post_Environments_error_tracking_symbol_sets_start_upload_create =
-    {
-      method: "POST";
-      path: "/api/environments/{project_id}/error_tracking/symbol_sets/start_upload/";
-      requestFormat: "form-data";
-      parameters: {
-        path: { project_id: string };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_error_tracking_symbol_sets_start_upload_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/error_tracking/symbol_sets/start_upload/";
+    requestFormat: "form-data";
+    parameters: {
+      path: { project_id: string };
 
-        body: Schemas.ErrorTrackingSymbolSet;
-      };
-      responses: { 200: unknown };
+      body: Schemas.ErrorTrackingSymbolSet;
     };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_evaluation_runs_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/evaluation_runs/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+    };
+    responses: { 201: unknown };
+  };
+  export type get_Environments_evaluations_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/evaluations/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{
+        enabled: boolean;
+        id__in: Array<string>;
+        limit: number;
+        offset: number;
+        order_by: Array<"-created_at" | "-name" | "-updated_at" | "created_at" | "name" | "updated_at">;
+        search: string;
+      }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedEvaluationList };
+  };
+  export type post_Environments_evaluations_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/evaluations/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.Evaluation;
+    };
+    responses: { 201: Schemas.Evaluation };
+  };
+  export type get_Environments_evaluations_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/evaluations/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.Evaluation };
+  };
+  export type put_Environments_evaluations_update = {
+    method: "PUT";
+    path: "/api/environments/{project_id}/evaluations/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.Evaluation;
+    };
+    responses: { 200: Schemas.Evaluation };
+  };
+  export type patch_Environments_evaluations_partial_update = {
+    method: "PATCH";
+    path: "/api/environments/{project_id}/evaluations/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.PatchedEvaluation;
+    };
+    responses: { 200: Schemas.Evaluation };
+  };
+  export type delete_Environments_evaluations_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/evaluations/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 405: unknown };
+  };
   export type get_Environments_events_list = {
     method: "GET";
     path: "/api/environments/{project_id}/events/";
@@ -10736,11 +10707,7 @@ export namespace Endpoints {
     path: "/api/environments/{project_id}/groups/";
     requestFormat: "json";
     parameters: {
-      query: {
-        cursor?: string | undefined;
-        group_type_index: number;
-        search: string;
-      };
+      query: { cursor?: string | undefined; group_type_index: number; search: string };
       path: { project_id: string };
     };
     responses: { 200: Schemas.PaginatedGroupList };
@@ -11119,18 +11086,6 @@ export namespace Endpoints {
     };
     responses: { 200: unknown };
   };
-  export type post_Environments_insights_viewed_create = {
-    method: "POST";
-    path: "/api/environments/{project_id}/insights/{id}/viewed/";
-    requestFormat: "json";
-    parameters: {
-      query: Partial<{ format: "csv" | "json" }>;
-      path: { id: number; project_id: string };
-
-      body: Schemas.Insight;
-    };
-    responses: { 200: unknown };
-  };
   export type get_Environments_insights_activity_retrieve = {
     method: "GET";
     path: "/api/environments/{project_id}/insights/activity/";
@@ -11159,6 +11114,176 @@ export namespace Endpoints {
     requestFormat: "json";
     parameters: {
       query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_insights_viewed_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/insights/viewed/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ format: "csv" | "json" }>;
+      path: { project_id: string };
+
+      body: Schemas.Insight;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_integrations_list = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/";
+    requestFormat: "json";
+    parameters: {
+      query: Partial<{ limit: number; offset: number }>;
+      path: { project_id: string };
+    };
+    responses: { 200: Schemas.PaginatedIntegrationList };
+  };
+  export type post_Environments_integrations_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/integrations/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
+
+      body: Schemas.Integration;
+    };
+    responses: { 201: Schemas.Integration };
+  };
+  export type get_Environments_integrations_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: Schemas.Integration };
+  };
+  export type delete_Environments_integrations_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/integrations/{id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 204: unknown };
+  };
+  export type get_Environments_integrations_channels_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/{id}/channels/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_integrations_clickup_lists_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/{id}/clickup_lists/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_integrations_clickup_spaces_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/{id}/clickup_spaces/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_integrations_clickup_workspaces_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/{id}/clickup_workspaces/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_integrations_email_verify_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/integrations/{id}/email/verify/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+
+      body: Schemas.Integration;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_integrations_github_repos_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/{id}/github_repos/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_integrations_google_accessible_accounts_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/{id}/google_accessible_accounts/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_integrations_google_conversion_actions_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/{id}/google_conversion_actions/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_integrations_linear_teams_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/{id}/linear_teams/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_integrations_linkedin_ads_accounts_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/{id}/linkedin_ads_accounts/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_integrations_linkedin_ads_conversion_rules_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/{id}/linkedin_ads_conversion_rules/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_integrations_twilio_phone_numbers_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/{id}/twilio_phone_numbers/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: number; project_id: string };
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_integrations_authorize_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/integrations/authorize/";
+    requestFormat: "json";
+    parameters: {
       path: { project_id: string };
     };
     responses: { 200: unknown };
@@ -11207,95 +11332,6 @@ export namespace Endpoints {
       path: { project_id: string };
     };
     responses: { 200: unknown };
-  };
-  export type get_Environments_named_query_retrieve = {
-    method: "GET";
-    path: "/api/environments/{project_id}/named_query/";
-    requestFormat: "json";
-    parameters: {
-      path: { project_id: string };
-    };
-    responses: { 200: unknown };
-  };
-  export type post_Environments_named_query_create = {
-    method: "POST";
-    path: "/api/environments/{project_id}/named_query/";
-    requestFormat: "json";
-    parameters: {
-      path: { project_id: string };
-
-      body: Schemas.NamedQueryRequest;
-    };
-    responses: { 201: unknown };
-  };
-  export type get_Environments_named_query_retrieve_2 = {
-    method: "GET";
-    path: "/api/environments/{project_id}/named_query/{name}/";
-    requestFormat: "json";
-    parameters: {
-      path: { name: string; project_id: string };
-    };
-    responses: { 200: unknown };
-  };
-  export type put_Environments_named_query_update = {
-    method: "PUT";
-    path: "/api/environments/{project_id}/named_query/{name}/";
-    requestFormat: "json";
-    parameters: {
-      path: { name: string; project_id: string };
-
-      body: Schemas.NamedQueryRequest;
-    };
-    responses: { 200: unknown };
-  };
-  export type patch_Environments_named_query_partial_update = {
-    method: "PATCH";
-    path: "/api/environments/{project_id}/named_query/{name}/";
-    requestFormat: "json";
-    parameters: {
-      path: { name: string; project_id: string };
-    };
-    responses: { 200: unknown };
-  };
-  export type delete_Environments_named_query_destroy = {
-    method: "DELETE";
-    path: "/api/environments/{project_id}/named_query/{name}/";
-    requestFormat: "json";
-    parameters: {
-      path: { name: string; project_id: string };
-    };
-    responses: { 204: unknown };
-  };
-  export type get_Environments_named_query_run_retrieve = {
-    method: "GET";
-    path: "/api/environments/{project_id}/named_query/{name}/run/";
-    requestFormat: "json";
-    parameters: {
-      path: { name: string; project_id: string };
-    };
-    responses: { 200: unknown };
-  };
-  export type post_Environments_named_query_run_create = {
-    method: "POST";
-    path: "/api/environments/{project_id}/named_query/{name}/run/";
-    requestFormat: "json";
-    parameters: {
-      path: { name: string; project_id: string };
-
-      body: Schemas.NamedQueryRunRequest;
-    };
-    responses: { 200: unknown };
-  };
-  export type post_Environments_named_query_last_execution_times_create = {
-    method: "POST";
-    path: "/api/environments/{project_id}/named_query/last_execution_times/";
-    requestFormat: "json";
-    parameters: {
-      path: { project_id: string };
-
-      body: Schemas.NamedQueryLastExecutionTimesRequest;
-    };
-    responses: { 200: Schemas.QueryStatusResponse };
   };
   export type get_Environments_persisted_folder_list = {
     method: "GET";
@@ -11493,11 +11529,7 @@ export namespace Endpoints {
     path: "/api/environments/{project_id}/persons/{id}/update_property/";
     requestFormat: "json";
     parameters: {
-      query: {
-        format?: ("csv" | "json") | undefined;
-        key: string;
-        value: unknown;
-      };
+      query: { format?: ("csv" | "json") | undefined; key: string; value: unknown };
       path: { id: number; project_id: string };
 
       body: Schemas.Person;
@@ -11719,12 +11751,7 @@ export namespace Endpoints {
     path: "/api/environments/{project_id}/session_recording_playlists/";
     requestFormat: "json";
     parameters: {
-      query: Partial<{
-        created_by: number;
-        limit: number;
-        offset: number;
-        short_id: string;
-      }>;
+      query: Partial<{ created_by: number; limit: number; offset: number; short_id: string }>;
       path: { project_id: string };
     };
     responses: { 200: Schemas.PaginatedSessionRecordingPlaylistList };
@@ -11780,46 +11807,35 @@ export namespace Endpoints {
     };
     responses: { 405: unknown };
   };
-  export type get_Environments_session_recording_playlists_recordings_retrieve =
-    {
-      method: "GET";
-      path: "/api/environments/{project_id}/session_recording_playlists/{short_id}/recordings/";
-      requestFormat: "json";
-      parameters: {
-        path: { project_id: string; short_id: string };
-      };
-      responses: { 200: unknown };
+  export type get_Environments_session_recording_playlists_recordings_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/session_recording_playlists/{short_id}/recordings/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string; short_id: string };
     };
-  export type post_Environments_session_recording_playlists_recordings_create =
-    {
-      method: "POST";
-      path: "/api/environments/{project_id}/session_recording_playlists/{short_id}/recordings/{session_recording_id}/";
-      requestFormat: "json";
-      parameters: {
-        path: {
-          project_id: string;
-          session_recording_id: string;
-          short_id: string;
-        };
+    responses: { 200: unknown };
+  };
+  export type post_Environments_session_recording_playlists_recordings_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/session_recording_playlists/{short_id}/recordings/{session_recording_id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string; session_recording_id: string; short_id: string };
 
-        body: Schemas.SessionRecordingPlaylist;
-      };
-      responses: { 200: unknown };
+      body: Schemas.SessionRecordingPlaylist;
     };
-  export type delete_Environments_session_recording_playlists_recordings_destroy =
-    {
-      method: "DELETE";
-      path: "/api/environments/{project_id}/session_recording_playlists/{short_id}/recordings/{session_recording_id}/";
-      requestFormat: "json";
-      parameters: {
-        path: {
-          project_id: string;
-          session_recording_id: string;
-          short_id: string;
-        };
-      };
-      responses: { 204: unknown };
+    responses: { 200: unknown };
+  };
+  export type delete_Environments_session_recording_playlists_recordings_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/session_recording_playlists/{short_id}/recordings/{session_recording_id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string; session_recording_id: string; short_id: string };
     };
+    responses: { 204: unknown };
+  };
   export type get_Environments_session_recordings_list = {
     method: "GET";
     path: "/api/environments/{project_id}/session_recordings/";
@@ -11890,16 +11906,15 @@ export namespace Endpoints {
     };
     responses: { 200: Schemas.SharingConfiguration };
   };
-  export type delete_Environments_session_recordings_sharing_passwords_destroy =
-    {
-      method: "DELETE";
-      path: "/api/environments/{project_id}/session_recordings/{recording_id}/sharing/passwords/{password_id}/";
-      requestFormat: "json";
-      parameters: {
-        path: { password_id: string; project_id: string; recording_id: string };
-      };
-      responses: { 204: unknown };
+  export type delete_Environments_session_recordings_sharing_passwords_destroy = {
+    method: "DELETE";
+    path: "/api/environments/{project_id}/session_recordings/{recording_id}/sharing/passwords/{password_id}/";
+    requestFormat: "json";
+    parameters: {
+      path: { password_id: string; project_id: string; recording_id: string };
     };
+    responses: { 204: unknown };
+  };
   export type post_Environments_session_recordings_sharing_refresh_create = {
     method: "POST";
     path: "/api/environments/{project_id}/session_recordings/{recording_id}/sharing/refresh/";
@@ -12165,18 +12180,17 @@ export namespace Endpoints {
     };
     responses: { 200: Schemas.DataWarehouseSavedQuery };
   };
-  export type post_Environments_warehouse_saved_queries_revert_materialization_create =
-    {
-      method: "POST";
-      path: "/api/environments/{project_id}/warehouse_saved_queries/{id}/revert_materialization/";
-      requestFormat: "json";
-      parameters: {
-        path: { id: string; project_id: string };
+  export type post_Environments_warehouse_saved_queries_revert_materialization_create = {
+    method: "POST";
+    path: "/api/environments/{project_id}/warehouse_saved_queries/{id}/revert_materialization/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
 
-        body: Schemas.DataWarehouseSavedQuery;
-      };
-      responses: { 200: Schemas.DataWarehouseSavedQuery };
+      body: Schemas.DataWarehouseSavedQuery;
     };
+    responses: { 200: Schemas.DataWarehouseSavedQuery };
+  };
   export type post_Environments_warehouse_saved_queries_run_create = {
     method: "POST";
     path: "/api/environments/{project_id}/warehouse_saved_queries/{id}/run/";
@@ -12353,6 +12367,17 @@ export namespace Endpoints {
     };
     responses: { 204: unknown };
   };
+  export type post_Tasks_attach_pr_create = {
+    method: "POST";
+    path: "/api/projects/{project_id}/tasks/{id}/attach_pr/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.TaskAttachPullRequestRequest;
+    };
+    responses: { 200: Schemas.Task; 400: Schemas.ErrorResponse; 404: unknown };
+  };
   export type get_Tasks_progress_retrieve = {
     method: "GET";
     path: "/api/projects/{project_id}/tasks/{id}/progress/";
@@ -12371,6 +12396,37 @@ export namespace Endpoints {
       path: { id: string; project_id: string };
     };
     responses: { 200: Schemas.TaskProgressStreamResponse; 404: unknown };
+  };
+  export type post_Tasks_progress_task_create = {
+    method: "POST";
+    path: "/api/projects/{project_id}/tasks/{id}/progress_task/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.TaskProgressTaskRequest;
+    };
+    responses: { 200: Schemas.Task; 400: Schemas.ErrorResponse; 404: unknown };
+  };
+  export type post_Tasks_run_create = {
+    method: "POST";
+    path: "/api/projects/{project_id}/tasks/{id}/run/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+    };
+    responses: { 200: Schemas.Task; 400: Schemas.ErrorResponse; 404: unknown };
+  };
+  export type post_Tasks_set_branch_create = {
+    method: "POST";
+    path: "/api/projects/{project_id}/tasks/{id}/set_branch/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string };
+
+      body: Schemas.TaskSetBranchRequest;
+    };
+    responses: { 200: Schemas.Task; 400: Schemas.ErrorResponse; 404: unknown };
   };
   export type patch_Tasks_update_position_partial_update = {
     method: "PATCH";
@@ -12403,10 +12459,7 @@ export namespace Endpoints {
 
       body: Schemas.TaskBulkReorderRequest;
     };
-    responses: {
-      200: Schemas.TaskBulkReorderResponse;
-      400: Schemas.ErrorResponse;
-    };
+    responses: { 200: Schemas.TaskBulkReorderResponse; 400: Schemas.ErrorResponse };
   };
   export type get_Workflows_list = {
     method: "GET";
@@ -12476,11 +12529,7 @@ export namespace Endpoints {
     parameters: {
       path: { id: string; project_id: string };
     };
-    responses: {
-      200: Schemas.WorkflowDeactivateResponse;
-      400: Schemas.ErrorResponse;
-      404: unknown;
-    };
+    responses: { 200: Schemas.WorkflowDeactivateResponse; 400: Schemas.ErrorResponse; 404: unknown };
   };
   export type post_Workflows_set_default_create = {
     method: "POST";
@@ -12575,12 +12624,7 @@ export namespace Endpoints {
     path: "/api/users/";
     requestFormat: "json";
     parameters: {
-      query: Partial<{
-        email: string;
-        is_staff: boolean;
-        limit: number;
-        offset: number;
-      }>;
+      query: Partial<{ email: string; is_staff: boolean; limit: number; offset: number }>;
     };
     responses: { 200: Schemas.PaginatedUserList };
   };
@@ -12784,6 +12828,9 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/dataset_items/{id}/": Endpoints.get_Environments_dataset_items_retrieve;
     "/api/environments/{project_id}/datasets/": Endpoints.get_Environments_datasets_list;
     "/api/environments/{project_id}/datasets/{id}/": Endpoints.get_Environments_datasets_retrieve;
+    "/api/environments/{project_id}/endpoints/": Endpoints.get_Environments_endpoints_retrieve;
+    "/api/environments/{project_id}/endpoints/{name}/": Endpoints.get_Environments_endpoints_retrieve_2;
+    "/api/environments/{project_id}/endpoints/{name}/run/": Endpoints.get_Environments_endpoints_run_retrieve;
     "/api/environments/{project_id}/error_tracking/assignment_rules/": Endpoints.get_Environments_error_tracking_assignment_rules_list;
     "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/": Endpoints.get_Environments_error_tracking_assignment_rules_retrieve;
     "/api/environments/{project_id}/error_tracking/fingerprints/": Endpoints.get_Environments_error_tracking_fingerprints_list;
@@ -12796,6 +12843,8 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/": Endpoints.get_Environments_error_tracking_suppression_rules_retrieve;
     "/api/environments/{project_id}/error_tracking/symbol_sets/": Endpoints.get_Environments_error_tracking_symbol_sets_list;
     "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/": Endpoints.get_Environments_error_tracking_symbol_sets_retrieve;
+    "/api/environments/{project_id}/evaluations/": Endpoints.get_Environments_evaluations_list;
+    "/api/environments/{project_id}/evaluations/{id}/": Endpoints.get_Environments_evaluations_retrieve;
     "/api/environments/{project_id}/events/": Endpoints.get_Environments_events_list;
     "/api/environments/{project_id}/events/{id}/": Endpoints.get_Environments_events_retrieve;
     "/api/environments/{project_id}/events/values/": Endpoints.get_Environments_events_values_retrieve;
@@ -12826,11 +12875,22 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/insights/{id}/activity/": Endpoints.get_Environments_insights_activity_retrieve_2;
     "/api/environments/{project_id}/insights/activity/": Endpoints.get_Environments_insights_activity_retrieve;
     "/api/environments/{project_id}/insights/my_last_viewed/": Endpoints.get_Environments_insights_my_last_viewed_retrieve;
+    "/api/environments/{project_id}/integrations/": Endpoints.get_Environments_integrations_list;
+    "/api/environments/{project_id}/integrations/{id}/": Endpoints.get_Environments_integrations_retrieve;
+    "/api/environments/{project_id}/integrations/{id}/channels/": Endpoints.get_Environments_integrations_channels_retrieve;
+    "/api/environments/{project_id}/integrations/{id}/clickup_lists/": Endpoints.get_Environments_integrations_clickup_lists_retrieve;
+    "/api/environments/{project_id}/integrations/{id}/clickup_spaces/": Endpoints.get_Environments_integrations_clickup_spaces_retrieve;
+    "/api/environments/{project_id}/integrations/{id}/clickup_workspaces/": Endpoints.get_Environments_integrations_clickup_workspaces_retrieve;
+    "/api/environments/{project_id}/integrations/{id}/github_repos/": Endpoints.get_Environments_integrations_github_repos_retrieve;
+    "/api/environments/{project_id}/integrations/{id}/google_accessible_accounts/": Endpoints.get_Environments_integrations_google_accessible_accounts_retrieve;
+    "/api/environments/{project_id}/integrations/{id}/google_conversion_actions/": Endpoints.get_Environments_integrations_google_conversion_actions_retrieve;
+    "/api/environments/{project_id}/integrations/{id}/linear_teams/": Endpoints.get_Environments_integrations_linear_teams_retrieve;
+    "/api/environments/{project_id}/integrations/{id}/linkedin_ads_accounts/": Endpoints.get_Environments_integrations_linkedin_ads_accounts_retrieve;
+    "/api/environments/{project_id}/integrations/{id}/linkedin_ads_conversion_rules/": Endpoints.get_Environments_integrations_linkedin_ads_conversion_rules_retrieve;
+    "/api/environments/{project_id}/integrations/{id}/twilio_phone_numbers/": Endpoints.get_Environments_integrations_twilio_phone_numbers_retrieve;
+    "/api/environments/{project_id}/integrations/authorize/": Endpoints.get_Environments_integrations_authorize_retrieve;
     "/api/environments/{project_id}/logs/attributes/": Endpoints.get_Environments_logs_attributes_retrieve;
     "/api/environments/{project_id}/logs/values/": Endpoints.get_Environments_logs_values_retrieve;
-    "/api/environments/{project_id}/named_query/": Endpoints.get_Environments_named_query_retrieve;
-    "/api/environments/{project_id}/named_query/{name}/": Endpoints.get_Environments_named_query_retrieve_2;
-    "/api/environments/{project_id}/named_query/{name}/run/": Endpoints.get_Environments_named_query_run_retrieve;
     "/api/environments/{project_id}/persisted_folder/": Endpoints.get_Environments_persisted_folder_list;
     "/api/environments/{project_id}/persisted_folder/{id}/": Endpoints.get_Environments_persisted_folder_retrieve;
     "/api/environments/{project_id}/persons/": Endpoints.get_Environments_persons_list;
@@ -12901,6 +12961,9 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/data_color_themes/": Endpoints.post_Environments_data_color_themes_create;
     "/api/environments/{project_id}/dataset_items/": Endpoints.post_Environments_dataset_items_create;
     "/api/environments/{project_id}/datasets/": Endpoints.post_Environments_datasets_create;
+    "/api/environments/{project_id}/endpoints/": Endpoints.post_Environments_endpoints_create;
+    "/api/environments/{project_id}/endpoints/{name}/run/": Endpoints.post_Environments_endpoints_run_create;
+    "/api/environments/{project_id}/endpoints/last_execution_times/": Endpoints.post_Environments_endpoints_last_execution_times_create;
     "/api/environments/{project_id}/error_tracking/assignment_rules/": Endpoints.post_Environments_error_tracking_assignment_rules_create;
     "/api/environments/{project_id}/error_tracking/grouping_rules/": Endpoints.post_Environments_error_tracking_grouping_rules_create;
     "/api/environments/{project_id}/error_tracking/releases/": Endpoints.post_Environments_error_tracking_releases_create;
@@ -12909,6 +12972,8 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/error_tracking/symbol_sets/bulk_finish_upload/": Endpoints.post_Environments_error_tracking_symbol_sets_bulk_finish_upload_create;
     "/api/environments/{project_id}/error_tracking/symbol_sets/bulk_start_upload/": Endpoints.post_Environments_error_tracking_symbol_sets_bulk_start_upload_create;
     "/api/environments/{project_id}/error_tracking/symbol_sets/start_upload/": Endpoints.post_Environments_error_tracking_symbol_sets_start_upload_create;
+    "/api/environments/{project_id}/evaluation_runs/": Endpoints.post_Environments_evaluation_runs_create;
+    "/api/environments/{project_id}/evaluations/": Endpoints.post_Environments_evaluations_create;
     "/api/environments/{project_id}/exports/": Endpoints.post_Environments_exports_create;
     "/api/environments/{project_id}/file_system/": Endpoints.post_Environments_file_system_create;
     "/api/environments/{project_id}/file_system/{id}/count/": Endpoints.post_Environments_file_system_count_create;
@@ -12925,14 +12990,13 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/insights/": Endpoints.post_Environments_insights_create;
     "/api/environments/{project_id}/insights/{insight_id}/sharing/passwords/": Endpoints.post_Environments_insights_sharing_passwords_create;
     "/api/environments/{project_id}/insights/{insight_id}/sharing/refresh/": Endpoints.post_Environments_insights_sharing_refresh_create;
-    "/api/environments/{project_id}/insights/{id}/viewed/": Endpoints.post_Environments_insights_viewed_create;
     "/api/environments/{project_id}/insights/cancel/": Endpoints.post_Environments_insights_cancel_create;
+    "/api/environments/{project_id}/insights/viewed/": Endpoints.post_Environments_insights_viewed_create;
+    "/api/environments/{project_id}/integrations/": Endpoints.post_Environments_integrations_create;
+    "/api/environments/{project_id}/integrations/{id}/email/verify/": Endpoints.post_Environments_integrations_email_verify_create;
     "/api/environments/{project_id}/logs/query/": Endpoints.post_Environments_logs_query_create;
     "/api/environments/{project_id}/logs/sparkline/": Endpoints.post_Environments_logs_sparkline_create;
     "/api/environments/{project_id}/max_tools/create_and_query_insight/": Endpoints.post_Environments_max_tools_create_and_query_insight_create;
-    "/api/environments/{project_id}/named_query/": Endpoints.post_Environments_named_query_create;
-    "/api/environments/{project_id}/named_query/{name}/run/": Endpoints.post_Environments_named_query_run_create;
-    "/api/environments/{project_id}/named_query/last_execution_times/": Endpoints.post_Environments_named_query_last_execution_times_create;
     "/api/environments/{project_id}/persisted_folder/": Endpoints.post_Environments_persisted_folder_create;
     "/api/environments/{project_id}/persons/{id}/delete_events/": Endpoints.post_Environments_persons_delete_events_create;
     "/api/environments/{project_id}/persons/{id}/delete_property/": Endpoints.post_Environments_persons_delete_property_create;
@@ -12964,6 +13028,10 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/warehouse_tables/{id}/update_schema/": Endpoints.post_Environments_warehouse_tables_update_schema_create;
     "/api/environments/{project_id}/warehouse_tables/file/": Endpoints.post_Environments_warehouse_tables_file_create;
     "/api/projects/{project_id}/tasks/": Endpoints.post_Tasks_create;
+    "/api/projects/{project_id}/tasks/{id}/attach_pr/": Endpoints.post_Tasks_attach_pr_create;
+    "/api/projects/{project_id}/tasks/{id}/progress_task/": Endpoints.post_Tasks_progress_task_create;
+    "/api/projects/{project_id}/tasks/{id}/run/": Endpoints.post_Tasks_run_create;
+    "/api/projects/{project_id}/tasks/{id}/set_branch/": Endpoints.post_Tasks_set_branch_create;
     "/api/projects/{project_id}/tasks/bulk_reorder/": Endpoints.post_Tasks_bulk_reorder_create;
     "/api/projects/{project_id}/workflows/": Endpoints.post_Workflows_create;
     "/api/projects/{project_id}/workflows/{id}/deactivate/": Endpoints.post_Workflows_deactivate_create;
@@ -12985,17 +13053,18 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/data_color_themes/{id}/": Endpoints.put_Environments_data_color_themes_update;
     "/api/environments/{project_id}/dataset_items/{id}/": Endpoints.put_Environments_dataset_items_update;
     "/api/environments/{project_id}/datasets/{id}/": Endpoints.put_Environments_datasets_update;
+    "/api/environments/{project_id}/endpoints/{name}/": Endpoints.put_Environments_endpoints_update;
     "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/": Endpoints.put_Environments_error_tracking_assignment_rules_update;
     "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/": Endpoints.put_Environments_error_tracking_grouping_rules_update;
     "/api/environments/{project_id}/error_tracking/releases/{id}/": Endpoints.put_Environments_error_tracking_releases_update;
     "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/": Endpoints.put_Environments_error_tracking_suppression_rules_update;
     "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/": Endpoints.put_Environments_error_tracking_symbol_sets_update;
     "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/finish_upload/": Endpoints.put_Environments_error_tracking_symbol_sets_finish_upload_update;
+    "/api/environments/{project_id}/evaluations/{id}/": Endpoints.put_Environments_evaluations_update;
     "/api/environments/{project_id}/file_system/{id}/": Endpoints.put_Environments_file_system_update;
     "/api/environments/{project_id}/file_system_shortcut/{id}/": Endpoints.put_Environments_file_system_shortcut_update;
     "/api/environments/{project_id}/hog_functions/{id}/": Endpoints.put_Environments_hog_functions_update;
     "/api/environments/{project_id}/insights/{id}/": Endpoints.put_Environments_insights_update;
-    "/api/environments/{project_id}/named_query/{name}/": Endpoints.put_Environments_named_query_update;
     "/api/environments/{project_id}/persisted_folder/{id}/": Endpoints.put_Environments_persisted_folder_update;
     "/api/environments/{project_id}/persons/{id}/": Endpoints.put_Environments_persons_update;
     "/api/environments/{project_id}/session_recording_playlists/{short_id}/": Endpoints.put_Environments_session_recording_playlists_update;
@@ -13016,6 +13085,7 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/data_color_themes/{id}/": Endpoints.patch_Environments_data_color_themes_partial_update;
     "/api/environments/{project_id}/dataset_items/{id}/": Endpoints.patch_Environments_dataset_items_partial_update;
     "/api/environments/{project_id}/datasets/{id}/": Endpoints.patch_Environments_datasets_partial_update;
+    "/api/environments/{project_id}/endpoints/{name}/": Endpoints.patch_Environments_endpoints_partial_update;
     "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/": Endpoints.patch_Environments_error_tracking_assignment_rules_partial_update;
     "/api/environments/{project_id}/error_tracking/assignment_rules/reorder/": Endpoints.patch_Environments_error_tracking_assignment_rules_reorder_partial_update;
     "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/": Endpoints.patch_Environments_error_tracking_grouping_rules_partial_update;
@@ -13024,12 +13094,12 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/": Endpoints.patch_Environments_error_tracking_suppression_rules_partial_update;
     "/api/environments/{project_id}/error_tracking/suppression_rules/reorder/": Endpoints.patch_Environments_error_tracking_suppression_rules_reorder_partial_update;
     "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/": Endpoints.patch_Environments_error_tracking_symbol_sets_partial_update;
+    "/api/environments/{project_id}/evaluations/{id}/": Endpoints.patch_Environments_evaluations_partial_update;
     "/api/environments/{project_id}/file_system/{id}/": Endpoints.patch_Environments_file_system_partial_update;
     "/api/environments/{project_id}/file_system_shortcut/{id}/": Endpoints.patch_Environments_file_system_shortcut_partial_update;
     "/api/environments/{project_id}/hog_functions/{id}/": Endpoints.patch_Environments_hog_functions_partial_update;
     "/api/environments/{project_id}/hog_functions/rearrange/": Endpoints.patch_Environments_hog_functions_rearrange_partial_update;
     "/api/environments/{project_id}/insights/{id}/": Endpoints.patch_Environments_insights_partial_update;
-    "/api/environments/{project_id}/named_query/{name}/": Endpoints.patch_Environments_named_query_partial_update;
     "/api/environments/{project_id}/persisted_folder/{id}/": Endpoints.patch_Environments_persisted_folder_partial_update;
     "/api/environments/{project_id}/persons/{id}/": Endpoints.patch_Environments_persons_partial_update;
     "/api/environments/{project_id}/session_recording_playlists/{short_id}/": Endpoints.patch_Environments_session_recording_playlists_partial_update;
@@ -13055,18 +13125,20 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/data_color_themes/{id}/": Endpoints.delete_Environments_data_color_themes_destroy;
     "/api/environments/{project_id}/dataset_items/{id}/": Endpoints.delete_Environments_dataset_items_destroy;
     "/api/environments/{project_id}/datasets/{id}/": Endpoints.delete_Environments_datasets_destroy;
+    "/api/environments/{project_id}/endpoints/{name}/": Endpoints.delete_Environments_endpoints_destroy;
     "/api/environments/{project_id}/error_tracking/assignment_rules/{id}/": Endpoints.delete_Environments_error_tracking_assignment_rules_destroy;
     "/api/environments/{project_id}/error_tracking/fingerprints/{id}/": Endpoints.delete_Environments_error_tracking_fingerprints_destroy;
     "/api/environments/{project_id}/error_tracking/grouping_rules/{id}/": Endpoints.delete_Environments_error_tracking_grouping_rules_destroy;
     "/api/environments/{project_id}/error_tracking/releases/{id}/": Endpoints.delete_Environments_error_tracking_releases_destroy;
     "/api/environments/{project_id}/error_tracking/suppression_rules/{id}/": Endpoints.delete_Environments_error_tracking_suppression_rules_destroy;
     "/api/environments/{project_id}/error_tracking/symbol_sets/{id}/": Endpoints.delete_Environments_error_tracking_symbol_sets_destroy;
+    "/api/environments/{project_id}/evaluations/{id}/": Endpoints.delete_Environments_evaluations_destroy;
     "/api/environments/{project_id}/file_system/{id}/": Endpoints.delete_Environments_file_system_destroy;
     "/api/environments/{project_id}/file_system_shortcut/{id}/": Endpoints.delete_Environments_file_system_shortcut_destroy;
     "/api/environments/{project_id}/hog_functions/{id}/": Endpoints.delete_Environments_hog_functions_destroy;
     "/api/environments/{project_id}/insights/{insight_id}/sharing/passwords/{password_id}/": Endpoints.delete_Environments_insights_sharing_passwords_destroy;
     "/api/environments/{project_id}/insights/{id}/": Endpoints.delete_Environments_insights_destroy;
-    "/api/environments/{project_id}/named_query/{name}/": Endpoints.delete_Environments_named_query_destroy;
+    "/api/environments/{project_id}/integrations/{id}/": Endpoints.delete_Environments_integrations_destroy;
     "/api/environments/{project_id}/persisted_folder/{id}/": Endpoints.delete_Environments_persisted_folder_destroy;
     "/api/environments/{project_id}/persons/{id}/": Endpoints.delete_Environments_persons_destroy;
     "/api/environments/{project_id}/query/{id}/": Endpoints.delete_Environments_query_destroy;
@@ -13130,13 +13202,8 @@ export type Endpoint<TConfig extends DefaultEndpoint = DefaultEndpoint> = {
 };
 
 export interface Fetcher {
-  decodePathParams?: (
-    path: string,
-    pathParams: Record<string, string>,
-  ) => string;
-  encodeSearchParams?: (
-    searchParams: Record<string, unknown> | undefined,
-  ) => URLSearchParams;
+  decodePathParams?: (path: string, pathParams: Record<string, string>) => string;
+  encodeSearchParams?: (searchParams: Record<string, unknown> | undefined) => URLSearchParams;
   //
   fetch: (input: {
     method: Method;
@@ -13151,60 +13218,38 @@ export interface Fetcher {
 }
 
 export const successStatusCodes = [
-  200, 201, 202, 203, 204, 205, 206, 207, 208, 226, 300, 301, 302, 303, 304,
-  305, 306, 307, 308,
+  200, 201, 202, 203, 204, 205, 206, 207, 208, 226, 300, 301, 302, 303, 304, 305, 306, 307, 308,
 ] as const;
 export type SuccessStatusCode = (typeof successStatusCodes)[number];
 
 export const errorStatusCodes = [
-  400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414,
-  415, 416, 417, 418, 421, 422, 423, 424, 425, 426, 428, 429, 431, 451, 500,
-  501, 502, 503, 504, 505, 506, 507, 508, 510, 511,
+  400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 421, 422, 423, 424,
+  425, 426, 428, 429, 431, 451, 500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511,
 ] as const;
 export type ErrorStatusCode = (typeof errorStatusCodes)[number];
 
 // Taken from https://github.com/unjs/fetchdts/blob/ec4eaeab5d287116171fc1efd61f4a1ad34e4609/src/fetch.ts#L3
-export interface TypedHeaders<
-  TypedHeaderValues extends Record<string, string> | unknown,
-> extends Omit<
-    Headers,
-    "append" | "delete" | "get" | "getSetCookie" | "has" | "set" | "forEach"
-  > {
+export interface TypedHeaders<TypedHeaderValues extends Record<string, string> | unknown>
+  extends Omit<Headers, "append" | "delete" | "get" | "getSetCookie" | "has" | "set" | "forEach"> {
   /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/append) */
-  append: <
-    Name extends Extract<keyof TypedHeaderValues, string> | (string & {}),
-  >(
+  append: <Name extends Extract<keyof TypedHeaderValues, string> | (string & {})>(
     name: Name,
-    value: Lowercase<Name> extends keyof TypedHeaderValues
-      ? TypedHeaderValues[Lowercase<Name>]
-      : string,
+    value: Lowercase<Name> extends keyof TypedHeaderValues ? TypedHeaderValues[Lowercase<Name>] : string,
   ) => void;
   /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/delete) */
-  delete: <
-    Name extends Extract<keyof TypedHeaderValues, string> | (string & {}),
-  >(
-    name: Name,
-  ) => void;
+  delete: <Name extends Extract<keyof TypedHeaderValues, string> | (string & {})>(name: Name) => void;
   /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/get) */
   get: <Name extends Extract<keyof TypedHeaderValues, string> | (string & {})>(
     name: Name,
-  ) =>
-    | (Lowercase<Name> extends keyof TypedHeaderValues
-        ? TypedHeaderValues[Lowercase<Name>]
-        : string)
-    | null;
+  ) => (Lowercase<Name> extends keyof TypedHeaderValues ? TypedHeaderValues[Lowercase<Name>] : string) | null;
   /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/getSetCookie) */
   getSetCookie: () => string[];
   /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/has) */
-  has: <Name extends Extract<keyof TypedHeaderValues, string> | (string & {})>(
-    name: Name,
-  ) => boolean;
+  has: <Name extends Extract<keyof TypedHeaderValues, string> | (string & {})>(name: Name) => boolean;
   /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/set) */
   set: <Name extends Extract<keyof TypedHeaderValues, string> | (string & {})>(
     name: Name,
-    value: Lowercase<Name> extends keyof TypedHeaderValues
-      ? TypedHeaderValues[Lowercase<Name>]
-      : string,
+    value: Lowercase<Name> extends keyof TypedHeaderValues ? TypedHeaderValues[Lowercase<Name>] : string,
   ) => void;
   forEach: (
     callbackfn: (
@@ -13238,47 +13283,23 @@ export interface TypedErrorResponse<TData, TStatusCode, THeaders>
   json: () => Promise<TData>;
 }
 
-export type TypedApiResponse<
-  TAllResponses extends Record<string | number, unknown> = {},
-  THeaders = {},
-> = {
+export type TypedApiResponse<TAllResponses extends Record<string | number, unknown> = {}, THeaders = {}> = {
   [K in keyof TAllResponses]: K extends string
     ? K extends `${infer TStatusCode extends number}`
       ? TStatusCode extends SuccessStatusCode
-        ? TypedSuccessResponse<
-            TAllResponses[K],
-            TStatusCode,
-            K extends keyof THeaders ? THeaders[K] : never
-          >
-        : TypedErrorResponse<
-            TAllResponses[K],
-            TStatusCode,
-            K extends keyof THeaders ? THeaders[K] : never
-          >
+        ? TypedSuccessResponse<TAllResponses[K], TStatusCode, K extends keyof THeaders ? THeaders[K] : never>
+        : TypedErrorResponse<TAllResponses[K], TStatusCode, K extends keyof THeaders ? THeaders[K] : never>
       : never
     : K extends number
       ? K extends SuccessStatusCode
-        ? TypedSuccessResponse<
-            TAllResponses[K],
-            K,
-            K extends keyof THeaders ? THeaders[K] : never
-          >
-        : TypedErrorResponse<
-            TAllResponses[K],
-            K,
-            K extends keyof THeaders ? THeaders[K] : never
-          >
+        ? TypedSuccessResponse<TAllResponses[K], K, K extends keyof THeaders ? THeaders[K] : never>
+        : TypedErrorResponse<TAllResponses[K], K, K extends keyof THeaders ? THeaders[K] : never>
       : never;
 }[keyof TAllResponses];
 
-export type SafeApiResponse<TEndpoint> = TEndpoint extends {
-  responses: infer TResponses;
-}
+export type SafeApiResponse<TEndpoint> = TEndpoint extends { responses: infer TResponses }
   ? TResponses extends Record<string, unknown>
-    ? TypedApiResponse<
-        TResponses,
-        TEndpoint extends { responseHeaders: infer THeaders } ? THeaders : never
-      >
+    ? TypedApiResponse<TResponses, TEndpoint extends { responseHeaders: infer THeaders } ? THeaders : never>
     : never
   : never;
 
@@ -13291,9 +13312,7 @@ type RequiredKeys<T> = {
   [P in keyof T]-?: undefined extends T[P] ? never : P;
 }[keyof T];
 
-type MaybeOptionalArg<T> = RequiredKeys<T> extends never
-  ? [config?: T]
-  : [config: T];
+type MaybeOptionalArg<T> = RequiredKeys<T> extends never ? [config?: T] : [config: T];
 type NotNever<T> = [T] extends [never] ? false : true;
 
 // </ApiClientTypes>
@@ -13328,22 +13347,14 @@ export class ApiClient {
    * Replace path parameters in URL
    * Supports both OpenAPI format {param} and Express format :param
    */
-  defaultDecodePathParams = (
-    url: string,
-    params: Record<string, string>,
-  ): string => {
+  defaultDecodePathParams = (url: string, params: Record<string, string>): string => {
     return url
       .replace(/{(\w+)}/g, (_, key: string) => params[key] || `{${key}}`)
-      .replace(
-        /:([a-zA-Z0-9_]+)/g,
-        (_, key: string) => params[key] || `:${key}`,
-      );
+      .replace(/:([a-zA-Z0-9_]+)/g, (_, key: string) => params[key] || `:${key}`);
   };
 
   /** Uses URLSearchParams, skips null/undefined values */
-  defaultEncodeSearchParams = (
-    queryParams: Record<string, unknown> | undefined,
-  ): URLSearchParams | undefined => {
+  defaultEncodeSearchParams = (queryParams: Record<string, unknown> | undefined): URLSearchParams | undefined => {
     if (!queryParams) return;
 
     const searchParams = new URLSearchParams();
@@ -13351,9 +13362,7 @@ export class ApiClient {
       if (value != null) {
         // Skip null/undefined values
         if (Array.isArray(value)) {
-          value.forEach(
-            (val) => val != null && searchParams.append(key, String(val)),
-          );
+          value.forEach((val) => val != null && searchParams.append(key, String(val)));
         } else {
           searchParams.append(key, String(value));
         }
@@ -13394,49 +13403,20 @@ export class ApiClient {
     ...params: MaybeOptionalArg<
       TEndpoint extends { parameters: infer UParams }
         ? NotNever<UParams> extends true
-          ? UParams & {
-              overrides?: RequestInit;
-              withResponse?: false;
-              throwOnStatusError?: boolean;
-            }
-          : {
-              overrides?: RequestInit;
-              withResponse?: false;
-              throwOnStatusError?: boolean;
-            }
-        : {
-            overrides?: RequestInit;
-            withResponse?: false;
-            throwOnStatusError?: boolean;
-          }
+          ? UParams & { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
+          : { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
+        : { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
     >
-  ): Promise<
-    Extract<
-      InferResponseByStatus<TEndpoint, SuccessStatusCode>,
-      { data: {} }
-    >["data"]
-  >;
+  ): Promise<Extract<InferResponseByStatus<TEndpoint, SuccessStatusCode>, { data: {} }>["data"]>;
 
   get<Path extends keyof GetEndpoints, TEndpoint extends GetEndpoints[Path]>(
     path: Path,
     ...params: MaybeOptionalArg<
       TEndpoint extends { parameters: infer UParams }
         ? NotNever<UParams> extends true
-          ? UParams & {
-              overrides?: RequestInit;
-              withResponse?: true;
-              throwOnStatusError?: boolean;
-            }
-          : {
-              overrides?: RequestInit;
-              withResponse?: true;
-              throwOnStatusError?: boolean;
-            }
-        : {
-            overrides?: RequestInit;
-            withResponse?: true;
-            throwOnStatusError?: boolean;
-          }
+          ? UParams & { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
+          : { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
+        : { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
     >
   ): Promise<SafeApiResponse<TEndpoint>>;
 
@@ -13454,56 +13434,27 @@ export class ApiClient {
     ...params: MaybeOptionalArg<
       TEndpoint extends { parameters: infer UParams }
         ? NotNever<UParams> extends true
-          ? UParams & {
-              overrides?: RequestInit;
-              withResponse?: false;
-              throwOnStatusError?: boolean;
-            }
-          : {
-              overrides?: RequestInit;
-              withResponse?: false;
-              throwOnStatusError?: boolean;
-            }
-        : {
-            overrides?: RequestInit;
-            withResponse?: false;
-            throwOnStatusError?: boolean;
-          }
+          ? UParams & { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
+          : { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
+        : { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
     >
-  ): Promise<
-    Extract<
-      InferResponseByStatus<TEndpoint, SuccessStatusCode>,
-      { data: {} }
-    >["data"]
-  >;
+  ): Promise<Extract<InferResponseByStatus<TEndpoint, SuccessStatusCode>, { data: {} }>["data"]>;
 
   post<Path extends keyof PostEndpoints, TEndpoint extends PostEndpoints[Path]>(
     path: Path,
     ...params: MaybeOptionalArg<
       TEndpoint extends { parameters: infer UParams }
         ? NotNever<UParams> extends true
-          ? UParams & {
-              overrides?: RequestInit;
-              withResponse?: true;
-              throwOnStatusError?: boolean;
-            }
-          : {
-              overrides?: RequestInit;
-              withResponse?: true;
-              throwOnStatusError?: boolean;
-            }
-        : {
-            overrides?: RequestInit;
-            withResponse?: true;
-            throwOnStatusError?: boolean;
-          }
+          ? UParams & { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
+          : { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
+        : { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
     >
   ): Promise<SafeApiResponse<TEndpoint>>;
 
-  post<
-    Path extends keyof PostEndpoints,
-    _TEndpoint extends PostEndpoints[Path],
-  >(path: Path, ...params: MaybeOptionalArg<any>): Promise<any> {
+  post<Path extends keyof PostEndpoints, _TEndpoint extends PostEndpoints[Path]>(
+    path: Path,
+    ...params: MaybeOptionalArg<any>
+  ): Promise<any> {
     return this.request("post", path, ...params);
   }
   // </ApiClient.post>
@@ -13514,49 +13465,20 @@ export class ApiClient {
     ...params: MaybeOptionalArg<
       TEndpoint extends { parameters: infer UParams }
         ? NotNever<UParams> extends true
-          ? UParams & {
-              overrides?: RequestInit;
-              withResponse?: false;
-              throwOnStatusError?: boolean;
-            }
-          : {
-              overrides?: RequestInit;
-              withResponse?: false;
-              throwOnStatusError?: boolean;
-            }
-        : {
-            overrides?: RequestInit;
-            withResponse?: false;
-            throwOnStatusError?: boolean;
-          }
+          ? UParams & { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
+          : { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
+        : { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
     >
-  ): Promise<
-    Extract<
-      InferResponseByStatus<TEndpoint, SuccessStatusCode>,
-      { data: {} }
-    >["data"]
-  >;
+  ): Promise<Extract<InferResponseByStatus<TEndpoint, SuccessStatusCode>, { data: {} }>["data"]>;
 
   put<Path extends keyof PutEndpoints, TEndpoint extends PutEndpoints[Path]>(
     path: Path,
     ...params: MaybeOptionalArg<
       TEndpoint extends { parameters: infer UParams }
         ? NotNever<UParams> extends true
-          ? UParams & {
-              overrides?: RequestInit;
-              withResponse?: true;
-              throwOnStatusError?: boolean;
-            }
-          : {
-              overrides?: RequestInit;
-              withResponse?: true;
-              throwOnStatusError?: boolean;
-            }
-        : {
-            overrides?: RequestInit;
-            withResponse?: true;
-            throwOnStatusError?: boolean;
-          }
+          ? UParams & { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
+          : { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
+        : { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
     >
   ): Promise<SafeApiResponse<TEndpoint>>;
 
@@ -13569,133 +13491,63 @@ export class ApiClient {
   // </ApiClient.put>
 
   // <ApiClient.patch>
-  patch<
-    Path extends keyof PatchEndpoints,
-    TEndpoint extends PatchEndpoints[Path],
-  >(
+  patch<Path extends keyof PatchEndpoints, TEndpoint extends PatchEndpoints[Path]>(
     path: Path,
     ...params: MaybeOptionalArg<
       TEndpoint extends { parameters: infer UParams }
         ? NotNever<UParams> extends true
-          ? UParams & {
-              overrides?: RequestInit;
-              withResponse?: false;
-              throwOnStatusError?: boolean;
-            }
-          : {
-              overrides?: RequestInit;
-              withResponse?: false;
-              throwOnStatusError?: boolean;
-            }
-        : {
-            overrides?: RequestInit;
-            withResponse?: false;
-            throwOnStatusError?: boolean;
-          }
+          ? UParams & { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
+          : { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
+        : { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
     >
-  ): Promise<
-    Extract<
-      InferResponseByStatus<TEndpoint, SuccessStatusCode>,
-      { data: {} }
-    >["data"]
-  >;
+  ): Promise<Extract<InferResponseByStatus<TEndpoint, SuccessStatusCode>, { data: {} }>["data"]>;
 
-  patch<
-    Path extends keyof PatchEndpoints,
-    TEndpoint extends PatchEndpoints[Path],
-  >(
+  patch<Path extends keyof PatchEndpoints, TEndpoint extends PatchEndpoints[Path]>(
     path: Path,
     ...params: MaybeOptionalArg<
       TEndpoint extends { parameters: infer UParams }
         ? NotNever<UParams> extends true
-          ? UParams & {
-              overrides?: RequestInit;
-              withResponse?: true;
-              throwOnStatusError?: boolean;
-            }
-          : {
-              overrides?: RequestInit;
-              withResponse?: true;
-              throwOnStatusError?: boolean;
-            }
-        : {
-            overrides?: RequestInit;
-            withResponse?: true;
-            throwOnStatusError?: boolean;
-          }
+          ? UParams & { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
+          : { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
+        : { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
     >
   ): Promise<SafeApiResponse<TEndpoint>>;
 
-  patch<
-    Path extends keyof PatchEndpoints,
-    _TEndpoint extends PatchEndpoints[Path],
-  >(path: Path, ...params: MaybeOptionalArg<any>): Promise<any> {
+  patch<Path extends keyof PatchEndpoints, _TEndpoint extends PatchEndpoints[Path]>(
+    path: Path,
+    ...params: MaybeOptionalArg<any>
+  ): Promise<any> {
     return this.request("patch", path, ...params);
   }
   // </ApiClient.patch>
 
   // <ApiClient.delete>
-  delete<
-    Path extends keyof DeleteEndpoints,
-    TEndpoint extends DeleteEndpoints[Path],
-  >(
+  delete<Path extends keyof DeleteEndpoints, TEndpoint extends DeleteEndpoints[Path]>(
     path: Path,
     ...params: MaybeOptionalArg<
       TEndpoint extends { parameters: infer UParams }
         ? NotNever<UParams> extends true
-          ? UParams & {
-              overrides?: RequestInit;
-              withResponse?: false;
-              throwOnStatusError?: boolean;
-            }
-          : {
-              overrides?: RequestInit;
-              withResponse?: false;
-              throwOnStatusError?: boolean;
-            }
-        : {
-            overrides?: RequestInit;
-            withResponse?: false;
-            throwOnStatusError?: boolean;
-          }
+          ? UParams & { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
+          : { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
+        : { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
     >
-  ): Promise<
-    Extract<
-      InferResponseByStatus<TEndpoint, SuccessStatusCode>,
-      { data: {} }
-    >["data"]
-  >;
+  ): Promise<Extract<InferResponseByStatus<TEndpoint, SuccessStatusCode>, { data: {} }>["data"]>;
 
-  delete<
-    Path extends keyof DeleteEndpoints,
-    TEndpoint extends DeleteEndpoints[Path],
-  >(
+  delete<Path extends keyof DeleteEndpoints, TEndpoint extends DeleteEndpoints[Path]>(
     path: Path,
     ...params: MaybeOptionalArg<
       TEndpoint extends { parameters: infer UParams }
         ? NotNever<UParams> extends true
-          ? UParams & {
-              overrides?: RequestInit;
-              withResponse?: true;
-              throwOnStatusError?: boolean;
-            }
-          : {
-              overrides?: RequestInit;
-              withResponse?: true;
-              throwOnStatusError?: boolean;
-            }
-        : {
-            overrides?: RequestInit;
-            withResponse?: true;
-            throwOnStatusError?: boolean;
-          }
+          ? UParams & { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
+          : { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
+        : { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
     >
   ): Promise<SafeApiResponse<TEndpoint>>;
 
-  delete<
-    Path extends keyof DeleteEndpoints,
-    _TEndpoint extends DeleteEndpoints[Path],
-  >(path: Path, ...params: MaybeOptionalArg<any>): Promise<any> {
+  delete<Path extends keyof DeleteEndpoints, _TEndpoint extends DeleteEndpoints[Path]>(
+    path: Path,
+    ...params: MaybeOptionalArg<any>
+  ): Promise<any> {
     return this.request("delete", path, ...params);
   }
   // </ApiClient.delete>
@@ -13714,28 +13566,11 @@ export class ApiClient {
     ...params: MaybeOptionalArg<
       TEndpoint extends { parameters: infer UParams }
         ? NotNever<UParams> extends true
-          ? UParams & {
-              overrides?: RequestInit;
-              withResponse?: false;
-              throwOnStatusError?: boolean;
-            }
-          : {
-              overrides?: RequestInit;
-              withResponse?: false;
-              throwOnStatusError?: boolean;
-            }
-        : {
-            overrides?: RequestInit;
-            withResponse?: false;
-            throwOnStatusError?: boolean;
-          }
+          ? UParams & { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
+          : { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
+        : { overrides?: RequestInit; withResponse?: false; throwOnStatusError?: boolean }
     >
-  ): Promise<
-    Extract<
-      InferResponseByStatus<TEndpoint, SuccessStatusCode>,
-      { data: {} }
-    >["data"]
-  >;
+  ): Promise<Extract<InferResponseByStatus<TEndpoint, SuccessStatusCode>, { data: {} }>["data"]>;
 
   request<
     TMethod extends keyof EndpointByMethod,
@@ -13747,21 +13582,9 @@ export class ApiClient {
     ...params: MaybeOptionalArg<
       TEndpoint extends { parameters: infer UParams }
         ? NotNever<UParams> extends true
-          ? UParams & {
-              overrides?: RequestInit;
-              withResponse?: true;
-              throwOnStatusError?: boolean;
-            }
-          : {
-              overrides?: RequestInit;
-              withResponse?: true;
-              throwOnStatusError?: boolean;
-            }
-        : {
-            overrides?: RequestInit;
-            withResponse?: true;
-            throwOnStatusError?: boolean;
-          }
+          ? UParams & { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
+          : { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
+        : { overrides?: RequestInit; withResponse?: true; throwOnStatusError?: boolean }
     >
   ): Promise<SafeApiResponse<TEndpoint>>;
 
@@ -13769,11 +13592,7 @@ export class ApiClient {
     TMethod extends keyof EndpointByMethod,
     TPath extends keyof EndpointByMethod[TMethod],
     TEndpoint extends EndpointByMethod[TMethod][TPath],
-  >(
-    method: TMethod,
-    path: TPath,
-    ...params: MaybeOptionalArg<any>
-  ): Promise<any> {
+  >(method: TMethod, path: TPath, ...params: MaybeOptionalArg<any>): Promise<any> {
     const requestParams = params[0];
     const withResponse = requestParams?.withResponse;
     const {
@@ -13784,25 +13603,17 @@ export class ApiClient {
     } = requestParams || {};
 
     const parametersToSend: EndpointParameters = {};
-    if (requestParams?.body !== undefined)
-      (parametersToSend as any).body = requestParams.body;
-    if (requestParams?.query !== undefined)
-      (parametersToSend as any).query = requestParams.query;
-    if (requestParams?.header !== undefined)
-      (parametersToSend as any).header = requestParams.header;
-    if (requestParams?.path !== undefined)
-      (parametersToSend as any).path = requestParams.path;
+    if (requestParams?.body !== undefined) (parametersToSend as any).body = requestParams.body;
+    if (requestParams?.query !== undefined) (parametersToSend as any).query = requestParams.query;
+    if (requestParams?.header !== undefined) (parametersToSend as any).header = requestParams.header;
+    if (requestParams?.path !== undefined) (parametersToSend as any).path = requestParams.path;
 
-    const resolvedPath = (
-      this.fetcher.decodePathParams ?? this.defaultDecodePathParams
-    )(
+    const resolvedPath = (this.fetcher.decodePathParams ?? this.defaultDecodePathParams)(
       this.baseUrl + (path as string),
       (parametersToSend.path ?? {}) as Record<string, string>,
     );
     const url = new URL(resolvedPath);
-    const urlSearchParams = (
-      this.fetcher.encodeSearchParams ?? this.defaultEncodeSearchParams
-    )(parametersToSend.query);
+    const urlSearchParams = (this.fetcher.encodeSearchParams ?? this.defaultEncodeSearchParams)(parametersToSend.query);
 
     const promise = this.fetcher
       .fetch({
@@ -13815,28 +13626,20 @@ export class ApiClient {
         throwOnStatusError,
       })
       .then(async (response) => {
-        const data = await (
-          this.fetcher.parseResponseData ?? this.defaultParseResponseData
-        )(response);
+        const data = await (this.fetcher.parseResponseData ?? this.defaultParseResponseData)(response);
         const typedResponse = Object.assign(response, {
           data: data,
           json: () => Promise.resolve(data),
         }) as SafeApiResponse<TEndpoint>;
 
-        if (
-          throwOnStatusError &&
-          errorStatusCodes.includes(response.status as never)
-        ) {
+        if (throwOnStatusError && errorStatusCodes.includes(response.status as never)) {
           throw new TypedStatusError(typedResponse as never);
         }
 
         return withResponse ? typedResponse : data;
       });
 
-    return promise as Extract<
-      InferResponseByStatus<TEndpoint, SuccessStatusCode>,
-      { data: {} }
-    >["data"];
+    return promise as Extract<InferResponseByStatus<TEndpoint, SuccessStatusCode>, { data: {} }>["data"];
   }
   // </ApiClient.request>
 }
