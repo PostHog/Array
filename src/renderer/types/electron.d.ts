@@ -42,6 +42,7 @@ export interface IElectronAPI {
     channel: string,
     listener: (event: AgentEvent) => void,
   ) => () => void;
+  onOpenSettings: (listener: () => void) => () => void;
 }
 
 declare global {
