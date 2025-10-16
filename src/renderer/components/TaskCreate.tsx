@@ -15,7 +15,7 @@ import {
   Text,
   TextArea,
 } from "@radix-ui/themes";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
@@ -77,15 +77,15 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
 
   const folderPath = watch("folderPath");
 
-  useEffect(() => {
-    const detectRepoFromFolder = async () => {
-      if (!folderPath?.trim()) {
+  const detectRepoFromFolder = useCallback(
+    async (newPath: string) => {
+      if (!newPath?.trim()) {
         setRepoWarning(null);
         return;
       }
 
       try {
-        const repoInfo = await window.electronAPI?.detectRepo(folderPath);
+        const repoInfo = await window.electronAPI?.detectRepo(newPath);
         if (repoInfo) {
           const repoKey = formatRepoKey(
             repoInfo.organization,
@@ -106,10 +106,15 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       } catch {
         setRepoWarning(null);
       }
-    };
+    },
+    [isRepoInIntegration, setValue],
+  );
 
-    detectRepoFromFolder();
-  }, [folderPath, isRepoInIntegration, setValue]);
+  useEffect(() => {
+    if (folderPath) {
+      detectRepoFromFolder(folderPath);
+    }
+  }, [folderPath, detectRepoFromFolder]);
 
   const onSubmit = (data: {
     title: string;
