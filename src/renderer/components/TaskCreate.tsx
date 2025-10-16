@@ -15,15 +15,20 @@ import {
   Text,
   TextArea,
 } from "@radix-ui/themes";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
+import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
 import { useCreateTask } from "../hooks/useTasks";
 import { useWorkflows } from "../hooks/useWorkflows";
 import { useAuthStore } from "../stores/authStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
+import {
+  formatRepoKey,
+  parseRepoKey,
+  REPO_NOT_IN_INTEGRATION_WARNING,
+} from "../utils/repository";
 import { Combobox } from "./Combobox";
 import { FolderPicker } from "./FolderPicker";
 import { RichTextEditor } from "./RichTextEditor";
@@ -36,21 +41,15 @@ interface TaskCreateProps {
 export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const { mutate: createTask, isPending: isLoading, error } = useCreateTask();
   const { createTab } = useTabStore();
-  const { data: integrations = [] } = useIntegrations();
+  const { repositories, isRepoInIntegration } = useRepositoryIntegration();
   const { data: workflows = [] } = useWorkflows();
   const { client, isAuthenticated } = useAuthStore();
   const { setRepoPath: saveRepoPath, setRepoWorkingDir } =
     useTaskExecutionStore();
 
-  const githubIntegration = useMemo(
-    () => integrations.find((i) => i.kind === "github"),
-    [integrations],
-  );
-
-  const { data: repositories = [] } = useRepositories(githubIntegration?.id);
   const [isExpanded, setIsExpanded] = useState(false);
   const [createMore, setCreateMore] = useState(false);
-  const [_repoPath, setRepoPath] = useState<string | null>(null);
+  const [repoWarning, setRepoWarning] = useState<string | null>(null);
 
   const defaultWorkflow = useMemo(
     () => workflows.find((w) => w.is_active && w.is_default) || workflows[0],
@@ -66,7 +65,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     [workflows],
   );
 
-  const { register, handleSubmit, reset, control, watch } = useForm({
+  const { register, handleSubmit, reset, control, setValue, watch } = useForm({
     defaultValues: {
       title: "",
       description: "",
@@ -77,6 +76,45 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   });
 
   const folderPath = watch("folderPath");
+
+  const detectRepoFromFolder = useCallback(
+    async (newPath: string) => {
+      if (!newPath?.trim()) {
+        setRepoWarning(null);
+        return;
+      }
+
+      try {
+        const repoInfo = await window.electronAPI?.detectRepo(newPath);
+        if (repoInfo) {
+          const repoKey = formatRepoKey(
+            repoInfo.organization,
+            repoInfo.repository,
+          );
+          setValue("repository", repoKey);
+
+          if (!isRepoInIntegration(repoKey)) {
+            setRepoWarning(
+              `Repository ${repoKey} ${REPO_NOT_IN_INTEGRATION_WARNING}`,
+            );
+          } else {
+            setRepoWarning(null);
+          }
+        } else {
+          setRepoWarning(null);
+        }
+      } catch {
+        setRepoWarning(null);
+      }
+    },
+    [isRepoInIntegration, setValue],
+  );
+
+  useEffect(() => {
+    if (folderPath) {
+      detectRepoFromFolder(folderPath);
+    }
+  }, [folderPath, detectRepoFromFolder]);
 
   const onSubmit = (data: {
     title: string;
@@ -93,16 +131,9 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       return;
     }
 
-    let repositoryConfig:
-      | { organization: string; repository: string }
-      | undefined;
-
-    if (data.repository) {
-      const [organization, repository] = data.repository.split("/");
-      if (organization && repository) {
-        repositoryConfig = { organization, repository };
-      }
-    }
+    const repositoryConfig = data.repository
+      ? (parseRepoKey(data.repository) ?? undefined)
+      : undefined;
 
     createTask(
       {
@@ -130,7 +161,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
             data: newTask,
           });
           reset();
-          setRepoPath(null); // Reset the local repo path for next task
           if (!createMore) {
             onOpenChange(false);
           }
@@ -290,10 +320,16 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                         control={control}
                         render={({ field }) => (
                           <Combobox
-                            items={repositories.map((repo) => ({
-                              value: `${repo.organization}/${repo.repository}`,
-                              label: `${repo.organization}/${repo.repository}`,
-                            }))}
+                            items={repositories.map((repo) => {
+                              const repoKey = formatRepoKey(
+                                repo.organization,
+                                repo.repository,
+                              );
+                              return {
+                                value: repoKey,
+                                label: repoKey,
+                              };
+                            })}
                             value={field.value}
                             onValueChange={field.onChange}
                             placeholder="Select GitHub repo..."
@@ -310,6 +346,12 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                   </DataList.Item>
                 )}
               </DataList.Root>
+
+              {repoWarning && (
+                <Callout.Root color="orange" size="1">
+                  <Callout.Text>{repoWarning}</Callout.Text>
+                </Callout.Root>
+              )}
 
               {error && (
                 <Callout.Root color="red" size="1">

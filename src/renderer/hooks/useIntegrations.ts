@@ -2,7 +2,7 @@ import type { RepositoryConfig } from "@shared/types";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "../stores/authStore";
 
-interface Integration {
+export interface Integration {
   id: number;
   kind: string;
   [key: string]: unknown;

@@ -3,6 +3,7 @@ import {
   FilesIcon,
   GitBranchIcon,
   GithubLogoIcon,
+  WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { GearIcon, GlobeIcon } from "@radix-ui/react-icons";
 import {
@@ -21,12 +22,16 @@ import { format, formatDistanceToNow } from "date-fns";
 import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useBlurOnEscape } from "../hooks/useBlurOnEscape";
-import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
+import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
 import { useTasks, useUpdateTask } from "../hooks/useTasks";
 import { useWorkflowStages, useWorkflows } from "../hooks/useWorkflows";
 import { useStatusBarStore } from "../stores/statusBarStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
+import {
+  REPO_NOT_IN_INTEGRATION_WARNING,
+  repoConfigToKey,
+} from "../utils/repository";
 import { AsciiArt } from "./AsciiArt";
 import { Combobox } from "./Combobox";
 import { LogView } from "./LogView";
@@ -47,12 +52,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     getRepoWorkingDir,
     setRepoPath,
   } = useTaskExecutionStore();
-  const { data: integrations = [] } = useIntegrations();
-  const githubIntegration = useMemo(
-    () => integrations.find((i) => i.kind === "github"),
-    [integrations],
-  );
-  useRepositories(githubIntegration?.id);
+  const { isRepoInIntegration } = useRepositoryIntegration();
   const { data: tasks = [] } = useTasks();
   const { mutate: updateTask } = useUpdateTask();
   const { updateTabTitle, activeTabId } = useTabStore();
@@ -91,15 +91,16 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       title: task.title,
       description: task.description || "",
       workflow: task.workflow || "",
-      repository:
-        task.repository_config?.organization &&
-        task.repository_config.repository
-          ? `${task.repository_config.organization}/${task.repository_config.repository}`
-          : "",
+      repository: repoConfigToKey(task.repository_config),
     },
   });
 
   const repositoryValue = watch("repository");
+
+  const showRepoWarning = useMemo(
+    () => repositoryValue && !isRepoInIntegration(repositoryValue),
+    [repositoryValue, isRepoInIntegration],
+  );
 
   const displayRepoPath = useMemo(() => {
     if (!repoPath) return null;
@@ -114,10 +115,12 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   // Initialize repoPath from mapping if task has repository_config
   useEffect(() => {
     if (task.repository_config && !repoPath) {
-      const repoKey = `${task.repository_config.organization}/${task.repository_config.repository}`;
-      const savedPath = getRepoWorkingDir(repoKey);
-      if (savedPath) {
-        setRepoPath(task.id, savedPath);
+      const repoKey = repoConfigToKey(task.repository_config);
+      if (repoKey) {
+        const savedPath = getRepoWorkingDir(repoKey);
+        if (savedPath) {
+          setRepoPath(task.id, savedPath);
+        }
       }
     }
   }, [
@@ -133,11 +136,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       title: task.title,
       description: task.description || "",
       workflow: task.workflow || "",
-      repository:
-        task.repository_config?.organization &&
-        task.repository_config.repository
-          ? `${task.repository_config.organization}/${task.repository_config.repository}`
-          : "",
+      repository: repoConfigToKey(task.repository_config),
     });
   }, [
     task.title,
@@ -332,10 +331,21 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                 <DataList.Item>
                   <DataList.Label>Repository</DataList.Label>
                   <DataList.Value>
-                    <Button size="1" variant="outline" color="gray">
-                      <GithubLogoIcon />
-                      {repositoryValue || "No repository connected"}
-                    </Button>
+                    <Flex align="center" gap="2">
+                      <Button size="1" variant="outline" color="gray">
+                        <GithubLogoIcon />
+                        {repositoryValue || "No repository connected"}
+                      </Button>
+                      {showRepoWarning && (
+                        <Tooltip content={REPO_NOT_IN_INTEGRATION_WARNING}>
+                          <WarningCircleIcon
+                            size={16}
+                            weight="fill"
+                            style={{ color: "var(--orange-9)" }}
+                          />
+                        </Tooltip>
+                      )}
+                    </Flex>
                   </DataList.Value>
                 </DataList.Item>
 

@@ -7,6 +7,12 @@ export interface IElectronAPI {
   searchDirectories: (query: string, searchRoot?: string) => Promise<string[]>;
   validateRepo: (directoryPath: string) => Promise<boolean>;
   checkWriteAccess: (directoryPath: string) => Promise<boolean>;
+  detectRepo: (directoryPath: string) => Promise<{
+    organization: string;
+    repository: string;
+    branch?: string;
+    remote?: string;
+  } | null>;
   showMessageBox: (options: {
     type?: "none" | "info" | "error" | "question" | "warning";
     title?: string;
