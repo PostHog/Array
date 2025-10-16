@@ -1,7 +1,7 @@
 import type { AgentEvent } from "@posthog/agent";
 import { Box, Code } from "@radix-ui/themes";
-import { BaseLogEntry } from "./BaseLogEntry";
-import { MetricView } from "./MetricView";
+import { BaseLogEntry } from "@renderer/components/log/BaseLogEntry";
+import { MetricView } from "@renderer/components/log/MetricView";
 
 interface MetricEventViewProps {
   event: Extract<AgentEvent, { type: "metric" }>;

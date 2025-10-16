@@ -1,11 +1,11 @@
 import "@radix-ui/themes/styles.css";
+import App from "@renderer/App";
+import { ThemeWrapper } from "@renderer/components/ThemeWrapper";
+import { queryClient } from "@renderer/lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
-import { ThemeWrapper } from "./components/ThemeWrapper";
-import { queryClient } from "./lib/queryClient";
-import "./styles/globals.css";
+import "@renderer/styles/globals.css";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element not found");

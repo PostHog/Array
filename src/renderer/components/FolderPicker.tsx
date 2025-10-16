@@ -1,10 +1,10 @@
 import { Folder } from "@phosphor-icons/react";
 import { ChevronDownIcon } from "@radix-ui/react-icons";
 import { Box, Button, Flex, Popover, Text, TextField } from "@radix-ui/themes";
+import { Command } from "@renderer/components/command";
+import { useFolderPickerStore } from "@renderer/stores/folderPickerStore";
 import { useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useFolderPickerStore } from "../stores/folderPickerStore";
-import { Command } from "./command";
 
 interface FolderPickerProps {
   value: string;

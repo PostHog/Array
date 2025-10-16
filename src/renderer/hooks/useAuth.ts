@@ -1,6 +1,6 @@
+import { useAuthStore } from "@renderer/stores/authStore";
 import type { User } from "@shared/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "../stores/authStore";
 
 export const authKeys = {
   all: ["auth"] as const,

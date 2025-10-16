@@ -7,10 +7,10 @@ import {
   Kbd,
   Text,
 } from "@radix-ui/themes";
+import { useTabStore } from "@renderer/stores/tabStore";
 import type React from "react";
 import { useCallback, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useTabStore } from "../stores/tabStore";
 
 export function TabBar() {
   const {

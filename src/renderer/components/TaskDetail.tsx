@@ -17,25 +17,25 @@ import {
   Text,
   Tooltip,
 } from "@radix-ui/themes";
+import { AsciiArt } from "@renderer/components/AsciiArt";
+import { Combobox } from "@renderer/components/Combobox";
+import { LogView } from "@renderer/components/LogView";
+import { RichTextEditor } from "@renderer/components/RichTextEditor";
+import { useBlurOnEscape } from "@renderer/hooks/useBlurOnEscape";
+import { useRepositoryIntegration } from "@renderer/hooks/useRepositoryIntegration";
+import { useTasks, useUpdateTask } from "@renderer/hooks/useTasks";
+import { useWorkflowStages, useWorkflows } from "@renderer/hooks/useWorkflows";
+import { useStatusBarStore } from "@renderer/stores/statusBarStore";
+import { useTabStore } from "@renderer/stores/tabStore";
+import { useTaskExecutionStore } from "@renderer/stores/taskExecutionStore";
+import {
+  REPO_NOT_IN_INTEGRATION_WARNING,
+  repoConfigToKey,
+} from "@renderer/utils/repository";
 import type { Task } from "@shared/types";
 import { format, formatDistanceToNow } from "date-fns";
 import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { useBlurOnEscape } from "../hooks/useBlurOnEscape";
-import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
-import { useTasks, useUpdateTask } from "../hooks/useTasks";
-import { useWorkflowStages, useWorkflows } from "../hooks/useWorkflows";
-import { useStatusBarStore } from "../stores/statusBarStore";
-import { useTabStore } from "../stores/tabStore";
-import { useTaskExecutionStore } from "../stores/taskExecutionStore";
-import {
-  REPO_NOT_IN_INTEGRATION_WARNING,
-  repoConfigToKey,
-} from "../utils/repository";
-import { AsciiArt } from "./AsciiArt";
-import { Combobox } from "./Combobox";
-import { LogView } from "./LogView";
-import { RichTextEditor } from "./RichTextEditor";
 
 interface TaskDetailProps {
   task: Task;

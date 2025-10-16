@@ -1,5 +1,8 @@
 import { Box } from "@radix-ui/themes";
-import { ToolMetadata, ToolResultMessage } from "../ToolUI";
+import {
+  ToolMetadata,
+  ToolResultMessage,
+} from "@renderer/components/log/tools/ToolUI";
 
 interface WriteToolViewProps {
   args: any;

@@ -1,5 +1,5 @@
 import { Box } from "@radix-ui/themes";
-import { ToolResultMessage } from "../ToolUI";
+import { ToolResultMessage } from "@renderer/components/log/tools/ToolUI";
 
 interface KillShellToolViewProps {
   args: any;

@@ -1,5 +1,8 @@
 import { Box } from "@radix-ui/themes";
-import { ToolCodeBlock, ToolMetadata } from "../ToolUI";
+import {
+  ToolCodeBlock,
+  ToolMetadata,
+} from "@renderer/components/log/tools/ToolUI";
 
 interface ReadToolViewProps {
   args: any;

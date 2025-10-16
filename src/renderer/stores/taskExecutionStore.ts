@@ -1,8 +1,8 @@
 import type { AgentEvent } from "@posthog/agent";
+import { useAuthStore } from "@renderer/stores/authStore";
 import type { Task } from "@shared/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { useAuthStore } from "./authStore";
 
 type AgentTaskProgress = {
   has_progress?: boolean;
@@ -337,7 +337,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         }
 
         const { apiKey, apiHost, client } = useAuthStore.getState();
-        
+
         if (!apiKey) {
           store.addLog(taskId, {
             type: "error",

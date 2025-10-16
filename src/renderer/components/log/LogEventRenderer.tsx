@@ -1,15 +1,15 @@
 import type { AgentEvent } from "@posthog/agent";
 import { Code, ContextMenu } from "@radix-ui/themes";
-import { ArtifactView } from "./ArtifactView";
-import { BaseLogEntry } from "./BaseLogEntry";
-import { DoneView } from "./DoneView";
-import { ErrorView } from "./ErrorView";
-import { InitView } from "./InitView";
-import { MetricEventView } from "./MetricEventView";
-import { StatusView } from "./StatusView";
-import { TokenView } from "./TokenView";
-import { ToolExecutionView } from "./ToolExecutionView";
-import { UserMessageView } from "./UserMessageView";
+import { ArtifactView } from "@renderer/components/log/ArtifactView";
+import { BaseLogEntry } from "@renderer/components/log/BaseLogEntry";
+import { DoneView } from "@renderer/components/log/DoneView";
+import { ErrorView } from "@renderer/components/log/ErrorView";
+import { InitView } from "@renderer/components/log/InitView";
+import { MetricEventView } from "@renderer/components/log/MetricEventView";
+import { StatusView } from "@renderer/components/log/StatusView";
+import { TokenView } from "@renderer/components/log/TokenView";
+import { ToolExecutionView } from "@renderer/components/log/ToolExecutionView";
+import { UserMessageView } from "@renderer/components/log/UserMessageView";
 
 const EVENT_COMPONENT_MAP: Record<
   string,

@@ -1,6 +1,6 @@
 import type { AgentEvent } from "@posthog/agent";
 import { Code } from "@radix-ui/themes";
-import { BaseLogEntry } from "./BaseLogEntry";
+import { BaseLogEntry } from "@renderer/components/log/BaseLogEntry";
 
 interface ErrorViewProps {
   event: Extract<AgentEvent, { type: "error" }>;

@@ -1,4 +1,18 @@
 import { Box } from "@radix-ui/themes";
+import {
+  MentionList,
+  type MentionListRef,
+} from "@renderer/components/FileMentionList";
+import { FormattingToolbar } from "@renderer/components/FormattingToolbar";
+import {
+  extractUrlFromMarkdown,
+  isUrl,
+  parsePostHogUrl,
+} from "@renderer/utils/posthog-url-parser";
+import {
+  markdownToTiptap,
+  tiptapToMarkdown,
+} from "@renderer/utils/tiptap-converter";
 import type { MentionItem } from "@shared/types";
 import { Link } from "@tiptap/extension-link";
 import { Mention } from "@tiptap/extension-mention";
@@ -10,14 +24,6 @@ import StarterKit from "@tiptap/starter-kit";
 import type { SuggestionOptions } from "@tiptap/suggestion";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  extractUrlFromMarkdown,
-  isUrl,
-  parsePostHogUrl,
-} from "../utils/posthog-url-parser";
-import { markdownToTiptap, tiptapToMarkdown } from "../utils/tiptap-converter";
-import { MentionList, type MentionListRef } from "./FileMentionList";
-import { FormattingToolbar } from "./FormattingToolbar";
 
 interface RichTextEditorProps {
   value: string;

@@ -2,6 +2,10 @@ import dns from "node:dns";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { registerAgentIpc, type TaskController } from "@main/services/agent";
+import { registerFsIpc } from "@main/services/fs";
+import { registerOsIpc } from "@main/services/os";
+import { registerPosthogIpc } from "@main/services/posthog";
 import {
   app,
   BrowserWindow,
@@ -9,10 +13,6 @@ import {
   type MenuItemConstructorOptions,
   shell,
 } from "electron";
-import { registerAgentIpc, type TaskController } from "./services/agent.js";
-import { registerFsIpc } from "./services/fs.js";
-import { registerOsIpc } from "./services/os.js";
-import { registerPosthogIpc } from "./services/posthog.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

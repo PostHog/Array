@@ -1,7 +1,7 @@
 import { CheckIcon, ChevronDownIcon } from "@radix-ui/react-icons";
 import { Box, Button, Flex, Popover, Text, TextField } from "@radix-ui/themes";
+import { Command } from "@renderer/components/command";
 import { type ReactNode, useMemo, useState } from "react";
-import { Command } from "./command";
 
 interface ComboboxItem {
   value: string;

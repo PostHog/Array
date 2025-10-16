@@ -1,18 +1,18 @@
 import { Box, Flex } from "@radix-ui/themes";
+import { CommandMenu } from "@renderer/components/command";
+import { SettingsView } from "@renderer/components/SettingsView";
+import { StatusBar } from "@renderer/components/StatusBar";
+import { TabBar } from "@renderer/components/TabBar";
+import { TaskCreate } from "@renderer/components/TaskCreate";
+import { TaskDetail } from "@renderer/components/TaskDetail";
+import { TaskList } from "@renderer/components/TaskList";
+import { WorkflowForm } from "@renderer/components/WorkflowForm";
+import { WorkflowView } from "@renderer/components/WorkflowView";
+import { useIntegrations } from "@renderer/hooks/useIntegrations";
+import { useTabStore } from "@renderer/stores/tabStore";
 import type { Task } from "@shared/types";
 import { useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useIntegrations } from "../hooks/useIntegrations";
-import { useTabStore } from "../stores/tabStore";
-import { CommandMenu } from "./command";
-import { SettingsView } from "./SettingsView";
-import { StatusBar } from "./StatusBar";
-import { TabBar } from "./TabBar";
-import { TaskCreate } from "./TaskCreate";
-import { TaskDetail } from "./TaskDetail";
-import { TaskList } from "./TaskList";
-import { WorkflowForm } from "./WorkflowForm";
-import { WorkflowView } from "./WorkflowView";
 
 export function MainLayout() {
   const { activeTabId, tabs, createTab, setActiveTab } = useTabStore();

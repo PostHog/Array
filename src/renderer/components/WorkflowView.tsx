@@ -10,15 +10,15 @@ import {
   Spinner,
   Text,
 } from "@radix-ui/themes";
+import { AsciiArt } from "@renderer/components/AsciiArt";
+import { WorkflowForm } from "@renderer/components/WorkflowForm";
+import { useTasks } from "@renderer/hooks/useTasks";
+import { useAgents, useWorkflows } from "@renderer/hooks/useWorkflows";
+import { useStatusBarStore } from "@renderer/stores/statusBarStore";
+import { useWorkflowStore } from "@renderer/stores/workflowStore";
 import type { Task, WorkflowStage } from "@shared/types";
 import { formatDistanceToNow } from "date-fns";
 import { useEffect, useMemo, useState } from "react";
-import { useTasks } from "../hooks/useTasks";
-import { useAgents, useWorkflows } from "../hooks/useWorkflows";
-import { useStatusBarStore } from "../stores/statusBarStore";
-import { useWorkflowStore } from "../stores/workflowStore";
-import { AsciiArt } from "./AsciiArt";
-import { WorkflowForm } from "./WorkflowForm";
 
 interface WorkflowViewProps {
   onSelectTask: (task: Task) => void;

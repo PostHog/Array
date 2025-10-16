@@ -1,7 +1,7 @@
 import { Cross2Icon } from "@radix-ui/react-icons";
 import { Box, Flex, IconButton, Text, TextField } from "@radix-ui/themes";
+import { Combobox } from "@renderer/components/Combobox";
 import type { AgentDefinition } from "@shared/types";
-import { Combobox } from "../Combobox";
 
 interface StageFormItemProps {
   name: string;

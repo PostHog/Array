@@ -8,8 +8,8 @@ import {
   Kbd,
   Tooltip,
 } from "@radix-ui/themes";
-import { useStatusBarStore } from "../stores/statusBarStore";
-import { StatusBarMenu } from "./StatusBarMenu";
+import { StatusBarMenu } from "@renderer/components/StatusBarMenu";
+import { useStatusBarStore } from "@renderer/stores/statusBarStore";
 
 interface StatusBarProps {
   showKeyHints?: boolean;

@@ -7,9 +7,11 @@ import {
   IconButton,
   TabNav,
 } from "@radix-ui/themes";
-import type { Workflow } from "@shared/types";
-import { useEffect, useState } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
+import { WorkflowBasicInfoStep } from "@renderer/components/workflow/WorkflowBasicInfoStep";
+import {
+  type StageFormData,
+  WorkflowStagesStep,
+} from "@renderer/components/workflow/WorkflowStagesStep";
 import {
   useAgents,
   useCreateStage,
@@ -18,14 +20,12 @@ import {
   useUpdateStage,
   useUpdateWorkflow,
   useWorkflows,
-} from "../hooks/useWorkflows";
-import { useTabStore } from "../stores/tabStore";
-import { useWorkflowStore } from "../stores/workflowStore";
-import { WorkflowBasicInfoStep } from "./workflow/WorkflowBasicInfoStep";
-import {
-  type StageFormData,
-  WorkflowStagesStep,
-} from "./workflow/WorkflowStagesStep";
+} from "@renderer/hooks/useWorkflows";
+import { useTabStore } from "@renderer/stores/tabStore";
+import { useWorkflowStore } from "@renderer/stores/workflowStore";
+import type { Workflow } from "@shared/types";
+import { useEffect, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 
 interface WorkflowFormProps {
   open: boolean;

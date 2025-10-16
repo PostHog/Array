@@ -8,11 +8,11 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
+import { AsciiArt } from "@renderer/components/AsciiArt";
+import { useAuthStore } from "@renderer/stores/authStore";
+import { useThemeStore } from "@renderer/stores/themeStore";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
-import { useAuthStore } from "../stores/authStore";
-import { useThemeStore } from "../stores/themeStore";
-import { AsciiArt } from "./AsciiArt";
 
 export function SettingsView() {
   const {

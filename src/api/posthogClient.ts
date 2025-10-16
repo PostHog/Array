@@ -1,6 +1,6 @@
+import { buildApiFetcher } from "@api/fetcher";
+import { createApiClient, type Schemas } from "@api/generated";
 import type { RepositoryConfig } from "@shared/types";
-import { buildApiFetcher } from "./fetcher";
-import { createApiClient, type Schemas } from "./generated";
 
 export class PostHogAPIClient {
   private api: ReturnType<typeof createApiClient>;

@@ -1,6 +1,6 @@
+import { useAuthStore } from "@renderer/stores/authStore";
 import type { Task } from "@shared/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "../stores/authStore";
 
 export const taskKeys = {
   all: ["tasks"] as const,

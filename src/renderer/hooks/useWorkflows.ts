@@ -1,6 +1,6 @@
+import { useAuthStore } from "@renderer/stores/authStore";
 import type { AgentDefinition, Workflow, WorkflowStage } from "@shared/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "../stores/authStore";
 
 export const workflowKeys = {
   all: ["workflows"] as const,

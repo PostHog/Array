@@ -9,11 +9,11 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
+import { AsciiArt } from "@renderer/components/AsciiArt";
+import { useAuthStore } from "@renderer/stores/authStore";
 import { useMutation } from "@tanstack/react-query";
 import type React from "react";
 import { useId, useState } from "react";
-import { useAuthStore } from "../stores/authStore";
-import { AsciiArt } from "./AsciiArt";
 
 export function AuthScreen() {
   const apiKeyId = useId();

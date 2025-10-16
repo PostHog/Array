@@ -1,7 +1,6 @@
 import { Check, CircleNotch, X } from "@phosphor-icons/react";
 import type { AgentEvent } from "@posthog/agent";
 import { Box, Code } from "@radix-ui/themes";
-import type { ReactNode } from "react";
 import {
   BashOutputToolView,
   BashToolView,
@@ -18,8 +17,9 @@ import {
   WebFetchToolView,
   WebSearchToolView,
   WriteToolView,
-} from "./tools";
-import { ToolExecutionWrapper } from "./tools/ToolUI";
+} from "@renderer/components/log/tools";
+import { ToolExecutionWrapper } from "@renderer/components/log/tools/ToolUI";
+import type { ReactNode } from "react";
 
 interface ToolExecutionViewProps {
   call: Extract<AgentEvent, { type: "tool_call" }>;

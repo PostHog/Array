@@ -1,5 +1,5 @@
 import { Code, Flex } from "@radix-ui/themes";
-import { KeyHint } from "./KeyHint";
+import { KeyHint } from "@renderer/components/command/KeyHint";
 
 export function CommandKeyHints() {
   return (

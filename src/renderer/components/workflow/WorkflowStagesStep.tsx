@@ -1,7 +1,7 @@
 import { PlusIcon, QuestionMarkCircledIcon } from "@radix-ui/react-icons";
 import { Button, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { StageFormItem } from "@renderer/components/workflow/StageFormItem";
 import type { AgentDefinition } from "@shared/types";
-import { StageFormItem } from "./StageFormItem";
 
 export interface StageFormData {
   id: string;

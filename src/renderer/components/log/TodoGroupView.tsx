@@ -7,8 +7,8 @@ import {
 } from "@phosphor-icons/react";
 import type { AgentEvent } from "@posthog/agent";
 import { Box, Code, ContextMenu } from "@radix-ui/themes";
+import { ToolExecutionView } from "@renderer/components/log/ToolExecutionView";
 import { useState } from "react";
-import { ToolExecutionView } from "./ToolExecutionView";
 
 interface Todo {
   content: string;

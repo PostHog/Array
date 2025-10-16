@@ -10,9 +10,9 @@ import {
   Text,
   Tooltip,
 } from "@radix-ui/themes";
+import { LogEventRenderer } from "@renderer/components/log/LogEventRenderer";
+import { TodoGroupView } from "@renderer/components/log/TodoGroupView";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { LogEventRenderer } from "./log/LogEventRenderer";
-import { TodoGroupView } from "./log/TodoGroupView";
 
 interface LogViewProps {
   logs: AgentEvent[];

@@ -15,23 +15,23 @@ import {
   Text,
   TextArea,
 } from "@radix-ui/themes";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
-import { useHotkeys } from "react-hotkeys-hook";
-import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
-import { useCreateTask } from "../hooks/useTasks";
-import { useWorkflows } from "../hooks/useWorkflows";
-import { useAuthStore } from "../stores/authStore";
-import { useTabStore } from "../stores/tabStore";
-import { useTaskExecutionStore } from "../stores/taskExecutionStore";
+import { Combobox } from "@renderer/components/Combobox";
+import { FolderPicker } from "@renderer/components/FolderPicker";
+import { RichTextEditor } from "@renderer/components/RichTextEditor";
+import { useRepositoryIntegration } from "@renderer/hooks/useRepositoryIntegration";
+import { useCreateTask } from "@renderer/hooks/useTasks";
+import { useWorkflows } from "@renderer/hooks/useWorkflows";
+import { useAuthStore } from "@renderer/stores/authStore";
+import { useTabStore } from "@renderer/stores/tabStore";
+import { useTaskExecutionStore } from "@renderer/stores/taskExecutionStore";
 import {
   formatRepoKey,
   parseRepoKey,
   REPO_NOT_IN_INTEGRATION_WARNING,
-} from "../utils/repository";
-import { Combobox } from "./Combobox";
-import { FolderPicker } from "./FolderPicker";
-import { RichTextEditor } from "./RichTextEditor";
+} from "@renderer/utils/repository";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { useHotkeys } from "react-hotkeys-hook";
 
 interface TaskCreateProps {
   open: boolean;

@@ -1,5 +1,8 @@
 import { Badge, Box, Code } from "@radix-ui/themes";
-import { ToolBadgeGroup, ToolMetadata } from "../ToolUI";
+import {
+  ToolBadgeGroup,
+  ToolMetadata,
+} from "@renderer/components/log/tools/ToolUI";
 
 interface WebSearchToolViewProps {
   args: any;

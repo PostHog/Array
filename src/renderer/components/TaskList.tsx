@@ -9,17 +9,17 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
+import { AsciiArt } from "@renderer/components/AsciiArt";
+import { ShortcutCard } from "@renderer/components/ShortcutCard";
+import { TaskItem } from "@renderer/components/TaskItem";
+import { useTasks } from "@renderer/hooks/useTasks";
+import { useAuthStore } from "@renderer/stores/authStore";
+import { useStatusBarStore } from "@renderer/stores/statusBarStore";
+import { useTaskStore } from "@renderer/stores/taskStore";
 import type { Task } from "@shared/types";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useTasks } from "../hooks/useTasks";
-import { useAuthStore } from "../stores/authStore";
-import { useStatusBarStore } from "../stores/statusBarStore";
-import { useTaskStore } from "../stores/taskStore";
-import { AsciiArt } from "./AsciiArt";
-import { ShortcutCard } from "./ShortcutCard";
-import { TaskItem } from "./TaskItem";
 
 interface TaskListProps {
   onSelectTask: (task: Task) => void;

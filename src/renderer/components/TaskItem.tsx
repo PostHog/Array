@@ -1,13 +1,13 @@
 import { CopyIcon, TrashIcon } from "@radix-ui/react-icons";
 import { Badge, Box, ContextMenu, Flex, Text } from "@radix-ui/themes";
+import { TaskDragPreview } from "@renderer/components/TaskDragPreview";
+import { useDeleteTask, useDuplicateTask } from "@renderer/hooks/useTasks";
+import { useTaskStore } from "@renderer/stores/taskStore";
 import type { Task } from "@shared/types";
 import { formatDistanceToNow } from "date-fns";
 import type React from "react";
 import { memo, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useDeleteTask, useDuplicateTask } from "../hooks/useTasks";
-import { useTaskStore } from "../stores/taskStore";
-import { TaskDragPreview } from "./TaskDragPreview";
 
 interface TaskItemProps {
   task: Task;

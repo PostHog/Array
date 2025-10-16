@@ -4,7 +4,7 @@ import {
   ToolCodeBlock,
   ToolCommandBlock,
   ToolResultMessage,
-} from "../ToolUI";
+} from "@renderer/components/log/tools/ToolUI";
 
 interface BashToolViewProps {
   args: any;

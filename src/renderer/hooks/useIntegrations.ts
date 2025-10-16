@@ -1,6 +1,6 @@
+import { useAuthStore } from "@renderer/stores/authStore";
 import type { RepositoryConfig } from "@shared/types";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "../stores/authStore";
 
 export interface Integration {
   id: number;

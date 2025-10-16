@@ -1,6 +1,9 @@
+import {
+  useIntegrations,
+  useRepositories,
+} from "@renderer/hooks/useIntegrations";
+import { formatRepoKey } from "@renderer/utils/repository";
 import { useMemo } from "react";
-import { formatRepoKey } from "../utils/repository";
-import { useIntegrations, useRepositories } from "./useIntegrations";
 
 export function useRepositoryIntegration() {
   const { data: integrations = [] } = useIntegrations();

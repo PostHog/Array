@@ -1,7 +1,7 @@
 import type { AgentEvent } from "@posthog/agent";
 import { Box, Code } from "@radix-ui/themes";
-import { BaseLogEntry } from "./BaseLogEntry";
-import { ToolCallView } from "./ToolCallView";
+import { BaseLogEntry } from "@renderer/components/log/BaseLogEntry";
+import { ToolCallView } from "@renderer/components/log/ToolCallView";
 import {
   BashOutputToolView,
   BashToolView,
@@ -18,7 +18,7 @@ import {
   WebFetchToolView,
   WebSearchToolView,
   WriteToolView,
-} from "./tools";
+} from "@renderer/components/log/tools";
 
 interface ToolResultEventViewProps {
   event: Extract<AgentEvent, { type: "tool_result" }>;

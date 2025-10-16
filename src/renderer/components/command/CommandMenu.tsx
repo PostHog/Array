@@ -4,13 +4,13 @@ import {
   ListBulletIcon,
 } from "@radix-ui/react-icons";
 import { Flex, Text } from "@radix-ui/themes";
+import { Command } from "@renderer/components/command/Command";
+import { CommandKeyHints } from "@renderer/components/command/CommandKeyHints";
+import { useTasks } from "@renderer/hooks/useTasks";
+import { useTabStore } from "@renderer/stores/tabStore";
 import { useCallback, useEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import type { Task } from "@/shared/types";
-import { useTasks } from "../../hooks/useTasks";
-import { useTabStore } from "../../stores/tabStore";
-import { Command } from "./Command";
-import { CommandKeyHints } from "./CommandKeyHints";
 
 interface CommandMenuProps {
   open: boolean;
