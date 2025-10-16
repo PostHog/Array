@@ -19,6 +19,18 @@
       "recommended": true,
       "nursery": {
         "useSortedClasses": "error"
+      },
+      "style": {
+        "noRestrictedImports": {
+          "options": {
+            "patterns": [
+              {
+                "group": ["./*", "../*"],
+                "message": "Relative imports are forbidden. Use path aliases instead (@api/*, @main/*, @renderer/*, @shared/*)."
+              }
+            ]
+          }
+        }
       }
     },
     "domains": {
