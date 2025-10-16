@@ -1,7 +1,7 @@
+import type { AgentEvent } from "@posthog/agent";
 import type { Task } from "@shared/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { LogEntry } from "../types/log";
 import { useAuthStore } from "./authStore";
 
 type AgentTaskProgress = {
@@ -45,12 +45,12 @@ const formatProgressLog = (progress: AgentTaskProgress): string => {
     typeof progress.total_steps === "number" && progress.total_steps > 0
       ? ` ${Math.round((currentStep / progress.total_steps) * 100)}%`
       : "";
-  return `📊 Progress: ${statusLabel} | step=${step} (${currentStep}/${total})${percentage}`;
+  return `Progress: ${statusLabel} | step=${step} (${currentStep}/${total})${percentage}`;
 };
 
 interface TaskExecutionState {
   isRunning: boolean;
-  logs: Array<string | LogEntry>;
+  logs: AgentEvent[];
   repoPath: string | null;
   currentTaskId: string | null;
   runMode: "local" | "cloud";
@@ -72,8 +72,8 @@ interface TaskExecutionStore {
     updates: Partial<TaskExecutionState>,
   ) => void;
   setRunning: (taskId: string, isRunning: boolean) => void;
-  addLog: (taskId: string, log: string | LogEntry) => void;
-  setLogs: (taskId: string, logs: Array<string | LogEntry>) => void;
+  addLog: (taskId: string, log: AgentEvent) => void;
+  setLogs: (taskId: string, logs: AgentEvent[]) => void;
   setRepoPath: (taskId: string, repoPath: string | null) => void;
   setCurrentTaskId: (taskId: string, currentTaskId: string | null) => void;
   setRunMode: (taskId: string, runMode: "local" | "cloud") => void;
@@ -150,14 +150,14 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         get().updateTaskState(taskId, { isRunning });
       },
 
-      addLog: (taskId: string, log: string | LogEntry) => {
+      addLog: (taskId: string, log: AgentEvent) => {
         const currentState = get().getTaskState(taskId);
         get().updateTaskState(taskId, {
           logs: [...currentState.logs, log],
         });
       },
 
-      setLogs: (taskId: string, logs: Array<string | LogEntry>) => {
+      setLogs: (taskId: string, logs: AgentEvent[]) => {
         get().updateTaskState(taskId, { logs });
       },
 
@@ -211,135 +211,43 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         // Create new subscription that persists even when component unmounts
         const unsubscribeFn = window.electronAPI?.onAgentEvent(
           channel,
-          // biome-ignore lint/suspicious/noExplicitAny: I have no idea what the type is, but it's coming from the agent.
-          (ev: any) => {
+          (
+            ev: AgentEvent | { type: "progress"; progress: AgentTaskProgress },
+          ) => {
             const currentStore = get();
 
-            switch (ev?.type) {
-              case "token":
-                if (
-                  typeof ev.content === "string" &&
-                  ev.content.trim().length > 0
-                ) {
-                  currentStore.addLog(taskId, {
-                    type: "text",
-                    ts: ev.ts || Date.now(),
-                    content: ev.content,
-                  });
-                }
-                break;
-              case "progress": {
-                const rawProgress = ev.progress as
-                  | AgentTaskProgress
-                  | undefined;
-                if (
-                  rawProgress &&
-                  typeof rawProgress === "object" &&
-                  rawProgress.has_progress
-                ) {
-                  const previousState = currentStore.getTaskState(taskId);
-                  const nextSignature = createProgressSignature(rawProgress);
-                  if (previousState.progressSignature !== nextSignature) {
-                    currentStore.setProgress(taskId, rawProgress);
-                    currentStore.addLog(taskId, {
-                      type: "text",
-                      ts: ev.ts || Date.now(),
-                      content: formatProgressLog(rawProgress),
-                    });
-                  }
-                }
-                break;
+            // Handle custom progress events from Array backend
+            if (ev?.type === "progress" && "progress" in ev) {
+              const newProgress = ev.progress;
+              const oldProgress = currentStore.getTaskState(taskId).progress;
+              const oldSig = oldProgress
+                ? createProgressSignature(oldProgress)
+                : null;
+              const newSig = createProgressSignature(newProgress);
+              if (oldSig !== newSig) {
+                const progressLog = formatProgressLog(newProgress);
+                currentStore.setProgress(taskId, newProgress);
+                currentStore.addLog(taskId, {
+                  type: "status",
+                  ts: Date.now(),
+                  phase: progressLog,
+                });
               }
-              case "status":
-                if (ev.phase) {
-                  currentStore.addLog(taskId, {
-                    type: "status",
-                    ts: ev.ts || Date.now(),
-                    phase: ev.phase,
-                  });
-                } else if (ev.message) {
-                  currentStore.addLog(taskId, {
-                    type: "text",
-                    ts: ev.ts || Date.now(),
-                    content: ev.message,
-                  });
+              return;
+            }
+
+            // Store AgentEvent directly (ev is now narrowed to AgentEvent)
+            if (ev?.type) {
+              // Handle state changes for special event types
+              if (ev.type === "error" || ev.type === "done") {
+                currentStore.setRunning(taskId, false);
+                if (ev.type === "done") {
+                  currentStore.setUnsubscribe(taskId, null);
                 }
-                break;
-              case "tool_call":
-                currentStore.addLog(taskId, {
-                  type: "tool_call",
-                  ts: ev.ts || Date.now(),
-                  toolName: ev.toolName || ev.tool || ev.name || "unknown-tool",
-                  callId: ev.callId,
-                  args: ev.args ?? ev.input,
-                });
-                break;
-              case "tool_result":
-                currentStore.addLog(taskId, {
-                  type: "tool_result",
-                  ts: ev.ts || Date.now(),
-                  toolName: ev.toolName || ev.tool || ev.name || "unknown-tool",
-                  callId: ev.callId,
-                  result: ev.result ?? ev.output,
-                });
-                break;
-              case "diff":
-                currentStore.addLog(taskId, {
-                  type: "diff",
-                  ts: ev.ts || Date.now(),
-                  file: ev.file || ev.path || "",
-                  patch: ev.patch ?? ev.patchText ?? ev.diff,
-                  summary: ev.summary,
-                });
-                break;
-              case "file_write":
-                currentStore.addLog(taskId, {
-                  type: "file_write",
-                  ts: ev.ts || Date.now(),
-                  path: ev.path || "",
-                  bytes: ev.bytes,
-                });
-                break;
-              case "metric":
-                currentStore.addLog(taskId, {
-                  type: "metric",
-                  ts: ev.ts || Date.now(),
-                  key: ev.key || "",
-                  value: ev.value ?? 0,
-                  unit: ev.unit,
-                });
-                break;
-              case "artifact":
-                currentStore.addLog(taskId, {
-                  type: "artifact",
-                  ts: ev.ts || Date.now(),
-                  kind: ev.kind || "artifact",
-                  content: ev.content,
-                });
-                break;
-              case "error":
-                currentStore.addLog(taskId, {
-                  type: "text",
-                  ts: ev.ts || Date.now(),
-                  level: "error",
-                  content: `error: ${ev.message || "Unknown error"}`,
-                });
-                currentStore.setRunning(taskId, false);
-                break;
-              case "done":
-                currentStore.addLog(taskId, {
-                  type: "text",
-                  ts: ev.ts || Date.now(),
-                  content: ev.success
-                    ? "Agent run completed"
-                    : "Agent run ended with errors",
-                });
-                currentStore.setRunning(taskId, false);
-                // Clean up subscription when done
-                currentStore.setUnsubscribe(taskId, null);
-                break;
-              default:
-                currentStore.addLog(taskId, `event: ${JSON.stringify(ev)}`);
+              }
+
+              // Add event to logs
+              currentStore.addLog(taskId, ev);
             }
           },
         );
@@ -365,19 +273,21 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           if (selected) {
             const isRepo = await window.electronAPI?.validateRepo(selected);
             if (!isRepo) {
-              store.addLog(
-                taskId,
-                `Selected folder is not a git repository: ${selected}`,
-              );
+              store.addLog(taskId, {
+                type: "error",
+                ts: Date.now(),
+                message: `Selected folder is not a git repository: ${selected}`,
+              });
               return;
             }
             const canWrite =
               await window.electronAPI?.checkWriteAccess(selected);
             if (!canWrite) {
-              store.addLog(
-                taskId,
-                `No write permission in selected folder: ${selected}`,
-              );
+              store.addLog(taskId, {
+                type: "error",
+                ts: Date.now(),
+                message: `No write permission in selected folder: ${selected}`,
+              });
               const result = await window.electronAPI?.showMessageBox({
                 type: "warning",
                 title: "Folder is not writable",
@@ -403,10 +313,11 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
             }
           }
         } catch (err) {
-          store.addLog(
-            taskId,
-            `Error selecting directory: ${err instanceof Error ? err.message : String(err)}`,
-          );
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message: `Error selecting directory: ${err instanceof Error ? err.message : String(err)}`,
+          });
         }
       },
 
@@ -417,19 +328,22 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         if (taskState.isRunning) return;
 
         if (!task.workflow) {
-          store.addLog(
-            taskId,
-            "Select a PostHog workflow before running the agent.",
-          );
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message: "Select a PostHog workflow before running the agent.",
+          });
           return;
         }
 
         const { apiKey, apiHost } = useAuthStore.getState();
         if (!apiKey) {
-          store.addLog(
-            taskId,
-            "No PostHog API key found. Sign in to PostHog to run workflows.",
-          );
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message:
+              "No PostHog API key found. Sign in to PostHog to run workflows.",
+          });
           return;
         }
 
@@ -441,27 +355,33 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         }
 
         if (!effectiveRepoPath) {
-          store.addLog(taskId, "No repository folder selected.");
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message: "No repository folder selected.",
+          });
           return;
         }
 
         const isRepo =
           await window.electronAPI?.validateRepo(effectiveRepoPath);
         if (!isRepo) {
-          store.addLog(
-            taskId,
-            `Selected folder is not a git repository: ${effectiveRepoPath}`,
-          );
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message: `Selected folder is not a git repository: ${effectiveRepoPath}`,
+          });
           return;
         }
 
         const canWrite =
           await window.electronAPI?.checkWriteAccess(effectiveRepoPath);
         if (!canWrite) {
-          store.addLog(
-            taskId,
-            `No write permission in selected folder: ${effectiveRepoPath}`,
-          );
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message: `No write permission in selected folder: ${effectiveRepoPath}`,
+          });
           const result = await window.electronAPI?.showMessageBox({
             type: "warning",
             title: "Folder is not writable",
@@ -489,17 +409,17 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         const startTs = Date.now();
         store.setLogs(taskId, [
           {
-            type: "text",
+            type: "token",
             ts: startTs,
             content: `Starting workflow run...`,
           },
           {
-            type: "text",
+            type: "token",
             ts: startTs,
             content: `Permission mode: ${permissionMode}`,
           },
           {
-            type: "text",
+            type: "token",
             ts: startTs,
             content: `Repo: ${effectiveRepoPath}`,
           },
@@ -516,10 +436,11 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
             autoProgress: true,
           });
           if (!result) {
-            store.addLog(
-              taskId,
-              "Failed to start agent: electronAPI not available",
-            );
+            store.addLog(taskId, {
+              type: "error",
+              ts: Date.now(),
+              message: "Failed to start agent: electronAPI not available",
+            });
             store.setRunning(taskId, false);
             return;
           }
@@ -530,10 +451,11 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           // Subscribe to streaming events using store-managed subscription
           store.subscribeToAgentEvents(taskId, channel);
         } catch (error) {
-          store.addLog(
-            taskId,
-            `Error starting agent: ${error instanceof Error ? error.message : "Unknown error"}`,
-          );
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message: `Error starting agent: ${error instanceof Error ? error.message : "Unknown error"}`,
+          });
           store.setRunning(taskId, false);
         }
       },
@@ -551,7 +473,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         }
 
         store.addLog(taskId, {
-          type: "text",
+          type: "token",
           ts: Date.now(),
           content: "Run cancelled",
         });

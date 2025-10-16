@@ -35,3 +35,167 @@ body {
 .no-drag {
   -webkit-app-region: no-drag;
 }
+
+/* File mention list styles */
+.file-mention-item {
+  padding: var(--space-2);
+  cursor: pointer;
+  background-color: white;
+  border-radius: var(--radius-2);
+  transition: background-color 0.1s ease;
+}
+
+.file-mention-item.is-selected {
+  background-color: white;
+  color: var(--gray-3);
+}
+
+/* Rich text editor styles */
+.file-mention {
+  background-color: var(--accent-a3);
+  border: 1px solid var(--accent-a6);
+  border-radius: var(--radius-1);
+  padding: 0.125rem 0.375rem;
+  color: var(--accent-11);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.rich-text-link {
+  color: var(--accent-11);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.rich-text-link:hover {
+  color: var(--accent-12);
+}
+
+.rich-text-editor-content {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+}
+
+.rich-text-editor-content p {
+  margin: 0;
+  padding: 0;
+}
+
+.rich-text-editor-content p + p {
+  margin-top: 0.75em;
+}
+
+.rich-text-editor-content h1,
+.rich-text-editor-content h2,
+.rich-text-editor-content h3,
+.rich-text-editor-content h4,
+.rich-text-editor-content h5,
+.rich-text-editor-content h6 {
+  margin: 1em 0 0.5em 0;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.rich-text-editor-content h1 {
+  font-size: 1.875rem;
+}
+.rich-text-editor-content h2 {
+  font-size: 1.5rem;
+}
+.rich-text-editor-content h3 {
+  font-size: 1.25rem;
+}
+.rich-text-editor-content h4 {
+  font-size: 1.125rem;
+}
+.rich-text-editor-content h5 {
+  font-size: 1rem;
+}
+.rich-text-editor-content h6 {
+  font-size: 0.875rem;
+}
+
+.rich-text-editor-content ul,
+.rich-text-editor-content ol {
+  margin: 0.75em 0;
+  padding-left: 1.5rem;
+}
+
+.rich-text-editor-content li {
+  margin: 0.25em 0;
+}
+
+.rich-text-editor-content blockquote {
+  margin: 0.75em 0;
+  padding-left: 1rem;
+  border-left: 3px solid var(--gray-a6);
+  color: var(--gray-11);
+  font-style: italic;
+}
+
+.rich-text-editor-content pre {
+  background-color: var(--gray-a3);
+  border: 1px solid var(--gray-a6);
+  border-radius: var(--radius-2);
+  padding: var(--space-3);
+  margin: 0.75em 0;
+  overflow-x: auto;
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.rich-text-editor-content code {
+  background-color: var(--gray-a3);
+  border: 1px solid var(--gray-a6);
+  border-radius: var(--radius-1);
+  padding: 0.125rem 0.25rem;
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+  font-size: 0.875rem;
+}
+
+.rich-text-editor-content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.rich-text-editor-content strong {
+  font-weight: 600;
+}
+
+.rich-text-editor-content em {
+  font-style: italic;
+}
+
+.rich-text-editor-content u {
+  text-decoration: underline;
+}
+
+.rich-text-editor-content s {
+  text-decoration: line-through;
+}
+
+.rich-text-editor-content hr {
+  border: none;
+  border-top: 2px solid var(--gray-a6);
+  margin: 1.5em 0;
+}
+
+.rich-text-editor-content p.is-editor-empty:first-child::before {
+  color: var(--gray-a9);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.ProseMirror-focused {
+  outline: none;
+}
+
+.ProseMirror {
+  outline: none;
+}

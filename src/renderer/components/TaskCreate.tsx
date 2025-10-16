@@ -1,4 +1,4 @@
-import { ArrowSquareRight } from "@phosphor-icons/react";
+import { DiamondIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import {
   Cross2Icon,
   EnterFullScreenIcon,
@@ -7,6 +7,7 @@ import {
 import {
   Button,
   Callout,
+  DataList,
   Dialog,
   Flex,
   IconButton,
@@ -20,6 +21,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
 import { useCreateTask } from "../hooks/useTasks";
 import { useWorkflows } from "../hooks/useWorkflows";
+import { useAuthStore } from "../stores/authStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
 import {
@@ -29,6 +31,7 @@ import {
 } from "../utils/repository";
 import { Combobox } from "./Combobox";
 import { FolderPicker } from "./FolderPicker";
+import { RichTextEditor } from "./RichTextEditor";
 
 interface TaskCreateProps {
   open: boolean;
@@ -36,11 +39,13 @@ interface TaskCreateProps {
 }
 
 export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
-  const { mutate: createTask, isPending: isLoading } = useCreateTask();
+  const { mutate: createTask, isPending: isLoading, error } = useCreateTask();
   const { createTab } = useTabStore();
-  const { setRepoPath } = useTaskExecutionStore();
   const { repositories, isRepoInIntegration } = useRepositoryIntegration();
   const { data: workflows = [] } = useWorkflows();
+  const { client, isAuthenticated } = useAuthStore();
+  const { setRepoPath: saveRepoPath, setRepoWorkingDir } =
+    useTaskExecutionStore();
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [createMore, setCreateMore] = useState(false);
@@ -113,8 +118,13 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     workflow: string;
     folderPath: string;
   }) => {
-    if (!data.title.trim() || !data.description.trim() || !data.workflow)
+    if (!isAuthenticated || !client) {
       return;
+    }
+
+    if (!data.title.trim() || !data.description.trim() || !data.workflow) {
+      return;
+    }
 
     const repositoryConfig = data.repository
       ? (parseRepoKey(data.repository) ?? undefined)
@@ -129,9 +139,17 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       },
       {
         onSuccess: (newTask) => {
-          if (data.folderPath?.trim()) {
-            setRepoPath(newTask.id, data.folderPath);
+          // Save the local working directory to the task execution store
+          if (data.folderPath && data.folderPath.trim().length > 0) {
+            saveRepoPath(newTask.id, data.folderPath);
+
+            // Also save the mapping for GitHub repos to reuse later
+            if (repositoryConfig) {
+              const repoKey = `${repositoryConfig.organization}/${repositoryConfig.repository}`;
+              setRepoWorkingDir(repoKey, data.folderPath);
+            }
           }
+
           createTab({
             type: "task-detail",
             title: newTask.title,
@@ -141,6 +159,9 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
           if (!createMore) {
             onOpenChange(false);
           }
+        },
+        onError: (error) => {
+          console.error("Failed to create task:", error);
         },
       },
     );
@@ -208,101 +229,147 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                   }}
                 />
               </Flex>
-
               <Flex
                 direction="column"
                 gap="2"
                 flexGrow="1"
                 style={{ minHeight: 0 }}
               >
-                <TextArea
-                  {...register("description", {
+                <Controller
+                  name="description"
+                  control={control}
+                  rules={{
                     required: true,
                     validate: (v) => v.trim().length > 0,
-                  })}
-                  placeholder="Add description..."
-                  size="3"
-                  rows={3}
-                  style={{
-                    resize: "none",
-                    overflow: isExpanded ? "auto" : "hidden",
-                    minHeight: "auto",
-                    height: isExpanded ? "100%" : "auto",
                   }}
-                />
-              </Flex>
-
-              <Flex direction="column" gap="2" width="50%">
-                {workflowOptions.length > 0 && (
-                  <Controller
-                    name="workflow"
-                    control={control}
-                    rules={{ required: true }}
-                    render={({ field }) => (
-                      <Combobox
-                        items={workflowOptions}
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        placeholder="Select a workflow..."
-                        searchPlaceholder="Search workflows..."
-                        emptyMessage="No workflows found"
-                        size="2"
-                        side="top"
-                        icon={<ArrowSquareRight size={16} weight="regular" />}
-                      />
-                    )}
-                  />
-                )}
-              </Flex>
-
-              {repositories.length > 0 && (
-                <Flex direction="column" gap="2" width="50%">
-                  <Controller
-                    name="repository"
-                    control={control}
-                    render={({ field }) => (
-                      <Combobox
-                        items={repositories.map((repo) => {
-                          const repoKey = formatRepoKey(
-                            repo.organization,
-                            repo.repository,
-                          );
-                          return {
-                            value: repoKey,
-                            label: repoKey,
-                          };
-                        })}
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        placeholder="Select a repository..."
-                        searchPlaceholder="Search repositories..."
-                        emptyMessage="No repositories found"
-                        size="2"
-                        side="top"
-                      />
-                    )}
-                  />
-                </Flex>
-              )}
-
-              <Flex direction="column" gap="2" width="50%">
-                <Controller
-                  name="folderPath"
-                  control={control}
                   render={({ field }) => (
-                    <FolderPicker
+                    <RichTextEditor
                       value={field.value}
                       onChange={field.onChange}
-                      placeholder="Choose working folder..."
-                      size="2"
+                      repoPath={folderPath}
+                      placeholder="Add description... Use @ to mention files, or try **bold**, *italic*, `code`, and more!"
+                      showToolbar={true}
+                      minHeight={isExpanded ? "200px" : "120px"}
+                      style={{
+                        height: isExpanded ? "100%" : "auto",
+                        overflow: isExpanded ? "auto" : "visible",
+                      }}
                     />
                   )}
                 />
               </Flex>
 
+              {/* Configuration */}
+              <DataList.Root>
+                <DataList.Item>
+                  <DataList.Label>Working Directory</DataList.Label>
+                  <DataList.Value>
+                    <Controller
+                      name="folderPath"
+                      control={control}
+                      render={({ field }) => (
+                        <FolderPicker
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Choose working folder..."
+                          size="1"
+                        />
+                      )}
+                    />
+                  </DataList.Value>
+                </DataList.Item>
+
+                {workflowOptions.length > 0 && (
+                  <DataList.Item>
+                    <DataList.Label>Workflow</DataList.Label>
+                    <DataList.Value>
+                      <Controller
+                        name="workflow"
+                        control={control}
+                        rules={{ required: true }}
+                        render={({ field }) => (
+                          <Combobox
+                            items={workflowOptions}
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            placeholder="Select a workflow..."
+                            searchPlaceholder="Search workflows..."
+                            emptyMessage="No workflows found"
+                            size="1"
+                            variant="outline"
+                            icon={<DiamondIcon />}
+                            side="top"
+                          />
+                        )}
+                      />
+                    </DataList.Value>
+                  </DataList.Item>
+                )}
+
+                {repositories.length > 0 && (
+                  <DataList.Item>
+                    <DataList.Label>Repository</DataList.Label>
+                    <DataList.Value>
+                      <Controller
+                        name="repository"
+                        control={control}
+                        render={({ field }) => (
+                          <Combobox
+                            items={repositories.map((repo) => {
+                              const repoKey = formatRepoKey(
+                                repo.organization,
+                                repo.repository,
+                              );
+                              return {
+                                value: repoKey,
+                                label: repoKey,
+                              };
+                            })}
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            placeholder="Select GitHub repo..."
+                            searchPlaceholder="Search repositories..."
+                            emptyMessage="No repositories found"
+                            size="1"
+                            variant="outline"
+                            icon={<GithubLogoIcon />}
+                            side="top"
+                          />
+                        )}
+                      />
+                    </DataList.Value>
+                  </DataList.Item>
+                )}
+              </DataList.Root>
+
               {repoWarning && (
                 <Callout.Root color="orange" size="1">
                   <Callout.Text>{repoWarning}</Callout.Text>
+                </Callout.Root>
+              )}
+
+              {error && (
+                <Callout.Root color="red" size="1">
+                  <Callout.Text>
+                    Failed to create task:{" "}
+                    {error instanceof Error ? error.message : "Unknown error"}
+                  </Callout.Text>
+                </Callout.Root>
+              )}
+
+              {!isAuthenticated && (
+                <Callout.Root color="orange" size="1">
+                  <Callout.Text>
+                    Not authenticated - please check your connection
+                  </Callout.Text>
+                </Callout.Root>
+              )}
+
+              {workflows.length === 0 && (
+                <Callout.Root color="orange" size="1">
+                  <Callout.Text>
+                    No workflows available - please create a workflow first
+                  </Callout.Text>
                 </Callout.Root>
               )}
 
@@ -319,7 +386,13 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                     </Text>
                   </Flex>
                 </Text>
-                <Button type="submit" variant="classic" disabled={isLoading}>
+                <Button
+                  type="submit"
+                  variant="classic"
+                  disabled={
+                    isLoading || !isAuthenticated || workflows.length === 0
+                  }
+                >
                   {isLoading ? "Creating..." : "Create task"}
                 </Button>
               </Flex>
