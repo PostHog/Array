@@ -5,12 +5,15 @@ import { MainLayout } from "./components/MainLayout";
 import { useAuthStore } from "./stores/authStore";
 
 function App() {
-  const { isAuthenticated, checkAuth } = useAuthStore();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    checkAuth().finally(() => setIsLoading(false));
-  }, [checkAuth]);
+    useAuthStore
+      .getState()
+      .checkAuth()
+      .finally(() => setIsLoading(false));
+  }, []);
 
   if (isLoading) {
     return (

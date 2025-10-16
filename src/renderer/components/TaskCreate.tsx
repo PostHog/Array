@@ -15,7 +15,7 @@ import {
   Text,
   TextArea,
 } from "@radix-ui/themes";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
@@ -41,7 +41,7 @@ interface TaskCreateProps {
 export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const { mutate: createTask, isPending: isLoading, error } = useCreateTask();
   const { createTab } = useTabStore();
-  const { repositories, isRepoInIntegration } = useRepositoryIntegration();
+  const { repositories } = useRepositoryIntegration();
   const { data: workflows = [] } = useWorkflows();
   const { client, isAuthenticated } = useAuthStore();
   const { setRepoPath: saveRepoPath, setRepoWorkingDir } =
@@ -50,6 +50,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [createMore, setCreateMore] = useState(false);
   const [repoWarning, setRepoWarning] = useState<string | null>(null);
+  const lastProcessedPath = useRef<string>("");
 
   const defaultWorkflow = useMemo(
     () => workflows.find((w) => w.is_active && w.is_default) || workflows[0],
@@ -77,15 +78,22 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
 
   const folderPath = watch("folderPath");
 
-  const detectRepoFromFolder = useCallback(
-    async (newPath: string) => {
-      if (!newPath?.trim()) {
-        setRepoWarning(null);
-        return;
-      }
+  useEffect(() => {
+    if (!folderPath?.trim()) {
+      setRepoWarning(null);
+      lastProcessedPath.current = "";
+      return;
+    }
 
+    if (lastProcessedPath.current === folderPath) {
+      return;
+    }
+
+    lastProcessedPath.current = folderPath;
+
+    const detectRepo = async () => {
       try {
-        const repoInfo = await window.electronAPI?.detectRepo(newPath);
+        const repoInfo = await window.electronAPI?.detectRepo(folderPath);
         if (repoInfo) {
           const repoKey = formatRepoKey(
             repoInfo.organization,
@@ -93,7 +101,11 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
           );
           setValue("repository", repoKey);
 
-          if (!isRepoInIntegration(repoKey)) {
+          const repoInIntegration = repositories.some(
+            (r) => formatRepoKey(r.organization, r.repository) === repoKey,
+          );
+
+          if (!repoInIntegration) {
             setRepoWarning(
               `Repository ${repoKey} ${REPO_NOT_IN_INTEGRATION_WARNING}`,
             );
@@ -106,15 +118,10 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       } catch {
         setRepoWarning(null);
       }
-    },
-    [isRepoInIntegration, setValue],
-  );
+    };
 
-  useEffect(() => {
-    if (folderPath) {
-      detectRepoFromFolder(folderPath);
-    }
-  }, [folderPath, detectRepoFromFolder]);
+    detectRepo();
+  }, [folderPath, repositories, setValue]);
 
   const onSubmit = (data: {
     title: string;

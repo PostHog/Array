@@ -53,8 +53,7 @@ export function TaskList({
   const setHoveredIndex = useTaskStore((state) => state.setHoveredIndex);
   const setFilter = useTaskStore((state) => state.setFilter);
 
-  const { setStatusBar, reset } = useStatusBarStore();
-  const { logout } = useAuthStore();
+  const logout = useAuthStore((state) => state.logout);
   const listRef = useRef<HTMLDivElement>(null);
 
   const filteredTasks = useMemo(() => {
@@ -156,7 +155,7 @@ export function TaskList({
   }, []);
 
   useEffect(() => {
-    setStatusBar({
+    useStatusBarStore.getState().setStatusBar({
       statusText: `${filteredTasks.length} task${filteredTasks.length === 1 ? "" : "s"}`,
       keyHints: [
         {
@@ -180,9 +179,9 @@ export function TaskList({
     });
 
     return () => {
-      reset();
+      useStatusBarStore.getState().reset();
     };
-  }, [setStatusBar, reset, filteredTasks.length]);
+  }, [filteredTasks.length]);
 
   const handleKeyNavigation = useCallback(
     (direction: "up" | "down") => {

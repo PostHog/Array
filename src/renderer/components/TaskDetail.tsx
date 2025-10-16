@@ -42,15 +42,12 @@ interface TaskDetailProps {
 }
 
 export function TaskDetail({ task: initialTask }: TaskDetailProps) {
-  const { setStatusBar, reset } = useStatusBarStore();
   const {
     getTaskState,
     setRunMode: setStoreRunMode,
     runTask,
     cancelTask,
     clearTaskLogs,
-    getRepoWorkingDir,
-    setRepoPath,
   } = useTaskExecutionStore();
   const { isRepoInIntegration } = useRepositoryIntegration();
   const { data: tasks = [] } = useTasks();
@@ -81,12 +78,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   const { isRunning, logs, repoPath, runMode, progress } = taskState;
 
-  const {
-    handleSubmit,
-    reset: resetForm,
-    control,
-    watch,
-  } = useForm({
+  const { handleSubmit, reset, control, watch } = useForm({
     defaultValues: {
       title: task.title,
       description: task.description || "",
@@ -117,33 +109,29 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     if (task.repository_config && !repoPath) {
       const repoKey = repoConfigToKey(task.repository_config);
       if (repoKey) {
-        const savedPath = getRepoWorkingDir(repoKey);
+        const savedPath = useTaskExecutionStore
+          .getState()
+          .getRepoWorkingDir(repoKey);
         if (savedPath) {
-          setRepoPath(task.id, savedPath);
+          useTaskExecutionStore.getState().setRepoPath(task.id, savedPath);
         }
       }
     }
-  }, [
-    task.id,
-    task.repository_config,
-    repoPath,
-    getRepoWorkingDir,
-    setRepoPath,
-  ]);
+  }, [task.id, task.repository_config, repoPath]);
 
   useEffect(() => {
-    resetForm({
+    reset({
       title: task.title,
       description: task.description || "",
       workflow: task.workflow || "",
       repository: repoConfigToKey(task.repository_config),
     });
   }, [
+    reset,
     task.title,
     task.description,
     task.workflow,
     task.repository_config,
-    resetForm,
   ]);
 
   // Default to first workflow if not set
@@ -161,7 +149,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   }, [workflows, task.workflow, task.id, updateTask]);
 
   useEffect(() => {
-    setStatusBar({
+    useStatusBarStore.getState().setStatusBar({
       statusText: isRunning ? "Agent running..." : "Task details",
       keyHints: [
         {
@@ -177,9 +165,9 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     });
 
     return () => {
-      reset();
+      useStatusBarStore.getState().reset();
     };
-  }, [setStatusBar, reset, isRunning]);
+  }, [isRunning]);
 
   useBlurOnEscape();
 
