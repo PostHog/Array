@@ -1,4 +1,5 @@
 import type { AgentEvent } from "@posthog/agent";
+import type { Recording } from "@shared/types";
 
 export interface IElectronAPI {
   storeApiKey: (apiKey: string) => Promise<string>;
@@ -42,6 +43,32 @@ export interface IElectronAPI {
     channel: string,
     listener: (event: AgentEvent) => void,
   ) => () => void;
+  // Recording API
+  recordingStart: () => Promise<{ recordingId: string; startTime: string }>;
+  recordingStop: (
+    recordingId: string,
+    audioData: Uint8Array,
+    duration: number,
+  ) => Promise<Recording>;
+  recordingList: () => Promise<Recording[]>;
+  recordingDelete: (recordingId: string) => Promise<boolean>;
+  recordingGetFile: (recordingId: string) => Promise<ArrayBuffer>;
+  recordingTranscribe: (
+    recordingId: string,
+    openaiApiKey: string,
+  ) => Promise<{
+    status: string;
+    text: string;
+    summary?: string | null;
+    extracted_tasks?: Array<{ title: string; description: string }>;
+  }>;
+  // Desktop capturer for system audio
+  getDesktopSources: (options: { types: string[] }) => Promise<
+    Array<{
+      id: string;
+      name: string;
+    }>
+  >;
 }
 
 declare global {

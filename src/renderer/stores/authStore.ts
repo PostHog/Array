@@ -8,8 +8,11 @@ interface AuthState {
   encryptedKey: string | null;
   isAuthenticated: boolean;
   client: PostHogAPIClient | null;
+  openaiApiKey: string | null;
+  encryptedOpenaiKey: string | null;
 
   setCredentials: (apiKey: string, apiHost: string) => Promise<void>;
+  setOpenAIKey: (apiKey: string) => Promise<void>;
   checkAuth: () => Promise<boolean>;
   logout: () => void;
 }
@@ -22,6 +25,8 @@ export const useAuthStore = create<AuthState>()(
       encryptedKey: null,
       isAuthenticated: false,
       client: null,
+      openaiApiKey: null,
+      encryptedOpenaiKey: null,
 
       setCredentials: async (apiKey: string, apiHost: string) => {
         const encryptedKey = await window.electronAPI.storeApiKey(apiKey);
@@ -43,9 +48,18 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
+      setOpenAIKey: async (apiKey: string) => {
+        const encryptedKey = await window.electronAPI.storeApiKey(apiKey);
+        set({
+          openaiApiKey: apiKey,
+          encryptedOpenaiKey: encryptedKey,
+        });
+      },
+
       checkAuth: async () => {
         const state = get();
 
+        // Check PostHog auth
         if (state.encryptedKey) {
           const decryptedKey = await window.electronAPI.retrieveApiKey(
             state.encryptedKey,
@@ -61,15 +75,26 @@ export const useAuthStore = create<AuthState>()(
                 isAuthenticated: true,
                 client,
               });
-
-              return true;
             } catch {
               set({ encryptedKey: null, isAuthenticated: false });
             }
           }
         }
 
-        return false;
+        // Check OpenAI key
+        if (state.encryptedOpenaiKey) {
+          const decryptedOpenaiKey = await window.electronAPI.retrieveApiKey(
+            state.encryptedOpenaiKey,
+          );
+
+          if (decryptedOpenaiKey) {
+            set({
+              openaiApiKey: decryptedOpenaiKey,
+            });
+          }
+        }
+
+        return state.isAuthenticated;
       },
 
       logout: () => {
@@ -78,6 +103,8 @@ export const useAuthStore = create<AuthState>()(
           encryptedKey: null,
           isAuthenticated: false,
           client: null,
+          openaiApiKey: null,
+          encryptedOpenaiKey: null,
         });
       },
     }),
@@ -86,6 +113,7 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         apiHost: state.apiHost,
         encryptedKey: state.encryptedKey,
+        encryptedOpenaiKey: state.encryptedOpenaiKey,
       }),
     },
   ),
