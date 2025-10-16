@@ -336,7 +336,8 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           return;
         }
 
-        const { apiKey, apiHost } = useAuthStore.getState();
+        const { apiKey, apiHost, client } = useAuthStore.getState();
+        
         if (!apiKey) {
           store.addLog(taskId, {
             type: "error",
@@ -347,6 +348,44 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           return;
         }
 
+        const currentTaskState = store.getTaskState(taskId);
+
+        // Handle cloud mode - run task via API
+        if (currentTaskState.runMode === "cloud") {
+          store.setProgress(taskId, null);
+          store.setRunning(taskId, true);
+          const startTs = Date.now();
+          store.setLogs(taskId, [
+            {
+              type: "token",
+              ts: startTs,
+              content: `Starting workflow run in cloud...`,
+            },
+          ]);
+
+          try {
+            if (!client) {
+              throw new Error("API client not available");
+            }
+            await client.runTask(taskId);
+            store.addLog(taskId, {
+              type: "token",
+              ts: Date.now(),
+              content: "Task started in cloud successfully",
+            });
+            store.setRunning(taskId, false);
+          } catch (error) {
+            store.addLog(taskId, {
+              type: "error",
+              ts: Date.now(),
+              message: `Error starting cloud task: ${error instanceof Error ? error.message : "Unknown error"}`,
+            });
+            store.setRunning(taskId, false);
+          }
+          return;
+        }
+
+        // Handle local mode - run task via electron agent
         // Ensure repo path is selected
         let effectiveRepoPath = taskState.repoPath;
         if (!effectiveRepoPath) {
@@ -400,9 +439,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           return;
         }
 
-        const currentTaskState = store.getTaskState(taskId);
-        const permissionMode =
-          currentTaskState.runMode === "cloud" ? "default" : "acceptEdits";
+        const permissionMode = "acceptEdits";
 
         store.setProgress(taskId, null);
         store.setRunning(taskId, true);

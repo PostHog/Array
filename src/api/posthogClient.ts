@@ -114,13 +114,12 @@ export class PostHogAPIClient {
   }
 
   async runTask(taskId: string) {
-    // TODO: Pull this out and handle local and API calls
     const teamId = await this.getTeamId();
-    const data = await this.api.patch(
-      `/api/projects/{project_id}/tasks/{id}/update_stage/`,
+
+    const data = await this.api.post(
+      `/api/projects/{project_id}/tasks/{id}/run/`,
       {
         path: { project_id: teamId.toString(), id: taskId },
-        body: { current_stage: "running" },
       },
     );
 
