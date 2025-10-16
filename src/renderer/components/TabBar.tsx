@@ -1,13 +1,27 @@
 import { Cross2Icon } from "@radix-ui/react-icons";
-import { Box, Flex, IconButton, Kbd, Text } from "@radix-ui/themes";
+import {
+  Box,
+  ContextMenu,
+  Flex,
+  IconButton,
+  Kbd,
+  Text,
+} from "@radix-ui/themes";
 import type React from "react";
 import { useCallback, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTabStore } from "../stores/tabStore";
 
 export function TabBar() {
-  const { tabs, activeTabId, setActiveTab, closeTab, reorderTabs } =
-    useTabStore();
+  const {
+    tabs,
+    activeTabId,
+    setActiveTab,
+    closeTab,
+    closeOtherTabs,
+    closeTabsToRight,
+    reorderTabs,
+  } = useTabStore();
   const [draggedTab, setDraggedTab] = useState<string | null>(null);
   const [dragOverTab, setDragOverTab] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"left" | "right" | null>(
@@ -168,66 +182,83 @@ export function TabBar() {
         const showRightIndicator = isDragOver && dropPosition === "right";
 
         return (
-          <Flex
-            key={tab.id}
-            className={`no-drag group relative cursor-pointer border-gray-6 border-r border-b-2 transition-colors ${
-              tab.id === activeTabId
-                ? "border-b-accent-8 bg-accent-3 text-accent-12"
-                : "border-b-transparent text-gray-11 hover:bg-gray-3 hover:text-gray-12"
-            } ${isDragging ? "opacity-50" : ""}`}
-            align="center"
-            px="4"
-            draggable
-            onClick={() => setActiveTab(tab.id)}
-            onDragStart={(e) => handleDragStart(e, tab.id)}
-            onDragOver={(e) => handleDragOver(e, tab.id)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, tab.id)}
-            onDragEnd={handleDragEnd}
-          >
-            {showLeftIndicator && (
-              <Box
-                className="absolute top-0 bottom-0 left-0 z-10 w-0.5 bg-accent-8"
-                style={{ marginLeft: "-1px" }}
-              />
-            )}
-
-            {showRightIndicator && (
-              <Box
-                className="absolute top-0 right-0 bottom-0 z-10 w-0.5 bg-accent-8"
-                style={{ marginRight: "-1px" }}
-              />
-            )}
-            {index < 9 && (
-              <Kbd size="1" className="mr-2 opacity-70">
-                {navigator.platform.includes("Mac") ? "⌘" : "Ctrl+"}
-                {index + 1}
-              </Kbd>
-            )}
-
-            <Text
-              size="2"
-              className="max-w-[200px] select-none overflow-hidden text-ellipsis whitespace-nowrap"
-              mr="2"
-            >
-              {tab.title}
-            </Text>
-
-            {tabs.length > 1 && (
-              <IconButton
-                size="1"
-                variant="ghost"
-                color={tab.id !== activeTabId ? "gray" : undefined}
-                className="opacity-0 transition-opacity group-hover:opacity-100"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTab(tab.id);
-                }}
+          <ContextMenu.Root key={tab.id}>
+            <ContextMenu.Trigger>
+              <Flex
+                className={`no-drag group relative cursor-pointer border-gray-6 border-r border-b-2 transition-colors ${
+                  tab.id === activeTabId
+                    ? "border-b-accent-8 bg-accent-3 text-accent-12"
+                    : "border-b-transparent text-gray-11 hover:bg-gray-3 hover:text-gray-12"
+                } ${isDragging ? "opacity-50" : ""}`}
+                align="center"
+                px="4"
+                draggable
+                onClick={() => setActiveTab(tab.id)}
+                onDragStart={(e) => handleDragStart(e, tab.id)}
+                onDragOver={(e) => handleDragOver(e, tab.id)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, tab.id)}
+                onDragEnd={handleDragEnd}
               >
-                <Cross2Icon />
-              </IconButton>
-            )}
-          </Flex>
+                {showLeftIndicator && (
+                  <Box
+                    className="absolute top-0 bottom-0 left-0 z-10 w-0.5 bg-accent-8"
+                    style={{ marginLeft: "-1px" }}
+                  />
+                )}
+
+                {showRightIndicator && (
+                  <Box
+                    className="absolute top-0 right-0 bottom-0 z-10 w-0.5 bg-accent-8"
+                    style={{ marginRight: "-1px" }}
+                  />
+                )}
+                {index < 9 && (
+                  <Kbd size="1" className="mr-2 opacity-70">
+                    {navigator.platform.includes("Mac") ? "⌘" : "Ctrl+"}
+                    {index + 1}
+                  </Kbd>
+                )}
+
+                <Text
+                  size="2"
+                  className="max-w-[200px] select-none overflow-hidden text-ellipsis whitespace-nowrap"
+                  mr="2"
+                >
+                  {tab.title}
+                </Text>
+
+                {tabs.length > 1 && (
+                  <IconButton
+                    size="1"
+                    variant="ghost"
+                    color={tab.id !== activeTabId ? "gray" : undefined}
+                    className="opacity-0 transition-opacity group-hover:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                  >
+                    <Cross2Icon />
+                  </IconButton>
+                )}
+              </Flex>
+            </ContextMenu.Trigger>
+            <ContextMenu.Content>
+              <ContextMenu.Item
+                disabled={tabs.length === 1}
+                onSelect={() => closeOtherTabs(tab.id)}
+              >
+                Close other tabs
+              </ContextMenu.Item>
+              <ContextMenu.Item
+                disabled={index === tabs.length - 1}
+                onSelect={() => closeTabsToRight(tab.id)}
+              >
+                Close tabs to the right
+              </ContextMenu.Item>
+            </ContextMenu.Content>
+          </ContextMenu.Root>
         );
       })}
     </Flex>
