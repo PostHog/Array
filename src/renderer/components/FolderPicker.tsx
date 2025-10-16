@@ -1,6 +1,14 @@
-import { Folder } from "@phosphor-icons/react";
+import { Folder, FolderIcon } from "@phosphor-icons/react";
 import { ChevronDownIcon } from "@radix-ui/react-icons";
-import { Box, Button, Flex, Popover, Text, TextField } from "@radix-ui/themes";
+import {
+  Box,
+  Button,
+  Flex,
+  IconButton,
+  Popover,
+  Text,
+  TextField,
+} from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useFolderPickerStore } from "../stores/folderPickerStore";
@@ -143,6 +151,13 @@ export function FolderPicker({
     }
   };
 
+  const handleOpenNativeFileFinder = async () => {
+    const selectedPath = await window.electronAPI.selectDirectory();
+    if (selectedPath) {
+      handleSelect(selectedPath);
+    }
+  };
+
   const renderItem = (path: string, itemIndex: number) => (
     <Command.Item
       key={path}
@@ -207,8 +222,15 @@ export function FolderPicker({
               onChange={handleSearchChange}
               size={size}
             >
-              <TextField.Slot>
-                <Folder size={16} weight="regular" />
+              <TextField.Slot side="right" style={{ paddingRight: 0 }}>
+                <IconButton
+                  size="1"
+                  onClick={handleOpenNativeFileFinder}
+                  type="button"
+                  style={{ cursor: "pointer" }}
+                >
+                  <FolderIcon size={12} weight="fill" />
+                </IconButton>
               </TextField.Slot>
             </TextField.Root>
           </Box>
