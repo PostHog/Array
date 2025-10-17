@@ -1,4 +1,5 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
+import type { Recording } from "../shared/types";
 
 interface MessageBoxOptions {
   type?: "info" | "error" | "warning" | "question";
@@ -70,5 +71,33 @@ contextBridge.exposeInMainWorld("electronAPI", {
     const wrapped = () => listener();
     ipcRenderer.on("open-settings", wrapped);
     return () => ipcRenderer.removeListener("open-settings", wrapped);
+  },
+  // Recording API
+  recordingStart: (): Promise<{ recordingId: string; startTime: string }> =>
+    ipcRenderer.invoke("recording:start"),
+  recordingStop: (
+    recordingId: string,
+    audioData: Uint8Array,
+    duration: number,
+  ): Promise<Recording> =>
+    ipcRenderer.invoke("recording:stop", recordingId, audioData, duration),
+  recordingList: (): Promise<Recording[]> =>
+    ipcRenderer.invoke("recording:list"),
+  recordingDelete: (recordingId: string): Promise<boolean> =>
+    ipcRenderer.invoke("recording:delete", recordingId),
+  recordingGetFile: (recordingId: string): Promise<ArrayBuffer> =>
+    ipcRenderer.invoke("recording:get-file", recordingId),
+  recordingTranscribe: (
+    recordingId: string,
+    openaiApiKey: string,
+  ): Promise<{
+    status: string;
+    text: string;
+    summary?: string | null;
+    extracted_tasks?: Array<{ title: string; description: string }>;
+  }> => ipcRenderer.invoke("recording:transcribe", recordingId, openaiApiKey),
+  // Desktop capturer for system audio
+  getDesktopSources: async (options: { types: ("screen" | "window")[] }) => {
+    return await ipcRenderer.invoke("desktop-capturer:get-sources", options);
   },
 });
