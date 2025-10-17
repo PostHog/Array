@@ -86,6 +86,7 @@ export function PlanEditor({
         display: "flex",
         flexDirection: "column",
         backgroundColor: "var(--gray-1)",
+        overflow: "hidden",
       }}
     >
       {/* Header */}
@@ -142,11 +143,6 @@ export function PlanEditor({
           repoPath={repoPath}
           placeholder="Your implementation plan will appear here..."
           showToolbar={true}
-          minHeight="100%"
-          style={{
-            minHeight: "100%",
-            height: "100%",
-          }}
         />
       </Box>
     </Box>
