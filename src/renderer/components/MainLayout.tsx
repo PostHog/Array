@@ -2,7 +2,7 @@ import { Box, Flex } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { RecordingsView } from "../features/recordings";
+import { RecordingsView } from "@/renderer/features/recordings";
 import { useIntegrations } from "../hooks/useIntegrations";
 import { useTabStore } from "../stores/tabStore";
 import { CommandMenu } from "./command";
