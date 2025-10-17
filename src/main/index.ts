@@ -13,6 +13,7 @@ import { registerAgentIpc, type TaskController } from "./services/agent.js";
 import { registerFsIpc } from "./services/fs.js";
 import { registerOsIpc } from "./services/os.js";
 import { registerPosthogIpc } from "./services/posthog.js";
+import { registerRecordingIpc } from "./services/recording-stub.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,6 +67,7 @@ function createWindow(): void {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
+      enableBlinkFeatures: "GetDisplayMedia",
     },
   });
 
@@ -75,6 +77,27 @@ function createWindow(): void {
   });
 
   setupExternalLinkHandlers(mainWindow);
+
+  // Enable screen/audio capture for recordings
+  mainWindow.webContents.session.setPermissionRequestHandler(
+    (_webContents, permission, callback) => {
+      if (permission === "media" || permission === "mediaKeySystem") {
+        callback(true);
+      } else {
+        callback(false);
+      }
+    },
+  );
+
+  // Handle display media requests (screen/window sharing)
+  mainWindow.webContents.session.setPermissionCheckHandler(
+    (_webContents, permission) => {
+      if (permission === "media") {
+        return true;
+      }
+      return false;
+    },
+  );
 
   // Set up menu for keyboard shortcuts
   const template: MenuItemConstructorOptions[] = [
@@ -156,3 +179,4 @@ registerPosthogIpc();
 registerOsIpc(() => mainWindow);
 registerAgentIpc(taskControllers, () => mainWindow);
 registerFsIpc();
+registerRecordingIpc();
