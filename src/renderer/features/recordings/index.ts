@@ -5,7 +5,6 @@ export { AudioPlayer } from "./components/AudioPlayer";
 export { RecordingControls } from "./components/RecordingControls";
 export { RecordingsView } from "./components/RecordingsView";
 export { SettingsPanel } from "./components/SettingsPanel";
-export { TranscriptionSection } from "./components/TranscriptionSection";
 
 // Hooks
 export { useAudioRecorder } from "./hooks/useAudioRecorder";
