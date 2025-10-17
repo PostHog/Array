@@ -1,4 +1,4 @@
-import type { RepositoryConfig, TaskRun } from "@shared/types";
+import type { LogEntry, RepositoryConfig, Task, TaskRun } from "@shared/types";
 import { buildApiFetcher } from "./fetcher";
 import { createApiClient, type Schemas } from "./generated";
 
@@ -126,7 +126,7 @@ export class PostHogAPIClient {
     return data;
   }
 
-  async listTaskRuns(taskId: string) {
+  async listTaskRuns(taskId: string): Promise<TaskRun[]> {
     const teamId = await this.getTeamId();
     const url = new URL(
       `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/`,
@@ -163,17 +163,13 @@ export class PostHogAPIClient {
     return await response.json();
   }
 
-  async getTaskLogs(taskId: string): Promise<string> {
+  async getTaskLogs(taskId: string): Promise<LogEntry[]> {
     try {
-      const runs = await this.listTaskRuns(taskId);
-      const latestRun = runs?.sort(
-        (a: TaskRun, b: TaskRun) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      )[0];
-      return latestRun?.log ?? "";
+      const task = (await this.getTask(taskId)) as Task;
+      return task?.latest_run?.log ?? [];
     } catch (err) {
-      console.warn("Failed to fetch task logs from runs", err);
-      return "";
+      console.warn("Failed to fetch task logs from latest run", err);
+      return [];
     }
   }
 
