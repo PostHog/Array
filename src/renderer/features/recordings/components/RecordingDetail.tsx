@@ -1,6 +1,7 @@
 import { Trash, X } from "@phosphor-icons/react";
 import {
   Box,
+  Button,
   Card,
   Flex,
   Heading,
@@ -13,21 +14,27 @@ import {
 import type { Recording } from "@shared/types";
 import { format } from "date-fns";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useAuthStore } from "../../../stores/authStore";
 import { useRecordingStore } from "../stores/recordingStore";
 import { AudioPlayer } from "./AudioPlayer";
 
 interface RecordingDetailProps {
   recording: Recording;
   onDelete: (recordingId: string) => void;
+  onTranscribe: (params: { recordingId: string; apiKey: string }) => void;
+  isTranscribing: boolean;
   isSettingsOpen?: boolean;
 }
 
 export function RecordingDetail({
   recording,
   onDelete,
+  onTranscribe,
+  isTranscribing,
   isSettingsOpen = false,
 }: RecordingDetailProps) {
   const { setSelectedRecording } = useRecordingStore();
+  const openaiApiKey = useAuthStore((state) => state.openaiApiKey);
 
   useHotkeys(
     "esc",
@@ -166,8 +173,27 @@ export function RecordingDetail({
               <Box p="4">
                 <Flex direction="column" align="center" gap="2">
                   <Text size="2" color="gray">
-                    Transcription not available
+                    No transcription yet
                   </Text>
+                  {openaiApiKey && (
+                    <Button
+                      size="2"
+                      onClick={() =>
+                        onTranscribe({
+                          recordingId: recording.id,
+                          apiKey: openaiApiKey,
+                        })
+                      }
+                      disabled={isTranscribing}
+                    >
+                      {isTranscribing ? "Transcribing..." : "Transcribe Now"}
+                    </Button>
+                  )}
+                  {!openaiApiKey && (
+                    <Text size="1" color="gray">
+                      Add OpenAI API key in settings to transcribe
+                    </Text>
+                  )}
                 </Flex>
               </Box>
             </Card>
@@ -176,14 +202,28 @@ export function RecordingDetail({
           {recording.transcription?.status === "error" && (
             <Card>
               <Box p="4">
-                <Flex direction="column" gap="2">
+                <Flex direction="column" align="center" gap="2">
                   <Text size="2" color="red" weight="medium">
                     Transcription failed
                   </Text>
                   {recording.transcription.error && (
-                    <Text size="1" color="gray">
+                    <Text size="1" color="gray" style={{ textAlign: "center" }}>
                       {recording.transcription.error}
                     </Text>
+                  )}
+                  {openaiApiKey && (
+                    <Button
+                      size="2"
+                      onClick={() =>
+                        onTranscribe({
+                          recordingId: recording.id,
+                          apiKey: openaiApiKey,
+                        })
+                      }
+                      disabled={isTranscribing}
+                    >
+                      {isTranscribing ? "Retrying..." : "Retry Transcription"}
+                    </Button>
                   )}
                 </Flex>
               </Box>
