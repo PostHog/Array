@@ -123,12 +123,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     }
   }, [folderPath, detectRepoFromFolder]);
 
-  useEffect(() => {
-    if (!open) {
-      setRepoWarning(null);
-    }
-  }, [open]);
-
   const onSubmit = (data: {
     title: string;
     description: string;
@@ -198,8 +192,15 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     },
   );
 
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen) {
+      setRepoWarning(null);
+    }
+    onOpenChange(newOpen);
+  };
+
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Content
         maxHeight={isExpanded ? "90vh" : "600px"}
         height={isExpanded ? "90vh" : "auto"}
