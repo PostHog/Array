@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Agent, PermissionMode } from "@posthog/agent";
 import { type BrowserWindow, type IpcMainInvokeEvent, ipcMain } from "electron";
+import type { TaskRun } from "@/shared/types";
 
 interface AgentStartParams {
   taskId: string;
@@ -19,6 +20,7 @@ export interface TaskController {
   channel: string;
   taskId: string;
   poller?: NodeJS.Timeout;
+  currentRunId?: string;
 }
 
 function resolvePermissionMode(
@@ -117,27 +119,41 @@ export function registerAgentIpc(
       taskControllers.set(taskId, controllerEntry);
 
       const posthogClient = agent.getPostHogClient();
+      const startTime = Date.now();
       if (posthogClient) {
         const pollTaskProgress = async () => {
           if (abortController.signal.aborted) return;
           try {
-            const progress = await posthogClient.getTaskProgress(posthogTaskId);
-            if (progress?.has_progress) {
+            const runs = await posthogClient.listTaskRuns(posthogTaskId);
+            const latestRun = runs?.sort(
+              (a: TaskRun, b: TaskRun) =>
+                new Date(b.created_at).getTime() -
+                new Date(a.created_at).getTime(),
+            )[0];
+
+            // Only emit progress for runs created after this workflow started
+            if (
+              latestRun &&
+              new Date(latestRun.created_at).getTime() >= startTime
+            ) {
+              // Store the current run ID
+              controllerEntry.currentRunId = latestRun.id;
+
               emitToRenderer({
                 type: "progress",
                 ts: Date.now(),
-                progress,
+                progress: latestRun,
               });
             }
           } catch (err) {
-            console.warn("[agent] failed to fetch task progress", err);
+            console.warn("[agent] failed to fetch task runs", err);
           }
         };
 
         void pollTaskProgress();
         controllerEntry.poller = setInterval(() => {
           void pollTaskProgress();
-        }, 5000);
+        }, 1000); // Poll every second to catch stage transitions
       }
 
       emitToRenderer({

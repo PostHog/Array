@@ -1,52 +1,15 @@
 import type { AgentEvent } from "@posthog/agent";
-import type { Task } from "@shared/types";
+import type { Task, TaskRun, Workflow } from "@shared/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useAuthStore } from "./authStore";
 
-type AgentTaskProgress = {
-  has_progress?: boolean;
-  status?: "started" | "in_progress" | "completed" | "failed";
-  current_step?: string | null;
-  completed_steps?: number | null;
-  total_steps?: number | null;
-  progress_percentage?: number | null;
-  message?: string | null;
-  output_log?: string | null;
-};
-
-const createProgressSignature = (progress: AgentTaskProgress): string =>
+const createProgressSignature = (progress: TaskRun): string =>
   [
     progress.status ?? "",
-    progress.current_step ?? "",
-    progress.completed_steps ?? "",
-    progress.total_steps ?? "",
-    progress.progress_percentage ?? "",
-    progress.message ?? "",
-    progress.output_log ?? "",
+    progress.current_stage ?? "",
+    progress.updated_at ?? "",
   ].join("|");
-
-const formatProgressLog = (progress: AgentTaskProgress): string => {
-  const statusLabel = progress.status?.replace(/_/g, " ") ?? "in progress";
-  const currentStep =
-    typeof progress.completed_steps === "number"
-      ? progress.completed_steps + 1
-      : 1;
-  const total =
-    typeof progress.total_steps === "number" && progress.total_steps >= 0
-      ? progress.total_steps
-      : "?";
-  const step =
-    typeof progress.current_step === "string" &&
-    progress.current_step.length > 0
-      ? progress.current_step
-      : "-";
-  const percentage =
-    typeof progress.total_steps === "number" && progress.total_steps > 0
-      ? ` ${Math.round((currentStep / progress.total_steps) * 100)}%`
-      : "";
-  return `Progress: ${statusLabel} | step=${step} (${currentStep}/${total})${percentage}`;
-};
 
 interface TaskExecutionState {
   isRunning: boolean;
@@ -55,8 +18,9 @@ interface TaskExecutionState {
   currentTaskId: string | null;
   runMode: "local" | "cloud";
   unsubscribe: (() => void) | null;
-  progress: AgentTaskProgress | null;
+  progress: TaskRun | null;
   progressSignature: string | null;
+  workflow: Workflow | null;
 }
 
 interface TaskExecutionStore {
@@ -78,7 +42,7 @@ interface TaskExecutionStore {
   setCurrentTaskId: (taskId: string, currentTaskId: string | null) => void;
   setRunMode: (taskId: string, runMode: "local" | "cloud") => void;
   setUnsubscribe: (taskId: string, unsubscribe: (() => void) | null) => void;
-  setProgress: (taskId: string, progress: AgentTaskProgress | null) => void;
+  setProgress: (taskId: string, progress: TaskRun | null) => void;
   clearTaskState: (taskId: string) => void;
 
   // Repository to working directory mapping
@@ -105,6 +69,7 @@ const defaultTaskState: TaskExecutionState = {
   unsubscribe: null,
   progress: null,
   progressSignature: null,
+  workflow: null,
 };
 
 export const useTaskExecutionStore = create<TaskExecutionStore>()(
@@ -177,7 +142,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         get().updateTaskState(taskId, { unsubscribe });
       },
 
-      setProgress: (taskId: string, progress: AgentTaskProgress | null) => {
+      setProgress: (taskId: string, progress: TaskRun | null) => {
         get().updateTaskState(taskId, {
           progress,
           progressSignature: progress
@@ -211,9 +176,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         // Create new subscription that persists even when component unmounts
         const unsubscribeFn = window.electronAPI?.onAgentEvent(
           channel,
-          (
-            ev: AgentEvent | { type: "progress"; progress: AgentTaskProgress },
-          ) => {
+          (ev: AgentEvent | { type: "progress"; progress: TaskRun }) => {
             const currentStore = get();
 
             // Handle custom progress events from Array backend
@@ -224,14 +187,17 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
                 ? createProgressSignature(oldProgress)
                 : null;
               const newSig = createProgressSignature(newProgress);
+
+              // Always update the stored progress state for UI (like TaskDetail)
+              currentStore.setProgress(taskId, newProgress);
+
+              // Only add to logs if signature changed (to avoid duplicate log entries)
               if (oldSig !== newSig) {
-                const progressLog = formatProgressLog(newProgress);
-                currentStore.setProgress(taskId, newProgress);
                 currentStore.addLog(taskId, {
-                  type: "status",
+                  type: "progress",
                   ts: Date.now(),
-                  phase: progressLog,
-                });
+                  progress: newProgress,
+                } as unknown as AgentEvent);
               }
               return;
             }
@@ -337,7 +303,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         }
 
         const { apiKey, apiHost, client } = useAuthStore.getState();
-        
+
         if (!apiKey) {
           store.addLog(taskId, {
             type: "error",
@@ -346,6 +312,21 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
               "No PostHog API key found. Sign in to PostHog to run workflows.",
           });
           return;
+        }
+
+        // Fetch and store workflow for stage name lookups
+        if (client && task.workflow) {
+          try {
+            const workflows = await client.getWorkflows();
+            const workflow = workflows.find(
+              (w: Workflow) => w.id === task.workflow,
+            );
+            if (workflow) {
+              store.updateTaskState(taskId, { workflow });
+            }
+          } catch (err) {
+            console.warn("Failed to fetch workflow", err);
+          }
         }
 
         const currentTaskState = store.getTaskState(taskId);

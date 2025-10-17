@@ -1,4 +1,4 @@
-import type { RepositoryConfig } from "@shared/types";
+import type { RepositoryConfig, TaskRun } from "@shared/types";
 import { buildApiFetcher } from "./fetcher";
 import { createApiClient, type Schemas } from "./generated";
 
@@ -126,13 +126,55 @@ export class PostHogAPIClient {
     return data;
   }
 
-  async getTaskLogs(taskId: string): Promise<string> {
+  async listTaskRuns(taskId: string) {
     const teamId = await this.getTeamId();
-    const data = await this.api.get(
-      `/api/projects/{project_id}/tasks/{id}/progress/`,
-      { path: { project_id: teamId.toString(), id: taskId } },
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/`,
     );
-    return data.output_log ?? "";
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/projects/${teamId}/tasks/${taskId}/runs/`,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch task runs: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.results ?? data ?? [];
+  }
+
+  async getTaskRun(taskId: string, runId: string) {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/`,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch task run: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
+
+  async getTaskLogs(taskId: string): Promise<string> {
+    try {
+      const runs = await this.listTaskRuns(taskId);
+      const latestRun = runs?.sort(
+        (a: TaskRun, b: TaskRun) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      )[0];
+      return latestRun?.log ?? "";
+    } catch (err) {
+      console.warn("Failed to fetch task logs from runs", err);
+      return "";
+    }
   }
 
   async getWorkflows() {

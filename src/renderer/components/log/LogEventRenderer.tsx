@@ -6,6 +6,7 @@ import { DoneView } from "./DoneView";
 import { ErrorView } from "./ErrorView";
 import { InitView } from "./InitView";
 import { MetricEventView } from "./MetricEventView";
+import { ProgressView } from "./ProgressView";
 import { StatusView } from "./StatusView";
 import { TokenView } from "./TokenView";
 import { ToolExecutionView } from "./ToolExecutionView";
@@ -13,7 +14,7 @@ import { UserMessageView } from "./UserMessageView";
 
 const EVENT_COMPONENT_MAP: Record<
   string,
-  React.ComponentType<{ event: any }>
+  React.ComponentType<{ event: any; workflow?: any }>
 > = {
   token: TokenView,
   text: TokenView, // Legacy: treat "text" events like "token" events
@@ -24,6 +25,7 @@ const EVENT_COMPONENT_MAP: Record<
   init: InitView,
   artifact: ArtifactView,
   metric: MetricEventView,
+  progress: ProgressView,
 };
 
 const SKIP_EVENTS = [
@@ -43,6 +45,7 @@ interface LogEventRendererProps {
   toolResult?: Extract<AgentEvent, { type: "tool_result" }>;
   onJumpToRaw?: (index: number) => void;
   forceExpanded?: boolean;
+  workflow?: { stages: Array<{ id: string; name: string }> } | null;
 }
 
 export function LogEventRenderer({
@@ -51,6 +54,7 @@ export function LogEventRenderer({
   toolResult,
   onJumpToRaw,
   forceExpanded = false,
+  workflow,
 }: LogEventRendererProps) {
   // Handle malformed events (e.g., double-stringified)
   if (typeof event === "string") {
@@ -77,7 +81,7 @@ export function LogEventRenderer({
     const Component = EVENT_COMPONENT_MAP[event.type];
 
     if (Component) {
-      content = <Component key={key} event={event} />;
+      content = <Component key={key} event={event} workflow={workflow} />;
       // Components handle their own timestamp wrapping, and return null if they shouldn't render
       if (content === null) {
         return null;
