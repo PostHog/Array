@@ -156,7 +156,7 @@ export function RecordingsView() {
                 Select a recording to view details
               </Text>
               <Text size="1" color="gray">
-                Or press <kbd>R</kbd> to start a new recording
+                Use <kbd>↑</kbd> <kbd>↓</kbd> to navigate
               </Text>
             </Flex>
           )}

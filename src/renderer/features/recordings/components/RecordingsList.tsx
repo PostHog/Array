@@ -104,12 +104,10 @@ export function RecordingsList({ recordings, onDelete }: RecordingsListProps) {
 
   // Auto-select first recording if none selected
   useEffect(() => {
-    if (recordings.length > 0 && !selectedRecordingId) {
-      setSelectedRecording(recordings[0].id);
-    } else if (recordings.length === 0) {
+    if (recordings.length === 0) {
       setSelectedRecording(null);
     }
-  }, [recordings, selectedRecordingId, setSelectedRecording]);
+  }, [recordings.length, setSelectedRecording]);
 
   if (recordings.length === 0) {
     return (

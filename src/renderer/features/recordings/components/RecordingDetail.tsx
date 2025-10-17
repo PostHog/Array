@@ -5,6 +5,7 @@ import {
   Flex,
   Heading,
   IconButton,
+  Kbd,
   ScrollArea,
   Separator,
   Text,
@@ -53,28 +54,34 @@ export function RecordingDetail({
         style={{ borderBottom: "1px solid var(--gray-6)" }}
       >
         <Heading size="5">{title}</Heading>
-        <Flex gap="2">
-          <IconButton
-            size="2"
-            variant="ghost"
-            color="red"
-            onClick={() => {
-              if (confirm("Delete this recording?")) {
-                onDelete(recording.id);
-                setSelectedRecording(null);
-              }
-            }}
-          >
-            <Trash />
-          </IconButton>
-          <IconButton
-            size="2"
-            variant="ghost"
-            color="gray"
-            onClick={() => setSelectedRecording(null)}
-          >
-            <X />
-          </IconButton>
+        <Flex gap="2" align="center">
+          <Flex align="center" gap="2">
+            <Kbd size="1">Del</Kbd>
+            <IconButton
+              size="2"
+              variant="ghost"
+              color="red"
+              onClick={() => {
+                if (confirm("Delete this recording?")) {
+                  onDelete(recording.id);
+                  setSelectedRecording(null);
+                }
+              }}
+            >
+              <Trash />
+            </IconButton>
+          </Flex>
+          <Flex align="center" gap="2">
+            <Kbd size="1">ESC</Kbd>
+            <IconButton
+              size="2"
+              variant="ghost"
+              color="gray"
+              onClick={() => setSelectedRecording(null)}
+            >
+              <X />
+            </IconButton>
+          </Flex>
         </Flex>
       </Flex>
 
