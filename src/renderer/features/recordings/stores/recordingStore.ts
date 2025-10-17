@@ -16,6 +16,7 @@ interface RecordingState {
   availableDevices: MediaDeviceInfo[];
 
   selectedRecordingId: string | null;
+  currentlyPlayingId: string | null;
 
   mediaRecorder: MediaRecorder | null;
   audioChunks: Blob[];
@@ -26,6 +27,7 @@ interface RecordingState {
   setSelectedMicId: (deviceId: string) => void;
   setAvailableDevices: (devices: MediaDeviceInfo[]) => void;
   setSelectedRecording: (recordingId: string | null) => void;
+  setCurrentlyPlaying: (recordingId: string | null) => void;
   startRecording: () => Promise<void>;
   stopRecording: (
     saveRecording: (params: {
@@ -55,6 +57,7 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
   selectedMicId: "",
   availableDevices: [],
   selectedRecordingId: null,
+  currentlyPlayingId: null,
   mediaRecorder: null,
   audioChunks: [],
   audioContext: null,
@@ -65,6 +68,8 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
   setAvailableDevices: (devices) => set({ availableDevices: devices }),
   setSelectedRecording: (recordingId) =>
     set({ selectedRecordingId: recordingId }),
+  setCurrentlyPlaying: (recordingId) =>
+    set({ currentlyPlayingId: recordingId }),
 
   startRecording: async () => {
     try {

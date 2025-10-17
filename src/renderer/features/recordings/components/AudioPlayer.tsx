@@ -2,6 +2,7 @@ import { FastForward, Pause, Play, Rewind } from "@phosphor-icons/react";
 import { Box, Button, Flex, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useRecordingStore } from "../stores/recordingStore";
 
 interface AudioPlayerProps {
   recordingId: string;
@@ -15,13 +16,21 @@ function formatTime(seconds: number): string {
 }
 
 export function AudioPlayer({ recordingId, duration }: AudioPlayerProps) {
-  const [isPlaying, setIsPlaying] = useState(false);
+  const currentlyPlayingId = useRecordingStore(
+    (state) => state.currentlyPlayingId,
+  );
+  const setCurrentlyPlaying = useRecordingStore(
+    (state) => state.setCurrentlyPlaying,
+  );
+  const isPlaying = currentlyPlayingId === recordingId;
+
   const [currentTime, setCurrentTime] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isReady, setIsReady] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
 
+  // Load audio file once when component mounts
   useEffect(() => {
     let mounted = true;
     setIsReady(false);
@@ -37,7 +46,6 @@ export function AudioPlayer({ recordingId, duration }: AudioPlayerProps) {
 
         const audio = new Audio(url);
 
-        // Wait for metadata to load
         await new Promise<void>((resolve) => {
           audio.addEventListener("loadedmetadata", () => resolve(), {
             once: true,
@@ -48,23 +56,16 @@ export function AudioPlayer({ recordingId, duration }: AudioPlayerProps) {
 
         audioRef.current = audio;
 
+        // Only track time and ended - don't sync play/pause state from audio element
         audio.addEventListener("timeupdate", () => {
           if (mounted) setCurrentTime(audio.currentTime);
         });
 
         audio.addEventListener("ended", () => {
           if (mounted) {
-            setIsPlaying(false);
+            setCurrentlyPlaying(null);
             setCurrentTime(0);
           }
-        });
-
-        audio.addEventListener("pause", () => {
-          if (mounted) setIsPlaying(false);
-        });
-
-        audio.addEventListener("play", () => {
-          if (mounted) setIsPlaying(true);
         });
 
         setIsReady(true);
@@ -85,17 +86,27 @@ export function AudioPlayer({ recordingId, duration }: AudioPlayerProps) {
         URL.revokeObjectURL(audioUrlRef.current);
       }
     };
-  }, [recordingId]);
+  }, [recordingId, setCurrentlyPlaying]);
 
-  const togglePlayPause = useCallback(() => {
-    if (!audioRef.current) return;
+  // Sync audio element state with global playing state
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
 
     if (isPlaying) {
-      audioRef.current.pause();
+      audio.play().catch((err) => {
+        console.error("Failed to play audio:", err);
+        setCurrentlyPlaying(null);
+      });
     } else {
-      audioRef.current.play();
+      audio.pause();
     }
-  }, [isPlaying]);
+  }, [isPlaying, setCurrentlyPlaying]);
+
+  const togglePlayPause = useCallback(() => {
+    if (!isReady) return;
+    setCurrentlyPlaying(isPlaying ? null : recordingId);
+  }, [isPlaying, isReady, recordingId, setCurrentlyPlaying]);
 
   const cyclePlaybackRate = useCallback(() => {
     if (!audioRef.current) return;
