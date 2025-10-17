@@ -71,7 +71,13 @@ export interface LogEntry {
 
 export interface TabState {
   id: string;
-  type: "task-list" | "task-detail" | "workflow" | "backlog" | "settings";
+  type:
+    | "task-list"
+    | "task-detail"
+    | "workflow"
+    | "backlog"
+    | "settings"
+    | "recordings";
   title: string;
   data?: Task | unknown;
 }
@@ -103,4 +109,28 @@ export interface PostHogUrlInfo {
   projectId?: string;
   url: string;
   label?: string;
+}
+
+// Recording types for audio transcription feature
+export interface Recording {
+  id: string; // Filename
+  filename: string;
+  duration: number; // Seconds
+  created_at: string; // ISO 8601
+  file_path: string; // Absolute path
+  transcription?: {
+    status: "processing" | "completed" | "error";
+    text: string;
+    summary?: string;
+    extracted_tasks?: Array<{
+      title: string;
+      description: string;
+    }>;
+    error?: string;
+  };
+}
+
+export interface ExtractedTask {
+  title: string;
+  description: string;
 }
