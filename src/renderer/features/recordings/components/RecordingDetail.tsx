@@ -40,19 +40,6 @@ export function RecordingDetail({
     [isSettingsOpen],
   );
 
-  useHotkeys(
-    "delete,backspace",
-    (e) => {
-      e.preventDefault();
-      if (confirm("Delete this recording?")) {
-        onDelete(recording.id);
-        setSelectedRecording(null);
-      }
-    },
-    { enableOnFormTags: false },
-    [recording.id, onDelete],
-  );
-
   const title =
     recording.transcription?.summary ||
     `Recording ${format(new Date(recording.created_at), "h:mm a")}`;
