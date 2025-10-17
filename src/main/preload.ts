@@ -58,4 +58,42 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on(channel, wrapped);
     return () => ipcRenderer.removeListener(channel, wrapped);
   },
+  // Plan mode operations
+  agentStartPlanMode: async (params: {
+    taskId: string;
+    taskTitle: string;
+    taskDescription: string;
+    repoPath: string;
+    apiKey: string;
+    apiHost: string;
+  }): Promise<{ taskId: string; channel: string }> =>
+    ipcRenderer.invoke("agent-start-plan-mode", params),
+  agentGeneratePlan: async (params: {
+    taskId: string;
+    taskTitle: string;
+    taskDescription: string;
+    repoPath: string;
+    questionAnswers: unknown[];
+    apiKey: string;
+    apiHost: string;
+  }): Promise<{ taskId: string; channel: string }> =>
+    ipcRenderer.invoke("agent-generate-plan", params),
+  readPlanFile: (repoPath: string, taskId: string): Promise<string | null> =>
+    ipcRenderer.invoke("read-plan-file", repoPath, taskId),
+  writePlanFile: (
+    repoPath: string,
+    taskId: string,
+    content: string,
+  ): Promise<void> =>
+    ipcRenderer.invoke("write-plan-file", repoPath, taskId, content),
+  ensurePosthogFolder: (repoPath: string, taskId: string): Promise<string> =>
+    ipcRenderer.invoke("ensure-posthog-folder", repoPath, taskId),
+  listTaskArtifacts: (repoPath: string, taskId: string): Promise<unknown[]> =>
+    ipcRenderer.invoke("list-task-artifacts", repoPath, taskId),
+  readTaskArtifact: (
+    repoPath: string,
+    taskId: string,
+    fileName: string,
+  ): Promise<string | null> =>
+    ipcRenderer.invoke("read-task-artifact", repoPath, taskId, fileName),
 });

@@ -2,7 +2,12 @@
  * PostHog URL parser for extracting resource types and IDs from URLs
  */
 
-export type PostHogResourceType = 'error' | 'experiment' | 'insight' | 'feature_flag' | 'generic';
+export type PostHogResourceType =
+  | "error"
+  | "experiment"
+  | "insight"
+  | "feature_flag"
+  | "generic";
 
 export interface PostHogUrlInfo {
   type: PostHogResourceType;
@@ -18,20 +23,22 @@ export interface PostHogUrlInfo {
 export function parsePostHogUrl(url: string): PostHogUrlInfo | null {
   try {
     const urlObj = new URL(url);
-    
+
     // Check if it's a PostHog domain
     if (!isPostHogDomain(urlObj.hostname)) {
       return null;
     }
 
     const pathname = urlObj.pathname;
-    
+
     // Error tracking URLs: /project/{id}/error_tracking/{error_id}
-    const errorTrackingMatch = pathname.match(/^\/project\/(\d+)\/error_tracking\/([a-f0-9-]+)$/i);
+    const errorTrackingMatch = pathname.match(
+      /^\/project\/(\d+)\/error_tracking\/([a-f0-9-]+)$/i,
+    );
     if (errorTrackingMatch) {
       const [, projectId, errorId] = errorTrackingMatch;
       return {
-        type: 'error',
+        type: "error",
         id: errorId,
         projectId,
         url,
@@ -40,11 +47,13 @@ export function parsePostHogUrl(url: string): PostHogUrlInfo | null {
     }
 
     // Experiments URLs: /project/{id}/experiments/{experiment_id}
-    const experimentMatch = pathname.match(/^\/project\/(\d+)\/experiments\/(\d+)$/);
+    const experimentMatch = pathname.match(
+      /^\/project\/(\d+)\/experiments\/(\d+)$/,
+    );
     if (experimentMatch) {
       const [, projectId, experimentId] = experimentMatch;
       return {
-        type: 'experiment',
+        type: "experiment",
         id: experimentId,
         projectId,
         url,
@@ -53,11 +62,13 @@ export function parsePostHogUrl(url: string): PostHogUrlInfo | null {
     }
 
     // Insights URLs: /project/{id}/insights/{insight_id}
-    const insightMatch = pathname.match(/^\/project\/(\d+)\/insights\/([a-zA-Z0-9-]+)$/);
+    const insightMatch = pathname.match(
+      /^\/project\/(\d+)\/insights\/([a-zA-Z0-9-]+)$/,
+    );
     if (insightMatch) {
       const [, projectId, insightId] = insightMatch;
       return {
-        type: 'insight',
+        type: "insight",
         id: insightId,
         projectId,
         url,
@@ -66,11 +77,13 @@ export function parsePostHogUrl(url: string): PostHogUrlInfo | null {
     }
 
     // Feature flags URLs: /project/{id}/feature_flags/{flag_id}
-    const featureFlagMatch = pathname.match(/^\/project\/(\d+)\/feature_flags\/(\d+)$/);
+    const featureFlagMatch = pathname.match(
+      /^\/project\/(\d+)\/feature_flags\/(\d+)$/,
+    );
     if (featureFlagMatch) {
       const [, projectId, flagId] = featureFlagMatch;
       return {
-        type: 'feature_flag',
+        type: "feature_flag",
         id: flagId,
         projectId,
         url,
@@ -80,11 +93,11 @@ export function parsePostHogUrl(url: string): PostHogUrlInfo | null {
 
     // Generic PostHog URL (couldn't match specific resource type)
     return {
-      type: 'generic',
+      type: "generic",
       url,
-      label: 'PostHog Resource',
+      label: "PostHog Resource",
     };
-  } catch (error) {
+  } catch (_error) {
     // Invalid URL format
     return null;
   }
@@ -95,15 +108,15 @@ export function parsePostHogUrl(url: string): PostHogUrlInfo | null {
  */
 function isPostHogDomain(hostname: string): boolean {
   const posthogDomains = [
-    'posthog.com',
-    'app.posthog.com',
-    'us.posthog.com',
-    'eu.posthog.com',
-    'localhost'
+    "posthog.com",
+    "app.posthog.com",
+    "us.posthog.com",
+    "eu.posthog.com",
+    "localhost",
   ];
-  
-  return posthogDomains.some(domain => 
-    hostname === domain || hostname.endsWith(`.${domain}`)
+
+  return posthogDomains.some(
+    (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
   );
 }
 

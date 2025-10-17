@@ -1,4 +1,5 @@
 import type { AgentEvent } from "@posthog/agent";
+import type { QuestionAnswer, TaskArtifact } from "@shared/types";
 
 export interface IElectronAPI {
   storeApiKey: (apiKey: string) => Promise<string>;
@@ -36,6 +37,40 @@ export interface IElectronAPI {
     channel: string,
     listener: (event: AgentEvent) => void,
   ) => () => void;
+  // Plan mode operations
+  agentStartPlanMode: (params: {
+    taskId: string;
+    taskTitle: string;
+    taskDescription: string;
+    repoPath: string;
+    apiKey: string;
+    apiHost: string;
+  }) => Promise<{ taskId: string; channel: string }>;
+  agentGeneratePlan: (params: {
+    taskId: string;
+    taskTitle: string;
+    taskDescription: string;
+    repoPath: string;
+    questionAnswers: QuestionAnswer[];
+    apiKey: string;
+    apiHost: string;
+  }) => Promise<{ taskId: string; channel: string }>;
+  readPlanFile: (repoPath: string, taskId: string) => Promise<string | null>;
+  writePlanFile: (
+    repoPath: string,
+    taskId: string,
+    content: string,
+  ) => Promise<void>;
+  ensurePosthogFolder: (repoPath: string, taskId: string) => Promise<string>;
+  listTaskArtifacts: (
+    repoPath: string,
+    taskId: string,
+  ) => Promise<TaskArtifact[]>;
+  readTaskArtifact: (
+    repoPath: string,
+    taskId: string,
+    fileName: string,
+  ) => Promise<string | null>;
 }
 
 declare global {

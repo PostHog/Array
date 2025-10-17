@@ -141,4 +141,125 @@ export function registerFsIpc(): void {
       }
     },
   );
+
+  // Plan file operations
+  ipcMain.handle(
+    "ensure-posthog-folder",
+    async (
+      _event: IpcMainInvokeEvent,
+      repoPath: string,
+      taskId: string,
+    ): Promise<string> => {
+      const posthogDir = path.join(repoPath, ".posthog", taskId);
+      await fsPromises.mkdir(posthogDir, { recursive: true });
+      return posthogDir;
+    },
+  );
+
+  ipcMain.handle(
+    "read-plan-file",
+    async (
+      _event: IpcMainInvokeEvent,
+      repoPath: string,
+      taskId: string,
+    ): Promise<string | null> => {
+      try {
+        const planPath = path.join(repoPath, ".posthog", taskId, "plan.md");
+        const content = await fsPromises.readFile(planPath, "utf-8");
+        return content;
+      } catch (error) {
+        // File doesn't exist or can't be read
+        console.log(`Plan file not found for task ${taskId}:`, error);
+        return null;
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "write-plan-file",
+    async (
+      _event: IpcMainInvokeEvent,
+      repoPath: string,
+      taskId: string,
+      content: string,
+    ): Promise<void> => {
+      try {
+        const posthogDir = path.join(repoPath, ".posthog", taskId);
+        await fsPromises.mkdir(posthogDir, { recursive: true });
+        const planPath = path.join(posthogDir, "plan.md");
+        await fsPromises.writeFile(planPath, content, "utf-8");
+        console.log(`Plan file written for task ${taskId}`);
+      } catch (error) {
+        console.error(`Failed to write plan file for task ${taskId}:`, error);
+        throw error;
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "list-task-artifacts",
+    async (
+      _event: IpcMainInvokeEvent,
+      repoPath: string,
+      taskId: string,
+    ): Promise<
+      Array<{ name: string; path: string; size: number; modifiedAt: string }>
+    > => {
+      try {
+        const posthogDir = path.join(repoPath, ".posthog", taskId);
+
+        // Check if directory exists
+        try {
+          await fsPromises.access(posthogDir);
+        } catch {
+          return []; // Directory doesn't exist yet
+        }
+
+        const entries = await fsPromises.readdir(posthogDir, {
+          withFileTypes: true,
+        });
+
+        const artifacts = [];
+        for (const entry of entries) {
+          if (entry.isFile() && entry.name.endsWith(".md")) {
+            const filePath = path.join(posthogDir, entry.name);
+            const stats = await fsPromises.stat(filePath);
+            artifacts.push({
+              name: entry.name,
+              path: filePath,
+              size: stats.size,
+              modifiedAt: stats.mtime.toISOString(),
+            });
+          }
+        }
+
+        return artifacts;
+      } catch (error) {
+        console.error(`Failed to list artifacts for task ${taskId}:`, error);
+        return [];
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "read-task-artifact",
+    async (
+      _event: IpcMainInvokeEvent,
+      repoPath: string,
+      taskId: string,
+      fileName: string,
+    ): Promise<string | null> => {
+      try {
+        const filePath = path.join(repoPath, ".posthog", taskId, fileName);
+        const content = await fsPromises.readFile(filePath, "utf-8");
+        return content;
+      } catch (error) {
+        console.error(
+          `Failed to read artifact ${fileName} for task ${taskId}:`,
+          error,
+        );
+        return null;
+      }
+    },
+  );
 }

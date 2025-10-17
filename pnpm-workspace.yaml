@@ -6,4 +6,4 @@ onlyBuiltDependencies:
   - esbuild
 
 overrides:
-  '@posthog/agent': link:../agent
+  '@posthog/agent': link:../posthog-agent

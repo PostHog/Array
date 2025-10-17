@@ -1,5 +1,11 @@
 import type { AgentEvent } from "@posthog/agent";
-import type { Task } from "@shared/types";
+import type {
+  ClarifyingQuestion,
+  ExecutionMode,
+  PlanModePhase,
+  QuestionAnswer,
+  Task,
+} from "@shared/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useAuthStore } from "./authStore";
@@ -57,6 +63,13 @@ interface TaskExecutionState {
   unsubscribe: (() => void) | null;
   progress: AgentTaskProgress | null;
   progressSignature: string | null;
+  // Plan mode fields
+  executionMode: ExecutionMode;
+  planModePhase: PlanModePhase;
+  clarifyingQuestions: ClarifyingQuestion[];
+  questionAnswers: QuestionAnswer[];
+  planContent: string | null;
+  selectedArtifact: string | null; // Currently viewing artifact filename
 }
 
 interface TaskExecutionStore {
@@ -94,6 +107,20 @@ interface TaskExecutionStore {
   // Event subscription management
   subscribeToAgentEvents: (taskId: string, channel: string) => void;
   unsubscribeFromAgentEvents: (taskId: string) => void;
+
+  // Plan mode actions
+  setExecutionMode: (taskId: string, mode: ExecutionMode) => void;
+  setPlanModePhase: (taskId: string, phase: PlanModePhase) => void;
+  setClarifyingQuestions: (
+    taskId: string,
+    questions: ClarifyingQuestion[],
+  ) => void;
+  setQuestionAnswers: (taskId: string, answers: QuestionAnswer[]) => void;
+  addQuestionAnswer: (taskId: string, answer: QuestionAnswer) => void;
+  setPlanContent: (taskId: string, content: string | null) => void;
+  setSelectedArtifact: (taskId: string, fileName: string | null) => void;
+  runPlanMode: (taskId: string, task: Task) => Promise<void>;
+  generatePlan: (taskId: string, task: Task) => Promise<void>;
 }
 
 const defaultTaskState: TaskExecutionState = {
@@ -105,6 +132,12 @@ const defaultTaskState: TaskExecutionState = {
   unsubscribe: null,
   progress: null,
   progressSignature: null,
+  executionMode: "workflow",
+  planModePhase: "idle",
+  clarifyingQuestions: [],
+  questionAnswers: [],
+  planContent: null,
+  selectedArtifact: null,
 };
 
 export const useTaskExecutionStore = create<TaskExecutionStore>()(
@@ -484,6 +517,225 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
       clearTaskLogs: (taskId: string) => {
         get().setLogs(taskId, []);
+      },
+
+      // Plan mode actions
+      setExecutionMode: (taskId: string, mode: ExecutionMode) => {
+        get().updateTaskState(taskId, { executionMode: mode });
+      },
+
+      setPlanModePhase: (taskId: string, phase: PlanModePhase) => {
+        get().updateTaskState(taskId, { planModePhase: phase });
+      },
+
+      setClarifyingQuestions: (
+        taskId: string,
+        questions: ClarifyingQuestion[],
+      ) => {
+        get().updateTaskState(taskId, { clarifyingQuestions: questions });
+      },
+
+      setQuestionAnswers: (taskId: string, answers: QuestionAnswer[]) => {
+        get().updateTaskState(taskId, { questionAnswers: answers });
+      },
+
+      addQuestionAnswer: (taskId: string, answer: QuestionAnswer) => {
+        const currentState = get().getTaskState(taskId);
+        const existingIndex = currentState.questionAnswers.findIndex(
+          (a) => a.questionId === answer.questionId,
+        );
+        const updatedAnswers =
+          existingIndex >= 0
+            ? currentState.questionAnswers.map((a, i) =>
+                i === existingIndex ? answer : a,
+              )
+            : [...currentState.questionAnswers, answer];
+        get().updateTaskState(taskId, { questionAnswers: updatedAnswers });
+      },
+
+      setPlanContent: (taskId: string, content: string | null) => {
+        get().updateTaskState(taskId, { planContent: content });
+      },
+
+      setSelectedArtifact: (taskId: string, fileName: string | null) => {
+        get().updateTaskState(taskId, { selectedArtifact: fileName });
+      },
+
+      runPlanMode: async (taskId: string, task: Task) => {
+        const store = get();
+        const taskState = store.getTaskState(taskId);
+
+        if (taskState.isRunning) return;
+
+        const { apiKey, apiHost } = useAuthStore.getState();
+        if (!apiKey) {
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message:
+              "No PostHog API key found. Sign in to PostHog to run plan mode.",
+          });
+          return;
+        }
+
+        // Ensure repo path is selected
+        let effectiveRepoPath = taskState.repoPath;
+        if (!effectiveRepoPath) {
+          await store.selectRepositoryForTask(taskId);
+          effectiveRepoPath = store.getTaskState(taskId).repoPath;
+        }
+
+        if (!effectiveRepoPath) {
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message: "No repository folder selected.",
+          });
+          return;
+        }
+
+        const isRepo =
+          await window.electronAPI?.validateRepo(effectiveRepoPath);
+        if (!isRepo) {
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message: `Selected folder is not a git repository: ${effectiveRepoPath}`,
+          });
+          return;
+        }
+
+        // Clear previous plan mode state
+        store.setPlanModePhase(taskId, "research");
+        store.setClarifyingQuestions(taskId, []);
+        store.setQuestionAnswers(taskId, []);
+        store.setProgress(taskId, null);
+        store.setRunning(taskId, true);
+
+        const startTs = Date.now();
+        store.setLogs(taskId, [
+          {
+            type: "token",
+            ts: startTs,
+            content: "Starting plan mode research phase...",
+          },
+          {
+            type: "token",
+            ts: startTs,
+            content: `Repo: ${effectiveRepoPath}`,
+          },
+        ]);
+
+        try {
+          const result = await window.electronAPI?.agentStartPlanMode({
+            taskId: task.id,
+            taskTitle: task.title,
+            taskDescription: task.description,
+            repoPath: effectiveRepoPath,
+            apiKey,
+            apiHost,
+          });
+
+          if (!result) {
+            store.addLog(taskId, {
+              type: "error",
+              ts: Date.now(),
+              message: "Failed to start plan mode: electronAPI not available",
+            });
+            store.setRunning(taskId, false);
+            store.setPlanModePhase(taskId, "idle");
+            return;
+          }
+
+          const { taskId: executionTaskId, channel } = result;
+          store.setCurrentTaskId(taskId, executionTaskId);
+
+          // Subscribe to streaming events
+          store.subscribeToAgentEvents(taskId, channel);
+        } catch (error) {
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message: `Error starting plan mode: ${error instanceof Error ? error.message : "Unknown error"}`,
+          });
+          store.setRunning(taskId, false);
+          store.setPlanModePhase(taskId, "idle");
+        }
+      },
+
+      generatePlan: async (taskId: string, task: Task) => {
+        const store = get();
+        const taskState = store.getTaskState(taskId);
+
+        if (taskState.isRunning) return;
+
+        const { apiKey, apiHost } = useAuthStore.getState();
+        if (!apiKey) {
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message:
+              "No PostHog API key found. Sign in to PostHog to generate plan.",
+          });
+          return;
+        }
+
+        const effectiveRepoPath = taskState.repoPath;
+        if (!effectiveRepoPath) {
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message: "No repository folder selected.",
+          });
+          return;
+        }
+
+        store.setPlanModePhase(taskId, "planning");
+        store.setRunning(taskId, true);
+
+        const startTs = Date.now();
+        store.addLog(taskId, {
+          type: "token",
+          ts: startTs,
+          content: "Generating implementation plan...",
+        });
+
+        try {
+          const result = await window.electronAPI?.agentGeneratePlan({
+            taskId: task.id,
+            taskTitle: task.title,
+            taskDescription: task.description,
+            repoPath: effectiveRepoPath,
+            questionAnswers: taskState.questionAnswers,
+            apiKey,
+            apiHost,
+          });
+
+          if (!result) {
+            store.addLog(taskId, {
+              type: "error",
+              ts: Date.now(),
+              message: "Failed to generate plan: electronAPI not available",
+            });
+            store.setRunning(taskId, false);
+            store.setPlanModePhase(taskId, "questions");
+            return;
+          }
+
+          const { taskId: executionTaskId, channel } = result;
+          store.setCurrentTaskId(taskId, executionTaskId);
+
+          // Subscribe to streaming events
+          store.subscribeToAgentEvents(taskId, channel);
+        } catch (error) {
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message: `Error generating plan: ${error instanceof Error ? error.message : "Unknown error"}`,
+          });
+          store.setRunning(taskId, false);
+          store.setPlanModePhase(taskId, "questions");
+        }
       },
     }),
     {

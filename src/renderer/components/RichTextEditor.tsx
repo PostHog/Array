@@ -1,4 +1,5 @@
 import { Box } from "@radix-ui/themes";
+import type { MentionItem } from "@shared/types";
 import { Link } from "@tiptap/extension-link";
 import { Mention } from "@tiptap/extension-mention";
 import { Placeholder } from "@tiptap/extension-placeholder";
@@ -9,11 +10,14 @@ import StarterKit from "@tiptap/starter-kit";
 import type { SuggestionOptions } from "@tiptap/suggestion";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import {
+  extractUrlFromMarkdown,
+  isUrl,
+  parsePostHogUrl,
+} from "../utils/posthog-url-parser";
 import { markdownToTiptap, tiptapToMarkdown } from "../utils/tiptap-converter";
-import { parsePostHogUrl, isUrl, extractUrlFromMarkdown } from "../utils/posthog-url-parser";
 import { MentionList, type MentionListRef } from "./FileMentionList";
 import { FormattingToolbar } from "./FormattingToolbar";
-import type { MentionItem } from "@shared/types";
 
 interface RichTextEditorProps {
   value: string;
@@ -87,7 +91,7 @@ export function RichTextEditor({
               default: null,
             },
             type: {
-              default: 'file',
+              default: "file",
             },
             urlId: {
               default: null,
@@ -103,33 +107,33 @@ export function RichTextEditor({
           class: "file-mention",
         },
         suggestion: {
-          char: '@',
+          char: "@",
           allowSpaces: true,
           command: ({ editor, range, props }) => {
             // Insert mention with all attributes
             const nodeAfter = editor.view.state.selection.$to.nodeAfter;
-            const overrideSpace = nodeAfter?.text?.startsWith(' ');
-            
+            const overrideSpace = nodeAfter?.text?.startsWith(" ");
+
             if (overrideSpace) {
               range.to += 1;
             }
-            
+
             editor
               .chain()
               .focus()
               .insertContentAt(range, [
                 {
-                  type: 'mention',
+                  type: "mention",
                   attrs: {
                     id: props.id,
                     label: props.label,
-                    type: props.type || 'file',
+                    type: props.type || "file",
                     urlId: props.urlId,
                   },
                 },
                 {
-                  type: 'text',
-                  text: ' ',
+                  type: "text",
+                  text: " ",
                 },
               ])
               .run();
@@ -158,7 +162,7 @@ export function RichTextEditor({
                   const urlObj = new URL(urlToCheck);
                   items.push({
                     url: urlToCheck,
-                    type: 'generic',
+                    type: "generic",
                     label: urlObj.hostname,
                   });
                 } catch {
@@ -177,7 +181,7 @@ export function RichTextEditor({
                 const fileItems = (results || []).map((file) => ({
                   path: file.path,
                   name: file.name,
-                  type: 'file' as const,
+                  type: "file" as const,
                 }));
                 items.push(...fileItems);
               } catch (error) {
@@ -305,43 +309,46 @@ export function RichTextEditor({
         const { state } = view;
         const { selection } = state;
         const { $from } = selection;
-        
+
         // Get text before cursor in current paragraph
         const textBefore = $from.parent.textBetween(
           Math.max(0, $from.parentOffset - 500),
           $from.parentOffset,
           undefined,
-          '\ufffc'
+          "\ufffc",
         );
-        
+
         // Check if there's an @ symbol before the cursor without any whitespace before it
         // or if @ is the last character before cursor (just typed @)
-        const lastAtIndex = textBefore.lastIndexOf('@');
+        const lastAtIndex = textBefore.lastIndexOf("@");
         if (lastAtIndex !== -1) {
           const textAfterAt = textBefore.substring(lastAtIndex + 1);
-          
+
           // We're in mention mode if:
           // 1. There's no space between @ and cursor, OR
           // 2. @ is immediately before cursor
-          if (!textAfterAt.includes(' ') || lastAtIndex === textBefore.length - 1) {
+          if (
+            !textAfterAt.includes(" ") ||
+            lastAtIndex === textBefore.length - 1
+          ) {
             const clipboardData = event.clipboardData;
             if (clipboardData) {
-              const pastedText = clipboardData.getData('text/plain').trim();
-              
+              const pastedText = clipboardData.getData("text/plain").trim();
+
               // If pasted content is a URL, prevent default paste and insert as plain text
               if (pastedText && isUrl(pastedText)) {
                 event.preventDefault();
-                
+
                 // Insert the URL as plain text to trigger mention suggestion
                 const transaction = state.tr.insertText(pastedText);
                 view.dispatch(transaction);
-                
+
                 return true;
               }
             }
           }
         }
-        
+
         return false;
       },
       handleKeyDown: (_view, event) => {

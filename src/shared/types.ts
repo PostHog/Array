@@ -104,3 +104,33 @@ export interface PostHogUrlInfo {
   url: string;
   label?: string;
 }
+
+// Plan Mode types
+export type ExecutionMode = "plan" | "workflow";
+
+export type PlanModePhase =
+  | "idle"
+  | "research"
+  | "questions"
+  | "planning"
+  | "review";
+
+export interface ClarifyingQuestion {
+  id: string;
+  question: string;
+  options: string[]; // ["a) option1", "b) option2", "c) something else"]
+  requiresInput: boolean; // true if option c or custom input needed
+}
+
+export interface QuestionAnswer {
+  questionId: string;
+  selectedOption: string;
+  customInput?: string;
+}
+
+export interface TaskArtifact {
+  name: string;
+  path: string;
+  size: number;
+  modifiedAt: string;
+}
