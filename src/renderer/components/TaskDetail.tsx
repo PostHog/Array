@@ -1,14 +1,9 @@
-import {
-  DiamondIcon,
-  FilesIcon,
-  GitBranchIcon,
-  GithubLogoIcon,
-  WarningCircleIcon,
-} from "@phosphor-icons/react";
+import { DiamondIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { GearIcon, GlobeIcon } from "@radix-ui/react-icons";
 import {
   Box,
   Button,
+  Code,
   DataList,
   Flex,
   Heading,
@@ -332,10 +327,15 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   <DataList.Label>Repository</DataList.Label>
                   <DataList.Value>
                     <Flex align="center" gap="2">
-                      <Button size="1" variant="outline" color="gray">
-                        <GithubLogoIcon />
-                        {repositoryValue || "No repository connected"}
-                      </Button>
+                      {repositoryValue ? (
+                        <Code size="2" color="gray">
+                          {repositoryValue}
+                        </Code>
+                      ) : (
+                        <Text size="2" color="gray">
+                          No repository connected
+                        </Text>
+                      )}
                       {showRepoWarning && (
                         <Tooltip content={REPO_NOT_IN_INTEGRATION_WARNING}>
                           <WarningCircleIcon
@@ -353,10 +353,9 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   <DataList.Label>Working Directory</DataList.Label>
                   <DataList.Value>
                     {repoPath ? (
-                      <Button size="1" variant="outline" color="gray">
-                        <FilesIcon />
+                      <Code size="2" color="gray">
                         {displayRepoPath}
-                      </Button>
+                      </Code>
                     ) : (
                       <Text size="2" color="gray">
                         Not set
@@ -369,10 +368,9 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   <DataList.Item>
                     <DataList.Label>Branch</DataList.Label>
                     <DataList.Value>
-                      <Button size="1" variant="outline" color="gray">
-                        <GitBranchIcon />
+                      <Code size="2" color="gray">
                         {task.github_branch}
-                      </Button>
+                      </Code>
                     </DataList.Value>
                   </DataList.Item>
                 )}

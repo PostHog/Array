@@ -19,4 +19,4 @@ export const repoConfigToKey = (config?: RepositoryConfig): string => {
 };
 
 export const REPO_NOT_IN_INTEGRATION_WARNING =
-  "This repository is not available in your GitHub integration. We won't be able to create PRs when running tasks in the cloud.";
+  "This repository is not connected to your GitHub integration. Tasks which run in the cloud won't be able to create PRs.";

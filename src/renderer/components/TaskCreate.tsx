@@ -7,6 +7,7 @@ import {
 import {
   Button,
   Callout,
+  Code,
   DataList,
   Dialog,
   Flex,
@@ -65,7 +66,15 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     [workflows],
   );
 
-  const { register, handleSubmit, reset, control, setValue, watch } = useForm({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    control,
+    setValue,
+    watch,
+    formState: { errors, isSubmitted },
+  } = useForm({
     defaultValues: {
       title: "",
       description: "",
@@ -94,9 +103,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
           setValue("repository", repoKey);
 
           if (!isRepoInIntegration(repoKey)) {
-            setRepoWarning(
-              `Repository ${repoKey} ${REPO_NOT_IN_INTEGRATION_WARNING}`,
-            );
+            setRepoWarning(repoKey);
           } else {
             setRepoWarning(null);
           }
@@ -161,6 +168,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
             data: newTask,
           });
           reset();
+          setRepoWarning(null);
           if (!createMore) {
             onOpenChange(false);
           }
@@ -184,8 +192,15 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     },
   );
 
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen) {
+      setRepoWarning(null);
+    }
+    onOpenChange(newOpen);
+  };
+
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Content
         maxHeight={isExpanded ? "90vh" : "600px"}
         height={isExpanded ? "90vh" : "auto"}
@@ -272,6 +287,10 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                     <Controller
                       name="folderPath"
                       control={control}
+                      rules={{
+                        required: true,
+                        validate: (v) => v.trim().length > 0,
+                      }}
                       render={({ field }) => (
                         <FolderPicker
                           value={field.value}
@@ -348,10 +367,28 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
               </DataList.Root>
 
               {repoWarning && (
-                <Callout.Root color="orange" size="1">
-                  <Callout.Text>{repoWarning}</Callout.Text>
+                <Callout.Root color="blue" size="1">
+                  <Callout.Text>
+                    <Code size="2">{repoWarning}</Code>{" "}
+                    {REPO_NOT_IN_INTEGRATION_WARNING}
+                  </Callout.Text>
                 </Callout.Root>
               )}
+
+              {isSubmitted &&
+                (errors.title ||
+                  errors.description ||
+                  errors.workflow ||
+                  errors.folderPath) && (
+                  <Callout.Root color="red" size="1">
+                    <Callout.Text>
+                      {errors.title && "Title is required. "}
+                      {errors.description && "Description is required. "}
+                      {errors.workflow && "Workflow is required. "}
+                      {errors.folderPath && "Working directory is required."}
+                    </Callout.Text>
+                  </Callout.Root>
+                )}
 
               {error && (
                 <Callout.Root color="red" size="1">

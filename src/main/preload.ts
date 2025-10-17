@@ -66,4 +66,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on(channel, wrapped);
     return () => ipcRenderer.removeListener(channel, wrapped);
   },
+  onOpenSettings: (listener: () => void): (() => void) => {
+    const wrapped = () => listener();
+    ipcRenderer.on("open-settings", wrapped);
+    return () => ipcRenderer.removeListener("open-settings", wrapped);
+  },
 });

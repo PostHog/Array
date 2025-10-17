@@ -80,7 +80,19 @@ function createWindow(): void {
   const template: MenuItemConstructorOptions[] = [
     {
       label: "Array",
-      submenu: [{ role: "about" }, { type: "separator" }, { role: "quit" }],
+      submenu: [
+        { role: "about" },
+        { type: "separator" },
+        {
+          label: "Settings...",
+          accelerator: "CmdOrCtrl+,",
+          click: () => {
+            mainWindow?.webContents.send("open-settings");
+          },
+        },
+        { type: "separator" },
+        { role: "quit" },
+      ],
     },
     {
       label: "Edit",
