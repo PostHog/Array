@@ -12,14 +12,11 @@ import {
   TASK_EXTRACTION_PROMPT,
 } from "./transcription-prompts.js";
 
-// Polyfill File for Node.js compatibility
 let FileConstructor: typeof File;
 try {
-  // Try importing from node:buffer (Node 20+)
   const { File: NodeFile } = await import("node:buffer");
   FileConstructor = NodeFile as typeof File;
 } catch {
-  // Fallback for Node < 20
   FileConstructor = class File extends Blob {
     name: string;
     lastModified: number;
@@ -44,7 +41,6 @@ interface RecordingSession {
 const activeRecordings = new Map<string, RecordingSession>();
 const recordingsDir = path.join(app.getPath("userData"), "recordings");
 
-// Ensure recordings directory exists
 if (!fs.existsSync(recordingsDir)) {
   fs.mkdirSync(recordingsDir, { recursive: true });
 }
@@ -53,21 +49,16 @@ if (!fs.existsSync(recordingsDir)) {
  * Validates a recording ID to prevent path traversal attacks
  */
 function validateRecordingId(recordingId: string): boolean {
-  // Only allow alphanumeric characters, dots, hyphens, and underscores
   const safePattern = /^[a-zA-Z0-9._-]+$/;
   if (!safePattern.test(recordingId)) {
     return false;
   }
 
-  // Ensure the resolved path stays within the recordings directory
   const resolvedPath = path.resolve(path.join(recordingsDir, recordingId));
   const recordingsDirResolved = path.resolve(recordingsDir);
   return resolvedPath.startsWith(recordingsDirResolved + path.sep);
 }
 
-/**
- * Generate a summary title for a transcript using GPT with structured output
- */
 async function generateTranscriptSummary(
   transcriptText: string,
   openaiApiKey: string,
@@ -100,9 +91,6 @@ async function generateTranscriptSummary(
   }
 }
 
-/**
- * Extract actionable tasks from a transcript using GPT with structured output
- */
 async function extractTasksFromTranscript(
   transcriptText: string,
   openaiApiKey: string,
@@ -146,12 +134,11 @@ function safeLog(...args: unknown[]): void {
   try {
     console.log(...args);
   } catch {
-    // Ignore logging errors (e.g., write EIO during startup)
+    // Ignore logging errors
   }
 }
 
 export function registerRecordingIpc(): void {
-  // Desktop capturer for system audio
   ipcMain.handle(
     "desktop-capturer:get-sources",
     async (_event, options: { types: ("screen" | "window")[] }) => {
@@ -194,16 +181,13 @@ export function registerRecordingIpc(): void {
         throw new Error("Recording session not found");
       }
 
-      // Save the recording
       const filename = `recording-${session.startTime.toISOString().replace(/[:.]/g, "-")}.webm`;
       const filePath = path.join(recordingsDir, filename);
       const metadataPath = path.join(recordingsDir, `${filename}.json`);
 
-      // Save the audio data
       const buffer = Buffer.from(audioData);
       fs.writeFileSync(filePath, buffer);
 
-      // Save metadata
       const metadata = {
         duration,
         created_at: session.startTime.toISOString(),
@@ -243,7 +227,6 @@ export function registerRecordingIpc(): void {
       let createdAt = new Date().toISOString();
       let transcription: Recording["transcription"];
 
-      // Try to read metadata
       if (fs.existsSync(metadataPath)) {
         try {
           const metadataContent = fs.readFileSync(metadataPath, "utf-8");
@@ -278,6 +261,13 @@ export function registerRecordingIpc(): void {
     }
 
     const filePath = path.join(recordingsDir, recordingId);
+
+    const resolvedPath = fs.realpathSync.native(filePath);
+    const recordingsDirResolved = fs.realpathSync.native(recordingsDir);
+    if (!resolvedPath.startsWith(recordingsDirResolved)) {
+      throw new Error("Invalid recording path");
+    }
+
     const metadataPath = path.join(recordingsDir, `${recordingId}.json`);
 
     let deleted = false;
@@ -305,6 +295,12 @@ export function registerRecordingIpc(): void {
       throw new Error("Recording file not found");
     }
 
+    const resolvedPath = fs.realpathSync.native(filePath);
+    const recordingsDirResolved = fs.realpathSync.native(recordingsDir);
+    if (!resolvedPath.startsWith(recordingsDirResolved)) {
+      throw new Error("Invalid recording path");
+    }
+
     const buffer = fs.readFileSync(filePath);
     return buffer;
   });
@@ -323,7 +319,12 @@ export function registerRecordingIpc(): void {
         throw new Error("Recording file not found");
       }
 
-      // Update metadata to show processing
+      const resolvedPath = fs.realpathSync.native(filePath);
+      const recordingsDirResolved = fs.realpathSync.native(recordingsDir);
+      if (!resolvedPath.startsWith(recordingsDirResolved)) {
+        throw new Error("Invalid recording path");
+      }
+
       let metadata: Record<string, unknown> = {};
       if (fs.existsSync(metadataPath)) {
         metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8"));
@@ -338,16 +339,14 @@ export function registerRecordingIpc(): void {
       try {
         const openai = createOpenAI({ apiKey: openaiApiKey });
 
-        // Read the file
         const audio = await readFile(filePath);
-        const maxSize = 25 * 1024 * 1024; // 25 MB limit
+        const maxSize = 25 * 1024 * 1024;
         const fileSize = audio.length;
 
         safeLog(
           `[Transcription] Starting (${(fileSize / 1024 / 1024).toFixed(2)} MB)`,
         );
 
-        // Check file size
         if (fileSize > maxSize) {
           throw new Error(
             `Recording file is too large (${(fileSize / 1024 / 1024).toFixed(1)} MB). ` +
@@ -356,7 +355,6 @@ export function registerRecordingIpc(): void {
           );
         }
 
-        // Call OpenAI transcription with detailed output
         const result = await transcribe({
           model: openai.transcription("gpt-4o-mini-transcribe"),
           audio,
@@ -366,13 +364,11 @@ export function registerRecordingIpc(): void {
 
         const fullTranscriptText = result.text;
 
-        // Generate summary title
         const summaryTitle = await generateTranscriptSummary(
           fullTranscriptText,
           openaiApiKey,
         );
 
-        // Extract actionable tasks using GPT
         const extractedTasks = await extractTasksFromTranscript(
           fullTranscriptText,
           openaiApiKey,
@@ -382,7 +378,6 @@ export function registerRecordingIpc(): void {
           `[Transcription] Complete - ${extractedTasks.length} tasks extracted`,
         );
 
-        // Update metadata with transcription, summary, and extracted tasks
         metadata.transcription = {
           status: "completed",
           text: fullTranscriptText,
@@ -400,7 +395,6 @@ export function registerRecordingIpc(): void {
       } catch (error) {
         console.error("[Transcription] Error:", error);
 
-        // Update metadata with error
         metadata.transcription = {
           status: "error",
           text: "",

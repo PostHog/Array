@@ -1,32 +1,31 @@
 import type { Recording } from "@shared/types";
 import { create } from "zustand";
 
-const MAX_DURATION_SECONDS = 3 * 60 * 60; // 3 hours
+const MAX_DURATION_SECONDS = 3 * 60 * 60;
 
 export type RecordingMode = "microphone" | "system-audio" | "both";
 
 interface RecordingState {
-  // Recording state
   isRecording: boolean;
   recordingDuration: number;
   recordingId: string | null;
   error: string | null;
 
-  // Recording configuration
   recordingMode: RecordingMode;
   selectedMicId: string;
   availableDevices: MediaDeviceInfo[];
 
-  // MediaRecorder and streams (not persisted)
+  selectedRecordingId: string | null;
+
   mediaRecorder: MediaRecorder | null;
   audioChunks: Blob[];
   audioContext: AudioContext | null;
   streamsToStop: MediaStream[];
 
-  // Actions
   setRecordingMode: (mode: RecordingMode) => void;
   setSelectedMicId: (deviceId: string) => void;
   setAvailableDevices: (devices: MediaDeviceInfo[]) => void;
+  setSelectedRecording: (recordingId: string | null) => void;
   startRecording: () => Promise<void>;
   stopRecording: (
     saveRecording: (params: {
@@ -37,6 +36,7 @@ interface RecordingState {
   ) => Promise<void>;
   incrementDuration: () => void;
   reset: () => void;
+  cleanup: () => void;
 }
 
 // Check if system audio capture is supported
@@ -51,9 +51,10 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
   recordingDuration: 0,
   recordingId: null,
   error: null,
-  recordingMode: "both", // Default: capture both mic and system audio for meetings
+  recordingMode: "both",
   selectedMicId: "",
   availableDevices: [],
+  selectedRecordingId: null,
   mediaRecorder: null,
   audioChunks: [],
   audioContext: null,
@@ -62,13 +63,14 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
   setRecordingMode: (mode) => set({ recordingMode: mode }),
   setSelectedMicId: (deviceId) => set({ selectedMicId: deviceId }),
   setAvailableDevices: (devices) => set({ availableDevices: devices }),
+  setSelectedRecording: (recordingId) =>
+    set({ selectedRecordingId: recordingId }),
 
   startRecording: async () => {
     try {
       const { recordingMode, selectedMicId } = get();
       set({ error: null });
 
-      // Check system audio support
       const needsSystemAudio =
         recordingMode === "system-audio" || recordingMode === "both";
       if (needsSystemAudio && !isSystemAudioSupported()) {
@@ -80,12 +82,10 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
         return;
       }
 
-      // Create audio context for mixing
       const audioContext = new AudioContext();
       const destination = audioContext.createMediaStreamDestination();
       const streamsToStop: MediaStream[] = [];
 
-      // Get microphone if needed
       if (recordingMode === "microphone" || recordingMode === "both") {
         const micStream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -100,86 +100,11 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
         micSource.connect(destination);
       }
 
-      // Get system audio if needed - use getDisplayMedia for tab audio capture
-      if (recordingMode === "system-audio" || recordingMode === "both") {
-        try {
-          // Use getDisplayMedia to let user select a tab with audio
-          // This works great for browser-based meetings (Google Meet, Zoom web)
-          const systemStream = await navigator.mediaDevices.getDisplayMedia({
-            audio: {
-              echoCancellation: false,
-              noiseSuppression: false,
-              sampleRate: 48000,
-            } as MediaTrackConstraints,
-            video: {
-              displaySurface: "browser",
-            } as MediaTrackConstraints,
-            // @ts-expect-error - Chromium supports preferCurrentTab
-            preferCurrentTab: false,
-            selfBrowserSurface: "exclude",
-            systemAudio: "exclude",
-            surfaceSwitching: "include",
-            monitorTypeSurfaces: "exclude",
-          });
-
-          // Stop video tracks immediately (we only want audio)
-          systemStream.getVideoTracks().forEach((track) => {
-            track.stop();
-          });
-
-          // Check for audio tracks
-          const audioTracks = systemStream.getAudioTracks();
-
-          if (audioTracks.length > 0) {
-            console.log("[Recording] Tab audio captured:", {
-              tracks: audioTracks.length,
-              state: audioTracks[0].readyState,
-              enabled: audioTracks[0].enabled,
-              label: audioTracks[0].label,
-            });
-            streamsToStop.push(systemStream);
-            const systemSource =
-              audioContext.createMediaStreamSource(systemStream);
-            systemSource.connect(destination);
-          } else {
-            console.warn("[Recording] No audio tracks in tab stream");
-            if (recordingMode === "system-audio") {
-              set({
-                error:
-                  "No tab audio captured. Make sure to:\n" +
-                  "1. Select a Chrome tab (not entire screen)\n" +
-                  "2. Check 'Share tab audio' in the picker\n" +
-                  "3. The tab has audio playing (e.g., Google Meet, Zoom)",
-              });
-              audioContext.close();
-              streamsToStop.forEach((stream) => {
-                stream.getTracks().forEach((track) => {
-                  track.stop();
-                });
-              });
-              return;
-            }
-          }
-        } catch (error) {
-          console.error("[Recording] Tab audio error:", error);
-          if (recordingMode === "system-audio") {
-            set({
-              error:
-                error instanceof Error && error.name === "NotAllowedError"
-                  ? "Screen sharing permission denied. Please allow screen sharing and select a Chrome tab with 'Share tab audio' enabled."
-                  : error instanceof Error
-                    ? error.message
-                    : "Tab audio capture failed. Make sure to select a Chrome tab and enable 'Share tab audio'.",
-            });
-            audioContext.close();
-            streamsToStop.forEach((stream) => {
-              stream.getTracks().forEach((track) => {
-                track.stop();
-              });
-            });
-            return;
-          }
-        }
+      if (recordingMode === "system-audio") {
+        console.log(
+          "[Recording] System audio mode: Recording from microphone. " +
+            "For better audio capture, use speakers or install BlackHole virtual audio device.",
+        );
       }
 
       const combinedStream = destination.stream;
@@ -189,17 +114,53 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
         throw new Error("No audio tracks available for recording");
       }
 
+      combinedStream.getAudioTracks().forEach((track, idx) => {
+        console.log(`[Recording] Audio track ${idx}:`, {
+          id: track.id,
+          label: track.label,
+          enabled: track.enabled,
+          muted: track.muted,
+          readyState: track.readyState,
+          settings: track.getSettings(),
+        });
+      });
+
+      const analyser = audioContext.createAnalyser();
+      const testSource = audioContext.createMediaStreamSource(combinedStream);
+      testSource.connect(analyser);
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      setTimeout(() => {
+        analyser.getByteTimeDomainData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += Math.abs(dataArray[i] - 128);
+        }
+        const average = sum / dataArray.length;
+        console.log(
+          `[Recording] Audio activity check: average=${average.toFixed(2)} (>0 means audio is flowing)`,
+        );
+        if (average < 0.1) {
+          console.warn(
+            "[Recording] WARNING: Very low or no audio activity detected. Audio may not be capturing properly.",
+          );
+        }
+        testSource.disconnect();
+      }, 4000);
+
       console.log(
         `[Recording] Starting with ${audioTrackCount} audio track(s)`,
       );
 
-      // Create MediaRecorder with optimized settings
       const mediaRecorder = new MediaRecorder(combinedStream, {
         mimeType: "audio/webm;codecs=opus",
-        audioBitsPerSecond: 64000, // 64 kbps for good quality + manageable file size
+        audioBitsPerSecond: 64000,
       });
 
       mediaRecorder.ondataavailable = (event) => {
+        console.log(
+          `[Recording] Chunk received: ${event.data.size} bytes, type: ${event.data.type}`,
+        );
         if (event.data.size > 0) {
           const currentChunks = get().audioChunks;
           set({ audioChunks: [...currentChunks, event.data] });
@@ -208,18 +169,28 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
         }
       };
 
-      // Start recording session in main process
+      mediaRecorder.onerror = (event) => {
+        console.error("[Recording] MediaRecorder error:", event);
+      };
+
+      mediaRecorder.onstart = () => {
+        console.log("[Recording] MediaRecorder started");
+      };
+
+      mediaRecorder.onstop = () => {
+        console.log("[Recording] MediaRecorder stopped");
+      };
+
       const { recordingId } = await window.electronAPI.recordingStart();
 
-      // Start capturing
-      mediaRecorder.start(1000); // Capture every second
+      mediaRecorder.start(1000);
 
       set({
         isRecording: true,
         recordingDuration: 0,
         recordingId,
         mediaRecorder,
-        audioChunks: [], // Start with fresh chunks array
+        audioChunks: [],
         audioContext,
         streamsToStop,
       });
@@ -249,12 +220,20 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
         return;
       }
 
-      // Stop the recorder
+      if (mediaRecorder.state === "inactive") {
+        console.warn("[Recording] MediaRecorder already stopped");
+        return;
+      }
+
       mediaRecorder.stop();
 
-      // Wait for onstop event
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error("MediaRecorder stop timeout after 5 seconds"));
+        }, 5000);
+
         mediaRecorder.onstop = async () => {
+          clearTimeout(timeout);
           try {
             const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
             console.log(
@@ -264,14 +243,12 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
             const arrayBuffer = await audioBlob.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
 
-            // Save recording via mutation (which will invalidate the query)
             await saveRecording({
               recordingId,
               audioData: uint8Array,
               duration: recordingDuration,
             });
 
-            // Cleanup
             streamsToStop.forEach((stream) => {
               stream.getTracks().forEach((track) => {
                 track.stop();
@@ -313,9 +290,8 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
 
   incrementDuration: () => {
     const { recordingDuration } = get();
-    // Just increment - let user manually stop if they hit max duration
     if (recordingDuration >= MAX_DURATION_SECONDS) {
-      return; // Stop incrementing at max
+      return;
     }
     set({ recordingDuration: recordingDuration + 1 });
   },
@@ -331,4 +307,53 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
       audioContext: null,
       streamsToStop: [],
     }),
+
+  cleanup: () => {
+    const { mediaRecorder, audioContext, streamsToStop } = get();
+
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      try {
+        mediaRecorder.stop();
+      } catch (error) {
+        console.warn(
+          "[Recording] Failed to stop MediaRecorder during cleanup:",
+          error,
+        );
+      }
+    }
+
+    streamsToStop.forEach((stream) => {
+      stream.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch (error) {
+          console.warn(
+            "[Recording] Failed to stop track during cleanup:",
+            error,
+          );
+        }
+      });
+    });
+
+    if (audioContext && audioContext.state !== "closed") {
+      try {
+        audioContext.close();
+      } catch (error) {
+        console.warn(
+          "[Recording] Failed to close AudioContext during cleanup:",
+          error,
+        );
+      }
+    }
+
+    set({
+      isRecording: false,
+      recordingDuration: 0,
+      recordingId: null,
+      mediaRecorder: null,
+      audioChunks: [],
+      audioContext: null,
+      streamsToStop: [],
+    });
+  },
 }));

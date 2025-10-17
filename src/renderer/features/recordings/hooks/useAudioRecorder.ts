@@ -3,9 +3,6 @@ import { useEffect } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useRecordingStore } from "../stores/recordingStore";
 
-/**
- * Hook that adds keyboard shortcuts and timer management to the recording store
- */
 export function useAudioRecorder(
   saveRecording: (params: {
     recordingId: string;
@@ -28,7 +25,6 @@ export function useAudioRecorder(
     incrementDuration,
   } = useRecordingStore();
 
-  // Load available audio devices on mount
   useEffect(() => {
     navigator.mediaDevices.enumerateDevices().then((devices) => {
       const audioInputs = devices.filter((d) => d.kind === "audioinput");
@@ -39,7 +35,6 @@ export function useAudioRecorder(
     });
   }, [selectedMicId, setAvailableDevices, setSelectedMicId]);
 
-  // Timer for recording duration
   useEffect(() => {
     if (!isRecording) return;
 
@@ -50,7 +45,6 @@ export function useAudioRecorder(
     return () => clearInterval(timer);
   }, [isRecording, incrementDuration]);
 
-  // Keyboard shortcuts
   useHotkeys(
     "r",
     () => {
@@ -73,7 +67,6 @@ export function useAudioRecorder(
     [isRecording, stopRecording, saveRecording],
   );
 
-  // Check if system audio is supported
   const isSystemAudioSupported =
     "chrome" in window &&
     !/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);

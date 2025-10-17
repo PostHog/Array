@@ -1,6 +1,7 @@
-import { Pause, Play } from "@phosphor-icons/react";
-import { Box, Button, Flex, Slider, Text } from "@radix-ui/themes";
+import { FastForward, Pause, Play, Rewind } from "@phosphor-icons/react";
+import { Box, Button, Flex, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 
 interface AudioPlayerProps {
   recordingId: string;
@@ -21,7 +22,6 @@ export function AudioPlayer({ recordingId, duration }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
 
-  // Load audio file and initialize audio element
   useEffect(() => {
     let mounted = true;
     setIsReady(false);
@@ -97,13 +97,6 @@ export function AudioPlayer({ recordingId, duration }: AudioPlayerProps) {
     }
   }, [isPlaying]);
 
-  const handleSeek = useCallback((value: number[]) => {
-    if (!audioRef.current) return;
-    const newTime = value[0];
-    audioRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
-  }, []);
-
   const cyclePlaybackRate = useCallback(() => {
     if (!audioRef.current) return;
     const rates = [1, 1.25, 1.5, 2];
@@ -113,11 +106,48 @@ export function AudioPlayer({ recordingId, duration }: AudioPlayerProps) {
     setPlaybackRate(nextRate);
   }, [playbackRate]);
 
+  const skipBackward = useCallback(() => {
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = Math.max(
+      0,
+      audioRef.current.currentTime - 10,
+    );
+  }, []);
+
+  const skipForward = useCallback(() => {
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = Math.min(
+      duration,
+      audioRef.current.currentTime + 10,
+    );
+  }, [duration]);
+
+  useHotkeys(
+    "space",
+    (e) => {
+      e.preventDefault();
+      togglePlayPause();
+    },
+    { enableOnFormTags: false },
+    [togglePlayPause],
+  );
+
   return (
-    <Flex direction="column" gap="2">
+    <Flex direction="column" gap="3">
       <Flex align="center" gap="2">
         <Button
           size="1"
+          variant="ghost"
+          color="gray"
+          onClick={skipBackward}
+          disabled={!isReady}
+          title="Skip backward 10s"
+        >
+          <Rewind weight="fill" size={16} />
+        </Button>
+
+        <Button
+          size="2"
           variant="soft"
           color={isPlaying ? "blue" : "gray"}
           onClick={togglePlayPause}
@@ -126,15 +156,18 @@ export function AudioPlayer({ recordingId, duration }: AudioPlayerProps) {
           {isPlaying ? <Pause weight="fill" /> : <Play weight="fill" />}
         </Button>
 
-        <Box style={{ flex: 1 }}>
-          <Slider
-            value={[currentTime]}
-            max={duration || 100}
-            step={0.1}
-            onValueChange={handleSeek}
-            disabled={!isReady}
-          />
-        </Box>
+        <Button
+          size="1"
+          variant="ghost"
+          color="gray"
+          onClick={skipForward}
+          disabled={!isReady}
+          title="Skip forward 10s"
+        >
+          <FastForward weight="fill" size={16} />
+        </Button>
+
+        <Box style={{ flex: 1 }} />
 
         <Flex gap="2" align="center">
           <Text

@@ -1,19 +1,22 @@
 import type { Recording } from "@shared/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useAuthStore } from "../../../stores/authStore";
 
 export function useRecordings() {
   const queryClient = useQueryClient();
+  const openaiApiKey = useAuthStore((state) => state.openaiApiKey);
+  const [transcriptionError, setTranscriptionError] = useState<string | null>(
+    null,
+  );
 
-  // Fetch all recordings
   const { data: recordings = [], isLoading } = useQuery({
     queryKey: ["recordings"],
     queryFn: async (): Promise<Recording[]> => {
       return await window.electronAPI.recordingList();
     },
-    // No polling - we invalidate on mutations instead
   });
 
-  // Save recording (called after stopping)
   const saveRecordingMutation = useMutation({
     mutationFn: async ({
       recordingId,
@@ -30,15 +33,31 @@ export function useRecordings() {
         duration,
       );
     },
-    onSuccess: (newRecording) => {
-      // Update cache directly with the new recording instead of invalidating
+    onSuccess: async (newRecording) => {
       queryClient.setQueryData<Recording[]>(["recordings"], (old = []) => {
         return [newRecording, ...old];
       });
+
+      if (openaiApiKey) {
+        try {
+          setTranscriptionError(null);
+          await window.electronAPI.recordingTranscribe(
+            newRecording.id,
+            openaiApiKey,
+          );
+          queryClient.invalidateQueries({ queryKey: ["recordings"] });
+        } catch (error) {
+          console.error("Auto-transcription failed:", error);
+          const errorMessage =
+            error instanceof Error
+              ? error.message
+              : "Auto-transcription failed. Please check your OpenAI API key and try again.";
+          setTranscriptionError(errorMessage);
+        }
+      }
     },
   });
 
-  // Delete recording
   const deleteMutation = useMutation({
     mutationFn: async (recordingId: string) => {
       return await window.electronAPI.recordingDelete(recordingId);
@@ -48,7 +67,6 @@ export function useRecordings() {
     },
   });
 
-  // Transcribe recording
   const transcribeMutation = useMutation({
     mutationFn: async ({
       recordingId,
@@ -72,6 +90,7 @@ export function useRecordings() {
     isDeleting: deleteMutation.isPending,
     transcribeRecording: transcribeMutation.mutate,
     isTranscribing: transcribeMutation.isPending,
-    transcriptionError: transcribeMutation.error,
+    transcriptionError,
+    clearTranscriptionError: () => setTranscriptionError(null),
   };
 }
