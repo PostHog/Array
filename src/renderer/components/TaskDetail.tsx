@@ -215,31 +215,42 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
         <Box width="50%" className="border-gray-6 border-r" overflowY="auto">
           <Box p="4">
             <Flex direction="column" gap="4">
-              <Controller
-                name="title"
-                control={control}
-                render={({ field }) => (
-                  <Heading
-                    size="5"
-                    contentEditable
-                    suppressContentEditableWarning
-                    ref={(el) => {
-                      if (el && el.textContent !== field.value) {
-                        el.textContent = field.value;
-                      }
-                    }}
-                    onBlur={(e) => {
-                      field.onChange(e.currentTarget.textContent || "");
-                      onSubmit();
-                    }}
-                    style={{
-                      cursor: "text",
-                      outline: "none",
-                      width: "100%",
-                    }}
-                  />
-                )}
-              />
+              <Flex direction="row" gap="2" align="baseline">
+                <Code
+                  size="3"
+                  color="gray"
+                  variant="ghost"
+                  style={{ flexShrink: 0 }}
+                >
+                  {task.slug}
+                </Code>
+                <Controller
+                  name="title"
+                  control={control}
+                  render={({ field }) => (
+                    <Heading
+                      size="5"
+                      contentEditable
+                      suppressContentEditableWarning
+                      ref={(el) => {
+                        if (el && el.textContent !== field.value) {
+                          el.textContent = field.value;
+                        }
+                      }}
+                      onBlur={(e) => {
+                        field.onChange(e.currentTarget.textContent || "");
+                        onSubmit();
+                      }}
+                      style={{
+                        cursor: "text",
+                        outline: "none",
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    />
+                  )}
+                />
+              </Flex>
 
               <Flex direction="column">
                 <Controller

@@ -5,6 +5,8 @@ export interface RepositoryConfig {
 
 export interface Task {
   id: string;
+  task_number: number | null;
+  slug: string;
   title: string;
   description: string;
   created_at: string;
