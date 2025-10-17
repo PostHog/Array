@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Agent, PermissionMode } from "@posthog/agent";
 import { type BrowserWindow, type IpcMainInvokeEvent, ipcMain } from "electron";
-import type { TaskRun } from "@/shared/types";
 
 interface AgentStartParams {
   taskId: string;
@@ -124,12 +123,8 @@ export function registerAgentIpc(
         const pollTaskProgress = async () => {
           if (abortController.signal.aborted) return;
           try {
-            const runs = await posthogClient.listTaskRuns(posthogTaskId);
-            const latestRun = runs?.sort(
-              (a: TaskRun, b: TaskRun) =>
-                new Date(b.created_at).getTime() -
-                new Date(a.created_at).getTime(),
-            )[0];
+            const task = await posthogClient.fetchTask(posthogTaskId);
+            const latestRun = task?.latest_run;
 
             // Only emit progress for runs created after this workflow started
             if (
@@ -146,7 +141,7 @@ export function registerAgentIpc(
               });
             }
           } catch (err) {
-            console.warn("[agent] failed to fetch task runs", err);
+            console.warn("[agent] failed to fetch task progress", err);
           }
         };
 
