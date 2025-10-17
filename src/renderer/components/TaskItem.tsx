@@ -1,5 +1,5 @@
 import { CopyIcon, TrashIcon } from "@radix-ui/react-icons";
-import { Badge, Box, ContextMenu, Flex, Text } from "@radix-ui/themes";
+import { Badge, Box, Code, ContextMenu, Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { formatDistanceToNow } from "date-fns";
 import type React from "react";
@@ -182,30 +182,54 @@ function TaskItemComponent({
             {showBottomIndicator && (
               <Box className="absolute right-0 bottom-0 left-0 z-10 h-0.5 bg-accent-8" />
             )}
-            <Flex align="center" gap="2">
-              <Text color="gray" size="1">
+            <Flex align="baseline" gap="2" style={{ minWidth: 0 }}>
+              <Text color="gray" size="1" style={{ flexShrink: 0 }}>
                 {isHighlighted ? "[•]" : "[ ]"}
               </Text>
 
-              <Badge color={status === "Backlog" ? "gray" : undefined} size="1">
+              <Code
+                size="1"
+                color="gray"
+                variant="ghost"
+                style={{ flexShrink: 0 }}
+              >
+                {task.slug}
+              </Code>
+
+              <Badge
+                color={status === "Backlog" ? "gray" : undefined}
+                size="1"
+                style={{ flexShrink: 0 }}
+              >
                 {status}
               </Badge>
 
               <Text
                 size="2"
                 className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+                style={{ minWidth: 0 }}
               >
                 {task.title}
               </Text>
 
               {task.repository_config && (
-                <Text size="1" color="gray">
+                <Text
+                  size="1"
+                  color="gray"
+                  className="whitespace-nowrap"
+                  style={{ flexShrink: 0 }}
+                >
                   {task.repository_config.organization}/
                   {task.repository_config.repository}
                 </Text>
               )}
 
-              <Text size="1" color="gray" className="whitespace-nowrap">
+              <Text
+                size="1"
+                color="gray"
+                className="whitespace-nowrap"
+                style={{ flexShrink: 0 }}
+              >
                 {timeAgo}
               </Text>
             </Flex>

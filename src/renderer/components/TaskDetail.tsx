@@ -1,13 +1,9 @@
-import {
-  DiamondIcon,
-  FilesIcon,
-  GitBranchIcon,
-  GithubLogoIcon,
-} from "@phosphor-icons/react";
+import { DiamondIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { GearIcon, GlobeIcon } from "@radix-ui/react-icons";
 import {
   Box,
   Button,
+  Code,
   DataList,
   Flex,
   Heading,
@@ -23,12 +19,16 @@ import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useBlurOnEscape } from "../hooks/useBlurOnEscape";
-import { useIntegrations, useRepositories } from "../hooks/useIntegrations";
+import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
 import { useTasks, useUpdateTask } from "../hooks/useTasks";
 import { useWorkflowStages, useWorkflows } from "../hooks/useWorkflows";
 import { useStatusBarStore } from "../stores/statusBarStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
+import {
+  REPO_NOT_IN_INTEGRATION_WARNING,
+  repoConfigToKey,
+} from "../utils/repository";
 import { AsciiArt } from "./AsciiArt";
 import { Combobox } from "./Combobox";
 import { LogView } from "./LogView";
@@ -60,12 +60,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     runPlanMode,
     generatePlan,
   } = useTaskExecutionStore();
-  const { data: integrations = [] } = useIntegrations();
-  const githubIntegration = useMemo(
-    () => integrations.find((i) => i.kind === "github"),
-    [integrations],
-  );
-  useRepositories(githubIntegration?.id);
+  const { isRepoInIntegration } = useRepositoryIntegration();
   const { data: tasks = [] } = useTasks();
   const { mutate: updateTask } = useUpdateTask();
   const { updateTabTitle, activeTabId } = useTabStore();
@@ -104,6 +99,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     questionAnswers,
     planContent,
     selectedArtifact,
+    workflow,
   } = taskState;
 
   const {
@@ -116,15 +112,16 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       title: task.title,
       description: task.description || "",
       workflow: task.workflow || "",
-      repository:
-        task.repository_config?.organization &&
-        task.repository_config.repository
-          ? `${task.repository_config.organization}/${task.repository_config.repository}`
-          : "",
+      repository: repoConfigToKey(task.repository_config),
     },
   });
 
   const repositoryValue = watch("repository");
+
+  const showRepoWarning = useMemo(
+    () => repositoryValue && !isRepoInIntegration(repositoryValue),
+    [repositoryValue, isRepoInIntegration],
+  );
 
   const displayRepoPath = useMemo(() => {
     if (!repoPath) return null;
@@ -139,10 +136,12 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   // Initialize repoPath from mapping if task has repository_config
   useEffect(() => {
     if (task.repository_config && !repoPath) {
-      const repoKey = `${task.repository_config.organization}/${task.repository_config.repository}`;
-      const savedPath = getRepoWorkingDir(repoKey);
-      if (savedPath) {
-        setRepoPath(task.id, savedPath);
+      const repoKey = repoConfigToKey(task.repository_config);
+      if (repoKey) {
+        const savedPath = getRepoWorkingDir(repoKey);
+        if (savedPath) {
+          setRepoPath(task.id, savedPath);
+        }
       }
     }
   }, [
@@ -158,11 +157,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       title: task.title,
       description: task.description || "",
       workflow: task.workflow || "",
-      repository:
-        task.repository_config?.organization &&
-        task.repository_config.repository
-          ? `${task.repository_config.organization}/${task.repository_config.repository}`
-          : "",
+      repository: repoConfigToKey(task.repository_config),
     });
   }, [
     task.title,
@@ -441,31 +436,42 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
         <Box width="50%" className="border-gray-6 border-r" overflowY="auto">
           <Box p="4">
             <Flex direction="column" gap="4">
-              <Controller
-                name="title"
-                control={control}
-                render={({ field }) => (
-                  <Heading
-                    size="5"
-                    contentEditable
-                    suppressContentEditableWarning
-                    ref={(el) => {
-                      if (el && el.textContent !== field.value) {
-                        el.textContent = field.value;
-                      }
-                    }}
-                    onBlur={(e) => {
-                      field.onChange(e.currentTarget.textContent || "");
-                      onSubmit();
-                    }}
-                    style={{
-                      cursor: "text",
-                      outline: "none",
-                      width: "100%",
-                    }}
-                  />
-                )}
-              />
+              <Flex direction="row" gap="2" align="baseline">
+                <Code
+                  size="3"
+                  color="gray"
+                  variant="ghost"
+                  style={{ flexShrink: 0 }}
+                >
+                  {task.slug}
+                </Code>
+                <Controller
+                  name="title"
+                  control={control}
+                  render={({ field }) => (
+                    <Heading
+                      size="5"
+                      contentEditable
+                      suppressContentEditableWarning
+                      ref={(el) => {
+                        if (el && el.textContent !== field.value) {
+                          el.textContent = field.value;
+                        }
+                      }}
+                      onBlur={(e) => {
+                        field.onChange(e.currentTarget.textContent || "");
+                        onSubmit();
+                      }}
+                      style={{
+                        cursor: "text",
+                        outline: "none",
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    />
+                  )}
+                />
+              </Flex>
 
               <Flex direction="column">
                 <Controller
@@ -500,18 +506,21 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   </DataList.Value>
                 </DataList.Item>
 
-                {progress?.has_progress && (
+                {progress && (
                   <DataList.Item>
-                    <DataList.Label>Progress</DataList.Label>
+                    <DataList.Label>Run Status</DataList.Label>
                     <DataList.Value>
                       <Text size="2">
-                        {(progress.completed_steps ?? 0) + 1}/
-                        {typeof progress.total_steps === "number"
-                          ? progress.total_steps
-                          : "-"}
-                        {typeof progress.total_steps === "number" &&
-                          ` · ${Math.round((((progress.completed_steps ?? 0) + 1) / progress.total_steps) * 100)}%`}
-                        {progress.current_step && ` · ${progress.current_step}`}
+                        {progress.status.replace(/_/g, " ")}
+                        {progress.current_stage &&
+                          (() => {
+                            const stage = workflowStages.find(
+                              (s) => s.id === progress.current_stage,
+                            );
+                            return stage
+                              ? ` · ${stage.name}`
+                              : ` · ${progress.current_stage}`;
+                          })()}
                       </Text>
                     </DataList.Value>
                   </DataList.Item>
@@ -552,10 +561,26 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                 <DataList.Item>
                   <DataList.Label>Repository</DataList.Label>
                   <DataList.Value>
-                    <Button size="1" variant="outline" color="gray">
-                      <GithubLogoIcon />
-                      {repositoryValue || "No repository connected"}
-                    </Button>
+                    <Flex align="center" gap="2">
+                      {repositoryValue ? (
+                        <Code size="2" color="gray">
+                          {repositoryValue}
+                        </Code>
+                      ) : (
+                        <Text size="2" color="gray">
+                          No repository connected
+                        </Text>
+                      )}
+                      {showRepoWarning && (
+                        <Tooltip content={REPO_NOT_IN_INTEGRATION_WARNING}>
+                          <WarningCircleIcon
+                            size={16}
+                            weight="fill"
+                            style={{ color: "var(--orange-9)" }}
+                          />
+                        </Tooltip>
+                      )}
+                    </Flex>
                   </DataList.Value>
                 </DataList.Item>
 
@@ -563,10 +588,9 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   <DataList.Label>Working Directory</DataList.Label>
                   <DataList.Value>
                     {repoPath ? (
-                      <Button size="1" variant="outline" color="gray">
-                        <FilesIcon />
+                      <Code size="2" color="gray">
                         {displayRepoPath}
-                      </Button>
+                      </Code>
                     ) : (
                       <Text size="2" color="gray">
                         Not set
@@ -579,10 +603,9 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   <DataList.Item>
                     <DataList.Label>Branch</DataList.Label>
                     <DataList.Value>
-                      <Button size="1" variant="outline" color="gray">
-                        <GitBranchIcon />
+                      <Code size="2" color="gray">
                         {task.github_branch}
-                      </Button>
+                      </Code>
                     </DataList.Value>
                   </DataList.Item>
                 )}
@@ -736,6 +759,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                 logs={logs}
                 isRunning={isRunning}
                 onClearLogs={handleClearLogs}
+                workflow={workflow}
               />
             )}
           </Box>

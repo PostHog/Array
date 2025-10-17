@@ -1,7 +1,8 @@
 import { Box, Flex } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { RecordingsView } from "@/renderer/features/recordings";
 import { useIntegrations } from "../hooks/useIntegrations";
 import { useTabStore } from "../stores/tabStore";
 import { CommandMenu } from "./command";
@@ -15,11 +16,29 @@ import { WorkflowForm } from "./WorkflowForm";
 import { WorkflowView } from "./WorkflowView";
 
 export function MainLayout() {
-  const { activeTabId, tabs, createTab, setActiveTab } = useTabStore();
+  const { activeTabId, tabs, createTab, setActiveTab, closeTab } =
+    useTabStore();
   useIntegrations();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [taskCreateOpen, setTaskCreateOpen] = useState(false);
   const [workflowCreateOpen, setWorkflowCreateOpen] = useState(false);
+
+  const handleOpenSettings = useCallback(() => {
+    const existingTab = tabs.find((tab) => tab.type === "settings");
+
+    if (existingTab) {
+      if (activeTabId === existingTab.id) {
+        closeTab(existingTab.id);
+      } else {
+        setActiveTab(existingTab.id);
+      }
+    } else {
+      createTab({
+        type: "settings",
+        title: "Settings",
+      });
+    }
+  }, [tabs, activeTabId, setActiveTab, createTab, closeTab]);
 
   useHotkeys("mod+k", () => setCommandMenuOpen((prev) => !prev), {
     enabled: !commandMenuOpen,
@@ -32,6 +51,17 @@ export function MainLayout() {
   });
   useHotkeys("mod+n", () => setTaskCreateOpen(true));
   useHotkeys("mod+shift+n", () => setWorkflowCreateOpen(true));
+  useHotkeys("mod+,", () => handleOpenSettings());
+
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.onOpenSettings(() => {
+      handleOpenSettings();
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [handleOpenSettings]);
 
   const handleSelectTask = (task: Task) => {
     const existingTab = tabs.find(
@@ -50,19 +80,6 @@ export function MainLayout() {
         type: "task-detail",
         title: task.title,
         data: task,
-      });
-    }
-  };
-
-  const handleOpenSettings = () => {
-    const existingTab = tabs.find((tab) => tab.type === "settings");
-
-    if (existingTab) {
-      setActiveTab(existingTab.id);
-    } else {
-      createTab({
-        type: "settings",
-        title: "Settings",
       });
     }
   };
@@ -91,6 +108,8 @@ export function MainLayout() {
         )}
 
         {activeTab?.type === "settings" && <SettingsView />}
+
+        {activeTab?.type === "recordings" && <RecordingsView />}
       </Box>
 
       <StatusBar onOpenSettings={handleOpenSettings} />

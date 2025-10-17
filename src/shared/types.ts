@@ -5,18 +5,45 @@ export interface RepositoryConfig {
 
 export interface Task {
   id: string;
+  task_number: number | null;
+  slug: string;
   title: string;
   description: string;
   created_at: string;
   updated_at: string;
   origin_product: string;
   status?: string;
-  current_stage?: string | null; // Stage ID
   workflow?: string | null; // Workflow ID
   repository_config?: RepositoryConfig;
+  tags?: string[];
+
+  // DEPRECATED: These fields have been moved to TaskRun
+  current_stage?: string | null;
   github_branch?: string | null;
   github_pr_url?: string | null;
-  tags?: string[];
+  latest_run?: TaskRun;
+}
+
+export interface LogEntry {
+  type: string; // e.g., "info", "warning", "error", "success", "debug"
+  message: string;
+  [key: string]: unknown; // Allow additional fields
+}
+
+export interface TaskRun {
+  id: string;
+  task: string; // Task ID
+  team: number;
+  branch: string | null;
+  current_stage: string | null; // WorkflowStage ID
+  status: "started" | "in_progress" | "completed" | "failed";
+  log: LogEntry[]; // Array of log entry objects
+  error_message: string | null;
+  output: Record<string, unknown> | null; // Structured output (PR URL, commit SHA, etc.)
+  state: Record<string, unknown>; // Intermediate run state (defaults to {}, never null)
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
 }
 
 export interface Workflow {
@@ -71,7 +98,13 @@ export interface LogEntry {
 
 export interface TabState {
   id: string;
-  type: "task-list" | "task-detail" | "workflow" | "backlog" | "settings";
+  type:
+    | "task-list"
+    | "task-detail"
+    | "workflow"
+    | "backlog"
+    | "settings"
+    | "recordings";
   title: string;
   data?: Task | unknown;
 }
@@ -133,4 +166,27 @@ export interface TaskArtifact {
   path: string;
   size: number;
   modifiedAt: string;
+}
+// Recording types for audio transcription feature
+export interface Recording {
+  id: string; // Filename
+  filename: string;
+  duration: number; // Seconds
+  created_at: string; // ISO 8601
+  file_path: string; // Absolute path
+  transcription?: {
+    status: "processing" | "completed" | "error";
+    text: string;
+    summary?: string;
+    extracted_tasks?: Array<{
+      title: string;
+      description: string;
+    }>;
+    error?: string;
+  };
+}
+
+export interface ExtractedTask {
+  title: string;
+  description: string;
 }

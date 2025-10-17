@@ -18,6 +18,7 @@ interface LogViewProps {
   logs: AgentEvent[];
   isRunning: boolean;
   onClearLogs?: () => void;
+  workflow?: { stages: Array<{ id: string; name: string }> } | null;
 }
 
 interface Todo {
@@ -48,7 +49,12 @@ interface StandaloneEvent {
 
 type ProcessedItem = TodoGroup | StandaloneEvent;
 
-export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
+export function LogView({
+  logs,
+  isRunning,
+  onClearLogs,
+  workflow,
+}: LogViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewMode, setViewMode] = useState<"pretty" | "raw">("pretty");
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
@@ -369,6 +375,7 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
                     toolResult={processed.toolResult}
                     onJumpToRaw={handleJumpToRaw}
                     forceExpanded={expandAll}
+                    workflow={workflow}
                   />
                 );
               }

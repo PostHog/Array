@@ -144,3 +144,19 @@ export function useRefreshTask() {
     },
   });
 }
+
+export function useRunTask() {
+  const client = useAuthStore((state) => state.client);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (taskId: string) => {
+      if (!client) throw new Error("Not authenticated");
+      return (await client.runTask(taskId)) as Task;
+    },
+    onSuccess: (_, taskId) => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+    },
+  });
+}

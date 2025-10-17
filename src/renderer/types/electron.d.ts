@@ -1,5 +1,6 @@
 import type { AgentEvent } from "@posthog/agent";
 import type { QuestionAnswer, TaskArtifact } from "@shared/types";
+import type { Recording } from "@shared/types";
 
 export interface IElectronAPI {
   storeApiKey: (apiKey: string) => Promise<string>;
@@ -8,6 +9,12 @@ export interface IElectronAPI {
   searchDirectories: (query: string, searchRoot?: string) => Promise<string[]>;
   validateRepo: (directoryPath: string) => Promise<boolean>;
   checkWriteAccess: (directoryPath: string) => Promise<boolean>;
+  detectRepo: (directoryPath: string) => Promise<{
+    organization: string;
+    repository: string;
+    branch?: string;
+    remote?: string;
+  } | null>;
   showMessageBox: (options: {
     type?: "none" | "info" | "error" | "question" | "warning";
     title?: string;
@@ -71,6 +78,33 @@ export interface IElectronAPI {
     taskId: string,
     fileName: string,
   ) => Promise<string | null>;
+  onOpenSettings: (listener: () => void) => () => void;
+  // Recording API
+  recordingStart: () => Promise<{ recordingId: string; startTime: string }>;
+  recordingStop: (
+    recordingId: string,
+    audioData: Uint8Array,
+    duration: number,
+  ) => Promise<Recording>;
+  recordingList: () => Promise<Recording[]>;
+  recordingDelete: (recordingId: string) => Promise<boolean>;
+  recordingGetFile: (recordingId: string) => Promise<ArrayBuffer>;
+  recordingTranscribe: (
+    recordingId: string,
+    openaiApiKey: string,
+  ) => Promise<{
+    status: string;
+    text: string;
+    summary?: string | null;
+    extracted_tasks?: Array<{ title: string; description: string }>;
+  }>;
+  // Desktop capturer for system audio
+  getDesktopSources: (options: { types: string[] }) => Promise<
+    Array<{
+      id: string;
+      name: string;
+    }>
+  >;
 }
 
 declare global {
