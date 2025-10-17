@@ -74,7 +74,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   const taskState = getTaskState(task.id);
 
-  const { isRunning, logs, repoPath, runMode, progress } = taskState;
+  const { isRunning, logs, repoPath, runMode, progress, workflow } = taskState;
 
   const {
     handleSubmit,
@@ -274,18 +274,21 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   </DataList.Value>
                 </DataList.Item>
 
-                {progress?.has_progress && (
+                {progress && (
                   <DataList.Item>
-                    <DataList.Label>Progress</DataList.Label>
+                    <DataList.Label>Run Status</DataList.Label>
                     <DataList.Value>
                       <Text size="2">
-                        {(progress.completed_steps ?? 0) + 1}/
-                        {typeof progress.total_steps === "number"
-                          ? progress.total_steps
-                          : "-"}
-                        {typeof progress.total_steps === "number" &&
-                          ` · ${Math.round((((progress.completed_steps ?? 0) + 1) / progress.total_steps) * 100)}%`}
-                        {progress.current_step && ` · ${progress.current_step}`}
+                        {progress.status.replace(/_/g, " ")}
+                        {progress.current_stage &&
+                          (() => {
+                            const stage = workflowStages.find(
+                              (s) => s.id === progress.current_stage,
+                            );
+                            return stage
+                              ? ` · ${stage.name}`
+                              : ` · ${progress.current_stage}`;
+                          })()}
                       </Text>
                     </DataList.Value>
                   </DataList.Item>
@@ -458,6 +461,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
               logs={logs}
               isRunning={isRunning}
               onClearLogs={handleClearLogs}
+              workflow={workflow}
             />
           </Box>
         </Box>

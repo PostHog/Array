@@ -19,6 +19,7 @@ export interface TaskController {
   channel: string;
   taskId: string;
   poller?: NodeJS.Timeout;
+  currentRunId?: string;
 }
 
 function resolvePermissionMode(
@@ -117,16 +118,26 @@ export function registerAgentIpc(
       taskControllers.set(taskId, controllerEntry);
 
       const posthogClient = agent.getPostHogClient();
+      const startTime = Date.now();
       if (posthogClient) {
         const pollTaskProgress = async () => {
           if (abortController.signal.aborted) return;
           try {
-            const progress = await posthogClient.getTaskProgress(posthogTaskId);
-            if (progress?.has_progress) {
+            const task = await posthogClient.fetchTask(posthogTaskId);
+            const latestRun = task?.latest_run;
+
+            // Only emit progress for runs created after this workflow started
+            if (
+              latestRun &&
+              new Date(latestRun.created_at).getTime() >= startTime
+            ) {
+              // Store the current run ID
+              controllerEntry.currentRunId = latestRun.id;
+
               emitToRenderer({
                 type: "progress",
                 ts: Date.now(),
-                progress,
+                progress: latestRun,
               });
             }
           } catch (err) {
@@ -137,7 +148,7 @@ export function registerAgentIpc(
         void pollTaskProgress();
         controllerEntry.poller = setInterval(() => {
           void pollTaskProgress();
-        }, 5000);
+        }, 1000); // Poll every second to catch stage transitions
       }
 
       emitToRenderer({

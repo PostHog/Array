@@ -11,12 +11,37 @@ export interface Task {
   updated_at: string;
   origin_product: string;
   status?: string;
-  current_stage?: string | null; // Stage ID
   workflow?: string | null; // Workflow ID
   repository_config?: RepositoryConfig;
+  tags?: string[];
+
+  // DEPRECATED: These fields have been moved to TaskRun
+  current_stage?: string | null;
   github_branch?: string | null;
   github_pr_url?: string | null;
-  tags?: string[];
+  latest_run?: TaskRun;
+}
+
+export interface LogEntry {
+  type: string; // e.g., "info", "warning", "error", "success", "debug"
+  message: string;
+  [key: string]: unknown; // Allow additional fields
+}
+
+export interface TaskRun {
+  id: string;
+  task: string; // Task ID
+  team: number;
+  branch: string | null;
+  current_stage: string | null; // WorkflowStage ID
+  status: "started" | "in_progress" | "completed" | "failed";
+  log: LogEntry[]; // Array of log entry objects
+  error_message: string | null;
+  output: Record<string, unknown> | null; // Structured output (PR URL, commit SHA, etc.)
+  state: Record<string, unknown>; // Intermediate run state (defaults to {}, never null)
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
 }
 
 export interface Workflow {
