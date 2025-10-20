@@ -30,3 +30,5 @@ Thumbs.db
 AGENTS.md
 .claude/
 .claude-config/
+
+pnpm-workspace.yaml
