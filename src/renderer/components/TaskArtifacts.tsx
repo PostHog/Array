@@ -1,8 +1,8 @@
 import { FileTextIcon } from "@radix-ui/react-icons";
 import { Box, Card, Flex, Text, Tooltip } from "@radix-ui/themes";
 import type { TaskArtifact } from "@shared/types";
+import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { useEffect, useState } from "react";
 
 interface TaskArtifactsProps {
   taskId: string;
@@ -17,34 +17,21 @@ export function TaskArtifacts({
   selectedArtifact,
   onArtifactSelect,
 }: TaskArtifactsProps) {
-  const [artifacts, setArtifacts] = useState<TaskArtifact[]>([]);
-
-  useEffect(() => {
-    if (!repoPath || !taskId) return;
-
-    const loadArtifacts = async () => {
-      try {
-        const files = await window.electronAPI?.listTaskArtifacts(
-          repoPath,
-          taskId,
-        );
-        if (files) {
-          setArtifacts(files as TaskArtifact[]);
-        }
-      } catch (error) {
-        console.error("Failed to load task artifacts:", error);
+  const { data: artifacts = [] } = useQuery({
+    queryKey: ["task-artifacts", repoPath, taskId],
+    enabled: !!repoPath && !!taskId,
+    refetchInterval: 5000,
+    queryFn: async () => {
+      if (!window.electronAPI) {
+        throw new Error("Electron API unavailable");
       }
-    };
-
-    loadArtifacts();
-
-    // Auto-refresh artifacts every 5 seconds
-    const interval = setInterval(() => {
-      loadArtifacts();
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [repoPath, taskId]);
+      const files = await window.electronAPI.listTaskArtifacts(
+        repoPath as string,
+        taskId,
+      );
+      return (files as TaskArtifact[]) ?? [];
+    },
+  });
 
   if (!repoPath || artifacts.length === 0) {
     return null;

@@ -4,6 +4,3 @@ packages:
 onlyBuiltDependencies:
   - electron
   - esbuild
-
-overrides:
-  '@posthog/agent': link:../agent
