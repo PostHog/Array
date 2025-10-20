@@ -14,6 +14,7 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "build-native": "bash scripts/build-native-modules.sh",
+    "build-icons": "bash scripts/generate-icns.sh",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "lint": "biome check --write --unsafe",
     "format": "biome format --write",
