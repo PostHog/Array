@@ -18,8 +18,8 @@ import { registerRecordingIpc } from "./services/recording-notranscribe.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const isDev =
-  process.env.NODE_ENV === "development" || process.argv.includes("--dev");
+declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
+declare const MAIN_WINDOW_VITE_NAME: string;
 
 let mainWindow: BrowserWindow | null = null;
 const taskControllers = new Map<string, TaskController>();
@@ -46,7 +46,7 @@ function setupExternalLinkHandlers(window: BrowserWindow): void {
   });
 
   window.webContents.on("will-navigate", (event, url) => {
-    const appUrl = isDev ? "http://localhost:5173" : "file://";
+    const appUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL || "file://";
     if (!url.startsWith(appUrl)) {
       event.preventDefault();
       shell.openExternal(url);
@@ -148,10 +148,12 @@ function createWindow(): void {
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
 
-  if (isDev) {
-    mainWindow.loadURL("http://localhost:5173");
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
+    mainWindow.loadFile(
+      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+    );
   }
 
   mainWindow.on("closed", () => {

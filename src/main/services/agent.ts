@@ -1,4 +1,8 @@
+import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Agent, PermissionMode } from "@posthog/agent";
 import { type BrowserWindow, type IpcMainInvokeEvent, ipcMain } from "electron";
 
@@ -34,6 +38,50 @@ function resolvePermissionMode(
   );
 
   return (match as PermissionMode | undefined) ?? PermissionMode.ACCEPT_EDITS;
+}
+
+function findClaudeExecutable(): string | undefined {
+  // Common installation locations based on Claude Code docs
+  const commonPaths = [
+    join(homedir(), ".local", "bin", "claude"), // Native installer location
+    join(homedir(), ".claude", "local", "claude"), // Migrated local installation
+    join(homedir(), ".volta", "bin", "claude"), // Volta (Node version manager)
+    join(homedir(), ".nvm", "current", "bin", "claude"), // nvm
+    "/opt/homebrew/bin/claude", // Homebrew on Apple Silicon
+    "/usr/local/bin/claude", // Homebrew on Intel Mac / apt on Linux
+    "/usr/bin/claude", // System installation
+  ];
+
+  // Add npm global installation paths
+  try {
+    const npmPrefix = execSync("npm config get prefix", {
+      encoding: "utf-8",
+    }).trim();
+    if (npmPrefix) {
+      commonPaths.push(join(npmPrefix, "bin", "claude"));
+    }
+  } catch {
+    // npm not available or failed, continue
+  }
+
+  // Check common paths first
+  for (const path of commonPaths) {
+    if (existsSync(path)) {
+      return path;
+    }
+  }
+
+  // Fall back to using 'which' if available
+  try {
+    const path = execSync("which claude", { encoding: "utf-8" }).trim();
+    if (path && existsSync(path)) {
+      return path;
+    }
+  } catch {
+    // which command failed, continue
+  }
+
+  return undefined;
 }
 
 export function registerAgentIpc(
@@ -171,6 +219,13 @@ export function registerAgentIpc(
 
           const mcpOverrides = {};
 
+          const claudePath = findClaudeExecutable();
+          if (!claudePath) {
+            throw new Error(
+              "Claude Code executable not found in PATH. Please install Claude Code CLI.",
+            );
+          }
+
           await agent.runWorkflow(posthogTaskId, workflowId, {
             repositoryPath: repoPath,
             permissionMode: resolvedPermission,
@@ -178,6 +233,7 @@ export function registerAgentIpc(
             queryOverrides: {
               abortController,
               ...(model ? { model } : {}),
+              pathToClaudeCodeExecutable: claudePath,
               stderr: forwardClaudeStderr,
               env: envOverrides,
               mcpServers: mcpOverrides,

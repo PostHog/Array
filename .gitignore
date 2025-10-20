@@ -4,6 +4,8 @@ node_modules/
 # Build outputs
 dist/
 release/
+.vite/
+out/
 *.log
 
 # Environment
@@ -23,6 +25,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+*.tgz
 
 AGENTS.md
 .claude/
