@@ -6,7 +6,8 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignoreUnknown": false
+    "ignoreUnknown": false,
+    "ignore": ["build/icon.icon/icon.json"]
   },
   "formatter": {
     "enabled": true,
