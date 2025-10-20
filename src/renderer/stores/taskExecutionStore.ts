@@ -1,5 +1,13 @@
 import type { AgentEvent } from "@posthog/agent";
-import type { Task, TaskRun, Workflow } from "@shared/types";
+import type {
+  ClarifyingQuestion,
+  ExecutionMode,
+  PlanModePhase,
+  QuestionAnswer,
+  Task,
+  TaskRun,
+  Workflow,
+} from "@shared/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useAuthStore } from "./authStore";
@@ -20,6 +28,13 @@ interface TaskExecutionState {
   unsubscribe: (() => void) | null;
   progress: TaskRun | null;
   progressSignature: string | null;
+  // Plan mode fields
+  executionMode: ExecutionMode;
+  planModePhase: PlanModePhase;
+  clarifyingQuestions: ClarifyingQuestion[];
+  questionAnswers: QuestionAnswer[];
+  planContent: string | null;
+  selectedArtifact: string | null; // Currently viewing artifact filename
   workflow: Workflow | null;
 }
 
@@ -58,6 +73,18 @@ interface TaskExecutionStore {
   // Event subscription management
   subscribeToAgentEvents: (taskId: string, channel: string) => void;
   unsubscribeFromAgentEvents: (taskId: string) => void;
+
+  // Plan mode actions
+  setExecutionMode: (taskId: string, mode: ExecutionMode) => void;
+  setPlanModePhase: (taskId: string, phase: PlanModePhase) => void;
+  setClarifyingQuestions: (
+    taskId: string,
+    questions: ClarifyingQuestion[],
+  ) => void;
+  setQuestionAnswers: (taskId: string, answers: QuestionAnswer[]) => void;
+  addQuestionAnswer: (taskId: string, answer: QuestionAnswer) => void;
+  setPlanContent: (taskId: string, content: string | null) => void;
+  setSelectedArtifact: (taskId: string, fileName: string | null) => void;
 }
 
 const defaultTaskState: TaskExecutionState = {
@@ -69,6 +96,12 @@ const defaultTaskState: TaskExecutionState = {
   unsubscribe: null,
   progress: null,
   progressSignature: null,
+  executionMode: "workflow",
+  planModePhase: "idle",
+  clarifyingQuestions: [],
+  questionAnswers: [],
+  planContent: null,
+  selectedArtifact: null,
   workflow: null,
 };
 
@@ -293,7 +326,8 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
         if (taskState.isRunning) return;
 
-        if (!task.workflow) {
+        // Only require workflow for workflow mode, not for plan mode
+        if (taskState.executionMode === "workflow" && !task.workflow) {
           store.addLog(taskId, {
             type: "error",
             ts: Date.now(),
@@ -446,12 +480,14 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         try {
           const result = await window.electronAPI?.agentStart({
             taskId: task.id,
-            workflowId: task.workflow,
+            workflowId: task.workflow || undefined,
             repoPath: effectiveRepoPath,
             apiKey,
             apiHost,
             permissionMode,
             autoProgress: true,
+            executionMode: taskState.executionMode,
+            runMode: taskState.runMode,
           });
           if (!result) {
             store.addLog(taskId, {
@@ -502,6 +538,48 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
       clearTaskLogs: (taskId: string) => {
         get().setLogs(taskId, []);
+      },
+
+      // Plan mode actions
+      setExecutionMode: (taskId: string, mode: ExecutionMode) => {
+        get().updateTaskState(taskId, { executionMode: mode });
+      },
+
+      setPlanModePhase: (taskId: string, phase: PlanModePhase) => {
+        get().updateTaskState(taskId, { planModePhase: phase });
+      },
+
+      setClarifyingQuestions: (
+        taskId: string,
+        questions: ClarifyingQuestion[],
+      ) => {
+        get().updateTaskState(taskId, { clarifyingQuestions: questions });
+      },
+
+      setQuestionAnswers: (taskId: string, answers: QuestionAnswer[]) => {
+        get().updateTaskState(taskId, { questionAnswers: answers });
+      },
+
+      addQuestionAnswer: (taskId: string, answer: QuestionAnswer) => {
+        const currentState = get().getTaskState(taskId);
+        const existingIndex = currentState.questionAnswers.findIndex(
+          (a) => a.questionId === answer.questionId,
+        );
+        const updatedAnswers =
+          existingIndex >= 0
+            ? currentState.questionAnswers.map((a, i) =>
+                i === existingIndex ? answer : a,
+              )
+            : [...currentState.questionAnswers, answer];
+        get().updateTaskState(taskId, { questionAnswers: updatedAnswers });
+      },
+
+      setPlanContent: (taskId: string, content: string | null) => {
+        get().updateTaskState(taskId, { planContent: content });
+      },
+
+      setSelectedArtifact: (taskId: string, fileName: string | null) => {
+        get().updateTaskState(taskId, { selectedArtifact: fileName });
       },
     }),
     {

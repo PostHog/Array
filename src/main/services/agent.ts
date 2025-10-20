@@ -8,13 +8,15 @@ import { type BrowserWindow, type IpcMainInvokeEvent, ipcMain } from "electron";
 
 interface AgentStartParams {
   taskId: string;
-  workflowId: string;
+  workflowId?: string;
   repoPath: string;
   apiKey: string;
   apiHost: string;
   permissionMode?: PermissionMode | string;
   autoProgress?: boolean;
   model?: string;
+  executionMode?: "plan" | "workflow";
+  runMode?: "local" | "cloud";
 }
 
 export interface TaskController {
@@ -101,10 +103,17 @@ export function registerAgentIpc(
         permissionMode,
         autoProgress,
         model,
+        executionMode,
+        runMode,
       }: AgentStartParams,
     ): Promise<{ taskId: string; channel: string }> => {
-      if (!posthogTaskId || !workflowId || !repoPath) {
-        throw new Error("taskId, workflowId, and repoPath are required");
+      // For plan mode, workflowId is optional
+      if (!posthogTaskId || !repoPath) {
+        throw new Error("taskId and repoPath are required");
+      }
+
+      if (executionMode !== "plan" && !workflowId) {
+        throw new Error("workflowId is required for workflow mode");
       }
 
       if (!apiKey || !apiHost) {
@@ -202,7 +211,7 @@ export function registerAgentIpc(
       emitToRenderer({
         type: "status",
         ts: Date.now(),
-        phase: "workflow_start",
+        phase: executionMode === "plan" ? "task_start" : "workflow_start",
         workflowId,
         taskId: posthogTaskId,
       });
@@ -226,19 +235,42 @@ export function registerAgentIpc(
             );
           }
 
-          await agent.runWorkflow(posthogTaskId, workflowId, {
-            repositoryPath: repoPath,
-            permissionMode: resolvedPermission,
-            autoProgress: autoProgress ?? true,
-            queryOverrides: {
-              abortController,
-              ...(model ? { model } : {}),
-              pathToClaudeCodeExecutable: claudePath,
-              stderr: forwardClaudeStderr,
-              env: envOverrides,
-              mcpServers: mcpOverrides,
-            },
-          });
+          if (executionMode === "plan") {
+            // Use adaptive task workflow (research → plan → build)
+            await agent.runTask(posthogTaskId, {
+              repositoryPath: repoPath,
+              permissionMode: resolvedPermission,
+              isCloudMode: runMode === "cloud",
+              autoProgress: autoProgress ?? true,
+              queryOverrides: {
+                abortController,
+                ...(model ? { model } : {}),
+                pathToClaudeCodeExecutable: claudePath,
+                stderr: forwardClaudeStderr,
+                env: envOverrides,
+                mcpServers: mcpOverrides,
+              },
+            });
+          } else {
+            // Use traditional workflow-based execution
+            if (!workflowId) {
+              throw new Error("Workflow ID is required for workflow mode");
+            }
+            await agent.runWorkflow(posthogTaskId, workflowId, {
+              repositoryPath: repoPath,
+              permissionMode: resolvedPermission,
+              autoProgress: autoProgress ?? true,
+              queryOverrides: {
+                abortController,
+                ...(model ? { model } : {}),
+                pathToClaudeCodeExecutable: claudePath,
+                stderr: forwardClaudeStderr,
+                env: envOverrides,
+                mcpServers: mcpOverrides,
+              },
+            });
+          }
+
           emitToRenderer({ type: "done", success: true, ts: Date.now() });
         } catch (err) {
           console.error("[agent] workflow execution failed", err);
@@ -293,6 +325,34 @@ export function registerAgentIpc(
       } finally {
         taskControllers.delete(taskId);
       }
+    },
+  );
+
+  ipcMain.handle(
+    "agent-extract-questions",
+    async (
+      _event: IpcMainInvokeEvent,
+      {
+        taskId,
+        repoPath,
+        apiKey,
+        apiHost,
+      }: {
+        taskId: string;
+        repoPath: string;
+        apiKey: string;
+        apiHost: string;
+      },
+    ): Promise<Array<{ id: string; question: string; options: string[] }>> => {
+      const agent = new Agent({
+        workingDirectory: repoPath,
+        posthogApiKey: apiKey,
+        posthogApiUrl: apiHost,
+        debug: true,
+      });
+
+      const questions = await agent.extractQuestionsFromResearch(taskId, false);
+      return questions;
     },
   );
 }

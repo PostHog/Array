@@ -1,4 +1,5 @@
 import type { AgentEvent } from "@posthog/agent";
+import type { TaskArtifact } from "@shared/types";
 import type { Recording } from "@shared/types";
 
 export interface IElectronAPI {
@@ -30,19 +31,53 @@ export interface IElectronAPI {
   ) => Promise<Array<{ path: string; name: string }>>;
   agentStart: (params: {
     taskId: string;
-    workflowId: string;
+    workflowId?: string;
     repoPath: string;
     apiKey: string;
     apiHost: string;
     permissionMode?: string;
     autoProgress?: boolean;
     model?: string;
+    executionMode?: "plan" | "workflow";
+    runMode?: "local" | "cloud";
   }) => Promise<{ taskId: string; channel: string }>;
   agentCancel: (taskId: string) => Promise<boolean>;
   onAgentEvent: (
     channel: string,
     listener: (event: AgentEvent) => void,
   ) => () => void;
+  // Task artifact operations
+  readPlanFile: (repoPath: string, taskId: string) => Promise<string | null>;
+  writePlanFile: (
+    repoPath: string,
+    taskId: string,
+    content: string,
+  ) => Promise<void>;
+  ensurePosthogFolder: (repoPath: string, taskId: string) => Promise<string>;
+  listTaskArtifacts: (
+    repoPath: string,
+    taskId: string,
+  ) => Promise<TaskArtifact[]>;
+  readTaskArtifact: (
+    repoPath: string,
+    taskId: string,
+    fileName: string,
+  ) => Promise<string | null>;
+  appendToArtifact: (
+    repoPath: string,
+    taskId: string,
+    fileName: string,
+    content: string,
+  ) => Promise<void>;
+  saveQuestionAnswers: (
+    repoPath: string,
+    taskId: string,
+    answers: Array<{
+      questionId: string;
+      selectedOption: string;
+      customInput?: string;
+    }>,
+  ) => Promise<void>;
   onOpenSettings: (listener: () => void) => () => void;
   // Recording API
   recordingStart: () => Promise<{ recordingId: string; startTime: string }>;

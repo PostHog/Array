@@ -9,13 +9,15 @@ import {
   Heading,
   IconButton,
   Link,
+  SegmentedControl,
   Text,
   Tooltip,
 } from "@radix-ui/themes";
-import type { Task } from "@shared/types";
+import type { ClarifyingQuestion, Task } from "@shared/types";
 import { format, formatDistanceToNow } from "date-fns";
 import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
+import { useHotkeys } from "react-hotkeys-hook";
 import { useBlurOnEscape } from "../hooks/useBlurOnEscape";
 import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
 import { useTasks, useUpdateTask } from "../hooks/useTasks";
@@ -30,7 +32,10 @@ import {
 import { AsciiArt } from "./AsciiArt";
 import { Combobox } from "./Combobox";
 import { LogView } from "./LogView";
+import { PlanEditor } from "./PlanEditor";
+import { PlanView } from "./PlanView";
 import { RichTextEditor } from "./RichTextEditor";
+import { TaskArtifacts } from "./TaskArtifacts";
 
 interface TaskDetailProps {
   task: Task;
@@ -46,6 +51,12 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     clearTaskLogs,
     getRepoWorkingDir,
     setRepoPath,
+    setExecutionMode,
+    setPlanModePhase,
+    setClarifyingQuestions,
+    addQuestionAnswer,
+    setPlanContent,
+    setSelectedArtifact,
   } = useTaskExecutionStore();
   const { isRepoInIntegration } = useRepositoryIntegration();
   const { data: tasks = [] } = useTasks();
@@ -74,7 +85,20 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   const taskState = getTaskState(task.id);
 
-  const { isRunning, logs, repoPath, runMode, progress, workflow } = taskState;
+  const {
+    isRunning,
+    logs,
+    repoPath,
+    runMode,
+    progress,
+    executionMode,
+    planModePhase,
+    clarifyingQuestions,
+    questionAnswers,
+    planContent,
+    selectedArtifact,
+    workflow,
+  } = taskState;
 
   const {
     handleSubmit,
@@ -155,6 +179,13 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     }
   }, [workflows, task.workflow, task.id, updateTask]);
 
+  // Auto-switch to auto mode if no workflow is assigned
+  useEffect(() => {
+    if (!task.workflow && executionMode === "workflow") {
+      setExecutionMode(task.id, "plan");
+    }
+  }, [task.workflow, executionMode, task.id, setExecutionMode]);
+
   useEffect(() => {
     setStatusBar({
       statusText: isRunning ? "Agent running..." : "Task details",
@@ -178,6 +209,19 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   useBlurOnEscape();
 
+  // Keyboard shortcut: Shift+Tab to toggle execution mode
+  useHotkeys(
+    "shift+tab",
+    (e) => {
+      e.preventDefault();
+      const newMode = executionMode === "plan" ? "workflow" : "plan";
+      setExecutionMode(task.id, newMode);
+    },
+    {
+      enableOnFormTags: true,
+    },
+  );
+
   const handleRunTask = () => {
     runTask(task.id, task);
   };
@@ -193,6 +237,141 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const handleClearLogs = () => {
     clearTaskLogs(task.id);
   };
+
+  const handleExecutionModeChange = (value: string) => {
+    setExecutionMode(task.id, value as "plan" | "workflow");
+  };
+
+  const handleAnswersComplete = async (
+    answers: Array<{
+      questionId: string;
+      selectedOption: string;
+      customInput?: string;
+    }>,
+  ) => {
+    // Save all answers to store
+    for (const answer of answers) {
+      addQuestionAnswer(task.id, answer);
+    }
+
+    // Save answers to questions.json
+    if (repoPath) {
+      try {
+        await window.electronAPI?.saveQuestionAnswers(
+          repoPath,
+          task.id,
+          answers,
+        );
+        console.log("Answers saved to questions.json");
+
+        // Set phase to planning and trigger next run
+        setPlanModePhase(task.id, "planning");
+
+        // Trigger the next phase (planning) by running the task again
+        runTask(task.id, task);
+      } catch (error) {
+        console.error("Failed to save answers to questions.json:", error);
+      }
+    }
+  };
+
+  const handleClosePlan = () => {
+    setPlanModePhase(task.id, "idle");
+    setSelectedArtifact(task.id, null);
+  };
+
+  const handleSavePlan = (content: string) => {
+    setPlanContent(task.id, content);
+  };
+
+  const handleArtifactSelect = (fileName: string) => {
+    setSelectedArtifact(task.id, fileName);
+    // If in plan mode, this will open the editor automatically via PlanView
+  };
+
+  // Listen for research_questions artifact event from agent
+  useEffect(() => {
+    // Check logs for research_questions artifact event
+    const artifactEvent = logs.find(
+      (log) => log.type === "artifact" && "kind" in log && "content" in log,
+    );
+
+    if (artifactEvent && clarifyingQuestions.length === 0) {
+      // Type guard to check if the content is an array of questions
+      const event = artifactEvent as {
+        type: string;
+        ts: number;
+        kind?: string;
+        content?: Array<{
+          id: string;
+          question: string;
+          options: string[];
+        }>;
+      };
+
+      if (event.kind === "research_questions" && event.content) {
+        const questions = event.content;
+
+        console.log(
+          "[TaskDetail] Received research_questions artifact with",
+          questions.length,
+          "questions",
+        );
+
+        // Convert to ClarifyingQuestion format
+        const clarifyingQs: ClarifyingQuestion[] = questions.map(
+          (q: { id: string; question: string; options: string[] }) => ({
+            id: q.id,
+            question: q.question,
+            options: q.options,
+            requiresInput: q.options.some((opt: string) =>
+              opt.toLowerCase().includes("something else"),
+            ),
+          }),
+        );
+
+        setClarifyingQuestions(task.id, clarifyingQs);
+        setPlanModePhase(task.id, "questions");
+      }
+    }
+  }, [
+    logs,
+    clarifyingQuestions.length,
+    task.id,
+    setClarifyingQuestions,
+    setPlanModePhase,
+  ]);
+
+  // Listen for plan completion
+  useEffect(() => {
+    if (planModePhase === "planning" && !isRunning) {
+      // Plan generation completed, load plan content and switch to review
+      const loadPlan = async () => {
+        if (repoPath) {
+          try {
+            const content = await window.electronAPI?.readPlanFile(
+              repoPath,
+              task.id,
+            );
+            if (content) {
+              setPlanContent(task.id, content);
+              setPlanModePhase(task.id, "review");
+            }
+          } catch (error) {
+            console.error("Failed to load plan:", error);
+          }
+        }
+      };
+      loadPlan();
+    }
+  }, [
+    planModePhase,
+    isRunning,
+    repoPath,
+    task.id,
+    setPlanContent,
+    setPlanModePhase,
+  ]);
 
   const onSubmit = handleSubmit((data) => {
     if (data.title !== task.title) {
@@ -412,6 +591,50 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
             </Flex>
 
             <Flex direction="column" gap="3" mt="4">
+              {/* Task Artifacts */}
+              {repoPath && (
+                <TaskArtifacts
+                  taskId={task.id}
+                  repoPath={repoPath}
+                  selectedArtifact={selectedArtifact}
+                  onArtifactSelect={handleArtifactSelect}
+                />
+              )}
+
+              {/* Execution Mode Toggle */}
+              <Flex direction="column" gap="1">
+                <Text
+                  size="1"
+                  weight="medium"
+                  style={{ color: "var(--gray-11)" }}
+                >
+                  Mode
+                </Text>
+                <SegmentedControl.Root
+                  value={executionMode}
+                  onValueChange={(value) => {
+                    // Don't allow switching to workflow if no workflow assigned
+                    if (value === "workflow" && !task.workflow) {
+                      return;
+                    }
+                    handleExecutionModeChange(value);
+                  }}
+                  size="1"
+                >
+                  <SegmentedControl.Item value="plan">
+                    Auto
+                  </SegmentedControl.Item>
+                  <SegmentedControl.Item value="workflow">
+                    Workflow
+                  </SegmentedControl.Item>
+                </SegmentedControl.Root>
+                <Text size="1" style={{ color: "var(--gray-10)" }}>
+                  {!task.workflow
+                    ? "Auto mode (no workflow assigned)"
+                    : "Press Shift+Tab to toggle"}
+                </Text>
+              </Flex>
+
               <Flex gap="2">
                 <Button
                   variant="classic"
@@ -422,24 +645,30 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                 >
                   {isRunning
                     ? "Running..."
-                    : runMode === "cloud"
-                      ? "Run Agent"
-                      : "Run Agent (Local)"}
+                    : executionMode === "plan"
+                      ? runMode === "cloud"
+                        ? "Run Auto (Cloud)"
+                        : "Run Auto (Local)"
+                      : runMode === "cloud"
+                        ? "Run Workflow (Cloud)"
+                        : "Run Workflow (Local)"}
                 </Button>
-                <Tooltip content="Toggle between Local or Cloud Agent">
-                  <IconButton
-                    size="2"
-                    variant="classic"
-                    color={runMode === "cloud" ? "blue" : "gray"}
-                    onClick={() =>
-                      handleRunModeChange(
-                        runMode === "local" ? "cloud" : "local",
-                      )
-                    }
-                  >
-                    {runMode === "cloud" ? <GlobeIcon /> : <GearIcon />}
-                  </IconButton>
-                </Tooltip>
+                {executionMode === "workflow" && (
+                  <Tooltip content="Toggle between Local or Cloud Agent">
+                    <IconButton
+                      size="2"
+                      variant="classic"
+                      color={runMode === "cloud" ? "blue" : "gray"}
+                      onClick={() =>
+                        handleRunModeChange(
+                          runMode === "local" ? "cloud" : "local",
+                        )
+                      }
+                    >
+                      {runMode === "cloud" ? <GlobeIcon /> : <GearIcon />}
+                    </IconButton>
+                  </Tooltip>
+                )}
               </Flex>
 
               {isRunning && (
@@ -456,7 +685,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
           </Box>
         </Box>
 
-        {/* Right pane - Logs */}
+        {/* Right pane - Logs/Plan View */}
         <Box
           width="50%"
           className="bg-panel-solid"
@@ -466,14 +695,41 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
           <Box style={{ position: "absolute", inset: 0, zIndex: 0 }}>
             <AsciiArt scale={1} opacity={0.1} />
           </Box>
-          {/* Foreground LogView */}
+          {/* Foreground View (LogView, PlanView, or Artifact Editor) */}
           <Box style={{ position: "relative", zIndex: 1, height: "100%" }}>
-            <LogView
-              logs={logs}
-              isRunning={isRunning}
-              onClearLogs={handleClearLogs}
-              workflow={workflow}
-            />
+            {selectedArtifact && repoPath ? (
+              // Viewing an artifact - show editor regardless of mode
+              <PlanEditor
+                taskId={task.id}
+                repoPath={repoPath}
+                fileName={selectedArtifact}
+                onClose={handleClosePlan}
+                onSave={handleSavePlan}
+              />
+            ) : executionMode === "plan" ? (
+              <PlanView
+                task={task}
+                repoPath={repoPath}
+                phase={planModePhase}
+                questions={clarifyingQuestions}
+                answers={questionAnswers}
+                logs={logs}
+                isRunning={isRunning}
+                planContent={planContent}
+                selectedArtifact={selectedArtifact}
+                onAnswersComplete={handleAnswersComplete}
+                onClearLogs={handleClearLogs}
+                onClosePlan={handleClosePlan}
+                onSavePlan={handleSavePlan}
+              />
+            ) : (
+              <LogView
+                logs={logs}
+                isRunning={isRunning}
+                onClearLogs={handleClearLogs}
+                workflow={workflow}
+              />
+            )}
           </Box>
         </Box>
       </Flex>

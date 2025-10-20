@@ -7,7 +7,6 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "ignore": ["build/icon.icon/icon.json"]
   },
   "formatter": {
     "enabled": true,
