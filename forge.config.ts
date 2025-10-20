@@ -16,10 +16,12 @@ const config: ForgeConfig = {
         {
           entry: "src/main/index.ts",
           config: "vite.main.config.mts",
+          target: "main",
         },
         {
           entry: "src/main/preload.ts",
           config: "vite.preload.config.mts",
+          target: "preload",
         },
       ],
       renderer: [

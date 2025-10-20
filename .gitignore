@@ -25,6 +25,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+*.tgz
 
 AGENTS.md
 .claude/
