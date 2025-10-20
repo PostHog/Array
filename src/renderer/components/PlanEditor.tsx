@@ -1,5 +1,6 @@
 import { Cross2Icon } from "@radix-ui/react-icons";
 import { Box, Button, Flex, Heading, IconButton } from "@radix-ui/themes";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { RichTextEditor } from "./RichTextEditor";
 
@@ -24,36 +25,33 @@ export function PlanEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
-  // Load file content on mount if not provided
+  const queryClient = useQueryClient();
+  const { data: fetchedContent } = useQuery({
+    queryKey: ["task-file", repoPath, taskId, fileName],
+    enabled: !initialContent && !!repoPath && !!taskId,
+    queryFn: async () => {
+      if (!window.electronAPI) {
+        throw new Error("Electron API unavailable");
+      }
+      if (fileName === "plan.md") {
+        const result = await window.electronAPI.readPlanFile(repoPath, taskId);
+        return result ?? "";
+      }
+      const result = await window.electronAPI.readTaskArtifact(
+        repoPath,
+        taskId,
+        fileName,
+      );
+      return result ?? "";
+    },
+  });
+
+  // Seed editor once with fetched content if no initial content was provided
   useEffect(() => {
-    if (!initialContent && repoPath && taskId) {
-      const loadFileContent = async () => {
-        try {
-          let fileContent: string | null = null;
-
-          if (fileName === "plan.md") {
-            fileContent = await window.electronAPI?.readPlanFile(
-              repoPath,
-              taskId,
-            );
-          } else {
-            fileContent = await window.electronAPI?.readTaskArtifact(
-              repoPath,
-              taskId,
-              fileName,
-            );
-          }
-
-          if (fileContent) {
-            setContent(fileContent);
-          }
-        } catch (error) {
-          console.error("Failed to load file:", error);
-        }
-      };
-      loadFileContent();
+    if (!initialContent && fetchedContent && content === "") {
+      setContent(fetchedContent);
     }
-  }, [taskId, repoPath, fileName, initialContent]);
+  }, [fetchedContent, initialContent, content]);
 
   const handleSave = async () => {
     if (!repoPath || !taskId) return;
@@ -71,6 +69,10 @@ export function PlanEditor({
       }
       setLastSaved(new Date());
       onSave?.(content);
+      queryClient.setQueryData(
+        ["task-file", repoPath, taskId, fileName],
+        content,
+      );
     } catch (error) {
       console.error("Failed to save file:", error);
       alert("Failed to save file. Please try again.");
