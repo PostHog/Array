@@ -11,6 +11,12 @@ const config: ForgeConfig = {
     name: "Array",
     executableName: "Array",
     icon: "./build/app-icon", // Forge adds .icns/.ico/.png based on platform
+    extraResource: existsSync("build/Assets.car") ? ["build/Assets.car"] : [],
+    extendInfo: existsSync("build/Assets.car")
+      ? {
+          CFBundleIconName: "Icon",
+        }
+      : {},
   },
   rebuildConfig: {},
   makers: [
@@ -21,6 +27,13 @@ const config: ForgeConfig = {
     new MakerZIP({}, ["darwin", "linux", "win32"]),
   ],
   hooks: {
+    generateAssets: async () => {
+      // Compile liquid glass icon to Assets.car
+      if (existsSync("build/icon.icon")) {
+        console.log("Compiling liquid glass icon...");
+        execSync("bash scripts/compile-glass-icon.sh", { stdio: "inherit" });
+      }
+    },
     prePackage: async () => {
       // Build native modules for DMG maker on Node.js 22
       const modules = ["macos-alias", "fs-xattr"];
