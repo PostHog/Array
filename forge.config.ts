@@ -1,3 +1,5 @@
+import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { MakerDMG } from "@electron-forge/maker-dmg";
 import { MakerZIP } from "@electron-forge/maker-zip";
 import { VitePlugin } from "@electron-forge/plugin-vite";
@@ -18,6 +20,20 @@ const config: ForgeConfig = {
     }),
     new MakerZIP({}, ["darwin", "linux", "win32"]),
   ],
+  hooks: {
+    prePackage: async () => {
+      // Build native modules for DMG maker on Node.js 22
+      const modules = ["macos-alias", "fs-xattr"];
+
+      for (const module of modules) {
+        const modulePath = `node_modules/${module}`;
+        if (existsSync(modulePath)) {
+          console.log(`Building native module: ${module}`);
+          execSync("npm install", { cwd: modulePath, stdio: "inherit" });
+        }
+      }
+    },
+  },
   plugins: [
     new VitePlugin({
       build: [

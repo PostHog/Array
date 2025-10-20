@@ -33,6 +33,29 @@ pnpm run typecheck  # Type checking
 pnpm run lint       # Linting
 ```
 
+### Building Distributables
+
+To create production distributables (DMG, ZIP):
+
+```bash
+# Package the app
+pnpm package
+
+# Create distributables (DMG + ZIP)
+pnpm make
+```
+
+Output will be in:
+- `out/Array-darwin-arm64/Array.app` - Packaged app
+- `out/make/Array-*.dmg` - macOS installer
+- `out/make/zip/` - ZIP archives
+
+**Note:** Native modules for the DMG maker are automatically compiled via the `prePackage` hook. If you need to manually rebuild them, run:
+
+```bash
+pnpm build-native
+```
+
 ### Environment Variables
 
 You can set these environment variables instead of entering credentials in the app:
