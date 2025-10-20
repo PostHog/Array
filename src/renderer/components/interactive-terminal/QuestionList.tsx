@@ -61,8 +61,7 @@ export function QuestionList({
           </Text>
         </Flex>
         <Text size="2" style={{ color: "var(--gray-11)" }}>
-          Please answer the following questions to guide the implementation
-          planning:
+          Please answer the following questions to guide the implementation:
         </Text>
       </Flex>
 
@@ -87,7 +86,7 @@ export function QuestionList({
       {allAnswered && (
         <Flex gap="2" mt="4">
           <Button onClick={handleSubmit} size="3" variant="solid">
-            Generate Plan
+            Continue
           </Button>
           {onCancel && (
             <Button onClick={onCancel} size="3" variant="outline" color="gray">

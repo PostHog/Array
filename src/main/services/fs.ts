@@ -262,4 +262,108 @@ export function registerFsIpc(): void {
       }
     },
   );
+
+  ipcMain.handle(
+    "append-to-artifact",
+    async (
+      _event: IpcMainInvokeEvent,
+      repoPath: string,
+      taskId: string,
+      fileName: string,
+      content: string,
+    ): Promise<void> => {
+      try {
+        const filePath = path.join(repoPath, ".posthog", taskId, fileName);
+
+        // Ensure the file exists before appending
+        try {
+          await fsPromises.access(filePath);
+        } catch {
+          throw new Error(`File ${fileName} does not exist for task ${taskId}`);
+        }
+
+        await fsPromises.appendFile(filePath, content, "utf-8");
+        console.log(`Appended content to ${fileName} for task ${taskId}`);
+      } catch (error) {
+        console.error(
+          `Failed to append to artifact ${fileName} for task ${taskId}:`,
+          error,
+        );
+        throw error;
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "save-question-answers",
+    async (
+      _event: IpcMainInvokeEvent,
+      repoPath: string,
+      taskId: string,
+      answers: Array<{
+        questionId: string;
+        selectedOption: string;
+        customInput?: string;
+      }>,
+    ): Promise<void> => {
+      try {
+        const questionsPath = path.join(
+          repoPath,
+          ".posthog",
+          taskId,
+          "questions.json",
+        );
+
+        // Read existing questions.json
+        let questionsData: {
+          answered: boolean;
+          answers: Array<{
+            questionId: string;
+            selectedOption: string;
+            customInput?: string;
+          }>;
+        };
+        try {
+          const content = await fsPromises.readFile(questionsPath, "utf-8");
+          questionsData = JSON.parse(content);
+        } catch {
+          throw new Error(`questions.json not found for task ${taskId}`);
+        }
+
+        // Update with answers
+        questionsData.answered = true;
+        questionsData.answers = answers;
+
+        // Write back to file
+        await fsPromises.writeFile(
+          questionsPath,
+          JSON.stringify(questionsData, null, 2),
+          "utf-8",
+        );
+
+        console.log(`Saved answers to questions.json for task ${taskId}`);
+
+        // Commit the answers (local mode - no push)
+        try {
+          await execAsync(`cd "${repoPath}" && git add .posthog/`, {
+            cwd: repoPath,
+          });
+          await execAsync(
+            `cd "${repoPath}" && git commit -m "Answer research questions for task ${taskId}"`,
+            { cwd: repoPath },
+          );
+          console.log(`Committed answers for task ${taskId}`);
+        } catch (gitError) {
+          console.warn(
+            `Failed to commit answers (may not be a git repo or no changes):`,
+            gitError,
+          );
+          // Don't throw - answers are still saved
+        }
+      } catch (error) {
+        console.error(`Failed to save answers for task ${taskId}:`, error);
+        throw error;
+      }
+    },
+  );
 }

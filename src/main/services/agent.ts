@@ -1,20 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { Agent, PermissionMode } from "@posthog/agent";
 import { type BrowserWindow, type IpcMainInvokeEvent, ipcMain } from "electron";
-import { buildPlanningPrompt } from "../prompts/generate-plan.js";
-import { buildResearchPrompt } from "../prompts/research-questions.js";
 
 interface AgentStartParams {
   taskId: string;
-  workflowId: string;
+  workflowId?: string;
   repoPath: string;
   apiKey: string;
   apiHost: string;
   permissionMode?: PermissionMode | string;
   autoProgress?: boolean;
   model?: string;
+  executionMode?: "plan" | "workflow";
+  runMode?: "local" | "cloud";
 }
 
 export interface TaskController {
@@ -57,10 +55,17 @@ export function registerAgentIpc(
         permissionMode,
         autoProgress,
         model,
+        executionMode,
+        runMode,
       }: AgentStartParams,
     ): Promise<{ taskId: string; channel: string }> => {
-      if (!posthogTaskId || !workflowId || !repoPath) {
-        throw new Error("taskId, workflowId, and repoPath are required");
+      // For plan mode, workflowId is optional
+      if (!posthogTaskId || !repoPath) {
+        throw new Error("taskId and repoPath are required");
+      }
+
+      if (executionMode !== "plan" && !workflowId) {
+        throw new Error("workflowId is required for workflow mode");
       }
 
       if (!apiKey || !apiHost) {
@@ -158,7 +163,7 @@ export function registerAgentIpc(
       emitToRenderer({
         type: "status",
         ts: Date.now(),
-        phase: "workflow_start",
+        phase: executionMode === "plan" ? "task_start" : "workflow_start",
         workflowId,
         taskId: posthogTaskId,
       });
@@ -175,18 +180,39 @@ export function registerAgentIpc(
 
           const mcpOverrides = {};
 
-          await agent.runWorkflow(posthogTaskId, workflowId, {
-            repositoryPath: repoPath,
-            permissionMode: resolvedPermission,
-            autoProgress: autoProgress ?? true,
-            queryOverrides: {
-              abortController,
-              ...(model ? { model } : {}),
-              stderr: forwardClaudeStderr,
-              env: envOverrides,
-              mcpServers: mcpOverrides,
-            },
-          });
+          if (executionMode === "plan") {
+            // Use adaptive task workflow (research → plan → build)
+            await agent.runTask(posthogTaskId, {
+              repositoryPath: repoPath,
+              permissionMode: resolvedPermission,
+              isCloudMode: runMode === "cloud",
+              autoProgress: autoProgress ?? true,
+              queryOverrides: {
+                abortController,
+                ...(model ? { model } : {}),
+                stderr: forwardClaudeStderr,
+                env: envOverrides,
+                mcpServers: mcpOverrides,
+              },
+            });
+          } else {
+            // Use traditional workflow-based execution
+            if (!workflowId) {
+              throw new Error("Workflow ID is required for workflow mode");
+            }
+            await agent.runWorkflow(posthogTaskId, workflowId, {
+              repositoryPath: repoPath,
+              permissionMode: resolvedPermission,
+              autoProgress: autoProgress ?? true,
+              queryOverrides: {
+                abortController,
+                ...(model ? { model } : {}),
+                stderr: forwardClaudeStderr,
+                env: envOverrides,
+                mcpServers: mcpOverrides,
+              },
+            });
+          }
           emitToRenderer({ type: "done", success: true, ts: Date.now() });
         } catch (err) {
           console.error("[agent] workflow execution failed", err);
@@ -244,294 +270,36 @@ export function registerAgentIpc(
     },
   );
 
-  // Plan mode: Research and generate questions
   ipcMain.handle(
-    "agent-start-plan-mode",
+    "agent-extract-questions",
     async (
       _event: IpcMainInvokeEvent,
       {
-        taskId: posthogTaskId,
-        taskTitle,
-        taskDescription,
+        taskId,
         repoPath,
         apiKey,
         apiHost,
       }: {
         taskId: string;
-        taskTitle: string;
-        taskDescription: string;
         repoPath: string;
         apiKey: string;
         apiHost: string;
       },
-    ): Promise<{ taskId: string; channel: string }> => {
-      const taskId = randomUUID();
-      const channel = `agent-event-${taskId}`;
-      const abortController = new AbortController();
-
-      const mainWindow = getMainWindow();
-      if (!mainWindow) {
-        throw new Error("Main window not found");
+    ): Promise<Array<{ id: string; question: string; options: string[] }>> => {
+      // Set OpenAI API key for extraction
+      if (!process.env.OPENAI_API_KEY) {
+        throw new Error("OPENAI_API_KEY environment variable is required");
       }
-
-      const emitToRenderer = (payload: unknown) => {
-        if (abortController.signal.aborted) return;
-        mainWindow.webContents.send(channel, payload);
-      };
 
       const agent = new Agent({
         workingDirectory: repoPath,
         posthogApiKey: apiKey,
         posthogApiUrl: apiHost,
-        onEvent: (event) => {
-          if (!event || abortController.signal.aborted) return;
-          emitToRenderer(event);
-        },
         debug: true,
       });
 
-      const controllerEntry: TaskController = {
-        abortController,
-        agent,
-        channel,
-        taskId: posthogTaskId,
-      };
-
-      taskControllers.set(taskId, controllerEntry);
-
-      emitToRenderer({
-        type: "status",
-        ts: Date.now(),
-        phase: "research_start",
-      });
-
-      (async () => {
-        try {
-          const envOverrides = {
-            ...process.env,
-            POSTHOG_API_KEY: apiKey,
-            POSTHOG_API_HOST: apiHost,
-            POSTHOG_AUTH_HEADER: `Bearer ${apiKey}`,
-          };
-
-          const researchPrompt = buildResearchPrompt(
-            taskTitle,
-            taskDescription,
-          );
-
-          await agent.run(researchPrompt, {
-            repositoryPath: repoPath,
-            permissionMode: "plan" as PermissionMode,
-            queryOverrides: {
-              abortController,
-              stderr: (text: string) => {
-                emitToRenderer({
-                  type: "token",
-                  ts: Date.now(),
-                  message: `[Agent stderr] ${text}`,
-                });
-              },
-              env: envOverrides,
-            },
-          });
-
-          // After agent finishes, signal completion
-          emitToRenderer({ type: "done", success: true, ts: Date.now() });
-        } catch (err) {
-          console.error("[plan-mode] research execution failed", err);
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          if (!abortController.signal.aborted) {
-            emitToRenderer({
-              type: "error",
-              message: errorMessage,
-              ts: Date.now(),
-            });
-            emitToRenderer({ type: "done", success: false, ts: Date.now() });
-          } else {
-            emitToRenderer({
-              type: "status",
-              ts: Date.now(),
-              phase: "canceled",
-            });
-            emitToRenderer({ type: "done", success: false, ts: Date.now() });
-          }
-        } finally {
-          taskControllers.delete(taskId);
-        }
-      })();
-
-      return { taskId, channel };
-    },
-  );
-
-  // Plan mode: Generate plan from question answers
-  ipcMain.handle(
-    "agent-generate-plan",
-    async (
-      _event: IpcMainInvokeEvent,
-      {
-        taskId: posthogTaskId,
-        taskTitle,
-        taskDescription,
-        repoPath,
-        questionAnswers,
-        apiKey,
-        apiHost,
-      }: {
-        taskId: string;
-        taskTitle: string;
-        taskDescription: string;
-        repoPath: string;
-        questionAnswers: Array<{
-          questionId: string;
-          selectedOption: string;
-          customInput?: string;
-        }>;
-        apiKey: string;
-        apiHost: string;
-      },
-    ): Promise<{ taskId: string; channel: string }> => {
-      const taskId = randomUUID();
-      const channel = `agent-event-${taskId}`;
-      const abortController = new AbortController();
-
-      const mainWindow = getMainWindow();
-      if (!mainWindow) {
-        throw new Error("Main window not found");
-      }
-
-      const emitToRenderer = (payload: unknown) => {
-        if (abortController.signal.aborted) return;
-        mainWindow.webContents.send(channel, payload);
-      };
-
-      const agent = new Agent({
-        workingDirectory: repoPath,
-        posthogApiKey: apiKey,
-        posthogApiUrl: apiHost,
-        onEvent: (event) => {
-          if (!event || abortController.signal.aborted) return;
-          emitToRenderer(event);
-        },
-        debug: true,
-      });
-
-      const controllerEntry: TaskController = {
-        abortController,
-        agent,
-        channel,
-        taskId: posthogTaskId,
-      };
-
-      taskControllers.set(taskId, controllerEntry);
-
-      emitToRenderer({
-        type: "status",
-        ts: Date.now(),
-        phase: "planning_start",
-      });
-
-      (async () => {
-        try {
-          const envOverrides = {
-            ...process.env,
-            POSTHOG_API_KEY: apiKey,
-            POSTHOG_API_HOST: apiHost,
-            POSTHOG_AUTH_HEADER: `Bearer ${apiKey}`,
-          };
-
-          const planningPrompt = buildPlanningPrompt(
-            taskTitle,
-            taskDescription,
-            questionAnswers,
-          );
-
-          let planContent = "";
-          const results = await agent.run(planningPrompt, {
-            repositoryPath: repoPath,
-            permissionMode: "plan" as PermissionMode,
-            queryOverrides: {
-              abortController,
-              stderr: (text: string) => {
-                emitToRenderer({
-                  type: "token",
-                  ts: Date.now(),
-                  message: `[Agent stderr] ${text}`,
-                });
-              },
-              env: envOverrides,
-            },
-          });
-
-          // Extract plan content from agent results
-          for (const message of results.results) {
-            if (message.type === "assistant" && message.message?.content) {
-              for (const content of message.message.content) {
-                if (content.type === "text" && content.text) {
-                  planContent += `${content.text}\n`;
-                }
-              }
-            }
-          }
-
-          // Write plan to .posthog/{taskId}/plan.md
-          if (planContent.trim()) {
-            try {
-              const planPath = join(
-                repoPath,
-                ".posthog",
-                posthogTaskId,
-                "plan.md",
-              );
-              const { mkdirSync } = await import("node:fs");
-              mkdirSync(join(repoPath, ".posthog", posthogTaskId), {
-                recursive: true,
-              });
-              writeFileSync(planPath, planContent.trim(), "utf-8");
-              emitToRenderer({
-                type: "status",
-                ts: Date.now(),
-                phase: "plan_written",
-                planPath,
-              });
-            } catch (writeError) {
-              console.error(
-                "[plan-mode] Failed to write plan file",
-                writeError,
-              );
-              emitToRenderer({
-                type: "error",
-                message: `Failed to write plan file: ${writeError instanceof Error ? writeError.message : String(writeError)}`,
-                ts: Date.now(),
-              });
-            }
-          }
-
-          emitToRenderer({ type: "done", success: true, ts: Date.now() });
-        } catch (err) {
-          console.error("[plan-mode] plan generation failed", err);
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          if (!abortController.signal.aborted) {
-            emitToRenderer({
-              type: "error",
-              message: errorMessage,
-              ts: Date.now(),
-            });
-            emitToRenderer({ type: "done", success: false, ts: Date.now() });
-          } else {
-            emitToRenderer({
-              type: "status",
-              ts: Date.now(),
-              phase: "canceled",
-            });
-            emitToRenderer({ type: "done", success: false, ts: Date.now() });
-          }
-        } finally {
-          taskControllers.delete(taskId);
-        }
-      })();
-
-      return { taskId, channel };
+      const questions = await agent.extractQuestionsFromResearch(taskId, false);
+      return questions;
     },
   );
 }

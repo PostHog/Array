@@ -57,8 +57,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     addQuestionAnswer,
     setPlanContent,
     setSelectedArtifact,
-    runPlanMode,
-    generatePlan,
   } = useTaskExecutionStore();
   const { isRepoInIntegration } = useRepositoryIntegration();
   const { data: tasks = [] } = useTasks();
@@ -181,6 +179,13 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     }
   }, [workflows, task.workflow, task.id, updateTask]);
 
+  // Auto-switch to auto mode if no workflow is assigned
+  useEffect(() => {
+    if (!task.workflow && executionMode === "workflow") {
+      setExecutionMode(task.id, "plan");
+    }
+  }, [task.workflow, executionMode, task.id, setExecutionMode]);
+
   useEffect(() => {
     setStatusBar({
       statusText: isRunning ? "Agent running..." : "Task details",
@@ -218,11 +223,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   );
 
   const handleRunTask = () => {
-    if (executionMode === "plan") {
-      runPlanMode(task.id, task);
-    } else {
-      runTask(task.id, task);
-    }
+    runTask(task.id, task);
   };
 
   const handleCancel = () => {
@@ -252,8 +253,26 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     for (const answer of answers) {
       addQuestionAnswer(task.id, answer);
     }
-    // Now trigger plan generation
-    await generatePlan(task.id, task);
+
+    // Save answers to questions.json
+    if (repoPath) {
+      try {
+        await window.electronAPI?.saveQuestionAnswers(
+          repoPath,
+          task.id,
+          answers,
+        );
+        console.log("Answers saved to questions.json");
+
+        // Set phase to planning and trigger next run
+        setPlanModePhase(task.id, "planning");
+
+        // Trigger the next phase (planning) by running the task again
+        runTask(task.id, task);
+      } catch (error) {
+        console.error("Failed to save answers to questions.json:", error);
+      }
+    }
   };
 
   const handleClosePlan = () => {
@@ -270,115 +289,54 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     // If in plan mode, this will open the editor automatically via PlanView
   };
 
-  // Listen for question extraction from logs
+  // Listen for research_questions artifact event from agent
   useEffect(() => {
-    if (planModePhase === "research" && !isRunning) {
-      // Research phase completed, look for questions in logs
-      const lastLogs = logs.slice(-30); // Check last 30 logs for questions
+    // Check logs for research_questions artifact event
+    const artifactEvent = logs.find(
+      (log) => log.type === "artifact" && "kind" in log && "content" in log,
+    );
 
-      for (const log of lastLogs) {
-        let content = "";
+    if (artifactEvent && clarifyingQuestions.length === 0) {
+      // Type guard to check if the content is an array of questions
+      const event = artifactEvent as {
+        type: string;
+        ts: number;
+        kind?: string;
+        content?: Array<{
+          id: string;
+          question: string;
+          options: string[];
+        }>;
+      };
 
-        // Extract content from different log types
-        if (log.type === "token" && log.content) {
-          content = log.content;
-        } else if (log.type === "raw_sdk_event") {
-          const rawLog = log as {
-            sdkMessage?: {
-              type?: string;
-              message?: { content?: Array<{ type?: string; text?: string }> };
-            };
-          };
-          const sdkMsg = rawLog.sdkMessage;
-          // Extract text from assistant messages
-          if (sdkMsg?.type === "assistant" && sdkMsg.message?.content) {
-            for (const block of sdkMsg.message.content) {
-              if (block.type === "text" && block.text) {
-                content += `${block.text}\n`;
-              }
-            }
-          }
-        } else if (log.type === "status") {
-          const statusLog = log as { phase?: string };
-          content = statusLog.phase || "";
-        }
+      if (event.kind === "research_questions" && event.content) {
+        const questions = event.content;
 
-        if (!content) continue;
+        console.log(
+          "[TaskDetail] Received research_questions artifact with",
+          questions.length,
+          "questions",
+        );
 
-        // Try multiple patterns to find JSON
-        let jsonText: string | null = null;
+        // Convert to ClarifyingQuestion format
+        const clarifyingQs: ClarifyingQuestion[] = questions.map(
+          (q: { id: string; question: string; options: string[] }) => ({
+            id: q.id,
+            question: q.question,
+            options: q.options,
+            requiresInput: q.options.some((opt: string) =>
+              opt.toLowerCase().includes("something else"),
+            ),
+          }),
+        );
 
-        // Pattern 1: Markdown code block
-        const codeBlockMatch = content.match(/```json\s*\n([\s\S]*?)\n```/);
-        if (codeBlockMatch) {
-          jsonText = codeBlockMatch[1];
-        }
-
-        // Pattern 2: JSON object directly in text
-        if (!jsonText && content.includes('"questions"')) {
-          // Find the complete JSON object containing questions
-          let braceCount = 0;
-          let startIndex = -1;
-          let endIndex = -1;
-
-          for (let i = 0; i < content.length; i++) {
-            if (content[i] === "{") {
-              if (braceCount === 0) startIndex = i;
-              braceCount++;
-            } else if (content[i] === "}") {
-              braceCount--;
-              if (braceCount === 0 && startIndex >= 0) {
-                endIndex = i + 1;
-                // Check if this JSON contains "questions"
-                const candidate = content.substring(startIndex, endIndex);
-                if (candidate.includes('"questions"')) {
-                  jsonText = candidate;
-                  break;
-                }
-              }
-            }
-          }
-        }
-
-        if (jsonText) {
-          try {
-            const parsed = JSON.parse(jsonText);
-            if (
-              parsed.questions &&
-              Array.isArray(parsed.questions) &&
-              parsed.questions.length > 0
-            ) {
-              const questions: ClarifyingQuestion[] = parsed.questions.map(
-                (q: { id: string; question: string; options?: string[] }) => ({
-                  id: q.id,
-                  question: q.question,
-                  options: q.options || [],
-                  requiresInput:
-                    q.options?.some((opt: string) =>
-                      opt.toLowerCase().includes("something else"),
-                    ) || false,
-                }),
-              );
-              setClarifyingQuestions(task.id, questions);
-              setPlanModePhase(task.id, "questions");
-              console.log("Successfully parsed questions:", questions);
-              break;
-            }
-          } catch (error) {
-            console.error(
-              "Failed to parse questions JSON:",
-              error,
-              "from:",
-              jsonText?.substring(0, 100),
-            );
-          }
-        }
+        setClarifyingQuestions(task.id, clarifyingQs);
+        setPlanModePhase(task.id, "questions");
       }
     }
   }, [
-    planModePhase,
-    isRunning,
     logs,
+    clarifyingQuestions.length,
     task.id,
     setClarifyingQuestions,
     setPlanModePhase,
@@ -654,18 +612,26 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                 </Text>
                 <SegmentedControl.Root
                   value={executionMode}
-                  onValueChange={handleExecutionModeChange}
+                  onValueChange={(value) => {
+                    // Don't allow switching to workflow if no workflow assigned
+                    if (value === "workflow" && !task.workflow) {
+                      return;
+                    }
+                    handleExecutionModeChange(value);
+                  }}
                   size="1"
                 >
+                  <SegmentedControl.Item value="plan">
+                    Auto
+                  </SegmentedControl.Item>
                   <SegmentedControl.Item value="workflow">
                     Workflow
                   </SegmentedControl.Item>
-                  <SegmentedControl.Item value="plan">
-                    Plan
-                  </SegmentedControl.Item>
                 </SegmentedControl.Root>
                 <Text size="1" style={{ color: "var(--gray-10)" }}>
-                  Press Shift+Tab to toggle
+                  {!task.workflow
+                    ? "Auto mode (no workflow assigned)"
+                    : "Press Shift+Tab to toggle"}
                 </Text>
               </Flex>
 
@@ -680,10 +646,12 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   {isRunning
                     ? "Running..."
                     : executionMode === "plan"
-                      ? "Start Research"
+                      ? runMode === "cloud"
+                        ? "Run Auto (Cloud)"
+                        : "Run Auto (Local)"
                       : runMode === "cloud"
-                        ? "Run Agent"
-                        : "Run Agent (Local)"}
+                        ? "Run Workflow (Cloud)"
+                        : "Run Workflow (Local)"}
                 </Button>
                 {executionMode === "workflow" && (
                   <Tooltip content="Toggle between Local or Cloud Agent">

@@ -85,8 +85,6 @@ interface TaskExecutionStore {
   addQuestionAnswer: (taskId: string, answer: QuestionAnswer) => void;
   setPlanContent: (taskId: string, content: string | null) => void;
   setSelectedArtifact: (taskId: string, fileName: string | null) => void;
-  runPlanMode: (taskId: string, task: Task) => Promise<void>;
-  generatePlan: (taskId: string, task: Task) => Promise<void>;
 }
 
 const defaultTaskState: TaskExecutionState = {
@@ -328,7 +326,8 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
         if (taskState.isRunning) return;
 
-        if (!task.workflow) {
+        // Only require workflow for workflow mode, not for plan mode
+        if (taskState.executionMode === "workflow" && !task.workflow) {
           store.addLog(taskId, {
             type: "error",
             ts: Date.now(),
@@ -481,12 +480,14 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         try {
           const result = await window.electronAPI?.agentStart({
             taskId: task.id,
-            workflowId: task.workflow,
+            workflowId: task.workflow || undefined,
             repoPath: effectiveRepoPath,
             apiKey,
             apiHost,
             permissionMode,
             autoProgress: true,
+            executionMode: taskState.executionMode,
+            runMode: taskState.runMode,
           });
           if (!result) {
             store.addLog(taskId, {
@@ -579,183 +580,6 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
       setSelectedArtifact: (taskId: string, fileName: string | null) => {
         get().updateTaskState(taskId, { selectedArtifact: fileName });
-      },
-
-      runPlanMode: async (taskId: string, task: Task) => {
-        const store = get();
-        const taskState = store.getTaskState(taskId);
-
-        if (taskState.isRunning) return;
-
-        const { apiKey, apiHost } = useAuthStore.getState();
-        if (!apiKey) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message:
-              "No PostHog API key found. Sign in to PostHog to run plan mode.",
-          });
-          return;
-        }
-
-        // Ensure repo path is selected
-        let effectiveRepoPath = taskState.repoPath;
-        if (!effectiveRepoPath) {
-          await store.selectRepositoryForTask(taskId);
-          effectiveRepoPath = store.getTaskState(taskId).repoPath;
-        }
-
-        if (!effectiveRepoPath) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message: "No repository folder selected.",
-          });
-          return;
-        }
-
-        const isRepo =
-          await window.electronAPI?.validateRepo(effectiveRepoPath);
-        if (!isRepo) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message: `Selected folder is not a git repository: ${effectiveRepoPath}`,
-          });
-          return;
-        }
-
-        // Clear previous plan mode state
-        store.setPlanModePhase(taskId, "research");
-        store.setClarifyingQuestions(taskId, []);
-        store.setQuestionAnswers(taskId, []);
-        store.setProgress(taskId, null);
-        store.setRunning(taskId, true);
-
-        const startTs = Date.now();
-        store.setLogs(taskId, [
-          {
-            type: "token",
-            ts: startTs,
-            content: "Starting plan mode research phase...",
-          },
-          {
-            type: "token",
-            ts: startTs,
-            content: `Repo: ${effectiveRepoPath}`,
-          },
-        ]);
-
-        try {
-          const result = await window.electronAPI?.agentStartPlanMode({
-            taskId: task.id,
-            taskTitle: task.title,
-            taskDescription: task.description,
-            repoPath: effectiveRepoPath,
-            apiKey,
-            apiHost,
-          });
-
-          if (!result) {
-            store.addLog(taskId, {
-              type: "error",
-              ts: Date.now(),
-              message: "Failed to start plan mode: electronAPI not available",
-            });
-            store.setRunning(taskId, false);
-            store.setPlanModePhase(taskId, "idle");
-            return;
-          }
-
-          const { taskId: executionTaskId, channel } = result;
-          store.setCurrentTaskId(taskId, executionTaskId);
-
-          // Subscribe to streaming events
-          store.subscribeToAgentEvents(taskId, channel);
-        } catch (error) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message: `Error starting plan mode: ${error instanceof Error ? error.message : "Unknown error"}`,
-          });
-          store.setRunning(taskId, false);
-          store.setPlanModePhase(taskId, "idle");
-        }
-      },
-
-      generatePlan: async (taskId: string, task: Task) => {
-        const store = get();
-        const taskState = store.getTaskState(taskId);
-
-        if (taskState.isRunning) return;
-
-        const { apiKey, apiHost } = useAuthStore.getState();
-        if (!apiKey) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message:
-              "No PostHog API key found. Sign in to PostHog to generate plan.",
-          });
-          return;
-        }
-
-        const effectiveRepoPath = taskState.repoPath;
-        if (!effectiveRepoPath) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message: "No repository folder selected.",
-          });
-          return;
-        }
-
-        store.setPlanModePhase(taskId, "planning");
-        store.setRunning(taskId, true);
-
-        const startTs = Date.now();
-        store.addLog(taskId, {
-          type: "token",
-          ts: startTs,
-          content: "Generating implementation plan...",
-        });
-
-        try {
-          const result = await window.electronAPI?.agentGeneratePlan({
-            taskId: task.id,
-            taskTitle: task.title,
-            taskDescription: task.description,
-            repoPath: effectiveRepoPath,
-            questionAnswers: taskState.questionAnswers,
-            apiKey,
-            apiHost,
-          });
-
-          if (!result) {
-            store.addLog(taskId, {
-              type: "error",
-              ts: Date.now(),
-              message: "Failed to generate plan: electronAPI not available",
-            });
-            store.setRunning(taskId, false);
-            store.setPlanModePhase(taskId, "questions");
-            return;
-          }
-
-          const { taskId: executionTaskId, channel } = result;
-          store.setCurrentTaskId(taskId, executionTaskId);
-
-          // Subscribe to streaming events
-          store.subscribeToAgentEvents(taskId, channel);
-        } catch (error) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message: `Error generating plan: ${error instanceof Error ? error.message : "Unknown error"}`,
-          });
-          store.setRunning(taskId, false);
-          store.setPlanModePhase(taskId, "questions");
-        }
       },
     }),
     {

@@ -105,6 +105,29 @@ contextBridge.exposeInMainWorld("electronAPI", {
     fileName: string,
   ): Promise<string | null> =>
     ipcRenderer.invoke("read-task-artifact", repoPath, taskId, fileName),
+  appendToArtifact: (
+    repoPath: string,
+    taskId: string,
+    fileName: string,
+    content: string,
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "append-to-artifact",
+      repoPath,
+      taskId,
+      fileName,
+      content,
+    ),
+  saveQuestionAnswers: (
+    repoPath: string,
+    taskId: string,
+    answers: Array<{
+      questionId: string;
+      selectedOption: string;
+      customInput?: string;
+    }>,
+  ): Promise<void> =>
+    ipcRenderer.invoke("save-question-answers", repoPath, taskId, answers),
   onOpenSettings: (listener: () => void): (() => void) => {
     const wrapped = () => listener();
     ipcRenderer.on("open-settings", wrapped);

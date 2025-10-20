@@ -134,7 +134,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       return;
     }
 
-    if (!data.title.trim() || !data.description.trim() || !data.workflow) {
+    if (!data.title.trim() || !data.description.trim()) {
       return;
     }
 
@@ -147,7 +147,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
         title: data.title,
         description: data.description,
         repositoryConfig,
-        workflow: data.workflow,
+        workflow: data.workflow || "",
       },
       {
         onSuccess: (newTask) => {
@@ -407,14 +407,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                 </Callout.Root>
               )}
 
-              {workflows.length === 0 && (
-                <Callout.Root color="orange" size="1">
-                  <Callout.Text>
-                    No workflows available - please create a workflow first
-                  </Callout.Text>
-                </Callout.Root>
-              )}
-
               <Flex gap="3" justify="end" align="end">
                 <Text as="label" size="1" style={{ cursor: "pointer" }}>
                   <Flex gap="2" align="center" mb="2">
@@ -431,9 +423,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                 <Button
                   type="submit"
                   variant="classic"
-                  disabled={
-                    isLoading || !isAuthenticated || workflows.length === 0
-                  }
+                  disabled={isLoading || !isAuthenticated}
                 >
                   {isLoading ? "Creating..." : "Create task"}
                 </Button>
