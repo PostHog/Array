@@ -2,23 +2,16 @@
   "name": "array",
   "version": "0.1.0",
   "description": "Array - PostHog desktop task manager",
-  "main": "dist/main/index.js",
+  "main": ".vite/build/index.js",
   "engines": {
     "node": ">=22.0.0",
     "pnpm": ">=9.0.0"
   },
   "packageManager": "pnpm@10.14.0",
   "scripts": {
-    "dev": "mprocs",
-    "dev:vite": "vite",
-    "dev:node": "cp src/main/package.json dist/main/package.json && tsc -p tsconfig.node.json --watch",
-    "dev:preload": "tsc -p tsconfig.preload.json --watch",
-    "dev:electron": "wait-on tcp:5173 && wait-on dist/main/index.js && electron . --dev",
-    "build": "pnpm run build:node && pnpm run build:vite && pnpm run build:electron",
-    "build:node": "tsc -p tsconfig.node.json && tsc -p tsconfig.preload.json && cp src/main/package.json dist/main/package.json",
-    "build:vite": "vite build",
-    "build:electron": "electron-builder",
-    "preview": "vite preview",
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "pnpm exec electron-forge make",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "lint": "biome check --write --unsafe",
     "format": "biome format --write",
@@ -36,6 +29,13 @@
   "license": "MIT",
   "devDependencies": {
     "@biomejs/biome": "2.2.4",
+    "@electron-forge/cli": "^7.10.2",
+    "@electron-forge/maker-deb": "^7.10.2",
+    "@electron-forge/maker-dmg": "^7.10.2",
+    "@electron-forge/maker-squirrel": "^7.10.2",
+    "@electron-forge/maker-zip": "^7.10.2",
+    "@electron-forge/plugin-vite": "^7.10.2",
+    "@electron-forge/shared-types": "^7.10.2",
     "@types/node": "^20.11.5",
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
@@ -45,7 +45,6 @@
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
     "electron": "^28.2.0",
-    "electron-builder": "^24.9.1",
     "eslint": "^8.56.0",
     "eslint-plugin-react": "^7.33.2",
     "eslint-plugin-react-hooks": "^4.6.0",
@@ -98,24 +97,5 @@
       "biome check --write --unsafe --files-ignore-unknown=true --no-errors-on-unmatched",
       "bash -c 'pnpm typecheck'"
     ]
-  },
-  "build": {
-    "appId": "com.posthog.array",
-    "productName": "Array",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*"
-    ],
-    "mac": {
-      "category": "public.app-category.developer-tools"
-    },
-    "linux": {
-      "target": "AppImage"
-    },
-    "win": {
-      "target": "nsis"
-    }
   }
 }
