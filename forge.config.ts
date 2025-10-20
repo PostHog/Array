@@ -7,6 +7,7 @@ const config: ForgeConfig = {
     asar: true,
     name: "Array",
     executableName: "Array",
+    icon: "./build/app-icon", // Forge adds .icns/.ico/.png based on platform
   },
   rebuildConfig: {},
   makers: [new MakerZIP({}, ["darwin", "linux", "win32"])],
