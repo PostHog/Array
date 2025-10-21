@@ -22,6 +22,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
 import { useCreateTask } from "../hooks/useTasks";
 import { useAuthStore } from "../stores/authStore";
+import { useFolderPickerStore } from "../stores/folderPickerStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
 import {
@@ -45,6 +46,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const { client, isAuthenticated } = useAuthStore();
   const { setRepoPath: saveRepoPath, setRepoWorkingDir } =
     useTaskExecutionStore();
+  const { lastSelectedFolder, setLastSelectedFolder } = useFolderPickerStore();
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [createMore, setCreateMore] = useState(false);
@@ -63,7 +65,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       title: "",
       description: "",
       repository: "",
-      folderPath: "",
+      folderPath: lastSelectedFolder || "",
     },
   });
 
@@ -135,6 +137,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
           // Save the local working directory to the task execution store
           if (data.folderPath && data.folderPath.trim().length > 0) {
             saveRepoPath(newTask.id, data.folderPath);
+            setLastSelectedFolder(data.folderPath);
 
             // Also save the mapping for GitHub repos to reuse later
             if (repositoryConfig) {
