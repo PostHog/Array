@@ -19,7 +19,7 @@ const createProgressSignature = (progress: TaskRun): string =>
     progress.updated_at ?? "",
   ].join("|");
 
-interface TaskExecutionState {
+export interface TaskExecutionState {
   isRunning: boolean;
   logs: AgentEvent[];
   repoPath: string | null;
