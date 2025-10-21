@@ -1,4 +1,6 @@
 import { defineConfig, type Plugin } from "vite";
+import { copyFileSync, mkdirSync } from "fs";
+import { join } from "path";
 
 /**
  * Custom Vite plugin to fix circular __filename references in bundled ESM packages.
@@ -29,8 +31,25 @@ function fixFilenameCircularRef(): Plugin {
   };
 }
 
+/**
+ * Copy agent templates to the build directory
+ */
+function copyAgentTemplates(): Plugin {
+  return {
+    name: "copy-agent-templates",
+    writeBundle() {
+      const templateSrc = join(__dirname, "node_modules/@posthog/agent/dist/templates/plan-template.md");
+      const templateDest = join(__dirname, ".vite/build/templates/plan-template.md");
+
+      mkdirSync(join(__dirname, ".vite/build/templates"), { recursive: true });
+      copyFileSync(templateSrc, templateDest);
+      console.log("Copied agent templates to build directory");
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [fixFilenameCircularRef()],
+  plugins: [fixFilenameCircularRef(), copyAgentTemplates()],
   build: {
     target: "node18",
     minify: false, // Disable minification to prevent variable name conflicts

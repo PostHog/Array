@@ -14,7 +14,7 @@ import { UserMessageView } from "./UserMessageView";
 
 const EVENT_COMPONENT_MAP: Record<
   string,
-  React.ComponentType<{ event: any; workflow?: any }>
+  React.ComponentType<{ event: any }>
 > = {
   token: TokenView,
   text: TokenView, // Legacy: treat "text" events like "token" events
@@ -45,7 +45,6 @@ interface LogEventRendererProps {
   toolResult?: Extract<AgentEvent, { type: "tool_result" }>;
   onJumpToRaw?: (index: number) => void;
   forceExpanded?: boolean;
-  workflow?: { stages: Array<{ id: string; name: string }> } | null;
 }
 
 export function LogEventRenderer({
@@ -54,7 +53,6 @@ export function LogEventRenderer({
   toolResult,
   onJumpToRaw,
   forceExpanded = false,
-  workflow,
 }: LogEventRendererProps) {
   // Handle malformed events (e.g., double-stringified)
   if (typeof event === "string") {
@@ -81,7 +79,7 @@ export function LogEventRenderer({
     const Component = EVENT_COMPONENT_MAP[event.type];
 
     if (Component) {
-      content = <Component key={key} event={event} workflow={workflow} />;
+      content = <Component key={key} event={event} />;
       // Components handle their own timestamp wrapping, and return null if they shouldn't render
       if (content === null) {
         return null;

@@ -31,14 +31,13 @@ export interface IElectronAPI {
   ) => Promise<Array<{ path: string; name: string }>>;
   agentStart: (params: {
     taskId: string;
-    workflowId?: string;
     repoPath: string;
     apiKey: string;
     apiHost: string;
     permissionMode?: string;
     autoProgress?: boolean;
     model?: string;
-    executionMode?: "plan" | "workflow";
+    executionMode?: "plan";
     runMode?: "local" | "cloud";
   }) => Promise<{ taskId: string; channel: string }>;
   agentCancel: (taskId: string) => Promise<boolean>;

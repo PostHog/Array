@@ -13,13 +13,14 @@ interface MessageBoxOptions {
 
 interface AgentStartParams {
   taskId: string;
-  workflowId: string;
   repoPath: string;
   apiKey: string;
   apiHost: string;
   permissionMode?: string;
   autoProgress?: boolean;
   model?: string;
+  executionMode?: "plan";
+  runMode?: "local" | "cloud";
 }
 
 contextBridge.exposeInMainWorld("electronAPI", {

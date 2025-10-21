@@ -12,8 +12,6 @@ import { TabBar } from "./TabBar";
 import { TaskCreate } from "./TaskCreate";
 import { TaskDetail } from "./TaskDetail";
 import { TaskList } from "./TaskList";
-import { WorkflowForm } from "./WorkflowForm";
-import { WorkflowView } from "./WorkflowView";
 
 export function MainLayout() {
   const { activeTabId, tabs, createTab, setActiveTab, closeTab } =
@@ -21,7 +19,6 @@ export function MainLayout() {
   useIntegrations();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [taskCreateOpen, setTaskCreateOpen] = useState(false);
-  const [workflowCreateOpen, setWorkflowCreateOpen] = useState(false);
 
   const handleOpenSettings = useCallback(() => {
     const existingTab = tabs.find((tab) => tab.type === "settings");
@@ -50,7 +47,6 @@ export function MainLayout() {
     enabled: !commandMenuOpen,
   });
   useHotkeys("mod+n", () => setTaskCreateOpen(true));
-  useHotkeys("mod+shift+n", () => setWorkflowCreateOpen(true));
   useHotkeys("mod+,", () => handleOpenSettings());
 
   useEffect(() => {
@@ -95,17 +91,12 @@ export function MainLayout() {
           <TaskList
             onSelectTask={handleSelectTask}
             onNewTask={() => setTaskCreateOpen(true)}
-            onNewWorkflow={() => setWorkflowCreateOpen(true)}
           />
         )}
 
         {activeTab?.type === "task-detail" && activeTab.data ? (
           <TaskDetail task={activeTab.data as Task} />
         ) : null}
-
-        {activeTab?.type === "workflow" && (
-          <WorkflowView onSelectTask={handleSelectTask} />
-        )}
 
         {activeTab?.type === "settings" && <SettingsView />}
 
@@ -120,10 +111,6 @@ export function MainLayout() {
         onCreateTask={() => setTaskCreateOpen(true)}
       />
       <TaskCreate open={taskCreateOpen} onOpenChange={setTaskCreateOpen} />
-      <WorkflowForm
-        open={workflowCreateOpen}
-        onOpenChange={setWorkflowCreateOpen}
-      />
     </Flex>
   );
 }

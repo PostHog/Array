@@ -4035,6 +4035,9 @@ export namespace Schemas {
     tags: QueryLogTags | null;
     version: number | null;
   }>;
+  export type IntegrationFilter = Partial<{
+    integrationSourceIds: Array<string> | null;
+  }>;
   export type MarketingAnalyticsOrderByEnum = "ASC" | "DESC";
   export type MarketingAnalyticsTableQueryResponse = {
     columns?: (Array<unknown> | null) | undefined;
@@ -4069,6 +4072,7 @@ export namespace Schemas {
     filterTestAccounts?: (boolean | null) | undefined;
     includeAllConversions?: (boolean | null) | undefined;
     includeRevenue?: (boolean | null) | undefined;
+    integrationFilter?: (IntegrationFilter | null) | undefined;
     kind?: string | undefined;
     limit?: (number | null) | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
@@ -4113,6 +4117,7 @@ export namespace Schemas {
       | undefined;
     filterTestAccounts?: (boolean | null) | undefined;
     includeRevenue?: (boolean | null) | undefined;
+    integrationFilter?: (IntegrationFilter | null) | undefined;
     kind?: string | undefined;
     modifiers?: (HogQLQueryModifiers | null) | undefined;
     properties: Array<
@@ -7466,13 +7471,11 @@ export namespace Schemas {
     origin_product: OriginProductEnum;
     position?: number | undefined;
     workflow?: (string | null) | undefined;
-    current_stage?: (string | null) | undefined;
     github_integration?: (number | null) | undefined;
     repository_config?: unknown | undefined;
     repository_list: string;
     primary_repository: string;
-    github_branch: string | null;
-    github_pr_url: string | null;
+    latest_run: string;
     created_at: string;
     updated_at: string;
   };
@@ -7482,33 +7485,30 @@ export namespace Schemas {
     previous?: (string | null) | undefined;
     results: Array<Task>;
   };
-  export type TaskProgressDetailStatusEnum =
+  export type TaskRunDetailStatusEnum =
     | "started"
     | "in_progress"
     | "completed"
     | "failed";
-  export type TaskProgressDetail = {
+  export type TaskRunDetail = {
     id: string;
     task: string;
-    status?: TaskProgressDetailStatusEnum | undefined;
-    current_step?: string | undefined;
-    completed_steps?: number | undefined;
-    total_steps?: number | undefined;
-    progress_percentage: string;
-    output_log?: string | undefined;
-    error_message?: string | undefined;
-    workflow_id?: string | undefined;
-    workflow_run_id?: string | undefined;
-    activity_id?: string | undefined;
+    current_stage?: (string | null) | undefined;
+    branch?: (string | null) | undefined;
+    status?: TaskRunDetailStatusEnum | undefined;
+    log?: unknown | undefined;
+    error_message?: (string | null) | undefined;
+    output?: (unknown | null) | undefined;
+    state?: unknown | undefined;
     created_at: string;
     updated_at: string;
     completed_at: string | null;
   };
-  export type PaginatedTaskProgressDetailList = {
+  export type PaginatedTaskRunDetailList = {
     count: number;
     next?: (string | null) | undefined;
     previous?: (string | null) | undefined;
-    results: Array<TaskProgressDetail>;
+    results: Array<TaskRunDetail>;
   };
   export type WorkflowStage = {
     id: string;
@@ -8359,29 +8359,24 @@ export namespace Schemas {
     origin_product: OriginProductEnum;
     position: number;
     workflow: string | null;
-    current_stage: string | null;
     github_integration: number | null;
     repository_config: unknown;
     repository_list: string;
     primary_repository: string;
-    github_branch: string | null;
-    github_pr_url: string | null;
+    latest_run: string;
     created_at: string;
     updated_at: string;
   }>;
-  export type PatchedTaskProgressDetail = Partial<{
+  export type PatchedTaskRunDetail = Partial<{
     id: string;
     task: string;
-    status: TaskProgressDetailStatusEnum;
-    current_step: string;
-    completed_steps: number;
-    total_steps: number;
-    progress_percentage: string;
-    output_log: string;
-    error_message: string;
-    workflow_id: string;
-    workflow_run_id: string;
-    activity_id: string;
+    current_stage: string | null;
+    branch: string | null;
+    status: TaskRunDetailStatusEnum;
+    log: unknown;
+    error_message: string | null;
+    output: unknown | null;
+    state: unknown;
     created_at: string;
     updated_at: string;
     completed_at: string | null;
@@ -8498,6 +8493,7 @@ export namespace Schemas {
     group_types: Array<Record<string, unknown>>;
     live_events_token: string | null;
     product_intents: string;
+    managed_viewsets: string;
   }>;
   export type PatchedUser = Partial<{
     date_joined: string;
@@ -9767,11 +9763,6 @@ export namespace Schemas {
     password_required?: boolean | undefined;
     share_passwords: string;
   };
-  export type Status219Enum =
-    | "started"
-    | "in_progress"
-    | "completed"
-    | "failed";
   export type SurveySerializerCreateUpdateOnly = {
     id: string;
     name: string;
@@ -9809,55 +9800,13 @@ export namespace Schemas {
     enable_partial_responses?: (boolean | null) | undefined;
     _create_in_folder?: string | undefined;
   };
-  export type TaskAttachPullRequestRequest = {
-    pr_url: string;
-    branch?: string | undefined;
+  export type TaskRunAppendLogRequest = {
+    entries: Array<Record<string, unknown>>;
   };
-  export type TaskBulkReorderRequest = {
-    columns: Record<string, Array<string>>;
-  };
-  export type TaskBulkReorderResponse = {
-    updated: number;
-    tasks: Array<Record<string, unknown>>;
-  };
-  export type TaskProgressResponse = {
-    has_progress: boolean;
-    id?: string | undefined;
-    status?: Status219Enum | undefined;
-    current_step?: string | undefined;
-    completed_steps?: number | undefined;
-    total_steps?: number | undefined;
-    progress_percentage?: number | undefined;
-    output_log?: string | undefined;
-    error_message?: string | undefined;
-    created_at?: string | undefined;
-    updated_at?: string | undefined;
-    completed_at?: string | undefined;
-    workflow_id?: string | undefined;
-    workflow_run_id?: string | undefined;
-    message?: string | undefined;
-  };
-  export type TaskProgressUpdate = {
-    id: string;
-    status: Status219Enum;
-    current_step: string;
-    completed_steps: number;
-    total_steps: number;
-    progress_percentage: number;
-    output_log: string;
-    error_message: string;
-    updated_at: string;
-    workflow_id: string;
-  };
-  export type TaskProgressStreamResponse = {
-    progress_updates: Array<TaskProgressUpdate>;
-    server_time: string;
-  };
-  export type TaskProgressTaskRequest = Partial<{
+  export type TaskRunProgressRequest = Partial<{
     next_stage_id: string;
     auto: boolean;
   }>;
-  export type TaskSetBranchRequest = { branch: string };
   export type Team = {
     id: number;
     uuid: string;
@@ -9951,6 +9900,7 @@ export namespace Schemas {
     group_types: Array<Record<string, unknown>>;
     live_events_token: string | null;
     product_intents: string;
+    managed_viewsets: string;
   };
   export type WebAnalyticsBreakdownResponse = {
     next?: (string | null) | undefined;
@@ -13156,64 +13106,12 @@ export namespace Endpoints {
     };
     responses: { 204: unknown };
   };
-  export type post_Tasks_attach_pr_create = {
-    method: "POST";
-    path: "/api/projects/{project_id}/tasks/{id}/attach_pr/";
-    requestFormat: "json";
-    parameters: {
-      path: { id: string; project_id: string };
-
-      body: Schemas.TaskAttachPullRequestRequest;
-    };
-    responses: { 200: Schemas.Task; 400: Schemas.ErrorResponse; 404: unknown };
-  };
-  export type get_Tasks_progress_retrieve = {
-    method: "GET";
-    path: "/api/projects/{project_id}/tasks/{id}/progress/";
-    requestFormat: "json";
-    parameters: {
-      path: { id: string; project_id: string };
-    };
-    responses: { 200: Schemas.TaskProgressResponse; 404: unknown };
-  };
-  export type get_Tasks_progress_stream_retrieve = {
-    method: "GET";
-    path: "/api/projects/{project_id}/tasks/{id}/progress_stream/";
-    requestFormat: "json";
-    parameters: {
-      query: Partial<{ since: string }>;
-      path: { id: string; project_id: string };
-    };
-    responses: { 200: Schemas.TaskProgressStreamResponse; 404: unknown };
-  };
-  export type post_Tasks_progress_task_create = {
-    method: "POST";
-    path: "/api/projects/{project_id}/tasks/{id}/progress_task/";
-    requestFormat: "json";
-    parameters: {
-      path: { id: string; project_id: string };
-
-      body: Schemas.TaskProgressTaskRequest;
-    };
-    responses: { 200: Schemas.Task; 400: Schemas.ErrorResponse; 404: unknown };
-  };
   export type post_Tasks_run_create = {
     method: "POST";
     path: "/api/projects/{project_id}/tasks/{id}/run/";
     requestFormat: "json";
     parameters: {
       path: { id: string; project_id: string };
-    };
-    responses: { 200: Schemas.Task; 400: Schemas.ErrorResponse; 404: unknown };
-  };
-  export type post_Tasks_set_branch_create = {
-    method: "POST";
-    path: "/api/projects/{project_id}/tasks/{id}/set_branch/";
-    requestFormat: "json";
-    parameters: {
-      path: { id: string; project_id: string };
-
-      body: Schemas.TaskSetBranchRequest;
     };
     responses: { 200: Schemas.Task; 400: Schemas.ErrorResponse; 404: unknown };
   };
@@ -13228,192 +13126,100 @@ export namespace Endpoints {
     };
     responses: { 200: Schemas.Task; 400: Schemas.ErrorResponse; 404: unknown };
   };
-  export type patch_Tasks_update_stage_partial_update = {
-    method: "PATCH";
-    path: "/api/projects/{project_id}/tasks/{id}/update_stage/";
-    requestFormat: "json";
-    parameters: {
-      path: { id: string; project_id: string };
-
-      body: Schemas.PatchedTaskUpdateStageRequest;
-    };
-    responses: { 200: Schemas.Task; 400: Schemas.ErrorResponse; 404: unknown };
-  };
-  export type post_Tasks_bulk_reorder_create = {
-    method: "POST";
-    path: "/api/projects/{project_id}/tasks/bulk_reorder/";
-    requestFormat: "json";
-    parameters: {
-      path: { project_id: string };
-
-      body: Schemas.TaskBulkReorderRequest;
-    };
-    responses: {
-      200: Schemas.TaskBulkReorderResponse;
-      400: Schemas.ErrorResponse;
-    };
-  };
-  export type get_Workflows_list = {
+  export type get_Tasks_runs_list = {
     method: "GET";
-    path: "/api/projects/{project_id}/workflows/";
+    path: "/api/projects/{project_id}/tasks/{task_id}/runs/";
     requestFormat: "json";
     parameters: {
       query: Partial<{ limit: number; offset: number }>;
-      path: { project_id: string };
+      path: { project_id: string; task_id: string };
     };
-    responses: { 200: Schemas.PaginatedTaskWorkflowList };
+    responses: { 200: Schemas.PaginatedTaskRunDetailList };
   };
-  export type post_Workflows_create = {
+  export type post_Tasks_runs_create = {
     method: "POST";
-    path: "/api/projects/{project_id}/workflows/";
+    path: "/api/projects/{project_id}/tasks/{task_id}/runs/";
     requestFormat: "json";
     parameters: {
-      path: { project_id: string };
+      path: { project_id: string; task_id: string };
 
-      body: Schemas.TaskWorkflow;
+      body: Schemas.TaskRunDetail;
     };
-    responses: { 201: Schemas.TaskWorkflow };
+    responses: { 201: Schemas.TaskRunDetail };
   };
-  export type get_Workflows_retrieve = {
+  export type get_Tasks_runs_retrieve = {
     method: "GET";
-    path: "/api/projects/{project_id}/workflows/{id}/";
+    path: "/api/projects/{project_id}/tasks/{task_id}/runs/{id}/";
     requestFormat: "json";
     parameters: {
-      path: { id: string; project_id: string };
+      path: { id: string; project_id: string; task_id: string };
     };
-    responses: { 200: Schemas.TaskWorkflow };
+    responses: { 200: Schemas.TaskRunDetail };
   };
-  export type put_Workflows_update = {
-    method: "PUT";
-    path: "/api/projects/{project_id}/workflows/{id}/";
-    requestFormat: "json";
-    parameters: {
-      path: { id: string; project_id: string };
-
-      body: Schemas.TaskWorkflow;
-    };
-    responses: { 200: Schemas.TaskWorkflow };
-  };
-  export type patch_Workflows_partial_update = {
+  export type patch_Tasks_runs_partial_update = {
     method: "PATCH";
-    path: "/api/projects/{project_id}/workflows/{id}/";
+    path: "/api/projects/{project_id}/tasks/{task_id}/runs/{id}/";
     requestFormat: "json";
     parameters: {
-      path: { id: string; project_id: string };
+      path: { id: string; project_id: string; task_id: string };
 
-      body: Schemas.PatchedTaskWorkflow;
+      body: Schemas.PatchedTaskRunDetail;
     };
-    responses: { 200: Schemas.TaskWorkflow };
+    responses: { 200: Schemas.TaskRunDetail };
   };
-  export type delete_Workflows_destroy = {
-    method: "DELETE";
-    path: "/api/projects/{project_id}/workflows/{id}/";
-    requestFormat: "json";
-    parameters: {
-      path: { id: string; project_id: string };
-    };
-    responses: { 204: unknown };
-  };
-  export type post_Workflows_deactivate_create = {
+  export type post_Tasks_runs_append_log_create = {
     method: "POST";
-    path: "/api/projects/{project_id}/workflows/{id}/deactivate/";
+    path: "/api/projects/{project_id}/tasks/{task_id}/runs/{id}/append_log/";
     requestFormat: "json";
     parameters: {
-      path: { id: string; project_id: string };
+      path: { id: string; project_id: string; task_id: string };
+
+      body: Schemas.TaskRunAppendLogRequest;
     };
     responses: {
-      200: Schemas.WorkflowDeactivateResponse;
+      200: Schemas.TaskRunDetail;
       400: Schemas.ErrorResponse;
       404: unknown;
     };
   };
-  export type post_Workflows_set_default_create = {
+  export type post_Tasks_runs_progress_run_create = {
     method: "POST";
-    path: "/api/projects/{project_id}/workflows/{id}/set_default/";
+    path: "/api/projects/{project_id}/tasks/{task_id}/runs/{id}/progress_run/";
     requestFormat: "json";
     parameters: {
-      path: { id: string; project_id: string };
-    };
-    responses: { 200: Schemas.TaskWorkflow; 404: unknown };
-  };
-  export type get_Workflows_stages_list = {
-    method: "GET";
-    path: "/api/projects/{project_id}/workflows/{workflow_id}/stages/";
-    requestFormat: "json";
-    parameters: {
-      query: Partial<{ limit: number; offset: number }>;
-      path: { project_id: string; workflow_id: string };
-    };
-    responses: { 200: Schemas.PaginatedWorkflowStageList };
-  };
-  export type post_Workflows_stages_create = {
-    method: "POST";
-    path: "/api/projects/{project_id}/workflows/{workflow_id}/stages/";
-    requestFormat: "json";
-    parameters: {
-      path: { project_id: string; workflow_id: string };
+      path: { id: string; project_id: string; task_id: string };
 
-      body: Schemas.WorkflowStage;
+      body: Schemas.TaskRunProgressRequest;
     };
-    responses: { 201: Schemas.WorkflowStage };
-  };
-  export type get_Workflows_stages_retrieve = {
-    method: "GET";
-    path: "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/";
-    requestFormat: "json";
-    parameters: {
-      path: { id: string; project_id: string; workflow_id: string };
+    responses: {
+      200: Schemas.TaskRunDetail;
+      400: Schemas.ErrorResponse;
+      404: unknown;
     };
-    responses: { 200: Schemas.WorkflowStage };
   };
-  export type put_Workflows_stages_update = {
-    method: "PUT";
-    path: "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/";
-    requestFormat: "json";
-    parameters: {
-      path: { id: string; project_id: string; workflow_id: string };
-
-      body: Schemas.WorkflowStage;
-    };
-    responses: { 200: Schemas.WorkflowStage };
-  };
-  export type patch_Workflows_stages_partial_update = {
+  export type patch_Tasks_runs_set_output_partial_update = {
     method: "PATCH";
-    path: "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/";
+    path: "/api/projects/{project_id}/tasks/{task_id}/runs/{id}/set_output/";
     requestFormat: "json";
     parameters: {
-      path: { id: string; project_id: string; workflow_id: string };
+      path: { id: string; project_id: string; task_id: string };
+    };
+    responses: { 200: Schemas.TaskRunDetail; 404: unknown };
+  };
+  export type patch_Tasks_runs_update_stage_partial_update = {
+    method: "PATCH";
+    path: "/api/projects/{project_id}/tasks/{task_id}/runs/{id}/update_stage/";
+    requestFormat: "json";
+    parameters: {
+      path: { id: string; project_id: string; task_id: string };
 
-      body: Schemas.PatchedWorkflowStage;
+      body: Schemas.PatchedTaskUpdateStageRequest;
     };
-    responses: { 200: Schemas.WorkflowStage };
-  };
-  export type delete_Workflows_stages_destroy = {
-    method: "DELETE";
-    path: "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/";
-    requestFormat: "json";
-    parameters: {
-      path: { id: string; project_id: string; workflow_id: string };
+    responses: {
+      200: Schemas.TaskRunDetail;
+      400: Schemas.ErrorResponse;
+      404: unknown;
     };
-    responses: { 204: unknown };
-  };
-  export type post_Workflows_stages_archive_create = {
-    method: "POST";
-    path: "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/archive/";
-    requestFormat: "json";
-    parameters: {
-      path: { id: string; project_id: string; workflow_id: string };
-    };
-    responses: { 200: Schemas.WorkflowStageArchiveResponse; 404: unknown };
-  };
-  export type post_Workflows_create_default_create = {
-    method: "POST";
-    path: "/api/projects/{project_id}/workflows/create_default/";
-    requestFormat: "json";
-    parameters: {
-      path: { project_id: string };
-    };
-    responses: { 200: Schemas.TaskWorkflow; 400: Schemas.ErrorResponse };
   };
   export type get_Users_list = {
     method: "GET";
@@ -13731,12 +13537,8 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/web_vitals/": Endpoints.get_Environments_web_vitals_retrieve;
     "/api/projects/{project_id}/tasks/": Endpoints.get_Tasks_list;
     "/api/projects/{project_id}/tasks/{id}/": Endpoints.get_Tasks_retrieve;
-    "/api/projects/{project_id}/tasks/{id}/progress/": Endpoints.get_Tasks_progress_retrieve;
-    "/api/projects/{project_id}/tasks/{id}/progress_stream/": Endpoints.get_Tasks_progress_stream_retrieve;
-    "/api/projects/{project_id}/workflows/": Endpoints.get_Workflows_list;
-    "/api/projects/{project_id}/workflows/{id}/": Endpoints.get_Workflows_retrieve;
-    "/api/projects/{project_id}/workflows/{workflow_id}/stages/": Endpoints.get_Workflows_stages_list;
-    "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/": Endpoints.get_Workflows_stages_retrieve;
+    "/api/projects/{project_id}/tasks/{task_id}/runs/": Endpoints.get_Tasks_runs_list;
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{id}/": Endpoints.get_Tasks_runs_retrieve;
     "/api/users/": Endpoints.get_Users_list;
     "/api/users/{uuid}/": Endpoints.get_Users_retrieve;
     "/api/users/{uuid}/hedgehog_config/": Endpoints.get_Users_hedgehog_config_retrieve;
@@ -13831,17 +13633,10 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/warehouse_tables/{id}/update_schema/": Endpoints.post_Environments_warehouse_tables_update_schema_create;
     "/api/environments/{project_id}/warehouse_tables/file/": Endpoints.post_Environments_warehouse_tables_file_create;
     "/api/projects/{project_id}/tasks/": Endpoints.post_Tasks_create;
-    "/api/projects/{project_id}/tasks/{id}/attach_pr/": Endpoints.post_Tasks_attach_pr_create;
-    "/api/projects/{project_id}/tasks/{id}/progress_task/": Endpoints.post_Tasks_progress_task_create;
     "/api/projects/{project_id}/tasks/{id}/run/": Endpoints.post_Tasks_run_create;
-    "/api/projects/{project_id}/tasks/{id}/set_branch/": Endpoints.post_Tasks_set_branch_create;
-    "/api/projects/{project_id}/tasks/bulk_reorder/": Endpoints.post_Tasks_bulk_reorder_create;
-    "/api/projects/{project_id}/workflows/": Endpoints.post_Workflows_create;
-    "/api/projects/{project_id}/workflows/{id}/deactivate/": Endpoints.post_Workflows_deactivate_create;
-    "/api/projects/{project_id}/workflows/{id}/set_default/": Endpoints.post_Workflows_set_default_create;
-    "/api/projects/{project_id}/workflows/{workflow_id}/stages/": Endpoints.post_Workflows_stages_create;
-    "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/archive/": Endpoints.post_Workflows_stages_archive_create;
-    "/api/projects/{project_id}/workflows/create_default/": Endpoints.post_Workflows_create_default_create;
+    "/api/projects/{project_id}/tasks/{task_id}/runs/": Endpoints.post_Tasks_runs_create;
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{id}/append_log/": Endpoints.post_Tasks_runs_append_log_create;
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{id}/progress_run/": Endpoints.post_Tasks_runs_progress_run_create;
     "/api/users/{uuid}/scene_personalisation/": Endpoints.post_Users_scene_personalisation_create;
     "/api/users/{uuid}/two_factor_backup_codes/": Endpoints.post_Users_two_factor_backup_codes_create;
     "/api/users/{uuid}/two_factor_disable/": Endpoints.post_Users_two_factor_disable_create;
@@ -13877,8 +13672,6 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/warehouse_saved_queries/{id}/": Endpoints.put_Environments_warehouse_saved_queries_update;
     "/api/environments/{project_id}/warehouse_tables/{id}/": Endpoints.put_Environments_warehouse_tables_update;
     "/api/projects/{project_id}/tasks/{id}/": Endpoints.put_Tasks_update;
-    "/api/projects/{project_id}/workflows/{id}/": Endpoints.put_Workflows_update;
-    "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/": Endpoints.put_Workflows_stages_update;
     "/api/users/{uuid}/": Endpoints.put_Users_update;
   };
   patch: {
@@ -13913,9 +13706,9 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/warehouse_tables/{id}/": Endpoints.patch_Environments_warehouse_tables_partial_update;
     "/api/projects/{project_id}/tasks/{id}/": Endpoints.patch_Tasks_partial_update;
     "/api/projects/{project_id}/tasks/{id}/update_position/": Endpoints.patch_Tasks_update_position_partial_update;
-    "/api/projects/{project_id}/tasks/{id}/update_stage/": Endpoints.patch_Tasks_update_stage_partial_update;
-    "/api/projects/{project_id}/workflows/{id}/": Endpoints.patch_Workflows_partial_update;
-    "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/": Endpoints.patch_Workflows_stages_partial_update;
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{id}/": Endpoints.patch_Tasks_runs_partial_update;
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{id}/set_output/": Endpoints.patch_Tasks_runs_set_output_partial_update;
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{id}/update_stage/": Endpoints.patch_Tasks_runs_update_stage_partial_update;
     "/api/users/{uuid}/": Endpoints.patch_Users_partial_update;
     "/api/users/{uuid}/hedgehog_config/": Endpoints.patch_Users_hedgehog_config_partial_update;
     "/api/users/cancel_email_change_request/": Endpoints.patch_Users_cancel_email_change_request_partial_update;
@@ -13954,8 +13747,6 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/warehouse_saved_queries/{id}/": Endpoints.delete_Environments_warehouse_saved_queries_destroy;
     "/api/environments/{project_id}/warehouse_tables/{id}/": Endpoints.delete_Environments_warehouse_tables_destroy;
     "/api/projects/{project_id}/tasks/{id}/": Endpoints.delete_Tasks_destroy;
-    "/api/projects/{project_id}/workflows/{id}/": Endpoints.delete_Workflows_destroy;
-    "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/": Endpoints.delete_Workflows_stages_destroy;
     "/api/users/{uuid}/": Endpoints.delete_Users_destroy;
   };
 };

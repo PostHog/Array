@@ -1,4 +1,4 @@
-import { DiamondIcon, GithubLogoIcon } from "@phosphor-icons/react";
+import { GithubLogoIcon } from "@phosphor-icons/react";
 import {
   Cross2Icon,
   EnterFullScreenIcon,
@@ -16,12 +16,11 @@ import {
   Text,
   TextArea,
 } from "@radix-ui/themes";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
 import { useCreateTask } from "../hooks/useTasks";
-import { useWorkflows } from "../hooks/useWorkflows";
 import { useAuthStore } from "../stores/authStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
@@ -43,7 +42,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const { mutate: createTask, isPending: isLoading, error } = useCreateTask();
   const { createTab } = useTabStore();
   const { repositories, isRepoInIntegration } = useRepositoryIntegration();
-  const { data: workflows = [] } = useWorkflows();
   const { client, isAuthenticated } = useAuthStore();
   const { setRepoPath: saveRepoPath, setRepoWorkingDir } =
     useTaskExecutionStore();
@@ -51,20 +49,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [createMore, setCreateMore] = useState(false);
   const [repoWarning, setRepoWarning] = useState<string | null>(null);
-
-  const defaultWorkflow = useMemo(
-    () => workflows.find((w) => w.is_active && w.is_default) || workflows[0],
-    [workflows],
-  );
-
-  const workflowOptions = useMemo(
-    () =>
-      workflows.map((workflow) => ({
-        value: workflow.id,
-        label: workflow.name,
-      })),
-    [workflows],
-  );
 
   const {
     register,
@@ -79,7 +63,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       title: "",
       description: "",
       repository: "",
-      workflow: defaultWorkflow?.id || "",
       folderPath: "",
     },
   });
@@ -127,7 +110,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     title: string;
     description: string;
     repository: string;
-    workflow: string;
     folderPath: string;
   }) => {
     if (!isAuthenticated || !client) {
@@ -147,7 +129,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
         title: data.title,
         description: data.description,
         repositoryConfig,
-        workflow: data.workflow || "",
       },
       {
         onSuccess: (newTask) => {
@@ -303,33 +284,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                   </DataList.Value>
                 </DataList.Item>
 
-                {workflowOptions.length > 0 && (
-                  <DataList.Item>
-                    <DataList.Label>Workflow</DataList.Label>
-                    <DataList.Value>
-                      <Controller
-                        name="workflow"
-                        control={control}
-                        rules={{ required: true }}
-                        render={({ field }) => (
-                          <Combobox
-                            items={workflowOptions}
-                            value={field.value}
-                            onValueChange={field.onChange}
-                            placeholder="Select a workflow..."
-                            searchPlaceholder="Search workflows..."
-                            emptyMessage="No workflows found"
-                            size="1"
-                            variant="outline"
-                            icon={<DiamondIcon />}
-                            side="top"
-                          />
-                        )}
-                      />
-                    </DataList.Value>
-                  </DataList.Item>
-                )}
-
                 {repositories.length > 0 && (
                   <DataList.Item>
                     <DataList.Label>Repository</DataList.Label>
@@ -376,15 +330,11 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
               )}
 
               {isSubmitted &&
-                (errors.title ||
-                  errors.description ||
-                  errors.workflow ||
-                  errors.folderPath) && (
+                (errors.title || errors.description || errors.folderPath) && (
                   <Callout.Root color="red" size="1">
                     <Callout.Text>
                       {errors.title && "Title is required. "}
                       {errors.description && "Description is required. "}
-                      {errors.workflow && "Workflow is required. "}
                       {errors.folderPath && "Working directory is required."}
                     </Callout.Text>
                   </Callout.Root>

@@ -6,18 +6,13 @@ import type {
   QuestionAnswer,
   Task,
   TaskRun,
-  Workflow,
 } from "@shared/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useAuthStore } from "./authStore";
 
 const createProgressSignature = (progress: TaskRun): string =>
-  [
-    progress.status ?? "",
-    progress.current_stage ?? "",
-    progress.updated_at ?? "",
-  ].join("|");
+  [progress.status ?? "", progress.updated_at ?? ""].join("|");
 
 interface TaskExecutionState {
   isRunning: boolean;
@@ -35,7 +30,6 @@ interface TaskExecutionState {
   questionAnswers: QuestionAnswer[];
   planContent: string | null;
   selectedArtifact: string | null; // Currently viewing artifact filename
-  workflow: Workflow | null;
 }
 
 interface TaskExecutionStore {
@@ -96,13 +90,12 @@ const defaultTaskState: TaskExecutionState = {
   unsubscribe: null,
   progress: null,
   progressSignature: null,
-  executionMode: "workflow",
+  executionMode: "plan",
   planModePhase: "idle",
   clarifyingQuestions: [],
   questionAnswers: [],
   planContent: null,
   selectedArtifact: null,
-  workflow: null,
 };
 
 export const useTaskExecutionStore = create<TaskExecutionStore>()(
@@ -326,47 +319,23 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
         if (taskState.isRunning) return;
 
-        // Only require workflow for workflow mode, not for plan mode
-        if (taskState.executionMode === "workflow" && !task.workflow) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message: "Select a PostHog workflow before running the agent.",
-          });
-          return;
-        }
-
-        const { apiKey, apiHost, client } = useAuthStore.getState();
+        const { apiKey, apiHost } = useAuthStore.getState();
 
         if (!apiKey) {
           store.addLog(taskId, {
             type: "error",
             ts: Date.now(),
             message:
-              "No PostHog API key found. Sign in to PostHog to run workflows.",
+              "No PostHog API key found. Sign in to PostHog to run tasks.",
           });
           return;
-        }
-
-        // Fetch and store workflow for stage name lookups
-        if (client && task.workflow) {
-          try {
-            const workflows = await client.getWorkflows();
-            const workflow = workflows.find(
-              (w: Workflow) => w.id === task.workflow,
-            );
-            if (workflow) {
-              store.updateTaskState(taskId, { workflow });
-            }
-          } catch (err) {
-            console.warn("Failed to fetch workflow", err);
-          }
         }
 
         const currentTaskState = store.getTaskState(taskId);
 
         // Handle cloud mode - run task via API
         if (currentTaskState.runMode === "cloud") {
+          const { client } = useAuthStore.getState();
           store.setProgress(taskId, null);
           store.setRunning(taskId, true);
           const startTs = Date.now();
@@ -374,7 +343,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
             {
               type: "token",
               ts: startTs,
-              content: `Starting workflow run in cloud...`,
+              content: `Starting task run in cloud...`,
             },
           ]);
 
@@ -463,7 +432,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           {
             type: "token",
             ts: startTs,
-            content: `Starting workflow run...`,
+            content: `Starting task run...`,
           },
           {
             type: "token",
@@ -480,7 +449,6 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         try {
           const result = await window.electronAPI?.agentStart({
             taskId: task.id,
-            workflowId: task.workflow || undefined,
             repoPath: effectiveRepoPath,
             apiKey,
             apiHost,

@@ -24,7 +24,7 @@ export function useTasks(filters?: {
       return (await client.getTasks(
         filters?.repositoryOrg,
         filters?.repositoryName,
-      )) as Task[];
+      )) as unknown as Task[];
     },
     enabled: !!client,
   });
@@ -37,7 +37,7 @@ export function useTask(taskId: string) {
     queryKey: taskKeys.detail(taskId),
     queryFn: async () => {
       if (!client) throw new Error("Not authenticated");
-      return (await client.getTask(taskId)) as Task;
+      return (await client.getTask(taskId)) as unknown as Task;
     },
     enabled: !!client && !!taskId,
   });
@@ -52,20 +52,17 @@ export function useCreateTask() {
       title,
       description,
       repositoryConfig,
-      workflow,
     }: {
       title: string;
       description: string;
       repositoryConfig?: { organization: string; repository: string };
-      workflow: string;
     }) => {
       if (!client) throw new Error("Not authenticated");
       const task = (await client.createTask(
         title,
         description,
         repositoryConfig,
-        workflow,
-      )) as Task;
+      )) as unknown as Task;
       return task;
     },
     onSuccess: () => {
@@ -121,7 +118,7 @@ export function useDuplicateTask() {
   return useMutation({
     mutationFn: async (taskId: string) => {
       if (!client) throw new Error("Not authenticated");
-      return (await client.duplicateTask(taskId)) as Task;
+      return (await client.duplicateTask(taskId)) as unknown as Task;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
@@ -136,7 +133,7 @@ export function useRefreshTask() {
   return useMutation({
     mutationFn: async (taskId: string) => {
       if (!client) throw new Error("Not authenticated");
-      return (await client.getTask(taskId)) as Task;
+      return (await client.getTask(taskId)) as unknown as Task;
     },
     onSuccess: (_, taskId) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
@@ -152,7 +149,7 @@ export function useRunTask() {
   return useMutation({
     mutationFn: async (taskId: string) => {
       if (!client) throw new Error("Not authenticated");
-      return (await client.runTask(taskId)) as Task;
+      return (await client.runTask(taskId)) as unknown as Task;
     },
     onSuccess: (_, taskId) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });

@@ -56,9 +56,6 @@ function TaskItemComponent({
   const timeAgo = formatDistanceToNow(createdAt, { addSuffix: true });
   const dragPreviewRef = useRef<HTMLDivElement>(null);
 
-  // TODO: Look up stage name from workflow data
-  const status = "Backlog";
-
   const handleDragStart = (e: React.DragEvent) => {
     if (dragPreviewRef.current) {
       e.dataTransfer.setDragImage(dragPreviewRef.current, 0, 0);

@@ -32,3 +32,5 @@ AGENTS.md
 .claude-config/
 
 pnpm-workspace.yaml
+
+.Assets.car

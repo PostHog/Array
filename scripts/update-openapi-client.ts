@@ -10,7 +10,6 @@ const OUTPUT_PATH = "src/api/generated.ts";
 
 const INCLUDED_ENDPOINT_PREFIXES = [
   "/api/projects/{project_id}/tasks",
-  "/api/projects/{project_id}/workflows",
   "/api/users/",
   "/api/environments/",
 ];
