@@ -1,6 +1,7 @@
 import type { Task } from "@shared/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../stores/authStore";
+import { useTaskExecutionStore } from "../stores/taskExecutionStore";
 
 export const taskKeys = {
   all: ["tasks"] as const,
@@ -120,7 +121,15 @@ export function useDuplicateTask() {
       if (!client) throw new Error("Not authenticated");
       return (await client.duplicateTask(taskId)) as unknown as Task;
     },
-    onSuccess: () => {
+    onSuccess: (newTask, originalTaskId) => {
+      // Copy working directory from original task to new task
+      const { getTaskState, setRepoPath } = useTaskExecutionStore.getState();
+      const originalState = getTaskState(originalTaskId);
+
+      if (originalState.repoPath) {
+        setRepoPath(newTask.id, originalState.repoPath);
+      }
+
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
     },
   });
