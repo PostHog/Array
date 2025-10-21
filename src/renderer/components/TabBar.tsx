@@ -8,7 +8,7 @@ import {
   Text,
 } from "@radix-ui/themes";
 import type React from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTabStore } from "../stores/tabStore";
 
@@ -27,6 +27,8 @@ export function TabBar() {
   const [dropPosition, setDropPosition] = useState<"left" | "right" | null>(
     null,
   );
+  const [showScrollGradient, setShowScrollGradient] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Keyboard navigation handlers
   const handlePrevTab = useCallback(() => {
@@ -166,101 +168,158 @@ export function TabBar() {
     setDropPosition(null);
   }, []);
 
+  const checkScrollGradient = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const canScrollRight =
+      container.scrollWidth > container.clientWidth &&
+      container.scrollLeft + container.clientWidth < container.scrollWidth - 1;
+
+    setShowScrollGradient(canScrollRight);
+  }, []);
+
+  useEffect(() => {
+    checkScrollGradient();
+
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    container.addEventListener("scroll", checkScrollGradient);
+    window.addEventListener("resize", checkScrollGradient);
+
+    return () => {
+      container.removeEventListener("scroll", checkScrollGradient);
+      window.removeEventListener("resize", checkScrollGradient);
+    };
+  }, [checkScrollGradient]);
+
+  useEffect(() => {
+    checkScrollGradient();
+  }, [checkScrollGradient]);
+
   return (
     <Flex
       className="drag border-gray-6 border-b"
       height="40px"
       minHeight="40px"
+      position="relative"
     >
       {/* Spacer for macOS window controls */}
       <Box width="80px" flexShrink="0" />
 
-      {tabs.map((tab, index) => {
-        const isDragging = draggedTab === tab.id;
-        const isDragOver = dragOverTab === tab.id;
-        const showLeftIndicator = isDragOver && dropPosition === "left";
-        const showRightIndicator = isDragOver && dropPosition === "right";
+      <Flex
+        ref={scrollContainerRef}
+        className="scrollbar-hide overflow-x-auto"
+        flexGrow="1"
+        style={{
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+        }}
+      >
+        {tabs.map((tab, index) => {
+          const isDragging = draggedTab === tab.id;
+          const isDragOver = dragOverTab === tab.id;
+          const showLeftIndicator = isDragOver && dropPosition === "left";
+          const showRightIndicator = isDragOver && dropPosition === "right";
 
-        return (
-          <ContextMenu.Root key={tab.id}>
-            <ContextMenu.Trigger>
-              <Flex
-                className={`no-drag group relative cursor-pointer border-gray-6 border-r border-b-2 transition-colors ${
-                  tab.id === activeTabId
-                    ? "border-b-accent-8 bg-accent-3 text-accent-12"
-                    : "border-b-transparent text-gray-11 hover:bg-gray-3 hover:text-gray-12"
-                } ${isDragging ? "opacity-50" : ""}`}
-                align="center"
-                px="4"
-                draggable
-                onClick={() => setActiveTab(tab.id)}
-                onDragStart={(e) => handleDragStart(e, tab.id)}
-                onDragOver={(e) => handleDragOver(e, tab.id)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, tab.id)}
-                onDragEnd={handleDragEnd}
-              >
-                {showLeftIndicator && (
-                  <Box
-                    className="absolute top-0 bottom-0 left-0 z-10 w-0.5 bg-accent-8"
-                    style={{ marginLeft: "-1px" }}
-                  />
-                )}
-
-                {showRightIndicator && (
-                  <Box
-                    className="absolute top-0 right-0 bottom-0 z-10 w-0.5 bg-accent-8"
-                    style={{ marginRight: "-1px" }}
-                  />
-                )}
-                {index < 9 && (
-                  <Kbd size="1" className="mr-2 opacity-70">
-                    {navigator.platform.includes("Mac") ? "⌘" : "Ctrl+"}
-                    {index + 1}
-                  </Kbd>
-                )}
-
-                <Text
-                  size="2"
-                  className="max-w-[200px] select-none overflow-hidden text-ellipsis whitespace-nowrap"
-                  mr="2"
+          return (
+            <ContextMenu.Root key={tab.id}>
+              <ContextMenu.Trigger>
+                <Flex
+                  className={`no-drag group relative cursor-pointer border-gray-6 border-r border-b-2 transition-colors ${
+                    tab.id === activeTabId
+                      ? "border-b-accent-8 bg-accent-3 text-accent-12"
+                      : "border-b-transparent text-gray-11 hover:bg-gray-3 hover:text-gray-12"
+                  } ${isDragging ? "opacity-50" : ""}`}
+                  align="center"
+                  px="4"
+                  draggable
+                  onClick={() => setActiveTab(tab.id)}
+                  onDragStart={(e) => handleDragStart(e, tab.id)}
+                  onDragOver={(e) => handleDragOver(e, tab.id)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, tab.id)}
+                  onDragEnd={handleDragEnd}
                 >
-                  {tab.title}
-                </Text>
+                  {showLeftIndicator && (
+                    <Box
+                      className="absolute top-0 bottom-0 left-0 z-10 w-0.5 bg-accent-8"
+                      style={{ marginLeft: "-1px" }}
+                    />
+                  )}
 
-                {tabs.length > 1 && (
-                  <IconButton
-                    size="1"
-                    variant="ghost"
-                    color={tab.id !== activeTabId ? "gray" : undefined}
-                    className="opacity-0 transition-opacity group-hover:opacity-100"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeTab(tab.id);
-                    }}
+                  {showRightIndicator && (
+                    <Box
+                      className="absolute top-0 right-0 bottom-0 z-10 w-0.5 bg-accent-8"
+                      style={{ marginRight: "-1px" }}
+                    />
+                  )}
+                  {index < 9 && (
+                    <Kbd size="1" className="mr-2 opacity-70">
+                      {navigator.platform.includes("Mac") ? "⌘" : "Ctrl+"}
+                      {index + 1}
+                    </Kbd>
+                  )}
+
+                  <Text
+                    size="2"
+                    className="max-w-[200px] select-none overflow-hidden text-ellipsis whitespace-nowrap"
+                    mr="2"
                   >
-                    <Cross2Icon />
-                  </IconButton>
-                )}
-              </Flex>
-            </ContextMenu.Trigger>
-            <ContextMenu.Content>
-              <ContextMenu.Item
-                disabled={tabs.length === 1}
-                onSelect={() => closeOtherTabs(tab.id)}
-              >
-                Close other tabs
-              </ContextMenu.Item>
-              <ContextMenu.Item
-                disabled={index === tabs.length - 1}
-                onSelect={() => closeTabsToRight(tab.id)}
-              >
-                Close tabs to the right
-              </ContextMenu.Item>
-            </ContextMenu.Content>
-          </ContextMenu.Root>
-        );
-      })}
+                    {tab.title}
+                  </Text>
+
+                  {tabs.length > 1 && (
+                    <IconButton
+                      size="1"
+                      variant="ghost"
+                      color={tab.id !== activeTabId ? "gray" : undefined}
+                      className="opacity-0 transition-opacity group-hover:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeTab(tab.id);
+                      }}
+                    >
+                      <Cross2Icon />
+                    </IconButton>
+                  )}
+                </Flex>
+              </ContextMenu.Trigger>
+              <ContextMenu.Content>
+                <ContextMenu.Item
+                  disabled={tabs.length === 1}
+                  onSelect={() => closeOtherTabs(tab.id)}
+                >
+                  Close other tabs
+                </ContextMenu.Item>
+                <ContextMenu.Item
+                  disabled={index === tabs.length - 1}
+                  onSelect={() => closeTabsToRight(tab.id)}
+                >
+                  Close tabs to the right
+                </ContextMenu.Item>
+              </ContextMenu.Content>
+            </ContextMenu.Root>
+          );
+        })}
+      </Flex>
+
+      {showScrollGradient && (
+        <Box
+          position="absolute"
+          top="0"
+          right="0"
+          height="40px"
+          width="80px"
+          className="pointer-events-none"
+          style={{
+            background:
+              "linear-gradient(to left, var(--color-background) 0%, transparent 100%)",
+            zIndex: 10,
+          }}
+        />
+      )}
     </Flex>
   );
 }
