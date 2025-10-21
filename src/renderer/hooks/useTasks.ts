@@ -49,17 +49,14 @@ export function useCreateTask() {
 
   return useMutation({
     mutationFn: async ({
-      title,
       description,
       repositoryConfig,
     }: {
-      title: string;
       description: string;
       repositoryConfig?: { organization: string; repository: string };
     }) => {
       if (!client) throw new Error("Not authenticated");
       const task = (await client.createTask(
-        title,
         description,
         repositoryConfig,
       )) as unknown as Task;
