@@ -55,6 +55,7 @@ function TaskItemComponent({
   const createdAt = new Date(task.created_at);
   const timeAgo = formatDistanceToNow(createdAt, { addSuffix: true });
   const dragPreviewRef = useRef<HTMLDivElement>(null);
+  const status = task.status || "Backlog";
 
   const handleDragStart = (e: React.DragEvent) => {
     if (dragPreviewRef.current) {
