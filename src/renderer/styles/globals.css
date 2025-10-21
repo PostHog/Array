@@ -36,6 +36,10 @@ body {
   -webkit-app-region: no-drag;
 }
 
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* File mention list styles */
 .file-mention-item {
   padding: var(--space-2);
