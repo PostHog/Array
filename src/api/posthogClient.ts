@@ -61,14 +61,12 @@ export class PostHogAPIClient {
   }
 
   async createTask(
-    title: string,
     description: string,
     repositoryConfig?: { organization: string; repository: string },
   ) {
     const teamId = await this.getTeamId();
 
     const payload = {
-      title,
       description,
       origin_product: "user_created" as const,
       ...(repositoryConfig && { repository_config: repositoryConfig }),
@@ -105,7 +103,6 @@ export class PostHogAPIClient {
   async duplicateTask(taskId: string) {
     const task = await this.getTask(taskId);
     return this.createTask(
-      `${task.title} (copy)`,
       task.description,
       task.repository_config as RepositoryConfig | undefined,
     );
