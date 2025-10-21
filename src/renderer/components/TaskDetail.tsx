@@ -224,7 +224,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       (log) => log.type === "artifact" && "kind" in log && "content" in log,
     );
 
-    if (artifactEvent && clarifyingQuestions.length === 0) {
+    if (artifactEvent && (clarifyingQuestions?.length ?? 0) === 0) {
       // Type guard to check if the content is an array of questions
       const event = artifactEvent as {
         type: string;
@@ -264,7 +264,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     }
   }, [
     logs,
-    clarifyingQuestions.length,
+    clarifyingQuestions?.length,
     task.id,
     setClarifyingQuestions,
     setPlanModePhase,
