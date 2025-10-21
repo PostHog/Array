@@ -24,22 +24,16 @@ function formatStatusMessage(
     return event.phase;
   }
 
-  // Format workflow stage events
+  // Format task events
   switch (event.phase) {
-    case "stage_start":
-      return `Starting ${event.stage || "stage"}`;
-    case "stage_complete":
-      return `Completed ${event.stage || "stage"}`;
+    case "task_start":
+      return `Starting task`;
     case "branch_created":
       return `Created branch: ${event.branch || "unknown"}`;
     case "commit_made":
       return `Committed ${event.kind || "changes"}`;
     case "pr_created":
       return `Pull request: ${event.prUrl || "created"}`;
-    case "no_next_stage":
-      return `No next stage after ${event.stage || "current"}`;
-    case "workflow_start":
-      return `Starting workflow`;
     case "canceled":
       return "Task canceled";
     default:

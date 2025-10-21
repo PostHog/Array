@@ -1,4 +1,4 @@
-import { DiamondIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { WarningCircleIcon } from "@phosphor-icons/react";
 import { GearIcon, GlobeIcon } from "@radix-ui/react-icons";
 import {
   Box,
@@ -9,7 +9,6 @@ import {
   Heading,
   IconButton,
   Link,
-  SegmentedControl,
   Text,
   Tooltip,
 } from "@radix-ui/themes";
@@ -17,11 +16,9 @@ import type { ClarifyingQuestion, Task } from "@shared/types";
 import { format, formatDistanceToNow } from "date-fns";
 import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { useHotkeys } from "react-hotkeys-hook";
 import { useBlurOnEscape } from "../hooks/useBlurOnEscape";
 import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
 import { useTasks, useUpdateTask } from "../hooks/useTasks";
-import { useWorkflowStages, useWorkflows } from "../hooks/useWorkflows";
 import { useStatusBarStore } from "../stores/statusBarStore";
 import { useTabStore } from "../stores/tabStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
@@ -30,8 +27,6 @@ import {
   repoConfigToKey,
 } from "../utils/repository";
 import { AsciiArt } from "./AsciiArt";
-import { Combobox } from "./Combobox";
-import { LogView } from "./LogView";
 import { PlanEditor } from "./PlanEditor";
 import { PlanView } from "./PlanView";
 import { RichTextEditor } from "./RichTextEditor";
@@ -51,7 +46,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     clearTaskLogs,
     getRepoWorkingDir,
     setRepoPath,
-    setExecutionMode,
     setPlanModePhase,
     setClarifyingQuestions,
     addQuestionAnswer,
@@ -62,26 +56,8 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const { data: tasks = [] } = useTasks();
   const { mutate: updateTask } = useUpdateTask();
   const { updateTabTitle, activeTabId } = useTabStore();
-  const { data: workflows = [] } = useWorkflows();
 
   const task = tasks.find((t) => t.id === initialTask.id) || initialTask;
-
-  const { data: workflowStages = [] } = useWorkflowStages(task.workflow || "");
-
-  const workflowOptions = useMemo(
-    () =>
-      workflows.map((workflow) => ({
-        value: workflow.id,
-        label: workflow.name,
-      })),
-    [workflows],
-  );
-
-  const currentStageName = useMemo(() => {
-    if (!task.current_stage) return "Backlog";
-    const stage = workflowStages.find((s) => s.id === task.current_stage);
-    return stage?.name || task.current_stage;
-  }, [task.current_stage, workflowStages]);
 
   const taskState = getTaskState(task.id);
 
@@ -91,13 +67,11 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     repoPath,
     runMode,
     progress,
-    executionMode,
     planModePhase,
     clarifyingQuestions,
     questionAnswers,
     planContent,
     selectedArtifact,
-    workflow,
   } = taskState;
 
   const {
@@ -109,7 +83,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     defaultValues: {
       title: task.title,
       description: task.description || "",
-      workflow: task.workflow || "",
       repository: repoConfigToKey(task.repository_config),
     },
   });
@@ -154,37 +127,9 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     resetForm({
       title: task.title,
       description: task.description || "",
-      workflow: task.workflow || "",
       repository: repoConfigToKey(task.repository_config),
     });
-  }, [
-    task.title,
-    task.description,
-    task.workflow,
-    task.repository_config,
-    resetForm,
-  ]);
-
-  // Default to first workflow if not set
-  useEffect(() => {
-    if (workflows.length > 0 && !task.workflow) {
-      const defaultWorkflow =
-        workflows.find((w) => w.is_active && w.is_default) || workflows[0];
-      if (defaultWorkflow) {
-        updateTask({
-          taskId: task.id,
-          updates: { workflow: defaultWorkflow.id },
-        });
-      }
-    }
-  }, [workflows, task.workflow, task.id, updateTask]);
-
-  // Auto-switch to auto mode if no workflow is assigned
-  useEffect(() => {
-    if (!task.workflow && executionMode === "workflow") {
-      setExecutionMode(task.id, "plan");
-    }
-  }, [task.workflow, executionMode, task.id, setExecutionMode]);
+  }, [task.title, task.description, task.repository_config, resetForm]);
 
   useEffect(() => {
     setStatusBar({
@@ -209,19 +154,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   useBlurOnEscape();
 
-  // Keyboard shortcut: Shift+Tab to toggle execution mode
-  useHotkeys(
-    "shift+tab",
-    (e) => {
-      e.preventDefault();
-      const newMode = executionMode === "plan" ? "workflow" : "plan";
-      setExecutionMode(task.id, newMode);
-    },
-    {
-      enableOnFormTags: true,
-    },
-  );
-
   const handleRunTask = () => {
     runTask(task.id, task);
   };
@@ -236,10 +168,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   const handleClearLogs = () => {
     clearTaskLogs(task.id);
-  };
-
-  const handleExecutionModeChange = (value: string) => {
-    setExecutionMode(task.id, value as "plan" | "workflow");
   };
 
   const handleAnswersComplete = async (
@@ -455,63 +383,11 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
               </Flex>
 
               <DataList.Root>
-                <DataList.Item>
-                  <DataList.Label>Status</DataList.Label>
-                  <DataList.Value>
-                    <Button size="1" color="gray">
-                      {currentStageName}
-                    </Button>
-                  </DataList.Value>
-                </DataList.Item>
-
                 {progress && (
                   <DataList.Item>
                     <DataList.Label>Run Status</DataList.Label>
                     <DataList.Value>
-                      <Text size="2">
-                        {progress.status.replace(/_/g, " ")}
-                        {progress.current_stage &&
-                          (() => {
-                            const stage = workflowStages.find(
-                              (s) => s.id === progress.current_stage,
-                            );
-                            return stage
-                              ? ` · ${stage.name}`
-                              : ` · ${progress.current_stage}`;
-                          })()}
-                      </Text>
-                    </DataList.Value>
-                  </DataList.Item>
-                )}
-
-                {workflowOptions.length > 0 && (
-                  <DataList.Item>
-                    <DataList.Label>Workflow</DataList.Label>
-                    <DataList.Value>
-                      <Controller
-                        name="workflow"
-                        control={control}
-                        rules={{ required: true }}
-                        render={({ field }) => (
-                          <Combobox
-                            items={workflowOptions}
-                            value={field.value}
-                            onValueChange={(value) => {
-                              field.onChange(value);
-                              updateTask({
-                                taskId: task.id,
-                                updates: { workflow: value },
-                              });
-                            }}
-                            placeholder="Select a workflow..."
-                            searchPlaceholder="Search workflows..."
-                            emptyMessage="No workflows found"
-                            size="1"
-                            variant="outline"
-                            icon={<DiamondIcon />}
-                          />
-                        )}
-                      />
+                      <Text size="2">{progress.status.replace(/_/g, " ")}</Text>
                     </DataList.Value>
                   </DataList.Item>
                 )}
@@ -601,40 +477,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                 />
               )}
 
-              {/* Execution Mode Toggle */}
-              <Flex direction="column" gap="1">
-                <Text
-                  size="1"
-                  weight="medium"
-                  style={{ color: "var(--gray-11)" }}
-                >
-                  Mode
-                </Text>
-                <SegmentedControl.Root
-                  value={executionMode}
-                  onValueChange={(value) => {
-                    // Don't allow switching to workflow if no workflow assigned
-                    if (value === "workflow" && !task.workflow) {
-                      return;
-                    }
-                    handleExecutionModeChange(value);
-                  }}
-                  size="1"
-                >
-                  <SegmentedControl.Item value="plan">
-                    Auto
-                  </SegmentedControl.Item>
-                  <SegmentedControl.Item value="workflow">
-                    Workflow
-                  </SegmentedControl.Item>
-                </SegmentedControl.Root>
-                <Text size="1" style={{ color: "var(--gray-10)" }}>
-                  {!task.workflow
-                    ? "Auto mode (no workflow assigned)"
-                    : "Press Shift+Tab to toggle"}
-                </Text>
-              </Flex>
-
               <Flex gap="2">
                 <Button
                   variant="classic"
@@ -645,30 +487,24 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                 >
                   {isRunning
                     ? "Running..."
-                    : executionMode === "plan"
-                      ? runMode === "cloud"
-                        ? "Run Auto (Cloud)"
-                        : "Run Auto (Local)"
-                      : runMode === "cloud"
-                        ? "Run Workflow (Cloud)"
-                        : "Run Workflow (Local)"}
+                    : runMode === "cloud"
+                      ? "Run (Cloud)"
+                      : "Run (Local)"}
                 </Button>
-                {executionMode === "workflow" && (
-                  <Tooltip content="Toggle between Local or Cloud Agent">
-                    <IconButton
-                      size="2"
-                      variant="classic"
-                      color={runMode === "cloud" ? "blue" : "gray"}
-                      onClick={() =>
-                        handleRunModeChange(
-                          runMode === "local" ? "cloud" : "local",
-                        )
-                      }
-                    >
-                      {runMode === "cloud" ? <GlobeIcon /> : <GearIcon />}
-                    </IconButton>
-                  </Tooltip>
-                )}
+                <Tooltip content="Toggle between Local or Cloud Agent">
+                  <IconButton
+                    size="2"
+                    variant="classic"
+                    color={runMode === "cloud" ? "blue" : "gray"}
+                    onClick={() =>
+                      handleRunModeChange(
+                        runMode === "local" ? "cloud" : "local",
+                      )
+                    }
+                  >
+                    {runMode === "cloud" ? <GlobeIcon /> : <GearIcon />}
+                  </IconButton>
+                </Tooltip>
               </Flex>
 
               {isRunning && (
@@ -695,10 +531,10 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
           <Box style={{ position: "absolute", inset: 0, zIndex: 0 }}>
             <AsciiArt scale={1} opacity={0.1} />
           </Box>
-          {/* Foreground View (LogView, PlanView, or Artifact Editor) */}
+          {/* Foreground View (PlanView or Artifact Editor) */}
           <Box style={{ position: "relative", zIndex: 1, height: "100%" }}>
             {selectedArtifact && repoPath ? (
-              // Viewing an artifact - show editor regardless of mode
+              // Viewing an artifact - show editor
               <PlanEditor
                 taskId={task.id}
                 repoPath={repoPath}
@@ -706,7 +542,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                 onClose={handleClosePlan}
                 onSave={handleSavePlan}
               />
-            ) : executionMode === "plan" ? (
+            ) : (
               <PlanView
                 task={task}
                 repoPath={repoPath}
@@ -721,13 +557,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                 onClearLogs={handleClearLogs}
                 onClosePlan={handleClosePlan}
                 onSavePlan={handleSavePlan}
-              />
-            ) : (
-              <LogView
-                logs={logs}
-                isRunning={isRunning}
-                onClearLogs={handleClearLogs}
-                workflow={workflow}
               />
             )}
           </Box>

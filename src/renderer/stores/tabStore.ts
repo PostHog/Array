@@ -17,17 +17,11 @@ interface TabStore {
 }
 
 // Create initial tabs
-const createInitialTabs = (): [TabState, TabState, TabState] => {
+const createInitialTabs = (): [TabState, TabState] => {
   const taskListTab: TabState = {
     id: uuidv4(),
     type: "task-list",
     title: "Tasks",
-  };
-
-  const workflowTab: TabState = {
-    id: uuidv4(),
-    type: "workflow",
-    title: "Workflows",
   };
 
   const recordingsTab: TabState = {
@@ -36,16 +30,15 @@ const createInitialTabs = (): [TabState, TabState, TabState] => {
     title: "Recordings",
   };
 
-  return [taskListTab, workflowTab, recordingsTab];
+  return [taskListTab, recordingsTab];
 };
 
-const [initialTaskListTab, initialWorkflowTab, initialRecordingsTab] =
-  createInitialTabs();
+const [initialTaskListTab, initialRecordingsTab] = createInitialTabs();
 
 export const useTabStore = create<TabStore>()(
   persist(
     (set, get) => ({
-      tabs: [initialTaskListTab, initialWorkflowTab, initialRecordingsTab],
+      tabs: [initialTaskListTab, initialRecordingsTab],
       activeTabId: initialTaskListTab.id,
 
       createTab: (tabData) => {

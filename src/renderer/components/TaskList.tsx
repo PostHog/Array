@@ -1,4 +1,3 @@
-import { ArrowSquareRight } from "@phosphor-icons/react";
 import { FileTextIcon, PlusIcon } from "@radix-ui/react-icons";
 import {
   Box,
@@ -27,14 +26,9 @@ interface TaskListProps {
 
 interface TaskListInternalProps extends TaskListProps {
   onNewTask?: () => void;
-  onNewWorkflow?: () => void;
 }
 
-export function TaskList({
-  onSelectTask,
-  onNewTask,
-  onNewWorkflow,
-}: TaskListInternalProps) {
+export function TaskList({ onSelectTask, onNewTask }: TaskListInternalProps) {
   const { data: tasks = [], isLoading, error, refetch } = useTasks();
   const taskOrder = useTaskStore((state) => state.taskOrder);
   const filter = useTaskStore((state) => state.filter);
@@ -400,21 +394,6 @@ export function TaskList({
                   ]}
                 />
               </Box>
-              {onNewWorkflow && (
-                <Box onClick={onNewWorkflow}>
-                  <ShortcutCard
-                    icon={
-                      <ArrowSquareRight size={16} className="text-gray-11" />
-                    }
-                    title="New workflow"
-                    keys={[
-                      navigator.platform.includes("Mac") ? "⌘" : "Ctrl",
-                      "⇧",
-                      "N",
-                    ]}
-                  />
-                </Box>
-              )}
             </Flex>
           </Box>
         </Box>

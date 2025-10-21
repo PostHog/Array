@@ -13,12 +13,10 @@ export interface Task {
   updated_at: string;
   origin_product: string;
   status?: string;
-  workflow?: string | null; // Workflow ID
   repository_config?: RepositoryConfig;
   tags?: string[];
 
   // DEPRECATED: These fields have been moved to TaskRun
-  current_stage?: string | null;
   github_branch?: string | null;
   github_pr_url?: string | null;
   latest_run?: TaskRun;
@@ -35,7 +33,6 @@ export interface TaskRun {
   task: string; // Task ID
   team: number;
   branch: string | null;
-  current_stage: string | null; // WorkflowStage ID
   status: "started" | "in_progress" | "completed" | "failed";
   log: LogEntry[]; // Array of log entry objects
   error_message: string | null;
@@ -44,28 +41,6 @@ export interface TaskRun {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
-}
-
-export interface Workflow {
-  id: string;
-  name: string;
-  description?: string;
-  is_default?: boolean;
-  is_active?: boolean;
-  stages: WorkflowStage[];
-}
-
-export interface WorkflowStage {
-  id: string;
-  workflow: string;
-  name: string;
-  key: string;
-  position: number;
-  color?: string;
-  agent_name?: string | null;
-  is_manual_only?: boolean;
-  is_archived?: boolean;
-  fallback_stage?: string | null;
 }
 
 export interface AgentDefinition {
@@ -98,13 +73,7 @@ export interface LogEntry {
 
 export interface TabState {
   id: string;
-  type:
-    | "task-list"
-    | "task-detail"
-    | "workflow"
-    | "backlog"
-    | "settings"
-    | "recordings";
+  type: "task-list" | "task-detail" | "backlog" | "settings" | "recordings";
   title: string;
   data?: Task | unknown;
 }
@@ -139,7 +108,7 @@ export interface PostHogUrlInfo {
 }
 
 // Plan Mode types
-export type ExecutionMode = "plan" | "workflow";
+export type ExecutionMode = "plan";
 
 export type PlanModePhase =
   | "idle"

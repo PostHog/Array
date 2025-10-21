@@ -8,14 +8,13 @@ import { type BrowserWindow, type IpcMainInvokeEvent, ipcMain } from "electron";
 
 interface AgentStartParams {
   taskId: string;
-  workflowId?: string;
   repoPath: string;
   apiKey: string;
   apiHost: string;
   permissionMode?: PermissionMode | string;
   autoProgress?: boolean;
   model?: string;
-  executionMode?: "plan" | "workflow";
+  executionMode?: "plan";
   runMode?: "local" | "cloud";
 }
 
@@ -96,24 +95,17 @@ export function registerAgentIpc(
       _event: IpcMainInvokeEvent,
       {
         taskId: posthogTaskId,
-        workflowId,
         repoPath,
         apiKey,
         apiHost,
         permissionMode,
         autoProgress,
         model,
-        executionMode,
         runMode,
       }: AgentStartParams,
     ): Promise<{ taskId: string; channel: string }> => {
-      // For plan mode, workflowId is optional
       if (!posthogTaskId || !repoPath) {
         throw new Error("taskId and repoPath are required");
-      }
-
-      if (executionMode !== "plan" && !workflowId) {
-        throw new Error("workflowId is required for workflow mode");
       }
 
       if (!apiKey || !apiHost) {
@@ -183,7 +175,7 @@ export function registerAgentIpc(
             const task = await posthogClient.fetchTask(posthogTaskId);
             const latestRun = task?.latest_run;
 
-            // Only emit progress for runs created after this workflow started
+            // Only emit progress for runs created after this task started
             if (
               latestRun &&
               new Date(latestRun.created_at).getTime() >= startTime
@@ -211,8 +203,7 @@ export function registerAgentIpc(
       emitToRenderer({
         type: "status",
         ts: Date.now(),
-        phase: executionMode === "plan" ? "task_start" : "workflow_start",
-        workflowId,
+        phase: "task_start",
         taskId: posthogTaskId,
       });
 
@@ -235,45 +226,24 @@ export function registerAgentIpc(
             );
           }
 
-          if (executionMode === "plan") {
-            // Use adaptive task workflow (research → plan → build)
-            await agent.runTask(posthogTaskId, {
-              repositoryPath: repoPath,
-              permissionMode: resolvedPermission,
-              isCloudMode: runMode === "cloud",
-              autoProgress: autoProgress ?? true,
-              queryOverrides: {
-                abortController,
-                ...(model ? { model } : {}),
-                pathToClaudeCodeExecutable: claudePath,
-                stderr: forwardClaudeStderr,
-                env: envOverrides,
-                mcpServers: mcpOverrides,
-              },
-            });
-          } else {
-            // Use traditional workflow-based execution
-            if (!workflowId) {
-              throw new Error("Workflow ID is required for workflow mode");
-            }
-            await agent.runWorkflow(posthogTaskId, workflowId, {
-              repositoryPath: repoPath,
-              permissionMode: resolvedPermission,
-              autoProgress: autoProgress ?? true,
-              queryOverrides: {
-                abortController,
-                ...(model ? { model } : {}),
-                pathToClaudeCodeExecutable: claudePath,
-                stderr: forwardClaudeStderr,
-                env: envOverrides,
-                mcpServers: mcpOverrides,
-              },
-            });
-          }
+          await agent.runTask(posthogTaskId, {
+            repositoryPath: repoPath,
+            permissionMode: resolvedPermission,
+            isCloudMode: runMode === "cloud",
+            autoProgress: autoProgress ?? true,
+            queryOverrides: {
+              abortController,
+              ...(model ? { model } : {}),
+              pathToClaudeCodeExecutable: claudePath,
+              stderr: forwardClaudeStderr,
+              env: envOverrides,
+              mcpServers: mcpOverrides,
+            },
+          });
 
           emitToRenderer({ type: "done", success: true, ts: Date.now() });
         } catch (err) {
-          console.error("[agent] workflow execution failed", err);
+          console.error("[agent] task execution failed", err);
           let errorMessage = err instanceof Error ? err.message : String(err);
           const cause =
             err instanceof Error && "cause" in err && err.cause

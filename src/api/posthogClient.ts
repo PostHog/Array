@@ -64,7 +64,6 @@ export class PostHogAPIClient {
     title: string,
     description: string,
     repositoryConfig?: { organization: string; repository: string },
-    workflowId?: string,
   ) {
     const teamId = await this.getTeamId();
 
@@ -73,7 +72,6 @@ export class PostHogAPIClient {
       description,
       origin_product: "user_created" as const,
       ...(repositoryConfig && { repository_config: repositoryConfig }),
-      ...(workflowId && { workflow: workflowId }),
     };
 
     const data = await this.api.post(`/api/projects/{project_id}/tasks/`, {
@@ -165,35 +163,12 @@ export class PostHogAPIClient {
 
   async getTaskLogs(taskId: string): Promise<LogEntry[]> {
     try {
-      const task = (await this.getTask(taskId)) as Task;
+      const task = (await this.getTask(taskId)) as unknown as Task;
       return task?.latest_run?.log ?? [];
     } catch (err) {
       console.warn("Failed to fetch task logs from latest run", err);
       return [];
     }
-  }
-
-  async getWorkflows() {
-    const teamId = await this.getTeamId();
-    const data = await this.api.get(`/api/projects/{project_id}/workflows/`, {
-      path: { project_id: teamId.toString() },
-      query: { limit: 100, offset: 0 },
-    });
-
-    return data.results ?? [];
-  }
-
-  async getWorkflowStages(workflowId: string) {
-    const teamId = await this.getTeamId();
-    const data = await this.api.get(
-      `/api/projects/{project_id}/workflows/{workflow_id}/stages/`,
-      {
-        path: { project_id: teamId.toString(), workflow_id: workflowId },
-        query: { limit: 100, offset: 0 },
-      },
-    );
-
-    return data.results ?? [];
   }
 
   async getIntegrations() {
@@ -252,106 +227,6 @@ export class PostHogAPIClient {
       organization,
       repository: repoName,
     }));
-  }
-
-  async createWorkflow(data: {
-    name: string;
-    description?: string;
-    color?: string;
-    is_default?: boolean;
-  }) {
-    const teamId = await this.getTeamId();
-    return await this.api.post("/api/projects/{project_id}/workflows/", {
-      path: { project_id: teamId.toString() },
-      body: {
-        name: data.name,
-        description: data.description,
-        color: data.color,
-        is_default: data.is_default ?? false,
-        is_active: true,
-      } as Schemas.TaskWorkflow,
-    });
-  }
-
-  async updateWorkflow(
-    workflowId: string,
-    data: {
-      name?: string;
-      description?: string;
-      color?: string;
-      is_default?: boolean;
-      is_active?: boolean;
-    },
-  ) {
-    const teamId = await this.getTeamId();
-    return await this.api.patch("/api/projects/{project_id}/workflows/{id}/", {
-      path: { project_id: teamId.toString(), id: workflowId },
-      body: data,
-    });
-  }
-
-  async deactivateWorkflow(workflowId: string) {
-    const teamId = await this.getTeamId();
-    return await this.api.post(
-      "/api/projects/{project_id}/workflows/{id}/deactivate/",
-      {
-        path: { project_id: teamId.toString(), id: workflowId },
-      },
-    );
-  }
-
-  async createStage(
-    workflowId: string,
-    data: {
-      name: string;
-      key: string;
-      position: number;
-      color?: string;
-      agent_name?: string | null;
-      is_manual_only?: boolean;
-    },
-  ) {
-    const teamId = await this.getTeamId();
-    return await this.api.post(
-      "/api/projects/{project_id}/workflows/{workflow_id}/stages/",
-      {
-        path: {
-          project_id: teamId.toString(),
-          workflow_id: workflowId,
-        },
-        body: {
-          ...data,
-          workflow: workflowId,
-        } as Schemas.WorkflowStage,
-      },
-    );
-  }
-
-  async updateStage(
-    workflowId: string,
-    stageId: string,
-    data: {
-      name?: string;
-      key?: string;
-      position?: number;
-      color?: string;
-      agent_name?: string | null;
-      is_manual_only?: boolean;
-      is_archived?: boolean;
-    },
-  ) {
-    const teamId = await this.getTeamId();
-    return await this.api.patch(
-      "/api/projects/{project_id}/workflows/{workflow_id}/stages/{id}/",
-      {
-        path: {
-          project_id: teamId.toString(),
-          workflow_id: workflowId,
-          id: stageId,
-        },
-        body: data,
-      },
-    );
   }
 
   async getAgents() {

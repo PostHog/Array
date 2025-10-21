@@ -1,8 +1,4 @@
-import {
-  ComponentInstanceIcon,
-  FileTextIcon,
-  ListBulletIcon,
-} from "@radix-ui/react-icons";
+import { FileTextIcon, ListBulletIcon } from "@radix-ui/react-icons";
 import { Flex, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -85,19 +81,6 @@ export function CommandMenu({
     onOpenChange(false);
   };
 
-  const handleNavigateToWorkflow = () => {
-    const workflowTab = tabs.find((tab) => tab.type === "workflow");
-    if (workflowTab) {
-      setActiveTab(workflowTab.id);
-    } else {
-      createTab({
-        type: "workflow",
-        title: "Workflows",
-      });
-    }
-    onOpenChange(false);
-  };
-
   const handleCreateTask = () => {
     onOpenChange(false);
     onCreateTask?.();
@@ -164,14 +147,6 @@ export function CommandMenu({
               >
                 <ListBulletIcon className="mr-3 h-4 w-4 text-gray-11" />
                 <Text size="2">Go to tasks</Text>
-              </Command.Item>
-
-              <Command.Item
-                value="Go to workflows"
-                onSelect={handleNavigateToWorkflow}
-              >
-                <ComponentInstanceIcon className="mr-3 h-4 w-4 text-gray-11" />
-                <Text size="2">Go to workflows</Text>
               </Command.Item>
             </Command.Group>
 
