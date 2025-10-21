@@ -198,6 +198,22 @@ export function TabBar() {
     checkScrollGradient();
   }, [checkScrollGradient]);
 
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const activeTabElement = container.querySelector(
+      `[data-tab-id="${activeTabId}"]`,
+    );
+    if (activeTabElement) {
+      activeTabElement.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest",
+      });
+    }
+  }, [activeTabId]);
+
   return (
     <Flex
       className="drag border-gray-6 border-b"
@@ -227,6 +243,7 @@ export function TabBar() {
             <ContextMenu.Root key={tab.id}>
               <ContextMenu.Trigger>
                 <Flex
+                  data-tab-id={tab.id}
                   className={`no-drag group relative cursor-pointer border-gray-6 border-r border-b-2 transition-colors ${
                     tab.id === activeTabId
                       ? "border-b-accent-8 bg-accent-3 text-accent-12"
