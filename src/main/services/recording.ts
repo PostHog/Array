@@ -12,26 +12,29 @@ import {
   TASK_EXTRACTION_PROMPT,
 } from "./transcription-prompts.js";
 
-let FileConstructor: typeof File;
-try {
-  const { File: NodeFile } = await import("node:buffer");
-  FileConstructor = NodeFile as typeof File;
-} catch {
-  FileConstructor = class File extends Blob {
-    name: string;
-    lastModified: number;
+const fallbackFile = class File extends Blob {
+  name: string;
+  lastModified: number;
 
-    constructor(bits: BlobPart[], name: string, options?: FilePropertyBag) {
-      super(bits, options);
-      this.name = name;
-      this.lastModified = options?.lastModified ?? Date.now();
-    }
-  } as typeof File;
-}
+  constructor(bits: BlobPart[], name: string, options?: FilePropertyBag) {
+    super(bits, options);
+    this.name = name;
+    this.lastModified = options?.lastModified ?? Date.now();
+  }
+} as typeof File;
 
-if (!globalThis.File) {
-  globalThis.File = FileConstructor;
-}
+(async () => {
+  let FileConstructor: typeof File;
+  try {
+    FileConstructor = (await import("node:buffer")).File as typeof File;
+  } catch {
+    FileConstructor = fallbackFile;
+  }
+
+  if (!globalThis.File) {
+    globalThis.File = FileConstructor;
+  }
+})();
 
 interface RecordingSession {
   id: string;

@@ -1,6 +1,9 @@
 import { copyFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import path, { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Custom Vite plugin to fix circular __filename references in bundled ESM packages.
@@ -56,6 +59,15 @@ function copyAgentTemplates(): Plugin {
 
 export default defineConfig({
   plugins: [fixFilenameCircularRef(), copyAgentTemplates()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+      "@main": path.resolve(__dirname, "./src/main"),
+      "@renderer": path.resolve(__dirname, "./src/renderer"),
+      "@shared": path.resolve(__dirname, "./src/shared"),
+      "@api": path.resolve(__dirname, "./src/api"),
+    },
+  },
   build: {
     target: "node18",
     minify: false, // Disable minification to prevent variable name conflicts
