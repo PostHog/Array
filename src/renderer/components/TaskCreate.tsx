@@ -14,7 +14,6 @@ import {
   IconButton,
   Switch,
   Text,
-  TextArea,
 } from "@radix-ui/themes";
 import { useCallback, useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -53,7 +52,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   const [repoWarning, setRepoWarning] = useState<string | null>(null);
 
   const {
-    register,
     handleSubmit,
     reset,
     control,
@@ -62,7 +60,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
     formState: { errors, isSubmitted },
   } = useForm({
     defaultValues: {
-      title: "",
       description: "",
       repository: "",
       folderPath: lastSelectedFolder || "",
@@ -109,7 +106,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
   }, [folderPath, detectRepoFromFolder]);
 
   const onSubmit = (data: {
-    title: string;
     description: string;
     repository: string;
     folderPath: string;
@@ -118,7 +114,7 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
       return;
     }
 
-    if (!data.title.trim() || !data.description.trim()) {
+    if (!data.description.trim()) {
       return;
     }
 
@@ -128,7 +124,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
 
     createTask(
       {
-        title: data.title,
         description: data.description,
         repositoryConfig,
       },
@@ -216,23 +211,6 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
             style={{ display: "contents" }}
           >
             <Flex direction="column" gap="4" mt="4" flexGrow="1">
-              <Flex direction="column" gap="2">
-                <TextArea
-                  {...register("title", {
-                    required: true,
-                    validate: (v) => v.trim().length > 0,
-                  })}
-                  placeholder="Task title..."
-                  size="3"
-                  autoFocus
-                  rows={1}
-                  style={{
-                    resize: "none",
-                    overflow: "hidden",
-                    minHeight: "auto",
-                  }}
-                />
-              </Flex>
               <Flex
                 direction="column"
                 gap="2"
@@ -332,16 +310,14 @@ export function TaskCreate({ open, onOpenChange }: TaskCreateProps) {
                 </Callout.Root>
               )}
 
-              {isSubmitted &&
-                (errors.title || errors.description || errors.folderPath) && (
-                  <Callout.Root color="red" size="1">
-                    <Callout.Text>
-                      {errors.title && "Title is required. "}
-                      {errors.description && "Description is required. "}
-                      {errors.folderPath && "Working directory is required."}
-                    </Callout.Text>
-                  </Callout.Root>
-                )}
+              {isSubmitted && (errors.description || errors.folderPath) && (
+                <Callout.Root color="red" size="1">
+                  <Callout.Text>
+                    {errors.description && "Description is required. "}
+                    {errors.folderPath && "Working directory is required."}
+                  </Callout.Text>
+                </Callout.Root>
+              )}
 
               {error && (
                 <Callout.Root color="red" size="1">
