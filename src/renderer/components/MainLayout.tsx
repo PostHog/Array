@@ -9,9 +9,9 @@ import { CommandMenu } from "./command";
 import { SettingsView } from "./SettingsView";
 import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
-import { TaskCreate } from "./TaskCreate";
-import { TaskDetail } from "./TaskDetail";
-import { TaskList } from "./TaskList";
+import { TaskCreate } from "./tasks/TaskCreate";
+import { TaskDetail } from "./tasks/TaskDetail";
+import { TaskList } from "./tasks/TaskList";
 
 export function MainLayout() {
   const { activeTabId, tabs, createTab, setActiveTab, closeTab } =

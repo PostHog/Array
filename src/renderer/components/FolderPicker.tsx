@@ -1,4 +1,4 @@
-import { Folder, FolderIcon } from "@phosphor-icons/react";
+import { Folder as FolderIcon } from "@phosphor-icons/react";
 import { ChevronDownIcon } from "@radix-ui/react-icons";
 import {
   Box,
@@ -187,7 +187,11 @@ export function FolderPicker({
         >
           <Flex justify="between" align="center" gap="2" width="100%">
             <Flex align="center" gap="2" style={{ minWidth: 0, flex: 1 }}>
-              <Folder size={16} weight="regular" style={{ flexShrink: 0 }} />
+              <FolderIcon
+                size={16}
+                weight="regular"
+                style={{ flexShrink: 0 }}
+              />
               <Text
                 size={size}
                 style={{

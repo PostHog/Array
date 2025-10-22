@@ -242,4 +242,11 @@ export class PostHogAPIClient {
     const data = await response.json();
     return data.results ?? data ?? [];
   }
+
+  async getUsers() {
+    const data = await this.api.get("/api/users/", {
+      query: { limit: 1000 },
+    });
+    return data.results ?? [];
+  }
 }

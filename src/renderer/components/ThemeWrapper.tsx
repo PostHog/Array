@@ -12,7 +12,7 @@ export function ThemeWrapper({ children }: { children: React.ReactNode }) {
       grayColor="slate"
       panelBackground="translucent"
       radius="none"
-      scaling="90%"
+      scaling="100%"
     >
       {children}
     </Theme>

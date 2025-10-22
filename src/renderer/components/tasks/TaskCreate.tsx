@@ -18,20 +18,20 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
-import { useCreateTask } from "../hooks/useTasks";
-import { useAuthStore } from "../stores/authStore";
-import { useFolderPickerStore } from "../stores/folderPickerStore";
-import { useTabStore } from "../stores/tabStore";
-import { useTaskExecutionStore } from "../stores/taskExecutionStore";
+import { useRepositoryIntegration } from "../../hooks/useRepositoryIntegration";
+import { useCreateTask } from "../../hooks/useTasks";
+import { useAuthStore } from "../../stores/authStore";
+import { useFolderPickerStore } from "../../stores/folderPickerStore";
+import { useTabStore } from "../../stores/tabStore";
+import { useTaskExecutionStore } from "../../stores/taskExecutionStore";
 import {
   formatRepoKey,
   parseRepoKey,
   REPO_NOT_IN_INTEGRATION_WARNING,
-} from "../utils/repository";
-import { Combobox } from "./Combobox";
-import { FolderPicker } from "./FolderPicker";
-import { RichTextEditor } from "./RichTextEditor";
+} from "../../utils/repository";
+import { Combobox } from "../Combobox";
+import { FolderPicker } from "../FolderPicker";
+import { RichTextEditor } from "../RichTextEditor";
 
 interface TaskCreateProps {
   open: boolean;

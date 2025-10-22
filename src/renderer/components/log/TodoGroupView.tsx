@@ -1,9 +1,9 @@
 import {
-  CaretDown,
-  CaretRight,
-  Check,
-  Circle,
-  CircleNotch,
+  CaretDown as CaretDownIcon,
+  CaretRight as CaretRightIcon,
+  Check as CheckIcon,
+  Circle as CircleIcon,
+  CircleNotch as CircleNotchIcon,
 } from "@phosphor-icons/react";
 import type { AgentEvent } from "@posthog/agent";
 import { Box, Code, ContextMenu } from "@radix-ui/themes";
@@ -67,11 +67,11 @@ export function TodoGroupView({
 
   const statusIcon =
     todo.status === "completed" ? (
-      <Check size={14} weight="bold" />
+      <CheckIcon size={14} weight="bold" />
     ) : todo.status === "in_progress" ? (
-      <CircleNotch size={14} className="animate-spin" />
+      <CircleNotchIcon size={14} className="animate-spin" />
     ) : (
-      <Circle size={14} />
+      <CircleIcon size={14} />
     );
 
   // Find the current todo's index in the allTodos array
@@ -113,7 +113,11 @@ export function TodoGroupView({
                   color: "var(--gray-11)",
                 }}
               >
-                {expanded ? <CaretDown size={14} /> : <CaretRight size={14} />}
+                {expanded ? (
+                  <CaretDownIcon size={14} />
+                ) : (
+                  <CaretRightIcon size={14} />
+                )}
               </Box>
               <Box
                 style={{

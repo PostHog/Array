@@ -1,4 +1,8 @@
-import { Check, CircleNotch, X } from "@phosphor-icons/react";
+import {
+  Check as CheckIcon,
+  CircleNotch as CircleNotchIcon,
+  X as XIcon,
+} from "@phosphor-icons/react";
 import type { AgentEvent } from "@posthog/agent";
 import { Box, Code } from "@radix-ui/themes";
 import type { ReactNode } from "react";
@@ -265,13 +269,13 @@ export function ToolExecutionView({
 
   if (isPending) {
     statusColor = "blue";
-    statusBadge = <CircleNotch size={14} className="animate-spin" />;
+    statusBadge = <CircleNotchIcon size={14} className="animate-spin" />;
   } else if (isError) {
     statusColor = "red";
-    statusBadge = <X size={14} weight="bold" />;
+    statusBadge = <XIcon size={14} weight="bold" />;
   } else {
     statusColor = "green";
-    statusBadge = <Check size={14} weight="bold" />;
+    statusBadge = <CheckIcon size={14} weight="bold" />;
   }
 
   return (
