@@ -3,20 +3,12 @@
     {
       "id": "1",
       "question": "What should the plus button do when clicked?",
-      "options": [
-        "Open task modal",
-        "Create new tab",
-        "Something else"
-      ]
+      "options": ["Open task modal", "Create new tab", "Something else"]
     },
     {
       "id": "2",
       "question": "Where should it be placed?",
-      "options": [
-        "Inside scrollable area",
-        "Fixed position",
-        "Something else"
-      ]
+      "options": ["Inside scrollable area", "Fixed position", "Something else"]
     },
     {
       "id": "3",
@@ -30,11 +22,7 @@
     {
       "id": "4",
       "question": "Any keyboard shortcuts needed?",
-      "options": [
-        "Yes, specify",
-        "No",
-        "Something else"
-      ]
+      "options": ["Yes, specify", "No", "Something else"]
     }
   ],
   "answered": true,
