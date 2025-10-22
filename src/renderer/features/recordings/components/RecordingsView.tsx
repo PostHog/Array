@@ -23,6 +23,8 @@ export function RecordingsView() {
     isLoading,
     saveRecording,
     deleteRecording,
+    transcribeRecording,
+    isTranscribing,
     transcriptionError,
     clearTranscriptionError,
   } = useRecordings();
@@ -142,6 +144,8 @@ export function RecordingsView() {
             <RecordingDetail
               recording={selectedRecording}
               onDelete={deleteRecording}
+              onTranscribe={transcribeRecording}
+              isTranscribing={isTranscribing}
               isSettingsOpen={isSettingsOpen}
             />
           ) : (

@@ -41,6 +41,22 @@ export function useRecordings() {
       if (openaiApiKey) {
         try {
           setTranscriptionError(null);
+
+          // Optimistically update to show "processing" status
+          queryClient.setQueryData<Recording[]>(["recordings"], (old = []) => {
+            return old.map((r) =>
+              r.id === newRecording.id
+                ? {
+                    ...r,
+                    transcription: {
+                      status: "processing" as const,
+                      text: "",
+                    },
+                  }
+                : r,
+            );
+          });
+
           await window.electronAPI.recordingTranscribe(
             newRecording.id,
             openaiApiKey,
@@ -53,6 +69,22 @@ export function useRecordings() {
               ? error.message
               : "Auto-transcription failed. Please check your OpenAI API key and try again.";
           setTranscriptionError(errorMessage);
+
+          // Update cache to show error state
+          queryClient.setQueryData<Recording[]>(["recordings"], (old = []) => {
+            return old.map((r) =>
+              r.id === newRecording.id
+                ? {
+                    ...r,
+                    transcription: {
+                      status: "error" as const,
+                      text: "",
+                      error: errorMessage,
+                    },
+                  }
+                : r,
+            );
+          });
         }
       }
     },
@@ -77,8 +109,48 @@ export function useRecordings() {
     }) => {
       return await window.electronAPI.recordingTranscribe(recordingId, apiKey);
     },
+    onMutate: async ({ recordingId }) => {
+      // Optimistically update to show "processing" status
+      setTranscriptionError(null);
+      queryClient.setQueryData<Recording[]>(["recordings"], (old = []) => {
+        return old.map((r) =>
+          r.id === recordingId
+            ? {
+                ...r,
+                transcription: {
+                  status: "processing" as const,
+                  text: "",
+                },
+              }
+            : r,
+        );
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["recordings"] });
+    },
+    onError: (error, { recordingId }) => {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Transcription failed. Please check your OpenAI API key and try again.";
+      setTranscriptionError(errorMessage);
+
+      // Update cache to show error state
+      queryClient.setQueryData<Recording[]>(["recordings"], (old = []) => {
+        return old.map((r) =>
+          r.id === recordingId
+            ? {
+                ...r,
+                transcription: {
+                  status: "error" as const,
+                  text: "",
+                  error: errorMessage,
+                },
+              }
+            : r,
+        );
+      });
     },
   });
 
