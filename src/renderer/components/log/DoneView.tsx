@@ -1,4 +1,7 @@
-import { CaretRight, Check } from "@phosphor-icons/react";
+import {
+  CaretRight as CaretRightIcon,
+  Check as CheckIcon,
+} from "@phosphor-icons/react";
 import type { AgentEvent } from "@posthog/agent";
 import { Box, Code } from "@radix-ui/themes";
 import { MarkdownRenderer } from "../MarkdownRenderer";
@@ -39,7 +42,7 @@ export function DoneView({ event }: DoneViewProps) {
               opacity: 0,
             }}
           >
-            <CaretRight size={14} />
+            <CaretRightIcon size={14} />
           </Box>
           <Box
             style={{
@@ -48,7 +51,7 @@ export function DoneView({ event }: DoneViewProps) {
               color: "var(--green-11)",
             }}
           >
-            <Check size={14} weight="bold" />
+            <CheckIcon size={14} weight="bold" />
           </Box>
           <Code
             size="2"

@@ -2,6 +2,21 @@ import type { Task } from "@shared/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export type OrderByField =
+  | "created_at"
+  | "status"
+  | "title"
+  | "repository"
+  | "working_directory"
+  | "source";
+export type OrderDirection = "asc" | "desc";
+export type GroupByField =
+  | "none"
+  | "status"
+  | "creator"
+  | "source"
+  | "repository";
+
 interface TaskState {
   taskOrder: Record<string, number>;
   selectedTaskId: string | null;
@@ -12,6 +27,10 @@ interface TaskState {
   hoveredIndex: number | null;
   contextMenuIndex: number | null;
   filter: string;
+  orderBy: OrderByField;
+  orderDirection: OrderDirection;
+  groupBy: GroupByField;
+  expandedGroups: Record<string, boolean>;
 
   selectTask: (taskId: string | null) => void;
   setTaskOrder: (order: Record<string, number>) => void;
@@ -31,6 +50,10 @@ interface TaskState {
   setHoveredIndex: (index: number | null) => void;
   setContextMenuIndex: (index: number | null) => void;
   setFilter: (filter: string) => void;
+  setOrderBy: (orderBy: OrderByField) => void;
+  setOrderDirection: (orderDirection: OrderDirection) => void;
+  setGroupBy: (groupBy: GroupByField) => void;
+  toggleGroupExpanded: (groupName: string) => void;
 }
 
 export const useTaskStore = create<TaskState>()(
@@ -45,6 +68,10 @@ export const useTaskStore = create<TaskState>()(
       hoveredIndex: null,
       contextMenuIndex: null,
       filter: "",
+      orderBy: "created_at",
+      orderDirection: "desc",
+      groupBy: "none",
+      expandedGroups: {},
 
       selectTask: (taskId: string | null) => {
         set({ selectedTaskId: taskId });
@@ -104,10 +131,37 @@ export const useTaskStore = create<TaskState>()(
       setFilter: (filter: string) => {
         set({ filter });
       },
+
+      setOrderBy: (orderBy: OrderByField) => {
+        set({ orderBy });
+      },
+
+      setOrderDirection: (orderDirection: OrderDirection) => {
+        set({ orderDirection });
+      },
+
+      setGroupBy: (groupBy: GroupByField) => {
+        set({ groupBy });
+      },
+
+      toggleGroupExpanded: (groupName: string) => {
+        set((state) => ({
+          expandedGroups: {
+            ...state.expandedGroups,
+            [groupName]: !(state.expandedGroups[groupName] ?? true),
+          },
+        }));
+      },
     }),
     {
       name: "task-store",
-      partialize: (state) => ({ taskOrder: state.taskOrder }),
+      partialize: (state) => ({
+        taskOrder: state.taskOrder,
+        orderBy: state.orderBy,
+        orderDirection: state.orderDirection,
+        groupBy: state.groupBy,
+        expandedGroups: state.expandedGroups,
+      }),
     },
   ),
 );

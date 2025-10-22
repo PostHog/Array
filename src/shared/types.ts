@@ -3,6 +3,16 @@ export interface RepositoryConfig {
   repository: string;
 }
 
+export interface UserBasic {
+  id: number;
+  uuid: string;
+  distinct_id?: string | null;
+  first_name?: string;
+  last_name?: string;
+  email: string;
+  is_email_verified?: boolean | null;
+}
+
 export interface Task {
   id: string;
   task_number: number | null;
@@ -11,6 +21,7 @@ export interface Task {
   description: string;
   created_at: string;
   updated_at: string;
+  created_by?: UserBasic | null;
   origin_product: string;
   status?: string;
   repository_config?: RepositoryConfig;

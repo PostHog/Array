@@ -4,6 +4,7 @@
 - Use `Kbd` for key hints. Fallback to Tailwind CSS when Radix lacks props.
 - Use zustand for state management.
 - Prefer creating separate, reusable components over large monolithic components.
+- When using Phosphor Icons, use the Icon name suffixed by `Icon` for the component name. For example, `<ArrowsDownUpIcon>`, not `<ArrowsDownUpIcon>`. Also import them  like so: `import { ArrowsDownUpIcon } from "@phosphor-icons/react";`
 
 ## Layout Components
 

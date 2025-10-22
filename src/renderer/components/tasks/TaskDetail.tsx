@@ -16,20 +16,20 @@ import type { ClarifyingQuestion, Task } from "@shared/types";
 import { format, formatDistanceToNow } from "date-fns";
 import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { useBlurOnEscape } from "../hooks/useBlurOnEscape";
-import { useRepositoryIntegration } from "../hooks/useRepositoryIntegration";
-import { useTasks, useUpdateTask } from "../hooks/useTasks";
-import { useStatusBarStore } from "../stores/statusBarStore";
-import { useTabStore } from "../stores/tabStore";
-import { useTaskExecutionStore } from "../stores/taskExecutionStore";
+import { useBlurOnEscape } from "../../hooks/useBlurOnEscape";
+import { useRepositoryIntegration } from "../../hooks/useRepositoryIntegration";
+import { useTasks, useUpdateTask } from "../../hooks/useTasks";
+import { useStatusBarStore } from "../../stores/statusBarStore";
+import { useTabStore } from "../../stores/tabStore";
+import { useTaskExecutionStore } from "../../stores/taskExecutionStore";
 import {
   REPO_NOT_IN_INTEGRATION_WARNING,
   repoConfigToKey,
-} from "../utils/repository";
-import { AsciiArt } from "./AsciiArt";
-import { PlanEditor } from "./PlanEditor";
-import { PlanView } from "./PlanView";
-import { RichTextEditor } from "./RichTextEditor";
+} from "../../utils/repository";
+import { AsciiArt } from "../AsciiArt";
+import { PlanEditor } from "../PlanEditor";
+import { PlanView } from "../PlanView";
+import { RichTextEditor } from "../RichTextEditor";
 import { TaskArtifacts } from "./TaskArtifacts";
 
 interface TaskDetailProps {

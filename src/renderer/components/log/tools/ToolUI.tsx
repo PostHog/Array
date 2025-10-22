@@ -1,4 +1,7 @@
-import { CaretDown, CaretRight } from "@phosphor-icons/react";
+import {
+  CaretDown as CaretDownIcon,
+  CaretRight as CaretRightIcon,
+} from "@phosphor-icons/react";
 import { Box, Code, ContextMenu } from "@radix-ui/themes";
 import { type ReactNode, useState } from "react";
 
@@ -64,7 +67,11 @@ export function ToolExecutionWrapper({
             color: "var(--gray-11)",
           }}
         >
-          {expanded ? <CaretDown size={14} /> : <CaretRight size={14} />}
+          {expanded ? (
+            <CaretDownIcon size={14} />
+          ) : (
+            <CaretRightIcon size={14} />
+          )}
         </Box>
         <Box
           style={{

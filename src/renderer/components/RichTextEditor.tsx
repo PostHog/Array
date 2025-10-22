@@ -30,6 +30,7 @@ interface RichTextEditorProps {
   style?: React.CSSProperties;
   showToolbar?: boolean;
   minHeight?: string;
+  readOnly?: boolean;
 }
 
 export function RichTextEditor({
@@ -43,6 +44,7 @@ export function RichTextEditor({
   style,
   showToolbar = true,
   minHeight = "100px",
+  readOnly = false,
 }: RichTextEditorProps) {
   const [mentionItems, setMentionItems] = useState<MentionItem[]>([]);
   const mentionItemsRef = useRef(mentionItems);
@@ -63,6 +65,7 @@ export function RichTextEditor({
   }, [repoPath]);
 
   const editor = useEditor({
+    editable: !readOnly,
     extensions: [
       StarterKit.configure({
         // Disable default keyboard shortcuts to override them

@@ -1,4 +1,9 @@
-import { CaretDown, CaretUp, Copy, Trash } from "@phosphor-icons/react";
+import {
+  CaretDown as CaretDownIcon,
+  CaretUp as CaretUpIcon,
+  Copy as CopyIcon,
+  Trash as TrashIcon,
+} from "@phosphor-icons/react";
 import type { AgentEvent } from "@posthog/agent";
 import {
   Box,
@@ -268,7 +273,7 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
                     color="gray"
                     onClick={() => setExpandAll(false)}
                   >
-                    <CaretUp size={16} />
+                    <CaretUpIcon size={16} />
                   </IconButton>
                 </Tooltip>
                 <Tooltip content="Expand all">
@@ -278,7 +283,7 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
                     color="gray"
                     onClick={() => setExpandAll(true)}
                   >
-                    <CaretDown size={16} />
+                    <CaretDownIcon size={16} />
                   </IconButton>
                 </Tooltip>
               </>
@@ -290,7 +295,7 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
                 color="gray"
                 onClick={handleCopyLogs}
               >
-                <Copy size={16} />
+                <CopyIcon size={16} />
               </IconButton>
             </Tooltip>
             {onClearLogs && (
@@ -301,7 +306,7 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
                   color="red"
                   onClick={onClearLogs}
                 >
-                  <Trash size={16} />
+                  <TrashIcon size={16} />
                 </IconButton>
               </Tooltip>
             )}

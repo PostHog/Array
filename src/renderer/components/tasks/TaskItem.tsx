@@ -1,12 +1,13 @@
+import { GitPullRequest } from "@phosphor-icons/react";
 import { CopyIcon, TrashIcon } from "@radix-ui/react-icons";
 import { Badge, Box, Code, ContextMenu, Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
-import { formatDistanceToNow } from "date-fns";
+import { differenceInHours, format, formatDistanceToNow } from "date-fns";
 import type React from "react";
 import { memo, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useDeleteTask, useDuplicateTask } from "../hooks/useTasks";
-import { useTaskStore } from "../stores/taskStore";
+import { useDeleteTask, useDuplicateTask } from "../../hooks/useTasks";
+import { useTaskStore } from "../../stores/taskStore";
 import { TaskDragPreview } from "./TaskDragPreview";
 
 interface TaskItemProps {
@@ -53,9 +54,43 @@ function TaskItemComponent({
   const selectedIndex = useTaskStore((state) => state.selectedIndex);
   const contextMenuIndex = useTaskStore((state) => state.contextMenuIndex);
   const createdAt = new Date(task.created_at);
-  const timeAgo = formatDistanceToNow(createdAt, { addSuffix: true });
+  const hoursSinceCreated = differenceInHours(new Date(), createdAt);
+  const timeDisplay =
+    hoursSinceCreated < 24
+      ? formatDistanceToNow(createdAt, { addSuffix: true })
+      : format(createdAt, "MMM d");
   const dragPreviewRef = useRef<HTMLDivElement>(null);
-  const status = task.status || "Backlog";
+
+  // Determine status: If PR exists, mark as completed, otherwise use latest_run status
+  const prUrl = task.latest_run?.output?.pr_url as string | undefined;
+  const hasPR = !!prUrl;
+  const status = hasPR ? "completed" : task.latest_run?.status || "backlog";
+
+  const handleOpenPR = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (prUrl) {
+      window.electronAPI.openExternal(prUrl);
+    }
+  };
+
+  const statusColorMap: Record<
+    string,
+    "green" | "red" | "blue" | "amber" | "gray"
+  > = {
+    completed: "green",
+    failed: "red",
+    in_progress: "blue",
+    started: "amber",
+    backlog: "gray",
+  };
+
+  const statusDisplayMap: Record<string, string> = {
+    completed: "Completed",
+    failed: "Failed",
+    in_progress: "In progress",
+    started: "Started",
+    backlog: "Backlog",
+  };
 
   const handleDragStart = (e: React.DragEvent) => {
     if (dragPreviewRef.current) {
@@ -195,20 +230,55 @@ function TaskItemComponent({
               </Code>
 
               <Badge
-                color={status === "Backlog" ? "gray" : undefined}
+                color={statusColorMap[status] || "gray"}
                 size="1"
                 style={{ flexShrink: 0 }}
               >
-                {status}
+                {statusDisplayMap[status] ||
+                  status.charAt(0).toUpperCase() + status.slice(1)}
               </Badge>
 
-              <Text
-                size="2"
-                className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+              <Flex
+                align="center"
+                gap="2"
+                className="flex-1"
                 style={{ minWidth: 0 }}
               >
-                {task.title}
-              </Text>
+                <Text
+                  size="1"
+                  className="overflow-hidden text-ellipsis whitespace-nowrap"
+                  style={{ minWidth: 0 }}
+                >
+                  {task.title}
+                </Text>
+                {hasPR && (
+                  <Flex
+                    align="center"
+                    gap="1"
+                    onClick={isHighlighted ? handleOpenPR : undefined}
+                    className={
+                      isHighlighted
+                        ? "cursor-pointer rounded border border-gray-6 px-1"
+                        : ""
+                    }
+                    style={{
+                      flexShrink: 0,
+                      fontFamily: "var(--font-mono)",
+                      opacity: isHighlighted ? 1 : 0,
+                      pointerEvents: isHighlighted ? "auto" : "none",
+                    }}
+                  >
+                    <GitPullRequest
+                      size={14}
+                      weight="light"
+                      className="text-gray-11"
+                    />
+                    <Text size="1" color="gray">
+                      Open pull request
+                    </Text>
+                  </Flex>
+                )}
+              </Flex>
 
               {task.repository_config && (
                 <Text
@@ -225,10 +295,10 @@ function TaskItemComponent({
               <Text
                 size="1"
                 color="gray"
-                className="whitespace-nowrap"
+                className="whitespace-nowrap text-gray-8"
                 style={{ flexShrink: 0 }}
               >
-                {timeAgo}
+                {timeDisplay}
               </Text>
             </Flex>
           </Box>
