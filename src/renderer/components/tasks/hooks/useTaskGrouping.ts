@@ -62,6 +62,7 @@ export function useTaskGrouping(
 
     // Sort groups with specific ordering for status groups
     // Priority: action needed > in progress > completed > backlog
+    // Note: Status values are lowercase from TaskRun, except "Backlog" which is the fallback
     const statusOrder = [
       "failed",
       "in_progress",
@@ -76,14 +77,7 @@ export function useTaskGrouping(
         tasks,
       }))
       .sort((a, b) => {
-        const aIsEmpty = a.name.startsWith("No ");
-        const bIsEmpty = b.name.startsWith("No ");
-
-        // Empty groups always go to bottom
-        if (aIsEmpty && !bIsEmpty) return 1;
-        if (!aIsEmpty && bIsEmpty) return -1;
-
-        // If grouping by status, use status order
+        // If grouping by status, use status order first
         if (groupBy === "status") {
           const aIndex = statusOrder.indexOf(a.name);
           const bIndex = statusOrder.indexOf(b.name);
@@ -94,6 +88,13 @@ export function useTaskGrouping(
           if (aIndex !== -1) return -1;
           if (bIndex !== -1) return 1;
         }
+
+        const aIsEmpty = a.name.startsWith("No ");
+        const bIsEmpty = b.name.startsWith("No ");
+
+        // Empty groups always go to bottom
+        if (aIsEmpty && !bIsEmpty) return 1;
+        if (!aIsEmpty && bIsEmpty) return -1;
 
         return a.name.localeCompare(b.name);
       });

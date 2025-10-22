@@ -64,7 +64,7 @@ function TaskItemComponent({
   // Determine status: If PR exists, mark as completed, otherwise use latest_run status
   const prUrl = task.latest_run?.output?.pr_url as string | undefined;
   const hasPR = !!prUrl;
-  const status = hasPR ? "completed" : task.latest_run?.status || "Backlog";
+  const status = hasPR ? "completed" : task.latest_run?.status || "backlog";
 
   const handleOpenPR = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -81,7 +81,15 @@ function TaskItemComponent({
     failed: "red",
     in_progress: "blue",
     started: "amber",
-    Backlog: "gray",
+    backlog: "gray",
+  };
+
+  const statusDisplayMap: Record<string, string> = {
+    completed: "Completed",
+    failed: "Failed",
+    in_progress: "In progress",
+    started: "Started",
+    backlog: "Backlog",
   };
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -226,7 +234,8 @@ function TaskItemComponent({
                 size="1"
                 style={{ flexShrink: 0 }}
               >
-                {status}
+                {statusDisplayMap[status] ||
+                  status.charAt(0).toUpperCase() + status.slice(1)}
               </Badge>
 
               <Flex
