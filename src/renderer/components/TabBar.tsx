@@ -1,4 +1,4 @@
-import { Cross2Icon } from "@radix-ui/react-icons";
+import { Cross2Icon, PlusIcon } from "@radix-ui/react-icons";
 import {
   Box,
   ContextMenu,
@@ -12,7 +12,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTabStore } from "../stores/tabStore";
 
-export function TabBar() {
+interface TabBarProps {
+  onOpenCommandMenu?: () => void;
+}
+
+export function TabBar({ onOpenCommandMenu }: TabBarProps) {
   const {
     tabs,
     activeTabId,
@@ -320,6 +324,19 @@ export function TabBar() {
             </ContextMenu.Root>
           );
         })}
+
+        {/* Plus button to open Command Menu */}
+        <Flex
+          className="no-drag cursor-pointer border-gray-6 border-r text-gray-11 transition-colors hover:bg-gray-3 hover:text-gray-12"
+          align="center"
+          justify="center"
+          px="4"
+          flexShrink="0"
+          onClick={() => onOpenCommandMenu?.()}
+          title="Open Command Menu"
+        >
+          <PlusIcon width="16" height="16" />
+        </Flex>
       </Flex>
 
       {showScrollGradient && (
