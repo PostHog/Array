@@ -8,6 +8,8 @@ interface AuthState {
   encryptedKey: string | null;
   isAuthenticated: boolean;
   client: PostHogAPIClient | null;
+  openaiApiKey: string | null;
+  encryptedOpenaiKey: string | null;
 
   setCredentials: (apiKey: string, apiHost: string) => Promise<void>;
   checkAuth: () => Promise<boolean>;
@@ -21,6 +23,9 @@ export const useAuthStore = create<AuthState>()(
       apiHost: "https://us.posthog.com",
       encryptedKey: null,
       isAuthenticated: false,
+      openaiApiKey: null,
+      encryptedOpenaiKey: null,
+
       client: null,
 
       setCredentials: async (apiKey: string, apiHost: string) => {
