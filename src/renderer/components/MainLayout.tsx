@@ -84,7 +84,7 @@ export function MainLayout() {
 
   return (
     <Flex direction="column" height="100vh">
-      <TabBar />
+      <TabBar onOpenCommandMenu={() => setCommandMenuOpen(true)} />
 
       <Box flexGrow="1" overflow="hidden">
         {activeTab?.type === "task-list" && (

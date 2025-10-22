@@ -1,0 +1,44 @@
+{
+  "questions": [
+    {
+      "id": "1",
+      "question": "What should the plus button do when clicked?",
+      "options": ["Open task modal", "Create new tab", "Something else"]
+    },
+    {
+      "id": "2",
+      "question": "Where should it be placed?",
+      "options": ["Inside scrollable area", "Fixed position", "Something else"]
+    },
+    {
+      "id": "3",
+      "question": "Should it match tab styling or use a button-like appearance?",
+      "options": [
+        "Match tab styling",
+        "Use a button-like appearance",
+        "Something else"
+      ]
+    },
+    {
+      "id": "4",
+      "question": "Any keyboard shortcuts needed?",
+      "options": ["Yes, specify", "No", "Something else"]
+    }
+  ],
+  "answered": true,
+  "answers": [
+    {
+      "questionId": "1",
+      "selectedOption": "Something else",
+      "customInput": "Open the Command Box"
+    },
+    {
+      "questionId": "2",
+      "selectedOption": "Inside scrollable area"
+    },
+    {
+      "questionId": "3",
+      "selectedOption": "Match tab styling"
+    }
+  ]
+}
