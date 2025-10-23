@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import type { Task } from "@/shared/types";
 import { useTasks } from "../../hooks/useTasks";
+import { useLayoutStore } from "../../stores/layoutStore";
 import { useTabStore } from "../../stores/tabStore";
 import { Command } from "./Command";
 import { CommandKeyHints } from "./CommandKeyHints";
@@ -12,15 +13,11 @@ import { CommandKeyHints } from "./CommandKeyHints";
 interface CommandMenuProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreateTask?: () => void;
 }
 
-export function CommandMenu({
-  open,
-  onOpenChange,
-  onCreateTask,
-}: CommandMenuProps) {
+export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const { tabs, setActiveTab, createTab } = useTabStore();
+  const { setCliMode } = useLayoutStore();
   const { data: tasks = [] } = useTasks();
   const commandRef = useRef<HTMLDivElement>(null);
 
@@ -96,8 +93,20 @@ export function CommandMenu({
   };
 
   const handleCreateTask = () => {
+    // Find the Tasks tab or use the first task-list tab
+    const tasksTab = tabs.find((tab) => tab.type === "task-list");
+
+    if (tasksTab) {
+      setActiveTab(tasksTab.id);
+    }
+
+    // Switch to task mode
+    setCliMode("task");
+
+    // Close the command menu
     onOpenChange(false);
-    onCreateTask?.();
+
+    // Note: The auto-focus effect in CliTaskPanel will handle focusing the editor
   };
 
   const handleNavigateToTask = (task: {

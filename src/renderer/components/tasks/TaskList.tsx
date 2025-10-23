@@ -20,11 +20,7 @@ interface TaskListProps {
   onSelectTask: (task: Task) => void;
 }
 
-interface TaskListInternalProps extends TaskListProps {
-  onNewTask?: () => void;
-}
-
-export function TaskList({ onSelectTask, onNewTask }: TaskListInternalProps) {
+export function TaskList({ onSelectTask }: TaskListProps) {
   // Data fetching
   const { data: tasks = [], isLoading, error, refetch } = useTasks();
   const { data: users = [] } = useUsers();
@@ -202,7 +198,6 @@ export function TaskList({ onSelectTask, onNewTask }: TaskListInternalProps) {
             setFilter(newFilter);
             setSelectedIndex(null);
           }}
-          onNewTask={onNewTask}
         />
 
         <Box ref={listRef} flexGrow="1" overflowY="auto">
@@ -240,7 +235,7 @@ export function TaskList({ onSelectTask, onNewTask }: TaskListInternalProps) {
           alignItems: "center",
           justifyContent: "center",
           marginRight: "8px",
-          marginLeft: "8px", // -7px for centering, -8px for scrollbar width
+          marginLeft: "8px",
         }}
         onMouseDown={handleMouseDown}
         onMouseEnter={(e) => {

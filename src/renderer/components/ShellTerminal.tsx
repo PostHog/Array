@@ -45,7 +45,23 @@ export function ShellTerminal({ cwd }: ShellTerminalProps) {
   }, [cliMode]);
 
   useEffect(() => {
-    if (!terminalRef.current) return;
+    console.log("[ShellTerminal] Effect running", {
+      hasRef: !!terminalRef.current,
+      hasTerminal: !!terminal.current,
+    });
+
+    if (!terminalRef.current) {
+      console.log("[ShellTerminal] No terminalRef, returning");
+      return;
+    }
+
+    // Don't recreate if already exists
+    if (terminal.current) {
+      console.log("[ShellTerminal] Terminal already exists, returning");
+      return;
+    }
+
+    console.log("[ShellTerminal] Creating terminal...");
 
     // Generate unique session ID for this effect run using cryptographically secure random
     const sessionId = `shell-${Date.now()}-${secureRandomString(7)}`;
@@ -84,7 +100,7 @@ export function ShellTerminal({ cwd }: ShellTerminalProps) {
       ) {
         // Manually trigger mode switch since event won't bubble to global handler
         event.preventDefault();
-        setCliMode(cliMode === "task" ? "shell" : "task");
+        setCliMode((current) => (current === "task" ? "shell" : "task"));
         return false; // Don't let xterm handle this
       }
       // Let xterm handle everything else normally
@@ -154,6 +170,7 @@ export function ShellTerminal({ cwd }: ShellTerminalProps) {
 
     // Cleanup
     return () => {
+      console.log("[ShellTerminal] Cleanup running, disposing terminal");
       window.removeEventListener("resize", handleResize);
       disposable.dispose();
       unsubscribeData?.();
@@ -162,8 +179,13 @@ export function ShellTerminal({ cwd }: ShellTerminalProps) {
         console.error("Failed to destroy shell session:", error);
       });
       term.dispose();
+      terminal.current = null;
+      fitAddon.current = null;
+      console.log(
+        "[ShellTerminal] Cleanup complete, terminal.current set to null",
+      );
     };
-  }, [cwd, cliMode, setCliMode]);
+  }, [cwd, setCliMode]);
 
   return (
     <Box

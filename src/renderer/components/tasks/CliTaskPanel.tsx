@@ -85,6 +85,7 @@ export function CliTaskPanel() {
   const [repository, setRepository] = useState("");
   const [cursorVisible, setCursorVisible] = useState(true);
   const [isFocused, setIsFocused] = useState(false);
+  const [isShellFocused, setIsShellFocused] = useState(false);
   const [fileHints, setFileHints] = useState<string[]>([]);
   const [selectedHintIndex, setSelectedHintIndex] = useState(0);
   const [showHints, setShowHints] = useState(false);
@@ -92,6 +93,7 @@ export function CliTaskPanel() {
   const [loadingDots, setLoadingDots] = useState(".");
   const caretRef = useRef<HTMLDivElement>(null);
   const hintsRef = useRef<HTMLDivElement>(null);
+  const terminalContainerRef = useRef<HTMLDivElement>(null);
 
   const editor = useEditor({
     extensions: [
@@ -120,7 +122,7 @@ export function CliTaskPanel() {
           !event.altKey
         ) {
           event.preventDefault();
-          setCliMode(cliMode === "task" ? "shell" : "task");
+          setCliMode((current) => (current === "task" ? "shell" : "task"));
           return true;
         }
 
@@ -387,6 +389,23 @@ export function CliTaskPanel() {
     }
   }, [cliMode, editor]);
 
+  // Track shell focus
+  useEffect(() => {
+    const container = terminalContainerRef.current;
+    if (!container) return;
+
+    const handleFocusIn = () => setIsShellFocused(true);
+    const handleFocusOut = () => setIsShellFocused(false);
+
+    container.addEventListener("focusin", handleFocusIn);
+    container.addEventListener("focusout", handleFocusOut);
+
+    return () => {
+      container.removeEventListener("focusin", handleFocusIn);
+      container.removeEventListener("focusout", handleFocusOut);
+    };
+  }, []);
+
   // Animated loading dots
   useEffect(() => {
     if (!isCreatingTask) {
@@ -526,10 +545,15 @@ export function CliTaskPanel() {
         p="4"
         pl="0"
         gap="4"
-        style={{ fontFamily: "monospace", position: "relative", zIndex: 1 }}
+        style={{
+          fontFamily: "monospace",
+          position: "relative",
+          zIndex: 1,
+          paddingTop: "23px",
+        }}
       >
         {/* Folder Picker */}
-        <Box>
+        <Box style={{ minWidth: 0 }}>
           <FolderPicker
             value={folderPath}
             onChange={setFolderPath}
@@ -540,6 +564,7 @@ export function CliTaskPanel() {
 
         {/* CLI Terminal */}
         <Flex
+          ref={terminalContainerRef}
           direction="column"
           flexGrow="1"
           style={{
@@ -553,45 +578,67 @@ export function CliTaskPanel() {
           {/* Mode Header */}
           <Flex
             align="center"
-            gap="2"
+            justify="between"
             p="2"
             style={{
               borderBottom: "1px solid var(--gray-a6)",
               fontFamily: "monospace",
               backgroundColor: "rgba(0, 0, 0, 0.2)",
+              userSelect: "none",
+              WebkitUserSelect: "none",
             }}
           >
-            {cliMode === "task" ? (
-              <>
-                <CheckSquareIcon
-                  size={16}
-                  weight="bold"
-                  color="var(--accent-11)"
-                />
-                <Text
-                  size="1"
-                  weight="bold"
-                  style={{ color: "var(--accent-11)" }}
-                >
-                  Task mode
-                </Text>
-              </>
-            ) : (
-              <>
-                <TerminalWindowIcon
-                  size={16}
-                  weight="bold"
-                  color="var(--accent-11)"
-                />
-                <Text
-                  size="1"
-                  weight="bold"
-                  style={{ color: "var(--accent-11)" }}
-                >
-                  Shell mode
-                </Text>
-              </>
-            )}
+            <Flex align="center" gap="2">
+              {cliMode === "task" ? (
+                <>
+                  <CheckSquareIcon
+                    size={16}
+                    weight="bold"
+                    color="var(--accent-11)"
+                  />
+                  <Text
+                    size="1"
+                    weight="bold"
+                    style={{ color: "var(--accent-11)" }}
+                  >
+                    Task mode
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <TerminalWindowIcon
+                    size={16}
+                    weight="bold"
+                    color="var(--accent-11)"
+                  />
+                  <Text
+                    size="1"
+                    weight="bold"
+                    style={{ color: "var(--accent-11)" }}
+                  >
+                    Shell mode
+                  </Text>
+                </>
+              )}
+            </Flex>
+            <Flex
+              align="center"
+              gap="1"
+              style={{
+                fontSize: "var(--font-size-1)",
+                color: "var(--gray-9)",
+                fontFamily: "monospace",
+              }}
+            >
+              <Text size="1" weight="bold">
+                Shift
+              </Text>
+              <Text size="1">+</Text>
+              <Text size="1" weight="bold">
+                Tab
+              </Text>
+              <Text size="1">to switch</Text>
+            </Flex>
           </Flex>
 
           {/* Terminal Content */}
@@ -628,7 +675,14 @@ export function CliTaskPanel() {
               >
                 &gt;
               </Text>
-              <Box style={{ flex: 1, position: "relative" }}>
+              <Box
+                style={{
+                  flex: 1,
+                  position: "relative",
+                  opacity: !isFocused && editor && !editor.isEmpty ? 0.5 : 1,
+                  transition: "opacity 0.2s",
+                }}
+              >
                 <EditorContent editor={editor} />
                 {editor && (isFocused || !editor.isEmpty) && (
                   <div
@@ -725,7 +779,7 @@ export function CliTaskPanel() {
                   }
 
                   .cli-editor.ProseMirror:not(.ProseMirror-focused) p.is-editor-empty:first-child::before {
-                    color: var(--gray-9);
+                    color: var(--gray-11);
                     content: attr(data-placeholder);
                     float: left;
                     height: 0;
@@ -750,33 +804,12 @@ export function CliTaskPanel() {
                 display: cliMode === "shell" ? "block" : "none",
                 height: "100%",
                 width: "100%",
+                opacity: !isShellFocused ? 0.5 : 1,
+                transition: "opacity 0.2s",
               }}
             >
               <ShellTerminal cwd={folderPath || undefined} />
             </Box>
-
-            {/* Keyboard hint in bottom-left */}
-            <Flex
-              align="center"
-              gap="1"
-              style={{
-                position: "absolute",
-                bottom: "8px",
-                left: "8px",
-                fontSize: "var(--font-size-1)",
-                color: "var(--gray-9)",
-                fontFamily: "monospace",
-              }}
-            >
-              <Text size="1" weight="bold">
-                Shift
-              </Text>
-              <Text size="1">+</Text>
-              <Text size="1" weight="bold">
-                Tab
-              </Text>
-              <Text size="1">to switch mode</Text>
-            </Flex>
 
             {/* Key hint or loading indicator (task mode only) */}
             {cliMode === "task" && (

@@ -5,16 +5,21 @@ interface LayoutStore {
   cliPanelWidth: number;
   setCliPanelWidth: (width: number) => void;
   cliMode: "task" | "shell";
-  setCliMode: (mode: "task" | "shell") => void;
+  setCliMode: (
+    mode: "task" | "shell" | ((current: "task" | "shell") => "task" | "shell"),
+  ) => void;
 }
 
 export const useLayoutStore = create<LayoutStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       cliPanelWidth: 30,
       setCliPanelWidth: (width) => set({ cliPanelWidth: width }),
       cliMode: "task",
-      setCliMode: (mode) => set({ cliMode: mode }),
+      setCliMode: (mode) => {
+        const newMode = typeof mode === "function" ? mode(get().cliMode) : mode;
+        set({ cliMode: newMode });
+      },
     }),
     {
       name: "layout-storage",
