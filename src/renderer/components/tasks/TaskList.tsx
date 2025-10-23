@@ -8,6 +8,7 @@ import { useLayoutStore } from "../../stores/layoutStore";
 import { useStatusBarStore } from "../../stores/statusBarStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { CliTaskPanel } from "./CliTaskPanel";
+import { useCliPanelResize } from "./hooks/useCliPanelResize";
 import { useTaskDragDrop } from "./hooks/useTaskDragDrop";
 import { useTaskFiltering } from "./hooks/useTaskFiltering";
 import { useTaskGrouping } from "./hooks/useTaskGrouping";
@@ -61,6 +62,7 @@ export function TaskList({ onSelectTask }: TaskListProps) {
     filter,
   );
   const groupedTasks = useTaskGrouping(filteredTasks, groupBy, users);
+  const { isResizing, handleMouseDown } = useCliPanelResize(setCliPanelWidth);
 
   const handleMoveTask = useCallback(
     (fromIndex: number, toIndex: number) => {
