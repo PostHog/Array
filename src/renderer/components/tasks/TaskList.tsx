@@ -6,7 +6,7 @@ import { useUsers } from "../../hooks/useUsers";
 import { useAuthStore } from "../../stores/authStore";
 import { useStatusBarStore } from "../../stores/statusBarStore";
 import { useTaskStore } from "../../stores/taskStore";
-import { EmptyTaskPanel } from "./EmptyTaskPanel";
+import { CliTaskPanel } from "./CliTaskPanel";
 import { useTaskDragDrop } from "./hooks/useTaskDragDrop";
 import { useTaskFiltering } from "./hooks/useTaskFiltering";
 import { useTaskGrouping } from "./hooks/useTaskGrouping";
@@ -197,8 +197,8 @@ export function TaskList({ onSelectTask, onNewTask }: TaskListInternalProps) {
         </Box>
       </Flex>
 
-      {/* Right side: Empty panel */}
-      <EmptyTaskPanel />
+      {/* Right side: CLI panel */}
+      <CliTaskPanel />
     </Flex>
   );
 }
