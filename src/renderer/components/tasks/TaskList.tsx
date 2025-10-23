@@ -1,6 +1,6 @@
 import { Box, Button, Flex, Spinner, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useTasks } from "../../hooks/useTasks";
 import { useUsers } from "../../hooks/useUsers";
 import { useAuthStore } from "../../stores/authStore";
@@ -8,6 +8,7 @@ import { useLayoutStore } from "../../stores/layoutStore";
 import { useStatusBarStore } from "../../stores/statusBarStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { CliTaskPanel } from "./CliTaskPanel";
+import { useCliPanelResize } from "./hooks/useCliPanelResize";
 import { useTaskDragDrop } from "./hooks/useTaskDragDrop";
 import { useTaskFiltering } from "./hooks/useTaskFiltering";
 import { useTaskGrouping } from "./hooks/useTaskGrouping";
@@ -50,9 +51,6 @@ export function TaskList({ onSelectTask }: TaskListProps) {
   const setCliPanelWidth = useLayoutStore((state) => state.setCliPanelWidth);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Resize state
-  const [isResizing, setIsResizing] = useState(false);
-
   // Custom hooks
   const filteredTasks = useTaskFiltering(
     tasks,
@@ -61,6 +59,7 @@ export function TaskList({ onSelectTask }: TaskListProps) {
     filter,
   );
   const groupedTasks = useTaskGrouping(filteredTasks, groupBy, users);
+  const { isResizing, handleMouseDown } = useCliPanelResize(setCliPanelWidth);
 
   const handleMoveTask = useCallback(
     (fromIndex: number, toIndex: number) => {
@@ -93,33 +92,6 @@ export function TaskList({ onSelectTask }: TaskListProps) {
   );
 
   useTaskScrolling(listRef, selectedIndex, filteredTasks.length);
-
-  // Resize handler
-  const handleMouseDown = useCallback(() => {
-    setIsResizing(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isResizing) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const newWidth =
-        ((window.innerWidth - e.clientX) / window.innerWidth) * 100;
-      setCliPanelWidth(Math.max(20, Math.min(50, newWidth))); // clamp between 20% and 50%
-    };
-
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isResizing, setCliPanelWidth]);
 
   // Status bar
   useEffect(() => {
