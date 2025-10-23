@@ -28,7 +28,10 @@ export function ShellTerminal({ cwd }: ShellTerminalProps) {
   // Auto-focus terminal when switching to shell mode
   useEffect(() => {
     if (cliMode === "shell" && terminal.current) {
-      terminal.current.focus();
+      // Use requestAnimationFrame to ensure the component is visible before focusing
+      requestAnimationFrame(() => {
+        terminal.current?.focus();
+      });
     }
   }, [cliMode]);
 

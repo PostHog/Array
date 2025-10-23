@@ -1,3 +1,4 @@
+import { CheckSquareIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
 import { Extension } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extension-placeholder";
@@ -379,7 +380,10 @@ export function CliTaskPanel() {
   // Auto-focus when switching modes
   useEffect(() => {
     if (cliMode === "task" && editor) {
-      editor.commands.focus();
+      // Use requestAnimationFrame to ensure the component is visible before focusing
+      requestAnimationFrame(() => {
+        editor?.commands.focus();
+      });
     }
   }, [cliMode, editor]);
 
@@ -538,110 +542,166 @@ export function CliTaskPanel() {
         <Flex
           direction="column"
           flexGrow="1"
-          p={cliMode === "task" ? "3" : "0"}
           style={{
             backgroundColor: "rgba(0, 0, 0, 0.3)",
             borderRadius: "var(--radius-2)",
             border: "1px solid var(--gray-a6)",
-            cursor: cliMode === "task" ? "text" : "default",
             position: "relative",
+            overflow: "hidden",
           }}
-          onClick={() => cliMode === "task" && editor?.commands.focus()}
         >
-          {/* Task Mode - TipTap Editor */}
+          {/* Mode Header */}
           <Flex
-            align="start"
+            align="center"
             gap="2"
+            p="2"
             style={{
-              display: cliMode === "task" ? "flex" : "none",
-              height: "100%",
+              borderBottom: "1px solid var(--gray-a6)",
+              fontFamily: "monospace",
+              backgroundColor: "rgba(0, 0, 0, 0.2)",
             }}
           >
-            <Text
-              size="2"
-              weight="bold"
+            {cliMode === "task" ? (
+              <>
+                <CheckSquareIcon
+                  size={16}
+                  weight="bold"
+                  color="var(--accent-11)"
+                />
+                <Text
+                  size="1"
+                  weight="bold"
+                  style={{ color: "var(--accent-11)" }}
+                >
+                  Task mode
+                </Text>
+              </>
+            ) : (
+              <>
+                <TerminalWindowIcon
+                  size={16}
+                  weight="bold"
+                  color="var(--accent-11)"
+                />
+                <Text
+                  size="1"
+                  weight="bold"
+                  style={{ color: "var(--accent-11)" }}
+                >
+                  Shell mode
+                </Text>
+              </>
+            )}
+          </Flex>
+
+          {/* Terminal Content */}
+          <Flex
+            direction="column"
+            flexGrow="1"
+            p={cliMode === "task" ? "3" : "0"}
+            style={{
+              cursor: cliMode === "task" ? "text" : "default",
+              position: "relative",
+            }}
+            onClick={() => cliMode === "task" && editor?.commands.focus()}
+          >
+            {/* Task Mode - TipTap Editor */}
+            <Flex
+              align="start"
+              gap="2"
               style={{
-                color: "var(--accent-11)",
-                fontFamily: "monospace",
-                userSelect: "none",
-                WebkitUserSelect: "none",
-                bottom: "1px",
-                position: "relative",
+                display: cliMode === "task" ? "flex" : "none",
+                height: "100%",
               }}
             >
-              &gt;
-            </Text>
-            <Box style={{ flex: 1, position: "relative" }}>
-              <EditorContent editor={editor} />
-              {editor && (isFocused || !editor.isEmpty) && (
-                <div
-                  ref={caretRef}
-                  style={{
-                    top: 0,
-                    position: "absolute",
-                    width: "8px",
-                    height: "16px",
-                    backgroundColor:
-                      isFocused && cursorVisible
-                        ? "var(--accent-11)"
-                        : "transparent",
-                    border: !isFocused ? "1px solid var(--accent-11)" : "none",
-                    pointerEvents: "none",
-                    transition: "none",
-                    mixBlendMode:
-                      isFocused && cursorVisible ? "color" : "normal",
-                  }}
-                />
-              )}
-              {showHints && fileHints.length > 0 && (
-                <Box
-                  ref={hintsRef}
-                  style={{
-                    position: "absolute",
-                    top: "calc(100% + 8px)",
-                    left: 0,
-                    width: "100%",
-                    fontFamily: "monospace",
-                    fontSize: "var(--font-size-1)",
-                    color: "var(--gray-11)",
-                    pointerEvents: "none",
-                    whiteSpace: "pre",
-                  }}
-                >
-                  <Box
+              <Text
+                size="2"
+                weight="bold"
+                style={{
+                  color: "var(--accent-11)",
+                  fontFamily: "monospace",
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+                  bottom: "1px",
+                  position: "relative",
+                }}
+              >
+                &gt;
+              </Text>
+              <Box style={{ flex: 1, position: "relative" }}>
+                <EditorContent editor={editor} />
+                {editor && (isFocused || !editor.isEmpty) && (
+                  <div
+                    ref={caretRef}
                     style={{
-                      borderTop: "1px solid var(--gray-a6)",
-                      paddingTop: "4px",
+                      top: 0,
+                      position: "absolute",
+                      width: "8px",
+                      height: "16px",
+                      backgroundColor:
+                        isFocused && cursorVisible
+                          ? "var(--accent-11)"
+                          : "transparent",
+                      border: !isFocused
+                        ? "1px solid var(--accent-11)"
+                        : "none",
+                      pointerEvents: "none",
+                      transition: "none",
+                      mixBlendMode:
+                        isFocused && cursorVisible ? "color" : "normal",
+                    }}
+                  />
+                )}
+                {showHints && fileHints.length > 0 && (
+                  <Box
+                    ref={hintsRef}
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 8px)",
+                      left: 0,
+                      width: "100%",
+                      fontFamily: "monospace",
+                      fontSize: "var(--font-size-1)",
+                      color: "var(--gray-11)",
+                      pointerEvents: "none",
+                      whiteSpace: "pre",
                     }}
                   >
-                    {fileHints
-                      .slice(visibleStartIndex, visibleStartIndex + 10)
-                      .map((hint, relativeIndex) => {
-                        const absoluteIndex = visibleStartIndex + relativeIndex;
-                        return (
-                          <Box
-                            key={hint}
-                            style={{
-                              backgroundColor:
-                                absoluteIndex === selectedHintIndex
-                                  ? "var(--accent-a3)"
-                                  : "transparent",
-                              color:
-                                absoluteIndex === selectedHintIndex
-                                  ? "var(--accent-11)"
-                                  : "var(--gray-11)",
-                              padding: "2px 4px",
-                            }}
-                          >
-                            {hint}
-                          </Box>
-                        );
-                      })}
+                    <Box
+                      style={{
+                        borderTop: "1px solid var(--gray-a6)",
+                        paddingTop: "4px",
+                      }}
+                    >
+                      {fileHints
+                        .slice(visibleStartIndex, visibleStartIndex + 10)
+                        .map((hint, relativeIndex) => {
+                          const absoluteIndex =
+                            visibleStartIndex + relativeIndex;
+                          return (
+                            <Box
+                              key={hint}
+                              style={{
+                                backgroundColor:
+                                  absoluteIndex === selectedHintIndex
+                                    ? "var(--accent-a3)"
+                                    : "transparent",
+                                color:
+                                  absoluteIndex === selectedHintIndex
+                                    ? "var(--accent-11)"
+                                    : "var(--gray-11)",
+                                padding: "2px 4px",
+                              }}
+                            >
+                              {hint}
+                            </Box>
+                          );
+                        })}
+                    </Box>
                   </Box>
-                </Box>
-              )}
-              <style>
-                {`
+                )}
+                <style>
+                  {`
                   .cli-editor {
                     font-family: monospace;
                     background-color: transparent;
@@ -680,79 +740,78 @@ export function CliTaskPanel() {
                     font-weight: 500;
                   }
                 `}
-              </style>
+                </style>
+              </Box>
+            </Flex>
+
+            {/* Shell Mode - xterm.js Terminal */}
+            <Box
+              style={{
+                display: cliMode === "shell" ? "block" : "none",
+                height: "100%",
+                width: "100%",
+              }}
+            >
+              <ShellTerminal cwd={folderPath || undefined} />
             </Box>
-          </Flex>
 
-          {/* Shell Mode - xterm.js Terminal */}
-          <Box
-            style={{
-              display: cliMode === "shell" ? "block" : "none",
-              height: "100%",
-              width: "100%",
-            }}
-          >
-            <ShellTerminal cwd={folderPath || undefined} />
-          </Box>
-
-          {/* Mode indicator in bottom-left */}
-          <Flex
-            align="center"
-            gap="1"
-            style={{
-              position: "absolute",
-              bottom: "8px",
-              left: "8px",
-              fontSize: "var(--font-size-1)",
-              color: "var(--gray-9)",
-              fontFamily: "monospace",
-            }}
-          >
-            <Text size="1">{cliMode === "task" ? "Task" : "Shell"} mode</Text>
-            <Text size="1">•</Text>
-            <Text size="1" weight="bold">
-              Shift
-            </Text>
-            <Text size="1">+</Text>
-            <Text size="1" weight="bold">
-              Tab
-            </Text>
-            <Text size="1">to switch</Text>
-          </Flex>
-
-          {/* Key hint or loading indicator (task mode only) */}
-          {cliMode === "task" && (
+            {/* Keyboard hint in bottom-left */}
             <Flex
               align="center"
               gap="1"
               style={{
                 position: "absolute",
                 bottom: "8px",
-                right: "8px",
+                left: "8px",
                 fontSize: "var(--font-size-1)",
                 color: "var(--gray-9)",
                 fontFamily: "monospace",
               }}
             >
-              {isCreatingTask ? (
-                <>
-                  <Spinner size="1" />
-                  <Text size="1">Spawning task{loadingDots}</Text>
-                </>
-              ) : (
-                <>
-                  <Text size="1" weight="bold">
-                    {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}
-                  </Text>
-                  <Text size="1">+</Text>
-                  <Text size="1" weight="bold">
-                    Enter
-                  </Text>
-                  <Text size="1">to submit</Text>
-                </>
-              )}
+              <Text size="1" weight="bold">
+                Shift
+              </Text>
+              <Text size="1">+</Text>
+              <Text size="1" weight="bold">
+                Tab
+              </Text>
+              <Text size="1">to switch mode</Text>
             </Flex>
-          )}
+
+            {/* Key hint or loading indicator (task mode only) */}
+            {cliMode === "task" && (
+              <Flex
+                align="center"
+                gap="1"
+                style={{
+                  position: "absolute",
+                  bottom: "8px",
+                  right: "8px",
+                  fontSize: "var(--font-size-1)",
+                  color: "var(--gray-9)",
+                  fontFamily: "monospace",
+                }}
+              >
+                {isCreatingTask ? (
+                  <>
+                    <Spinner size="1" />
+                    <Text size="1">Spawning task{loadingDots}</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text size="1" weight="bold">
+                      {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}
+                    </Text>
+                    <Text size="1">+</Text>
+                    <Text size="1" weight="bold">
+                      Enter
+                    </Text>
+                    <Text size="1">to submit</Text>
+                  </>
+                )}
+              </Flex>
+            )}
+          </Flex>
         </Flex>
       </Flex>
     </Box>
