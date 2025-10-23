@@ -11,6 +11,15 @@ interface ShellTerminalProps {
   cwd?: string;
 }
 
+// Generate a cryptographically secure random string
+function secureRandomString(length: number): string {
+  const array = new Uint8Array(length);
+  window.crypto.getRandomValues(array);
+  return Array.from(array, (byte) => byte.toString(36).padStart(2, "0"))
+    .join("")
+    .substring(0, length);
+}
+
 export function ShellTerminal({ cwd }: ShellTerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
@@ -38,8 +47,8 @@ export function ShellTerminal({ cwd }: ShellTerminalProps) {
   useEffect(() => {
     if (!terminalRef.current) return;
 
-    // Generate unique session ID for this effect run
-    const sessionId = `shell-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    // Generate unique session ID for this effect run using cryptographically secure random
+    const sessionId = `shell-${Date.now()}-${secureRandomString(7)}`;
     sessionIdRef.current = sessionId;
 
     // Initialize terminal with same styling as task mode
