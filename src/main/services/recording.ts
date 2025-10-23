@@ -12,25 +12,24 @@ import {
   TASK_EXTRACTION_PROMPT,
 } from "./transcription-prompts.js";
 
-let FileConstructor: typeof File;
-try {
-  const { File: NodeFile } = await import("node:buffer");
-  FileConstructor = NodeFile as typeof File;
-} catch {
-  FileConstructor = class File extends Blob {
-    name: string;
-    lastModified: number;
+async function ensureFileConstructor(): Promise<void> {
+  if (globalThis.File) return;
 
-    constructor(bits: BlobPart[], name: string, options?: FilePropertyBag) {
-      super(bits, options);
-      this.name = name;
-      this.lastModified = options?.lastModified ?? Date.now();
-    }
-  } as typeof File;
-}
+  try {
+    const { File: NodeFile } = await import("node:buffer");
+    globalThis.File = NodeFile as typeof File;
+  } catch {
+    globalThis.File = class File extends Blob {
+      name: string;
+      lastModified: number;
 
-if (!globalThis.File) {
-  globalThis.File = FileConstructor;
+      constructor(bits: BlobPart[], name: string, options?: FilePropertyBag) {
+        super(bits, options);
+        this.name = name;
+        this.lastModified = options?.lastModified ?? Date.now();
+      }
+    } as typeof File;
+  }
 }
 
 interface RecordingSession {
@@ -139,6 +138,8 @@ function safeLog(...args: unknown[]): void {
 }
 
 export function registerRecordingIpc(): void {
+  ensureFileConstructor();
+
   ipcMain.handle(
     "desktop-capturer:get-sources",
     async (_event, options: { types: ("screen" | "window")[] }) => {
