@@ -11,11 +11,13 @@ import { useRepositoryIntegration } from "../../hooks/useRepositoryIntegration";
 import { useCreateTask } from "../../hooks/useTasks";
 import { useAuthStore } from "../../stores/authStore";
 import { useFolderPickerStore } from "../../stores/folderPickerStore";
+import { useLayoutStore } from "../../stores/layoutStore";
 import { useTabStore } from "../../stores/tabStore";
 import { useTaskExecutionStore } from "../../stores/taskExecutionStore";
 import { formatRepoKey, parseRepoKey } from "../../utils/repository";
 import { AsciiArt } from "../AsciiArt";
 import { FolderPicker } from "../FolderPicker";
+import { ShellTerminal } from "../ShellTerminal";
 
 const FilePathHighlight = Extension.create({
   name: "filePathHighlight",
@@ -75,6 +77,8 @@ export function CliTaskPanel() {
   const { setRepoPath: saveRepoPath, setRepoWorkingDir } =
     useTaskExecutionStore();
   const { lastSelectedFolder, setLastSelectedFolder } = useFolderPickerStore();
+  const cliMode = useLayoutStore((state) => state.cliMode);
+  const setCliMode = useLayoutStore((state) => state.setCliMode);
 
   const [folderPath, setFolderPath] = useState(lastSelectedFolder || "");
   const [repository, setRepository] = useState("");
@@ -103,6 +107,22 @@ export function CliTaskPanel() {
         spellcheck: "false",
       },
       handleKeyDown: (_view, event) => {
+        // Handle Shift+Tab for mode switching (needs to be before other handlers)
+        // Only respond to actual keydown, not repeat or release events
+        if (
+          event.type === "keydown" &&
+          !event.repeat &&
+          event.key === "Tab" &&
+          event.shiftKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey
+        ) {
+          event.preventDefault();
+          setCliMode(cliMode === "task" ? "shell" : "task");
+          return true;
+        }
+
         if (showHints) {
           if (event.key === "ArrowDown") {
             event.preventDefault();
@@ -356,6 +376,13 @@ export function CliTaskPanel() {
     return () => clearInterval(interval);
   }, []);
 
+  // Auto-focus when switching modes
+  useEffect(() => {
+    if (cliMode === "task" && editor) {
+      editor.commands.focus();
+    }
+  }, [cliMode, editor]);
+
   // Animated loading dots
   useEffect(() => {
     if (!isCreatingTask) {
@@ -511,17 +538,25 @@ export function CliTaskPanel() {
         <Flex
           direction="column"
           flexGrow="1"
-          p="3"
+          p={cliMode === "task" ? "3" : "0"}
           style={{
             backgroundColor: "rgba(0, 0, 0, 0.3)",
             borderRadius: "var(--radius-2)",
             border: "1px solid var(--gray-a6)",
-            cursor: "text",
+            cursor: cliMode === "task" ? "text" : "default",
             position: "relative",
           }}
-          onClick={() => editor?.commands.focus()}
+          onClick={() => cliMode === "task" && editor?.commands.focus()}
         >
-          <Flex align="start" gap="2">
+          {/* Task Mode - TipTap Editor */}
+          <Flex
+            align="start"
+            gap="2"
+            style={{
+              display: cliMode === "task" ? "flex" : "none",
+              height: "100%",
+            }}
+          >
             <Text
               size="2"
               weight="bold"
@@ -649,37 +684,75 @@ export function CliTaskPanel() {
             </Box>
           </Flex>
 
-          {/* Key hint or loading indicator */}
+          {/* Shell Mode - xterm.js Terminal */}
+          <Box
+            style={{
+              display: cliMode === "shell" ? "block" : "none",
+              height: "100%",
+              width: "100%",
+            }}
+          >
+            <ShellTerminal cwd={folderPath || undefined} />
+          </Box>
+
+          {/* Mode indicator in bottom-left */}
           <Flex
             align="center"
             gap="1"
             style={{
               position: "absolute",
               bottom: "8px",
-              right: "8px",
+              left: "8px",
               fontSize: "var(--font-size-1)",
               color: "var(--gray-9)",
               fontFamily: "monospace",
             }}
           >
-            {isCreatingTask ? (
-              <>
-                <Spinner size="1" />
-                <Text size="1">Spawning task{loadingDots}</Text>
-              </>
-            ) : (
-              <>
-                <Text size="1" weight="bold">
-                  {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}
-                </Text>
-                <Text size="1">+</Text>
-                <Text size="1" weight="bold">
-                  Enter
-                </Text>
-                <Text size="1">to submit</Text>
-              </>
-            )}
+            <Text size="1">{cliMode === "task" ? "Task" : "Shell"} mode</Text>
+            <Text size="1">•</Text>
+            <Text size="1" weight="bold">
+              Shift
+            </Text>
+            <Text size="1">+</Text>
+            <Text size="1" weight="bold">
+              Tab
+            </Text>
+            <Text size="1">to switch</Text>
           </Flex>
+
+          {/* Key hint or loading indicator (task mode only) */}
+          {cliMode === "task" && (
+            <Flex
+              align="center"
+              gap="1"
+              style={{
+                position: "absolute",
+                bottom: "8px",
+                right: "8px",
+                fontSize: "var(--font-size-1)",
+                color: "var(--gray-9)",
+                fontFamily: "monospace",
+              }}
+            >
+              {isCreatingTask ? (
+                <>
+                  <Spinner size="1" />
+                  <Text size="1">Spawning task{loadingDots}</Text>
+                </>
+              ) : (
+                <>
+                  <Text size="1" weight="bold">
+                    {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}
+                  </Text>
+                  <Text size="1">+</Text>
+                  <Text size="1" weight="bold">
+                    Enter
+                  </Text>
+                  <Text size="1">to submit</Text>
+                </>
+              )}
+            </Flex>
+          )}
         </Flex>
       </Flex>
     </Box>

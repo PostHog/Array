@@ -4,6 +4,8 @@ import { persist } from "zustand/middleware";
 interface LayoutStore {
   cliPanelWidth: number;
   setCliPanelWidth: (width: number) => void;
+  cliMode: "task" | "shell";
+  setCliMode: (mode: "task" | "shell") => void;
 }
 
 export const useLayoutStore = create<LayoutStore>()(
@@ -11,6 +13,8 @@ export const useLayoutStore = create<LayoutStore>()(
     (set) => ({
       cliPanelWidth: 30,
       setCliPanelWidth: (width) => set({ cliPanelWidth: width }),
+      cliMode: "task",
+      setCliMode: (mode) => set({ cliMode: mode }),
     }),
     {
       name: "layout-storage",

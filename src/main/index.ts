@@ -14,6 +14,7 @@ import { registerFsIpc } from "./services/fs.js";
 import { registerOsIpc } from "./services/os.js";
 import { registerPosthogIpc } from "./services/posthog.js";
 import { registerRecordingIpc } from "./services/recording.js";
+import { registerShellIpc } from "./services/shell.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -182,3 +183,4 @@ registerOsIpc(() => mainWindow);
 registerAgentIpc(taskControllers, () => mainWindow);
 registerFsIpc();
 registerRecordingIpc();
+registerShellIpc();

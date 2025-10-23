@@ -74,5 +74,8 @@ export default defineConfig({
     commonjsOptions: {
       transformMixedEsModules: true,
     },
+    rollupOptions: {
+      external: ["node-pty"],
+    },
   },
 });

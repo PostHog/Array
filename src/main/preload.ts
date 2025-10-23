@@ -162,4 +162,28 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getDesktopSources: async (options: { types: ("screen" | "window")[] }) => {
     return await ipcRenderer.invoke("desktop-capturer:get-sources", options);
   },
+  // Shell API
+  shellCreate: (sessionId: string, cwd?: string): Promise<void> =>
+    ipcRenderer.invoke("shell:create", sessionId, cwd),
+  shellWrite: (sessionId: string, data: string): Promise<void> =>
+    ipcRenderer.invoke("shell:write", sessionId, data),
+  shellResize: (sessionId: string, cols: number, rows: number): Promise<void> =>
+    ipcRenderer.invoke("shell:resize", sessionId, cols, rows),
+  shellDestroy: (sessionId: string): Promise<void> =>
+    ipcRenderer.invoke("shell:destroy", sessionId),
+  onShellData: (
+    sessionId: string,
+    listener: (data: string) => void,
+  ): (() => void) => {
+    const channel = `shell:data:${sessionId}`;
+    const wrapped = (_event: IpcRendererEvent, data: string) => listener(data);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
+  },
+  onShellExit: (sessionId: string, listener: () => void): (() => void) => {
+    const channel = `shell:exit:${sessionId}`;
+    const wrapped = () => listener();
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
+  },
 });
