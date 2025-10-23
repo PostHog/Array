@@ -1,9 +1,10 @@
 import { Box, Button, Flex, Spinner, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTasks } from "../../hooks/useTasks";
 import { useUsers } from "../../hooks/useUsers";
 import { useAuthStore } from "../../stores/authStore";
+import { useLayoutStore } from "../../stores/layoutStore";
 import { useStatusBarStore } from "../../stores/statusBarStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { CliTaskPanel } from "./CliTaskPanel";
@@ -49,7 +50,12 @@ export function TaskList({ onSelectTask, onNewTask }: TaskListInternalProps) {
 
   const { setStatusBar, reset } = useStatusBarStore();
   const { logout } = useAuthStore();
+  const cliPanelWidth = useLayoutStore((state) => state.cliPanelWidth);
+  const setCliPanelWidth = useLayoutStore((state) => state.setCliPanelWidth);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Resize state
+  const [isResizing, setIsResizing] = useState(false);
 
   // Custom hooks
   const filteredTasks = useTaskFiltering(
@@ -91,6 +97,33 @@ export function TaskList({ onSelectTask, onNewTask }: TaskListInternalProps) {
   );
 
   useTaskScrolling(listRef, selectedIndex, filteredTasks.length);
+
+  // Resize handler
+  const handleMouseDown = useCallback(() => {
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth =
+        ((window.innerWidth - e.clientX) / window.innerWidth) * 100;
+      setCliPanelWidth(Math.max(20, Math.min(50, newWidth))); // clamp between 20% and 50%
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing, setCliPanelWidth]);
 
   // Status bar
   useEffect(() => {
@@ -162,7 +195,7 @@ export function TaskList({ onSelectTask, onNewTask }: TaskListInternalProps) {
   return (
     <Flex height="100%">
       {/* Left side: Task list */}
-      <Flex direction="column" style={{ flex: 1 }}>
+      <Flex direction="column" style={{ width: `${100 - cliPanelWidth}%` }}>
         <TaskListHeader
           filter={filter}
           onFilterChange={(newFilter) => {
@@ -197,8 +230,52 @@ export function TaskList({ onSelectTask, onNewTask }: TaskListInternalProps) {
         </Box>
       </Flex>
 
+      {/* Resize handle - outer div for hitbox */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: This is a drag handle for resizing */}
+      <div
+        style={{
+          width: "12px",
+          cursor: "col-resize",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          marginRight: "8px",
+          marginLeft: "8px", // -7px for centering, -8px for scrollbar width
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseEnter={(e) => {
+          if (!isResizing) {
+            const bar = e.currentTarget.querySelector(
+              ".drag-bar",
+            ) as HTMLElement;
+            if (bar) bar.style.backgroundColor = "var(--gray-a6)";
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!isResizing) {
+            const bar = e.currentTarget.querySelector(
+              ".drag-bar",
+            ) as HTMLElement;
+            if (bar) bar.style.backgroundColor = "transparent";
+          }
+        }}
+      >
+        {/* Inner div for 2px drag bar */}
+        <div
+          className="drag-bar"
+          style={{
+            width: "1px",
+            height: "100%",
+            backgroundColor: isResizing ? "var(--accent-9)" : "transparent",
+            transition: "background-color 0.2s",
+          }}
+        />
+      </div>
+
       {/* Right side: CLI panel */}
-      <CliTaskPanel />
+      <Box style={{ width: `${cliPanelWidth}%` }}>
+        <CliTaskPanel />
+      </Box>
     </Flex>
   );
 }

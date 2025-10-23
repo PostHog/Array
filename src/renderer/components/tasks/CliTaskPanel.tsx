@@ -1,5 +1,9 @@
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
+import { Extension } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extension-placeholder";
+import type { Node } from "@tiptap/pm/model";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,8 +17,58 @@ import { formatRepoKey, parseRepoKey } from "../../utils/repository";
 import { AsciiArt } from "../AsciiArt";
 import { FolderPicker } from "../FolderPicker";
 
+const FilePathHighlight = Extension.create({
+  name: "filePathHighlight",
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey("filePathHighlight"),
+        state: {
+          init(_, { doc }) {
+            return findFilePathDecorations(doc);
+          },
+          apply(tr, oldState) {
+            return tr.docChanged ? findFilePathDecorations(tr.doc) : oldState;
+          },
+        },
+        props: {
+          decorations(state) {
+            return this.getState(state);
+          },
+        },
+      }),
+    ];
+  },
+});
+
+function findFilePathDecorations(doc: Node) {
+  const decorations: Decoration[] = [];
+  const regex = /@[^\s]+/g;
+
+  doc.descendants((node: Node, pos: number) => {
+    if (node.isText && node.text) {
+      let match: RegExpExecArray | null = null;
+      regex.lastIndex = 0;
+      match = regex.exec(node.text);
+      while (match !== null) {
+        const from = pos + match.index;
+        const to = from + match[0].length;
+        decorations.push(
+          Decoration.inline(from, to, {
+            class: "cli-file-path",
+          }),
+        );
+        match = regex.exec(node.text);
+      }
+    }
+  });
+
+  return DecorationSet.create(doc, decorations);
+}
+
 export function CliTaskPanel() {
-  const { mutate: createTask } = useCreateTask();
+  const { mutate: createTask, isPending: isCreatingTask } = useCreateTask();
   const { createTab } = useTabStore();
   const { isRepoInIntegration } = useRepositoryIntegration();
   const { client, isAuthenticated } = useAuthStore();
@@ -26,7 +80,13 @@ export function CliTaskPanel() {
   const [repository, setRepository] = useState("");
   const [cursorVisible, setCursorVisible] = useState(true);
   const [isFocused, setIsFocused] = useState(false);
+  const [fileHints, setFileHints] = useState<string[]>([]);
+  const [selectedHintIndex, setSelectedHintIndex] = useState(0);
+  const [showHints, setShowHints] = useState(false);
+  const [visibleStartIndex, setVisibleStartIndex] = useState(0);
+  const [loadingDots, setLoadingDots] = useState(".");
   const caretRef = useRef<HTMLDivElement>(null);
+  const hintsRef = useRef<HTMLDivElement>(null);
 
   const editor = useEditor({
     extensions: [
@@ -34,13 +94,105 @@ export function CliTaskPanel() {
       Placeholder.configure({
         placeholder: "What do you want to work on?",
       }),
+      FilePathHighlight,
     ],
     content: "",
     editorProps: {
       attributes: {
         class: "cli-editor",
+        spellcheck: "false",
       },
       handleKeyDown: (_view, event) => {
+        if (showHints) {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setSelectedHintIndex((prev) => {
+              const newIndex = prev < fileHints.length - 1 ? prev + 1 : 0;
+
+              // Scroll window when reaching halfway point
+              const relativePos = newIndex - visibleStartIndex;
+              if (
+                relativePos >= 5 &&
+                visibleStartIndex + 10 < fileHints.length
+              ) {
+                setVisibleStartIndex(visibleStartIndex + 1);
+              } else if (newIndex === 0) {
+                // Wrapped to start
+                setVisibleStartIndex(0);
+              }
+
+              return newIndex;
+            });
+            return true;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setSelectedHintIndex((prev) => {
+              const newIndex = prev > 0 ? prev - 1 : fileHints.length - 1;
+
+              // Scroll window when reaching halfway point going up
+              const relativePos = newIndex - visibleStartIndex;
+              if (relativePos < 5 && visibleStartIndex > 0) {
+                setVisibleStartIndex(visibleStartIndex - 1);
+              } else if (newIndex === fileHints.length - 1) {
+                // Wrapped to end
+                setVisibleStartIndex(Math.max(0, fileHints.length - 10));
+              }
+
+              return newIndex;
+            });
+            return true;
+          }
+          if (event.key === "Tab" || event.key === "Enter") {
+            if (!event.metaKey && !event.ctrlKey) {
+              event.preventDefault();
+
+              // Insert selected hint inline
+              if (fileHints.length > 0) {
+                const selectedFile = fileHints[selectedHintIndex];
+                const { state } = _view;
+                const { selection } = state;
+                const { $from } = selection;
+
+                const textBefore = $from.parent.textBetween(
+                  Math.max(0, $from.parentOffset - 100),
+                  $from.parentOffset,
+                  undefined,
+                  "\ufffc",
+                );
+
+                const lastAtIndex = textBefore.lastIndexOf("@");
+                if (lastAtIndex !== -1) {
+                  const deleteFrom =
+                    $from.pos - ($from.parentOffset - lastAtIndex);
+                  const deleteTo = $from.pos;
+
+                  const tr = state.tr.deleteRange(deleteFrom, deleteTo);
+                  tr.insertText(`@${selectedFile} `);
+                  _view.dispatch(tr);
+
+                  setShowHints(false);
+                  setFileHints([]);
+                }
+              }
+
+              return true;
+            }
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setShowHints(false);
+            setFileHints([]);
+            return true;
+          }
+        }
+
+        if (event.key === "Escape") {
+          event.preventDefault();
+          _view.dom.blur();
+          return true;
+        }
+
         if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
           event.preventDefault();
           handleSubmit();
@@ -49,11 +201,121 @@ export function CliTaskPanel() {
         return false;
       },
     },
-    onUpdate: () => {
+    onUpdate: ({ editor: ed }) => {
       updateCaretPosition();
+
+      // Check for file hints immediately
+      if (!ed || !folderPath) {
+        setShowHints(false);
+        setFileHints([]);
+        return;
+      }
+
+      const { state } = ed;
+      const { selection } = state;
+      const { $from } = selection;
+
+      const textBefore = $from.parent.textBetween(
+        Math.max(0, $from.parentOffset - 100),
+        $from.parentOffset,
+        undefined,
+        "\ufffc",
+      );
+
+      // Check if cursor is right after a space (in the blank space after a file mention)
+      if (textBefore.endsWith(" ")) {
+        setShowHints(false);
+        setFileHints([]);
+        return;
+      }
+
+      const lastAtIndex = textBefore.lastIndexOf("@");
+      if (lastAtIndex === -1) {
+        setShowHints(false);
+        setFileHints([]);
+        return;
+      }
+
+      const textAfterAt = textBefore.substring(lastAtIndex + 1);
+      if (textAfterAt.includes(" ")) {
+        setShowHints(false);
+        setFileHints([]);
+        return;
+      }
+
+      const query = textAfterAt;
+      window.electronAPI
+        ?.listRepoFiles(folderPath, query || "")
+        .then((results) => {
+          const filePaths = (results || []).map((file) => file.path);
+          setFileHints(filePaths);
+          setShowHints(filePaths.length > 0);
+          setSelectedHintIndex(0);
+          setVisibleStartIndex(0);
+        })
+        .catch((error) => {
+          console.error("Error fetching files:", error);
+          setFileHints([]);
+          setShowHints(false);
+        });
     },
-    onSelectionUpdate: () => {
+    onSelectionUpdate: ({ editor: ed }) => {
       updateCaretPosition();
+
+      // Check for file hints on selection change too
+      if (!ed || !folderPath) {
+        setShowHints(false);
+        setFileHints([]);
+        return;
+      }
+
+      const { state } = ed;
+      const { selection } = state;
+      const { $from } = selection;
+
+      const textBefore = $from.parent.textBetween(
+        Math.max(0, $from.parentOffset - 100),
+        $from.parentOffset,
+        undefined,
+        "\ufffc",
+      );
+
+      // Check if cursor is right after a space (in the blank space after a file mention)
+      if (textBefore.endsWith(" ")) {
+        setShowHints(false);
+        setFileHints([]);
+        return;
+      }
+
+      const lastAtIndex = textBefore.lastIndexOf("@");
+      if (lastAtIndex === -1) {
+        setShowHints(false);
+        setFileHints([]);
+        return;
+      }
+
+      const textAfterAt = textBefore.substring(lastAtIndex + 1);
+      if (textAfterAt.includes(" ")) {
+        setShowHints(false);
+        setFileHints([]);
+        return;
+      }
+
+      const query = textAfterAt;
+      window.electronAPI
+        ?.listRepoFiles(folderPath, query || "")
+        .then((results) => {
+          const filePaths = (results || []).map((file) => file.path);
+          setFileHints(filePaths);
+          setShowHints(filePaths.length > 0);
+          setSelectedHintIndex(0);
+          setVisibleStartIndex(0);
+        })
+        .catch((error) => {
+          console.error("Error fetching files:", error);
+          setFileHints([]);
+          setShowHints(false);
+        });
     },
     onFocus: () => {
       setIsFocused(true);
@@ -90,9 +352,26 @@ export function CliTaskPanel() {
   useEffect(() => {
     const interval = setInterval(() => {
       setCursorVisible((v) => !v);
-    }, 530);
+    }, 700);
     return () => clearInterval(interval);
   }, []);
+
+  // Animated loading dots
+  useEffect(() => {
+    if (!isCreatingTask) {
+      setLoadingDots(".");
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setLoadingDots((prev) => {
+        if (prev === ".") return "..";
+        if (prev === "..") return "...";
+        return ".";
+      });
+    }, 400);
+    return () => clearInterval(interval);
+  }, [isCreatingTask]);
 
   // Update caret position on mount and when editor changes
   useEffect(() => {
@@ -192,10 +471,10 @@ export function CliTaskPanel() {
 
   return (
     <Box
-      width="30%"
       height="100%"
       style={{
         position: "relative",
+        width: "100%",
       }}
     >
       {/* Background ASCII Art */}
@@ -207,13 +486,14 @@ export function CliTaskPanel() {
           overflow: "hidden",
         }}
       >
-        <AsciiArt scale={0.7} opacity={0.15} />
+        <AsciiArt scale={0.6} opacity={0.3} />
       </Box>
 
       <Flex
         direction="column"
         height="100%"
         p="4"
+        pl="0"
         gap="4"
         style={{ fontFamily: "monospace", position: "relative", zIndex: 1 }}
       >
@@ -273,8 +553,57 @@ export function CliTaskPanel() {
                     border: !isFocused ? "1px solid var(--accent-11)" : "none",
                     pointerEvents: "none",
                     transition: "none",
+                    mixBlendMode:
+                      isFocused && cursorVisible ? "color" : "normal",
                   }}
                 />
+              )}
+              {showHints && fileHints.length > 0 && (
+                <Box
+                  ref={hintsRef}
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 8px)",
+                    left: 0,
+                    width: "100%",
+                    fontFamily: "monospace",
+                    fontSize: "var(--font-size-1)",
+                    color: "var(--gray-11)",
+                    pointerEvents: "none",
+                    whiteSpace: "pre",
+                  }}
+                >
+                  <Box
+                    style={{
+                      borderTop: "1px solid var(--gray-a6)",
+                      paddingTop: "4px",
+                    }}
+                  >
+                    {fileHints
+                      .slice(visibleStartIndex, visibleStartIndex + 10)
+                      .map((hint, relativeIndex) => {
+                        const absoluteIndex = visibleStartIndex + relativeIndex;
+                        return (
+                          <Box
+                            key={hint}
+                            style={{
+                              backgroundColor:
+                                absoluteIndex === selectedHintIndex
+                                  ? "var(--accent-a3)"
+                                  : "transparent",
+                              color:
+                                absoluteIndex === selectedHintIndex
+                                  ? "var(--accent-11)"
+                                  : "var(--gray-11)",
+                              padding: "2px 4px",
+                            }}
+                          >
+                            {hint}
+                          </Box>
+                        );
+                      })}
+                  </Box>
+                </Box>
               )}
               <style>
                 {`
@@ -307,12 +636,20 @@ export function CliTaskPanel() {
                     height: 0;
                     pointer-events: none;
                   }
+
+                  .cli-editor .cli-file-path {
+                    background-color: var(--accent-a3);
+                    color: var(--accent-11);
+                    padding: 2px 4px;
+                    border-radius: 3px;
+                    font-weight: 500;
+                  }
                 `}
               </style>
             </Box>
           </Flex>
 
-          {/* Key hint */}
+          {/* Key hint or loading indicator */}
           <Flex
             align="center"
             gap="1"
@@ -325,14 +662,23 @@ export function CliTaskPanel() {
               fontFamily: "monospace",
             }}
           >
-            <Text size="1" weight="bold">
-              {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}
-            </Text>
-            <Text size="1">+</Text>
-            <Text size="1" weight="bold">
-              Enter
-            </Text>
-            <Text size="1">to submit</Text>
+            {isCreatingTask ? (
+              <>
+                <Spinner size="1" />
+                <Text size="1">Spawning task{loadingDots}</Text>
+              </>
+            ) : (
+              <>
+                <Text size="1" weight="bold">
+                  {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}
+                </Text>
+                <Text size="1">+</Text>
+                <Text size="1" weight="bold">
+                  Enter
+                </Text>
+                <Text size="1">to submit</Text>
+              </>
+            )}
           </Flex>
         </Flex>
       </Flex>

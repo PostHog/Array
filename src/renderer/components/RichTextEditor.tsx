@@ -1,10 +1,14 @@
 import { Box } from "@radix-ui/themes";
 import type { MentionItem } from "@shared/types";
+import { Extension } from "@tiptap/core";
 import { Link } from "@tiptap/extension-link";
 import { Mention } from "@tiptap/extension-mention";
 import { Placeholder } from "@tiptap/extension-placeholder";
 import { Typography } from "@tiptap/extension-typography";
 import { Underline } from "@tiptap/extension-underline";
+import type { Node } from "@tiptap/pm/model";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import type { SuggestionOptions } from "@tiptap/suggestion";
@@ -18,6 +22,56 @@ import {
 import { markdownToTiptap, tiptapToMarkdown } from "../utils/tiptap-converter";
 import { MentionList, type MentionListRef } from "./FileMentionList";
 import { FormattingToolbar } from "./FormattingToolbar";
+
+const FilePathHighlight = Extension.create({
+  name: "filePathHighlight",
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey("filePathHighlight"),
+        state: {
+          init(_, { doc }) {
+            return findFilePathDecorations(doc);
+          },
+          apply(tr, oldState) {
+            return tr.docChanged ? findFilePathDecorations(tr.doc) : oldState;
+          },
+        },
+        props: {
+          decorations(state) {
+            return this.getState(state);
+          },
+        },
+      }),
+    ];
+  },
+});
+
+function findFilePathDecorations(doc: Node) {
+  const decorations: Decoration[] = [];
+  const regex = /@[^\s]+/g;
+
+  doc.descendants((node: Node, pos: number) => {
+    if (node.isText && node.text) {
+      let match: RegExpExecArray | null = null;
+      regex.lastIndex = 0;
+      match = regex.exec(node.text);
+      while (match !== null) {
+        const from = pos + match.index;
+        const to = from + match[0].length;
+        decorations.push(
+          Decoration.inline(from, to, {
+            class: "rich-text-file-path",
+          }),
+        );
+        match = regex.exec(node.text);
+      }
+    }
+  });
+
+  return DecorationSet.create(doc, decorations);
+}
 
 interface RichTextEditorProps {
   value: string;
@@ -201,6 +255,7 @@ export function RichTextEditor({
             let root: ReturnType<typeof createRoot> | null = null;
 
             return {
+              // biome-ignore lint/suspicious/noExplicitAny: TipTap suggestion API doesn't provide types
               onStart: (props: any) => {
                 popup = document.createElement("div");
                 popup.style.position = "absolute";
@@ -237,9 +292,11 @@ export function RichTextEditor({
                 );
 
                 // Store ref for keyboard handling
+                // biome-ignore lint/suspicious/noExplicitAny: Dynamic property for component reference
                 (component as any).ref = ref;
               },
 
+              // biome-ignore lint/suspicious/noExplicitAny: TipTap suggestion API doesn't provide types
               onUpdate: (props: any) => {
                 if (!root) return;
 
@@ -271,11 +328,14 @@ export function RichTextEditor({
                 }
 
                 // Store ref for keyboard handling
+                // biome-ignore lint/suspicious/noExplicitAny: Dynamic property for component reference
                 (component as any).ref = ref;
               },
 
+              // biome-ignore lint/suspicious/noExplicitAny: TipTap suggestion API doesn't provide types
               onKeyDown: (props: any) => {
                 if (!component) return false;
+                // biome-ignore lint/suspicious/noExplicitAny: Dynamic property for component reference
                 const ref = (component as any).ref;
                 if (ref?.current?.onKeyDown) {
                   return ref.current.onKeyDown(props);
@@ -293,6 +353,7 @@ export function RichTextEditor({
           },
         } as Partial<SuggestionOptions>,
       }),
+      FilePathHighlight,
     ],
     content: markdownToTiptap(value),
     onUpdate: ({ editor }) => {
@@ -475,6 +536,17 @@ export function RichTextEditor({
     >
       {showToolbar && editor && <FormattingToolbar editor={editor} />}
       <EditorContent editor={editor} />
+      <style>
+        {`
+          .rich-text-file-path {
+            background-color: var(--accent-a3);
+            color: var(--accent-11);
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-weight: 500;
+          }
+        `}
+      </style>
     </Box>
   );
 }
