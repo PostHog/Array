@@ -104,6 +104,16 @@ export interface IElectronAPI {
       name: string;
     }>
   >;
+  // Shell API
+  shellCreate: (sessionId: string, cwd?: string) => Promise<void>;
+  shellWrite: (sessionId: string, data: string) => Promise<void>;
+  shellResize: (sessionId: string, cols: number, rows: number) => Promise<void>;
+  shellDestroy: (sessionId: string) => Promise<void>;
+  onShellData: (
+    sessionId: string,
+    listener: (data: string) => void,
+  ) => () => void;
+  onShellExit: (sessionId: string, listener: () => void) => () => void;
 }
 
 declare global {

@@ -180,7 +180,7 @@ export function FolderPicker({
     <Popover.Root open={open} onOpenChange={handleOpenChange}>
       <Popover.Trigger>
         <Button
-          variant="surface"
+          variant="outline"
           size={size}
           color="gray"
           style={{ width: "100%" }}

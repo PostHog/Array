@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { RecordingsView } from "@/renderer/features/recordings";
 import { useIntegrations } from "../hooks/useIntegrations";
+import { useLayoutStore } from "../stores/layoutStore";
 import { useTabStore } from "../stores/tabStore";
 import { CommandMenu } from "./command";
 import { SettingsView } from "./SettingsView";
@@ -16,6 +17,7 @@ import { TaskList } from "./tasks/TaskList";
 export function MainLayout() {
   const { activeTabId, tabs, createTab, setActiveTab, closeTab } =
     useTabStore();
+  const { setCliMode } = useLayoutStore();
   useIntegrations();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [taskCreateOpen, setTaskCreateOpen] = useState(false);
@@ -37,6 +39,20 @@ export function MainLayout() {
     }
   }, [tabs, activeTabId, setActiveTab, createTab, closeTab]);
 
+  const handleFocusTaskMode = useCallback(() => {
+    // Find the Tasks tab or use the first task-list tab
+    const tasksTab = tabs.find((tab) => tab.type === "task-list");
+
+    if (tasksTab) {
+      setActiveTab(tasksTab.id);
+    }
+
+    // Switch to task mode
+    setCliMode("task");
+
+    // Note: The auto-focus effect in CliTaskPanel will handle focusing the editor
+  }, [tabs, setActiveTab, setCliMode]);
+
   useHotkeys("mod+k", () => setCommandMenuOpen((prev) => !prev), {
     enabled: !commandMenuOpen,
   });
@@ -46,7 +62,7 @@ export function MainLayout() {
   useHotkeys("mod+p", () => setCommandMenuOpen((prev) => !prev), {
     enabled: !commandMenuOpen,
   });
-  useHotkeys("mod+n", () => setTaskCreateOpen(true));
+  useHotkeys("mod+n", () => handleFocusTaskMode());
   useHotkeys("mod+,", () => handleOpenSettings());
 
   useEffect(() => {
@@ -88,10 +104,7 @@ export function MainLayout() {
 
       <Box flexGrow="1" overflow="hidden">
         {activeTab?.type === "task-list" && (
-          <TaskList
-            onSelectTask={handleSelectTask}
-            onNewTask={() => setTaskCreateOpen(true)}
-          />
+          <TaskList onSelectTask={handleSelectTask} />
         )}
 
         {activeTab?.type === "task-detail" && activeTab.data ? (
@@ -105,11 +118,7 @@ export function MainLayout() {
 
       <StatusBar onOpenSettings={handleOpenSettings} />
 
-      <CommandMenu
-        open={commandMenuOpen}
-        onOpenChange={setCommandMenuOpen}
-        onCreateTask={() => setTaskCreateOpen(true)}
-      />
+      <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
       <TaskCreate open={taskCreateOpen} onOpenChange={setTaskCreateOpen} />
     </Flex>
   );
