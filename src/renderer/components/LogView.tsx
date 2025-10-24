@@ -58,6 +58,7 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
   const [viewMode, setViewMode] = useState<"pretty" | "raw">("pretty");
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
   const [expandAll, setExpandAll] = useState<boolean>(false);
+  const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const scrollPositions = useRef<{ pretty: number; raw: number }>({
     pretty: 0,
     raw: 0,
@@ -189,11 +190,16 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
     return processed;
   }, [logs]);
 
-  // Track scroll position continuously
+  // Track scroll position and auto-scroll state
   useEffect(() => {
     const handleScroll = () => {
       if (scrollRef.current) {
         scrollPositions.current[viewMode] = scrollRef.current.scrollTop;
+
+        // Check if user is near the bottom (within 100px)
+        const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+        const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+        setAutoScroll(isNearBottom);
       }
     };
 
@@ -216,12 +222,17 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
     }
   }, [viewMode]);
 
-  // Auto-scroll to bottom when new logs arrive (only in pretty mode)
+  // Auto-scroll to bottom when new logs arrive
   useEffect(() => {
-    if (scrollRef.current && viewMode === "pretty") {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (scrollRef.current && autoScroll) {
+      // Use requestAnimationFrame to ensure DOM is updated with new content
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      });
     }
-  }, [viewMode]);
+  }, [autoScroll]);
 
   if (logs.length === 0 && !isRunning) {
     return (

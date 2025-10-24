@@ -648,6 +648,9 @@ export function CliTaskPanel() {
             style={{
               cursor: cliMode === "task" ? "text" : "default",
               position: "relative",
+              overflowX: "hidden",
+              overflowY: cliMode === "task" ? "visible" : "hidden",
+              minHeight: 0,
             }}
             onClick={() => cliMode === "task" && editor?.commands.focus()}
           >
@@ -658,6 +661,9 @@ export function CliTaskPanel() {
               style={{
                 display: cliMode === "task" ? "flex" : "none",
                 height: "100%",
+                overflowX: "hidden",
+                overflowY: "visible",
+                minWidth: 0,
               }}
             >
               <Text
@@ -680,6 +686,7 @@ export function CliTaskPanel() {
                   position: "relative",
                   opacity: !isFocused && editor && !editor.isEmpty ? 0.5 : 1,
                   transition: "opacity 0.2s",
+                  minWidth: 0,
                 }}
               >
                 <EditorContent editor={editor} />
@@ -763,14 +770,21 @@ export function CliTaskPanel() {
                     color: var(--gray-12);
                     font-size: var(--font-size-1);
                     width: 100%;
+                    overflow-wrap: break-word;
+                    word-wrap: break-word;
+                    word-break: break-word;
                   }
 
                   .cli-editor.ProseMirror {
                     caret-color: transparent;
+                    overflow-x: hidden;
                   }
 
                   .cli-editor.ProseMirror p {
                     margin: 0;
+                    overflow-wrap: break-word;
+                    word-wrap: break-word;
+                    word-break: break-word;
                   }
 
                   .cli-editor.ProseMirror.ProseMirror-focused p.is-editor-empty:first-child::before {
@@ -800,9 +814,11 @@ export function CliTaskPanel() {
             {/* Shell Mode - xterm.js Terminal */}
             <Box
               style={{
-                display: cliMode === "shell" ? "block" : "none",
-                height: "100%",
+                display: cliMode === "shell" ? "flex" : "none",
+                flexDirection: "column",
+                flex: 1,
                 width: "100%",
+                overflow: "hidden",
                 opacity: !isShellFocused ? 0.5 : 1,
                 transition: "opacity 0.2s",
               }}
