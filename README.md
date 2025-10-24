@@ -23,14 +23,13 @@ npm install -g pnpm
 pnpm install
 
 # Run in development mode
-pnpm run dev
+pnpm run start
 
 # Build for production
-pnpm run build
+pnpm run make
 
 # Other useful commands
-pnpm run typecheck  # Type checking
-pnpm run lint       # Linting
+pnpm run check:write       # Linting & typecheck
 ```
 
 ### Building Distributables

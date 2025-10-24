@@ -1,7 +1,8 @@
+import { PencilSimpleIcon } from "@phosphor-icons/react";
 import { CheckCircledIcon } from "@radix-ui/react-icons";
 import { Box, Flex, Text, TextArea } from "@radix-ui/themes";
 import type { ClarifyingQuestion, QuestionAnswer } from "@shared/types";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface InteractiveQuestionProps {
   question: ClarifyingQuestion;
@@ -9,7 +10,15 @@ interface InteractiveQuestionProps {
   isActive: boolean;
   onAnswer: (answer: QuestionAnswer) => void;
   onNext: () => void;
+  onClearAnswer?: () => void;
 }
+
+// Convert index to letter (0 -> 'a', 1 -> 'b', etc.)
+const indexToLetter = (index: number): string => {
+  return String.fromCharCode(97 + index); // 97 is 'a' in ASCII
+};
+
+const SOMETHING_ELSE_OPTION = "Something else? (Please specify)";
 
 export function InteractiveQuestion({
   question,
@@ -17,12 +26,28 @@ export function InteractiveQuestion({
   isActive,
   onAnswer,
   onNext,
+  onClearAnswer,
 }: InteractiveQuestionProps) {
-  const [selectedIndex, setSelectedIndex] = useState<number>(
-    answer ? question.options.indexOf(answer.selectedOption) : 0,
+  // Automatically add "Something else" option to all questions
+  const allOptions = useMemo(
+    () => [...question.options, SOMETHING_ELSE_OPTION],
+    [question.options],
   );
-  const [showInput, setShowInput] = useState(false);
+  const somethingElseIndex = allOptions.length - 1;
+
+  const [selectedIndex, setSelectedIndex] = useState<number>(() => {
+    if (answer) {
+      if (answer.customInput) {
+        return somethingElseIndex;
+      }
+      const index = question.options.indexOf(answer.selectedOption);
+      return index >= 0 ? index : 0;
+    }
+    return 0;
+  });
+  const [showInput, setShowInput] = useState(!!answer?.customInput);
   const [customInput, setCustomInput] = useState(answer?.customInput || "");
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const isAnswered = !!answer;
 
@@ -32,35 +57,47 @@ export function InteractiveQuestion({
     }
   }, [showInput]);
 
-  const handleSelect = useCallback(() => {
-    const selectedOption = question.options[selectedIndex];
-    const needsInput =
-      selectedOption.toLowerCase().includes("something else") ||
-      selectedOption.toLowerCase().includes("please specify");
+  const handleSelect = useCallback(
+    (optionIndex?: number) => {
+      const index = optionIndex ?? selectedIndex;
+      const isSomethingElse = index === somethingElseIndex;
 
-    if (needsInput && !customInput.trim()) {
-      setShowInput(true);
-      return;
-    }
+      if (isSomethingElse && !customInput.trim()) {
+        setSelectedIndex(index);
+        setShowInput(true);
+        return;
+      }
 
-    onAnswer({
-      questionId: question.id,
-      selectedOption,
-      customInput: customInput.trim() || undefined,
-    });
-    onNext();
-  }, [question, selectedIndex, customInput, onAnswer, onNext]);
+      onAnswer({
+        questionId: question.id,
+        selectedOption: isSomethingElse
+          ? SOMETHING_ELSE_OPTION
+          : allOptions[index],
+        customInput: customInput.trim() || undefined,
+      });
+      onNext();
+    },
+    [
+      question,
+      selectedIndex,
+      customInput,
+      onAnswer,
+      onNext,
+      somethingElseIndex,
+      allOptions,
+    ],
+  );
 
   const handleTextSubmit = useCallback(() => {
     if (customInput.trim()) {
       onAnswer({
         questionId: question.id,
-        selectedOption: question.options[selectedIndex],
+        selectedOption: SOMETHING_ELSE_OPTION,
         customInput: customInput.trim(),
       });
       onNext();
     }
-  }, [customInput, question, selectedIndex, onAnswer, onNext]);
+  }, [customInput, question, onAnswer, onNext]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -77,13 +114,24 @@ export function InteractiveQuestion({
         return;
       }
 
+      // Check for letter key shortcuts (a, b, c, etc.)
+      if (e.key.length === 1 && e.key >= "a" && e.key <= "z") {
+        const index = e.key.charCodeAt(0) - 97; // Convert 'a' to 0, 'b' to 1, etc.
+        if (index < allOptions.length) {
+          e.preventDefault();
+          setSelectedIndex(index);
+          handleSelect(index);
+          return;
+        }
+      }
+
       // Navigation mode
       switch (e.key) {
         case "ArrowDown":
         case "j":
           e.preventDefault();
           setSelectedIndex((prev) =>
-            prev < question.options.length - 1 ? prev + 1 : prev,
+            prev < allOptions.length - 1 ? prev + 1 : prev,
           );
           break;
         case "ArrowUp":
@@ -97,7 +145,7 @@ export function InteractiveQuestion({
           break;
       }
     },
-    [isActive, isAnswered, showInput, question, handleSelect],
+    [isActive, isAnswered, showInput, allOptions.length, handleSelect],
   );
 
   useEffect(() => {
@@ -120,18 +168,41 @@ export function InteractiveQuestion({
       }}
     >
       <Flex direction="column" gap="2">
-        <Flex align="center" gap="2">
-          {isAnswered && <CheckCircledIcon color="green" />}
-          <Text size="3" weight="bold">
-            {question.question}
-          </Text>
+        <Flex align="center" justify="between">
+          <Flex align="center" gap="2">
+            {isAnswered && <CheckCircledIcon color="green" />}
+            <Text size="3" weight="bold">
+              {question.question}
+            </Text>
+          </Flex>
+          {isAnswered && onClearAnswer && (
+            <Box
+              style={{
+                cursor: "pointer",
+                opacity: 0.6,
+                transition: "opacity 0.2s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.opacity = "1";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.opacity = "0.6";
+              }}
+              onClick={onClearAnswer}
+            >
+              <PencilSimpleIcon size={16} weight="bold" />
+            </Box>
+          )}
         </Flex>
 
         <Box ml="4">
-          {question.options.map((option, index) => {
+          {allOptions.map((option, index) => {
             const isSelected = index === selectedIndex;
+            const isHovered = index === hoveredIndex;
             const isAnsweredOption =
               isAnswered && answer?.selectedOption === option;
+            const isSomethingElse = index === somethingElseIndex;
+            const letter = indexToLetter(index);
 
             return (
               <Flex
@@ -142,17 +213,47 @@ export function InteractiveQuestion({
                 px="2"
                 style={{
                   backgroundColor:
-                    isActive && isSelected ? "var(--accent-4)" : "transparent",
+                    isActive && isSelected
+                      ? "var(--accent-4)"
+                      : isActive && isHovered && !isAnswered
+                        ? "var(--accent-3)"
+                        : "transparent",
                   borderRadius: "var(--radius-1)",
                   cursor: isActive && !isAnswered ? "pointer" : "default",
+                  transition: "background-color 0.1s ease",
+                }}
+                onMouseEnter={() => {
+                  if (isActive && !isAnswered) {
+                    setHoveredIndex(index);
+                  }
+                }}
+                onMouseLeave={() => {
+                  if (isActive && !isAnswered) {
+                    setHoveredIndex(null);
+                  }
                 }}
                 onClick={() => {
                   if (isActive && !isAnswered) {
                     setSelectedIndex(index);
-                    handleSelect();
+                    handleSelect(index);
                   }
                 }}
               >
+                <Text
+                  size="2"
+                  weight="bold"
+                  style={{
+                    fontFamily: "monospace",
+                    color: isAnsweredOption
+                      ? "var(--green-11)"
+                      : isActive && (isSelected || isHovered)
+                        ? "var(--accent-11)"
+                        : "var(--gray-10)",
+                    minWidth: "20px",
+                  }}
+                >
+                  {letter})
+                </Text>
                 <Text
                   size="2"
                   style={{
@@ -163,9 +264,9 @@ export function InteractiveQuestion({
                       : isActive && isSelected
                         ? "var(--accent-12)"
                         : "var(--gray-12)",
+                    fontStyle: isSomethingElse ? "italic" : "normal",
                   }}
                 >
-                  {isActive && isSelected && !isAnswered ? "→ " : "  "}
                   {option}
                 </Text>
               </Flex>
@@ -218,7 +319,7 @@ export function InteractiveQuestion({
 
         {isActive && !isAnswered && !showInput && (
           <Text size="1" mt="2" style={{ color: "var(--gray-10)" }}>
-            Use ↑↓ or j/k to navigate, Enter to select
+            Press letter key (a, b, c...) to select, or use ↑↓/j/k + Enter
           </Text>
         )}
       </Flex>
