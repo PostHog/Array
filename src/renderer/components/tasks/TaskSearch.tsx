@@ -11,7 +11,8 @@ export function TaskSearch({ value, onChange }: TaskSearchProps) {
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder="Search tasks..."
-      style={{ flexGrow: 1, maxWidth: "300px", height: "32px" }}
+      size="1"
+      style={{ flexGrow: 1, maxWidth: "300px" }}
     />
   );
 }

@@ -31,7 +31,7 @@ export function TaskListDisplayOptions() {
     <Popover.Root>
       <Popover.Trigger>
         <IconButton
-          size="2"
+          size="1"
           variant="outline"
           color="gray"
           title="Display options"

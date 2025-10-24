@@ -549,7 +549,6 @@ export function CliTaskPanel() {
           fontFamily: "monospace",
           position: "relative",
           zIndex: 1,
-          paddingTop: "23px",
         }}
       >
         {/* Folder Picker */}

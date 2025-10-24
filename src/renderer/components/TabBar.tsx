@@ -10,7 +10,10 @@ import {
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useSidebarStore } from "../stores/sidebarStore";
 import { useTabStore } from "../stores/tabStore";
+import { SIDEBAR_BORDER } from "./ui/sidebar/Context";
+import { SidebarTrigger } from "./ui/sidebar/SidebarTrigger";
 
 interface TabBarProps {
   onOpenCommandMenu?: () => void;
@@ -26,6 +29,9 @@ export function TabBar({ onOpenCommandMenu }: TabBarProps) {
     closeTabsToRight,
     reorderTabs,
   } = useTabStore();
+  const sidebarOpen = useSidebarStore((state) => state.open);
+  const sidebarWidth = useSidebarStore((state) => state.width);
+  const sidebarResizing = useSidebarStore((state) => state.isResizing);
   const [draggedTab, setDraggedTab] = useState<string | null>(null);
   const [dragOverTab, setDragOverTab] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"left" | "right" | null>(
@@ -224,9 +230,27 @@ export function TabBar({ onOpenCommandMenu }: TabBarProps) {
       height="40px"
       minHeight="40px"
       position="relative"
+      style={{
+        paddingLeft: sidebarOpen
+          ? `calc(${sidebarWidth}px - 80px - 40px - 1px)`
+          : "0",
+        transition: sidebarResizing ? "none" : "padding-left 0.2s ease-in-out",
+      }}
     >
       {/* Spacer for macOS window controls */}
       <Box width="80px" flexShrink="0" />
+
+      <Flex
+        align="center"
+        justify="center"
+        pl="2"
+        pr="4"
+        style={{
+          borderRight: sidebarOpen ? SIDEBAR_BORDER : "none",
+        }}
+      >
+        <SidebarTrigger />
+      </Flex>
 
       <Flex
         ref={scrollContainerRef}
@@ -284,7 +308,7 @@ export function TabBar({ onOpenCommandMenu }: TabBarProps) {
                   )}
 
                   <Text
-                    size="2"
+                    size="1"
                     className="max-w-[200px] select-none overflow-hidden text-ellipsis whitespace-nowrap"
                     mr="2"
                   >

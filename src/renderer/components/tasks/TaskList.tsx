@@ -206,8 +206,8 @@ export function TaskList({ onSelectTask }: TaskListProps) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          marginRight: "8px",
           marginLeft: "8px",
+          marginRight: "8px",
         }}
         onMouseDown={handleMouseDown}
         onMouseEnter={(e) => {
@@ -215,7 +215,7 @@ export function TaskList({ onSelectTask }: TaskListProps) {
             const bar = e.currentTarget.querySelector(
               ".drag-bar",
             ) as HTMLElement;
-            if (bar) bar.style.backgroundColor = "var(--gray-a6)";
+            if (bar) bar.style.backgroundColor = "var(--gray-a8)";
           }
         }}
         onMouseLeave={(e) => {
@@ -223,7 +223,7 @@ export function TaskList({ onSelectTask }: TaskListProps) {
             const bar = e.currentTarget.querySelector(
               ".drag-bar",
             ) as HTMLElement;
-            if (bar) bar.style.backgroundColor = "transparent";
+            if (bar) bar.style.backgroundColor = "var(--gray-a4)";
           }
         }}
       >
@@ -233,7 +233,7 @@ export function TaskList({ onSelectTask }: TaskListProps) {
           style={{
             width: "1px",
             height: "100%",
-            backgroundColor: isResizing ? "var(--accent-9)" : "transparent",
+            backgroundColor: isResizing ? "var(--accent-9)" : "var(--gray-a4)",
             transition: "background-color 0.2s",
           }}
         />
