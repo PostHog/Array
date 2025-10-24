@@ -1,6 +1,6 @@
 import { Box, Button, Flex, Heading, Text } from "@radix-ui/themes";
 import type { ClarifyingQuestion, QuestionAnswer } from "@shared/types";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { InteractiveQuestion } from "./InteractiveQuestion";
 
 interface QuestionListProps {
@@ -35,21 +35,43 @@ export function QuestionList({
     });
   };
 
-  const handleNext = () => {
-    if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex((prev) => prev + 1);
-    } else {
-      // All questions answered
-      onAnswersComplete(answers);
+  const handleClearAnswer = (questionId: string) => {
+    setAnswers((prev) => prev.filter((a) => a.questionId !== questionId));
+    // Set the current question to the one being edited
+    const questionIndex = questions.findIndex((q) => q.id === questionId);
+    if (questionIndex >= 0) {
+      setCurrentQuestionIndex(questionIndex);
     }
   };
 
-  const handleSubmit = () => {
-    onAnswersComplete(answers);
+  const handleNext = () => {
+    // Only advance to next question, don't auto-submit on last question
+    if (currentQuestionIndex < questions.length - 1) {
+      setCurrentQuestionIndex((prev) => prev + 1);
+    }
   };
+
+  const handleSubmit = useCallback(() => {
+    onAnswersComplete(answers);
+  }, [answers, onAnswersComplete]);
 
   const allAnswered = answers.length === questions.length;
   const progress = `${answers.length}/${questions.length}`;
+
+  // Listen for Cmd/Ctrl+Enter to submit when all questions are answered
+  useEffect(() => {
+    if (!allAnswered) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        handleSubmit();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [allAnswered, handleSubmit]);
 
   return (
     <Box p="4">
@@ -78,21 +100,33 @@ export function QuestionList({
               isActive={isActive}
               onAnswer={handleAnswer}
               onNext={handleNext}
+              onClearAnswer={() => handleClearAnswer(question.id)}
             />
           );
         })}
       </Box>
 
       {allAnswered && (
-        <Flex gap="2" mt="4">
-          <Button onClick={handleSubmit} size="3" variant="solid">
-            Continue
-          </Button>
-          {onCancel && (
-            <Button onClick={onCancel} size="3" variant="outline" color="gray">
-              Cancel
+        <Flex direction="column" gap="2" mt="4">
+          <Flex gap="2">
+            <Button onClick={handleSubmit} size="3" variant="solid">
+              Continue
             </Button>
-          )}
+            {onCancel && (
+              <Button
+                onClick={onCancel}
+                size="3"
+                variant="outline"
+                color="gray"
+              >
+                Cancel
+              </Button>
+            )}
+          </Flex>
+          <Text size="1" style={{ color: "var(--gray-10)" }}>
+            Press {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}+Enter to
+            continue
+          </Text>
         </Flex>
       )}
     </Box>
