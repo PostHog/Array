@@ -7,10 +7,10 @@ import { useIntegrations } from "../hooks/useIntegrations";
 import { useLayoutStore } from "../stores/layoutStore";
 import { useTabStore } from "../stores/tabStore";
 import { CommandMenu } from "./command";
+import { MainSidebar } from "./MainSidebar";
 import { SettingsView } from "./SettingsView";
 import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
-import { TaskCreate } from "./tasks/TaskCreate";
 import { TaskDetail } from "./tasks/TaskDetail";
 import { TaskList } from "./tasks/TaskList";
 
@@ -20,7 +20,6 @@ export function MainLayout() {
   const { setCliMode } = useLayoutStore();
   useIntegrations();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
-  const [taskCreateOpen, setTaskCreateOpen] = useState(false);
 
   const handleOpenSettings = useCallback(() => {
     const existingTab = tabs.find((tab) => tab.type === "settings");
@@ -102,24 +101,27 @@ export function MainLayout() {
     <Flex direction="column" height="100vh">
       <TabBar onOpenCommandMenu={() => setCommandMenuOpen(true)} />
 
-      <Box flexGrow="1" overflow="hidden">
-        {activeTab?.type === "task-list" && (
-          <TaskList onSelectTask={handleSelectTask} />
-        )}
+      <Flex flexGrow="1" overflow="hidden">
+        <MainSidebar />
 
-        {activeTab?.type === "task-detail" && activeTab.data ? (
-          <TaskDetail task={activeTab.data as Task} />
-        ) : null}
+        <Box flexGrow="1" overflow="hidden">
+          {activeTab?.type === "task-list" && (
+            <TaskList onSelectTask={handleSelectTask} />
+          )}
 
-        {activeTab?.type === "settings" && <SettingsView />}
+          {activeTab?.type === "task-detail" && activeTab.data ? (
+            <TaskDetail task={activeTab.data as Task} />
+          ) : null}
 
-        {activeTab?.type === "recordings" && <RecordingsView />}
-      </Box>
+          {activeTab?.type === "settings" && <SettingsView />}
+
+          {activeTab?.type === "recordings" && <RecordingsView />}
+        </Box>
+      </Flex>
 
       <StatusBar onOpenSettings={handleOpenSettings} />
 
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
-      <TaskCreate open={taskCreateOpen} onOpenChange={setTaskCreateOpen} />
     </Flex>
   );
 }

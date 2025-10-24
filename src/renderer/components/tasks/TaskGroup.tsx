@@ -54,6 +54,7 @@ export function TaskGroup({
           style={{
             cursor: "pointer",
             borderBottom: "1px solid var(--gray-6)",
+            borderRight: "1px solid var(--gray-6)",
           }}
           className="bg-gray-2 hover:bg-[var(--gray-4)]"
         >

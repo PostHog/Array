@@ -149,7 +149,8 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
             <Command.Input
               placeholder="Search for tasks, navigate to sections..."
               autoFocus={true}
-              className="w-full bg-transparent py-3 text-sm outline-none placeholder:text-gray-9"
+              style={{ fontSize: "12px" }}
+              className="w-full bg-transparent py-3 outline-none placeholder:text-gray-9"
             />
           </div>
 
@@ -158,8 +159,8 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
 
             <Command.Group heading="Actions">
               <Command.Item value="Create new task" onSelect={handleCreateTask}>
-                <FileTextIcon className="mr-3 h-4 w-4 text-gray-11" />
-                <Text size="2">Create new task</Text>
+                <FileTextIcon className="mr-3 h-3 w-3 text-gray-11" />
+                <Text size="1">Create new task</Text>
               </Command.Item>
             </Command.Group>
 
@@ -168,16 +169,16 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                 value="Go to tasks"
                 onSelect={handleNavigateToTasks}
               >
-                <ListBulletIcon className="mr-3 h-4 w-4 text-gray-11" />
-                <Text size="2">Go to tasks</Text>
+                <ListBulletIcon className="mr-3 h-3 w-3 text-gray-11" />
+                <Text size="1">Go to tasks</Text>
               </Command.Item>
 
               <Command.Item
                 value="Go to recordings"
                 onSelect={handleNavigateToRecordings}
               >
-                <MicrophoneIcon className="mr-3 h-4 w-4 text-gray-11" />
-                <Text size="2">Go to recordings</Text>
+                <MicrophoneIcon className="mr-3 h-3 w-3 text-gray-11" />
+                <Text size="1">Go to recordings</Text>
               </Command.Item>
             </Command.Group>
 
@@ -192,7 +193,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                   >
                     <FileTextIcon className="mt-0.5 mr-3 h-4 w-4 flex-shrink-0 text-gray-11" />
                     <Flex direction="column" flexGrow="1" className="min-w-0">
-                      <Text size="2" weight="medium" className="truncate">
+                      <Text size="1" weight="medium" className="truncate">
                         {task.title}
                       </Text>
                       {task.description && (

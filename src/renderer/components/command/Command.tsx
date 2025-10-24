@@ -91,7 +91,7 @@ const CommandGroup = React.forwardRef<
       {...props}
     >
       {heading && (
-        <div className="px-2 py-1.5 font-medium text-gray-11 text-xs">
+        <div className="px-2 py-1.5 text-gray-11" style={{ fontSize: "14px" }}>
           {heading}
         </div>
       )}
