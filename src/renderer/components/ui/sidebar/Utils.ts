@@ -62,3 +62,26 @@ export function buildTreeLines(
 
   return lines;
 }
+
+export function getAllNodeIds(
+  nodes: TreeNode[],
+  parentId = "",
+  depth = 0,
+): string[] {
+  const nodeIds: string[] = [];
+
+  nodes.forEach((node, index) => {
+    const nodeId = parentId ? `${parentId}.${index}` : `${index}`;
+    const hasChildren = !!(node.children && node.children.length > 0);
+
+    if (hasChildren && depth > 0) {
+      nodeIds.push(nodeId);
+    }
+
+    if (hasChildren && node.children) {
+      nodeIds.push(...getAllNodeIds(node.children, nodeId, depth + 1));
+    }
+  });
+
+  return nodeIds;
+}
