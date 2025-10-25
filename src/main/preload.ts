@@ -134,6 +134,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("open-settings", wrapped);
     return () => ipcRenderer.removeListener("open-settings", wrapped);
   },
+  onUpdateReady: (listener: () => void): (() => void) => {
+    const channel = "updates:ready";
+    const wrapped = () => listener();
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
+  },
+  installUpdate: (): Promise<{ installed: boolean }> =>
+    ipcRenderer.invoke("updates:install"),
   // Recording API
   recordingStart: (): Promise<{ recordingId: string; startTime: string }> =>
     ipcRenderer.invoke("recording:start"),

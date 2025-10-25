@@ -78,6 +78,8 @@ export interface IElectronAPI {
     }>,
   ) => Promise<void>;
   onOpenSettings: (listener: () => void) => () => void;
+  onUpdateReady: (listener: () => void) => () => void;
+  installUpdate: () => Promise<{ installed: boolean }>;
   // Recording API
   recordingStart: () => Promise<{ recordingId: string; startTime: string }>;
   recordingStop: (

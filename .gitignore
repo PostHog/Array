@@ -34,3 +34,5 @@ AGENTS.md
 pnpm-workspace.yaml
 
 **.car
+
+.envrc

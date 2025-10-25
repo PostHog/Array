@@ -55,6 +55,18 @@ Output will be in:
 pnpm build-native
 ```
 
+### Auto Updates & Releases
+
+Array uses Electron's built-in `autoUpdater` pointed at the public `update.electronjs.org` service for `PostHog/Array`. Every time a non-draft GitHub release is published with the platform archives, packaged apps will automatically download and install the newest version on macOS and Windows.
+
+Publishing a new release:
+
+1. Export a GitHub token with `repo` scope as `GH_TOKEN`; this is consumed by Electron Forge's GitHub publisher (store it locally in `.envrc` and in the repo's secrets).
+2. Run `pnpm run make` locally to sanity check artifacts, then bump `package.json`'s version (e.g., `pnpm version patch`).
+3. Merge the version bump into `main`. The `Publish Release` GitHub Action auto-detects the new version, tags `vX.Y.Z`, runs `pnpm run publish`, and uploads the release artifacts. You can also run the workflow manually (`workflow_dispatch`) and supply a tag if you need to re-publish.
+
+Set `ELECTRON_DISABLE_AUTO_UPDATE=1` if you ever need to ship a build with auto updates disabled.
+
 ### Liquid Glass Icon (macOS 26+)
 
 The app supports macOS liquid glass icons for a modern, layered appearance. The icon configuration is in `build/icon.icon/`.

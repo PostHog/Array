@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { MakerDMG } from "@electron-forge/maker-dmg";
 import { MakerZIP } from "@electron-forge/maker-zip";
 import { VitePlugin } from "@electron-forge/plugin-vite";
+import { PublisherGithub } from "@electron-forge/publisher-github";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 
 const config: ForgeConfig = {
@@ -53,6 +54,16 @@ const config: ForgeConfig = {
       }
     },
   },
+  publishers: [
+    new PublisherGithub({
+      repository: {
+        owner: "PostHog",
+        name: "Array",
+      },
+      draft: false,
+      prerelease: false,
+    }),
+  ],
   plugins: [
     new VitePlugin({
       build: [
