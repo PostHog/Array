@@ -61,7 +61,7 @@ Array uses Electron's built-in `autoUpdater` pointed at the public `update.elect
 
 Publishing a new release:
 
-1. Export a GitHub token with `repo` scope as `GH_TOKEN`; this is consumed by Electron Forge's GitHub publisher (store it locally in `.envrc` and in the repo's secrets).
+1. Export a GitHub token with `repo` scope as `GH_PUBLISH_TOKEN`; set both `GH_TOKEN` and `GITHUB_TOKEN` to its value locally (e.g., in `.envrc`). In GitHub, store the token as the `GH_PUBLISH_TOKEN` repository secret.
 2. Run `pnpm run make` locally to sanity check artifacts, then bump `package.json`'s version (e.g., `pnpm version patch`).
 3. Merge the version bump into `main`. The `Publish Release` GitHub Action auto-detects the new version, tags `vX.Y.Z`, runs `pnpm run publish`, and uploads the release artifacts. You can also run the workflow manually (`workflow_dispatch`) and supply a tag if you need to re-publish.
 

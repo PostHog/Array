@@ -8,7 +8,10 @@ import type { ForgeConfig } from "@electron-forge/shared-types";
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    asar: {
+      unpack: "**/*.node",
+    },
+    prune: false,
     name: "Array",
     executableName: "Array",
     icon: "./build/app-icon", // Forge adds .icns/.ico/.png based on platform
