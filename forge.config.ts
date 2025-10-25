@@ -1,10 +1,37 @@
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import path from "node:path";
 import { MakerDMG } from "@electron-forge/maker-dmg";
 import { MakerZIP } from "@electron-forge/maker-zip";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { PublisherGithub } from "@electron-forge/publisher-github";
 import type { ForgeConfig } from "@electron-forge/shared-types";
+
+function copyNativeDependency(
+  dependency: string,
+  destinationRoot: string,
+): void {
+  const source = path.resolve("node_modules", dependency);
+  if (!existsSync(source)) {
+    console.warn(
+      `[forge] Native dependency "${dependency}" not found, skipping copy`,
+    );
+    return;
+  }
+
+  const nodeModulesDir = path.join(destinationRoot, "node_modules");
+  mkdirSync(nodeModulesDir, { recursive: true });
+
+  const destination = path.join(nodeModulesDir, dependency);
+  rmSync(destination, { recursive: true, force: true });
+  cpSync(source, destination, { recursive: true, dereference: true });
+  console.log(
+    `[forge] Copied native dependency "${dependency}" into ${path.relative(
+      process.cwd(),
+      destination,
+    )}`,
+  );
+}
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -15,6 +42,8 @@ const config: ForgeConfig = {
     name: "Array",
     executableName: "Array",
     icon: "./build/app-icon", // Forge adds .icns/.ico/.png based on platform
+    appBundleId: "com.posthog.array",
+    appCategoryType: "public.app-category.productivity",
     extraResource: existsSync("build/Assets.car") ? ["build/Assets.car"] : [],
     extendInfo: existsSync("build/Assets.car")
       ? {
@@ -55,6 +84,9 @@ const config: ForgeConfig = {
           execSync("npm install", { cwd: modulePath, stdio: "inherit" });
         }
       }
+    },
+    packageAfterCopy: async (_forgeConfig, buildPath) => {
+      copyNativeDependency("node-pty", buildPath);
     },
   },
   publishers: [

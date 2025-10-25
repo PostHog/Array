@@ -134,6 +134,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("open-settings", wrapped);
     return () => ipcRenderer.removeListener("open-settings", wrapped);
   },
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke("app:get-version"),
   onUpdateReady: (listener: () => void): (() => void) => {
     const channel = "updates:ready";
     const wrapped = () => listener();

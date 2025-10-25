@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   app,
   BrowserWindow,
+  ipcMain,
   Menu,
   type MenuItemConstructorOptions,
   shell,
@@ -180,6 +181,8 @@ app.on("activate", () => {
 
 // Background services
 registerAutoUpdater(() => mainWindow);
+
+ipcMain.handle("app:get-version", () => app.getVersion());
 
 // Register IPC handlers via services
 registerPosthogIpc();
