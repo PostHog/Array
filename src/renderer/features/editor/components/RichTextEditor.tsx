@@ -3,21 +3,18 @@ import {
   type MentionListRef,
 } from "@features/editor/components/FileMentionList";
 import { FormattingToolbar } from "@features/editor/components/FormattingToolbar";
+import { FilePathHighlight } from "@features/editor/extensions/filePathHighlight";
 import {
   markdownToTiptap,
   tiptapToMarkdown,
 } from "@features/editor/utils/tiptap-converter";
 import { Box } from "@radix-ui/themes";
 import type { MentionItem } from "@shared/types";
-import { Extension } from "@tiptap/core";
 import { Link } from "@tiptap/extension-link";
 import { Mention } from "@tiptap/extension-mention";
 import { Placeholder } from "@tiptap/extension-placeholder";
 import { Typography } from "@tiptap/extension-typography";
 import { Underline } from "@tiptap/extension-underline";
-import type { Node } from "@tiptap/pm/model";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import type { SuggestionOptions } from "@tiptap/suggestion";
@@ -28,56 +25,6 @@ import {
 } from "@utils/posthog-url-parser";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-
-const FilePathHighlight = Extension.create({
-  name: "filePathHighlight",
-
-  addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        key: new PluginKey("filePathHighlight"),
-        state: {
-          init(_, { doc }) {
-            return findFilePathDecorations(doc);
-          },
-          apply(tr, oldState) {
-            return tr.docChanged ? findFilePathDecorations(tr.doc) : oldState;
-          },
-        },
-        props: {
-          decorations(state) {
-            return this.getState(state);
-          },
-        },
-      }),
-    ];
-  },
-});
-
-function findFilePathDecorations(doc: Node) {
-  const decorations: Decoration[] = [];
-  const regex = /@[^\s]+/g;
-
-  doc.descendants((node: Node, pos: number) => {
-    if (node.isText && node.text) {
-      let match: RegExpExecArray | null = null;
-      regex.lastIndex = 0;
-      match = regex.exec(node.text);
-      while (match !== null) {
-        const from = pos + match.index;
-        const to = from + match[0].length;
-        decorations.push(
-          Decoration.inline(from, to, {
-            class: "rich-text-file-path",
-          }),
-        );
-        match = regex.exec(node.text);
-      }
-    }
-  });
-
-  return DecorationSet.create(doc, decorations);
-}
 
 interface RichTextEditorProps {
   value: string;
@@ -359,7 +306,9 @@ export function RichTextEditor({
           },
         } as Partial<SuggestionOptions>,
       }),
-      FilePathHighlight,
+      FilePathHighlight.configure({
+        className: "rich-text-file-path",
+      }),
     ],
     content: markdownToTiptap(value),
     onUpdate: ({ editor }) => {

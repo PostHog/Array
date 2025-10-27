@@ -205,10 +205,6 @@ export function TabBar({ onOpenCommandMenu }: TabBarProps) {
   }, [checkScrollGradient]);
 
   useEffect(() => {
-    checkScrollGradient();
-  }, [checkScrollGradient]);
-
-  useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 

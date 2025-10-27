@@ -1,6 +1,11 @@
 import { LogEventRenderer } from "@features/logs/components/LogEventRenderer";
 import { TodoGroupView } from "@features/logs/components/TodoGroupView";
 import {
+  useLogsSelectors,
+  useLogsStore,
+} from "@features/logs/stores/logsStore";
+import { useAutoScroll } from "@hooks/useAutoScroll";
+import {
   CaretDown as CaretDownIcon,
   CaretUp as CaretUpIcon,
   Copy as CopyIcon,
@@ -17,7 +22,7 @@ import {
   Text,
   Tooltip,
 } from "@radix-ui/themes";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect } from "react";
 
 interface LogViewProps {
   logs: AgentEvent[];
@@ -25,214 +30,27 @@ interface LogViewProps {
   onClearLogs?: () => void;
 }
 
-interface Todo {
-  content: string;
-  status: "pending" | "in_progress" | "completed";
-  activeForm: string;
-}
-
-interface TodoGroup {
-  type: "todo_group";
-  todo: Todo;
-  allTodos: Todo[];
-  toolCalls: Array<{
-    call: Extract<AgentEvent, { type: "tool_call" }>;
-    result?: Extract<AgentEvent, { type: "tool_result" }>;
-    index: number;
-  }>;
-  timestamp: number;
-  todoWriteIndex: number;
-}
-
-interface StandaloneEvent {
-  type: "standalone";
-  event: AgentEvent;
-  index: number;
-  toolResult?: Extract<AgentEvent, { type: "tool_result" }>;
-}
-
-type ProcessedItem = TodoGroup | StandaloneEvent;
-
 export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [viewMode, setViewMode] = useState<"pretty" | "raw">("pretty");
-  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
-  const [expandAll, setExpandAll] = useState<boolean>(false);
-  const [autoScroll, setAutoScroll] = useState<boolean>(true);
-  const scrollPositions = useRef<{ pretty: number; raw: number }>({
-    pretty: 0,
-    raw: 0,
+  const viewMode = useLogsStore((state) => state.viewMode);
+  const highlightedIndex = useLogsStore((state) => state.highlightedIndex);
+  const expandAll = useLogsStore((state) => state.expandAll);
+  const setViewMode = useLogsStore((state) => state.setViewMode);
+  const setHighlightedIndex = useLogsStore(
+    (state) => state.setHighlightedIndex,
+  );
+  const setExpandAll = useLogsStore((state) => state.setExpandAll);
+  const setLogs = useLogsStore((state) => state.setLogs);
+
+  const { scrollRef } = useAutoScroll({
+    contentLength: logs.length,
+    viewMode,
   });
 
-  // Process logs to group tool calls by active todo
-  const processedLogs = useMemo(() => {
-    // Build a map of callId -> tool_result event
-    const resultMap = new Map<
-      string,
-      Extract<AgentEvent, { type: "tool_result" }>
-    >();
-
-    for (const log of logs) {
-      if (log.type === "tool_result") {
-        resultMap.set(
-          log.callId,
-          log as Extract<AgentEvent, { type: "tool_result" }>,
-        );
-      }
-    }
-
-    const processed: ProcessedItem[] = [];
-    let currentTodo: Todo | null = null;
-    let currentAllTodos: Todo[] = [];
-    let currentTodoTimestamp: number | null = null;
-    let currentTodoWriteIndex: number | null = null;
-    let currentToolCalls: Array<{
-      call: Extract<AgentEvent, { type: "tool_call" }>;
-      result?: Extract<AgentEvent, { type: "tool_result" }>;
-      index: number;
-    }> = [];
-
-    const flushCurrentTodo = (finalStatus?: "completed" | "pending") => {
-      if (
-        currentTodo &&
-        currentTodoTimestamp &&
-        currentTodoWriteIndex !== null &&
-        currentToolCalls.length > 0
-      ) {
-        // Update status if we know the final status
-        const todoToFlush = finalStatus
-          ? { ...currentTodo, status: finalStatus }
-          : currentTodo;
-        processed.push({
-          type: "todo_group",
-          todo: todoToFlush,
-          allTodos: currentAllTodos,
-          toolCalls: [...currentToolCalls],
-          timestamp: currentTodoTimestamp,
-          todoWriteIndex: currentTodoWriteIndex,
-        });
-        currentToolCalls = [];
-      }
-    };
-
-    for (let index = 0; index < logs.length; index++) {
-      const log = logs[index];
-
-      if (log.type === "tool_call" && log.toolName === "TodoWrite") {
-        const args = log.args as { todos?: Todo[] };
-        const todos = args.todos || [];
-
-        // Check if previous todo completed
-        if (currentTodo) {
-          const previousTodoInList = todos.find(
-            (t) =>
-              t.content === currentTodo?.content ||
-              t.activeForm === currentTodo?.activeForm,
-          );
-          if (previousTodoInList && previousTodoInList.status === "completed") {
-            // Flush with completed status
-            flushCurrentTodo("completed");
-          } else {
-            // Flush without changing status (still in progress or moved to pending)
-            flushCurrentTodo();
-          }
-        }
-
-        // Extract the new in_progress todo
-        const inProgressTodo = todos.find((t) => t.status === "in_progress");
-
-        if (inProgressTodo) {
-          currentTodo = inProgressTodo;
-          currentAllTodos = todos;
-          currentTodoTimestamp = log.ts;
-          currentTodoWriteIndex = index;
-        } else {
-          currentTodo = null;
-          currentAllTodos = [];
-          currentTodoTimestamp = null;
-          currentTodoWriteIndex = null;
-        }
-      } else if (log.type === "tool_call") {
-        // Regular tool call
-        const toolCall = log as Extract<AgentEvent, { type: "tool_call" }>;
-        const matchedResult = resultMap.get(toolCall.callId);
-
-        if (currentTodo) {
-          // Add to current todo group
-          currentToolCalls.push({
-            call: toolCall,
-            result: matchedResult,
-            index,
-          });
-        } else {
-          // Standalone tool call (no active todo)
-          processed.push({
-            type: "standalone",
-            event: log,
-            index,
-            toolResult: matchedResult,
-          });
-        }
-      } else if (log.type === "tool_result") {
-      } else {
-        // All other events pass through as standalone
-        processed.push({
-          type: "standalone",
-          event: log,
-          index,
-        });
-      }
-    }
-
-    // Flush any remaining todo group
-    flushCurrentTodo();
-
-    return processed;
-  }, [logs]);
-
-  // Track scroll position and auto-scroll state
   useEffect(() => {
-    const handleScroll = () => {
-      if (scrollRef.current) {
-        scrollPositions.current[viewMode] = scrollRef.current.scrollTop;
+    setLogs(logs);
+  }, [logs, setLogs]);
 
-        // Check if user is near the bottom (within 100px)
-        const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-        const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
-        setAutoScroll(isNearBottom);
-      }
-    };
-
-    const scrollElement = scrollRef.current;
-    if (!scrollElement) return;
-
-    scrollElement.addEventListener("scroll", handleScroll);
-    return () => scrollElement.removeEventListener("scroll", handleScroll);
-  }, [viewMode]);
-
-  // Restore scroll position when view changes
-  useEffect(() => {
-    if (scrollRef.current) {
-      // Use requestAnimationFrame to ensure DOM is ready
-      requestAnimationFrame(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollPositions.current[viewMode];
-        }
-      });
-    }
-  }, [viewMode]);
-
-  // Auto-scroll to bottom when new logs arrive
-  useEffect(() => {
-    if (scrollRef.current && autoScroll) {
-      // Use requestAnimationFrame to ensure DOM is updated with new content
-      requestAnimationFrame(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-      });
-    }
-  }, [autoScroll]);
+  const { processedLogs } = useLogsSelectors();
 
   if (logs.length === 0 && !isRunning) {
     return (

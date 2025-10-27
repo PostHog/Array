@@ -5,6 +5,7 @@ import { SettingsPanel } from "@features/recordings/components/SettingsPanel";
 import { useAudioRecorder } from "@features/recordings/hooks/useAudioRecorder";
 import { useRecordings } from "@features/recordings/hooks/useRecordings";
 import { useRecordingStore } from "@features/recordings/stores/recordingStore";
+import { useStatusBar } from "@hooks/useStatusBar";
 import { Gear, X } from "@phosphor-icons/react";
 import {
   Box,
@@ -14,7 +15,6 @@ import {
   IconButton,
   Text,
 } from "@radix-ui/themes";
-import { useStatusBarStore } from "@stores/statusBarStore";
 import { useEffect, useState } from "react";
 
 export function RecordingsView() {
@@ -28,7 +28,6 @@ export function RecordingsView() {
     transcriptionError,
     clearTranscriptionError,
   } = useRecordings();
-  const { setStatusBar, reset } = useStatusBarStore();
   const { selectedRecordingId, cleanup } = useRecordingStore();
   const {
     isRecording,
@@ -46,8 +45,8 @@ export function RecordingsView() {
 
   useEffect(() => cleanup, [cleanup]);
 
-  useEffect(() => {
-    setStatusBar({
+  useStatusBar(
+    {
       statusText: `${recordings.length} recording${recordings.length === 1 ? "" : "s"}`,
       keyHints: [
         { keys: ["↑/↓"], description: "Navigate" },
@@ -57,9 +56,9 @@ export function RecordingsView() {
         { keys: ["Del"], description: "Delete" },
       ],
       mode: "replace",
-    });
-    return reset;
-  }, [setStatusBar, reset, recordings.length]);
+    },
+    [recordings.length],
+  );
 
   const selectedRecording = recordings.find(
     (r) => r.id === selectedRecordingId,

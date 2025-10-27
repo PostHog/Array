@@ -2,7 +2,7 @@ import { PencilSimpleIcon } from "@phosphor-icons/react";
 import { CheckCircledIcon } from "@radix-ui/react-icons";
 import { Box, Flex, Text, TextArea } from "@radix-ui/themes";
 import type { ClarifyingQuestion, QuestionAnswer } from "@shared/types";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 interface InteractiveQuestionProps {
   question: ClarifyingQuestion;
@@ -28,7 +28,6 @@ export function InteractiveQuestion({
   onNext,
   onClearAnswer,
 }: InteractiveQuestionProps) {
-  // Automatically add "Something else" option to all questions
   const allOptions = useMemo(
     () => [...question.options, SOMETHING_ELSE_OPTION],
     [question.options],
@@ -51,44 +50,28 @@ export function InteractiveQuestion({
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const isAnswered = !!answer;
 
+  const stateRef = useRef({
+    selectedIndex,
+    showInput,
+    customInput,
+    allOptions,
+    somethingElseIndex,
+  });
+  stateRef.current = {
+    selectedIndex,
+    showInput,
+    customInput,
+    allOptions,
+    somethingElseIndex,
+  };
+
   useEffect(() => {
     if (showInput && textAreaRef.current) {
       textAreaRef.current.focus();
     }
   }, [showInput]);
 
-  const handleSelect = useCallback(
-    (optionIndex?: number) => {
-      const index = optionIndex ?? selectedIndex;
-      const isSomethingElse = index === somethingElseIndex;
-
-      if (isSomethingElse && !customInput.trim()) {
-        setSelectedIndex(index);
-        setShowInput(true);
-        return;
-      }
-
-      onAnswer({
-        questionId: question.id,
-        selectedOption: isSomethingElse
-          ? SOMETHING_ELSE_OPTION
-          : allOptions[index],
-        customInput: customInput.trim() || undefined,
-      });
-      onNext();
-    },
-    [
-      question,
-      selectedIndex,
-      customInput,
-      onAnswer,
-      onNext,
-      somethingElseIndex,
-      allOptions,
-    ],
-  );
-
-  const handleTextSubmit = useCallback(() => {
+  const handleTextSubmit = () => {
     if (customInput.trim()) {
       onAnswer({
         questionId: question.id,
@@ -97,41 +80,53 @@ export function InteractiveQuestion({
       });
       onNext();
     }
-  }, [customInput, question, onAnswer, onNext]);
+  };
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (!isActive || isAnswered) return;
+  useEffect(() => {
+    if (!isActive || isAnswered) return;
 
-      if (showInput) {
-        // In text input mode
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const state = stateRef.current;
+
+      if (state.showInput) {
         if (e.key === "Escape") {
           e.preventDefault();
           setShowInput(false);
           setCustomInput("");
         }
-        // Let Enter be handled by the TextArea's onKeyDown
         return;
       }
 
-      // Check for letter key shortcuts (a, b, c, etc.)
       if (e.key.length === 1 && e.key >= "a" && e.key <= "z") {
-        const index = e.key.charCodeAt(0) - 97; // Convert 'a' to 0, 'b' to 1, etc.
-        if (index < allOptions.length) {
+        const index = e.key.charCodeAt(0) - 97;
+        if (index < state.allOptions.length) {
           e.preventDefault();
           setSelectedIndex(index);
-          handleSelect(index);
+
+          const isSomethingElse = index === state.somethingElseIndex;
+          if (isSomethingElse && !state.customInput.trim()) {
+            setShowInput(true);
+            return;
+          }
+
+          onAnswer({
+            questionId: question.id,
+            selectedOption: isSomethingElse
+              ? SOMETHING_ELSE_OPTION
+              : state.allOptions[index],
+            customInput: state.customInput.trim() || undefined,
+          });
+          onNext();
           return;
         }
       }
 
-      // Navigation mode
       switch (e.key) {
         case "ArrowDown":
         case "j":
           e.preventDefault();
           setSelectedIndex((prev) =>
-            prev < allOptions.length - 1 ? prev + 1 : prev,
+            prev < state.allOptions.length - 1 ? prev + 1 : prev,
           );
           break;
         case "ArrowUp":
@@ -139,22 +134,32 @@ export function InteractiveQuestion({
           e.preventDefault();
           setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
           break;
-        case "Enter":
+        case "Enter": {
           e.preventDefault();
-          handleSelect();
-          break;
-      }
-    },
-    [isActive, isAnswered, showInput, allOptions.length, handleSelect],
-  );
+          const index = state.selectedIndex;
+          const isSomethingElse = index === state.somethingElseIndex;
 
-  useEffect(() => {
-    if (isActive && !isAnswered) {
-      window.addEventListener("keydown", handleKeyDown);
-      return () => window.removeEventListener("keydown", handleKeyDown);
-    }
-    return undefined;
-  }, [isActive, isAnswered, handleKeyDown]);
+          if (isSomethingElse && !state.customInput.trim()) {
+            setShowInput(true);
+            return;
+          }
+
+          onAnswer({
+            questionId: question.id,
+            selectedOption: isSomethingElse
+              ? SOMETHING_ELSE_OPTION
+              : state.allOptions[index],
+            customInput: state.customInput.trim() || undefined,
+          });
+          onNext();
+          break;
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isActive, isAnswered, question.id, onAnswer, onNext]);
 
   return (
     <Box
@@ -235,7 +240,21 @@ export function InteractiveQuestion({
                 onClick={() => {
                   if (isActive && !isAnswered) {
                     setSelectedIndex(index);
-                    handleSelect(index);
+
+                    const isSomethingElse = index === somethingElseIndex;
+                    if (isSomethingElse && !customInput.trim()) {
+                      setShowInput(true);
+                      return;
+                    }
+
+                    onAnswer({
+                      questionId: question.id,
+                      selectedOption: isSomethingElse
+                        ? SOMETHING_ELSE_OPTION
+                        : allOptions[index],
+                      customInput: customInput.trim() || undefined,
+                    });
+                    onNext();
                   }
                 }}
               >

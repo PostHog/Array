@@ -1,74 +1,23 @@
 import { AsciiArt } from "@components/AsciiArt";
 import { useAuthStore } from "@features/auth/stores/authStore";
+import { FilePathHighlight } from "@features/editor/extensions/filePathHighlight";
+import { useFileAutocomplete } from "@features/editor/hooks/useFileAutocomplete";
 import { FolderPicker } from "@features/folder-picker/components/FolderPicker";
 import { useFolderPickerStore } from "@features/folder-picker/stores/folderPickerStore";
+import { CliModeHeader } from "@features/tasks/components/CliModeHeader";
+import { CliStatusIndicator } from "@features/tasks/components/CliStatusIndicator";
 import { useCreateTask } from "@features/tasks/hooks/useTasks";
 import { useTaskExecutionStore } from "@features/tasks/stores/taskExecutionStore";
 import { ShellTerminal } from "@features/terminal/components/ShellTerminal";
 import { useRepositoryIntegration } from "@hooks/useIntegrations";
-import { CheckSquareIcon, TerminalWindowIcon } from "@phosphor-icons/react";
-import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import { useLayoutStore } from "@stores/layoutStore";
 import { useTabStore } from "@stores/tabStore";
-import { Extension } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extension-placeholder";
-import type { Node } from "@tiptap/pm/model";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { formatRepoKey, parseRepoKey } from "@utils/repository";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-const FilePathHighlight = Extension.create({
-  name: "filePathHighlight",
-
-  addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        key: new PluginKey("filePathHighlight"),
-        state: {
-          init(_, { doc }) {
-            return findFilePathDecorations(doc);
-          },
-          apply(tr, oldState) {
-            return tr.docChanged ? findFilePathDecorations(tr.doc) : oldState;
-          },
-        },
-        props: {
-          decorations(state) {
-            return this.getState(state);
-          },
-        },
-      }),
-    ];
-  },
-});
-
-function findFilePathDecorations(doc: Node) {
-  const decorations: Decoration[] = [];
-  const regex = /@[^\s]+/g;
-
-  doc.descendants((node: Node, pos: number) => {
-    if (node.isText && node.text) {
-      let match: RegExpExecArray | null = null;
-      regex.lastIndex = 0;
-      match = regex.exec(node.text);
-      while (match !== null) {
-        const from = pos + match.index;
-        const to = from + match[0].length;
-        decorations.push(
-          Decoration.inline(from, to, {
-            class: "cli-file-path",
-          }),
-        );
-        match = regex.exec(node.text);
-      }
-    }
-  });
-
-  return DecorationSet.create(doc, decorations);
-}
 
 export function CliTaskPanel() {
   const { mutate: createTask, isPending: isCreatingTask } = useCreateTask();
@@ -83,14 +32,8 @@ export function CliTaskPanel() {
 
   const [folderPath, setFolderPath] = useState(lastSelectedFolder || "");
   const [repository, setRepository] = useState("");
-  const [cursorVisible, setCursorVisible] = useState(true);
   const [isFocused, setIsFocused] = useState(false);
   const [isShellFocused, setIsShellFocused] = useState(false);
-  const [fileHints, setFileHints] = useState<string[]>([]);
-  const [selectedHintIndex, setSelectedHintIndex] = useState(0);
-  const [showHints, setShowHints] = useState(false);
-  const [visibleStartIndex, setVisibleStartIndex] = useState(0);
-  const [loadingDots, setLoadingDots] = useState(".");
   const caretRef = useRef<HTMLDivElement>(null);
   const hintsRef = useRef<HTMLDivElement>(null);
   const terminalContainerRef = useRef<HTMLDivElement>(null);
@@ -101,7 +44,9 @@ export function CliTaskPanel() {
       Placeholder.configure({
         placeholder: "What do you want to work on?",
       }),
-      FilePathHighlight,
+      FilePathHighlight.configure({
+        className: "cli-file-path",
+      }),
     ],
     content: "",
     editorProps: {
@@ -126,88 +71,9 @@ export function CliTaskPanel() {
           return true;
         }
 
-        if (showHints) {
-          if (event.key === "ArrowDown") {
-            event.preventDefault();
-            setSelectedHintIndex((prev) => {
-              const newIndex = prev < fileHints.length - 1 ? prev + 1 : 0;
-
-              // Scroll window when reaching halfway point
-              const relativePos = newIndex - visibleStartIndex;
-              if (
-                relativePos >= 5 &&
-                visibleStartIndex + 10 < fileHints.length
-              ) {
-                setVisibleStartIndex(visibleStartIndex + 1);
-              } else if (newIndex === 0) {
-                // Wrapped to start
-                setVisibleStartIndex(0);
-              }
-
-              return newIndex;
-            });
-            return true;
-          }
-          if (event.key === "ArrowUp") {
-            event.preventDefault();
-            setSelectedHintIndex((prev) => {
-              const newIndex = prev > 0 ? prev - 1 : fileHints.length - 1;
-
-              // Scroll window when reaching halfway point going up
-              const relativePos = newIndex - visibleStartIndex;
-              if (relativePos < 5 && visibleStartIndex > 0) {
-                setVisibleStartIndex(visibleStartIndex - 1);
-              } else if (newIndex === fileHints.length - 1) {
-                // Wrapped to end
-                setVisibleStartIndex(Math.max(0, fileHints.length - 10));
-              }
-
-              return newIndex;
-            });
-            return true;
-          }
-          if (event.key === "Tab" || event.key === "Enter") {
-            if (!event.metaKey && !event.ctrlKey) {
-              event.preventDefault();
-
-              // Insert selected hint inline
-              if (fileHints.length > 0) {
-                const selectedFile = fileHints[selectedHintIndex];
-                const { state } = _view;
-                const { selection } = state;
-                const { $from } = selection;
-
-                const textBefore = $from.parent.textBetween(
-                  Math.max(0, $from.parentOffset - 100),
-                  $from.parentOffset,
-                  undefined,
-                  "\ufffc",
-                );
-
-                const lastAtIndex = textBefore.lastIndexOf("@");
-                if (lastAtIndex !== -1) {
-                  const deleteFrom =
-                    $from.pos - ($from.parentOffset - lastAtIndex);
-                  const deleteTo = $from.pos;
-
-                  const tr = state.tr.deleteRange(deleteFrom, deleteTo);
-                  tr.insertText(`@${selectedFile} `);
-                  _view.dispatch(tr);
-
-                  setShowHints(false);
-                  setFileHints([]);
-                }
-              }
-
-              return true;
-            }
-          }
-          if (event.key === "Escape") {
-            event.preventDefault();
-            setShowHints(false);
-            setFileHints([]);
-            return true;
-          }
+        // Handle file autocomplete
+        if (handleFileAutocompleteKeyDown(event)) {
+          return true;
         }
 
         if (event.key === "Escape") {
@@ -224,121 +90,11 @@ export function CliTaskPanel() {
         return false;
       },
     },
-    onUpdate: ({ editor: ed }) => {
+    onUpdate: () => {
       updateCaretPosition();
-
-      // Check for file hints immediately
-      if (!ed || !folderPath) {
-        setShowHints(false);
-        setFileHints([]);
-        return;
-      }
-
-      const { state } = ed;
-      const { selection } = state;
-      const { $from } = selection;
-
-      const textBefore = $from.parent.textBetween(
-        Math.max(0, $from.parentOffset - 100),
-        $from.parentOffset,
-        undefined,
-        "\ufffc",
-      );
-
-      // Check if cursor is right after a space (in the blank space after a file mention)
-      if (textBefore.endsWith(" ")) {
-        setShowHints(false);
-        setFileHints([]);
-        return;
-      }
-
-      const lastAtIndex = textBefore.lastIndexOf("@");
-      if (lastAtIndex === -1) {
-        setShowHints(false);
-        setFileHints([]);
-        return;
-      }
-
-      const textAfterAt = textBefore.substring(lastAtIndex + 1);
-      if (textAfterAt.includes(" ")) {
-        setShowHints(false);
-        setFileHints([]);
-        return;
-      }
-
-      const query = textAfterAt;
-      window.electronAPI
-        ?.listRepoFiles(folderPath, query || "")
-        .then((results) => {
-          const filePaths = (results || []).map((file) => file.path);
-          setFileHints(filePaths);
-          setShowHints(filePaths.length > 0);
-          setSelectedHintIndex(0);
-          setVisibleStartIndex(0);
-        })
-        .catch((error) => {
-          console.error("Error fetching files:", error);
-          setFileHints([]);
-          setShowHints(false);
-        });
     },
-    onSelectionUpdate: ({ editor: ed }) => {
+    onSelectionUpdate: () => {
       updateCaretPosition();
-
-      // Check for file hints on selection change too
-      if (!ed || !folderPath) {
-        setShowHints(false);
-        setFileHints([]);
-        return;
-      }
-
-      const { state } = ed;
-      const { selection } = state;
-      const { $from } = selection;
-
-      const textBefore = $from.parent.textBetween(
-        Math.max(0, $from.parentOffset - 100),
-        $from.parentOffset,
-        undefined,
-        "\ufffc",
-      );
-
-      // Check if cursor is right after a space (in the blank space after a file mention)
-      if (textBefore.endsWith(" ")) {
-        setShowHints(false);
-        setFileHints([]);
-        return;
-      }
-
-      const lastAtIndex = textBefore.lastIndexOf("@");
-      if (lastAtIndex === -1) {
-        setShowHints(false);
-        setFileHints([]);
-        return;
-      }
-
-      const textAfterAt = textBefore.substring(lastAtIndex + 1);
-      if (textAfterAt.includes(" ")) {
-        setShowHints(false);
-        setFileHints([]);
-        return;
-      }
-
-      const query = textAfterAt;
-      window.electronAPI
-        ?.listRepoFiles(folderPath, query || "")
-        .then((results) => {
-          const filePaths = (results || []).map((file) => file.path);
-          setFileHints(filePaths);
-          setShowHints(filePaths.length > 0);
-          setSelectedHintIndex(0);
-          setVisibleStartIndex(0);
-        })
-        .catch((error) => {
-          console.error("Error fetching files:", error);
-          setFileHints([]);
-          setShowHints(false);
-        });
     },
     onFocus: () => {
       setIsFocused(true);
@@ -347,6 +103,19 @@ export function CliTaskPanel() {
     onBlur: () => {
       setIsFocused(false);
     },
+  });
+
+  // File autocomplete for @ mentions
+  const {
+    fileHints,
+    selectedHintIndex,
+    showHints,
+    visibleStartIndex,
+    handleKeyDown: handleFileAutocompleteKeyDown,
+  } = useFileAutocomplete({
+    folderPath,
+    editor,
+    enabled: cliMode === "task",
   });
 
   const updateCaretPosition = useCallback(() => {
@@ -370,14 +139,6 @@ export function CliTaskPanel() {
       console.error("Error updating caret position:", error);
     }
   }, [editor]);
-
-  // Blinking cursor effect
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCursorVisible((v) => !v);
-    }, 700);
-    return () => clearInterval(interval);
-  }, []);
 
   // Auto-focus when switching modes
   useEffect(() => {
@@ -406,23 +167,6 @@ export function CliTaskPanel() {
     };
   }, []);
 
-  // Animated loading dots
-  useEffect(() => {
-    if (!isCreatingTask) {
-      setLoadingDots(".");
-      return;
-    }
-
-    const interval = setInterval(() => {
-      setLoadingDots((prev) => {
-        if (prev === ".") return "..";
-        if (prev === "..") return "...";
-        return ".";
-      });
-    }, 400);
-    return () => clearInterval(interval);
-  }, [isCreatingTask]);
-
   // Update caret position on mount and when editor changes
   useEffect(() => {
     if (editor) {
@@ -430,15 +174,15 @@ export function CliTaskPanel() {
     }
   }, [editor, updateCaretPosition]);
 
-  // Auto-detect repository from folder
-  const detectRepoFromFolder = useCallback(
-    async (newPath: string) => {
-      if (!newPath?.trim()) {
+  // Auto-detect repository from folder path
+  const detectRepoFromPath = useCallback(
+    async (path: string) => {
+      if (!path?.trim()) {
         return;
       }
 
       try {
-        const repoInfo = await window.electronAPI?.detectRepo(newPath);
+        const repoInfo = await window.electronAPI?.detectRepo(path);
         if (repoInfo) {
           const repoKey = formatRepoKey(
             repoInfo.organization,
@@ -457,11 +201,22 @@ export function CliTaskPanel() {
     [isRepoInIntegration],
   );
 
+  // Detect repository from initial folder path on mount
   useEffect(() => {
     if (folderPath) {
-      detectRepoFromFolder(folderPath);
+      detectRepoFromPath(folderPath);
     }
-  }, [folderPath, detectRepoFromFolder]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectRepoFromPath, folderPath]);
+
+  // Handle folder path change and auto-detect repository
+  const handleFolderPathChange = useCallback(
+    async (newPath: string) => {
+      setFolderPath(newPath);
+      detectRepoFromPath(newPath);
+    },
+    [detectRepoFromPath],
+  );
 
   const handleSubmit = useCallback(() => {
     if (!editor || !isAuthenticated || !client || !folderPath.trim()) {
@@ -555,7 +310,7 @@ export function CliTaskPanel() {
         <Box style={{ minWidth: 0 }}>
           <FolderPicker
             value={folderPath}
-            onChange={setFolderPath}
+            onChange={handleFolderPathChange}
             placeholder="Select working directory..."
             size="1"
           />
@@ -575,70 +330,7 @@ export function CliTaskPanel() {
           }}
         >
           {/* Mode Header */}
-          <Flex
-            align="center"
-            justify="between"
-            p="2"
-            style={{
-              borderBottom: "1px solid var(--gray-a6)",
-              fontFamily: "monospace",
-              backgroundColor: "rgba(0, 0, 0, 0.2)",
-              userSelect: "none",
-              WebkitUserSelect: "none",
-            }}
-          >
-            <Flex align="center" gap="2">
-              {cliMode === "task" ? (
-                <>
-                  <CheckSquareIcon
-                    size={16}
-                    weight="bold"
-                    color="var(--accent-11)"
-                  />
-                  <Text
-                    size="1"
-                    weight="bold"
-                    style={{ color: "var(--accent-11)" }}
-                  >
-                    Task mode
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <TerminalWindowIcon
-                    size={16}
-                    weight="bold"
-                    color="var(--accent-11)"
-                  />
-                  <Text
-                    size="1"
-                    weight="bold"
-                    style={{ color: "var(--accent-11)" }}
-                  >
-                    Shell mode
-                  </Text>
-                </>
-              )}
-            </Flex>
-            <Flex
-              align="center"
-              gap="1"
-              style={{
-                fontSize: "var(--font-size-1)",
-                color: "var(--gray-9)",
-                fontFamily: "monospace",
-              }}
-            >
-              <Text size="1" weight="bold">
-                Shift
-              </Text>
-              <Text size="1">+</Text>
-              <Text size="1" weight="bold">
-                Tab
-              </Text>
-              <Text size="1">to switch</Text>
-            </Flex>
-          </Flex>
+          <CliModeHeader cliMode={cliMode} />
 
           {/* Terminal Content */}
           <Flex
@@ -693,22 +385,21 @@ export function CliTaskPanel() {
                 {editor && (isFocused || !editor.isEmpty) && (
                   <div
                     ref={caretRef}
+                    className={isFocused ? "cli-cursor-blink" : ""}
                     style={{
                       top: 0,
                       position: "absolute",
                       width: "8px",
                       height: "16px",
-                      backgroundColor:
-                        isFocused && cursorVisible
-                          ? "var(--accent-11)"
-                          : "transparent",
+                      backgroundColor: isFocused
+                        ? "var(--accent-11)"
+                        : "transparent",
                       border: !isFocused
                         ? "1px solid var(--accent-11)"
                         : "none",
                       pointerEvents: "none",
                       transition: "none",
-                      mixBlendMode:
-                        isFocused && cursorVisible ? "color" : "normal",
+                      mixBlendMode: isFocused ? "color" : "normal",
                     }}
                   />
                 )}
@@ -827,38 +518,10 @@ export function CliTaskPanel() {
             </Box>
 
             {/* Key hint or loading indicator (task mode only) */}
-            {cliMode === "task" && (
-              <Flex
-                align="center"
-                gap="1"
-                style={{
-                  position: "absolute",
-                  bottom: "8px",
-                  right: "8px",
-                  fontSize: "var(--font-size-1)",
-                  color: "var(--gray-9)",
-                  fontFamily: "monospace",
-                }}
-              >
-                {isCreatingTask ? (
-                  <>
-                    <Spinner size="1" />
-                    <Text size="1">Spawning task{loadingDots}</Text>
-                  </>
-                ) : (
-                  <>
-                    <Text size="1" weight="bold">
-                      {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}
-                    </Text>
-                    <Text size="1">+</Text>
-                    <Text size="1" weight="bold">
-                      Enter
-                    </Text>
-                    <Text size="1">to submit</Text>
-                  </>
-                )}
-              </Flex>
-            )}
+            <CliStatusIndicator
+              cliMode={cliMode}
+              isCreatingTask={isCreatingTask}
+            />
           </Flex>
         </Flex>
       </Flex>

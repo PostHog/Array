@@ -281,3 +281,40 @@ body {
   color: var(--gray-11);
   user-select: none;
 }
+
+/* CLI cursor blink animation */
+@keyframes blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.cli-cursor-blink {
+  animation: blink 1.4s step-end infinite;
+}
+
+/* Loading dots animation */
+@keyframes loadingDots {
+  0% {
+    content: ".";
+  }
+  33% {
+    content: "..";
+  }
+  66% {
+    content: "...";
+  }
+  100% {
+    content: ".";
+  }
+}
+
+.loading-dots::after {
+  content: ".";
+  animation: loadingDots 1.5s steps(1, end) infinite;
+}

@@ -5,18 +5,17 @@ import { TaskListContent } from "@features/tasks/components/TaskListContent";
 import { TaskListHeader } from "@features/tasks/components/TaskListHeader";
 import { useCliPanelResize } from "@features/tasks/hooks/useCliPanelResize";
 import { useTaskDragDrop } from "@features/tasks/hooks/useTaskDragDrop";
-import { useTaskFiltering } from "@features/tasks/hooks/useTaskFiltering";
 import { useTaskGrouping } from "@features/tasks/hooks/useTaskGrouping";
 import { useTaskKeyboardNavigation } from "@features/tasks/hooks/useTaskKeyboardNavigation";
 import { useTaskScrolling } from "@features/tasks/hooks/useTaskScrolling";
 import { useTasks } from "@features/tasks/hooks/useTasks";
-import { useTaskStore } from "@features/tasks/stores/taskStore";
+import { filterTasks, useTaskStore } from "@features/tasks/stores/taskStore";
+import { useStatusBar } from "@hooks/useStatusBar";
 import { useUsers } from "@hooks/useUsers";
 import { Box, Button, Flex, Spinner, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { useLayoutStore } from "@stores/layoutStore";
-import { useStatusBarStore } from "@stores/statusBarStore";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 
 interface TaskListProps {
   onSelectTask: (task: Task) => void;
@@ -46,19 +45,12 @@ export function TaskList({ onSelectTask }: TaskListProps) {
     (state) => state.toggleGroupExpanded,
   );
 
-  const { setStatusBar, reset } = useStatusBarStore();
   const { logout } = useAuthStore();
   const cliPanelWidth = useLayoutStore((state) => state.cliPanelWidth);
   const setCliPanelWidth = useLayoutStore((state) => state.setCliPanelWidth);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Custom hooks
-  const filteredTasks = useTaskFiltering(
-    tasks,
-    orderBy,
-    orderDirection,
-    filter,
-  );
+  const filteredTasks = filterTasks(tasks, orderBy, orderDirection, filter);
   const groupedTasks = useTaskGrouping(filteredTasks, groupBy, users);
   const { isResizing, handleMouseDown } = useCliPanelResize(setCliPanelWidth);
 
@@ -95,8 +87,8 @@ export function TaskList({ onSelectTask }: TaskListProps) {
   useTaskScrolling(listRef, selectedIndex, filteredTasks.length);
 
   // Status bar
-  useEffect(() => {
-    setStatusBar({
+  useStatusBar(
+    {
       statusText: `${filteredTasks.length} task${filteredTasks.length === 1 ? "" : "s"}`,
       keyHints: [
         {
@@ -117,10 +109,9 @@ export function TaskList({ onSelectTask }: TaskListProps) {
         },
       ],
       mode: "replace",
-    });
-
-    return () => reset();
-  }, [setStatusBar, reset, filteredTasks.length]);
+    },
+    [filteredTasks.length],
+  );
 
   // Loading state
   if (isLoading && tasks.length === 0) {

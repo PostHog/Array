@@ -1,3 +1,4 @@
+import { getUserDisplayName } from "@hooks/useUsers";
 import type { Task } from "@shared/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -16,6 +17,91 @@ export type GroupByField =
   | "creator"
   | "source"
   | "repository";
+
+// Helper to get computed status
+function getTaskStatus(task: Task): string {
+  const hasPR = task.latest_run?.output?.pr_url;
+  return hasPR ? "completed" : task.latest_run?.status || "backlog";
+}
+
+/**
+ * Filter and sort tasks based on current filter and order settings
+ */
+export function filterTasks(
+  tasks: Task[],
+  orderBy: OrderByField,
+  orderDirection: OrderDirection,
+  filter: string,
+): Task[] {
+  // Status order for sorting
+  const statusOrder = [
+    "failed",
+    "in_progress",
+    "started",
+    "completed",
+    "backlog",
+  ];
+
+  // Sort tasks
+  const orderedTasks = [...tasks].sort((a, b) => {
+    let compareResult = 0;
+
+    switch (orderBy) {
+      case "created_at":
+        compareResult =
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        break;
+      case "status": {
+        const statusA = getTaskStatus(a);
+        const statusB = getTaskStatus(b);
+        const indexA = statusOrder.indexOf(statusA);
+        const indexB = statusOrder.indexOf(statusB);
+
+        // Use index-based comparison if both found, otherwise alphabetical
+        if (indexA !== -1 && indexB !== -1) {
+          compareResult = indexA - indexB;
+        } else if (indexA !== -1) {
+          compareResult = -1;
+        } else if (indexB !== -1) {
+          compareResult = 1;
+        } else {
+          compareResult = statusA.localeCompare(statusB);
+        }
+        break;
+      }
+      case "title":
+        compareResult = a.title.localeCompare(b.title);
+        break;
+      case "repository": {
+        const repoA = a.repository_config
+          ? `${a.repository_config.organization}/${a.repository_config.repository}`
+          : "";
+        const repoB = b.repository_config
+          ? `${b.repository_config.organization}/${b.repository_config.repository}`
+          : "";
+        compareResult = repoA.localeCompare(repoB);
+        break;
+      }
+      case "working_directory":
+        compareResult = 0;
+        break;
+      case "source":
+        compareResult = a.origin_product.localeCompare(b.origin_product);
+        break;
+      default:
+        compareResult = 0;
+    }
+
+    return orderDirection === "asc" ? compareResult : -compareResult;
+  });
+
+  // Filter tasks
+  return orderedTasks.filter(
+    (task) =>
+      task.title.toLowerCase().includes(filter.toLowerCase()) ||
+      task.description?.toLowerCase().includes(filter.toLowerCase()),
+  );
+}
 
 interface TaskState {
   taskOrder: Record<string, number>;
@@ -165,3 +251,98 @@ export const useTaskStore = create<TaskState>()(
     },
   ),
 );
+
+export interface TaskGroup {
+  name: string;
+  tasks: Task[];
+}
+
+export interface TaskGroupingResult {
+  groups: TaskGroup[];
+  taskToGlobalIndex: Map<string, number>;
+}
+
+export function getTaskGrouping(
+  filteredTasks: Task[],
+  groupBy: GroupByField,
+): TaskGroupingResult | null {
+  if (groupBy === "none") {
+    return null;
+  }
+
+  const getGroupKey = (task: Task): string => {
+    switch (groupBy) {
+      case "status": {
+        const hasPR = task.latest_run?.output?.pr_url;
+        return hasPR ? "completed" : task.latest_run?.status || "Backlog";
+      }
+      case "creator": {
+        if (!task.created_by) return "No Creator";
+        return getUserDisplayName(task.created_by);
+      }
+      case "source":
+        return task.origin_product;
+      case "repository":
+        return task.repository_config?.organization &&
+          task.repository_config?.repository
+          ? `${task.repository_config.organization}/${task.repository_config.repository}`
+          : "No Repository Connected";
+      default:
+        return "All Tasks";
+    }
+  };
+
+  const groups = new Map<string, Task[]>();
+  const taskToGlobalIndex = new Map<string, number>();
+
+  filteredTasks.forEach((task, index) => {
+    taskToGlobalIndex.set(task.id, index);
+  });
+
+  for (const task of filteredTasks) {
+    const key = getGroupKey(task);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)?.push(task);
+  }
+
+  const statusOrder = [
+    "failed",
+    "in_progress",
+    "started",
+    "completed",
+    "Backlog",
+  ];
+
+  const sortedGroups = Array.from(groups.entries())
+    .map(([name, tasks]) => ({
+      name,
+      tasks,
+    }))
+    .sort((a, b) => {
+      if (groupBy === "status") {
+        const aIndex = statusOrder.indexOf(a.name);
+        const bIndex = statusOrder.indexOf(b.name);
+
+        if (aIndex !== -1 && bIndex !== -1) {
+          return aIndex - bIndex;
+        }
+        if (aIndex !== -1) return -1;
+        if (bIndex !== -1) return 1;
+      }
+
+      const aIsEmpty = a.name.startsWith("No ");
+      const bIsEmpty = b.name.startsWith("No ");
+
+      if (aIsEmpty && !bIsEmpty) return 1;
+      if (!aIsEmpty && bIsEmpty) return -1;
+
+      return a.name.localeCompare(b.name);
+    });
+
+  return {
+    groups: sortedGroups,
+    taskToGlobalIndex,
+  };
+}

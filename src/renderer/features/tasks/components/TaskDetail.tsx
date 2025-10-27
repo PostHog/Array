@@ -9,6 +9,7 @@ import { useTasks, useUpdateTask } from "@features/tasks/hooks/useTasks";
 import { useTaskExecutionStore } from "@features/tasks/stores/taskExecutionStore";
 import { useBlurOnEscape } from "@hooks/useBlurOnEscape";
 import { useRepositoryIntegration } from "@hooks/useIntegrations";
+import { useStatusBar } from "@hooks/useStatusBar";
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { GearIcon, GlobeIcon } from "@radix-ui/react-icons";
 import {
@@ -25,14 +26,13 @@ import {
 } from "@radix-ui/themes";
 import type { ClarifyingQuestion, Task } from "@shared/types";
 import { useLayoutStore } from "@stores/layoutStore";
-import { useStatusBarStore } from "@stores/statusBarStore";
 import { useTabStore } from "@stores/tabStore";
 import {
   REPO_NOT_IN_INTEGRATION_WARNING,
   repoConfigToKey,
 } from "@utils/repository";
 import { format, formatDistanceToNow } from "date-fns";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 interface TaskDetailProps {
@@ -40,7 +40,6 @@ interface TaskDetailProps {
 }
 
 export function TaskDetail({ task: initialTask }: TaskDetailProps) {
-  const { setStatusBar, reset } = useStatusBarStore();
   const {
     getTaskState,
     setRunMode: setStoreRunMode,
@@ -101,21 +100,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   const repositoryValue = watch("repository");
 
-  const showRepoWarning = useMemo(
-    () => repositoryValue && !isRepoInIntegration(repositoryValue),
-    [repositoryValue, isRepoInIntegration],
-  );
-
-  const displayRepoPath = useMemo(() => {
-    if (!repoPath) return null;
-    // Replace home directory with ~
-    const homeDirPattern = /^\/Users\/[^/]+/; // macOS/Linux pattern
-    if (homeDirPattern.test(repoPath)) {
-      return repoPath.replace(homeDirPattern, "~");
-    }
-    return repoPath;
-  }, [repoPath]);
-
   // Initialize repoPath from mapping if task has repository_config
   useEffect(() => {
     if (task.repository_config && !repoPath) {
@@ -143,8 +127,8 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     });
   }, [task.title, task.description, task.repository_config, resetForm]);
 
-  useEffect(() => {
-    setStatusBar({
+  useStatusBar(
+    {
       statusText: isRunning ? "Agent running..." : "Task details",
       keyHints: [
         {
@@ -157,12 +141,9 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
         },
       ],
       mode: "replace",
-    });
-
-    return () => {
-      reset();
-    };
-  }, [setStatusBar, reset, isRunning]);
+    },
+    [isRunning],
+  );
 
   useBlurOnEscape();
 
@@ -420,15 +401,16 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                           No repository connected
                         </Text>
                       )}
-                      {showRepoWarning && (
-                        <Tooltip content={REPO_NOT_IN_INTEGRATION_WARNING}>
-                          <WarningCircleIcon
-                            size={16}
-                            weight="fill"
-                            style={{ color: "var(--orange-9)" }}
-                          />
-                        </Tooltip>
-                      )}
+                      {repositoryValue &&
+                        !isRepoInIntegration(repositoryValue) && (
+                          <Tooltip content={REPO_NOT_IN_INTEGRATION_WARNING}>
+                            <WarningCircleIcon
+                              size={16}
+                              weight="fill"
+                              style={{ color: "var(--orange-9)" }}
+                            />
+                          </Tooltip>
+                        )}
                     </Flex>
                   </DataList.Value>
                 </DataList.Item>
@@ -438,7 +420,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                   <DataList.Value>
                     {repoPath ? (
                       <Code size="2" color="gray">
-                        {displayRepoPath}
+                        {repoPath.replace(/^\/Users\/[^/]+/, "~")}
                       </Code>
                     ) : (
                       <Text size="2" color="gray">

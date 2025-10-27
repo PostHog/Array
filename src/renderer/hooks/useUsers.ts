@@ -1,10 +1,13 @@
 import { useAuthStore } from "@features/auth/stores/authStore";
+import { useUsersStore } from "@stores/usersStore";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 export function useUsers() {
   const client = useAuthStore((state) => state.client);
+  const setUsers = useUsersStore((state) => state.setUsers);
 
-  return useQuery({
+  const query = useQuery({
     queryKey: ["users"],
     queryFn: async () => {
       if (!client) throw new Error("Not authenticated");
@@ -13,6 +16,14 @@ export function useUsers() {
     enabled: !!client,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
+
+  useEffect(() => {
+    if (query.data) {
+      setUsers(query.data);
+    }
+  }, [query.data, setUsers]);
+
+  return query;
 }
 
 export function getUserDisplayName(user: {

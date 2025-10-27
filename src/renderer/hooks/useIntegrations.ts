@@ -1,8 +1,11 @@
 import { useAuthStore } from "@features/auth/stores/authStore";
+import {
+  useIntegrationSelectors,
+  useIntegrationStore,
+} from "@features/integrations/stores/integrationStore";
 import type { RepositoryConfig } from "@shared/types";
 import { useQuery } from "@tanstack/react-query";
-import { formatRepoKey } from "@utils/repository";
-import { useMemo } from "react";
+import { useEffect } from "react";
 
 interface Integration {
   id: number;
@@ -19,8 +22,9 @@ const integrationKeys = {
 
 export function useIntegrations() {
   const client = useAuthStore((state) => state.client);
+  const setIntegrations = useIntegrationStore((state) => state.setIntegrations);
 
-  return useQuery({
+  const query = useQuery({
     queryKey: integrationKeys.list(),
     queryFn: async () => {
       if (!client) throw new Error("Not authenticated");
@@ -28,12 +32,21 @@ export function useIntegrations() {
     },
     enabled: !!client,
   });
+
+  useEffect(() => {
+    if (query.data) {
+      setIntegrations(query.data);
+    }
+  }, [query.data, setIntegrations]);
+
+  return query;
 }
 
 function useRepositories(integrationId?: number) {
   const client = useAuthStore((state) => state.client);
+  const setRepositories = useIntegrationStore((state) => state.setRepositories);
 
-  return useQuery({
+  const query = useQuery({
     queryKey: integrationKeys.repositories(integrationId),
     queryFn: async () => {
       if (!client) throw new Error("Not authenticated");
@@ -44,27 +57,23 @@ function useRepositories(integrationId?: number) {
     },
     enabled: !!client && !!integrationId,
   });
+
+  useEffect(() => {
+    if (query.data) {
+      setRepositories(query.data);
+    }
+  }, [query.data, setRepositories]);
+
+  return query;
 }
 
 export function useRepositoryIntegration() {
-  const { data: integrations = [] } = useIntegrations();
+  useIntegrations();
+  const { githubIntegration } = useIntegrationSelectors();
+  useRepositories(githubIntegration?.id);
 
-  const githubIntegration = useMemo(
-    () => integrations.find((i) => i.kind === "github"),
-    [integrations],
-  );
-
-  const { data: repositories = [] } = useRepositories(githubIntegration?.id);
-
-  const isRepoInIntegration = useMemo(
-    () => (repoKey: string) => {
-      if (!repoKey) return true;
-      return repositories.some(
-        (r) => formatRepoKey(r.organization, r.repository) === repoKey,
-      );
-    },
-    [repositories],
-  );
+  const repositories = useIntegrationStore((state) => state.repositories);
+  const { isRepoInIntegration } = useIntegrationSelectors();
 
   return {
     githubIntegration,
