@@ -13,7 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../../../stores/authStore";
 import { useExtractTasks } from "../hooks/useExtractTasks";
-import { useLiveTranscript } from "../hooks/useTranscript";
+import { useLiveTranscript, useTranscript } from "../hooks/useTranscript";
 
 interface LiveTranscriptViewProps {
   posthogRecordingId: string; // PostHog UUID
@@ -29,6 +29,7 @@ export function LiveTranscriptView({
   const { segments, addSegment, forceUpload, pendingCount } =
     useLiveTranscript(posthogRecordingId);
 
+  const { data: transcriptData } = useTranscript(posthogRecordingId);
   const extractTasksMutation = useExtractTasks();
 
   const handleExtractTasks = () => {
@@ -246,7 +247,7 @@ export function LiveTranscriptView({
               </Button>
             </Flex>
 
-            {!openaiApiKey && (
+            {!openaiApiKey && !transcriptData?.extracted_tasks && (
               <Card>
                 <Text size="2" color="gray">
                   Add OpenAI API key in settings to extract tasks
@@ -254,16 +255,10 @@ export function LiveTranscriptView({
               </Card>
             )}
 
-            {extractTasksMutation.isSuccess && extractTasksMutation.data && (
-              <Flex direction="column" gap="2">
-                {extractTasksMutation.data.tasks.length === 0 ? (
-                  <Card>
-                    <Text size="2" color="gray">
-                      No tasks found in transcript
-                    </Text>
-                  </Card>
-                ) : (
-                  extractTasksMutation.data.tasks.map((task, idx) => (
+            {transcriptData?.extracted_tasks &&
+              transcriptData.extracted_tasks.length > 0 && (
+                <Flex direction="column" gap="2">
+                  {transcriptData.extracted_tasks.map((task, idx) => (
                     <Card key={`${task.title}-${idx}`}>
                       <Flex direction="column" gap="1">
                         <Text size="2" weight="medium">
@@ -274,10 +269,18 @@ export function LiveTranscriptView({
                         </Text>
                       </Flex>
                     </Card>
-                  ))
-                )}
-              </Flex>
-            )}
+                  ))}
+                </Flex>
+              )}
+
+            {transcriptData?.extracted_tasks &&
+              transcriptData.extracted_tasks.length === 0 && (
+                <Card>
+                  <Text size="2" color="gray">
+                    No tasks found in transcript
+                  </Text>
+                </Card>
+              )}
 
             {extractTasksMutation.isError && (
               <Card>

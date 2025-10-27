@@ -12,6 +12,10 @@ export interface TranscriptSegment {
 interface TranscriptData {
   full_text: string;
   segments: TranscriptSegment[];
+  extracted_tasks?: Array<{
+    title: string;
+    description: string;
+  }>;
 }
 
 export function useTranscript(recordingId: string | null) {

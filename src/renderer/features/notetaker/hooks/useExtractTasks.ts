@@ -8,6 +8,7 @@ export interface ExtractedTask {
 
 export function useExtractTasks() {
   const openaiApiKey = useAuthStore((state) => state.openaiApiKey);
+  const { client } = useAuthStore();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -22,15 +23,27 @@ export function useExtractTasks() {
         throw new Error("OpenAI API key not configured");
       }
 
+      if (!client) {
+        throw new Error("Not authenticated");
+      }
+
+      // Extract tasks using AI
       const tasks = await window.electronAPI.notetakerExtractTasks(
         transcriptText,
         openaiApiKey,
       );
 
+      // Upload tasks to backend
+      await client.uploadDesktopRecordingTranscript(recordingId, {
+        full_text: transcriptText,
+        segments: [], // Segments already uploaded
+        extracted_tasks: tasks,
+      });
+
       return { tasks, recordingId };
     },
     onSuccess: (data) => {
-      // Invalidate recording query to refetch with new tasks
+      // Invalidate queries to refetch with new tasks from backend
       queryClient.invalidateQueries({
         queryKey: ["notetaker-recording", data.recordingId],
       });
