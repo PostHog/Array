@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   app,
   BrowserWindow,
+  ipcMain,
   Menu,
   type MenuItemConstructorOptions,
   shell,
@@ -15,6 +16,7 @@ import { registerOsIpc } from "./services/os.js";
 import { registerPosthogIpc } from "./services/posthog.js";
 import { registerRecordingIpc } from "./services/recording.js";
 import { registerShellIpc } from "./services/shell.js";
+import { registerAutoUpdater } from "./services/updates.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -176,6 +178,11 @@ app.on("activate", () => {
     createWindow();
   }
 });
+
+// Background services
+registerAutoUpdater(() => mainWindow);
+
+ipcMain.handle("app:get-version", () => app.getVersion());
 
 // Register IPC handlers via services
 registerPosthogIpc();
