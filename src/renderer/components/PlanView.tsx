@@ -1,9 +1,9 @@
+import { InteractiveTerminal } from "@components/interactive-terminal/InteractiveTerminal";
+import { LogView } from "@components/LogView";
+import { PlanEditor } from "@components/PlanEditor";
 import type { AgentEvent } from "@posthog/agent";
 import { Box } from "@radix-ui/themes";
 import type { PlanModePhase, Task } from "@shared/types";
-import { InteractiveTerminal } from "./interactive-terminal/InteractiveTerminal";
-import { LogView } from "./LogView";
-import { PlanEditor } from "./PlanEditor";
 
 interface PlanViewProps {
   task: Task;

@@ -1,6 +1,6 @@
+import { TaskItem } from "@components/tasks/TaskItem";
 import type { Task } from "@shared/types";
 import type React from "react";
-import { TaskItem } from "./TaskItem";
 
 interface TaskListItemsProps {
   tasks: Task[];

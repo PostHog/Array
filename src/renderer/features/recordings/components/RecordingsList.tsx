@@ -1,10 +1,10 @@
+import { RecordingListItem } from "@features/recordings/components/RecordingListItem";
+import { useRecordingStore } from "@features/recordings/stores/recordingStore";
 import { Waveform } from "@phosphor-icons/react";
 import { Flex, ScrollArea, Text } from "@radix-ui/themes";
 import type { Recording } from "@shared/types";
 import { useEffect } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useRecordingStore } from "../stores/recordingStore";
-import { RecordingListItem } from "./RecordingListItem";
 
 interface RecordingsListProps {
   recordings: Recording[];

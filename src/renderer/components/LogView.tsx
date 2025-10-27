@@ -1,3 +1,5 @@
+import { LogEventRenderer } from "@components/log/LogEventRenderer";
+import { TodoGroupView } from "@components/log/TodoGroupView";
 import {
   CaretDown as CaretDownIcon,
   CaretUp as CaretUpIcon,
@@ -16,8 +18,6 @@ import {
   Tooltip,
 } from "@radix-ui/themes";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { LogEventRenderer } from "./log/LogEventRenderer";
-import { TodoGroupView } from "./log/TodoGroupView";
 
 interface LogViewProps {
   logs: AgentEvent[];

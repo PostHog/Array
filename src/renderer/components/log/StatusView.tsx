@@ -1,6 +1,6 @@
+import { BaseLogEntry } from "@components/log/BaseLogEntry";
 import type { AgentEvent } from "@posthog/agent";
 import { Code } from "@radix-ui/themes";
-import { BaseLogEntry } from "./BaseLogEntry";
 
 interface StatusViewProps {
   event: Extract<AgentEvent, { type: "status" }>;

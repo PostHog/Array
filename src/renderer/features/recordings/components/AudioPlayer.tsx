@@ -1,8 +1,8 @@
+import { useRecordingStore } from "@features/recordings/stores/recordingStore";
 import { FastForward, Pause, Play, Rewind } from "@phosphor-icons/react";
 import { Box, Button, Flex, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useRecordingStore } from "../stores/recordingStore";
 
 interface AudioPlayerProps {
   recordingId: string;

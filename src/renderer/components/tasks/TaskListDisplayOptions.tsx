@@ -17,7 +17,7 @@ import {
   type GroupByField,
   type OrderByField,
   useTaskStore,
-} from "../../stores/taskStore";
+} from "@stores/taskStore";
 
 export function TaskListDisplayOptions() {
   const orderBy = useTaskStore((state) => state.orderBy);

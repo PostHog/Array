@@ -1,11 +1,11 @@
-import { Badge, Box } from "@radix-ui/themes";
 import {
   ToolBadgeGroup,
   ToolCodeBlock,
   ToolMetadata,
   ToolResultMessage,
   ToolSection,
-} from "./ToolUI";
+} from "@components/log/tools/ToolUI";
+import { Badge, Box } from "@radix-ui/themes";
 
 interface NotebookEditToolViewProps {
   args: any;

@@ -1,3 +1,4 @@
+import { AsciiArt } from "@components/AsciiArt";
 import {
   Box,
   Button,
@@ -9,11 +10,10 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
+import { useAuthStore } from "@stores/authStore";
 import { useMutation } from "@tanstack/react-query";
 import type React from "react";
 import { useId, useState } from "react";
-import { useAuthStore } from "../stores/authStore";
-import { AsciiArt } from "./AsciiArt";
 
 export function AuthScreen() {
   const apiKeyId = useId();

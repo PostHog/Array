@@ -1,7 +1,7 @@
 import type { Recording } from "@shared/types";
+import { useAuthStore } from "@stores/authStore";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useAuthStore } from "../../../stores/authStore";
 
 export function useRecordings() {
   const queryClient = useQueryClient();

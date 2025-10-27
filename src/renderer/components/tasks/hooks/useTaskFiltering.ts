@@ -1,6 +1,6 @@
 import type { Task } from "@shared/types";
+import type { OrderByField, OrderDirection } from "@stores/taskStore";
 import { useMemo } from "react";
-import type { OrderByField, OrderDirection } from "../../../stores/taskStore";
 
 export function useTaskFiltering(
   tasks: Task[],

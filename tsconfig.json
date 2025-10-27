@@ -22,7 +22,12 @@
       "@api/*": ["api/*"],
       "@main/*": ["main/*"],
       "@renderer/*": ["renderer/*"],
-      "@shared/*": ["shared/*"]
+      "@shared/*": ["shared/*"],
+      "@features/*": ["renderer/features/*"],
+      "@components/*": ["renderer/components/*"],
+      "@stores/*": ["renderer/stores/*"],
+      "@hooks/*": ["renderer/hooks/*"],
+      "@utils/*": ["renderer/utils/*"]
     },
     "resolveJsonModule": true,
     "skipLibCheck": true,

@@ -1,10 +1,10 @@
+import { MarkdownRenderer } from "@components/MarkdownRenderer";
 import {
   CaretRight as CaretRightIcon,
   Check as CheckIcon,
 } from "@phosphor-icons/react";
 import type { AgentEvent } from "@posthog/agent";
 import { Box, Code } from "@radix-ui/themes";
-import { MarkdownRenderer } from "../MarkdownRenderer";
 
 interface DoneViewProps {
   event: Extract<AgentEvent, { type: "done" }>;

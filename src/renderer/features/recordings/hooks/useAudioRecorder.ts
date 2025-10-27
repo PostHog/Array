@@ -1,7 +1,7 @@
+import { useRecordingStore } from "@features/recordings/stores/recordingStore";
 import type { Recording } from "@shared/types";
 import { useEffect } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useRecordingStore } from "../stores/recordingStore";
 
 export function useAudioRecorder(
   saveRecording: (params: {

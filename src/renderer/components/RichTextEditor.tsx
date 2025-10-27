@@ -1,3 +1,5 @@
+import { MentionList, type MentionListRef } from "@components/FileMentionList";
+import { FormattingToolbar } from "@components/FormattingToolbar";
 import { Box } from "@radix-ui/themes";
 import type { MentionItem } from "@shared/types";
 import { Extension } from "@tiptap/core";
@@ -12,16 +14,14 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import type { SuggestionOptions } from "@tiptap/suggestion";
-import { useEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
 import {
   extractUrlFromMarkdown,
   isUrl,
   parsePostHogUrl,
-} from "../utils/posthog-url-parser";
-import { markdownToTiptap, tiptapToMarkdown } from "../utils/tiptap-converter";
-import { MentionList, type MentionListRef } from "./FileMentionList";
-import { FormattingToolbar } from "./FormattingToolbar";
+} from "@utils/posthog-url-parser";
+import { markdownToTiptap, tiptapToMarkdown } from "@utils/tiptap-converter";
+import { useEffect, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
 
 const FilePathHighlight = Extension.create({
   name: "filePathHighlight",

@@ -1,3 +1,4 @@
+import { AsciiArt } from "@components/AsciiArt";
 import {
   Box,
   Button,
@@ -8,11 +9,10 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
+import { useAuthStore } from "@stores/authStore";
+import { useThemeStore } from "@stores/themeStore";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
-import { useAuthStore } from "../stores/authStore";
-import { useThemeStore } from "../stores/themeStore";
-import { AsciiArt } from "./AsciiArt";
 
 export function SettingsView() {
   const {

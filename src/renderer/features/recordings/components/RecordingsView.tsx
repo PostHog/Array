@@ -1,3 +1,10 @@
+import { RecordingControls } from "@features/recordings/components/RecordingControls";
+import { RecordingDetail } from "@features/recordings/components/RecordingDetail";
+import { RecordingsList } from "@features/recordings/components/RecordingsList";
+import { SettingsPanel } from "@features/recordings/components/SettingsPanel";
+import { useAudioRecorder } from "@features/recordings/hooks/useAudioRecorder";
+import { useRecordings } from "@features/recordings/hooks/useRecordings";
+import { useRecordingStore } from "@features/recordings/stores/recordingStore";
 import { Gear, X } from "@phosphor-icons/react";
 import {
   Box,
@@ -7,15 +14,8 @@ import {
   IconButton,
   Text,
 } from "@radix-ui/themes";
+import { useStatusBarStore } from "@stores/statusBarStore";
 import { useEffect, useState } from "react";
-import { useStatusBarStore } from "../../../stores/statusBarStore";
-import { useAudioRecorder } from "../hooks/useAudioRecorder";
-import { useRecordings } from "../hooks/useRecordings";
-import { useRecordingStore } from "../stores/recordingStore";
-import { RecordingControls } from "./RecordingControls";
-import { RecordingDetail } from "./RecordingDetail";
-import { RecordingsList } from "./RecordingsList";
-import { SettingsPanel } from "./SettingsPanel";
 
 export function RecordingsView() {
   const {

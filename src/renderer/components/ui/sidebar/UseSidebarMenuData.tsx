@@ -1,3 +1,6 @@
+import type { TreeNode } from "@components/ui/sidebar/Types";
+import { useRecordingStore } from "@features/recordings/stores/recordingStore";
+import { useTasks } from "@hooks/useTasks";
 import {
   CheckCircleIcon,
   CircleIcon,
@@ -12,9 +15,6 @@ import {
 } from "@phosphor-icons/react";
 import type { TabState, Task } from "@shared/types";
 import { useMemo } from "react";
-import { useRecordingStore } from "../../../features/recordings/stores/recordingStore";
-import { useTasks } from "../../../hooks/useTasks";
-import type { TreeNode } from "./Types";
 
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);

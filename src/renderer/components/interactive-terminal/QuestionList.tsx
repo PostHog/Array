@@ -1,7 +1,7 @@
+import { InteractiveQuestion } from "@components/interactive-terminal/InteractiveQuestion";
 import { Box, Button, Flex, Heading, Text } from "@radix-ui/themes";
 import type { ClarifyingQuestion, QuestionAnswer } from "@shared/types";
 import { useCallback, useEffect, useState } from "react";
-import { InteractiveQuestion } from "./InteractiveQuestion";
 
 interface QuestionListProps {
   questions: ClarifyingQuestion[];

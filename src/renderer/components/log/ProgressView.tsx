@@ -1,6 +1,6 @@
+import { BaseLogEntry } from "@components/log/BaseLogEntry";
 import { Badge, Flex } from "@radix-ui/themes";
 import type { TaskRun } from "@shared/types";
-import { BaseLogEntry } from "./BaseLogEntry";
 
 interface ProgressViewProps {
   event: { type: "progress"; progress: TaskRun; ts: number };

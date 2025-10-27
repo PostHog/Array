@@ -1,5 +1,15 @@
+import { AsciiArt } from "@components/AsciiArt";
+import { FolderPicker } from "@components/FolderPicker";
+import { ShellTerminal } from "@components/ShellTerminal";
+import { useRepositoryIntegration } from "@hooks/useIntegrations";
+import { useCreateTask } from "@hooks/useTasks";
 import { CheckSquareIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
+import { useAuthStore } from "@stores/authStore";
+import { useFolderPickerStore } from "@stores/folderPickerStore";
+import { useLayoutStore } from "@stores/layoutStore";
+import { useTabStore } from "@stores/tabStore";
+import { useTaskExecutionStore } from "@stores/taskExecutionStore";
 import { Extension } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extension-placeholder";
 import type { Node } from "@tiptap/pm/model";
@@ -7,18 +17,8 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { formatRepoKey, parseRepoKey } from "@utils/repository";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRepositoryIntegration } from "../../hooks/useIntegrations";
-import { useCreateTask } from "../../hooks/useTasks";
-import { useAuthStore } from "../../stores/authStore";
-import { useFolderPickerStore } from "../../stores/folderPickerStore";
-import { useLayoutStore } from "../../stores/layoutStore";
-import { useTabStore } from "../../stores/tabStore";
-import { useTaskExecutionStore } from "../../stores/taskExecutionStore";
-import { formatRepoKey, parseRepoKey } from "../../utils/repository";
-import { AsciiArt } from "../AsciiArt";
-import { FolderPicker } from "../FolderPicker";
-import { ShellTerminal } from "../ShellTerminal";
 
 const FilePathHighlight = Extension.create({
   name: "filePathHighlight",

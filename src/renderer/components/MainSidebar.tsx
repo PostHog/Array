@@ -1,5 +1,5 @@
+import { Sidebar, SidebarContent } from "@components/ui/sidebar";
 import { Box } from "@radix-ui/themes";
-import { Sidebar, SidebarContent } from "./ui/sidebar";
 
 export function MainSidebar() {
   return (

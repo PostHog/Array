@@ -1,5 +1,9 @@
+import {
+  ToolBadgeGroup,
+  ToolCodeBlock,
+  ToolSection,
+} from "@components/log/tools/ToolUI";
 import { Badge, Box, Code } from "@radix-ui/themes";
-import { ToolBadgeGroup, ToolCodeBlock, ToolSection } from "./ToolUI";
 
 interface TaskToolViewProps {
   args: any;

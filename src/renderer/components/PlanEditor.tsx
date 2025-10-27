@@ -1,8 +1,8 @@
+import { RichTextEditor } from "@components/RichTextEditor";
 import { Cross2Icon } from "@radix-ui/react-icons";
 import { Box, Button, Flex, Heading, IconButton } from "@radix-ui/themes";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { RichTextEditor } from "./RichTextEditor";
 
 interface PlanEditorProps {
   taskId: string;

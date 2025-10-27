@@ -1,7 +1,7 @@
+import { getUserDisplayName } from "@hooks/useUsers";
 import type { Task } from "@shared/types";
+import type { GroupByField } from "@stores/taskStore";
 import { useCallback, useMemo } from "react";
-import { getUserDisplayName } from "../../../hooks/useUsers";
-import type { GroupByField } from "../../../stores/taskStore";
 
 export function useTaskGrouping(
   filteredTasks: Task[],

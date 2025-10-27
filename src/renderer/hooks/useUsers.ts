@@ -1,5 +1,5 @@
+import { useAuthStore } from "@stores/authStore";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "../stores/authStore";
 
 export function useUsers() {
   const client = useAuthStore((state) => state.client);

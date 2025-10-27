@@ -1,22 +1,22 @@
+import { CliTaskPanel } from "@components/tasks/CliTaskPanel";
+import { useCliPanelResize } from "@components/tasks/hooks/useCliPanelResize";
+import { useTaskDragDrop } from "@components/tasks/hooks/useTaskDragDrop";
+import { useTaskFiltering } from "@components/tasks/hooks/useTaskFiltering";
+import { useTaskGrouping } from "@components/tasks/hooks/useTaskGrouping";
+import { useTaskKeyboardNavigation } from "@components/tasks/hooks/useTaskKeyboardNavigation";
+import { useTaskScrolling } from "@components/tasks/hooks/useTaskScrolling";
+import { TaskListContent } from "@components/tasks/TaskListContent";
+import { TaskListHeader } from "@components/tasks/TaskListHeader";
+import { ResizeHandle } from "@components/ui/ResizeHandle";
+import { useTasks } from "@hooks/useTasks";
+import { useUsers } from "@hooks/useUsers";
 import { Box, Button, Flex, Spinner, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
+import { useAuthStore } from "@stores/authStore";
+import { useLayoutStore } from "@stores/layoutStore";
+import { useStatusBarStore } from "@stores/statusBarStore";
+import { useTaskStore } from "@stores/taskStore";
 import { useCallback, useEffect, useRef } from "react";
-import { useTasks } from "../../hooks/useTasks";
-import { useUsers } from "../../hooks/useUsers";
-import { useAuthStore } from "../../stores/authStore";
-import { useLayoutStore } from "../../stores/layoutStore";
-import { useStatusBarStore } from "../../stores/statusBarStore";
-import { useTaskStore } from "../../stores/taskStore";
-import { ResizeHandle } from "../ui/ResizeHandle";
-import { CliTaskPanel } from "./CliTaskPanel";
-import { useCliPanelResize } from "./hooks/useCliPanelResize";
-import { useTaskDragDrop } from "./hooks/useTaskDragDrop";
-import { useTaskFiltering } from "./hooks/useTaskFiltering";
-import { useTaskGrouping } from "./hooks/useTaskGrouping";
-import { useTaskKeyboardNavigation } from "./hooks/useTaskKeyboardNavigation";
-import { useTaskScrolling } from "./hooks/useTaskScrolling";
-import { TaskListContent } from "./TaskListContent";
-import { TaskListHeader } from "./TaskListHeader";
 
 interface TaskListProps {
   onSelectTask: (task: Task) => void;

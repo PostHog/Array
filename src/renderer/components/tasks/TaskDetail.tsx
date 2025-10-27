@@ -1,3 +1,13 @@
+import { AsciiArt } from "@components/AsciiArt";
+import { PlanEditor } from "@components/PlanEditor";
+import { PlanView } from "@components/PlanView";
+import { RichTextEditor } from "@components/RichTextEditor";
+import { useCliPanelResize } from "@components/tasks/hooks/useCliPanelResize";
+import { TaskArtifacts } from "@components/tasks/TaskArtifacts";
+import { ResizeHandle } from "@components/ui/ResizeHandle";
+import { useBlurOnEscape } from "@hooks/useBlurOnEscape";
+import { useRepositoryIntegration } from "@hooks/useIntegrations";
+import { useTasks, useUpdateTask } from "@hooks/useTasks";
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { GearIcon, GlobeIcon } from "@radix-ui/react-icons";
 import {
@@ -13,27 +23,17 @@ import {
   Tooltip,
 } from "@radix-ui/themes";
 import type { ClarifyingQuestion, Task } from "@shared/types";
-import { format, formatDistanceToNow } from "date-fns";
-import { useEffect, useMemo } from "react";
-import { Controller, useForm } from "react-hook-form";
-import { useBlurOnEscape } from "../../hooks/useBlurOnEscape";
-import { useRepositoryIntegration } from "../../hooks/useIntegrations";
-import { useTasks, useUpdateTask } from "../../hooks/useTasks";
-import { useLayoutStore } from "../../stores/layoutStore";
-import { useStatusBarStore } from "../../stores/statusBarStore";
-import { useTabStore } from "../../stores/tabStore";
-import { useTaskExecutionStore } from "../../stores/taskExecutionStore";
+import { useLayoutStore } from "@stores/layoutStore";
+import { useStatusBarStore } from "@stores/statusBarStore";
+import { useTabStore } from "@stores/tabStore";
+import { useTaskExecutionStore } from "@stores/taskExecutionStore";
 import {
   REPO_NOT_IN_INTEGRATION_WARNING,
   repoConfigToKey,
-} from "../../utils/repository";
-import { AsciiArt } from "../AsciiArt";
-import { PlanEditor } from "../PlanEditor";
-import { PlanView } from "../PlanView";
-import { RichTextEditor } from "../RichTextEditor";
-import { ResizeHandle } from "../ui/ResizeHandle";
-import { useCliPanelResize } from "./hooks/useCliPanelResize";
-import { TaskArtifacts } from "./TaskArtifacts";
+} from "@utils/repository";
+import { format, formatDistanceToNow } from "date-fns";
+import { useEffect, useMemo } from "react";
+import { Controller, useForm } from "react-hook-form";
 
 interface TaskDetailProps {
   task: Task;

@@ -1,3 +1,4 @@
+import { ToolExecutionView } from "@components/log/ToolExecutionView";
 import {
   CaretDown as CaretDownIcon,
   CaretRight as CaretRightIcon,
@@ -8,7 +9,6 @@ import {
 import type { AgentEvent } from "@posthog/agent";
 import { Box, Code, ContextMenu } from "@radix-ui/themes";
 import { useState } from "react";
-import { ToolExecutionView } from "./ToolExecutionView";
 
 interface Todo {
   content: string;

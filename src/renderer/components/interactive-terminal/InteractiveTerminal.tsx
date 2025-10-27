@@ -1,6 +1,6 @@
+import { QuestionList } from "@components/interactive-terminal/QuestionList";
 import { Box } from "@radix-ui/themes";
 import type { ClarifyingQuestion, QuestionAnswer } from "@shared/types";
-import { QuestionList } from "./QuestionList";
 
 interface InteractiveTerminalProps {
   questions: ClarifyingQuestion[];

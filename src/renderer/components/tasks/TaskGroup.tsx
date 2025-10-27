@@ -1,9 +1,9 @@
+import { TaskListItems } from "@components/tasks/TaskListItems";
 import { CaretDownIcon, CaretRightIcon } from "@phosphor-icons/react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { Box, Code, Flex } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import type React from "react";
-import { TaskListItems } from "./TaskListItems";
 
 interface TaskGroupProps {
   name: string;

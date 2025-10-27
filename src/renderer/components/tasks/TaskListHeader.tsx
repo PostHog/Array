@@ -1,6 +1,6 @@
+import { TaskListDisplayOptions } from "@components/tasks/TaskListDisplayOptions";
+import { TaskSearch } from "@components/tasks/TaskSearch";
 import { Box, Flex } from "@radix-ui/themes";
-import { TaskListDisplayOptions } from "./TaskListDisplayOptions";
-import { TaskSearch } from "./TaskSearch";
 
 interface TaskListHeaderProps {
   filter: string;

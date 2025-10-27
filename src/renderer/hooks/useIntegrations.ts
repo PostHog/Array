@@ -1,8 +1,8 @@
 import type { RepositoryConfig } from "@shared/types";
+import { useAuthStore } from "@stores/authStore";
 import { useQuery } from "@tanstack/react-query";
+import { formatRepoKey } from "@utils/repository";
 import { useMemo } from "react";
-import { useAuthStore } from "../stores/authStore";
-import { formatRepoKey } from "../utils/repository";
 
 interface Integration {
   id: number;

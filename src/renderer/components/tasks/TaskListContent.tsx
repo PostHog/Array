@@ -1,9 +1,9 @@
+import { TaskGroup } from "@components/tasks/TaskGroup";
+import { TaskListItems } from "@components/tasks/TaskListItems";
 import { Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
+import type { GroupByField } from "@stores/taskStore";
 import type React from "react";
-import type { GroupByField } from "../../stores/taskStore";
-import { TaskGroup } from "./TaskGroup";
-import { TaskListItems } from "./TaskListItems";
 
 interface TaskListContentProps {
   filteredTasks: Task[];

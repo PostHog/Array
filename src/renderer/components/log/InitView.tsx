@@ -1,6 +1,6 @@
+import { BaseLogEntry } from "@components/log/BaseLogEntry";
 import type { AgentEvent } from "@posthog/agent";
 import { Box, Code } from "@radix-ui/themes";
-import { BaseLogEntry } from "./BaseLogEntry";
 
 interface InitViewProps {
   event: Extract<AgentEvent, { type: "init" }>;

@@ -1,14 +1,14 @@
+import { Command } from "@components/command/Command";
+import { CommandKeyHints } from "@components/command/CommandKeyHints";
+import { useTasks } from "@hooks/useTasks";
 import { MicrophoneIcon } from "@phosphor-icons/react";
 import { FileTextIcon, ListBulletIcon } from "@radix-ui/react-icons";
 import { Flex, Text } from "@radix-ui/themes";
+import type { Task } from "@shared/types";
+import { useLayoutStore } from "@stores/layoutStore";
+import { useTabStore } from "@stores/tabStore";
 import { useCallback, useEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import type { Task } from "@/shared/types";
-import { useTasks } from "../../hooks/useTasks";
-import { useLayoutStore } from "../../stores/layoutStore";
-import { useTabStore } from "../../stores/tabStore";
-import { Command } from "./Command";
-import { CommandKeyHints } from "./CommandKeyHints";
 
 interface CommandMenuProps {
   open: boolean;

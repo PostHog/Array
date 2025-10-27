@@ -7,9 +7,9 @@ import type {
   Task,
   TaskRun,
 } from "@shared/types";
+import { useAuthStore } from "@stores/authStore";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { useAuthStore } from "./authStore";
 
 const createProgressSignature = (progress: TaskRun): string =>
   [progress.status ?? "", progress.updated_at ?? ""].join("|");

@@ -1,14 +1,14 @@
+import { TaskDragPreview } from "@components/tasks/TaskDragPreview";
+import { useDeleteTask, useDuplicateTask } from "@hooks/useTasks";
 import { GitPullRequest } from "@phosphor-icons/react";
 import { CopyIcon, TrashIcon } from "@radix-ui/react-icons";
 import { Badge, Box, Code, ContextMenu, Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
+import { useTaskStore } from "@stores/taskStore";
 import { differenceInHours, format, formatDistanceToNow } from "date-fns";
 import type React from "react";
 import { memo, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useDeleteTask, useDuplicateTask } from "../../hooks/useTasks";
-import { useTaskStore } from "../../stores/taskStore";
-import { TaskDragPreview } from "./TaskDragPreview";
 
 interface TaskItemProps {
   task: Task;
