@@ -5,7 +5,7 @@ import {
 import { Box, Code, ContextMenu } from "@radix-ui/themes";
 import { type ReactNode, useState } from "react";
 
-export interface ToolExecutionWrapperProps {
+interface ToolExecutionWrapperProps {
   toolName: string;
   statusBadge: ReactNode;
   statusColor: string;
@@ -158,18 +158,6 @@ export function ToolExecutionWrapper({
   }
 
   return content;
-}
-
-interface ToolFilePathProps {
-  path: string;
-}
-
-export function ToolFilePath({ path }: ToolFilePathProps) {
-  return (
-    <Code size="2" variant="ghost">
-      {path}
-    </Code>
-  );
 }
 
 interface ToolCodeBlockProps {

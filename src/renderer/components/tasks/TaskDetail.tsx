@@ -17,7 +17,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useBlurOnEscape } from "../../hooks/useBlurOnEscape";
-import { useRepositoryIntegration } from "../../hooks/useRepositoryIntegration";
+import { useRepositoryIntegration } from "../../hooks/useIntegrations";
 import { useTasks, useUpdateTask } from "../../hooks/useTasks";
 import { useLayoutStore } from "../../stores/layoutStore";
 import { useStatusBarStore } from "../../stores/statusBarStore";

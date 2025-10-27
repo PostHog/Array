@@ -1,14 +1,16 @@
 import type { RepositoryConfig } from "@shared/types";
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useAuthStore } from "../stores/authStore";
+import { formatRepoKey } from "../utils/repository";
 
-export interface Integration {
+interface Integration {
   id: number;
   kind: string;
   [key: string]: unknown;
 }
 
-export const integrationKeys = {
+const integrationKeys = {
   all: ["integrations"] as const,
   list: () => [...integrationKeys.all, "list"] as const,
   repositories: (integrationId?: number) =>
@@ -28,7 +30,7 @@ export function useIntegrations() {
   });
 }
 
-export function useRepositories(integrationId?: number) {
+function useRepositories(integrationId?: number) {
   const client = useAuthStore((state) => state.client);
 
   return useQuery({
@@ -42,4 +44,31 @@ export function useRepositories(integrationId?: number) {
     },
     enabled: !!client && !!integrationId,
   });
+}
+
+export function useRepositoryIntegration() {
+  const { data: integrations = [] } = useIntegrations();
+
+  const githubIntegration = useMemo(
+    () => integrations.find((i) => i.kind === "github"),
+    [integrations],
+  );
+
+  const { data: repositories = [] } = useRepositories(githubIntegration?.id);
+
+  const isRepoInIntegration = useMemo(
+    () => (repoKey: string) => {
+      if (!repoKey) return true;
+      return repositories.some(
+        (r) => formatRepoKey(r.organization, r.repository) === repoKey,
+      );
+    },
+    [repositories],
+  );
+
+  return {
+    githubIntegration,
+    repositories,
+    isRepoInIntegration,
+  };
 }

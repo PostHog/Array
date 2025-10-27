@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 
-export interface MentionListProps {
+interface MentionListProps {
   items: MentionItem[];
   command: (item: {
     id: string;
@@ -195,8 +195,3 @@ export const MentionList = forwardRef(
 );
 
 MentionList.displayName = "MentionList";
-
-// Backward compatibility export
-export const FileMentionList = MentionList;
-export type FileMentionListRef = MentionListRef;
-export type FileMentionListProps = MentionListProps;

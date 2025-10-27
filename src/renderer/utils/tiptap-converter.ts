@@ -490,20 +490,3 @@ function parseInlineContent(text: string): JSONContent[] {
   flushText();
   return nodes.length > 0 ? nodes : [{ type: "text", text: "" }];
 }
-
-/**
- * Extract file paths from markdown with XML tags
- */
-export function extractFilePaths(markdown: string): string[] {
-  const fileTagRegex = /<file\s+path="([^"]+)"\s*\/>/g;
-  const paths: string[] = [];
-  let match: RegExpExecArray | null;
-
-  match = fileTagRegex.exec(markdown);
-  while (match !== null) {
-    paths.push(match[1]);
-    match = fileTagRegex.exec(markdown);
-  }
-
-  return paths;
-}

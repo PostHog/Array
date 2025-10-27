@@ -3,19 +3,23 @@
 @tailwind utilities;
 
 @font-face {
-  font-family: 'JetBrains Mono';
-  src: url('/assets/fonts/JetBrainsMono/JetBrainsMono-Regular.woff2') format('woff2');
+  font-family: "JetBrains Mono";
+  src: url("/assets/fonts/JetBrainsMono/JetBrainsMono-Regular.woff2")
+    format("woff2");
   font-weight: 400;
   font-style: normal;
 }
 
 .radix-themes {
-  --default-font-family: 'JetBrains Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', 'Courier New', monospace;
-  --code-font-family: 'JetBrains Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', 'Courier New', monospace;
+  --default-font-family:
+    "JetBrains Mono", "Monaco", "Menlo", "Ubuntu Mono", "Courier New", monospace;
+  --code-font-family:
+    "JetBrains Mono", "Monaco", "Menlo", "Ubuntu Mono", "Courier New", monospace;
 }
 
 body {
-  font-family: 'JetBrains Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', 'Courier New', monospace;
+  font-family:
+    "JetBrains Mono", "Monaco", "Menlo", "Ubuntu Mono", "Courier New", monospace;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -271,10 +275,9 @@ body {
 }
 
 .sidebar-tree {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: "JetBrains Mono", monospace;
   font-size: 12px;
   line-height: 1.5;
   color: var(--gray-11);
   user-select: none;
 }
-

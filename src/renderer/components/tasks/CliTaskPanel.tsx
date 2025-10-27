@@ -8,7 +8,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRepositoryIntegration } from "../../hooks/useRepositoryIntegration";
+import { useRepositoryIntegration } from "../../hooks/useIntegrations";
 import { useCreateTask } from "../../hooks/useTasks";
 import { useAuthStore } from "../../stores/authStore";
 import { useFolderPickerStore } from "../../stores/folderPickerStore";

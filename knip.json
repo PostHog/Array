@@ -4,22 +4,20 @@
     "src/main/index.ts",
     "src/main/preload.ts",
     "src/renderer/main.tsx",
-    "scripts/update-openapi-client.ts",
     "forge.config.ts",
     "vite.main.config.mts",
     "vite.preload.config.mts",
     "vite.renderer.config.mts"
   ],
-  "project": [
-    "src/**/*.{ts,tsx}",
-    "scripts/**/*.ts"
-  ],
+  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
   "ignore": [
     "src/api/generated.ts",
-    "src/renderer/features/recordings/components/**"
+    "src/renderer/features/recordings/**",
+    "src/main/services/recording-*.ts"
   ],
   "ignoreDependencies": [
     "@tiptap/core",
-    "@radix-ui/react-collapsible"
+    "@radix-ui/react-collapsible",
+    "typed-openapi"
   ]
 }

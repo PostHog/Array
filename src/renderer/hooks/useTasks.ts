@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../stores/authStore";
 import { useTaskExecutionStore } from "../stores/taskExecutionStore";
 
-export const taskKeys = {
+const taskKeys = {
   all: ["tasks"] as const,
   lists: () => [...taskKeys.all, "list"] as const,
   list: (filters?: { repositoryOrg?: string; repositoryName?: string }) =>
@@ -28,19 +28,6 @@ export function useTasks(filters?: {
       )) as unknown as Task[];
     },
     enabled: !!client,
-  });
-}
-
-export function useTask(taskId: string) {
-  const client = useAuthStore((state) => state.client);
-
-  return useQuery({
-    queryKey: taskKeys.detail(taskId),
-    queryFn: async () => {
-      if (!client) throw new Error("Not authenticated");
-      return (await client.getTask(taskId)) as unknown as Task;
-    },
-    enabled: !!client && !!taskId,
   });
 }
 
@@ -127,38 +114,6 @@ export function useDuplicateTask() {
         setRepoPath(newTask.id, originalState.repoPath);
       }
 
-      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
-    },
-  });
-}
-
-export function useRefreshTask() {
-  const client = useAuthStore((state) => state.client);
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (taskId: string) => {
-      if (!client) throw new Error("Not authenticated");
-      return (await client.getTask(taskId)) as unknown as Task;
-    },
-    onSuccess: (_, taskId) => {
-      queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
-      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
-    },
-  });
-}
-
-export function useRunTask() {
-  const client = useAuthStore((state) => state.client);
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (taskId: string) => {
-      if (!client) throw new Error("Not authenticated");
-      return (await client.runTask(taskId)) as unknown as Task;
-    },
-    onSuccess: (_, taskId) => {
-      queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
     },
   });
