@@ -1,21 +1,19 @@
-import { useAuthStore } from "@features/auth/stores/authStore";
+import type { Schemas } from "@api/generated";
 import { useUsersStore } from "@stores/usersStore";
-import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { useAuthenticatedQuery } from "./useAuthenticatedQuery";
 
 export function useUsers() {
-  const client = useAuthStore((state) => state.client);
   const setUsers = useUsersStore((state) => state.setUsers);
 
-  const query = useQuery({
-    queryKey: ["users"],
-    queryFn: async () => {
-      if (!client) throw new Error("Not authenticated");
-      return await client.getUsers();
+  const query = useAuthenticatedQuery(
+    ["users"],
+    async (client) => {
+      const data = await client.getUsers();
+      return data as Schemas.UserBasic[];
     },
-    enabled: !!client,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
+    { staleTime: 5 * 60 * 1000 },
+  );
 
   useEffect(() => {
     if (query.data) {

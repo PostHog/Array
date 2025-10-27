@@ -1,11 +1,10 @@
-import { useAuthStore } from "@features/auth/stores/authStore";
 import {
   useIntegrationSelectors,
   useIntegrationStore,
 } from "@features/integrations/stores/integrationStore";
 import type { RepositoryConfig } from "@shared/types";
-import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { useAuthenticatedQuery } from "./useAuthenticatedQuery";
 
 interface Integration {
   id: number;
@@ -21,17 +20,12 @@ const integrationKeys = {
 };
 
 export function useIntegrations() {
-  const client = useAuthStore((state) => state.client);
   const setIntegrations = useIntegrationStore((state) => state.setIntegrations);
 
-  const query = useQuery({
-    queryKey: integrationKeys.list(),
-    queryFn: async () => {
-      if (!client) throw new Error("Not authenticated");
-      return (await client.getIntegrations()) as Integration[];
-    },
-    enabled: !!client,
-  });
+  const query = useAuthenticatedQuery(
+    integrationKeys.list(),
+    (client) => client.getIntegrations() as Promise<Integration[]>,
+  );
 
   useEffect(() => {
     if (query.data) {
@@ -43,20 +37,17 @@ export function useIntegrations() {
 }
 
 function useRepositories(integrationId?: number) {
-  const client = useAuthStore((state) => state.client);
   const setRepositories = useIntegrationStore((state) => state.setRepositories);
 
-  const query = useQuery({
-    queryKey: integrationKeys.repositories(integrationId),
-    queryFn: async () => {
-      if (!client) throw new Error("Not authenticated");
+  const query = useAuthenticatedQuery(
+    integrationKeys.repositories(integrationId),
+    async (client) => {
       if (!integrationId) return [];
       return (await client.getGithubRepositories(
         integrationId,
       )) as RepositoryConfig[];
     },
-    enabled: !!client && !!integrationId,
-  });
+  );
 
   useEffect(() => {
     if (query.data) {
