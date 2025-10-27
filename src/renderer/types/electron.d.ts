@@ -107,6 +107,47 @@ export interface IElectronAPI {
       name: string;
     }>
   >;
+  // Recall SDK API
+  recallInitialize: (
+    recallApiUrl: string,
+    posthogKey: string,
+    posthogHost: string,
+  ) => Promise<void>;
+  recallGetActiveSessions: () => Promise<
+    Array<{
+      windowId: string;
+      recordingId: string;
+      platform: string;
+    }>
+  >;
+  recallRequestPermission: (
+    permission: "accessibility" | "screen-capture" | "microphone",
+  ) => Promise<void>;
+  recallShutdown: () => Promise<void>;
+  // Notetaker API
+  notetakerGetRecordings: () => Promise<
+    Array<{
+      id: string;
+      platform: string;
+      title: string | null;
+      status: "recording" | "uploading" | "processing" | "ready" | "error";
+      duration: number | null;
+      created_at: string;
+      video_url: string | null;
+      recall_recording_id: string | null;
+    }>
+  >;
+  notetakerGetRecording: (recordingId: string) => Promise<{
+    id: string;
+    platform: string;
+    title: string | null;
+    status: "recording" | "uploading" | "processing" | "ready" | "error";
+    duration: number | null;
+    created_at: string;
+    video_url: string | null;
+    recall_recording_id: string | null;
+  }>;
+  notetakerDeleteRecording: (recordingId: string) => Promise<void>;
   // Shell API
   shellCreate: (sessionId: string, cwd?: string) => Promise<void>;
   shellWrite: (sessionId: string, data: string) => Promise<void>;

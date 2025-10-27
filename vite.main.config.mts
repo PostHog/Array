@@ -75,7 +75,7 @@ export default defineConfig({
       transformMixedEsModules: true,
     },
     rollupOptions: {
-      external: ["node-pty"],
+      external: ["node-pty", "@recallai/desktop-sdk"],
     },
   },
 });

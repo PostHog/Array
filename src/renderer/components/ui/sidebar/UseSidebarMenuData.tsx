@@ -7,6 +7,7 @@ import {
   PlusIcon,
   SquareIcon,
   SquaresFourIcon,
+  VideoIcon,
   WaveformIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
@@ -26,7 +27,7 @@ interface UseSidebarMenuDataProps {
   userName: string;
   activeTab: TabState | undefined;
   onNavigate: (
-    type: "task-list" | "recordings" | "settings",
+    type: "task-list" | "recordings" | "notetaker" | "settings",
     title: string,
   ) => void;
   onTaskClick: (task: Task) => void;
@@ -98,6 +99,17 @@ export function useSidebarMenuData({
           isActive: activeTab?.type === "task-list",
           hoverAction: onCreateTask,
           hoverIcon: <PlusIcon size={12} />,
+        },
+        {
+          label: "Notetaker",
+          icon: (
+            <VideoIcon
+              size={12}
+              weight={activeTab?.type === "notetaker" ? "fill" : "regular"}
+            />
+          ),
+          action: () => onNavigate("notetaker", "Notetaker"),
+          isActive: activeTab?.type === "notetaker",
         },
         {
           label: isRecording

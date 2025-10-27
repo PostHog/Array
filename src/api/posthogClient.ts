@@ -249,4 +249,155 @@ export class PostHogAPIClient {
     });
     return data.results ?? [];
   }
+
+  // Desktop Recordings API
+  private validateRecordingId(recordingId: string): void {
+    if (!recordingId || typeof recordingId !== "string") {
+      throw new Error("Recording ID is required");
+    }
+    // UUID format validation (PostHog uses UUIDs for recording IDs)
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        recordingId,
+      )
+    ) {
+      throw new Error("Invalid recording ID format");
+    }
+  }
+
+  async createDesktopRecording(platform: string) {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/desktop_recordings/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/environments/${teamId}/desktop_recordings/`,
+      parameters: {
+        body: { platform },
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to create recording: ${response.statusText}`);
+    }
+
+    return await response.json(); // { upload_token, recording_id, ... }
+  }
+
+  async getDesktopRecording(recordingId: string) {
+    this.validateRecordingId(recordingId);
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/desktop_recordings/${recordingId}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/environments/${teamId}/desktop_recordings/${recordingId}/`,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch recording: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
+
+  async getDesktopRecordingTranscript(recordingId: string) {
+    this.validateRecordingId(recordingId);
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/desktop_recordings/${recordingId}/transcript/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/environments/${teamId}/desktop_recordings/${recordingId}/transcript/`,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch transcript: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
+
+  async listDesktopRecordings(filters?: {
+    platform?: string;
+    status?: string;
+    search?: string;
+  }) {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/desktop_recordings/`,
+    );
+
+    if (filters) {
+      for (const [key, value] of Object.entries(filters)) {
+        if (value) url.searchParams.set(key, value);
+      }
+    }
+
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/environments/${teamId}/desktop_recordings/`,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to list recordings: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.results ?? data ?? [];
+  }
+
+  async deleteDesktopRecording(recordingId: string) {
+    this.validateRecordingId(recordingId);
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/desktop_recordings/${recordingId}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: `/api/environments/${teamId}/desktop_recordings/${recordingId}/`,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to delete recording: ${response.statusText}`);
+    }
+  }
+
+  async updateDesktopRecording(
+    recordingId: string,
+    updates: {
+      status?: string;
+      title?: string;
+      duration?: number;
+      video_url?: string;
+    },
+  ) {
+    this.validateRecordingId(recordingId);
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/desktop_recordings/${recordingId}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: `/api/environments/${teamId}/desktop_recordings/${recordingId}/`,
+      parameters: {
+        body: updates,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to update recording: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
 }

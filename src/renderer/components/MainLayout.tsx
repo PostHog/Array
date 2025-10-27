@@ -2,6 +2,7 @@ import { Box, Flex } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { NotetakerView } from "@/renderer/features/notetaker/components/NotetakerView";
 import { RecordingsView } from "@/renderer/features/recordings";
 import { useIntegrations } from "../hooks/useIntegrations";
 import { useLayoutStore } from "../stores/layoutStore";
@@ -117,6 +118,8 @@ export function MainLayout() {
           {activeTab?.type === "settings" && <SettingsView />}
 
           {activeTab?.type === "recordings" && <RecordingsView />}
+
+          {activeTab?.type === "notetaker" && <NotetakerView />}
         </Box>
       </Flex>
 

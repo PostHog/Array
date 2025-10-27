@@ -171,6 +171,37 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getDesktopSources: async (options: { types: ("screen" | "window")[] }) => {
     return await ipcRenderer.invoke("desktop-capturer:get-sources", options);
   },
+  // Recall SDK API
+  recallInitialize: (
+    recallApiUrl: string,
+    posthogKey: string,
+    posthogHost: string,
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "recall:initialize",
+      recallApiUrl,
+      posthogKey,
+      posthogHost,
+    ),
+  recallGetActiveSessions: (): Promise<
+    Array<{
+      windowId: string;
+      recordingId: string;
+      platform: string;
+    }>
+  > => ipcRenderer.invoke("recall:get-active-sessions"),
+  recallRequestPermission: (
+    permission: "accessibility" | "screen-capture" | "microphone",
+  ): Promise<void> =>
+    ipcRenderer.invoke("recall:request-permission", permission),
+  recallShutdown: (): Promise<void> => ipcRenderer.invoke("recall:shutdown"),
+  // Notetaker API
+  notetakerGetRecordings: (): Promise<unknown[]> =>
+    ipcRenderer.invoke("notetaker:get-recordings"),
+  notetakerGetRecording: (recordingId: string): Promise<unknown> =>
+    ipcRenderer.invoke("notetaker:get-recording", recordingId),
+  notetakerDeleteRecording: (recordingId: string): Promise<void> =>
+    ipcRenderer.invoke("notetaker:delete-recording", recordingId),
   // Shell API
   shellCreate: (sessionId: string, cwd?: string): Promise<void> =>
     ipcRenderer.invoke("shell:create", sessionId, cwd),

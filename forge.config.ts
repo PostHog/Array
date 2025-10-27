@@ -36,7 +36,7 @@ function copyNativeDependency(
 const config: ForgeConfig = {
   packagerConfig: {
     asar: {
-      unpack: "**/*.node",
+      unpack: "{**/*.node,node_modules/@recallai/**}",
     },
     prune: false,
     name: "Array",
