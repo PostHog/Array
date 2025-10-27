@@ -1,5 +1,5 @@
+import { useAuthStore } from "@features/auth/stores/authStore";
 import type { RepositoryConfig } from "@shared/types";
-import { useAuthStore } from "@stores/authStore";
 import { useQuery } from "@tanstack/react-query";
 import { formatRepoKey } from "@utils/repository";
 import { useMemo } from "react";

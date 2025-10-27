@@ -1,3 +1,4 @@
+import { useAuthStore } from "@features/auth/stores/authStore";
 import { AudioPlayer } from "@features/recordings/components/AudioPlayer";
 import { useRecordingStore } from "@features/recordings/stores/recordingStore";
 import { Trash, X } from "@phosphor-icons/react";
@@ -14,7 +15,6 @@ import {
   Text,
 } from "@radix-ui/themes";
 import type { Recording } from "@shared/types";
-import { useAuthStore } from "@stores/authStore";
 import { format } from "date-fns";
 import { useHotkeys } from "react-hotkeys-hook";
 

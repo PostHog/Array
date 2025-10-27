@@ -1,5 +1,5 @@
+import { useAuthStore } from "@features/auth/stores/authStore";
 import type { Recording } from "@shared/types";
-import { useAuthStore } from "@stores/authStore";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 

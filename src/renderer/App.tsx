@@ -1,7 +1,7 @@
-import { AuthScreen } from "@components/AuthScreen";
 import { MainLayout } from "@components/MainLayout";
+import { AuthScreen } from "@features/auth/components/AuthScreen";
+import { useAuthStore } from "@features/auth/stores/authStore";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
-import { useAuthStore } from "@stores/authStore";
 import { useEffect, useState } from "react";
 
 function App() {

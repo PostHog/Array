@@ -1,4 +1,4 @@
-import { useAuthStore } from "@stores/authStore";
+import { useAuthStore } from "@features/auth/stores/authStore";
 import { useQuery } from "@tanstack/react-query";
 
 export function useUsers() {

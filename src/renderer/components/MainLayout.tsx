@@ -1,12 +1,12 @@
-import { CommandMenu } from "@components/command";
 import { MainSidebar } from "@components/MainSidebar";
-import { SettingsView } from "@components/SettingsView";
 import { StatusBar } from "@components/StatusBar";
 import { TabBar } from "@components/TabBar";
-import { TaskDetail } from "@components/tasks/TaskDetail";
-import { TaskList } from "@components/tasks/TaskList";
 import { UpdatePrompt } from "@components/UpdatePrompt";
-import { RecordingsView } from "@features/recordings";
+import { CommandMenu } from "@features/command/components/CommandMenu";
+import { RecordingsView } from "@features/recordings/components/RecordingsView";
+import { SettingsView } from "@features/settings/components/SettingsView";
+import { TaskDetail } from "@features/tasks/components/TaskDetail";
+import { TaskList } from "@features/tasks/components/TaskList";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { Box, Flex } from "@radix-ui/themes";
 import type { Task } from "@shared/types";

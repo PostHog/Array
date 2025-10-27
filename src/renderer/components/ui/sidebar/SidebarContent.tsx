@@ -1,12 +1,12 @@
 import { SidebarTreeItem } from "@components/ui/sidebar/SidebarTreeItem";
 import { useSidebarMenuData } from "@components/ui/sidebar/UseSidebarMenuData";
 import { buildTreeLines, getAllNodeIds } from "@components/ui/sidebar/Utils";
+import { useAuthStore } from "@features/auth/stores/authStore";
 import { useAudioRecorder } from "@features/recordings/hooks/useAudioRecorder";
 import { useRecordings } from "@features/recordings/hooks/useRecordings";
 import { ArrowsInSimpleIcon, ArrowsOutSimpleIcon } from "@phosphor-icons/react";
 import { Box, Flex, IconButton, Tooltip } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
-import { useAuthStore } from "@stores/authStore";
 import { useLayoutStore } from "@stores/layoutStore";
 import { useSidebarStore } from "@stores/sidebarStore";
 import { useTabStore } from "@stores/tabStore";

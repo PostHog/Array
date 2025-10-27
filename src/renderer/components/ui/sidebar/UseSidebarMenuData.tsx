@@ -1,6 +1,6 @@
 import type { TreeNode } from "@components/ui/sidebar/Types";
 import { useRecordingStore } from "@features/recordings/stores/recordingStore";
-import { useTasks } from "@hooks/useTasks";
+import { useTasks } from "@features/tasks/hooks/useTasks";
 import {
   CheckCircleIcon,
   CircleIcon,
