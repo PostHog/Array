@@ -1,5 +1,5 @@
 import { Box } from "@radix-ui/themes";
-import { ToolCodeBlock, ToolMetadata } from "../ToolUI";
+import { ToolCodeBlock, ToolMetadata } from "./ToolUI";
 
 interface GlobToolViewProps {
   args: any;

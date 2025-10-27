@@ -1,5 +1,5 @@
 import { Badge, Box } from "@radix-ui/themes";
-import { ToolCodeBlock, ToolResultMessage, ToolSection } from "../ToolUI";
+import { ToolCodeBlock, ToolResultMessage, ToolSection } from "./ToolUI";
 
 interface EditToolViewProps {
   args: any;

@@ -1,5 +1,5 @@
 import { Box } from "@radix-ui/themes";
-import { ToolCodeBlock } from "../ToolUI";
+import { ToolCodeBlock } from "./ToolUI";
 
 interface SlashCommandToolViewProps {
   args: any;

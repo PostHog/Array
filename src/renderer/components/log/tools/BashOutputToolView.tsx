@@ -1,5 +1,5 @@
 import { Badge, Box } from "@radix-ui/themes";
-import { ToolBadgeGroup, ToolCodeBlock, ToolMetadata } from "../ToolUI";
+import { ToolBadgeGroup, ToolCodeBlock, ToolMetadata } from "./ToolUI";
 
 interface BashOutputToolViewProps {
   args: any;

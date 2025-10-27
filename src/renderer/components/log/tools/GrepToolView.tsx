@@ -1,5 +1,5 @@
 import { Badge, Box, Code } from "@radix-ui/themes";
-import { ToolBadgeGroup, ToolCodeBlock, ToolMetadata } from "../ToolUI";
+import { ToolBadgeGroup, ToolCodeBlock, ToolMetadata } from "./ToolUI";
 
 interface GrepToolViewProps {
   args: any;

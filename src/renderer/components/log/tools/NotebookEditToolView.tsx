@@ -5,7 +5,7 @@ import {
   ToolMetadata,
   ToolResultMessage,
   ToolSection,
-} from "../ToolUI";
+} from "./ToolUI";
 
 interface NotebookEditToolViewProps {
   args: any;
