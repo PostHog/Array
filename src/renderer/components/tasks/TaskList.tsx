@@ -7,6 +7,7 @@ import { useAuthStore } from "../../stores/authStore";
 import { useLayoutStore } from "../../stores/layoutStore";
 import { useStatusBarStore } from "../../stores/statusBarStore";
 import { useTaskStore } from "../../stores/taskStore";
+import { ResizeHandle } from "../ui/ResizeHandle";
 import { CliTaskPanel } from "./CliTaskPanel";
 import { useCliPanelResize } from "./hooks/useCliPanelResize";
 import { useTaskDragDrop } from "./hooks/useTaskDragDrop";
@@ -161,9 +162,12 @@ export function TaskList({ onSelectTask }: TaskListProps) {
   }
 
   return (
-    <Flex height="100%">
+    <Flex height="100%" style={{ position: "relative" }}>
       {/* Left side: Task list */}
-      <Flex direction="column" style={{ width: `${100 - cliPanelWidth}%` }}>
+      <Flex
+        direction="column"
+        style={{ width: `calc(${100 - cliPanelWidth}% - 14px)` }}
+      >
         <TaskListHeader
           filter={filter}
           onFilterChange={(newFilter) => {
@@ -197,50 +201,10 @@ export function TaskList({ onSelectTask }: TaskListProps) {
         </Box>
       </Flex>
 
-      {/* Resize handle - outer div for hitbox */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: This is a drag handle for resizing */}
-      <div
-        style={{
-          width: "12px",
-          cursor: "col-resize",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          marginLeft: "8px",
-          marginRight: "8px",
-        }}
-        onMouseDown={handleMouseDown}
-        onMouseEnter={(e) => {
-          if (!isResizing) {
-            const bar = e.currentTarget.querySelector(
-              ".drag-bar",
-            ) as HTMLElement;
-            if (bar) bar.style.backgroundColor = "var(--gray-a8)";
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (!isResizing) {
-            const bar = e.currentTarget.querySelector(
-              ".drag-bar",
-            ) as HTMLElement;
-            if (bar) bar.style.backgroundColor = "var(--gray-a4)";
-          }
-        }}
-      >
-        {/* Inner div for 2px drag bar */}
-        <div
-          className="drag-bar"
-          style={{
-            width: "1px",
-            height: "100%",
-            backgroundColor: isResizing ? "var(--accent-9)" : "var(--gray-a4)",
-            transition: "background-color 0.2s",
-          }}
-        />
-      </div>
+      <ResizeHandle isResizing={isResizing} onMouseDown={handleMouseDown} />
 
       {/* Right side: CLI panel */}
-      <Box style={{ width: `${cliPanelWidth}%` }}>
+      <Box style={{ width: `calc(${cliPanelWidth}% - 14px)` }}>
         <CliTaskPanel />
       </Box>
     </Flex>

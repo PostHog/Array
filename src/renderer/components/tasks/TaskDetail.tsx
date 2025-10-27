@@ -19,6 +19,7 @@ import { Controller, useForm } from "react-hook-form";
 import { useBlurOnEscape } from "../../hooks/useBlurOnEscape";
 import { useRepositoryIntegration } from "../../hooks/useRepositoryIntegration";
 import { useTasks, useUpdateTask } from "../../hooks/useTasks";
+import { useLayoutStore } from "../../stores/layoutStore";
 import { useStatusBarStore } from "../../stores/statusBarStore";
 import { useTabStore } from "../../stores/tabStore";
 import { useTaskExecutionStore } from "../../stores/taskExecutionStore";
@@ -30,6 +31,8 @@ import { AsciiArt } from "../AsciiArt";
 import { PlanEditor } from "../PlanEditor";
 import { PlanView } from "../PlanView";
 import { RichTextEditor } from "../RichTextEditor";
+import { ResizeHandle } from "../ui/ResizeHandle";
+import { useCliPanelResize } from "./hooks/useCliPanelResize";
 import { TaskArtifacts } from "./TaskArtifacts";
 
 interface TaskDetailProps {
@@ -56,6 +59,15 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const { data: tasks = [] } = useTasks();
   const { mutate: updateTask } = useUpdateTask();
   const { updateTabTitle, activeTabId } = useTabStore();
+  const taskDetailSplitWidth = useLayoutStore(
+    (state) => state.taskDetailSplitWidth,
+  );
+  const setTaskDetailSplitWidth = useLayoutStore(
+    (state) => state.setTaskDetailSplitWidth,
+  );
+  const { isResizing, handleMouseDown } = useCliPanelResize(
+    setTaskDetailSplitWidth,
+  );
 
   const task = tasks.find((t) => t.id === initialTask.id) || initialTask;
 
@@ -318,8 +330,11 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   return (
     <Flex direction="column" height="100%">
-      <Flex height="100%" style={{ flex: 1 }}>
-        <Box width="50%" className="border-gray-6 border-r" overflowY="auto">
+      <Flex height="100%" style={{ flex: 1, position: "relative" }}>
+        <Box
+          style={{ width: `calc(${100 - taskDetailSplitWidth}% - 14px)` }}
+          overflowY="auto"
+        >
           <Box p="4">
             <Flex direction="column" gap="4">
               <Flex direction="row" gap="2" align="baseline">
@@ -521,11 +536,14 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
           </Box>
         </Box>
 
+        <ResizeHandle isResizing={isResizing} onMouseDown={handleMouseDown} />
+
         {/* Right pane - Logs/Plan View */}
         <Box
-          width="50%"
-          className="bg-panel-solid"
-          style={{ position: "relative" }}
+          style={{
+            width: `calc(${taskDetailSplitWidth}% - 14px)`,
+            position: "relative",
+          }}
         >
           {/* Background ASCII Art */}
           <Box style={{ position: "absolute", inset: 0, zIndex: 0 }}>
