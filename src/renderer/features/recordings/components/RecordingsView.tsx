@@ -46,18 +46,15 @@ export function RecordingsView() {
   useEffect(() => cleanup, [cleanup]);
 
   useStatusBar(
-    {
-      statusText: `${recordings.length} recording${recordings.length === 1 ? "" : "s"}`,
-      keyHints: [
-        { keys: ["↑/↓"], description: "Navigate" },
-        { keys: ["R"], description: "Record" },
-        { keys: ["S"], description: "Stop" },
-        { keys: ["ESC"], description: "Close" },
-        { keys: ["Del"], description: "Delete" },
-      ],
-      mode: "replace",
-    },
-    [recordings.length],
+    `${recordings.length} recording${recordings.length === 1 ? "" : "s"}`,
+    [
+      { keys: ["↑/↓"], description: "Navigate" },
+      { keys: ["R"], description: "Record" },
+      { keys: ["S"], description: "Stop" },
+      { keys: ["ESC"], description: "Close" },
+      { keys: ["Del"], description: "Delete" },
+    ],
+    "replace",
   );
 
   const selectedRecording = recordings.find(

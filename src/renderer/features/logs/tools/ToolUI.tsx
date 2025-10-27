@@ -3,6 +3,7 @@ import {
   CaretRight as CaretRightIcon,
 } from "@phosphor-icons/react";
 import { Box, Code, ContextMenu } from "@radix-ui/themes";
+import { formatTimestamp } from "@utils/time";
 import { type ReactNode, useState } from "react";
 
 interface ToolExecutionWrapperProps {
@@ -38,16 +39,6 @@ export function ToolExecutionWrapper({
   const durationSeconds =
     durationMs !== undefined ? (durationMs / 1000).toFixed(2) : undefined;
   const isDev = import.meta.env.DEV;
-
-  function formatTime(ts: number): string {
-    const date = new Date(ts);
-    return date.toLocaleTimeString("en-US", {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  }
 
   const content = (
     <Box
@@ -88,7 +79,7 @@ export function ToolExecutionWrapper({
           variant="ghost"
           style={{ display: "flex", alignItems: "center" }}
         >
-          {formatTime(timestamp)}
+          {formatTimestamp(timestamp)}
         </Code>
         <Code
           size="2"

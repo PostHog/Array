@@ -88,29 +88,26 @@ export function TaskList({ onSelectTask }: TaskListProps) {
 
   // Status bar
   useStatusBar(
-    {
-      statusText: `${filteredTasks.length} task${filteredTasks.length === 1 ? "" : "s"}`,
-      keyHints: [
-        {
-          keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "K"],
-          description: "Command",
-        },
-        {
-          keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "R"],
-          description: "Refresh",
-        },
-        {
-          keys: ["↑", "↓"],
-          description: "Navigate",
-        },
-        {
-          keys: ["Enter"],
-          description: "Select",
-        },
-      ],
-      mode: "replace",
-    },
-    [filteredTasks.length],
+    `${filteredTasks.length} task${filteredTasks.length === 1 ? "" : "s"}`,
+    [
+      {
+        keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "K"],
+        description: "Command",
+      },
+      {
+        keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "R"],
+        description: "Refresh",
+      },
+      {
+        keys: ["↑", "↓"],
+        description: "Navigate",
+      },
+      {
+        keys: ["Enter"],
+        description: "Select",
+      },
+    ],
+    "replace",
   );
 
   // Loading state

@@ -14,6 +14,49 @@ import { persist } from "zustand/middleware";
 const createProgressSignature = (progress: TaskRun): string =>
   [progress.status ?? "", progress.updated_at ?? ""].join("|");
 
+async function validateRepositoryAccess(
+  path: string,
+  addLog: (log: AgentEvent) => void,
+  onRetrySelect?: () => Promise<void>,
+): Promise<boolean> {
+  const isRepo = await window.electronAPI?.validateRepo(path);
+  if (!isRepo) {
+    addLog({
+      type: "error",
+      ts: Date.now(),
+      message: `Selected folder is not a git repository: ${path}`,
+    });
+    return false;
+  }
+
+  const canWrite = await window.electronAPI?.checkWriteAccess(path);
+  if (!canWrite) {
+    addLog({
+      type: "error",
+      ts: Date.now(),
+      message: `No write permission in selected folder: ${path}`,
+    });
+    const result = await window.electronAPI?.showMessageBox({
+      type: "warning",
+      title: "Folder is not writable",
+      message: "The selected folder is not writable by the app.",
+      detail:
+        "Grant access by selecting a different folder or adjusting permissions.",
+      buttons: ["Grant Access", "Cancel"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (!result) return false;
+    const { response } = result;
+    if (response === 0 && onRetrySelect) {
+      await onRetrySelect();
+    }
+    return false;
+  }
+
+  return true;
+}
+
 interface TaskExecutionState {
   isRunning: boolean;
   logs: AgentEvent[];
@@ -263,39 +306,12 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         try {
           const selected = await window.electronAPI?.selectDirectory();
           if (selected) {
-            const isRepo = await window.electronAPI?.validateRepo(selected);
-            if (!isRepo) {
-              store.addLog(taskId, {
-                type: "error",
-                ts: Date.now(),
-                message: `Selected folder is not a git repository: ${selected}`,
-              });
-              return;
-            }
-            const canWrite =
-              await window.electronAPI?.checkWriteAccess(selected);
-            if (!canWrite) {
-              store.addLog(taskId, {
-                type: "error",
-                ts: Date.now(),
-                message: `No write permission in selected folder: ${selected}`,
-              });
-              const result = await window.electronAPI?.showMessageBox({
-                type: "warning",
-                title: "Folder is not writable",
-                message: "The selected folder is not writable by the app.",
-                detail:
-                  "Grant access by selecting a different folder or adjusting permissions.",
-                buttons: ["Grant Access", "Cancel"],
-                defaultId: 0,
-                cancelId: 1,
-              });
-              if (!result) return;
-              const { response } = result;
-              if (response === 0) {
-                // Let user reselect and validate again
-                return store.selectRepositoryForTask(taskId, repoKey);
-              }
+            const isValid = await validateRepositoryAccess(
+              selected,
+              (log) => store.addLog(taskId, log),
+              () => store.selectRepositoryForTask(taskId, repoKey),
+            );
+            if (!isValid) {
               return;
             }
             store.setRepoPath(taskId, selected);
@@ -386,40 +402,12 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           return;
         }
 
-        const isRepo =
-          await window.electronAPI?.validateRepo(effectiveRepoPath);
-        if (!isRepo) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message: `Selected folder is not a git repository: ${effectiveRepoPath}`,
-          });
-          return;
-        }
-
-        const canWrite =
-          await window.electronAPI?.checkWriteAccess(effectiveRepoPath);
-        if (!canWrite) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message: `No write permission in selected folder: ${effectiveRepoPath}`,
-          });
-          const result = await window.electronAPI?.showMessageBox({
-            type: "warning",
-            title: "Folder is not writable",
-            message: "This folder is not writable by the app.",
-            detail:
-              "Grant access by selecting a different folder or adjusting permissions.",
-            buttons: ["Grant Access", "Cancel"],
-            defaultId: 0,
-            cancelId: 1,
-          });
-          if (!result) return;
-          const { response } = result;
-          if (response === 0) {
-            await store.selectRepositoryForTask(taskId);
-          }
+        const isValid = await validateRepositoryAccess(
+          effectiveRepoPath,
+          (log) => store.addLog(taskId, log),
+          () => store.selectRepositoryForTask(taskId),
+        );
+        if (!isValid) {
           return;
         }
 

@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import type { AgentEvent } from "@posthog/agent";
 import { Box, Code, ContextMenu } from "@radix-ui/themes";
+import { formatTimestamp } from "@utils/time";
 import { useState } from "react";
 
 interface Todo {
@@ -86,16 +87,6 @@ export function TodoGroupView({
 
   const isDev = import.meta.env.DEV;
 
-  function formatTime(ts: number): string {
-    const date = new Date(ts);
-    return date.toLocaleTimeString("en-US", {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  }
-
   return (
     <Box mb="3">
       <ContextMenu.Root>
@@ -134,7 +125,7 @@ export function TodoGroupView({
                 variant="ghost"
                 style={{ display: "flex", alignItems: "center" }}
               >
-                {formatTime(timestamp)}
+                {formatTimestamp(timestamp)}
               </Code>
               {todoPosition !== null && (
                 <Code

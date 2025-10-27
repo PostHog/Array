@@ -4,6 +4,7 @@ import {
   ToolMetadata,
 } from "@features/logs/tools/ToolUI";
 import { Badge, Box, Code } from "@radix-ui/themes";
+import { parseStringListResult, truncateList } from "@utils/tool-results";
 
 interface GrepToolViewProps {
   args: any;
@@ -38,7 +39,7 @@ export function GrepToolView({ args, result }: GrepToolViewProps) {
 
   if (result) {
     if (typeof result === "string") {
-      matches = result.split("\n").filter(Boolean);
+      matches = parseStringListResult(result);
     } else if (typeof result === "object") {
       matches = result.matches || [];
       count = result.count;
@@ -113,7 +114,7 @@ export function GrepToolView({ args, result }: GrepToolViewProps) {
             {head_limit && ` (limited to ${head_limit})`}:
           </ToolMetadata>
           <ToolCodeBlock maxHeight="max-h-96">
-            {`${matches.slice(0, 100).join("\n")}${matches.length > 100 ? `\n... and ${matches.length - 100} more` : ""}`}
+            {truncateList(matches, 100)}
           </ToolCodeBlock>
         </Box>
       )}

@@ -128,21 +128,18 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   }, [task.title, task.description, task.repository_config, resetForm]);
 
   useStatusBar(
-    {
-      statusText: isRunning ? "Agent running..." : "Task details",
-      keyHints: [
-        {
-          keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "K"],
-          description: "Command",
-        },
-        {
-          keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "R"],
-          description: "Refresh",
-        },
-      ],
-      mode: "replace",
-    },
-    [isRunning],
+    isRunning ? "Agent running..." : "Task details",
+    [
+      {
+        keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "K"],
+        description: "Command",
+      },
+      {
+        keys: [navigator.platform.includes("Mac") ? "⌘" : "Ctrl", "R"],
+        description: "Refresh",
+      },
+    ],
+    "replace",
   );
 
   useBlurOnEscape();

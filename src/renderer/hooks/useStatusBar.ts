@@ -1,35 +1,34 @@
 import { useStatusBarStore } from "@stores/statusBarStore";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 interface KeyHint {
   keys: string[];
   description: string;
 }
 
-interface UseStatusBarConfig {
-  statusText: string;
-  keyHints: KeyHint[];
-  mode?: "replace" | "append";
-}
-
-/**
- * Hook to manage status bar state with automatic cleanup
- *
- * Automatically sets the status bar when the component mounts or dependencies change,
- * and resets the status bar when the component unmounts.
- *
- * @param config - Status bar configuration
- * @param deps - Optional dependency array to control when status bar updates
- */
 export function useStatusBar(
-  config: UseStatusBarConfig,
-  deps: React.DependencyList = [],
+  statusText: string,
+  keyHints: KeyHint[],
+  mode: "replace" | "append" = "replace",
 ) {
   const { setStatusBar, reset } = useStatusBarStore();
+  const keyHintsJson = JSON.stringify(keyHints);
+  const lastConfigJson = useRef<string>("");
 
   useEffect(() => {
-    setStatusBar(config);
+    const configJson = JSON.stringify({
+      statusText,
+      keyHints: keyHintsJson,
+      mode,
+    });
+
+    if (configJson !== lastConfigJson.current) {
+      lastConfigJson.current = configJson;
+      setStatusBar({ statusText, keyHints, mode });
+    }
+  }, [statusText, keyHintsJson, mode, keyHints, setStatusBar]);
+
+  useEffect(() => {
     return reset;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setStatusBar, reset, ...deps, config]);
+  }, [reset]);
 }
