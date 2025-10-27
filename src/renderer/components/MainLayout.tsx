@@ -13,6 +13,7 @@ import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
 import { TaskDetail } from "./tasks/TaskDetail";
 import { TaskList } from "./tasks/TaskList";
+import { UpdatePrompt } from "./UpdatePrompt";
 
 export function MainLayout() {
   const { activeTabId, tabs, createTab, setActiveTab, closeTab } =
@@ -122,6 +123,7 @@ export function MainLayout() {
       <StatusBar onOpenSettings={handleOpenSettings} />
 
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+      <UpdatePrompt />
     </Flex>
   );
 }

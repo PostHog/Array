@@ -8,6 +8,7 @@ import {
   Kbd,
   Tooltip,
 } from "@radix-ui/themes";
+import { useEffect, useState } from "react";
 import { useStatusBarStore } from "../stores/statusBarStore";
 import { StatusBarMenu } from "./StatusBarMenu";
 
@@ -21,10 +22,32 @@ export function StatusBar({
   onOpenSettings,
 }: StatusBarProps) {
   const { statusText, keyHints } = useStatusBarStore();
+  const [appVersion, setAppVersion] = useState<string | null>(null);
 
   // Determine if we're in development mode
   const isDev = import.meta.env.DEV;
-  const version = "0.1.0"; // You can get this from package.json or env vars
+  const fallbackVersion = import.meta.env.VITE_APP_VERSION ?? "dev";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    window.electronAPI
+      ?.getAppVersion()
+      .then((version) => {
+        if (!cancelled) {
+          setAppVersion(version);
+        }
+      })
+      .catch((error) => {
+        console.warn("[statusbar] Failed to load app version", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const version = appVersion ?? fallbackVersion;
 
   return (
     <Box className="flex flex-row items-center justify-between border-gray-6 border-t bg-gray-2 px-4 py-2">
