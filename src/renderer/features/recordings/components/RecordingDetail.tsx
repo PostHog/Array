@@ -14,6 +14,7 @@ import {
 import type { Recording } from "@shared/types";
 import { format } from "date-fns";
 import { useHotkeys } from "react-hotkeys-hook";
+import { MarkdownRenderer } from "../../../components/MarkdownRenderer";
 import { useAuthStore } from "../../../stores/authStore";
 import { useRecordingStore } from "../stores/recordingStore";
 import { AudioPlayer } from "./AudioPlayer";
@@ -136,6 +137,45 @@ export function RecordingDetail({
                 </Flex>
               </>
             )}
+
+          {recording.transcription?.notes && (
+            <>
+              <Separator size="4" />
+              <Flex direction="column" gap="3">
+                <Heading size="4">Notes</Heading>
+                <Card>
+                  <Box
+                    p="3"
+                    style={{
+                      fontSize: "var(--font-size-2)",
+                      lineHeight: "1.6",
+                    }}
+                    className="notes-section"
+                  >
+                    <style>{`
+                      .notes-section h2 {
+                        font-size: var(--font-size-4) !important;
+                        font-weight: 600 !important;
+                        margin-top: 1rem !important;
+                        margin-bottom: 0.5rem !important;
+                        color: var(--gray-12) !important;
+                      }
+                      .notes-section h2:first-child {
+                        margin-top: 0 !important;
+                      }
+                      .notes-section ul {
+                        margin-bottom: 0.75rem !important;
+                      }
+                      .notes-section li {
+                        margin-bottom: 0.25rem !important;
+                      }
+                    `}</style>
+                    <MarkdownRenderer content={recording.transcription.notes} />
+                  </Box>
+                </Card>
+              </Flex>
+            </>
+          )}
 
           {recording.transcription?.text && (
             <>

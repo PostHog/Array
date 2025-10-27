@@ -158,6 +158,7 @@ export interface Recording {
     status: "processing" | "completed" | "error";
     text: string;
     summary?: string;
+    notes?: string; // Structured meeting notes in markdown
     extracted_tasks?: Array<{
       title: string;
       description: string;
