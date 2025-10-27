@@ -202,6 +202,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("notetaker:get-recording", recordingId),
   notetakerDeleteRecording: (recordingId: string): Promise<void> =>
     ipcRenderer.invoke("notetaker:delete-recording", recordingId),
+  notetakerExtractTasks: (
+    transcriptText: string,
+    openaiApiKey: string,
+  ): Promise<Array<{ title: string; description: string }>> =>
+    ipcRenderer.invoke("notetaker:extract-tasks", transcriptText, openaiApiKey),
   // Real-time transcript listener
   onTranscriptSegment: (
     listener: (segment: {

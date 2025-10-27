@@ -1,5 +1,18 @@
-import { Badge, Box, Card, Flex, ScrollArea, Text } from "@radix-ui/themes";
+import { ListChecksIcon, SparkleIcon } from "@phosphor-icons/react";
+import {
+  Badge,
+  Box,
+  Button,
+  Card,
+  Flex,
+  Heading,
+  ScrollArea,
+  Separator,
+  Text,
+} from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
+import { useAuthStore } from "../../../stores/authStore";
+import { useExtractTasks } from "../hooks/useExtractTasks";
 import { useLiveTranscript } from "../hooks/useTranscript";
 
 interface LiveTranscriptViewProps {
@@ -11,9 +24,20 @@ export function LiveTranscriptView({
 }: LiveTranscriptViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const openaiApiKey = useAuthStore((state) => state.openaiApiKey);
 
   const { segments, addSegment, forceUpload, pendingCount } =
     useLiveTranscript(posthogRecordingId);
+
+  const extractTasksMutation = useExtractTasks();
+
+  const handleExtractTasks = () => {
+    const fullText = segments.map((s) => s.text).join(" ");
+    extractTasksMutation.mutate({
+      recordingId: posthogRecordingId,
+      transcriptText: fullText,
+    });
+  };
 
   // Auto-scroll to bottom when new segments arrive
   useEffect(() => {
@@ -176,6 +200,77 @@ export function LiveTranscriptView({
             Scroll to bottom to enable auto-scroll
           </Text>
         </Box>
+      )}
+
+      {/* Extract Tasks Section */}
+      {segments.length > 0 && (
+        <>
+          <Separator size="4" my="4" />
+          <Flex direction="column" gap="3">
+            <Flex justify="between" align="center">
+              <Heading size="4">
+                <Flex align="center" gap="2">
+                  <ListChecksIcon size={20} />
+                  Extracted tasks
+                </Flex>
+              </Heading>
+              <Button
+                size="2"
+                onClick={handleExtractTasks}
+                disabled={extractTasksMutation.isPending || !openaiApiKey}
+              >
+                <SparkleIcon />
+                {extractTasksMutation.isPending
+                  ? "Extracting..."
+                  : "Extract tasks"}
+              </Button>
+            </Flex>
+
+            {!openaiApiKey && (
+              <Card>
+                <Text size="2" color="gray">
+                  Add OpenAI API key in settings to extract tasks
+                </Text>
+              </Card>
+            )}
+
+            {extractTasksMutation.isSuccess && extractTasksMutation.data && (
+              <Flex direction="column" gap="2">
+                {extractTasksMutation.data.tasks.length === 0 ? (
+                  <Card>
+                    <Text size="2" color="gray">
+                      No tasks found in transcript
+                    </Text>
+                  </Card>
+                ) : (
+                  extractTasksMutation.data.tasks.map((task, idx) => (
+                    <Card key={`${task.title}-${idx}`}>
+                      <Flex direction="column" gap="1">
+                        <Text size="2" weight="medium">
+                          {task.title}
+                        </Text>
+                        <Text size="1" color="gray">
+                          {task.description}
+                        </Text>
+                      </Flex>
+                    </Card>
+                  ))
+                )}
+              </Flex>
+            )}
+
+            {extractTasksMutation.isError && (
+              <Card>
+                <Text size="2" color="red">
+                  Failed to extract tasks:{" "}
+                  {extractTasksMutation.error instanceof Error
+                    ? extractTasksMutation.error.message
+                    : "Unknown error"}
+                </Text>
+              </Card>
+            )}
+          </Flex>
+        </>
       )}
     </Box>
   );

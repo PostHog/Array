@@ -1,6 +1,10 @@
+import { createOpenAI } from "@ai-sdk/openai";
 import { PostHogAPIClient } from "@api/posthogClient";
 import RecallAiSdk from "@recallai/desktop-sdk";
+import { generateObject } from "ai";
 import { ipcMain } from "electron";
+import { z } from "zod";
+import { TASK_EXTRACTION_PROMPT } from "./transcription-prompts";
 
 interface RecordingSession {
   windowId: string;
@@ -428,6 +432,45 @@ export function getActiveSessions() {
   return Array.from(activeSessions.values());
 }
 
+async function extractTasksFromTranscript(
+  transcriptText: string,
+  openaiApiKey: string,
+): Promise<Array<{ title: string; description: string }>> {
+  try {
+    const openai = createOpenAI({ apiKey: openaiApiKey });
+
+    const schema = z.object({
+      tasks: z.array(
+        z.object({
+          title: z.string().describe("Brief task title"),
+          description: z.string().describe("Detailed description with context"),
+        }),
+      ),
+    });
+
+    const { object } = await generateObject({
+      model: openai("gpt-4o-mini"),
+      schema,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a helpful assistant that extracts actionable tasks from conversation transcripts. Be generous in identifying work items - include feature requests, requirements, and any work that needs to be done.",
+        },
+        {
+          role: "user",
+          content: `${TASK_EXTRACTION_PROMPT}\n${transcriptText}`,
+        },
+      ],
+    });
+
+    return object.tasks || [];
+  } catch (error) {
+    console.error("[Task Extraction] Error:", error);
+    throw error;
+  }
+}
+
 export function registerRecallIPCHandlers() {
   ipcMain.handle(
     "recall:initialize",
@@ -483,4 +526,17 @@ export function registerRecallIPCHandlers() {
     }
     return await posthogClient.deleteDesktopRecording(recordingId);
   });
+
+  ipcMain.handle(
+    "notetaker:extract-tasks",
+    async (_event, transcriptText, openaiApiKey) => {
+      console.log("[Task Extraction] Starting task extraction...");
+      const tasks = await extractTasksFromTranscript(
+        transcriptText,
+        openaiApiKey,
+      );
+      console.log(`[Task Extraction] Extracted ${tasks.length} tasks`);
+      return tasks;
+    },
+  );
 }

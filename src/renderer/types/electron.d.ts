@@ -148,6 +148,10 @@ export interface IElectronAPI {
     recall_recording_id: string | null;
   }>;
   notetakerDeleteRecording: (recordingId: string) => Promise<void>;
+  notetakerExtractTasks: (
+    transcriptText: string,
+    openaiApiKey: string,
+  ) => Promise<Array<{ title: string; description: string }>>;
   // Real-time transcript listener
   onTranscriptSegment: (
     listener: (segment: {
