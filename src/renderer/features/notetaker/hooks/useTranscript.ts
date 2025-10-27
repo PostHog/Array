@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useAuthStore } from "../../../stores/authStore";
 
 export interface TranscriptSegment {
@@ -27,8 +27,8 @@ export function useTranscript(recordingId: string | null) {
       return transcript as TranscriptData;
     },
     enabled: !!client && !!recordingId,
-    refetchInterval: 5000, // Poll every 5s to get updates
-    staleTime: 2000,
+    refetchInterval: false, // Disabled: we get real-time updates via IPC events
+    staleTime: Infinity, // Never consider stale since we update via IPC
   });
 }
 
@@ -67,113 +67,115 @@ export function useUploadTranscript() {
 }
 
 /**
- * Hook for managing real-time transcript with local buffering and batched uploads
+ * Hook for managing real-time transcript with TanStack Query cache and batched uploads
  */
 export function useLiveTranscript(posthogRecordingId: string | null) {
-  const [localSegments, setLocalSegments] = useState<TranscriptSegment[]>([]);
-  const [pendingUpload, setPendingUpload] = useState<TranscriptSegment[]>([]);
+  const queryClient = useQueryClient();
   const uploadMutation = useUploadTranscript();
   const { data: serverTranscript } = useTranscript(posthogRecordingId);
 
-  // Keep track of uploaded segment timestamps to avoid duplicates
-  const uploadedTimestamps = useRef(new Set<number>());
+  // Track pending segments for upload
+  const pendingSegmentsRef = useRef<TranscriptSegment[]>([]);
+  const uploadTimerRef = useRef<number>();
+  const posthogRecordingIdRef = useRef(posthogRecordingId);
+  posthogRecordingIdRef.current = posthogRecordingId;
 
-  // Merge server transcript with local segments
-  const allSegments = [
-    ...(serverTranscript?.segments || []),
-    ...localSegments,
-  ].sort((a, b) => a.timestamp - b.timestamp);
-
-  // Add new segment from IPC
-  const addSegment = useCallback((segment: TranscriptSegment) => {
-    // Check if already uploaded or in local buffer
-    if (uploadedTimestamps.current.has(segment.timestamp)) {
+  // Upload pending segments helper
+  const doUpload = useCallback(() => {
+    if (
+      !posthogRecordingIdRef.current ||
+      pendingSegmentsRef.current.length === 0
+    )
       return;
+
+    const toUpload = [...pendingSegmentsRef.current];
+    pendingSegmentsRef.current = [];
+
+    if (uploadTimerRef.current) {
+      clearTimeout(uploadTimerRef.current);
+      uploadTimerRef.current = undefined;
     }
 
-    setLocalSegments((prev) => {
-      // Avoid duplicates in local buffer
-      const exists = prev.some((s) => s.timestamp === segment.timestamp);
-      if (exists) return prev;
-      return [...prev, segment];
+    uploadMutation.mutate({
+      recordingId: posthogRecordingIdRef.current,
+      segments: toUpload,
     });
+  }, [uploadMutation]);
 
-    setPendingUpload((prev) => [...prev, segment]);
-  }, []);
+  // Add new segment from IPC - optimistically update cache
+  const addSegment = useCallback(
+    (segment: TranscriptSegment) => {
+      if (!posthogRecordingId) return;
 
-  const uploadSegments = useCallback(() => {
-    if (!posthogRecordingId || pendingUpload.length === 0) return;
+      // Optimistically update TanStack Query cache
+      queryClient.setQueryData<TranscriptData>(
+        ["notetaker-transcript", posthogRecordingId],
+        (old) => {
+          const existingSegments = old?.segments || [];
 
-    const toUpload = [...pendingUpload];
+          // Check if segment already exists
+          const exists = existingSegments.some(
+            (s) => s.timestamp === segment.timestamp,
+          );
+          if (exists) return old;
 
-    uploadMutation.mutate(
-      {
-        recordingId: posthogRecordingId,
-        segments: toUpload,
-      },
-      {
-        onSuccess: () => {
-          // Mark as uploaded
-          for (const seg of toUpload) {
-            uploadedTimestamps.current.add(seg.timestamp);
-          }
-
-          // Remove from local buffer after successful upload
-          setLocalSegments((prev) =>
-            prev.filter(
-              (s) => !toUpload.some((u) => u.timestamp === s.timestamp),
-            ),
+          // Add to cache
+          const newSegments = [...existingSegments, segment].sort(
+            (a, b) => a.timestamp - b.timestamp,
           );
 
-          // Clear pending
-          setPendingUpload([]);
+          return {
+            full_text: newSegments.map((s) => s.text).join(" "),
+            segments: newSegments,
+          };
         },
-        onError: (error) => {
-          console.error("[LiveTranscript] Failed to upload segments:", error);
-          // Keep in pending for retry
-        },
-      },
-    );
-  }, [posthogRecordingId, pendingUpload, uploadMutation]);
+      );
 
-  // Batch upload every 10 segments or 10 seconds
-  useEffect(() => {
-    if (!posthogRecordingId || pendingUpload.length === 0) return;
-
-    const shouldUpload = pendingUpload.length >= 10;
-
-    const timer = setTimeout(() => {
-      if (pendingUpload.length > 0) {
-        uploadSegments();
+      // Track for batched upload
+      const alreadyPending = pendingSegmentsRef.current.some(
+        (s) => s.timestamp === segment.timestamp,
+      );
+      if (!alreadyPending) {
+        pendingSegmentsRef.current.push(segment);
       }
-    }, 10000); // 10s
 
-    if (shouldUpload) {
-      uploadSegments();
-    }
+      // Clear existing timer
+      if (uploadTimerRef.current) {
+        clearTimeout(uploadTimerRef.current);
+      }
 
-    return () => clearTimeout(timer);
-  }, [pendingUpload.length, posthogRecordingId, uploadSegments]);
+      // Upload immediately if we have 10 segments
+      if (pendingSegmentsRef.current.length >= 10) {
+        doUpload();
+      } else {
+        // Otherwise schedule upload in 10 seconds
+        uploadTimerRef.current = setTimeout(() => {
+          doUpload();
+        }, 10000);
+      }
+    },
+    [posthogRecordingId, queryClient, doUpload],
+  );
 
   // Force upload (e.g., when meeting ends)
   const forceUpload = useCallback(() => {
-    if (pendingUpload.length > 0) {
-      uploadSegments();
-    }
-  }, [pendingUpload, uploadSegments]);
+    doUpload();
+  }, [doUpload]);
 
-  // Reset when recording changes
+  // Cleanup timer on unmount
   useEffect(() => {
-    setLocalSegments([]);
-    setPendingUpload([]);
-    uploadedTimestamps.current.clear();
+    return () => {
+      if (uploadTimerRef.current) {
+        clearTimeout(uploadTimerRef.current);
+      }
+    };
   }, []);
 
   return {
-    segments: allSegments,
+    segments: serverTranscript?.segments || [],
     addSegment,
     forceUpload,
     isUploading: uploadMutation.isPending,
-    pendingCount: pendingUpload.length,
+    pendingCount: pendingSegmentsRef.current.length,
   };
 }
