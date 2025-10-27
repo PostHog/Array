@@ -14,6 +14,10 @@ import { registerAgentIpc, type TaskController } from "./services/agent.js";
 import { registerFsIpc } from "./services/fs.js";
 import { registerOsIpc } from "./services/os.js";
 import { registerPosthogIpc } from "./services/posthog.js";
+import {
+  registerRecallIPCHandlers,
+  setMainWindow,
+} from "./services/recallRecording.js";
 import { registerRecordingIpc } from "./services/recording.js";
 import { registerShellIpc } from "./services/shell.js";
 import { registerAutoUpdater } from "./services/updates.js";
@@ -73,6 +77,8 @@ function createWindow(): void {
       enableBlinkFeatures: "GetDisplayMedia",
     },
   });
+
+  setMainWindow(mainWindow);
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.maximize();
@@ -190,4 +196,5 @@ registerOsIpc(() => mainWindow);
 registerAgentIpc(taskControllers, () => mainWindow);
 registerFsIpc();
 registerRecordingIpc();
+registerRecallIPCHandlers();
 registerShellIpc();

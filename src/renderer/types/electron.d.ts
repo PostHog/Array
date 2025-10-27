@@ -1,3 +1,4 @@
+import type { Schemas } from "@api/generated";
 import type { AgentEvent } from "@posthog/agent";
 import type { TaskArtifact } from "@shared/types";
 import type { Recording } from "@shared/types";
@@ -107,6 +108,43 @@ export interface IElectronAPI {
       name: string;
     }>
   >;
+  // Recall SDK API
+  recallInitialize: (
+    recallApiUrl: string,
+    posthogKey: string,
+    posthogHost: string,
+  ) => Promise<void>;
+  recallGetActiveSessions: () => Promise<
+    Array<{
+      windowId: string;
+      recordingId: string;
+      platform: string;
+    }>
+  >;
+  recallRequestPermission: (
+    permission: "accessibility" | "screen-capture" | "microphone",
+  ) => Promise<void>;
+  recallShutdown: () => Promise<void>;
+  // Recall SDK event listeners
+  onRecallRecordingStarted: (
+    listener: (recording: Schemas.DesktopRecording) => void,
+  ) => () => void;
+  onRecallTranscriptSegment: (
+    listener: (data: {
+      posthog_recording_id: string;
+      timestamp: number;
+      speaker: string | null;
+      text: string;
+      confidence: number | null;
+      is_final: boolean;
+    }) => void,
+  ) => () => void;
+  onRecallMeetingEnded: (
+    listener: (data: { posthog_recording_id: string }) => void,
+  ) => () => void;
+  onRecallRecordingReady: (
+    listener: (data: { posthog_recording_id: string }) => void,
+  ) => () => void;
   // Shell API
   shellCreate: (sessionId: string, cwd?: string) => Promise<void>;
   shellWrite: (sessionId: string, data: string) => Promise<void>;
