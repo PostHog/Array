@@ -5,6 +5,7 @@ import type {
   KillShellResult,
 } from "@features/logs/tools/types";
 import { Box } from "@radix-ui/themes";
+import { parseKillShellResult } from "@utils/tool-results";
 
 type KillShellToolViewProps = BaseToolViewProps<
   KillShellArgs,
@@ -12,18 +13,7 @@ type KillShellToolViewProps = BaseToolViewProps<
 >;
 
 export function KillShellToolView({ result }: KillShellToolViewProps) {
-  let success = false;
-  let message = "";
-
-  if (result) {
-    if (typeof result === "string") {
-      message = result;
-      success = result.includes("killed") || result.includes("terminated");
-    } else if (typeof result === "object") {
-      success = result.success || false;
-      message = result.message || "";
-    }
-  }
+  const { success, message } = parseKillShellResult(result);
 
   return (
     <Box>

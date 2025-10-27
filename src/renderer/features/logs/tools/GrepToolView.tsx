@@ -10,7 +10,7 @@ import type {
   GrepResult,
 } from "@features/logs/tools/types";
 import { Box, Code } from "@radix-ui/themes";
-import { parseStringListResult, truncateList } from "@utils/tool-results";
+import { parseGrepResult, truncateList } from "@utils/tool-results";
 
 type GrepToolViewProps = BaseToolViewProps<GrepArgs, string | GrepResult>;
 
@@ -22,18 +22,7 @@ export function GrepToolView({ args, result }: GrepToolViewProps) {
   const contextBefore = args["-B"];
   const contextAround = args["-C"];
 
-  // Parse result
-  let matches: string[] = [];
-  let count: number | undefined;
-
-  if (result) {
-    if (typeof result === "string") {
-      matches = parseStringListResult(result);
-    } else if (typeof result === "object") {
-      matches = result.matches || [];
-      count = result.count;
-    }
-  }
+  const { matches, count } = parseGrepResult(result);
 
   return (
     <Box>

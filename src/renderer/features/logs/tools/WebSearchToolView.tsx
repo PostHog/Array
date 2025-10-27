@@ -7,6 +7,7 @@ import type {
   WebSearchResultItem,
 } from "@features/logs/tools/types";
 import { Box, Code } from "@radix-ui/themes";
+import { parseWebSearchResult } from "@utils/tool-results";
 
 type WebSearchToolViewProps = BaseToolViewProps<
   WebSearchArgs,
@@ -16,20 +17,7 @@ type WebSearchToolViewProps = BaseToolViewProps<
 export function WebSearchToolView({ args, result }: WebSearchToolViewProps) {
   const { allowed_domains, blocked_domains } = args;
 
-  // Parse result
-  let results: WebSearchResultItem[] = [];
-  if (result) {
-    if (typeof result === "string") {
-      try {
-        const parsed = JSON.parse(result);
-        results = parsed.results || [];
-      } catch {
-        // Result is just text
-      }
-    } else if (result && typeof result === "object" && "results" in result) {
-      results = result.results || [];
-    }
-  }
+  const results = parseWebSearchResult<WebSearchResultItem>(result);
 
   return (
     <Box>

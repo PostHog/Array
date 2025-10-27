@@ -10,6 +10,7 @@ import type {
   ShellStatus,
 } from "@features/logs/tools/types";
 import { Box } from "@radix-ui/themes";
+import { parseShellStatusResult } from "@utils/tool-results";
 
 type BashOutputToolViewProps = BaseToolViewProps<
   BashOutputArgs,
@@ -19,20 +20,7 @@ type BashOutputToolViewProps = BaseToolViewProps<
 export function BashOutputToolView({ args, result }: BashOutputToolViewProps) {
   const { filter } = args;
 
-  // Parse result
-  let stdout = "";
-  let stderr = "";
-  let status: string | undefined;
-
-  if (result) {
-    if (typeof result === "string") {
-      stdout = result;
-    } else if (typeof result === "object") {
-      stdout = result.stdout || "";
-      stderr = result.stderr || "";
-      status = result.status;
-    }
-  }
+  const { stdout, stderr, status } = parseShellStatusResult(result);
 
   return (
     <Box>

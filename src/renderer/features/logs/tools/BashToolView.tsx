@@ -11,26 +11,14 @@ import type {
   ShellResult,
 } from "@features/logs/tools/types";
 import { Box } from "@radix-ui/themes";
+import { parseShellResult } from "@utils/tool-results";
 
 type BashToolViewProps = BaseToolViewProps<BashArgs, string | ShellResult>;
 
 export function BashToolView({ args, result }: BashToolViewProps) {
   const { command, timeout, run_in_background } = args;
 
-  // Parse result
-  let stdout = "";
-  let stderr = "";
-  let exitCode: number | undefined;
-
-  if (result) {
-    if (typeof result === "string") {
-      stdout = result;
-    } else if (typeof result === "object") {
-      stdout = result.stdout || "";
-      stderr = result.stderr || "";
-      exitCode = result.exitCode;
-    }
-  }
+  const { stdout, stderr, exitCode } = parseShellResult(result);
 
   return (
     <Box>
