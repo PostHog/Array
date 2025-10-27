@@ -62,8 +62,6 @@ export function registerShellIpc(): void {
           pty: ptyProcess,
           webContents: event.sender,
         });
-
-        console.log(`Created shell session ${sessionId} with shell: ${shell}`);
       } catch (error) {
         console.error(`Failed to create shell session ${sessionId}:`, error);
         throw error;
@@ -117,7 +115,6 @@ export function registerShellIpc(): void {
 
       session.pty.kill();
       sessions.delete(sessionId);
-      console.log(`Destroyed shell session ${sessionId}`);
     },
   );
 }

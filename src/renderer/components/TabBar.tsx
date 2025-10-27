@@ -56,7 +56,6 @@ export function TabBar({ onOpenCommandMenu }: TabBarProps) {
   }, [tabs, activeTabId, setActiveTab]);
 
   const handleCloseTab = useCallback(() => {
-    console.log("Closing tab");
     if (tabs.length > 1) {
       closeTab(activeTabId);
     }

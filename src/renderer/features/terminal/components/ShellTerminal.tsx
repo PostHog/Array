@@ -45,23 +45,14 @@ export function ShellTerminal({ cwd }: ShellTerminalProps) {
   }, [cliMode]);
 
   useEffect(() => {
-    console.log("[ShellTerminal] Effect running", {
-      hasRef: !!terminalRef.current,
-      hasTerminal: !!terminal.current,
-    });
-
     if (!terminalRef.current) {
-      console.log("[ShellTerminal] No terminalRef, returning");
       return;
     }
 
     // Don't recreate if already exists
     if (terminal.current) {
-      console.log("[ShellTerminal] Terminal already exists, returning");
       return;
     }
-
-    console.log("[ShellTerminal] Creating terminal...");
 
     // Generate unique session ID for this effect run using cryptographically secure random
     const sessionId = `shell-${Date.now()}-${secureRandomString(7)}`;
@@ -115,12 +106,14 @@ export function ShellTerminal({ cwd }: ShellTerminalProps) {
     // Open terminal
     term.open(terminalRef.current);
 
-    // Fit terminal to container
-    fit.fit();
-
     // Store refs
     terminal.current = term;
     fitAddon.current = fit;
+
+    // Fit terminal to container after it's fully initialized
+    setTimeout(() => {
+      fit.fit();
+    }, 0);
 
     // Create PTY session
     window.electronAPI?.shellCreate(sessionId, cwd).catch((error: Error) => {
@@ -152,25 +145,21 @@ export function ShellTerminal({ cwd }: ShellTerminalProps) {
 
     // Handle resize
     const handleResize = () => {
-      if (fit && term) {
-        fit.fit();
+      if (fitAddon.current && terminal.current) {
+        fitAddon.current.fit();
         window.electronAPI
-          ?.shellResize(sessionId, term.cols, term.rows)
+          ?.shellResize(sessionId, terminal.current.cols, terminal.current.rows)
           .catch((error: Error) => {
             console.error("Failed to resize shell:", error);
           });
       }
     };
 
-    // Initial resize
-    handleResize();
-
     // Listen for window resize
     window.addEventListener("resize", handleResize);
 
     // Cleanup
     return () => {
-      console.log("[ShellTerminal] Cleanup running, disposing terminal");
       window.removeEventListener("resize", handleResize);
       disposable.dispose();
       unsubscribeData?.();
@@ -181,9 +170,6 @@ export function ShellTerminal({ cwd }: ShellTerminalProps) {
       term.dispose();
       terminal.current = null;
       fitAddon.current = null;
-      console.log(
-        "[ShellTerminal] Cleanup complete, terminal.current set to null",
-      );
     };
   }, [cwd, setCliMode]);
 
