@@ -1,14 +1,14 @@
 import { ToolCodeBlock, ToolMetadata } from "@features/logs/tools/ToolUI";
+import type {
+  BaseToolViewProps,
+  WebFetchArgs,
+} from "@features/logs/tools/types";
 import { Box, Code, Link } from "@radix-ui/themes";
 
-interface WebFetchToolViewProps {
-  args: any;
-  _unused?: {
-    url: string;
-    prompt: string;
-  };
-  result?: any;
-}
+type WebFetchToolViewProps = BaseToolViewProps<
+  WebFetchArgs,
+  string | Record<string, unknown>
+>;
 
 export function WebFetchToolView({ args, result }: WebFetchToolViewProps) {
   const { url, prompt } = args;

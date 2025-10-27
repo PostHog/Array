@@ -3,27 +3,15 @@ import {
   ToolCodeBlock,
   ToolMetadata,
 } from "@features/logs/tools/ToolUI";
+import type {
+  BaseToolViewProps,
+  GrepArgs,
+  GrepResult,
+} from "@features/logs/tools/types";
 import { Badge, Box, Code } from "@radix-ui/themes";
 import { parseStringListResult, truncateList } from "@utils/tool-results";
 
-interface GrepToolViewProps {
-  args: any;
-  _unused?: {
-    pattern: string;
-    path?: string;
-    glob?: string;
-    type?: string;
-    output_mode?: "content" | "files_with_matches" | "count";
-    "-i"?: boolean;
-    "-n"?: boolean;
-    "-A"?: number;
-    "-B"?: number;
-    "-C"?: number;
-    multiline?: boolean;
-    head_limit?: number;
-  };
-  result?: string | { matches?: string[]; count?: number };
-}
+type GrepToolViewProps = BaseToolViewProps<GrepArgs, string | GrepResult>;
 
 export function GrepToolView({ args, result }: GrepToolViewProps) {
   const { path, glob, type, output_mode, head_limit, multiline } = args;

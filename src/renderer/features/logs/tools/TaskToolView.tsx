@@ -3,17 +3,13 @@ import {
   ToolCodeBlock,
   ToolSection,
 } from "@features/logs/tools/ToolUI";
+import type { BaseToolViewProps, TaskArgs } from "@features/logs/tools/types";
 import { Badge, Box, Code } from "@radix-ui/themes";
 
-interface TaskToolViewProps {
-  args: any;
-  _unused?: {
-    description: string;
-    prompt: string;
-    subagent_type: string;
-  };
-  result?: any;
-}
+type TaskToolViewProps = BaseToolViewProps<
+  TaskArgs,
+  string | Record<string, unknown>
+>;
 
 export function TaskToolView({ args, result }: TaskToolViewProps) {
   const { description, prompt, subagent_type } = args;

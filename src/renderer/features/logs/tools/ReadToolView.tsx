@@ -1,10 +1,11 @@
 import { ToolCodeBlock, ToolMetadata } from "@features/logs/tools/ToolUI";
+import type { BaseToolViewProps, ReadArgs } from "@features/logs/tools/types";
 import { Box } from "@radix-ui/themes";
 
-interface ReadToolViewProps {
-  args: any;
-  result?: any;
-}
+type ReadToolViewProps = BaseToolViewProps<
+  ReadArgs,
+  string | Record<string, unknown>
+>;
 
 export function ReadToolView({ args, result }: ReadToolViewProps) {
   const { offset, limit } = args;

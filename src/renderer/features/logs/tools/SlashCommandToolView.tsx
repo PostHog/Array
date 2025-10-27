@@ -1,13 +1,14 @@
 import { ToolCodeBlock } from "@features/logs/tools/ToolUI";
+import type {
+  BaseToolViewProps,
+  SlashCommandArgs,
+} from "@features/logs/tools/types";
 import { Box } from "@radix-ui/themes";
 
-interface SlashCommandToolViewProps {
-  args: any;
-  _unused?: {
-    command: string;
-  };
-  result?: any;
-}
+type SlashCommandToolViewProps = BaseToolViewProps<
+  SlashCommandArgs,
+  string | Record<string, unknown>
+>;
 
 export function SlashCommandToolView({ result }: SlashCommandToolViewProps) {
   return (

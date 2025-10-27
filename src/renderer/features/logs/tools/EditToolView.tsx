@@ -3,18 +3,10 @@ import {
   ToolResultMessage,
   ToolSection,
 } from "@features/logs/tools/ToolUI";
+import type { BaseToolViewProps, EditArgs } from "@features/logs/tools/types";
 import { Badge, Box } from "@radix-ui/themes";
 
-interface EditToolViewProps {
-  args: any;
-  _unused?: {
-    file_path: string;
-    old_string: string;
-    new_string: string;
-    replace_all?: boolean;
-  };
-  result?: any;
-}
+type EditToolViewProps = BaseToolViewProps<EditArgs, string>;
 
 export function EditToolView({ args, result }: EditToolViewProps) {
   const { old_string, new_string, replace_all } = args;

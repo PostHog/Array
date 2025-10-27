@@ -5,19 +5,13 @@ import {
   ToolResultMessage,
   ToolSection,
 } from "@features/logs/tools/ToolUI";
+import type {
+  BaseToolViewProps,
+  NotebookEditArgs,
+} from "@features/logs/tools/types";
 import { Badge, Box } from "@radix-ui/themes";
 
-interface NotebookEditToolViewProps {
-  args: any;
-  _unused?: {
-    notebook_path: string;
-    cell_id?: string;
-    cell_type?: "code" | "markdown";
-    edit_mode?: "replace" | "insert" | "delete";
-    new_source: string;
-  };
-  result?: any;
-}
+type NotebookEditToolViewProps = BaseToolViewProps<NotebookEditArgs, string>;
 
 export function NotebookEditToolView({
   args,

@@ -1,23 +1,22 @@
 import { ToolBadgeGroup, ToolMetadata } from "@features/logs/tools/ToolUI";
+import type {
+  BaseToolViewProps,
+  WebSearchArgs,
+  WebSearchResult,
+  WebSearchResultItem,
+} from "@features/logs/tools/types";
 import { Badge, Box, Code } from "@radix-ui/themes";
 
-interface WebSearchToolViewProps {
-  args: any;
-  _unused?: {
-    query: string;
-    allowed_domains?: string[];
-    blocked_domains?: string[];
-  };
-  result?:
-    | string
-    | { results?: Array<{ title?: string; url?: string; snippet?: string }> };
-}
+type WebSearchToolViewProps = BaseToolViewProps<
+  WebSearchArgs,
+  string | WebSearchResult
+>;
 
 export function WebSearchToolView({ args, result }: WebSearchToolViewProps) {
   const { allowed_domains, blocked_domains } = args;
 
   // Parse result
-  let results: Array<{ title?: string; url?: string; snippet?: string }> = [];
+  let results: WebSearchResultItem[] = [];
   if (result) {
     if (typeof result === "string") {
       try {

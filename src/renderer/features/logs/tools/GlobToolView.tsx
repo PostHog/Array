@@ -1,15 +1,9 @@
 import { ToolCodeBlock, ToolMetadata } from "@features/logs/tools/ToolUI";
+import type { BaseToolViewProps, GlobArgs } from "@features/logs/tools/types";
 import { Box } from "@radix-ui/themes";
 import { parseStringListResult, truncateList } from "@utils/tool-results";
 
-interface GlobToolViewProps {
-  args: any;
-  _unused?: {
-    pattern: string;
-    path?: string;
-  };
-  result?: string | string[];
-}
+type GlobToolViewProps = BaseToolViewProps<GlobArgs, string | string[]>;
 
 export function GlobToolView({ args, result }: GlobToolViewProps) {
   const { path } = args;

@@ -1,13 +1,15 @@
 import { ToolResultMessage } from "@features/logs/tools/ToolUI";
+import type {
+  BaseToolViewProps,
+  KillShellArgs,
+  KillShellResult,
+} from "@features/logs/tools/types";
 import { Box } from "@radix-ui/themes";
 
-interface KillShellToolViewProps {
-  args: any;
-  _unused?: {
-    shell_id: string;
-  };
-  result?: string | { success?: boolean; message?: string };
-}
+type KillShellToolViewProps = BaseToolViewProps<
+  KillShellArgs,
+  string | KillShellResult
+>;
 
 export function KillShellToolView({ result }: KillShellToolViewProps) {
   let success = false;

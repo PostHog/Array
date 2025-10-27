@@ -1,18 +1,11 @@
+import type {
+  BaseToolViewProps,
+  Todo,
+  TodoWriteArgs,
+} from "@features/logs/tools/types";
 import { Box, Code } from "@radix-ui/themes";
 
-interface Todo {
-  content: string;
-  status: "pending" | "in_progress" | "completed";
-  activeForm: string;
-}
-
-interface TodoWriteToolViewProps {
-  args: any;
-  _unused?: {
-    todos: Todo[];
-  };
-  result?: any;
-}
+type TodoWriteToolViewProps = BaseToolViewProps<TodoWriteArgs, string>;
 
 export function TodoWriteToolView({ args }: TodoWriteToolViewProps) {
   const { todos } = args;

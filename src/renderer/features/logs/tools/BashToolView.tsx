@@ -4,18 +4,14 @@ import {
   ToolCommandBlock,
   ToolResultMessage,
 } from "@features/logs/tools/ToolUI";
+import type {
+  BaseToolViewProps,
+  BashArgs,
+  ShellResult,
+} from "@features/logs/tools/types";
 import { Badge, Box } from "@radix-ui/themes";
 
-interface BashToolViewProps {
-  args: any;
-  _unused?: {
-    command: string;
-    description?: string;
-    timeout?: number;
-    run_in_background?: boolean;
-  };
-  result?: string | { stdout?: string; stderr?: string; exitCode?: number };
-}
+type BashToolViewProps = BaseToolViewProps<BashArgs, string | ShellResult>;
 
 export function BashToolView({ args, result }: BashToolViewProps) {
   const { command, timeout, run_in_background } = args;

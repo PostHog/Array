@@ -3,15 +3,13 @@ import {
   ToolResultMessage,
   ToolSection,
 } from "@features/logs/tools/ToolUI";
+import type {
+  BaseToolViewProps,
+  ExitPlanModeArgs,
+} from "@features/logs/tools/types";
 import { Box } from "@radix-ui/themes";
 
-interface ExitPlanModeToolViewProps {
-  args: any;
-  _unused?: {
-    plan: string;
-  };
-  result?: any;
-}
+type ExitPlanModeToolViewProps = BaseToolViewProps<ExitPlanModeArgs, string>;
 
 export function ExitPlanModeToolView({
   args,

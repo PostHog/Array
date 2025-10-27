@@ -3,16 +3,17 @@ import {
   ToolCodeBlock,
   ToolMetadata,
 } from "@features/logs/tools/ToolUI";
+import type {
+  BaseToolViewProps,
+  BashOutputArgs,
+  ShellStatus,
+} from "@features/logs/tools/types";
 import { Badge, Box } from "@radix-ui/themes";
 
-interface BashOutputToolViewProps {
-  args: any;
-  _unused?: {
-    bash_id: string;
-    filter?: string;
-  };
-  result?: string | { stdout?: string; stderr?: string; status?: string };
-}
+type BashOutputToolViewProps = BaseToolViewProps<
+  BashOutputArgs,
+  string | ShellStatus
+>;
 
 export function BashOutputToolView({ args, result }: BashOutputToolViewProps) {
   const { filter } = args;

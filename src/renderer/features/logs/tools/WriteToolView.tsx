@@ -1,14 +1,8 @@
 import { ToolMetadata, ToolResultMessage } from "@features/logs/tools/ToolUI";
+import type { BaseToolViewProps, WriteArgs } from "@features/logs/tools/types";
 import { Box } from "@radix-ui/themes";
 
-interface WriteToolViewProps {
-  args: any;
-  _unused?: {
-    file_path: string;
-    content: string;
-  };
-  result?: any;
-}
+type WriteToolViewProps = BaseToolViewProps<WriteArgs, string>;
 
 export function WriteToolView({ args, result }: WriteToolViewProps) {
   const { content } = args;
