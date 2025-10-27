@@ -18,6 +18,14 @@ export type GroupByField =
   | "source"
   | "repository";
 
+const TASK_STATUS_ORDER: string[] = [
+  "failed",
+  "in_progress",
+  "started",
+  "completed",
+  "backlog",
+];
+
 // Helper to get computed status
 function getTaskStatus(task: Task): string {
   const hasPR = task.latest_run?.output?.pr_url;
@@ -33,15 +41,6 @@ export function filterTasks(
   orderDirection: OrderDirection,
   filter: string,
 ): Task[] {
-  // Status order for sorting
-  const statusOrder = [
-    "failed",
-    "in_progress",
-    "started",
-    "completed",
-    "backlog",
-  ];
-
   // Sort tasks
   const orderedTasks = [...tasks].sort((a, b) => {
     let compareResult = 0;
@@ -54,8 +53,8 @@ export function filterTasks(
       case "status": {
         const statusA = getTaskStatus(a);
         const statusB = getTaskStatus(b);
-        const indexA = statusOrder.indexOf(statusA);
-        const indexB = statusOrder.indexOf(statusB);
+        const indexA = TASK_STATUS_ORDER.indexOf(statusA);
+        const indexB = TASK_STATUS_ORDER.indexOf(statusB);
 
         // Use index-based comparison if both found, otherwise alphabetical
         if (indexA !== -1 && indexB !== -1) {
@@ -307,14 +306,6 @@ export function getTaskGrouping(
     groups.get(key)?.push(task);
   }
 
-  const statusOrder = [
-    "failed",
-    "in_progress",
-    "started",
-    "completed",
-    "Backlog",
-  ];
-
   const sortedGroups = Array.from(groups.entries())
     .map(([name, tasks]) => ({
       name,
@@ -322,8 +313,8 @@ export function getTaskGrouping(
     }))
     .sort((a, b) => {
       if (groupBy === "status") {
-        const aIndex = statusOrder.indexOf(a.name);
-        const bIndex = statusOrder.indexOf(b.name);
+        const aIndex = TASK_STATUS_ORDER.indexOf(a.name.toLowerCase());
+        const bIndex = TASK_STATUS_ORDER.indexOf(b.name.toLowerCase());
 
         if (aIndex !== -1 && bIndex !== -1) {
           return aIndex - bIndex;
