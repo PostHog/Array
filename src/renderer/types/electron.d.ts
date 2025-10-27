@@ -148,6 +148,24 @@ export interface IElectronAPI {
     recall_recording_id: string | null;
   }>;
   notetakerDeleteRecording: (recordingId: string) => Promise<void>;
+  // Real-time transcript listener
+  onTranscriptSegment: (
+    listener: (segment: {
+      posthog_recording_id: string;
+      timestamp: number;
+      speaker: string | null;
+      text: string;
+      confidence: number | null;
+      is_final: boolean;
+    }) => void,
+  ) => () => void;
+  // Meeting ended listener (trigger sync)
+  onMeetingEnded: (
+    listener: (event: {
+      posthog_recording_id: string;
+      platform: string;
+    }) => void,
+  ) => () => void;
   // Shell API
   shellCreate: (sessionId: string, cwd?: string) => Promise<void>;
   shellWrite: (sessionId: string, data: string) => Promise<void>;

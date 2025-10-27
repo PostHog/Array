@@ -400,4 +400,37 @@ export class PostHogAPIClient {
 
     return await response.json();
   }
+
+  async uploadDesktopRecordingTranscript(
+    recordingId: string,
+    transcript: {
+      full_text: string;
+      segments: Array<{
+        timestamp: number;
+        speaker: string | null;
+        text: string;
+        confidence: number | null;
+      }>;
+    },
+  ) {
+    this.validateRecordingId(recordingId);
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/desktop_recordings/${recordingId}/upload_transcript/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/environments/${teamId}/desktop_recordings/${recordingId}/upload_transcript/`,
+      parameters: {
+        body: transcript,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to upload transcript: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
 }

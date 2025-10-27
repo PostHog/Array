@@ -1,4 +1,5 @@
 import {
+  ArrowClockwiseIcon,
   CheckCircleIcon,
   ClockIcon,
   TrashIcon,
@@ -11,12 +12,13 @@ import {
   Button,
   Card,
   Flex,
-  ScrollArea,
   Spinner,
   Text,
 } from "@radix-ui/themes";
-import { useEffect } from "react";
-import { useNotetakerStore } from "../stores/notetakerStore";
+import { useState } from "react";
+import { useDeleteRecording, useRecordings } from "../hooks/useRecordings";
+import { useUploadTranscript } from "../hooks/useTranscript";
+import { LiveTranscriptView } from "./LiveTranscriptView";
 
 function getStatusIcon(
   status: "recording" | "uploading" | "processing" | "ready" | "error",
@@ -74,21 +76,33 @@ function formatDuration(seconds: number | null) {
 }
 
 export function NotetakerView() {
-  const {
-    recordings,
-    isLoading,
-    error,
-    fetchRecordings,
-    deleteRecording,
-    selectedRecordingId,
-    setSelectedRecording,
-  } = useNotetakerStore();
+  const { data: recordings = [], isLoading, error, refetch } = useRecordings();
+  const deleteMutation = useDeleteRecording();
+  const uploadTranscriptMutation = useUploadTranscript();
+  const [selectedRecordingId, setSelectedRecordingId] = useState<string | null>(
+    null,
+  );
 
-  useEffect(() => {
-    fetchRecordings();
-    const interval = setInterval(fetchRecordings, 10000);
-    return () => clearInterval(interval);
-  }, [fetchRecordings]);
+  const handleRetry = (recordingId: string) => {
+    // For retry, we need to fetch local segments and upload
+    // Since we're now backend-first, this will trigger a re-sync
+    uploadTranscriptMutation.mutate({
+      recordingId,
+      segments: [], // Empty will fetch from backend
+    });
+  };
+
+  const handleDelete = (recordingId: string) => {
+    if (confirm("Delete this recording?")) {
+      deleteMutation.mutate(recordingId, {
+        onSuccess: () => {
+          if (selectedRecordingId === recordingId) {
+            setSelectedRecordingId(null);
+          }
+        },
+      });
+    }
+  };
 
   if (isLoading && recordings.length === 0) {
     return (
@@ -106,8 +120,8 @@ export function NotetakerView() {
       <Flex align="center" justify="center" minHeight="200px">
         <Flex direction="column" align="center" gap="3">
           <WarningCircleIcon size={32} />
-          <Text color="red">{error}</Text>
-          <Button onClick={() => fetchRecordings()}>Retry</Button>
+          <Text color="red">{String(error)}</Text>
+          <Button onClick={() => refetch()}>Retry</Button>
         </Flex>
       </Flex>
     );
@@ -127,23 +141,31 @@ export function NotetakerView() {
     );
   }
 
-  return (
-    <Box p="4">
-      <Flex direction="column" gap="3">
-        <Flex justify="between" align="center">
-          <Text size="5" weight="bold">
-            Notetaker
-          </Text>
-          <Text size="2" color="gray">
-            {recordings.length} recording{recordings.length !== 1 ? "s" : ""}
-          </Text>
-        </Flex>
+  const selectedRecording = recordings.find(
+    (r) => r.id === selectedRecordingId,
+  );
 
-        <ScrollArea
-          type="auto"
-          scrollbars="vertical"
-          style={{ maxHeight: "calc(100vh - 150px)" }}
-        >
+  return (
+    <Flex style={{ height: "100vh" }}>
+      {/* Left sidebar: Recordings list */}
+      <Box
+        p="4"
+        style={{
+          width: selectedRecordingId ? "350px" : "100%",
+          borderRight: selectedRecordingId ? "1px solid var(--gray-5)" : "none",
+          overflowY: "auto",
+        }}
+      >
+        <Flex direction="column" gap="3">
+          <Flex justify="between" align="center">
+            <Text size="5" weight="bold">
+              Notetaker
+            </Text>
+            <Text size="2" color="gray">
+              {recordings.length} recording{recordings.length !== 1 ? "s" : ""}
+            </Text>
+          </Flex>
+
           <Flex direction="column" gap="2">
             {recordings.map((recording) => (
               <Card
@@ -155,7 +177,7 @@ export function NotetakerView() {
                       ? "var(--accent-3)"
                       : undefined,
                 }}
-                onClick={() => setSelectedRecording(recording.id)}
+                onClick={() => setSelectedRecordingId(recording.id)}
               >
                 <Flex justify="between" align="start" gap="3">
                   <Flex direction="column" gap="2" style={{ flex: 1 }}>
@@ -190,25 +212,45 @@ export function NotetakerView() {
                     </Flex>
                   </Flex>
 
-                  <Button
-                    size="1"
-                    variant="ghost"
-                    color="red"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm("Delete this recording?")) {
-                        deleteRecording(recording.id);
-                      }
-                    }}
-                  >
-                    <TrashIcon />
-                  </Button>
+                  <Flex gap="1">
+                    {recording.status === "error" && (
+                      <Button
+                        size="1"
+                        variant="ghost"
+                        color="blue"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRetry(recording.id);
+                        }}
+                      >
+                        <ArrowClockwiseIcon />
+                      </Button>
+                    )}
+                    <Button
+                      size="1"
+                      variant="ghost"
+                      color="red"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(recording.id);
+                      }}
+                    >
+                      <TrashIcon />
+                    </Button>
+                  </Flex>
                 </Flex>
               </Card>
             ))}
           </Flex>
-        </ScrollArea>
-      </Flex>
-    </Box>
+        </Flex>
+      </Box>
+
+      {/* Right panel: Live transcript view */}
+      {selectedRecordingId && selectedRecording && (
+        <Box style={{ flex: 1, overflowY: "auto" }}>
+          <LiveTranscriptView posthogRecordingId={selectedRecordingId} />
+        </Box>
+      )}
+    </Flex>
   );
 }

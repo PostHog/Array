@@ -202,6 +202,36 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("notetaker:get-recording", recordingId),
   notetakerDeleteRecording: (recordingId: string): Promise<void> =>
     ipcRenderer.invoke("notetaker:delete-recording", recordingId),
+  // Real-time transcript listener
+  onTranscriptSegment: (
+    listener: (segment: {
+      posthog_recording_id: string;
+      timestamp: number;
+      speaker: string | null;
+      text: string;
+      confidence: number | null;
+      is_final: boolean;
+    }) => void,
+  ): (() => void) => {
+    const channel = "recall:transcript-segment";
+    const wrapped = (_event: IpcRendererEvent, segment: unknown) =>
+      listener(segment as never);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
+  },
+  // Meeting ended listener (trigger sync)
+  onMeetingEnded: (
+    listener: (event: {
+      posthog_recording_id: string;
+      platform: string;
+    }) => void,
+  ): (() => void) => {
+    const channel = "recall:meeting-ended";
+    const wrapped = (_event: IpcRendererEvent, event: unknown) =>
+      listener(event as never);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
+  },
   // Shell API
   shellCreate: (sessionId: string, cwd?: string): Promise<void> =>
     ipcRenderer.invoke("shell:create", sessionId, cwd),
