@@ -1,10 +1,11 @@
+import { BadgeRenderer } from "@features/logs/tools/BadgeRenderer";
 import {
   ToolBadgeGroup,
   ToolCodeBlock,
   ToolSection,
 } from "@features/logs/tools/ToolUI";
 import type { BaseToolViewProps, TaskArgs } from "@features/logs/tools/types";
-import { Badge, Box, Code } from "@radix-ui/themes";
+import { Box, Code } from "@radix-ui/themes";
 
 type TaskToolViewProps = BaseToolViewProps<
   TaskArgs,
@@ -17,9 +18,11 @@ export function TaskToolView({ args, result }: TaskToolViewProps) {
   return (
     <Box>
       <ToolBadgeGroup>
-        <Badge size="1" color="blue">
-          {subagent_type}
-        </Badge>
+        <BadgeRenderer
+          badges={[
+            { condition: subagent_type, label: subagent_type, color: "blue" },
+          ]}
+        />
       </ToolBadgeGroup>
       <Box mt="1">
         <Code size="2" variant="ghost">

@@ -1,3 +1,4 @@
+import { BadgeRenderer } from "@features/logs/tools/BadgeRenderer";
 import { ToolBadgeGroup, ToolMetadata } from "@features/logs/tools/ToolUI";
 import type {
   BaseToolViewProps,
@@ -5,7 +6,7 @@ import type {
   WebSearchResult,
   WebSearchResultItem,
 } from "@features/logs/tools/types";
-import { Badge, Box, Code } from "@radix-ui/themes";
+import { Box, Code } from "@radix-ui/themes";
 
 type WebSearchToolViewProps = BaseToolViewProps<
   WebSearchArgs,
@@ -34,18 +35,28 @@ export function WebSearchToolView({ args, result }: WebSearchToolViewProps) {
     <Box>
       {(allowed_domains || blocked_domains) && (
         <ToolBadgeGroup>
-          {allowed_domains && (
-            <Badge size="1" color="green">
-              Only: {allowed_domains.slice(0, 2).join(", ")}
-              {allowed_domains.length > 2 && ` +${allowed_domains.length - 2}`}
-            </Badge>
-          )}
-          {blocked_domains && (
-            <Badge size="1" color="red">
-              Blocked: {blocked_domains.slice(0, 2).join(", ")}
-              {blocked_domains.length > 2 && ` +${blocked_domains.length - 2}`}
-            </Badge>
-          )}
+          <BadgeRenderer
+            badges={[
+              {
+                condition: allowed_domains,
+                label: `Only: ${allowed_domains?.slice(0, 2).join(", ")}${
+                  allowed_domains && allowed_domains.length > 2
+                    ? ` +${allowed_domains.length - 2}`
+                    : ""
+                }`,
+                color: "green",
+              },
+              {
+                condition: blocked_domains,
+                label: `Blocked: ${blocked_domains?.slice(0, 2).join(", ")}${
+                  blocked_domains && blocked_domains.length > 2
+                    ? ` +${blocked_domains.length - 2}`
+                    : ""
+                }`,
+                color: "red",
+              },
+            ]}
+          />
         </ToolBadgeGroup>
       )}
       {results.length > 0 && (

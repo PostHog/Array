@@ -1,3 +1,4 @@
+import { BadgeRenderer } from "@features/logs/tools/BadgeRenderer";
 import {
   ToolBadgeGroup,
   ToolCodeBlock,
@@ -9,7 +10,7 @@ import type {
   BaseToolViewProps,
   NotebookEditArgs,
 } from "@features/logs/tools/types";
-import { Badge, Box } from "@radix-ui/themes";
+import { Box } from "@radix-ui/themes";
 
 type NotebookEditToolViewProps = BaseToolViewProps<NotebookEditArgs, string>;
 
@@ -22,16 +23,12 @@ export function NotebookEditToolView({
   return (
     <Box>
       <ToolBadgeGroup>
-        {edit_mode && (
-          <Badge size="1" color="blue">
-            {edit_mode}
-          </Badge>
-        )}
-        {cell_type && (
-          <Badge size="1" color="gray">
-            {cell_type}
-          </Badge>
-        )}
+        <BadgeRenderer
+          badges={[
+            { condition: edit_mode, label: edit_mode, color: "blue" },
+            { condition: cell_type, label: cell_type },
+          ]}
+        />
         {cell_id && <ToolMetadata>Cell: {cell_id.slice(0, 8)}</ToolMetadata>}
       </ToolBadgeGroup>
       {edit_mode !== "delete" && new_source && (

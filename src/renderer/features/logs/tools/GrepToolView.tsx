@@ -1,3 +1,4 @@
+import { BadgeRenderer } from "@features/logs/tools/BadgeRenderer";
 import {
   ToolBadgeGroup,
   ToolCodeBlock,
@@ -8,7 +9,7 @@ import type {
   GrepArgs,
   GrepResult,
 } from "@features/logs/tools/types";
-import { Badge, Box, Code } from "@radix-ui/themes";
+import { Box, Code } from "@radix-ui/themes";
 import { parseStringListResult, truncateList } from "@utils/tool-results";
 
 type GrepToolViewProps = BaseToolViewProps<GrepArgs, string | GrepResult>;
@@ -37,51 +38,19 @@ export function GrepToolView({ args, result }: GrepToolViewProps) {
   return (
     <Box>
       <ToolBadgeGroup className="flex-wrap">
-        {output_mode && (
-          <Badge size="1" color="blue">
-            {output_mode}
-          </Badge>
-        )}
-        {caseInsensitive && (
-          <Badge size="1" color="gray">
-            case-insensitive
-          </Badge>
-        )}
-        {showLineNumbers && (
-          <Badge size="1" color="gray">
-            line numbers
-          </Badge>
-        )}
-        {multiline && (
-          <Badge size="1" color="purple">
-            multiline
-          </Badge>
-        )}
-        {contextAfter && (
-          <Badge size="1" color="gray">
-            +{contextAfter} after
-          </Badge>
-        )}
-        {contextBefore && (
-          <Badge size="1" color="gray">
-            -{contextBefore} before
-          </Badge>
-        )}
-        {contextAround && (
-          <Badge size="1" color="gray">
-            ±{contextAround}
-          </Badge>
-        )}
-        {glob && (
-          <Badge size="1" color="green">
-            {glob}
-          </Badge>
-        )}
-        {type && (
-          <Badge size="1" color="green">
-            {type}
-          </Badge>
-        )}
+        <BadgeRenderer
+          badges={[
+            { condition: output_mode, label: output_mode, color: "blue" },
+            { condition: caseInsensitive, label: "case-insensitive" },
+            { condition: showLineNumbers, label: "line numbers" },
+            { condition: multiline, label: "multiline", color: "purple" },
+            { condition: contextAfter, label: `+${contextAfter} after` },
+            { condition: contextBefore, label: `-${contextBefore} before` },
+            { condition: contextAround, label: `±${contextAround}` },
+            { condition: glob, label: glob, color: "green" },
+            { condition: type, label: type, color: "green" },
+          ]}
+        />
       </ToolBadgeGroup>
       {path && (
         <Box mt="1">

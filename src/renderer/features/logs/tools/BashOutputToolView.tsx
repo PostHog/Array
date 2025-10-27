@@ -1,3 +1,4 @@
+import { BadgeRenderer } from "@features/logs/tools/BadgeRenderer";
 import {
   ToolBadgeGroup,
   ToolCodeBlock,
@@ -8,7 +9,7 @@ import type {
   BashOutputArgs,
   ShellStatus,
 } from "@features/logs/tools/types";
-import { Badge, Box } from "@radix-ui/themes";
+import { Box } from "@radix-ui/themes";
 
 type BashOutputToolViewProps = BaseToolViewProps<
   BashOutputArgs,
@@ -36,11 +37,15 @@ export function BashOutputToolView({ args, result }: BashOutputToolViewProps) {
   return (
     <Box>
       <ToolBadgeGroup>
-        {status && (
-          <Badge size="1" color={status === "running" ? "blue" : "gray"}>
-            {status}
-          </Badge>
-        )}
+        <BadgeRenderer
+          badges={[
+            {
+              condition: status,
+              label: status,
+              color: status === "running" ? "blue" : "gray",
+            },
+          ]}
+        />
       </ToolBadgeGroup>
       {filter && (
         <Box mt="1">

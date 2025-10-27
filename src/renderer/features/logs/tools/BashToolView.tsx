@@ -1,3 +1,4 @@
+import { BadgeRenderer } from "@features/logs/tools/BadgeRenderer";
 import {
   ToolBadgeGroup,
   ToolCodeBlock,
@@ -9,7 +10,7 @@ import type {
   BashArgs,
   ShellResult,
 } from "@features/logs/tools/types";
-import { Badge, Box } from "@radix-ui/themes";
+import { Box } from "@radix-ui/themes";
 
 type BashToolViewProps = BaseToolViewProps<BashArgs, string | ShellResult>;
 
@@ -34,16 +35,16 @@ export function BashToolView({ args, result }: BashToolViewProps) {
   return (
     <Box>
       <ToolBadgeGroup>
-        {run_in_background && (
-          <Badge size="1" color="blue">
-            background
-          </Badge>
-        )}
-        {timeout && (
-          <Badge size="1" color="gray">
-            {timeout}ms timeout
-          </Badge>
-        )}
+        <BadgeRenderer
+          badges={[
+            {
+              condition: run_in_background,
+              label: "background",
+              color: "blue",
+            },
+            { condition: timeout, label: `${timeout}ms timeout` },
+          ]}
+        />
       </ToolBadgeGroup>
       <Box mt={run_in_background || timeout ? "2" : "0"}>
         <ToolCommandBlock command={command} />

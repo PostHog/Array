@@ -1,10 +1,11 @@
+import { BadgeRenderer } from "@features/logs/tools/BadgeRenderer";
 import {
   ToolCodeBlock,
   ToolResultMessage,
   ToolSection,
 } from "@features/logs/tools/ToolUI";
 import type { BaseToolViewProps, EditArgs } from "@features/logs/tools/types";
-import { Badge, Box } from "@radix-ui/themes";
+import { Box } from "@radix-ui/themes";
 
 type EditToolViewProps = BaseToolViewProps<EditArgs, string>;
 
@@ -15,9 +16,11 @@ export function EditToolView({ args, result }: EditToolViewProps) {
     <Box>
       {replace_all && (
         <Box mb="2">
-          <Badge size="1" color="blue">
-            replace all
-          </Badge>
+          <BadgeRenderer
+            badges={[
+              { condition: replace_all, label: "replace all", color: "blue" },
+            ]}
+          />
         </Box>
       )}
       <Box className="space-y-2">
