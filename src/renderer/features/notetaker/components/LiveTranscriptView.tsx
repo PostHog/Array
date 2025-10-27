@@ -79,7 +79,7 @@ export function LiveTranscriptView({
     return cleanup;
   }, [posthogRecordingId, addSegment]);
 
-  // Listen for meeting-ended event to force upload remaining segments
+  // Listen for meeting-ended event to force upload remaining segments and extract tasks
   useEffect(() => {
     console.log(
       `[LiveTranscript] Setting up meeting-ended listener for ${posthogRecordingId}`,
@@ -87,13 +87,33 @@ export function LiveTranscriptView({
 
     const cleanup = window.electronAPI.onMeetingEnded((event) => {
       if (event.posthog_recording_id === posthogRecordingId) {
-        console.log(`[LiveTranscript] Meeting ended, force uploading segments`);
+        console.log(
+          `[LiveTranscript] Meeting ended, force uploading segments and extracting tasks`,
+        );
         forceUpload();
+
+        // Automatically extract tasks when meeting ends (if OpenAI key is configured)
+        if (openaiApiKey && segments.length > 0) {
+          console.log(
+            `[LiveTranscript] Auto-extracting tasks for ${segments.length} segments`,
+          );
+          const fullText = segments.map((s) => s.text).join(" ");
+          extractTasksMutation.mutate({
+            recordingId: posthogRecordingId,
+            transcriptText: fullText,
+          });
+        }
       }
     });
 
     return cleanup;
-  }, [posthogRecordingId, forceUpload]);
+  }, [
+    posthogRecordingId,
+    forceUpload,
+    openaiApiKey,
+    segments,
+    extractTasksMutation,
+  ]);
 
   // Detect manual scroll to disable auto-scroll
   const handleScroll = () => {
