@@ -15,6 +15,13 @@ export function LiveTranscriptView({
   const { segments, addSegment, forceUpload, pendingCount } =
     useLiveTranscript(posthogRecordingId);
 
+  // Auto-scroll to bottom when new segments arrive
+  useEffect(() => {
+    if (autoScroll && scrollRef.current && segments.length > 0) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [segments.length, autoScroll]);
+
   // Listen for new transcript segments from IPC
   useEffect(() => {
     console.log(
@@ -63,13 +70,6 @@ export function LiveTranscriptView({
 
     return cleanup;
   }, [posthogRecordingId, forceUpload]);
-
-  // Auto-scroll to bottom when new segments arrive
-  useEffect(() => {
-    if (autoScroll && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [autoScroll]);
 
   // Detect manual scroll to disable auto-scroll
   const handleScroll = () => {
