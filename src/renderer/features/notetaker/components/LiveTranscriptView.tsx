@@ -120,29 +120,53 @@ export function LiveTranscriptView({
         ref={scrollRef as never}
         onScroll={handleScroll}
       >
-        <Flex direction="column" gap="2">
-          {segments.map((segment, idx) => (
-            <Card
-              key={`${segment.timestamp}-${idx}`}
-              style={{
-                opacity: 1,
-              }}
-            >
-              <Flex direction="column" gap="1">
-                <Flex align="center" gap="2">
-                  {segment.speaker && (
-                    <Text size="1" weight="bold" color="gray">
+        <Flex direction="column" gap="1">
+          {segments.map((segment, idx) => {
+            const prevSegment = idx > 0 ? segments[idx - 1] : null;
+            const isSameSpeaker = prevSegment?.speaker === segment.speaker;
+
+            return (
+              <Flex
+                key={`${segment.timestamp}-${idx}`}
+                gap="2"
+                py="1"
+                px="2"
+                style={{
+                  backgroundColor:
+                    idx % 2 === 0 ? "var(--gray-2)" : "transparent",
+                }}
+              >
+                {/* Speaker name (only show if different from previous) */}
+                <Box style={{ minWidth: "100px", flexShrink: 0 }}>
+                  {!isSameSpeaker && segment.speaker && (
+                    <Text
+                      size="1"
+                      weight="bold"
+                      style={{ color: getSpeakerColor(segment.speaker) }}
+                    >
                       {segment.speaker}
                     </Text>
                   )}
-                  <Text size="1" color="gray">
-                    {formatTimestamp(segment.timestamp)}
-                  </Text>
+                </Box>
+
+                {/* Timestamp + Text */}
+                <Flex direction="column" gap="1" style={{ flex: 1 }}>
+                  <Flex align="baseline" gap="2">
+                    <Text
+                      size="1"
+                      color="gray"
+                      style={{ fontVariantNumeric: "tabular-nums" }}
+                    >
+                      {formatTimestamp(segment.timestamp)}
+                    </Text>
+                    <Text size="2" style={{ lineHeight: "1.5" }}>
+                      {segment.text}
+                    </Text>
+                  </Flex>
                 </Flex>
-                <Text size="2">{segment.text}</Text>
               </Flex>
-            </Card>
-          ))}
+            );
+          })}
         </Flex>
       </ScrollArea>
 
@@ -167,4 +191,23 @@ function formatTimestamp(milliseconds: number): string {
     return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
   }
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+// Consistent color assignment for speakers
+function getSpeakerColor(speaker: string): string {
+  const colors = [
+    "var(--blue-11)",
+    "var(--green-11)",
+    "var(--orange-11)",
+    "var(--purple-11)",
+    "var(--pink-11)",
+    "var(--cyan-11)",
+  ];
+
+  // Simple hash function to consistently map speaker to color
+  let hash = 0;
+  for (let i = 0; i < speaker.length; i++) {
+    hash = speaker.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
 }
