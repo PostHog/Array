@@ -1,3 +1,5 @@
+import { SIDEBAR_BORDER } from "@components/ui/sidebar/Context";
+import { SidebarTrigger } from "@components/ui/sidebar/SidebarTrigger";
 import { Cross2Icon, PlusIcon } from "@radix-ui/react-icons";
 import {
   Box,
@@ -7,13 +9,11 @@ import {
   Kbd,
   Text,
 } from "@radix-ui/themes";
+import { useSidebarStore } from "@stores/sidebarStore";
+import { useTabStore } from "@stores/tabStore";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useSidebarStore } from "../stores/sidebarStore";
-import { useTabStore } from "../stores/tabStore";
-import { SIDEBAR_BORDER } from "./ui/sidebar/Context";
-import { SidebarTrigger } from "./ui/sidebar/SidebarTrigger";
 
 interface TabBarProps {
   onOpenCommandMenu?: () => void;
@@ -56,7 +56,6 @@ export function TabBar({ onOpenCommandMenu }: TabBarProps) {
   }, [tabs, activeTabId, setActiveTab]);
 
   const handleCloseTab = useCallback(() => {
-    console.log("Closing tab");
     if (tabs.length > 1) {
       closeTab(activeTabId);
     }
@@ -202,10 +201,6 @@ export function TabBar({ onOpenCommandMenu }: TabBarProps) {
       container.removeEventListener("scroll", checkScrollGradient);
       window.removeEventListener("resize", checkScrollGradient);
     };
-  }, [checkScrollGradient]);
-
-  useEffect(() => {
-    checkScrollGradient();
   }, [checkScrollGradient]);
 
   useEffect(() => {

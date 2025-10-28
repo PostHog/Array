@@ -1,3 +1,5 @@
+import { useAuthStore } from "@features/auth/stores/authStore";
+import type { RecordingMode } from "@features/recordings/stores/recordingStore";
 import { Key, MicrophoneIcon, X } from "@phosphor-icons/react";
 import {
   Button,
@@ -10,8 +12,6 @@ import {
 } from "@radix-ui/themes";
 import { useCallback, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useAuthStore } from "../../../stores/authStore";
-import type { RecordingMode } from "../stores/recordingStore";
 
 interface SettingsPanelProps {
   open: boolean;

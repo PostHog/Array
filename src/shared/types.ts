@@ -3,7 +3,7 @@ export interface RepositoryConfig {
   repository: string;
 }
 
-export interface UserBasic {
+interface UserBasic {
   id: number;
   uuid: string;
   distinct_id?: string | null;
@@ -54,26 +54,6 @@ export interface TaskRun {
   completed_at: string | null;
 }
 
-export interface AgentDefinition {
-  id: string;
-  name: string;
-  description?: string;
-}
-
-export interface AuthConfig {
-  apiKey: string;
-  apiHost: string;
-}
-
-export interface User {
-  id: number;
-  email: string;
-  team: {
-    id: number;
-    name: string;
-  };
-}
-
 export interface LogEntry {
   id: string;
   timestamp: string;
@@ -90,7 +70,7 @@ export interface TabState {
 }
 
 // URL mention types for RichTextEditor
-export type MentionType =
+type MentionType =
   | "file"
   | "error"
   | "experiment"
@@ -108,14 +88,6 @@ export interface MentionItem {
   label?: string;
   id?: string;
   urlId?: string;
-}
-
-export interface PostHogUrlInfo {
-  type: MentionType;
-  id?: string;
-  projectId?: string;
-  url: string;
-  label?: string;
 }
 
 // Plan Mode types
@@ -164,9 +136,4 @@ export interface Recording {
     }>;
     error?: string;
   };
-}
-
-export interface ExtractedTask {
-  title: string;
-  description: string;
 }

@@ -1,7 +1,7 @@
+import { SIDEBAR_BORDER } from "@components/ui/sidebar/Context";
 import { Box, Flex } from "@radix-ui/themes";
+import { useSidebarStore } from "@stores/sidebarStore";
 import React from "react";
-import { useSidebarStore } from "../../../stores/sidebarStore";
-import { SIDEBAR_BORDER } from "./Context";
 
 const MIN_WIDTH = 100;
 

@@ -1,3 +1,4 @@
+import { StatusBarMenu } from "@components/StatusBarMenu";
 import { GearIcon } from "@radix-ui/react-icons";
 import {
   Badge,
@@ -8,9 +9,8 @@ import {
   Kbd,
   Tooltip,
 } from "@radix-ui/themes";
+import { useStatusBarStore } from "@stores/statusBarStore";
 import { useEffect, useState } from "react";
-import { useStatusBarStore } from "../stores/statusBarStore";
-import { StatusBarMenu } from "./StatusBarMenu";
 
 interface StatusBarProps {
   showKeyHints?: boolean;

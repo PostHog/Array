@@ -1,19 +1,19 @@
+import { MainSidebar } from "@components/MainSidebar";
+import { StatusBar } from "@components/StatusBar";
+import { TabBar } from "@components/TabBar";
+import { UpdatePrompt } from "@components/UpdatePrompt";
+import { CommandMenu } from "@features/command/components/CommandMenu";
+import { RecordingsView } from "@features/recordings/components/RecordingsView";
+import { SettingsView } from "@features/settings/components/SettingsView";
+import { TaskDetail } from "@features/tasks/components/TaskDetail";
+import { TaskList } from "@features/tasks/components/TaskList";
+import { useIntegrations } from "@hooks/useIntegrations";
 import { Box, Flex } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
+import { useLayoutStore } from "@stores/layoutStore";
+import { useTabStore } from "@stores/tabStore";
 import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { RecordingsView } from "@/renderer/features/recordings";
-import { useIntegrations } from "../hooks/useIntegrations";
-import { useLayoutStore } from "../stores/layoutStore";
-import { useTabStore } from "../stores/tabStore";
-import { CommandMenu } from "./command";
-import { MainSidebar } from "./MainSidebar";
-import { SettingsView } from "./SettingsView";
-import { StatusBar } from "./StatusBar";
-import { TabBar } from "./TabBar";
-import { TaskDetail } from "./tasks/TaskDetail";
-import { TaskList } from "./tasks/TaskList";
-import { UpdatePrompt } from "./UpdatePrompt";
 
 export function MainLayout() {
   const { activeTabId, tabs, createTab, setActiveTab, closeTab } =

@@ -1,37 +1,30 @@
+import { SidebarTreeItem } from "@components/ui/sidebar/SidebarTreeItem";
+import { useSidebarMenuData } from "@components/ui/sidebar/UseSidebarMenuData";
+import { buildTreeLines, getAllNodeIds } from "@components/ui/sidebar/Utils";
+import { useAuthStore } from "@features/auth/stores/authStore";
+import { useAudioRecorder } from "@features/recordings/hooks/useAudioRecorder";
+import { useRecordings } from "@features/recordings/hooks/useRecordings";
 import { ArrowsInSimpleIcon, ArrowsOutSimpleIcon } from "@phosphor-icons/react";
 import { Box, Flex, IconButton, Tooltip } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
+import { useLayoutStore } from "@stores/layoutStore";
+import { useSidebarStore } from "@stores/sidebarStore";
+import { useTabStore } from "@stores/tabStore";
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
-import { useAudioRecorder } from "../../../features/recordings/hooks/useAudioRecorder";
-import { useRecordings } from "../../../features/recordings/hooks/useRecordings";
-import { useAuthStore } from "../../../stores/authStore";
-import { useLayoutStore } from "../../../stores/layoutStore";
-import { useSidebarStore } from "../../../stores/sidebarStore";
-import { useTabStore } from "../../../stores/tabStore";
-import { SidebarTreeItem } from "./SidebarTreeItem";
-import { useSidebarMenuData } from "./UseSidebarMenuData";
-import { buildTreeLines, getAllNodeIds } from "./Utils";
+import { useEffect, useState } from "react";
 
 export const SidebarContent: React.FC = () => {
   const { client } = useAuthStore();
   const { tabs, createTab, setActiveTab, activeTabId } = useTabStore();
-  const {
-    expandedNodes: expandedNodesArray,
-    toggleNode,
-    expandAll,
-    collapseAll,
-  } = useSidebarStore();
+  const expandedNodesArray = useSidebarStore((state) => state.expandedNodes);
+  const { toggleNode, expandAll, collapseAll } = useSidebarStore();
   const { setCliMode } = useLayoutStore();
   const { saveRecording } = useRecordings();
   const { startRecording, stopRecording } = useAudioRecorder(saveRecording);
   const [userName, setUserName] = useState<string>("Loading...");
   const [hoveredLineIndex, setHoveredLineIndex] = useState<number | null>(null);
 
-  const expandedNodes = useMemo(
-    () => new Set(expandedNodesArray),
-    [expandedNodesArray],
-  );
+  const expandedNodes = new Set(expandedNodesArray);
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
 
   useEffect(() => {
@@ -107,10 +100,7 @@ export const SidebarContent: React.FC = () => {
   });
 
   const treeLines = buildTreeLines([menuData], "", "", expandedNodes, 0);
-  const allNodeIds = useMemo(
-    () => getAllNodeIds([menuData], "", 0),
-    [menuData],
-  );
+  const allNodeIds = getAllNodeIds([menuData], "", 0);
   const allExpanded =
     allNodeIds.length > 0 && allNodeIds.every((id) => expandedNodes.has(id));
 

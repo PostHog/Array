@@ -1,6 +1,6 @@
 import { Theme } from "@radix-ui/themes";
+import { useThemeStore } from "@stores/themeStore";
 import type React from "react";
-import { useThemeStore } from "../stores/themeStore";
 
 export function ThemeWrapper({ children }: { children: React.ReactNode }) {
   const isDarkMode = useThemeStore((state) => state.isDarkMode);

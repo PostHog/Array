@@ -1,3 +1,11 @@
+import { RecordingControls } from "@features/recordings/components/RecordingControls";
+import { RecordingDetail } from "@features/recordings/components/RecordingDetail";
+import { RecordingsList } from "@features/recordings/components/RecordingsList";
+import { SettingsPanel } from "@features/recordings/components/SettingsPanel";
+import { useAudioRecorder } from "@features/recordings/hooks/useAudioRecorder";
+import { useRecordings } from "@features/recordings/hooks/useRecordings";
+import { useRecordingStore } from "@features/recordings/stores/recordingStore";
+import { useStatusBar } from "@hooks/useStatusBar";
 import { Gear, X } from "@phosphor-icons/react";
 import {
   Box,
@@ -8,14 +16,6 @@ import {
   Text,
 } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
-import { useStatusBarStore } from "../../../stores/statusBarStore";
-import { useAudioRecorder } from "../hooks/useAudioRecorder";
-import { useRecordings } from "../hooks/useRecordings";
-import { useRecordingStore } from "../stores/recordingStore";
-import { RecordingControls } from "./RecordingControls";
-import { RecordingDetail } from "./RecordingDetail";
-import { RecordingsList } from "./RecordingsList";
-import { SettingsPanel } from "./SettingsPanel";
 
 export function RecordingsView() {
   const {
@@ -28,7 +28,6 @@ export function RecordingsView() {
     transcriptionError,
     clearTranscriptionError,
   } = useRecordings();
-  const { setStatusBar, reset } = useStatusBarStore();
   const { selectedRecordingId, cleanup } = useRecordingStore();
   const {
     isRecording,
@@ -46,20 +45,17 @@ export function RecordingsView() {
 
   useEffect(() => cleanup, [cleanup]);
 
-  useEffect(() => {
-    setStatusBar({
-      statusText: `${recordings.length} recording${recordings.length === 1 ? "" : "s"}`,
-      keyHints: [
-        { keys: ["↑/↓"], description: "Navigate" },
-        { keys: ["R"], description: "Record" },
-        { keys: ["S"], description: "Stop" },
-        { keys: ["ESC"], description: "Close" },
-        { keys: ["Del"], description: "Delete" },
-      ],
-      mode: "replace",
-    });
-    return reset;
-  }, [setStatusBar, reset, recordings.length]);
+  useStatusBar(
+    `${recordings.length} recording${recordings.length === 1 ? "" : "s"}`,
+    [
+      { keys: ["↑/↓"], description: "Navigate" },
+      { keys: ["R"], description: "Record" },
+      { keys: ["S"], description: "Stop" },
+      { keys: ["ESC"], description: "Close" },
+      { keys: ["Del"], description: "Delete" },
+    ],
+    "replace",
+  );
 
   const selectedRecording = recordings.find(
     (r) => r.id === selectedRecordingId,

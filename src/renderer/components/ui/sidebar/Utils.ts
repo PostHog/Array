@@ -1,4 +1,4 @@
-import type { TreeLine, TreeNode } from "./Types";
+import type { TreeLine, TreeNode } from "@components/ui/sidebar/Types";
 
 export function buildTreeLines(
   nodes: TreeNode[],

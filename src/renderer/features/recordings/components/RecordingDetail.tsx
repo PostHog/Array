@@ -1,3 +1,6 @@
+import { useAuthStore } from "@features/auth/stores/authStore";
+import { AudioPlayer } from "@features/recordings/components/AudioPlayer";
+import { useRecordingStore } from "@features/recordings/stores/recordingStore";
 import { Trash, X } from "@phosphor-icons/react";
 import {
   Box,
@@ -14,9 +17,6 @@ import {
 import type { Recording } from "@shared/types";
 import { format } from "date-fns";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useAuthStore } from "../../../stores/authStore";
-import { useRecordingStore } from "../stores/recordingStore";
-import { AudioPlayer } from "./AudioPlayer";
 
 interface RecordingDetailProps {
   recording: Recording;

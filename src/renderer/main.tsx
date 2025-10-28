@@ -1,10 +1,10 @@
 import "@radix-ui/themes/styles.css";
+import { ThemeWrapper } from "@components/ThemeWrapper";
+import App from "@renderer/App";
+import { queryClient } from "@renderer/lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
-import { ThemeWrapper } from "./components/ThemeWrapper";
-import { queryClient } from "./lib/queryClient";
 import "./styles/globals.css";
 
 const rootElement = document.getElementById("root");

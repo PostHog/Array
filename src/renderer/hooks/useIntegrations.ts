@@ -1,14 +1,18 @@
+import {
+  useIntegrationSelectors,
+  useIntegrationStore,
+} from "@features/integrations/stores/integrationStore";
 import type { RepositoryConfig } from "@shared/types";
-import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "../stores/authStore";
+import { useEffect } from "react";
+import { useAuthenticatedQuery } from "./useAuthenticatedQuery";
 
-export interface Integration {
+interface Integration {
   id: number;
   kind: string;
   [key: string]: unknown;
 }
 
-export const integrationKeys = {
+const integrationKeys = {
   all: ["integrations"] as const,
   list: () => [...integrationKeys.all, "list"] as const,
   repositories: (integrationId?: number) =>
@@ -16,30 +20,55 @@ export const integrationKeys = {
 };
 
 export function useIntegrations() {
-  const client = useAuthStore((state) => state.client);
+  const setIntegrations = useIntegrationStore((state) => state.setIntegrations);
 
-  return useQuery({
-    queryKey: integrationKeys.list(),
-    queryFn: async () => {
-      if (!client) throw new Error("Not authenticated");
-      return (await client.getIntegrations()) as Integration[];
-    },
-    enabled: !!client,
-  });
+  const query = useAuthenticatedQuery(
+    integrationKeys.list(),
+    (client) => client.getIntegrations() as Promise<Integration[]>,
+  );
+
+  useEffect(() => {
+    if (query.data) {
+      setIntegrations(query.data);
+    }
+  }, [query.data, setIntegrations]);
+
+  return query;
 }
 
-export function useRepositories(integrationId?: number) {
-  const client = useAuthStore((state) => state.client);
+function useRepositories(integrationId?: number) {
+  const setRepositories = useIntegrationStore((state) => state.setRepositories);
 
-  return useQuery({
-    queryKey: integrationKeys.repositories(integrationId),
-    queryFn: async () => {
-      if (!client) throw new Error("Not authenticated");
+  const query = useAuthenticatedQuery(
+    integrationKeys.repositories(integrationId),
+    async (client) => {
       if (!integrationId) return [];
       return (await client.getGithubRepositories(
         integrationId,
       )) as RepositoryConfig[];
     },
-    enabled: !!client && !!integrationId,
-  });
+  );
+
+  useEffect(() => {
+    if (query.data) {
+      setRepositories(query.data);
+    }
+  }, [query.data, setRepositories]);
+
+  return query;
+}
+
+export function useRepositoryIntegration() {
+  useIntegrations();
+  const { githubIntegration } = useIntegrationSelectors();
+  useRepositories(githubIntegration?.id);
+
+  const repositories = useIntegrationStore((state) => state.repositories);
+  const { isRepoInIntegration } = useIntegrationSelectors();
+
+  return {
+    githubIntegration,
+    repositories,
+    isRepoInIntegration,
+  };
 }

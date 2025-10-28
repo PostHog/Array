@@ -2,6 +2,7 @@ import { copyFileSync, mkdirSync } from "node:fs";
 import path, { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
+import tsconfigPaths from "vite-tsconfig-paths";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -58,7 +59,7 @@ function copyAgentTemplates(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [fixFilenameCircularRef(), copyAgentTemplates()],
+  plugins: [tsconfigPaths(), fixFilenameCircularRef(), copyAgentTemplates()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
