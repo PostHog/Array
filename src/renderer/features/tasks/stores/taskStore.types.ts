@@ -109,6 +109,11 @@ export interface TaskState {
     value: string,
     operator?: FilterOperator,
   ) => void;
+  updateFilter: (
+    category: FilterCategory,
+    oldValue: string,
+    newValue: string,
+  ) => void;
   toggleFilterOperator: (category: FilterCategory, value: string) => void;
   setFilterMatchMode: (mode: FilterMatchMode) => void;
   setFilterSearchQuery: (query: string) => void;

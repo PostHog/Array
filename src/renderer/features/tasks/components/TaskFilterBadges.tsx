@@ -13,8 +13,11 @@ interface TaskFilterBadgesProps {
   activeFilters: ActiveFilters;
   filterCategories: FilterCategoryConfig[];
   onRemoveFilter: (category: FilterCategory, value: string) => void;
-  isFilterActive: (category: FilterCategory, value: string) => boolean;
-  onToggleFilter: (category: FilterCategory, value: string) => void;
+  onUpdateFilter: (
+    category: FilterCategory,
+    oldValue: string,
+    newValue: string,
+  ) => void;
   children?: ReactNode;
 }
 
@@ -22,8 +25,7 @@ export function TaskFilterBadges({
   activeFilters,
   filterCategories,
   onRemoveFilter,
-  isFilterActive,
-  onToggleFilter,
+  onUpdateFilter,
   children,
 }: TaskFilterBadgesProps) {
   const setEditingBadgeKey = useTaskStore(
@@ -59,19 +61,12 @@ export function TaskFilterBadges({
     }
   }
 
-  const handleToggleFilter = (category: FilterCategory, value: string) => {
-    const isCurrentlyActive = isFilterActive(category, value);
-
-    if (isCurrentlyActive) {
-      onToggleFilter(category, value);
-    } else {
-      const currentValues = activeFilters[category] || [];
-      for (const currentValue of currentValues) {
-        onToggleFilter(category, currentValue.value);
-      }
-      onToggleFilter(category, value);
-    }
-
+  const handleToggleFilterFromBadge = (
+    category: FilterCategory,
+    oldValue: string,
+    newValue: string,
+  ) => {
+    onUpdateFilter(category, oldValue, newValue);
     setEditingBadgeKey(null);
   };
 
@@ -94,7 +89,9 @@ export function TaskFilterBadges({
             badgeKey={badgeKey}
             categoryConfig={categoryConfig}
             onRemoveFilter={onRemoveFilter}
-            onToggleFilter={handleToggleFilter}
+            onToggleFilter={(category, newValue) =>
+              handleToggleFilterFromBadge(category, badge.value, newValue)
+            }
           />
         );
       })}

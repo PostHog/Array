@@ -157,6 +157,29 @@ export const useTaskStore = create<TaskState>()(
           },
         })),
 
+      updateFilter: (category, oldValue, newValue) =>
+        set((state) => {
+          const currentFilters = state.activeFilters[category] || [];
+          const filterIndex = currentFilters.findIndex(
+            (f) => f.value === oldValue,
+          );
+
+          if (filterIndex === -1) return state;
+
+          const updatedFilters = [...currentFilters];
+          updatedFilters[filterIndex] = {
+            ...updatedFilters[filterIndex],
+            value: newValue,
+          };
+
+          return {
+            activeFilters: {
+              ...state.activeFilters,
+              [category]: updatedFilters,
+            },
+          };
+        }),
+
       toggleFilterOperator: (category, value) =>
         set((state) => {
           const currentFilters = state.activeFilters[category] || [];

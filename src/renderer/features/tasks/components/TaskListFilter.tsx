@@ -19,6 +19,7 @@ export function TaskListFilter() {
   const activeFilters = useTaskStore((state) => state.activeFilters);
   const toggleFilter = useTaskStore((state) => state.toggleFilter);
   const addFilter = useTaskStore((state) => state.addFilter);
+  const updateFilter = useTaskStore((state) => state.updateFilter);
   const searchQuery = useTaskStore((state) => state.filterSearchQuery);
   const setSearchQuery = useTaskStore((state) => state.setFilterSearchQuery);
   const isOpen = useTaskStore((state) => state.isFilterDropdownOpen);
@@ -69,10 +70,6 @@ export function TaskListFilter() {
     0,
   );
 
-  const isFilterActive = (category: FilterCategory, value: string): boolean => {
-    return activeFilters[category]?.some((f) => f.value === value) ?? false;
-  };
-
   const handleToggleFilter = (category: FilterCategory, value: string) => {
     addFilter(category, value);
     setIsOpen(false);
@@ -115,8 +112,7 @@ export function TaskListFilter() {
       activeFilters={activeFilters}
       filterCategories={filterCategories}
       onRemoveFilter={toggleFilter}
-      isFilterActive={isFilterActive}
-      onToggleFilter={handleToggleFilter}
+      onUpdateFilter={updateFilter}
     >
       <DropdownMenu.Root open={isOpen} onOpenChange={handleOpenChange}>
         <DropdownMenu.Trigger>
