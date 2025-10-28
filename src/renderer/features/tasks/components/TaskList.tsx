@@ -35,6 +35,8 @@ export function TaskList({ onSelectTask }: TaskListProps) {
   const orderDirection = useTaskStore((state) => state.orderDirection);
   const groupBy = useTaskStore((state) => state.groupBy);
   const expandedGroups = useTaskStore((state) => state.expandedGroups);
+  const activeFilters = useTaskStore((state) => state.activeFilters);
+  const filterMatchMode = useTaskStore((state) => state.filterMatchMode);
 
   // Store actions
   const moveTask = useTaskStore((state) => state.moveTask);
@@ -50,7 +52,14 @@ export function TaskList({ onSelectTask }: TaskListProps) {
   const setCliPanelWidth = useLayoutStore((state) => state.setCliPanelWidth);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const filteredTasks = filterTasks(tasks, orderBy, orderDirection, filter);
+  const filteredTasks = filterTasks(
+    tasks,
+    orderBy,
+    orderDirection,
+    filter,
+    activeFilters,
+    filterMatchMode,
+  );
   const groupedTasks = useTaskGrouping(filteredTasks, groupBy, users);
   const { isResizing, handleMouseDown } = useCliPanelResize(setCliPanelWidth);
 
