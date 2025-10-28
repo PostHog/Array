@@ -1,11 +1,77 @@
 import { execSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
+import type { SignOptions } from "@electron/osx-sign";
 import { MakerDMG } from "@electron-forge/maker-dmg";
 import { MakerZIP } from "@electron-forge/maker-zip";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { PublisherGithub } from "@electron-forge/publisher-github";
 import type { ForgeConfig } from "@electron-forge/shared-types";
+
+const appleCodesignIdentity = process.env.APPLE_CODESIGN_IDENTITY;
+const appleTeamId = process.env.APPLE_TEAM_ID;
+const appleId = process.env.APPLE_ID;
+const appleIdPassword =
+  process.env.APPLE_APP_SPECIFIC_PASSWORD ?? process.env.APPLE_ID_PASSWORD;
+const appleApiKey = process.env.APPLE_API_KEY;
+const appleApiKeyId = process.env.APPLE_API_KEY_ID;
+const appleApiIssuer = process.env.APPLE_API_ISSUER;
+const appleNotarizeKeychainProfile =
+  process.env.APPLE_NOTARIZE_KEYCHAIN_PROFILE;
+const appleNotarizeKeychain = process.env.APPLE_NOTARIZE_KEYCHAIN;
+const entitlementsPath = path.resolve("build", "entitlements.mac.plist");
+const shouldSignMacApp = Boolean(appleCodesignIdentity);
+
+type NotaryToolCredentials =
+  | {
+      appleId: string;
+      appleIdPassword: string;
+      teamId: string;
+    }
+  | {
+      appleApiKey: string;
+      appleApiKeyId: string;
+      appleApiIssuer: string;
+    }
+  | {
+      keychainProfile: string;
+      keychain?: string;
+    };
+
+let notaryToolCredentials: NotaryToolCredentials | undefined;
+
+if (appleId && appleIdPassword && appleTeamId) {
+  notaryToolCredentials = {
+    appleId,
+    appleIdPassword,
+    teamId: appleTeamId,
+  };
+} else if (appleApiKey && appleApiKeyId && appleApiIssuer) {
+  notaryToolCredentials = {
+    appleApiKey,
+    appleApiKeyId,
+    appleApiIssuer,
+  };
+} else if (appleNotarizeKeychainProfile) {
+  notaryToolCredentials = {
+    keychainProfile: appleNotarizeKeychainProfile,
+    ...(appleNotarizeKeychain ? { keychain: appleNotarizeKeychain } : {}),
+  };
+}
+
+const notarizeConfig =
+  shouldSignMacApp && notaryToolCredentials ? notaryToolCredentials : undefined;
+
+// Apply custom entitlements across the app bundle during signing.
+const osxSignConfig: SignOptions | undefined = shouldSignMacApp
+  ? {
+      identity: appleCodesignIdentity!,
+      optionsForFile: () => ({
+        entitlements: entitlementsPath,
+        hardenedRuntime: true,
+      }),
+    }
+  : undefined;
 
 function copyNativeDependency(
   dependency: string,
@@ -50,12 +116,30 @@ const config: ForgeConfig = {
           CFBundleIconName: "Icon",
         }
       : {},
+    ...(osxSignConfig
+      ? {
+          osxSign: osxSignConfig,
+        }
+      : {}),
+    ...(notarizeConfig
+      ? {
+          osxNotarize: notarizeConfig,
+        }
+      : {}),
   },
   rebuildConfig: {},
   makers: [
     new MakerDMG({
       icon: "./build/app-icon.icns",
       format: "ULFO",
+      ...(shouldSignMacApp
+        ? {
+            "code-sign": {
+              "signing-identity": appleCodesignIdentity!,
+              identifier: "com.posthog.array",
+            },
+          }
+        : {}),
     }),
     new MakerZIP({}, ["darwin", "linux", "win32"]),
   ],
