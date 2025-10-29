@@ -4,6 +4,7 @@ import { FilePathHighlight } from "@features/editor/extensions/filePathHighlight
 import { useFileAutocomplete } from "@features/editor/hooks/useFileAutocomplete";
 import { FolderPicker } from "@features/folder-picker/components/FolderPicker";
 import { useFolderPickerStore } from "@features/folder-picker/stores/folderPickerStore";
+import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { CliModeHeader } from "@features/tasks/components/CliModeHeader";
 import { CliStatusIndicator } from "@features/tasks/components/CliStatusIndicator";
 import { useCreateTask } from "@features/tasks/hooks/useTasks";
@@ -24,8 +25,13 @@ export function CliTaskPanel() {
   const { createTab } = useTabStore();
   const { isRepoInIntegration } = useRepositoryIntegration();
   const { client, isAuthenticated } = useAuthStore();
-  const { setRepoPath: saveRepoPath, setRepoWorkingDir } =
-    useTaskExecutionStore();
+  const {
+    setRepoPath: saveRepoPath,
+    setRepoWorkingDir,
+    setRunMode,
+    runTask,
+  } = useTaskExecutionStore();
+  const { autoRunTasks, defaultRunMode, lastUsedRunMode } = useSettingsStore();
   const { lastSelectedFolder, setLastSelectedFolder } = useFolderPickerStore();
   const cliMode = useLayoutStore((state) => state.cliMode);
   const setCliMode = useLayoutStore((state) => state.setCliMode);
@@ -140,16 +146,6 @@ export function CliTaskPanel() {
     }
   }, [editor]);
 
-  // Auto-focus when switching modes
-  useEffect(() => {
-    if (cliMode === "task" && editor) {
-      // Use requestAnimationFrame to ensure the component is visible before focusing
-      requestAnimationFrame(() => {
-        editor?.commands.focus();
-      });
-    }
-  }, [cliMode, editor]);
-
   // Track shell focus
   useEffect(() => {
     const container = terminalContainerRef.current;
@@ -255,6 +251,19 @@ export function CliTaskPanel() {
             data: newTask,
           });
           editor.commands.clearContent();
+
+          if (autoRunTasks) {
+            let runMode: "local" | "cloud" = "local";
+
+            if (defaultRunMode === "cloud") {
+              runMode = "cloud";
+            } else if (defaultRunMode === "last_used") {
+              runMode = lastUsedRunMode;
+            }
+
+            setRunMode(newTask.id, runMode);
+            runTask(newTask.id, newTask);
+          }
         },
         onError: (error) => {
           console.error("Failed to create task:", error);
@@ -272,6 +281,11 @@ export function CliTaskPanel() {
     setLastSelectedFolder,
     setRepoWorkingDir,
     createTab,
+    autoRunTasks,
+    defaultRunMode,
+    lastUsedRunMode,
+    setRunMode,
+    runTask,
   ]);
 
   return (

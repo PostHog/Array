@@ -1,11 +1,15 @@
-import { AsciiArt } from "@components/AsciiArt";
 import { useAuthStore } from "@features/auth/stores/authStore";
+import {
+  type DefaultRunMode,
+  useSettingsStore,
+} from "@features/settings/stores/settingsStore";
 import {
   Box,
   Button,
   Card,
   Flex,
   Heading,
+  Select,
   Switch,
   Text,
   TextField,
@@ -24,6 +28,8 @@ export function SettingsView() {
   } = useAuthStore();
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
   const toggleDarkMode = useThemeStore((state) => state.toggleDarkMode);
+  const { autoRunTasks, defaultRunMode, setAutoRunTasks, setDefaultRunMode } =
+    useSettingsStore();
   const [apiKey, setApiKey] = useState("");
   const [host, setHost] = useState(apiHost);
   const [initialHost] = useState(apiHost);
@@ -64,158 +70,190 @@ export function SettingsView() {
   };
 
   return (
-    <Box height="100%">
-      <Flex height="100%">
-        {/* Left pane - Settings */}
-        <Box
-          width="50%"
-          p="6"
-          className="border-gray-6 border-r"
-          overflowY="auto"
-        >
-          <Flex direction="column" gap="6">
-            <Flex direction="column" gap="2">
-              <Heading size="6">Settings</Heading>
-              <Text size="2" color="gray">
-                Manage your PostHog connection and preferences
-              </Text>
-            </Flex>
-
-            {/* Appearance Section */}
-            <Flex direction="column" gap="3">
-              <Heading size="4">Appearance</Heading>
-              <Card>
-                <Flex align="center" justify="between">
-                  <Text size="2" weight="medium">
-                    Dark Mode
-                  </Text>
-                  <Switch
-                    checked={isDarkMode}
-                    onCheckedChange={toggleDarkMode}
-                    size="2"
-                  />
-                </Flex>
-              </Card>
-            </Flex>
-
-            <Box className="border-gray-6 border-t" />
-
-            {/* Authentication Section */}
-            <Flex direction="column" gap="3">
-              <Flex align="center" gap="3">
-                <Heading size="4">Authentication</Heading>
-                <Flex align="center" gap="2">
-                  <Box
-                    width="8px"
-                    height="8px"
-                    className={`rounded-full ${isAuthenticated ? "bg-green-9" : "bg-red-9"}`}
-                  />
-                  <Text size="2" color="gray">
-                    {isAuthenticated ? "Connected" : "Not connected"}
-                  </Text>
-                </Flex>
-              </Flex>
-
-              <Card>
-                <Flex direction="column" gap="3">
-                  <Flex direction="column" gap="2">
-                    <Text size="2" weight="medium">
-                      API Key
-                    </Text>
-                    <TextField.Root
-                      type="password"
-                      placeholder="Enter your PostHog API key"
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      onBlur={handleApiKeyBlur}
-                      disabled={updateCredentialsMutation.isPending}
-                    />
-                  </Flex>
-
-                  <Flex direction="column" gap="2">
-                    <Text size="2" weight="medium">
-                      API Host
-                    </Text>
-                    <TextField.Root
-                      type="text"
-                      placeholder="https://us.posthog.com"
-                      value={host}
-                      onChange={(e) => setHost(e.target.value)}
-                      onBlur={handleHostBlur}
-                      disabled={updateCredentialsMutation.isPending}
-                    />
-                  </Flex>
-
-                  {updateCredentialsMutation.isError && (
-                    <Text size="2" color="red">
-                      {updateCredentialsMutation.error instanceof Error
-                        ? updateCredentialsMutation.error.message
-                        : "Failed to update credentials"}
-                    </Text>
-                  )}
-
-                  {updateCredentialsMutation.isSuccess && (
-                    <Text size="2" color="green">
-                      Credentials updated successfully
-                    </Text>
-                  )}
-
-                  <Box>
-                    <Button
-                      variant="classic"
-                      size="2"
-                      onClick={() => {
-                        const keyToUse = apiKey.trim() || currentApiKey;
-                        if (keyToUse && host.trim()) {
-                          updateCredentialsMutation.mutate({
-                            apiKey: keyToUse,
-                            host,
-                          });
-                        }
-                      }}
-                      disabled={updateCredentialsMutation.isPending}
-                      loading={updateCredentialsMutation.isPending}
-                    >
-                      Save credentials
-                    </Button>
-                  </Box>
-                </Flex>
-              </Card>
-            </Flex>
-
-            {isAuthenticated && <Box className="border-gray-6 border-t" />}
-
-            {/* Account Section */}
-            {isAuthenticated && (
-              <Flex direction="column" gap="3">
-                <Heading size="4">Account</Heading>
-                <Card>
-                  <Button
-                    variant="soft"
-                    color="red"
-                    onClick={handleLogout}
-                    disabled={updateCredentialsMutation.isPending}
-                  >
-                    Logout
-                  </Button>
-                </Card>
-              </Flex>
-            )}
+    <Box height="100%" overflowY="auto">
+      <Box p="6" style={{ maxWidth: "600px", margin: "0 auto" }}>
+        <Flex direction="column" gap="6">
+          <Flex direction="column" gap="2">
+            <Heading size="4">Settings</Heading>
+            <Text size="1" color="gray">
+              Manage your PostHog connection and preferences
+            </Text>
           </Flex>
-        </Box>
 
-        {/* Right pane - ASCII Art */}
-        <Box
-          width="50%"
-          height="100%"
-          className="bg-panel-solid"
-          style={{ position: "relative" }}
-        >
-          <Box style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-            <AsciiArt scale={1} opacity={0.1} />
-          </Box>
-        </Box>
-      </Flex>
+          {/* Appearance Section */}
+          <Flex direction="column" gap="3">
+            <Heading size="3">Appearance</Heading>
+            <Card>
+              <Flex align="center" justify="between">
+                <Text size="1" weight="medium">
+                  Dark mode
+                </Text>
+                <Switch
+                  checked={isDarkMode}
+                  onCheckedChange={toggleDarkMode}
+                  size="1"
+                />
+              </Flex>
+            </Card>
+          </Flex>
+
+          <Box className="border-gray-6 border-t" />
+
+          {/* Task Execution Section */}
+          <Flex direction="column" gap="3">
+            <Heading size="3">Task execution</Heading>
+            <Card>
+              <Flex direction="column" gap="4">
+                <Flex align="center" justify="between">
+                  <Flex direction="column" gap="1">
+                    <Text size="1" weight="medium">
+                      Auto-run new tasks
+                    </Text>
+                    <Text size="1" color="gray">
+                      Automatically start tasks after creation
+                    </Text>
+                  </Flex>
+                  <Switch
+                    checked={autoRunTasks}
+                    onCheckedChange={setAutoRunTasks}
+                    size="1"
+                  />
+                </Flex>
+
+                <Flex direction="column" gap="2">
+                  <Text size="1" weight="medium">
+                    Default run environment
+                  </Text>
+                  <Select.Root
+                    value={defaultRunMode}
+                    onValueChange={(value) =>
+                      setDefaultRunMode(value as DefaultRunMode)
+                    }
+                    size="1"
+                  >
+                    <Select.Trigger />
+                    <Select.Content>
+                      <Select.Item value="local">Local</Select.Item>
+                      <Select.Item value="cloud">Cloud</Select.Item>
+                      <Select.Item value="last_used">Last used</Select.Item>
+                    </Select.Content>
+                  </Select.Root>
+                  <Text size="1" color="gray">
+                    Choose which environment to use when running tasks
+                  </Text>
+                </Flex>
+              </Flex>
+            </Card>
+          </Flex>
+
+          <Box className="border-gray-6 border-t" />
+
+          {/* Authentication Section */}
+          <Flex direction="column" gap="3">
+            <Flex align="center" gap="3">
+              <Heading size="3">Authentication</Heading>
+              <Flex align="center" gap="2">
+                <Box
+                  width="8px"
+                  height="8px"
+                  className={`rounded-full ${isAuthenticated ? "bg-green-9" : "bg-red-9"}`}
+                />
+                <Text size="1" color="gray">
+                  {isAuthenticated ? "Connected" : "Not connected"}
+                </Text>
+              </Flex>
+            </Flex>
+
+            <Card>
+              <Flex direction="column" gap="3">
+                <Flex direction="column" gap="2">
+                  <Text size="1" weight="medium">
+                    API Key
+                  </Text>
+                  <TextField.Root
+                    size="1"
+                    type="password"
+                    placeholder="Enter your PostHog API key"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    onBlur={handleApiKeyBlur}
+                    disabled={updateCredentialsMutation.isPending}
+                  />
+                </Flex>
+
+                <Flex direction="column" gap="2">
+                  <Text size="1" weight="medium">
+                    API Host
+                  </Text>
+                  <TextField.Root
+                    size="1"
+                    type="text"
+                    placeholder="https://us.posthog.com"
+                    value={host}
+                    onChange={(e) => setHost(e.target.value)}
+                    onBlur={handleHostBlur}
+                    disabled={updateCredentialsMutation.isPending}
+                  />
+                </Flex>
+
+                {updateCredentialsMutation.isError && (
+                  <Text size="1" color="red">
+                    {updateCredentialsMutation.error instanceof Error
+                      ? updateCredentialsMutation.error.message
+                      : "Failed to update credentials"}
+                  </Text>
+                )}
+
+                {updateCredentialsMutation.isSuccess && (
+                  <Text size="1" color="green">
+                    Credentials updated successfully
+                  </Text>
+                )}
+
+                <Box>
+                  <Button
+                    variant="classic"
+                    size="1"
+                    onClick={() => {
+                      const keyToUse = apiKey.trim() || currentApiKey;
+                      if (keyToUse && host.trim()) {
+                        updateCredentialsMutation.mutate({
+                          apiKey: keyToUse,
+                          host,
+                        });
+                      }
+                    }}
+                    disabled={updateCredentialsMutation.isPending}
+                    loading={updateCredentialsMutation.isPending}
+                  >
+                    Save credentials
+                  </Button>
+                </Box>
+              </Flex>
+            </Card>
+          </Flex>
+
+          {isAuthenticated && <Box className="border-gray-6 border-t" />}
+
+          {/* Account Section */}
+          {isAuthenticated && (
+            <Flex direction="column" gap="3">
+              <Heading size="3">Account</Heading>
+              <Card>
+                <Button
+                  variant="soft"
+                  color="red"
+                  size="1"
+                  onClick={handleLogout}
+                  disabled={updateCredentialsMutation.isPending}
+                >
+                  Logout
+                </Button>
+              </Card>
+            </Flex>
+          )}
+        </Flex>
+      </Box>
     </Box>
   );
 }

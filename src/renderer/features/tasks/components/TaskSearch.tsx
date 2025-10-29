@@ -33,6 +33,15 @@ export function TaskSearch({ value, onChange }: TaskSearchProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "f" && (e.metaKey || e.ctrlKey)) {
+        const target = e.target as HTMLElement;
+        if (
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable ||
+          target.closest('[contenteditable="true"]')
+        ) {
+          return;
+        }
         e.preventDefault();
         setIsExpanded(true);
         setTimeout(() => inputRef.current?.focus(), 100);
