@@ -7,7 +7,7 @@ import {
 import { Badge, Box, Card, Flex, Spinner, Text } from "@radix-ui/themes";
 import { useAllRecordings } from "@renderer/features/notetaker/hooks/useAllRecordings";
 import { useNotetakerStore } from "@renderer/features/notetaker/stores/notetakerStore";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { RecordingView } from "@/renderer/features/notetaker/components/RecordingView";
 
@@ -61,18 +61,33 @@ function formatDate(dateString: string) {
 
 export function NotetakerView() {
   const { allRecordings, isLoading } = useAllRecordings();
-  const selectedRecording = useNotetakerStore(
-    (state) => state.selectedRecording,
+  const selectedRecordingId = useNotetakerStore(
+    (state) => state.selectedRecordingId,
   );
-  const setSelectedRecording = useNotetakerStore(
-    (state) => state.setSelectedRecording,
+  const setSelectedRecordingId = useNotetakerStore(
+    (state) => state.setSelectedRecordingId,
+  );
+
+  const selectedRecording = useMemo(
+    () =>
+      selectedRecordingId
+        ? allRecordings.find(
+            (item) =>
+              item.recording.id === selectedRecordingId.id &&
+              item.type === selectedRecordingId.type,
+          )
+        : null,
+    [allRecordings, selectedRecordingId],
   );
 
   useEffect(() => {
-    if (allRecordings.length > 0 && !selectedRecording) {
-      setSelectedRecording(allRecordings[0]);
+    if (allRecordings.length > 0 && !selectedRecordingId) {
+      setSelectedRecordingId({
+        id: allRecordings[0].recording.id,
+        type: allRecordings[0].type,
+      });
     }
-  }, [allRecordings, selectedRecording, setSelectedRecording]);
+  }, [allRecordings, selectedRecordingId, setSelectedRecordingId]);
 
   useHotkeys(
     "up",
@@ -80,17 +95,19 @@ export function NotetakerView() {
       e.preventDefault();
       const currentIndex = allRecordings.findIndex(
         (item) =>
-          item.recording.id === selectedRecording?.recording.id &&
-          item.type === selectedRecording?.type,
+          item.recording.id === selectedRecordingId?.id &&
+          item.type === selectedRecordingId?.type,
       );
 
       if (currentIndex === -1 && allRecordings.length > 0) {
-        setSelectedRecording(allRecordings[0]);
+        const first = allRecordings[0];
+        setSelectedRecordingId({ id: first.recording.id, type: first.type });
       } else if (currentIndex > 0) {
-        setSelectedRecording(allRecordings[currentIndex - 1]);
+        const prev = allRecordings[currentIndex - 1];
+        setSelectedRecordingId({ id: prev.recording.id, type: prev.type });
       }
     },
-    [allRecordings, selectedRecording],
+    [allRecordings, selectedRecordingId, setSelectedRecordingId],
   );
 
   useHotkeys(
@@ -99,17 +116,19 @@ export function NotetakerView() {
       e.preventDefault();
       const currentIndex = allRecordings.findIndex(
         (item) =>
-          item.recording.id === selectedRecording?.recording.id &&
-          item.type === selectedRecording?.type,
+          item.recording.id === selectedRecordingId?.id &&
+          item.type === selectedRecordingId?.type,
       );
 
       if (currentIndex === -1 && allRecordings.length > 0) {
-        setSelectedRecording(allRecordings[0]);
+        const first = allRecordings[0];
+        setSelectedRecordingId({ id: first.recording.id, type: first.type });
       } else if (currentIndex < allRecordings.length - 1) {
-        setSelectedRecording(allRecordings[currentIndex + 1]);
+        const next = allRecordings[currentIndex + 1];
+        setSelectedRecordingId({ id: next.recording.id, type: next.type });
       }
     },
-    [allRecordings, selectedRecording],
+    [allRecordings, selectedRecordingId, setSelectedRecordingId],
   );
 
   if (allRecordings.length === 0 && !isLoading) {
@@ -181,12 +200,17 @@ export function NotetakerView() {
                   style={{
                     cursor: "pointer",
                     backgroundColor:
-                      selectedRecording?.recording.id === recording.id &&
-                      selectedRecording?.type === item.type
+                      selectedRecordingId?.id === recording.id &&
+                      selectedRecordingId?.type === item.type
                         ? "var(--accent-3)"
                         : undefined,
                   }}
-                  onClick={() => setSelectedRecording(item)}
+                  onClick={() =>
+                    setSelectedRecordingId({
+                      id: recording.id,
+                      type: item.type,
+                    })
+                  }
                 >
                   <Flex justify="between" align="start" gap="3">
                     <Flex direction="column" gap="2" style={{ flex: 1 }}>

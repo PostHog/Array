@@ -1992,6 +1992,14 @@ export namespace Schemas {
     stop_sequence?: (string | null) | undefined;
     usage: AnthropicUsage;
   };
+  export type TranscriptSegment = {
+    timestamp?: (number | null) | undefined;
+    speaker?: (string | null) | undefined;
+    text: string;
+    confidence?: (number | null) | undefined;
+    is_final?: (boolean | null) | undefined;
+  };
+  export type AppendSegments = { segments: Array<TranscriptSegment> };
   export type AttributionModeEnum = "first_touch" | "last_touch";
   export type AutocompleteCompletionItemKind =
     | "Method"
@@ -2797,13 +2805,10 @@ export namespace Schemas {
     | "processing"
     | "ready"
     | "error";
-  export type RecordingTranscript = {
-    full_text: string;
-    segments?: unknown | undefined;
-    summary?: (string | null) | undefined;
-    extracted_tasks?: unknown | undefined;
-    created_at: string;
-    updated_at: string;
+  export type Task = {
+    title: string;
+    description?: string | undefined;
+    assignee?: (string | null) | undefined;
   };
   export type CreateRecordingResponse = {
     id: string;
@@ -2816,14 +2821,21 @@ export namespace Schemas {
     meeting_url?: (string | null) | undefined;
     duration_seconds?: (number | null) | undefined;
     status?: Status292Enum | undefined;
+    notes?: (string | null) | undefined;
+    error_message?: (string | null) | undefined;
     video_url?: (string | null) | undefined;
     video_size_bytes?: (number | null) | undefined;
-    participants?: unknown | undefined;
+    participants?: Array<string> | undefined;
+    transcript_text: string;
+    transcript_segments?: Array<TranscriptSegment> | undefined;
+    summary?: (string | null) | undefined;
+    extracted_tasks?: Array<Task> | undefined;
+    tasks_generated_at?: (string | null) | undefined;
+    summary_generated_at?: (string | null) | undefined;
     started_at?: string | undefined;
     completed_at?: (string | null) | undefined;
     created_at: string;
     updated_at: string;
-    transcript: RecordingTranscript & unknown;
     upload_token: string;
   };
   export type CreationContextEnum =
@@ -2851,6 +2863,7 @@ export namespace Schemas {
     created_at: string;
     created_by: UserBasic & unknown;
     last_accessed_at?: (string | null) | undefined;
+    last_viewed_at: string | null;
     is_shared: boolean;
     deleted?: boolean | undefined;
     creation_mode: CreationModeEnum & unknown;
@@ -2882,6 +2895,7 @@ export namespace Schemas {
     created_at: string;
     created_by: UserBasic & unknown;
     last_accessed_at: string | null;
+    last_viewed_at: string | null;
     is_shared: boolean;
     deleted: boolean;
     creation_mode: CreationModeEnum & unknown;
@@ -3263,6 +3277,7 @@ export namespace Schemas {
     | "twilio"
     | "linear"
     | "github"
+    | "gitlab"
     | "meta-ads"
     | "clickup"
     | "reddit-ads"
@@ -4753,14 +4768,21 @@ export namespace Schemas {
     meeting_url?: (string | null) | undefined;
     duration_seconds?: (number | null) | undefined;
     status?: Status292Enum | undefined;
+    notes?: (string | null) | undefined;
+    error_message?: (string | null) | undefined;
     video_url?: (string | null) | undefined;
     video_size_bytes?: (number | null) | undefined;
-    participants?: unknown | undefined;
+    participants?: Array<string> | undefined;
+    transcript_text: string;
+    transcript_segments?: Array<TranscriptSegment> | undefined;
+    summary?: (string | null) | undefined;
+    extracted_tasks?: Array<Task> | undefined;
+    tasks_generated_at?: (string | null) | undefined;
+    summary_generated_at?: (string | null) | undefined;
     started_at?: string | undefined;
     completed_at?: (string | null) | undefined;
     created_at: string;
     updated_at: string;
-    transcript: RecordingTranscript & unknown;
   };
   export type DisplayEnum = "number" | "sparkline";
   export type DistanceFunc = "L1Distance" | "L2Distance" | "cosineDistance";
@@ -4985,12 +5007,17 @@ export namespace Schemas {
     storage_ptr?: (string | null) | undefined;
     failure_reason?: (string | null) | undefined;
   };
+  export type EvaluationTypeEnum = "llm_judge";
+  export type OutputTypeEnum = "boolean";
   export type Evaluation = {
     id: string;
     name: string;
     description?: string | undefined;
     enabled?: boolean | undefined;
-    prompt: string;
+    evaluation_type: EvaluationTypeEnum;
+    evaluation_config?: unknown | undefined;
+    output_type: OutputTypeEnum;
+    output_config?: unknown | undefined;
     conditions?: unknown | undefined;
     created_at: string;
     updated_at: string;
@@ -6295,6 +6322,7 @@ export namespace Schemas {
     | "email"
     | "linear"
     | "github"
+    | "gitlab"
     | "meta-ads"
     | "twilio"
     | "clickup"
@@ -7605,22 +7633,6 @@ export namespace Schemas {
     previous?: (string | null) | undefined;
     results: Array<Table>;
   };
-  export type Task = {
-    id: string;
-    task_number: number | null;
-    slug: string;
-    title?: string | undefined;
-    description: string;
-    origin_product: OriginProductEnum;
-    position?: number | undefined;
-    github_integration?: (number | null) | undefined;
-    repository_config?: unknown | undefined;
-    repository_list: string;
-    primary_repository: string;
-    latest_run: string;
-    created_at: string;
-    updated_at: string;
-  };
   export type PaginatedTaskList = {
     count: number;
     next?: (string | null) | undefined;
@@ -7836,6 +7848,7 @@ export namespace Schemas {
     created_at: string;
     created_by: UserBasic & unknown;
     last_accessed_at: string | null;
+    last_viewed_at: string | null;
     is_shared: boolean;
     deleted: boolean;
     creation_mode: CreationModeEnum & unknown;
@@ -7937,14 +7950,21 @@ export namespace Schemas {
     meeting_url: string | null;
     duration_seconds: number | null;
     status: Status292Enum;
+    notes: string | null;
+    error_message: string | null;
     video_url: string | null;
     video_size_bytes: number | null;
-    participants: unknown;
+    participants: Array<string>;
+    transcript_text: string;
+    transcript_segments: Array<TranscriptSegment>;
+    summary: string | null;
+    extracted_tasks: Array<Task>;
+    tasks_generated_at: string | null;
+    summary_generated_at: string | null;
     started_at: string;
     completed_at: string | null;
     created_at: string;
     updated_at: string;
-    transcript: RecordingTranscript & unknown;
   }>;
   export type PatchedEarlyAccessFeature = Partial<{
     id: string;
@@ -7996,7 +8016,10 @@ export namespace Schemas {
     name: string;
     description: string;
     enabled: boolean;
-    prompt: string;
+    evaluation_type: EvaluationTypeEnum;
+    evaluation_config: unknown;
+    output_type: OutputTypeEnum;
+    output_config: unknown;
     conditions: unknown;
     created_at: string;
     updated_at: string;
@@ -8489,6 +8512,7 @@ export namespace Schemas {
     latest_run: string;
     created_at: string;
     updated_at: string;
+    created_by: UserBasic & unknown;
   }>;
   export type PatchedTaskRunDetail = Partial<{
     id: string;
@@ -10011,10 +10035,6 @@ export namespace Schemas {
     product_intents: string;
     managed_viewsets: string;
   };
-  export type UploadTranscript = Partial<{
-    segments: Array<Record<string, unknown>>;
-    full_text: string;
-  }>;
   export type WebAnalyticsBreakdownResponse = {
     next?: (string | null) | undefined;
     results: Array<unknown>;
@@ -10715,25 +10735,16 @@ export namespace Endpoints {
     };
     responses: { 204: unknown };
   };
-  export type get_Environments_desktop_recordings_transcript_retrieve = {
-    method: "GET";
-    path: "/api/environments/{project_id}/desktop_recordings/{id}/transcript/";
-    requestFormat: "json";
-    parameters: {
-      path: { id: string; project_id: string };
-    };
-    responses: { 200: Schemas.RecordingTranscript; 404: unknown };
-  };
-  export type post_Environments_desktop_recordings_transcript_create = {
+  export type post_Environments_desktop_recordings_append_segments_create = {
     method: "POST";
-    path: "/api/environments/{project_id}/desktop_recordings/{id}/transcript/";
+    path: "/api/environments/{project_id}/desktop_recordings/{id}/append_segments/";
     requestFormat: "json";
     parameters: {
       path: { id: string; project_id: string };
 
-      body: Schemas.UploadTranscript;
+      body: Schemas.AppendSegments;
     };
-    responses: { 200: Schemas.RecordingTranscript };
+    responses: { 200: Schemas.DesktopRecording };
   };
   export type get_Environments_endpoints_retrieve = {
     method: "GET";
@@ -11530,6 +11541,15 @@ export namespace Endpoints {
       path: { project_id: string };
 
       body: Schemas.FileSystem;
+    };
+    responses: { 200: unknown };
+  };
+  export type get_Environments_file_system_log_view_retrieve = {
+    method: "GET";
+    path: "/api/environments/{project_id}/file_system/log_view/";
+    requestFormat: "json";
+    parameters: {
+      path: { project_id: string };
     };
     responses: { 200: unknown };
   };
@@ -13620,7 +13640,6 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/datasets/{id}/": Endpoints.get_Environments_datasets_retrieve;
     "/api/environments/{project_id}/desktop_recordings/": Endpoints.get_Environments_desktop_recordings_list;
     "/api/environments/{project_id}/desktop_recordings/{id}/": Endpoints.get_Environments_desktop_recordings_retrieve;
-    "/api/environments/{project_id}/desktop_recordings/{id}/transcript/": Endpoints.get_Environments_desktop_recordings_transcript_retrieve;
     "/api/environments/{project_id}/endpoints/": Endpoints.get_Environments_endpoints_retrieve;
     "/api/environments/{project_id}/endpoints/{name}/": Endpoints.get_Environments_endpoints_retrieve_2;
     "/api/environments/{project_id}/endpoints/{name}/run/": Endpoints.get_Environments_endpoints_run_retrieve;
@@ -13648,6 +13667,7 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/exports/{id}/content/": Endpoints.get_Environments_exports_content_retrieve;
     "/api/environments/{project_id}/file_system/": Endpoints.get_Environments_file_system_list;
     "/api/environments/{project_id}/file_system/{id}/": Endpoints.get_Environments_file_system_retrieve;
+    "/api/environments/{project_id}/file_system/log_view/": Endpoints.get_Environments_file_system_log_view_retrieve;
     "/api/environments/{project_id}/file_system/unfiled/": Endpoints.get_Environments_file_system_unfiled_retrieve;
     "/api/environments/{project_id}/file_system_shortcut/": Endpoints.get_Environments_file_system_shortcut_list;
     "/api/environments/{project_id}/file_system_shortcut/{id}/": Endpoints.get_Environments_file_system_shortcut_retrieve;
@@ -13753,7 +13773,7 @@ export type EndpointByMethod = {
     "/api/environments/{project_id}/dataset_items/": Endpoints.post_Environments_dataset_items_create;
     "/api/environments/{project_id}/datasets/": Endpoints.post_Environments_datasets_create;
     "/api/environments/{project_id}/desktop_recordings/": Endpoints.post_Environments_desktop_recordings_create;
-    "/api/environments/{project_id}/desktop_recordings/{id}/transcript/": Endpoints.post_Environments_desktop_recordings_transcript_create;
+    "/api/environments/{project_id}/desktop_recordings/{id}/append_segments/": Endpoints.post_Environments_desktop_recordings_append_segments_create;
     "/api/environments/{project_id}/endpoints/": Endpoints.post_Environments_endpoints_create;
     "/api/environments/{project_id}/endpoints/{name}/run/": Endpoints.post_Environments_endpoints_run_create;
     "/api/environments/{project_id}/endpoints/last_execution_times/": Endpoints.post_Environments_endpoints_last_execution_times_create;
