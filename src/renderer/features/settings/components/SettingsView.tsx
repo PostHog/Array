@@ -28,8 +28,14 @@ export function SettingsView() {
   } = useAuthStore();
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
   const toggleDarkMode = useThemeStore((state) => state.toggleDarkMode);
-  const { autoRunTasks, defaultRunMode, setAutoRunTasks, setDefaultRunMode } =
-    useSettingsStore();
+  const {
+    autoRunTasks,
+    defaultRunMode,
+    createPR,
+    setAutoRunTasks,
+    setDefaultRunMode,
+    setCreatePR,
+  } = useSettingsStore();
   const [apiKey, setApiKey] = useState("");
   const [host, setHost] = useState(apiHost);
   const [initialHost] = useState(apiHost);
@@ -141,6 +147,23 @@ export function SettingsView() {
                   <Text size="1" color="gray">
                     Choose which environment to use when running tasks
                   </Text>
+                </Flex>
+
+                <Flex align="center" justify="between">
+                  <Flex direction="column" gap="1">
+                    <Text size="1" weight="medium">
+                      Create PR for local runs
+                    </Text>
+                    <Text size="1" color="gray">
+                      Automatically create a pull request when local tasks
+                      complete
+                    </Text>
+                  </Flex>
+                  <Switch
+                    checked={createPR}
+                    onCheckedChange={setCreatePR}
+                    size="1"
+                  />
                 </Flex>
               </Flex>
             </Card>

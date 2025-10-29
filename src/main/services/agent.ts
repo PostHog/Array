@@ -16,6 +16,7 @@ interface AgentStartParams {
   model?: string;
   executionMode?: "plan";
   runMode?: "local" | "cloud";
+  createPR?: boolean;
 }
 
 export interface TaskController {
@@ -102,6 +103,7 @@ export function registerAgentIpc(
         autoProgress,
         model,
         runMode,
+        createPR,
       }: AgentStartParams,
     ): Promise<{ taskId: string; channel: string }> => {
       if (!posthogTaskId || !repoPath) {
@@ -231,6 +233,7 @@ export function registerAgentIpc(
             permissionMode: resolvedPermission,
             isCloudMode: runMode === "cloud",
             autoProgress: autoProgress ?? true,
+            createPR: createPR ?? true,
             queryOverrides: {
               abortController,
               ...(model ? { model } : {}),
