@@ -1,3 +1,7 @@
+import {
+  extractTasksFromTranscript,
+  generateTranscriptSummary,
+} from "@renderer/services/aiAnalysisService";
 import { useActiveRecordingStore } from "@renderer/stores/activeRecordingStore";
 import { useAuthStore } from "@/renderer/features/auth/stores/authStore";
 
@@ -129,6 +133,8 @@ export function initializeRecordingService() {
             );
           }
         }
+
+        analyzeRecording(data.posthog_recording_id);
       }
 
       store.updateStatus(data.posthog_recording_id, "uploading");
@@ -208,6 +214,77 @@ async function uploadPendingSegments(recordingId: string): Promise<void> {
       recordingId,
       error instanceof Error ? error.message : "Failed to upload segments",
     );
+  }
+}
+
+export async function analyzeRecording(recordingId: string): Promise<void> {
+  const store = useActiveRecordingStore.getState();
+  const authStore = useAuthStore.getState();
+
+  const recording = store.getRecording(recordingId);
+  if (!recording) {
+    console.warn(`[AI Analysis] Recording ${recordingId} not found`);
+    return;
+  }
+
+  const openaiApiKey = authStore.openaiApiKey;
+  if (!openaiApiKey) {
+    console.log("[AI Analysis] No OpenAI API key, skipping analysis");
+    store.setAnalysisStatus(recordingId, "skipped");
+    return;
+  }
+
+  if (recording.segments.length === 0) {
+    console.log("[AI Analysis] No transcript segments, skipping analysis");
+    store.setAnalysisStatus(recordingId, "skipped");
+    return;
+  }
+
+  const fullTranscript = recording.segments.map((s) => s.text).join(" ");
+
+  try {
+    store.setAnalysisStatus(recordingId, "analyzing_summary");
+    console.log("[AI Analysis] Generating summary...");
+
+    const summary = await generateTranscriptSummary(
+      fullTranscript,
+      openaiApiKey,
+    );
+    if (summary) {
+      store.setSummary(recordingId, summary);
+    }
+
+    store.setAnalysisStatus(recordingId, "analyzing_tasks");
+    console.log("[AI Analysis] Extracting tasks...");
+
+    const tasks = await extractTasksFromTranscript(
+      fullTranscript,
+      openaiApiKey,
+    );
+    store.setExtractedTasks(recordingId, tasks);
+
+    store.setAnalysisStatus(recordingId, "completed");
+    console.log(
+      `[AI Analysis] Complete - summary: "${summary}", tasks: ${tasks.length}`,
+    );
+
+    const client = authStore.client;
+    if (client && (summary || tasks.length > 0)) {
+      try {
+        await client.updateDesktopRecordingTranscript(recordingId, {
+          summary: summary || undefined,
+          extracted_tasks: tasks.length > 0 ? tasks : undefined,
+        });
+        console.log("[AI Analysis] Updated backend with analysis results");
+      } catch (error) {
+        console.error("[AI Analysis] Failed to update backend:", error);
+      }
+    }
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Analysis failed";
+    console.error("[AI Analysis] Error:", errorMessage);
+    store.setAnalysisError(recordingId, errorMessage);
   }
 }
 
