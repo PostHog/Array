@@ -1,4 +1,5 @@
 import { useAuthStore } from "@features/auth/stores/authStore";
+import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import type { AgentEvent } from "@posthog/agent";
 import type {
   ClarifyingQuestion,
@@ -205,6 +206,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
       setRunMode: (taskId: string, runMode: "local" | "cloud") => {
         get().updateTaskState(taskId, { runMode });
+        useSettingsStore.getState().setLastUsedRunMode(runMode);
       },
 
       setUnsubscribe: (taskId: string, unsubscribe: (() => void) | null) => {

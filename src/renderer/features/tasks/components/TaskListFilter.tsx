@@ -86,7 +86,12 @@ export function TaskListFilter() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "f" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const target = e.target as HTMLElement;
-        if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") {
+        if (
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable ||
+          target.closest('[contenteditable="true"]')
+        ) {
           return;
         }
         e.preventDefault();

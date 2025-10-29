@@ -490,6 +490,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                     size="2"
                     variant="classic"
                     color={runMode === "cloud" ? "blue" : "gray"}
+                    disabled={isRunning}
                     onClick={() =>
                       handleRunModeChange(
                         runMode === "local" ? "cloud" : "local",
