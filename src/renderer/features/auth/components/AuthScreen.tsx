@@ -8,30 +8,48 @@ import {
   Container,
   Flex,
   Heading,
+  Select,
   Text,
-  TextField,
 } from "@radix-ui/themes";
+import { IS_DEV } from "@shared/constants/environment";
+import type { CloudRegion } from "@shared/types/oauth";
 import { useMutation } from "@tanstack/react-query";
-import type React from "react";
-import { useId, useState } from "react";
+import { useState } from "react";
 
+export const getErrorMessage = (error: unknown) => {
+  if (!(error instanceof Error)) {
+    return "Failed to authenticate";
+  }
+  const message = error.message;
+
+  if (message.includes("access_denied")) {
+    return "Authorization cancelled.";
+  }
+
+  if (message.includes("timed out")) {
+    return "Authorization timed out. Please try again.";
+  }
+
+  return message;
+};
 export function AuthScreen() {
-  const apiKeyId = useId();
-  const apiHostId = useId();
-  const [apiKey, setApiKey] = useState("");
-  const [apiHost, setApiHost] = useState("https://app.posthog.com");
+  const [region, setRegion] = useState<CloudRegion>("us");
 
-  const { setCredentials } = useAuthStore();
+  const { loginWithOAuth } = useAuthStore();
 
   const authMutation = useMutation({
-    mutationFn: async ({ apiKey, host }: { apiKey: string; host: string }) => {
-      await setCredentials(apiKey, host);
+    mutationFn: async (selectedRegion: CloudRegion) => {
+      await loginWithOAuth(selectedRegion);
     },
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    authMutation.mutate({ apiKey, host: apiHost });
+  const handleSignIn = () => {
+    authMutation.mutate(region);
+  };
+
+  const handleRegionChange = (value: string) => {
+    setRegion(value as CloudRegion);
+    authMutation.reset();
   };
 
   return (
@@ -48,78 +66,62 @@ export function AuthScreen() {
             <Card size="3">
               <Flex direction="column" gap="6" width="25vw">
                 <Flex direction="column" gap="2">
-                  <Heading size="4">Array</Heading>
+                  <Heading size="4">Welcome to Array</Heading>
+                  <Text size="2" color="gray">
+                    Sign in with your PostHog account
+                  </Text>
                 </Flex>
 
-                <form onSubmit={handleSubmit}>
-                  <Flex direction="column" gap="4">
-                    <Flex direction="column" gap="6">
-                      <Flex direction="column" gap="2">
-                        <Text
-                          as="label"
-                          htmlFor="apiKey"
-                          size="2"
-                          weight="medium"
-                          color="gray"
-                        >
-                          Personal API Key
-                        </Text>
-                        <TextField.Root
-                          id={apiKeyId}
-                          type="password"
-                          value={apiKey}
-                          onChange={(e) => setApiKey(e.target.value)}
-                          placeholder="phx_..."
-                          required
-                        />
-                        <Text size="1" color="gray">
-                          Get your API key from PostHog settings
-                        </Text>
-                      </Flex>
-
-                      <Flex direction="column" gap="2">
-                        <Text
-                          as="label"
-                          htmlFor="apiHost"
-                          size="2"
-                          weight="medium"
-                          color="gray"
-                        >
-                          PostHog Instance URL
-                        </Text>
-                        <TextField.Root
-                          id={apiHostId}
-                          type="url"
-                          value={apiHost}
-                          onChange={(e) => setApiHost(e.target.value)}
-                          placeholder="https://us.posthog.com"
-                          required
-                        />
-                      </Flex>
-                    </Flex>
-
-                    {authMutation.isError && (
-                      <Callout.Root color="red">
-                        <Callout.Text>
-                          {authMutation.error instanceof Error
-                            ? authMutation.error.message
-                            : "Failed to authenticate"}
-                        </Callout.Text>
-                      </Callout.Root>
-                    )}
-
-                    <Button
-                      type="submit"
-                      disabled={authMutation.isPending || !apiKey}
-                      variant="classic"
+                <Flex direction="column" gap="4">
+                  <Flex direction="column" gap="2">
+                    <Text size="2" weight="medium" color="gray">
+                      PostHog region
+                    </Text>
+                    <Select.Root
+                      value={region}
+                      onValueChange={handleRegionChange}
                       size="3"
-                      mt="4"
-                      loading={authMutation.isPending}
                     >
-                      {authMutation.isPending ? "Connecting..." : "Connect"}
-                    </Button>
+                      <Select.Trigger />
+                      <Select.Content>
+                        <Select.Item value="us">🇺🇸 US Cloud</Select.Item>
+                        <Select.Item value="eu">🇪🇺 EU Cloud</Select.Item>
+                        {IS_DEV && (
+                          <Select.Item value="dev">🔧 Development</Select.Item>
+                        )}
+                      </Select.Content>
+                    </Select.Root>
                   </Flex>
-                </form>
+
+                  {authMutation.isError && (
+                    <Callout.Root color="red">
+                      <Callout.Text>
+                        {getErrorMessage(authMutation.error)}
+                      </Callout.Text>
+                    </Callout.Root>
+                  )}
+
+                  {authMutation.isPending && (
+                    <Callout.Root color="blue">
+                      <Callout.Text>
+                        Waiting for authorization in your browser...
+                      </Callout.Text>
+                    </Callout.Root>
+                  )}
+
+                  <Button
+                    onClick={handleSignIn}
+                    disabled={authMutation.isPending}
+                    variant="classic"
+                    size="3"
+                    mt="2"
+                    loading={authMutation.isPending}
+                  >
+                    {authMutation.isPending
+                      ? "Waiting for authorization..."
+                      : "Sign in with PostHog"}
+                  </Button>
+                </Flex>
               </Flex>
             </Card>
           </Flex>

@@ -1,5 +1,10 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
 import type { Recording } from "../shared/types";
+import type {
+  CloudRegion,
+  OAuthTokenResponse,
+  StoredOAuthTokens,
+} from "../shared/types/oauth";
 
 interface MessageBoxOptions {
   type?: "info" | "error" | "warning" | "question";
@@ -28,6 +33,26 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("store-api-key", apiKey),
   retrieveApiKey: (encryptedKey: string): Promise<string | null> =>
     ipcRenderer.invoke("retrieve-api-key", encryptedKey),
+  // OAuth API
+  oauthStartFlow: (
+    region: CloudRegion,
+  ): Promise<{ success: boolean; data?: OAuthTokenResponse; error?: string }> =>
+    ipcRenderer.invoke("oauth:start-flow", region),
+  oauthStoreTokens: (
+    tokens: StoredOAuthTokens,
+  ): Promise<{ success: boolean; encrypted?: string; error?: string }> =>
+    ipcRenderer.invoke("oauth:store-tokens", tokens),
+  oauthRetrieveTokens: (
+    encrypted: string,
+  ): Promise<{ success: boolean; data?: StoredOAuthTokens; error?: string }> =>
+    ipcRenderer.invoke("oauth:retrieve-tokens", encrypted),
+  oauthDeleteTokens: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("oauth:delete-tokens"),
+  oauthRefreshToken: (
+    refreshToken: string,
+    region: CloudRegion,
+  ): Promise<{ success: boolean; data?: OAuthTokenResponse; error?: string }> =>
+    ipcRenderer.invoke("oauth:refresh-token", refreshToken, region),
   selectDirectory: (): Promise<string | null> =>
     ipcRenderer.invoke("select-directory"),
   searchDirectories: (query: string, searchRoot?: string): Promise<string[]> =>

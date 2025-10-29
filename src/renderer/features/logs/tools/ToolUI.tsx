@@ -3,6 +3,7 @@ import {
   CaretRight as CaretRightIcon,
 } from "@phosphor-icons/react";
 import { Box, Code, ContextMenu } from "@radix-ui/themes";
+import { IS_DEV } from "@shared/constants/environment";
 import { formatTimestamp } from "@utils/time";
 import { type ReactNode, useState } from "react";
 
@@ -38,7 +39,6 @@ export function ToolExecutionWrapper({
 
   const durationSeconds =
     durationMs !== undefined ? (durationMs / 1000).toFixed(2) : undefined;
-  const isDev = import.meta.env.DEV;
 
   const content = (
     <Box
@@ -139,7 +139,7 @@ export function ToolExecutionWrapper({
           <div style={{ cursor: "context-menu" }}>{content}</div>
         </ContextMenu.Trigger>
         <ContextMenu.Content>
-          {isDev && <ContextMenu.Label>{toolName}ToolView</ContextMenu.Label>}
+          {IS_DEV && <ContextMenu.Label>{toolName}ToolView</ContextMenu.Label>}
           <ContextMenu.Item onClick={() => onJumpToRaw(index)}>
             Jump to raw source
           </ContextMenu.Item>

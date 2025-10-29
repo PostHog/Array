@@ -6,9 +6,19 @@ export class PostHogAPIClient {
   private api: ReturnType<typeof createApiClient>;
   private _teamId: number | null = null;
 
-  constructor(apiKey: string, apiHost: string) {
+  constructor(
+    accessToken: string,
+    apiHost: string,
+    onTokenRefresh?: () => Promise<string>,
+  ) {
     const baseUrl = apiHost.endsWith("/") ? apiHost.slice(0, -1) : apiHost;
-    this.api = createApiClient(buildApiFetcher({ apiToken: apiKey }), baseUrl);
+    this.api = createApiClient(
+      buildApiFetcher({
+        apiToken: accessToken,
+        onTokenRefresh,
+      }),
+      baseUrl,
+    );
   }
 
   private async getTeamId(): Promise<number> {

@@ -1,10 +1,30 @@
 import type { AgentEvent } from "@posthog/agent";
 import type { TaskArtifact } from "@shared/types";
 import type { Recording } from "@shared/types";
+import type {
+  CloudRegion,
+  OAuthTokenResponse,
+  StoredOAuthTokens,
+} from "@shared/types/oauth";
 
 export interface IElectronAPI {
   storeApiKey: (apiKey: string) => Promise<string>;
   retrieveApiKey: (encryptedKey: string) => Promise<string | null>;
+  // OAuth API
+  oauthStartFlow: (
+    region: CloudRegion,
+  ) => Promise<{ success: boolean; data?: OAuthTokenResponse; error?: string }>;
+  oauthStoreTokens: (
+    tokens: StoredOAuthTokens,
+  ) => Promise<{ success: boolean; encrypted?: string; error?: string }>;
+  oauthRetrieveTokens: (
+    encrypted: string,
+  ) => Promise<{ success: boolean; data?: StoredOAuthTokens; error?: string }>;
+  oauthDeleteTokens: () => Promise<{ success: boolean }>;
+  oauthRefreshToken: (
+    refreshToken: string,
+    region: CloudRegion,
+  ) => Promise<{ success: boolean; data?: OAuthTokenResponse; error?: string }>;
   selectDirectory: () => Promise<string | null>;
   searchDirectories: (query: string, searchRoot?: string) => Promise<string[]>;
   validateRepo: (directoryPath: string) => Promise<boolean>;

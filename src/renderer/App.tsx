@@ -5,12 +5,12 @@ import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
 
 function App() {
-  const { isAuthenticated, checkAuth } = useAuthStore();
+  const { isAuthenticated, initializeOAuth } = useAuthStore();
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    checkAuth().finally(() => setIsLoading(false));
-  }, [checkAuth]);
+    initializeOAuth().finally(() => setIsLoading(false));
+  }, [initializeOAuth]);
 
   if (isLoading) {
     return (
