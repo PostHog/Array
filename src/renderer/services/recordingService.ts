@@ -13,7 +13,6 @@ interface UploadBatch {
 
 const uploadBatches = new Map<string, UploadBatch>();
 
-// Track initialization to prevent double-initialization
 let isInitialized = false;
 
 /**
@@ -22,7 +21,6 @@ let isInitialized = false;
  * Call this once when the app starts (outside React component lifecycle)
  */
 export function initializeRecordingService() {
-  // Prevent double-initialization
   if (isInitialized) {
     console.warn("[RecordingService] Already initialized, skipping");
     return;
@@ -31,8 +29,6 @@ export function initializeRecordingService() {
   console.log("[RecordingService] Initializing...");
   isInitialized = true;
 
-  // Handle crash recovery after checking auth client is ready
-  // This prevents the race condition where recovery tries to upload before client exists
   const authStore = useAuthStore.getState();
   if (authStore.client) {
     handleCrashRecovery();
@@ -42,15 +38,12 @@ export function initializeRecordingService() {
     );
   }
 
-  // Listen for recording started events
   window.electronAPI.onRecallRecordingStarted((recording) => {
     console.log("[RecordingService] Recording started:", recording);
 
     const store = useActiveRecordingStore.getState();
-    // Pass full DesktopRecording object to store
     store.addRecording(recording);
 
-    // Initialize upload batch tracker
     uploadBatches.set(recording.id, {
       recordingId: recording.id,
       timer: null,
@@ -58,11 +51,9 @@ export function initializeRecordingService() {
     });
   });
 
-  // Listen for transcript segments
   window.electronAPI.onRecallTranscriptSegment((data) => {
     const store = useActiveRecordingStore.getState();
 
-    // Add segment to store
     store.addSegment(data.posthog_recording_id, {
       timestamp: data.timestamp,
       speaker: data.speaker,
@@ -71,19 +62,16 @@ export function initializeRecordingService() {
       is_final: data.is_final,
     });
 
-    // Track batch for upload
     const batch = uploadBatches.get(data.posthog_recording_id);
     if (batch) {
       batch.segmentCount++;
 
-      // Start timer if not already running
       if (!batch.timer) {
         batch.timer = setTimeout(() => {
           uploadPendingSegments(data.posthog_recording_id);
         }, BATCH_TIMEOUT_MS);
       }
 
-      // Upload if batch size reached
       if (batch.segmentCount >= BATCH_SIZE) {
         if (batch.timer) {
           clearTimeout(batch.timer);
@@ -94,7 +82,6 @@ export function initializeRecordingService() {
     }
   });
 
-  // Listen for meeting ended events
   window.electronAPI.onRecallMeetingEnded((data) => {
     console.log("[RecordingService] Meeting ended:", data);
 
@@ -104,14 +91,50 @@ export function initializeRecordingService() {
     }
     uploadBatches.delete(data.posthog_recording_id);
 
-    // Upload any pending segments, then update status to uploading
-    uploadPendingSegments(data.posthog_recording_id).then(() => {
+    uploadPendingSegments(data.posthog_recording_id).then(async () => {
       const store = useActiveRecordingStore.getState();
+
+      const recording = store.getRecording(data.posthog_recording_id);
+      if (recording) {
+        const participants = [
+          ...new Set(
+            recording.segments
+              .map((s) => s.speaker)
+              .filter((s): s is string => s !== null && s !== undefined),
+          ),
+        ];
+
+        if (participants.length > 0) {
+          console.log(
+            `[RecordingService] Extracted ${participants.length} participants:`,
+            participants,
+          );
+
+          try {
+            const authStore = useAuthStore.getState();
+            const client = authStore.client;
+
+            if (client) {
+              await client.updateDesktopRecording(data.posthog_recording_id, {
+                participants,
+              });
+              console.log(
+                `[RecordingService] Updated recording with participants`,
+              );
+            }
+          } catch (error) {
+            console.error(
+              "[RecordingService] Failed to update participants:",
+              error,
+            );
+          }
+        }
+      }
+
       store.updateStatus(data.posthog_recording_id, "uploading");
     });
   });
 
-  // Listen for recording ready events
   window.electronAPI.onRecallRecordingReady((data) => {
     console.log("[RecordingService] Recording ready:", data);
 
@@ -123,9 +146,6 @@ export function initializeRecordingService() {
   console.log("[RecordingService] Initialized successfully");
 }
 
-/**
- * Upload pending transcript segments to backend
- */
 async function uploadPendingSegments(recordingId: string): Promise<void> {
   const store = useActiveRecordingStore.getState();
   const recording = store.getRecording(recordingId);
@@ -153,7 +173,6 @@ async function uploadPendingSegments(recordingId: string): Promise<void> {
       throw new Error("PostHog client not initialized");
     }
 
-    // Upload segments to backend
     await client.updateDesktopRecordingTranscript(recordingId, {
       segments: pendingSegments.map((seg) => ({
         timestamp_ms: seg.timestamp,
@@ -164,7 +183,6 @@ async function uploadPendingSegments(recordingId: string): Promise<void> {
       })),
     });
 
-    // Update last uploaded index
     const newIndex =
       recording.lastUploadedSegmentIndex + pendingSegments.length;
     store.updateLastUploadedIndex(recordingId, newIndex);
@@ -173,7 +191,6 @@ async function uploadPendingSegments(recordingId: string): Promise<void> {
       `[RecordingService] Successfully uploaded ${pendingSegments.length} segments`,
     );
 
-    // Reset batch tracker
     const batch = uploadBatches.get(recordingId);
     if (batch) {
       batch.segmentCount = 0;
@@ -196,11 +213,9 @@ async function uploadPendingSegments(recordingId: string): Promise<void> {
 
 /**
  * Handle crash recovery - upload any pending segments and clear from IDB
- * Called on app startup. Keeps things simple: save what we have and move on.
  *
  * Tradeoff: Might lose last ~10 segments if upload fails during crash recovery.
- * Acceptable because: (1) Backend already has 90%+ from batched uploads during meeting
- * (2) Crashes are rare, (3) Crash + upload failure is even rarer
+ * Acceptable because backend already has 90%+ from batched uploads during meeting.
  */
 function handleCrashRecovery() {
   const store = useActiveRecordingStore.getState();
@@ -220,7 +235,6 @@ function handleCrashRecovery() {
       `[RecordingService] Uploading pending segments for ${recording.id} (best effort)`,
     );
 
-    // Upload pending segments in background (best effort, don't block startup)
     uploadPendingSegments(recording.id).catch((error) => {
       console.error(
         `[RecordingService] Failed to upload segments during recovery (acceptable):`,
@@ -228,20 +242,14 @@ function handleCrashRecovery() {
       );
     });
 
-    // Clear from IDB immediately - recording is already in backend
     store.clearRecording(recording.id);
     console.log(`[RecordingService] Cleared ${recording.id} from IDB`);
   }
 }
 
-/**
- * Clean up the recording service
- * Call this when the app shuts down
- */
 export function shutdownRecordingService() {
   console.log("[RecordingService] Shutting down...");
 
-  // Clear all upload batch timers
   for (const batch of uploadBatches.values()) {
     if (batch.timer) {
       clearTimeout(batch.timer);
@@ -249,7 +257,6 @@ export function shutdownRecordingService() {
   }
   uploadBatches.clear();
 
-  // Reset initialization flag to allow re-initialization after logout/login
   isInitialized = false;
 
   console.log("[RecordingService] Shutdown complete");
