@@ -1,5 +1,6 @@
 import { AsciiArt } from "@components/AsciiArt";
 import { useAuthStore } from "@features/auth/stores/authStore";
+import { FolderPicker } from "@features/folder-picker/components/FolderPicker";
 import {
   Box,
   Button,
@@ -20,18 +21,39 @@ export function AuthScreen() {
   const apiHostId = useId();
   const [apiKey, setApiKey] = useState("");
   const [apiHost, setApiHost] = useState("https://app.posthog.com");
+  const [workspace, setWorkspace] = useState("~/workspace");
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
-  const { setCredentials } = useAuthStore();
+  const { setCredentials, setDefaultWorkspace } = useAuthStore();
 
   const authMutation = useMutation({
-    mutationFn: async ({ apiKey, host }: { apiKey: string; host: string }) => {
+    mutationFn: async ({
+      apiKey,
+      host,
+      workspace,
+    }: {
+      apiKey: string;
+      host: string;
+      workspace: string;
+    }) => {
+      if (!workspace || !workspace.trim()) {
+        setWorkspaceError("Please select a workspace directory");
+        throw new Error("Workspace is required");
+      }
+
+      // Set credentials first
       await setCredentials(apiKey, host);
+
+      // Then save workspace
+      setDefaultWorkspace(workspace.trim());
+      setWorkspaceError(null);
     },
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    authMutation.mutate({ apiKey, host: apiHost });
+    setWorkspaceError(null);
+    authMutation.mutate({ apiKey, host: apiHost, workspace });
   };
 
   return (
@@ -96,7 +118,28 @@ export function AuthScreen() {
                           required
                         />
                       </Flex>
+
+                      <Flex direction="column" gap="2">
+                        <Text as="label" size="2" weight="medium" color="gray">
+                          Default workspace
+                        </Text>
+                        <FolderPicker
+                          value={workspace}
+                          onChange={setWorkspace}
+                          placeholder="~/workspace"
+                          size="2"
+                        />
+                        <Text size="1" color="gray">
+                          Where repositories will be cloned
+                        </Text>
+                      </Flex>
                     </Flex>
+
+                    {workspaceError && (
+                      <Callout.Root color="red">
+                        <Callout.Text>{workspaceError}</Callout.Text>
+                      </Callout.Root>
+                    )}
 
                     {authMutation.isError && (
                       <Callout.Root color="red">
@@ -110,7 +153,7 @@ export function AuthScreen() {
 
                     <Button
                       type="submit"
-                      disabled={authMutation.isPending || !apiKey}
+                      disabled={authMutation.isPending || !apiKey || !workspace}
                       variant="classic"
                       size="3"
                       mt="4"

@@ -12,9 +12,11 @@ interface AuthState {
   client: PostHogAPIClient | null;
   openaiApiKey: string | null;
   encryptedOpenaiKey: string | null;
+  defaultWorkspace: string | null;
 
   setCredentials: (apiKey: string, apiHost: string) => Promise<void>;
   setOpenAIKey: (apiKey: string) => Promise<void>;
+  setDefaultWorkspace: (workspace: string) => void;
   checkAuth: () => Promise<boolean>;
   logout: () => void;
 }
@@ -29,6 +31,7 @@ export const useAuthStore = create<AuthState>()(
       client: null,
       openaiApiKey: null,
       encryptedOpenaiKey: null,
+      defaultWorkspace: null,
 
       setCredentials: async (apiKey: string, apiHost: string) => {
         const encryptedKey = await window.electronAPI.storeApiKey(apiKey);
@@ -62,6 +65,10 @@ export const useAuthStore = create<AuthState>()(
           openaiApiKey: apiKey,
           encryptedOpenaiKey: encryptedKey,
         });
+      },
+
+      setDefaultWorkspace: (workspace: string) => {
+        set({ defaultWorkspace: workspace });
       },
 
       checkAuth: async () => {
@@ -131,6 +138,7 @@ export const useAuthStore = create<AuthState>()(
         apiHost: state.apiHost,
         encryptedKey: state.encryptedKey,
         encryptedOpenaiKey: state.encryptedOpenaiKey,
+        defaultWorkspace: state.defaultWorkspace,
       }),
     },
   ),

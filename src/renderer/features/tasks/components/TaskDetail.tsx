@@ -1,5 +1,6 @@
 import { AsciiArt } from "@components/AsciiArt";
 import { ResizeHandle } from "@components/ui/ResizeHandle";
+import { useAuthStore } from "@features/auth/stores/authStore";
 import { PlanEditor } from "@features/editor/components/PlanEditor";
 import { PlanView } from "@features/editor/components/PlanView";
 import { RichTextEditor } from "@features/editor/components/RichTextEditor";
@@ -8,9 +9,7 @@ import { useCliPanelResize } from "@features/tasks/hooks/useCliPanelResize";
 import { useTasks, useUpdateTask } from "@features/tasks/hooks/useTasks";
 import { useTaskExecutionStore } from "@features/tasks/stores/taskExecutionStore";
 import { useBlurOnEscape } from "@hooks/useBlurOnEscape";
-import { useRepositoryIntegration } from "@hooks/useIntegrations";
 import { useStatusBar } from "@hooks/useStatusBar";
-import { WarningCircleIcon } from "@phosphor-icons/react";
 import { GearIcon, GlobeIcon } from "@radix-ui/react-icons";
 import {
   Box,
@@ -24,15 +23,12 @@ import {
   Text,
   Tooltip,
 } from "@radix-ui/themes";
-import type { ClarifyingQuestion, Task } from "@shared/types";
+import type { Task } from "@shared/types";
 import { useLayoutStore } from "@stores/layoutStore";
 import { useTabStore } from "@stores/tabStore";
-import {
-  REPO_NOT_IN_INTEGRATION_WARNING,
-  repoConfigToKey,
-} from "@utils/repository";
+import { expandTildePath } from "@utils/path";
 import { format, formatDistanceToNow } from "date-fns";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 interface TaskDetailProps {
@@ -46,15 +42,12 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     runTask,
     cancelTask,
     clearTaskLogs,
-    getRepoWorkingDir,
-    setRepoPath,
     setPlanModePhase,
-    setClarifyingQuestions,
     addQuestionAnswer,
     setPlanContent,
     setSelectedArtifact,
   } = useTaskExecutionStore();
-  const { isRepoInIntegration } = useRepositoryIntegration();
+  const { defaultWorkspace } = useAuthStore();
   const { data: tasks = [] } = useTasks();
   const { mutate: updateTask } = useUpdateTask();
   const { updateTabTitle, activeTabId } = useTabStore();
@@ -89,43 +82,26 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     handleSubmit,
     reset: resetForm,
     control,
-    watch,
   } = useForm({
     defaultValues: {
       title: task.title,
       description: task.description || "",
-      repository: repoConfigToKey(task.repository_config),
     },
   });
 
-  const repositoryValue = watch("repository");
-
-  // Initialize repoPath from mapping if task has repository_config
-  useEffect(() => {
-    if (task.repository_config && !repoPath) {
-      const repoKey = repoConfigToKey(task.repository_config);
-      if (repoKey) {
-        const savedPath = getRepoWorkingDir(repoKey);
-        if (savedPath) {
-          setRepoPath(task.id, savedPath);
-        }
-      }
-    }
-  }, [
-    task.id,
-    task.repository_config,
-    repoPath,
-    getRepoWorkingDir,
-    setRepoPath,
-  ]);
+  // Derive working path from repository and workspace (for display only)
+  const derivedPath = useMemo(() => {
+    if (!task.repository_config || !defaultWorkspace) return null;
+    const expandedWorkspace = expandTildePath(defaultWorkspace);
+    return `${expandedWorkspace}/${task.repository_config.repository}`;
+  }, [task.repository_config, defaultWorkspace]);
 
   useEffect(() => {
     resetForm({
       title: task.title,
       description: task.description || "",
-      repository: repoConfigToKey(task.repository_config),
     });
-  }, [task.title, task.description, task.repository_config, resetForm]);
+  }, [task.title, task.description, resetForm]);
 
   useStatusBar(
     isRunning ? "Agent running..." : "Task details",
@@ -206,90 +182,6 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     setSelectedArtifact(task.id, fileName);
     // If in plan mode, this will open the editor automatically via PlanView
   };
-
-  // Listen for research_questions artifact event from agent
-  useEffect(() => {
-    // Check logs for research_questions artifact event
-    const artifactEvent = logs.find(
-      (log) => log.type === "artifact" && "kind" in log && "content" in log,
-    );
-
-    if (artifactEvent && (clarifyingQuestions?.length ?? 0) === 0) {
-      // Type guard to check if the content is an array of questions
-      const event = artifactEvent as {
-        type: string;
-        ts: number;
-        kind?: string;
-        content?: Array<{
-          id: string;
-          question: string;
-          options: string[];
-        }>;
-      };
-
-      if (event.kind === "research_questions" && event.content) {
-        const questions = event.content;
-
-        console.log(
-          "[TaskDetail] Received research_questions artifact with",
-          questions.length,
-          "questions",
-        );
-
-        // Convert to ClarifyingQuestion format
-        const clarifyingQs: ClarifyingQuestion[] = questions.map(
-          (q: { id: string; question: string; options: string[] }) => ({
-            id: q.id,
-            question: q.question,
-            options: q.options,
-            requiresInput: q.options.some((opt: string) =>
-              opt.toLowerCase().includes("something else"),
-            ),
-          }),
-        );
-
-        setClarifyingQuestions(task.id, clarifyingQs);
-        setPlanModePhase(task.id, "questions");
-      }
-    }
-  }, [
-    logs,
-    clarifyingQuestions?.length,
-    task.id,
-    setClarifyingQuestions,
-    setPlanModePhase,
-  ]);
-
-  // Listen for plan completion
-  useEffect(() => {
-    if (planModePhase === "planning" && !isRunning) {
-      // Plan generation completed, load plan content and switch to review
-      const loadPlan = async () => {
-        if (repoPath) {
-          try {
-            const content = await window.electronAPI?.readPlanFile(
-              repoPath,
-              task.id,
-            );
-            if (content) {
-              setPlanContent(task.id, content);
-              setPlanModePhase(task.id, "review");
-            }
-          } catch (error) {
-            console.error("Failed to load plan:", error);
-          }
-        }
-      };
-      loadPlan();
-    }
-  }, [
-    planModePhase,
-    isRunning,
-    repoPath,
-    task.id,
-    setPlanContent,
-    setPlanModePhase,
-  ]);
 
   const onSubmit = handleSubmit((data) => {
     if (data.title !== task.title) {
@@ -388,40 +280,31 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                 <DataList.Item>
                   <DataList.Label>Repository</DataList.Label>
                   <DataList.Value>
-                    <Flex align="center" gap="2">
-                      {repositoryValue ? (
-                        <Code size="2" color="gray">
-                          {repositoryValue}
-                        </Code>
-                      ) : (
-                        <Text size="2" color="gray">
-                          No repository connected
-                        </Text>
-                      )}
-                      {repositoryValue &&
-                        !isRepoInIntegration(repositoryValue) && (
-                          <Tooltip content={REPO_NOT_IN_INTEGRATION_WARNING}>
-                            <WarningCircleIcon
-                              size={16}
-                              weight="fill"
-                              style={{ color: "var(--orange-9)" }}
-                            />
-                          </Tooltip>
-                        )}
-                    </Flex>
+                    {task.repository_config ? (
+                      <Code size="2" color="gray">
+                        {task.repository_config.organization}/
+                        {task.repository_config.repository}
+                      </Code>
+                    ) : (
+                      <Text size="2" color="gray">
+                        No repository connected
+                      </Text>
+                    )}
                   </DataList.Value>
                 </DataList.Item>
 
                 <DataList.Item>
-                  <DataList.Label>Working Directory</DataList.Label>
+                  <DataList.Label>Working directory</DataList.Label>
                   <DataList.Value>
-                    {repoPath ? (
+                    {derivedPath ? (
                       <Code size="2" color="gray">
-                        {repoPath.replace(/^\/Users\/[^/]+/, "~")}
+                        {derivedPath.replace(/^\/Users\/[^/]+/, "~")}
                       </Code>
                     ) : (
                       <Text size="2" color="gray">
-                        Not set
+                        {!defaultWorkspace
+                          ? "No workspace configured"
+                          : "No repository selected"}
                       </Text>
                     )}
                   </DataList.Value>

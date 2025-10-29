@@ -27,6 +27,15 @@ export const useLayoutStore = create<LayoutStore>()(
     }),
     {
       name: "layout-storage",
+      partialize: (state) => ({
+        cliPanelWidth: state.cliPanelWidth,
+        taskDetailSplitWidth: state.taskDetailSplitWidth,
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          state.cliMode = "task";
+        }
+      },
     },
   ),
 );

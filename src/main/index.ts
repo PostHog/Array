@@ -12,6 +12,7 @@ import {
 } from "electron";
 import { registerAgentIpc, type TaskController } from "./services/agent.js";
 import { registerFsIpc } from "./services/fs.js";
+import { registerGitIpc } from "./services/git.js";
 import { registerOsIpc } from "./services/os.js";
 import { registerPosthogIpc } from "./services/posthog.js";
 import {
@@ -193,6 +194,7 @@ ipcMain.handle("app:get-version", () => app.getVersion());
 // Register IPC handlers via services
 registerPosthogIpc();
 registerOsIpc(() => mainWindow);
+registerGitIpc(() => mainWindow);
 registerAgentIpc(taskControllers, () => mainWindow);
 registerFsIpc();
 registerRecordingIpc();

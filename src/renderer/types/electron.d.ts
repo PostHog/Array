@@ -16,6 +16,30 @@ export interface IElectronAPI {
     branch?: string;
     remote?: string;
   } | null>;
+  validateRepositoryMatch: (
+    path: string,
+    organization: string,
+    repository: string,
+  ) => Promise<{
+    valid: boolean;
+    detected?: { organization: string; repository: string } | null;
+    error?: string;
+  }>;
+  checkSSHAccess: () => Promise<{
+    available: boolean;
+    error?: string;
+  }>;
+  cloneRepository: (
+    repoUrl: string,
+    targetPath: string,
+  ) => Promise<{ cloneId: string }>;
+  onCloneProgress: (
+    cloneId: string,
+    listener: (event: {
+      status: "cloning" | "complete" | "error";
+      message: string;
+    }) => void,
+  ) => () => void;
   showMessageBox: (options: {
     type?: "none" | "info" | "error" | "question" | "warning";
     title?: string;

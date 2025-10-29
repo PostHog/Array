@@ -45,6 +45,48 @@ contextBridge.exposeInMainWorld("electronAPI", {
     branch?: string;
     remote?: string;
   } | null> => ipcRenderer.invoke("detect-repo", directoryPath),
+  validateRepositoryMatch: (
+    path: string,
+    organization: string,
+    repository: string,
+  ): Promise<{
+    valid: boolean;
+    detected?: { organization: string; repository: string } | null;
+    error?: string;
+  }> =>
+    ipcRenderer.invoke(
+      "validate-repository-match",
+      path,
+      organization,
+      repository,
+    ),
+  checkSSHAccess: (): Promise<{
+    available: boolean;
+    error?: string;
+  }> => ipcRenderer.invoke("check-ssh-access"),
+  cloneRepository: (
+    repoUrl: string,
+    targetPath: string,
+  ): Promise<{ cloneId: string }> =>
+    ipcRenderer.invoke("clone-repository", repoUrl, targetPath),
+  onCloneProgress: (
+    cloneId: string,
+    listener: (event: {
+      status: "cloning" | "complete" | "error";
+      message: string;
+    }) => void,
+  ): (() => void) => {
+    const channel = `clone-progress:${cloneId}`;
+    const wrapped = (
+      _event: IpcRendererEvent,
+      payload: {
+        status: "cloning" | "complete" | "error";
+        message: string;
+      },
+    ) => listener(payload);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
+  },
   showMessageBox: (options: MessageBoxOptions): Promise<{ response: number }> =>
     ipcRenderer.invoke("show-message-box", options),
   openExternal: (url: string): Promise<void> =>
