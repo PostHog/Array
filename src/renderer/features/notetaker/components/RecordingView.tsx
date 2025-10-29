@@ -47,6 +47,17 @@ export function RecordingView({ recordingItem }: RecordingViewProps) {
   const isPastRecording = recordingItem.type === "past";
   const hasSegments = segments.length > 0;
 
+  const participants =
+    recordingItem.type === "past"
+      ? (recordingItem.recording.participants as string[] | undefined)
+      : [
+          ...new Set(
+            segments
+              .map((s) => s.speaker)
+              .filter((s): s is string => s !== null && s !== undefined),
+          ),
+        ];
+
   return (
     <Box
       p="4"
@@ -57,7 +68,7 @@ export function RecordingView({ recordingItem }: RecordingViewProps) {
         <Text size="4" weight="bold">
           {recordingItem.recording.meeting_title || "Untitled meeting"}
         </Text>
-        <Flex gap="2">
+        <Flex gap="2" wrap="wrap">
           <Badge color="gray" variant="soft">
             {recordingItem.recording.platform}
           </Badge>
@@ -66,7 +77,27 @@ export function RecordingView({ recordingItem }: RecordingViewProps) {
               recordingItem.recording.created_at || new Date(),
             ).toLocaleString()}
           </Text>
+          {participants && participants.length > 0 && (
+            <>
+              <Text size="2" color="gray">
+                •
+              </Text>
+              <Text size="2" color="gray">
+                {participants.length} participant
+                {participants.length !== 1 ? "s" : ""}
+              </Text>
+            </>
+          )}
         </Flex>
+        {participants && participants.length > 0 && (
+          <Flex gap="1" wrap="wrap">
+            {participants.map((participant) => (
+              <Badge key={participant} color="blue" variant="soft" size="1">
+                {participant}
+              </Badge>
+            ))}
+          </Flex>
+        )}
       </Flex>
 
       {/* Summary - only for past recordings */}
