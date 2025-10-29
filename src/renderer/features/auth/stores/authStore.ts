@@ -1,4 +1,5 @@
 import { PostHogAPIClient } from "@api/posthogClient";
+import { queryClient } from "@renderer/lib/queryClient";
 import {
   getCloudUrlFromRegion,
   TOKEN_REFRESH_BUFFER_MS,
@@ -18,6 +19,7 @@ interface AuthState {
   // PostHog client
   isAuthenticated: boolean;
   client: PostHogAPIClient | null;
+  projectId: number | null; // Current team/project ID
 
   // OpenAI API key (separate concern, kept for now)
   openaiApiKey: string | null;
@@ -49,6 +51,7 @@ export const useAuthStore = create<AuthState>()(
       // PostHog client
       isAuthenticated: false,
       client: null,
+      projectId: null,
 
       // OpenAI key
       openaiApiKey: null,
@@ -63,6 +66,12 @@ export const useAuthStore = create<AuthState>()(
 
         const tokenResponse = result.data;
         const expiresAt = Date.now() + tokenResponse.expires_in * 1000;
+
+        const projectId = tokenResponse.scoped_teams?.[0];
+
+        if (!projectId) {
+          throw new Error("No team found in OAuth scopes");
+        }
 
         const storeResult = await window.electronAPI.oauthEncryptTokens({
           accessToken: tokenResponse.access_token,
@@ -87,6 +96,7 @@ export const useAuthStore = create<AuthState>()(
             }
             return token;
           },
+          projectId,
         );
 
         try {
@@ -100,6 +110,7 @@ export const useAuthStore = create<AuthState>()(
             encryptedOAuthTokens: storeResult.encrypted,
             isAuthenticated: true,
             client,
+            projectId,
           });
 
           get().scheduleTokenRefresh();
@@ -154,6 +165,7 @@ export const useAuthStore = create<AuthState>()(
             }
             return token;
           },
+          state.projectId || undefined,
         );
 
         set({
@@ -230,6 +242,14 @@ export const useAuthStore = create<AuthState>()(
             }
 
             const apiHost = getCloudUrlFromRegion(tokens.cloudRegion);
+            const projectId = state.projectId;
+
+            if (!projectId) {
+              console.error("No project ID found in stored auth state");
+              set({ encryptedOAuthTokens: null, isAuthenticated: false });
+              return false;
+            }
+
             const client = new PostHogAPIClient(
               tokens.accessToken,
               apiHost,
@@ -241,6 +261,7 @@ export const useAuthStore = create<AuthState>()(
                 }
                 return token;
               },
+              projectId,
             );
 
             try {
@@ -302,6 +323,8 @@ export const useAuthStore = create<AuthState>()(
 
         window.electronAPI.oauthDeleteTokens();
 
+        queryClient.clear();
+
         set({
           oauthAccessToken: null,
           oauthRefreshToken: null,
@@ -310,6 +333,7 @@ export const useAuthStore = create<AuthState>()(
           encryptedOAuthTokens: null,
           isAuthenticated: false,
           client: null,
+          projectId: null,
           openaiApiKey: null,
           encryptedOpenaiKey: null,
         });
@@ -321,6 +345,7 @@ export const useAuthStore = create<AuthState>()(
         cloudRegion: state.cloudRegion,
         encryptedOAuthTokens: state.encryptedOAuthTokens,
         encryptedOpenaiKey: state.encryptedOpenaiKey,
+        projectId: state.projectId,
       }),
     },
   ),

@@ -165,6 +165,17 @@ export function SettingsView() {
                   </Flex>
                 )}
 
+                {isAuthenticated && currentUser?.team?.name && (
+                  <Flex direction="column" gap="2">
+                    <Text size="1" weight="medium">
+                      Project
+                    </Text>
+                    <Text size="1" color="gray">
+                      {currentUser.team.name}
+                    </Text>
+                  </Flex>
+                )}
+
                 {isAuthenticated && cloudRegion && (
                   <Flex direction="column" gap="2">
                     <Text size="1" weight="medium">

@@ -10,6 +10,7 @@ export class PostHogAPIClient {
     accessToken: string,
     apiHost: string,
     onTokenRefresh?: () => Promise<string>,
+    teamId?: number,
   ) {
     const baseUrl = apiHost.endsWith("/") ? apiHost.slice(0, -1) : apiHost;
     this.api = createApiClient(
@@ -19,6 +20,9 @@ export class PostHogAPIClient {
       }),
       baseUrl,
     );
+    if (teamId) {
+      this._teamId = teamId;
+    }
   }
 
   private async getTeamId(): Promise<number> {
