@@ -1,5 +1,4 @@
 import type { TreeNode } from "@components/ui/sidebar/Types";
-import { useRecordingStore } from "@features/recordings/stores/recordingStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import {
   CheckCircleIcon,
@@ -8,24 +7,17 @@ import {
   GearIcon,
   ListNumbersIcon,
   PlusIcon,
-  SquareIcon,
   SquaresFourIcon,
-  WaveformIcon,
+  VideoIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
 import type { TabState, Task } from "@shared/types";
-
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
 
 interface UseSidebarMenuDataProps {
   userName: string;
   activeTab: TabState | undefined;
   onNavigate: (
-    type: "task-list" | "recordings" | "settings",
+    type: "task-list" | "recordings" | "notetaker" | "settings",
     title: string,
   ) => void;
   onTaskClick: (task: Task) => void;
@@ -63,15 +55,8 @@ export function useSidebarMenuData({
   onNavigate,
   onTaskClick,
   onCreateTask,
-  onStartRecording,
-  onStopRecording,
 }: UseSidebarMenuDataProps): TreeNode {
   const { data: allTasks = [] } = useTasks();
-  const isRecording = useRecordingStore((state) => state.isRecording);
-  const recordingDuration = useRecordingStore(
-    (state) => state.recordingDuration,
-  );
-
   const relevantTasks = allTasks
     .sort(
       (a, b) =>
@@ -96,38 +81,15 @@ export function useSidebarMenuData({
         hoverIcon: <PlusIcon size={12} />,
       },
       {
-        label: isRecording
-          ? `Recordings ${formatDuration(recordingDuration)}`
-          : "Recordings",
-        icon: isRecording ? (
-          <CircleIcon
+        label: "Notetaker",
+        icon: (
+          <VideoIcon
             size={12}
-            weight="fill"
-            style={{ color: "var(--red-9)" }}
-          />
-        ) : (
-          <WaveformIcon
-            size={12}
-            weight={activeTab?.type === "recordings" ? "fill" : "regular"}
+            weight={activeTab?.type === "notetaker" ? "fill" : "regular"}
           />
         ),
-        action: () => onNavigate("recordings", "Recordings"),
-        isActive: activeTab?.type === "recordings",
-        hoverAction: isRecording ? onStopRecording : onStartRecording,
-        hoverIcon: isRecording ? (
-          <SquareIcon
-            size={10}
-            weight="fill"
-            style={{ color: "var(--red-9)" }}
-          />
-        ) : (
-          <CircleIcon
-            size={10}
-            weight="fill"
-            style={{ color: "var(--red-9)" }}
-          />
-        ),
-        showHoverIconAlways: isRecording,
+        action: () => onNavigate("notetaker", "Notetaker"),
+        isActive: activeTab?.type === "notetaker",
       },
       {
         label: "Settings",

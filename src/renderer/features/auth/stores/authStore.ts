@@ -2,6 +2,8 @@ import { PostHogAPIClient } from "@api/posthogClient";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+const RECALL_API_URL = "https://us-west-2.recall.ai";
+
 interface AuthState {
   apiKey: string | null;
   apiHost: string;
@@ -43,6 +45,12 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             client,
           });
+
+          window.electronAPI
+            .recallInitialize(RECALL_API_URL, apiKey, apiHost)
+            .catch((error) => {
+              console.error("[Auth] Failed to initialize Recall SDK:", error);
+            });
         } catch (_error) {
           throw new Error("Invalid API key or host");
         }
@@ -75,6 +83,15 @@ export const useAuthStore = create<AuthState>()(
                 isAuthenticated: true,
                 client,
               });
+
+              window.electronAPI
+                .recallInitialize(RECALL_API_URL, decryptedKey, state.apiHost)
+                .catch((error) => {
+                  console.error(
+                    "[Auth] Failed to initialize Recall SDK:",
+                    error,
+                  );
+                });
             } catch {
               set({ encryptedKey: null, isAuthenticated: false });
             }
