@@ -190,7 +190,8 @@ export function SettingsView() {
                     size="1"
                   />
                   <Text size="1" color="gray">
-                    Default directory where repositories will be cloned
+                    Default directory where repositories will be cloned. This
+                    should be the folder where you usually store your projects.
                   </Text>
                 </Flex>
               </Flex>

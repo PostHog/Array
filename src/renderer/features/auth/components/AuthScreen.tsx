@@ -130,7 +130,8 @@ export function AuthScreen() {
                           size="2"
                         />
                         <Text size="1" color="gray">
-                          Where repositories will be cloned
+                          Where repositories will be cloned. This should be the
+                          folder where you usually store your projects.
                         </Text>
                       </Flex>
                     </Flex>
