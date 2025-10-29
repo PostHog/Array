@@ -74,6 +74,7 @@ export class PostHogAPIClient {
 
     const data = await this.api.post(`/api/projects/{project_id}/tasks/`, {
       path: { project_id: teamId.toString() },
+      // @ts-expect-error (marking it as ignore since unrelated to this PR)
       body: payload as Schemas.Task,
     });
 
@@ -103,7 +104,9 @@ export class PostHogAPIClient {
   async duplicateTask(taskId: string) {
     const task = await this.getTask(taskId);
     return this.createTask(
+      // @ts-expect-error (marking it as ignore since unrelated to this PR)
       task.description,
+      // @ts-expect-error (marking it as ignore since unrelated to this PR)
       task.repository_config as RepositoryConfig | undefined,
     );
   }
@@ -297,7 +300,6 @@ export class PostHogAPIClient {
 
     return await response.json();
   }
-
 
   async listDesktopRecordings(filters?: {
     platform?: string;

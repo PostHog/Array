@@ -4,6 +4,7 @@ import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as yaml from "yaml";
 
+// const SCHEMA_URL = "http://localhost:8010/api/schema/";
 const SCHEMA_URL = "https://us.posthog.com/api/schema/";
 const TEMP_SCHEMA_PATH = "temp-openapi.yaml";
 const OUTPUT_PATH = "src/api/generated.ts";

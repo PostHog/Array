@@ -31,6 +31,7 @@ export interface ActiveRecording extends Schemas.DesktopRecording {
   uploadRetries: number;
   errorMessage?: string;
   lastUploadedSegmentIndex: number;
+  lastSegmentTime: number | null;
 }
 
 interface ActiveRecordingState {
@@ -85,6 +86,7 @@ export const useActiveRecordingStore = create<ActiveRecordingState>()(
               localSegmentBuffer: [],
               uploadRetries: 0,
               lastUploadedSegmentIndex: -1,
+              lastSegmentTime: null,
             },
           ],
         }));
@@ -101,7 +103,11 @@ export const useActiveRecordingStore = create<ActiveRecordingState>()(
         set((state) => ({
           activeRecordings: state.activeRecordings.map((r) =>
             r.id === recordingId
-              ? { ...r, localSegmentBuffer: [...r.localSegmentBuffer, segment] }
+              ? {
+                  ...r,
+                  localSegmentBuffer: [...r.localSegmentBuffer, segment],
+                  lastSegmentTime: Date.now(),
+                }
               : r,
           ),
         }));
@@ -217,7 +223,9 @@ export const useActiveRecordingStore = create<ActiveRecordingState>()(
         );
         if (!recording) return [];
 
-        return recording.localSegmentBuffer.slice(recording.lastUploadedSegmentIndex + 1);
+        return recording.localSegmentBuffer.slice(
+          recording.lastUploadedSegmentIndex + 1,
+        );
       },
     }),
     {

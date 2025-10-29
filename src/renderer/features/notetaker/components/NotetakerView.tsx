@@ -4,9 +4,18 @@ import {
   VideoIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
-import { Badge, Box, Card, Flex, Spinner, Text } from "@radix-ui/themes";
+import {
+  Badge,
+  Box,
+  Button,
+  Card,
+  Flex,
+  Spinner,
+  Text,
+} from "@radix-ui/themes";
 import { useAllRecordings } from "@renderer/features/notetaker/hooks/useAllRecordings";
 import { useNotetakerStore } from "@renderer/features/notetaker/stores/notetakerStore";
+import { useActiveRecordingStore } from "@renderer/stores/activeRecordingStore";
 import { useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { RecordingView } from "@/renderer/features/notetaker/components/RecordingView";
@@ -67,6 +76,20 @@ export function NotetakerView() {
   const setSelectedRecordingId = useNotetakerStore(
     (state) => state.setSelectedRecordingId,
   );
+  const clearRecording = useActiveRecordingStore(
+    (state) => state.clearRecording,
+  );
+  const updateStatus = useActiveRecordingStore((state) => state.updateStatus);
+
+  const handleRecoverRecording = (recordingId: string) => {
+    console.log(`[NotetakerView] Recovering recording: ${recordingId}`);
+    updateStatus(recordingId, "ready");
+  };
+
+  const handleDiscardRecording = (recordingId: string) => {
+    console.log(`[NotetakerView] Discarding recording: ${recordingId}`);
+    clearRecording(recordingId);
+  };
 
   const selectedRecording = useMemo(
     () =>
@@ -236,9 +259,37 @@ export function NotetakerView() {
                       </Flex>
 
                       {errorMessage && (
-                        <Text size="1" color="red">
-                          {errorMessage}
-                        </Text>
+                        <Flex direction="column" gap="2">
+                          <Text size="1" color="red">
+                            {errorMessage}
+                          </Text>
+                          {item.type === "active" &&
+                            errorMessage.includes("interrupted") && (
+                              <Flex gap="2">
+                                <Button
+                                  size="1"
+                                  variant="soft"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRecoverRecording(recording.id);
+                                  }}
+                                >
+                                  Recover
+                                </Button>
+                                <Button
+                                  size="1"
+                                  color="red"
+                                  variant="soft"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDiscardRecording(recording.id);
+                                  }}
+                                >
+                                  Discard
+                                </Button>
+                              </Flex>
+                            )}
+                        </Flex>
                       )}
                     </Flex>
                   </Flex>
