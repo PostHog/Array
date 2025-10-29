@@ -69,26 +69,16 @@ Set `ELECTRON_DISABLE_AUTO_UPDATE=1` if you ever need to ship a build with auto 
 
 ### macOS Code Signing & Notarization
 
-macOS builds are automatically signed (and optionally notarized) when the relevant environment variables are present:
+macOS builds are automatically signed (and optionally notarized) when the relevant environment variables are present. We standardise on Apple ID + app-specific password credentials for notarization:
 
 ```bash
 # Required for code signing
 export APPLE_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 
-# Notarytool authentication (pick one of the following)
-# 1. Apple ID + app-specific password
+# Notarytool authentication
 export APPLE_ID="appleid@example.com"
 export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
 export APPLE_TEAM_ID="TEAMID"
-
-# 2. App Store Connect API key
-export APPLE_API_KEY="-----BEGIN PRIVATE KEY-----..."
-export APPLE_API_KEY_ID="ABC123DEFG"
-export APPLE_API_ISSUER="01234567-89AB-CDEF-0123-456789ABCDEF"
-
-# 3. Pre-configured keychain profile (created via `xcrun notarytool store-credentials`)
-export APPLE_NOTARIZE_KEYCHAIN_PROFILE="AC_PROFILE"
-# export APPLE_NOTARIZE_KEYCHAIN="/Users/me/Library/Keychains/login.keychain-db" # optional
 ```
 
 The signing step uses hardened runtime with the entitlements in `build/entitlements.mac.plist` and will sign the DMG plus the zipped `.app`. When the notarization variables are present, packages are also notarized. Without these variables the build proceeds unsigned, which is convenient for local development.
@@ -96,11 +86,16 @@ The signing step uses hardened runtime with the entitlements in `build/entitleme
 For CI releases, add the same values as GitHub Actions repository secrets:
 
 - `APPLE_CODESIGN_IDENTITY`
-- `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` (or)
-- `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` (or)
-- `APPLE_NOTARIZE_KEYCHAIN_PROFILE`, `APPLE_NOTARIZE_KEYCHAIN` (optional companion secret)
+- `APPLE_ID`
+- `APPLE_APP_SPECIFIC_PASSWORD`
+- `APPLE_TEAM_ID`
+- `APPLE_CODESIGN_CERT_BASE64` - Base64 encoded `.p12` export of your Developer ID Application certificate
+- `APPLE_CODESIGN_CERT_PASSWORD` - Password used when exporting the `.p12`
+- `APPLE_CODESIGN_KEYCHAIN_PASSWORD` - Password for the temporary keychain created in CI
 
 The `Publish Release` workflow will automatically sign and notarize when these secrets are present.
+
+> If you prefer API-key or keychain profile credentials for notarization, the Forge configuration already supports them—add the matching env vars locally and in CI instead of the defaults above.
 
 ### Liquid Glass Icon (macOS 26+)
 
