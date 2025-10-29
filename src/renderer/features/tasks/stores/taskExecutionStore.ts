@@ -437,6 +437,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         ]);
 
         try {
+          const { createPR } = useSettingsStore.getState();
           const result = await window.electronAPI?.agentStart({
             taskId: task.id,
             repoPath: effectiveRepoPath,
@@ -446,6 +447,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
             autoProgress: true,
             executionMode: taskState.executionMode,
             runMode: taskState.runMode,
+            createPR,
           });
           if (!result) {
             store.addLog(taskId, {

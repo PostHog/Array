@@ -40,6 +40,7 @@ export interface IElectronAPI {
     model?: string;
     executionMode?: "plan";
     runMode?: "local" | "cloud";
+    createPR?: boolean;
   }) => Promise<{ taskId: string; channel: string }>;
   agentCancel: (taskId: string) => Promise<boolean>;
   onAgentEvent: (

@@ -21,6 +21,7 @@ interface AgentStartParams {
   model?: string;
   executionMode?: "plan";
   runMode?: "local" | "cloud";
+  createPR?: boolean;
 }
 
 contextBridge.exposeInMainWorld("electronAPI", {
