@@ -38,10 +38,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     region: CloudRegion,
   ): Promise<{ success: boolean; data?: OAuthTokenResponse; error?: string }> =>
     ipcRenderer.invoke("oauth:start-flow", region),
-  oauthStoreTokens: (
+  oauthEncryptTokens: (
     tokens: StoredOAuthTokens,
   ): Promise<{ success: boolean; encrypted?: string; error?: string }> =>
-    ipcRenderer.invoke("oauth:store-tokens", tokens),
+    ipcRenderer.invoke("oauth:encrypt-tokens", tokens),
   oauthRetrieveTokens: (
     encrypted: string,
   ): Promise<{ success: boolean; data?: StoredOAuthTokens; error?: string }> =>

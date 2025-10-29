@@ -64,8 +64,7 @@ export const useAuthStore = create<AuthState>()(
         const tokenResponse = result.data;
         const expiresAt = Date.now() + tokenResponse.expires_in * 1000;
 
-        // Encrypt and store tokens
-        const storeResult = await window.electronAPI.oauthStoreTokens({
+        const storeResult = await window.electronAPI.oauthEncryptTokens({
           accessToken: tokenResponse.access_token,
           refreshToken: tokenResponse.refresh_token,
           expiresAt,
@@ -76,7 +75,6 @@ export const useAuthStore = create<AuthState>()(
           throw new Error(storeResult.error || "Failed to store tokens");
         }
 
-        // Create PostHog client with access token and refresh callback
         const apiHost = getCloudUrlFromRegion(region);
         const client = new PostHogAPIClient(
           tokenResponse.access_token,
@@ -91,7 +89,6 @@ export const useAuthStore = create<AuthState>()(
           },
         );
 
-        // Validate by calling getCurrentUser
         try {
           await client.getCurrentUser();
 
@@ -105,7 +102,6 @@ export const useAuthStore = create<AuthState>()(
             client,
           });
 
-          // Schedule proactive token refresh
           get().scheduleTokenRefresh();
         } catch {
           throw new Error("Failed to authenticate with PostHog");
@@ -133,8 +129,7 @@ export const useAuthStore = create<AuthState>()(
         const tokenResponse = result.data;
         const expiresAt = Date.now() + tokenResponse.expires_in * 1000;
 
-        // Store new tokens (refresh token rotates)
-        const storeResult = await window.electronAPI.oauthStoreTokens({
+        const storeResult = await window.electronAPI.oauthEncryptTokens({
           accessToken: tokenResponse.access_token,
           refreshToken: tokenResponse.refresh_token,
           expiresAt,
@@ -147,7 +142,6 @@ export const useAuthStore = create<AuthState>()(
           );
         }
 
-        // Update client with new access token and refresh callback
         const apiHost = getCloudUrlFromRegion(state.cloudRegion);
         const client = new PostHogAPIClient(
           tokenResponse.access_token,
@@ -170,14 +164,12 @@ export const useAuthStore = create<AuthState>()(
           client,
         });
 
-        // Schedule next proactive refresh
         get().scheduleTokenRefresh();
       },
 
       scheduleTokenRefresh: () => {
         const state = get();
 
-        // Clear existing timeout
         if (refreshTimeoutId) {
           clearTimeout(refreshTimeoutId);
           refreshTimeoutId = null;
@@ -187,7 +179,6 @@ export const useAuthStore = create<AuthState>()(
           return;
         }
 
-        // Schedule refresh 5 minutes before expiry
         const timeUntilRefresh =
           state.tokenExpiry - Date.now() - TOKEN_REFRESH_BUFFER_MS;
 
@@ -200,7 +191,6 @@ export const useAuthStore = create<AuthState>()(
               });
           }, timeUntilRefresh);
         } else {
-          // Token already expired or about to expire - refresh immediately
           get()
             .refreshAccessToken()
             .catch((error) => {
@@ -212,7 +202,6 @@ export const useAuthStore = create<AuthState>()(
       initializeOAuth: async () => {
         const state = get();
 
-        // Restore OAuth session from encrypted tokens
         if (state.encryptedOAuthTokens) {
           const result = await window.electronAPI.oauthRetrieveTokens(
             state.encryptedOAuthTokens,
@@ -220,8 +209,6 @@ export const useAuthStore = create<AuthState>()(
 
           if (result.success && result.data) {
             const tokens = result.data;
-
-            // Check if token is still valid or can be refreshed
             const now = Date.now();
             const isExpired = tokens.expiresAt <= now;
 
@@ -233,7 +220,6 @@ export const useAuthStore = create<AuthState>()(
             });
 
             if (isExpired) {
-              // Token expired - try to refresh
               try {
                 await get().refreshAccessToken();
               } catch (error) {
@@ -243,7 +229,6 @@ export const useAuthStore = create<AuthState>()(
               }
             }
 
-            // Create client with refresh callback and validate
             const apiHost = getCloudUrlFromRegion(tokens.cloudRegion);
             const client = new PostHogAPIClient(
               tokens.accessToken,
@@ -266,10 +251,8 @@ export const useAuthStore = create<AuthState>()(
                 client,
               });
 
-              // Schedule proactive refresh
               get().scheduleTokenRefresh();
 
-              // Restore OpenAI key
               if (state.encryptedOpenaiKey) {
                 const decryptedOpenaiKey =
                   await window.electronAPI.retrieveApiKey(
@@ -290,7 +273,6 @@ export const useAuthStore = create<AuthState>()(
           }
         }
 
-        // Also restore OpenAI key even if OAuth not present
         if (state.encryptedOpenaiKey) {
           const decryptedOpenaiKey = await window.electronAPI.retrieveApiKey(
             state.encryptedOpenaiKey,
@@ -313,13 +295,11 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
-        // Clear refresh timeout
         if (refreshTimeoutId) {
           clearTimeout(refreshTimeoutId);
           refreshTimeoutId = null;
         }
 
-        // Clear OAuth tokens
         window.electronAPI.oauthDeleteTokens();
 
         set({

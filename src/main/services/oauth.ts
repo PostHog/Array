@@ -281,11 +281,9 @@ export function registerOAuthHandlers(): void {
     }
   });
 
-  ipcMain.handle("oauth:store-tokens", async (_, tokens: StoredOAuthTokens) => {
+  ipcMain.handle("oauth:encrypt-tokens", async (_, tokens: StoredOAuthTokens) => {
     try {
       const encrypted = encryptTokens(tokens);
-      // Store in electron-store or similar
-      // For now, we'll return the encrypted string for the renderer to store
       return {
         success: true,
         encrypted,

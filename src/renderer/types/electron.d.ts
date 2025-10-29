@@ -14,7 +14,7 @@ export interface IElectronAPI {
   oauthStartFlow: (
     region: CloudRegion,
   ) => Promise<{ success: boolean; data?: OAuthTokenResponse; error?: string }>;
-  oauthStoreTokens: (
+  oauthEncryptTokens: (
     tokens: StoredOAuthTokens,
   ) => Promise<{ success: boolean; encrypted?: string; error?: string }>;
   oauthRetrieveTokens: (
