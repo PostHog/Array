@@ -9,6 +9,7 @@ import { useAllRecordings } from "@renderer/features/notetaker/hooks/useAllRecor
 import { useNotetakerStore } from "@renderer/features/notetaker/stores/notetakerStore";
 import { useEffect } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { RecordingView } from "@/renderer/features/notetaker/components/RecordingView";
 
 function getStatusIcon(
   status: "recording" | "uploading" | "processing" | "ready" | "error",
@@ -223,6 +224,8 @@ export function NotetakerView() {
           </Flex>
         </Flex>
       </Box>
+
+      {selectedRecording && <RecordingView recordingItem={selectedRecording} />}
     </Flex>
   );
 }
