@@ -4,6 +4,7 @@ import { ChevronDownIcon } from "@radix-ui/react-icons";
 import { Box, Button, Flex, Popover, Text, TextField } from "@radix-ui/themes";
 import { useRepositoryIntegration } from "@renderer/hooks/useIntegrations";
 import type { RepositoryConfig } from "@shared/types";
+import { cloneStore } from "@stores/cloneStore";
 import { useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
@@ -34,6 +35,7 @@ export function RepositoryPicker({
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const { repositories, githubIntegration } = useRepositoryIntegration();
+  const { isCloning } = cloneStore();
 
   const displayValue = value ? `${value.repository}` : placeholder;
 
@@ -103,19 +105,32 @@ export function RepositoryPicker({
     }
   };
 
-  const renderItem = (repo: RepositoryConfig) => (
-    <Command.Item
-      key={`${repo.organization}/${repo.repository}`}
-      onSelect={() => handleSelect(repo)}
-    >
-      <Flex direction="row" gap="4">
-        <Text size="1">{repo.repository}</Text>
-        <Text size="1" color="gray" className="text-gray-9">
-          {repo.organization}
-        </Text>
-      </Flex>
-    </Command.Item>
-  );
+  const renderItem = (repo: RepositoryConfig) => {
+    const repoKey = `${repo.organization}/${repo.repository}`;
+    const cloning = isCloning(repoKey);
+
+    return (
+      <Command.Item
+        key={repoKey}
+        onSelect={() => handleSelect(repo)}
+        disabled={cloning}
+      >
+        <Flex direction="row" gap="4" align="center">
+          <Text size="1" color={cloning ? "gray" : undefined}>
+            {repo.repository}
+          </Text>
+          <Text size="1" color="gray" className="text-gray-9">
+            {repo.organization}
+          </Text>
+          {cloning && (
+            <Text size="1" color="amber">
+              Cloning...
+            </Text>
+          )}
+        </Flex>
+      </Command.Item>
+    );
+  };
 
   const hasIntegration = githubIntegration !== null;
 

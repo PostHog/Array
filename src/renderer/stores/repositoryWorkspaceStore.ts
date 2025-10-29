@@ -10,6 +10,7 @@ interface RepositoryWorkspaceState {
   derivedPath: string;
   pathExists: boolean;
   isValidating: boolean;
+  isInitiatingClone: boolean;
 
   selectRepository: (repo: RepositoryConfig) => Promise<void>;
   clearRepository: () => void;
@@ -151,6 +152,7 @@ export const repositoryWorkspaceStore = create<RepositoryWorkspaceState>()(
         derivedPath: "",
         pathExists: false,
         isValidating: false,
+        isInitiatingClone: false,
 
         clearRepository: () => {
           stopPolling();
@@ -186,6 +188,21 @@ export const repositoryWorkspaceStore = create<RepositoryWorkspaceState>()(
         },
 
         selectRepository: async (repo: RepositoryConfig) => {
+          const repoKey = `${repo.organization}/${repo.repository}`;
+          const { isCloning } = cloneStore.getState();
+
+          if (isCloning(repoKey)) {
+            await window.electronAPI.showMessageBox({
+              type: "warning",
+              title: "Repository cloning",
+              message: `${repoKey} is currently being cloned`,
+              detail:
+                "Please wait for the clone to complete before selecting this repository.",
+              buttons: ["OK"],
+            });
+            return;
+          }
+
           const targetPath = getDerivedPath(repo);
 
           if (!targetPath) {
@@ -216,10 +233,15 @@ export const repositoryWorkspaceStore = create<RepositoryWorkspaceState>()(
             selectedRepository: repo,
             derivedPath: targetPath,
             pathExists: false,
+            isInitiatingClone: true,
           });
 
-          await initiateClone(repo, targetPath);
-          startPolling();
+          try {
+            await initiateClone(repo, targetPath);
+            startPolling();
+          } finally {
+            set({ isInitiatingClone: false });
+          }
         },
       };
     },

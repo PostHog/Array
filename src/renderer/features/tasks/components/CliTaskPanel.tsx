@@ -11,6 +11,7 @@ import { useTaskExecutionStore } from "@features/tasks/stores/taskExecutionStore
 import { ShellTerminal } from "@features/terminal/components/ShellTerminal";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import type { RepositoryConfig } from "@shared/types";
+import { cloneStore } from "@stores/cloneStore";
 import { useLayoutStore } from "@stores/layoutStore";
 import { repositoryWorkspaceStore } from "@stores/repositoryWorkspaceStore";
 import { useTabStore } from "@stores/tabStore";
@@ -51,9 +52,19 @@ export function CliTaskPanel() {
     selectedRepository,
     derivedPath,
     pathExists,
+    isInitiatingClone,
     selectRepository,
     validateAndUpdatePath,
   } = repositoryWorkspaceStore();
+
+  const { isCloning } = cloneStore();
+  const repoIsCloning =
+    isInitiatingClone ||
+    (selectedRepository
+      ? isCloning(
+          `${selectedRepository.organization}/${selectedRepository.repository}`,
+        )
+      : false);
 
   const [isFocused, setIsFocused] = useState(false);
   const [isShellFocused, setIsShellFocused] = useState(false);
@@ -196,6 +207,13 @@ export function CliTaskPanel() {
     }
   }, [cliMode, editor]);
 
+  // Update editor editable state based on clone status
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(!repoIsCloning);
+    }
+  }, [editor, repoIsCloning]);
+
   // Validate path on mount if repository is selected
   useEffect(() => {
     if (selectedRepository) {
@@ -204,7 +222,13 @@ export function CliTaskPanel() {
   }, [selectedRepository, validateAndUpdatePath]);
 
   const handleSubmit = useCallback(() => {
-    if (!editor || !isAuthenticated || !client || !selectedRepository) {
+    if (
+      !editor ||
+      !isAuthenticated ||
+      !client ||
+      !selectedRepository ||
+      repoIsCloning
+    ) {
       return;
     }
 
@@ -268,6 +292,7 @@ export function CliTaskPanel() {
     lastUsedRunMode,
     setRunMode,
     runTask,
+    repoIsCloning,
   ]);
 
   return (
@@ -360,6 +385,8 @@ export function CliTaskPanel() {
             >
               {!selectedRepository ? (
                 <EmptyStateMessage message="Select a repository to start" />
+              ) : repoIsCloning ? (
+                <EmptyStateMessage message="Repository is being cloned..." />
               ) : (
                 <>
                   <Text
