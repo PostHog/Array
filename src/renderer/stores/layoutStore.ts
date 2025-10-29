@@ -15,7 +15,7 @@ interface LayoutStore {
 export const useLayoutStore = create<LayoutStore>()(
   persist(
     (set, get) => ({
-      cliPanelWidth: 30,
+      cliPanelWidth: 25,
       setCliPanelWidth: (width) => set({ cliPanelWidth: width }),
       taskDetailSplitWidth: 50,
       setTaskDetailSplitWidth: (width) => set({ taskDetailSplitWidth: width }),
