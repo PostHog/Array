@@ -49,6 +49,14 @@ export class PostHogAPIClient {
     return data;
   }
 
+  async getProject(projectId: number) {
+    //@ts-expect-error this is not in the generated client
+    const data = await this.api.get("/api/projects/{project_id}/", {
+      path: { project_id: projectId.toString() },
+    });
+    return data as Schemas.Team;
+  }
+
   async getTasks(repositoryOrg?: string, repositoryName?: string) {
     const teamId = await this.getTeamId();
     const params: Record<string, string> = {};
@@ -88,7 +96,7 @@ export class PostHogAPIClient {
 
     const data = await this.api.post(`/api/projects/{project_id}/tasks/`, {
       path: { project_id: teamId.toString() },
-      body: payload as Schemas.Task,
+      body: payload as unknown as Schemas.Task,
     });
 
     return data;
@@ -117,7 +125,8 @@ export class PostHogAPIClient {
   async duplicateTask(taskId: string) {
     const task = await this.getTask(taskId);
     return this.createTask(
-      task.description,
+      task.description ?? "",
+      //@ts-expect-error
       task.repository_config as RepositoryConfig | undefined,
     );
   }
@@ -413,6 +422,7 @@ export class PostHogAPIClient {
     const teamId = await this.getTeamId();
 
     const data = await this.api.post(
+      //@ts-expect-error not in the generated client
       "/api/environments/{project_id}/desktop_recordings/{id}/transcript/",
       {
         path: { project_id: teamId.toString(), id: recordingId },

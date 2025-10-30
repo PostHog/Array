@@ -21,6 +21,7 @@ interface AgentStartParams {
   repoPath: string;
   apiKey: string;
   apiHost: string;
+  projectId: number;
   permissionMode?: string;
   autoProgress?: boolean;
   model?: string;
@@ -102,6 +103,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     repoPath: string;
     apiKey: string;
     apiHost: string;
+    projectId: number;
   }): Promise<{ taskId: string; channel: string }> =>
     ipcRenderer.invoke("agent-start-plan-mode", params),
   agentGeneratePlan: async (params: {
@@ -112,6 +114,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     questionAnswers: unknown[];
     apiKey: string;
     apiHost: string;
+    projectId: number;
   }): Promise<{ taskId: string; channel: string }> =>
     ipcRenderer.invoke("agent-generate-plan", params),
   readPlanFile: (repoPath: string, taskId: string): Promise<string | null> =>

@@ -344,6 +344,8 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           ? getCloudUrlFromRegion(authState.cloudRegion)
           : null;
 
+        const projectId = authState.projectId;
+
         if (!apiKey) {
           store.addLog(taskId, {
             type: "error",
@@ -360,6 +362,15 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
             ts: Date.now(),
             message:
               "No PostHog API host found. Please check your region settings.",
+          });
+          return;
+        }
+
+        if (!projectId) {
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message: "No PostHog project ID found. Please check your settings.",
           });
           return;
         }
@@ -458,6 +469,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
             repoPath: effectiveRepoPath,
             apiKey,
             apiHost,
+            projectId,
             permissionMode,
             autoProgress: true,
             executionMode: taskState.executionMode,

@@ -1,7 +1,6 @@
 import type { Schemas } from "@api/generated";
 import type { AgentEvent } from "@posthog/agent";
-import type { TaskArtifact } from "@shared/types";
-import type { Recording } from "@shared/types";
+import type { Recording, TaskArtifact } from "@shared/types";
 import type {
   CloudRegion,
   OAuthTokenResponse,
@@ -55,6 +54,7 @@ export interface IElectronAPI {
     repoPath: string;
     apiKey: string;
     apiHost: string;
+    projectId: number;
     permissionMode?: string;
     autoProgress?: boolean;
     model?: string;
