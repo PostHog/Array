@@ -1,8 +1,6 @@
-import { exec } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import {
   type BrowserWindow,
   dialog,
@@ -12,7 +10,6 @@ import {
 } from "electron";
 
 const fsPromises = fs.promises;
-const execAsync = promisify(exec);
 
 interface MessageBoxOptionsCustom {
   type?: "info" | "error" | "warning" | "question";
@@ -23,6 +20,11 @@ interface MessageBoxOptionsCustom {
   defaultId?: number;
   cancelId?: number;
 }
+
+const expandHomePath = (searchPath: string): string =>
+  searchPath.startsWith("~")
+    ? searchPath.replace(/^~/, os.homedir())
+    : searchPath;
 
 export function registerOsIpc(getMainWindow: () => BrowserWindow | null): void {
   ipcMain.handle("select-directory", async (): Promise<string | null> => {
@@ -42,24 +44,6 @@ export function registerOsIpc(getMainWindow: () => BrowserWindow | null): void {
     }
     return result.filePaths[0];
   });
-
-  ipcMain.handle(
-    "validate-repo",
-    async (
-      _event: IpcMainInvokeEvent,
-      directoryPath: string,
-    ): Promise<boolean> => {
-      if (!directoryPath) return false;
-      try {
-        await execAsync("git rev-parse --is-inside-work-tree", {
-          cwd: directoryPath,
-        });
-        return true;
-      } catch {
-        return false;
-      }
-    },
-  );
 
   ipcMain.handle(
     "check-write-access",
@@ -118,15 +102,9 @@ export function registerOsIpc(getMainWindow: () => BrowserWindow | null): void {
   ipcMain.handle(
     "search-directories",
     async (_event: IpcMainInvokeEvent, query: string): Promise<string[]> => {
-      if (!query?.trim()) {
-        return [];
-      }
+      if (!query?.trim()) return [];
 
-      let searchPath = query.trim();
-      if (searchPath.startsWith("~")) {
-        searchPath = searchPath.replace(/^~/, os.homedir());
-      }
-
+      const searchPath = expandHomePath(query.trim());
       const lastSlashIdx = searchPath.lastIndexOf("/");
       const basePath =
         lastSlashIdx === -1 ? "" : searchPath.substring(0, lastSlashIdx + 1);
@@ -140,78 +118,20 @@ export function registerOsIpc(getMainWindow: () => BrowserWindow | null): void {
         const entries = await fsPromises.readdir(pathToRead, {
           withFileTypes: true,
         });
-        let directories = entries.filter((entry) => entry.isDirectory());
+        const directories = entries.filter((entry) => entry.isDirectory());
 
-        if (searchTerm) {
-          const searchLower = searchTerm.toLowerCase();
-          directories = directories.filter((dir) =>
-            dir.name.toLowerCase().includes(searchLower),
-          );
-        }
+        const filtered = searchTerm
+          ? directories.filter((dir) =>
+              dir.name.toLowerCase().includes(searchTerm.toLowerCase()),
+            )
+          : directories;
 
-        return directories
+        return filtered
           .map((dir) => path.join(pathToRead, dir.name))
           .sort((a, b) => path.basename(a).localeCompare(path.basename(b)))
           .slice(0, 20);
       } catch {
         return [];
-      }
-    },
-  );
-
-  ipcMain.handle(
-    "detect-repo",
-    async (
-      _event: IpcMainInvokeEvent,
-      directoryPath: string,
-    ): Promise<{
-      organization: string;
-      repository: string;
-      branch?: string;
-      remote?: string;
-    } | null> => {
-      if (!directoryPath) return null;
-      try {
-        // Get remote URL
-        const { stdout: remoteUrl } = await execAsync(
-          "git remote get-url origin",
-          { cwd: directoryPath },
-        );
-        const cleanUrl = remoteUrl.trim();
-
-        // Parse GitHub URL (HTTPS or SSH format)
-        let match = cleanUrl.match(/github\.com[:/](.+?)\/(.+?)(\.git)?$/);
-        if (!match) {
-          match = cleanUrl.match(/git@github\.com:(.+?)\/(.+?)(\.git)?$/);
-        }
-
-        if (!match) {
-          return null;
-        }
-
-        const organization = match[1];
-        const repository = match[2].replace(/\.git$/, "");
-
-        // Get current branch
-        let branch: string | undefined;
-        try {
-          const { stdout: branchName } = await execAsync(
-            "git branch --show-current",
-            { cwd: directoryPath },
-          );
-          branch = branchName.trim();
-        } catch {
-          // Ignore branch detection errors
-        }
-
-        return {
-          organization,
-          repository,
-          branch,
-          remote: cleanUrl,
-        };
-      } catch {
-        return null;
       }
     },
   );

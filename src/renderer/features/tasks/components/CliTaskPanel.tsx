@@ -2,42 +2,70 @@ import { AsciiArt } from "@components/AsciiArt";
 import { useAuthStore } from "@features/auth/stores/authStore";
 import { FilePathHighlight } from "@features/editor/extensions/filePathHighlight";
 import { useFileAutocomplete } from "@features/editor/hooks/useFileAutocomplete";
-import { FolderPicker } from "@features/folder-picker/components/FolderPicker";
-import { useFolderPickerStore } from "@features/folder-picker/stores/folderPickerStore";
+import { RepositoryPicker } from "@features/repository-picker/components/RepositoryPicker";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { CliModeHeader } from "@features/tasks/components/CliModeHeader";
 import { CliStatusIndicator } from "@features/tasks/components/CliStatusIndicator";
 import { useCreateTask } from "@features/tasks/hooks/useTasks";
 import { useTaskExecutionStore } from "@features/tasks/stores/taskExecutionStore";
 import { ShellTerminal } from "@features/terminal/components/ShellTerminal";
-import { useRepositoryIntegration } from "@hooks/useIntegrations";
 import { Box, Flex, Text } from "@radix-ui/themes";
+import type { RepositoryConfig } from "@shared/types";
+import { cloneStore } from "@stores/cloneStore";
 import { useLayoutStore } from "@stores/layoutStore";
+import { repositoryWorkspaceStore } from "@stores/repositoryWorkspaceStore";
 import { useTabStore } from "@stores/tabStore";
 import { Placeholder } from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { formatRepoKey, parseRepoKey } from "@utils/repository";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+function EmptyStateMessage({ message }: { message: string }) {
+  return (
+    <Flex
+      align="center"
+      justify="center"
+      style={{ height: "100%", width: "100%", padding: "var(--space-4)" }}
+    >
+      <Text size="2" color="gray">
+        {message}
+      </Text>
+    </Flex>
+  );
+}
 
 export function CliTaskPanel() {
   const { mutate: createTask, isPending: isCreatingTask } = useCreateTask();
   const { createTab } = useTabStore();
-  const { isRepoInIntegration } = useRepositoryIntegration();
-  const { client, isAuthenticated } = useAuthStore();
+  const { client, isAuthenticated, defaultWorkspace } = useAuthStore();
   const {
     setRepoPath: saveRepoPath,
-    setRepoWorkingDir,
     setRunMode,
     runTask,
   } = useTaskExecutionStore();
   const { autoRunTasks, defaultRunMode, lastUsedRunMode } = useSettingsStore();
-  const { lastSelectedFolder, setLastSelectedFolder } = useFolderPickerStore();
   const cliMode = useLayoutStore((state) => state.cliMode);
   const setCliMode = useLayoutStore((state) => state.setCliMode);
 
-  const [folderPath, setFolderPath] = useState(lastSelectedFolder || "");
-  const [repository, setRepository] = useState("");
+  // Repository workspace store
+  const {
+    selectedRepository,
+    derivedPath,
+    pathExists,
+    isInitiatingClone,
+    selectRepository,
+    validateAndUpdatePath,
+  } = repositoryWorkspaceStore();
+
+  const { isCloning } = cloneStore();
+  const repoIsCloning =
+    isInitiatingClone ||
+    (selectedRepository
+      ? isCloning(
+          `${selectedRepository.organization}/${selectedRepository.repository}`,
+        )
+      : false);
+
   const [isFocused, setIsFocused] = useState(false);
   const [isShellFocused, setIsShellFocused] = useState(false);
   const caretRef = useRef<HTMLDivElement>(null);
@@ -119,7 +147,7 @@ export function CliTaskPanel() {
     visibleStartIndex,
     handleKeyDown: handleFileAutocompleteKeyDown,
   } = useFileAutocomplete({
-    folderPath,
+    folderPath: derivedPath,
     editor,
     enabled: cliMode === "task",
   });
@@ -170,52 +198,37 @@ export function CliTaskPanel() {
     }
   }, [editor, updateCaretPosition]);
 
-  // Auto-detect repository from folder path
-  const detectRepoFromPath = useCallback(
-    async (path: string) => {
-      if (!path?.trim()) {
-        return;
-      }
-
-      try {
-        const repoInfo = await window.electronAPI?.detectRepo(path);
-        if (repoInfo) {
-          const repoKey = formatRepoKey(
-            repoInfo.organization,
-            repoInfo.repository,
-          );
-          setRepository(repoKey);
-
-          if (!isRepoInIntegration(repoKey)) {
-            setRepository(repoKey);
-          }
-        }
-      } catch {
-        // Ignore errors
-      }
-    },
-    [isRepoInIntegration],
-  );
-
-  // Detect repository from initial folder path on mount
+  // Auto-focus editor when switching to task mode
   useEffect(() => {
-    if (folderPath) {
-      detectRepoFromPath(folderPath);
+    if (cliMode === "task" && editor) {
+      requestAnimationFrame(() => {
+        editor.commands.focus();
+      });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detectRepoFromPath, folderPath]);
+  }, [cliMode, editor]);
 
-  // Handle folder path change and auto-detect repository
-  const handleFolderPathChange = useCallback(
-    async (newPath: string) => {
-      setFolderPath(newPath);
-      detectRepoFromPath(newPath);
-    },
-    [detectRepoFromPath],
-  );
+  // Update editor editable state based on clone status
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(!repoIsCloning);
+    }
+  }, [editor, repoIsCloning]);
+
+  // Validate path on mount if repository is selected
+  useEffect(() => {
+    if (selectedRepository) {
+      validateAndUpdatePath();
+    }
+  }, [selectedRepository, validateAndUpdatePath]);
 
   const handleSubmit = useCallback(() => {
-    if (!editor || !isAuthenticated || !client || !folderPath.trim()) {
+    if (
+      !editor ||
+      !isAuthenticated ||
+      !client ||
+      !selectedRepository ||
+      repoIsCloning
+    ) {
       return;
     }
 
@@ -224,9 +237,10 @@ export function CliTaskPanel() {
       return;
     }
 
-    const repositoryConfig = repository
-      ? (parseRepoKey(repository) ?? undefined)
-      : undefined;
+    const repositoryConfig: RepositoryConfig = {
+      organization: selectedRepository.organization,
+      repository: selectedRepository.repository,
+    };
 
     createTask(
       {
@@ -235,14 +249,8 @@ export function CliTaskPanel() {
       },
       {
         onSuccess: (newTask) => {
-          if (folderPath && folderPath.trim().length > 0) {
-            saveRepoPath(newTask.id, folderPath);
-            setLastSelectedFolder(folderPath);
-
-            if (repositoryConfig) {
-              const repoKey = `${repositoryConfig.organization}/${repositoryConfig.repository}`;
-              setRepoWorkingDir(repoKey, folderPath);
-            }
+          if (derivedPath) {
+            saveRepoPath(newTask.id, derivedPath);
           }
 
           createTab({
@@ -274,18 +282,17 @@ export function CliTaskPanel() {
     editor,
     isAuthenticated,
     client,
-    folderPath,
-    repository,
+    selectedRepository,
+    derivedPath,
     createTask,
     saveRepoPath,
-    setLastSelectedFolder,
-    setRepoWorkingDir,
     createTab,
     autoRunTasks,
     defaultRunMode,
     lastUsedRunMode,
     setRunMode,
     runTask,
+    repoIsCloning,
   ]);
 
   return (
@@ -320,12 +327,16 @@ export function CliTaskPanel() {
           zIndex: 1,
         }}
       >
-        {/* Folder Picker */}
+        {/* Repository Picker */}
         <Box style={{ minWidth: 0 }}>
-          <FolderPicker
-            value={folderPath}
-            onChange={handleFolderPathChange}
-            placeholder="Select working directory..."
+          <RepositoryPicker
+            value={selectedRepository}
+            onChange={selectRepository}
+            placeholder={
+              defaultWorkspace
+                ? "Select repository..."
+                : "Configure workspace in settings first"
+            }
             size="1"
           />
         </Box>
@@ -372,101 +383,108 @@ export function CliTaskPanel() {
                 minWidth: 0,
               }}
             >
-              <Text
-                size="2"
-                weight="bold"
-                style={{
-                  color: "var(--accent-11)",
-                  fontFamily: "monospace",
-                  userSelect: "none",
-                  WebkitUserSelect: "none",
-                  bottom: "1px",
-                  position: "relative",
-                }}
-              >
-                &gt;
-              </Text>
-              <Box
-                style={{
-                  flex: 1,
-                  position: "relative",
-                  opacity: !isFocused && editor && !editor.isEmpty ? 0.5 : 1,
-                  transition: "opacity 0.2s",
-                  minWidth: 0,
-                }}
-              >
-                <EditorContent editor={editor} />
-                {editor && (isFocused || !editor.isEmpty) && (
-                  <div
-                    ref={caretRef}
-                    className={isFocused ? "cli-cursor-blink" : ""}
+              {!selectedRepository ? (
+                <EmptyStateMessage message="Select a repository to start" />
+              ) : repoIsCloning ? (
+                <EmptyStateMessage message="Repository is being cloned..." />
+              ) : (
+                <>
+                  <Text
+                    size="2"
+                    weight="bold"
                     style={{
-                      top: 0,
-                      position: "absolute",
-                      width: "8px",
-                      height: "16px",
-                      backgroundColor: isFocused
-                        ? "var(--accent-11)"
-                        : "transparent",
-                      border: !isFocused
-                        ? "1px solid var(--accent-11)"
-                        : "none",
-                      pointerEvents: "none",
-                      transition: "none",
-                      mixBlendMode: isFocused ? "color" : "normal",
-                    }}
-                  />
-                )}
-                {showHints && fileHints.length > 0 && (
-                  <Box
-                    ref={hintsRef}
-                    style={{
-                      position: "absolute",
-                      top: "calc(100% + 8px)",
-                      left: 0,
-                      width: "100%",
+                      color: "var(--accent-11)",
                       fontFamily: "monospace",
-                      fontSize: "var(--font-size-1)",
-                      color: "var(--gray-11)",
-                      pointerEvents: "none",
-                      whiteSpace: "pre",
+                      userSelect: "none",
+                      WebkitUserSelect: "none",
+                      bottom: "1px",
+                      position: "relative",
                     }}
                   >
-                    <Box
-                      style={{
-                        borderTop: "1px solid var(--gray-a6)",
-                        paddingTop: "4px",
-                      }}
-                    >
-                      {fileHints
-                        .slice(visibleStartIndex, visibleStartIndex + 10)
-                        .map((hint, relativeIndex) => {
-                          const absoluteIndex =
-                            visibleStartIndex + relativeIndex;
-                          return (
-                            <Box
-                              key={hint}
-                              style={{
-                                backgroundColor:
-                                  absoluteIndex === selectedHintIndex
-                                    ? "var(--accent-a3)"
-                                    : "transparent",
-                                color:
-                                  absoluteIndex === selectedHintIndex
-                                    ? "var(--accent-11)"
-                                    : "var(--gray-11)",
-                                padding: "2px 4px",
-                              }}
-                            >
-                              {hint}
-                            </Box>
-                          );
-                        })}
-                    </Box>
-                  </Box>
-                )}
-                <style>
-                  {`
+                    &gt;
+                  </Text>
+                  <Box
+                    style={{
+                      flex: 1,
+                      position: "relative",
+                      opacity:
+                        !isFocused && editor && !editor.isEmpty ? 0.5 : 1,
+                      transition: "opacity 0.2s",
+                      minWidth: 0,
+                    }}
+                  >
+                    <EditorContent editor={editor} />
+                    {editor && (isFocused || !editor.isEmpty) && (
+                      <div
+                        ref={caretRef}
+                        className={isFocused ? "cli-cursor-blink" : ""}
+                        style={{
+                          top: 0,
+                          position: "absolute",
+                          width: "8px",
+                          height: "16px",
+                          backgroundColor: isFocused
+                            ? "var(--accent-11)"
+                            : "transparent",
+                          border: !isFocused
+                            ? "1px solid var(--accent-11)"
+                            : "none",
+                          pointerEvents: "none",
+                          transition: "none",
+                          mixBlendMode: isFocused ? "color" : "normal",
+                        }}
+                      />
+                    )}
+                    {showHints && fileHints.length > 0 && (
+                      <Box
+                        ref={hintsRef}
+                        style={{
+                          position: "absolute",
+                          top: "calc(100% + 8px)",
+                          left: 0,
+                          width: "100%",
+                          fontFamily: "monospace",
+                          fontSize: "var(--font-size-1)",
+                          color: "var(--gray-11)",
+                          pointerEvents: "none",
+                          whiteSpace: "pre",
+                        }}
+                      >
+                        <Box
+                          style={{
+                            borderTop: "1px solid var(--gray-a6)",
+                            paddingTop: "4px",
+                          }}
+                        >
+                          {fileHints
+                            .slice(visibleStartIndex, visibleStartIndex + 10)
+                            .map((hint, relativeIndex) => {
+                              const absoluteIndex =
+                                visibleStartIndex + relativeIndex;
+                              return (
+                                <Box
+                                  key={hint}
+                                  style={{
+                                    backgroundColor:
+                                      absoluteIndex === selectedHintIndex
+                                        ? "var(--accent-a3)"
+                                        : "transparent",
+                                    color:
+                                      absoluteIndex === selectedHintIndex
+                                        ? "var(--accent-11)"
+                                        : "var(--gray-11)",
+                                    padding: "2px 4px",
+                                  }}
+                                >
+                                  {hint}
+                                </Box>
+                              );
+                            })}
+                        </Box>
+                      </Box>
+                    )}
+                    <style>
+                      {`
                   .cli-editor {
                     font-family: monospace;
                     background-color: transparent;
@@ -512,8 +530,10 @@ export function CliTaskPanel() {
                     font-weight: 500;
                   }
                 `}
-                </style>
-              </Box>
+                    </style>
+                  </Box>
+                </>
+              )}
             </Flex>
 
             {/* Shell Mode - xterm.js Terminal */}
@@ -528,7 +548,17 @@ export function CliTaskPanel() {
                 transition: "opacity 0.2s",
               }}
             >
-              <ShellTerminal cwd={folderPath || undefined} />
+              {pathExists ? (
+                <ShellTerminal cwd={derivedPath || undefined} />
+              ) : (
+                <EmptyStateMessage
+                  message={
+                    selectedRepository
+                      ? "Repository is being cloned..."
+                      : "Select a repository to start"
+                  }
+                />
+              )}
             </Box>
 
             {/* Key hint or loading indicator (task mode only) */}

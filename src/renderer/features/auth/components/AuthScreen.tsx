@@ -1,5 +1,6 @@
 import { AsciiArt } from "@components/AsciiArt";
 import { useAuthStore } from "@features/auth/stores/authStore";
+import { FolderPicker } from "@features/folder-picker/components/FolderPicker";
 import {
   Box,
   Button,
@@ -34,17 +35,36 @@ export const getErrorMessage = (error: unknown) => {
 };
 export function AuthScreen() {
   const [region, setRegion] = useState<CloudRegion>("us");
+  const [workspace, setWorkspace] = useState("~/workspace");
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
-  const { loginWithOAuth } = useAuthStore();
+  const { loginWithOAuth, setDefaultWorkspace } = useAuthStore();
 
   const authMutation = useMutation({
-    mutationFn: async (selectedRegion: CloudRegion) => {
+    mutationFn: async ({
+      selectedRegion,
+      workspace,
+    }: {
+      selectedRegion: CloudRegion;
+      workspace: string;
+    }) => {
+      if (!workspace || !workspace.trim()) {
+        setWorkspaceError("Please select a workspace directory");
+        throw new Error("Workspace is required");
+      }
+
+      // Login with OAuth first
       await loginWithOAuth(selectedRegion);
+
+      // Then save workspace
+      setDefaultWorkspace(workspace.trim());
+      setWorkspaceError(null);
     },
   });
 
   const handleSignIn = () => {
-    authMutation.mutate(region);
+    setWorkspaceError(null);
+    authMutation.mutate({ selectedRegion: region, workspace });
   };
 
   const handleRegionChange = (value: string) => {
@@ -93,6 +113,28 @@ export function AuthScreen() {
                     </Select.Root>
                   </Flex>
 
+                  <Flex direction="column" gap="2">
+                    <Text as="label" size="2" weight="medium" color="gray">
+                      Default workspace
+                    </Text>
+                    <FolderPicker
+                      value={workspace}
+                      onChange={setWorkspace}
+                      placeholder="~/workspace"
+                      size="2"
+                    />
+                    <Text size="1" color="gray">
+                      Where repositories will be cloned. This should be the
+                      folder where you usually store your projects.
+                    </Text>
+                  </Flex>
+
+                  {workspaceError && (
+                    <Callout.Root color="red">
+                      <Callout.Text>{workspaceError}</Callout.Text>
+                    </Callout.Root>
+                  )}
+
                   {authMutation.isError && (
                     <Callout.Root color="red">
                       <Callout.Text>
@@ -111,7 +153,7 @@ export function AuthScreen() {
 
                   <Button
                     onClick={handleSignIn}
-                    disabled={authMutation.isPending}
+                    disabled={authMutation.isPending || !workspace}
                     variant="classic"
                     size="3"
                     mt="2"

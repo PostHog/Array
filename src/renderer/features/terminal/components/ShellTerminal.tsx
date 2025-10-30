@@ -158,9 +158,18 @@ export function ShellTerminal({ cwd }: ShellTerminalProps) {
     // Listen for window resize
     window.addEventListener("resize", handleResize);
 
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+
+    if (terminalRef.current) {
+      resizeObserver.observe(terminalRef.current);
+    }
+
     // Cleanup
     return () => {
       window.removeEventListener("resize", handleResize);
+      resizeObserver.disconnect();
       disposable.dispose();
       unsubscribeData?.();
       unsubscribeExit?.();

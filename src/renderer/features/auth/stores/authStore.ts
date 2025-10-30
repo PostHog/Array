@@ -27,6 +27,7 @@ interface AuthState {
   // OpenAI API key (separate concern, kept for now)
   openaiApiKey: string | null;
   encryptedOpenaiKey: string | null;
+  defaultWorkspace: string | null;
 
   // OAuth methods
   loginWithOAuth: (region: CloudRegion) => Promise<void>;
@@ -36,6 +37,7 @@ interface AuthState {
 
   // Other methods
   setOpenAIKey: (apiKey: string) => Promise<void>;
+  setDefaultWorkspace: (workspace: string) => void;
   logout: () => void;
 }
 
@@ -59,6 +61,7 @@ export const useAuthStore = create<AuthState>()(
       // OpenAI key
       openaiApiKey: null,
       encryptedOpenaiKey: null,
+      defaultWorkspace: null,
 
       loginWithOAuth: async (region: CloudRegion) => {
         const result = await window.electronAPI.oauthStartFlow(region);
@@ -358,6 +361,10 @@ export const useAuthStore = create<AuthState>()(
           encryptedOpenaiKey: encryptedKey,
         });
       },
+
+      setDefaultWorkspace: (workspace: string) => {
+        set({ defaultWorkspace: workspace });
+      },
       logout: () => {
         if (refreshTimeoutId) {
           clearTimeout(refreshTimeoutId);
@@ -388,6 +395,7 @@ export const useAuthStore = create<AuthState>()(
         cloudRegion: state.cloudRegion,
         encryptedOAuthTokens: state.encryptedOAuthTokens,
         encryptedOpenaiKey: state.encryptedOpenaiKey,
+        defaultWorkspace: state.defaultWorkspace,
         projectId: state.projectId,
       }),
     },

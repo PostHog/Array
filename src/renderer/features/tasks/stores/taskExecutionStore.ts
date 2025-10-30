@@ -9,17 +9,52 @@ import type {
   Task,
   TaskRun,
 } from "@shared/types";
+import { cloneStore } from "@stores/cloneStore";
+import { expandTildePath } from "@utils/path";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { getCloudUrlFromRegion } from "@/constants/oauth";
 
+interface ArtifactEvent {
+  type: string;
+  ts: number;
+  kind?: string;
+  content?: Array<{
+    id: string;
+    question: string;
+    options: string[];
+  }>;
+}
+
 const createProgressSignature = (progress: TaskRun): string =>
   [progress.status ?? "", progress.updated_at ?? ""].join("|");
+
+const getRepoKey = (org: string, repo: string) => `${org}/${repo}`;
+
+const derivePath = (workspace: string, repo: string) =>
+  `${expandTildePath(workspace)}/${repo}`;
+
+const isArtifactEvent = (log: AgentEvent): log is AgentEvent & ArtifactEvent =>
+  log.type === "artifact" && "kind" in log && "content" in log;
+
+const hasCustomOption = (options: string[]) =>
+  options.some((opt) => opt.toLowerCase().includes("something else"));
+
+const toClarifyingQuestions = (
+  content: ArtifactEvent["content"],
+): ClarifyingQuestion[] => {
+  if (!content) return [];
+  return content.map((q) => ({
+    id: q.id,
+    question: q.question,
+    options: q.options,
+    requiresInput: hasCustomOption(q.options),
+  }));
+};
 
 async function validateRepositoryAccess(
   path: string,
   addLog: (log: AgentEvent) => void,
-  onRetrySelect?: () => Promise<void>,
 ): Promise<boolean> {
   const isRepo = await window.electronAPI?.validateRepo(path);
   if (!isRepo) {
@@ -38,21 +73,6 @@ async function validateRepositoryAccess(
       ts: Date.now(),
       message: `No write permission in selected folder: ${path}`,
     });
-    const result = await window.electronAPI?.showMessageBox({
-      type: "warning",
-      title: "Folder is not writable",
-      message: "The selected folder is not writable by the app.",
-      detail:
-        "Grant access by selecting a different folder or adjusting permissions.",
-      buttons: ["Grant Access", "Cancel"],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (!result) return false;
-    const { response } = result;
-    if (response === 0 && onRetrySelect) {
-      await onRetrySelect();
-    }
     return false;
   }
 
@@ -80,8 +100,6 @@ interface TaskExecutionState {
 interface TaskExecutionStore {
   // State per task ID
   taskStates: Record<string, TaskExecutionState>;
-  // Repository (org/repo) to working directory mapping
-  repoToCwd: Record<string, string>;
 
   // Basic state accessors
   getTaskState: (taskId: string) => TaskExecutionState;
@@ -99,12 +117,7 @@ interface TaskExecutionStore {
   setProgress: (taskId: string, progress: TaskRun | null) => void;
   clearTaskState: (taskId: string) => void;
 
-  // Repository to working directory mapping
-  getRepoWorkingDir: (repoKey: string) => string | null;
-  setRepoWorkingDir: (repoKey: string, path: string) => void;
-
   // High-level task execution actions
-  selectRepositoryForTask: (taskId: string, repoKey?: string) => Promise<void>;
   runTask: (taskId: string, task: Task) => Promise<void>;
   cancelTask: (taskId: string) => Promise<void>;
   clearTaskLogs: (taskId: string) => void;
@@ -124,6 +137,11 @@ interface TaskExecutionStore {
   addQuestionAnswer: (taskId: string, answer: QuestionAnswer) => void;
   setPlanContent: (taskId: string, content: string | null) => void;
   setSelectedArtifact: (taskId: string, fileName: string | null) => void;
+
+  // Auto-initialization and artifact processing
+  initializeRepoPath: (taskId: string, task: Task) => void;
+  processLogsForArtifacts: (taskId: string) => void;
+  checkPlanCompletion: (taskId: string) => Promise<void>;
 }
 
 const defaultTaskState: TaskExecutionState = {
@@ -147,24 +165,10 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
   persist(
     (set, get) => ({
       taskStates: {},
-      repoToCwd: {},
 
       getTaskState: (taskId: string) => {
         const state = get();
         return state.taskStates[taskId] || { ...defaultTaskState };
-      },
-
-      getRepoWorkingDir: (repoKey: string) => {
-        return get().repoToCwd[repoKey] || null;
-      },
-
-      setRepoWorkingDir: (repoKey: string, path: string) => {
-        set((state) => ({
-          repoToCwd: {
-            ...state.repoToCwd,
-            [repoKey]: path,
-          },
-        }));
       },
 
       updateTaskState: (
@@ -187,10 +191,13 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
       },
 
       addLog: (taskId: string, log: AgentEvent) => {
-        const currentState = get().getTaskState(taskId);
-        get().updateTaskState(taskId, {
+        const store = get();
+        const currentState = store.getTaskState(taskId);
+        store.updateTaskState(taskId, {
           logs: [...currentState.logs, log],
         });
+        // Process logs for artifacts after adding
+        store.processLogsForArtifacts(taskId);
       },
 
       setLogs: (taskId: string, logs: AgentEvent[]) => {
@@ -282,6 +289,8 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
                 if (ev.type === "done") {
                   currentStore.setUnsubscribe(taskId, null);
                 }
+                // Check if plan needs to be loaded after run completes
+                currentStore.checkPlanCompletion(taskId);
               }
 
               // Add event to logs
@@ -304,36 +313,12 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
       },
 
       // High-level task execution actions
-      selectRepositoryForTask: async (taskId: string, repoKey?: string) => {
-        const store = get();
-        try {
-          const selected = await window.electronAPI?.selectDirectory();
-          if (selected) {
-            const isValid = await validateRepositoryAccess(
-              selected,
-              (log) => store.addLog(taskId, log),
-              () => store.selectRepositoryForTask(taskId, repoKey),
-            );
-            if (!isValid) {
-              return;
-            }
-            store.setRepoPath(taskId, selected);
-            // Save mapping for future tasks with the same repository
-            if (repoKey) {
-              store.setRepoWorkingDir(repoKey, selected);
-            }
-          }
-        } catch (err) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message: `Error selecting directory: ${err instanceof Error ? err.message : String(err)}`,
-          });
-        }
-      },
-
       runTask: async (taskId: string, task: Task) => {
         const store = get();
+
+        // Initialize repo path if not set
+        store.initializeRepoPath(taskId, task);
+
         const taskState = store.getTaskState(taskId);
 
         if (taskState.isRunning) return;
@@ -414,12 +399,8 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         }
 
         // Handle local mode - run task via electron agent
-        // Ensure repo path is selected
-        let effectiveRepoPath = taskState.repoPath;
-        if (!effectiveRepoPath) {
-          await store.selectRepositoryForTask(taskId);
-          effectiveRepoPath = store.getTaskState(taskId).repoPath;
-        }
+        // Ensure repo path is set
+        const effectiveRepoPath = taskState.repoPath;
 
         if (!effectiveRepoPath) {
           store.addLog(taskId, {
@@ -430,10 +411,27 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           return;
         }
 
+        // Check if repository is currently being cloned
+        if (task.repository_config) {
+          const repoKey = getRepoKey(
+            task.repository_config.organization,
+            task.repository_config.repository,
+          );
+          const { isCloning } = cloneStore.getState();
+
+          if (isCloning(repoKey)) {
+            store.addLog(taskId, {
+              type: "error",
+              ts: Date.now(),
+              message: `Repository ${repoKey} is currently being cloned. Please wait for the clone to complete before running this task.`,
+            });
+            return;
+          }
+        }
+
         const isValid = await validateRepositoryAccess(
           effectiveRepoPath,
           (log) => store.addLog(taskId, log),
-          () => store.selectRepositoryForTask(taskId),
         );
         if (!isValid) {
           return;
@@ -567,6 +565,66 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
       setSelectedArtifact: (taskId: string, fileName: string | null) => {
         get().updateTaskState(taskId, { selectedArtifact: fileName });
+      },
+
+      // Auto-initialization and artifact processing
+      initializeRepoPath: (taskId: string, task: Task) => {
+        const store = get();
+        const taskState = store.getTaskState(taskId);
+
+        if (taskState.repoPath || !task.repository_config) return;
+
+        const { defaultWorkspace } = useAuthStore.getState();
+        if (!defaultWorkspace) return;
+
+        const path = derivePath(
+          defaultWorkspace,
+          task.repository_config.repository,
+        );
+        store.setRepoPath(taskId, path);
+      },
+
+      processLogsForArtifacts: (taskId: string) => {
+        const store = get();
+        const taskState = store.getTaskState(taskId);
+
+        if (taskState.clarifyingQuestions.length > 0) return;
+
+        const artifactEvent = taskState.logs.find(isArtifactEvent);
+        if (!artifactEvent) return;
+
+        const event = artifactEvent as ArtifactEvent;
+        if (event.kind === "research_questions" && event.content) {
+          const questions = toClarifyingQuestions(event.content);
+          store.setClarifyingQuestions(taskId, questions);
+          store.setPlanModePhase(taskId, "questions");
+        }
+      },
+
+      checkPlanCompletion: async (taskId: string) => {
+        const store = get();
+        const taskState = store.getTaskState(taskId);
+
+        if (
+          taskState.planModePhase !== "planning" ||
+          taskState.isRunning ||
+          !taskState.repoPath
+        ) {
+          return;
+        }
+
+        try {
+          const content = await window.electronAPI?.readPlanFile(
+            taskState.repoPath,
+            taskId,
+          );
+          if (content) {
+            store.setPlanContent(taskId, content);
+            store.setPlanModePhase(taskId, "review");
+          }
+        } catch (error) {
+          console.error("Failed to load plan:", error);
+        }
       },
     }),
     {

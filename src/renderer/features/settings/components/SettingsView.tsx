@@ -1,4 +1,5 @@
 import { useAuthStore } from "@features/auth/stores/authStore";
+import { FolderPicker } from "@features/folder-picker/components/FolderPicker";
 import {
   type DefaultRunMode,
   useSettingsStore,
@@ -33,8 +34,14 @@ const REGION_URLS: Record<CloudRegion, string> = {
 };
 
 export function SettingsView() {
-  const { isAuthenticated, cloudRegion, loginWithOAuth, logout } =
-    useAuthStore();
+  const {
+    isAuthenticated,
+    defaultWorkspace,
+    setDefaultWorkspace,
+    cloudRegion,
+    loginWithOAuth,
+    logout,
+  } = useAuthStore();
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
   const toggleDarkMode = useThemeStore((state) => state.toggleDarkMode);
   const {
@@ -154,6 +161,32 @@ export function SettingsView() {
                     onCheckedChange={setCreatePR}
                     size="1"
                   />
+                </Flex>
+              </Flex>
+            </Card>
+          </Flex>
+
+          <Box className="border-gray-6 border-t" />
+
+          {/* Workspace Section */}
+          <Flex direction="column" gap="3">
+            <Heading size="3">Workspace</Heading>
+            <Card>
+              <Flex direction="column" gap="3">
+                <Flex direction="column" gap="2">
+                  <Text size="1" weight="medium">
+                    Default workspace
+                  </Text>
+                  <FolderPicker
+                    value={defaultWorkspace || ""}
+                    onChange={setDefaultWorkspace}
+                    placeholder="~/workspace"
+                    size="1"
+                  />
+                  <Text size="1" color="gray">
+                    Default directory where repositories will be cloned. This
+                    should be the folder where you usually store your projects.
+                  </Text>
                 </Flex>
               </Flex>
             </Card>

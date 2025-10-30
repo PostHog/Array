@@ -14,6 +14,7 @@ import { useLayoutStore } from "@stores/layoutStore";
 import { useTabStore } from "@stores/tabStore";
 import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { Toaster } from "sonner";
 import { NotetakerView } from "@/renderer/features/notetaker/components/NotetakerView";
 
 export function MainLayout() {
@@ -127,6 +128,7 @@ export function MainLayout() {
 
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
       <UpdatePrompt />
+      <Toaster position="bottom-right" />
     </Flex>
   );
 }
