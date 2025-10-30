@@ -29,7 +29,8 @@ export function useAuthenticatedQuery<
       if (!client) throw new Error("Not authenticated");
       return await queryFn(client);
     },
-    enabled: !!client && (options?.enabled !== undefined ? options.enabled : true),
+    enabled:
+      !!client && (options?.enabled !== undefined ? options.enabled : true),
     ...options,
   });
 }

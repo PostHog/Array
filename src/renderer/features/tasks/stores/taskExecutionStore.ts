@@ -341,8 +341,8 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         const authState = useAuthStore.getState();
         const apiKey = authState.oauthAccessToken;
         const apiHost = authState.cloudRegion
-        ? getCloudUrlFromRegion(authState.cloudRegion)
-        : null;
+          ? getCloudUrlFromRegion(authState.cloudRegion)
+          : null;
 
         const projectId = authState.projectId;
 
