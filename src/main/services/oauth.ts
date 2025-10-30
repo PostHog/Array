@@ -62,15 +62,27 @@ async function startCallbackServer(authUrl: string): Promise<{
           "Content-Type": "text/html",
         });
         res.end(`
-          <html>
-            <body>
-              <p>${
-                isAccessDenied
-                  ? "Authorization cancelled."
-                  : `Authorization failed.`
-              }</p>
-              <p>Return to Array. This window will close automatically.</p>
-              <script>window.close();</script>
+          <!DOCTYPE html>
+          <html class="radix-themes" data-is-root-theme="true" data-accent-color="orange" data-gray-color="slate" data-has-background="true" data-panel-background="translucent" data-radius="none" data-scaling="100%">
+            <head>
+              <meta charset="utf-8">
+              <title>Authorization ${isAccessDenied ? "Cancelled" : "Failed"}</title>
+              <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@radix-ui/themes@3.1.6/styles.css">
+              <script src="https://cdn.tailwindcss.com"></script>
+              <style>
+                @layer utilities {
+                  .text-gray-12 { color: var(--gray-12); }
+                  .text-gray-11 { color: var(--gray-11); }
+                  .bg-gray-1 { background-color: var(--gray-1); }
+                }
+              </style>
+            </head>
+            <body class="dark bg-gray-1 h-screen overflow-hidden flex flex-col items-center justify-center m-0 gap-2">
+              <h1 class="text-gray-12 text-xl font-semibold">${isAccessDenied ? "Authorization cancelled" : "Authorization failed"}</h1>
+              <p class="text-gray-11 text-sm">You can close this window and return to Array</p>
+              <script>
+                setTimeout(() => window.close(), 500);
+              </script>
             </body>
           </html>
         `);
@@ -81,10 +93,31 @@ async function startCallbackServer(authUrl: string): Promise<{
       if (code) {
         res.writeHead(200, { "Content-Type": "text/html" });
         res.end(`
-          <html>
-            <body>
-              <p>Authorization successful! Return to Array.</p>
-              <script>window.close();</script>
+          <!DOCTYPE html>
+          <html class="radix-themes" data-is-root-theme="true" data-accent-color="orange" data-gray-color="slate" data-has-background="true" data-panel-background="translucent" data-radius="none" data-scaling="100%">
+            <head>
+              <meta charset="utf-8">
+              <title>Authorization Successful</title>
+              <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@radix-ui/themes@3.1.6/styles.css">
+              <script src="https://cdn.tailwindcss.com"></script>
+              <style>
+                @layer utilities {
+                  .text-accent-9 { color: var(--accent-9); }
+                  .text-green-9 { color: var(--green-9); }
+                  .text-gray-11 { color: var(--gray-11); }
+                  .text-gray-12 { color: var(--gray-12); }
+                  .bg-gray-1 { background-color: var(--gray-1); }
+                  .bg-green-9 { background-color: var(--green-9); }
+                  .border-gray-6 { border-color: var(--gray-6); }
+                }
+              </style>
+            </head>
+            <body class="dark bg-gray-1 h-screen overflow-hidden flex flex-col items-center justify-center m-0 gap-2">
+              <h1 class="text-gray-12 text-xl font-semibold">Authorization successful!</h1>
+              <p class="text-gray-11 text-sm">You can close this window and return to Array</p>
+              <script>
+                setTimeout(() => window.close(), 500);
+              </script>
             </body>
           </html>
         `);
@@ -92,10 +125,31 @@ async function startCallbackServer(authUrl: string): Promise<{
       } else {
         res.writeHead(400, { "Content-Type": "text/html" });
         res.end(`
-          <html>
-            <body>
-              <p>Invalid request - no authorization code received.</p>
-              <p>You can close this window.</p>
+          <!DOCTYPE html>
+          <html class="radix-themes" data-is-root-theme="true" data-accent-color="orange" data-gray-color="slate" data-has-background="true" data-panel-background="translucent" data-radius="none" data-scaling="100%">
+            <head>
+              <meta charset="utf-8">
+              <title>Invalid Request</title>
+              <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@radix-ui/themes@3.1.6/styles.css">
+              <script src="https://cdn.tailwindcss.com"></script>
+              <style>
+                @layer utilities {
+                  .text-accent-9 { color: var(--accent-9); }
+                  .text-red-9 { color: var(--red-9); }
+                  .text-gray-11 { color: var(--gray-11); }
+                  .text-gray-12 { color: var(--gray-12); }
+                  .bg-gray-1 { background-color: var(--gray-1); }
+                  .bg-gray-12 { background-color: var(--gray-12); }
+                  .border-gray-6 { border-color: var(--gray-6); }
+                }
+              </style>
+            </head>
+            <body class="dark bg-gray-1 h-screen overflow-hidden flex flex-col items-center justify-center m-0 gap-2">
+              <h1 class="text-gray-12 text-xl font-semibold">Invalid request</h1>
+              <p class="text-gray-11 text-sm">You can close this window and return to Array</p>
+              <script>
+                setTimeout(() => window.close(), 500);
+              </script>
             </body>
           </html>
         `);
@@ -229,7 +283,6 @@ export async function performOAuthFlow(
 
   activeCloseServer = closeServer;
 
-  // Open browser
   await shell.openExternal(localLoginUrl);
 
   try {

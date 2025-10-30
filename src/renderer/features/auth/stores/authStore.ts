@@ -1,5 +1,6 @@
 import { PostHogAPIClient } from "@api/posthogClient";
 import { queryClient } from "@renderer/lib/queryClient";
+import { useTabStore } from "@renderer/stores/tabStore";
 import type { CloudRegion } from "@shared/types/oauth";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -116,7 +117,18 @@ export const useAuthStore = create<AuthState>()(
             projectId,
           });
 
+          // Clear any cached data from previous sessions AFTER setting new auth
+          queryClient.clear();
+
           get().scheduleTokenRefresh();
+
+          // Navigate to task list after successful authentication
+          const taskListTab = useTabStore
+            .getState()
+            .tabs.find((tab) => tab.type === "task-list");
+          if (taskListTab) {
+            useTabStore.getState().setActiveTab(taskListTab.id);
+          }
         } catch {
           throw new Error("Failed to authenticate with PostHog");
         }
@@ -290,6 +302,14 @@ export const useAuthStore = create<AuthState>()(
               });
 
               get().scheduleTokenRefresh();
+
+              // Navigate to task list after successful authentication
+              const taskListTab = useTabStore
+                .getState()
+                .tabs.find((tab) => tab.type === "task-list");
+              if (taskListTab) {
+                useTabStore.getState().setActiveTab(taskListTab.id);
+              }
 
               if (state.encryptedOpenaiKey) {
                 const decryptedOpenaiKey =
