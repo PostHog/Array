@@ -6,8 +6,8 @@ type WriteToolViewProps = BaseToolViewProps<WriteArgs, string>;
 
 export function WriteToolView({ args, result }: WriteToolViewProps) {
   const { content } = args;
-  const lineCount = content.split("\n").length;
-  const charCount = content.length;
+  const lineCount = content ? content.split("\n").length : 0;
+  const charCount = content ? content.length : 0;
 
   return (
     <Box>

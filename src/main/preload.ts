@@ -60,7 +60,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("agent-start", params),
   agentCancel: async (taskId: string): Promise<boolean> =>
     ipcRenderer.invoke("agent-cancel", taskId),
-  onAgentEvent: (
+  onAgentNotification: (
     channel: string,
     listener: (payload: unknown) => void,
   ): (() => void) => {
@@ -205,9 +205,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
       meeting_url: string | null;
     }) => void,
   ): (() => void) => {
+    type RecordingStartedData = {
+      posthog_recording_id: string;
+      platform: string;
+      title: string | null;
+      meeting_url: string | null;
+    };
     const channel = "recall:recording-started";
     const wrapped = (_event: IpcRendererEvent, data: unknown) =>
-      listener(data as any);
+      listener(data as RecordingStartedData);
     ipcRenderer.on(channel, wrapped);
     return () => ipcRenderer.removeListener(channel, wrapped);
   },
@@ -221,27 +227,37 @@ contextBridge.exposeInMainWorld("electronAPI", {
       is_final: boolean;
     }) => void,
   ): (() => void) => {
+    type TranscriptSegmentData = {
+      posthog_recording_id: string;
+      timestamp: number;
+      speaker: string | null;
+      text: string;
+      confidence: number | null;
+      is_final: boolean;
+    };
     const channel = "recall:transcript-segment";
     const wrapped = (_event: IpcRendererEvent, data: unknown) =>
-      listener(data as any);
+      listener(data as TranscriptSegmentData);
     ipcRenderer.on(channel, wrapped);
     return () => ipcRenderer.removeListener(channel, wrapped);
   },
   onRecallMeetingEnded: (
     listener: (data: { posthog_recording_id: string }) => void,
   ): (() => void) => {
+    type MeetingEndedData = { posthog_recording_id: string };
     const channel = "recall:meeting-ended";
     const wrapped = (_event: IpcRendererEvent, data: unknown) =>
-      listener(data as any);
+      listener(data as MeetingEndedData);
     ipcRenderer.on(channel, wrapped);
     return () => ipcRenderer.removeListener(channel, wrapped);
   },
   onRecallRecordingReady: (
     listener: (data: { posthog_recording_id: string }) => void,
   ): (() => void) => {
+    type RecordingReadyData = { posthog_recording_id: string };
     const channel = "recall:recording-ready";
     const wrapped = (_event: IpcRendererEvent, data: unknown) =>
-      listener(data as any);
+      listener(data as RecordingReadyData);
     ipcRenderer.on(channel, wrapped);
     return () => ipcRenderer.removeListener(channel, wrapped);
   },
@@ -269,4 +285,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on(channel, wrapped);
     return () => ipcRenderer.removeListener(channel, wrapped);
   },
+  clipboardWriteText: (text: string): Promise<void> =>
+    ipcRenderer.invoke("clipboard:write-text", text),
 });

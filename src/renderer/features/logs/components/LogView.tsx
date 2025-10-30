@@ -1,5 +1,7 @@
-import { LogEventRenderer } from "@features/logs/components/LogEventRenderer";
+import { AgentNotificationRenderer } from "@features/logs/components/AgentNotificationRenderer";
+import { MessageChunkView } from "@features/logs/components/MessageChunkView";
 import { TodoGroupView } from "@features/logs/components/TodoGroupView";
+import { ToolExecutionView } from "@features/logs/components/ToolExecutionView";
 import {
   useLogsSelectors,
   useLogsStore,
@@ -8,10 +10,11 @@ import { useAutoScroll } from "@hooks/useAutoScroll";
 import {
   CaretDown as CaretDownIcon,
   CaretUp as CaretUpIcon,
+  Check as CheckIcon,
   Copy as CopyIcon,
   Trash as TrashIcon,
 } from "@phosphor-icons/react";
-import type { AgentEvent } from "@posthog/agent";
+import type { AgentNotification } from "@posthog/agent";
 import {
   Box,
   Code,
@@ -22,10 +25,10 @@ import {
   Text,
   Tooltip,
 } from "@radix-ui/themes";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 interface LogViewProps {
-  logs: AgentEvent[];
+  logs: AgentNotification[];
   isRunning: boolean;
   onClearLogs?: () => void;
 }
@@ -33,13 +36,13 @@ interface LogViewProps {
 export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
   const viewMode = useLogsStore((state) => state.viewMode);
   const highlightedIndex = useLogsStore((state) => state.highlightedIndex);
-  const expandAll = useLogsStore((state) => state.expandAll);
   const setViewMode = useLogsStore((state) => state.setViewMode);
   const setHighlightedIndex = useLogsStore(
     (state) => state.setHighlightedIndex,
   );
   const setExpandAll = useLogsStore((state) => state.setExpandAll);
   const setLogs = useLogsStore((state) => state.setLogs);
+  const [copied, setCopied] = useState(false);
 
   const { scrollRef } = useAutoScroll({
     contentLength: logs.length,
@@ -68,11 +71,17 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
     );
   }
 
-  const handleCopyLogs = () => {
-    const logsText = logs
-      .map((log) => JSON.stringify(log, null, 2))
-      .join("\n\n");
-    navigator.clipboard.writeText(logsText);
+  const handleCopyLogs = async () => {
+    try {
+      const logsText = logs
+        .map((log) => JSON.stringify(log, null, 2))
+        .join("\n\n");
+      await window.electronAPI.clipboardWriteText(logsText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error("Failed to copy logs:", error);
+    }
   };
 
   const handleJumpToRaw = (index: number) => {
@@ -117,14 +126,14 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
                 </Tooltip>
               </>
             )}
-            <Tooltip content="Copy logs">
+            <Tooltip content={copied ? "Copied!" : "Copy logs"}>
               <IconButton
                 size="2"
                 variant="ghost"
-                color="gray"
+                color={copied ? "green" : "gray"}
                 onClick={handleCopyLogs}
               >
-                <CopyIcon size={16} />
+                {copied ? <CheckIcon size={16} /> : <CopyIcon size={16} />}
               </IconButton>
             </Tooltip>
             {onClearLogs && (
@@ -178,49 +187,98 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
       <Box ref={scrollRef} flexGrow="1" overflowY="auto" p="4">
         {viewMode === "pretty" ? (
           <Box className="space-y-2">
-            {processedLogs.map((processed, idx) => {
-              if (processed.type === "todo_group") {
-                const key = `todo-${processed.timestamp}-${idx}`;
+            {processedLogs.map((item) => {
+              if (item.type === "message_chunk_group") {
                 return (
-                  <TodoGroupView
-                    key={key}
-                    todo={processed.todo}
-                    allTodos={processed.allTodos}
-                    toolCalls={processed.toolCalls}
-                    timestamp={processed.timestamp}
-                    todoWriteIndex={processed.todoWriteIndex}
-                    onJumpToRaw={handleJumpToRaw}
-                    forceExpanded={expandAll}
-                  />
-                );
-              } else {
-                const key = `${processed.event.type}-${processed.event.ts}-${processed.index}`;
-                return (
-                  <LogEventRenderer
-                    key={key}
-                    event={processed.event}
-                    index={processed.index}
-                    toolResult={processed.toolResult}
-                    onJumpToRaw={handleJumpToRaw}
-                    forceExpanded={expandAll}
+                  <MessageChunkView
+                    key={`message-group-${item.startIndex}`}
+                    chunks={item.chunks}
+                    timestamp={item.timestamp}
                   />
                 );
               }
+              if (item.type === "tool_call_group") {
+                return (
+                  <ToolExecutionView
+                    key={`tool-call-${item.toolCallId}`}
+                    initialCall={item.initialCall}
+                    updates={item.updates}
+                    index={item.startIndex}
+                    onJumpToRaw={handleJumpToRaw}
+                  />
+                );
+              }
+              if (item.type === "todo_group") {
+                return (
+                  <TodoGroupView
+                    key={`todo-group-${item.todoWriteIndex}`}
+                    todo={item.todo}
+                    allTodos={item.allTodos}
+                    toolCalls={item.toolCalls}
+                    messageChunks={item.messageChunks}
+                    timestamp={item.timestamp}
+                    todoWriteIndex={item.todoWriteIndex}
+                    onJumpToRaw={handleJumpToRaw}
+                    planNumber={item.planNumber}
+                    totalPlans={item.totalPlans}
+                    todoStepNumber={item.todoStepNumber}
+                    totalTodos={item.totalTodos}
+                  />
+                );
+              }
+              if (item.type === "standalone") {
+                return (
+                  <AgentNotificationRenderer
+                    key={`notification-${item.index}`}
+                    notification={item.event}
+                    index={item.index}
+                  />
+                );
+              }
+              return null;
             })}
           </Box>
         ) : (
           <Box>
-            {logs.map((log, index) => {
-              const timestamp = new Date(log.ts).toLocaleTimeString("en-US", {
+            {logs.map((notification, index) => {
+              // Extract timestamp from notification
+              const ts =
+                "params" in notification && "timestamp" in notification.params
+                  ? notification.params.timestamp
+                  : Date.now();
+              const timestamp = new Date(ts).toLocaleTimeString("en-US", {
                 hour12: false,
                 hour: "2-digit",
                 minute: "2-digit",
                 second: "2-digit",
               });
               const isHighlighted = highlightedIndex === index;
+
+              // Generate stable key from notification content
+              const notificationKey = (() => {
+                if ("sessionId" in notification) {
+                  const sessionId = notification.sessionId as string;
+                  const update =
+                    "update" in notification ? notification.update : {};
+                  const toolCallId =
+                    update &&
+                    typeof update === "object" &&
+                    "toolCallId" in update
+                      ? (update as { toolCallId?: string }).toolCallId
+                      : undefined;
+                  return toolCallId
+                    ? `${sessionId}-${toolCallId}`
+                    : `${sessionId}-${index}`;
+                }
+                if ("method" in notification) {
+                  return `${notification.method}-${ts}-${index}`;
+                }
+                return `notification-${ts}-${index}`;
+              })();
+
               return (
                 <Code
-                  key={`${log.ts}-${index}`}
+                  key={notificationKey}
                   id={`log-${index}`}
                   size="1"
                   variant="ghost"
@@ -229,7 +287,7 @@ export function LogView({ logs, isRunning, onClearLogs }: LogViewProps) {
                   }`}
                   style={{ marginBottom: "1rem" }}
                 >
-                  [{timestamp}] {JSON.stringify(log, null, 2)}
+                  [{timestamp}] {JSON.stringify(notification, null, 2)}
                 </Code>
               );
             })}

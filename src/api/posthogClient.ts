@@ -402,7 +402,7 @@ export class PostHogAPIClient {
       "/api/environments/{project_id}/desktop_recordings/{id}/transcript/",
       {
         path: { project_id: teamId.toString(), id: recordingId },
-        body: updates as any,
+        body: updates,
       },
     );
 

@@ -4,25 +4,37 @@ import {
   ToolCodeBlock,
   ToolMetadata,
 } from "@features/logs/tools/ToolUI";
-import type {
-  BaseToolViewProps,
-  GrepArgs,
-  GrepResult,
-} from "@features/logs/tools/types";
+import type { BaseToolViewProps } from "@features/logs/tools/types";
 import { Box, Code } from "@radix-ui/themes";
-import { parseGrepResult, truncateList } from "@utils/tool-results";
+import {
+  getBooleanOrUndefined,
+  getNumber,
+  getStringOrUndefined,
+} from "@utils/arg-extractors";
+import {
+  type GrepResultParsed,
+  parseGrepResult,
+  truncateList,
+} from "@utils/tool-results";
 
-type GrepToolViewProps = BaseToolViewProps<GrepArgs, string | GrepResult>;
+type GrepToolViewProps = BaseToolViewProps<Record<string, unknown>, unknown>;
 
 export function GrepToolView({ args, result }: GrepToolViewProps) {
-  const { path, glob, type, output_mode, head_limit, multiline } = args;
-  const caseInsensitive = args["-i"];
-  const showLineNumbers = args["-n"];
-  const contextAfter = args["-A"];
-  const contextBefore = args["-B"];
-  const contextAround = args["-C"];
+  const path = getStringOrUndefined(args, "path");
+  const glob = getStringOrUndefined(args, "glob");
+  const type = getStringOrUndefined(args, "type");
+  const output_mode = getStringOrUndefined(args, "output_mode");
+  const head_limit = getNumber(args, "head_limit");
+  const multiline = getBooleanOrUndefined(args, "multiline");
+  const caseInsensitive = getBooleanOrUndefined(args, "-i");
+  const showLineNumbers = getBooleanOrUndefined(args, "-n");
+  const contextAfter = getNumber(args, "-A");
+  const contextBefore = getNumber(args, "-B");
+  const contextAround = getNumber(args, "-C");
 
-  const { matches, count } = parseGrepResult(result);
+  const { matches, count } = parseGrepResult(
+    result as string | Partial<GrepResultParsed> | undefined,
+  );
 
   return (
     <Box>

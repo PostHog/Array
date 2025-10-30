@@ -3,8 +3,34 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Agent, PermissionMode } from "@posthog/agent";
+import { Agent, type AgentNotification, PermissionMode } from "@posthog/agent";
 import { type BrowserWindow, type IpcMainInvokeEvent, ipcMain } from "electron";
+
+// Helpers to create PostHog notifications
+function createStatusNotification(
+  type: string,
+  meta: Record<string, unknown> = {},
+): AgentNotification {
+  return {
+    method: "_posthog/status",
+    params: {
+      type,
+      timestamp: Date.now(),
+      _meta: meta,
+    },
+  };
+}
+
+function createErrorNotification(message: string): AgentNotification {
+  return {
+    method: "_posthog/error",
+    params: {
+      type: "error",
+      timestamp: Date.now(),
+      _meta: { message },
+    },
+  };
+}
 
 interface AgentStartParams {
   taskId: string;
@@ -138,23 +164,21 @@ export function registerAgentIpc(
           stderrBuffer.shift();
         }
         console.error(`[agent][claude-stderr] ${text}`);
-        emitToRenderer({
-          type: "status",
-          ts: Date.now(),
-          message: `[Claude stderr] ${text}`,
-        });
+        emitToRenderer(
+          createStatusNotification("claude_stderr", {
+            message: `[Claude stderr] ${text}`,
+          }),
+        );
       };
 
       const agent = new Agent({
         workingDirectory: repoPath,
         posthogApiKey: apiKey,
         posthogApiUrl: apiHost,
-        onEvent: (event) => {
-          console.log("agent event", event);
-          if (!event || abortController.signal.aborted) return;
-          const payload =
-            event.type === "done" ? { ...event, success: true } : event;
-          emitToRenderer(payload);
+        onNotification: (notification: AgentNotification) => {
+          console.log("agent notification", notification);
+          if (!notification || abortController.signal.aborted) return;
+          emitToRenderer(notification);
         },
         debug: true,
       });
@@ -185,11 +209,8 @@ export function registerAgentIpc(
               // Store the current run ID
               controllerEntry.currentRunId = latestRun.id;
 
-              emitToRenderer({
-                type: "progress",
-                ts: Date.now(),
-                progress: latestRun,
-              });
+              // Don't emit progress to renderer - too verbose
+              // emitToRenderer(createStatusNotification("progress", { progress: latestRun }));
             }
           } catch (err) {
             console.warn("[agent] failed to fetch task progress", err);
@@ -202,12 +223,9 @@ export function registerAgentIpc(
         }, 1000); // Poll every second to catch stage transitions
       }
 
-      emitToRenderer({
-        type: "status",
-        ts: Date.now(),
-        phase: "task_start",
-        taskId: posthogTaskId,
-      });
+      emitToRenderer(
+        createStatusNotification("task_start", { taskId: posthogTaskId }),
+      );
 
       (async () => {
         const resolvedPermission = resolvePermissionMode(permissionMode);
@@ -244,7 +262,7 @@ export function registerAgentIpc(
             },
           });
 
-          emitToRenderer({ type: "done", success: true, ts: Date.now() });
+          emitToRenderer(createStatusNotification("done", { success: true }));
         } catch (err) {
           console.error("[agent] task execution failed", err);
           let errorMessage = err instanceof Error ? err.message : String(err);
@@ -257,19 +275,15 @@ export function registerAgentIpc(
               const stderrSummary = stderrBuffer.slice(-5).join("\n");
               errorMessage += `\nLast Claude stderr:\n${stderrSummary}`;
             }
-            emitToRenderer({
-              type: "error",
-              message: `${errorMessage}${cause}`,
-              ts: Date.now(),
-            });
-            emitToRenderer({ type: "done", success: false, ts: Date.now() });
+            emitToRenderer(createErrorNotification(`${errorMessage}${cause}`));
+            emitToRenderer(
+              createStatusNotification("done", { success: false }),
+            );
           } else {
-            emitToRenderer({
-              type: "status",
-              ts: Date.now(),
-              phase: "canceled",
-            });
-            emitToRenderer({ type: "done", success: false, ts: Date.now() });
+            emitToRenderer(createStatusNotification("canceled"));
+            emitToRenderer(
+              createStatusNotification("done", { success: false }),
+            );
           }
         } finally {
           if (controllerEntry.poller) {

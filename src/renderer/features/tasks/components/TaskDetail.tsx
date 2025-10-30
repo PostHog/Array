@@ -24,7 +24,7 @@ import {
   Text,
   Tooltip,
 } from "@radix-ui/themes";
-import type { ClarifyingQuestion, Task } from "@shared/types";
+import type { Task } from "@shared/types";
 import { useLayoutStore } from "@stores/layoutStore";
 import { useTabStore } from "@stores/tabStore";
 import {
@@ -207,55 +207,105 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     // If in plan mode, this will open the editor automatically via PlanView
   };
 
+  // TODO: Re-implement research_questions artifact detection for ACP notifications
   // Listen for research_questions artifact event from agent
-  useEffect(() => {
-    // Check logs for research_questions artifact event
-    const artifactEvent = logs.find(
-      (log) => log.type === "artifact" && "kind" in log && "content" in log,
-    );
+  // useEffect(() => {
+  //   // Check logs for research_questions artifact event
+  //   const artifactEvent = logs.find(
+  //     (log) => log.type === "artifact" && "kind" in log && "content" in log,
+  //   );
+  //
+  //   if (artifactEvent && (clarifyingQuestions?.length ?? 0) === 0) {
+  //     // Type guard to check if the content is an array of questions
+  //     const event = artifactEvent as {
+  //       type: string;
+  //       ts: number;
+  //       kind?: string;
+  //       content?: Array<{
+  //         id: string;
+  //         question: string;
+  //         options: string[];
+  //       }>;
+  //     };
+  //
+  //     if (event.kind === "research_questions" && event.content) {
+  //       const questions = event.content;
+  //
+  //       console.log(
+  //         "[TaskDetail] Received research_questions artifact with",
+  //         questions.length,
+  //         "questions",
+  //       );
+  //
+  //       // Convert to ClarifyingQuestion format
+  //       const clarifyingQs: ClarifyingQuestion[] = questions.map(
+  //         (q: { id: string; question: string; options: string[] }) => ({
+  //           id: q.id,
+  //           question: q.question,
+  //           options: q.options,
+  //           requiresInput: q.options.some((opt: string) =>
+  //             opt.toLowerCase().includes("something else"),
+  //           ),
+  //         }),
+  //       );
+  //
+  //       setClarifyingQuestions(task.id, clarifyingQs);
+  //       setPlanModePhase(task.id, "questions");
+  //     }
+  //   }
+  // }, [
+  //   logs,
+  //   clarifyingQuestions?.length,
+  //   task.id,
+  //   setClarifyingQuestions,
+  //   setPlanModePhase,
+  // ]);
 
-    if (artifactEvent && (clarifyingQuestions?.length ?? 0) === 0) {
-      // Type guard to check if the content is an array of questions
-      const event = artifactEvent as {
-        type: string;
-        ts: number;
-        kind?: string;
-        content?: Array<{
-          id: string;
-          question: string;
-          options: string[];
-        }>;
+  // Listen for research_questions artifact notification
+  useEffect(() => {
+    // Check logs for research_questions artifact
+    const artifactNotification = logs.find((log) => {
+      if ("method" in log && log.method === "_posthog/artifact") {
+        if (!("params" in log) || !log.params) return false;
+        const params = log.params as Record<string, unknown>;
+        return params.type === "research_questions";
+      }
+      return false;
+    });
+
+    // If found and we haven't loaded questions yet, load them
+    if (artifactNotification && repoPath && clarifyingQuestions.length === 0) {
+      const loadQuestions = async () => {
+        try {
+          const content = await window.electronAPI?.readTaskArtifact(
+            repoPath,
+            task.id,
+            "questions.json",
+          );
+
+          if (content) {
+            const data = JSON.parse(content);
+            if (data.questions && Array.isArray(data.questions)) {
+              console.log(
+                "[TaskDetail] Loaded research questions from artifact",
+                data.questions.length,
+              );
+              setClarifyingQuestions(task.id, data.questions);
+              setPlanModePhase(task.id, "questions");
+            }
+          }
+        } catch (error) {
+          console.error("Failed to load research questions:", error);
+        }
       };
 
-      if (event.kind === "research_questions" && event.content) {
-        const questions = event.content;
-
-        console.log(
-          "[TaskDetail] Received research_questions artifact with",
-          questions.length,
-          "questions",
-        );
-
-        // Convert to ClarifyingQuestion format
-        const clarifyingQs: ClarifyingQuestion[] = questions.map(
-          (q: { id: string; question: string; options: string[] }) => ({
-            id: q.id,
-            question: q.question,
-            options: q.options,
-            requiresInput: q.options.some((opt: string) =>
-              opt.toLowerCase().includes("something else"),
-            ),
-          }),
-        );
-
-        setClarifyingQuestions(task.id, clarifyingQs);
-        setPlanModePhase(task.id, "questions");
-      }
+      loadQuestions();
     }
   }, [
     logs,
-    clarifyingQuestions?.length,
+    repoPath,
     task.id,
+    clarifyingQuestions.length,
     setClarifyingQuestions,
     setPlanModePhase,
   ]);

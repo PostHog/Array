@@ -1,5 +1,5 @@
 import type { Schemas } from "@api/generated";
-import type { AgentEvent } from "@posthog/agent";
+import type { AgentNotification } from "@posthog/agent";
 import type { TaskArtifact } from "@shared/types";
 import type { Recording } from "@shared/types";
 
@@ -43,9 +43,9 @@ export interface IElectronAPI {
     createPR?: boolean;
   }) => Promise<{ taskId: string; channel: string }>;
   agentCancel: (taskId: string) => Promise<boolean>;
-  onAgentEvent: (
+  onAgentNotification: (
     channel: string,
-    listener: (event: AgentEvent) => void,
+    listener: (notification: AgentNotification) => void,
   ) => () => void;
   // Task artifact operations
   readPlanFile: (repoPath: string, taskId: string) => Promise<string | null>;
@@ -156,6 +156,8 @@ export interface IElectronAPI {
     listener: (data: string) => void,
   ) => () => void;
   onShellExit: (sessionId: string, listener: () => void) => () => void;
+  // Clipboard API
+  clipboardWriteText: (text: string) => Promise<void>;
 }
 
 declare global {

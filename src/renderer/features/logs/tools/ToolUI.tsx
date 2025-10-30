@@ -18,6 +18,7 @@ interface ToolExecutionWrapperProps {
   forceExpanded?: boolean;
   onJumpToRaw?: (index: number) => void;
   index?: number;
+  kindIcon?: ReactNode;
 }
 
 export function ToolExecutionWrapper({
@@ -32,6 +33,7 @@ export function ToolExecutionWrapper({
   forceExpanded = false,
   onJumpToRaw,
   index,
+  kindIcon,
 }: ToolExecutionWrapperProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const expanded = forceExpanded || isExpanded;
@@ -81,6 +83,17 @@ export function ToolExecutionWrapper({
         >
           {formatTimestamp(timestamp)}
         </Code>
+        {kindIcon && (
+          <Box
+            style={{
+              display: "flex",
+              alignItems: "center",
+              color: "var(--gray-11)",
+            }}
+          >
+            {kindIcon}
+          </Box>
+        )}
         <Code
           size="2"
           variant="ghost"
@@ -152,7 +165,7 @@ export function ToolExecutionWrapper({
 }
 
 interface ToolCodeBlockProps {
-  children: string;
+  children?: string;
   maxHeight?: string;
   maxLength?: number;
   color?: "red" | "green";
@@ -166,10 +179,12 @@ export function ToolCodeBlock({
   color,
   className = "",
 }: ToolCodeBlockProps) {
+  // Handle undefined or null children
+  const safeChildren = children ?? "";
   const truncated =
-    maxLength && children.length > maxLength
-      ? `${children.slice(0, maxLength)}…`
-      : children;
+    maxLength && safeChildren.length > maxLength
+      ? `${safeChildren.slice(0, maxLength)}…`
+      : safeChildren;
 
   return (
     <Code

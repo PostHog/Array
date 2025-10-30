@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import {
   type BrowserWindow,
+  clipboard,
   dialog,
   type IpcMainInvokeEvent,
   ipcMain,
@@ -213,6 +214,13 @@ export function registerOsIpc(getMainWindow: () => BrowserWindow | null): void {
       } catch {
         return null;
       }
+    },
+  );
+
+  ipcMain.handle(
+    "clipboard:write-text",
+    async (_event: IpcMainInvokeEvent, text: string): Promise<void> => {
+      clipboard.writeText(text);
     },
   );
 }

@@ -1,6 +1,10 @@
 import { useAuthStore } from "@features/auth/stores/authStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
-import type { AgentEvent } from "@posthog/agent";
+import type {
+  AgentNotification,
+  PostHogErrorNotification,
+  PostHogStatusNotification,
+} from "@posthog/agent";
 import type {
   ClarifyingQuestion,
   ExecutionMode,
@@ -15,28 +19,55 @@ import { persist } from "zustand/middleware";
 const createProgressSignature = (progress: TaskRun): string =>
   [progress.status ?? "", progress.updated_at ?? ""].join("|");
 
+// Helper to create PostHog error notifications
+function createErrorNotification(message: string): PostHogErrorNotification {
+  return {
+    method: "_posthog/error",
+    params: {
+      type: "error",
+      timestamp: Date.now(),
+      _meta: { message },
+    },
+  };
+}
+
+// Helper to create PostHog status notifications
+function createStatusNotification(
+  type: string,
+  meta: Record<string, unknown>,
+): PostHogStatusNotification {
+  return {
+    method: "_posthog/status",
+    params: {
+      type,
+      timestamp: Date.now(),
+      _meta: meta,
+    },
+  };
+}
+
 async function validateRepositoryAccess(
   path: string,
-  addLog: (log: AgentEvent) => void,
+  addLog: (log: AgentNotification) => void,
   onRetrySelect?: () => Promise<void>,
 ): Promise<boolean> {
   const isRepo = await window.electronAPI?.validateRepo(path);
   if (!isRepo) {
-    addLog({
-      type: "error",
-      ts: Date.now(),
-      message: `Selected folder is not a git repository: ${path}`,
-    });
+    addLog(
+      createErrorNotification(
+        `Selected folder is not a git repository: ${path}`,
+      ),
+    );
     return false;
   }
 
   const canWrite = await window.electronAPI?.checkWriteAccess(path);
   if (!canWrite) {
-    addLog({
-      type: "error",
-      ts: Date.now(),
-      message: `No write permission in selected folder: ${path}`,
-    });
+    addLog(
+      createErrorNotification(
+        `No write permission in selected folder: ${path}`,
+      ),
+    );
     const result = await window.electronAPI?.showMessageBox({
       type: "warning",
       title: "Folder is not writable",
@@ -60,7 +91,7 @@ async function validateRepositoryAccess(
 
 interface TaskExecutionState {
   isRunning: boolean;
-  logs: AgentEvent[];
+  logs: AgentNotification[];
   repoPath: string | null;
   currentTaskId: string | null;
   runMode: "local" | "cloud";
@@ -74,6 +105,8 @@ interface TaskExecutionState {
   questionAnswers: QuestionAnswer[];
   planContent: string | null;
   selectedArtifact: string | null; // Currently viewing artifact filename
+  // Workflow phase tracking
+  currentPhase: string | null; // Current agent workflow phase (research, plan, build)
 }
 
 interface TaskExecutionStore {
@@ -89,8 +122,8 @@ interface TaskExecutionStore {
     updates: Partial<TaskExecutionState>,
   ) => void;
   setRunning: (taskId: string, isRunning: boolean) => void;
-  addLog: (taskId: string, log: AgentEvent) => void;
-  setLogs: (taskId: string, logs: AgentEvent[]) => void;
+  addLog: (taskId: string, log: AgentNotification) => void;
+  setLogs: (taskId: string, logs: AgentNotification[]) => void;
   setRepoPath: (taskId: string, repoPath: string | null) => void;
   setCurrentTaskId: (taskId: string, currentTaskId: string | null) => void;
   setRunMode: (taskId: string, runMode: "local" | "cloud") => void;
@@ -109,8 +142,8 @@ interface TaskExecutionStore {
   clearTaskLogs: (taskId: string) => void;
 
   // Event subscription management
-  subscribeToAgentEvents: (taskId: string, channel: string) => void;
-  unsubscribeFromAgentEvents: (taskId: string) => void;
+  subscribeToAgentNotifications: (taskId: string, channel: string) => void;
+  unsubscribeFromAgentNotifications: (taskId: string) => void;
 
   // Plan mode actions
   setExecutionMode: (taskId: string, mode: ExecutionMode) => void;
@@ -140,6 +173,7 @@ const defaultTaskState: TaskExecutionState = {
   questionAnswers: [],
   planContent: null,
   selectedArtifact: null,
+  currentPhase: null,
 };
 
 export const useTaskExecutionStore = create<TaskExecutionStore>()(
@@ -185,14 +219,14 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         get().updateTaskState(taskId, { isRunning });
       },
 
-      addLog: (taskId: string, log: AgentEvent) => {
+      addLog: (taskId: string, log: AgentNotification) => {
         const currentState = get().getTaskState(taskId);
         get().updateTaskState(taskId, {
           logs: [...currentState.logs, log],
         });
       },
 
-      setLogs: (taskId: string, logs: AgentEvent[]) => {
+      setLogs: (taskId: string, logs: AgentNotification[]) => {
         get().updateTaskState(taskId, { logs });
       },
 
@@ -235,7 +269,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         });
       },
 
-      subscribeToAgentEvents: (taskId: string, channel: string) => {
+      subscribeToAgentNotifications: (taskId: string, channel: string) => {
         const store = get();
 
         // Clean up existing subscription if any
@@ -245,47 +279,47 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         }
 
         // Create new subscription that persists even when component unmounts
-        const unsubscribeFn = window.electronAPI?.onAgentEvent(
+        const unsubscribeFn = window.electronAPI?.onAgentNotification(
           channel,
-          (ev: AgentEvent | { type: "progress"; progress: TaskRun }) => {
+          (notification: AgentNotification) => {
             const currentStore = get();
 
-            // Handle custom progress events from Array backend
-            if (ev?.type === "progress" && "progress" in ev) {
-              const newProgress = ev.progress;
-              const oldProgress = currentStore.getTaskState(taskId).progress;
-              const oldSig = oldProgress
-                ? createProgressSignature(oldProgress)
-                : null;
-              const newSig = createProgressSignature(newProgress);
+            // Check if this is a PostHog notification
+            if ("method" in notification) {
+              // Handle PostHog notifications
+              const { method } = notification;
 
-              // Always update the stored progress state for UI (like TaskDetail)
-              currentStore.setProgress(taskId, newProgress);
-
-              // Only add to logs if signature changed (to avoid duplicate log entries)
-              if (oldSig !== newSig) {
-                currentStore.addLog(taskId, {
-                  type: "progress",
-                  ts: Date.now(),
-                  progress: newProgress,
-                } as unknown as AgentEvent);
-              }
-              return;
-            }
-
-            // Store AgentEvent directly (ev is now narrowed to AgentEvent)
-            if (ev?.type) {
-              // Handle state changes for special event types
-              if (ev.type === "error" || ev.type === "done") {
+              if (method === "_posthog/error") {
                 currentStore.setRunning(taskId, false);
-                if (ev.type === "done") {
-                  currentStore.setUnsubscribe(taskId, null);
+              }
+
+              // Handle status notifications for phase tracking and completion
+              if (method === "_posthog/status") {
+                if ("params" in notification && notification.params) {
+                  const params = notification.params as Record<string, unknown>;
+                  const type = params.type;
+                  const _meta = params._meta as
+                    | Record<string, unknown>
+                    | undefined;
+
+                  if (type === "phase_start" && _meta?.phase) {
+                    // Update current phase when a new phase starts
+                    currentStore.updateTaskState(taskId, {
+                      currentPhase: _meta.phase as string,
+                    });
+                  } else if (type === "phase_complete" && _meta?.phase) {
+                    // Keep phase set until next phase starts
+                    // Could clear it here if desired: currentPhase: null
+                  } else if (type === "done") {
+                    // Task completed - stop running state
+                    currentStore.setRunning(taskId, false);
+                  }
                 }
               }
-
-              // Add event to logs
-              currentStore.addLog(taskId, ev);
             }
+
+            // Add notification to logs
+            currentStore.addLog(taskId, notification);
           },
         );
 
@@ -293,7 +327,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         store.setUnsubscribe(taskId, unsubscribeFn);
       },
 
-      unsubscribeFromAgentEvents: (taskId: string) => {
+      unsubscribeFromAgentNotifications: (taskId: string) => {
         const state = get();
         const taskState = state.taskStates[taskId];
         if (taskState?.unsubscribe) {
@@ -323,11 +357,12 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
             }
           }
         } catch (err) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message: `Error selecting directory: ${err instanceof Error ? err.message : String(err)}`,
-          });
+          store.addLog(
+            taskId,
+            createErrorNotification(
+              `Error selecting directory: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
         }
       },
 
@@ -340,12 +375,12 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         const { apiKey, apiHost } = useAuthStore.getState();
 
         if (!apiKey) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message:
+          store.addLog(
+            taskId,
+            createErrorNotification(
               "No PostHog API key found. Sign in to PostHog to run tasks.",
-          });
+            ),
+          );
           return;
         }
 
@@ -356,13 +391,10 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           const { client } = useAuthStore.getState();
           store.setProgress(taskId, null);
           store.setRunning(taskId, true);
-          const startTs = Date.now();
           store.setLogs(taskId, [
-            {
-              type: "token",
-              ts: startTs,
-              content: `Starting task run in cloud...`,
-            },
+            createStatusNotification("task_start", {
+              content: "Starting task run in cloud...",
+            }),
           ]);
 
           try {
@@ -370,18 +402,20 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
               throw new Error("API client not available");
             }
             await client.runTask(taskId);
-            store.addLog(taskId, {
-              type: "token",
-              ts: Date.now(),
-              content: "Task started in cloud successfully",
-            });
+            store.addLog(
+              taskId,
+              createStatusNotification("task_started", {
+                content: "Task started in cloud successfully",
+              }),
+            );
             store.setRunning(taskId, false);
           } catch (error) {
-            store.addLog(taskId, {
-              type: "error",
-              ts: Date.now(),
-              message: `Error starting cloud task: ${error instanceof Error ? error.message : "Unknown error"}`,
-            });
+            store.addLog(
+              taskId,
+              createErrorNotification(
+                `Error starting cloud task: ${error instanceof Error ? error.message : "Unknown error"}`,
+              ),
+            );
             store.setRunning(taskId, false);
           }
           return;
@@ -396,11 +430,10 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         }
 
         if (!effectiveRepoPath) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message: "No repository folder selected.",
-          });
+          store.addLog(
+            taskId,
+            createErrorNotification("No repository folder selected."),
+          );
           return;
         }
 
@@ -417,23 +450,16 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
         store.setProgress(taskId, null);
         store.setRunning(taskId, true);
-        const startTs = Date.now();
         store.setLogs(taskId, [
-          {
-            type: "token",
-            ts: startTs,
-            content: `Starting task run...`,
-          },
-          {
-            type: "token",
-            ts: startTs,
+          createStatusNotification("task_start", {
+            content: "Starting task run...",
+          }),
+          createStatusNotification("permission_mode", {
             content: `Permission mode: ${permissionMode}`,
-          },
-          {
-            type: "token",
-            ts: startTs,
+          }),
+          createStatusNotification("repo_path", {
             content: `Repo: ${effectiveRepoPath}`,
-          },
+          }),
         ]);
 
         try {
@@ -450,11 +476,12 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
             createPR,
           });
           if (!result) {
-            store.addLog(taskId, {
-              type: "error",
-              ts: Date.now(),
-              message: "Failed to start agent: electronAPI not available",
-            });
+            store.addLog(
+              taskId,
+              createErrorNotification(
+                "Failed to start agent: electronAPI not available",
+              ),
+            );
             store.setRunning(taskId, false);
             return;
           }
@@ -462,14 +489,15 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
           store.setCurrentTaskId(taskId, executionTaskId);
 
-          // Subscribe to streaming events using store-managed subscription
-          store.subscribeToAgentEvents(taskId, channel);
+          // Subscribe to streaming notifications using store-managed subscription
+          store.subscribeToAgentNotifications(taskId, channel);
         } catch (error) {
-          store.addLog(taskId, {
-            type: "error",
-            ts: Date.now(),
-            message: `Error starting agent: ${error instanceof Error ? error.message : "Unknown error"}`,
-          });
+          store.addLog(
+            taskId,
+            createErrorNotification(
+              `Error starting agent: ${error instanceof Error ? error.message : "Unknown error"}`,
+            ),
+          );
           store.setRunning(taskId, false);
         }
       },
@@ -486,14 +514,13 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           // Ignore cancellation errors
         }
 
-        store.addLog(taskId, {
-          type: "token",
-          ts: Date.now(),
-          content: "Run cancelled",
-        });
+        store.addLog(
+          taskId,
+          createStatusNotification("cancelled", { content: "Run cancelled" }),
+        );
 
         store.setRunning(taskId, false);
-        store.unsubscribeFromAgentEvents(taskId);
+        store.unsubscribeFromAgentNotifications(taskId);
       },
 
       clearTaskLogs: (taskId: string) => {

@@ -1,17 +1,22 @@
 import { ToolCodeBlock, ToolMetadata } from "@features/logs/tools/ToolUI";
-import type {
-  BaseToolViewProps,
-  WebFetchArgs,
-} from "@features/logs/tools/types";
+import type { BaseToolViewProps } from "@features/logs/tools/types";
 import { Box, Code, Link } from "@radix-ui/themes";
+import { getString } from "@utils/arg-extractors";
 
 type WebFetchToolViewProps = BaseToolViewProps<
-  WebFetchArgs,
-  string | Record<string, unknown>
+  Record<string, unknown>,
+  unknown
 >;
 
 export function WebFetchToolView({ args, result }: WebFetchToolViewProps) {
-  const { url, prompt } = args;
+  const url = getString(args, "url");
+  const prompt = getString(args, "prompt");
+
+  const resultText: string | undefined = result
+    ? typeof result === "string"
+      ? result
+      : JSON.stringify(result, null, 2)
+    : undefined;
 
   return (
     <Box>
@@ -23,13 +28,9 @@ export function WebFetchToolView({ args, result }: WebFetchToolViewProps) {
       <Box mt="1">
         <ToolMetadata>Prompt: {prompt}</ToolMetadata>
       </Box>
-      {result && (
+      {resultText && (
         <Box mt="2">
-          <ToolCodeBlock maxLength={3000}>
-            {typeof result === "string"
-              ? result
-              : JSON.stringify(result, null, 2)}
-          </ToolCodeBlock>
+          <ToolCodeBlock maxLength={3000}>{resultText}</ToolCodeBlock>
         </Box>
       )}
     </Box>

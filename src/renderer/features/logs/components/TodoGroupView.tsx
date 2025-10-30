@@ -1,3 +1,4 @@
+import { MessageChunkView } from "@features/logs/components/MessageChunkView";
 import { ToolExecutionView } from "@features/logs/components/ToolExecutionView";
 import {
   CaretDown as CaretDownIcon,
@@ -6,55 +7,76 @@ import {
   Circle as CircleIcon,
   CircleNotch as CircleNotchIcon,
 } from "@phosphor-icons/react";
-import type { AgentEvent } from "@posthog/agent";
+import type { AgentNotification } from "@posthog/agent";
 import { Box, Code, ContextMenu } from "@radix-ui/themes";
+import { getNotificationTimestamp } from "@utils/notification-helpers";
 import { formatTimestamp } from "@utils/time";
 import { useState } from "react";
 
 interface Todo {
   content: string;
   status: "pending" | "in_progress" | "completed";
-  activeForm: string;
+  activeForm?: string;
+  priority?: "high" | "medium" | "low";
 }
 
 interface TodoGroupViewProps {
   todo: Todo;
   allTodos: Todo[];
   toolCalls: Array<{
-    call: Extract<AgentEvent, { type: "tool_call" }>;
-    result?: Extract<AgentEvent, { type: "tool_result" }>;
+    initialCall: AgentNotification;
+    updates: AgentNotification[];
     index: number;
+  }>;
+  messageChunks: Array<{
+    chunks: AgentNotification[];
+    startIndex: number;
   }>;
   timestamp: number;
   todoWriteIndex: number;
   onJumpToRaw?: (index: number) => void;
   forceExpanded?: boolean;
+  planNumber?: number;
+  totalPlans?: number;
+  todoStepNumber?: number;
+  totalTodos?: number;
 }
 
 function calculateTodoDuration(
   toolCalls: Array<{
-    call: Extract<AgentEvent, { type: "tool_call" }>;
-    result?: Extract<AgentEvent, { type: "tool_result" }>;
+    initialCall: AgentNotification;
+    updates: AgentNotification[];
   }>,
 ): number | undefined {
   if (toolCalls.length === 0) return undefined;
 
-  const firstToolStart = toolCalls[0].call.ts;
-  const lastToolResult = toolCalls[toolCalls.length - 1].result;
+  // Extract timestamp from first tool call
+  const firstToolCall = toolCalls[0].initialCall;
+  const firstToolStart = getNotificationTimestamp(firstToolCall);
+  if (!firstToolStart) return undefined;
 
-  if (!lastToolResult) return undefined;
+  // Extract timestamp from last tool update
+  const lastToolUpdates = toolCalls[toolCalls.length - 1].updates;
+  if (lastToolUpdates.length === 0) return undefined;
 
-  return lastToolResult.ts - firstToolStart;
+  const lastUpdate = lastToolUpdates[lastToolUpdates.length - 1];
+  const lastToolEnd = getNotificationTimestamp(lastUpdate);
+  if (!lastToolEnd) return undefined;
+
+  return lastToolEnd - firstToolStart;
 }
 
 export function TodoGroupView({
   todo,
   allTodos,
   toolCalls,
+  messageChunks,
   timestamp,
   todoWriteIndex,
   onJumpToRaw,
   forceExpanded = false,
+  todoStepNumber,
+  totalTodos,
 }: TodoGroupViewProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const expanded = forceExpanded || isExpanded;
@@ -74,12 +96,6 @@ export function TodoGroupView({
     ) : (
       <CircleIcon size={14} />
     );
-
-  // Find the current todo's index in the allTodos array
-  const currentTodoIndex = allTodos.findIndex(
-    (t) => t.content === todo.content && t.activeForm === todo.activeForm,
-  );
-  const todoPosition = currentTodoIndex !== -1 ? currentTodoIndex + 1 : null;
 
   const durationMs = calculateTodoDuration(toolCalls);
   const durationSeconds =
@@ -127,13 +143,13 @@ export function TodoGroupView({
               >
                 {formatTimestamp(timestamp)}
               </Code>
-              {todoPosition !== null && (
+              {todoStepNumber !== undefined && totalTodos !== undefined && (
                 <Code
                   size="1"
                   variant="soft"
                   style={{ display: "flex", alignItems: "center" }}
                 >
-                  ({todoPosition}/{allTodos.length})
+                  {todoStepNumber}/{totalTodos}
                 </Code>
               )}
               <Code
@@ -142,7 +158,7 @@ export function TodoGroupView({
                 className="flex-1"
                 style={{ display: "flex", alignItems: "center" }}
               >
-                {todo.status === "in_progress" ? todo.activeForm : todo.content}
+                {todo.content}
               </Code>
               {toolCalls.length > 0 && (
                 <Code
@@ -219,26 +235,54 @@ export function TodoGroupView({
                       variant="ghost"
                       className="flex-1"
                     >
-                      {todoItem.status === "in_progress"
-                        ? todoItem.activeForm
-                        : todoItem.content}
+                      {todoItem.content}
                     </Code>
                   </Box>
                 );
               })}
             </Box>
           )}
-          {/* Render tool calls */}
-          {toolCalls.map((toolCall, idx) => (
-            <ToolExecutionView
-              key={`${toolCall.call.callId}-${idx}`}
-              call={toolCall.call}
-              result={toolCall.result}
-              forceExpanded={forceExpanded}
-              onJumpToRaw={onJumpToRaw}
-              index={toolCall.index}
-            />
-          ))}
+          {/* Render tool calls and message chunks in chronological order */}
+          {[
+            ...toolCalls.map((tc) => ({
+              type: "tool" as const,
+              data: tc,
+              index: tc.index,
+            })),
+            ...messageChunks.map((mc) => ({
+              type: "message" as const,
+              data: mc,
+              index: mc.startIndex,
+            })),
+          ]
+            .sort((a, b) => a.index - b.index)
+            .map((item, idx) => {
+              if (item.type === "tool") {
+                const toolCall = item.data;
+                return (
+                  <ToolExecutionView
+                    key={`tool-${toolCall.index}-${idx}`}
+                    initialCall={toolCall.initialCall}
+                    updates={toolCall.updates}
+                    forceExpanded={forceExpanded}
+                    onJumpToRaw={onJumpToRaw}
+                    index={toolCall.index}
+                  />
+                );
+              } else {
+                const messageChunk = item.data;
+                const timestamp =
+                  getNotificationTimestamp(messageChunk.chunks[0]) ??
+                  Date.now();
+                return (
+                  <MessageChunkView
+                    key={`message-${messageChunk.startIndex}-${idx}`}
+                    chunks={messageChunk.chunks}
+                    timestamp={timestamp}
+                  />
+                );
+              }
+            })}
         </Box>
       )}
     </Box>

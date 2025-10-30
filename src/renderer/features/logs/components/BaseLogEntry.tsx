@@ -15,7 +15,7 @@ export function BaseLogEntry({ ts, children, mb = "2" }: BaseLogEntryProps) {
       className="hover:bg-gray-3"
       style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}
     >
-      <Code size="2" color="gray" variant="ghost">
+      <Code size="1" color="gray" variant="ghost">
         {formatTimestamp(ts)}
       </Code>
       {children}

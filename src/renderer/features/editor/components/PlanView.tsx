@@ -1,7 +1,7 @@
 import { PlanEditor } from "@features/editor/components/PlanEditor";
 import { LogView } from "@features/logs/components/LogView";
 import { InteractiveTerminal } from "@features/terminal/components/InteractiveTerminal";
-import type { AgentEvent } from "@posthog/agent";
+import type { AgentNotification } from "@posthog/agent";
 import { Box } from "@radix-ui/themes";
 import type { PlanModePhase, Task } from "@shared/types";
 
@@ -20,7 +20,7 @@ interface PlanViewProps {
     selectedOption: string;
     customInput?: string;
   }>;
-  logs: AgentEvent[];
+  logs: AgentNotification[];
   isRunning: boolean;
   planContent: string | null;
   selectedArtifact: string | null;

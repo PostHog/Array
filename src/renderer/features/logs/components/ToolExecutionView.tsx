@@ -1,267 +1,329 @@
+import type { SessionNotification } from "@agentclientprotocol/sdk";
 import {
-  BashOutputToolView,
   BashToolView,
   EditToolView,
-  ExitPlanModeToolView,
   GlobToolView,
   GrepToolView,
-  KillShellToolView,
-  NotebookEditToolView,
   ReadToolView,
-  SlashCommandToolView,
-  TaskToolView,
-  TodoWriteToolView,
   WebFetchToolView,
-  WebSearchToolView,
-  WriteToolView,
 } from "@features/logs/tools";
 import { ToolExecutionWrapper } from "@features/logs/tools/ToolUI";
 import {
   Check as CheckIcon,
   CircleNotch as CircleNotchIcon,
+  Terminal as ExecuteIcon,
+  Download as FetchIcon,
+  File as FileIcon,
+  ArrowsDownUp as MoveIcon,
+  Cube as OtherIcon,
+  PencilSimple as PencilIcon,
+  MagnifyingGlass as SearchIcon,
+  Brain as ThinkIcon,
+  Trash as TrashIcon,
   X as XIcon,
 } from "@phosphor-icons/react";
-import type { AgentEvent } from "@posthog/agent";
+import type { AgentNotification } from "@posthog/agent";
 import { Box, Code } from "@radix-ui/themes";
+import { getNotificationTimestamp } from "@utils/notification-helpers";
 import type { ReactNode } from "react";
 
 interface ToolExecutionViewProps {
-  call: Extract<AgentEvent, { type: "tool_call" }>;
-  result?: Extract<AgentEvent, { type: "tool_result" }>;
+  initialCall: AgentNotification;
+  updates: AgentNotification[];
   forceExpanded?: boolean;
   onJumpToRaw?: (index: number) => void;
   index?: number;
 }
 
-// Map tool names to their view components
-const TOOL_VIEW_MAP: Record<
-  string,
-  React.ComponentType<{ args: any; result?: any }>
-> = {
-  Read: ReadToolView,
-  Write: WriteToolView,
-  Edit: EditToolView,
-  Glob: GlobToolView,
-  NotebookEdit: NotebookEditToolView,
-  Bash: BashToolView,
-  BashOutput: BashOutputToolView,
-  KillShell: KillShellToolView,
-  WebFetch: WebFetchToolView,
-  WebSearch: WebSearchToolView,
-  Grep: GrepToolView,
-  Task: TaskToolView,
-  TodoWrite: TodoWriteToolView,
-  ExitPlanMode: ExitPlanModeToolView,
-  SlashCommand: SlashCommandToolView,
-};
+type ToolKind =
+  | "read"
+  | "edit"
+  | "delete"
+  | "move"
+  | "search"
+  | "execute"
+  | "think"
+  | "fetch"
+  | "other";
 
-function getToolDisplayName(toolName: string): string {
-  switch (toolName) {
-    case "TodoWrite":
-      return "Todo Progress";
+// Helper to extract tool name from ACP notification
+function extractToolName(
+  title: string,
+  kind?: ToolKind,
+  rawInput?: Record<string, unknown>,
+): string {
+  // Use kind and rawInput to identify the tool
+  if (kind === "execute" && rawInput?.command) {
+    return "Bash";
+  }
+  if (kind === "search") {
+    if (rawInput?.pattern) {
+      // Check if it's a glob pattern (has * or ** without regex chars)
+      const pattern = rawInput.pattern;
+      if (typeof pattern === "string" && /^[*./\w-]+$/.test(pattern)) {
+        return "Glob";
+      }
+      return "Grep";
+    }
+  }
+
+  // Fallback to extracting from title
+  // ACP titles are like "Read /path/to/file" or "Edit `file.txt`"
+  let firstWord = title.split(" ")[0] || "Unknown";
+
+  // Remove backticks if present
+  firstWord = firstWord.replace(/`/g, "");
+
+  // Capitalize first letter
+  return firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
+}
+
+// Get icon component based on tool kind
+function getToolKindIcon(kind?: ToolKind): typeof FileIcon {
+  switch (kind) {
+    case "read":
+      return FileIcon;
+    case "edit":
+      return PencilIcon;
+    case "delete":
+      return TrashIcon;
+    case "move":
+      return MoveIcon;
+    case "search":
+      return SearchIcon;
+    case "execute":
+      return ExecuteIcon;
+    case "think":
+      return ThinkIcon;
+    case "fetch":
+      return FetchIcon;
     default:
-      return toolName;
+      return OtherIcon;
   }
 }
 
-function getToolSummary(
-  toolName: string,
-  args: Record<string, any>,
-): ReactNode {
-  switch (toolName) {
-    case "Bash":
-      return (
-        <Code size="1" color="gray" variant="ghost">
-          {args.description || args.command || ""}
-        </Code>
-      );
-    case "Read":
-      return (
-        <Code size="1" color="gray" variant="ghost">
-          {args.file_path || ""}
-        </Code>
-      );
-    case "Write":
-      return (
-        <Code size="1" color="gray" variant="ghost">
-          {args.file_path || ""}
-        </Code>
-      );
-    case "Edit": {
-      const filePath = args.file_path || "";
-      const oldString = args.old_string || "";
-      const newString = args.new_string || "";
+// Helper to extract result from tool_call_update content
+function extractToolResult(
+  content?: Record<string, unknown>[],
+): string | Record<string, unknown> | undefined {
+  if (!content || content.length === 0) return undefined;
 
-      // Calculate lines added and removed
-      const oldLines = oldString.split("\n").length;
-      const newLines = newString.split("\n").length;
-      const linesAdded = Math.max(0, newLines - oldLines);
-      const linesRemoved = Math.max(0, oldLines - newLines);
-
-      return (
-        <Box style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <Code size="1" color="gray" variant="ghost">
-            {filePath}
-          </Code>
-          {linesAdded > 0 && (
-            <Code size="1" color="green" variant="soft">
-              +{linesAdded}
-            </Code>
-          )}
-          {linesRemoved > 0 && (
-            <Code size="1" color="red" variant="soft">
-              -{linesRemoved}
-            </Code>
-          )}
-        </Box>
-      );
-    }
-    case "Glob":
-      return (
-        <Code size="1" color="gray" variant="ghost">
-          {args.pattern || ""}
-        </Code>
-      );
-    case "Grep":
-      return (
-        <Code size="1" color="gray" variant="ghost">
-          {args.pattern || ""}
-        </Code>
-      );
-    case "NotebookEdit":
-      return (
-        <Code size="1" color="gray" variant="ghost">
-          {args.notebook_path || ""}
-        </Code>
-      );
-    case "BashOutput":
-      return (
-        <Code size="1" color="gray" variant="ghost">
-          {args.bash_id || ""}
-        </Code>
-      );
-    case "KillShell":
-      return (
-        <Code size="1" color="gray" variant="ghost">
-          {args.shell_id || ""}
-        </Code>
-      );
-    case "WebFetch":
-      return (
-        <Code size="1" color="gray" variant="ghost">
-          {args.url || ""}
-        </Code>
-      );
-    case "WebSearch":
-      return (
-        <Code size="1" color="gray" variant="ghost">
-          {args.query || ""}
-        </Code>
-      );
-    case "Task":
-      return (
-        <Code size="1" color="gray" variant="ghost">
-          {args.description || ""}
-        </Code>
-      );
-    case "TodoWrite": {
-      const todos = args.todos || [];
-      const inProgressTodo = todos.find((t: any) => t.status === "in_progress");
-      const currentIndex = todos.findIndex(
-        (t: any) => t.status === "in_progress",
-      );
-      const totalTodos = todos.length;
-
-      if (inProgressTodo && currentIndex !== -1) {
-        return (
-          <Box style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <Code size="1" color="blue" variant="soft">
-              {inProgressTodo.activeForm}
-            </Code>
-            <Code size="1" color="gray" variant="ghost">
-              ({currentIndex + 1}/{totalTodos})
-            </Code>
-          </Box>
-        );
-      }
-
-      // If no in-progress todo, show completed count
-      const completed = todos.filter(
-        (t: any) => t.status === "completed",
-      ).length;
-      if (completed === totalTodos && totalTodos > 0) {
-        return (
-          <Code size="1" color="green" variant="soft">
-            All tasks completed ({totalTodos}/{totalTodos})
-          </Code>
-        );
-      }
-
-      return null;
-    }
-    case "ExitPlanMode":
-      return null;
-    case "SlashCommand":
-      return (
-        <Code size="1" color="gray" variant="ghost">
-          {args.command || ""}
-        </Code>
-      );
-    default:
-      return null;
+  // Check for text content - ACP format
+  const textContent = content.find(
+    (c) =>
+      c.type === "content" &&
+      typeof c.content === "object" &&
+      c.content !== null &&
+      (c.content as Record<string, unknown>).type === "text",
+  ) as Record<string, unknown> | undefined;
+  if (
+    textContent?.content &&
+    typeof textContent.content === "object" &&
+    (textContent.content as Record<string, unknown>).text
+  ) {
+    return (textContent.content as Record<string, unknown>).text as string;
   }
+
+  // Check for diff content - ACP format
+  const diffContent = content.find((c) => c.type === "diff") as
+    | Record<string, unknown>
+    | undefined;
+  if (diffContent) {
+    return {
+      type: "diff",
+      path: diffContent.path,
+      oldText: diffContent.oldText,
+      newText: diffContent.newText,
+    };
+  }
+
+  // Check for terminal content - ACP format
+  const terminalContent = content.find((c) => c.type === "terminal") as
+    | Record<string, unknown>
+    | undefined;
+  if (terminalContent) {
+    return {
+      type: "terminal",
+      terminalId: terminalContent.terminalId,
+    };
+  }
+
+  // If no structured content found, try to extract raw text from any content block
+  for (const item of content) {
+    if (item.type === "content" && item.content) {
+      if (typeof item.content === "string") {
+        return item.content;
+      }
+      if (
+        typeof item.content === "object" &&
+        item.content !== null &&
+        (item.content as Record<string, unknown>).text
+      ) {
+        return (item.content as Record<string, unknown>).text as string;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function getToolDisplayName(toolName: string): string {
+  return toolName;
+}
+
+function getToolSummary(
+  _toolName: string,
+  _args: Record<string, unknown>,
+): ReactNode {
+  return null;
 }
 
 function renderToolContent(
   toolName: string,
-  args: Record<string, any>,
-  result?: any,
+  args: Record<string, unknown>,
+  result?: unknown,
 ) {
   // Extract args and result if structured
-  const resultArgs =
+  const resultArgs: Record<string, unknown> =
     result && typeof result === "object" && "args" in result
-      ? result.args
+      ? (result.args as Record<string, unknown>)
       : args;
   const actualResult =
     result && typeof result === "object" && "result" in result
       ? result.result
       : result;
 
-  // Look up the component
-  const ToolComponent = TOOL_VIEW_MAP[toolName];
-
-  if (ToolComponent) {
-    return <ToolComponent args={resultArgs} result={actualResult} />;
+  switch (toolName) {
+    case "Read":
+      return <ReadToolView args={resultArgs} result={actualResult} />;
+    case "Edit":
+      return <EditToolView args={resultArgs} result={actualResult} />;
+    case "Glob":
+      return <GlobToolView args={resultArgs} result={actualResult} />;
+    case "Bash":
+      return <BashToolView args={resultArgs} result={actualResult} />;
+    case "WebFetch":
+      return <WebFetchToolView args={resultArgs} result={actualResult} />;
+    case "Grep":
+      return <GrepToolView args={resultArgs} result={actualResult} />;
+    default: {
+      // Fallback: render as JSON
+      const data = result !== undefined ? { args, result: actualResult } : args;
+      return (
+        <Box>
+          <Code
+            size="2"
+            variant="outline"
+            className="block overflow-x-auto whitespace-pre-wrap p-2"
+          >
+            {JSON.stringify(data, null, 2)}
+          </Code>
+        </Box>
+      );
+    }
   }
-
-  // Fallback: render as JSON
-  const data = result !== undefined ? { args, result: actualResult } : args;
-  return (
-    <Box>
-      <Code
-        size="2"
-        variant="outline"
-        className="block overflow-x-auto whitespace-pre-wrap p-2"
-      >
-        {JSON.stringify(data, null, 2)}
-      </Code>
-    </Box>
-  );
 }
 
 export function ToolExecutionView({
-  call,
-  result,
+  initialCall,
+  updates,
   forceExpanded = false,
   onJumpToRaw,
   index,
 }: ToolExecutionViewProps) {
-  const isPending = !result;
-  const isError = result?.isError || false;
-  const summary = getToolSummary(call.toolName, call.args);
+  // Ensure initialCall is a SessionNotification
+  if (!("sessionId" in initialCall && "update" in initialCall)) {
+    return null;
+  }
 
-  // Calculate duration if result is available
-  const durationMs = result?.ts ? result.ts - call.ts : undefined;
+  const { update: initialUpdate } = initialCall as SessionNotification;
+
+  // Only handle tool_call
+  if (
+    !("sessionUpdate" in initialUpdate) ||
+    initialUpdate.sessionUpdate !== "tool_call"
+  ) {
+    return null;
+  }
+
+  // Get the latest update for status
+  const latestUpdate = updates.length > 0 ? updates[updates.length - 1] : null;
+  const latestUpdateData =
+    latestUpdate && "sessionId" in latestUpdate && "update" in latestUpdate
+      ? (latestUpdate as SessionNotification).update
+      : null;
+
+  // Merge initial call with updates
+  const title = "title" in initialUpdate ? (initialUpdate.title ?? "") : "";
+  const kind: ToolKind | undefined =
+    "kind" in initialUpdate ? (initialUpdate.kind as ToolKind) : undefined;
+  const status =
+    latestUpdateData && "status" in latestUpdateData
+      ? (latestUpdateData.status ?? initialUpdate.status ?? "pending")
+      : (initialUpdate.status ?? "pending");
+  const rawInput =
+    "rawInput" in initialUpdate ? initialUpdate.rawInput : undefined;
+
+  // Merge rawOutput from all updates (prefer latest non-empty)
+  let rawOutput =
+    "rawOutput" in initialUpdate ? initialUpdate.rawOutput : undefined;
+  for (const update of updates) {
+    if ("sessionId" in update && "update" in update) {
+      const updateData = (update as SessionNotification).update;
+      if ("rawOutput" in updateData && updateData.rawOutput) {
+        rawOutput = updateData.rawOutput;
+      }
+    }
+  }
+
+  // Merge content from all updates (prefer latest non-empty)
+  let content = "content" in initialUpdate ? initialUpdate.content : undefined;
+  for (const update of updates) {
+    if ("sessionId" in update && "update" in update) {
+      const updateData = (update as SessionNotification).update;
+      if (
+        "content" in updateData &&
+        updateData.content &&
+        Array.isArray(updateData.content) &&
+        updateData.content.length > 0
+      ) {
+        content = updateData.content;
+      }
+    }
+  }
+
+  // Extract tool name and args
+  const toolName = extractToolName(
+    title,
+    kind,
+    rawInput as Record<string, unknown>,
+  );
+
+  // Extract args from rawInput, handling both direct object and nested structures
+  let args: Record<string, unknown> = {};
+  if (rawInput) {
+    // If rawInput has nested structure, flatten it
+    if (typeof rawInput === "object") {
+      args = rawInput as Record<string, unknown>;
+    }
+  }
+
+  // Ensure content is an array before passing to extractToolResult
+  const contentArray = content
+    ? Array.isArray(content)
+      ? content
+      : undefined
+    : undefined;
+
+  // Extract result from content or rawOutput
+  // rawOutput is used for tools like Bash that return structured data (stdout/stderr/exitCode)
+  // content is used for tools that return formatted content (text, diffs, etc)
+  const result = rawOutput || extractToolResult(contentArray);
+
+  // Determine state
+  const isPending = status === "pending" || status === "in_progress";
+  const isError = status === "failed";
+  const summary = getToolSummary(toolName, args);
 
   // Determine status badge
   let statusBadge: React.ReactNode = null;
@@ -278,21 +340,29 @@ export function ToolExecutionView({
     statusBadge = <CheckIcon size={14} weight="bold" />;
   }
 
+  // Get kind icon
+  const KindIconComponent = getToolKindIcon(kind);
+  const kindIconElement = <KindIconComponent size={14} />;
+
+  // Extract timestamp from initial call
+  const timestamp = getNotificationTimestamp(initialCall) ?? Date.now();
+
   return (
     <Box mb="3">
       <ToolExecutionWrapper
-        toolName={getToolDisplayName(call.toolName)}
+        toolName={getToolDisplayName(toolName)}
         statusBadge={statusBadge}
         statusColor={statusColor}
         summary={summary}
-        timestamp={call.ts}
-        durationMs={durationMs}
+        timestamp={timestamp}
+        durationMs={undefined}
         isError={isError}
         forceExpanded={forceExpanded}
         onJumpToRaw={onJumpToRaw}
         index={index}
+        kindIcon={kindIconElement}
       >
-        {renderToolContent(call.toolName, call.args, result?.result)}
+        {renderToolContent(toolName, args, result)}
       </ToolExecutionWrapper>
     </Box>
   );
