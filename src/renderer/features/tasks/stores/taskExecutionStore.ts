@@ -11,6 +11,7 @@ import type {
 } from "@shared/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { getCloudUrlFromRegion } from "@/constants/oauth";
 
 const createProgressSignature = (progress: TaskRun): string =>
   [progress.status ?? "", progress.updated_at ?? ""].join("|");
@@ -337,7 +338,11 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
         if (taskState.isRunning) return;
 
-        const { apiKey, apiHost } = useAuthStore.getState();
+        const authState = useAuthStore.getState();
+        const apiKey = authState.oauthAccessToken;
+        const apiHost = authState.cloudRegion
+          ? getCloudUrlFromRegion(authState.cloudRegion)
+          : null;
 
         if (!apiKey) {
           store.addLog(taskId, {
@@ -345,6 +350,16 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
             ts: Date.now(),
             message:
               "No PostHog API key found. Sign in to PostHog to run tasks.",
+          });
+          return;
+        }
+
+        if (!apiHost) {
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message:
+              "No PostHog API host found. Please check your region settings.",
           });
           return;
         }

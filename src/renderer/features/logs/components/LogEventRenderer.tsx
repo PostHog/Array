@@ -11,6 +11,7 @@ import { ToolExecutionView } from "@features/logs/components/ToolExecutionView";
 import { UserMessageView } from "@features/logs/components/UserMessageView";
 import type { AgentEvent } from "@posthog/agent";
 import { Code, ContextMenu } from "@radix-ui/themes";
+import { IS_DEV } from "@/constants/environment";
 
 const EVENT_COMPONENT_MAP: Record<
   string,
@@ -98,8 +99,6 @@ export function LogEventRenderer({
     }
   }
 
-  const isDev = import.meta.env.DEV;
-
   // Get component name for debugging
   let componentName = "Unknown";
   if (event.type === "tool_call") {
@@ -117,7 +116,7 @@ export function LogEventRenderer({
         <div style={{ cursor: "context-menu" }}>{content}</div>
       </ContextMenu.Trigger>
       <ContextMenu.Content>
-        {isDev && <ContextMenu.Label>{componentName}</ContextMenu.Label>}
+        {IS_DEV && <ContextMenu.Label>{componentName}</ContextMenu.Label>}
         <ContextMenu.Item onClick={() => onJumpToRaw?.(index)}>
           Jump to raw source
         </ContextMenu.Item>
