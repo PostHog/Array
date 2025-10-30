@@ -4,6 +4,7 @@ import {
   useSettingsStore,
 } from "@features/settings/stores/settingsStore";
 import { useMeQuery } from "@hooks/useMeQuery";
+import { useProjectQuery } from "@hooks/useProjectQuery";
 import {
   Badge,
   Box,
@@ -46,6 +47,7 @@ export function SettingsView() {
   } = useSettingsStore();
 
   const { data: currentUser } = useMeQuery();
+  const { data: project } = useProjectQuery();
 
   const reauthMutation = useMutation({
     mutationFn: async (region: CloudRegion) => {
@@ -188,13 +190,13 @@ export function SettingsView() {
                   </Flex>
                 )}
 
-                {isAuthenticated && currentUser?.team?.name && (
+                {isAuthenticated && project?.name && (
                   <Flex direction="column" gap="2">
                     <Text size="1" weight="medium">
                       Project
                     </Text>
                     <Text size="1" color="gray">
-                      {currentUser.team.name}
+                      {project.name} (ID: {project.id})
                     </Text>
                   </Flex>
                 )}

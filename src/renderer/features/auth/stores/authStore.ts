@@ -81,6 +81,7 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: tokenResponse.refresh_token,
           expiresAt,
           cloudRegion: region,
+          scopedTeams: tokenResponse.scoped_teams,
         });
 
         if (!storeResult.success || !storeResult.encrypted) {
@@ -174,6 +175,7 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: tokenResponse.refresh_token,
           expiresAt,
           cloudRegion: state.cloudRegion,
+          scopedTeams: tokenResponse.scoped_teams,
         });
 
         if (!storeResult.success || !storeResult.encrypted) {
@@ -183,6 +185,9 @@ export const useAuthStore = create<AuthState>()(
         }
 
         const apiHost = getCloudUrlFromRegion(state.cloudRegion);
+        const projectId =
+          tokenResponse.scoped_teams?.[0] || state.projectId || undefined;
+
         const client = new PostHogAPIClient(
           tokenResponse.access_token,
           apiHost,
@@ -194,7 +199,7 @@ export const useAuthStore = create<AuthState>()(
             }
             return token;
           },
-          state.projectId || undefined,
+          projectId,
         );
 
         set({
@@ -203,6 +208,7 @@ export const useAuthStore = create<AuthState>()(
           tokenExpiry: expiresAt,
           encryptedOAuthTokens: storeResult.encrypted,
           client,
+          ...(projectId && { projectId }),
         });
 
         get().scheduleTokenRefresh();
@@ -259,6 +265,7 @@ export const useAuthStore = create<AuthState>()(
               tokenExpiry: tokens.expiresAt,
               cloudRegion: tokens.cloudRegion,
             });
+            
 
             if (isExpired) {
               try {
@@ -271,11 +278,11 @@ export const useAuthStore = create<AuthState>()(
             }
 
             const apiHost = getCloudUrlFromRegion(tokens.cloudRegion);
-            const projectId = state.projectId;
+            const projectId = tokens.scopedTeams?.[0];
 
             if (!projectId) {
-              console.error("No project ID found in stored auth state");
-              set({ encryptedOAuthTokens: null, isAuthenticated: false });
+              console.error("No project ID found in stored tokens");
+              get().logout();
               return false;
             }
 
@@ -299,6 +306,7 @@ export const useAuthStore = create<AuthState>()(
               set({
                 isAuthenticated: true,
                 client,
+                projectId,
               });
 
               get().scheduleTokenRefresh();

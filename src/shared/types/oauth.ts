@@ -20,4 +20,5 @@ export interface StoredOAuthTokens {
   refreshToken: string;
   expiresAt: number; // Unix timestamp in milliseconds
   cloudRegion: CloudRegion;
+  scopedTeams?: number[];
 }

@@ -49,6 +49,14 @@ export class PostHogAPIClient {
     return data;
   }
 
+  async getProject(projectId: number) {
+    //@ts-expect-error this is not in the generated client
+    const data = await this.api.get("/api/projects/{project_id}/", {
+      path: { project_id: projectId.toString() },
+    });
+    return data as Schemas.Team;
+  }
+
   async getTasks(repositoryOrg?: string, repositoryName?: string) {
     const teamId = await this.getTeamId();
     const params: Record<string, string> = {};

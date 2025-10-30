@@ -18,7 +18,7 @@ export function useAuthenticatedQuery<
   queryFn: AuthenticatedQueryFn<TData>,
   options?: Omit<
     UseQueryOptions<TData, TError, TData, TQueryKey>,
-    "queryKey" | "queryFn" | "enabled"
+    "queryKey" | "queryFn"
   >,
 ): UseQueryResult<TData, TError> {
   const client = useAuthStore((state) => state.client);
@@ -29,7 +29,7 @@ export function useAuthenticatedQuery<
       if (!client) throw new Error("Not authenticated");
       return await queryFn(client);
     },
-    enabled: !!client,
+    enabled: !!client && (options?.enabled !== undefined ? options.enabled : true),
     ...options,
   });
 }
