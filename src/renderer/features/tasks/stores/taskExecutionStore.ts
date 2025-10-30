@@ -1,7 +1,6 @@
 import { useAuthStore } from "@features/auth/stores/authStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import type { AgentEvent } from "@posthog/agent";
-import { getCloudUrlFromRegion } from "@shared/constants/oauth";
 import type {
   ClarifyingQuestion,
   ExecutionMode,
@@ -12,6 +11,7 @@ import type {
 } from "@shared/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { getCloudUrlFromRegion } from "@/constants/oauth";
 
 const createProgressSignature = (progress: TaskRun): string =>
   [progress.status ?? "", progress.updated_at ?? ""].join("|");
@@ -452,6 +452,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
         ]);
 
         try {
+          const { createPR } = useSettingsStore.getState();
           const result = await window.electronAPI?.agentStart({
             taskId: task.id,
             repoPath: effectiveRepoPath,
@@ -461,6 +462,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
             autoProgress: true,
             executionMode: taskState.executionMode,
             runMode: taskState.runMode,
+            createPR,
           });
           if (!result) {
             store.addLog(taskId, {

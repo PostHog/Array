@@ -1,4 +1,3 @@
-import type { Schemas } from "@api/generated";
 import { useAuthenticatedQuery } from "./useAuthenticatedQuery";
 
 export function useMeQuery() {
@@ -6,7 +5,7 @@ export function useMeQuery() {
     ["me"],
     async (client) => {
       const data = await client.getCurrentUser();
-      return data as Schemas.UserBasic;
+      return data;
     },
     { staleTime: 5 * 60 * 1000 },
   );

@@ -7,7 +7,7 @@ import {
   getOauthClientIdFromRegion,
   OAUTH_PORT,
   OAUTH_SCOPES,
-} from "../../shared/constants/oauth";
+} from "../../constants/oauth";
 import type {
   CloudRegion,
   OAuthConfig,
@@ -281,20 +281,23 @@ export function registerOAuthHandlers(): void {
     }
   });
 
-  ipcMain.handle("oauth:encrypt-tokens", async (_, tokens: StoredOAuthTokens) => {
-    try {
-      const encrypted = encryptTokens(tokens);
-      return {
-        success: true,
-        encrypted,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
-    }
-  });
+  ipcMain.handle(
+    "oauth:encrypt-tokens",
+    async (_, tokens: StoredOAuthTokens) => {
+      try {
+        const encrypted = encryptTokens(tokens);
+        return {
+          success: true,
+          encrypted,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+  );
 
   ipcMain.handle("oauth:retrieve-tokens", async (_, encrypted: string) => {
     try {

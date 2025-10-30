@@ -8,9 +8,9 @@ import {
 } from "@phosphor-icons/react";
 import type { AgentEvent } from "@posthog/agent";
 import { Box, Code, ContextMenu } from "@radix-ui/themes";
-import { IS_DEV } from "@shared/constants/environment";
 import { formatTimestamp } from "@utils/time";
 import { useState } from "react";
+import { IS_DEV } from "@/constants/environment";
 
 interface Todo {
   content: string;

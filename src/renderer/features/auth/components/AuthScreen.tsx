@@ -11,10 +11,10 @@ import {
   Select,
   Text,
 } from "@radix-ui/themes";
-import { IS_DEV } from "@shared/constants/environment";
 import type { CloudRegion } from "@shared/types/oauth";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
+import { IS_DEV } from "@/constants/environment";
 
 export const getErrorMessage = (error: unknown) => {
   if (!(error instanceof Error)) {

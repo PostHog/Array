@@ -9,9 +9,9 @@ import {
   Kbd,
   Tooltip,
 } from "@radix-ui/themes";
-import { IS_DEV } from "@shared/constants/environment";
 import { useStatusBarStore } from "@stores/statusBarStore";
 import { useEffect, useState } from "react";
+import { IS_DEV } from "@/constants/environment";
 
 interface StatusBarProps {
   showKeyHints?: boolean;

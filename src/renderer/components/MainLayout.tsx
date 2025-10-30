@@ -14,6 +14,7 @@ import { useLayoutStore } from "@stores/layoutStore";
 import { useTabStore } from "@stores/tabStore";
 import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { NotetakerView } from "@/renderer/features/notetaker/components/NotetakerView";
 
 export function MainLayout() {
   const { activeTabId, tabs, createTab, setActiveTab, closeTab } =
@@ -117,6 +118,8 @@ export function MainLayout() {
           {activeTab?.type === "settings" && <SettingsView />}
 
           {activeTab?.type === "recordings" && <RecordingsView />}
+
+          {activeTab?.type === "notetaker" && <NotetakerView />}
         </Box>
       </Flex>
 

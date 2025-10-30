@@ -1,4 +1,4 @@
-import type { CloudRegion } from "../types/oauth";
+import type { CloudRegion } from "../shared/types/oauth";
 
 export const POSTHOG_US_CLIENT_ID = "HCWoE0aRFMYxIxFNTTwkOORn5LBjOt2GVDzwSw5W";
 export const POSTHOG_EU_CLIENT_ID = "AIvijgMS0dxKEmr5z6odvRd8Pkh5vts3nPTzgzU9";

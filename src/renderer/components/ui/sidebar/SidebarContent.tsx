@@ -43,7 +43,7 @@ export const SidebarContent: React.FC = () => {
   }, [client]);
 
   const handleNavigate = (
-    type: "task-list" | "recordings" | "settings",
+    type: "task-list" | "recordings" | "notetaker" | "settings",
     title: string,
   ) => {
     const existingTab = tabs.find((tab) => tab.type === type);

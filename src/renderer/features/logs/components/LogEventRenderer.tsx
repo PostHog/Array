@@ -11,7 +11,7 @@ import { ToolExecutionView } from "@features/logs/components/ToolExecutionView";
 import { UserMessageView } from "@features/logs/components/UserMessageView";
 import type { AgentEvent } from "@posthog/agent";
 import { Code, ContextMenu } from "@radix-ui/themes";
-import { IS_DEV } from "@shared/constants/environment";
+import { IS_DEV } from "@/constants/environment";
 
 const EVENT_COMPONENT_MAP: Record<
   string,

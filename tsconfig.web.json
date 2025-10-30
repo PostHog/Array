@@ -9,5 +9,5 @@
   },
   "exclude": ["src/main/**/*", "src/api/repoDetector.ts"],
   "extends": "./tsconfig.json",
-  "include": ["src/renderer/**/*", "src/shared/**/*", "src/api/**/*"]
+  "include": ["src/renderer/**/*", "src/shared/**/*", "src/api/**/*", "src/vite-env.d.ts"]
 }

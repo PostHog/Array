@@ -26,6 +26,7 @@ interface AgentStartParams {
   model?: string;
   executionMode?: "plan";
   runMode?: "local" | "cloud";
+  createPR?: boolean;
 }
 
 contextBridge.exposeInMainWorld("electronAPI", {
@@ -195,6 +196,79 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Desktop capturer for system audio
   getDesktopSources: async (options: { types: ("screen" | "window")[] }) => {
     return await ipcRenderer.invoke("desktop-capturer:get-sources", options);
+  },
+  // Recall SDK API
+  recallInitialize: (
+    recallApiUrl: string,
+    posthogKey: string,
+    posthogHost: string,
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "recall:initialize",
+      recallApiUrl,
+      posthogKey,
+      posthogHost,
+    ),
+  recallGetActiveSessions: (): Promise<
+    Array<{
+      windowId: string;
+      recordingId: string;
+      platform: string;
+    }>
+  > => ipcRenderer.invoke("recall:get-active-sessions"),
+  recallRequestPermission: (
+    permission: "accessibility" | "screen-capture" | "microphone",
+  ): Promise<void> =>
+    ipcRenderer.invoke("recall:request-permission", permission),
+  recallShutdown: (): Promise<void> => ipcRenderer.invoke("recall:shutdown"),
+  // Recall SDK event listeners
+  onRecallRecordingStarted: (
+    listener: (data: {
+      posthog_recording_id: string;
+      platform: string;
+      title: string | null;
+      meeting_url: string | null;
+    }) => void,
+  ): (() => void) => {
+    const channel = "recall:recording-started";
+    const wrapped = (_event: IpcRendererEvent, data: unknown) =>
+      listener(data as any);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
+  },
+  onRecallTranscriptSegment: (
+    listener: (data: {
+      posthog_recording_id: string;
+      timestamp: number;
+      speaker: string | null;
+      text: string;
+      confidence: number | null;
+      is_final: boolean;
+    }) => void,
+  ): (() => void) => {
+    const channel = "recall:transcript-segment";
+    const wrapped = (_event: IpcRendererEvent, data: unknown) =>
+      listener(data as any);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
+  },
+  onRecallMeetingEnded: (
+    listener: (data: { posthog_recording_id: string }) => void,
+  ): (() => void) => {
+    const channel = "recall:meeting-ended";
+    const wrapped = (_event: IpcRendererEvent, data: unknown) =>
+      listener(data as any);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
+  },
+  onRecallRecordingReady: (
+    listener: (data: { posthog_recording_id: string }) => void,
+  ): (() => void) => {
+    const channel = "recall:recording-ready";
+    const wrapped = (_event: IpcRendererEvent, data: unknown) =>
+      listener(data as any);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
   },
   // Shell API
   shellCreate: (sessionId: string, cwd?: string): Promise<void> =>

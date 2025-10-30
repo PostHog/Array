@@ -1,12 +1,14 @@
 import { PostHogAPIClient } from "@api/posthogClient";
 import { queryClient } from "@renderer/lib/queryClient";
-import {
-  getCloudUrlFromRegion,
-  TOKEN_REFRESH_BUFFER_MS,
-} from "@shared/constants/oauth";
 import type { CloudRegion } from "@shared/types/oauth";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import {
+  getCloudUrlFromRegion,
+  TOKEN_REFRESH_BUFFER_MS,
+} from "@/constants/oauth";
+
+const RECALL_API_URL = "https://us-west-2.recall.ai";
 
 interface AuthState {
   // OAuth state
@@ -36,7 +38,7 @@ interface AuthState {
   logout: () => void;
 }
 
-let refreshTimeoutId: NodeJS.Timeout | null = null;
+let refreshTimeoutId: number | null = null;
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -85,6 +87,7 @@ export const useAuthStore = create<AuthState>()(
         }
 
         const apiHost = getCloudUrlFromRegion(region);
+
         const client = new PostHogAPIClient(
           tokenResponse.access_token,
           apiHost,
@@ -116,6 +119,20 @@ export const useAuthStore = create<AuthState>()(
           get().scheduleTokenRefresh();
         } catch {
           throw new Error("Failed to authenticate with PostHog");
+        }
+
+        try {
+          window.electronAPI
+            .recallInitialize(
+              RECALL_API_URL,
+              tokenResponse.access_token,
+              apiHost,
+            )
+            .catch((error) => {
+              console.error("[Auth] Failed to initialize Recall SDK:", error);
+            });
+        } catch (_error) {
+          throw new Error("Invalid API key or host");
         }
       },
 
@@ -314,7 +331,6 @@ export const useAuthStore = create<AuthState>()(
           encryptedOpenaiKey: encryptedKey,
         });
       },
-
       logout: () => {
         if (refreshTimeoutId) {
           clearTimeout(refreshTimeoutId);
