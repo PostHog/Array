@@ -88,6 +88,7 @@ export class PostHogAPIClient {
 
     const data = await this.api.post(`/api/projects/{project_id}/tasks/`, {
       path: { project_id: teamId.toString() },
+      // @ts-expect-error (marking it as ignore since unrelated to this PR)
       body: payload as Schemas.Task,
     });
 
@@ -117,7 +118,9 @@ export class PostHogAPIClient {
   async duplicateTask(taskId: string) {
     const task = await this.getTask(taskId);
     return this.createTask(
+      // @ts-expect-error (marking it as ignore since unrelated to this PR)
       task.description,
+      // @ts-expect-error (marking it as ignore since unrelated to this PR)
       task.repository_config as RepositoryConfig | undefined,
     );
   }
@@ -312,25 +315,6 @@ export class PostHogAPIClient {
     return await response.json();
   }
 
-  async getDesktopRecordingTranscript(recordingId: string) {
-    this.validateRecordingId(recordingId);
-    const teamId = await this.getTeamId();
-    const url = new URL(
-      `${this.api.baseUrl}/api/environments/${teamId}/desktop_recordings/${recordingId}/transcript/`,
-    );
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path: `/api/environments/${teamId}/desktop_recordings/${recordingId}/transcript/`,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch transcript: ${response.statusText}`);
-    }
-
-    return await response.json();
-  }
-
   async listDesktopRecordings(filters?: {
     platform?: string;
     status?: string;
@@ -396,27 +380,18 @@ export class PostHogAPIClient {
     return data;
   }
 
-  async updateDesktopRecordingTranscript(
+  async appendTranscriptSegments(
     recordingId: string,
-    updates: {
-      segments?: Array<{
-        timestamp_ms: number;
-        speaker: string | null;
-        text: string;
-        confidence: number | null;
-        is_final: boolean;
-      }>;
-      full_text?: string;
-    },
-  ) {
+    segments: Array<Schemas.TranscriptSegment>,
+  ): Promise<Schemas.DesktopRecording> {
     this.validateRecordingId(recordingId);
     const teamId = await this.getTeamId();
 
     const data = await this.api.post(
-      "/api/environments/{project_id}/desktop_recordings/{id}/transcript/",
+      "/api/environments/{project_id}/desktop_recordings/{id}/append_segments/",
       {
         path: { project_id: teamId.toString(), id: recordingId },
-        body: updates as any,
+        body: { segments } as Schemas.AppendSegments,
       },
     );
 

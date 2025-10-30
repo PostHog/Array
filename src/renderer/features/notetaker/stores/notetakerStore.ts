@@ -1,12 +1,17 @@
-import type { RecordingItem } from "@renderer/features/notetaker/hooks/useAllRecordings";
 import { create } from "zustand";
 
+interface SelectedRecording {
+  id: string;
+  type: "active" | "past";
+}
+
 interface NotetakerState {
-  selectedRecording: RecordingItem | null;
-  setSelectedRecording: (recording: RecordingItem | null) => void;
+  selectedRecordingId: SelectedRecording | null;
+  setSelectedRecordingId: (selection: SelectedRecording | null) => void;
 }
 
 export const useNotetakerStore = create<NotetakerState>()((set) => ({
-  selectedRecording: null,
-  setSelectedRecording: (recording) => set({ selectedRecording: recording }),
+  selectedRecordingId: null,
+  setSelectedRecordingId: (selection) =>
+    set({ selectedRecordingId: selection }),
 }));

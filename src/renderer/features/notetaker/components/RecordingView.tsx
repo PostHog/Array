@@ -1,6 +1,5 @@
 import { Badge, Box, Card, Flex, Text } from "@radix-ui/themes";
 import type { RecordingItem } from "@renderer/features/notetaker/hooks/useAllRecordings";
-import type { TranscriptSegment } from "@renderer/stores/activeRecordingStore";
 import { useEffect, useRef, useState } from "react";
 
 interface RecordingViewProps {
@@ -11,24 +10,10 @@ export function RecordingView({ recordingItem }: RecordingViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
-  const segments: TranscriptSegment[] =
+  const segments =
     recordingItem.type === "active"
-      ? recordingItem.recording.segments || []
-      : (
-          recordingItem.recording.transcript?.segments as Array<{
-            timestamp_ms: number;
-            speaker: string | null;
-            text: string;
-            confidence: number | null;
-            is_final: boolean;
-          }>
-        )?.map((seg) => ({
-          timestamp: seg.timestamp_ms,
-          speaker: seg.speaker,
-          text: seg.text,
-          confidence: seg.confidence,
-          is_final: seg.is_final,
-        })) || [];
+      ? recordingItem.recording.localSegmentBuffer || []
+      : recordingItem.recording.transcript_segments || [];
 
   useEffect(() => {
     if (autoScroll && scrollRef.current && segments.length > 0) {
@@ -203,13 +188,15 @@ export function RecordingView({ recordingItem }: RecordingViewProps) {
 
                     <Flex direction="column" gap="1" style={{ flex: 1 }}>
                       <Flex align="baseline" gap="2">
-                        <Text
-                          size="1"
-                          color="gray"
-                          style={{ fontVariantNumeric: "tabular-nums" }}
-                        >
-                          {formatTimestamp(segment.timestamp)}
-                        </Text>
+                        {segment.timestamp && (
+                          <Text
+                            size="1"
+                            color="gray"
+                            style={{ fontVariantNumeric: "tabular-nums" }}
+                          >
+                            {formatTimestamp(segment.timestamp)}
+                          </Text>
+                        )}
                         <Text size="2" style={{ lineHeight: "1.5" }}>
                           {segment.text}
                         </Text>

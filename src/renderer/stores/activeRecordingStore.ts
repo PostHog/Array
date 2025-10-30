@@ -18,29 +18,24 @@ function isValidRecordingId(id: string): boolean {
   return uuidRegex.test(id) || tempIdRegex.test(id);
 }
 
-// Transcript segment from Recall SDK real-time events
 export interface TranscriptSegment {
-  timestamp: number; // Milliseconds from recording start
+  timestamp: number;
   speaker: string | null;
   text: string;
   confidence: number | null;
   is_final: boolean;
 }
 
-// Active recording state - extends backend DesktopRecording with client-only fields
 export interface ActiveRecording extends Schemas.DesktopRecording {
-  // Client-only fields for real-time state
-  segments: TranscriptSegment[]; // Live segments (for upload batching)
-  notes: string; // User's scratchpad notes
-  uploadRetries: number; // Retry tracking
-  errorMessage?: string; // Error details
-  lastUploadedSegmentIndex: number; // Track which segments have been uploaded
+  localSegmentBuffer: TranscriptSegment[];
+  uploadRetries: number;
+  errorMessage?: string;
+  lastUploadedSegmentIndex: number;
+  lastSegmentTime: number | null;
 }
 
 interface ActiveRecordingState {
   activeRecordings: ActiveRecording[];
-
-  // Core methods
   addRecording: (recording: Schemas.DesktopRecording) => void;
   addSegment: (recordingId: string, segment: TranscriptSegment) => void;
   updateStatus: (
@@ -55,7 +50,6 @@ interface ActiveRecordingState {
   getPendingSegments: (recordingId: string) => TranscriptSegment[];
 }
 
-// Custom storage adapter for idb-keyval
 const storage: StateStorage = {
   getItem: async (name: string): Promise<string | null> => {
     return (await get(name)) || null;
@@ -88,12 +82,11 @@ export const useActiveRecordingStore = create<ActiveRecordingState>()(
           activeRecordings: [
             ...state.activeRecordings,
             {
-              ...recording, // Spread all DesktopRecording fields
-              // Add client-only fields
-              segments: [],
-              notes: "",
+              ...recording,
+              localSegmentBuffer: [],
               uploadRetries: 0,
               lastUploadedSegmentIndex: -1,
+              lastSegmentTime: null,
             },
           ],
         }));
@@ -110,7 +103,11 @@ export const useActiveRecordingStore = create<ActiveRecordingState>()(
         set((state) => ({
           activeRecordings: state.activeRecordings.map((r) =>
             r.id === recordingId
-              ? { ...r, segments: [...r.segments, segment] }
+              ? {
+                  ...r,
+                  localSegmentBuffer: [...r.localSegmentBuffer, segment],
+                  lastSegmentTime: Date.now(),
+                }
               : r,
           ),
         }));
@@ -226,12 +223,13 @@ export const useActiveRecordingStore = create<ActiveRecordingState>()(
         );
         if (!recording) return [];
 
-        // Return segments that haven't been uploaded yet
-        return recording.segments.slice(recording.lastUploadedSegmentIndex + 1);
+        return recording.localSegmentBuffer.slice(
+          recording.lastUploadedSegmentIndex + 1,
+        );
       },
     }),
     {
-      name: "active-recordings", // IDB key
+      name: "active-recordings",
       storage: createJSONStorage(() => storage),
     },
   ),

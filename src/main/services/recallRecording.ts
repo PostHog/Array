@@ -135,13 +135,10 @@ export function initializeRecallSDK(
 
   RecallAiSdk.addEventListener("meeting-detected", async (evt) => {
     try {
-      // Log all available metadata to help identify the meeting
-      console.log(
-        "[Recall SDK] Meeting detected - Available metadata:",
-        JSON.stringify(evt, null, 2),
-      );
+      const platform = (evt.window as { platform?: string }).platform;
+      const meetingUrl = evt.window.url || "unknown";
+      console.log(`[Recall SDK] Meeting detected: ${platform} - ${meetingUrl}`);
 
-      // Only allow ONE recording at a time to prevent duplicates
       if (isRecording) {
         console.log(
           `[Recall SDK] Already recording. Ignoring duplicate meeting-detected event.`,
@@ -149,7 +146,6 @@ export function initializeRecallSDK(
         return;
       }
 
-      const platform = (evt.window as { platform?: string }).platform;
       if (!platform) {
         console.log(`[Recall SDK] Skipping recording - no platform provided`);
         return;
@@ -165,7 +161,6 @@ export function initializeRecallSDK(
       const normalizedPlatform = normalizePlatform(platform);
       const meetingTitle =
         evt.window.title || generateDefaultTitle(normalizedPlatform);
-      const meetingUrl = evt.window.url || null;
       console.log(
         `[Recall SDK] Starting recording: ${platform} (normalized: ${normalizedPlatform}) - ${meetingTitle}`,
       );
@@ -325,13 +320,7 @@ export function initializeRecallSDK(
 
   RecallAiSdk.addEventListener("meeting-closed", async (_evt) => {
     console.log("[Recall SDK] Meeting closed");
-    // Note: Session cleanup is now handled in upload-progress listener
-    // to ensure we don't delete the session before upload completes
   });
-
-  RecallAiSdk.addEventListener("meeting-updated", async (_evt) => {});
-
-  RecallAiSdk.addEventListener("media-capture-status", async (_evt) => {});
 
   RecallAiSdk.addEventListener("realtime-event", async (evt) => {
     if (evt.event === "transcript.data") {
@@ -376,6 +365,13 @@ export function initializeRecallSDK(
       `[Recall SDK] Error: ${evt.message}`,
       evt.window?.id ? `(window: ${evt.window.id})` : "",
     );
+
+    if (evt.message?.includes("process exited unexpectedly")) {
+      console.warn(
+        "[Recall SDK] SDK crashed - resetting recording flag to allow recovery",
+      );
+      isRecording = false;
+    }
   });
 
   RecallAiSdk.addEventListener("shutdown", async (evt) => {

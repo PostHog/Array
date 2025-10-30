@@ -98,7 +98,7 @@ export function initializeRecordingService() {
       if (recording) {
         const participants = [
           ...new Set(
-            recording.segments
+            recording.localSegmentBuffer
               .map((s) => s.speaker)
               .filter((s): s is string => s !== null && s !== undefined),
           ),
@@ -140,7 +140,6 @@ export function initializeRecordingService() {
 
     const store = useActiveRecordingStore.getState();
     store.updateStatus(data.posthog_recording_id, "ready");
-    store.clearRecording(data.posthog_recording_id);
   });
 
   console.log("[RecordingService] Initialized successfully");
@@ -173,15 +172,16 @@ async function uploadPendingSegments(recordingId: string): Promise<void> {
       throw new Error("PostHog client not initialized");
     }
 
-    await client.updateDesktopRecordingTranscript(recordingId, {
-      segments: pendingSegments.map((seg) => ({
-        timestamp_ms: seg.timestamp,
+    await client.appendTranscriptSegments(
+      recordingId,
+      pendingSegments.map((seg) => ({
+        timestamp: seg.timestamp,
         speaker: seg.speaker,
         text: seg.text,
         confidence: seg.confidence,
         is_final: seg.is_final,
       })),
-    });
+    );
 
     const newIndex =
       recording.lastUploadedSegmentIndex + pendingSegments.length;
@@ -211,12 +211,6 @@ async function uploadPendingSegments(recordingId: string): Promise<void> {
   }
 }
 
-/**
- * Handle crash recovery - upload any pending segments and clear from IDB
- *
- * Tradeoff: Might lose last ~10 segments if upload fails during crash recovery.
- * Acceptable because backend already has 90%+ from batched uploads during meeting.
- */
 function handleCrashRecovery() {
   const store = useActiveRecordingStore.getState();
   const activeRecordings = store.activeRecordings;
@@ -227,23 +221,28 @@ function handleCrashRecovery() {
   }
 
   console.log(
-    `[RecordingService] Found ${activeRecordings.length} interrupted recording(s), uploading and clearing...`,
+    `[RecordingService] Found ${activeRecordings.length} interrupted recording(s)`,
   );
 
   for (const recording of activeRecordings) {
-    console.log(
-      `[RecordingService] Uploading pending segments for ${recording.id} (best effort)`,
-    );
-
-    uploadPendingSegments(recording.id).catch((error) => {
-      console.error(
-        `[RecordingService] Failed to upload segments during recovery (acceptable):`,
-        error,
+    if (recording.status === "recording" || recording.status === "uploading") {
+      console.log(
+        `[RecordingService] Marking ${recording.id} as interrupted - user can recover or discard`,
       );
-    });
 
-    store.clearRecording(recording.id);
-    console.log(`[RecordingService] Cleared ${recording.id} from IDB`);
+      uploadPendingSegments(recording.id).catch((error) => {
+        console.warn(
+          `[RecordingService] Failed to upload pending segments:`,
+          error,
+        );
+      });
+
+      store.updateStatus(recording.id, "error");
+      store.setError(
+        recording.id,
+        "Recording interrupted - app was restarted during meeting",
+      );
+    }
   }
 }
 
