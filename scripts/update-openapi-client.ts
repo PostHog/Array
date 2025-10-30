@@ -12,6 +12,7 @@ const INCLUDED_ENDPOINT_PREFIXES = [
   "/api/projects/{project_id}/tasks",
   "/api/users/",
   "/api/environments/",
+  "/api/projects/",
 ];
 
 async function fetchSchema() {

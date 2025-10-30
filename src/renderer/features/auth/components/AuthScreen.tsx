@@ -9,31 +9,43 @@ import {
   Container,
   Flex,
   Heading,
+  Select,
   Text,
-  TextField,
 } from "@radix-ui/themes";
+import type { CloudRegion } from "@shared/types/oauth";
 import { useMutation } from "@tanstack/react-query";
-import type React from "react";
-import { useId, useState } from "react";
+import { useState } from "react";
+import { IS_DEV } from "@/constants/environment";
 
+export const getErrorMessage = (error: unknown) => {
+  if (!(error instanceof Error)) {
+    return "Failed to authenticate";
+  }
+  const message = error.message;
+
+  if (message.includes("access_denied")) {
+    return "Authorization cancelled.";
+  }
+
+  if (message.includes("timed out")) {
+    return "Authorization timed out. Please try again.";
+  }
+
+  return message;
+};
 export function AuthScreen() {
-  const apiKeyId = useId();
-  const apiHostId = useId();
-  const [apiKey, setApiKey] = useState("");
-  const [apiHost, setApiHost] = useState("https://app.posthog.com");
+  const [region, setRegion] = useState<CloudRegion>("us");
   const [workspace, setWorkspace] = useState("~/workspace");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
-  const { setCredentials, setDefaultWorkspace } = useAuthStore();
+  const { loginWithOAuth, setDefaultWorkspace } = useAuthStore();
 
   const authMutation = useMutation({
     mutationFn: async ({
-      apiKey,
-      host,
+      selectedRegion,
       workspace,
     }: {
-      apiKey: string;
-      host: string;
+      selectedRegion: CloudRegion;
       workspace: string;
     }) => {
       if (!workspace || !workspace.trim()) {
@@ -41,8 +53,8 @@ export function AuthScreen() {
         throw new Error("Workspace is required");
       }
 
-      // Set credentials first
-      await setCredentials(apiKey, host);
+      // Login with OAuth first
+      await loginWithOAuth(selectedRegion);
 
       // Then save workspace
       setDefaultWorkspace(workspace.trim());
@@ -50,10 +62,14 @@ export function AuthScreen() {
     },
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSignIn = () => {
     setWorkspaceError(null);
-    authMutation.mutate({ apiKey, host: apiHost, workspace });
+    authMutation.mutate({ selectedRegion: region, workspace });
+  };
+
+  const handleRegionChange = (value: string) => {
+    setRegion(value as CloudRegion);
+    authMutation.reset();
   };
 
   return (
@@ -70,100 +86,84 @@ export function AuthScreen() {
             <Card size="3">
               <Flex direction="column" gap="6" width="25vw">
                 <Flex direction="column" gap="2">
-                  <Heading size="4">Array</Heading>
+                  <Heading size="4">Welcome to Array</Heading>
+                  <Text size="2" color="gray">
+                    Sign in with your PostHog account
+                  </Text>
                 </Flex>
 
-                <form onSubmit={handleSubmit}>
-                  <Flex direction="column" gap="4">
-                    <Flex direction="column" gap="6">
-                      <Flex direction="column" gap="2">
-                        <Text
-                          as="label"
-                          htmlFor="apiKey"
-                          size="2"
-                          weight="medium"
-                          color="gray"
-                        >
-                          Personal API Key
-                        </Text>
-                        <TextField.Root
-                          id={apiKeyId}
-                          type="password"
-                          value={apiKey}
-                          onChange={(e) => setApiKey(e.target.value)}
-                          placeholder="phx_..."
-                          required
-                        />
-                        <Text size="1" color="gray">
-                          Get your API key from PostHog settings
-                        </Text>
-                      </Flex>
-
-                      <Flex direction="column" gap="2">
-                        <Text
-                          as="label"
-                          htmlFor="apiHost"
-                          size="2"
-                          weight="medium"
-                          color="gray"
-                        >
-                          PostHog Instance URL
-                        </Text>
-                        <TextField.Root
-                          id={apiHostId}
-                          type="url"
-                          value={apiHost}
-                          onChange={(e) => setApiHost(e.target.value)}
-                          placeholder="https://us.posthog.com"
-                          required
-                        />
-                      </Flex>
-
-                      <Flex direction="column" gap="2">
-                        <Text as="label" size="2" weight="medium" color="gray">
-                          Default workspace
-                        </Text>
-                        <FolderPicker
-                          value={workspace}
-                          onChange={setWorkspace}
-                          placeholder="~/workspace"
-                          size="2"
-                        />
-                        <Text size="1" color="gray">
-                          Where repositories will be cloned. This should be the
-                          folder where you usually store your projects.
-                        </Text>
-                      </Flex>
-                    </Flex>
-
-                    {workspaceError && (
-                      <Callout.Root color="red">
-                        <Callout.Text>{workspaceError}</Callout.Text>
-                      </Callout.Root>
-                    )}
-
-                    {authMutation.isError && (
-                      <Callout.Root color="red">
-                        <Callout.Text>
-                          {authMutation.error instanceof Error
-                            ? authMutation.error.message
-                            : "Failed to authenticate"}
-                        </Callout.Text>
-                      </Callout.Root>
-                    )}
-
-                    <Button
-                      type="submit"
-                      disabled={authMutation.isPending || !apiKey || !workspace}
-                      variant="classic"
+                <Flex direction="column" gap="4">
+                  <Flex direction="column" gap="2">
+                    <Text size="2" weight="medium" color="gray">
+                      PostHog region
+                    </Text>
+                    <Select.Root
+                      value={region}
+                      onValueChange={handleRegionChange}
                       size="3"
-                      mt="4"
-                      loading={authMutation.isPending}
                     >
-                      {authMutation.isPending ? "Connecting..." : "Connect"}
-                    </Button>
+                      <Select.Trigger />
+                      <Select.Content>
+                        <Select.Item value="us">🇺🇸 US Cloud</Select.Item>
+                        <Select.Item value="eu">🇪🇺 EU Cloud</Select.Item>
+                        {IS_DEV && (
+                          <Select.Item value="dev">🔧 Development</Select.Item>
+                        )}
+                      </Select.Content>
+                    </Select.Root>
                   </Flex>
-                </form>
+
+                  <Flex direction="column" gap="2">
+                    <Text as="label" size="2" weight="medium" color="gray">
+                      Default workspace
+                    </Text>
+                    <FolderPicker
+                      value={workspace}
+                      onChange={setWorkspace}
+                      placeholder="~/workspace"
+                      size="2"
+                    />
+                    <Text size="1" color="gray">
+                      Where repositories will be cloned. This should be the
+                      folder where you usually store your projects.
+                    </Text>
+                  </Flex>
+
+                  {workspaceError && (
+                    <Callout.Root color="red">
+                      <Callout.Text>{workspaceError}</Callout.Text>
+                    </Callout.Root>
+                  )}
+
+                  {authMutation.isError && (
+                    <Callout.Root color="red">
+                      <Callout.Text>
+                        {getErrorMessage(authMutation.error)}
+                      </Callout.Text>
+                    </Callout.Root>
+                  )}
+
+                  {authMutation.isPending && (
+                    <Callout.Root color="blue">
+                      <Callout.Text>
+                        Waiting for authorization in your browser...
+                      </Callout.Text>
+                    </Callout.Root>
+                  )}
+
+                  <Button
+                    onClick={handleSignIn}
+                    disabled={authMutation.isPending || !workspace}
+                    variant="classic"
+                    size="3"
+                    mt="2"
+                    loading={authMutation.isPending}
+                  >
+                    {authMutation.isPending
+                      ? "Waiting for authorization..."
+                      : "Sign in with PostHog"}
+                  </Button>
+                </Flex>
               </Flex>
             </Card>
           </Flex>

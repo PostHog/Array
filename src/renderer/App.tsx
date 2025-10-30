@@ -10,14 +10,14 @@ import {
 } from "@/renderer/services/recordingService";
 
 function App() {
-  const { isAuthenticated, checkAuth } = useAuthStore();
+  const { isAuthenticated, initializeOAuth } = useAuthStore();
   const [isLoading, setIsLoading] = useState(true);
 
   useRecordingQuerySync();
 
   useEffect(() => {
-    checkAuth().finally(() => setIsLoading(false));
-  }, [checkAuth]);
+    initializeOAuth().finally(() => setIsLoading(false));
+  }, [initializeOAuth]);
 
   // Initialize recording service when authenticated
   useEffect(() => {

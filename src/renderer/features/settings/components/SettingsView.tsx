@@ -4,7 +4,10 @@ import {
   type DefaultRunMode,
   useSettingsStore,
 } from "@features/settings/stores/settingsStore";
+import { useMeQuery } from "@hooks/useMeQuery";
+import { useProjectQuery } from "@hooks/useProjectQuery";
 import {
+  Badge,
   Box,
   Button,
   Card,
@@ -13,21 +16,31 @@ import {
   Select,
   Switch,
   Text,
-  TextField,
 } from "@radix-ui/themes";
-import { useThemeStore } from "@stores/themeStore";
+import type { CloudRegion } from "@shared/types/oauth";
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useThemeStore } from "../../../stores/themeStore";
+
+const REGION_LABELS: Record<CloudRegion, string> = {
+  us: "US Cloud",
+  eu: "EU Cloud",
+  dev: "Development",
+};
+
+const REGION_URLS: Record<CloudRegion, string> = {
+  us: "us.posthog.com",
+  eu: "eu.posthog.com",
+  dev: "localhost:8010",
+};
 
 export function SettingsView() {
   const {
-    apiKey: currentApiKey,
-    apiHost,
     isAuthenticated,
-    setCredentials,
-    logout,
     defaultWorkspace,
     setDefaultWorkspace,
+    cloudRegion,
+    loginWithOAuth,
+    logout,
   } = useAuthStore();
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
   const toggleDarkMode = useThemeStore((state) => state.toggleDarkMode);
@@ -39,43 +52,24 @@ export function SettingsView() {
     setDefaultRunMode,
     setCreatePR,
   } = useSettingsStore();
-  const [apiKey, setApiKey] = useState("");
-  const [host, setHost] = useState(apiHost);
-  const [initialHost] = useState(apiHost);
 
-  const updateCredentialsMutation = useMutation({
-    mutationFn: async ({ apiKey, host }: { apiKey: string; host: string }) => {
-      await setCredentials(apiKey, host);
-    },
-    onSuccess: () => {
-      setApiKey("");
-      setTimeout(() => updateCredentialsMutation.reset(), 3000);
+  const { data: currentUser } = useMeQuery();
+  const { data: project } = useProjectQuery();
+
+  const reauthMutation = useMutation({
+    mutationFn: async (region: CloudRegion) => {
+      await loginWithOAuth(region);
     },
   });
 
-  const handleApiKeyBlur = () => {
-    // Only update if apiKey was entered (not empty)
-    if (apiKey.trim()) {
-      updateCredentialsMutation.mutate({ apiKey, host });
-    }
-  };
-
-  const handleHostBlur = () => {
-    // Only update if host changed and is not empty
-    if (host.trim() && host !== initialHost) {
-      // Need current API key or new one to update
-      const keyToUse = apiKey.trim() || currentApiKey;
-      if (keyToUse) {
-        updateCredentialsMutation.mutate({ apiKey: keyToUse, host });
-      }
+  const handleReauthenticate = () => {
+    if (cloudRegion) {
+      reauthMutation.mutate(cloudRegion);
     }
   };
 
   const handleLogout = () => {
     logout();
-    setApiKey("");
-    setHost("https://us.posthog.com");
-    updateCredentialsMutation.reset();
   };
 
   return (
@@ -200,10 +194,10 @@ export function SettingsView() {
 
           <Box className="border-gray-6 border-t" />
 
-          {/* Authentication Section */}
+          {/* Account Section */}
           <Flex direction="column" gap="3">
             <Flex align="center" gap="3">
-              <Heading size="3">Authentication</Heading>
+              <Heading size="3">Account</Heading>
               <Flex align="center" gap="2">
                 <Box
                   width="8px"
@@ -218,92 +212,85 @@ export function SettingsView() {
 
             <Card>
               <Flex direction="column" gap="3">
-                <Flex direction="column" gap="2">
-                  <Text size="1" weight="medium">
-                    API Key
-                  </Text>
-                  <TextField.Root
-                    size="1"
-                    type="password"
-                    placeholder="Enter your PostHog API key"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    onBlur={handleApiKeyBlur}
-                    disabled={updateCredentialsMutation.isPending}
-                  />
-                </Flex>
+                {isAuthenticated && currentUser?.email && (
+                  <Flex direction="column" gap="2">
+                    <Text size="1" weight="medium">
+                      Email
+                    </Text>
+                    <Text size="1" color="gray">
+                      {currentUser.email}
+                    </Text>
+                  </Flex>
+                )}
 
-                <Flex direction="column" gap="2">
-                  <Text size="1" weight="medium">
-                    API Host
-                  </Text>
-                  <TextField.Root
-                    size="1"
-                    type="text"
-                    placeholder="https://us.posthog.com"
-                    value={host}
-                    onChange={(e) => setHost(e.target.value)}
-                    onBlur={handleHostBlur}
-                    disabled={updateCredentialsMutation.isPending}
-                  />
-                </Flex>
+                {isAuthenticated && project?.name && (
+                  <Flex direction="column" gap="2">
+                    <Text size="1" weight="medium">
+                      Project
+                    </Text>
+                    <Text size="1" color="gray">
+                      {project.name} (ID: {project.id})
+                    </Text>
+                  </Flex>
+                )}
 
-                {updateCredentialsMutation.isError && (
+                {isAuthenticated && cloudRegion && (
+                  <Flex direction="column" gap="2">
+                    <Text size="1" weight="medium">
+                      PostHog region
+                    </Text>
+                    <Flex align="center" gap="2">
+                      <Badge size="1" variant="soft">
+                        {REGION_LABELS[cloudRegion as CloudRegion]}
+                      </Badge>
+                      <Text size="1" color="gray">
+                        {REGION_URLS[cloudRegion as CloudRegion]}
+                      </Text>
+                    </Flex>
+                  </Flex>
+                )}
+
+                {!isAuthenticated && (
+                  <Text size="1" color="gray">
+                    You are not currently authenticated. Please sign in from the
+                    main screen.
+                  </Text>
+                )}
+
+                {isAuthenticated && (
+                  <Flex gap="2">
+                    <Button
+                      variant="classic"
+                      size="1"
+                      onClick={handleReauthenticate}
+                      disabled={reauthMutation.isPending}
+                      loading={reauthMutation.isPending}
+                    >
+                      {reauthMutation.isPending
+                        ? "Authenticating..."
+                        : "Re-authenticate"}
+                    </Button>
+                    <Button
+                      variant="soft"
+                      color="red"
+                      size="1"
+                      onClick={handleLogout}
+                    >
+                      Sign out
+                    </Button>
+                  </Flex>
+                )}
+
+                {reauthMutation.isError && (
                   <Text size="1" color="red">
-                    {updateCredentialsMutation.error instanceof Error
-                      ? updateCredentialsMutation.error.message
-                      : "Failed to update credentials"}
+                    {reauthMutation.error instanceof Error
+                      ? reauthMutation.error.message
+                      : "Failed to re-authenticate"}
                   </Text>
                 )}
-
-                {updateCredentialsMutation.isSuccess && (
-                  <Text size="1" color="green">
-                    Credentials updated successfully
-                  </Text>
-                )}
-
-                <Box>
-                  <Button
-                    variant="classic"
-                    size="1"
-                    onClick={() => {
-                      const keyToUse = apiKey.trim() || currentApiKey;
-                      if (keyToUse && host.trim()) {
-                        updateCredentialsMutation.mutate({
-                          apiKey: keyToUse,
-                          host,
-                        });
-                      }
-                    }}
-                    disabled={updateCredentialsMutation.isPending}
-                    loading={updateCredentialsMutation.isPending}
-                  >
-                    Save credentials
-                  </Button>
-                </Box>
               </Flex>
             </Card>
           </Flex>
-
-          {isAuthenticated && <Box className="border-gray-6 border-t" />}
-
-          {/* Account Section */}
-          {isAuthenticated && (
-            <Flex direction="column" gap="3">
-              <Heading size="3">Account</Heading>
-              <Card>
-                <Button
-                  variant="soft"
-                  color="red"
-                  size="1"
-                  onClick={handleLogout}
-                  disabled={updateCredentialsMutation.isPending}
-                >
-                  Logout
-                </Button>
-              </Card>
-            </Flex>
-          )}
         </Flex>
       </Box>
     </Box>

@@ -11,6 +11,7 @@ import {
 } from "@radix-ui/themes";
 import { useStatusBarStore } from "@stores/statusBarStore";
 import { useEffect, useState } from "react";
+import { IS_DEV } from "@/constants/environment";
 
 interface StatusBarProps {
   showKeyHints?: boolean;
@@ -24,8 +25,6 @@ export function StatusBar({
   const { statusText, keyHints } = useStatusBarStore();
   const [appVersion, setAppVersion] = useState<string | null>(null);
 
-  // Determine if we're in development mode
-  const isDev = import.meta.env.DEV;
   const fallbackVersion = import.meta.env.VITE_APP_VERSION ?? "dev";
 
   useEffect(() => {
@@ -81,9 +80,9 @@ export function StatusBar({
       )}
 
       <Flex align="center" gap="2">
-        <Badge color={isDev ? "orange" : "green"} size="1">
+        <Badge color={IS_DEV ? "orange" : "green"} size="1">
           <Code size="1" variant="ghost">
-            {isDev ? "DEV" : "PROD"}
+            {IS_DEV ? "DEV" : "PROD"}
           </Code>
         </Badge>
         <Badge color="gray" size="1">

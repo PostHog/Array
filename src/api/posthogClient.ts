@@ -6,9 +6,23 @@ export class PostHogAPIClient {
   private api: ReturnType<typeof createApiClient>;
   private _teamId: number | null = null;
 
-  constructor(apiKey: string, apiHost: string) {
+  constructor(
+    accessToken: string,
+    apiHost: string,
+    onTokenRefresh?: () => Promise<string>,
+    teamId?: number,
+  ) {
     const baseUrl = apiHost.endsWith("/") ? apiHost.slice(0, -1) : apiHost;
-    this.api = createApiClient(buildApiFetcher({ apiToken: apiKey }), baseUrl);
+    this.api = createApiClient(
+      buildApiFetcher({
+        apiToken: accessToken,
+        onTokenRefresh,
+      }),
+      baseUrl,
+    );
+    if (teamId) {
+      this._teamId = teamId;
+    }
   }
 
   private async getTeamId(): Promise<number> {
@@ -33,6 +47,14 @@ export class PostHogAPIClient {
       path: { uuid: "@me" },
     });
     return data;
+  }
+
+  async getProject(projectId: number) {
+    //@ts-expect-error this is not in the generated client
+    const data = await this.api.get("/api/projects/{project_id}/", {
+      path: { project_id: projectId.toString() },
+    });
+    return data as Schemas.Team;
   }
 
   async getTasks(repositoryOrg?: string, repositoryName?: string) {
@@ -74,7 +96,7 @@ export class PostHogAPIClient {
 
     const data = await this.api.post(`/api/projects/{project_id}/tasks/`, {
       path: { project_id: teamId.toString() },
-      body: payload as Schemas.Task,
+      body: payload as unknown as Schemas.Task,
     });
 
     return data;
@@ -103,7 +125,8 @@ export class PostHogAPIClient {
   async duplicateTask(taskId: string) {
     const task = await this.getTask(taskId);
     return this.createTask(
-      task.description,
+      task.description ?? "",
+      //@ts-expect-error
       task.repository_config as RepositoryConfig | undefined,
     );
   }
@@ -399,6 +422,7 @@ export class PostHogAPIClient {
     const teamId = await this.getTeamId();
 
     const data = await this.api.post(
+      //@ts-expect-error not in the generated client
       "/api/environments/{project_id}/desktop_recordings/{id}/transcript/",
       {
         path: { project_id: teamId.toString(), id: recordingId },

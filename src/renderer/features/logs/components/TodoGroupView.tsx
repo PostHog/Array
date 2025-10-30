@@ -10,6 +10,7 @@ import type { AgentEvent } from "@posthog/agent";
 import { Box, Code, ContextMenu } from "@radix-ui/themes";
 import { formatTimestamp } from "@utils/time";
 import { useState } from "react";
+import { IS_DEV } from "@/constants/environment";
 
 interface Todo {
   content: string;
@@ -84,8 +85,6 @@ export function TodoGroupView({
   const durationMs = calculateTodoDuration(toolCalls);
   const durationSeconds =
     durationMs !== undefined ? (durationMs / 1000).toFixed(2) : undefined;
-
-  const isDev = import.meta.env.DEV;
 
   return (
     <Box mb="3">
@@ -172,7 +171,7 @@ export function TodoGroupView({
           </Box>
         </ContextMenu.Trigger>
         <ContextMenu.Content>
-          {isDev && <ContextMenu.Label>TodoGroupView</ContextMenu.Label>}
+          {IS_DEV && <ContextMenu.Label>TodoGroupView</ContextMenu.Label>}
           <ContextMenu.Item onClick={() => onJumpToRaw?.(todoWriteIndex)}>
             Jump to raw source
           </ContextMenu.Item>

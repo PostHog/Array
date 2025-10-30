@@ -13,6 +13,7 @@ import { cloneStore } from "@stores/cloneStore";
 import { expandTildePath } from "@utils/path";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { getCloudUrlFromRegion } from "@/constants/oauth";
 
 interface ArtifactEvent {
   type: string;
@@ -322,7 +323,13 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
 
         if (taskState.isRunning) return;
 
-        const { apiKey, apiHost } = useAuthStore.getState();
+        const authState = useAuthStore.getState();
+        const apiKey = authState.oauthAccessToken;
+        const apiHost = authState.cloudRegion
+          ? getCloudUrlFromRegion(authState.cloudRegion)
+          : null;
+
+        const projectId = authState.projectId;
 
         if (!apiKey) {
           store.addLog(taskId, {
@@ -330,6 +337,25 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
             ts: Date.now(),
             message:
               "No PostHog API key found. Sign in to PostHog to run tasks.",
+          });
+          return;
+        }
+
+        if (!apiHost) {
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message:
+              "No PostHog API host found. Please check your region settings.",
+          });
+          return;
+        }
+
+        if (!projectId) {
+          store.addLog(taskId, {
+            type: "error",
+            ts: Date.now(),
+            message: "No PostHog project ID found. Please check your settings.",
           });
           return;
         }
@@ -441,6 +467,7 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
             repoPath: effectiveRepoPath,
             apiKey,
             apiHost,
+            projectId,
             permissionMode,
             autoProgress: true,
             executionMode: taskState.executionMode,

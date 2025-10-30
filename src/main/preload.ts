@@ -1,5 +1,10 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
 import type { Recording } from "../shared/types";
+import type {
+  CloudRegion,
+  OAuthTokenResponse,
+  StoredOAuthTokens,
+} from "../shared/types/oauth";
 
 interface MessageBoxOptions {
   type?: "info" | "error" | "warning" | "question";
@@ -16,6 +21,7 @@ interface AgentStartParams {
   repoPath: string;
   apiKey: string;
   apiHost: string;
+  projectId: number;
   permissionMode?: string;
   autoProgress?: boolean;
   model?: string;
@@ -29,6 +35,26 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("store-api-key", apiKey),
   retrieveApiKey: (encryptedKey: string): Promise<string | null> =>
     ipcRenderer.invoke("retrieve-api-key", encryptedKey),
+  // OAuth API
+  oauthStartFlow: (
+    region: CloudRegion,
+  ): Promise<{ success: boolean; data?: OAuthTokenResponse; error?: string }> =>
+    ipcRenderer.invoke("oauth:start-flow", region),
+  oauthEncryptTokens: (
+    tokens: StoredOAuthTokens,
+  ): Promise<{ success: boolean; encrypted?: string; error?: string }> =>
+    ipcRenderer.invoke("oauth:encrypt-tokens", tokens),
+  oauthRetrieveTokens: (
+    encrypted: string,
+  ): Promise<{ success: boolean; data?: StoredOAuthTokens; error?: string }> =>
+    ipcRenderer.invoke("oauth:retrieve-tokens", encrypted),
+  oauthDeleteTokens: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("oauth:delete-tokens"),
+  oauthRefreshToken: (
+    refreshToken: string,
+    region: CloudRegion,
+  ): Promise<{ success: boolean; data?: OAuthTokenResponse; error?: string }> =>
+    ipcRenderer.invoke("oauth:refresh-token", refreshToken, region),
   selectDirectory: (): Promise<string | null> =>
     ipcRenderer.invoke("select-directory"),
   searchDirectories: (query: string, searchRoot?: string): Promise<string[]> =>
@@ -119,6 +145,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     repoPath: string;
     apiKey: string;
     apiHost: string;
+    projectId: number;
   }): Promise<{ taskId: string; channel: string }> =>
     ipcRenderer.invoke("agent-start-plan-mode", params),
   agentGeneratePlan: async (params: {
@@ -129,6 +156,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     questionAnswers: unknown[];
     apiKey: string;
     apiHost: string;
+    projectId: number;
   }): Promise<{ taskId: string; channel: string }> =>
     ipcRenderer.invoke("agent-generate-plan", params),
   readPlanFile: (repoPath: string, taskId: string): Promise<string | null> =>
