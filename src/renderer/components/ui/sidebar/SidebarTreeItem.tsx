@@ -1,6 +1,6 @@
+import type { TreeLine } from "@components/ui/sidebar/Types";
 import { CaretDownIcon, CaretRightIcon } from "@phosphor-icons/react";
 import { Tooltip } from "@radix-ui/themes";
-import type { TreeLine } from "./Types";
 
 interface SidebarTreeItemProps {
   line: TreeLine;

@@ -1,16 +1,39 @@
+import { MainLayout } from "@components/MainLayout";
+import { AuthScreen } from "@features/auth/components/AuthScreen";
+import { useAuthStore } from "@features/auth/stores/authStore";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
-import { AuthScreen } from "./components/AuthScreen";
-import { MainLayout } from "./components/MainLayout";
-import { useAuthStore } from "./stores/authStore";
+import { useRecordingQuerySync } from "@/renderer/hooks/useRecordingQuerySync";
+import {
+  initializeRecordingService,
+  shutdownRecordingService,
+} from "@/renderer/services/recordingService";
 
 function App() {
-  const { isAuthenticated, checkAuth } = useAuthStore();
+  const { isAuthenticated, initializeOAuth } = useAuthStore();
   const [isLoading, setIsLoading] = useState(true);
 
+  useRecordingQuerySync();
+
   useEffect(() => {
-    checkAuth().finally(() => setIsLoading(false));
-  }, [checkAuth]);
+    initializeOAuth().finally(() => setIsLoading(false));
+  }, [initializeOAuth]);
+
+  // Initialize recording service when authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    console.log("[App] Initializing recording service");
+    initializeRecordingService();
+
+    // Cleanup on unmount
+    return () => {
+      console.log("[App] Shutting down recording service");
+      shutdownRecordingService();
+    };
+  }, [isAuthenticated]);
 
   if (isLoading) {
     return (

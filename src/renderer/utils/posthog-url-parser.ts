@@ -2,14 +2,14 @@
  * PostHog URL parser for extracting resource types and IDs from URLs
  */
 
-export type PostHogResourceType =
+type PostHogResourceType =
   | "error"
   | "experiment"
   | "insight"
   | "feature_flag"
   | "generic";
 
-export interface PostHogUrlInfo {
+interface PostHogUrlInfo {
   type: PostHogResourceType;
   id?: string;
   projectId?: string;
@@ -130,23 +130,6 @@ export function isUrl(text: string): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * Check if a URL is a PostHog URL
- */
-export function isPostHogUrl(url: string): boolean {
-  const info = parsePostHogUrl(url);
-  return info !== null;
-}
-
-/**
- * Extract URLs from a text string
- */
-export function extractUrlsFromText(text: string): string[] {
-  const urlRegex = /https?:\/\/[^\s<>"'`(){}[\]]+/g;
-  const matches = text.match(urlRegex) || [];
-  return matches.filter(isUrl);
 }
 
 /**

@@ -1,18 +1,13 @@
+import { useRecordingStore } from "@features/recordings/stores/recordingStore";
 import { FastForward, Pause, Play, Rewind } from "@phosphor-icons/react";
 import { Box, Button, Flex, Text } from "@radix-ui/themes";
+import { formatDuration } from "@utils/time";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useRecordingStore } from "../stores/recordingStore";
 
 interface AudioPlayerProps {
   recordingId: string;
   duration: number;
-}
-
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 export function AudioPlayer({ recordingId, duration }: AudioPlayerProps) {
@@ -186,7 +181,7 @@ export function AudioPlayer({ recordingId, duration }: AudioPlayerProps) {
             color="gray"
             style={{ minWidth: "80px", textAlign: "right" }}
           >
-            {formatTime(currentTime)} / {formatTime(duration)}
+            {formatDuration(currentTime)} / {formatDuration(duration)}
           </Text>
           <Button
             size="1"

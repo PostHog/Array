@@ -1,5 +1,10 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
 import type { Recording } from "../shared/types";
+import type {
+  CloudRegion,
+  OAuthTokenResponse,
+  StoredOAuthTokens,
+} from "../shared/types/oauth";
 
 interface MessageBoxOptions {
   type?: "info" | "error" | "warning" | "question";
@@ -16,11 +21,13 @@ interface AgentStartParams {
   repoPath: string;
   apiKey: string;
   apiHost: string;
+  projectId: number;
   permissionMode?: string;
   autoProgress?: boolean;
   model?: string;
   executionMode?: "plan";
   runMode?: "local" | "cloud";
+  createPR?: boolean;
 }
 
 contextBridge.exposeInMainWorld("electronAPI", {
@@ -28,6 +35,26 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("store-api-key", apiKey),
   retrieveApiKey: (encryptedKey: string): Promise<string | null> =>
     ipcRenderer.invoke("retrieve-api-key", encryptedKey),
+  // OAuth API
+  oauthStartFlow: (
+    region: CloudRegion,
+  ): Promise<{ success: boolean; data?: OAuthTokenResponse; error?: string }> =>
+    ipcRenderer.invoke("oauth:start-flow", region),
+  oauthEncryptTokens: (
+    tokens: StoredOAuthTokens,
+  ): Promise<{ success: boolean; encrypted?: string; error?: string }> =>
+    ipcRenderer.invoke("oauth:encrypt-tokens", tokens),
+  oauthRetrieveTokens: (
+    encrypted: string,
+  ): Promise<{ success: boolean; data?: StoredOAuthTokens; error?: string }> =>
+    ipcRenderer.invoke("oauth:retrieve-tokens", encrypted),
+  oauthDeleteTokens: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("oauth:delete-tokens"),
+  oauthRefreshToken: (
+    refreshToken: string,
+    region: CloudRegion,
+  ): Promise<{ success: boolean; data?: OAuthTokenResponse; error?: string }> =>
+    ipcRenderer.invoke("oauth:refresh-token", refreshToken, region),
   selectDirectory: (): Promise<string | null> =>
     ipcRenderer.invoke("select-directory"),
   searchDirectories: (query: string, searchRoot?: string): Promise<string[]> =>
@@ -76,6 +103,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     repoPath: string;
     apiKey: string;
     apiHost: string;
+    projectId: number;
   }): Promise<{ taskId: string; channel: string }> =>
     ipcRenderer.invoke("agent-start-plan-mode", params),
   agentGeneratePlan: async (params: {
@@ -86,6 +114,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     questionAnswers: unknown[];
     apiKey: string;
     apiHost: string;
+    projectId: number;
   }): Promise<{ taskId: string; channel: string }> =>
     ipcRenderer.invoke("agent-generate-plan", params),
   readPlanFile: (repoPath: string, taskId: string): Promise<string | null> =>
@@ -170,6 +199,79 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Desktop capturer for system audio
   getDesktopSources: async (options: { types: ("screen" | "window")[] }) => {
     return await ipcRenderer.invoke("desktop-capturer:get-sources", options);
+  },
+  // Recall SDK API
+  recallInitialize: (
+    recallApiUrl: string,
+    posthogKey: string,
+    posthogHost: string,
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "recall:initialize",
+      recallApiUrl,
+      posthogKey,
+      posthogHost,
+    ),
+  recallGetActiveSessions: (): Promise<
+    Array<{
+      windowId: string;
+      recordingId: string;
+      platform: string;
+    }>
+  > => ipcRenderer.invoke("recall:get-active-sessions"),
+  recallRequestPermission: (
+    permission: "accessibility" | "screen-capture" | "microphone",
+  ): Promise<void> =>
+    ipcRenderer.invoke("recall:request-permission", permission),
+  recallShutdown: (): Promise<void> => ipcRenderer.invoke("recall:shutdown"),
+  // Recall SDK event listeners
+  onRecallRecordingStarted: (
+    listener: (data: {
+      posthog_recording_id: string;
+      platform: string;
+      title: string | null;
+      meeting_url: string | null;
+    }) => void,
+  ): (() => void) => {
+    const channel = "recall:recording-started";
+    const wrapped = (_event: IpcRendererEvent, data: unknown) =>
+      listener(data as any);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
+  },
+  onRecallTranscriptSegment: (
+    listener: (data: {
+      posthog_recording_id: string;
+      timestamp: number;
+      speaker: string | null;
+      text: string;
+      confidence: number | null;
+      is_final: boolean;
+    }) => void,
+  ): (() => void) => {
+    const channel = "recall:transcript-segment";
+    const wrapped = (_event: IpcRendererEvent, data: unknown) =>
+      listener(data as any);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
+  },
+  onRecallMeetingEnded: (
+    listener: (data: { posthog_recording_id: string }) => void,
+  ): (() => void) => {
+    const channel = "recall:meeting-ended";
+    const wrapped = (_event: IpcRendererEvent, data: unknown) =>
+      listener(data as any);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
+  },
+  onRecallRecordingReady: (
+    listener: (data: { posthog_recording_id: string }) => void,
+  ): (() => void) => {
+    const channel = "recall:recording-ready";
+    const wrapped = (_event: IpcRendererEvent, data: unknown) =>
+      listener(data as any);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
   },
   // Shell API
   shellCreate: (sessionId: string, cwd?: string): Promise<void> =>

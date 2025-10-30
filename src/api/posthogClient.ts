@@ -6,9 +6,23 @@ export class PostHogAPIClient {
   private api: ReturnType<typeof createApiClient>;
   private _teamId: number | null = null;
 
-  constructor(apiKey: string, apiHost: string) {
+  constructor(
+    accessToken: string,
+    apiHost: string,
+    onTokenRefresh?: () => Promise<string>,
+    teamId?: number,
+  ) {
     const baseUrl = apiHost.endsWith("/") ? apiHost.slice(0, -1) : apiHost;
-    this.api = createApiClient(buildApiFetcher({ apiToken: apiKey }), baseUrl);
+    this.api = createApiClient(
+      buildApiFetcher({
+        apiToken: accessToken,
+        onTokenRefresh,
+      }),
+      baseUrl,
+    );
+    if (teamId) {
+      this._teamId = teamId;
+    }
   }
 
   private async getTeamId(): Promise<number> {
@@ -33,6 +47,14 @@ export class PostHogAPIClient {
       path: { uuid: "@me" },
     });
     return data;
+  }
+
+  async getProject(projectId: number) {
+    //@ts-expect-error this is not in the generated client
+    const data = await this.api.get("/api/projects/{project_id}/", {
+      path: { project_id: projectId.toString() },
+    });
+    return data as Schemas.Team;
   }
 
   async getTasks(repositoryOrg?: string, repositoryName?: string) {
@@ -74,7 +96,7 @@ export class PostHogAPIClient {
 
     const data = await this.api.post(`/api/projects/{project_id}/tasks/`, {
       path: { project_id: teamId.toString() },
-      body: payload as Schemas.Task,
+      body: payload as unknown as Schemas.Task,
     });
 
     return data;
@@ -103,7 +125,8 @@ export class PostHogAPIClient {
   async duplicateTask(taskId: string) {
     const task = await this.getTask(taskId);
     return this.createTask(
-      task.description,
+      task.description ?? "",
+      //@ts-expect-error
       task.repository_config as RepositoryConfig | undefined,
     );
   }
@@ -248,5 +271,165 @@ export class PostHogAPIClient {
       query: { limit: 1000 },
     });
     return data.results ?? [];
+  }
+
+  // Desktop Recordings API
+  private validateRecordingId(recordingId: string): void {
+    if (!recordingId || typeof recordingId !== "string") {
+      throw new Error("Recording ID is required");
+    }
+    // UUID format validation (PostHog uses UUIDs for recording IDs)
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        recordingId,
+      )
+    ) {
+      throw new Error("Invalid recording ID format");
+    }
+  }
+
+  async createDesktopRecording(
+    platform: string,
+  ): Promise<Schemas.CreateRecordingResponse> {
+    const teamId = await this.getTeamId();
+    const data = await this.api.post(
+      "/api/environments/{project_id}/desktop_recordings/",
+      {
+        path: { project_id: teamId.toString() },
+        body: { platform } as Schemas.CreateRecordingRequest,
+      },
+    );
+    return data;
+  }
+
+  async getDesktopRecording(recordingId: string) {
+    this.validateRecordingId(recordingId);
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/desktop_recordings/${recordingId}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/environments/${teamId}/desktop_recordings/${recordingId}/`,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch recording: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
+
+  async getDesktopRecordingTranscript(recordingId: string) {
+    this.validateRecordingId(recordingId);
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/desktop_recordings/${recordingId}/transcript/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/environments/${teamId}/desktop_recordings/${recordingId}/transcript/`,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch transcript: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
+
+  async listDesktopRecordings(filters?: {
+    platform?: string;
+    status?: string;
+    search?: string;
+  }) {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/desktop_recordings/`,
+    );
+
+    if (filters) {
+      for (const [key, value] of Object.entries(filters)) {
+        if (value) url.searchParams.set(key, value);
+      }
+    }
+
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/environments/${teamId}/desktop_recordings/`,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to list recordings: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.results ?? data ?? [];
+  }
+
+  async deleteDesktopRecording(recordingId: string) {
+    this.validateRecordingId(recordingId);
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/desktop_recordings/${recordingId}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: `/api/environments/${teamId}/desktop_recordings/${recordingId}/`,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to delete recording: ${response.statusText}`);
+    }
+  }
+
+  async updateDesktopRecording(
+    recordingId: string,
+    updates: Partial<Schemas.PatchedDesktopRecording>,
+  ) {
+    this.validateRecordingId(recordingId);
+    const teamId = await this.getTeamId();
+
+    const data = await this.api.patch(
+      "/api/environments/{project_id}/desktop_recordings/{id}/",
+      {
+        path: { project_id: teamId.toString(), id: recordingId },
+        body: updates,
+      },
+    );
+
+    return data;
+  }
+
+  async updateDesktopRecordingTranscript(
+    recordingId: string,
+    updates: {
+      segments?: Array<{
+        timestamp_ms: number;
+        speaker: string | null;
+        text: string;
+        confidence: number | null;
+        is_final: boolean;
+      }>;
+      full_text?: string;
+    },
+  ) {
+    this.validateRecordingId(recordingId);
+    const teamId = await this.getTeamId();
+
+    const data = await this.api.post(
+      //@ts-expect-error not in the generated client
+      "/api/environments/{project_id}/desktop_recordings/{id}/transcript/",
+      {
+        path: { project_id: teamId.toString(), id: recordingId },
+        body: updates as any,
+      },
+    );
+
+    return data;
   }
 }

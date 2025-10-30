@@ -19,6 +19,18 @@
       "recommended": true,
       "nursery": {
         "useSortedClasses": "error"
+      },
+      "style": {
+        "noRestrictedImports": {
+          "options": {
+            "patterns": [
+              {
+                "group": ["./*", "../*"],
+                "message": "Relative imports are forbidden. Use path aliases instead (@api/*, @main/*, @shared/*)."
+              }
+            ]
+          }
+        }
       }
     },
     "domains": {
@@ -51,6 +63,26 @@
       "includes": ["src/api/generated.ts"],
       "linter": {
         "enabled": false
+      }
+    },
+    {
+      // Renderer code should use path aliases
+      "includes": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["./*", "../*"],
+                    "message": "Use path aliases instead: @features/*, @components/*, @stores/*, @hooks/*, @utils/*, @renderer/*, @shared/*, @api/*"
+                  }
+                ]
+              }
+            }
+          }
+        }
       }
     }
   ]

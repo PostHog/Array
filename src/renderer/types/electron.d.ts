@@ -1,10 +1,30 @@
+import type { Schemas } from "@api/generated";
 import type { AgentEvent } from "@posthog/agent";
-import type { TaskArtifact } from "@shared/types";
-import type { Recording } from "@shared/types";
+import type { Recording, TaskArtifact } from "@shared/types";
+import type {
+  CloudRegion,
+  OAuthTokenResponse,
+  StoredOAuthTokens,
+} from "@shared/types/oauth";
 
 export interface IElectronAPI {
   storeApiKey: (apiKey: string) => Promise<string>;
   retrieveApiKey: (encryptedKey: string) => Promise<string | null>;
+  // OAuth API
+  oauthStartFlow: (
+    region: CloudRegion,
+  ) => Promise<{ success: boolean; data?: OAuthTokenResponse; error?: string }>;
+  oauthEncryptTokens: (
+    tokens: StoredOAuthTokens,
+  ) => Promise<{ success: boolean; encrypted?: string; error?: string }>;
+  oauthRetrieveTokens: (
+    encrypted: string,
+  ) => Promise<{ success: boolean; data?: StoredOAuthTokens; error?: string }>;
+  oauthDeleteTokens: () => Promise<{ success: boolean }>;
+  oauthRefreshToken: (
+    refreshToken: string,
+    region: CloudRegion,
+  ) => Promise<{ success: boolean; data?: OAuthTokenResponse; error?: string }>;
   selectDirectory: () => Promise<string | null>;
   searchDirectories: (query: string, searchRoot?: string) => Promise<string[]>;
   validateRepo: (directoryPath: string) => Promise<boolean>;
@@ -34,11 +54,13 @@ export interface IElectronAPI {
     repoPath: string;
     apiKey: string;
     apiHost: string;
+    projectId: number;
     permissionMode?: string;
     autoProgress?: boolean;
     model?: string;
     executionMode?: "plan";
     runMode?: "local" | "cloud";
+    createPR?: boolean;
   }) => Promise<{ taskId: string; channel: string }>;
   agentCancel: (taskId: string) => Promise<boolean>;
   onAgentEvent: (
@@ -107,6 +129,43 @@ export interface IElectronAPI {
       name: string;
     }>
   >;
+  // Recall SDK API
+  recallInitialize: (
+    recallApiUrl: string,
+    posthogKey: string,
+    posthogHost: string,
+  ) => Promise<void>;
+  recallGetActiveSessions: () => Promise<
+    Array<{
+      windowId: string;
+      recordingId: string;
+      platform: string;
+    }>
+  >;
+  recallRequestPermission: (
+    permission: "accessibility" | "screen-capture" | "microphone",
+  ) => Promise<void>;
+  recallShutdown: () => Promise<void>;
+  // Recall SDK event listeners
+  onRecallRecordingStarted: (
+    listener: (recording: Schemas.DesktopRecording) => void,
+  ) => () => void;
+  onRecallTranscriptSegment: (
+    listener: (data: {
+      posthog_recording_id: string;
+      timestamp: number;
+      speaker: string | null;
+      text: string;
+      confidence: number | null;
+      is_final: boolean;
+    }) => void,
+  ) => () => void;
+  onRecallMeetingEnded: (
+    listener: (data: { posthog_recording_id: string }) => void,
+  ) => () => void;
+  onRecallRecordingReady: (
+    listener: (data: { posthog_recording_id: string }) => void,
+  ) => () => void;
   // Shell API
   shellCreate: (sessionId: string, cwd?: string) => Promise<void>;
   shellWrite: (sessionId: string, data: string) => Promise<void>;

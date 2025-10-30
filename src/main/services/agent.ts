@@ -11,11 +11,13 @@ interface AgentStartParams {
   repoPath: string;
   apiKey: string;
   apiHost: string;
+  projectId: number;
   permissionMode?: PermissionMode | string;
   autoProgress?: boolean;
   model?: string;
   executionMode?: "plan";
   runMode?: "local" | "cloud";
+  createPR?: boolean;
 }
 
 export interface TaskController {
@@ -98,10 +100,12 @@ export function registerAgentIpc(
         repoPath,
         apiKey,
         apiHost,
+        projectId,
         permissionMode,
         autoProgress,
         model,
         runMode,
+        createPR,
       }: AgentStartParams,
     ): Promise<{ taskId: string; channel: string }> => {
       if (!posthogTaskId || !repoPath) {
@@ -147,6 +151,7 @@ export function registerAgentIpc(
         workingDirectory: repoPath,
         posthogApiKey: apiKey,
         posthogApiUrl: apiHost,
+        posthogProjectId: projectId,
         onEvent: (event) => {
           console.log("agent event", event);
           if (!event || abortController.signal.aborted) return;
@@ -231,6 +236,7 @@ export function registerAgentIpc(
             permissionMode: resolvedPermission,
             isCloudMode: runMode === "cloud",
             autoProgress: autoProgress ?? true,
+            createPR: createPR ?? true,
             queryOverrides: {
               abortController,
               ...(model ? { model } : {}),
@@ -307,17 +313,20 @@ export function registerAgentIpc(
         repoPath,
         apiKey,
         apiHost,
+        projectId,
       }: {
         taskId: string;
         repoPath: string;
         apiKey: string;
         apiHost: string;
+        projectId: number;
       },
     ): Promise<Array<{ id: string; question: string; options: string[] }>> => {
       const agent = new Agent({
         workingDirectory: repoPath,
         posthogApiKey: apiKey,
         posthogApiUrl: apiHost,
+        posthogProjectId: projectId,
         debug: true,
       });
 

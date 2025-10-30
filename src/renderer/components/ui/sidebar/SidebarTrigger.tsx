@@ -1,7 +1,7 @@
 import { SidebarSimpleIcon } from "@phosphor-icons/react";
 import { IconButton } from "@radix-ui/themes";
+import { useSidebarStore } from "@stores/sidebarStore";
 import type React from "react";
-import { useSidebarStore } from "../../../stores/sidebarStore";
 
 export const SidebarTrigger: React.FC = () => {
   const open = useSidebarStore((state) => state.open);
