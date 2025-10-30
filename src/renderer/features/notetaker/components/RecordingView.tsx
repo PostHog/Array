@@ -15,7 +15,7 @@ export function RecordingView({ recordingItem }: RecordingViewProps) {
     recordingItem.type === "active"
       ? recordingItem.recording.segments || []
       : (
-          recordingItem.recording.transcript?.segments as Array<{
+          recordingItem.recording.transcript_segments as Array<{
             timestamp_ms: number;
             speaker: string | null;
             text: string;

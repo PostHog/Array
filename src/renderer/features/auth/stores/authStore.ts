@@ -265,7 +265,6 @@ export const useAuthStore = create<AuthState>()(
               tokenExpiry: tokens.expiresAt,
               cloudRegion: tokens.cloudRegion,
             });
-            
 
             if (isExpired) {
               try {
