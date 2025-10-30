@@ -73,7 +73,9 @@ export function AuthScreen() {
                           required
                         />
                         <Text size="1" color="gray">
-                          Get your API key from PostHog settings
+                          Get your API key from PostHog settings. Required
+                          scopes: user:read, tasks:read, integration:read and
+                          desktop_recording:read.
                         </Text>
                       </Flex>
 
