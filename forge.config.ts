@@ -1,7 +1,6 @@
 import { execSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
-import type { SignOptions } from "@electron/osx-sign";
 import { MakerDMG } from "@electron-forge/maker-dmg";
 import { MakerZIP } from "@electron-forge/maker-zip";
 import { VitePlugin } from "@electron-forge/plugin-vite";
@@ -19,8 +18,8 @@ const appleApiIssuer = process.env.APPLE_API_ISSUER;
 const appleNotarizeKeychainProfile =
   process.env.APPLE_NOTARIZE_KEYCHAIN_PROFILE;
 const appleNotarizeKeychain = process.env.APPLE_NOTARIZE_KEYCHAIN;
-const entitlementsPath = path.resolve("build", "entitlements.mac.plist");
 const shouldSignMacApp = Boolean(appleCodesignIdentity);
+const skipNotarize = process.env.SKIP_NOTARIZE === "1";
 
 type NotaryToolCredentials =
   | {
@@ -38,39 +37,35 @@ type NotaryToolCredentials =
       keychain?: string;
     };
 
-let notaryToolCredentials: NotaryToolCredentials | undefined;
+let notarizeCredentials: NotaryToolCredentials | undefined;
 
 if (appleId && appleIdPassword && appleTeamId) {
-  notaryToolCredentials = {
-    appleId,
-    appleIdPassword,
-    teamId: appleTeamId,
+  notarizeCredentials = {
+    appleId: appleId!,
+    appleIdPassword: appleIdPassword!,
+    teamId: appleTeamId!,
   };
 } else if (appleApiKey && appleApiKeyId && appleApiIssuer) {
-  notaryToolCredentials = {
+  notarizeCredentials = {
     appleApiKey,
     appleApiKeyId,
     appleApiIssuer,
   };
 } else if (appleNotarizeKeychainProfile) {
-  notaryToolCredentials = {
+  notarizeCredentials = {
     keychainProfile: appleNotarizeKeychainProfile,
     ...(appleNotarizeKeychain ? { keychain: appleNotarizeKeychain } : {}),
   };
 }
 
 const notarizeConfig =
-  shouldSignMacApp && notaryToolCredentials ? notaryToolCredentials : undefined;
-
-// Apply custom entitlements across the app bundle during signing.
-const osxSignConfig: SignOptions | undefined = shouldSignMacApp
-  ? {
+  !skipNotarize && shouldSignMacApp && notarizeCredentials
+    ? notarizeCredentials
+    : undefined;
+const osxSignConfig = shouldSignMacApp
+  ? ({
       identity: appleCodesignIdentity!,
-      optionsForFile: () => ({
-        entitlements: entitlementsPath,
-        hardenedRuntime: true,
-      }),
-    }
+    } satisfies Record<string, unknown>)
   : undefined;
 
 function copyNativeDependency(
