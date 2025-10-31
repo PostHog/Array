@@ -14,6 +14,7 @@ import { GearIcon, GlobeIcon } from "@radix-ui/react-icons";
 import {
   Box,
   Button,
+  Callout,
   Code,
   DataList,
   Flex,
@@ -24,7 +25,9 @@ import {
   Tooltip,
 } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
+import { cloneStore } from "@stores/cloneStore";
 import { useLayoutStore } from "@stores/layoutStore";
+import { repositoryWorkspaceStore } from "@stores/repositoryWorkspaceStore";
 import { useTabStore } from "@stores/tabStore";
 import { expandTildePath } from "@utils/path";
 import { format, formatDistanceToNow } from "date-fns";
@@ -63,12 +66,13 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   const task = tasks.find((t) => t.id === initialTask.id) || initialTask;
 
-  const taskState = getTaskState(task.id);
+  const taskState = getTaskState(task.id, task);
 
   const {
     isRunning,
     logs,
     repoPath,
+    repoExists,
     runMode,
     progress,
     planModePhase,
@@ -95,6 +99,15 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     const expandedWorkspace = expandTildePath(defaultWorkspace);
     return `${expandedWorkspace}/${task.repository_config.repository}`;
   }, [task.repository_config, defaultWorkspace]);
+
+  // Check if repository is being cloned using existing cloneStore method
+  const isCloningRepo = cloneStore((state) =>
+    task.repository_config
+      ? state.isCloning(
+          `${task.repository_config.organization}/${task.repository_config.repository}`,
+        )
+      : false,
+  );
 
   useEffect(() => {
     resetForm({
@@ -134,6 +147,21 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
 
   const handleClearLogs = () => {
     clearTaskLogs(task.id);
+  };
+
+  const handleCloneRepository = async () => {
+    if (!task.repository_config) return;
+    await repositoryWorkspaceStore
+      .getState()
+      .selectRepository(task.repository_config);
+  };
+
+  const getRunButtonLabel = () => {
+    if (isRunning) return "Running...";
+    if (isCloningRepo) return "Cloning...";
+    if (runMode === "cloud") return "Run (Cloud)";
+    if (repoExists === false) return "Clone repository";
+    return "Run (Local)";
   };
 
   const handleAnswersComplete = async (
@@ -361,6 +389,17 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
             </Flex>
 
             <Flex direction="column" gap="3" mt="4">
+              {/* Repository status */}
+              {repoExists === false &&
+                task.repository_config &&
+                runMode === "local" && (
+                  <Callout.Root color="gray" size="2">
+                    <Callout.Text size="1">
+                      Repository not in workspace. Clone to run agent locally.
+                    </Callout.Text>
+                  </Callout.Root>
+                )}
+
               {/* Task Artifacts */}
               {repoPath && (
                 <TaskArtifacts
@@ -374,23 +413,23 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
               <Flex gap="2">
                 <Button
                   variant="classic"
-                  onClick={handleRunTask}
-                  disabled={isRunning}
+                  onClick={
+                    runMode === "local" && repoExists === false
+                      ? handleCloneRepository
+                      : handleRunTask
+                  }
+                  disabled={isRunning || isCloningRepo}
                   size="2"
                   style={{ flex: 1 }}
                 >
-                  {isRunning
-                    ? "Running..."
-                    : runMode === "cloud"
-                      ? "Run (Cloud)"
-                      : "Run (Local)"}
+                  {getRunButtonLabel()}
                 </Button>
                 <Tooltip content="Toggle between Local or Cloud Agent">
                   <IconButton
                     size="2"
                     variant="classic"
                     color={runMode === "cloud" ? "blue" : "gray"}
-                    disabled={isRunning}
+                    disabled={isRunning || isCloningRepo}
                     onClick={() =>
                       handleRunModeChange(
                         runMode === "local" ? "cloud" : "local",

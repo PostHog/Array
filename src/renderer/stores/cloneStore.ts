@@ -1,3 +1,4 @@
+import { useTaskExecutionStore } from "@features/tasks/stores/taskExecutionStore";
 import type { RepositoryConfig } from "@shared/types";
 import { toast } from "@utils/toast";
 import { create } from "zustand";
@@ -35,12 +36,30 @@ const getRepoKey = (repo: RepositoryConfig) =>
   `${repo.organization}/${repo.repository}`;
 
 export const cloneStore = create<CloneStore>((set, get) => {
+  const updateTaskRepoExists = (targetPath: string, exists: boolean) => {
+    const taskStore = useTaskExecutionStore.getState();
+    Object.keys(taskStore.taskStates).forEach((taskId) => {
+      const taskState = taskStore.taskStates[taskId];
+      if (taskState?.repoPath === targetPath) {
+        taskStore.updateTaskState(taskId, { repoExists: exists });
+      }
+
+      taskStore.revalidateRepo(taskId);
+    });
+  };
+
   const handleComplete = (
     cloneId: string,
     repoKey: string,
     toastId: string | number,
   ) => {
     toast.success(`${repoKey} cloned successfully`, { id: toastId });
+
+    const operation = get().operations[cloneId];
+    if (operation) {
+      updateTaskRepoExists(operation.targetPath, true);
+    }
+
     window.setTimeout(
       () => get().removeClone(cloneId),
       REMOVE_DELAY_SUCCESS_MS,
@@ -57,6 +76,12 @@ export const cloneStore = create<CloneStore>((set, get) => {
       id: toastId,
       description: message,
     });
+
+    const operation = get().operations[cloneId];
+    if (operation) {
+      updateTaskRepoExists(operation.targetPath, false);
+    }
+
     window.setTimeout(() => get().removeClone(cloneId), REMOVE_DELAY_ERROR_MS);
   };
 
