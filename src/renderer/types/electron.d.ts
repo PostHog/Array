@@ -27,6 +27,7 @@ export interface IElectronAPI {
   ) => Promise<{ success: boolean; data?: OAuthTokenResponse; error?: string }>;
   selectDirectory: () => Promise<string | null>;
   searchDirectories: (query: string, searchRoot?: string) => Promise<string[]>;
+  findReposDirectory: () => Promise<string | null>;
   validateRepo: (directoryPath: string) => Promise<boolean>;
   checkWriteAccess: (directoryPath: string) => Promise<boolean>;
   detectRepo: (directoryPath: string) => Promise<{

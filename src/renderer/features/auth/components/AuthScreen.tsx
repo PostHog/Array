@@ -14,7 +14,7 @@ import {
 } from "@radix-ui/themes";
 import type { CloudRegion } from "@shared/types/oauth";
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { IS_DEV } from "@/constants/environment";
 
 export const getErrorMessage = (error: unknown) => {
@@ -33,12 +33,34 @@ export const getErrorMessage = (error: unknown) => {
 
   return message;
 };
+
+const detectWorkspacePath = async () => {
+  try {
+    const detectedPath = await window.electronAPI.findReposDirectory();
+    if (detectedPath) {
+      return detectedPath;
+    }
+  } catch (error) {
+    console.error("Failed to detect repos directory:", error);
+  }
+
+  return null;
+};
+
 export function AuthScreen() {
   const [region, setRegion] = useState<CloudRegion>("us");
   const [workspace, setWorkspace] = useState("~/workspace");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
   const { loginWithOAuth, setDefaultWorkspace } = useAuthStore();
+
+  useEffect(() => {
+    detectWorkspacePath().then((path) => {
+      if (path) {
+        setWorkspace(path);
+      }
+    });
+  }, []);
 
   const authMutation = useMutation({
     mutationFn: async ({
@@ -124,8 +146,7 @@ export function AuthScreen() {
                       size="2"
                     />
                     <Text size="1" color="gray">
-                      Where repositories will be cloned. This should be the
-                      folder where you usually store your projects.
+                      Where repositories will be cloned. This should be the folder where you usually store your projects.
                     </Text>
                   </Flex>
 

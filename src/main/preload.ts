@@ -59,6 +59,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("select-directory"),
   searchDirectories: (query: string, searchRoot?: string): Promise<string[]> =>
     ipcRenderer.invoke("search-directories", query, searchRoot),
+  findReposDirectory: (): Promise<string | null> =>
+    ipcRenderer.invoke("find-repos-directory"),
   validateRepo: (directoryPath: string): Promise<boolean> =>
     ipcRenderer.invoke("validate-repo", directoryPath),
   checkWriteAccess: (directoryPath: string): Promise<boolean> =>
