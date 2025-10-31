@@ -32,41 +32,6 @@ pnpm run make
 pnpm run check:write       # Linting & typecheck
 ```
 
-### Building Distributables
-
-To create production distributables (DMG, ZIP):
-
-```bash
-# Package the app
-pnpm package
-
-# Create distributables (DMG + ZIP)
-pnpm make
-```
-
-Output will be in:
-- `out/Array-darwin-arm64/Array.app` - Packaged app
-- `out/make/Array-*.dmg` - macOS installer
-- `out/make/zip/` - ZIP archives
-
-**Note:** Native modules for the DMG maker are automatically compiled via the `prePackage` hook. If you need to manually rebuild them, run:
-
-```bash
-pnpm build-native
-```
-
-### Auto Updates & Releases
-
-Array uses Electron's built-in `autoUpdater` pointed at the public `update.electronjs.org` service for `PostHog/Array`. Every time a non-draft GitHub release is published with the platform archives, packaged apps will automatically download and install the newest version on macOS and Windows.
-
-Publishing a new release:
-
-1. Export a GitHub token with `repo` scope as `GH_PUBLISH_TOKEN`; set both `GH_TOKEN` and `GITHUB_TOKEN` to its value locally (e.g., in `.envrc`). In GitHub, store the token as the `GH_PUBLISH_TOKEN` repository secret.
-2. Run `pnpm run make` locally to sanity check artifacts, then bump `package.json`'s version (e.g., `pnpm version patch`).
-3. Merge the version bump into `main`. The `Publish Release` GitHub Action auto-detects the new version, tags `vX.Y.Z`, runs `pnpm run publish`, and uploads the release artifacts. You can also run the workflow manually (`workflow_dispatch`) and supply a tag if you need to re-publish.
-
-Set `ELECTRON_DISABLE_AUTO_UPDATE=1` if you ever need to ship a build with auto updates disabled.
-
 ### Liquid Glass Icon (macOS 26+)
 
 The app supports macOS liquid glass icons for a modern, layered appearance. The icon configuration is in `build/icon.icon/`.
@@ -122,3 +87,77 @@ array/
 - `⌘R` - Refresh task list
 - `⌘⇧[/]` - Switch between tabs
 - `⌘W` - Close current tab
+
+
+### Building Distributables
+
+To create production distributables (DMG, ZIP):
+
+```bash
+# Package the app
+pnpm package
+
+# Create distributables (DMG + ZIP)
+pnpm make
+```
+
+Output will be in:
+- `out/Array-darwin-arm64/Array.app` - Packaged app
+- `out/make/Array-*.dmg` - macOS installer
+- `out/make/zip/` - ZIP archives
+
+**Note:** Native modules for the DMG maker are automatically compiled via the `prePackage` hook. If you need to manually rebuild them, run:
+
+```bash
+pnpm build-native
+```
+
+### Auto Updates & Releases
+
+Array uses Electron's built-in `autoUpdater` pointed at the public `update.electronjs.org` service for `PostHog/Array`. Every time a non-draft GitHub release is published with the platform archives, packaged apps will automatically download and install the newest version on macOS and Windows.
+
+Publishing a new release:
+
+1. Export a GitHub token with `repo` scope as `GH_PUBLISH_TOKEN`; set both `GH_TOKEN` and `GITHUB_TOKEN` to its value locally (e.g., in `.envrc`). In GitHub, store the token as the `GH_PUBLISH_TOKEN` repository secret.
+2. Run `pnpm run make` locally to sanity check artifacts, then bump `package.json`'s version (e.g., `pnpm version patch`).
+3. Merge the version bump into `main`. The `Publish Release` GitHub Action auto-detects the new version, tags `vX.Y.Z`, runs `pnpm run publish`, and uploads the release artifacts. You can also run the workflow manually (`workflow_dispatch`) and supply a tag if you need to re-publish.
+
+Set `ELECTRON_DISABLE_AUTO_UPDATE=1` if you ever need to ship a build with auto updates disabled.
+
+### macOS Code Signing & Notarization
+
+macOS packages are signed and notarized automatically when these environment variables are present:
+
+```bash
+export APPLE_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+export APPLE_ID="appleid@example.com"
+export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+export APPLE_TEAM_ID="TEAMID"
+```
+
+For CI releases, configure matching GitHub Actions secrets:
+
+- `APPLE_CODESIGN_IDENTITY`
+- `APPLE_ID`
+- `APPLE_APP_SPECIFIC_PASSWORD`
+- `APPLE_TEAM_ID`
+- `APPLE_CODESIGN_CERT_BASE64` – Base64-encoded `.p12` export of the Developer ID Application certificate (include the private key)
+- `APPLE_CODESIGN_CERT_PASSWORD` – Password used when exporting the `.p12`
+- `APPLE_CODESIGN_KEYCHAIN_PASSWORD` – Password for the temporary keychain the workflow creates on the runner
+
+The `Publish Release` workflow imports the certificate into a temporary keychain, signs each artifact with hardened runtime enabled (using Electron’s default entitlements), and notarizes it before upload whenever these secrets are available.
+
+For local testing, copy `codesign.env.example` to `.env.codesign`, fill in the real values, and load it before running `pnpm run make`:
+
+```bash
+set -a
+source .env.codesign
+set +a
+pnpm run make
+```
+
+Set `SKIP_NOTARIZE=1` if you need to generate signed artifacts without submitting to Apple (e.g., while debugging credentials):
+
+```bash
+SKIP_NOTARIZE=1 pnpm run make
+```

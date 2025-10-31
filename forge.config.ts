@@ -7,6 +7,67 @@ import { VitePlugin } from "@electron-forge/plugin-vite";
 import { PublisherGithub } from "@electron-forge/publisher-github";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 
+const appleCodesignIdentity = process.env.APPLE_CODESIGN_IDENTITY;
+const appleTeamId = process.env.APPLE_TEAM_ID;
+const appleId = process.env.APPLE_ID;
+const appleIdPassword =
+  process.env.APPLE_APP_SPECIFIC_PASSWORD ?? process.env.APPLE_ID_PASSWORD;
+const appleApiKey = process.env.APPLE_API_KEY;
+const appleApiKeyId = process.env.APPLE_API_KEY_ID;
+const appleApiIssuer = process.env.APPLE_API_ISSUER;
+const appleNotarizeKeychainProfile =
+  process.env.APPLE_NOTARIZE_KEYCHAIN_PROFILE;
+const appleNotarizeKeychain = process.env.APPLE_NOTARIZE_KEYCHAIN;
+const shouldSignMacApp = Boolean(appleCodesignIdentity);
+const skipNotarize = process.env.SKIP_NOTARIZE === "1";
+
+type NotaryToolCredentials =
+  | {
+      appleId: string;
+      appleIdPassword: string;
+      teamId: string;
+    }
+  | {
+      appleApiKey: string;
+      appleApiKeyId: string;
+      appleApiIssuer: string;
+    }
+  | {
+      keychainProfile: string;
+      keychain?: string;
+    };
+
+let notarizeCredentials: NotaryToolCredentials | undefined;
+
+if (appleId && appleIdPassword && appleTeamId) {
+  notarizeCredentials = {
+    appleId: appleId!,
+    appleIdPassword: appleIdPassword!,
+    teamId: appleTeamId!,
+  };
+} else if (appleApiKey && appleApiKeyId && appleApiIssuer) {
+  notarizeCredentials = {
+    appleApiKey,
+    appleApiKeyId,
+    appleApiIssuer,
+  };
+} else if (appleNotarizeKeychainProfile) {
+  notarizeCredentials = {
+    keychainProfile: appleNotarizeKeychainProfile,
+    ...(appleNotarizeKeychain ? { keychain: appleNotarizeKeychain } : {}),
+  };
+}
+
+const notarizeConfig =
+  !skipNotarize && shouldSignMacApp && notarizeCredentials
+    ? notarizeCredentials
+    : undefined;
+const osxSignConfig = shouldSignMacApp
+  ? ({
+      identity: appleCodesignIdentity!,
+    } satisfies Record<string, unknown>)
+  : undefined;
+
 function copyNativeDependency(
   dependency: string,
   destinationRoot: string,
@@ -50,12 +111,30 @@ const config: ForgeConfig = {
           CFBundleIconName: "Icon",
         }
       : {},
+    ...(osxSignConfig
+      ? {
+          osxSign: osxSignConfig,
+        }
+      : {}),
+    ...(notarizeConfig
+      ? {
+          osxNotarize: notarizeConfig,
+        }
+      : {}),
   },
   rebuildConfig: {},
   makers: [
     new MakerDMG({
       icon: "./build/app-icon.icns",
       format: "ULFO",
+      ...(shouldSignMacApp
+        ? {
+            "code-sign": {
+              "signing-identity": appleCodesignIdentity!,
+              identifier: "com.posthog.array",
+            },
+          }
+        : {}),
     }),
     new MakerZIP({}, ["darwin", "linux", "win32"]),
   ],
@@ -87,6 +166,7 @@ const config: ForgeConfig = {
     },
     packageAfterCopy: async (_forgeConfig, buildPath) => {
       copyNativeDependency("node-pty", buildPath);
+      copyNativeDependency("@recallai/desktop-sdk", buildPath);
     },
   },
   publishers: [

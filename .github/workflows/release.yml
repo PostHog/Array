@@ -72,6 +72,13 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
       NODE_ENV: production
       APP_VERSION: ${{ needs.determine-version.outputs.version }}
+      APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_CODESIGN_CERT_BASE64: ${{ secrets.APPLE_CODESIGN_CERT_BASE64 }}
+      APPLE_CODESIGN_CERT_PASSWORD: ${{ secrets.APPLE_CODESIGN_CERT_PASSWORD }}
+      APPLE_CODESIGN_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_CODESIGN_KEYCHAIN_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -88,6 +95,26 @@ jobs:
           cache: "pnpm"
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Import code signing certificate
+        if: env.APPLE_CODESIGN_IDENTITY != ''
+        env:
+          CERT_BASE64: ${{ env.APPLE_CODESIGN_CERT_BASE64 }}
+          CERT_PASSWORD: ${{ env.APPLE_CODESIGN_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ env.APPLE_CODESIGN_KEYCHAIN_PASSWORD }}
+        run: |
+          if [ -z "$CERT_BASE64" ] || [ -z "$CERT_PASSWORD" ] || [ -z "$KEYCHAIN_PASSWORD" ]; then
+            echo "Missing code signing certificate secrets"
+            exit 1
+          fi
+          KEYCHAIN="$RUNNER_TEMP/codesign.keychain-db"
+          echo "$CERT_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          rm "$RUNNER_TEMP/certificate.p12"
       - name: Verify package version
         run: |
           PACKAGE_VERSION=$(jq -r .version package.json)
