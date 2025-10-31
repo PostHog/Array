@@ -220,6 +220,9 @@ export function registerAgentIpc(
             POSTHOG_API_KEY: apiKey,
             POSTHOG_API_HOST: apiHost,
             POSTHOG_AUTH_HEADER: `Bearer ${apiKey}`,
+            ANTHROPIC_API_KEY: apiKey,
+            ANTHROPIC_AUTH_TOKEN: apiKey,
+            ANTHROPIC_BASE_URL: `${apiHost}/api/projects/${projectId}/llm_gateway`,
           };
 
           const mcpOverrides = {};
