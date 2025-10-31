@@ -83,6 +83,7 @@ interface TaskExecutionState {
   isRunning: boolean;
   logs: AgentEvent[];
   repoPath: string | null;
+  repoExists: boolean | null;
   currentTaskId: string | null;
   runMode: "local" | "cloud";
   unsubscribe: (() => void) | null;
@@ -102,7 +103,7 @@ interface TaskExecutionStore {
   taskStates: Record<string, TaskExecutionState>;
 
   // Basic state accessors
-  getTaskState: (taskId: string) => TaskExecutionState;
+  getTaskState: (taskId: string, task?: Task) => TaskExecutionState;
   updateTaskState: (
     taskId: string,
     updates: Partial<TaskExecutionState>,
@@ -140,6 +141,7 @@ interface TaskExecutionStore {
 
   // Auto-initialization and artifact processing
   initializeRepoPath: (taskId: string, task: Task) => void;
+  revalidateRepo: (taskId: string) => Promise<void>;
   processLogsForArtifacts: (taskId: string) => void;
   checkPlanCompletion: (taskId: string) => Promise<void>;
 }
@@ -148,6 +150,7 @@ const defaultTaskState: TaskExecutionState = {
   isRunning: false,
   logs: [],
   repoPath: null,
+  repoExists: null,
   currentTaskId: null,
   runMode: "local",
   unsubscribe: null,
@@ -166,8 +169,11 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
     (set, get) => ({
       taskStates: {},
 
-      getTaskState: (taskId: string) => {
+      getTaskState: (taskId: string, task?: Task) => {
         const state = get();
+        if (task) {
+          state.initializeRepoPath(taskId, task);
+        }
         return state.taskStates[taskId] || { ...defaultTaskState };
       },
 
@@ -582,6 +588,32 @@ export const useTaskExecutionStore = create<TaskExecutionStore>()(
           task.repository_config.repository,
         );
         store.setRepoPath(taskId, path);
+
+        // Validate repo exists
+        window.electronAPI
+          ?.validateRepo(path)
+          .then((exists) => {
+            store.updateTaskState(taskId, { repoExists: exists });
+          })
+          .catch(() => {
+            store.updateTaskState(taskId, { repoExists: false });
+          });
+      },
+
+      revalidateRepo: async (taskId: string) => {
+        const store = get();
+        const taskState = store.getTaskState(taskId);
+
+        if (!taskState.repoPath) return;
+
+        try {
+          const exists = await window.electronAPI?.validateRepo(
+            taskState.repoPath,
+          );
+          store.updateTaskState(taskId, { repoExists: exists });
+        } catch {
+          store.updateTaskState(taskId, { repoExists: false });
+        }
       },
 
       processLogsForArtifacts: (taskId: string) => {
