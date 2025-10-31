@@ -35,10 +35,6 @@ export function CliStatusIndicator({
       ) : (
         <>
           <Text size="1" weight="bold">
-            {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}
-          </Text>
-          <Text size="1">+</Text>
-          <Text size="1" weight="bold">
             Enter
           </Text>
           <Text size="1">to submit</Text>
