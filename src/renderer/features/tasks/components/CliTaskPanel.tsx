@@ -116,7 +116,7 @@ export function CliTaskPanel() {
           return true;
         }
 
-        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        if (event.key === "Enter") {
           event.preventDefault();
           handleSubmit();
           return true;
