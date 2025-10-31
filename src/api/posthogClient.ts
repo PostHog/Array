@@ -416,6 +416,8 @@ export class PostHogAPIClient {
         is_final: boolean;
       }>;
       full_text?: string;
+      summary?: string;
+      extracted_tasks?: Array<{ title: string; description: string }>;
     },
   ) {
     this.validateRecordingId(recordingId);

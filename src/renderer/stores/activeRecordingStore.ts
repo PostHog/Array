@@ -27,6 +27,21 @@ export interface TranscriptSegment {
   is_final: boolean;
 }
 
+// AI analysis status
+export type AnalysisStatus =
+  | "pending" // Not started yet
+  | "analyzing_summary" // Generating summary
+  | "analyzing_tasks" // Extracting tasks
+  | "completed" // All analysis done
+  | "error" // Analysis failed
+  | "skipped"; // Skipped (no OpenAI key)
+
+// AI-extracted task
+export interface ExtractedTask {
+  title: string;
+  description: string;
+}
+
 // Active recording state - extends backend DesktopRecording with client-only fields
 export interface ActiveRecording extends Schemas.DesktopRecording {
   // Client-only fields for real-time state
@@ -35,6 +50,12 @@ export interface ActiveRecording extends Schemas.DesktopRecording {
   uploadRetries: number; // Retry tracking
   errorMessage?: string; // Error details
   lastUploadedSegmentIndex: number; // Track which segments have been uploaded
+
+  // AI analysis fields
+  analysisStatus: AnalysisStatus;
+  summary?: string; // AI-generated 3-7 word title
+  extractedTasks?: ExtractedTask[]; // AI-extracted action items
+  analysisError?: string; // Error message if analysis failed
 }
 
 interface ActiveRecordingState {
@@ -53,6 +74,12 @@ interface ActiveRecordingState {
   clearRecording: (recordingId: string) => void;
   getRecording: (recordingId: string) => ActiveRecording | undefined;
   getPendingSegments: (recordingId: string) => TranscriptSegment[];
+
+  // AI analysis methods
+  setAnalysisStatus: (recordingId: string, status: AnalysisStatus) => void;
+  setSummary: (recordingId: string, summary: string) => void;
+  setExtractedTasks: (recordingId: string, tasks: ExtractedTask[]) => void;
+  setAnalysisError: (recordingId: string, error: string) => void;
 }
 
 // Custom storage adapter for idb-keyval
@@ -88,12 +115,12 @@ export const useActiveRecordingStore = create<ActiveRecordingState>()(
           activeRecordings: [
             ...state.activeRecordings,
             {
-              ...recording, // Spread all DesktopRecording fields
-              // Add client-only fields
+              ...recording,
               segments: [],
               notes: "",
               uploadRetries: 0,
               lastUploadedSegmentIndex: -1,
+              analysisStatus: "pending",
             },
           ],
         }));
@@ -226,8 +253,69 @@ export const useActiveRecordingStore = create<ActiveRecordingState>()(
         );
         if (!recording) return [];
 
-        // Return segments that haven't been uploaded yet
         return recording.segments.slice(recording.lastUploadedSegmentIndex + 1);
+      },
+
+      setAnalysisStatus: (recordingId, status) => {
+        if (!isValidRecordingId(recordingId)) {
+          console.error(
+            `[ActiveRecording] Invalid recording ID: ${recordingId}`,
+          );
+          return;
+        }
+        set((state) => ({
+          activeRecordings: state.activeRecordings.map((r) =>
+            r.id === recordingId ? { ...r, analysisStatus: status } : r,
+          ),
+        }));
+        console.log(`[ActiveRecording] Analysis status: ${status}`);
+      },
+
+      setSummary: (recordingId, summary) => {
+        if (!isValidRecordingId(recordingId)) {
+          console.error(
+            `[ActiveRecording] Invalid recording ID: ${recordingId}`,
+          );
+          return;
+        }
+        set((state) => ({
+          activeRecordings: state.activeRecordings.map((r) =>
+            r.id === recordingId ? { ...r, summary } : r,
+          ),
+        }));
+        console.log(`[ActiveRecording] Summary set: "${summary}"`);
+      },
+
+      setExtractedTasks: (recordingId, tasks) => {
+        if (!isValidRecordingId(recordingId)) {
+          console.error(
+            `[ActiveRecording] Invalid recording ID: ${recordingId}`,
+          );
+          return;
+        }
+        set((state) => ({
+          activeRecordings: state.activeRecordings.map((r) =>
+            r.id === recordingId ? { ...r, extractedTasks: tasks } : r,
+          ),
+        }));
+        console.log(`[ActiveRecording] ${tasks.length} tasks extracted`);
+      },
+
+      setAnalysisError: (recordingId, error) => {
+        if (!isValidRecordingId(recordingId)) {
+          console.error(
+            `[ActiveRecording] Invalid recording ID: ${recordingId}`,
+          );
+          return;
+        }
+        set((state) => ({
+          activeRecordings: state.activeRecordings.map((r) =>
+            r.id === recordingId
+              ? { ...r, analysisStatus: "error", analysisError: error }
+              : r,
+          ),
+        }));
+        console.error(`[ActiveRecording] Analysis error: ${error}`);
       },
     }),
     {

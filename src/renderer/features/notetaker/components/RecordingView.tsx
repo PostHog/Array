@@ -1,6 +1,10 @@
-import { Badge, Box, Card, Flex, Text } from "@radix-ui/themes";
+import { Badge, Box, Button, Card, Flex, Text } from "@radix-ui/themes";
 import type { RecordingItem } from "@renderer/features/notetaker/hooks/useAllRecordings";
-import type { TranscriptSegment } from "@renderer/stores/activeRecordingStore";
+import { analyzeRecording } from "@renderer/services/recordingService";
+import type {
+  AnalysisStatus,
+  TranscriptSegment,
+} from "@renderer/stores/activeRecordingStore";
 import { useEffect, useRef, useState } from "react";
 
 interface RecordingViewProps {
@@ -58,6 +62,42 @@ export function RecordingView({ recordingItem }: RecordingViewProps) {
           ),
         ];
 
+  const analysisStatus: AnalysisStatus | undefined =
+    recordingItem.type === "active"
+      ? recordingItem.recording.analysisStatus
+      : undefined;
+
+  const summary =
+    recordingItem.type === "active"
+      ? recordingItem.recording.summary
+      : recordingItem.recording.transcript?.summary;
+
+  const extractedTasks =
+    recordingItem.type === "active"
+      ? recordingItem.recording.extractedTasks
+      : (recordingItem.recording.transcript?.extracted_tasks as
+          | Array<{
+              title: string;
+              description: string;
+            }>
+          | undefined);
+
+  const analysisError =
+    recordingItem.type === "active"
+      ? recordingItem.recording.analysisError
+      : undefined;
+
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const handleAnalyze = async () => {
+    setIsAnalyzing(true);
+    try {
+      await analyzeRecording(recording.id);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   return (
     <Box
       p="4"
@@ -107,11 +147,57 @@ export function RecordingView({ recordingItem }: RecordingViewProps) {
             Summary
           </Text>
           <Card>
-            <Flex align="center" justify="center" py="4">
-              <Text size="2" color="gray">
-                Coming soon
-              </Text>
-            </Flex>
+            {summary ? (
+              <Text size="2">{summary}</Text>
+            ) : (
+              <Flex
+                direction="column"
+                align="center"
+                justify="center"
+                py="4"
+                gap="2"
+              >
+                {analysisStatus === "analyzing_summary" ? (
+                  <Text size="2" color="gray">
+                    Analyzing...
+                  </Text>
+                ) : analysisStatus === "error" ? (
+                  <>
+                    <Text size="2" color="red">
+                      {analysisError || "Analysis failed"}
+                    </Text>
+                    <Button
+                      size="1"
+                      onClick={handleAnalyze}
+                      disabled={isAnalyzing}
+                    >
+                      Retry
+                    </Button>
+                  </>
+                ) : analysisStatus === "skipped" ? (
+                  <>
+                    <Text size="2" color="gray">
+                      Configure OpenAI API key to analyze
+                    </Text>
+                    <Button
+                      size="1"
+                      onClick={handleAnalyze}
+                      disabled={isAnalyzing}
+                    >
+                      Analyze now
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="1"
+                    onClick={handleAnalyze}
+                    disabled={isAnalyzing}
+                  >
+                    Analyze with AI
+                  </Button>
+                )}
+              </Flex>
+            )}
           </Card>
         </Flex>
       )}
@@ -123,11 +209,72 @@ export function RecordingView({ recordingItem }: RecordingViewProps) {
             Action items
           </Text>
           <Card>
-            <Flex align="center" justify="center" py="4">
-              <Text size="2" color="gray">
-                Coming soon
-              </Text>
-            </Flex>
+            {extractedTasks && extractedTasks.length > 0 ? (
+              <Flex direction="column" gap="2">
+                {extractedTasks.map((task) => (
+                  <Box key={task.title}>
+                    <Text size="2" weight="bold">
+                      {task.title}
+                    </Text>
+                    <Text size="1" color="gray">
+                      {task.description}
+                    </Text>
+                  </Box>
+                ))}
+              </Flex>
+            ) : (
+              <Flex
+                direction="column"
+                align="center"
+                justify="center"
+                py="4"
+                gap="2"
+              >
+                {analysisStatus === "analyzing_tasks" ? (
+                  <Text size="2" color="gray">
+                    Extracting tasks...
+                  </Text>
+                ) : analysisStatus === "error" ? (
+                  <>
+                    <Text size="2" color="red">
+                      {analysisError || "Analysis failed"}
+                    </Text>
+                    <Button
+                      size="1"
+                      onClick={handleAnalyze}
+                      disabled={isAnalyzing}
+                    >
+                      Retry
+                    </Button>
+                  </>
+                ) : analysisStatus === "skipped" ? (
+                  <>
+                    <Text size="2" color="gray">
+                      Configure OpenAI API key to analyze
+                    </Text>
+                    <Button
+                      size="1"
+                      onClick={handleAnalyze}
+                      disabled={isAnalyzing}
+                    >
+                      Analyze now
+                    </Button>
+                  </>
+                ) : analysisStatus === "completed" ? (
+                  <Text size="2" color="gray">
+                    No tasks found
+                  </Text>
+                ) : (
+                  <Button
+                    size="1"
+                    onClick={handleAnalyze}
+                    disabled={isAnalyzing}
+                  >
+                    Analyze with AI
+                  </Button>
+                )}
+              </Flex>
+            )}
           </Card>
         </Flex>
       )}
