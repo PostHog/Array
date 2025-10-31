@@ -278,6 +278,23 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
                 )}
 
                 <DataList.Item>
+                  <DataList.Label>Author</DataList.Label>
+                  <DataList.Value>
+                    {task.created_by ? (
+                      <Text size="2">
+                        {task.created_by.first_name && task.created_by.last_name
+                          ? `${task.created_by.first_name} ${task.created_by.last_name}`
+                          : task.created_by.email}
+                      </Text>
+                    ) : (
+                      <Text size="2" color="gray">
+                        Unknown
+                      </Text>
+                    )}
+                  </DataList.Value>
+                </DataList.Item>
+
+                <DataList.Item>
                   <DataList.Label>Repository</DataList.Label>
                   <DataList.Value>
                     {task.repository_config ? (
