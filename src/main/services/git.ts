@@ -151,12 +151,9 @@ export const detectSSHError = (output: string): string | undefined => {
 export function registerGitIpc(
   getMainWindow: () => BrowserWindow | null,
 ): void {
-  ipcMain.handle(
-    "find-repos-directory",
-    async (): Promise<string | null> => {
-      return findReposDirectory();
-    },
-  );
+  ipcMain.handle("find-repos-directory", async (): Promise<string | null> => {
+    return findReposDirectory();
+  });
 
   ipcMain.handle(
     "validate-repo",
