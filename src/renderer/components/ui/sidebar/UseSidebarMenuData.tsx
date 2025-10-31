@@ -26,7 +26,7 @@ interface UseSidebarMenuDataProps {
   activeTab: TabState | undefined;
   isLoading: boolean;
   activeFilters: ActiveFilters;
-  currentUser: Schemas.UserBasic | null;
+  currentUser: Schemas.User| undefined;
   setActiveFilters: (filters: ActiveFilters) => void;
   onNavigate: (
     type: "task-list" | "recordings" | "notetaker" | "settings",
