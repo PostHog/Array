@@ -166,6 +166,7 @@ const config: ForgeConfig = {
     },
     packageAfterCopy: async (_forgeConfig, buildPath) => {
       copyNativeDependency("node-pty", buildPath);
+      copyNativeDependency("node-addon-api", buildPath);
       copyNativeDependency("@recallai/desktop-sdk", buildPath);
     },
   },

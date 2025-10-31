@@ -83,6 +83,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.3.1",
     "idb-keyval": "^6.2.2",
+    "node-addon-api": "^8.5.0",
     "node-pty": "1.1.0-beta37",
     "radix-themes-tw": "0.2.3",
     "react": "^18.2.0",
