@@ -1,5 +1,6 @@
 import type { TreeNode } from "@components/ui/sidebar/Types";
 import { useTasks } from "@features/tasks/hooks/useTasks";
+import type { ActiveFilters } from "@features/tasks/stores/taskStore";
 import {
   CheckCircleIcon,
   CircleIcon,
@@ -16,6 +17,8 @@ import type { TabState, Task } from "@shared/types";
 interface UseSidebarMenuDataProps {
   userName: string;
   activeTab: TabState | undefined;
+  isLoading: boolean;
+  activeFilters: ActiveFilters;
   onNavigate: (
     type: "task-list" | "recordings" | "notetaker" | "settings",
     title: string,
@@ -24,6 +27,7 @@ interface UseSidebarMenuDataProps {
   onCreateTask: () => void;
   onStartRecording: () => void;
   onStopRecording: () => void;
+  onProjectClick: (repository: string) => void;
 }
 
 function getStatusIcon(status?: string) {
@@ -52,9 +56,12 @@ function getStatusIcon(status?: string) {
 export function useSidebarMenuData({
   userName,
   activeTab,
+  isLoading,
+  activeFilters,
   onNavigate,
   onTaskClick,
   onCreateTask,
+  onProjectClick,
 }: UseSidebarMenuDataProps): TreeNode {
   const { data: allTasks = [] } = useTasks();
   const relevantTasks = allTasks
@@ -63,6 +70,24 @@ export function useSidebarMenuData({
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
     )
     .slice(0, 10);
+
+  const repositoryMap = new Map<string, { fullPath: string; name: string }>();
+  for (const task of allTasks) {
+    const { organization, repository } = task.repository_config || {};
+    if (organization && repository) {
+      const fullPath = `${organization}/${repository}`;
+      repositoryMap.set(fullPath, { fullPath, name: repository });
+    }
+  }
+
+  const repositories = Array.from(repositoryMap.values()).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+  const activeRepositoryFilters = activeFilters.repository || [];
+  const activeRepositoryValue =
+    activeRepositoryFilters.length === 1
+      ? activeRepositoryFilters[0].value
+      : null;
 
   return {
     label: userName,
@@ -138,11 +163,17 @@ export function useSidebarMenuData({
       {
         label: "Projects",
         icon: <FolderIcon size={12} />,
-        children: [
-          { label: "Array" },
-          { label: "posthog" },
-          { label: "agent" },
-        ],
+        children: isLoading
+          ? [{ label: "Loading..." }]
+          : repositories.length > 0
+            ? repositories.map(
+                (repo): TreeNode => ({
+                  label: repo.name,
+                  action: () => onProjectClick(repo.fullPath),
+                  isActive: activeRepositoryValue === repo.fullPath,
+                }),
+              )
+            : [{ label: "No projects found" }],
       },
     ],
   };

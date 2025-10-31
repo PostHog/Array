@@ -4,6 +4,8 @@ import { buildTreeLines, getAllNodeIds } from "@components/ui/sidebar/Utils";
 import { useAuthStore } from "@features/auth/stores/authStore";
 import { useAudioRecorder } from "@features/recordings/hooks/useAudioRecorder";
 import { useRecordings } from "@features/recordings/hooks/useRecordings";
+import { useTasks } from "@features/tasks/hooks/useTasks";
+import { useTaskStore } from "@features/tasks/stores/taskStore";
 import { ArrowsInSimpleIcon, ArrowsOutSimpleIcon } from "@phosphor-icons/react";
 import { Box, Flex, IconButton, Tooltip } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
@@ -21,6 +23,9 @@ export const SidebarContent: React.FC = () => {
   const { setCliMode } = useLayoutStore();
   const { saveRecording } = useRecordings();
   const { startRecording, stopRecording } = useAudioRecorder(saveRecording);
+  const { isLoading } = useTasks();
+  const activeFilters = useTaskStore((state) => state.activeFilters);
+  const setActiveFilters = useTaskStore((state) => state.setActiveFilters);
   const [userName, setUserName] = useState<string>("Loading...");
   const [hoveredLineIndex, setHoveredLineIndex] = useState<number | null>(null);
 
@@ -89,14 +94,24 @@ export const SidebarContent: React.FC = () => {
     setCliMode("task");
   };
 
+  const handleProjectClick = (repository: string) => {
+    const newActiveFilters = { ...activeFilters };
+    newActiveFilters.repository = [{ value: repository, operator: "is" }];
+    setActiveFilters(newActiveFilters);
+    handleNavigate("task-list", "Tasks");
+  };
+
   const menuData = useSidebarMenuData({
     userName,
     activeTab,
+    isLoading,
+    activeFilters,
     onNavigate: handleNavigate,
     onTaskClick: handleTaskClick,
     onCreateTask: handleCreateTask,
     onStartRecording: handleStartRecording,
     onStopRecording: handleStopRecording,
+    onProjectClick: handleProjectClick,
   });
 
   const treeLines = buildTreeLines([menuData], "", "", expandedNodes, 0);
