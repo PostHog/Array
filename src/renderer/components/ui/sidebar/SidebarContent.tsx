@@ -1,11 +1,11 @@
 import { SidebarTreeItem } from "@components/ui/sidebar/SidebarTreeItem";
 import { useSidebarMenuData } from "@components/ui/sidebar/UseSidebarMenuData";
 import { buildTreeLines, getAllNodeIds } from "@components/ui/sidebar/Utils";
-import { useAuthStore } from "@features/auth/stores/authStore";
 import { useAudioRecorder } from "@features/recordings/hooks/useAudioRecorder";
 import { useRecordings } from "@features/recordings/hooks/useRecordings";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { useTaskStore } from "@features/tasks/stores/taskStore";
+import { useMeQuery } from "@hooks/useMeQuery";
 import { ArrowsInSimpleIcon, ArrowsOutSimpleIcon } from "@phosphor-icons/react";
 import { Box, Flex, IconButton, Tooltip } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
@@ -13,10 +13,9 @@ import { useLayoutStore } from "@stores/layoutStore";
 import { useSidebarStore } from "@stores/sidebarStore";
 import { useTabStore } from "@stores/tabStore";
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export const SidebarContent: React.FC = () => {
-  const { client } = useAuthStore();
   const { tabs, createTab, setActiveTab, activeTabId } = useTabStore();
   const expandedNodesArray = useSidebarStore((state) => state.expandedNodes);
   const { toggleNode, expandAll, collapseAll } = useSidebarStore();
@@ -26,26 +25,12 @@ export const SidebarContent: React.FC = () => {
   const { isLoading } = useTasks();
   const activeFilters = useTaskStore((state) => state.activeFilters);
   const setActiveFilters = useTaskStore((state) => state.setActiveFilters);
-  const [userName, setUserName] = useState<string>("Loading...");
+  const { data: currentUser } = useMeQuery();
   const [hoveredLineIndex, setHoveredLineIndex] = useState<number | null>(null);
 
   const expandedNodes = new Set(expandedNodesArray);
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
-
-  useEffect(() => {
-    async function fetchUser() {
-      if (client) {
-        try {
-          const user = await client.getCurrentUser();
-          setUserName(user.first_name || user.email || "Account");
-        } catch (error) {
-          console.error("Failed to fetch user:", error);
-          setUserName("Account");
-        }
-      }
-    }
-    fetchUser();
-  }, [client]);
+  const userName = currentUser?.first_name || currentUser?.email || "Account";
 
   const handleNavigate = (
     type: "task-list" | "recordings" | "notetaker" | "settings",
@@ -106,6 +91,8 @@ export const SidebarContent: React.FC = () => {
     activeTab,
     isLoading,
     activeFilters,
+    currentUser,
+    setActiveFilters,
     onNavigate: handleNavigate,
     onTaskClick: handleTaskClick,
     onCreateTask: handleCreateTask,

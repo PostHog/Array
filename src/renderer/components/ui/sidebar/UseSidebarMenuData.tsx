@@ -1,6 +1,9 @@
+import type { Schemas } from "@api/generated";
 import type { TreeNode } from "@components/ui/sidebar/Types";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import type { ActiveFilters } from "@features/tasks/stores/taskStore";
+import { getUserDisplayName } from "@hooks/useUsers";
+import { filtersMatch } from "@lib/filters";
 import {
   CheckCircleIcon,
   CircleIcon,
@@ -8,17 +11,23 @@ import {
   GearIcon,
   ListNumbersIcon,
   PlusIcon,
-  SquaresFourIcon,
   VideoIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
 import type { TabState, Task } from "@shared/types";
+
+interface TaskView {
+  label: string;
+  filters: ActiveFilters;
+}
 
 interface UseSidebarMenuDataProps {
   userName: string;
   activeTab: TabState | undefined;
   isLoading: boolean;
   activeFilters: ActiveFilters;
+  currentUser: Schemas.UserBasic | null;
+  setActiveFilters: (filters: ActiveFilters) => void;
   onNavigate: (
     type: "task-list" | "recordings" | "notetaker" | "settings",
     title: string,
@@ -58,6 +67,8 @@ export function useSidebarMenuData({
   activeTab,
   isLoading,
   activeFilters,
+  currentUser,
+  setActiveFilters,
   onNavigate,
   onTaskClick,
   onCreateTask,
@@ -89,22 +100,44 @@ export function useSidebarMenuData({
       ? activeRepositoryFilters[0].value
       : null;
 
+  const views: TaskView[] = [];
+
+  if (currentUser) {
+    const userDisplayName = getUserDisplayName(currentUser);
+    views.push({
+      label: "My tasks",
+      filters: {
+        creator: [{ value: userDisplayName, operator: "is" }],
+      },
+    });
+  }
+
+  views.push({
+    label: "All tasks",
+    filters: {},
+  });
+
   return {
     label: userName,
     children: [
-      {
-        label: "My tasks",
-        icon: (
-          <ListNumbersIcon
-            size={12}
-            weight={activeTab?.type === "task-list" ? "fill" : "regular"}
-          />
-        ),
-        action: () => onNavigate("task-list", "Tasks"),
-        isActive: activeTab?.type === "task-list",
-        hoverAction: onCreateTask,
-        hoverIcon: <PlusIcon size={12} />,
-      },
+      ...views.map((view): TreeNode => {
+        const isActive =
+          activeTab?.type === "task-list" &&
+          filtersMatch(activeFilters, view.filters);
+        return {
+          label: view.label,
+          icon: (
+            <ListNumbersIcon size={12} weight={isActive ? "fill" : "regular"} />
+          ),
+          action: () => {
+            setActiveFilters(view.filters);
+            onNavigate("task-list", "Tasks");
+          },
+          isActive,
+          hoverAction: onCreateTask,
+          hoverIcon: <PlusIcon size={12} />,
+        };
+      }),
       {
         label: "Notetaker",
         icon: (
@@ -155,11 +188,6 @@ export function useSidebarMenuData({
             },
           ]
         : []),
-      {
-        label: "Views",
-        icon: <SquaresFourIcon size={12} />,
-        children: [{ label: "Work in progress" }],
-      },
       {
         label: "Projects",
         icon: <FolderIcon size={12} />,

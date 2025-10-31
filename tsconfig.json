@@ -27,7 +27,8 @@
       "@components/*": ["renderer/components/*"],
       "@stores/*": ["renderer/stores/*"],
       "@hooks/*": ["renderer/hooks/*"],
-      "@utils/*": ["renderer/utils/*"]
+      "@utils/*": ["renderer/utils/*"],
+      "@lib/*": ["renderer/lib/*"]
     },
     "resolveJsonModule": true,
     "skipLibCheck": true,
