@@ -1,5 +1,7 @@
 import { type ChildProcess, exec } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { promisify } from "node:util";
 import { type BrowserWindow, type IpcMainInvokeEvent, ipcMain } from "electron";
 
@@ -87,6 +89,42 @@ const getCurrentBranch = async (
   }
 };
 
+export const findReposDirectory = async (): Promise<string | null> => {
+  const platform = os.platform();
+
+  if (platform === "win32") {
+    return null;
+  }
+
+  const homeDir = os.homedir();
+
+  const excludedPaths = [
+    "Library",
+    "Applications",
+    ".Trash",
+    "Music",
+    "Movies",
+    "Pictures",
+    "Desktop",
+    "Downloads",
+  ];
+
+  const excludeArgs = excludedPaths
+    .map((p) => `-path "${path.join(homeDir, p)}"`)
+    .join(" -o ");
+
+  const command = `find "${homeDir}" -maxdepth 4 \\( ${excludeArgs} \\) -prune -o -type d -name .git -print 2>/dev/null | sed 's|/.git$||' | xargs -n1 dirname 2>/dev/null | sort | uniq -c | sort -rn | head -1 | awk '$1 >= 3 {print $2}'`;
+
+  try {
+    const { stdout } = await execAsync(command);
+    const result = stdout.trim();
+
+    return result || null;
+  } catch {
+    return null;
+  }
+};
+
 export const detectSSHError = (output: string): string | undefined => {
   if (
     output.includes("successfully authenticated") ||
@@ -113,6 +151,10 @@ export const detectSSHError = (output: string): string | undefined => {
 export function registerGitIpc(
   getMainWindow: () => BrowserWindow | null,
 ): void {
+  ipcMain.handle("find-repos-directory", async (): Promise<string | null> => {
+    return findReposDirectory();
+  });
+
   ipcMain.handle(
     "validate-repo",
     async (
