@@ -114,7 +114,7 @@ export const useAuthStore = create<AuthState>()(
         );
 
         try {
-          await client.getCurrentUser();
+          const user = await client.getCurrentUser();
 
           set({
             oauthAccessToken: tokenResponse.access_token,
@@ -133,7 +133,7 @@ export const useAuthStore = create<AuthState>()(
           get().scheduleTokenRefresh();
 
           // Track user login
-          identifyUser(`project-${projectId}`, {
+          identifyUser(user.uuid, {
             project_id: projectId.toString(),
             region,
           });
@@ -319,7 +319,7 @@ export const useAuthStore = create<AuthState>()(
             );
 
             try {
-              await client.getCurrentUser();
+              const user = await client.getCurrentUser();
 
               set({
                 isAuthenticated: true,
@@ -330,7 +330,7 @@ export const useAuthStore = create<AuthState>()(
               get().scheduleTokenRefresh();
 
               // Track user identity on session restoration
-              identifyUser(`project-${projectId}`, {
+              identifyUser(user.uuid, {
                 project_id: projectId.toString(),
                 region: tokens.cloudRegion,
               });

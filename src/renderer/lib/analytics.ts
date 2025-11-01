@@ -25,8 +25,7 @@ export function initializePostHog() {
   posthog.init(apiKey, {
     api_host: apiHost,
     ui_host: uiHost,
-    person_profiles: "identified_only",
-    capture_pageview: false, // We'll manually track page views if needed
+    capture_pageview: false,
     capture_pageleave: false,
   });
 

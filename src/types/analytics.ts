@@ -30,7 +30,6 @@ export interface TaskRunProperties {
   execution_type: ExecutionType;
   execution_mode: ExecutionMode;
   has_repository: boolean;
-  repository_provider: RepositoryProvider;
 }
 
 export interface RepositorySelectProperties {

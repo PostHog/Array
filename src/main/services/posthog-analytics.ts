@@ -29,8 +29,13 @@ export function trackAppEvent(
     return;
   }
 
+  properties = {
+    ...properties,
+    $process_person_profile: false,
+  };
+
   posthogClient.capture({
-    distinctId: "app-lifecycle", // Will be updated when user logs in
+    distinctId: "app-event",
     event: eventName,
     properties,
   });
