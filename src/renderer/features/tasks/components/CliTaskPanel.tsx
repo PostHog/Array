@@ -246,6 +246,8 @@ export function CliTaskPanel() {
       {
         description: content,
         repositoryConfig,
+        autoRun: autoRunTasks,
+        createdFrom: "cli",
       },
       {
         onSuccess: (newTask) => {

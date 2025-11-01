@@ -2,6 +2,7 @@ import { MainLayout } from "@components/MainLayout";
 import { AuthScreen } from "@features/auth/components/AuthScreen";
 import { useAuthStore } from "@features/auth/stores/authStore";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
+import { initializePostHog } from "@renderer/lib/analytics";
 import { useEffect, useState } from "react";
 import { useRecordingQuerySync } from "@/renderer/hooks/useRecordingQuerySync";
 import {
@@ -14,6 +15,11 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
 
   useRecordingQuerySync();
+
+  // Initialize PostHog analytics
+  useEffect(() => {
+    initializePostHog();
+  }, []);
 
   useEffect(() => {
     initializeOAuth().finally(() => setIsLoading(false));

@@ -1,4 +1,10 @@
 import { PostHogAPIClient } from "@api/posthogClient";
+import {
+  identifyUser,
+  resetUser,
+  trackUserLoggedIn,
+  trackUserLoggedOut,
+} from "@renderer/lib/analytics";
 import { queryClient } from "@renderer/lib/queryClient";
 import { useTabStore } from "@renderer/stores/tabStore";
 import type { CloudRegion } from "@shared/types/oauth";
@@ -108,7 +114,7 @@ export const useAuthStore = create<AuthState>()(
         );
 
         try {
-          await client.getCurrentUser();
+          const user = await client.getCurrentUser();
 
           set({
             oauthAccessToken: tokenResponse.access_token,
@@ -125,6 +131,16 @@ export const useAuthStore = create<AuthState>()(
           queryClient.clear();
 
           get().scheduleTokenRefresh();
+
+          // Track user login
+          identifyUser(user.uuid, {
+            project_id: projectId.toString(),
+            region,
+          });
+          trackUserLoggedIn({
+            project_id: projectId.toString(),
+            region,
+          });
 
           // Navigate to task list after successful authentication
           const taskListTab = useTabStore
@@ -303,7 +319,7 @@ export const useAuthStore = create<AuthState>()(
             );
 
             try {
-              await client.getCurrentUser();
+              const user = await client.getCurrentUser();
 
               set({
                 isAuthenticated: true,
@@ -312,6 +328,12 @@ export const useAuthStore = create<AuthState>()(
               });
 
               get().scheduleTokenRefresh();
+
+              // Track user identity on session restoration
+              identifyUser(user.uuid, {
+                project_id: projectId.toString(),
+                region: tokens.cloudRegion,
+              });
 
               // Navigate to task list after successful authentication
               const taskListTab = useTabStore
@@ -366,6 +388,10 @@ export const useAuthStore = create<AuthState>()(
         set({ defaultWorkspace: workspace });
       },
       logout: () => {
+        // Track logout before clearing state
+        trackUserLoggedOut();
+        resetUser();
+
         if (refreshTimeoutId) {
           clearTimeout(refreshTimeoutId);
           refreshTimeoutId = null;
