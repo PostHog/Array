@@ -1,6 +1,7 @@
 import { useTaskExecutionStore } from "@features/tasks/stores/taskExecutionStore";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
+import { trackTaskCreate } from "@renderer/lib/analytics";
 import type { Task } from "@shared/types";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -39,6 +40,8 @@ export function useCreateTask() {
       }: {
         description: string;
         repositoryConfig?: { organization: string; repository: string };
+        autoRun?: boolean;
+        createdFrom?: "cli" | "command-menu";
       },
     ) =>
       client.createTask(
@@ -46,8 +49,16 @@ export function useCreateTask() {
         repositoryConfig,
       ) as unknown as Promise<Task>,
     {
-      onSuccess: () => {
+      onSuccess: (_task, variables) => {
         queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+
+        // Track task creation
+        trackTaskCreate({
+          has_repository: !!variables.repositoryConfig,
+          auto_run: variables.autoRun || false,
+          created_from: variables.createdFrom || "cli",
+          repository_provider: variables.repositoryConfig ? "github" : "none",
+        });
       },
     },
   );

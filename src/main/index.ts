@@ -10,12 +10,18 @@ import {
   type MenuItemConstructorOptions,
   shell,
 } from "electron";
+import { ANALYTICS_EVENTS } from "../types/analytics.js";
 import { registerAgentIpc, type TaskController } from "./services/agent.js";
 import { registerFsIpc } from "./services/fs.js";
 import { registerGitIpc } from "./services/git.js";
 import { registerOAuthHandlers } from "./services/oauth.js";
 import { registerOsIpc } from "./services/os.js";
 import { registerPosthogIpc } from "./services/posthog.js";
+import {
+  initializePostHog,
+  shutdownPostHog,
+  trackAppEvent,
+} from "./services/posthog-analytics.js";
 import {
   registerRecallIPCHandlers,
   setMainWindow,
@@ -172,11 +178,19 @@ function createWindow(): void {
   });
 }
 
-app.whenReady().then(createWindow);
-app.whenReady().then(ensureClaudeConfigDir);
+app.whenReady().then(() => {
+  createWindow();
+  ensureClaudeConfigDir();
 
-app.on("window-all-closed", () => {
+  // Initialize PostHog analytics
+  initializePostHog();
+  trackAppEvent(ANALYTICS_EVENTS.APP_STARTED);
+});
+
+app.on("window-all-closed", async () => {
   if (process.platform !== "darwin") {
+    trackAppEvent(ANALYTICS_EVENTS.APP_QUIT);
+    await shutdownPostHog();
     app.quit();
   }
 });

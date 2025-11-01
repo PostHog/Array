@@ -3,6 +3,7 @@ import { GitBranch as GitBranchIcon } from "@phosphor-icons/react";
 import { ChevronDownIcon } from "@radix-ui/react-icons";
 import { Box, Button, Flex, Popover, Text, TextField } from "@radix-ui/themes";
 import { useRepositoryIntegration } from "@renderer/hooks/useIntegrations";
+import { trackRepositorySelect } from "@renderer/lib/analytics";
 import type { RepositoryConfig } from "@shared/types";
 import { cloneStore } from "@stores/cloneStore";
 import { useMemo, useRef, useState } from "react";
@@ -90,6 +91,12 @@ export function RepositoryPicker({
     onChange(repo);
     setSearchValue("");
     setOpen(false);
+
+    // Track repository selection
+    trackRepositorySelect({
+      repository_provider: "github", // Currently only GitHub is supported
+      source: "task-creation",
+    });
   };
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {

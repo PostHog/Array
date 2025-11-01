@@ -1,6 +1,6 @@
 {
   "name": "array",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Array - PostHog desktop task manager",
   "main": ".vite/build/index.js",
   "versionHash": "dynamic",
@@ -85,6 +85,8 @@
     "idb-keyval": "^6.2.2",
     "node-addon-api": "^8.5.0",
     "node-pty": "1.1.0-beta37",
+    "posthog-js": "^1.283.0",
+    "posthog-node": "^4.18.0",
     "radix-themes-tw": "0.2.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

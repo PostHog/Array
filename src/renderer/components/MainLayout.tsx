@@ -9,6 +9,7 @@ import { TaskDetail } from "@features/tasks/components/TaskDetail";
 import { TaskList } from "@features/tasks/components/TaskList";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { Box, Flex } from "@radix-ui/themes";
+import { trackTaskView } from "@renderer/lib/analytics";
 import type { Task } from "@shared/types";
 import { useLayoutStore } from "@stores/layoutStore";
 import { useTabStore } from "@stores/tabStore";
@@ -94,6 +95,12 @@ export function MainLayout() {
         type: "task-detail",
         title: task.title,
         data: task,
+      });
+
+      // Track task view
+      trackTaskView({
+        task_id: task.id,
+        has_repository: !!task.repository_config,
       });
     }
   };
