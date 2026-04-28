@@ -53,6 +53,7 @@ import type { FsService } from "../fs/service";
 import type { McpAppsService } from "../mcp-apps/service";
 import type { PosthogPluginService } from "../posthog-plugin/service";
 import type { ProcessTrackingService } from "../process-tracking/service";
+import { loadSessionEnvOverrides } from "../session-env/loader";
 import type { SleepService } from "../sleep/service";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
 import { discoverExternalPlugins } from "./discover-plugins";
@@ -981,6 +982,27 @@ When creating pull requests, add the following footer at the end of the PR descr
   listSessions(taskId?: string): ManagedSession[] {
     const all = Array.from(this.sessions.values());
     return taskId ? all.filter((s) => s.taskId === taskId) : all;
+  }
+
+  /**
+   * Resolve env-var overrides set by the SessionStart-style hooks of the most
+   * recently active agent session for `taskId`.
+   *
+   * Used by git/gh operations triggered from the UI (Commit, Create PR) so
+   * they pick up the same hook env the agent itself sees — most importantly
+   * the SSH_AUTH_SOCK that Secretive's hook re-points at the Secretive agent
+   * for commit signing. Returns an empty object when there is no session for
+   * the task or when no hook output is available.
+   */
+  public async getSessionEnvForTask(
+    taskId: string,
+  ): Promise<Record<string, string>> {
+    const candidates = this.listSessions(taskId)
+      .filter((s) => !!s.config.sessionId)
+      .sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+    const session = candidates[0];
+    if (!session?.config.sessionId) return {};
+    return loadSessionEnvOverrides(session.config.sessionId);
   }
 
   /**
