@@ -1473,15 +1473,18 @@ export class PostHogAPIClient {
     }
   }
 
-  async getIntegrations() {
+  async getIntegrations(kind?: string) {
     const teamId = await this.getTeamId();
-    return this.getIntegrationsForProject(teamId);
+    return this.getIntegrationsForProject(teamId, kind);
   }
 
-  async getIntegrationsForProject(projectId: number) {
+  async getIntegrationsForProject(projectId: number, kind?: string) {
     const url = new URL(
       `${this.api.baseUrl}/api/environments/${projectId}/integrations/`,
     );
+    if (kind) {
+      url.searchParams.set("kind", kind);
+    }
     const response = await this.api.fetcher.fetch({
       method: "get",
       url,
