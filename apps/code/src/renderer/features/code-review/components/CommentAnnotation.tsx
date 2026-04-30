@@ -1,7 +1,14 @@
 import { sendPromptToAgent } from "@features/sessions/utils/sendPromptToAgent";
-import { PaperPlaneTilt, X } from "@phosphor-icons/react";
+import { ArrowUp, Trash } from "@phosphor-icons/react";
 import type { AnnotationSide } from "@pierre/diffs";
-import { Button, Checkbox, Flex, IconButton, Text } from "@radix-ui/themes";
+import {
+  Checkbox,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupTextarea,
+} from "@posthog/quill";
+import { Text, Tooltip } from "@radix-ui/themes";
 import { isSendMessageSubmitKey } from "@utils/sendMessageKey";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useReviewDraftsStore } from "../stores/reviewDraftsStore";
@@ -39,6 +46,7 @@ export function CommentAnnotation({
   const [batch, setBatch] = useState(
     editingDraftId ? true : initialBatchEnabled,
   );
+  const [isEmpty, setIsEmpty] = useState(!initialText?.trim());
 
   const setTextareaRef = useCallback(
     (el: HTMLTextAreaElement | null) => {
@@ -55,8 +63,6 @@ export function CommentAnnotation({
     [initialText],
   );
 
-  // Keep the checkbox in sync if another action toggles batchEnabled while
-  // this textarea is open (e.g. user adds a draft elsewhere).
   useEffect(() => {
     if (editingDraftId) return;
     setBatch(initialBatchEnabled);
@@ -112,53 +118,62 @@ export function CommentAnnotation({
     [handleSubmit, onDismiss],
   );
 
-  const submitLabel = editingDraftId
-    ? "Update comment"
-    : batch
-      ? "Add to review"
-      : "Send to agent";
+  const submitTooltip = isEmpty
+    ? "Enter a comment"
+    : editingDraftId
+      ? "Save"
+      : batch
+        ? "Add to review"
+        : "Send to agent";
 
   return (
-    <div className="px-3 py-1.5">
-      <div
-        data-comment-annotation=""
-        className="whitespace-normal rounded-md border border-(--gray-5) bg-(--gray-2) px-2.5 py-2 font-sans"
-      >
-        <textarea
+    <div data-comment-annotation="" className="px-3 py-1.5 font-sans">
+      <InputGroup>
+        <InputGroupTextarea
           ref={setTextareaRef}
           placeholder="Describe the changes you'd like..."
           onKeyDown={handleKeyDown}
-          className="min-h-[48px] w-full resize-none rounded border border-(--gray-6) bg-(--color-background) p-1.5 text-(--gray-12) text-[13px] leading-normal outline-none"
+          onChange={(e) => setIsEmpty(!e.currentTarget.value.trim())}
+          className="min-h-[48px] resize-none text-[13px]"
         />
-        <Flex align="center" justify="between" gap="3" className="mt-1.5">
-          <Flex align="center" gap="3">
-            <Button size="1" onClick={handleSubmit}>
-              <PaperPlaneTilt size={12} weight="fill" />
-              {submitLabel}
-            </Button>
-            <IconButton
-              size="1"
-              variant="ghost"
-              color="gray"
+        <InputGroupAddon align="block-end">
+          <Tooltip content="Discard">
+            <InputGroupButton
+              size="icon-sm"
+              variant="default"
               onClick={onDismiss}
+              aria-label="Discard"
             >
-              <X size={12} />
-            </IconButton>
-          </Flex>
-          {!editingDraftId && (
-            <Text as="label" size="1" color="gray">
-              <Flex align="center" gap="1.5" className="cursor-pointer">
-                <Checkbox
-                  size="1"
-                  checked={batch}
-                  onCheckedChange={(value) => setBatch(value === true)}
-                />
-                Add to review
-              </Flex>
-            </Text>
-          )}
-        </Flex>
-      </div>
+              <Trash size={14} />
+            </InputGroupButton>
+          </Tooltip>
+          <div className="ml-auto flex items-center gap-3">
+            {!editingDraftId && (
+              <Text as="label" size="1" color="gray">
+                <span className="flex cursor-pointer items-center gap-2">
+                  <Checkbox
+                    size="sm"
+                    checked={batch}
+                    onCheckedChange={(value) => setBatch(value === true)}
+                  />
+                  Add to review
+                </span>
+              </Text>
+            )}
+            <Tooltip content={submitTooltip}>
+              <InputGroupButton
+                size="icon-sm"
+                variant="primary"
+                onClick={handleSubmit}
+                disabled={isEmpty}
+                aria-label={editingDraftId ? "Save" : "Submit"}
+              >
+                <ArrowUp size={14} weight="bold" />
+              </InputGroupButton>
+            </Tooltip>
+          </div>
+        </InputGroupAddon>
+      </InputGroup>
     </div>
   );
 }

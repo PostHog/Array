@@ -53,15 +53,15 @@ export function buildBatchedInlineCommentsPrompt(
     );
   }
   const items = drafts
-    .map((d, idx) => {
+    .map((d) => {
       const lineRef = formatLineRef(d.startLine, d.endLine);
       const sideLabel = formatSideLabel(d.side);
       const escapedPath = escapeXmlAttr(d.filePath);
       const indented = d.text
         .split("\n")
-        .map((line) => `   ${line}`)
+        .map((line) => `  ${line}`)
         .join("\n");
-      return `${idx + 1}. In file <file path="${escapedPath}" />, ${lineRef} (${sideLabel}):\n${indented}`;
+      return `- In file <file path="${escapedPath}" />, ${lineRef} (${sideLabel}):\n${indented}`;
     })
     .join("\n\n");
   return `Please address these review comments:\n\n${items}`;

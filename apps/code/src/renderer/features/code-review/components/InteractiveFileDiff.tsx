@@ -130,6 +130,27 @@ function useFileDrafts(taskId: string | undefined, filePath: string) {
   );
 }
 
+function useEditDraftHandler(
+  fileDrafts: ReturnType<typeof useFileDrafts>,
+  openCommentForEdit: (seed: CommentEditSeed) => void,
+) {
+  return useCallback(
+    (draftId: string) => {
+      const draft = fileDrafts.find((d) => d.id === draftId);
+      if (!draft) return;
+      openCommentForEdit({
+        draftId: draft.id,
+        text: draft.text,
+        filePath: draft.filePath,
+        startLine: draft.startLine,
+        endLine: draft.endLine,
+        side: draft.side,
+      });
+    },
+    [fileDrafts, openCommentForEdit],
+  );
+}
+
 function PatchDiffView({
   fileDiff: patchFileDiff,
   repoPath,
@@ -180,22 +201,7 @@ function PatchDiffView({
   filePathRef.current = currentFilePath;
 
   const fileDrafts = useFileDrafts(taskId, currentFilePath);
-
-  const handleEditDraft = useCallback(
-    (draftId: string) => {
-      const draft = fileDrafts.find((d) => d.id === draftId);
-      if (!draft) return;
-      openCommentForEdit({
-        draftId: draft.id,
-        text: draft.text,
-        filePath: draft.filePath,
-        startLine: draft.startLine,
-        endLine: draft.endLine,
-        side: draft.side,
-      });
-    },
-    [fileDrafts, openCommentForEdit],
-  );
+  const handleEditDraft = useEditDraftHandler(fileDrafts, openCommentForEdit);
 
   const hunkAnnotations = useMemo(
     () => (repoPath ? buildHunkAnnotations(fileDiff) : []),
@@ -350,22 +356,7 @@ function FilesDiffView({
   const filePath = newFile.name || oldFile.name;
 
   const fileDrafts = useFileDrafts(taskId, filePath);
-
-  const handleEditDraft = useCallback(
-    (draftId: string) => {
-      const draft = fileDrafts.find((d) => d.id === draftId);
-      if (!draft) return;
-      openCommentForEdit({
-        draftId: draft.id,
-        text: draft.text,
-        filePath: draft.filePath,
-        startLine: draft.startLine,
-        endLine: draft.endLine,
-        side: draft.side,
-      });
-    },
-    [fileDrafts, openCommentForEdit],
-  );
+  const handleEditDraft = useEditDraftHandler(fileDrafts, openCommentForEdit);
 
   const prAnnotations = useMemo(
     () =>
