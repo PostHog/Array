@@ -1,5 +1,6 @@
 import type { PrReviewComment } from "@main/services/git/schemas";
 import type { AnnotationSide } from "@pierre/diffs";
+import type { DraftComment } from "../stores/reviewDraftsStore";
 
 function escapeXmlAttr(value: string): string {
   return value
@@ -14,6 +15,16 @@ function formatThreadForPrompt(comments: PrReviewComment[]): string {
   return comments.map((c) => `@${c.user.login}:\n> ${c.body}`).join("\n\n");
 }
 
+function formatLineRef(startLine: number, endLine: number): string {
+  return startLine === endLine
+    ? `line ${startLine}`
+    : `lines ${startLine}-${endLine}`;
+}
+
+function formatSideLabel(side: AnnotationSide): "old" | "new" {
+  return side === "deletions" ? "old" : "new";
+}
+
 export function buildInlineCommentPrompt(
   filePath: string,
   startLine: number,
@@ -21,13 +32,39 @@ export function buildInlineCommentPrompt(
   side: AnnotationSide,
   comment: string,
 ): string {
-  const lineRef =
-    startLine === endLine
-      ? `line ${startLine}`
-      : `lines ${startLine}-${endLine}`;
-  const sideLabel = side === "deletions" ? "old" : "new";
+  const lineRef = formatLineRef(startLine, endLine);
+  const sideLabel = formatSideLabel(side);
   const escapedPath = escapeXmlAttr(filePath);
   return `In file <file path="${escapedPath}" />, ${lineRef} (${sideLabel}):\n\n${comment}`;
+}
+
+export function buildBatchedInlineCommentsPrompt(
+  drafts: DraftComment[],
+): string {
+  if (drafts.length === 0) return "";
+  if (drafts.length === 1) {
+    const [d] = drafts;
+    return buildInlineCommentPrompt(
+      d.filePath,
+      d.startLine,
+      d.endLine,
+      d.side,
+      d.text,
+    );
+  }
+  const items = drafts
+    .map((d, idx) => {
+      const lineRef = formatLineRef(d.startLine, d.endLine);
+      const sideLabel = formatSideLabel(d.side);
+      const escapedPath = escapeXmlAttr(d.filePath);
+      const indented = d.text
+        .split("\n")
+        .map((line) => `   ${line}`)
+        .join("\n");
+      return `${idx + 1}. In file <file path="${escapedPath}" />, ${lineRef} (${sideLabel}):\n${indented}`;
+    })
+    .join("\n\n");
+  return `Please address these review comments:\n\n${items}`;
 }
 
 export function buildFixPrCommentPrompt(

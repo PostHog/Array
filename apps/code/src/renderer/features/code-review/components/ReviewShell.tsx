@@ -7,6 +7,7 @@ import type { FileDiffMetadata } from "@pierre/diffs/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import WorkerUrl from "@pierre/diffs/worker/worker.js?worker&url";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
+import { useReviewDraftsStore } from "@renderer/features/code-review/stores/reviewDraftsStore";
 import { useReviewNavigationStore } from "@renderer/features/code-review/stores/reviewNavigationStore";
 import type { ChangedFile, Task } from "@shared/types";
 import { useThemeStore } from "@stores/themeStore";
@@ -19,6 +20,7 @@ import {
   useState,
 } from "react";
 import type { ResolvedDiffSource } from "../utils/resolveDiffSource";
+import { PendingReviewBar } from "./PendingReviewBar";
 import { ReviewToolbar } from "./ReviewToolbar";
 
 function splitFilePath(fullPath: string): {
@@ -340,7 +342,10 @@ export function ReviewShell({
   const clearTask = useReviewNavigationStore((s) => s.clearTask);
 
   useEffect(() => {
-    return () => clearTask(taskId);
+    return () => {
+      clearTask(taskId);
+      useReviewDraftsStore.getState().clearDrafts(taskId);
+    };
   }, [taskId, clearTask]);
 
   useEffect(() => {
@@ -430,25 +435,28 @@ export function ReviewShell({
           defaultBranch={defaultBranch}
         />
         <Flex className="min-h-0 flex-1">
-          <div
-            ref={scrollContainerRef}
-            className="scrollbar-overlay-y min-w-0 flex-1 space-y-2 overflow-auto"
-            id="review-shell-diff-container"
-          >
-            {isLoading ? (
-              <Flex align="center" justify="center" height="100%">
-                <Spinner size="2" />
-              </Flex>
-            ) : isEmpty ? (
-              <Flex align="center" justify="center" height="100%">
-                <Text color="gray" className="text-sm">
-                  No file changes to review
-                </Text>
-              </Flex>
-            ) : (
-              children
-            )}
-          </div>
+          <Flex direction="column" className="min-w-0 flex-1">
+            <div
+              ref={scrollContainerRef}
+              className="scrollbar-overlay-y min-h-0 flex-1 space-y-2 overflow-auto"
+              id="review-shell-diff-container"
+            >
+              {isLoading ? (
+                <Flex align="center" justify="center" height="100%">
+                  <Spinner size="2" />
+                </Flex>
+              ) : isEmpty ? (
+                <Flex align="center" justify="center" height="100%">
+                  <Text color="gray" className="text-sm">
+                    No file changes to review
+                  </Text>
+                </Flex>
+              ) : (
+                children
+              )}
+            </div>
+            <PendingReviewBar taskId={taskId} />
+          </Flex>
 
           {isExpanded && <ExpandedSidebar task={task} />}
         </Flex>
