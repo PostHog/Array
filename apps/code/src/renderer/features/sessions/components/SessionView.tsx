@@ -18,6 +18,7 @@ import type { Plan } from "@features/sessions/types";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
 import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
+import { useConnectivity } from "@hooks/useConnectivity";
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
 import { Box, Button, ContextMenu, Flex, Text } from "@radix-ui/themes";
 import { toast } from "@renderer/utils/toast";
@@ -245,6 +246,25 @@ export function SessionView({
       }
     },
     [onSendPrompt],
+  );
+
+  const { isOnline } = useConnectivity();
+  // Gate submission on connectivity so the editor isn't cleared by an Enter
+  // press that won't actually reach the agent. Returning false from
+  // onBeforeSubmit short-circuits both onSubmit and the editor's auto-clear.
+  const handleBeforeSubmit = useCallback(
+    (text: string, clearEditor: () => void): boolean => {
+      if (!isOnline) {
+        toast.error("Can't send while offline", {
+          id: "send-prompt-offline",
+          description:
+            "Your message has been kept — try again once you're back online.",
+        });
+        return false;
+      }
+      return onBeforeSubmit ? onBeforeSubmit(text, clearEditor) : true;
+    },
+    [isOnline, onBeforeSubmit],
   );
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -645,7 +665,7 @@ export function SessionView({
                               />
                             ) : null
                           }
-                          onBeforeSubmit={onBeforeSubmit}
+                          onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
                           onBashCommand={onBashCommand}
                           onCancel={onCancelPrompt}
