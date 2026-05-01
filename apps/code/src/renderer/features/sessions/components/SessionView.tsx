@@ -249,19 +249,9 @@ export function SessionView({
   );
 
   const { isOnline } = useConnectivity();
-  // Gate submission on connectivity so the editor isn't cleared by an Enter
-  // press that won't actually reach the agent. Returning false from
-  // onBeforeSubmit short-circuits both onSubmit and the editor's auto-clear.
   const handleBeforeSubmit = useCallback(
     (text: string, clearEditor: () => void): boolean => {
-      if (!isOnline) {
-        toast.error("Can't send while offline", {
-          id: "send-prompt-offline",
-          description:
-            "Your message has been kept — try again once you're back online.",
-        });
-        return false;
-      }
+      if (!isOnline) return false;
       return onBeforeSubmit ? onBeforeSubmit(text, clearEditor) : true;
     },
     [isOnline, onBeforeSubmit],
