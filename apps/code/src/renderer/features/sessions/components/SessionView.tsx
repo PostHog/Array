@@ -1,5 +1,6 @@
 import { isOtherOption } from "@components/action-selector/constants";
 import { PermissionSelector } from "@components/permissions/PermissionSelector";
+import { showOfflineToast } from "@features/connectivity/connectivityToast";
 import {
   PromptInput,
   type EditorHandle as PromptInputHandle,
@@ -251,7 +252,10 @@ export function SessionView({
   const { isOnline } = useConnectivity();
   const handleBeforeSubmit = useCallback(
     (text: string, clearEditor: () => void): boolean => {
-      if (!isOnline) return false;
+      if (!isOnline) {
+        showOfflineToast();
+        return false;
+      }
       return onBeforeSubmit ? onBeforeSubmit(text, clearEditor) : true;
     },
     [isOnline, onBeforeSubmit],
