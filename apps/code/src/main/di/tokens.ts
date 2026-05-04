@@ -34,6 +34,9 @@ export const MAIN_TOKENS = Object.freeze({
   WorktreeRepository: Symbol.for("Main.WorktreeRepository"),
   ArchiveRepository: Symbol.for("Main.ArchiveRepository"),
   SuspensionRepository: Symbol.for("Main.SuspensionRepository"),
+  DefaultAdditionalDirectoryRepository: Symbol.for(
+    "Main.DefaultAdditionalDirectoryRepository",
+  ),
 
   // Services
   AgentAuthAdapter: Symbol.for("Main.AgentAuthAdapter"),

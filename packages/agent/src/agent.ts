@@ -136,6 +136,7 @@ export class Agent {
               binaryPath: options.codexBinaryPath,
               model: sanitizedModel,
               instructions: options.instructions,
+              additionalDirectories: options.additionalDirectories,
             }
           : undefined,
     });

@@ -17,6 +17,8 @@ export interface CodexProcessOptions {
   logger?: Logger;
   processCallbacks?: ProcessSpawnedCallback;
   settings?: CodexSettings;
+  /** Additional writable roots passed to Codex's workspace-write sandbox. */
+  additionalDirectories?: string[];
 }
 
 export interface CodexProcess {
@@ -55,6 +57,13 @@ function buildConfigArgs(options: CodexProcessOptions): string[] {
 
   if (options.reasoningEffort) {
     args.push("-c", `model_reasoning_effort="${options.reasoningEffort}"`);
+  }
+
+  if (options.additionalDirectories?.length) {
+    const escaped = options.additionalDirectories
+      .map((p) => `"${p.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)
+      .join(",");
+    args.push("-c", `sandbox_workspace_write.writable_roots=[${escaped}]`);
   }
 
   if (options.instructions) {

@@ -190,6 +190,16 @@ function createMockDependencies() {
       appDataPath: "/mock/userData",
       logsPath: "/mock/logs",
     },
+    defaultAdditionalDirectoryRepository: {
+      list: vi.fn(() => [] as string[]),
+      add: vi.fn(),
+      remove: vi.fn(),
+    },
+    workspaceRepository: {
+      getAdditionalDirectories: vi.fn(() => [] as string[]),
+      addAdditionalDirectory: vi.fn(),
+      removeAdditionalDirectory: vi.fn(),
+    },
   };
 }
 
@@ -220,6 +230,8 @@ describe("AgentService", () => {
       deps.bundledResources as never,
       deps.appMeta as never,
       deps.storagePaths as never,
+      deps.defaultAdditionalDirectoryRepository as never,
+      deps.workspaceRepository as never,
     );
   });
 

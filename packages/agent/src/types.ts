@@ -124,6 +124,8 @@ export interface TaskExecutionOptions {
   processCallbacks?: ProcessSpawnedCallback;
   /** Callback invoked when the agent calls the create_output tool for structured output */
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
+  /** Additional directories the agent process can access beyond cwd. */
+  additionalDirectories?: string[];
 }
 
 export type LogLevel = "debug" | "info" | "warn" | "error";

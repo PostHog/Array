@@ -3,7 +3,7 @@ import {
   baseComponents,
   defaultRemarkPlugins,
 } from "@features/editor/components/MarkdownRenderer";
-import { File, Warning } from "@phosphor-icons/react";
+import { File, Folder, Warning } from "@phosphor-icons/react";
 import { Text } from "@radix-ui/themes";
 import { unescapeXmlAttr } from "@utils/xml";
 import type { ReactNode } from "react";
@@ -12,9 +12,9 @@ import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 
 const MENTION_TAG_REGEX =
-  /<file\s+path="([^"]+)"\s*\/>|<(github_issue|github_pr)\s+number="([^"]+)"(?:\s+title="([^"]*)")?(?:\s+url="([^"]*)")?\s*\/>|<error_context\s+label="([^"]*)">[\s\S]*?<\/error_context>/g;
+  /<file\s+path="([^"]+)"\s*\/>|<(github_issue|github_pr)\s+number="([^"]+)"(?:\s+title="([^"]*)")?(?:\s+url="([^"]*)")?\s*\/>|<error_context\s+label="([^"]*)">[\s\S]*?<\/error_context>|<folder\s+path="([^"]+)"\s*\/>/g;
 const MENTION_TAG_TEST =
-  /<(?:file\s+path|github_issue\s+number|github_pr\s+number|error_context\s+label)="[^"]+"/;
+  /<(?:file\s+path|folder\s+path|github_issue\s+number|github_pr\s+number|error_context\s+label)="[^"]+"/;
 const SLASH_COMMAND_START = /^\/([a-zA-Z][\w-]*)(?=\s|$)/;
 
 const inlineComponents: Components = {
@@ -149,6 +149,17 @@ export function parseMentionTags(content: string): ReactNode[] {
           key={`error-ctx-${matchIndex}`}
           icon={<Warning size={12} />}
           label={unescapeXmlAttr(match[6])}
+        />,
+      );
+    } else if (match[7]) {
+      const folderPath = unescapeXmlAttr(match[7]);
+      const segments = folderPath.split("/").filter(Boolean);
+      const folderName = segments.pop() ?? folderPath;
+      parts.push(
+        <MentionChip
+          key={`folder-${matchIndex}`}
+          icon={<Folder size={12} />}
+          label={folderName}
         />,
       );
     }

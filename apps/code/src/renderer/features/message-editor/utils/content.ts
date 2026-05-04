@@ -41,6 +41,10 @@ export function contentToPlainText(content: EditorContent): string {
     .join("");
 }
 
+function isAbsolutePathLike(p: string): boolean {
+  return p.startsWith("/") || p.startsWith("~") || /^[A-Za-z]:[\\/]/.test(p);
+}
+
 export function contentToXml(content: EditorContent): string {
   const inlineFilePaths = new Set<string>();
   const parts = content.segments.map((seg) => {
@@ -55,6 +59,9 @@ export function contentToXml(content: EditorContent): string {
         inlineFilePaths.add(chip.id);
         return `<folder path="${escapedId}" />`;
       case "command":
+        if (chip.id && chip.id !== chip.label && isAbsolutePathLike(chip.id)) {
+          return `<folder path="${escapedId}" />`;
+        }
         return `/${chip.label}`;
       case "error":
         return `<error id="${escapedId}" />`;

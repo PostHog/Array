@@ -33,7 +33,22 @@ export interface IWorkspaceRepository {
     mode: WorkspaceMode,
     repositoryId: string | null,
   ): void;
+  getAdditionalDirectories(taskId: string): string[];
+  addAdditionalDirectory(taskId: string, path: string): void;
+  removeAdditionalDirectory(taskId: string, path: string): void;
   deleteAll(): void;
+}
+
+export function parseDirectories(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((v): v is string => typeof v === "string")
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 const byId = (id: string) => eq(workspaces.id, id);
@@ -156,6 +171,36 @@ export class WorkspaceRepository implements IWorkspaceRepository {
       .set({ mode, repositoryId, updatedAt: now() })
       .where(byTaskId(taskId))
       .run();
+  }
+
+  getAdditionalDirectories(taskId: string): string[] {
+    const workspace = this.findByTaskId(taskId);
+    return parseDirectories(workspace?.additionalDirectories);
+  }
+
+  private updateDirectories(
+    taskId: string,
+    update: (current: string[]) => string[] | null,
+  ): void {
+    const next = update(this.getAdditionalDirectories(taskId));
+    if (next === null) return;
+    this.db
+      .update(workspaces)
+      .set({ additionalDirectories: JSON.stringify(next), updatedAt: now() })
+      .where(byTaskId(taskId))
+      .run();
+  }
+
+  addAdditionalDirectory(taskId: string, path: string): void {
+    this.updateDirectories(taskId, (current) =>
+      current.includes(path) ? null : [...current, path],
+    );
+  }
+
+  removeAdditionalDirectory(taskId: string, path: string): void {
+    this.updateDirectories(taskId, (current) =>
+      current.includes(path) ? current.filter((p) => p !== path) : null,
+    );
   }
 
   deleteAll(): void {

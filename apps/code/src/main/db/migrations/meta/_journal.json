@@ -43,6 +43,13 @@
       "when": 1775755977659,
       "tag": "0005_youthful_scarlet_spider",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1777639303535,
+      "tag": "0006_youthful_warstar",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,8 @@
-import type {
-  CreateWorkspaceData,
-  IWorkspaceRepository,
-  Workspace,
+import {
+  type CreateWorkspaceData,
+  type IWorkspaceRepository,
+  parseDirectories,
+  type Workspace,
 } from "./workspace-repository";
 
 export interface MockWorkspaceRepository extends IWorkspaceRepository {
@@ -14,6 +15,26 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
 
   const clone = (w: Workspace | null): Workspace | null =>
     w ? { ...w } : null;
+
+  const findLiveByTaskId = (taskId: string): Workspace | undefined => {
+    const id = taskIndex.get(taskId);
+    return id ? workspaces.get(id) : undefined;
+  };
+
+  const updateDirectoriesForTask = (
+    taskId: string,
+    update: (current: string[]) => string[] | null,
+  ) => {
+    const w = findLiveByTaskId(taskId);
+    if (!w) return;
+    const next = update(parseDirectories(w.additionalDirectories));
+    if (next === null) return;
+    workspaces.set(w.id, {
+      ...w,
+      additionalDirectories: JSON.stringify(next),
+      updatedAt: new Date().toISOString(),
+    });
+  };
 
   return {
     _workspaces: workspaces,
@@ -42,6 +63,7 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
         lastViewedAt: null,
         lastActivityAt: null,
         linkedBranch: null,
+        additionalDirectories: "[]",
         createdAt: now,
         updatedAt: now,
       };
@@ -78,6 +100,18 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
         repositoryId,
         updatedAt: new Date().toISOString(),
       });
+    },
+    getAdditionalDirectories: (taskId) =>
+      parseDirectories(findLiveByTaskId(taskId)?.additionalDirectories),
+    addAdditionalDirectory: (taskId, path) => {
+      updateDirectoriesForTask(taskId, (current) =>
+        current.includes(path) ? null : [...current, path],
+      );
+    },
+    removeAdditionalDirectory: (taskId, path) => {
+      updateDirectoriesForTask(taskId, (current) =>
+        current.includes(path) ? current.filter((p) => p !== path) : null,
+      );
     },
     deleteAll: () => {
       workspaces.clear();

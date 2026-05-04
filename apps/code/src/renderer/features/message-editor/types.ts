@@ -18,6 +18,11 @@ export interface EditorHandle {
   getText: () => string;
   setContent: (text: string) => void;
   insertChip: (chip: MentionChip) => void;
+  removeChipById: (chipId: string) => void;
+  replaceChipAttrs: (
+    chipId: string,
+    attrs: Partial<{ id: string; label: string; type: MentionChip["type"] }>,
+  ) => void;
   addAttachment: (attachment: FileAttachment) => void;
   removeAttachment: (id: string) => void;
 }
