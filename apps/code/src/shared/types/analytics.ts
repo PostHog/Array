@@ -279,10 +279,7 @@ export interface BranchMismatchActionProperties {
 }
 
 // Deep link events
-type DeepLinkAction = "new" | "plan" | "issue";
-
 export interface DeepLinkNewTaskProperties {
-  action: DeepLinkAction;
   has_prompt: boolean;
   has_repo: boolean;
   mode?: string;
@@ -290,7 +287,6 @@ export interface DeepLinkNewTaskProperties {
 }
 
 export interface DeepLinkPlanProperties {
-  action: DeepLinkAction;
   has_repo: boolean;
   mode?: string;
   model?: string;
@@ -298,7 +294,6 @@ export interface DeepLinkPlanProperties {
 }
 
 export interface DeepLinkIssueProperties {
-  action: DeepLinkAction;
   owner: string;
   repo: string;
   issue_number: number;

@@ -60,7 +60,9 @@ export function useNewTaskDeepLink() {
     trpcReact.deepLink.onNewTaskAction.subscriptionOptions(undefined, {
       onData: (data) => {
         log.info(`Received new task link event: action=${data.action}`);
-        handleAction(data);
+        handleAction(data).catch((error) => {
+          log.error("Failed to handle new task link action:", error);
+        });
       },
     }),
   );
@@ -82,7 +84,6 @@ function handleNew(
   });
 
   track(ANALYTICS_EVENTS.DEEP_LINK_NEW_TASK, {
-    action: "new",
     has_prompt: !!payload.prompt,
     has_repo: !!payload.repo,
     mode: payload.mode,
@@ -102,7 +103,6 @@ function handlePlan(
   });
 
   track(ANALYTICS_EVENTS.DEEP_LINK_PLAN, {
-    action: "plan",
     has_repo: !!payload.repo,
     mode: payload.mode,
     model: payload.model,
@@ -145,7 +145,6 @@ async function handleIssue(
     });
 
     track(ANALYTICS_EVENTS.DEEP_LINK_ISSUE, {
-      action: "issue",
       owner: payload.owner,
       repo: payload.issueRepo,
       issue_number: payload.issueNumber,

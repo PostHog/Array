@@ -1,5 +1,5 @@
 import type { IMainWindow } from "@posthog/platform/main-window";
-import type { NewTaskLinkPayload } from "@shared/types";
+import type { NewTaskLinkPayload, SharedLinkParams } from "@shared/types";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
@@ -16,12 +16,6 @@ export type { NewTaskLinkPayload };
 
 export interface NewTaskLinkEvents {
   [NewTaskLinkEvent.Action]: NewTaskLinkPayload;
-}
-
-interface SharedParams {
-  repo?: string;
-  mode?: string;
-  model?: string;
 }
 
 @injectable()
@@ -47,7 +41,7 @@ export class NewTaskLinkService extends TypedEventEmitter<NewTaskLinkEvents> {
     );
   }
 
-  private extractSharedParams(params: URLSearchParams): SharedParams {
+  private extractSharedParams(params: URLSearchParams): SharedLinkParams {
     return {
       repo: params.get("repo") ?? undefined,
       mode: params.get("mode") ?? undefined,
