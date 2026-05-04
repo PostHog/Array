@@ -279,7 +279,8 @@ type SetupDiscoveredTaskCategory =
   | "stale_feature_flag"
   | "error_tracking"
   | "event_tracking"
-  | "funnel";
+  | "funnel"
+  | "posthog_setup";
 
 export interface SetupViewedProperties {
   discovery_status: "idle" | "running" | "done" | "error";
@@ -323,21 +324,6 @@ export interface SetupSkippedProperties {
   discovery_status: "idle" | "running" | "done" | "error";
   had_discovered_tasks: boolean;
   entry_point: "during_scan" | "after_done";
-}
-
-export interface SetupWizardStartedProperties {
-  wizard_task_id: string;
-  workspace_mode?: string;
-}
-
-export interface SetupWizardFailedProperties {
-  reason:
-    | "unauthenticated_client"
-    | "missing_directory"
-    | "startup_error"
-    | "already_installed"
-    | "task_run_terminal";
-  error_message?: string;
 }
 
 // Event names as constants
@@ -417,8 +403,6 @@ export const ANALYTICS_EVENTS = {
   SETUP_TASK_SELECTED: "Setup task selected",
   SETUP_TASK_DISMISSED: "Setup task dismissed",
   SETUP_SKIPPED: "Setup skipped",
-  SETUP_WIZARD_STARTED: "Setup wizard started",
-  SETUP_WIZARD_FAILED: "Setup wizard failed",
 
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
@@ -498,8 +482,6 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SETUP_TASK_SELECTED]: SetupTaskSelectedProperties;
   [ANALYTICS_EVENTS.SETUP_TASK_DISMISSED]: SetupTaskDismissedProperties;
   [ANALYTICS_EVENTS.SETUP_SKIPPED]: SetupSkippedProperties;
-  [ANALYTICS_EVENTS.SETUP_WIZARD_STARTED]: SetupWizardStartedProperties;
-  [ANALYTICS_EVENTS.SETUP_WIZARD_FAILED]: SetupWizardFailedProperties;
 
   // Error events
   [ANALYTICS_EVENTS.TASK_CREATION_FAILED]: TaskCreationFailedProperties;

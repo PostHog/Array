@@ -1,23 +1,17 @@
 import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { fetchAuthState } from "@features/auth/hooks/authQueries";
-import { DISCOVERY_PROMPT, WIZARD_PROMPT } from "@features/setup/prompts";
+import { DISCOVERY_PROMPT } from "@features/setup/prompts";
 import { useSetupStore } from "@features/setup/stores/setupStore";
 import {
   type DiscoveredTask,
   TASK_DISCOVERY_JSON_SCHEMA,
 } from "@features/setup/types";
-import type { PostHogAPIClient } from "@renderer/api/posthogClient";
-import {
-  type TaskCreationInput,
-  TaskCreationSaga,
-} from "@renderer/sagas/task/task-creation";
 import { trpcClient } from "@renderer/trpc/client";
 import { isTerminalStatus, type Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
 import { captureException, track } from "@utils/analytics";
 import { logger } from "@utils/logger";
-import { queryClient } from "@utils/queryClient";
 import { injectable } from "inversify";
 
 const log = logger.scope("setup-run-service");
@@ -155,60 +149,95 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-const POSTHOG_PACKAGES = [
-  "posthog-js",
-  "posthog-node",
-  "posthog-react-native",
-  "@posthog/react-native-session-replay",
-  "posthog-android",
-  "posthog-ios",
-  "posthog-flutter",
-];
-
-async function isPosthogInstalled(repoPath: string): Promise<boolean> {
-  try {
-    const content = await trpcClient.fs.readRepoFile.query({
-      repoPath,
-      filePath: "package.json",
-    });
-    if (!content) return false;
-    const pkg = JSON.parse(content);
-    const allDeps = {
-      ...pkg.dependencies,
-      ...pkg.devDependencies,
-    };
-    return POSTHOG_PACKAGES.some((name) => name in allDeps);
-  } catch {
-    return false;
-  }
+interface StaleFlagPayload {
+  flagKey: string;
+  references: { file: string; line: number; method: string }[];
+  referenceCount: number;
 }
 
-async function resolveWizardWorkspaceMode(
-  client: PostHogAPIClient,
-): Promise<"cloud" | "local"> {
-  try {
-    const integrations = await client.getIntegrations();
-    const hasGithub = (integrations as { kind: string }[]).some(
-      (i) => i.kind === "github",
-    );
-    if (hasGithub) return "cloud";
-  } catch (err) {
-    log.warn("Failed to check GitHub integration, falling back to local", {
-      error: err,
-    });
+function buildStaleFlagSuggestion(flag: StaleFlagPayload): DiscoveredTask {
+  const refs = flag.references;
+  const first = refs[0];
+  const moreCount = Math.max(0, flag.referenceCount - refs.length);
+  const referencesBlock = refs
+    .map((r) => `- ${r.file}:${r.line} (${r.method})`)
+    .join("\n");
+  const recommendation = `Remove the flag check and inline the winning branch. Code references:\n${referencesBlock}${moreCount > 0 ? `\n…and ${moreCount} more.` : ""}`;
+  return {
+    // Stable id keyed off the flag key so dismissal sticks across re-runs.
+    id: `posthog-stale-flag-${flag.flagKey}`,
+    source: "enricher",
+    category: "stale_feature_flag",
+    title: `Clean up stale flag "${flag.flagKey}"`,
+    description: `\`${flag.flagKey}\` hasn't been evaluated in 30+ days but is still referenced in ${flag.referenceCount} place${flag.referenceCount === 1 ? "" : "s"} in this codebase.`,
+    impact:
+      "Stale flags accumulate dead code paths and conditional branches that nobody is exercising any more — they make refactors riskier and obscure what's actually live in production.",
+    recommendation,
+    file: first?.file,
+    lineHint: first?.line,
+    prompt: `/cleaning-up-stale-feature-flags Clean up stale flag "${flag.flagKey}"\n\n${recommendation}`,
+  };
+}
+
+function buildSdkHealthSuggestion(): DiscoveredTask {
+  return {
+    id: "posthog-sdk-health",
+    source: "enricher",
+    category: "posthog_setup",
+    title: "Check PostHog SDK health",
+    description:
+      "Run a quick health check on the PostHog SDKs installed in this repo: confirm they're on supported versions, flag anything outdated or deprecated, and bump the safely-upgradable ones.",
+    impact:
+      "Outdated SDKs miss bug fixes, security patches, and new features (newer event types, recording APIs, flag evaluation behavior). Catching version drift early avoids surprise breakage when you eventually upgrade.",
+    recommendation:
+      'Click "Implement as new task" — the agent uses the bundled diagnosing-sdk-health skill to inspect each PostHog SDK\'s version, compare it against the latest, and open a PR with safe bumps. Breaking-change upgrades are flagged for your review rather than applied automatically.',
+    prompt: "/diagnosing-sdk-health",
+  };
+}
+
+function buildPosthogSetupSuggestion(
+  state: "not_installed" | "installed_no_init",
+): DiscoveredTask {
+  if (state === "not_installed") {
+    return {
+      id: "posthog-setup",
+      source: "enricher",
+      category: "posthog_setup",
+      title: "Set up PostHog",
+      description:
+        "PostHog isn't installed in this repo yet. Open this as a task to detect your framework, install the SDK, instrument analytics + error tracking + replay, and open a PR with the changes.",
+      impact:
+        "Without PostHog wired in, you have no visibility into how users interact with the product, no error or session-replay coverage, and no way to gate releases behind feature flags.",
+      recommendation:
+        'Click "Implement as new task" — the agent runs the bundled instrument-integration skill, sets up env vars, installs the SDK with your project\'s package manager, and opens a PR.',
+      prompt: "/instrument-integration",
+    };
   }
-  return "local";
+  return {
+    id: "posthog-finish-init",
+    source: "enricher",
+    category: "posthog_setup",
+    title: "Finish wiring PostHog",
+    description:
+      "The PostHog SDK is declared in this repo but `posthog.init(...)` (or the framework-equivalent provider) isn't called. Events won't be captured until that's wired up.",
+    impact:
+      "Until init runs, all PostHog calls are no-ops — you'll see no events in the project, no error reports, and no session replays despite the SDK being installed.",
+    recommendation:
+      'Click "Implement as new task" — the agent adds the init call and provider component for your framework, sets up the public-token + host env vars, and opens a PR. The SDK package itself is left alone.',
+    prompt:
+      "/instrument-integration\n\nThe SDK is already declared in this repo — skip install steps and focus on adding the init call, provider, and env vars.",
+  };
 }
 
 @injectable()
 export class SetupRunService {
-  private discoverySubscription: { unsubscribe: () => void } | null = null;
-  private wizardSubscription: { unsubscribe: () => void } | null = null;
-  private discoveryAbort: AbortController | null = null;
-  private wizardAbort: AbortController | null = null;
-  private discoveryStartedAt: number | null = null;
   private discoveryStarting = false;
-  private wizardStarting = false;
+  private enricherSuggestionsRunning = false;
+
+  startSetup(directory: string): void {
+    this.injectEnricherSuggestions(directory);
+    this.startDiscovery(directory);
+  }
 
   startDiscovery(directory: string): void {
     if (this.discoveryStarting) return;
@@ -224,216 +253,47 @@ export class SetupRunService {
       });
   }
 
-  startWizard(directory: string): void {
-    if (this.wizardStarting) return;
-    const state = useSetupStore.getState();
-    if (state.wizardTaskId || state.wizardSkipped) return;
-    this.wizardStarting = true;
-    this.runWizard(directory)
-      .catch((err) => {
-        log.error("Wizard startup failed", { error: err });
-      })
-      .finally(() => {
-        this.wizardStarting = false;
-      });
-  }
+  injectEnricherSuggestions(directory: string): void {
+    if (!directory) return;
+    if (this.enricherSuggestionsRunning) return;
+    this.enricherSuggestionsRunning = true;
 
-  cancel(): void {
-    this.discoveryAbort?.abort();
-    this.discoveryAbort = null;
-    this.wizardAbort?.abort();
-    this.wizardAbort = null;
-    this.discoverySubscription = null;
-    this.wizardSubscription = null;
-    this.discoveryStartedAt = null;
-    useSetupStore.getState().resetDiscovery();
-  }
-
-  private async runWizard(directory: string): Promise<void> {
-    const existingId = useSetupStore.getState().wizardTaskId;
-    if (existingId) {
-      log.debug("Wizard task already exists, skipping", {
-        wizardTaskId: existingId,
-      });
-      return;
-    }
-
-    this.wizardAbort?.abort();
-    const abort = new AbortController();
-    this.wizardAbort = abort;
-
-    log.debug("Starting wizard task");
-    try {
-      const client = await getAuthenticatedClient();
-      if (abort.signal.aborted) return;
-      if (!client) {
-        log.error("getAuthenticatedClient returned null for wizard");
-        track(ANALYTICS_EVENTS.SETUP_WIZARD_FAILED, {
-          reason: "unauthenticated_client",
-        });
-        return;
-      }
-
-      if (!directory) {
-        log.warn("No directory for wizard task");
-        track(ANALYTICS_EVENTS.SETUP_WIZARD_FAILED, {
-          reason: "missing_directory",
-        });
-        return;
-      }
-
-      if (await isPosthogInstalled(directory)) {
-        if (abort.signal.aborted) return;
-        log.info("PostHog already installed, skipping wizard");
-        useSetupStore.getState().skipWizard();
-        track(ANALYTICS_EVENTS.SETUP_WIZARD_FAILED, {
-          reason: "already_installed",
-        });
-        return;
-      }
-
-      const workspaceMode = await resolveWizardWorkspaceMode(client);
-      if (abort.signal.aborted) return;
-      log.info("Wizard workspace mode resolved", { workspaceMode });
-
-      const sagaInput: TaskCreationInput = {
-        taskDescription: WIZARD_PROMPT,
-        content: WIZARD_PROMPT,
-        repoPath: directory,
-        workspaceMode,
-        executionMode: "auto",
-      };
-
-      const saga = new TaskCreationSaga({
-        posthogClient: client,
-        onTaskReady: ({ task }) => {
-          if (abort.signal.aborted) return;
-          useSetupStore.getState().setWizardTaskId(task.id);
-          track(ANALYTICS_EVENTS.SETUP_WIZARD_STARTED, {
-            wizard_task_id: task.id,
-            workspace_mode: workspaceMode,
+    void (async () => {
+      try {
+        const installState =
+          await trpcClient.enrichment.detectPosthogInstallState.query({
+            repoPath: directory,
           });
-          queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
-          this.subscribeToWizardEvents(task.id, abort.signal);
-        },
+
+        if (installState === "initialized") {
+          useSetupStore
+            .getState()
+            .addEnricherSuggestionIfMissing(buildSdkHealthSuggestion());
+          await this.injectStaleFlagSuggestions(directory);
+        } else {
+          const suggestion = buildPosthogSetupSuggestion(installState);
+          useSetupStore.getState().addEnricherSuggestionIfMissing(suggestion);
+        }
+      } catch (err) {
+        log.warn("Enricher run failed", { error: err });
+      } finally {
+        this.enricherSuggestionsRunning = false;
+      }
+    })();
+  }
+
+  private async injectStaleFlagSuggestions(directory: string): Promise<void> {
+    try {
+      const flags = await trpcClient.enrichment.findStaleFlagSuggestions.query({
+        repoPath: directory,
       });
-
-      const result = await saga.run(sagaInput);
-      if (abort.signal.aborted) return;
-
-      if (!result.success) {
-        throw new Error(
-          `Wizard saga failed at step: ${result.failedStep ?? "unknown"}`,
-        );
+      const store = useSetupStore.getState();
+      for (const flag of flags) {
+        store.addEnricherSuggestionIfMissing(buildStaleFlagSuggestion(flag));
       }
     } catch (err) {
-      if (abort.signal.aborted) return;
-      log.error("Failed to start wizard task", { error: err });
-      const message =
-        err instanceof Error ? err.message : "Failed to start wizard task.";
-      track(ANALYTICS_EVENTS.SETUP_WIZARD_FAILED, {
-        reason: "startup_error",
-        error_message: message,
-      });
-      if (err instanceof Error) {
-        captureException(err, { scope: "setup.start_wizard_task" });
-      }
-    } finally {
-      if (this.wizardAbort === abort) {
-        this.wizardAbort = null;
-      }
+      log.warn("Failed to find stale flag suggestions", { error: err });
     }
-  }
-
-  private subscribeToWizardEvents(taskId: string, signal: AbortSignal): void {
-    const run = async () => {
-      const client = await getAuthenticatedClient();
-      if (!client || signal.aborted) return;
-
-      let runId: string | null = null;
-      for (let i = 0; i < 30; i++) {
-        try {
-          await sleep(2000, signal);
-        } catch {
-          return; // aborted
-        }
-        try {
-          const taskData = (await client.getTask(taskId)) as unknown as Task;
-          if (signal.aborted) return;
-          if (taskData.latest_run?.id) {
-            runId = taskData.latest_run.id;
-            break;
-          }
-        } catch {
-          // keep polling
-        }
-      }
-
-      if (!runId || signal.aborted) return;
-
-      log.debug("Wizard run found, subscribing", { taskId, runId });
-      const sub = trpcClient.agent.onSessionEvent.subscribe(
-        { taskRunId: runId },
-        {
-          onData: (payload: unknown) => {
-            handleSessionUpdate(payload, (entry) => {
-              useSetupStore.getState().pushWizardActivity(entry);
-            });
-          },
-          onError: (err) => {
-            log.error("Wizard subscription error", { error: err });
-          },
-        },
-      );
-      this.wizardSubscription = sub;
-      signal.addEventListener(
-        "abort",
-        () => {
-          sub.unsubscribe();
-          if (this.wizardSubscription === sub) {
-            this.wizardSubscription = null;
-          }
-        },
-        { once: true },
-      );
-
-      const POLL_INTERVAL_MS = 5000;
-      const MAX_ATTEMPTS = 360; // 30 minutes
-      for (let i = 0; i < MAX_ATTEMPTS; i++) {
-        try {
-          await sleep(POLL_INTERVAL_MS, signal);
-        } catch {
-          return; // aborted
-        }
-        if (useSetupStore.getState().wizardCompleted) return;
-        try {
-          const taskRun = await client.getTaskRun(taskId, runId);
-          if (signal.aborted) return;
-          if (isTerminalStatus(taskRun.status)) {
-            log.info("Wizard task reached terminal status", {
-              taskId,
-              runId,
-              status: taskRun.status,
-            });
-            if (taskRun.status === "completed") {
-              useSetupStore.getState().completeWizard();
-            } else {
-              useSetupStore.getState().skipWizard();
-              track(ANALYTICS_EVENTS.SETUP_WIZARD_FAILED, {
-                reason: "task_run_terminal",
-                error_message: taskRun.status,
-              });
-            }
-            return;
-          }
-        } catch (err) {
-          log.warn("Failed to poll wizard task run", { error: err });
-        }
-      }
-    };
-    run().catch((err) =>
-      log.error("Wizard event subscribe failed", { error: err }),
-    );
   }
 
   private async runDiscovery(directory: string): Promise<void> {
@@ -445,9 +305,8 @@ export class SetupRunService {
       return;
     }
 
-    this.discoveryAbort?.abort();
     const abort = new AbortController();
-    this.discoveryAbort = abort;
+    const discoveryStartedAt = Date.now();
 
     try {
       const authState = await fetchAuthState();
@@ -501,7 +360,6 @@ export class SetupRunService {
       }
 
       useSetupStore.getState().startDiscovery(task.id, taskRun.id);
-      this.discoveryStartedAt = Date.now();
       track(ANALYTICS_EVENTS.SETUP_DISCOVERY_STARTED, {
         discovery_task_id: task.id,
         discovery_task_run_id: taskRun.id,
@@ -542,14 +400,10 @@ export class SetupRunService {
         if (completed || abort.signal.aborted) return;
         completed = true;
         subscription?.unsubscribe();
-        if (this.discoverySubscription === subscription) {
-          this.discoverySubscription = null;
-        }
 
-        const startedAt = this.discoveryStartedAt;
-        const durationSeconds = startedAt
-          ? Math.round((Date.now() - startedAt) / 1000)
-          : 0;
+        const durationSeconds = Math.round(
+          (Date.now() - discoveryStartedAt) / 1000,
+        );
 
         log.info("Discovery completed", {
           taskCount: tasks.length,
@@ -572,9 +426,6 @@ export class SetupRunService {
         if (completed || abort.signal.aborted) return;
         completed = true;
         subscription?.unsubscribe();
-        if (this.discoverySubscription === subscription) {
-          this.discoverySubscription = null;
-        }
 
         log.error("Discovery failed", { reason });
         useSetupStore.getState().failDiscovery(message);
@@ -656,15 +507,11 @@ export class SetupRunService {
           },
         },
       );
-      this.discoverySubscription = subscription;
       const subscriptionAtAbort = subscription;
       abort.signal.addEventListener(
         "abort",
         () => {
           subscriptionAtAbort.unsubscribe();
-          if (this.discoverySubscription === subscriptionAtAbort) {
-            this.discoverySubscription = null;
-          }
         },
         { once: true },
       );
@@ -725,9 +572,6 @@ export class SetupRunService {
         if (!completed) {
           completed = true;
           subscription?.unsubscribe();
-          if (this.discoverySubscription === subscription) {
-            this.discoverySubscription = null;
-          }
           useSetupStore
             .getState()
             .failDiscovery("Discovery failed unexpectedly.");
@@ -755,10 +599,6 @@ export class SetupRunService {
       });
       if (err instanceof Error) {
         captureException(err, { scope: "setup.start_discovery" });
-      }
-    } finally {
-      if (this.discoveryAbort === abort) {
-        this.discoveryAbort = null;
       }
     }
   }

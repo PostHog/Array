@@ -1,18 +1,8 @@
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
-import type { SetupRunService } from "@features/setup/services/setupRunService";
-import { get } from "@renderer/di/container";
-import { RENDERER_TOKENS } from "@renderer/di/tokens";
 import { trpcClient } from "@renderer/trpc/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ONBOARDING_STEPS, type OnboardingStep } from "../types";
-
-function kickOffSetupRuns(directory: string): void {
-  if (!directory) return;
-  const service = get<SetupRunService>(RENDERER_TOKENS.SetupRunService);
-  service.startWizard(directory);
-  service.startDiscovery(directory);
-}
 
 export interface DetectedRepo {
   organization: string;
@@ -56,7 +46,6 @@ export function useOnboardingFlow() {
       })
       .catch(() => {})
       .finally(() => setIsDetectingRepo(false));
-    kickOffSetupRuns(selectedDirectory);
   }, [selectedDirectory]);
 
   const handleDirectoryChange = useCallback(
@@ -64,8 +53,6 @@ export function useOnboardingFlow() {
       setSelectedDirectory(path);
       setDetectedRepo(null);
       if (!path) return;
-
-      kickOffSetupRuns(path);
 
       setIsDetectingRepo(true);
       try {

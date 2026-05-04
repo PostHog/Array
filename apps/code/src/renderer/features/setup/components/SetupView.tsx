@@ -7,7 +7,7 @@ import { useSetupStore } from "@features/setup/stores/setupStore";
 import type { DiscoveredTask } from "@features/setup/types";
 import { buildDiscoveredTaskPrompt } from "@features/setup/utils/buildDiscoveredTaskPrompt";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
-import { MagicWand, Robot, Rocket } from "@phosphor-icons/react";
+import { Robot, Rocket } from "@phosphor-icons/react";
 import { Box, Button, Flex, ScrollArea, Text } from "@radix-ui/themes";
 import explorerHog from "@renderer/assets/images/hedgehogs/explorer-hog.png";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
@@ -17,16 +17,8 @@ import { motion } from "framer-motion";
 import { useEffect } from "react";
 
 export function SetupView() {
-  const {
-    discoveryFeed,
-    wizardFeed,
-    isDiscoveryDone,
-    isWizardStarted,
-    isWizardDone,
-    wizardSkipped,
-    discoveredTasks,
-    error,
-  } = useSetupRun();
+  const { discoveryFeed, isDiscoveryDone, discoveredTasks, error } =
+    useSetupRun();
   const completeSetup = useOnboardingStore((state) => state.completeSetup);
   const navigateToTaskInput = useNavigationStore(
     (state) => state.navigateToTaskInput,
@@ -110,35 +102,21 @@ export function SetupView() {
               >
                 {isDiscoveryDone
                   ? "Your starter tasks are ready"
-                  : "Finding your first tasks"}
+                  : discoveredTasks.length > 0
+                    ? "Some starter tasks are ready"
+                    : "Finding your first tasks"}
               </Text>
               <Text size="2" className="text-(--gray-11)">
                 {isDiscoveryDone
                   ? "Pick one to get going, or start from scratch — your suggestions stay in the sidebar."
-                  : "This takes about a minute. We're scanning your code for a handful of starter tasks you can run in one click — bug fixes, cleanup, and PostHog enhancements where they apply."}
+                  : discoveredTasks.length > 0
+                    ? "Pick one to get going, or wait — we're still skimming your codebase for more."
+                    : "This takes about a minute. We're scanning your code for a handful of starter tasks you can run in one click — bug fixes, cleanup, and PostHog enhancements where they apply."}
               </Text>
             </Flex>
           </motion.div>
 
           <Flex direction="column" gap="3">
-            {isWizardStarted && !wizardSkipped && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: 0.05 }}
-              >
-                <SetupScanFeed
-                  label="Integrating PostHog features"
-                  icon={MagicWand}
-                  color="blue"
-                  currentTool={wizardFeed.currentTool}
-                  recentEntries={wizardFeed.recentEntries}
-                  isDone={isWizardDone}
-                  doneLabel="Integration ready"
-                />
-              </motion.div>
-            )}
-
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -155,6 +133,24 @@ export function SetupView() {
               />
             </motion.div>
           </Flex>
+
+          {discoveredTasks.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <Flex direction="column" gap="2">
+                <Text size="3" weight="medium" className="text-(--gray-12)">
+                  Recommended first tasks
+                </Text>
+                <SuggestedTasks
+                  tasks={discoveredTasks}
+                  onSelectTask={handleSelectTask}
+                />
+              </Flex>
+            </motion.div>
+          )}
 
           {!isDiscoveryDone && (
             <motion.div
@@ -178,7 +174,9 @@ export function SetupView() {
                     className="h-9 w-9 shrink-0 object-contain"
                   />
                   <Text size="1" className="text-(--gray-9) italic">
-                    Skimming your codebase for a few starter tasks…
+                    {discoveredTasks.length > 0
+                      ? "Looking for more starter tasks…"
+                      : "Skimming your codebase for a few starter tasks…"}
                   </Text>
                 </Flex>
 
@@ -211,30 +209,16 @@ export function SetupView() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4 }}
             >
-              <Flex direction="column" gap="4">
-                {discoveredTasks.length > 0 && (
-                  <Flex direction="column" gap="2">
-                    <Text size="3" weight="medium" className="text-(--gray-12)">
-                      Recommended first tasks
-                    </Text>
-                    <SuggestedTasks
-                      tasks={discoveredTasks}
-                      onSelectTask={handleSelectTask}
-                    />
-                  </Flex>
-                )}
-
-                <Box>
-                  <Button
-                    size="2"
-                    variant="ghost"
-                    color="gray"
-                    onClick={handleSkipAfterDone}
-                  >
-                    Start from scratch
-                  </Button>
-                </Box>
-              </Flex>
+              <Box>
+                <Button
+                  size="2"
+                  variant="ghost"
+                  color="gray"
+                  onClick={handleSkipAfterDone}
+                >
+                  Start from scratch
+                </Button>
+              </Box>
             </motion.div>
           )}
         </Flex>

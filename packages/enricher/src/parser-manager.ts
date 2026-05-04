@@ -24,6 +24,7 @@ export class ParserManager {
   private languages = new Map<string, Parser.Language>();
   private languageKeys = new WeakMap<Parser.Language, string>();
   private queryCache = new Map<string, Parser.Query>();
+  private failedQueries = new Set<string>();
   private maxCacheSize = 256;
   private initPromise: Promise<void> | null = null;
   private wasmDir = resolveGrammarsDir();
@@ -32,6 +33,7 @@ export class ParserManager {
   updateConfig(config: DetectionConfig): void {
     this.config = config;
     this.queryCache.clear();
+    this.failedQueries.clear();
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -106,6 +108,11 @@ export class ParserManager {
 
     const langKey = this.languageKeys.get(lang) ?? lang.toString();
     const cacheKey = `${langKey}:${queryStr}`;
+
+    if (this.failedQueries.has(cacheKey)) {
+      return null;
+    }
+
     let query = this.queryCache.get(cacheKey);
     if (query) {
       // LRU: move to end by deleting and re-inserting
@@ -127,6 +134,7 @@ export class ParserManager {
       return query;
     } catch (err) {
       warn("Query compilation failed", err);
+      this.failedQueries.add(cacheKey);
       return null;
     }
   }
@@ -138,5 +146,6 @@ export class ParserManager {
     this.languages.clear();
     this.languageKeys = new WeakMap();
     this.queryCache.clear();
+    this.failedQueries.clear();
   }
 }
