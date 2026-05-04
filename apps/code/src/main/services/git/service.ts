@@ -19,6 +19,7 @@ import {
   getDiffHead,
   getDiffStats,
   getFileAtHead,
+  getGitBusyState,
   getLatestCommit,
   getRemoteUrl,
   getStagedDiff,
@@ -57,6 +58,7 @@ import type {
   GetPrTemplateOutput,
   GhAuthTokenOutput,
   GhStatusOutput,
+  GitBusyState,
   GitCommitInfo,
   GitFileStatus,
   GithubRef,
@@ -283,6 +285,10 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
 
   public async getAllBranches(directoryPath: string): Promise<string[]> {
     return getAllBranches(directoryPath);
+  }
+
+  public async getGitBusyState(directoryPath: string): Promise<GitBusyState> {
+    return getGitBusyState(directoryPath);
   }
 
   public async createBranch(

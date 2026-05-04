@@ -372,10 +372,89 @@ export async function getAllBranches(
     baseDir,
     async (git) => {
       try {
-        const summary = await git.branchLocal();
-        return summary.all;
+        // Use `for-each-ref` rather than `branch --list` (via simple-git's
+        // branchLocal()): during a rebase or cherry-pick git surfaces a
+        // pseudo-branch like `(no branch, rebasing main)` which simple-git's
+        // parser mistakenly returns as a branch named `(no`.
+        const output = await git.raw([
+          "for-each-ref",
+          "--format=%(refname:short)",
+          "refs/heads/",
+        ]);
+        return output.split("\n").filter(Boolean);
       } catch {
         return [];
+      }
+    },
+    { signal: options?.abortSignal },
+  );
+}
+
+export type GitBusyOperation = "rebase" | "merge" | "cherry-pick" | "revert";
+
+export type GitBusyState =
+  | { busy: false }
+  | { busy: true; operation: GitBusyOperation };
+
+export async function inspectGitBusyState(git: GitLike): Promise<GitBusyState> {
+  const toplevel = (await git.raw(["rev-parse", "--show-toplevel"])).trim();
+
+  const resolveGitPath = async (gitPath: string): Promise<string> => {
+    const relative = (
+      await git.raw(["rev-parse", "--git-path", gitPath])
+    ).trim();
+    return path.isAbsolute(relative)
+      ? relative
+      : path.resolve(toplevel, relative);
+  };
+
+  const pathExists = async (gitPath: string): Promise<boolean> => {
+    const resolved = await resolveGitPath(gitPath);
+    try {
+      await fs.access(resolved);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const dirExists = async (gitPath: string): Promise<boolean> => {
+    const resolved = await resolveGitPath(gitPath);
+    try {
+      const stat = await fs.stat(resolved);
+      return stat.isDirectory();
+    } catch {
+      return false;
+    }
+  };
+
+  if ((await dirExists("rebase-merge")) || (await dirExists("rebase-apply"))) {
+    return { busy: true, operation: "rebase" };
+  }
+  if (await pathExists("MERGE_HEAD")) {
+    return { busy: true, operation: "merge" };
+  }
+  if (await pathExists("CHERRY_PICK_HEAD")) {
+    return { busy: true, operation: "cherry-pick" };
+  }
+  if (await pathExists("REVERT_HEAD")) {
+    return { busy: true, operation: "revert" };
+  }
+  return { busy: false };
+}
+
+export async function getGitBusyState(
+  baseDir: string,
+  options?: CreateGitClientOptions,
+): Promise<GitBusyState> {
+  const manager = getGitOperationManager();
+  return manager.executeRead(
+    baseDir,
+    async (git) => {
+      try {
+        return await inspectGitBusyState(git);
+      } catch {
+        return { busy: false };
       }
     },
     { signal: options?.abortSignal },

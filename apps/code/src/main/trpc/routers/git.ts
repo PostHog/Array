@@ -35,6 +35,8 @@ import {
   getDiffStatsOutput,
   getFileAtHeadInput,
   getFileAtHeadOutput,
+  getGitBusyStateInput,
+  getGitBusyStateOutput,
   getGithubIssueInput,
   getGithubIssueOutput,
   getGithubPullRequestInput,
@@ -129,6 +131,11 @@ export const gitRouter = router({
     .input(getAllBranchesInput)
     .output(getAllBranchesOutput)
     .query(({ input }) => getService().getAllBranches(input.directoryPath)),
+
+  getGitBusyState: publicProcedure
+    .input(getGitBusyStateInput)
+    .output(getGitBusyStateOutput)
+    .query(({ input }) => getService().getGitBusyState(input.directoryPath)),
 
   createBranch: publicProcedure
     .input(createBranchInput)
