@@ -278,6 +278,34 @@ export interface BranchMismatchActionProperties {
   current_branch: string;
 }
 
+// Deep link events
+type DeepLinkAction = "new" | "plan" | "issue";
+
+export interface DeepLinkNewTaskProperties {
+  action: DeepLinkAction;
+  has_prompt: boolean;
+  has_repo: boolean;
+  mode?: string;
+  model?: string;
+}
+
+export interface DeepLinkPlanProperties {
+  action: DeepLinkAction;
+  has_repo: boolean;
+  mode?: string;
+  model?: string;
+  plan_length_chars: number;
+}
+
+export interface DeepLinkIssueProperties {
+  action: DeepLinkAction;
+  owner: string;
+  repo: string;
+  issue_number: number;
+  mode?: string;
+  model?: string;
+}
+
 // Feedback events
 export interface TaskFeedbackProperties {
   task_id: string;
@@ -633,6 +661,11 @@ export const ANALYTICS_EVENTS = {
   SETUP_TASK_SELECTED: "Setup task selected",
   SETUP_TASK_DISMISSED: "Setup task dismissed",
 
+  // Deep link events
+  DEEP_LINK_NEW_TASK: "Deep link new task",
+  DEEP_LINK_PLAN: "Deep link plan",
+  DEEP_LINK_ISSUE: "Deep link issue",
+
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
   AGENT_SESSION_ERROR: "Agent session error",
@@ -738,6 +771,11 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SETUP_DISCOVERY_FAILED]: SetupDiscoveryFailedProperties;
   [ANALYTICS_EVENTS.SETUP_TASK_SELECTED]: SetupTaskSelectedProperties;
   [ANALYTICS_EVENTS.SETUP_TASK_DISMISSED]: SetupTaskDismissedProperties;
+
+  // Deep link events
+  [ANALYTICS_EVENTS.DEEP_LINK_NEW_TASK]: DeepLinkNewTaskProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_PLAN]: DeepLinkPlanProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_ISSUE]: DeepLinkIssueProperties;
 
   // Error events
   [ANALYTICS_EVENTS.TASK_CREATION_FAILED]: TaskCreationFailedProperties;

@@ -38,6 +38,7 @@ import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useRef } from "react";
+import { useNewTaskDeepLink } from "../hooks/useNewTaskDeepLink";
 import { useTaskDeepLink } from "../hooks/useTaskDeepLink";
 import { GlobalEventHandlers } from "./GlobalEventHandlers";
 
@@ -81,6 +82,7 @@ export function MainLayout() {
   useTaskDeepLink();
   useInboxDeepLink();
   useSetupDiscovery();
+  useNewTaskDeepLink();
 
   useEffect(() => {
     if (tasks) {
