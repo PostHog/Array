@@ -61,6 +61,8 @@ interface TaskInputProps {
   initialPrompt?: string;
   initialPromptKey?: string;
   initialCloudRepository?: string;
+  initialModel?: string;
+  initialMode?: string;
   reportAssociation?: TaskInputReportAssociation;
 }
 
@@ -70,6 +72,8 @@ export function TaskInput({
   initialPrompt,
   initialPromptKey,
   initialCloudRepository,
+  initialModel,
+  initialMode,
   reportAssociation,
 }: TaskInputProps = {}) {
   const { cloudRegion } = useAuthStore();
@@ -350,6 +354,23 @@ export function TaskInput({
     isLoading: isPreviewLoading,
     setConfigOption,
   } = usePreviewConfig(adapter);
+
+  useEffect(() => {
+    if (isPreviewLoading) return;
+    if (initialModel && modelOption) {
+      setConfigOption(modelOption.id, initialModel);
+    }
+    if (initialMode && modeOption) {
+      setConfigOption(modeOption.id, initialMode);
+    }
+  }, [
+    isPreviewLoading,
+    initialModel,
+    initialMode,
+    modelOption,
+    modeOption,
+    setConfigOption,
+  ]);
 
   const { folders } = useFolders();
 

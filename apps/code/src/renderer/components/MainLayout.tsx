@@ -151,6 +151,8 @@ export function MainLayout() {
               initialCloudRepository={
                 view.initialCloudRepository ?? taskInputCloudRepository
               }
+              initialModel={view.initialModel}
+              initialMode={view.initialMode}
               reportAssociation={
                 view.reportAssociation ?? taskInputReportAssociation
               }

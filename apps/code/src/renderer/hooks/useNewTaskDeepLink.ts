@@ -72,6 +72,8 @@ type NavigateToTaskInput = (options?: {
   folderId?: string;
   initialPrompt?: string;
   initialCloudRepository?: string;
+  initialModel?: string;
+  initialMode?: string;
 }) => void;
 
 function handleNew(
@@ -81,6 +83,8 @@ function handleNew(
   navigateToTaskInput({
     initialPrompt: payload.prompt,
     initialCloudRepository: payload.repo,
+    initialModel: payload.model,
+    initialMode: payload.mode,
   });
 
   track(ANALYTICS_EVENTS.DEEP_LINK_NEW_TASK, {
@@ -100,6 +104,8 @@ function handlePlan(
   navigateToTaskInput({
     initialPrompt: payload.plan,
     initialCloudRepository: payload.repo,
+    initialModel: payload.model,
+    initialMode: payload.mode,
   });
 
   track(ANALYTICS_EVENTS.DEEP_LINK_PLAN, {
@@ -142,6 +148,8 @@ async function handleIssue(
     navigateToTaskInput({
       initialPrompt: prompt,
       initialCloudRepository: cloudRepo,
+      initialModel: payload.model,
+      initialMode: payload.mode,
     });
 
     track(ANALYTICS_EVENTS.DEEP_LINK_ISSUE, {

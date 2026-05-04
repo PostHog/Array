@@ -32,6 +32,8 @@ interface TaskInputNavigationOptions {
   folderId?: string;
   initialPrompt?: string;
   initialCloudRepository?: string;
+  initialModel?: string;
+  initialMode?: string;
   reportAssociation?: TaskInputReportAssociation;
 }
 
@@ -43,6 +45,8 @@ interface ViewState {
   taskInputRequestId?: string;
   initialPrompt?: string;
   initialCloudRepository?: string;
+  initialModel?: string;
+  initialMode?: string;
   reportAssociation?: TaskInputReportAssociation;
   pendingTaskKey?: string;
 }
@@ -211,6 +215,8 @@ export const useNavigationStore = create<NavigationStore>()(
           const hasTransientState =
             !!options.initialPrompt ||
             !!options.initialCloudRepository ||
+            !!options.initialModel ||
+            !!options.initialMode ||
             !!options.reportAssociation;
           if (options.reportAssociation || options.initialCloudRepository) {
             set({
@@ -223,6 +229,8 @@ export const useNavigationStore = create<NavigationStore>()(
             folderId: options.folderId,
             initialPrompt: options.initialPrompt,
             initialCloudRepository: options.initialCloudRepository,
+            initialModel: options.initialModel,
+            initialMode: options.initialMode,
             reportAssociation: options.reportAssociation,
             taskInputRequestId: hasTransientState
               ? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`)
