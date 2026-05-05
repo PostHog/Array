@@ -23,8 +23,12 @@ export function AddDirectoryDialog() {
   const close = useAddDirectoryDialogStore((s) => s.close);
 
   const decidedRef = useRef(false);
+  const justThisChatRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
-    if (open) decidedRef.current = false;
+    if (!open) return;
+    decidedRef.current = false;
+    const id = window.setTimeout(() => justThisChatRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
   }, [open]);
 
   if (!path || !taskId) return null;
@@ -100,7 +104,12 @@ export function AddDirectoryDialog() {
           <Button variant="outline" size="sm" onClick={handleAlways}>
             Always add to new chats
           </Button>
-          <Button variant="primary" size="sm" onClick={handleJustThisChat}>
+          <Button
+            ref={justThisChatRef}
+            variant="primary"
+            size="sm"
+            onClick={handleJustThisChat}
+          >
             Just this chat
           </Button>
         </DialogFooter>
