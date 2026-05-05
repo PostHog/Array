@@ -9,6 +9,7 @@ import {
 } from "@features/auth/hooks/authClient";
 import { fetchAuthState } from "@features/auth/hooks/authQueries";
 import { useUsageLimitStore } from "@features/billing/stores/usageLimitStore";
+import { useAddDirectoryDialogStore } from "@features/folder-picker/stores/addDirectoryDialogStore";
 import { useSessionAdapterStore } from "@features/sessions/stores/sessionAdapterStore";
 import {
   getPersistedConfigOptions,
@@ -1472,6 +1473,15 @@ export class SessionService {
     let session = sessionStoreSetters.getSessionByTaskId(taskId);
     if (!session) throw new Error("No active session for task");
 
+    // The /add-dir dialog mutates the per-task additional-directories list and
+    // we re-read it during respawn below. Sending while it's open would race
+    // and respawn with the pre-decision set, so block here.
+    if (useAddDirectoryDialogStore.getState().open) {
+      throw new Error(
+        "Confirm the folder access dialog before sending your message.",
+      );
+    }
+
     if (session.isCloud) {
       return this.sendCloudPrompt(session, prompt);
     }
@@ -1527,10 +1537,19 @@ export class SessionService {
         try {
           await this.reconnectInPlace(taskId, repoPath);
         } catch (err) {
-          log.warn("Respawn failed; continuing with current session", {
-            taskId,
-            err,
+          log.error("Respawn failed; aborting prompt send", { taskId, err });
+          sessionStoreSetters.clearOptimisticItems(session.taskRunId);
+          sessionStoreSetters.updateSession(session.taskRunId, {
+            isPromptPending: false,
+            promptStartedAt: null,
           });
+          toast.error("Couldn't grant the new folder access", {
+            description:
+              "The session needs to restart to pick up the added folder. Try sending again, or remove the folder reference.",
+          });
+          throw err instanceof Error
+            ? err
+            : new Error("Failed to apply additional directories");
         }
         const refreshed = sessionStoreSetters.getSessionByTaskId(taskId);
         if (refreshed) {

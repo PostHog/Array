@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
+import { normalizeDirectoryPath } from "../../utils/normalize-path";
 import { defaultAdditionalDirectories } from "../schema";
 import type { DatabaseService } from "../service";
 
@@ -37,7 +38,7 @@ export class DefaultAdditionalDirectoryRepository
   add(path: string): void {
     this.db
       .insert(defaultAdditionalDirectories)
-      .values({ path })
+      .values({ path: normalizeDirectoryPath(path) })
       .onConflictDoNothing()
       .run();
   }
@@ -45,7 +46,9 @@ export class DefaultAdditionalDirectoryRepository
   remove(path: string): void {
     this.db
       .delete(defaultAdditionalDirectories)
-      .where(eq(defaultAdditionalDirectories.path, path))
+      .where(
+        eq(defaultAdditionalDirectories.path, normalizeDirectoryPath(path)),
+      )
       .run();
   }
 }

@@ -1,6 +1,7 @@
 import { eq, isNotNull } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
+import { normalizeDirectoryPath } from "../../utils/normalize-path";
 import { workspaces } from "../schema";
 import type { DatabaseService } from "../service";
 
@@ -192,14 +193,18 @@ export class WorkspaceRepository implements IWorkspaceRepository {
   }
 
   addAdditionalDirectory(taskId: string, path: string): void {
+    const normalized = normalizeDirectoryPath(path);
     this.updateDirectories(taskId, (current) =>
-      current.includes(path) ? null : [...current, path],
+      current.includes(normalized) ? null : [...current, normalized],
     );
   }
 
   removeAdditionalDirectory(taskId: string, path: string): void {
+    const normalized = normalizeDirectoryPath(path);
     this.updateDirectories(taskId, (current) =>
-      current.includes(path) ? current.filter((p) => p !== path) : null,
+      current.includes(normalized)
+        ? current.filter((p) => p !== normalized)
+        : null,
     );
   }
 

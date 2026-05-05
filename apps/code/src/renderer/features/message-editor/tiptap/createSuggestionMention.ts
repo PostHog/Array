@@ -126,6 +126,10 @@ export function createSuggestionMention<T extends SuggestionItem>(
           }
 
           if (autoCommit) {
+            // Caveat: if one item label is a strict prefix of another (e.g.
+            // "add" vs "add-dir"), the shorter name becomes uncommittable via
+            // auto-commit and the user has to pick from the list. Avoid
+            // shipping prefix-clashing command names, or rename to disambiguate.
             const q = props.query.toLowerCase();
             const exact = props.items.find((i) => i.label.toLowerCase() === q);
             const hasLongerExtension = props.items.some(
