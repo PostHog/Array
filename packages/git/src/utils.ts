@@ -178,6 +178,40 @@ export function parsePrUrl(prUrl: string | null | undefined): GitHubPr | null {
   return { owner, repo, number };
 }
 
+export interface GitHubRefLink {
+  owner: string;
+  repo: string;
+  number: number;
+  kind: "issue" | "pr";
+}
+
+export function parseGithubRefUrl(
+  url: string | null | undefined,
+): GitHubRefLink | null {
+  if (!url) return null;
+  let parsed: gitUrlParse.GitUrl;
+  try {
+    parsed = gitUrlParse(url.trim());
+  } catch {
+    return null;
+  }
+  if (parsed.source.toLowerCase() !== "github.com") return null;
+  // git-url-parse keeps the issue suffix in pathname but strips it from
+  // full_name, so read pathname directly.
+  const parts = parsed.pathname.split("/");
+  if (parts.length < 5 || parts[0] !== "") return null;
+  const [, owner, repoRaw, segment, num] = parts;
+  if (!owner || !repoRaw || !segment || !num) return null;
+  let kind: "issue" | "pr";
+  if (segment === "pull") kind = "pr";
+  else if (segment === "issues") kind = "issue";
+  else return null;
+  const number = Number(num);
+  if (!Number.isInteger(number) || number <= 0) return null;
+  const repo = repoRaw.replace(/\.git$/, "");
+  return { owner, repo, number, kind };
+}
+
 export function parseGitHubUrl(
   url: string | null | undefined,
 ): GitHubRepo | null {

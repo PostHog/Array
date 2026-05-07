@@ -2,7 +2,12 @@ import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { forceRemove, parseGitHubUrl, parsePrUrl } from "./utils";
+import {
+  forceRemove,
+  parseGitHubUrl,
+  parseGithubRefUrl,
+  parsePrUrl,
+} from "./utils";
 
 async function fileExists(p: string): Promise<boolean> {
   try {
@@ -243,5 +248,100 @@ describe("parsePrUrl", () => {
     "https://api.github.com/repos/PostHog/code/pulls/42",
   ])("returns null for %s", (url) => {
     expect(parsePrUrl(url)).toBeNull();
+  });
+});
+
+describe("parseGithubRefUrl", () => {
+  it.each([
+    // Issue URLs
+    [
+      "https://github.com/PostHog/posthog/issues/57021",
+      "PostHog",
+      "posthog",
+      57021,
+      "issue" as const,
+    ],
+    [
+      "http://github.com/PostHog/code/issues/1",
+      "PostHog",
+      "code",
+      1,
+      "issue" as const,
+    ],
+    // Whitespace
+    [
+      "  https://github.com/PostHog/code/issues/7\n",
+      "PostHog",
+      "code",
+      7,
+      "issue" as const,
+    ],
+    // Query strings + fragments
+    [
+      "https://github.com/PostHog/code/issues/42?foo=bar",
+      "PostHog",
+      "code",
+      42,
+      "issue" as const,
+    ],
+    [
+      "https://github.com/PostHog/code/issues/42#issuecomment-1",
+      "PostHog",
+      "code",
+      42,
+      "issue" as const,
+    ],
+    // Mixed-case host
+    [
+      "https://GITHUB.COM/PostHog/code/issues/42",
+      "PostHog",
+      "code",
+      42,
+      "issue" as const,
+    ],
+    // PR URLs
+    [
+      "https://github.com/PostHog/code/pull/42",
+      "PostHog",
+      "code",
+      42,
+      "pr" as const,
+    ],
+    [
+      "https://github.com/PostHog/code/pull/42/files",
+      "PostHog",
+      "code",
+      42,
+      "pr" as const,
+    ],
+  ])("parses %s", (url, owner, repo, number, kind) => {
+    expect(parseGithubRefUrl(url)).toEqual({ owner, repo, number, kind });
+  });
+
+  it.each<string | null | undefined>([
+    "",
+    "   ",
+    null,
+    undefined,
+    "not-a-url",
+    // Repo-only
+    "https://github.com/PostHog/code",
+    "https://github.com/PostHog/code/",
+    // Wrong path keyword
+    "https://github.com/PostHog/code/discussions/42",
+    "https://github.com/PostHog/code/pulls/42",
+    "https://github.com/PostHog/code/issue/42",
+    // Bad number
+    "https://github.com/PostHog/code/issues/abc",
+    "https://github.com/PostHog/code/issues/0",
+    "https://github.com/PostHog/code/issues/-1",
+    "https://github.com/PostHog/code/issues/42.5",
+    "https://github.com/PostHog/code/issues/",
+    "https://github.com/PostHog/code/issues",
+    // Wrong host
+    "https://gitlab.com/PostHog/code/issues/42",
+    "https://api.github.com/repos/PostHog/code/issues/42",
+  ])("returns null for %s", (url) => {
+    expect(parseGithubRefUrl(url)).toBeNull();
   });
 });

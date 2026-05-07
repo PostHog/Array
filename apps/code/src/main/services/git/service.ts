@@ -35,7 +35,11 @@ import { CommitSaga } from "@posthog/git/sagas/commit";
 import { DiscardFileChangesSaga } from "@posthog/git/sagas/discard";
 import { PullSaga } from "@posthog/git/sagas/pull";
 import { PushSaga } from "@posthog/git/sagas/push";
-import { parseGitHubUrl, parsePrUrl } from "@posthog/git/utils";
+import {
+  parseGitHubUrl,
+  parseGithubRefUrl,
+  parsePrUrl,
+} from "@posthog/git/utils";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
@@ -1543,6 +1547,23 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
   ): Promise<GithubRef[]> {
     const repoInfo = await this.getGitRepoInfo(directoryPath);
     if (!repoInfo) return [];
+
+    // Full GitHub URL: look up directly. May target a different repo than the local one.
+    const urlRef = parseGithubRefUrl(query);
+    if (urlRef && kinds.includes(urlRef.kind)) {
+      const repoSlug = `${urlRef.owner}/${urlRef.repo}`;
+      return this.fetchGhRefs(
+        [
+          urlRef.kind === "pr" ? "pr" : "issue",
+          "view",
+          String(urlRef.number),
+          "--repo",
+          repoSlug,
+        ],
+        repoSlug,
+        urlRef.kind,
+      );
+    }
 
     const repo = await this.resolveCanonicalRepo(
       `${repoInfo.organization}/${repoInfo.repository}`,
