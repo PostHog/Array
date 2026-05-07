@@ -108,3 +108,23 @@ function readExplicitInput(value: unknown): string | undefined {
     return undefined;
   }
 }
+
+/**
+ * Pretty-prints the unwrapped exec args for display in the permission dialog
+ * body — JSON payloads (the `call` case) render multi-line; non-JSON args
+ * (e.g. a `search` regex) pass through unchanged.
+ */
+export function formatPosthogExecBody(
+  input: string | undefined,
+): string | undefined {
+  if (!input) return undefined;
+  try {
+    const parsed = JSON.parse(input);
+    if (parsed && typeof parsed === "object") {
+      return JSON.stringify(parsed, null, 2);
+    }
+  } catch {
+    // not JSON — fall through and show raw
+  }
+  return input;
+}

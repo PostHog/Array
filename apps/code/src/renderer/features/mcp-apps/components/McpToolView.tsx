@@ -1,4 +1,8 @@
 import {
+  getPostHogExecDisplay,
+  isPostHogExecTool,
+} from "@features/posthog-mcp/utils/posthog-exec-display";
+import {
   compactInput,
   ExpandableIcon,
   ExpandedContentBox,
@@ -15,10 +19,6 @@ import { Plugs } from "@phosphor-icons/react";
 import { Box, Flex } from "@radix-ui/themes";
 import { useState } from "react";
 import { parseMcpToolKey } from "../utils/mcp-app-host-utils";
-import {
-  getPostHogExecDisplay,
-  isPostHogExecTool,
-} from "../utils/posthog-exec-display";
 
 const POSTHOG_EXEC_INPUT_PREVIEW_MAX_LENGTH = 60;
 

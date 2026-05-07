@@ -21,7 +21,7 @@ import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
 import { Box, Button, ContextMenu, Flex, Text } from "@radix-ui/themes";
 import { toast } from "@renderer/utils/toast";
-import type { TaskRunStatus } from "@shared/types";
+import type { Task, TaskRunStatus } from "@shared/types";
 import {
   type AcpMessage,
   isJsonRpcNotification,
@@ -45,6 +45,7 @@ import { RawLogsView } from "./raw-logs/RawLogsView";
 interface SessionViewProps {
   events: AcpMessage[];
   taskId?: string;
+  task?: Task;
   isRunning: boolean;
   isPromptPending?: boolean | null;
   promptStartedAt?: number | null;
@@ -97,6 +98,7 @@ function resolveAllowAlwaysUpgradeMode(
 export function SessionView({
   events,
   taskId,
+  task,
   isRunning,
   isPromptPending = false,
   promptStartedAt,
@@ -443,6 +445,7 @@ export function SessionView({
                   promptStartedAt={promptStartedAt}
                   repoPath={repoPath}
                   taskId={taskId}
+                  task={task}
                   slackThreadUrl={slackThreadUrl}
                 />
                 <Box className="border-gray-4 border-t">
@@ -513,6 +516,7 @@ export function SessionView({
                   promptStartedAt={promptStartedAt}
                   repoPath={repoPath}
                   taskId={taskId}
+                  task={task}
                   slackThreadUrl={slackThreadUrl}
                   compact={compact}
                 />

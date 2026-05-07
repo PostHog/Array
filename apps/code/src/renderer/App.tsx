@@ -11,6 +11,7 @@ import {
   useCurrentUser,
 } from "@features/auth/hooks/authQueries";
 import { useAuthSession } from "@features/auth/hooks/useAuthSession";
+import { useIsOrgAdmin } from "@features/auth/hooks/useOrgRole";
 import { OnboardingFlow } from "@features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
@@ -31,8 +32,6 @@ import { useEffect, useRef, useState } from "react";
 import { Toaster } from "sonner";
 
 const log = logger.scope("app");
-
-const ORGANIZATION_ADMIN_LEVEL = 8;
 
 function App() {
   const trpcReact = useTRPC();
@@ -158,7 +157,12 @@ function App() {
         log.warn(
           `Foreign branch checkout detected: ${focusedBranch} -> ${foreignBranch}. Auto-unfocusing.`,
         );
-        await useFocusStore.getState().disableFocus();
+        const result = await useFocusStore.getState().disableFocus();
+        if (!result.success && result.error) {
+          toast.error("Could not unfocus workspace", {
+            description: result.error,
+          });
+        }
       },
     }),
   );
@@ -182,8 +186,8 @@ function App() {
     hasCodeAccess === true &&
     currentOrg != null &&
     currentOrg.is_ai_data_processing_approved !== true;
-  const isAdmin =
-    (currentOrg?.membership_level ?? 0) >= ORGANIZATION_ADMIN_LEVEL;
+  const { isAdmin: isOrgAdmin } = useIsOrgAdmin();
+  const isAdmin = isOrgAdmin === true;
 
   // Handle transition into main app — only show the dark overlay if dark mode is active
   useEffect(() => {

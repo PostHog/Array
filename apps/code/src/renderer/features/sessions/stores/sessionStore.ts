@@ -32,6 +32,7 @@ export type OptimisticItem =
       id: string;
       content: string;
       timestamp: number;
+      pinToTop?: boolean;
     }
   | {
       type: "skill_button_action";
@@ -449,6 +450,17 @@ export const sessionStoreSetters = {
       const session = state.sessions[taskRunId];
       if (session) {
         session.optimisticItems = [];
+      }
+    });
+  },
+
+  clearTailOptimisticItems: (taskRunId: string): void => {
+    useSessionStore.setState((state) => {
+      const session = state.sessions[taskRunId];
+      if (session) {
+        session.optimisticItems = session.optimisticItems.filter(
+          (item) => item.type !== "user_message" || item.pinToTop !== false,
+        );
       }
     });
   },

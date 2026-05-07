@@ -142,6 +142,14 @@ function extractLatestConfigOptionsFromEntries(
   return latest;
 }
 
+function hasSessionPromptEvent(events: AcpMessage[]): boolean {
+  return events.some(
+    (event) =>
+      isJsonRpcRequest(event.message) &&
+      event.message.method === "session/prompt",
+  );
+}
+
 function buildCloudDefaultConfigOptions(
   initialMode: string | undefined,
   adapter: Adapter = "claude",
@@ -1729,6 +1737,18 @@ export class SessionService {
     if (!auth || !cloudCommandAuth) {
       throw new Error("Authentication required for cloud commands");
     }
+
+    this.watchCloudTask(
+      session.taskId,
+      session.taskRunId,
+      cloudCommandAuth.apiHost,
+      cloudCommandAuth.teamId,
+      undefined,
+      session.logUrl,
+      undefined,
+      session.adapter ?? "claude",
+    );
+
     const artifactIds = await uploadRunAttachments(
       auth.client,
       session.taskId,
@@ -1745,6 +1765,14 @@ export class SessionService {
 
     sessionStoreSetters.updateSession(session.taskRunId, {
       isPromptPending: true,
+      promptStartedAt: Date.now(),
+      pausedDurationMs: 0,
+    });
+    sessionStoreSetters.appendOptimisticItem(session.taskRunId, {
+      type: "user_message",
+      content: transport.promptText,
+      timestamp: Date.now(),
+      pinToTop: false,
     });
 
     track(ANALYTICS_EVENTS.PROMPT_SENT, {
@@ -1764,36 +1792,24 @@ export class SessionService {
         params,
       });
 
-      sessionStoreSetters.updateSession(session.taskRunId, {
-        isPromptPending: false,
-      });
-
       if (!result.success) {
         throw new Error(result.error ?? "Failed to send cloud command");
       }
 
-      const stopReason =
-        (result.result as { stopReason?: string })?.stopReason ?? "end_turn";
-
-      const freshSession = sessionStoreSetters.getSessionByTaskId(
-        session.taskId,
-      );
-      if (freshSession && freshSession.messageQueue.length > 0) {
-        setTimeout(() => {
-          this.sendQueuedCloudMessages(session.taskId).catch((err) => {
-            log.error("Failed to send queued cloud messages", {
-              taskId: session.taskId,
-              error: err,
-            });
-          });
-        }, 0);
-      }
+      const commandResult = result.result as
+        | { queued?: boolean; stopReason?: string }
+        | undefined;
+      const stopReason = commandResult?.queued
+        ? "queued"
+        : (commandResult?.stopReason ?? "end_turn");
 
       return { stopReason };
     } catch (error) {
       sessionStoreSetters.updateSession(session.taskRunId, {
         isPromptPending: false,
+        promptStartedAt: null,
       });
+      sessionStoreSetters.clearTailOptimisticItems(session.taskRunId);
       throw error;
     }
   }
@@ -2570,7 +2586,9 @@ export class SessionService {
       existingWatcher.apiHost === apiHost &&
       existingWatcher.teamId === teamId
     ) {
-      existingWatcher.onStatusChange = onStatusChange;
+      if (onStatusChange) {
+        existingWatcher.onStatusChange = onStatusChange;
+      }
       // Ensure configOptions is populated on revisit
       const existing = sessionStoreSetters.getSessionByTaskId(taskId);
       if (existing) {
@@ -3197,6 +3215,9 @@ export class SessionService {
           session,
           newEvents,
         );
+        if (hasSessionPromptEvent(newEvents)) {
+          sessionStoreSetters.clearTailOptimisticItems(taskRunId);
+        }
         sessionStoreSetters.appendEvents(taskRunId, newEvents, expectedCount);
         this.updatePromptStateFromEvents(taskRunId, newEvents);
       } else {
@@ -3526,6 +3547,9 @@ export class SessionService {
 
     if (rawEntries.length >= expectedCount) {
       const events = convertStoredEntriesToEvents(rawEntries);
+      if (hasSessionPromptEvent(events)) {
+        sessionStoreSetters.clearTailOptimisticItems(taskRunId);
+      }
       sessionStoreSetters.updateSession(taskRunId, {
         events,
         isCloud: true,
@@ -3544,6 +3568,9 @@ export class SessionService {
     });
     let newEvents = convertStoredEntriesToEvents(newEntries);
     newEvents = this.filterSkippedPromptEvents(taskRunId, session, newEvents);
+    if (hasSessionPromptEvent(newEvents)) {
+      sessionStoreSetters.clearTailOptimisticItems(taskRunId);
+    }
     sessionStoreSetters.appendEvents(
       taskRunId,
       newEvents,

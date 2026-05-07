@@ -7,6 +7,7 @@ import {
   getOauthClientIdFromRegion,
   OAUTH_SCOPES,
 } from "@shared/constants/oauth";
+import { type BackoffOptions, sleepWithBackoff } from "@shared/utils/backoff";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
@@ -25,6 +26,16 @@ const log = logger.scope("oauth-service");
 
 const OAUTH_TIMEOUT_MS = 180_000; // 3 minutes
 const DEV_CALLBACK_PORT = 8237;
+
+const NETWORK_ERROR_MESSAGE =
+  "Could not connect to PostHog. Please check your internet connection and try again.";
+
+const TOKEN_FETCH_MAX_ATTEMPTS = 3;
+const TOKEN_FETCH_BACKOFF: BackoffOptions = {
+  initialDelayMs: 1_000,
+  maxDelayMs: 5_000,
+  multiplier: 2,
+};
 
 interface OAuthConfig {
   scopes: string[];
@@ -212,7 +223,7 @@ export class OAuthService {
     } catch {
       return {
         success: false,
-        error: "Network error",
+        error: NETWORK_ERROR_MESSAGE,
         errorCode: "network_error",
       };
     }
@@ -428,26 +439,57 @@ export class OAuthService {
   ): Promise<OAuthTokenResponse> {
     const cloudUrl = getCloudUrlFromRegion(config.cloudRegion);
     const redirectUri = this.getRedirectUri();
-
-    const response = await fetch(`${cloudUrl}/oauth/token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        grant_type: "authorization_code",
-        code,
-        redirect_uri: redirectUri,
-        client_id: getOauthClientIdFromRegion(config.cloudRegion),
-        code_verifier: codeVerifier,
-      }),
+    const body = JSON.stringify({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: redirectUri,
+      client_id: getOauthClientIdFromRegion(config.cloudRegion),
+      code_verifier: codeVerifier,
     });
 
-    if (!response.ok) {
-      throw new Error(`Token exchange failed: ${response.statusText}`);
+    let lastError = "Token exchange failed";
+
+    for (let attempt = 0; attempt < TOKEN_FETCH_MAX_ATTEMPTS; attempt++) {
+      let response: Response;
+      try {
+        response = await fetch(`${cloudUrl}/oauth/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+      } catch (error) {
+        // fetch threw — DNS/TLS/socket failure. The raw message ("Failed to fetch",
+        // "fetch failed", "terminated", etc.) leaks to the UI as-is, so we replace
+        // it with something users can act on.
+        lastError = NETWORK_ERROR_MESSAGE;
+        log.warn("Token exchange network error", {
+          attempt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (attempt === TOKEN_FETCH_MAX_ATTEMPTS - 1) break;
+        await sleepWithBackoff(attempt, TOKEN_FETCH_BACKOFF);
+        continue;
+      }
+
+      if (response.ok) {
+        return response.json();
+      }
+
+      lastError = `Token exchange failed: ${response.status} ${response.statusText}`;
+      const isServerError = response.status >= 500;
+      if (!isServerError) {
+        throw new Error(lastError);
+      }
+
+      log.warn("Token exchange server error", {
+        attempt,
+        status: response.status,
+      });
+      if (attempt === TOKEN_FETCH_MAX_ATTEMPTS - 1) break;
+      await sleepWithBackoff(attempt, TOKEN_FETCH_BACKOFF);
     }
 
-    return response.json();
+    throw new Error(lastError);
   }
 
   private buildAuthorizeUrl(region: CloudRegion, codeVerifier: string): URL {

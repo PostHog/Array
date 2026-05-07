@@ -38,9 +38,14 @@ import { useState } from "react";
 const REPO_PREVIEW_COUNT = 3;
 
 function githubInstallationSettingsUrl(integration: UserGitHubIntegration) {
-  const accountType = integration.account?.type?.toLowerCase();
+  const accountType = integration.account?.type;
   const accountName = integration.account?.name;
-  if (accountType === "organization" && accountName) {
+  if (
+    typeof accountType === "string" &&
+    accountType.toLowerCase() === "organization" &&
+    typeof accountName === "string" &&
+    accountName
+  ) {
     return `https://github.com/organizations/${accountName}/settings/installations/${integration.installation_id}`;
   }
   return `https://github.com/settings/installations/${integration.installation_id}`;
@@ -53,9 +58,13 @@ export function GitHubSettings() {
   const { reposByInstallationId, failedInstallationIds, isLoadingRepos } =
     useUserRepositoryIntegration();
 
-  const { state, error, connect, reset } = useGithubUserConnect({ projectId });
-  const isConnecting = state === "connecting";
-  const hasConnectError = state === "error";
+  const {
+    error,
+    isConnecting,
+    hasError: hasConnectError,
+    connect,
+    reset,
+  } = useGithubUserConnect({ projectId });
   const canConnect = projectId != null && cloudRegion != null && !isConnecting;
 
   const handleConnect = () => {
@@ -164,7 +173,10 @@ function GitHubIntegrationRow({
     },
   });
 
-  const accountName = integration.account?.name?.trim() || "GitHub account";
+  const rawAccountName = integration.account?.name;
+  const accountName =
+    (typeof rawAccountName === "string" && rawAccountName.trim()) ||
+    "GitHub account";
   const repoCount = repos.length;
   const canExpand = repoCount > 0;
   const settingsUrl = githubInstallationSettingsUrl(integration);

@@ -4,6 +4,7 @@ import { DeletePermission } from "./DeletePermission";
 import { EditPermission } from "./EditPermission";
 import { ExecutePermission } from "./ExecutePermission";
 import { FetchPermission } from "./FetchPermission";
+import { McpPermission } from "./McpPermission";
 import { MovePermission } from "./MovePermission";
 import { QuestionPermission } from "./QuestionPermission";
 import { ReadPermission } from "./ReadPermission";
@@ -30,9 +31,14 @@ export function PermissionSelector({
   onCancel,
 }: PermissionSelectorProps) {
   const props = { toolCall, options, onSelect, onCancel };
-  const codeToolKind = (toolCall._meta as { codeToolKind?: string } | undefined)
-    ?.codeToolKind;
-  const kind = codeToolKind ?? (toolCall.kind as string);
+  const meta = toolCall._meta as
+    | { codeToolKind?: string; claudeCode?: { toolName?: string } }
+    | undefined;
+  const agentToolName = meta?.claudeCode?.toolName;
+  if (agentToolName?.startsWith("mcp__")) {
+    return <McpPermission {...props} />;
+  }
+  const kind = meta?.codeToolKind ?? (toolCall.kind as string);
 
   switch (kind) {
     case "execute":

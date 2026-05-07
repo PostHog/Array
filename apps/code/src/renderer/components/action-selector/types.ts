@@ -18,7 +18,7 @@ export interface StepAnswer {
 }
 
 export interface ActionSelectorProps {
-  title: string;
+  title: ReactNode;
   pendingAction?: ReactNode;
   question: ReactNode;
   options: SelectorOption[];

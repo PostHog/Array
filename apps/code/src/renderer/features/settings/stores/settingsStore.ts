@@ -38,6 +38,7 @@ interface SettingsStore {
   lastUsedWorkspaceMode: WorkspaceMode;
   lastUsedAdapter: AgentAdapter;
   lastUsedModel: string | null;
+  lastUsedReasoningEffort: string | null;
   lastUsedCloudRepository: string | null;
   lastUsedEnvironments: Record<string, string>;
   desktopNotifications: boolean;
@@ -71,6 +72,7 @@ interface SettingsStore {
   setLastUsedWorkspaceMode: (mode: WorkspaceMode) => void;
   setLastUsedAdapter: (adapter: AgentAdapter) => void;
   setLastUsedModel: (model: string) => void;
+  setLastUsedReasoningEffort: (effort: string) => void;
   setLastUsedCloudRepository: (repo: string | null) => void;
   setLastUsedEnvironment: (
     repoPath: string,
@@ -103,6 +105,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedWorkspaceMode: "local",
       lastUsedAdapter: "claude",
       lastUsedModel: null,
+      lastUsedReasoningEffort: null,
       lastUsedCloudRepository: null,
       lastUsedEnvironments: {},
       desktopNotifications: true,
@@ -159,6 +162,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setLastUsedWorkspaceMode: (mode) => set({ lastUsedWorkspaceMode: mode }),
       setLastUsedAdapter: (adapter) => set({ lastUsedAdapter: adapter }),
       setLastUsedModel: (model) => set({ lastUsedModel: model }),
+      setLastUsedReasoningEffort: (effort) =>
+        set({ lastUsedReasoningEffort: effort }),
       setLastUsedCloudRepository: (repo) =>
         set({ lastUsedCloudRepository: repo }),
       setLastUsedEnvironment: (repoPath, environmentId) =>
@@ -208,6 +213,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedWorkspaceMode: state.lastUsedWorkspaceMode,
         lastUsedAdapter: state.lastUsedAdapter,
         lastUsedModel: state.lastUsedModel,
+        lastUsedReasoningEffort: state.lastUsedReasoningEffort,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
         lastUsedEnvironments: state.lastUsedEnvironments,
         desktopNotifications: state.desktopNotifications,

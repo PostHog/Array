@@ -2,10 +2,13 @@ import { Button } from "@components/ui/Button";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import {
   describeGithubConnectError,
-  useGithubUserConnect,
+  useGithubConnect,
 } from "@features/integrations/hooks/useGithubUserConnect";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
-import { useUserRepositoryIntegration } from "@hooks/useIntegrations";
+import {
+  useRepositoryIntegration,
+  useUserRepositoryIntegration,
+} from "@hooks/useIntegrations";
 import {
   ArrowSquareOutIcon,
   GithubLogoIcon,
@@ -21,12 +24,21 @@ export function GitHubConnectionBanner() {
   );
   const { hasGithubIntegration: hasGithubForProject } =
     useUserRepositoryIntegration();
+  const { hasGithubIntegration: hasTeamGithubIntegration } =
+    useRepositoryIntegration();
   const projectId = useAuthStateValue((s) => s.projectId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
 
-  const { state, error, connect, reset } = useGithubUserConnect({ projectId });
-  const connecting = state === "connecting";
-  const hasConnectError = state === "error";
+  const {
+    error,
+    isConnecting: connecting,
+    hasError: hasConnectError,
+    connect,
+    reset,
+  } = useGithubConnect({
+    projectId,
+    projectHasTeamIntegration: hasTeamGithubIntegration,
+  });
   const canConnectCloud = projectId != null && cloudRegion != null;
 
   if (loginLoading) {

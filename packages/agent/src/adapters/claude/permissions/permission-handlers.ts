@@ -528,6 +528,7 @@ async function handlePostHogExecApprovalFlow(
         },
       ],
       rawInput: { ...(toolInput as Record<string, unknown>), toolName },
+      _meta: { claudeCode: { toolName } },
     },
   });
 

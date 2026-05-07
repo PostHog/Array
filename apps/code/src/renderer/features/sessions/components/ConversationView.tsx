@@ -14,6 +14,7 @@ import { ArrowDown, XCircle } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import WorkerUrl from "@pierre/diffs/worker/worker.js?worker&url";
 import { Box, Button, Flex, Text } from "@radix-ui/themes";
+import type { Task } from "@shared/types";
 import type { AcpMessage } from "@shared/types/session-events";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -54,6 +55,7 @@ interface ConversationViewProps {
   promptStartedAt?: number | null;
   repoPath?: string | null;
   taskId?: string;
+  task?: Task;
   slackThreadUrl?: string;
   compact?: boolean;
 }
@@ -64,6 +66,7 @@ export function ConversationView({
   promptStartedAt,
   repoPath,
   taskId,
+  task,
   slackThreadUrl,
   compact = false,
 }: ConversationViewProps) {
@@ -277,6 +280,7 @@ export function ConversationView({
           footer={
             <div className={compact ? "pb-1" : "pb-16"}>
               <SessionFooter
+                task={task}
                 isPromptPending={isPromptPending}
                 promptStartedAt={promptStartedAt}
                 lastGenerationDuration={

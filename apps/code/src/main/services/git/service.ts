@@ -434,7 +434,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
 
       let compareUrl: string | null = null;
       if (currentBranch && currentBranch !== defaultBranch) {
-        compareUrl = `https://github.com/${parsed.organization}/${parsed.repository}/compare/${defaultBranch}...${currentBranch}?expand=1`;
+        compareUrl = `https://github.com/${parsed.path}/compare/${defaultBranch}...${currentBranch}?expand=1`;
       }
 
       return {
@@ -893,7 +893,6 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
       const parsed = parseGitHubUrl(remoteUrl);
       if (!parsed) return null;
 
-      const repoSlug = `${parsed.organization}/${parsed.repository}`;
       const result = await execGh([
         "pr",
         "list",
@@ -906,7 +905,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
         "--limit",
         "1",
         "--repo",
-        repoSlug,
+        parsed.path,
       ]);
 
       if (result.exitCode !== 0) {

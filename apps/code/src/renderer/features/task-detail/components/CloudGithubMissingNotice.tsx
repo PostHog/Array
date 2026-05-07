@@ -1,18 +1,21 @@
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import {
   describeGithubConnectError,
-  useGithubUserConnect,
+  useGithubConnect,
 } from "@features/integrations/hooks/useGithubUserConnect";
+import { useRepositoryIntegration } from "@hooks/useIntegrations";
 import { ArrowSquareOutIcon, InfoIcon } from "@phosphor-icons/react";
 import { Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 
 export function CloudGithubMissingNotice() {
   const projectId = useAuthStateValue((s) => s.projectId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
-  const { state, error, connect, reset } = useGithubUserConnect({ projectId });
-
-  const isConnecting = state === "connecting";
-  const hasError = state === "error";
+  const { hasGithubIntegration: hasTeamGithubIntegration } =
+    useRepositoryIntegration();
+  const { error, isConnecting, hasError, connect, reset } = useGithubConnect({
+    projectId,
+    projectHasTeamIntegration: hasTeamGithubIntegration,
+  });
   const canConnect = projectId != null && cloudRegion != null;
 
   return (

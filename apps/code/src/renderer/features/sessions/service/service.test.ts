@@ -68,6 +68,7 @@ const mockSessionStoreSetters = vi.hoisted(() => ({
   setSession: vi.fn(),
   removeSession: vi.fn(),
   updateSession: vi.fn(),
+  updateCloudStatus: vi.fn(),
   appendEvents: vi.fn(),
   enqueueMessage: vi.fn(),
   removeQueuedMessage: vi.fn(),
@@ -89,6 +90,7 @@ const mockSessionStoreSetters = vi.hoisted(() => ({
   clearAll: vi.fn(),
   appendOptimisticItem: vi.fn(),
   clearOptimisticItems: vi.fn(),
+  clearTailOptimisticItems: vi.fn(),
   replaceOptimisticWithEvent: vi.fn(),
 }));
 
@@ -892,6 +894,43 @@ describe("SessionService", () => {
 
       secondCleanup();
       expect(unsubscribe).not.toHaveBeenCalled();
+    });
+
+    it("preserves an existing status callback when reusing a watcher without one", () => {
+      const service = getSessionService();
+      const onStatusChange = vi.fn();
+
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+        onStatusChange,
+      );
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+      );
+
+      const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
+        .calls[0][1] as {
+        onData: (update: {
+          kind: "status";
+          taskId: string;
+          runId: string;
+          status: "in_progress";
+        }) => void;
+      };
+      subscribeOptions.onData({
+        kind: "status",
+        taskId: "task-123",
+        runId: "run-123",
+        status: "in_progress",
+      });
+
+      expect(onStatusChange).toHaveBeenCalledTimes(1);
     });
 
     it("hydrates a fresh cloud session from persisted logs before replay arrives", async () => {
@@ -2376,7 +2415,7 @@ describe("SessionService", () => {
       );
       mockTrpcCloudTask.sendCommand.mutate.mockResolvedValue({
         success: true,
-        result: { stopReason: "end_turn" },
+        result: { queued: true },
       });
       mockTrpcFs.readFileAsBase64.query.mockResolvedValue("aGVsbG8=");
       mockAuthenticatedClient.prepareTaskRunArtifactUploads.mockResolvedValue([
@@ -2424,8 +2463,16 @@ describe("SessionService", () => {
 
       const result = await service.sendPrompt("task-123", prompt);
 
-      expect(result.stopReason).toBe("end_turn");
+      expect(result.stopReason).toBe("queued");
       expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledTimes(1);
+      expect(mockSessionStoreSetters.appendOptimisticItem).toHaveBeenCalledWith(
+        "run-123",
+        expect.objectContaining({
+          type: "user_message",
+          content: "read this\n\nAttached files: test.txt",
+          pinToTop: false,
+        }),
+      );
 
       expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(
         expect.objectContaining({

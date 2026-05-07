@@ -237,6 +237,7 @@ describe("canUseTool MCP approval enforcement", () => {
       expect.objectContaining({
         toolCall: expect.objectContaining({
           title: "The agent wants to run `notebooks-destroy` on PostHog",
+          _meta: { claudeCode: { toolName: "mcp__posthog__exec" } },
         }),
       }),
     );

@@ -27,6 +27,14 @@ function getOptionByCategory(
   );
 }
 
+function flattenValues(
+  options: Array<{ value?: string; options?: Array<{ value: string }> }>,
+): string[] {
+  return options.flatMap((o) =>
+    o.options ? o.options.map((go) => go.value) : o.value ? [o.value] : [],
+  );
+}
+
 /**
  * Fetches config options (models, modes, effort levels) for the task input
  * page via a lightweight tRPC query. No agent session is created.
@@ -59,8 +67,11 @@ export function usePreviewConfig(
       .then((options) => {
         if (abort.signal.aborted) return;
 
-        const { defaultInitialTaskMode, lastUsedInitialTaskMode } =
-          useSettingsStore.getState();
+        const {
+          defaultInitialTaskMode,
+          lastUsedInitialTaskMode,
+          lastUsedReasoningEffort,
+        } = useSettingsStore.getState();
 
         // Use the mode option's existing currentValue (set by the server
         // based on the adapter) when the user hasn't chosen a preference,
@@ -70,17 +81,11 @@ export function usePreviewConfig(
         const serverDefault = modeOpt?.currentValue;
         const availableValues: string[] =
           modeOpt?.type === "select"
-            ? (
+            ? flattenValues(
                 modeOpt.options as Array<{
                   value?: string;
                   options?: Array<{ value: string }>;
-                }>
-              ).flatMap((o) =>
-                o.options
-                  ? o.options.map((go) => go.value)
-                  : o.value
-                    ? [o.value]
-                    : [],
+                }>,
               )
             : [];
 
@@ -106,7 +111,29 @@ export function usePreviewConfig(
             : opt,
         );
 
-        setConfigOptions(withMode);
+        const withEffort = withMode.map((opt) => {
+          if (opt.category !== "thought_level" || opt.type !== "select") {
+            return opt;
+          }
+          const validValues = flattenValues(
+            opt.options as Array<{
+              value?: string;
+              options?: Array<{ value: string }>;
+            }>,
+          );
+          if (
+            lastUsedReasoningEffort &&
+            validValues.includes(lastUsedReasoningEffort)
+          ) {
+            return {
+              ...opt,
+              currentValue: lastUsedReasoningEffort,
+            } as SessionConfigOption;
+          }
+          return opt;
+        });
+
+        setConfigOptions(withEffort);
         setIsLoading(false);
       })
       .catch((error) => {
@@ -141,27 +168,33 @@ export function usePreviewConfig(
                 ? "reasoning_effort"
                 : "effort";
 
-          const defaultEffort = adapter === "codex" ? "high" : "medium";
+          const { lastUsedReasoningEffort } = useSettingsStore.getState();
+          const isValidEffort = (effort: unknown): effort is string =>
+            typeof effort === "string" &&
+            !!effortOpts?.some((e) => e.value === effort);
           if (effortOpts && existingIdx >= 0) {
             const currentEffort = updated[existingIdx].currentValue;
-            const validEffort = effortOpts.some(
-              (e) => e.value === currentEffort,
-            )
+            const nextEffort = isValidEffort(currentEffort)
               ? currentEffort
-              : defaultEffort;
+              : isValidEffort(lastUsedReasoningEffort)
+                ? lastUsedReasoningEffort
+                : "high";
             updated[existingIdx] = {
               ...updated[existingIdx],
-              currentValue: validEffort,
+              currentValue: nextEffort,
               options: effortOpts,
             } as SessionConfigOption;
           } else if (effortOpts && existingIdx === -1) {
+            const nextEffort = isValidEffort(lastUsedReasoningEffort)
+              ? lastUsedReasoningEffort
+              : "high";
             updated = [
               ...updated,
               {
                 id: effortOptionId,
                 name: adapter === "codex" ? "Reasoning Level" : "Effort",
                 type: "select",
-                currentValue: defaultEffort,
+                currentValue: nextEffort,
                 options: effortOpts,
                 category: "thought_level",
                 description:

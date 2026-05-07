@@ -2,10 +2,12 @@ import { execFile } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import gitUrlParse from "git-url-parse";
 
 export interface GitHubRepo {
   organization: string;
   repository: string;
+  path: string;
 }
 
 export async function safeSymlink(
@@ -158,21 +160,41 @@ export interface GitHubPr {
   number: number;
 }
 
-export function parsePrUrl(prUrl: string): GitHubPr | null {
-  const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
-  if (!match) return null;
-  return { owner: match[1], repo: match[2], number: Number(match[3]) };
+export function parsePrUrl(prUrl: string | null | undefined): GitHubPr | null {
+  if (!prUrl) return null;
+  let parsed: gitUrlParse.GitUrl;
+  try {
+    parsed = gitUrlParse(prUrl.trim());
+  } catch {
+    return null;
+  }
+  if (parsed.source.toLowerCase() !== "github.com" || !parsed.full_name) {
+    return null;
+  }
+  const [owner, repo, kind, num] = parsed.full_name.split("/");
+  if (!owner || !repo || kind !== "pull") return null;
+  const number = Number(num);
+  if (!Number.isInteger(number) || number <= 0) return null;
+  return { owner, repo, number };
 }
 
-export function parseGitHubUrl(url: string): GitHubRepo | null {
-  // Trim whitespace/newlines that git commands may include
-  const trimmedUrl = url.trim();
-
-  const match =
-    trimmedUrl.match(/github\.com[:/](.+?)\/(.+?)(\.git)?$/) ||
-    trimmedUrl.match(/git@github\.com:(.+?)\/(.+?)(\.git)?$/);
-
-  if (!match) return null;
-
-  return { organization: match[1], repository: match[2].replace(/\.git$/, "") };
+export function parseGitHubUrl(
+  url: string | null | undefined,
+): GitHubRepo | null {
+  if (!url) return null;
+  let parsed: gitUrlParse.GitUrl;
+  try {
+    parsed = gitUrlParse(url.trim());
+  } catch {
+    return null;
+  }
+  if (parsed.source.toLowerCase() !== "github.com") return null;
+  // git-url-parse stuffs unhandled path segments into owner (e.g. wiki, actions,
+  // releases pages), so reject anything that didn't cleanly split into org/repo.
+  if (!parsed.owner || !parsed.name || parsed.owner.includes("/")) return null;
+  return {
+    organization: parsed.owner,
+    repository: parsed.name,
+    path: `${parsed.owner}/${parsed.name}`,
+  };
 }

@@ -75,11 +75,7 @@ function InlineFileLink({
         type="button"
         onClick={taskId ? handleClick : undefined}
         disabled={!taskId}
-        className={`inline text-(--accent-11) ${taskId ? "cursor-pointer underline-offset-2 hover:underline" : ""}`}
-        style={{
-          all: "unset",
-          font: "inherit",
-        }}
+        className={`m-0 inline border-0 bg-transparent p-0 font-[inherit] text-(--accent-11) text-[length:inherit] ${taskId ? "cursor-pointer underline decoration-(--accent-a8) underline-offset-2 hover:decoration-(--accent-11)" : ""}`}
       >
         {filename}
         {lineSuffix ? `:${lineSuffix}` : ""}

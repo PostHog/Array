@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatPosthogExecBody,
   getPostHogExecDisplay,
   isPostHogExecTool,
 } from "./posthog-exec-display";
@@ -197,5 +198,33 @@ describe("getPostHogExecDisplay", () => {
         getPostHogExecDisplay({ command: "  call execute-sql  " }),
       ).toEqual({ label: "execute-sql", input: undefined });
     });
+  });
+});
+
+describe("formatPosthogExecBody", () => {
+  it("returns undefined for empty input", () => {
+    expect(formatPosthogExecBody(undefined)).toBeUndefined();
+    expect(formatPosthogExecBody("")).toBeUndefined();
+  });
+
+  it("pretty-prints JSON object payloads", () => {
+    expect(formatPosthogExecBody('{"id":3}')).toBe('{\n  "id": 3\n}');
+  });
+
+  it("pretty-prints JSON array payloads", () => {
+    expect(formatPosthogExecBody("[1,2]")).toBe("[\n  1,\n  2\n]");
+  });
+
+  it("returns non-JSON strings unchanged (e.g. search regex)", () => {
+    expect(formatPosthogExecBody("query-")).toBe("query-");
+  });
+
+  it("returns malformed JSON unchanged", () => {
+    expect(formatPosthogExecBody('{"id":')).toBe('{"id":');
+  });
+
+  it("returns JSON primitives unchanged (not pretty-printable)", () => {
+    expect(formatPosthogExecBody("42")).toBe("42");
+    expect(formatPosthogExecBody('"hello"')).toBe('"hello"');
   });
 });

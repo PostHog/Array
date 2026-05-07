@@ -10,9 +10,8 @@ interface MergeConversationItemsArgs {
 }
 
 // Cloud's initial optimistic is pinned to the top so the user's prompt stays
-// visible above setup progress. When the agent echoes it back via
-// `session/prompt`, the duplicate `user_message` is filtered out by content
-// match so the bubble doesn't disappear-then-reappear when the echo lands.
+// visible above setup progress. Follow-up optimistics render at the tail until
+// the streamed `session/prompt` arrives and replaces them.
 //
 // Local sessions keep optimistic at the chronological end — they rely on
 // `replaceOptimisticWithEvent` to swap optimistic↔real in place.
@@ -30,8 +29,14 @@ export function mergeConversationItems({
     return queuedItems.length > 0 ? [...result, ...queuedItems] : result;
   }
 
-  const optimisticUserContents = new Set(
-    optimisticItems
+  const pinnedOptimisticItems = optimisticItems.filter(
+    (item) => item.type !== "user_message" || item.pinToTop !== false,
+  );
+  const tailOptimisticItems = optimisticItems.filter(
+    (item) => item.type === "user_message" && item.pinToTop === false,
+  );
+  const pinnedOptimisticUserContents = new Set(
+    pinnedOptimisticItems
       .filter(
         (item): item is Extract<typeof item, { type: "user_message" }> =>
           item.type === "user_message",
@@ -39,15 +44,16 @@ export function mergeConversationItems({
       .map((item) => item.content),
   );
   const dedupedConversation =
-    optimisticUserContents.size === 0
+    pinnedOptimisticUserContents.size === 0
       ? conversationItems
       : conversationItems.filter((item) => {
           if (item.type !== "user_message") return true;
-          return !optimisticUserContents.has(item.content);
+          return !pinnedOptimisticUserContents.has(item.content);
         });
   const result: ConversationItem[] = [
-    ...optimisticItems,
+    ...pinnedOptimisticItems,
     ...dedupedConversation,
+    ...tailOptimisticItems,
   ];
   return queuedItems.length > 0 ? [...result, ...queuedItems] : result;
 }

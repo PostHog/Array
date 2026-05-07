@@ -2,21 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { getRemoteUrl, isGitRepository } from "@posthog/git/queries";
 import { InitRepositorySaga } from "@posthog/git/sagas/init";
-
-import { normalizeRepoKey } from "@shared/utils/repo";
-
-function extractRepoKey(url: string): string | null {
-  const httpsMatch = url.match(/github\.com\/([^/]+\/[^/]+)/);
-  if (httpsMatch) return normalizeRepoKey(httpsMatch[1]);
-
-  const sshMatch = url.match(/github\.com:([^/]+\/[^/]+)/);
-  if (sshMatch) return normalizeRepoKey(sshMatch[1]);
-
-  return null;
-}
-
+import { parseGitHubUrl } from "@posthog/git/utils";
 import { WorktreeManager } from "@posthog/git/worktree";
 import type { IDialog } from "@posthog/platform/dialog";
+import { normalizeRepoKey } from "@shared/utils/repo";
 import { inject, injectable } from "inversify";
 import type {
   IRepositoryRepository,
@@ -249,12 +238,13 @@ export class FoldersService {
     overrideRemoteUrl: string | undefined,
   ): Promise<string | null> {
     if (overrideRemoteUrl) {
-      const overrideKey = extractRepoKey(overrideRemoteUrl);
-      if (overrideKey) return overrideKey;
-      return normalizeRepoKey(overrideRemoteUrl);
+      return (
+        parseGitHubUrl(overrideRemoteUrl)?.path ??
+        normalizeRepoKey(overrideRemoteUrl)
+      );
     }
     const localRemoteUrl = await getRemoteUrl(folderPath);
-    return localRemoteUrl ? extractRepoKey(localRemoteUrl) : null;
+    return parseGitHubUrl(localRemoteUrl)?.path ?? null;
   }
 
   getRepositoryByRemoteUrl(

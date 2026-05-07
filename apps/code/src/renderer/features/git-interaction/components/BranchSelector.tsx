@@ -127,6 +127,13 @@ export function BranchSelector({
       onError: (error, { branchName }) => {
         const message =
           error instanceof Error ? error.message : "Unknown error occurred";
+        if (/would be overwritten by checkout/i.test(message)) {
+          toast.error(`Can't switch to ${branchName}`, {
+            description:
+              "You have uncommitted changes that would be overwritten. Commit or stash them first.",
+          });
+          return;
+        }
         toast.error(`Failed to checkout ${branchName}`, {
           description: message,
         });

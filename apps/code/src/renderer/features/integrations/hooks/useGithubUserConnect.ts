@@ -1,10 +1,12 @@
 import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
+import { useIsOrgAdmin } from "@features/auth/hooks/useOrgRole";
 import { useGitHubIntegrationCallback } from "@features/integrations/hooks/useGitHubIntegrationCallback";
+import type { PostHogAPIClient } from "@renderer/api/posthogClient";
 import { trpcClient } from "@renderer/trpc/client";
 import { IS_DEV } from "@shared/constants/environment";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const POLL_INTERVAL_MS = 3_000;
 const POLL_TIMEOUT_MS = 300_000;
@@ -64,6 +66,9 @@ interface Options {
 interface Result {
   state: GithubUserConnectState;
   error: GithubUserConnectError | null;
+  isConnecting: boolean;
+  isTimedOut: boolean;
+  hasError: boolean;
   connect: () => Promise<void>;
   reset: () => void;
 }
@@ -94,9 +99,18 @@ export async function openUrlInBrowser(url: string): Promise<void> {
   }
 }
 
-export function useGithubUserConnect({ projectId }: Options): Result {
-  const client = useOptionalAuthenticatedClient();
-  const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+interface StateMachine {
+  state: GithubUserConnectState;
+  error: GithubUserConnectError | null;
+  stateRef: React.MutableRefObject<GithubUserConnectState>;
+  beginConnecting: () => void;
+  finishWithError: (error: GithubUserConnectError) => void;
+  reset: () => void;
+  scheduleUserFlowTimeout: () => void;
+  scheduleDevPolling: () => void;
+}
+
+function useConnectStateMachine(projectId: number | null): StateMachine {
   const queryClient = useQueryClient();
   const [state, setState] = useState<GithubUserConnectState>("idle");
   const [error, setError] = useState<GithubUserConnectError | null>(null);
@@ -151,40 +165,20 @@ export function useGithubUserConnect({ projectId }: Options): Result {
     },
   });
 
-  const connect = useCallback(async () => {
-    if (stateRef.current === "connecting") return;
-    if (!cloudRegion || projectId === null || !client) return;
+  const beginConnecting = useCallback(() => {
     stopPolling();
     setError(null);
     setState("connecting");
-    try {
-      const res = await client.startGithubUserIntegrationConnect(projectId);
-      const installUrl = res.install_url?.trim() ?? "";
-      if (!installUrl) {
-        throw new Error("GitHub connection did not return a URL");
-      }
-      await openUrlInBrowser(installUrl);
+  }, [stopPolling]);
 
-      if (IS_DEV) {
-        pollTimerRef.current = setInterval(
-          () => invalidate(projectId),
-          POLL_INTERVAL_MS,
-        );
-      }
-
-      pollTimeoutRef.current = setTimeout(() => {
-        stopPolling();
-        setState("timed-out");
-      }, POLL_TIMEOUT_MS);
-    } catch (e) {
+  const finishWithError = useCallback(
+    (e: GithubUserConnectError) => {
+      stopPolling();
+      setError(e);
       setState("error");
-      setError({
-        message:
-          e instanceof Error ? e.message : "Failed to start GitHub connection",
-        code: null,
-      });
-    }
-  }, [client, cloudRegion, projectId, invalidate, stopPolling]);
+    },
+    [stopPolling],
+  );
 
   const reset = useCallback(() => {
     stopPolling();
@@ -192,5 +186,153 @@ export function useGithubUserConnect({ projectId }: Options): Result {
     setState("idle");
   }, [stopPolling]);
 
-  return { state, error, connect, reset };
+  const scheduleUserFlowTimeout = useCallback(() => {
+    pollTimeoutRef.current = setTimeout(() => {
+      stopPolling();
+      setState("timed-out");
+    }, POLL_TIMEOUT_MS);
+  }, [stopPolling]);
+
+  const scheduleDevPolling = useCallback(() => {
+    if (!IS_DEV) return;
+    pollTimerRef.current = setInterval(
+      () => invalidate(projectId),
+      POLL_INTERVAL_MS,
+    );
+  }, [invalidate, projectId]);
+
+  return useMemo(
+    () => ({
+      state,
+      error,
+      stateRef,
+      beginConnecting,
+      finishWithError,
+      reset,
+      scheduleUserFlowTimeout,
+      scheduleDevPolling,
+    }),
+    [
+      state,
+      error,
+      beginConnecting,
+      finishWithError,
+      reset,
+      scheduleUserFlowTimeout,
+      scheduleDevPolling,
+    ],
+  );
+}
+
+function machineToResult(
+  machine: StateMachine,
+  connect: () => Promise<void>,
+): Result {
+  return {
+    state: machine.state,
+    error: machine.error,
+    isConnecting: machine.state === "connecting",
+    isTimedOut: machine.state === "timed-out",
+    hasError: machine.state === "error",
+    connect,
+    reset: machine.reset,
+  };
+}
+
+async function runUserFlow(
+  client: PostHogAPIClient,
+  projectId: number,
+): Promise<void> {
+  const res = await client.startGithubUserIntegrationConnect(projectId);
+  const installUrl = res.install_url?.trim() ?? "";
+  if (!installUrl) {
+    throw new Error("GitHub connection did not return a URL");
+  }
+  await openUrlInBrowser(installUrl);
+}
+
+export function useGithubUserConnect({ projectId }: Options): Result {
+  const client = useOptionalAuthenticatedClient();
+  const machine = useConnectStateMachine(projectId);
+
+  const connect = useCallback(async () => {
+    if (machine.stateRef.current === "connecting") return;
+    if (projectId === null || !client) return;
+    machine.beginConnecting();
+    try {
+      await runUserFlow(client, projectId);
+      machine.scheduleDevPolling();
+      machine.scheduleUserFlowTimeout();
+    } catch (e) {
+      machine.finishWithError({
+        message:
+          e instanceof Error ? e.message : "Failed to start GitHub connection",
+        code: null,
+      });
+    }
+  }, [client, projectId, machine]);
+
+  return machineToResult(machine, connect);
+}
+
+interface ConnectOptions extends Options {
+  /** Whether `projectId` already has a team-level GitHub Integration. Required
+   *  because the relevant project is not always the auth project (e.g.
+   *  onboarding picks a project from a list). Admins on projects where this
+   *  is `false` get the team-level OAuth flow (Cloud also seeds their
+   *  `UserIntegration` in the same round-trip). */
+  projectHasTeamIntegration: boolean | null;
+}
+
+/**
+ * Single "Connect GitHub" button for surfaces that should respect the
+ * team-vs-user distinction. Picks the team-level flow only for admins on
+ * projects with no team integration yet; everyone else gets the user-level
+ * flow. For purely user-scoped surfaces ("Add another GitHub org") use
+ * `useGithubUserConnect` directly.
+ */
+export function useGithubConnect({
+  projectId,
+  projectHasTeamIntegration,
+}: ConnectOptions): Result {
+  const client = useOptionalAuthenticatedClient();
+  const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+  const { isAdmin } = useIsOrgAdmin();
+  const machine = useConnectStateMachine(projectId);
+
+  const shouldUseTeamFlow =
+    isAdmin === true &&
+    projectHasTeamIntegration === false &&
+    cloudRegion != null;
+
+  const connect = useCallback(async () => {
+    if (machine.stateRef.current === "connecting") return;
+    if (projectId === null || !client) return;
+    machine.beginConnecting();
+    try {
+      if (shouldUseTeamFlow && cloudRegion) {
+        const res = await trpcClient.githubIntegration.startFlow.mutate({
+          region: cloudRegion,
+          projectId,
+        });
+        if (!res.success) {
+          throw new Error(res.error ?? "Failed to start GitHub connection");
+        }
+        // Team flow's URL launch + timeout live in the main process and route
+        // back through the shared callback subscription.
+      } else {
+        await runUserFlow(client, projectId);
+        machine.scheduleDevPolling();
+        machine.scheduleUserFlowTimeout();
+      }
+    } catch (e) {
+      machine.finishWithError({
+        message:
+          e instanceof Error ? e.message : "Failed to start GitHub connection",
+        code: null,
+      });
+    }
+  }, [client, projectId, shouldUseTeamFlow, cloudRegion, machine]);
+
+  return machineToResult(machine, connect);
 }

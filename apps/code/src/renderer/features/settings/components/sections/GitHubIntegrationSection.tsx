@@ -1,4 +1,8 @@
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
+import {
+  describeGithubConnectError,
+  useGithubConnect,
+} from "@features/integrations/hooks/useGithubUserConnect";
 import { useRepositoryIntegration } from "@hooks/useIntegrations";
 import {
   ArrowSquareOutIcon,
@@ -7,15 +11,6 @@ import {
   InfoIcon,
 } from "@phosphor-icons/react";
 import { Box, Button, Flex, Spinner, Text, Tooltip } from "@radix-ui/themes";
-import { useGitHubIntegrationCallback } from "@renderer/features/integrations/hooks/useGitHubIntegrationCallback";
-import { trpcClient } from "@renderer/trpc/client";
-import { IS_DEV } from "@shared/constants/environment";
-import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
-
-const POLL_INTERVAL_MS = 3_000;
-const POLL_TIMEOUT_MS = 300_000; // 5 minutes
 
 export function GitHubIntegrationSection({
   hasGithubIntegration,
@@ -24,90 +19,16 @@ export function GitHubIntegrationSection({
 }) {
   const { repositories, isLoadingRepos } = useRepositoryIntegration();
   const projectId = useAuthStateValue((state) => state.projectId);
-  const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
-  const queryClient = useQueryClient();
-  const [connecting, setConnecting] = useState(false);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const invalidateIntegrations = useCallback(() => {
-    void queryClient.invalidateQueries({
-      queryKey: ["integrations", "list"],
-    });
-  }, [queryClient]);
-
-  const stopPolling = useCallback(() => {
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-    if (pollTimeoutRef.current) {
-      clearTimeout(pollTimeoutRef.current);
-      pollTimeoutRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => stopPolling, [stopPolling]);
-
-  useEffect(() => {
-    if (hasGithubIntegration && connecting) {
-      stopPolling();
-      setConnecting(false);
-    }
-  }, [hasGithubIntegration, connecting, stopPolling]);
-
-  // Fallback for when the `posthog-code://integration` deep link from PostHog Cloud
-  // never makes it back to the app (browser blocked the protocol prompt, focus didn't
-  // return cleanly, etc.). The integrations query has a 5-minute staleTime so the
-  // global `refetchOnWindowFocus: true` won't refetch it on its own — invalidate
-  // explicitly while a connect flow is in flight.
-  useEffect(() => {
-    if (!connecting) return;
-    const handleFocus = () => invalidateIntegrations();
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, [connecting, invalidateIntegrations]);
-
-  useGitHubIntegrationCallback({
-    onSuccess: () => {
-      stopPolling();
-      setConnecting(false);
-      invalidateIntegrations();
-    },
-    onError: ({ message }) => {
-      stopPolling();
-      setConnecting(false);
-      toast.error(message);
-    },
-    onTimedOut: () => {
-      stopPolling();
-      setConnecting(false);
-    },
+  const {
+    error: connectError,
+    isConnecting: connecting,
+    isTimedOut: timedOut,
+    hasError: hasConnectError,
+    connect: handleConnect,
+  } = useGithubConnect({
+    projectId,
+    projectHasTeamIntegration: hasGithubIntegration,
   });
-
-  const handleConnect = useCallback(async () => {
-    if (!cloudRegion || !projectId) return;
-    setConnecting(true);
-    try {
-      await trpcClient.githubIntegration.startFlow.mutate({
-        region: cloudRegion,
-        projectId,
-      });
-
-      if (IS_DEV) {
-        pollTimerRef.current = setInterval(() => {
-          invalidateIntegrations();
-        }, POLL_INTERVAL_MS);
-      }
-
-      pollTimeoutRef.current = setTimeout(() => {
-        stopPolling();
-        setConnecting(false);
-      }, POLL_TIMEOUT_MS);
-    } catch {
-      setConnecting(false);
-    }
-  }, [cloudRegion, projectId, invalidateIntegrations, stopPolling]);
 
   return (
     <Flex
@@ -115,7 +36,7 @@ export function GitHubIntegrationSection({
       justify="between"
       gap="4"
       pb="4"
-      style={{ borderBottom: "1px dashed var(--gray-5)" }}
+      className="border-(--gray-5) border-b border-dashed"
     >
       <Flex align="center" gap="3">
         <Box className="shrink-0 text-(--gray-11)">
@@ -149,10 +70,20 @@ export function GitHubIntegrationSection({
               </Flex>
             </Tooltip>
           ) : (
-            <Text className="text-(--gray-11) text-[13px]">
+            <Text
+              className={
+                hasConnectError
+                  ? "text-(--red-11) text-[13px]"
+                  : "text-(--gray-11) text-[13px]"
+              }
+            >
               {hasGithubIntegration
                 ? "Connected and active"
-                : "Required for the Inbox pipeline to work"}
+                : hasConnectError
+                  ? describeGithubConnectError(connectError)
+                  : timedOut
+                    ? "We didn't hear back from GitHub. Try again."
+                    : "Required for the Inbox pipeline to work"}
             </Text>
           )}
         </Flex>
@@ -173,7 +104,7 @@ export function GitHubIntegrationSection({
         </Flex>
       ) : (
         <Button size="1" onClick={() => void handleConnect()}>
-          Connect GitHub
+          {hasConnectError || timedOut ? "Try again" : "Connect GitHub"}
           <ArrowSquareOutIcon size={12} />
         </Button>
       )}

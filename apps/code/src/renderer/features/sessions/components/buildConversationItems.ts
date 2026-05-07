@@ -37,6 +37,7 @@ export type ConversationItem =
       content: string;
       timestamp: number;
       attachments?: UserMessageAttachment[];
+      pinToTop?: boolean;
     }
   | { type: "git_action"; id: string; actionType: GitActionType }
   | { type: "skill_button_action"; id: string; buttonId: SkillButtonId }
