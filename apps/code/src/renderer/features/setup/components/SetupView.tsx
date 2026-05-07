@@ -7,22 +7,43 @@ import { useSetupStore } from "@features/setup/stores/setupStore";
 import type { DiscoveredTask } from "@features/setup/types";
 import { buildDiscoveredTaskPrompt } from "@features/setup/utils/buildDiscoveredTaskPrompt";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
-import { Robot, Rocket } from "@phosphor-icons/react";
-import { Box, Button, Flex, ScrollArea, Text } from "@radix-ui/themes";
-import explorerHog from "@renderer/assets/images/hedgehogs/explorer-hog.png";
+import {
+  ArrowRight,
+  Lightning,
+  MagnifyingGlass,
+  Rocket,
+} from "@phosphor-icons/react";
+import { Button, Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
 import { track } from "@utils/analytics";
-import { motion } from "framer-motion";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 
 export function SetupView() {
-  const { discoveryFeed, isDiscoveryDone, discoveredTasks, error } =
-    useSetupRun();
+  const {
+    discoveryFeed,
+    isDiscoveryDone,
+    isEnricherRunning,
+    discoveredTasks,
+    error,
+  } = useSetupRun();
   const completeSetup = useOnboardingStore((state) => state.completeSetup);
   const navigateToTaskInput = useNavigationStore(
     (state) => state.navigateToTaskInput,
   );
+
+  const { enricherTasks, agentTasks } = useMemo(() => {
+    const enricher: DiscoveredTask[] = [];
+    const agent: DiscoveredTask[] = [];
+    for (const task of discoveredTasks) {
+      if (task.source === "enricher") enricher.push(task);
+      else agent.push(task);
+    }
+    return { enricherTasks: enricher, agentTasks: agent };
+  }, [discoveredTasks]);
+
+  const showQuickWins = enricherTasks.length > 0 || isEnricherRunning;
+  const isEnricherDone = !isEnricherRunning;
 
   useSetHeaderContent(
     <Flex align="center" gap="2">
@@ -54,24 +75,15 @@ export function SetupView() {
     navigateToTaskInput({ initialPrompt });
   };
 
-  // Mid-scan: leave discovery running so the sidebar surfaces tasks when ready.
-  const handleSkipDuringScan = () => {
+  const handleStartFromScratch = () => {
     track(ANALYTICS_EVENTS.SETUP_SKIPPED, {
       discovery_status: useSetupStore.getState().discoveryStatus,
       had_discovered_tasks: discoveredTasks.length > 0,
-      entry_point: "during_scan",
+      entry_point: isDiscoveryDone ? "after_done" : "during_scan",
     });
-    completeSetup();
-    navigateToTaskInput();
-  };
-
-  const handleSkipAfterDone = () => {
-    track(ANALYTICS_EVENTS.SETUP_SKIPPED, {
-      discovery_status: useSetupStore.getState().discoveryStatus,
-      had_discovered_tasks: discoveredTasks.length > 0,
-      entry_point: "after_done",
-    });
-    useSetupStore.getState().resetDiscovery();
+    if (isDiscoveryDone) {
+      useSetupStore.getState().resetDiscovery();
+    }
     completeSetup();
     navigateToTaskInput();
   };
@@ -87,142 +99,183 @@ export function SetupView() {
         <Flex
           direction="column"
           gap="5"
-          className="w-full max-w-[520px] rounded-2xl border border-(--gray-a3) bg-(--color-background) px-7 py-6"
+          className="w-full max-w-[760px] rounded-2xl border border-(--gray-a3) bg-(--color-background) px-7 py-6"
         >
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <Flex direction="column" gap="2">
-              <Text
-                size="6"
-                weight="bold"
-                className="text-(--gray-12) leading-[1.3]"
-              >
-                {isDiscoveryDone
-                  ? "Your starter tasks are ready"
-                  : discoveredTasks.length > 0
-                    ? "Some starter tasks are ready"
-                    : "Finding your first tasks"}
-              </Text>
-              <Text size="2" className="text-(--gray-11)">
-                {isDiscoveryDone
-                  ? "Pick one to get going, or start from scratch — your suggestions stay in the sidebar."
-                  : discoveredTasks.length > 0
-                    ? "Pick one to get going, or wait — we're still skimming your codebase for more."
-                    : "This takes about a minute. We're scanning your code for a handful of starter tasks you can run in one click — bug fixes, cleanup, and PostHog enhancements where they apply."}
-              </Text>
-            </Flex>
-          </motion.div>
-
-          <Flex direction="column" gap="3">
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0.1 }}
+          <Flex direction="column" gap="2">
+            <Text
+              size="6"
+              weight="bold"
+              className="text-(--gray-12) leading-[1.3]"
             >
-              <SetupScanFeed
-                label="Searching for your first tasks"
-                icon={Robot}
-                color="orange"
-                currentTool={discoveryFeed.currentTool}
-                recentEntries={discoveryFeed.recentEntries}
-                isDone={isDiscoveryDone}
-                doneLabel="Analysis complete"
-              />
-            </motion.div>
+              Set up your first task
+            </Text>
+            <Text size="2" className="text-(--gray-11)">
+              Pick something to work on, or describe your own.
+            </Text>
           </Flex>
 
-          {discoveredTasks.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-            >
-              <Flex direction="column" gap="2">
-                <Text size="3" weight="medium" className="text-(--gray-12)">
-                  Recommended first tasks
+          <div
+            className={`grid grid-cols-1 items-start gap-5 ${
+              showQuickWins ? "md:grid-cols-2" : ""
+            }`}
+          >
+            {showQuickWins && (
+              <QuickWinsColumn
+                tasks={enricherTasks}
+                isDone={isEnricherDone}
+                onSelectTask={handleSelectTask}
+              />
+            )}
+
+            <DeeperScanColumn
+              hasSibling={showQuickWins}
+              isDone={isDiscoveryDone}
+              tasks={agentTasks}
+              feed={discoveryFeed}
+              error={error}
+              onSelectTask={handleSelectTask}
+            />
+          </div>
+
+          <Flex
+            direction="column"
+            gap="2"
+            align="stretch"
+            className="border-(--gray-a3) border-t pt-4"
+          >
+            <Button size="3" variant="solid" onClick={handleStartFromScratch}>
+              <Flex align="center" gap="2" justify="center">
+                <Text size="2" weight="medium">
+                  Or describe your own task
                 </Text>
-                <SuggestedTasks
-                  tasks={discoveredTasks}
-                  onSelectTask={handleSelectTask}
-                />
+                <ArrowRight size={14} weight="bold" />
               </Flex>
-            </motion.div>
-          )}
-
-          {!isDiscoveryDone && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0.15 }}
-            >
-              <Flex direction="column" gap="3">
-                <Flex align="center" gap="3" py="1">
-                  <motion.img
-                    src={explorerHog}
-                    alt=""
-                    animate={{
-                      y: [0, -3, 0],
-                      transition: {
-                        duration: 0.35,
-                        repeat: Infinity,
-                        repeatDelay: 0.15,
-                      },
-                    }}
-                    className="h-9 w-9 shrink-0 object-contain"
-                  />
-                  <Text size="1" className="text-(--gray-9) italic">
-                    {discoveredTasks.length > 0
-                      ? "Looking for more starter tasks…"
-                      : "Skimming your codebase for a few starter tasks…"}
-                  </Text>
-                </Flex>
-
-                <Flex direction="column" gap="1" align="start">
-                  <Button
-                    size="2"
-                    variant="ghost"
-                    color="gray"
-                    onClick={handleSkipDuringScan}
-                  >
-                    Start from scratch
-                  </Button>
-                  <Text size="1" className="text-(--gray-9)">
-                    Suggested tasks will appear in the sidebar when ready.
-                  </Text>
-                </Flex>
-              </Flex>
-            </motion.div>
-          )}
-
-          {error && (
-            <Text size="2" className="text-(--red-11)">
-              {error}
-            </Text>
-          )}
-
-          {isDiscoveryDone && (
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-            >
-              <Box>
-                <Button
-                  size="2"
-                  variant="ghost"
-                  color="gray"
-                  onClick={handleSkipAfterDone}
-                >
-                  Start from scratch
-                </Button>
-              </Box>
-            </motion.div>
-          )}
+            </Button>
+            {!isDiscoveryDone && (
+              <Text size="1" className="text-center text-(--gray-9)">
+                Suggested tasks will appear in the sidebar as they're ready.
+              </Text>
+            )}
+          </Flex>
         </Flex>
       </Flex>
     </ScrollArea>
+  );
+}
+
+interface QuickWinsColumnProps {
+  tasks: DiscoveredTask[];
+  isDone: boolean;
+  onSelectTask: (task: DiscoveredTask) => void;
+}
+
+function QuickWinsColumn({
+  tasks,
+  isDone,
+  onSelectTask,
+}: QuickWinsColumnProps) {
+  return (
+    <Flex direction="column" gap="3">
+      <Flex direction="column" gap="1">
+        <Text size="2" weight="medium" className="text-(--gray-12)">
+          Quick wins
+        </Text>
+        <Text size="1" className="text-(--gray-10)">
+          Spotted in your PostHog setup
+        </Text>
+      </Flex>
+      <SetupScanFeed
+        label="Quick wins"
+        icon={Lightning}
+        color="amber"
+        currentTool={null}
+        activeLabelOverride="Checking your PostHog setup…"
+        recentEntries={[]}
+        isDone={isDone}
+        doneLabel="Ready"
+      />
+      {tasks.length > 0 && (
+        <SuggestedTasks
+          tasks={tasks}
+          onSelectTask={onSelectTask}
+          variant="compact"
+        />
+      )}
+    </Flex>
+  );
+}
+
+interface DeeperScanColumnProps {
+  hasSibling: boolean;
+  isDone: boolean;
+  tasks: DiscoveredTask[];
+  feed: ReturnType<typeof useSetupRun>["discoveryFeed"];
+  error: string | null;
+  onSelectTask: (task: DiscoveredTask) => void;
+}
+
+function DeeperScanColumn({
+  hasSibling,
+  isDone,
+  tasks,
+  feed,
+  error,
+  onSelectTask,
+}: DeeperScanColumnProps) {
+  const isEmpty = isDone && tasks.length === 0;
+
+  return (
+    <div
+      className={
+        hasSibling ? "md:border-(--gray-a3) md:border-l md:pl-5" : undefined
+      }
+    >
+      <Flex direction="column" gap="3">
+        <Flex direction="column" gap="1">
+          <Text size="2" weight="medium" className="text-(--gray-12)">
+            Deeper scan
+          </Text>
+          <Text size="1" className="text-(--gray-10)">
+            {isDone
+              ? "We checked your code for bugs and improvements."
+              : "Bugs, dead code, and improvements (~1 min)."}
+          </Text>
+        </Flex>
+        <SetupScanFeed
+          label="Deeper scan"
+          icon={MagnifyingGlass}
+          color="orange"
+          currentTool={feed.currentTool}
+          recentEntries={feed.recentEntries}
+          isDone={isDone}
+          doneLabel="Analysis complete"
+        />
+
+        {isDone && tasks.length > 0 && (
+          <SuggestedTasks
+            tasks={tasks}
+            onSelectTask={onSelectTask}
+            variant="compact"
+          />
+        )}
+
+        {isEmpty && !error && (
+          <Flex
+            align="center"
+            justify="center"
+            py="4"
+            className="rounded-xl border border-(--gray-a3) border-dashed text-(--gray-10)"
+          >
+            <Text size="2">No issues found — your code looks clean ✨</Text>
+          </Flex>
+        )}
+
+        {error && (
+          <Text size="2" className="text-(--red-11)">
+            {error}
+          </Text>
+        )}
+      </Flex>
+    </div>
   );
 }

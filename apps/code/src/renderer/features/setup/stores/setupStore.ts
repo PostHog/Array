@@ -6,6 +6,7 @@ import { persist } from "zustand/middleware";
 const log = logger.scope("setup-store");
 
 type DiscoveryStatus = "idle" | "running" | "done" | "error";
+type EnricherStatus = "idle" | "running" | "done" | "error";
 
 interface ActivityEntry {
   id: number;
@@ -33,6 +34,7 @@ interface SetupStoreState {
   discoveryTaskId: string | null;
   discoveryTaskRunId: string | null;
   discoveryFeed: AgentFeedState;
+  enricherStatus: EnricherStatus;
   error: string | null;
   selectedDiscoveredTaskId: string | null;
 }
@@ -42,6 +44,9 @@ interface SetupStoreActions {
   completeDiscovery: (tasks: DiscoveredTask[]) => void;
   failDiscovery: (message?: string) => void;
   resetDiscovery: () => void;
+  startEnrichment: () => void;
+  completeEnrichment: () => void;
+  failEnrichment: () => void;
   removeDiscoveredTask: (taskId: string) => void;
   selectDiscoveredTask: (taskId: string | null) => void;
   addEnricherSuggestionIfMissing: (task: DiscoveredTask) => void;
@@ -57,6 +62,7 @@ const initialState: SetupStoreState = {
   discoveryTaskId: null,
   discoveryTaskRunId: null,
   discoveryFeed: EMPTY_FEED,
+  enricherStatus: "idle",
   error: null,
   selectedDiscoveredTaskId: null,
 };
@@ -142,6 +148,18 @@ export const useSetupStore = create<SetupStore>()(
           discoveryFeed: EMPTY_FEED,
           error: null,
         }));
+      },
+
+      startEnrichment: () => {
+        set({ enricherStatus: "running" });
+      },
+
+      completeEnrichment: () => {
+        set({ enricherStatus: "done" });
+      },
+
+      failEnrichment: () => {
+        set({ enricherStatus: "error" });
       },
 
       removeDiscoveredTask: (taskId) => {

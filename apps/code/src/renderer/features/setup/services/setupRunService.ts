@@ -257,6 +257,7 @@ export class SetupRunService {
     if (!directory) return;
     if (this.enricherSuggestionsRunning) return;
     this.enricherSuggestionsRunning = true;
+    useSetupStore.getState().startEnrichment();
 
     void (async () => {
       try {
@@ -274,8 +275,10 @@ export class SetupRunService {
           const suggestion = buildPosthogSetupSuggestion(installState);
           useSetupStore.getState().addEnricherSuggestionIfMissing(suggestion);
         }
+        useSetupStore.getState().completeEnrichment();
       } catch (err) {
         log.warn("Enricher run failed", { error: err });
+        useSetupStore.getState().failEnrichment();
       } finally {
         this.enricherSuggestionsRunning = false;
       }

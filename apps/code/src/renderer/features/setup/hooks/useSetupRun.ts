@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 export function useSetupRun() {
   const selectedDirectory = useOnboardingStore((s) => s.selectedDirectory);
   const discoveryStatus = useSetupStore((s) => s.discoveryStatus);
+  const enricherStatus = useSetupStore((s) => s.enricherStatus);
   const discoveredTasks = useSetupStore((s) => s.discoveredTasks);
   const discoveryFeed = useSetupStore((s) => s.discoveryFeed);
   const error = useSetupStore((s) => s.error);
@@ -28,6 +29,7 @@ export function useSetupRun() {
   return {
     discoveryFeed,
     isDiscoveryDone: discoveryStatus === "done",
+    isEnricherRunning: enricherStatus === "running",
     discoveredTasks,
     error,
   };

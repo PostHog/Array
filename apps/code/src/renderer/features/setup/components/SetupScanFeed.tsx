@@ -29,6 +29,7 @@ interface SetupScanFeedProps {
   icon: Icon;
   color: string;
   currentTool: string | null;
+  activeLabelOverride?: string;
   recentEntries: ActivityEntry[];
   isDone: boolean;
   doneLabel?: string;
@@ -124,11 +125,14 @@ export function SetupScanFeed({
   icon: LabelIcon,
   color,
   currentTool,
+  activeLabelOverride,
   recentEntries,
   isDone,
   doneLabel = "Complete",
 }: SetupScanFeedProps) {
-  const activeLabel = currentTool ? toolLabel(currentTool) : "Starting...";
+  const activeLabel =
+    activeLabelOverride ??
+    (currentTool ? toolLabel(currentTool) : "Starting...");
 
   return (
     <Flex direction="column" gap="0" className="w-full">
