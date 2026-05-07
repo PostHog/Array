@@ -102,6 +102,12 @@ function buildMcpServers(
 }
 
 function buildEnvironment(): Record<string, string> {
+  const bedrockFallbackHeader = "x-posthog-use-bedrock-fallback: true";
+  const existingCustomHeaders = process.env.ANTHROPIC_CUSTOM_HEADERS;
+  const customHeaders = existingCustomHeaders
+    ? `${existingCustomHeaders}\n${bedrockFallbackHeader}`
+    : bedrockFallbackHeader;
+
   return {
     ...process.env,
     ELECTRON_RUN_AS_NODE: "1",
@@ -110,6 +116,8 @@ function buildEnvironment(): Record<string, string> {
     ENABLE_TOOL_SEARCH: "auto:0",
     // Enable idle state as end-of-turn signal (required for SDK 0.2.114+)
     CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
+    // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
+    ANTHROPIC_CUSTOM_HEADERS: customHeaders,
   };
 }
 

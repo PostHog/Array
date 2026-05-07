@@ -79,7 +79,6 @@ export class LlmGatewayService {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-posthog-use-bedrock-fallback": "true",
         },
         body: JSON.stringify(requestBody),
       },
