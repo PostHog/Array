@@ -137,6 +137,7 @@ export class AuthProxyService {
         headers[key] = value;
       }
     }
+    headers["x-posthog-use-bedrock-fallback"] = "true";
     const fetchOptions: RequestInit = {
       method: req.method ?? "GET",
       headers,
