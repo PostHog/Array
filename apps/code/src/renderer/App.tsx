@@ -21,6 +21,7 @@ import { useFocusStore } from "@renderer/stores/focusStore";
 import { useThemeStore } from "@renderer/stores/themeStore";
 import { initializeUpdateStore } from "@renderer/stores/updateStore";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
+import { isNotAuthenticatedError } from "@shared/errors";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
@@ -284,7 +285,11 @@ function App() {
   const content = renderContent();
 
   return (
-    <ErrorBoundary name="App">
+    <ErrorBoundary
+      name="App"
+      resetKey={authState.status}
+      shouldSuppress={isNotAuthenticatedError}
+    >
       {isAuthenticated ? (
         <AnimatePresence mode="wait">{content}</AnimatePresence>
       ) : (
