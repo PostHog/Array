@@ -4,6 +4,7 @@ import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { ArrowRight, SignOut } from "@phosphor-icons/react";
 import { Button, Flex } from "@radix-ui/themes";
+import { IS_DEV } from "@shared/constants/environment";
 import { useNavigationStore } from "@stores/navigationStore";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -87,16 +88,18 @@ export function OnboardingFlow() {
           Log out
         </Button>
       )}
-      <Button
-        size="1"
-        variant="ghost"
-        color="gray"
-        onClick={handleSkip}
-        className="opacity-50"
-      >
-        <ArrowRight size={14} weight="bold" />
-        Skip setup
-      </Button>
+      {IS_DEV && (
+        <Button
+          size="1"
+          variant="ghost"
+          color="gray"
+          onClick={handleSkip}
+          className="opacity-50"
+        >
+          <ArrowRight size={14} weight="bold" />
+          Skip setup
+        </Button>
+      )}
     </Flex>
   );
 
