@@ -1163,6 +1163,125 @@ describe("SessionService", () => {
       });
     });
 
+    it("flushes queued cloud messages when cloudStatus flips to in_progress on a connected session", async () => {
+      const service = getSessionService();
+      mockBuildAuthenticatedClient.mockReturnValue(mockAuthenticatedClient);
+      const queuedMessage = {
+        id: "q-1",
+        content: "follow up",
+        queuedAt: 1700000000,
+      };
+      const sessionWithQueue = createMockSession({
+        taskRunId: "run-123",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: true,
+        cloudStatus: "in_progress",
+        events: [],
+        messageQueue: [queuedMessage],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        sessionWithQueue,
+      );
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": sessionWithQueue,
+      });
+      mockSessionStoreSetters.dequeueMessages.mockReturnValue([queuedMessage]);
+      mockTrpcCloudTask.sendCommand.mutate.mockResolvedValue({
+        success: true,
+        result: { stopReason: "end_turn" },
+      });
+
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+        undefined,
+        "https://logs.example.com/run-123",
+      );
+
+      const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
+        .calls[0][1] as {
+        onData: (update: {
+          kind: "status";
+          taskId: string;
+          runId: string;
+          status: "in_progress";
+        }) => void;
+      };
+      subscribeOptions.onData({
+        kind: "status",
+        taskId: "task-123",
+        runId: "run-123",
+        status: "in_progress",
+      });
+
+      await vi.waitFor(() => {
+        expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            taskId: "task-123",
+            method: "user_message",
+            params: expect.objectContaining({ content: "follow up" }),
+          }),
+        );
+      });
+    });
+
+    it("does not flush queued cloud messages when cloudStatus flips to in_progress while still connecting", async () => {
+      const service = getSessionService();
+      mockBuildAuthenticatedClient.mockReturnValue(mockAuthenticatedClient);
+      const queuedMessage = {
+        id: "q-1",
+        content: "follow up",
+        queuedAt: 1700000000,
+      };
+      const sessionWithQueue = createMockSession({
+        taskRunId: "run-123",
+        taskId: "task-123",
+        status: "connecting",
+        isCloud: true,
+        cloudStatus: "queued",
+        events: [],
+        messageQueue: [queuedMessage],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        sessionWithQueue,
+      );
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": sessionWithQueue,
+      });
+
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+        undefined,
+        "https://logs.example.com/run-123",
+      );
+
+      const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
+        .calls[0][1] as {
+        onData: (update: {
+          kind: "status";
+          taskId: string;
+          runId: string;
+          status: "in_progress";
+        }) => void;
+      };
+      subscribeOptions.onData({
+        kind: "status",
+        taskId: "task-123",
+        runId: "run-123",
+        status: "in_progress",
+      });
+
+      // Give the setTimeout(0) microtask time to resolve had it been scheduled.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(mockTrpcCloudTask.sendCommand.mutate).not.toHaveBeenCalled();
+    });
+
     it("re-enqueues queued cloud messages when the dispatch fails", async () => {
       const service = getSessionService();
       const queuedMessage = {
@@ -2357,6 +2476,95 @@ describe("SessionService", () => {
         prompt,
       );
       expect(mockTrpcCloudTask.sendCommand.mutate).not.toHaveBeenCalled();
+    });
+
+    it("kicks an SSE retry when queueing on a disconnected cloud session", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "in_progress",
+          status: "disconnected",
+          isPromptPending: false,
+        }),
+      );
+
+      const prompt: ContentBlock[] = [{ type: "text", text: "wake me up" }];
+      await service.sendPrompt("task-123", prompt);
+
+      await vi.waitFor(() => {
+        expect(mockTrpcCloudTask.retry.mutate).toHaveBeenCalledWith({
+          taskId: "task-123",
+          runId: "run-123",
+        });
+      });
+    });
+
+    it("kicks an SSE retry when queueing on an errored cloud session", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "in_progress",
+          status: "error",
+          errorMessage: "Lost connection",
+          isPromptPending: false,
+        }),
+      );
+
+      const prompt: ContentBlock[] = [{ type: "text", text: "wake me up" }];
+      await service.sendPrompt("task-123", prompt);
+
+      await vi.waitFor(() => {
+        expect(mockTrpcCloudTask.retry.mutate).toHaveBeenCalledWith({
+          taskId: "task-123",
+          runId: "run-123",
+        });
+      });
+    });
+
+    it("does not kick an SSE retry when queueing on a still-connecting cloud session", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "in_progress",
+          status: "connecting",
+          isPromptPending: false,
+        }),
+      );
+
+      const prompt: ContentBlock[] = [{ type: "text", text: "wake me up" }];
+      const result = await service.sendPrompt("task-123", prompt);
+
+      expect(result.stopReason).toBe("queued");
+      expect(mockTrpcCloudTask.retry.mutate).not.toHaveBeenCalled();
+    });
+
+    it("does not pin isPromptPending when queueing during sandbox boot", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "queued",
+          status: "connecting",
+          isPromptPending: false,
+        }),
+      );
+
+      const prompt: ContentBlock[] = [{ type: "text", text: "before boot" }];
+      const result = await service.sendPrompt("task-123", prompt);
+
+      expect(result.stopReason).toBe("queued");
+      expect(mockSessionStoreSetters.enqueueMessage).toHaveBeenCalledWith(
+        "task-123",
+        "before boot",
+      );
+      const wroteIsPromptPendingTrue =
+        mockSessionStoreSetters.updateSession.mock.calls.some(
+          ([, patch]) => patch?.isPromptPending === true,
+        );
+      expect(wroteIsPromptPendingTrue).toBe(false);
     });
 
     it("preserves cloud attachment prompts when queueing a follow-up", async () => {

@@ -1682,9 +1682,6 @@ export class SessionService {
 
     if (session.cloudStatus !== "in_progress") {
       sessionStoreSetters.enqueueMessage(session.taskId, transport.promptText);
-      sessionStoreSetters.updateSession(session.taskRunId, {
-        isPromptPending: true,
-      });
       log.info("Cloud message queued (sandbox not ready)", {
         taskId: session.taskId,
         cloudStatus: session.cloudStatus,
@@ -1714,6 +1711,19 @@ export class SessionService {
         sessionStatus: session.status,
         queueLength: session.messageQueue.length + 1,
       });
+      // The watcher may have exhausted its reconnect budget and been left in a
+      // failed state — without an SSE stream, no `turn_complete` will arrive
+      // to drain the queue. Kick a retry so the stream comes back online; the
+      // queued message dispatches naturally once `run_started`/`turn_complete`
+      // is observed.
+      if (session.status === "disconnected" || session.status === "error") {
+        this.retryCloudTaskWatch(session.taskId).catch((err) => {
+          log.warn("Auto-retry of cloud task watch from queue gate failed", {
+            taskId: session.taskId,
+            error: String(err),
+          });
+        });
+      }
       return { stopReason: "queued" };
     }
 
@@ -3250,10 +3260,31 @@ export class SessionService {
         branch: update.branch,
       });
 
-      // No cloudStatus="in_progress" auto-flush here. `run_started` from
-      // the agent-server is the canonical "agent is ready" trigger and
-      // handles both initial boot and post-restart recovery; firing
-      // earlier would race with `sendInitialTaskMessage`.
+      // Recovery path for missed `turn_complete` notifications. `run_started`
+      // is normally the canonical "agent is ready" trigger and would race with
+      // `sendInitialTaskMessage` — but only while `session.status` is not yet
+      // "connected". Once status is "connected", the agent's handshake is
+      // done; if the run becomes `in_progress` and we still hold queued
+      // messages, attempt to drain. `sendQueuedCloudMessages` itself bails
+      // when `isPromptPending` is true, preserving the race protection.
+      if (update.status === "in_progress") {
+        const sessionAfter = sessionStoreSetters.getSessions()[taskRunId];
+        if (
+          sessionAfter?.isCloud &&
+          sessionAfter.status === "connected" &&
+          sessionAfter.messageQueue.length > 0
+        ) {
+          const taskId = sessionAfter.taskId;
+          setTimeout(() => {
+            this.sendQueuedCloudMessages(taskId).catch((err) =>
+              log.error("status-driven cloud queue flush failed", {
+                taskId,
+                error: err,
+              }),
+            );
+          }, 0);
+        }
+      }
 
       if (isTerminalStatus(update.status)) {
         // Clean up any pending resume messages that couldn't be sent
