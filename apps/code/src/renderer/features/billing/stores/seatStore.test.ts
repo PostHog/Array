@@ -252,6 +252,38 @@ describe("seatStore", () => {
         { plan_key: PLAN_PRO },
       );
     });
+
+    it("falls back to API response plan_key when store seat is null", async () => {
+      const cancelingSeat = makeSeat({
+        plan_key: PLAN_PRO,
+        status: "canceling",
+      });
+      const client = mockClient({
+        getMySeat: vi.fn().mockResolvedValue(cancelingSeat),
+      });
+
+      await useSeatStore.getState().cancelSeat();
+
+      expect(client.cancelSeat).toHaveBeenCalled();
+      expect(mockTrack).toHaveBeenCalledWith(
+        ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED,
+        { plan_key: PLAN_PRO },
+      );
+    });
+
+    it("skips tracking when no plan_key is available", async () => {
+      const client = mockClient({
+        getMySeat: vi.fn().mockResolvedValue(null),
+      });
+
+      await useSeatStore.getState().cancelSeat();
+
+      expect(client.cancelSeat).toHaveBeenCalled();
+      expect(mockTrack).not.toHaveBeenCalledWith(
+        ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED,
+        expect.anything(),
+      );
+    });
   });
 
   describe("reactivateSeat", () => {

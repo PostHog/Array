@@ -224,9 +224,12 @@ export const useSeatStore = create<SeatStore>()((set, get) => ({
         isLoading: false,
         billingOrgId: seat?.organization_id ?? null,
       });
-      track(ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED, {
-        plan_key: previousPlanKey ?? seat?.plan_key ?? PLAN_PRO,
-      });
+      const cancelledPlanKey = previousPlanKey ?? seat?.plan_key;
+      if (cancelledPlanKey) {
+        track(ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED, {
+          plan_key: cancelledPlanKey,
+        });
+      }
       invalidatePlanCache();
     } catch (error) {
       handleSeatError(error, set);
