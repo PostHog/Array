@@ -273,6 +273,14 @@ class TerminalManagerImpl {
   handleExit(sessionId: string, exitCode?: number): void {
     const instance = this.instances.get(sessionId);
     if (instance) {
+      // Without this, ResizeObserver keeps firing shell.resize against the dead
+      // session on every layout shift, producing a TRPC error per call and
+      // wedging the renderer.
+      instance.isReady = false;
+      if (instance.resizeObserver) {
+        instance.resizeObserver.disconnect();
+        instance.resizeObserver = null;
+      }
       this.emit("exit", {
         sessionId,
         persistenceKey: instance.persistenceKey,
