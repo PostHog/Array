@@ -28,6 +28,7 @@ import { memo, useCallback, useEffect, useRef } from "react";
 import { usePinnedTasks } from "../hooks/usePinnedTasks";
 import { useSidebarData } from "../hooks/useSidebarData";
 import { useTaskViewed } from "../hooks/useTaskViewed";
+import { useSidebarStore } from "../stores/sidebarStore";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
 import { McpServersItem } from "./items/McpServersItem";
@@ -48,7 +49,11 @@ function SidebarMenuComponent() {
     navigateToSetup,
   } = useNavigationStore();
 
-  const { data: allTasks = [] } = useTasks();
+  // Must mirror useSidebarData's filters so taskMap covers every rendered
+  // task — otherwise handleTaskClick silently bails for tasks not in the map.
+  const showAllUsers = useSidebarStore((s) => s.showAllUsers);
+  const showInternal = useSidebarStore((s) => s.showInternal);
+  const { data: allTasks = [] } = useTasks({ showAllUsers, showInternal });
 
   const { data: workspaces = {} } = useWorkspaces();
   const { markAsViewed } = useTaskViewed();
