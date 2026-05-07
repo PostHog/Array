@@ -4,11 +4,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import gitUrlParse from "git-url-parse";
 
-export interface GitHubRepo {
-  organization: string;
-  repository: string;
-  path: string;
-}
+export type GitHubUrl =
+  | { kind: "repo"; owner: string; repo: string }
+  | { kind: "issue"; owner: string; repo: string; number: number }
+  | { kind: "pr"; owner: string; repo: string; number: number };
 
 export async function safeSymlink(
   source: string,
@@ -154,40 +153,9 @@ export async function forceRemove(target: string): Promise<void> {
   await fs.rm(target, { recursive: true, force: true, maxRetries: 3 });
 }
 
-export interface GitHubPr {
-  owner: string;
-  repo: string;
-  number: number;
-}
-
-export function parsePrUrl(prUrl: string | null | undefined): GitHubPr | null {
-  if (!prUrl) return null;
-  let parsed: gitUrlParse.GitUrl;
-  try {
-    parsed = gitUrlParse(prUrl.trim());
-  } catch {
-    return null;
-  }
-  if (parsed.source.toLowerCase() !== "github.com" || !parsed.full_name) {
-    return null;
-  }
-  const [owner, repo, kind, num] = parsed.full_name.split("/");
-  if (!owner || !repo || kind !== "pull") return null;
-  const number = Number(num);
-  if (!Number.isInteger(number) || number <= 0) return null;
-  return { owner, repo, number };
-}
-
-export interface GitHubRefLink {
-  owner: string;
-  repo: string;
-  number: number;
-  kind: "issue" | "pr";
-}
-
-export function parseGithubRefUrl(
+export function parseGithubUrl(
   url: string | null | undefined,
-): GitHubRefLink | null {
+): GitHubUrl | null {
   if (!url) return null;
   let parsed: gitUrlParse.GitUrl;
   try {
@@ -195,40 +163,31 @@ export function parseGithubRefUrl(
   } catch {
     return null;
   }
-  if (parsed.source.toLowerCase() !== "github.com") return null;
-  // git-url-parse keeps the issue suffix in pathname but strips it from
-  // full_name, so read pathname directly.
-  const parts = parsed.pathname.split("/");
-  if (parts.length < 5 || parts[0] !== "") return null;
-  const [, owner, repoRaw, segment, num] = parts;
-  if (!owner || !repoRaw || !segment || !num) return null;
-  let kind: "issue" | "pr";
-  if (segment === "pull") kind = "pr";
-  else if (segment === "issues") kind = "issue";
-  else return null;
-  const number = Number(num);
-  if (!Number.isInteger(number) || number <= 0) return null;
+  // git-url-parse normalizes source to github.com for any *.github.com host,
+  // so check resource to reject api.github.com etc. SSH uses ssh.github.com.
+  const resource = parsed.resource.toLowerCase();
+  if (resource !== "github.com" && resource !== "ssh.github.com") return null;
+
+  // Read pathname directly: git-url-parse keeps /pull/N in full_name but
+  // strips /issues/N, and stuffs unknown path segments into owner. Pathname
+  // is consistent across HTTPS, SSH, and shorthand inputs.
+  const raw = parsed.pathname.split("/");
+  if (raw[0] !== "") return null;
+  const parts = raw[raw.length - 1] === "" ? raw.slice(1, -1) : raw.slice(1);
+  if (parts.length < 2 || parts.some((p) => p === "")) return null;
+  const [owner, repoRaw, segment, num] = parts;
   const repo = repoRaw.replace(/\.git$/, "");
-  return { owner, repo, number, kind };
-}
 
-export function parseGitHubUrl(
-  url: string | null | undefined,
-): GitHubRepo | null {
-  if (!url) return null;
-  let parsed: gitUrlParse.GitUrl;
-  try {
-    parsed = gitUrlParse(url.trim());
-  } catch {
-    return null;
+  if (segment === "issues" || segment === "pull") {
+    const number = Number(num);
+    if (!Number.isInteger(number) || number <= 0) return null;
+    return {
+      kind: segment === "pull" ? "pr" : "issue",
+      owner,
+      repo,
+      number,
+    };
   }
-  if (parsed.source.toLowerCase() !== "github.com") return null;
-  // git-url-parse stuffs unhandled path segments into owner (e.g. wiki, actions,
-  // releases pages), so reject anything that didn't cleanly split into org/repo.
-  if (!parsed.owner || !parsed.name || parsed.owner.includes("/")) return null;
-  return {
-    organization: parsed.owner,
-    repository: parsed.name,
-    path: `${parsed.owner}/${parsed.name}`,
-  };
+
+  return { kind: "repo", owner, repo };
 }
