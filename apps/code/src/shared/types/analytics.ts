@@ -331,6 +331,16 @@ export interface SetupSkippedProperties {
   entry_point: "during_scan" | "after_done";
 }
 
+// Subscription / billing events
+export interface SubscriptionStartedProperties {
+  plan_key: string;
+  previous_plan_key?: string;
+}
+
+export interface SubscriptionCancelledProperties {
+  plan_key: string;
+}
+
 // Event names as constants
 export const ANALYTICS_EVENTS = {
   // App lifecycle
@@ -419,6 +429,10 @@ export const ANALYTICS_EVENTS = {
   // Prompt history events
   PROMPT_HISTORY_OPENED: "Prompt history opened",
   PROMPT_HISTORY_SELECTED: "Prompt history selected",
+
+  // Subscription events
+  SUBSCRIPTION_STARTED: "Subscription started",
+  SUBSCRIPTION_CANCELLED: "Subscription cancelled",
 } as const;
 
 // Event property mapping
@@ -502,4 +516,8 @@ export type EventPropertyMap = {
   // Prompt history events
   [ANALYTICS_EVENTS.PROMPT_HISTORY_OPENED]: PromptHistoryOpenedProperties;
   [ANALYTICS_EVENTS.PROMPT_HISTORY_SELECTED]: PromptHistorySelectedProperties;
+
+  // Subscription events
+  [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
+  [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
 };

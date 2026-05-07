@@ -4,8 +4,10 @@ import {
   SeatSubscriptionRequiredError,
 } from "@renderer/api/posthogClient";
 import { trpcClient } from "@renderer/trpc";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import type { SeatData } from "@shared/types/seat";
 import { PLAN_FREE, PLAN_PRO } from "@shared/types/seat";
+import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { queryClient } from "@utils/queryClient";
 import { create } from "zustand";
@@ -186,6 +188,10 @@ export const useSeatStore = create<SeatStore>()((set, get) => ({
           isLoading: false,
           billingOrgId: seat.organization_id ?? null,
         });
+        track(ANALYTICS_EVENTS.SUBSCRIPTION_STARTED, {
+          plan_key: seat.plan_key,
+          previous_plan_key: existing.plan_key,
+        });
         invalidatePlanCache();
         return;
       }
@@ -195,6 +201,9 @@ export const useSeatStore = create<SeatStore>()((set, get) => ({
         orgSeat: seat,
         isLoading: false,
         billingOrgId: seat.organization_id ?? null,
+      });
+      track(ANALYTICS_EVENTS.SUBSCRIPTION_STARTED, {
+        plan_key: seat.plan_key,
       });
       invalidatePlanCache();
     } catch (error) {
@@ -206,6 +215,7 @@ export const useSeatStore = create<SeatStore>()((set, get) => ({
     set({ isLoading: true, error: null, redirectUrl: null });
     try {
       const client = await getClient();
+      const previousPlanKey = get().seat?.plan_key;
       await client.cancelSeat();
       const seat = await client.getMySeat();
       set({
@@ -213,6 +223,9 @@ export const useSeatStore = create<SeatStore>()((set, get) => ({
         orgSeat: seat,
         isLoading: false,
         billingOrgId: seat?.organization_id ?? null,
+      });
+      track(ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED, {
+        plan_key: previousPlanKey ?? seat?.plan_key ?? PLAN_PRO,
       });
       invalidatePlanCache();
     } catch (error) {

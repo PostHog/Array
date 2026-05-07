@@ -45,12 +45,17 @@ vi.mock("@renderer/trpc", () => ({
   },
 }));
 
+vi.mock("@utils/analytics", () => ({ track: vi.fn() }));
+
 import { trpcClient } from "@renderer/trpc";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import { track } from "@utils/analytics";
 import { useSeatStore } from "./seatStore";
 
 const mockInvalidatePlanCache = vi.mocked(
   trpcClient.llmGateway.invalidatePlanCache.mutate,
 );
+const mockTrack = vi.mocked(track);
 
 function makeSeat(overrides: Partial<SeatData> = {}): SeatData {
   return {
@@ -170,6 +175,10 @@ describe("seatStore", () => {
       expect(client.upgradeSeat).toHaveBeenCalledWith(PLAN_PRO);
       expect(useSeatStore.getState().seat).toEqual(proSeat);
       expect(mockInvalidatePlanCache).toHaveBeenCalled();
+      expect(mockTrack).toHaveBeenCalledWith(
+        ANALYTICS_EVENTS.SUBSCRIPTION_STARTED,
+        { plan_key: PLAN_PRO, previous_plan_key: PLAN_FREE },
+      );
     });
 
     it("no-ops when already on pro", async () => {
@@ -183,6 +192,7 @@ describe("seatStore", () => {
       expect(client.upgradeSeat).not.toHaveBeenCalled();
       expect(client.createSeat).not.toHaveBeenCalled();
       expect(useSeatStore.getState().seat).toEqual(proSeat);
+      expect(mockTrack).not.toHaveBeenCalled();
     });
 
     it("upgrades alpha pro seat to paid pro", async () => {
@@ -197,6 +207,10 @@ describe("seatStore", () => {
 
       expect(client.upgradeSeat).toHaveBeenCalledWith(PLAN_PRO);
       expect(useSeatStore.getState().seat).toEqual(proSeat);
+      expect(mockTrack).toHaveBeenCalledWith(
+        ANALYTICS_EVENTS.SUBSCRIPTION_STARTED,
+        { plan_key: PLAN_PRO, previous_plan_key: PLAN_PRO_ALPHA },
+      );
     });
 
     it("creates pro seat when none exists", async () => {
@@ -209,21 +223,34 @@ describe("seatStore", () => {
 
       expect(client.createSeat).toHaveBeenCalledWith(PLAN_PRO);
       expect(mockInvalidatePlanCache).toHaveBeenCalled();
+      expect(mockTrack).toHaveBeenCalledWith(
+        ANALYTICS_EVENTS.SUBSCRIPTION_STARTED,
+        { plan_key: PLAN_PRO },
+      );
     });
   });
 
   describe("cancelSeat", () => {
     it("cancels and re-fetches seat", async () => {
-      const canceledSeat = makeSeat({ status: "canceling" });
+      const proSeat = makeSeat({ plan_key: PLAN_PRO });
+      const cancelingSeat = makeSeat({
+        plan_key: PLAN_PRO,
+        status: "canceling",
+      });
+      useSeatStore.setState({ seat: proSeat });
       const client = mockClient({
-        getMySeat: vi.fn().mockResolvedValue(canceledSeat),
+        getMySeat: vi.fn().mockResolvedValue(cancelingSeat),
       });
 
       await useSeatStore.getState().cancelSeat();
 
       expect(client.cancelSeat).toHaveBeenCalled();
-      expect(useSeatStore.getState().seat).toEqual(canceledSeat);
+      expect(useSeatStore.getState().seat).toEqual(cancelingSeat);
       expect(mockInvalidatePlanCache).toHaveBeenCalled();
+      expect(mockTrack).toHaveBeenCalledWith(
+        ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED,
+        { plan_key: PLAN_PRO },
+      );
     });
   });
 
