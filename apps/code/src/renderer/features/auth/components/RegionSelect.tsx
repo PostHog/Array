@@ -1,82 +1,97 @@
 import { Flex, Select, Text } from "@radix-ui/themes";
 import { IS_DEV } from "@shared/constants/environment";
 import type { CloudRegion } from "@shared/types/regions";
-import { useState } from "react";
 
 interface RegionSelectProps {
   region: CloudRegion;
-  regionLabel: string;
   onRegionChange: (region: CloudRegion) => void;
   disabled?: boolean;
 }
 
+interface RegionOption {
+  value: CloudRegion;
+  flag: string;
+  label: string;
+  hint: string;
+}
+
+const REGION_OPTIONS: RegionOption[] = [
+  {
+    value: "us",
+    flag: "\u{1F1FA}\u{1F1F8}", // US flag
+    label: "US Cloud",
+    hint: "us.posthog.com",
+  },
+  {
+    value: "eu",
+    flag: "\u{1F1EA}\u{1F1FA}", // EU flag
+    label: "EU Cloud",
+    hint: "eu.posthog.com",
+  },
+];
+
 export function RegionSelect({
   region,
-  regionLabel,
   onRegionChange,
   disabled = false,
 }: RegionSelectProps) {
-  const [expanded, setExpanded] = useState(false);
-
-  if (!expanded) {
-    return (
-      <Text className="mt-[10px] text-sm">
-        <span className="text-(--gray-12) opacity-50">
-          {regionLabel}
-          {" \u00B7 "}
-        </span>
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          disabled={disabled}
-          style={{
-            cursor: disabled ? "not-allowed" : "pointer",
-            fontSize: "inherit",
-            opacity: disabled ? 0.5 : 1,
-          }}
-          className="border-0 bg-transparent p-0 font-medium text-(--accent-9)"
-        >
-          change
-        </button>
-      </Text>
-    );
-  }
-
   return (
-    <Flex direction="column" gap="2" className="mt-[10px] w-full">
+    <Flex direction="column" gap="2" className="w-full">
       <Flex justify="between" align="center">
-        <Text className="font-medium text-(--gray-12) text-sm opacity-60">
+        <Text className="font-medium text-(--gray-12) text-sm">
           PostHog region
         </Text>
-        <Text className="text-(--gray-12) text-sm opacity-50">
-          <button
-            type="button"
-            onClick={() => setExpanded(false)}
-            style={{
-              fontSize: "inherit",
-            }}
-            className="cursor-pointer border-0 bg-transparent p-0 font-medium text-(--accent-9)"
-          >
-            cancel
-          </button>
+        <Text className="text-(--gray-11) text-xs">
+          Pick where your account lives
         </Text>
       </Flex>
-      <Select.Root
-        value={region}
-        onValueChange={(value) => {
-          onRegionChange(value as CloudRegion);
-          setExpanded(false);
-        }}
-        size="2"
-        disabled={disabled}
-      >
-        <Select.Trigger />
-        <Select.Content>
-          <Select.Item value="us">US Cloud</Select.Item>
-          <Select.Item value="eu">EU Cloud</Select.Item>
-          {IS_DEV && <Select.Item value="dev">Development</Select.Item>}
-        </Select.Content>
-      </Select.Root>
+      <div className="grid w-full grid-cols-2 gap-2">
+        {REGION_OPTIONS.map((option) => {
+          const isSelected = option.value === region;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={isSelected}
+              onClick={() => onRegionChange(option.value)}
+              disabled={disabled}
+              className={`flex w-full flex-col items-start gap-[2px] rounded-[8px] border-[1.5px] px-3 py-2 text-left transition-colors ${
+                isSelected
+                  ? "border-(--accent-9) bg-(--accent-3) text-(--gray-12)"
+                  : "border-(--gray-6) bg-transparent text-(--gray-12) hover:border-(--gray-8)"
+              } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+            >
+              <Flex align="center" gap="2" className="w-full">
+                <span className="text-[18px] leading-none">{option.flag}</span>
+                <Text className="font-semibold text-(--gray-12) text-sm">
+                  {option.label}
+                </Text>
+              </Flex>
+              <Text className="pl-[26px] text-(--gray-11) text-xs">
+                {option.hint}
+              </Text>
+            </button>
+          );
+        })}
+      </div>
+      {IS_DEV && (
+        <Flex direction="column" gap="1" className="mt-1 w-full">
+          <Text className="text-(--gray-11) text-xs">Development override</Text>
+          <Select.Root
+            value={region}
+            onValueChange={(value) => onRegionChange(value as CloudRegion)}
+            size="2"
+            disabled={disabled}
+          >
+            <Select.Trigger />
+            <Select.Content>
+              <Select.Item value="us">US Cloud</Select.Item>
+              <Select.Item value="eu">EU Cloud</Select.Item>
+              <Select.Item value="dev">Development</Select.Item>
+            </Select.Content>
+          </Select.Root>
+        </Flex>
+      )}
     </Flex>
   );
 }
