@@ -14,7 +14,7 @@ export const DISMISSAL_REASON_OPTIONS = [
   },
   {
     value: "analysis_wrong",
-    label: "Agent's analysis is clearly wrong",
+    label: "Agent's analysis is wrong",
   },
   {
     value: "wontfix_intentional",
