@@ -29,7 +29,6 @@ import {
   TextField,
   Tooltip,
 } from "@radix-ui/themes";
-import { IS_DEV } from "@shared/constants/environment";
 import type { SignalReport } from "@shared/types";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -441,17 +440,15 @@ export function SignalsToolbar({
                 align="end"
                 className="min-w-[180px] overflow-visible"
               >
-                {IS_DEV ? (
-                  <BulkOverflowMenuItem
-                    menuPrimary={reingestMenuPrimary}
-                    disabled={reingestDisabledReason !== null || isReingesting}
-                    disabledReason={reingestDisabledReason}
-                    loading={isReingesting}
-                    icon={<ArrowClockwiseIcon size={14} />}
-                    label="Reingest"
-                    onSelect={() => void reingestSelected()}
-                  />
-                ) : null}
+                <BulkOverflowMenuItem
+                  menuPrimary={reingestMenuPrimary}
+                  disabled={reingestDisabledReason !== null || isReingesting}
+                  disabledReason={reingestDisabledReason}
+                  loading={isReingesting}
+                  icon={<ArrowClockwiseIcon size={14} />}
+                  label="Reingest"
+                  onSelect={() => void reingestSelected()}
+                />
                 <BulkOverflowMenuItem
                   menuPrimary={deleteMenuPrimary}
                   disabled={deleteDisabledReason !== null || isDeleting}
