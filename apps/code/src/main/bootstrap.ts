@@ -18,7 +18,7 @@ import dns from "node:dns";
 import { mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { app, protocol } from "electron";
+import { app, crashReporter, protocol } from "electron";
 import { fixPath } from "./utils/fixPath";
 
 const isDev = !app.isPackaged;
@@ -56,6 +56,8 @@ process.env.POSTHOG_CODE_CHROMIUM_LOG_PATH = chromiumLogPath;
 app.commandLine.appendSwitch("enable-logging", "file");
 app.commandLine.appendSwitch("log-file", chromiumLogPath);
 app.commandLine.appendSwitch("log-level", "0");
+
+crashReporter.start({ uploadToServer: false });
 
 // Force IPv4 resolution when "localhost" is used so the agent hits 127.0.0.1
 // instead of ::1. This matches how the renderer already reaches the PostHog API.

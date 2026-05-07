@@ -1,5 +1,8 @@
-import { getImageMimeType } from "@features/code-editor/utils/imageUtils";
 import { trpcClient } from "@renderer/trpc/client";
+import { toast } from "@renderer/utils/toast";
+import { getImageMimeType, isImageFile } from "@shared/constants/image";
+import { getFilePath } from "@utils/getFilePath";
+import type { FileAttachment } from "./content";
 
 const CHUNK_SIZE = 8192;
 
@@ -58,12 +61,49 @@ export async function persistGenericFile(file: File): Promise<PersistedFile> {
   };
 }
 
+export async function persistImageFilePath(
+  filePath: string,
+): Promise<{ id: string; label: string }> {
+  const result = await trpcClient.os.downscaleImageFile.mutate({ filePath });
+  return { id: result.path, label: result.name };
+}
+
+export async function resolveDroppedFile(
+  file: File,
+): Promise<FileAttachment | null> {
+  const filePath = getFilePath(file);
+  if (!filePath) return null;
+
+  if (isImageFile(file.name)) {
+    try {
+      return await persistImageFilePath(filePath);
+    } catch {
+      toast.warning("Image could not be downscaled", {
+        description: "Attaching original file instead",
+      });
+      return { id: filePath, label: file.name };
+    }
+  }
+
+  return { id: filePath, label: file.name };
+}
+
+export async function resolveAndAttachDroppedFiles(
+  files: FileList,
+  addAttachment: (attachment: FileAttachment) => void,
+): Promise<void> {
+  for (let i = 0; i < files.length; i++) {
+    const attachment = await resolveDroppedFile(files[i]);
+    if (attachment) addAttachment(attachment);
+  }
+}
+
 export async function persistBrowserFile(
   file: File,
 ): Promise<{ id: string; label: string }> {
   if (file.type.startsWith("image/")) {
     const result = await persistImageFile(file);
-    return { id: result.path, label: file.name };
+    return { id: result.path, label: result.name };
   }
 
   const result = await persistGenericFile(file);

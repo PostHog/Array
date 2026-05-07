@@ -1,4 +1,6 @@
-import { useMcpServers } from "@features/settings/hooks/useMcpServers";
+import { useMcpServers } from "@features/mcp-servers/hooks/useMcpServers";
+import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
+import { Plugs } from "@phosphor-icons/react";
 import {
   AlertDialog,
   Box,
@@ -14,10 +16,10 @@ import type {
 } from "@renderer/api/posthogClient";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AddCustomServerForm } from "./mcp/AddCustomServerForm";
-import { MarketplaceView } from "./mcp/MarketplaceView";
-import { McpInstalledRail } from "./mcp/McpInstalledRail";
-import { ServerDetailView } from "./mcp/ServerDetailView";
+import { AddCustomServerForm } from "./parts/AddCustomServerForm";
+import { MarketplaceView } from "./parts/MarketplaceView";
+import { McpInstalledRail } from "./parts/McpInstalledRail";
+import { ServerDetailView } from "./parts/ServerDetailView";
 
 type SceneView =
   | { kind: "marketplace" }
@@ -25,7 +27,7 @@ type SceneView =
   | { kind: "detail-template"; templateId: string }
   | { kind: "add-custom" };
 
-export function McpServersSettings() {
+export function McpServersView() {
   const queryClient = useQueryClient();
   const [view, setView] = useState<SceneView>({ kind: "marketplace" });
   const [query, setQuery] = useState("");
@@ -42,6 +44,22 @@ export function McpServersSettings() {
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(
     null,
   );
+
+  const headerContent = useMemo(
+    () => (
+      <Flex align="center" gap="2" className="w-full min-w-0">
+        <Plugs size={12} className="shrink-0 text-gray-10" />
+        <Text
+          className="truncate whitespace-nowrap font-medium text-[13px]"
+          title="MCP servers"
+        >
+          MCP servers
+        </Text>
+      </Flex>
+    ),
+    [],
+  );
+  useSetHeaderContent(headerContent);
 
   const {
     installations,
@@ -254,7 +272,7 @@ export function McpServersSettings() {
   })();
 
   return (
-    <Flex className="min-h-0 w-full flex-1 overflow-hidden">
+    <Flex height="100%" className="min-h-0 overflow-hidden">
       <McpInstalledRail
         installations={installationList}
         templates={serverList}
@@ -266,12 +284,7 @@ export function McpServersSettings() {
       />
       <Box className="min-h-0 min-w-0 flex-1">
         <ScrollArea className="h-full w-full">
-          <Box
-            p="6"
-            mx="auto"
-            style={{ zIndex: 1 }}
-            className="relative max-w-[960px]"
-          >
+          <Box p="6" mx="auto" className="relative z-[1] max-w-[960px]">
             {mainContent}
           </Box>
         </ScrollArea>

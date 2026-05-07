@@ -24,6 +24,7 @@ interface VirtualizedListProps<T> {
 
 export interface VirtualizedListHandle {
   scrollToBottom: () => void;
+  scrollToIndex: (index: number) => void;
 }
 
 const AT_BOTTOM_THRESHOLD = 50;
@@ -58,6 +59,13 @@ function VirtualizedListInner<T>(
         if (handle) {
           handle.scrollTo(handle.scrollSize);
           isAtBottomRef.current = true;
+        }
+      },
+      scrollToIndex: (index: number) => {
+        const handle = listRef.current;
+        if (handle) {
+          isAtBottomRef.current = false;
+          handle.scrollToIndex(index, { align: "center" });
         }
       },
     }),
@@ -116,15 +124,19 @@ function VirtualizedListInner<T>(
         keepMounted={keepMounted}
         className="flex-1"
       >
-        {items.map((item, index) => (
-          <div
-            key={getItemKey ? getItemKey(item, index) : index}
-            className={itemClassName}
-            style={itemStyle}
-          >
-            {renderItem(item, index)}
-          </div>
-        ))}
+        {items.map((item, index) => {
+          const key = getItemKey ? getItemKey(item, index) : index;
+          return (
+            <div
+              key={key}
+              className={itemClassName}
+              style={itemStyle}
+              data-conversation-item-id={key}
+            >
+              {renderItem(item, index)}
+            </div>
+          );
+        })}
         {footer && (
           <div className={itemClassName} style={itemStyle}>
             {footer}

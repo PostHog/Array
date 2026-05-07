@@ -20,6 +20,10 @@
       "types": "./dist/posthog-api.d.ts",
       "import": "./dist/posthog-api.js"
     },
+    "./pr-url-detector": {
+      "types": "./dist/pr-url-detector.d.ts",
+      "import": "./dist/pr-url-detector.js"
+    },
     "./types": {
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"
@@ -90,7 +94,7 @@
     "typescript"
   ],
   "author": "PostHog",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "scripts": {
     "build": "node ../../scripts/rimraf.mjs dist && tsup",
     "dev": "tsup --watch",
@@ -117,7 +121,6 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.19.0",
-    "ajv": "^8.17.1",
     "@anthropic-ai/claude-agent-sdk": "0.2.112",
     "@anthropic-ai/sdk": "0.89.0",
     "@hono/node-server": "^1.19.9",
@@ -131,6 +134,7 @@
     "hono": "^4.11.7",
     "jsonwebtoken": "^9.0.2",
     "minimatch": "^10.0.3",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "tar": "^7.5.0",
     "uuid": "13.0.0",
     "yoga-wasm-web": "^0.3.3",

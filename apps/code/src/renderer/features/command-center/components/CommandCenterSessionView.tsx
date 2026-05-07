@@ -55,6 +55,7 @@ export function CommandCenterSessionView({
       <SessionView
         events={events}
         taskId={taskId}
+        task={task}
         isRunning={isRunning}
         isPromptPending={isPromptPending}
         promptStartedAt={promptStartedAt}

@@ -68,6 +68,7 @@ const mockSessionStoreSetters = vi.hoisted(() => ({
   setSession: vi.fn(),
   removeSession: vi.fn(),
   updateSession: vi.fn(),
+  updateCloudStatus: vi.fn(),
   appendEvents: vi.fn(),
   enqueueMessage: vi.fn(),
   removeQueuedMessage: vi.fn(),
@@ -89,6 +90,7 @@ const mockSessionStoreSetters = vi.hoisted(() => ({
   clearAll: vi.fn(),
   appendOptimisticItem: vi.fn(),
   clearOptimisticItems: vi.fn(),
+  clearTailOptimisticItems: vi.fn(),
   replaceOptimisticWithEvent: vi.fn(),
 }));
 
@@ -566,6 +568,148 @@ describe("SessionService", () => {
         }),
       );
     });
+
+    describe("auto-retry on connect failure", () => {
+      const setupFailingConnect = () => {
+        const createTaskRun = vi
+          .fn()
+          .mockRejectedValue(new Error("Internal error"));
+        mockBuildAuthenticatedClient.mockReturnValue({
+          ...mockAuthenticatedClient,
+          createTaskRun,
+          appendTaskRunLog: vi.fn(),
+        });
+        return { createTaskRun };
+      };
+
+      it("parks the session in 'connecting' and auto-retries via clearSessionError", async () => {
+        vi.useFakeTimers();
+        try {
+          setupFailingConnect();
+          const service = getSessionService();
+          const clearSpy = vi
+            .spyOn(service, "clearSessionError")
+            .mockResolvedValue(undefined);
+
+          const promise = service.connectToTask({
+            task: createMockTask(),
+            repoPath: "/repo",
+          });
+
+          await vi.advanceTimersByTimeAsync(0);
+          expect(mockSessionStoreSetters.setSession).toHaveBeenCalledWith(
+            expect.objectContaining({ status: "connecting" }),
+          );
+
+          await vi.advanceTimersByTimeAsync(10_000);
+          await promise;
+
+          expect(clearSpy).toHaveBeenCalledTimes(1);
+          expect(clearSpy).toHaveBeenCalledWith("task-123", "/repo");
+          expect(mockSessionStoreSetters.setSession).not.toHaveBeenCalledWith(
+            expect.objectContaining({ status: "error" }),
+          );
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it("flips to error after both auto-retries fail", async () => {
+        vi.useFakeTimers();
+        try {
+          setupFailingConnect();
+          const service = getSessionService();
+          const clearSpy = vi
+            .spyOn(service, "clearSessionError")
+            .mockRejectedValue(new Error("retry failed"));
+          mockSessionStoreSetters.getSessionByTaskId.mockReturnValue({
+            taskRunId: "error-task-123",
+            taskId: "task-123",
+          });
+
+          const promise = service.connectToTask({
+            task: createMockTask(),
+            repoPath: "/repo",
+          });
+
+          await vi.advanceTimersByTimeAsync(25_000);
+          await promise;
+
+          expect(clearSpy).toHaveBeenCalledTimes(2);
+          expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+            "error-task-123",
+            expect.objectContaining({
+              status: "error",
+              errorTitle: "Failed to connect",
+              errorMessage: "retry failed",
+            }),
+          );
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it("stops retrying and sets disconnected when device goes offline", async () => {
+        vi.useFakeTimers();
+        try {
+          setupFailingConnect();
+          const service = getSessionService();
+          const clearSpy = vi
+            .spyOn(service, "clearSessionError")
+            .mockResolvedValue(undefined);
+          mockSessionStoreSetters.getSessionByTaskId.mockReturnValue({
+            taskRunId: "error-task-123",
+            taskId: "task-123",
+          });
+
+          const promise = service.connectToTask({
+            task: createMockTask(),
+            repoPath: "/repo",
+          });
+
+          await vi.advanceTimersByTimeAsync(0);
+          mockGetIsOnline.mockReturnValue(false);
+          await vi.advanceTimersByTimeAsync(10_000);
+          await promise;
+
+          expect(clearSpy).not.toHaveBeenCalled();
+          expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+            "error-task-123",
+            expect.objectContaining({
+              status: "disconnected",
+              errorMessage: expect.stringContaining("No internet connection"),
+            }),
+          );
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it("skips final update when session was dismissed during retry gap", async () => {
+        vi.useFakeTimers();
+        try {
+          setupFailingConnect();
+          const service = getSessionService();
+          const clearSpy = vi
+            .spyOn(service, "clearSessionError")
+            .mockRejectedValue(new Error("retry failed"));
+          mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(undefined);
+
+          const promise = service.connectToTask({
+            task: createMockTask(),
+            repoPath: "/repo",
+          });
+
+          await vi.advanceTimersByTimeAsync(25_000);
+          await promise;
+
+          expect(clearSpy).toHaveBeenCalled();
+          expect(mockSessionStoreSetters.updateSession).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+    });
   });
 
   describe("disconnectFromTask", () => {
@@ -750,6 +894,43 @@ describe("SessionService", () => {
 
       secondCleanup();
       expect(unsubscribe).not.toHaveBeenCalled();
+    });
+
+    it("preserves an existing status callback when reusing a watcher without one", () => {
+      const service = getSessionService();
+      const onStatusChange = vi.fn();
+
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+        onStatusChange,
+      );
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+      );
+
+      const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
+        .calls[0][1] as {
+        onData: (update: {
+          kind: "status";
+          taskId: string;
+          runId: string;
+          status: "in_progress";
+        }) => void;
+      };
+      subscribeOptions.onData({
+        kind: "status",
+        taskId: "task-123",
+        runId: "run-123",
+        status: "in_progress",
+      });
+
+      expect(onStatusChange).toHaveBeenCalledTimes(1);
     });
 
     it("hydrates a fresh cloud session from persisted logs before replay arrives", async () => {
@@ -1036,6 +1217,87 @@ describe("SessionService", () => {
         expect(
           mockSessionStoreSetters.prependQueuedMessages,
         ).toHaveBeenCalledWith("task-123", [queuedMessage]);
+      });
+    });
+
+    it("upgrades status to connected on turn_complete when run_started was never received", async () => {
+      const service = getSessionService();
+      mockBuildAuthenticatedClient.mockReturnValue(mockAuthenticatedClient);
+      const queuedMessage = {
+        id: "q-1",
+        content: "follow up",
+        queuedAt: 1700000000,
+      };
+      // Session starts disconnected — simulates an old agent that never
+      // emitted _posthog/run_started.
+      const sessionWithQueue = createMockSession({
+        taskRunId: "run-123",
+        taskId: "task-123",
+        status: "disconnected",
+        isCloud: true,
+        cloudStatus: "in_progress",
+        events: [],
+        messageQueue: [queuedMessage],
+      });
+      // After the turn_complete handler flips status to "connected",
+      // sendQueuedCloudMessages reads the session again via
+      // getSessionByTaskId. We return the disconnected version first
+      // (for the turn_complete handler) then the connected version
+      // (for the queue dispatcher's canSendNow check).
+      const connectedSession = createMockSession({
+        ...sessionWithQueue,
+        status: "connected",
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": sessionWithQueue,
+      });
+      mockSessionStoreSetters.getSessionByTaskId
+        .mockReturnValueOnce(sessionWithQueue)
+        .mockReturnValue(connectedSession);
+      mockSessionStoreSetters.dequeueMessages.mockReturnValue([queuedMessage]);
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("{}");
+      mockTrpcLogs.writeLocalLogs.mutate.mockResolvedValue(undefined);
+      mockTrpcCloudTask.sendCommand.mutate.mockResolvedValue({
+        success: true,
+        result: { stopReason: "end_turn" },
+      });
+
+      const turnCompleteEvent = {
+        type: "acp_message" as const,
+        ts: 1700000001,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "_posthog/turn_complete",
+          params: { sessionId: "acp-session", stopReason: "end_turn" },
+        },
+      };
+      mockConvertStoredEntriesToEvents.mockReturnValueOnce([turnCompleteEvent]);
+
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+        undefined,
+        "https://logs.example.com/run-123",
+      );
+
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+          "run-123",
+          { status: "connected" },
+        );
+      });
+
+      await vi.waitFor(() => {
+        expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            taskId: "task-123",
+            method: "user_message",
+            params: expect.objectContaining({ content: "follow up" }),
+          }),
+        );
       });
     });
 
@@ -1446,6 +1708,61 @@ describe("SessionService", () => {
         expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
           "run-123",
           { status: "connected" },
+        );
+      });
+    });
+
+    it("captures agentVersion from run_started params onto the session", async () => {
+      const service = getSessionService();
+      const hydratedSession = createMockSession({
+        taskRunId: "run-123",
+        taskId: "task-123",
+        status: "disconnected",
+        isCloud: true,
+        events: [],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        hydratedSession,
+      );
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": hydratedSession,
+      });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("{}");
+      mockTrpcLogs.writeLocalLogs.mutate.mockResolvedValue(undefined);
+
+      const runStartedEvent = {
+        type: "acp_message" as const,
+        ts: 1700000000,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "_posthog/run_started",
+          params: {
+            sessionId: "acp-session",
+            runId: "run-123",
+            taskId: "task-123",
+            agentVersion: "0.42.3",
+          },
+        },
+      };
+      mockConvertStoredEntriesToEvents.mockReturnValueOnce([runStartedEvent]);
+
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+        undefined,
+        "https://logs.example.com/run-123",
+      );
+
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+          "run-123",
+          expect.objectContaining({
+            agentVersion: "0.42.3",
+            status: "connected",
+          }),
         );
       });
     });
@@ -2098,7 +2415,7 @@ describe("SessionService", () => {
       );
       mockTrpcCloudTask.sendCommand.mutate.mockResolvedValue({
         success: true,
-        result: { stopReason: "end_turn" },
+        result: { queued: true },
       });
       mockTrpcFs.readFileAsBase64.query.mockResolvedValue("aGVsbG8=");
       mockAuthenticatedClient.prepareTaskRunArtifactUploads.mockResolvedValue([
@@ -2146,8 +2463,16 @@ describe("SessionService", () => {
 
       const result = await service.sendPrompt("task-123", prompt);
 
-      expect(result.stopReason).toBe("end_turn");
+      expect(result.stopReason).toBe("queued");
       expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledTimes(1);
+      expect(mockSessionStoreSetters.appendOptimisticItem).toHaveBeenCalledWith(
+        "run-123",
+        expect.objectContaining({
+          type: "user_message",
+          content: "read this\n\nAttached files: test.txt",
+          pinToTop: false,
+        }),
+      );
 
       expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -2369,6 +2694,96 @@ describe("SessionService", () => {
           skipPolledPromptCount: 1,
         }),
       );
+    });
+
+    const mockPreBootFailedSession = (overrides: Partial<AgentSession> = {}) =>
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "failed",
+          status: "disconnected",
+          ...overrides,
+        }),
+      );
+
+    it("refuses to resume when the previous run failed before the agent booted", async () => {
+      const service = getSessionService();
+      mockPreBootFailedSession({
+        cloudErrorMessage: "Sandbox could not be provisioned",
+      });
+
+      await expect(service.sendPrompt("task-123", "retry?")).rejects.toThrow(
+        "Sandbox could not be provisioned",
+      );
+      expect(mockAuthenticatedClient.runTaskInCloud).not.toHaveBeenCalled();
+    });
+
+    it("falls back to a generic message when the failed run has no error", async () => {
+      const service = getSessionService();
+      mockPreBootFailedSession();
+
+      await expect(service.sendPrompt("task-123", "retry?")).rejects.toThrow(
+        /Cloud run couldn't start/,
+      );
+      expect(mockAuthenticatedClient.runTaskInCloud).not.toHaveBeenCalled();
+    });
+
+    it("still resumes when a previously running agent failed mid-execution", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "failed",
+          status: "connected",
+          cloudBranch: "feature/mid-run",
+        }),
+      );
+      mockAuthenticatedClient.getTaskRun.mockResolvedValue({
+        id: "run-123",
+        task: "task-123",
+        team: 123,
+        branch: "feature/mid-run",
+        runtime_adapter: "claude",
+        model: "claude-sonnet-4-20250514",
+        reasoning_effort: null,
+        environment: "cloud",
+        status: "failed",
+        log_url: "https://example.com/logs/run-123",
+        error_message: "agent crashed",
+        output: {},
+        state: {},
+        created_at: "2026-04-14T00:00:00Z",
+        updated_at: "2026-04-14T00:00:00Z",
+        completed_at: "2026-04-14T00:05:00Z",
+      });
+      mockAuthenticatedClient.getTask.mockResolvedValue(createMockTask());
+      mockAuthenticatedClient.runTaskInCloud.mockResolvedValue(
+        createMockTask({
+          latest_run: {
+            id: "run-456",
+            task: "task-123",
+            team: 123,
+            branch: "feature/mid-run",
+            runtime_adapter: "claude",
+            model: "claude-sonnet-4-20250514",
+            reasoning_effort: null,
+            environment: "cloud",
+            status: "queued",
+            log_url: "https://example.com/logs/run-456",
+            error_message: null,
+            output: {},
+            state: {},
+            created_at: "2026-04-14T00:06:00Z",
+            updated_at: "2026-04-14T00:06:00Z",
+            completed_at: null,
+          },
+        }),
+      );
+
+      const result = await service.sendPrompt("task-123", "try again");
+
+      expect(result.stopReason).toBe("queued");
+      expect(mockAuthenticatedClient.runTaskInCloud).toHaveBeenCalledTimes(1);
     });
 
     it("attempts automatic recovery on fatal error", async () => {

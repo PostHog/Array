@@ -151,6 +151,46 @@ describe("fixPath", () => {
     expect(parts).toContain("/opt/homebrew/bin");
   });
 
+  it("preserves entries from the inherited PATH that the login shell lacks", async () => {
+    // Simulate launching from a terminal where .zshrc has added nvm/mise
+    // paths that the -lc resolution (only sources .zprofile) won't see.
+    process.env.PATH =
+      "/Users/me/.nvm/versions/node/v22.0.0/bin:/Users/me/.local/share/pnpm:/usr/bin:/bin";
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: shellOutput("/opt/homebrew/bin:/usr/bin:/bin"),
+    });
+
+    const { fixPath } = await import("./fixPath");
+    fixPath();
+
+    const parts = process.env.PATH?.split(":") ?? [];
+    // Inherited entries (added by .zshrc, missing from .zprofile) survive.
+    expect(parts).toContain("/Users/me/.nvm/versions/node/v22.0.0/bin");
+    expect(parts).toContain("/Users/me/.local/share/pnpm");
+    // Shell-resolved entries are still merged in.
+    expect(parts).toContain("/opt/homebrew/bin");
+  });
+
+  it("preserves inherited PATH entries when reading from the cache", async () => {
+    process.env.PATH = "/Users/me/.nvm/versions/node/v22.0.0/bin:/usr/bin:/bin";
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        path: "/opt/homebrew/bin:/usr/bin:/bin",
+        timestamp: Date.now(),
+      }),
+    );
+
+    const { fixPath } = await import("./fixPath");
+    fixPath();
+
+    const parts = process.env.PATH?.split(":") ?? [];
+    expect(parts).toContain("/Users/me/.nvm/versions/node/v22.0.0/bin");
+    expect(parts).toContain("/opt/homebrew/bin");
+    expect(mockSpawnSync).not.toHaveBeenCalled();
+  });
+
   it("returns early on win32 without touching PATH", async () => {
     setPlatform("win32");
     process.env.PATH = "C:\\Windows\\System32";

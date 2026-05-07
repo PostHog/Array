@@ -56,6 +56,14 @@
 - TypeScript strict mode enabled
 - Tailwind CSS classes should be sorted (biome `useSortedClasses` rule)
 
+### Services Over Hooks for Business Logic
+
+Put data-fetching logic and derivation in main process services, not renderer hooks. Hooks should be thin wrappers around a single tRPC query. If a hook orchestrates multiple queries and derives a result, that logic belongs in a service exposed via tRPC so it can be reused from both the main process and the renderer.
+
+### Small Focused Components
+
+Extract distinct UI concerns into their own components instead of building long inline ternary chains or conditional blocks. If a section of JSX handles its own logic (e.g. icon selection based on state), pull it into a named component next to where it's used. Keep render functions short and scannable.
+
 ### Async Cleanup Ordering
 
 When tearing down async operations that use an AbortController, always abort the controller **before** awaiting any cleanup that depends on it. Otherwise you get a deadlock: the cleanup waits for the operation to stop, but the operation won't stop until the abort signal fires.

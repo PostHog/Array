@@ -1,8 +1,7 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import { getImageMimeType } from "@features/code-editor/utils/imageUtils";
-import { isImageFile } from "@features/message-editor/utils/imageUtils";
 import { CLOUD_PROMPT_PREFIX, serializeCloudPrompt } from "@posthog/shared";
 import { trpcClient } from "@renderer/trpc/client";
+import { getImageMimeType, isImageFile } from "@shared/constants/image";
 import { getFileExtension, getFileName, isAbsolutePath } from "@utils/path";
 import { makeAttachmentUri } from "@utils/promptContent";
 import { unescapeXmlAttr } from "@utils/xml";

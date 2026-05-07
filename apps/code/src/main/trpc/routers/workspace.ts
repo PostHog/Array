@@ -1,6 +1,7 @@
 import type { WorkspaceRepository } from "../../db/repositories/workspace-repository";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
+import type { GitService } from "../../services/git/service";
 import {
   createWorkspaceInput,
   createWorkspaceOutput,
@@ -24,6 +25,8 @@ import {
   listGitWorktreesOutput,
   markActivityInput,
   markViewedInput,
+  taskPrStatusInput,
+  taskPrStatusOutput,
   togglePinInput,
   togglePinOutput,
   unlinkBranchInput,
@@ -39,6 +42,8 @@ import { publicProcedure, router } from "../trpc";
 
 const getService = () =>
   container.get<WorkspaceService>(MAIN_TOKENS.WorkspaceService);
+
+const getGitService = () => container.get<GitService>(MAIN_TOKENS.GitService);
 
 const getWorkspaceRepo = () =>
   container.get<WorkspaceRepository>(MAIN_TOKENS.WorkspaceRepository);
@@ -192,6 +197,13 @@ export const workspaceRouter = router({
   unlinkBranch: publicProcedure
     .input(unlinkBranchInput)
     .mutation(({ input }) => getService().unlinkBranch(input.taskId, "user")),
+
+  getTaskPrStatus: publicProcedure
+    .input(taskPrStatusInput)
+    .output(taskPrStatusOutput)
+    .query(({ input }) =>
+      getGitService().getTaskPrStatus(input.taskId, input.cloudPrUrl),
+    ),
 
   onError: subscribe(WorkspaceServiceEvent.Error),
   onWarning: subscribe(WorkspaceServiceEvent.Warning),

@@ -1,10 +1,10 @@
 import { File, X } from "@phosphor-icons/react";
 import { Dialog, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc/client";
+import { isGifFile, isImageFile } from "@shared/constants/image";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import type { FileAttachment } from "../utils/content";
-import { isGifFile, isImageFile } from "../utils/imageUtils";
 
 function FrozenGifThumbnail({ src, alt }: { src: string; alt: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

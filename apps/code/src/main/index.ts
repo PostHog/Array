@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import os from "node:os";
-import { app } from "electron";
+import { app, BrowserWindow } from "electron";
 import log from "electron-log/main";
 import "./utils/logger";
 import "./services/index.js";
@@ -19,6 +19,7 @@ import type { NotificationService } from "./services/notification/service";
 import type { OAuthService } from "./services/oauth/service";
 import {
   captureException,
+  getPostHogClient,
   initializePostHog,
   trackAppEvent,
 } from "./services/posthog-analytics";
@@ -42,6 +43,102 @@ if (!gotTheLock) {
   app.quit();
   process.exit(0);
 }
+
+const RECOVERABLE_RENDER_REASONS = new Set([
+  "abnormal-exit",
+  "killed",
+  "crashed",
+  "oom",
+  "integrity-failure",
+  "memory-eviction",
+]);
+const CRASH_LOOP_WINDOW_MS = 30_000;
+const CRASH_LOOP_THRESHOLD = 3;
+const recentCrashTimestamps: number[] = [];
+
+function isCrashLoop(): boolean {
+  const now = Date.now();
+  while (
+    recentCrashTimestamps.length > 0 &&
+    now - recentCrashTimestamps[0] > CRASH_LOOP_WINDOW_MS
+  ) {
+    recentCrashTimestamps.shift();
+  }
+  recentCrashTimestamps.push(now);
+  return recentCrashTimestamps.length >= CRASH_LOOP_THRESHOLD;
+}
+
+app.on("render-process-gone", (_event, webContents, details) => {
+  const props = {
+    source: "main",
+    type: "render-process-gone",
+    reason: details.reason,
+    exitCode: String(details.exitCode),
+    url: webContents.getURL(),
+    title: webContents.getTitle(),
+    webContentsId: String(webContents.id),
+  };
+  log.error("Renderer process gone", {
+    ...props,
+    chromiumLogTail: readChromiumLogTail(),
+  });
+  captureException(
+    new Error(`Renderer process gone: ${details.reason}`),
+    props,
+  );
+  getPostHogClient()
+    ?.flush()
+    .catch(() => {});
+
+  if (RECOVERABLE_RENDER_REASONS.has(details.reason)) {
+    if (isCrashLoop()) {
+      log.error("Crash loop detected, stopping auto-recovery", {
+        crashesInWindow: recentCrashTimestamps.length,
+        windowMs: CRASH_LOOP_WINDOW_MS,
+      });
+      return;
+    }
+    log.info("Recovering from renderer crash", { reason: details.reason });
+    const win = BrowserWindow.fromWebContents(webContents);
+    if (!win || win.isDestroyed()) {
+      log.warn("No window to recover");
+      return;
+    }
+    setImmediate(() => {
+      if (win.isDestroyed()) return;
+      log.info("Reloading webContents");
+      win.webContents.reload();
+      log.info("Bringing window to foreground");
+      win.show();
+      win.moveTop();
+      win.focus();
+      app.focus({ steal: true });
+    });
+  }
+});
+
+app.on("child-process-gone", (_event, details) => {
+  const props = {
+    source: "main",
+    type: "child-process-gone",
+    processType: details.type,
+    reason: details.reason,
+    exitCode: String(details.exitCode),
+    serviceName: details.serviceName ?? "",
+    name: details.name ?? "",
+  };
+  log.error("Child process gone", {
+    ...props,
+    chromiumLogTail: readChromiumLogTail(),
+  });
+  captureException(
+    new Error(`Child process gone (${details.type}): ${details.reason}`),
+    props,
+  );
+  getPostHogClient()
+    ?.flush()
+    .catch(() => {});
+});
 
 async function initializeServices(): Promise<void> {
   container.get<DatabaseService>(MAIN_TOKENS.DatabaseService);
@@ -109,17 +206,6 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   app.quit();
-});
-
-app.on("child-process-gone", (_event, details) => {
-  log.error("Child process gone", {
-    type: details.type,
-    reason: details.reason,
-    exitCode: details.exitCode,
-    serviceName: details.serviceName,
-    name: details.name,
-    chromiumLogTail: readChromiumLogTail(),
-  });
 });
 
 app.on("before-quit", async (event) => {

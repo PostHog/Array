@@ -1,7 +1,7 @@
 import {
   filterServersByCategory,
   filterServersByQuery,
-} from "@features/settings/hooks/mcpFilters";
+} from "@features/mcp-servers/hooks/mcpFilters";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import {
   Button,

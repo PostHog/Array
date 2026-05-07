@@ -1,8 +1,11 @@
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
+import { toast } from "@utils/toast";
 import { create } from "zustand";
 
 const log = logger.scope("update-store");
+
+let menuCheckPending = false;
 
 type UpdateStatus =
   | "idle"
@@ -70,16 +73,31 @@ export function initializeUpdateStore() {
         if (current === "checking" || current === "downloading") {
           useUpdateStore.setState({ status: "idle" });
         }
+        if (menuCheckPending) {
+          menuCheckPending = false;
+          toast.success("You're on the latest version");
+        }
       } else if (status.error) {
         log.error("Update check failed", { error: status.error });
         const current = useUpdateStore.getState().status;
         if (current === "checking" || current === "downloading") {
           useUpdateStore.setState({ status: "idle" });
         }
+        if (menuCheckPending) {
+          menuCheckPending = false;
+          toast.error("Failed to check for updates", {
+            description: status.error,
+          });
+        }
+      } else if (status.checking === false && menuCheckPending) {
+        // Check finished and an update was found (download in progress / ready) —
+        // the UpdateBanner will surface it, so suppress the menu-check toast.
+        menuCheckPending = false;
       }
     },
     onError: (error) => {
       log.error("Update status subscription error", { error });
+      menuCheckPending = false;
     },
   });
 
@@ -97,7 +115,27 @@ export function initializeUpdateStore() {
 
   const menuCheckSub = trpcClient.updates.onCheckFromMenu.subscribe(undefined, {
     onData: () => {
-      useUpdateStore.getState().checkForUpdates();
+      menuCheckPending = true;
+      trpcClient.updates.check
+        .mutate()
+        .then((result) => {
+          if (!result.success) {
+            if (result.errorCode === "disabled") {
+              menuCheckPending = false;
+              toast.error(result.errorMessage ?? "Updates not available");
+            } else if (result.errorCode !== "already_checking") {
+              // Unknown/future error code — reset the flag so it never gets stuck.
+              menuCheckPending = false;
+            }
+            // For "already_checking", keep the flag so the in-flight check
+            // surfaces the toast when it resolves.
+          }
+        })
+        .catch((error: unknown) => {
+          menuCheckPending = false;
+          log.error("Failed to check for updates", { error });
+          toast.error("Failed to check for updates");
+        });
     },
     onError: (error) => {
       log.error("Update menu check subscription error", { error });

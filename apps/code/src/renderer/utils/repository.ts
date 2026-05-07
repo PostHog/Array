@@ -1,5 +1,3 @@
-import type { Task } from "@shared/types";
-
 export const parseRepository = (
   repository: string,
 ): { organization: string; repoName: string } | null => {
@@ -12,6 +10,8 @@ export const parseRepository = (
   return { organization: result[0], repoName: result[1] };
 };
 
-export function getTaskRepository(task: Task): string | null {
+export function getTaskRepository(task: {
+  repository?: string | null;
+}): string | null {
   return task.repository ?? null;
 }

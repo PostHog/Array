@@ -63,7 +63,7 @@ export const MCP_CATEGORIES = [
 export type McpCategory = Schemas.CategoryEnum;
 export type McpApprovalState =
   Schemas.MCPServerInstallationToolApprovalStateEnum;
-export type McpAuthType = Schemas.AuthType9cbEnum;
+export type McpAuthType = Schemas.MCPAuthTypeEnum;
 export type McpRecommendedServer = Schemas.MCPServerTemplate;
 export type McpServerInstallation = Schemas.MCPServerInstallation;
 export type McpInstallationTool = Schemas.MCPServerInstallationTool;
@@ -622,6 +622,21 @@ export class PostHogAPIClient {
     return data.results ?? [];
   }
 
+  async disconnectGithubUserIntegration(installationId: string): Promise<void> {
+    const urlPath = `/api/users/@me/integrations/github/${encodeURIComponent(installationId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Failed to disconnect GitHub integration: ${response.statusText}`,
+      );
+    }
+  }
+
   async switchOrganization(orgId: string): Promise<void> {
     await this.api.patch("/api/users/{uuid}/", {
       path: { uuid: "@me" },
@@ -768,7 +783,7 @@ export class PostHogAPIClient {
       "/api/projects/{project_id}/external_data_sources/",
       {
         path: { project_id: projectId.toString() },
-        body: payload as unknown as Schemas.ExternalDataSourceSerializers,
+        body: payload as unknown as Schemas.ExternalDataSourceCreate,
         withResponse: true,
         throwOnStatusError: false,
       },
@@ -844,6 +859,40 @@ export class PostHogAPIClient {
     });
 
     return data.results ?? [];
+  }
+
+  async getTaskSummaries(ids: string[]) {
+    if (ids.length === 0) return [];
+    const TASK_SUMMARIES_MAX_PAGES = 50;
+    const teamId = await this.getTeamId();
+    const all: Schemas.TaskSummary[] = [];
+    let urlPath: string = `/api/projects/${teamId}/tasks/summaries/`;
+    for (let i = 0; i < TASK_SUMMARIES_MAX_PAGES; i++) {
+      const url = new URL(`${this.api.baseUrl}${urlPath}`);
+      const response = await this.api.fetcher.fetch({
+        method: "post",
+        url,
+        path: urlPath,
+        overrides: {
+          body: JSON.stringify({ ids } satisfies Schemas.TaskSummariesRequest),
+        },
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch task summaries: ${response.statusText}`,
+        );
+      }
+      const page = (await response.json()) as Schemas.PaginatedTaskSummaryList;
+      all.push(...page.results);
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    log.warn(
+      `getTaskSummaries hit MAX_PAGES (${TASK_SUMMARIES_MAX_PAGES}); returning partial results`,
+      { ids: ids.length, returned: all.length },
+    );
+    return all;
   }
 
   async getTask(taskId: string) {
@@ -2445,11 +2494,15 @@ export class PostHogAPIClient {
     return data.results ?? data ?? [];
   }
 
-  async getMySeat(): Promise<SeatData | null> {
+  async getMySeat(
+    options: { best?: boolean } = { best: true },
+  ): Promise<SeatData | null> {
     try {
       const url = new URL(`${this.api.baseUrl}/api/seats/me/`);
       url.searchParams.set("product_key", SEAT_PRODUCT_KEY);
-      url.searchParams.set("best", "true");
+      if (options.best) {
+        url.searchParams.set("best", "true");
+      }
       const response = await this.api.fetcher.fetch({
         method: "get",
         url,

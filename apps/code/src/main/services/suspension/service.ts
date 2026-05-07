@@ -6,6 +6,7 @@ import {
   deleteCheckpoint,
   RevertCheckpointSaga,
 } from "@posthog/git/sagas/checkpoint";
+import { forceRemove } from "@posthog/git/utils";
 import { type WorktreeInfo, WorktreeManager } from "@posthog/git/worktree";
 import { inject, injectable } from "inversify";
 import type { IArchiveRepository } from "../../db/repositories/archive-repository.js";
@@ -278,7 +279,7 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
   ): Promise<void> {
     const manager = this.createWorktreeManager(folderPath);
     await manager.deleteWorktree(worktreePath);
-    await fs.rm(path.dirname(worktreePath), { recursive: true, force: true });
+    await forceRemove(path.dirname(worktreePath));
   }
 
   private async killTaskProcesses(

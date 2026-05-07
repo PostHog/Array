@@ -5,6 +5,7 @@ import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore"
 import { ArrowRight, SignOut } from "@phosphor-icons/react";
 import { Button, Flex } from "@radix-ui/themes";
 import { IS_DEV } from "@shared/constants/environment";
+import { useNavigationStore } from "@stores/navigationStore";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { useHotkeys } from "react-hotkeys-hook";
 
@@ -39,7 +40,11 @@ export function OnboardingFlow() {
   const completeOnboarding = useOnboardingStore(
     (state) => state.completeOnboarding,
   );
+  const hasCompletedSetup = useOnboardingStore(
+    (state) => state.hasCompletedSetup,
+  );
   const resetOnboarding = useOnboardingStore((state) => state.resetOnboarding);
+  const navigateToSetup = useNavigationStore((state) => state.navigateToSetup);
   const logoutMutation = useLogoutMutation();
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
@@ -51,6 +56,9 @@ export function OnboardingFlow() {
 
   const handleComplete = () => {
     completeOnboarding();
+    if (!hasCompletedSetup) {
+      navigateToSetup();
+    }
   };
 
   const footerRight = (

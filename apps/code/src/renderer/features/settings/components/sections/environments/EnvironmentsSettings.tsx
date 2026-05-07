@@ -1,119 +1,64 @@
-import { useFolders } from "@features/folders/hooks/useFolders";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
-import type { Environment } from "@main/services/environment/schemas";
-import type { RegisteredFolder } from "@main/services/folders/schemas";
-import { Flex, Text } from "@radix-ui/themes";
-import { useTRPC } from "@renderer/trpc/client";
-import { useQueries } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { EnvironmentForm } from "./EnvironmentForm";
-import { ProjectEnvironmentCard } from "./ProjectEnvironmentCard";
+import { Cloud, HardDrives } from "@phosphor-icons/react";
+import { Flex, SegmentedControl, Text } from "@radix-ui/themes";
+import { CloudEnvironmentsSettings } from "./CloudEnvironmentsSettings";
+import { LocalEnvironmentsSettings } from "./LocalEnvironmentsSettings";
 
-export interface ProjectEnvironments {
-  folder: RegisteredFolder;
-  environments: Environment[];
-  isLoading: boolean;
-}
-
-interface FormTarget {
-  folder: RegisteredFolder;
-  environment?: Environment;
-}
+type Segment = "local" | "cloud";
 
 export function EnvironmentsSettings() {
-  const trpc = useTRPC();
-  const { folders } = useFolders();
-  const [formTarget, setFormTarget] = useState<FormTarget | null>(null);
+  const activeCategory = useSettingsDialogStore((s) => s.activeCategory);
+  const setCategory = useSettingsDialogStore((s) => s.setCategory);
+  const formMode = useSettingsDialogStore((s) => s.formMode);
 
-  const environmentQueries = useQueries({
-    queries: folders.map((folder) =>
-      trpc.environment.list.queryOptions(
-        { repoPath: folder.path },
-        { staleTime: 30_000 },
-      ),
-    ),
-  });
+  const segment: Segment =
+    activeCategory === "cloud-environments" ? "cloud" : "local";
 
-  const projects = useMemo(() => {
-    const result: ProjectEnvironments[] = [];
-
-    for (let i = 0; i < folders.length; i++) {
-      const folder = folders[i];
-      const query = environmentQueries[i];
-
-      result.push({
-        folder,
-        environments: query?.data ?? [],
-        isLoading: query?.isLoading ?? true,
-      });
-    }
-
-    return result.sort((a, b) => a.folder.name.localeCompare(b.folder.name));
-  }, [folders, environmentQueries]);
-
-  const context = useSettingsDialogStore((s) => s.context);
-  const clearContext = useSettingsDialogStore((s) => s.clearContext);
-
-  useEffect(() => {
-    if (!context.repoPath) return;
-    const folder = folders.find((f) => f.path === context.repoPath);
-    if (folder) {
-      setFormTarget({ folder });
-    }
-    clearContext();
-  }, [context.repoPath, folders, clearContext]);
-
-  const handleCreate = useCallback((folder: RegisteredFolder) => {
-    setFormTarget({ folder });
-  }, []);
-
-  const handleEdit = useCallback(
-    (folder: RegisteredFolder, environment: Environment) => {
-      setFormTarget({ folder, environment });
-    },
-    [],
-  );
-
-  const handleBack = useCallback(() => {
-    setFormTarget(null);
-  }, []);
-
-  if (formTarget) {
-    return (
-      <EnvironmentForm
-        key={formTarget.environment?.id ?? formTarget.folder.id}
-        folder={formTarget.folder}
-        environment={formTarget.environment}
-        onBack={handleBack}
-      />
-    );
-  }
+  const handleSegmentChange = (value: string) => {
+    setCategory(value === "cloud" ? "cloud-environments" : "environments");
+  };
 
   return (
     <Flex direction="column" gap="4">
-      <Text color="gray" className="text-[13px]">
-        An environment defines how a fresh worktree of a project is prepared.
-        The setup script runs once when the worktree is created, so the agent
-        starts in a project that's already installed, built, and ready.
-        Environments are stored as TOML files inside the project and can be
-        committed so teammates share the same setup.
-      </Text>
-      <Text className="font-medium text-[13px]">Projects</Text>
-      {projects.length === 0 ? (
-        <Text color="gray" className="text-[13px]">
-          No projects registered. Open a folder to get started.
-        </Text>
+      {!formMode && (
+        <>
+          <Text color="gray" className="text-[13px]">
+            An environment defines what the agent works inside when you start a
+            task.{" "}
+            <Text color="gray" className="font-medium text-[13px]">
+              Local
+            </Text>{" "}
+            environments prepare a project on your machine;{" "}
+            <Text color="gray" className="font-medium text-[13px]">
+              cloud
+            </Text>{" "}
+            environments configure remote sandboxes.
+          </Text>
+          <SegmentedControl.Root
+            value={segment}
+            onValueChange={handleSegmentChange}
+            size="2"
+          >
+            <SegmentedControl.Item value="local">
+              <Flex align="center" gap="2">
+                <HardDrives size={14} />
+                <Text>Local</Text>
+              </Flex>
+            </SegmentedControl.Item>
+            <SegmentedControl.Item value="cloud">
+              <Flex align="center" gap="2">
+                <Cloud size={14} />
+                <Text>Cloud</Text>
+              </Flex>
+            </SegmentedControl.Item>
+          </SegmentedControl.Root>
+        </>
+      )}
+
+      {segment === "cloud" ? (
+        <CloudEnvironmentsSettings />
       ) : (
-        <Flex direction="column" gap="3">
-          {projects.map((project) => (
-            <ProjectEnvironmentCard
-              key={project.folder.id}
-              project={project}
-              onCreate={handleCreate}
-              onEdit={handleEdit}
-            />
-          ))}
-        </Flex>
+        <LocalEnvironmentsSettings />
       )}
     </Flex>
   );

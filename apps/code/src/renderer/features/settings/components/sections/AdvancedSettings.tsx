@@ -2,6 +2,7 @@ import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore"
 import { SettingRow } from "@features/settings/components/SettingRow";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import { useSetupStore } from "@features/setup/stores/setupStore";
 import { useTourStore } from "@features/tour/stores/tourStore";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { Button, Flex, Switch } from "@radix-ui/themes";
@@ -27,6 +28,7 @@ export function AdvancedSettings() {
           onClick={() => {
             useSettingsDialogStore.getState().close();
             useOnboardingStore.getState().resetOnboarding();
+            useSetupStore.getState().resetSetup();
           }}
         >
           Reset

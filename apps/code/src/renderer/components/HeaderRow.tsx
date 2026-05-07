@@ -28,7 +28,8 @@ function LocalHandoffButton({ taskId, task }: { taskId: string; task: Task }) {
   const workspace = useWorkspace(taskId);
   const repoPath = workspace?.folderPath ?? null;
   const authStatus = useAuthStateValue((s) => s.status);
-  const cloudHandoffEnabled = useFeatureFlag(CLOUD_HANDOFF_FLAG);
+  const cloudHandoffEnabled =
+    useFeatureFlag(CLOUD_HANDOFF_FLAG) || import.meta.env.DEV;
   const { initiateHandoffToCloud } = useSessionCallbacks({
     taskId,
     task,

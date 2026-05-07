@@ -39,7 +39,7 @@
     "agent"
   ],
   "author": "PostHog",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "devDependencies": {
     "@biomejs/biome": "2.2.4",
     "@posthog/cli": "^0.7.3",

@@ -7,6 +7,7 @@ import {
   deleteCheckpoint,
   RevertCheckpointSaga,
 } from "@posthog/git/sagas/checkpoint";
+import { forceRemove } from "@posthog/git/utils";
 import { type WorktreeInfo, WorktreeManager } from "@posthog/git/worktree";
 import { inject, injectable } from "inversify";
 import type {
@@ -232,7 +233,7 @@ export class ArchiveService {
             });
             await manager.deleteWorktree(worktreePath);
             const parentDir = path.dirname(worktreePath);
-            await fs.rm(parentDir, { recursive: true, force: true });
+            await forceRemove(parentDir);
           },
           async () => {},
         );
@@ -352,7 +353,7 @@ export class ArchiveService {
               );
               await manager.deleteWorktree(worktreePath);
               const parentDir = path.dirname(worktreePath);
-              await fs.rm(parentDir, { recursive: true, force: true });
+              await forceRemove(parentDir);
             }
           },
         );

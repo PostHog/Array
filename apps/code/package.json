@@ -40,7 +40,7 @@
     "developer-tools"
   ],
   "author": "PostHog",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "devDependencies": {
     "@biomejs/biome": "2.2.4",
     "@electron-forge/cli": "^7.11.1",
@@ -63,6 +63,7 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "@types/semver": "^7.5.0",
     "@vitejs/plugin-react": "^4.2.1",
     "@vitest/ui": "^4.0.10",
     "adm-zip": "^0.5.16",
@@ -185,6 +186,7 @@
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^3.0.6",
     "reflect-metadata": "^0.2.2",
+    "semver": "^7.6.0",
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
     "remark-breaks": "^4.0.0",

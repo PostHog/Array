@@ -5,6 +5,7 @@ import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSelectAttachments = vi.hoisted(() => vi.fn());
+const mockDownscaleImageFile = vi.hoisted(() => vi.fn());
 
 vi.mock("@posthog/quill", () => ({
   Button: ({
@@ -51,6 +52,9 @@ vi.mock("@renderer/trpc/client", () => ({
     os: {
       selectAttachments: {
         query: mockSelectAttachments,
+      },
+      downscaleImageFile: {
+        mutate: mockDownscaleImageFile,
       },
     },
   },
@@ -111,6 +115,46 @@ describe("AttachmentMenu", () => {
       type: "folder",
       id: "/tmp/demo/src",
       label: "demo/src",
+    });
+  });
+
+  it("downscales image files from the OS picker and adds as attachment", async () => {
+    const user = userEvent.setup();
+    const onAddAttachment = vi.fn();
+    const onInsertChip = vi.fn();
+
+    mockSelectAttachments.mockResolvedValue([
+      { path: "/tmp/demo/photo.png", kind: "file" },
+      { path: "/tmp/demo/readme.md", kind: "file" },
+    ]);
+    mockDownscaleImageFile.mockResolvedValue({
+      path: "/tmp/posthog-code-clipboard/attachment-xyz/photo.jpg",
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+    });
+
+    render(
+      <Theme>
+        <AttachmentMenu
+          onAddAttachment={onAddAttachment}
+          onInsertChip={onInsertChip}
+        />
+      </Theme>,
+    );
+
+    await user.click(screen.getByText("Add file or folder"));
+
+    expect(mockDownscaleImageFile).toHaveBeenCalledWith({
+      filePath: "/tmp/demo/photo.png",
+    });
+    expect(onAddAttachment).toHaveBeenCalledWith({
+      id: "/tmp/posthog-code-clipboard/attachment-xyz/photo.jpg",
+      label: "photo.jpg",
+    });
+    expect(onInsertChip).toHaveBeenCalledWith({
+      type: "file",
+      id: "/tmp/demo/readme.md",
+      label: "demo/readme.md",
     });
   });
 });

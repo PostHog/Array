@@ -19,7 +19,9 @@ type ViewType =
   | "inbox"
   | "archived"
   | "command-center"
-  | "skills";
+  | "skills"
+  | "mcp-servers"
+  | "setup";
 
 export interface TaskInputReportAssociation {
   reportId: string;
@@ -60,6 +62,8 @@ interface NavigationStore {
   navigateToArchived: () => void;
   navigateToCommandCenter: () => void;
   navigateToSkills: () => void;
+  navigateToMcpServers: () => void;
+  navigateToSetup: () => void;
   goBack: () => void;
   goForward: () => void;
   canGoBack: () => boolean;
@@ -91,6 +95,12 @@ const isSameView = (view1: ViewState, view2: ViewState): boolean => {
     return true;
   }
   if (view1.type === "skills" && view2.type === "skills") {
+    return true;
+  }
+  if (view1.type === "mcp-servers" && view2.type === "mcp-servers") {
+    return true;
+  }
+  if (view1.type === "setup" && view2.type === "setup") {
     return true;
   }
   return false;
@@ -269,6 +279,14 @@ export const useNavigationStore = create<NavigationStore>()(
 
         navigateToSkills: () => {
           navigate({ type: "skills" });
+        },
+
+        navigateToMcpServers: () => {
+          navigate({ type: "mcp-servers" });
+        },
+
+        navigateToSetup: () => {
+          navigate({ type: "setup" });
         },
 
         goBack: () => {

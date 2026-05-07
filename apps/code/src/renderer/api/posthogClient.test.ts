@@ -281,4 +281,108 @@ describe("PostHogAPIClient", () => {
       await expect(client.getSignalReport("abc")).rejects.toThrow("[500]");
     });
   });
+
+  describe("getTaskSummaries", () => {
+    const SUMMARIES_PATH = "/api/projects/123/tasks/summaries/";
+
+    function buildClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    function page(results: object[], next: string | null = null) {
+      return {
+        ok: true,
+        json: async () => ({ count: 0, previous: null, next, results }),
+      };
+    }
+
+    function buildFetchForPages(...pages: ReturnType<typeof page>[]) {
+      const fetch = vi.fn();
+      for (const p of pages) fetch.mockResolvedValueOnce(p);
+      return fetch;
+    }
+
+    it("returns immediately for empty input without hitting the network", async () => {
+      const fetch = vi.fn();
+      await expect(buildClient(fetch).getTaskSummaries([])).resolves.toEqual(
+        [],
+      );
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it("returns single-page results without further requests", async () => {
+      const fetch = buildFetchForPages(page([{ id: "a" }]));
+      await expect(buildClient(fetch).getTaskSummaries(["a"])).resolves.toEqual(
+        [{ id: "a" }],
+      );
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      {
+        name: "same-host next URL",
+        nextUrl: `http://localhost:8000${SUMMARIES_PATH}?limit=2&offset=2`,
+        expectedSecondPath: `${SUMMARIES_PATH}?limit=2&offset=2`,
+      },
+      {
+        name: "cross-host next URL (proxy variance)",
+        nextUrl: `https://internal.posthog.example${SUMMARIES_PATH}?limit=1&offset=1`,
+        expectedSecondPath: `${SUMMARIES_PATH}?limit=1&offset=1`,
+      },
+    ])(
+      "follows the next cursor across pages and merges results: $name",
+      async ({ nextUrl, expectedSecondPath }) => {
+        const fetch = buildFetchForPages(
+          page([{ id: "a" }, { id: "b" }], nextUrl),
+          page([{ id: "c" }]),
+        );
+        await expect(
+          buildClient(fetch).getTaskSummaries(["a", "b", "c"]),
+        ).resolves.toEqual([{ id: "a" }, { id: "b" }, { id: "c" }]);
+        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(fetch.mock.calls[0][0]).toMatchObject({
+          method: "post",
+          path: SUMMARIES_PATH,
+        });
+        expect(fetch.mock.calls[1][0]).toMatchObject({
+          method: "post",
+          path: expectedSecondPath,
+        });
+      },
+    );
+
+    it("throws when the server responds non-OK", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValue({ ok: false, statusText: "Bad Request" });
+      await expect(buildClient(fetch).getTaskSummaries(["a"])).rejects.toThrow(
+        "Bad Request",
+      );
+    });
+
+    it("returns partial results when MAX_PAGES is exceeded", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(
+          page(
+            [{ id: "x" }],
+            `http://localhost:8000${SUMMARIES_PATH}?offset=1`,
+          ),
+        );
+      const result = await buildClient(fetch).getTaskSummaries(["a"]);
+      expect(fetch).toHaveBeenCalledTimes(50);
+      expect(result.length).toBe(50);
+    });
+  });
 });

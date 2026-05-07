@@ -35,6 +35,7 @@ import {
   isOpenAIModel,
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
+import { extractCreatedPrUrl } from "@posthog/agent/pr-url-detector";
 import type * as AgentTypes from "@posthog/agent/types";
 import { getCurrentBranch } from "@posthog/git/queries";
 import type { IAppMeta } from "@posthog/platform/app-meta";
@@ -1524,6 +1525,7 @@ For git operations while detached:
               claudeCode?: {
                 toolName?: string;
                 toolResponse?: unknown;
+                bashCommand?: string;
               };
             };
             content?: Array<{ type?: string; text?: string }>;
@@ -1542,10 +1544,7 @@ For git operations while detached:
 
       const session = this.sessions.get(taskRunId);
 
-      // PR URLs only appear in Bash tool output
-      if (toolName.includes("Bash") || toolName.includes("bash")) {
-        this.detectAndAttachPrUrl(taskRunId, session, toolMeta, update.content);
-      }
+      this.detectAndAttachPrUrl(taskRunId, session, toolMeta, update.content);
 
       this.trackAgentFileActivity(taskRunId, session, toolName);
     } catch (err) {
@@ -1557,60 +1556,37 @@ For git operations while detached:
   }
 
   /**
-   * Detect GitHub PR URLs in bash tool results and attach to task.
-   * This enables webhook tracking by populating the pr_url in TaskRun output.
+   * Detect GitHub PR URLs in `gh pr create` output and attach to task.
+   * Gated on the originating bash command so that unrelated PR URLs (e.g.
+   * `gh pr view`, `gh search prs`) don't get latched onto the run.
    */
   private detectAndAttachPrUrl(
     taskRunId: string,
     session: ManagedSession | undefined,
-    toolMeta: { toolName?: string; toolResponse?: unknown },
+    toolMeta:
+      | {
+          toolName?: string;
+          toolResponse?: unknown;
+          bashCommand?: string;
+        }
+      | undefined,
     content?: Array<{ type?: string; text?: string }>,
   ): void {
-    let textToSearch = "";
+    const prUrl = extractCreatedPrUrl({
+      toolName: toolMeta?.toolName,
+      bashCommand: toolMeta?.bashCommand,
+      toolResponse: toolMeta?.toolResponse,
+      content,
+    });
+    if (!prUrl) return;
 
-    // Check toolResponse (hook response with raw output)
-    const toolResponse = toolMeta?.toolResponse;
-    if (toolResponse) {
-      if (typeof toolResponse === "string") {
-        textToSearch = toolResponse;
-      } else if (typeof toolResponse === "object" && toolResponse !== null) {
-        // May be { stdout?: string, stderr?: string } or similar
-        const respObj = toolResponse as Record<string, unknown>;
-        textToSearch =
-          String(respObj.stdout || "") + String(respObj.stderr || "");
-        if (!textToSearch && respObj.output) {
-          textToSearch = String(respObj.output);
-        }
-      }
-    }
+    log.info("Detected PR URL from gh pr create", { taskRunId, prUrl });
 
-    // Also check content array
-    if (Array.isArray(content)) {
-      for (const item of content) {
-        if (item.type === "text" && item.text) {
-          textToSearch += ` ${item.text}`;
-        }
-      }
-    }
-
-    if (!textToSearch) return;
-
-    // Match GitHub PR URLs
-    const prUrlMatch = textToSearch.match(
-      /https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/,
-    );
-    if (!prUrlMatch) return;
-
-    const prUrl = prUrlMatch[0];
-    log.info("Detected PR URL in bash output", { taskRunId, prUrl });
-
-    // Attach PR URL
     if (!session) {
       log.warn("Session not found for PR attachment", { taskRunId });
       return;
     }
 
-    // Attach asynchronously without blocking message flow
     session.agent
       .attachPullRequestToTask(session.taskId, prUrl)
       .then(() => {

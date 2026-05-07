@@ -13,11 +13,19 @@ describe("buildApiFetcher", () => {
     status: 200,
     json: () => Promise.resolve(data),
   });
-  const err = (status: number) => ({
-    ok: false,
-    status,
-    json: () => Promise.resolve({ error: status }),
-  });
+  const err = (status: number) => {
+    const response = {
+      ok: false,
+      status,
+      statusText: `Error ${status}`,
+      json: () => Promise.resolve({ error: status }),
+      clone: () => ({
+        ...response,
+        text: () => Promise.resolve(`Error ${status}`),
+      }),
+    };
+    return response;
+  };
 
   beforeEach(() => {
     vi.resetAllMocks();

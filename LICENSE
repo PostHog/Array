@@ -1,33 +1,21 @@
-Business Source License 1.1
+MIT License
 
-Parameters
+Copyright (c) 2026 PostHog Inc.
 
-Licensor: PostHog Inc.
-Licensed Work: PostHog Code & PostHog Agent package
-The Licensed Work is © 2025 PostHog Inc.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-Change Date: None (the Licensed Work will remain under this License indefinitely unless Licensor specifies otherwise)
-Change License: At Licensor's discretion
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-Additional Use Grant:
-You may use, modify, and self-host this software for personal purposes.
-You may also submit contributions (e.g., pull requests) to the Licensed Work under this License.
-Commercial redistribution, resale, or offering as a managed/hosted service requires a separate commercial agreement with the Licensor.
-Using the Licensed Work to build or offer a competing product or service is prohibited without explicit written permission from the Licensor.
-
-Terms
-
-The Licensor hereby grants you the right to copy, modify, create derivative works, redistribute, and make use of the Licensed Work for personal purposes. The Licensor may make an Additional Use Grant, above, permitting limited production use.
-
-Effective on the Change Date (if one is ever designated by the Licensor), the Change License will apply to the Licensed Work.
-
-Any use of the Licensed Work not explicitly permitted by this License is prohibited.
-This License applies separately to each version of the Licensed Work released by the Licensor.
-
-THE LICENSED WORK IS PROVIDED "AS IS". THE LICENSOR MAKES NO WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
-
-This License does not grant trademark rights, and no license is granted for use of the Licensor's trademarks, trade names, or logos.
-
-License text copyright (c) 2020 MariaDB Corporation Ab, All Rights Reserved.
-
-"Business Source License" is a trademark of MariaDB Corporation Ab.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

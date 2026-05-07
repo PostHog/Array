@@ -28,3 +28,6 @@ procs:
   6-mobile-ios:
     shell: 'node scripts/pnpm-run.mjs --filter @posthog/mobile run ios'
     autostart: false
+
+  7-chromium-log:
+    shell: 'tail -F ~/.posthog-code/logs-dev/chromium.log'

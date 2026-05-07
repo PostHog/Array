@@ -25,7 +25,7 @@ vi.mock("../../utils/logger.js", () => ({
 
 import type { LlmGatewayService } from "../llm-gateway/service";
 import type { WorkspaceService } from "../workspace/service";
-import { GitService } from "./service";
+import { GitService, mapPrState } from "./service";
 
 describe("GitService.getPrChangedFiles", () => {
   let service: GitService;
@@ -267,5 +267,42 @@ describe("GitService.getPrUrlForBranch", () => {
     const result = await service.getPrUrlForBranch("/repo", "feat/x");
 
     expect(result).toBeNull();
+  });
+});
+
+describe("mapPrState", () => {
+  it("returns merged when merged boolean is true", () => {
+    expect(mapPrState("open", true, false)).toBe("merged");
+    expect(mapPrState("closed", true, false)).toBe("merged");
+    expect(mapPrState(null, true, false)).toBe("merged");
+  });
+
+  it("returns merged when state string is MERGED", () => {
+    expect(mapPrState("MERGED", false, false)).toBe("merged");
+    expect(mapPrState("merged", false, false)).toBe("merged");
+    expect(mapPrState("Merged", false, false)).toBe("merged");
+  });
+
+  it("returns closed for closed state", () => {
+    expect(mapPrState("closed", false, false)).toBe("closed");
+    expect(mapPrState("CLOSED", false, false)).toBe("closed");
+  });
+
+  it("returns draft when draft is true and not merged/closed", () => {
+    expect(mapPrState("open", false, true)).toBe("draft");
+  });
+
+  it("closed takes priority over draft", () => {
+    expect(mapPrState("closed", false, true)).toBe("closed");
+  });
+
+  it("returns open for open state", () => {
+    expect(mapPrState("open", false, false)).toBe("open");
+    expect(mapPrState("OPEN", false, false)).toBe("open");
+  });
+
+  it("returns null for unknown state", () => {
+    expect(mapPrState(null, false, false)).toBeNull();
+    expect(mapPrState("something", false, false)).toBeNull();
   });
 });

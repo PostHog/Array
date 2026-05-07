@@ -6,7 +6,9 @@ import {
   INBOX_PIPELINE_STATUS_FILTER,
   INBOX_REFETCH_INTERVAL_MS,
 } from "@features/inbox/utils/inboxConstants";
+import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { getSessionService } from "@features/sessions/service/service";
+import { useSetupStore } from "@features/setup/stores/setupStore";
 import {
   archiveTaskImperative,
   useArchiveTask,
@@ -28,6 +30,8 @@ import { useSidebarData } from "../hooks/useSidebarData";
 import { useTaskViewed } from "../hooks/useTaskViewed";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
+import { McpServersItem } from "./items/McpServersItem";
+import { SetupItem } from "./items/SetupItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
 import { TaskListView } from "./TaskListView";
@@ -40,6 +44,8 @@ function SidebarMenuComponent() {
     navigateToInbox,
     navigateToCommandCenter,
     navigateToSkills,
+    navigateToMcpServers,
+    navigateToSetup,
   } = useNavigationStore();
 
   const { data: allTasks = [] } = useTasks();
@@ -51,6 +57,17 @@ function SidebarMenuComponent() {
     useTaskContextMenu();
   const { archiveTask } = useArchiveTask();
   const { togglePin } = usePinnedTasks();
+
+  const hasCompletedSetup = useOnboardingStore(
+    (state) => state.hasCompletedSetup,
+  );
+  const showSetupItem = useSetupStore((s) => {
+    if (!hasCompletedSetup) return true;
+    if (s.discoveryStatus === "running") return true;
+    if (s.discoveryStatus === "done" && s.discoveredTasks.length > 0)
+      return true;
+    return false;
+  });
 
   const sidebarData = useSidebarData({
     activeView: view,
@@ -112,6 +129,14 @@ function SidebarMenuComponent() {
 
   const handleSkillsClick = () => {
     navigateToSkills();
+  };
+
+  const handleMcpServersClick = () => {
+    navigateToMcpServers();
+  };
+
+  const handleSetupClick = () => {
+    navigateToSetup();
   };
 
   const handleTaskClick = (taskId: string) => {
@@ -277,6 +302,15 @@ function SidebarMenuComponent() {
             />
           </Box>
 
+          {showSetupItem && (
+            <Box mb="1" px="1">
+              <SetupItem
+                isActive={sidebarData.isSetupActive}
+                onClick={handleSetupClick}
+              />
+            </Box>
+          )}
+
           <Box>
             <InboxItem
               isActive={sidebarData.isInboxActive}
@@ -289,6 +323,13 @@ function SidebarMenuComponent() {
             <SkillsItem
               isActive={sidebarData.isSkillsActive}
               onClick={handleSkillsClick}
+            />
+          </Box>
+
+          <Box>
+            <McpServersItem
+              isActive={sidebarData.isMcpServersActive}
+              onClick={handleMcpServersClick}
             />
           </Box>
 

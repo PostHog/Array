@@ -24,6 +24,7 @@ function tiptapJsonToEditorContent(json: JSONContent): EditorContent {
           type: node.attrs.type,
           id: node.attrs.id,
           label: node.attrs.label,
+          pastedText: node.attrs.pastedText,
         },
       });
     } else if (node.type === "doc" && node.content) {
@@ -79,6 +80,7 @@ function editorContentToTiptapJson(content: EditorContent): JSONContent {
           type: seg.chip.type,
           id: seg.chip.id,
           label: seg.chip.label,
+          pastedText: seg.chip.pastedText ?? false,
         },
       });
     }

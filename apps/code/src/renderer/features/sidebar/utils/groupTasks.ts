@@ -1,5 +1,4 @@
 import { getTaskRepository, parseRepository } from "@renderer/utils/repository";
-import type { Task } from "@shared/types";
 import { normalizeRepoKey } from "@shared/utils/repo";
 
 export interface TaskRepositoryInfo {
@@ -19,7 +18,7 @@ export interface TaskGroup<T extends GroupableTask> {
 }
 
 export function getRepositoryInfo(
-  task: Task,
+  task: { repository?: string | null },
   folderPath?: string,
 ): TaskRepositoryInfo | null {
   const repository = getTaskRepository(task);

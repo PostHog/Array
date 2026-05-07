@@ -124,6 +124,25 @@ export interface AgentFileActivityProperties {
   branch_name: string | null;
 }
 
+// Branch link events
+type BranchLinkSource = "agent" | "user" | "unknown";
+
+export interface BranchLinkedProperties {
+  task_id: string;
+  branch_name: string;
+  source: BranchLinkSource;
+}
+
+export interface BranchUnlinkedProperties {
+  task_id: string;
+  source: BranchLinkSource;
+}
+
+export interface BranchLinkDefaultBranchUnknownProperties {
+  task_id: string;
+  branch_name: string;
+}
+
 // File interactions
 export interface FileOpenedProperties {
   file_extension: string;
@@ -250,6 +269,77 @@ export interface TaskFeedbackProperties {
   feedback_comment?: string;
 }
 
+// Setup / onboarding events
+type SetupDiscoveredTaskCategory =
+  | "bug"
+  | "security"
+  | "dead_code"
+  | "duplication"
+  | "performance"
+  | "stale_feature_flag"
+  | "error_tracking"
+  | "event_tracking"
+  | "funnel";
+
+export interface SetupViewedProperties {
+  discovery_status: "idle" | "running" | "done" | "error";
+}
+
+export interface SetupDiscoveryStartedProperties {
+  discovery_task_id: string;
+  discovery_task_run_id: string;
+}
+
+export interface SetupDiscoveryCompletedProperties {
+  discovery_task_id: string;
+  discovery_task_run_id: string;
+  task_count: number;
+  duration_seconds: number;
+  signal_source: "structured_output" | "terminal_status" | "missing_output";
+}
+
+export interface SetupDiscoveryFailedProperties {
+  discovery_task_id?: string;
+  discovery_task_run_id?: string;
+  reason: "failed" | "cancelled" | "timeout" | "startup_error";
+  error_message?: string;
+}
+
+export interface SetupTaskSelectedProperties {
+  discovered_task_id: string;
+  category: SetupDiscoveredTaskCategory;
+  position: number;
+  total_discovered: number;
+}
+
+export interface SetupTaskDismissedProperties {
+  discovered_task_id: string;
+  category: SetupDiscoveredTaskCategory;
+  position: number;
+  total_discovered: number;
+}
+
+export interface SetupSkippedProperties {
+  discovery_status: "idle" | "running" | "done" | "error";
+  had_discovered_tasks: boolean;
+  entry_point: "during_scan" | "after_done";
+}
+
+export interface SetupWizardStartedProperties {
+  wizard_task_id: string;
+  workspace_mode?: string;
+}
+
+export interface SetupWizardFailedProperties {
+  reason:
+    | "unauthenticated_client"
+    | "missing_directory"
+    | "startup_error"
+    | "already_installed"
+    | "task_run_terminal";
+  error_message?: string;
+}
+
 // Event names as constants
 export const ANALYTICS_EVENTS = {
   // App lifecycle
@@ -277,6 +367,9 @@ export const ANALYTICS_EVENTS = {
   GIT_ACTION_EXECUTED: "Git action executed",
   PR_CREATED: "PR created",
   AGENT_FILE_ACTIVITY: "Agent file activity",
+  BRANCH_LINKED: "Branch linked",
+  BRANCH_UNLINKED: "Branch unlinked",
+  BRANCH_LINK_DEFAULT_BRANCH_UNKNOWN: "Branch link default branch unknown",
 
   // File interactions
   FILE_OPENED: "File opened",
@@ -316,9 +409,23 @@ export const ANALYTICS_EVENTS = {
   // Tour events
   TOUR_EVENT: "Tour event",
 
+  // Setup / onboarding events
+  SETUP_VIEWED: "Setup viewed",
+  SETUP_DISCOVERY_STARTED: "Setup discovery started",
+  SETUP_DISCOVERY_COMPLETED: "Setup discovery completed",
+  SETUP_DISCOVERY_FAILED: "Setup discovery failed",
+  SETUP_TASK_SELECTED: "Setup task selected",
+  SETUP_TASK_DISMISSED: "Setup task dismissed",
+  SETUP_SKIPPED: "Setup skipped",
+  SETUP_WIZARD_STARTED: "Setup wizard started",
+  SETUP_WIZARD_FAILED: "Setup wizard failed",
+
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
   AGENT_SESSION_ERROR: "Agent session error",
+
+  // Inbox events
+  INBOX_INTEREST_REGISTERED: "Inbox interest registered",
 } as const;
 
 // Event property mapping
@@ -341,6 +448,9 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.GIT_ACTION_EXECUTED]: GitActionExecutedProperties;
   [ANALYTICS_EVENTS.PR_CREATED]: PrCreatedProperties;
   [ANALYTICS_EVENTS.AGENT_FILE_ACTIVITY]: AgentFileActivityProperties;
+  [ANALYTICS_EVENTS.BRANCH_LINKED]: BranchLinkedProperties;
+  [ANALYTICS_EVENTS.BRANCH_UNLINKED]: BranchUnlinkedProperties;
+  [ANALYTICS_EVENTS.BRANCH_LINK_DEFAULT_BRANCH_UNKNOWN]: BranchLinkDefaultBranchUnknownProperties;
 
   // File interactions
   [ANALYTICS_EVENTS.FILE_OPENED]: FileOpenedProperties;
@@ -380,7 +490,21 @@ export type EventPropertyMap = {
   // Tour events
   [ANALYTICS_EVENTS.TOUR_EVENT]: TourEventProperties;
 
+  // Setup / onboarding events
+  [ANALYTICS_EVENTS.SETUP_VIEWED]: SetupViewedProperties;
+  [ANALYTICS_EVENTS.SETUP_DISCOVERY_STARTED]: SetupDiscoveryStartedProperties;
+  [ANALYTICS_EVENTS.SETUP_DISCOVERY_COMPLETED]: SetupDiscoveryCompletedProperties;
+  [ANALYTICS_EVENTS.SETUP_DISCOVERY_FAILED]: SetupDiscoveryFailedProperties;
+  [ANALYTICS_EVENTS.SETUP_TASK_SELECTED]: SetupTaskSelectedProperties;
+  [ANALYTICS_EVENTS.SETUP_TASK_DISMISSED]: SetupTaskDismissedProperties;
+  [ANALYTICS_EVENTS.SETUP_SKIPPED]: SetupSkippedProperties;
+  [ANALYTICS_EVENTS.SETUP_WIZARD_STARTED]: SetupWizardStartedProperties;
+  [ANALYTICS_EVENTS.SETUP_WIZARD_FAILED]: SetupWizardFailedProperties;
+
   // Error events
   [ANALYTICS_EVENTS.TASK_CREATION_FAILED]: TaskCreationFailedProperties;
   [ANALYTICS_EVENTS.AGENT_SESSION_ERROR]: AgentSessionErrorProperties;
+
+  // Inbox events
+  [ANALYTICS_EVENTS.INBOX_INTEREST_REGISTERED]: never;
 };

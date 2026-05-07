@@ -36,12 +36,45 @@ import {
 import type { PermissionMode } from "../../execution-mode";
 import type { Logger } from "../../utils/logger";
 import type { CodexSessionState } from "./session-state";
+import {
+  STRUCTURED_OUTPUT_MCP_NAME,
+  STRUCTURED_OUTPUT_TOOL_NAME,
+} from "./structured-output-constants";
 
 export interface CodexClientCallbacks {
   /** Called when a usage_update session notification is received */
   onUsageUpdate?: (update: Record<string, unknown>) => void;
   /** When set, Read responses are annotated with PostHog enrichment before reaching codex-acp. */
   enrichmentDeps?: FileEnrichmentDeps;
+  /**
+   * Called once per session when the agent completes the injected
+   * `create_output` MCP tool. Matches the Claude adapter's structured
+   * output delivery.
+   */
+  onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
+}
+
+/**
+ * Tool calls for our injected MCP server surface in ACP `tool_call` /
+ * `tool_call_update` notifications. The `title` from codex-acp can be
+ * either the bare tool name or prefixed (`mcp__<server>__<tool>`); match
+ * both forms but require the server name on prefixed titles so an unrelated
+ * user tool happening to contain `create_output` doesn't trigger us.
+ */
+function isStructuredOutputToolCall(title: string | undefined | null): boolean {
+  if (!title) return false;
+  if (title === STRUCTURED_OUTPUT_TOOL_NAME) return true;
+  return (
+    title.includes(STRUCTURED_OUTPUT_MCP_NAME) &&
+    title.includes(STRUCTURED_OUTPUT_TOOL_NAME)
+  );
+}
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
 }
 
 const AUTO_APPROVED_KINDS: Record<PermissionMode, Set<ToolKind>> = {
@@ -96,6 +129,14 @@ export function createCodexClient(
   callbacks?: CodexClientCallbacks,
 ): Client {
   const terminalHandles = new Map<string, TerminalHandle>();
+  // Track rawInput across tool_call → tool_call_update → completed so we can
+  // fire onStructuredOutput exactly once per tool call id. Entries stay in
+  // the map after firing with `fired: true` so a re-emitted completion
+  // (if codex-acp ever resends one) is a no-op.
+  const structuredOutputState = new Map<
+    string,
+    { rawInput?: Record<string, unknown>; fired: boolean }
+  >();
 
   return {
     async requestPermission(
@@ -125,6 +166,33 @@ export function createCodexClient(
 
     async sessionUpdate(params: SessionNotification): Promise<void> {
       const update = params.update as Record<string, unknown> | undefined;
+
+      if (
+        callbacks?.onStructuredOutput &&
+        (update?.sessionUpdate === "tool_call" ||
+          update?.sessionUpdate === "tool_call_update")
+      ) {
+        const toolCallId = update.toolCallId as string | undefined;
+        const title = update.title as string | undefined;
+        if (toolCallId && isStructuredOutputToolCall(title)) {
+          const entry = structuredOutputState.get(toolCallId) ?? {
+            fired: false,
+          };
+          const rawInput = toRecord(update.rawInput);
+          if (rawInput) entry.rawInput = rawInput;
+          structuredOutputState.set(toolCallId, entry);
+
+          if (update.status === "completed" && !entry.fired && entry.rawInput) {
+            entry.fired = true;
+            try {
+              await callbacks.onStructuredOutput(entry.rawInput);
+            } catch (err) {
+              logger.warn("onStructuredOutput callback threw", { error: err });
+            }
+          }
+        }
+      }
+
       if (update?.sessionUpdate === "usage_update") {
         const used = update.used as number | undefined;
         const size = update.size as number | undefined;

@@ -18,8 +18,8 @@
   },
   "devDependencies": {
     "@types/tar": "^6.1.13",
-    "vitest": "^2.1.8",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.8"
   },
   "files": [
     "dist/**/*",
@@ -27,6 +27,7 @@
   ],
   "dependencies": {
     "@posthog/shared": "workspace:*",
+    "git-url-parse": "^16.1.0",
     "simple-git": "^3.30.0"
   }
 }

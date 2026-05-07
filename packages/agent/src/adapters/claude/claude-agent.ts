@@ -103,6 +103,7 @@ import type {
   SDKMessageFilter,
   Session,
   ToolUseCache,
+  ToolUseStreamCache,
 } from "./types";
 
 const SESSION_VALIDATION_TIMEOUT_MS = 30_000;
@@ -145,6 +146,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   readonly adapterName = "claude";
   declare session: Session;
   toolUseCache: ToolUseCache;
+  toolUseStreamCache: ToolUseStreamCache;
   backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
   private options?: ClaudeAcpAgentOptions;
@@ -155,6 +157,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     super(client);
     this.options = options;
     this.toolUseCache = {};
+    this.toolUseStreamCache = new Map();
     this.logger = new Logger({ debug: true, prefix: "[ClaudeAcpAgent]" });
     this.enrichment = createEnrichment(options?.posthogApiConfig, this.logger);
   }
@@ -403,6 +406,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       sessionId: params.sessionId,
       client: this.client,
       toolUseCache: this.toolUseCache,
+      toolUseStreamCache: this.toolUseStreamCache,
       fileContentCache: this.fileContentCache,
       enrichedReadCache: this.enrichedReadCache,
       logger: this.logger,
@@ -768,6 +772,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
       throw error;
     } finally {
+      // Drop any leftover streaming-input buffers. Normally cleared per index
+      // on `content_block_stop`, but a cancelled or errored turn may leave
+      // entries behind; without this they'd carry over into the next turn
+      // and collide with new content-block indices.
+      this.toolUseStreamCache.clear();
       if (!handedOff) {
         this.session.promptRunning = false;
         // Resolve all remaining pending prompts so no callers get stuck.
@@ -1309,7 +1318,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const configOptions = this.buildConfigOptions(
       permissionMode,
       modelOptions,
-      effort ?? "high",
+      effort ?? "medium",
     );
     session.configOptions = configOptions;
 
@@ -1406,7 +1415,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       currentModelId: string;
       options: SessionConfigSelectOption[];
     },
-    currentEffort: EffortLevel = "high",
+    currentEffort: EffortLevel = "medium",
   ): SessionConfigOption[] {
     const modeOptions = getAvailableModes().map((mode) => ({
       value: mode.id,
@@ -1528,6 +1537,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         sessionId,
         client: this.client,
         toolUseCache: this.toolUseCache,
+        toolUseStreamCache: this.toolUseStreamCache,
         fileContentCache: this.fileContentCache,
         enrichedReadCache: this.enrichedReadCache,
         logger: this.logger,

@@ -5,6 +5,7 @@ import {
   type EditorHandle as PromptInputHandle,
 } from "@features/message-editor/components/PromptInput";
 import { useDraftStore } from "@features/message-editor/stores/draftStore";
+import { resolveAndAttachDroppedFiles } from "@features/message-editor/utils/persistFile";
 import { CHAT_CONTENT_MAX_WIDTH } from "@features/sessions/constants";
 import { useSessionForTask } from "@features/sessions/hooks/useSession";
 import {
@@ -19,13 +20,13 @@ import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
 import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
 import { Box, Button, ContextMenu, Flex, Text } from "@radix-ui/themes";
-import type { TaskRunStatus } from "@shared/types";
+import { toast } from "@renderer/utils/toast";
+import type { Task, TaskRunStatus } from "@shared/types";
 import {
   type AcpMessage,
   isJsonRpcNotification,
   isJsonRpcResponse,
 } from "@shared/types/session-events";
-import { getFilePath } from "@utils/getFilePath";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSessionService } from "../service/service";
 import { flattenSelectOptions } from "../stores/sessionStore";
@@ -44,6 +45,7 @@ import { RawLogsView } from "./raw-logs/RawLogsView";
 interface SessionViewProps {
   events: AcpMessage[];
   taskId?: string;
+  task?: Task;
   isRunning: boolean;
   isPromptPending?: boolean | null;
   promptStartedAt?: number | null;
@@ -96,6 +98,7 @@ function resolveAllowAlwaysUpgradeMode(
 export function SessionView({
   events,
   taskId,
+  task,
   isRunning,
   isPromptPending = false,
   promptStartedAt,
@@ -372,18 +375,11 @@ export function SessionView({
     const files = e.dataTransfer.files;
     if (!files || files.length === 0) return;
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const filePath = getFilePath(file);
-      if (filePath) {
-        editorRef.current?.addAttachment({
-          id: filePath,
-          label: file.name,
-        });
-      }
-    }
-
-    editorRef.current?.focus();
+    resolveAndAttachDroppedFiles(files, (a) =>
+      editorRef.current?.addAttachment(a),
+    )
+      .then(() => editorRef.current?.focus())
+      .catch(() => toast.error("Failed to attach files"));
   }, []);
 
   const handlePaneClick = useCallback((e: React.MouseEvent) => {
@@ -449,6 +445,7 @@ export function SessionView({
                   promptStartedAt={promptStartedAt}
                   repoPath={repoPath}
                   taskId={taskId}
+                  task={task}
                   slackThreadUrl={slackThreadUrl}
                 />
                 <Box className="border-gray-4 border-t">
@@ -519,6 +516,7 @@ export function SessionView({
                   promptStartedAt={promptStartedAt}
                   repoPath={repoPath}
                   taskId={taskId}
+                  task={task}
                   slackThreadUrl={slackThreadUrl}
                   compact={compact}
                 />
@@ -569,10 +567,14 @@ export function SessionView({
                     </Flex>
                   </Flex>
                 ) : hideInput ? null : firstPendingPermission ? (
-                  <Box className="border-gray-4 border-t">
+                  <Box className="max-h-1/2 min-h-0 overflow-y-auto border-gray-4 border-t">
                     <Box
-                      className="mx-auto p-2"
-                      style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+                      className={compact ? "p-1" : "mx-auto p-2"}
+                      style={
+                        compact
+                          ? undefined
+                          : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
+                      }
                     >
                       <PermissionSelector
                         toolCall={firstPendingPermission.toolCall}

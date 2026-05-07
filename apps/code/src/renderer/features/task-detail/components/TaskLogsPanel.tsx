@@ -127,6 +127,7 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
             <SessionView
               events={events}
               taskId={taskId}
+              task={task}
               isRunning={isRunning}
               isSuspended={isSuspended}
               onRestoreWorktree={

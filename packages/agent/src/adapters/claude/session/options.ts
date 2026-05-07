@@ -24,6 +24,7 @@ import {
 import type { CodeExecutionMode } from "../tools";
 import type { EffortLevel } from "../types";
 import { APPENDED_INSTRUCTIONS } from "./instructions";
+import { loadUserClaudeJsonMcpServers } from "./mcp-config";
 import { DEFAULT_MODEL } from "./models";
 import type { SettingsManager } from "./settings";
 
@@ -91,8 +92,10 @@ export function buildSystemPrompt(
 function buildMcpServers(
   userServers: Record<string, McpServerConfig> | undefined,
   acpServers: Record<string, McpServerConfig>,
+  projectScopedServers: Record<string, McpServerConfig>,
 ): Record<string, McpServerConfig> {
   return {
+    ...projectScopedServers,
     ...(userServers || {}),
     ...acpServers,
   };
@@ -154,7 +157,7 @@ function buildHooks(
 const PH_EXPLORE_AGENT: NonNullable<Options["agents"]>[string] = {
   description:
     'Fast agent for exploring and understanding codebases. Use this when you need to find files by pattern (eg. "src/components/**/*.tsx"), search for code or keywords (eg. "where is the auth middleware?"), or answer questions about how the codebase works (eg. "how does the session service handle reconnects?"). When calling this agent, specify a thoroughness level: "quick" for targeted lookups, "medium" for broader exploration, or "very thorough" for comprehensive analysis across multiple locations.',
-  model: "haiku",
+  model: "sonnet",
   prompt: `You are a fast, read-only codebase exploration agent.
 
 Your job is to find files, search code, read the most relevant sources, and report findings clearly.
@@ -330,6 +333,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     mcpServers: buildMcpServers(
       params.userProvidedOptions?.mcpServers,
       params.mcpServers,
+      loadUserClaudeJsonMcpServers(params.cwd, params.logger),
     ),
     env: buildEnvironment(),
     hooks: buildHooks(

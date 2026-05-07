@@ -6,8 +6,9 @@ import { mergeConversationItems } from "./mergeConversationItems";
 function userMessage(
   id: string,
   content: string,
+  pinToTop?: boolean,
 ): Extract<ConversationItem, { type: "user_message" }> {
-  return { type: "user_message", id, content, timestamp: 0 };
+  return { type: "user_message", id, content, timestamp: 0, pinToTop };
 }
 
 function queuedItem(
@@ -98,5 +99,28 @@ describe("mergeConversationItems", () => {
       isCloud: true,
     });
     expect(result.map((i) => i.id)).toEqual(["opt", "setup", "q1"]);
+  });
+
+  it("cloud: renders follow-up optimistic messages at the tail", () => {
+    const result = mergeConversationItems({
+      conversationItems: [userMessage("setup", "setup")],
+      optimisticItems: [userMessage("opt", "follow up", false)],
+      queuedItems: [],
+      isCloud: true,
+    });
+    expect(result.map((i) => i.id)).toEqual(["setup", "opt"]);
+  });
+
+  it("cloud: does not dedupe historical messages against tail follow-up optimistics", () => {
+    const result = mergeConversationItems({
+      conversationItems: [
+        userMessage("old", "repeat"),
+        userMessage("setup", "setup"),
+      ],
+      optimisticItems: [userMessage("opt", "repeat", false)],
+      queuedItems: [],
+      isCloud: true,
+    });
+    expect(result.map((i) => i.id)).toEqual(["old", "setup", "opt"]);
   });
 });

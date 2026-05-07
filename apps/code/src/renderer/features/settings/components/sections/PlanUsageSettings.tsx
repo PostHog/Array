@@ -8,6 +8,7 @@ import {
   ArrowSquareOut,
   Check,
   CreditCard,
+  Info,
   WarningCircle,
 } from "@phosphor-icons/react";
 import {
@@ -22,7 +23,7 @@ import {
 import { Tooltip } from "@renderer/components/ui/Tooltip";
 import { PLAN_PRO_ALPHA } from "@shared/types/seat";
 import { logger } from "@utils/logger";
-import { getPostHogUrl } from "@utils/urls";
+import { getBillingUrl, getPostHogUrl } from "@utils/urls";
 import { useEffect, useState } from "react";
 
 const log = logger.scope("plan-usage");
@@ -38,7 +39,7 @@ async function openBillingPage(orgId: string | null): Promise<void> {
       log.warn("Failed to switch org before opening billing", err);
     }
   }
-  const url = getPostHogUrl("/organization/billing");
+  const url = getBillingUrl();
   if (url) window.open(url, "_blank");
 }
 
@@ -56,24 +57,26 @@ function formatResetTime(seconds: number): string {
 export function PlanUsageSettings() {
   const {
     seat,
-    isPro,
+    orgSeat,
+    isOrgPro,
     isCanceling,
     activeUntil,
     isLoading,
     error,
     redirectUrl,
     billingOrgId,
+    hasBetterPlanElsewhere,
   } = useSeat();
   const { fetchSeat, upgradeToPro, cancelSeat, reactivateSeat, clearError } =
     useSeatStore();
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
-  const billingUrl = getPostHogUrl("/organization/billing", cloudRegion);
+  const billingUrl = getBillingUrl(cloudRegion);
   const redirectFullUrl = redirectUrl
-    ? getPostHogUrl(redirectUrl, cloudRegion)
+    ? (getPostHogUrl(redirectUrl, cloudRegion) ?? billingUrl)
     : null;
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
 
-  const isAlpha = seat?.plan_key === PLAN_PRO_ALPHA;
+  const isAlpha = orgSeat?.plan_key === PLAN_PRO_ALPHA;
   const {
     usage,
     isLoading: usageLoading,
@@ -83,7 +86,7 @@ export function PlanUsageSettings() {
   });
 
   useEffect(() => {
-    void fetchSeat();
+    void fetchSeat({ autoProvision: true });
     void refetchUsage();
   }, [fetchSeat, refetchUsage]);
 
@@ -108,7 +111,27 @@ export function PlanUsageSettings() {
           <Callout.Icon>
             <WarningCircle size={16} />
           </Callout.Icon>
-          <Callout.Text>{error}</Callout.Text>
+          <Callout.Text>
+            <Flex direction="column" gap="2">
+              <Text className="text-sm">{error}</Text>
+              <Text className="text-(--red-9) text-sm">
+                Update your payment method in PostHog to continue.
+              </Text>
+              <Button
+                size="1"
+                variant="outline"
+                color="red"
+                disabled={!billingUrl}
+                onClick={() => {
+                  void openBillingPage(billingOrgId);
+                }}
+                className="self-start"
+              >
+                Manage billing
+                <ArrowSquareOut size={12} />
+              </Button>
+            </Flex>
+          </Callout.Text>
         </Callout.Root>
       )}
 
@@ -142,8 +165,21 @@ export function PlanUsageSettings() {
         </Callout.Root>
       )}
 
+      {hasBetterPlanElsewhere && seat?.organization_name && (
+        <Callout.Root color="blue" size="1">
+          <Callout.Icon>
+            <Info size={16} />
+          </Callout.Icon>
+          <Callout.Text className="text-sm">
+            You have a Pro plan on{" "}
+            <Text weight="medium">{seat.organization_name}</Text>. Usage on this
+            page reflects your current organization.
+          </Callout.Text>
+        </Callout.Root>
+      )}
+
       <Flex gap="3">
-        {seat ? (
+        {orgSeat ? (
           <>
             <PlanCard
               name="Free"
@@ -154,7 +190,7 @@ export function PlanUsageSettings() {
                 "Local and cloud execution",
                 "All Claude and Codex models",
               ]}
-              isCurrent={!isPro}
+              isCurrent={!isOrgPro}
             />
             <PlanCard
               name="Pro"
@@ -165,11 +201,11 @@ export function PlanUsageSettings() {
                 "Local and cloud execution",
                 "All Claude and Codex models",
               ]}
-              isCurrent={isPro && !isAlpha}
+              isCurrent={isOrgPro && !isAlpha}
               resetLabel={
-                isPro && !isAlpha && isCanceling && formattedActiveUntil
+                isOrgPro && !isAlpha && isCanceling && formattedActiveUntil
                   ? `Cancels ${formattedActiveUntil}`
-                  : isPro &&
+                  : isOrgPro &&
                       !isAlpha &&
                       formattedActiveUntil &&
                       daysUntilReset !== null
@@ -177,7 +213,7 @@ export function PlanUsageSettings() {
                     : undefined
               }
               action={
-                isPro && !isAlpha ? (
+                isAlpha ? null : isOrgPro ? (
                   isCanceling ? (
                     <Button
                       size="1"
@@ -238,10 +274,11 @@ export function PlanUsageSettings() {
           className="rounded-(--radius-3) border border-(--accent-7) bg-(--accent-2)"
         >
           <Flex direction="column" gap="2">
-            <Text className="font-medium text-sm">Alpha plan</Text>
+            <Text className="font-medium text-sm">Extended Alpha Plan</Text>
             <Text className="text-(--gray-11) text-sm">
-              You're on the free alpha Pro plan with full Pro features. You can
-              upgrade to the paid Pro plan anytime for higher usage limits.
+              You're on the free Pro plan with full Pro features until June 4,
+              2026. Once your alpha seat expires, you'll be moved to the free
+              plan automatically and will be able to upgrade to the Pro plan.
             </Text>
           </Flex>
         </Flex>
@@ -261,12 +298,12 @@ export function PlanUsageSettings() {
         ) : usage ? (
           <Flex direction="column" gap="3">
             <UsageMeter
-              label="Sustained"
+              label="Monthly"
               bucket={usage.sustained}
               color={usage.sustained.exceeded ? "red" : undefined}
             />
             <UsageMeter
-              label="Burst"
+              label="Daily"
               bucket={usage.burst}
               color={usage.burst.exceeded ? "red" : undefined}
             />
@@ -285,7 +322,7 @@ export function PlanUsageSettings() {
         )}
       </Flex>
 
-      {isPro && (
+      {isOrgPro && (
         <Flex direction="column" gap="3">
           <Text className="font-medium text-(--gray-9) text-sm">Billing</Text>
           <Flex
@@ -316,8 +353,13 @@ export function PlanUsageSettings() {
         <Dialog.Content maxWidth="420px" size="2">
           <Dialog.Title className="text-base">Upgrade to Pro</Dialog.Title>
           <Dialog.Description color="gray" className="text-sm">
-            You are about to subscribe to the Pro plan. Your organization will
-            be charged $200/month starting immediately.
+            {seat?.organization_name ? (
+              <Text weight="medium">{seat.organization_name}</Text>
+            ) : (
+              "Your organization"
+            )}{" "}
+            will be charged $200/month using the payment method on file in
+            PostHog.
           </Dialog.Description>
           <Flex direction="column" gap="2" mt="3">
             <Flex align="center" gap="2">
@@ -332,6 +374,19 @@ export function PlanUsageSettings() {
               <Check size={14} weight="bold" className="text-(--accent-9)" />
               <Text className="text-sm">All Claude and Codex models</Text>
             </Flex>
+          </Flex>
+          <Flex
+            align="start"
+            gap="2"
+            mt="3"
+            p="3"
+            className="rounded-(--radius-2) bg-(--gray-2)"
+          >
+            <Info size={14} className="mt-[2px] shrink-0 text-(--gray-9)" />
+            <Text className="text-(--gray-11) text-[13px]">
+              Your first charge is prorated for the remainder of the current
+              billing cycle, then $200/month thereafter.
+            </Text>
           </Flex>
           <Flex justify="end" gap="3" mt="4">
             <Dialog.Close>

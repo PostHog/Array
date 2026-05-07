@@ -1,4 +1,6 @@
+import { readdirSync, statSync } from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import {
   app,
   BrowserWindow,
@@ -16,6 +18,31 @@ import type { UIService } from "./services/ui/service";
 import type { UpdatesService } from "./services/updates/service";
 import { isDevBuild } from "./utils/env";
 import { getLogFilePath } from "./utils/logger";
+
+function findLatestCrashDump(): string | null {
+  const pendingDir = path.join(app.getPath("crashDumps"), "pending");
+  let entries: string[];
+  try {
+    entries = readdirSync(pendingDir);
+  } catch {
+    return null;
+  }
+  let latest: { file: string; mtimeMs: number } | null = null;
+  for (const name of entries) {
+    if (!name.endsWith(".dmp")) continue;
+    const full = path.join(pendingDir, name);
+    let mtimeMs: number;
+    try {
+      mtimeMs = statSync(full).mtimeMs;
+    } catch {
+      continue;
+    }
+    if (!latest || mtimeMs > latest.mtimeMs) {
+      latest = { file: full, mtimeMs };
+    }
+  }
+  return latest?.file ?? null;
+}
 
 function getSystemInfo(): string {
   const commit = __BUILD_COMMIT__ ?? "dev";
@@ -124,6 +151,64 @@ function buildFileMenu(): MenuItemConstructorOptions {
               shell.showItemInFolder(getLogFilePath());
             },
           },
+          {
+            label:
+              process.platform === "darwin"
+                ? "Show crash dumps in Finder"
+                : "Show crash dumps in file manager",
+            click: () => {
+              const latest = findLatestCrashDump();
+              if (latest) {
+                shell.showItemInFolder(latest);
+                return;
+              }
+              const pendingDir = path.join(
+                app.getPath("crashDumps"),
+                "pending",
+              );
+              void shell.openPath(pendingDir).then((err) => {
+                if (err) void shell.openPath(app.getPath("crashDumps"));
+              });
+            },
+          },
+          ...(isDevBuild()
+            ? [
+                {
+                  label: "Test: terminate renderer (forced shutdown, no fault)",
+                  click: () => {
+                    const win = BrowserWindow.getFocusedWindow();
+                    if (!win) return;
+                    win.webContents.forcefullyCrashRenderer();
+                  },
+                },
+                {
+                  label: "Test: crash renderer (in-process, EXC_BAD_ACCESS)",
+                  click: () => {
+                    const win = BrowserWindow.getFocusedWindow();
+                    if (!win) return;
+                    void win.webContents.executeJavaScript(
+                      "window.__posthogCodeTest.crash()",
+                    );
+                  },
+                },
+                {
+                  label: "Test: abort renderer (in-process, SIGABRT)",
+                  click: () => {
+                    const win = BrowserWindow.getFocusedWindow();
+                    if (!win) return;
+                    void win.webContents.executeJavaScript(
+                      "window.__posthogCodeTest.abort()",
+                    );
+                  },
+                },
+                {
+                  label: "Test: crash main process (SIGABRT)",
+                  click: () => {
+                    process.crash();
+                  },
+                },
+              ]
+            : []),
           { type: "separator" },
           {
             label: "Invalidate OAuth token",

@@ -7,7 +7,16 @@ vi.mock("../../enrichment/file-enricher", () => ({
   enrichFileForAgent: enrichFileMock,
 }));
 
-import { createReadEnrichmentHook, type EnrichedReadCache } from "./hooks";
+import { Logger } from "../../utils/logger";
+import {
+  createPreToolUseHook,
+  createReadEnrichmentHook,
+  type EnrichedReadCache,
+} from "./hooks";
+import type {
+  PermissionCheckResult,
+  SettingsManager,
+} from "./session/settings";
 
 const stubDeps = {} as FileEnrichmentDeps;
 
@@ -185,5 +194,120 @@ describe("createReadEnrichmentHook", () => {
 
     const [, , content] = enrichFileMock.mock.calls[0];
     expect(content).toBe("foo");
+  });
+});
+
+function buildPreToolUseHookInput(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+): HookInput {
+  return {
+    session_id: "test-session",
+    transcript_path: "/tmp/transcript",
+    cwd: "/tmp",
+    hook_event_name: "PreToolUse",
+    tool_name: toolName,
+    tool_use_id: "toolu_1",
+    tool_input: toolInput,
+  } as HookInput;
+}
+
+function buildSettingsManagerStub(
+  result: PermissionCheckResult,
+): SettingsManager {
+  return {
+    checkPermission: () => result,
+  } as unknown as SettingsManager;
+}
+
+describe("createPreToolUseHook", () => {
+  const logger = new Logger({ debug: false });
+
+  test("defers destructive PostHog exec sub-tool to canUseTool via ask", async () => {
+    const settingsManager = buildSettingsManagerStub({
+      decision: "allow",
+      rule: "mcp__posthog__exec",
+      source: "allow",
+    });
+    const hook = createPreToolUseHook(settingsManager, logger);
+    const result = await hook(
+      buildPreToolUseHookInput("mcp__posthog__exec", {
+        command: 'call dashboard-update {"id": 1, "name": "x"}',
+      }),
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    expect(result).toMatchObject({
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "ask",
+      },
+    });
+  });
+
+  test("allows non-destructive PostHog exec sub-tool via settings rule", async () => {
+    const settingsManager = buildSettingsManagerStub({
+      decision: "allow",
+      rule: "mcp__posthog__exec",
+      source: "allow",
+    });
+    const hook = createPreToolUseHook(settingsManager, logger);
+    const result = await hook(
+      buildPreToolUseHookInput("mcp__posthog__exec", {
+        command: 'call experiment-get {"id": 1}',
+      }),
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    expect(result).toEqual({
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        permissionDecisionReason:
+          "Allowed by settings rule: mcp__posthog__exec",
+      },
+    });
+  });
+
+  test("allows non-PostHog tool via settings rule unchanged", async () => {
+    const settingsManager = buildSettingsManagerStub({
+      decision: "allow",
+      rule: "Bash(ls:*)",
+      source: "allow",
+    });
+    const hook = createPreToolUseHook(settingsManager, logger);
+    const result = await hook(
+      buildPreToolUseHookInput("Bash", { command: "ls -la" }),
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    expect(result).toMatchObject({
+      hookSpecificOutput: { permissionDecision: "allow" },
+    });
+  });
+
+  test("defers when destructive rule is partial-update", async () => {
+    const settingsManager = buildSettingsManagerStub({
+      decision: "allow",
+      rule: "mcp__posthog__exec",
+      source: "allow",
+    });
+    const hook = createPreToolUseHook(settingsManager, logger);
+    const result = await hook(
+      buildPreToolUseHookInput("mcp__posthog__exec", {
+        command: 'call cohorts-partial-update {"id": 1}',
+      }),
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    expect(result).toMatchObject({
+      hookSpecificOutput: { permissionDecision: "ask" },
+    });
   });
 });

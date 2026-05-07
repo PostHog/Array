@@ -7,6 +7,7 @@ import { SignalReportSummaryMarkdown } from "@features/inbox/components/utils/Si
 import { EyeIcon, LightningIcon } from "@phosphor-icons/react";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import type { SignalReport } from "@shared/types";
+import type { ReactNode } from "react";
 
 interface ReportCardContentProps {
   report: SignalReport;
@@ -14,12 +15,15 @@ interface ReportCardContentProps {
   showMeta?: boolean;
   /** Tighter vertical and horizontal gaps for inbox list rows. */
   compact?: boolean;
+  /** Optional badge node rendered before the standard status/priority/actionability badges. */
+  prependBadges?: ReactNode;
 }
 
 export function ReportCardContent({
   report,
   showMeta = false,
   compact = false,
+  prependBadges,
 }: ReportCardContentProps) {
   const isReady = report.status === "ready";
 
@@ -57,6 +61,7 @@ export function ReportCardContent({
           wrap="wrap"
           className="min-w-0 flex-1"
         >
+          {prependBadges}
           {!isReady && <SignalReportStatusBadge status={report.status} />}
           <SignalReportPriorityBadge priority={report.priority} />
           <SignalReportActionabilityBadge

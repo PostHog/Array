@@ -5,10 +5,8 @@ import { EnrichmentPopover } from "@features/code-editor/components/EnrichmentPo
 import { useCloudFileContent } from "@features/code-editor/hooks/useCloudFileContent";
 import { useFileEnrichment } from "@features/code-editor/hooks/useFileEnrichment";
 import { useMarkdownViewerStore } from "@features/code-editor/stores/markdownViewerStore";
-import { getImageMimeType } from "@features/code-editor/utils/imageUtils";
 import { isMarkdownFile } from "@features/code-editor/utils/markdownUtils";
 import { getRelativePath } from "@features/code-editor/utils/pathUtils";
-import { isImageFile } from "@features/message-editor/utils/imageUtils";
 import { usePanelLayoutStore } from "@features/panels";
 import { useFileTreeStore } from "@features/right-sidebar/stores/fileTreeStore";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
@@ -16,6 +14,7 @@ import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
 import { Check, Code, Copy, Eye } from "@phosphor-icons/react";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
+import { getImageMimeType, isImageFile } from "@shared/constants/image";
 import type { Task } from "@shared/types";
 
 import { useQuery } from "@tanstack/react-query";

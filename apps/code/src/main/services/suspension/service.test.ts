@@ -45,9 +45,20 @@ vi.mock("@posthog/git/worktree", () => ({
       mockWorktreeManagerProto.createDetachedWorktreeAtCommit;
   },
 }));
-vi.mock("node:fs/promises", () => ({
-  default: { rm: vi.fn(), access: vi.fn() },
-}));
+vi.mock("node:fs/promises", () => {
+  const fns = {
+    rm: vi.fn(),
+    access: vi.fn(),
+    lstat: vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error("ENOENT"), { code: "ENOENT" }),
+      ),
+    chmod: vi.fn(),
+    readdir: vi.fn().mockResolvedValue([]),
+  };
+  return { default: fns, ...fns };
+});
 
 vi.mock("../../utils/logger.js", () => ({
   logger: {

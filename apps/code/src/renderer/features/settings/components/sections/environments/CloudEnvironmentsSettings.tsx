@@ -1,6 +1,6 @@
 import { useSandboxEnvironments } from "@features/settings/hooks/useSandboxEnvironments";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
-import { PencilSimple, Plus, Trash } from "@phosphor-icons/react";
+import { ArrowLeft, PencilSimple, Plus, Trash } from "@phosphor-icons/react";
 import { ChevronDownIcon } from "@radix-ui/react-icons";
 import {
   Badge,
@@ -195,6 +195,7 @@ export function CloudEnvironmentsSettings() {
   const consumeInitialAction = useSettingsDialogStore(
     (s) => s.consumeInitialAction,
   );
+  const setFormMode = useSettingsDialogStore((s) => s.setFormMode);
   const [editingEnv, setEditingEnv] = useState<SandboxEnvironment | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm());
@@ -209,6 +210,11 @@ export function CloudEnvironmentsSettings() {
   }, [consumeInitialAction]);
 
   const isFormOpen = isCreating || editingEnv !== null;
+
+  useEffect(() => {
+    setFormMode(isFormOpen);
+    return () => setFormMode(false);
+  }, [isFormOpen, setFormMode]);
 
   const domainValidation = useMemo(() => {
     if (form.network_access_level !== "custom")
@@ -289,14 +295,26 @@ export function CloudEnvironmentsSettings() {
   if (isFormOpen) {
     return (
       <Flex direction="column" gap="4">
-        <Text className="font-medium text-base">
-          {editingEnv ? "Update cloud environment" : "New cloud environment"}
-        </Text>
-        <Text color="gray" className="text-[13px]">
+        <button
+          type="button"
+          onClick={closeForm}
+          className="flex w-fit cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-[12px] text-gray-11 hover:text-gray-12"
+        >
+          <ArrowLeft size={10} />
+          <span>Back to environments</span>
+        </button>
+
+        <Text className="font-medium text-[13px]">
           {editingEnv
-            ? "Changes take effect on the next session that uses this environment; running sessions are not affected."
-            : "Once created, you can pick this environment in the Cloud section of the workspace picker when starting a task."}
+            ? `Editing cloud environment ${editingEnv.name}`
+            : "Creating cloud environment"}
         </Text>
+        {editingEnv && (
+          <Text color="gray" className="text-[12px]">
+            Changes take effect on the next session that uses this environment;
+            running sessions are not affected.
+          </Text>
+        )}
 
         <Flex direction="column" gap="1">
           <Text className="font-medium text-sm">Name</Text>
@@ -482,15 +500,21 @@ export function CloudEnvironmentsSettings() {
 
   return (
     <Flex direction="column" gap="4">
-      <Flex justify="between" align="start" gap="4">
-        <Text color="gray" className="text-[13px]">
-          A cloud environment is a reusable configuration applied to remote
-          sandbox sessions — it controls which outbound network hosts the
-          sandbox can reach and what environment variables (like API keys) are
-          available to the agent. Pick an environment in the Cloud section of
-          the workspace picker when starting a task; the Default option uses
-          full network access.
-        </Text>
+      <Text color="gray" className="text-[13px]">
+        A cloud environment is a sandbox profile for tasks that run remotely. It
+        controls which outbound hosts the sandbox can reach and which
+        environment variables — like API keys — are injected before the agent
+        starts. Account-wide, so the same profile is available across all your
+        projects. The built-in{" "}
+        <Text color="gray" className="font-medium text-[13px]">
+          Default
+        </Text>{" "}
+        uses full network access; create your own to lock things down or share
+        secrets with the agent. Pick one in the Cloud section of the workspace
+        picker when starting a task.
+      </Text>
+      <Flex justify="between" align="center">
+        <Text className="font-medium text-[13px]">Environments</Text>
         <Button size="1" variant="outline" onClick={openCreate}>
           <Plus size={12} />
           New environment

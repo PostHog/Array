@@ -440,6 +440,8 @@ export async function getGitBusyState(git: GitClient): Promise<GitBusyState> {
   return { busy: false };
 }
 
+const MAX_WORKTREE_FILE_BYTES = 1024 * 1024;
+
 async function createWorktreeTree(
   git: GitClient,
   baseDir: string,
@@ -459,11 +461,99 @@ async function createWorktreeTree(
     }
 
     await tempGit.raw(["add", "-A", "--", "."]);
+    await reconcileLargeBlobs(tempGit, head, MAX_WORKTREE_FILE_BYTES);
     const treeHash = await tempGit.raw(["write-tree"]);
     return treeHash.trim();
   } finally {
     await fs.rm(tempIndexPath, { force: true }).catch(() => {});
   }
+}
+
+async function reconcileLargeBlobs(
+  tempGit: GitClient,
+  head: string | null,
+  maxBytes: number,
+): Promise<void> {
+  const intermediateTree = (await tempGit.raw(["write-tree"])).trim();
+  const largePaths = await listLargeBlobPaths(
+    tempGit,
+    intermediateTree,
+    maxBytes,
+  );
+  if (largePaths.length === 0) return;
+
+  const headEntries = head
+    ? await readHeadBlobEntries(tempGit, head, largePaths)
+    : new Map<string, { mode: string; hash: string }>();
+
+  for (const filePath of largePaths) {
+    const headEntry = headEntries.get(filePath);
+    if (headEntry) {
+      await tempGit.raw([
+        "update-index",
+        "--cacheinfo",
+        `${headEntry.mode},${headEntry.hash},${filePath}`,
+      ]);
+    } else {
+      await tempGit
+        .raw(["update-index", "--force-remove", filePath])
+        .catch(() => {});
+    }
+  }
+}
+
+async function listLargeBlobPaths(
+  tempGit: GitClient,
+  tree: string,
+  maxBytes: number,
+): Promise<string[]> {
+  const output = await tempGit.raw(["ls-tree", "-r", "-l", tree]);
+  const result: string[] = [];
+  for (const line of output.split("\n")) {
+    if (!line) continue;
+    const tabIndex = line.indexOf("\t");
+    if (tabIndex < 0) continue;
+    const meta = line.slice(0, tabIndex);
+    const filePath = line.slice(tabIndex + 1);
+    const parts = meta.split(/\s+/);
+    if (parts.length < 4) continue;
+    const [, type, , sizeStr] = parts;
+    if (type !== "blob") continue;
+    if (sizeStr === "-") continue;
+    const size = Number.parseInt(sizeStr, 10);
+    if (Number.isFinite(size) && size > maxBytes) {
+      result.push(filePath);
+    }
+  }
+  return result;
+}
+
+async function readHeadBlobEntries(
+  tempGit: GitClient,
+  head: string,
+  paths: string[],
+): Promise<Map<string, { mode: string; hash: string }>> {
+  const result = new Map<string, { mode: string; hash: string }>();
+  const CHUNK_SIZE = 100;
+  for (let i = 0; i < paths.length; i += CHUNK_SIZE) {
+    const chunk = paths.slice(i, i + CHUNK_SIZE);
+    const output = await tempGit
+      .raw(["ls-tree", "-r", head, "--", ...chunk])
+      .catch(() => "");
+    for (const line of output.split("\n")) {
+      if (!line) continue;
+      const tabIndex = line.indexOf("\t");
+      if (tabIndex < 0) continue;
+      const meta = line.slice(0, tabIndex);
+      const filePath = line.slice(tabIndex + 1);
+      const parts = meta.split(/\s+/);
+      if (parts.length < 3) continue;
+      const [mode, type, hash] = parts;
+      if (type !== "blob") continue;
+      result.set(filePath, { mode, hash });
+    }
+  }
+  return result;
 }
 
 async function createMetaTree(

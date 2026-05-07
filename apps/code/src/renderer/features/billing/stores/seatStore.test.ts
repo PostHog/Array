@@ -85,6 +85,7 @@ describe("seatStore", () => {
     vi.clearAllMocks();
     useSeatStore.setState({
       seat: null,
+      orgSeat: null,
       isLoading: false,
       error: null,
       redirectUrl: null,

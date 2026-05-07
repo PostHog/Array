@@ -1,4 +1,4 @@
-import { filterInstallationsByQuery } from "@features/settings/hooks/mcpFilters";
+import { filterInstallationsByQuery } from "@features/mcp-servers/hooks/mcpFilters";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import {
   Flex,

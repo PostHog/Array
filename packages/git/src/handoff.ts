@@ -8,6 +8,7 @@ import { CaptureCheckpointSaga, deleteCheckpoint } from "./sagas/checkpoint";
 
 const HANDOFF_HEAD_REF_PREFIX = "refs/posthog-code-handoff/head/";
 const CHECKPOINT_REF_PREFIX = "refs/posthog-code-checkpoint/";
+const MAX_HANDOFF_FILE_BYTES = 1024 * 1024;
 
 export interface HandoffLocalGitState {
   head: string | null;
@@ -93,7 +94,7 @@ export class GitHandoffTracker {
   }
 
   async captureForHandoff(
-    _localGitState?: HandoffLocalGitState,
+    localGitState?: HandoffLocalGitState,
   ): Promise<GitHandoffCaptureResult> {
     const captureSaga = new CaptureCheckpointSaga(this.logger);
     const result = await captureSaga.run({ baseDir: this.repositoryPath });
@@ -107,20 +108,31 @@ export class GitHandoffTracker {
     const git = createGitClient(this.repositoryPath);
     const tempDir = await this.createTempDir(checkpoint.checkpointId);
     const checkpointRef = `${CHECKPOINT_REF_PREFIX}${checkpoint.checkpointId}`;
-    const packRefs = [
-      checkpoint.head,
-      checkpoint.indexTree,
-      checkpoint.worktreeTree,
-    ].filter((ref): ref is string => !!ref);
-    const headRef = checkpoint.head
-      ? `${HANDOFF_HEAD_REF_PREFIX}${checkpoint.checkpointId}`
-      : undefined;
-    const packPrefix = path.join(tempDir, checkpoint.checkpointId);
 
     try {
+      const reconciledIndex = await this.reconcileHandoffIndex(
+        git,
+        checkpoint.head,
+        checkpoint.indexTree,
+        tempDir,
+        checkpoint.checkpointId,
+      );
+
+      const packBaseline = localGitState?.upstreamHead ?? null;
+      const packRefs = [
+        checkpoint.head,
+        reconciledIndex.indexTree,
+        checkpoint.worktreeTree,
+        packBaseline ? `^${packBaseline}` : null,
+      ].filter((ref): ref is string => !!ref);
+      const headRef = checkpoint.head
+        ? `${HANDOFF_HEAD_REF_PREFIX}${checkpoint.checkpointId}`
+        : undefined;
+      const packPrefix = path.join(tempDir, checkpoint.checkpointId);
+
       const [headPack, indexFile, tracking] = await Promise.all([
         this.captureObjectPack(packPrefix, packRefs),
-        this.copyIndexFile(git, checkpoint.checkpointId, tempDir),
+        this.statFileArtifact(reconciledIndex.indexFilePath),
         getTrackingMetadata(git, checkpoint.branch),
       ]);
 
@@ -132,7 +144,7 @@ export class GitHandoffTracker {
           headRef,
           head: checkpoint.head,
           branch: checkpoint.branch,
-          indexTree: checkpoint.indexTree,
+          indexTree: reconciledIndex.indexTree,
           worktreeTree: checkpoint.worktreeTree,
           timestamp: checkpoint.timestamp,
           upstreamRemote: tracking.upstreamRemote,
@@ -161,6 +173,7 @@ export class GitHandoffTracker {
     const git = createGitClient(this.repositoryPath);
 
     if (headPackPath) {
+      await this.ensureBaselineForApply(git, checkpoint, localGitState);
       await this.unpackPackFile(headPackPath);
     }
 
@@ -223,18 +236,113 @@ export class GitHandoffTracker {
     return { path: packPath, rawBytes };
   }
 
-  private async copyIndexFile(
+  private async reconcileHandoffIndex(
     git: GitClient,
-    checkpointId: string,
+    head: string | null,
+    indexTree: string,
     tempDir: string,
+    checkpointId: string,
+  ): Promise<{ indexTree: string; indexFilePath: string }> {
+    const realIndexPath = await this.getGitPath(git, "index");
+    const tempIndexPath = path.join(tempDir, `${checkpointId}.index`);
+    await copyFile(realIndexPath, tempIndexPath);
+
+    const largePaths = await this.listLargeBlobsInTree(
+      indexTree,
+      MAX_HANDOFF_FILE_BYTES,
+    );
+    if (largePaths.length === 0) {
+      return { indexTree, indexFilePath: tempIndexPath };
+    }
+
+    const headBlobs = head
+      ? await this.readHeadBlobsForPaths(head, largePaths)
+      : new Map<string, { mode: string; hash: string }>();
+
+    const env = { ...process.env, GIT_INDEX_FILE: tempIndexPath };
+    for (const filePath of largePaths) {
+      const headBlob = headBlobs.get(filePath);
+      if (headBlob) {
+        await this.runGitWithEnv(env, [
+          "update-index",
+          "--cacheinfo",
+          `${headBlob.mode},${headBlob.hash},${filePath}`,
+        ]);
+      } else {
+        await this.runGitWithEnv(env, [
+          "update-index",
+          "--force-remove",
+          filePath,
+        ]).catch(() => {});
+      }
+    }
+
+    const reconciledTree = (
+      await this.runGitWithEnv(env, ["write-tree"])
+    ).trim();
+    return { indexTree: reconciledTree, indexFilePath: tempIndexPath };
+  }
+
+  private async listLargeBlobsInTree(
+    tree: string,
+    maxBytes: number,
+  ): Promise<string[]> {
+    const { stdout } = await this.runGitProcess(
+      ["ls-tree", "-r", "-l", tree],
+      "",
+    );
+    const result: string[] = [];
+    for (const line of stdout.split("\n")) {
+      if (!line) continue;
+      const tabIndex = line.indexOf("\t");
+      if (tabIndex < 0) continue;
+      const meta = line.slice(0, tabIndex);
+      const filePath = line.slice(tabIndex + 1);
+      const parts = meta.split(/\s+/);
+      if (parts.length < 4) continue;
+      const [, type, , sizeStr] = parts;
+      if (type !== "blob") continue;
+      if (sizeStr === "-") continue;
+      const size = Number.parseInt(sizeStr, 10);
+      if (Number.isFinite(size) && size > maxBytes) {
+        result.push(filePath);
+      }
+    }
+    return result;
+  }
+
+  private async readHeadBlobsForPaths(
+    head: string,
+    paths: string[],
+  ): Promise<Map<string, { mode: string; hash: string }>> {
+    const result = new Map<string, { mode: string; hash: string }>();
+    const CHUNK_SIZE = 100;
+    for (let i = 0; i < paths.length; i += CHUNK_SIZE) {
+      const chunk = paths.slice(i, i + CHUNK_SIZE);
+      const { stdout } = await this.runGitProcess(
+        ["ls-tree", "-r", head, "--", ...chunk],
+        "",
+      ).catch(() => ({ stdout: "", stderr: "" }));
+      for (const line of stdout.split("\n")) {
+        if (!line) continue;
+        const tabIndex = line.indexOf("\t");
+        if (tabIndex < 0) continue;
+        const meta = line.slice(0, tabIndex);
+        const filePath = line.slice(tabIndex + 1);
+        const parts = meta.split(/\s+/);
+        if (parts.length < 3) continue;
+        const [mode, type, hash] = parts;
+        if (type !== "blob") continue;
+        result.set(filePath, { mode, hash });
+      }
+    }
+    return result;
+  }
+
+  private async statFileArtifact(
+    filePath: string,
   ): Promise<GitHandoffArtifactFile> {
-    const indexPath = await this.getGitPath(git, "index");
-    const copiedIndexPath = path.join(tempDir, `${checkpointId}.index`);
-    await copyFile(indexPath, copiedIndexPath);
-    return {
-      path: copiedIndexPath,
-      rawBytes: await this.getFileSize(copiedIndexPath),
-    };
+    return { path: filePath, rawBytes: await this.getFileSize(filePath) };
   }
 
   private async restoreIndexFile(
@@ -285,6 +393,29 @@ export class GitHandoffTracker {
         (tracking.upstreamRemote !== null ||
           tracking.upstreamMergeRef !== null))
     );
+  }
+
+  private async ensureBaselineForApply(
+    git: GitClient,
+    checkpoint: GitHandoffCheckpoint,
+    localGitState: HandoffLocalGitState | undefined,
+  ): Promise<void> {
+    const tracking = this.getPreferredTracking(localGitState, checkpoint);
+    if (!tracking.upstreamRemote || !tracking.upstreamMergeRef) return;
+
+    await this.ensureRemoteForTracking(git, tracking).catch(() => {});
+    await git
+      .raw(["fetch", tracking.upstreamRemote, tracking.upstreamMergeRef])
+      .catch((err) => {
+        this.logger?.error(
+          "Handoff baseline fetch failed; if the pack excludes commits the receiver does not already have, the subsequent unpack/read-tree will fail with an object-missing error",
+          {
+            err: String(err),
+            remote: tracking.upstreamRemote,
+            ref: tracking.upstreamMergeRef,
+          },
+        );
+      });
   }
 
   private async ensureRemoteForTracking(
@@ -485,6 +616,37 @@ export class GitHandoffTracker {
     });
   }
 
+  private async runGitWithEnv(
+    env: NodeJS.ProcessEnv,
+    args: string[],
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const child = spawn("git", args, {
+        cwd: this.repositoryPath,
+        stdio: ["ignore", "pipe", "pipe"],
+        env,
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk: Buffer | string) => {
+        stdout += chunk.toString();
+      });
+      child.stderr.on("data", (chunk: Buffer | string) => {
+        stderr += chunk.toString();
+      });
+      child.on("error", reject);
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolve(stdout);
+          return;
+        }
+        reject(
+          new Error(stderr || `git ${args.join(" ")} failed with code ${code}`),
+        );
+      });
+    });
+  }
+
   private runGitProcess(
     args: string[],
     input: string | Buffer,
@@ -515,6 +677,7 @@ export class GitHandoffTracker {
         );
       });
 
+      child.stdin.on("error", () => {});
       child.stdin.end(input);
     });
   }
@@ -531,6 +694,13 @@ export async function readHandoffLocalGitState(
   const head = await readCurrentHead(git);
   const branch = await getCurrentBranchName(git);
   const tracking = await getTrackingMetadata(git, branch);
+
+  if (tracking.upstreamRemote && tracking.upstreamMergeRef) {
+    await git
+      .raw(["fetch", tracking.upstreamRemote, tracking.upstreamMergeRef])
+      .catch(() => {});
+  }
+
   const upstreamHead =
     tracking.upstreamRemote && tracking.upstreamMergeRef
       ? await resolveUpstreamHead(

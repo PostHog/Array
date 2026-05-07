@@ -229,6 +229,25 @@ export const getAllTaskTimestampsOutput = z.record(
   }),
 );
 
+// Task PR status
+export const taskPrStatusInput = z.object({
+  taskId: z.string(),
+  cloudPrUrl: z.string().nullable(),
+});
+
+export const sidebarPrStateSchema = z
+  .enum(["merged", "open", "draft", "closed"])
+  .nullable();
+
+export const taskPrStatusOutput = z.object({
+  prState: sidebarPrStateSchema,
+  hasDiff: z.boolean(),
+});
+
+export type TaskPrStatusInput = z.infer<typeof taskPrStatusInput>;
+export type SidebarPrState = z.infer<typeof sidebarPrStateSchema>;
+export type TaskPrStatus = z.infer<typeof taskPrStatusOutput>;
+
 // Type exports
 export type WorkspaceMode = z.infer<typeof workspaceModeSchema>;
 export type WorktreeInfo = z.infer<typeof worktreeInfoSchema>;

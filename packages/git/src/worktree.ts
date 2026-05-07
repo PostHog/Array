@@ -10,7 +10,7 @@ import {
   getHeadSha,
   listWorktrees as listWorktreesRaw,
 } from "./queries";
-import { clonePath, safeSymlink } from "./utils";
+import { clonePath, forceRemove, safeSymlink } from "./utils";
 
 export interface WorktreeInfo {
   worktreePath: string;
@@ -394,7 +394,7 @@ export class WorktreeManager {
       try {
         await git.raw(["worktree", "remove", worktreePath, "--force"]);
       } catch {
-        await fs.rm(worktreePath, { recursive: true, force: true });
+        await forceRemove(worktreePath);
         await git.raw(["worktree", "prune"]);
       }
     });

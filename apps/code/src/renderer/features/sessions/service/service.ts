@@ -93,6 +93,8 @@ const LOCAL_SESSION_RECOVERY_MESSAGE =
 const LOCAL_SESSION_RECOVERY_FAILED_MESSAGE =
   "Connecting to to the agent has been lost. Retry, or start a new session.";
 const GITHUB_AUTHORIZATION_REQUIRED_CODE = "github_authorization_required";
+const AUTO_RETRY_MAX_ATTEMPTS = 2;
+const AUTO_RETRY_DELAY_MS = 10_000;
 
 class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
   constructor(
@@ -138,6 +140,14 @@ function extractLatestConfigOptionsFromEntries(
     }
   }
   return latest;
+}
+
+function hasSessionPromptEvent(events: AcpMessage[]): boolean {
+  return events.some(
+    (event) =>
+      isJsonRpcRequest(event.message) &&
+      event.message.method === "session/prompt",
+  );
 }
 
 function buildCloudDefaultConfigOptions(
@@ -443,13 +453,9 @@ export class SessionService {
 
       const taskRunId = latestRun?.id ?? `error-${taskId}`;
       const session = this.createBaseSession(taskRunId, taskId, taskTitle);
-      session.status = "error";
-      session.errorTitle = "Failed to connect";
-      session.errorMessage = message;
       if (initialPrompt?.length) {
         session.initialPrompt = initialPrompt;
       }
-
       if (latestRun?.log_url) {
         try {
           const { rawEntries } = await this.fetchSessionLogs(
@@ -463,7 +469,60 @@ export class SessionService {
         }
       }
 
+      const shouldAutoRetry = getIsOnline();
+      session.status = shouldAutoRetry ? "connecting" : "error";
+      if (!shouldAutoRetry) {
+        session.errorTitle = "Failed to connect";
+        session.errorMessage = message;
+      }
       sessionStoreSetters.setSession(session);
+
+      if (!shouldAutoRetry) return;
+
+      let lastRetryMessage = message;
+      let wentOffline = false;
+      for (let attempt = 1; attempt <= AUTO_RETRY_MAX_ATTEMPTS; attempt++) {
+        log.warn("Auto-retrying failed connection", {
+          taskId,
+          attempt,
+          delayMs: AUTO_RETRY_DELAY_MS,
+        });
+        await new Promise((resolve) =>
+          setTimeout(resolve, AUTO_RETRY_DELAY_MS),
+        );
+        if (!getIsOnline()) {
+          log.warn("Skipping retry — device went offline", {
+            taskId,
+            attempt,
+          });
+          wentOffline = true;
+          break;
+        }
+        try {
+          await this.clearSessionError(taskId, repoPath);
+          return;
+        } catch (retryError) {
+          lastRetryMessage =
+            retryError instanceof Error
+              ? retryError.message
+              : String(retryError);
+          log.error("Auto-retry via clearSessionError failed", {
+            taskId,
+            attempt,
+            error: lastRetryMessage,
+          });
+        }
+      }
+
+      const currentSession = sessionStoreSetters.getSessionByTaskId(taskId);
+      if (!currentSession) return;
+      sessionStoreSetters.updateSession(currentSession.taskRunId, {
+        status: wentOffline ? "disconnected" : "error",
+        errorTitle: wentOffline ? undefined : "Failed to connect",
+        errorMessage: wentOffline
+          ? "No internet connection. Connect when you're back online."
+          : lastRetryMessage || message,
+      });
     }
   }
 
@@ -1074,10 +1133,20 @@ export class SessionService {
         isNotification(msg.method, POSTHOG_NOTIFICATIONS.RUN_STARTED)
       ) {
         const session = sessionStoreSetters.getSessions()[taskRunId];
+        const params = (msg as { params?: { agentVersion?: unknown } }).params;
+        const agentVersion =
+          typeof params?.agentVersion === "string"
+            ? params.agentVersion
+            : undefined;
+        const updates: Partial<AgentSession> = {};
+        if (agentVersion && session?.agentVersion !== agentVersion) {
+          updates.agentVersion = agentVersion;
+        }
         if (session?.isCloud && session.status !== "connected") {
-          sessionStoreSetters.updateSession(taskRunId, {
-            status: "connected",
-          });
+          updates.status = "connected";
+        }
+        if (Object.keys(updates).length > 0) {
+          sessionStoreSetters.updateSession(taskRunId, updates);
         }
       }
       // Canonical "turn boundary" — flush any queued cloud messages now
@@ -1087,16 +1156,25 @@ export class SessionService {
         isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)
       ) {
         const session = sessionStoreSetters.getSessions()[taskRunId];
-        if (session?.isCloud && session.messageQueue.length > 0) {
-          const taskId = session.taskId;
-          setTimeout(() => {
-            this.sendQueuedCloudMessages(taskId).catch((err) =>
-              log.error("turn_complete-driven cloud queue flush failed", {
-                taskId,
-                error: err,
-              }),
-            );
-          }, 0);
+        if (session?.isCloud) {
+          // Backward compat: treat turn_complete as an implicit run_started
+          // for agents that predate the run_started notification.
+          if (session.status !== "connected") {
+            sessionStoreSetters.updateSession(taskRunId, {
+              status: "connected",
+            });
+          }
+          if (session.messageQueue.length > 0) {
+            const taskId = session.taskId;
+            setTimeout(() => {
+              this.sendQueuedCloudMessages(taskId).catch((err) =>
+                log.error("turn_complete-driven cloud queue flush failed", {
+                  taskId,
+                  error: err,
+                }),
+              );
+            }, 0);
+          }
         }
       }
     }
@@ -1590,6 +1668,15 @@ export class SessionService {
     }
 
     if (isTerminalStatus(session.cloudStatus)) {
+      // If the agent never booted (no `run_started`), resuming spins another
+      // sandbox that hits the same provisioning failure — surface the error
+      // instead of looping.
+      if (session.cloudStatus === "failed" && session.status !== "connected") {
+        throw new Error(
+          session.cloudErrorMessage ??
+            "Cloud run couldn't start. Check that GitHub is connected for this project, then try again.",
+        );
+      }
       return this.resumeCloudRun(session, prompt);
     }
 
@@ -1650,6 +1737,18 @@ export class SessionService {
     if (!auth || !cloudCommandAuth) {
       throw new Error("Authentication required for cloud commands");
     }
+
+    this.watchCloudTask(
+      session.taskId,
+      session.taskRunId,
+      cloudCommandAuth.apiHost,
+      cloudCommandAuth.teamId,
+      undefined,
+      session.logUrl,
+      undefined,
+      session.adapter ?? "claude",
+    );
+
     const artifactIds = await uploadRunAttachments(
       auth.client,
       session.taskId,
@@ -1666,6 +1765,14 @@ export class SessionService {
 
     sessionStoreSetters.updateSession(session.taskRunId, {
       isPromptPending: true,
+      promptStartedAt: Date.now(),
+      pausedDurationMs: 0,
+    });
+    sessionStoreSetters.appendOptimisticItem(session.taskRunId, {
+      type: "user_message",
+      content: transport.promptText,
+      timestamp: Date.now(),
+      pinToTop: false,
     });
 
     track(ANALYTICS_EVENTS.PROMPT_SENT, {
@@ -1685,36 +1792,24 @@ export class SessionService {
         params,
       });
 
-      sessionStoreSetters.updateSession(session.taskRunId, {
-        isPromptPending: false,
-      });
-
       if (!result.success) {
         throw new Error(result.error ?? "Failed to send cloud command");
       }
 
-      const stopReason =
-        (result.result as { stopReason?: string })?.stopReason ?? "end_turn";
-
-      const freshSession = sessionStoreSetters.getSessionByTaskId(
-        session.taskId,
-      );
-      if (freshSession && freshSession.messageQueue.length > 0) {
-        setTimeout(() => {
-          this.sendQueuedCloudMessages(session.taskId).catch((err) => {
-            log.error("Failed to send queued cloud messages", {
-              taskId: session.taskId,
-              error: err,
-            });
-          });
-        }, 0);
-      }
+      const commandResult = result.result as
+        | { queued?: boolean; stopReason?: string }
+        | undefined;
+      const stopReason = commandResult?.queued
+        ? "queued"
+        : (commandResult?.stopReason ?? "end_turn");
 
       return { stopReason };
     } catch (error) {
       sessionStoreSetters.updateSession(session.taskRunId, {
         isPromptPending: false,
+        promptStartedAt: null,
       });
+      sessionStoreSetters.clearTailOptimisticItems(session.taskRunId);
       throw error;
     }
   }
@@ -2491,7 +2586,9 @@ export class SessionService {
       existingWatcher.apiHost === apiHost &&
       existingWatcher.teamId === teamId
     ) {
-      existingWatcher.onStatusChange = onStatusChange;
+      if (onStatusChange) {
+        existingWatcher.onStatusChange = onStatusChange;
+      }
       // Ensure configOptions is populated on revisit
       const existing = sessionStoreSetters.getSessionByTaskId(taskId);
       if (existing) {
@@ -3118,6 +3215,9 @@ export class SessionService {
           session,
           newEvents,
         );
+        if (hasSessionPromptEvent(newEvents)) {
+          sessionStoreSetters.clearTailOptimisticItems(taskRunId);
+        }
         sessionStoreSetters.appendEvents(taskRunId, newEvents, expectedCount);
         this.updatePromptStateFromEvents(taskRunId, newEvents);
       } else {
@@ -3447,6 +3547,9 @@ export class SessionService {
 
     if (rawEntries.length >= expectedCount) {
       const events = convertStoredEntriesToEvents(rawEntries);
+      if (hasSessionPromptEvent(events)) {
+        sessionStoreSetters.clearTailOptimisticItems(taskRunId);
+      }
       sessionStoreSetters.updateSession(taskRunId, {
         events,
         isCloud: true,
@@ -3465,6 +3568,9 @@ export class SessionService {
     });
     let newEvents = convertStoredEntriesToEvents(newEntries);
     newEvents = this.filterSkippedPromptEvents(taskRunId, session, newEvents);
+    if (hasSessionPromptEvent(newEvents)) {
+      sessionStoreSetters.clearTailOptimisticItems(taskRunId);
+    }
     sessionStoreSetters.appendEvents(
       taskRunId,
       newEvents,

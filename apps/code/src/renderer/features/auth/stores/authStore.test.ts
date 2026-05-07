@@ -55,6 +55,7 @@ vi.mock("@renderer/api/posthogClient", () => ({
 vi.mock("@utils/analytics", () => ({
   identifyUser: vi.fn(),
   resetUser: vi.fn(),
+  setUserGroups: vi.fn(),
   track: vi.fn(),
 }));
 
@@ -83,7 +84,7 @@ vi.mock("@stores/navigationStore", () => ({
   },
 }));
 
-import { resetUser } from "@utils/analytics";
+import { resetUser, setUserGroups } from "@utils/analytics";
 import { queryClient } from "@utils/queryClient";
 import { resetAuthStoreModuleStateForTest, useAuthStore } from "./authStore";
 
@@ -166,6 +167,7 @@ describe("authStore", () => {
     await useAuthStore.getState().checkCodeAccess();
 
     expect(mockGetCurrentUser).toHaveBeenCalledTimes(1);
+    expect(setUserGroups).toHaveBeenCalledTimes(1);
   });
 
   it("clears user identity and cached current user on implicit auth loss", async () => {

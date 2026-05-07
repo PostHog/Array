@@ -59,7 +59,7 @@ export function InboxItem({ isActive, onClick, signalCount }: InboxItemProps) {
               Inbox
               {signalCount && signalCount > 0 ? (
                 <span
-                  className="ml-2 inline-flex h-[14px] min-w-[14px] shrink-0 items-center justify-center rounded-full bg-(--red-9) px-0.5 font-medium text-[9px] leading-none"
+                  className="ml-2 inline-flex shrink-0 items-center justify-center rounded-full bg-(--red-9) p-1 font-medium text-[10px] leading-none"
                   style={{
                     color: "white",
                   }}

@@ -13,6 +13,7 @@ export interface MentionChip {
     | "github_pr";
   id: string;
   label: string;
+  pastedText?: boolean;
 }
 
 export interface FileAttachment {

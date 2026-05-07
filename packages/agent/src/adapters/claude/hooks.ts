@@ -5,6 +5,11 @@ import {
 } from "../../enrichment/file-enricher";
 import type { Logger } from "../../utils/logger";
 import { stripCatLineNumbers } from "./conversion/sdk-to-acp";
+import {
+  extractPostHogSubTool,
+  isPostHogDestructiveSubTool,
+  isPostHogExecTool,
+} from "./permissions/posthog-exec-gate";
 import type { SettingsManager } from "./session/settings";
 import type { CodeExecutionMode } from "./tools";
 
@@ -235,6 +240,25 @@ export const createPreToolUseHook =
       logger.info(
         `[PreToolUseHook] Tool: ${toolName}, Decision: ${permissionCheck.decision}, Rule: ${permissionCheck.rule}`,
       );
+    }
+
+    // Defer destructive PostHog exec sub-tools to canUseTool so the
+    // sub-tool gate can re-prompt. Returning `{ continue: true }` is
+    // not enough — the SDK then falls back to its default permission
+    // flow which re-checks the same allow rule. We must force "ask"
+    // so the SDK invokes canUseTool.
+    if (permissionCheck.decision === "allow" && isPostHogExecTool(toolName)) {
+      const subTool = extractPostHogSubTool(toolInput);
+      if (subTool && isPostHogDestructiveSubTool(subTool)) {
+        return {
+          continue: true,
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse" as const,
+            permissionDecision: "ask" as const,
+            permissionDecisionReason: `Destructive PostHog sub-tool '${subTool}' requires explicit approval`,
+          },
+        };
+      }
     }
 
     switch (permissionCheck.decision) {

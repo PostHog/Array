@@ -4,6 +4,7 @@ import {
   useInboxReportSignals,
 } from "@features/inbox/hooks/useInboxReports";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
+import { useDetectedCloudRepository } from "@hooks/useDetectedCloudRepository";
 import { useMeQuery } from "@hooks/useMeQuery";
 import {
   ArrowSquareOutIcon,
@@ -15,6 +16,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { Box, Flex, ScrollArea, Text, Tooltip } from "@radix-ui/themes";
+import { useTRPC } from "@renderer/trpc";
 import { EXTERNAL_LINKS } from "@renderer/utils/links";
 import { getDeeplinkProtocol } from "@shared/deeplink";
 import type {
@@ -29,6 +31,7 @@ import type {
   Task,
 } from "@shared/types";
 import { useNavigationStore } from "@stores/navigationStore";
+import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { SignalReportActionabilityBadge } from "../utils/SignalReportActionabilityBadge";
@@ -201,6 +204,14 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
   // ── Task creation ───────────────────────────────────────────────────────
   const { navigateToTaskInput } = useNavigationStore();
   const { data: reportRepository } = useReportRepository(report.id);
+  const trpcReact = useTRPC();
+  const { data: mostRecentRepo } = useQuery(
+    trpcReact.folders.getMostRecentlyAccessedRepository.queryOptions(),
+  );
+  const detectedFallbackRepo = useDetectedCloudRepository(
+    !reportRepository ? mostRecentRepo?.path : null,
+  );
+  const effectiveCloudRepository = reportRepository ?? detectedFallbackRepo;
 
   /** True when the report is waiting on user input before implementation can proceed.
    * Covers the `pending_input` status and the `ready + requires_human_input` combination
@@ -222,7 +233,7 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
     if (!canCreateImplementationPr) return;
     navigateToTaskInput({
       initialPrompt: `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`,
-      initialCloudRepository: reportRepository ?? undefined,
+      initialCloudRepository: effectiveCloudRepository ?? undefined,
       reportAssociation: {
         reportId: report.id,
         title: report.title ?? "Untitled signal",
@@ -231,7 +242,7 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
   }, [
     canCreateImplementationPr,
     navigateToTaskInput,
-    reportRepository,
+    effectiveCloudRepository,
     report,
   ]);
 

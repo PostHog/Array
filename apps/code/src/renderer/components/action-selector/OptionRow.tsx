@@ -30,6 +30,7 @@ interface OptionRowProps {
   customInputPlaceholder: string;
   isEditing: boolean;
   submitLabel: string;
+  disabled?: boolean;
   onCustomInputChange: (value: string) => void;
   onNavigateUp: () => void;
   onNavigateDown: () => void;
@@ -52,6 +53,7 @@ export function OptionRow({
   customInputPlaceholder,
   isEditing,
   submitLabel,
+  disabled = false,
   onCustomInputChange,
   onNavigateUp,
   onNavigateDown,
@@ -63,34 +65,37 @@ export function OptionRow({
 }: OptionRowProps) {
   if (isSubmitOption(option.id) || isCancelOption(option.id)) {
     const isCancel = isCancelOption(option.id);
+    const submitBg = disabled
+      ? "bg-(--gray-4)"
+      : isSelected
+        ? "bg-(--blue-8)"
+        : isHovered
+          ? "bg-(--blue-4)"
+          : "bg-(--blue-3)";
     return (
       <Flex
         align="center"
         justify="center"
         gap="2"
-        onClick={onClick}
+        onClick={disabled ? undefined : onClick}
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
         px="2"
-        className={`inline-flex h-[28px] cursor-pointer rounded-(--radius-2) ${
-          isCancel
-            ? isSelected
-              ? "bg-(--gray-6)"
-              : "bg-(--gray-3)"
-            : isSelected
-              ? "bg-(--blue-8)"
-              : isHovered
-                ? "bg-(--blue-4)"
-                : "bg-(--blue-3)"
+        className={`inline-flex h-[28px] rounded-(--radius-2) ${
+          disabled ? "cursor-not-allowed" : "cursor-pointer"
+        } ${
+          isCancel ? (isSelected ? "bg-(--gray-6)" : "bg-(--gray-3)") : submitBg
         }`}
       >
         <Text
           className={`font-medium text-[13px] ${
-            isSelected
-              ? isCancel
-                ? "text-gray-12"
-                : "text-blue-12"
-              : "text-gray-12"
+            disabled
+              ? "text-gray-9"
+              : isSelected
+                ? isCancel
+                  ? "text-gray-12"
+                  : "text-blue-12"
+                : "text-gray-12"
           }`}
         >
           {isCancel ? option.label : submitLabel}

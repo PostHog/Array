@@ -549,7 +549,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
     if (watcher.needsPostBootstrapReconnect) {
       watcher.needsPostBootstrapReconnect = false;
-      this.scheduleReconnect(key);
+      this.scheduleReconnect(key, undefined, { countAttempt: false });
     }
 
     void this.verifyPostBootstrapStatus(key);
@@ -655,7 +655,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         return;
       }
 
-      await this.handleStreamCompletion(key, { reconnectIfNonTerminal: false });
+      await this.handleStreamCompletion(key, { reconnectIfNonTerminal: true });
     } catch (error) {
       this.flushLogBatch(key);
 
@@ -677,7 +677,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         key,
         error: errorMessage,
       });
-      await this.handleStreamCompletion(key, { reconnectIfNonTerminal: true });
+      await this.handleStreamCompletion(key, {
+        reconnectIfNonTerminal: true,
+        reconnectError: error,
+        countReconnectAttempt: true,
+      });
     } finally {
       const currentWatcher = this.watchers.get(key);
       if (currentWatcher?.sseAbortController === controller) {
@@ -952,7 +956,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     });
   }
 
-  private scheduleReconnect(key: string, error?: unknown): void {
+  private scheduleReconnect(
+    key: string,
+    error?: unknown,
+    options: { countAttempt?: boolean } = {},
+  ): void {
     const watcher = this.watchers.get(key);
     if (!watcher || watcher.failed || isTerminalStatus(watcher.lastStatus)) {
       return;
@@ -962,7 +970,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       clearTimeout(watcher.reconnectTimeoutId);
     }
 
-    watcher.reconnectAttempts += 1;
+    const countAttempt = options.countAttempt ?? true;
+    if (countAttempt) {
+      watcher.reconnectAttempts += 1;
+    } else {
+      watcher.reconnectAttempts = 0;
+    }
     if (watcher.reconnectAttempts > MAX_SSE_RECONNECT_ATTEMPTS) {
       const details =
         error instanceof CloudTaskStreamError
@@ -978,7 +991,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     const delay = Math.min(
-      SSE_RECONNECT_BASE_DELAY_MS * 2 ** (watcher.reconnectAttempts - 1),
+      SSE_RECONNECT_BASE_DELAY_MS *
+        2 ** Math.max(watcher.reconnectAttempts - 1, 0),
       SSE_RECONNECT_MAX_DELAY_MS,
     );
 
@@ -995,7 +1009,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
   private async handleStreamCompletion(
     key: string,
-    options: { reconnectIfNonTerminal: boolean },
+    options: {
+      reconnectIfNonTerminal: boolean;
+      reconnectError?: unknown;
+      countReconnectAttempt?: boolean;
+    },
   ): Promise<void> {
     const watcher = this.watchers.get(key);
     if (!watcher) return;
@@ -1034,14 +1052,28 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return;
     }
 
-    this.applyTaskRunState(watcher, run);
+    const stateChanged = this.applyTaskRunState(watcher, run);
 
     if (!isTerminalStatus(watcher.lastStatus) && reconnectIfNonTerminal) {
+      if (stateChanged) {
+        this.emit(CloudTaskEvent.Update, {
+          taskId: watcher.taskId,
+          runId: watcher.runId,
+          kind: "status",
+          status: watcher.lastStatus ?? undefined,
+          stage: watcher.lastStage,
+          output: watcher.lastOutput,
+          errorMessage: watcher.lastErrorMessage,
+          branch: watcher.lastBranch,
+        });
+      }
       log.warn("Cloud task stream ended before terminal status", {
         key,
         status: watcher.lastStatus,
       });
-      this.scheduleReconnect(key);
+      this.scheduleReconnect(key, options.reconnectError, {
+        countAttempt: options.countReconnectAttempt ?? false,
+      });
       return;
     }
 

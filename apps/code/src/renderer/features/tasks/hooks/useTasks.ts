@@ -3,12 +3,13 @@ import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import { useMeQuery } from "@hooks/useMeQuery";
+import type { Schemas } from "@renderer/api/generated";
 import { useFocusStore } from "@renderer/stores/focusStore";
 import { useNavigationStore } from "@renderer/stores/navigationStore";
 import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback } from "react";
@@ -26,15 +27,20 @@ const taskKeys = {
     originProduct?: string;
     internal?: boolean;
   }) => [...taskKeys.lists(), filters] as const,
+  summaries: (ids: string[]) =>
+    [...taskKeys.all, "summaries", [...ids].sort()] as const,
   details: () => [...taskKeys.all, "detail"] as const,
   detail: (id: string) => [...taskKeys.details(), id] as const,
 };
 
-export function useTasks(filters?: {
-  repository?: string;
-  showAllUsers?: boolean;
-  showInternal?: boolean;
-}) {
+export function useTasks(
+  filters?: {
+    repository?: string;
+    showAllUsers?: boolean;
+    showInternal?: boolean;
+  },
+  options?: { enabled?: boolean },
+) {
   const { data: currentUser } = useMeQuery();
   const createdBy = filters?.showAllUsers ? undefined : currentUser?.id;
   const internal = filters?.showInternal ? true : undefined;
@@ -47,7 +53,25 @@ export function useTasks(filters?: {
         createdBy,
         internal,
       }) as unknown as Promise<Task[]>,
-    { enabled: !!currentUser?.id, refetchInterval: TASK_LIST_POLL_INTERVAL_MS },
+    {
+      enabled: (options?.enabled ?? true) && !!currentUser?.id,
+      refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
+    },
+  );
+}
+
+export function useTaskSummaries(
+  ids: string[],
+  options?: { enabled?: boolean },
+) {
+  return useAuthenticatedQuery<Schemas.TaskSummary[]>(
+    taskKeys.summaries(ids),
+    (client) => client.getTaskSummaries(ids),
+    {
+      enabled: (options?.enabled ?? true) && ids.length > 0,
+      refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
+      placeholderData: keepPreviousData,
+    },
   );
 }
 

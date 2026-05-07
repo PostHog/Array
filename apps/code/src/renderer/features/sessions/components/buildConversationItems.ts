@@ -37,6 +37,7 @@ export type ConversationItem =
       content: string;
       timestamp: number;
       attachments?: UserMessageAttachment[];
+      pinToTop?: boolean;
     }
   | { type: "git_action"; id: string; actionType: GitActionType }
   | { type: "skill_button_action"; id: string; buttonId: SkillButtonId }
@@ -392,8 +393,6 @@ function handleNotification(
     const params = msg.params as { level?: string; message?: string };
     if (!params?.message) return;
     const level = params.level ?? "info";
-    // Cloud runs downgrade every console log to debug at the source, so this
-    // gate hides the entire stream unless the user flips the debug toggle.
     if (level === "debug" && !options?.showDebugLogs) return;
     if (!b.currentTurn) ensureImplicitTurn(b, ts);
     pushItem(b, {

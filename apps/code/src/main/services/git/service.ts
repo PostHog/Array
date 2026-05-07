@@ -41,6 +41,7 @@ import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import type { LlmGatewayService } from "../llm-gateway/service";
+import type { SidebarPrState } from "../workspace/schemas";
 import type { WorkspaceService } from "../workspace/service";
 import { CreatePrSaga } from "./create-pr-saga";
 import type {
@@ -93,6 +94,19 @@ const log = logger.scope("git-service");
 
 const FETCH_THROTTLE_MS = 5 * 60 * 1000;
 const MAX_DIFF_LENGTH = 8000;
+
+export function mapPrState(
+  state: string | null,
+  merged: boolean,
+  draft: boolean,
+): SidebarPrState {
+  const lower = state?.toLowerCase() ?? null;
+  if (merged || lower === "merged") return "merged";
+  if (lower === "closed") return "closed";
+  if (draft) return "draft";
+  if (lower === "open") return "open";
+  return null;
+}
 
 /**
  * Wraps a GitHub API per-file patch (hunk content only) with
@@ -420,7 +434,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
 
       let compareUrl: string | null = null;
       if (currentBranch && currentBranch !== defaultBranch) {
-        compareUrl = `https://github.com/${parsed.organization}/${parsed.repository}/compare/${defaultBranch}...${currentBranch}?expand=1`;
+        compareUrl = `https://github.com/${parsed.path}/compare/${defaultBranch}...${currentBranch}?expand=1`;
       }
 
       return {
@@ -879,7 +893,6 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
       const parsed = parseGitHubUrl(remoteUrl);
       if (!parsed) return null;
 
-      const repoSlug = `${parsed.organization}/${parsed.repository}`;
       const result = await execGh([
         "pr",
         "list",
@@ -892,7 +905,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
         "--limit",
         "1",
         "--repo",
-        repoSlug,
+        parsed.path,
       ]);
 
       if (result.exitCode !== 0) {
@@ -1667,5 +1680,74 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
       log.warn("Failed to parse GitHub refs response", { repo, kind, args });
       return [];
     }
+  }
+
+  async getTaskPrStatus(
+    taskId: string,
+    cloudPrUrl: string | null,
+  ): Promise<{ prState: SidebarPrState; hasDiff: boolean }> {
+    const workspace = await this.workspaceService.getWorkspace(taskId);
+    if (!workspace) return { prState: null, hasDiff: false };
+
+    const { mode, worktreePath, folderPath, linkedBranch } = workspace;
+    const isCloud = mode === "cloud";
+    const repoPath = worktreePath ?? (folderPath || null);
+
+    // Cloud tasks: look up PR details by the cloud run's PR URL
+    if (isCloud && cloudPrUrl) {
+      const details = await this.getPrDetailsByUrl(cloudPrUrl);
+      if (details) {
+        return {
+          prState: mapPrState(details.state, details.merged, details.draft),
+          hasDiff: false,
+        };
+      }
+      return { prState: null, hasDiff: false };
+    }
+
+    if (isCloud) return { prState: null, hasDiff: false };
+
+    // Linked branch: look up PR by branch name
+    if (linkedBranch && repoPath) {
+      const prUrl = await this.getPrUrlForBranch(repoPath, linkedBranch);
+      if (prUrl) {
+        const details = await this.getPrDetailsByUrl(prUrl);
+        if (details) {
+          return {
+            prState: mapPrState(details.state, details.merged, details.draft),
+            hasDiff: false,
+          };
+        }
+      }
+      return { prState: null, hasDiff: false };
+    }
+
+    // Worktree tasks without linked branch: check current branch PR + diff
+    if (worktreePath) {
+      const prStatus = await this.getPrStatus(worktreePath);
+      if (prStatus.prExists && prStatus.prState) {
+        return {
+          prState: mapPrState(
+            prStatus.prState,
+            false,
+            prStatus.isDraft ?? false,
+          ),
+          hasDiff: false,
+        };
+      }
+
+      const [diffStats, syncStatus] = await Promise.all([
+        this.getDiffStats(worktreePath),
+        this.getGitSyncStatus(worktreePath),
+      ]);
+
+      const hasDiff =
+        (diffStats?.filesChanged ?? 0) > 0 ||
+        (syncStatus?.aheadOfDefault ?? 0) > 0;
+
+      return { prState: null, hasDiff };
+    }
+
+    return { prState: null, hasDiff: false };
   }
 }

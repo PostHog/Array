@@ -2,6 +2,11 @@ import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient"
 import { useSelectProjectMutation } from "@features/auth/hooks/authMutations";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { FolderPicker } from "@features/folder-picker/components/FolderPicker";
+import {
+  describeGithubConnectError,
+  invalidateGithubQueries,
+  useGithubConnect,
+} from "@features/integrations/hooks/useGithubUserConnect";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import {
   useUserGithubIntegrations,
@@ -17,23 +22,28 @@ import {
   FolderOpen,
   GearSix,
   GitBranch,
+  Plus,
 } from "@phosphor-icons/react";
-import { Box, Button, Callout, Flex, Skeleton, Text } from "@radix-ui/themes";
+import {
+  AlertDialog,
+  Box,
+  Button,
+  DropdownMenu,
+  Flex,
+  Skeleton,
+  Spinner,
+  Text,
+} from "@radix-ui/themes";
 import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
 import { trpcClient } from "@renderer/trpc/client";
-import { IS_DEV } from "@shared/constants/environment";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useGitHubIntegrationCallback } from "../../integrations/hooks/useGitHubIntegrationCallback";
 import type { DetectedRepo } from "../hooks/useOnboardingFlow";
 import { useProjectsWithIntegrations } from "../hooks/useProjectsWithIntegrations";
 import { OnboardingHogTip } from "./OnboardingHogTip";
 import { StepActions } from "./StepActions";
-
-const POLL_INTERVAL_MS = 3_000;
-const POLL_TIMEOUT_MS = 300_000;
 
 interface GitIntegrationStepProps {
   onNext: () => void;
@@ -52,28 +62,19 @@ export function GitIntegrationStep({
   isDetectingRepo,
   onDirectoryChange,
 }: GitIntegrationStepProps) {
-  const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const currentProjectId = useAuthStateValue((state) => state.projectId);
-  const client = useOptionalAuthenticatedClient();
   const selectProjectMutation = useSelectProjectMutation();
 
   const queryClient = useQueryClient();
   const { projects, projectsWithGithub, isLoading } =
     useProjectsWithIntegrations();
 
-  const isConnecting = useOnboardingStore((state) => state.isConnectingGithub);
-  const setConnectingGithub = useOnboardingStore(
-    (state) => state.setConnectingGithub,
-  );
   const manuallySelectedProjectId = useOnboardingStore(
     (state) => state.selectedProjectId,
   );
   const setSelectedProjectId = useOnboardingStore(
     (state) => state.selectProjectId,
   );
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [timedOut, setTimedOut] = useState(false);
 
   const selectedProjectId = useMemo(() => {
     if (manuallySelectedProjectId !== null) {
@@ -88,25 +89,54 @@ export function GitIntegrationStep({
   );
 
   const {
+    error: connectError,
+    isConnecting,
+    isTimedOut: timedOut,
+    hasError: hasConnectError,
+    connect: handleConnectGitHub,
+    reset: resetConnect,
+  } = useGithubConnect({
+    projectId: selectedProjectId,
+    projectHasTeamIntegration: selectedProject?.hasGithubIntegration ?? null,
+  });
+  const canTakeAction = !isConnecting && !timedOut && !hasConnectError;
+  const defaultPanelMessage = hasConnectError
+    ? describeGithubConnectError(connectError)
+    : timedOut
+      ? "We didn't hear back from GitHub. If the browser tab was closed, click Connect again."
+      : isConnecting
+        ? "Waiting for GitHub..."
+        : "Optional. Unlocks cloud agents and pull request workflows.";
+
+  const {
     data: githubUserIntegrations = [],
     isLoading: githubUserIntegrationsLoading,
   } = useUserGithubIntegrations();
   const hasGitIntegration = githubUserIntegrations.length > 0;
-  const { repositories, isLoadingRepos } = useUserRepositoryIntegration();
-  const githubIntegration = githubUserIntegrations[0] ?? null;
+  const { repositories, failedInstallationIds, reposByInstallationId } =
+    useUserRepositoryIntegration();
+  const anyIntegrationStale = githubUserIntegrations.some((i) =>
+    failedInstallationIds.includes(i.installation_id),
+  );
 
-  const alternativeConnectedProject = useMemo(() => {
-    if (hasGitIntegration) return null;
-    if (!projectsWithGithub.length) return null;
-    return projectsWithGithub.find((p) => p.id !== selectedProjectId) ?? null;
+  const alternativeConnectedProjects = useMemo(() => {
+    if (hasGitIntegration) return [];
+    if (!projectsWithGithub.length) return [];
+    return projectsWithGithub.filter((p) => p.id !== selectedProjectId);
   }, [hasGitIntegration, projectsWithGithub, selectedProjectId]);
 
-  const repoSummary = useMemo(() => {
-    if (repositories.length === 0) return null;
-    const names = repositories.map((r) => r.split("/").pop() ?? r);
-    if (names.length <= 2) return names.join(" and ");
-    return `${names[0]}, ${names[1]} and ${names.length - 2} more`;
-  }, [repositories]);
+  const [selectedAlternativeId, setSelectedAlternativeId] = useState<
+    number | null
+  >(null);
+
+  const selectedAlternative = useMemo(() => {
+    if (!alternativeConnectedProjects.length) return null;
+    return (
+      alternativeConnectedProjects.find(
+        (p) => p.id === selectedAlternativeId,
+      ) ?? alternativeConnectedProjects[0]
+    );
+  }, [alternativeConnectedProjects, selectedAlternativeId]);
 
   const repoMatchesGitHub = useMemo(() => {
     if (!detectedRepo || repositories.length === 0) return false;
@@ -115,108 +145,33 @@ export function GitIntegrationStep({
     );
   }, [detectedRepo, repositories]);
 
-  const stopPolling = useCallback(() => {
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-    if (pollTimeoutRef.current) {
-      clearTimeout(pollTimeoutRef.current);
-      pollTimeoutRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (hasGitIntegration && isConnecting) {
-      stopPolling();
-      setConnectingGithub(false);
-      setTimedOut(false);
-    }
-  }, [hasGitIntegration, isConnecting, setConnectingGithub, stopPolling]);
-
-  useEffect(() => stopPolling, [stopPolling]);
-
-  const invalidateProject = useCallback(
-    (projectId: number | null) => {
-      if (projectId === null) {
-        void queryClient.invalidateQueries({ queryKey: ["integrations"] });
-        void queryClient.invalidateQueries({
-          queryKey: ["user-github-integrations"],
-        });
-        return;
+  const apiClient = useOptionalAuthenticatedClient();
+  const [disconnectTarget, setDisconnectTarget] = useState<{
+    installationId: string;
+    accountName: string;
+  } | null>(null);
+  const [reconnectingInstallationId, setReconnectingInstallationId] = useState<
+    string | null
+  >(null);
+  const disconnectMutation = useMutation({
+    mutationFn: async (opts: { installationId: string; silent?: boolean }) => {
+      if (!apiClient) {
+        throw new Error("Not authenticated");
       }
-      void queryClient.invalidateQueries({
-        queryKey: ["integrations", projectId],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["user-github-integrations"],
-      });
+      await apiClient.disconnectGithubUserIntegration(opts.installationId);
+      return { silent: opts.silent ?? false };
     },
-    [queryClient],
-  );
-
-  useGitHubIntegrationCallback({
-    onSuccess: (projectId) => {
-      stopPolling();
-      setTimedOut(false);
-      setConnectingGithub(false);
-      invalidateProject(projectId ?? selectedProjectId);
+    onSuccess: ({ silent }) => {
+      setDisconnectTarget(null);
+      invalidateGithubQueries(queryClient, selectedProjectId);
+      if (!silent) toast.success("GitHub disconnected.");
     },
-    onError: (message) => {
-      stopPolling();
-      setTimedOut(false);
-      setConnectingGithub(false);
-      toast.error(message);
-    },
-    onTimedOut: () => {
-      stopPolling();
-      setConnectingGithub(false);
-      setTimedOut(true);
+    onError: (e) => {
+      toast.error(
+        e instanceof Error ? e.message : "Failed to disconnect GitHub.",
+      );
     },
   });
-
-  const handleConnectGitHub = async () => {
-    if (!cloudRegion || !selectedProjectId || !client) return;
-    stopPolling();
-    setTimedOut(false);
-    setConnectingGithub(true);
-    try {
-      const res =
-        await client.startGithubUserIntegrationConnect(selectedProjectId);
-      const installUrl = res.install_url?.trim() ?? "";
-      if (!installUrl) {
-        throw new Error("GitHub connection did not return a URL");
-      }
-      await trpcClient.os.openExternal.mutate({ url: installUrl });
-
-      // Dev-only fallback: GitHub returns via posthog-code-dev:// while the
-      // browser flow may not always surface the same path; poll integrations.
-      if (IS_DEV) {
-        pollTimerRef.current = setInterval(() => {
-          void queryClient.invalidateQueries({
-            queryKey: ["integrations", selectedProjectId],
-          });
-          void queryClient.invalidateQueries({
-            queryKey: ["user-github-integrations"],
-          });
-        }, POLL_INTERVAL_MS);
-      }
-
-      // Safety timeout in case the subscription drops or the user abandons the browser.
-      pollTimeoutRef.current = setTimeout(() => {
-        stopPolling();
-        setConnectingGithub(false);
-        setTimedOut(true);
-      }, POLL_TIMEOUT_MS);
-    } catch (error) {
-      setConnectingGithub(false);
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to start GitHub connection",
-      );
-    }
-  };
 
   const handleContinue = () => {
     if (selectedProjectId && selectedProjectId !== currentProjectId) {
@@ -364,33 +319,6 @@ export function GitIntegrationStep({
                 </Box>
               </motion.div>
 
-              {alternativeConnectedProject && selectedProject && (
-                <Callout.Root color="blue" variant="soft">
-                  <Callout.Text>
-                    GitHub is already connected on{" "}
-                    <Text className="font-bold">
-                      {alternativeConnectedProject.name}
-                    </Text>{" "}
-                    ({alternativeConnectedProject.organization.name}). Switch to
-                    that project, or click{" "}
-                    <Text className="font-bold">Connect GitHub</Text> below to
-                    install a new integration on{" "}
-                    <Text className="font-bold">{selectedProject.name}</Text>.
-                  </Callout.Text>
-                  <Flex mt="2">
-                    <Button
-                      size="1"
-                      variant="soft"
-                      onClick={() =>
-                        setSelectedProjectId(alternativeConnectedProject.id)
-                      }
-                    >
-                      Switch to {alternativeConnectedProject.name}
-                    </Button>
-                  </Flex>
-                </Callout.Root>
-              )}
-
               {/* GitHub integration */}
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
@@ -416,47 +344,148 @@ export function GitIntegrationStep({
                       {isLoading || githubUserIntegrationsLoading ? (
                         <Skeleton className="h-[16px] w-[80px]" />
                       ) : hasGitIntegration ? (
-                        <Flex align="center" gap="1">
-                          <CheckCircle
-                            size={14}
-                            weight="fill"
-                            className="text-(--green-9)"
-                          />
-                          <Text className="text-(--green-11) text-[13px]">
-                            Connected
+                        anyIntegrationStale ? (
+                          <Text className="text-(--amber-11) text-[13px]">
+                            Reconnect needed
                           </Text>
-                        </Flex>
+                        ) : (
+                          <Flex align="center" gap="1">
+                            <CheckCircle
+                              size={14}
+                              weight="fill"
+                              className="text-(--green-9)"
+                            />
+                            <Text className="text-(--green-11) text-[13px]">
+                              {githubUserIntegrations.length > 1
+                                ? `Connected (${githubUserIntegrations.length})`
+                                : "Connected"}
+                            </Text>
+                          </Flex>
+                        )
                       ) : null}
                     </Flex>
                     {hasGitIntegration ? (
                       <Flex direction="column" gap="3">
-                        <Text className="text-(--gray-11) text-sm">
-                          {isLoadingRepos
-                            ? "Loading repositories..."
-                            : repoSummary
-                              ? `Access to ${repoSummary}`
-                              : "No repositories found. Check your GitHub app settings."}
-                        </Text>
-                        <Flex align="center" gap="3">
-                          <Button
-                            size="1"
-                            variant="soft"
-                            color="gray"
-                            onClick={() => {
-                              const id = githubIntegration?.installation_id;
-                              const account = githubIntegration?.account;
-                              const url = id
-                                ? account?.type === "Organization" &&
-                                  account.name
-                                  ? `https://github.com/organizations/${account.name}/settings/installations/${id}`
-                                  : `https://github.com/settings/installations/${id}`
-                                : "https://github.com/settings/installations";
-                              trpcClient.os.openExternal.mutate({ url });
-                            }}
-                          >
-                            <GearSix size={12} />
-                            Settings
-                          </Button>
+                        {githubUserIntegrations.map((integration) => {
+                          const installationId = integration.installation_id;
+                          const accountName =
+                            integration.account?.name ?? "GitHub";
+                          const installRepos =
+                            reposByInstallationId[installationId];
+                          const isLoadingInstallRepos =
+                            installRepos === undefined;
+                          const isStale =
+                            failedInstallationIds.includes(installationId);
+                          const isReconnecting =
+                            reconnectingInstallationId === installationId;
+                          return (
+                            <Flex
+                              key={integration.id}
+                              direction="column"
+                              gap="2"
+                              p="3"
+                              className="rounded-[8px] border border-(--gray-a3)"
+                            >
+                              <Flex
+                                align="center"
+                                justify="between"
+                                gap="2"
+                                wrap="wrap"
+                              >
+                                <Flex align="center" gap="2">
+                                  <Text className="font-bold text-(--gray-12) text-sm">
+                                    {accountName}
+                                  </Text>
+                                  <Text className="text-(--gray-10) text-[12px]">
+                                    {integration.account?.type ===
+                                    "Organization"
+                                      ? "org"
+                                      : "personal"}
+                                  </Text>
+                                </Flex>
+                                {isStale ? (
+                                  <Text className="text-(--amber-11) text-[12px]">
+                                    Reconnect needed
+                                  </Text>
+                                ) : (
+                                  <Text className="text-(--gray-10) text-[12px]">
+                                    {isLoadingInstallRepos
+                                      ? "Loading…"
+                                      : installRepos.length === 1
+                                        ? "1 repo"
+                                        : `${installRepos.length} repos`}
+                                  </Text>
+                                )}
+                              </Flex>
+                              <Flex align="center" gap="3" wrap="wrap">
+                                {isStale && (
+                                  <Button
+                                    size="1"
+                                    variant="solid"
+                                    loading={isReconnecting}
+                                    disabled={
+                                      reconnectingInstallationId !== null &&
+                                      !isReconnecting
+                                    }
+                                    onClick={async () => {
+                                      setReconnectingInstallationId(
+                                        installationId,
+                                      );
+                                      try {
+                                        await disconnectMutation.mutateAsync({
+                                          installationId,
+                                          silent: true,
+                                        });
+                                      } catch {
+                                        setReconnectingInstallationId(null);
+                                        return;
+                                      }
+                                      try {
+                                        await handleConnectGitHub();
+                                      } finally {
+                                        setReconnectingInstallationId(null);
+                                      }
+                                    }}
+                                  >
+                                    Reconnect
+                                    <ArrowSquareOut size={12} />
+                                  </Button>
+                                )}
+                                <Button
+                                  size="1"
+                                  variant="soft"
+                                  color="gray"
+                                  onClick={() => {
+                                    const account = integration.account;
+                                    const url =
+                                      account?.type === "Organization" &&
+                                      account.name
+                                        ? `https://github.com/organizations/${account.name}/settings/installations/${installationId}`
+                                        : `https://github.com/settings/installations/${installationId}`;
+                                    trpcClient.os.openExternal.mutate({ url });
+                                  }}
+                                >
+                                  <GearSix size={12} />
+                                  Settings
+                                </Button>
+                                <Button
+                                  size="1"
+                                  variant="soft"
+                                  color="red"
+                                  onClick={() =>
+                                    setDisconnectTarget({
+                                      installationId,
+                                      accountName,
+                                    })
+                                  }
+                                >
+                                  Disconnect
+                                </Button>
+                              </Flex>
+                            </Flex>
+                          );
+                        })}
+                        <Flex align="center" gap="3" wrap="wrap">
                           <Button
                             size="1"
                             variant="soft"
@@ -473,28 +502,147 @@ export function GitIntegrationStep({
                             <ArrowsClockwise size={12} />
                             Refresh
                           </Button>
+                          <Button
+                            size="1"
+                            variant="ghost"
+                            color="gray"
+                            onClick={() => void handleConnectGitHub()}
+                            loading={isConnecting}
+                          >
+                            <Plus size={12} />
+                            Add another GitHub org
+                          </Button>
                         </Flex>
                       </Flex>
                     ) : !isLoading && !githubUserIntegrationsLoading ? (
-                      <Flex direction="column" gap="3">
-                        <Text className="text-(--gray-11) text-sm">
-                          {timedOut
-                            ? "We didn't hear back from GitHub. If the browser tab was closed, click Connect again."
-                            : isConnecting
-                              ? "Waiting for GitHub... You'll return here automatically once the install completes."
-                              : "Optional. Unlocks cloud agents and pull request workflows."}
-                        </Text>
-                        <Button
-                          size="1"
-                          variant="soft"
-                          onClick={() => void handleConnectGitHub()}
-                          loading={isConnecting}
-                          className="self-start"
-                        >
-                          {isConnecting ? "Retry connection" : "Connect GitHub"}
-                          <ArrowSquareOut size={12} />
-                        </Button>
-                      </Flex>
+                      selectedProject?.hasGithubIntegration && canTakeAction ? (
+                        <Flex direction="column" gap="3">
+                          <Text className="text-(--gray-11) text-sm">
+                            GitHub is already set up on{" "}
+                            <Text className="font-bold">
+                              {selectedProject.name}
+                            </Text>
+                            . Sign in with one click to link your account — no
+                            admin approval needed.
+                          </Text>
+                          <Button
+                            size="1"
+                            variant="solid"
+                            onClick={() => void handleConnectGitHub()}
+                            className="self-start"
+                          >
+                            Sign in with GitHub
+                            <ArrowSquareOut size={12} />
+                          </Button>
+                        </Flex>
+                      ) : selectedAlternative &&
+                        selectedProject &&
+                        canTakeAction ? (
+                        <Flex direction="column" gap="3">
+                          <Text className="text-(--gray-11) text-sm">
+                            GitHub is already connected on{" "}
+                            {alternativeConnectedProjects.length > 1 ? (
+                              <DropdownMenu.Root>
+                                <DropdownMenu.Trigger>
+                                  <button
+                                    type="button"
+                                    className="cursor-pointer border-0 bg-transparent p-0 font-bold text-(--gray-12) underline"
+                                  >
+                                    {selectedAlternative.name} +{" "}
+                                    {alternativeConnectedProjects.length - 1}{" "}
+                                    more
+                                  </button>
+                                </DropdownMenu.Trigger>
+                                <DropdownMenu.Content size="1" align="start">
+                                  {alternativeConnectedProjects.map((p) => (
+                                    <DropdownMenu.Item
+                                      key={p.id}
+                                      onSelect={() =>
+                                        setSelectedAlternativeId(p.id)
+                                      }
+                                    >
+                                      <Text className="text-[13px]">
+                                        {p.name}
+                                      </Text>
+                                      <Text className="ml-2 text-(--gray-10) text-[13px]">
+                                        {p.organization.name}
+                                      </Text>
+                                    </DropdownMenu.Item>
+                                  ))}
+                                </DropdownMenu.Content>
+                              </DropdownMenu.Root>
+                            ) : (
+                              <>
+                                <Text className="font-bold">
+                                  {selectedAlternative.name}
+                                </Text>{" "}
+                                ({selectedAlternative.organization.name})
+                              </>
+                            )}
+                            .
+                          </Text>
+                          <Flex direction="column" gap="2" align="start">
+                            <Button
+                              size="1"
+                              variant="solid"
+                              onClick={() => void handleConnectGitHub()}
+                            >
+                              Connect GitHub on {selectedProject.name}
+                              <ArrowSquareOut size={12} />
+                            </Button>
+                            <Button
+                              size="1"
+                              variant="ghost"
+                              color="gray"
+                              onClick={() =>
+                                setSelectedProjectId(selectedAlternative.id)
+                              }
+                            >
+                              Switch to {selectedAlternative.name}
+                            </Button>
+                          </Flex>
+                        </Flex>
+                      ) : (
+                        <Flex direction="column" gap="3">
+                          <Text
+                            className={
+                              hasConnectError
+                                ? "text-(--red-11) text-sm"
+                                : "text-(--gray-11) text-sm"
+                            }
+                          >
+                            {defaultPanelMessage}
+                          </Text>
+                          <Flex gap="2">
+                            <Button
+                              size="1"
+                              variant="soft"
+                              onClick={() => {
+                                if (hasConnectError) resetConnect();
+                                void handleConnectGitHub();
+                              }}
+                              loading={isConnecting}
+                            >
+                              {isConnecting
+                                ? "Retry connection"
+                                : hasConnectError || timedOut
+                                  ? "Try again"
+                                  : "Connect GitHub"}
+                              <ArrowSquareOut size={12} />
+                            </Button>
+                            {hasConnectError && (
+                              <Button
+                                size="1"
+                                variant="ghost"
+                                color="gray"
+                                onClick={resetConnect}
+                              >
+                                Dismiss
+                              </Button>
+                            )}
+                          </Flex>
+                        </Flex>
+                      )
                     ) : null}
                   </Flex>
                 </Box>
@@ -524,6 +672,53 @@ export function GitIntegrationStep({
             <ArrowRight size={16} weight="bold" />
           </Button>
         </StepActions>
+
+        <AlertDialog.Root
+          open={disconnectTarget !== null}
+          onOpenChange={(next) => {
+            if (!next && !disconnectMutation.isPending) {
+              setDisconnectTarget(null);
+            }
+          }}
+        >
+          <AlertDialog.Content maxWidth="450px">
+            <AlertDialog.Title>
+              Disconnect{" "}
+              {disconnectTarget ? disconnectTarget.accountName : "GitHub"}
+            </AlertDialog.Title>
+            <AlertDialog.Description className="text-sm">
+              This removes your personal GitHub authorization from PostHog. You
+              can reconnect at any time. The GitHub App itself stays installed
+              in your org — uninstall it on GitHub if you want to remove that
+              too.
+            </AlertDialog.Description>
+            <Flex gap="3" mt="4" justify="end">
+              <AlertDialog.Cancel>
+                <Button
+                  variant="soft"
+                  color="gray"
+                  disabled={disconnectMutation.isPending}
+                >
+                  Cancel
+                </Button>
+              </AlertDialog.Cancel>
+              <Button
+                variant="solid"
+                color="red"
+                onClick={() => {
+                  if (!disconnectTarget) return;
+                  disconnectMutation.mutate({
+                    installationId: disconnectTarget.installationId,
+                  });
+                }}
+                disabled={disconnectMutation.isPending}
+              >
+                {disconnectMutation.isPending ? <Spinner size="1" /> : null}
+                Disconnect
+              </Button>
+            </Flex>
+          </AlertDialog.Content>
+        </AlertDialog.Root>
       </Flex>
     </Flex>
   );

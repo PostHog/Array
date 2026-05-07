@@ -31,6 +31,11 @@ import {
   buildExitPlanModePermissionOptions,
   buildPermissionOptions,
 } from "./permission-options";
+import {
+  extractPostHogSubTool,
+  isPostHogDestructiveSubTool,
+  isPostHogExecTool,
+} from "./posthog-exec-gate";
 
 export type ToolPermissionResult =
   | {
@@ -76,6 +81,18 @@ async function emitToolDenial(
       content: [{ type: "content", content: text(message) }],
     },
   });
+}
+
+async function buildDenialResult(
+  context: ToolHandlerContext,
+  response: RequestPermissionResponse,
+): Promise<ToolPermissionResult> {
+  const feedback = (response._meta?.customInput as string | undefined)?.trim();
+  const message = feedback
+    ? `User refused permission to run tool with feedback: ${feedback}`
+    : "User refused permission to run tool";
+  await emitToolDenial(context, message);
+  return { behavior: "deny", message, interrupt: !feedback };
 }
 
 function getPlanFromFile(
@@ -389,16 +406,9 @@ async function handleDefaultPermissionFlow(
       behavior: "allow",
       updatedInput: toolInput as Record<string, unknown>,
     };
-  } else {
-    const feedback = (
-      response._meta?.customInput as string | undefined
-    )?.trim();
-    const message = feedback
-      ? `User refused permission to run tool with feedback: ${feedback}`
-      : "User refused permission to run tool";
-    await emitToolDenial(context, message);
-    return { behavior: "deny", message, interrupt: !feedback };
   }
+
+  return buildDenialResult(context, response);
 }
 
 function parseMcpToolName(toolName: string): {
@@ -479,12 +489,75 @@ async function handleMcpApprovalFlow(
     };
   }
 
-  const feedback = (response._meta?.customInput as string | undefined)?.trim();
-  const message = feedback
-    ? `User refused permission to run tool with feedback: ${feedback}`
-    : "User refused permission to run tool";
-  await emitToolDenial(context, message);
-  return { behavior: "deny", message, interrupt: !feedback };
+  return buildDenialResult(context, response);
+}
+
+async function handlePostHogExecApprovalFlow(
+  context: ToolHandlerContext,
+  subTool: string,
+): Promise<ToolPermissionResult> {
+  const { toolName, toolInput, toolUseID, client, sessionId, session } =
+    context;
+
+  const response = await client.requestPermission({
+    options: [
+      { kind: "allow_once", name: "Yes", optionId: "allow" },
+      {
+        kind: "allow_always",
+        name: "Yes, always allow",
+        optionId: "allow_always",
+      },
+      {
+        kind: "reject_once",
+        name: "Type here to tell the agent what to do differently",
+        optionId: "reject",
+        _meta: { customInput: true },
+      },
+    ],
+    sessionId,
+    toolCall: {
+      toolCallId: toolUseID,
+      title: `The agent wants to run \`${subTool}\` on PostHog`,
+      kind: "other",
+      content: [
+        {
+          type: "content" as const,
+          content: text(
+            "This will modify live PostHog data. Approve to run this sub-tool.",
+          ),
+        },
+      ],
+      rawInput: { ...(toolInput as Record<string, unknown>), toolName },
+      _meta: { claudeCode: { toolName } },
+    },
+  });
+
+  if (context.signal?.aborted || response.outcome?.outcome === "cancelled") {
+    throw new Error("Tool use aborted");
+  }
+
+  if (
+    response.outcome?.outcome === "selected" &&
+    (response.outcome.optionId === "allow" ||
+      response.outcome.optionId === "allow_always")
+  ) {
+    if (response.outcome.optionId === "allow_always") {
+      try {
+        await session.settingsManager.addPostHogExecApproval(subTool);
+      } catch (error) {
+        context.logger.warn(
+          "[canUseTool] Failed to persist PostHog exec approval",
+          { error: error instanceof Error ? error.message : String(error) },
+        );
+      }
+    }
+    return {
+      behavior: "allow",
+      updatedInput: toolInput as Record<string, unknown>,
+    };
+  }
+
+  return buildDenialResult(context, response);
 }
 
 function handlePlanFileException(
@@ -601,6 +674,28 @@ export async function canUseTool(
 
     if (approvalState === "needs_approval") {
       return handleMcpApprovalFlow(context);
+    }
+
+    if (isPostHogExecTool(toolName)) {
+      const subTool = extractPostHogSubTool(toolInput);
+      if (subTool && isPostHogDestructiveSubTool(subTool)) {
+        if (
+          session.permissionMode === "auto" ||
+          session.permissionMode === "bypassPermissions"
+        ) {
+          return {
+            behavior: "allow",
+            updatedInput: toolInput as Record<string, unknown>,
+          };
+        }
+        if (session.settingsManager.hasPostHogExecApproval(subTool)) {
+          return {
+            behavior: "allow",
+            updatedInput: toolInput as Record<string, unknown>,
+          };
+        }
+        return handlePostHogExecApprovalFlow(context, subTool);
+      }
     }
   }
 

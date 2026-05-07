@@ -53,6 +53,13 @@ const workspaceAliases: Alias[] = [
     find: "@posthog/shared",
     replacement: path.resolve(__dirname, "../../packages/shared/src/index.ts"),
   },
+  {
+    find: "@posthog/enricher",
+    replacement: path.resolve(
+      __dirname,
+      "../../packages/enricher/src/index.ts",
+    ),
+  },
 ];
 
 export const mainAliases: Alias[] = [

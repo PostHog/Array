@@ -17,15 +17,16 @@ async function resolveRepoPathFromRemote(
   return repo?.path ?? null;
 }
 
-async function resolveRepoPathFromPicker(): Promise<string | null> {
+async function resolveRepoPathFromPicker(
+  remoteUrl: string | null | undefined,
+): Promise<string | null> {
   const selectedPath = await trpcClient.os.selectDirectory.query();
   if (!selectedPath) return null;
 
-  const folders = await trpcClient.folders.getFolders.query();
-  const folder = folders.find((f) => f.path === selectedPath);
-  if (!folder) {
-    await trpcClient.folders.addFolder.mutate({ folderPath: selectedPath });
-  }
+  await trpcClient.folders.addFolder.mutate({
+    folderPath: selectedPath,
+    remoteUrl: remoteUrl ?? undefined,
+  });
 
   return selectedPath;
 }
@@ -66,7 +67,7 @@ export class LocalHandoffService {
     try {
       const targetPath =
         (await resolveRepoPathFromRemote(task.repository)) ??
-        (await resolveRepoPathFromPicker());
+        (await resolveRepoPathFromPicker(task.repository));
 
       if (!targetPath) return;
 

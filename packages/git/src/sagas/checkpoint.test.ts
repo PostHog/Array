@@ -400,6 +400,77 @@ describe("checkpoint sagas", () => {
     });
   });
 
+  it("drops untracked files larger than the worktree size cap", async () => {
+    await withRepo(async (repoPath) => {
+      const git = createGitClient(repoPath);
+      const largePath = path.join(repoPath, "large.bin");
+      await writeFile(largePath, Buffer.alloc(1024 * 1024 + 1, 7));
+      await writeFile(path.join(repoPath, "small.txt"), "tiny\n");
+
+      await captureCheckpoint(repoPath, "large-untracked");
+
+      await rm(largePath);
+      await rm(path.join(repoPath, "small.txt"));
+
+      await revertCheckpoint(repoPath, "large-untracked");
+
+      await expect(readFile(largePath)).rejects.toBeTruthy();
+      const small = await readFile(path.join(repoPath, "small.txt"), "utf8");
+      expect(small).toBe("tiny\n");
+
+      const status = await git.raw(["status", "--porcelain"]);
+      expect(status).not.toContain("large.bin");
+    });
+  });
+
+  it("preserves tracked files larger than the cap when content is unchanged", async () => {
+    await withRepo(async (repoPath) => {
+      const git = createGitClient(repoPath);
+      const largePath = path.join(repoPath, "tracked-large.bin");
+      const data = Buffer.alloc(1024 * 1024 + 1, 3);
+      await writeFile(largePath, data);
+      await git.add(["tracked-large.bin"]);
+      await git.commit("add large tracked");
+
+      await writeFile(path.join(repoPath, "a.txt"), "edited\n");
+
+      await captureCheckpoint(repoPath, "large-tracked-unchanged");
+
+      await writeFile(path.join(repoPath, "a.txt"), "after\n");
+      await rm(largePath);
+
+      await revertCheckpoint(repoPath, "large-tracked-unchanged");
+
+      const a = await readFile(path.join(repoPath, "a.txt"), "utf8");
+      expect(a).toBe("edited\n");
+      const restored = await readFile(largePath);
+      expect(Buffer.compare(restored, data)).toBe(0);
+    });
+  });
+
+  it("rolls tracked large files back to HEAD when modified locally", async () => {
+    await withRepo(async (repoPath) => {
+      const git = createGitClient(repoPath);
+      const largePath = path.join(repoPath, "tracked-large.bin");
+      const original = Buffer.alloc(1024 * 1024 + 1, 1);
+      await writeFile(largePath, original);
+      await git.add(["tracked-large.bin"]);
+      await git.commit("add large tracked");
+
+      const modified = Buffer.alloc(1024 * 1024 + 1, 9);
+      await writeFile(largePath, modified);
+
+      await captureCheckpoint(repoPath, "large-tracked-modified");
+
+      await writeFile(largePath, Buffer.alloc(1024 * 1024 + 1, 5));
+
+      await revertCheckpoint(repoPath, "large-tracked-modified");
+
+      const restored = await readFile(largePath);
+      expect(Buffer.compare(restored, original)).toBe(0);
+    });
+  });
+
   it("does not leak temp index into normal git operations", async () => {
     await withRepo(async (repoPath) => {
       const git = createGitClient(repoPath);

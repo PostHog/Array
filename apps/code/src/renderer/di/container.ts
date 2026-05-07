@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { SetupRunService } from "@features/setup/services/setupRunService";
 import { TaskService } from "@features/task-detail/service/service";
 import type { TrpcRouter } from "@main/trpc/router";
 import { trpcClient } from "@renderer/trpc";
@@ -20,6 +21,9 @@ container
 
 // Bind services
 container.bind<TaskService>(RENDERER_TOKENS.TaskService).to(TaskService);
+container
+  .bind<SetupRunService>(RENDERER_TOKENS.SetupRunService)
+  .to(SetupRunService);
 
 export function get<T>(token: symbol): T {
   return container.get<T>(token);

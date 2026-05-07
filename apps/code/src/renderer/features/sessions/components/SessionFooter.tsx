@@ -1,11 +1,14 @@
 import type { ContextUsage } from "@features/sessions/hooks/useContextUsage";
 import { Brain, Pause } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
+import type { Task } from "@shared/types";
 
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
+import { DiffStatsChip } from "./DiffStatsChip";
 import { formatDuration, GeneratingIndicator } from "./GeneratingIndicator";
 
 interface SessionFooterProps {
+  task?: Task;
   isPromptPending: boolean | null;
   promptStartedAt?: number | null;
   lastGenerationDuration: number | null;
@@ -18,6 +21,7 @@ interface SessionFooterProps {
 }
 
 export function SessionFooter({
+  task,
   isPromptPending,
   promptStartedAt,
   lastGenerationDuration,
@@ -28,6 +32,12 @@ export function SessionFooter({
   isCompacting = false,
   usage,
 }: SessionFooterProps) {
+  const rightSide = (
+    <Flex align="center" gap="3">
+      {task && <DiffStatsChip task={task} />}
+      <ContextUsageIndicator usage={usage ?? null} />
+    </Flex>
+  );
   if (isPromptPending && !isCompacting) {
     if (hasPendingPermission) {
       return (
@@ -42,7 +52,7 @@ export function SessionFooter({
               <Pause size={14} weight="fill" />
               <Text className="text-[13px]">Awaiting permission...</Text>
             </Flex>
-            <ContextUsageIndicator usage={usage ?? null} />
+            {rightSide}
           </Flex>
         </Box>
       );
@@ -62,7 +72,7 @@ export function SessionFooter({
               </Text>
             )}
           </Flex>
-          <ContextUsageIndicator usage={usage ?? null} />
+          {rightSide}
         </Flex>
       </Box>
     );
@@ -91,7 +101,7 @@ export function SessionFooter({
             </Text>
           </Flex>
         )}
-        <ContextUsageIndicator usage={usage ?? null} />
+        {rightSide}
       </Flex>
     </Box>
   );

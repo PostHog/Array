@@ -5,6 +5,7 @@ import type { IAppMeta } from "@posthog/platform/app-meta";
 import type { DialogSeverity, IDialog } from "@posthog/platform/dialog";
 import type { IImageProcessor } from "@posthog/platform/image-processor";
 import type { IUrlLauncher } from "@posthog/platform/url-launcher";
+import { IMAGE_MIME_TYPES } from "@shared/constants/image";
 import { z } from "zod";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
@@ -19,19 +20,6 @@ const getDialog = () => container.get<IDialog>(MAIN_TOKENS.Dialog);
 const getAppMeta = () => container.get<IAppMeta>(MAIN_TOKENS.AppMeta);
 const getImageProcessor = () =>
   container.get<IImageProcessor>(MAIN_TOKENS.ImageProcessor);
-
-const IMAGE_MIME_MAP: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  bmp: "image/bmp",
-  ico: "image/x-icon",
-  svg: "image/svg+xml",
-  tiff: "image/tiff",
-  tif: "image/tiff",
-};
 
 const messageBoxOptionsSchema = z.object({
   type: z.enum(["none", "info", "error", "question", "warning"]).optional(),
@@ -50,6 +38,7 @@ const expandHomePath = (searchPath: string): string =>
 
 const MAX_IMAGE_DIMENSION = 1568;
 const JPEG_QUALITY = 85;
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const CLIPBOARD_TEMP_DIR = path.join(os.tmpdir(), "posthog-code-clipboard");
 
 async function createClipboardTempFilePath(
@@ -61,6 +50,24 @@ async function createClipboardTempFilePath(
     path.join(CLIPBOARD_TEMP_DIR, "attachment-"),
   );
   return path.join(tempDir, safeName);
+}
+
+async function downscaleAndPersist(
+  raw: Uint8Array,
+  inputMime: string,
+  displayName: string,
+): Promise<{ path: string; name: string; mimeType: string }> {
+  const { buffer, mimeType, extension } = getImageProcessor().downscale(
+    raw,
+    inputMime,
+    { maxDimension: MAX_IMAGE_DIMENSION, jpegQuality: JPEG_QUALITY },
+  );
+
+  const finalName = displayName.replace(/\.[^.]+$/, `.${extension}`);
+  const filePath = await createClipboardTempFilePath(finalName);
+  await fsPromises.writeFile(filePath, Buffer.from(buffer));
+
+  return { path: filePath, name: finalName, mimeType };
 }
 
 const claudeSettingsPath = path.join(os.homedir(), ".claude", "settings.json");
@@ -286,7 +293,7 @@ export const osRouter = router({
         if (stat.size > input.maxSizeBytes) return null;
 
         const ext = path.extname(input.filePath).toLowerCase().slice(1);
-        const mime = IMAGE_MIME_MAP[ext] ?? "application/octet-stream";
+        const mime = IMAGE_MIME_TYPES[ext] ?? "application/octet-stream";
 
         const buffer = await fsPromises.readFile(input.filePath);
         return `data:${mime};base64,${buffer.toString("base64")}`;
@@ -331,28 +338,37 @@ export const osRouter = router({
     )
     .mutation(async ({ input }) => {
       const raw = new Uint8Array(Buffer.from(input.base64Data, "base64"));
-      const { buffer, mimeType, extension } = getImageProcessor().downscale(
-        raw,
-        input.mimeType,
-        { maxDimension: MAX_IMAGE_DIMENSION, jpegQuality: JPEG_QUALITY },
-      );
-
       const isGenericName =
         !input.originalName ||
         input.originalName === "image.png" ||
         input.originalName === "image.jpeg" ||
         input.originalName === "image.jpg";
       const displayName = isGenericName
-        ? `clipboard.${extension}`
-        : (input.originalName ?? "clipboard").replace(
-            /\.[^.]+$/,
-            `.${extension}`,
-          );
-      const filePath = await createClipboardTempFilePath(displayName);
+        ? "clipboard.png"
+        : (input.originalName ?? "clipboard.png");
 
-      await fsPromises.writeFile(filePath, Buffer.from(buffer));
+      return downscaleAndPersist(raw, input.mimeType, displayName);
+    }),
 
-      return { path: filePath, name: displayName, mimeType };
+  downscaleImageFile: publicProcedure
+    .input(z.object({ filePath: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      const ext = path.extname(input.filePath).toLowerCase().slice(1);
+      if (!IMAGE_MIME_TYPES[ext]) {
+        throw new Error(`Unsupported image type: .${ext}`);
+      }
+
+      const stat = await fsPromises.stat(input.filePath);
+      if (stat.size > MAX_FILE_SIZE) {
+        throw new Error(
+          `Image too large (${Math.round(stat.size / 1024 / 1024)}MB). Max is 50MB.`,
+        );
+      }
+
+      const raw = new Uint8Array(await fsPromises.readFile(input.filePath));
+      const inputMime = IMAGE_MIME_TYPES[ext];
+
+      return downscaleAndPersist(raw, inputMime, path.basename(input.filePath));
     }),
 
   /**

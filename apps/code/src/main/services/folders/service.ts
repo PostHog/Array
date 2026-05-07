@@ -2,21 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { getRemoteUrl, isGitRepository } from "@posthog/git/queries";
 import { InitRepositorySaga } from "@posthog/git/sagas/init";
-
-import { normalizeRepoKey } from "@shared/utils/repo";
-
-function extractRepoKey(url: string): string | null {
-  const httpsMatch = url.match(/github\.com\/([^/]+\/[^/]+)/);
-  if (httpsMatch) return normalizeRepoKey(httpsMatch[1]);
-
-  const sshMatch = url.match(/github\.com:([^/]+\/[^/]+)/);
-  if (sshMatch) return normalizeRepoKey(sshMatch[1]);
-
-  return null;
-}
-
+import { parseGitHubUrl } from "@posthog/git/utils";
 import { WorktreeManager } from "@posthog/git/worktree";
 import type { IDialog } from "@posthog/platform/dialog";
+import { normalizeRepoKey } from "@shared/utils/repo";
 import { inject, injectable } from "inversify";
 import type {
   IRepositoryRepository,
@@ -114,6 +103,7 @@ export class FoldersService {
 
   async addFolder(
     folderPath: string,
+    options: { remoteUrl?: string } = {},
   ): Promise<RegisteredFolder & { exists: boolean }> {
     const folderName = path.basename(folderPath);
     if (!folderPath || !folderName) {
@@ -152,6 +142,7 @@ export class FoldersService {
       }
     }
 
+    const repoKey = await this.resolveRepoKey(folderPath, options.remoteUrl);
     const existingRepo = this.repositoryRepo.findByPath(folderPath);
     let repo: Repository;
 
@@ -163,23 +154,17 @@ export class FoldersService {
       }
       repo = updated;
 
-      if (!repo.remoteUrl) {
-        const remoteUrl = await getRemoteUrl(folderPath);
-        const repoKey = remoteUrl ? extractRepoKey(remoteUrl) : null;
-        if (repoKey) {
-          this.repositoryRepo.updateRemoteUrl(repo.id, repoKey);
-          const refreshed = this.repositoryRepo.findById(repo.id);
-          if (!refreshed) {
-            throw new Error(
-              `Repository ${repo.id} not found after remote URL update`,
-            );
-          }
-          repo = refreshed;
+      if (repoKey && repo.remoteUrl !== repoKey) {
+        this.repositoryRepo.updateRemoteUrl(repo.id, repoKey);
+        const refreshed = this.repositoryRepo.findById(repo.id);
+        if (!refreshed) {
+          throw new Error(
+            `Repository ${repo.id} not found after remote URL update`,
+          );
         }
+        repo = refreshed;
       }
     } else {
-      const remoteUrl = await getRemoteUrl(folderPath);
-      const repoKey = remoteUrl ? extractRepoKey(remoteUrl) : null;
       repo = this.repositoryRepo.create({
         path: folderPath,
         remoteUrl: repoKey ?? undefined,
@@ -246,6 +231,20 @@ export class FoldersService {
     const associatedWorktreePaths = allWorktrees.map((wt) => wt.path);
 
     await manager.cleanupOrphanedWorktrees(associatedWorktreePaths);
+  }
+
+  private async resolveRepoKey(
+    folderPath: string,
+    overrideRemoteUrl: string | undefined,
+  ): Promise<string | null> {
+    if (overrideRemoteUrl) {
+      return (
+        parseGitHubUrl(overrideRemoteUrl)?.path ??
+        normalizeRepoKey(overrideRemoteUrl)
+      );
+    }
+    const localRemoteUrl = await getRemoteUrl(folderPath);
+    return parseGitHubUrl(localRemoteUrl)?.path ?? null;
   }
 
   getRepositoryByRemoteUrl(

@@ -26,6 +26,7 @@ import { getRelativeDateGroup } from "@utils/time";
 import { motion } from "framer-motion";
 import { Fragment, useCallback, useEffect, useMemo } from "react";
 import type { TaskData, TaskGroup } from "../hooks/useSidebarData";
+import { useTaskPrStatus } from "../hooks/useTaskPrStatus";
 import { useSidebarStore } from "../stores/sidebarStore";
 import { DraggableFolder } from "./DraggableFolder";
 import { TaskItem } from "./items/TaskItem";
@@ -100,6 +101,7 @@ function TaskRow({
   const effectiveMode =
     workspace?.mode ??
     (task.taskRunEnvironment === "cloud" ? "cloud" : undefined);
+  const { prState, hasDiff } = useTaskPrStatus(task);
 
   return (
     <TaskItem
@@ -116,6 +118,8 @@ function TaskRow({
       isPinned={task.isPinned}
       needsPermission={task.needsPermission}
       taskRunStatus={task.taskRunStatus}
+      prState={prState}
+      hasDiff={hasDiff}
       timestamp={timestamp}
       onClick={onClick}
       onDoubleClick={onDoubleClick}

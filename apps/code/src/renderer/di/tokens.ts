@@ -10,4 +10,5 @@ export const RENDERER_TOKENS = Object.freeze({
 
   // Services
   TaskService: Symbol.for("Renderer.TaskService"),
+  SetupRunService: Symbol.for("Renderer.SetupRunService"),
 });

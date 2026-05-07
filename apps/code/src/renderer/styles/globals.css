@@ -1118,3 +1118,11 @@ button,
     background-color: var(--accent-11);
   }
 }
+
+::highlight(search-match) {
+  background-color: var(--yellow-a5);
+}
+
+::highlight(search-match-active) {
+  background-color: var(--orange-a8);
+}

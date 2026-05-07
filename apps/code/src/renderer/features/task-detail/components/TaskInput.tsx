@@ -15,6 +15,7 @@ import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReport
 import { PromptInput } from "@features/message-editor/components/PromptInput";
 import { useTaskInputHistoryStore } from "@features/message-editor/stores/taskInputHistoryStore";
 import type { EditorHandle } from "@features/message-editor/types";
+import { resolveAndAttachDroppedFiles } from "@features/message-editor/utils/persistFile";
 import { DropZoneOverlay } from "@features/sessions/components/DropZoneOverlay";
 import { ReasoningLevelSelector } from "@features/sessions/components/ReasoningLevelSelector";
 import { UnifiedModelSelector } from "@features/sessions/components/UnifiedModelSelector";
@@ -40,11 +41,11 @@ import {
   useNavigationStore,
 } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
-import { getFilePath } from "@utils/getFilePath";
 import { FOCUSABLE_SELECTOR } from "@utils/overlay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
+import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import { type WorkspaceMode, WorkspaceModeSelect } from "./WorkspaceModeSelect";
 
 interface TaskInputProps {
@@ -75,6 +76,7 @@ export function TaskInput({
     trpcReact.folders.getMostRecentlyAccessedRepository.queryOptions(),
   );
   const {
+    lastUsedLocalWorkspaceMode,
     setLastUsedLocalWorkspaceMode,
     lastUsedWorkspaceMode,
     setLastUsedWorkspaceMode,
@@ -87,6 +89,7 @@ export function TaskInput({
     getLastUsedEnvironment,
     defaultInitialTaskMode,
     lastUsedInitialTaskMode,
+    setLastUsedReasoningEffort,
   } = useSettingsStore();
 
   const editorRef = useRef<EditorHandle>(null);
@@ -114,7 +117,6 @@ export function TaskInput({
   );
 
   const [selectedDirectory, setSelectedDirectory] = useState("");
-  const workspaceMode = lastUsedWorkspaceMode || "local";
   const adapter = lastUsedAdapter;
   const prefillRequestKey = initialPromptKey ?? initialPrompt;
 
@@ -166,12 +168,6 @@ export function TaskInput({
     }
   }, [mostRecentRepo?.path, selectedDirectory]);
 
-  const setWorkspaceMode = (mode: WorkspaceMode) => {
-    setLastUsedWorkspaceMode(mode);
-    if (mode !== "cloud") {
-      setLastUsedLocalWorkspaceMode(mode);
-    }
-  };
   const setAdapter = (newAdapter: AgentAdapter) =>
     setLastUsedAdapter(newAdapter);
 
@@ -182,7 +178,32 @@ export function TaskInput({
     isLoadingRepos,
     isRefreshingRepos,
     refreshRepositories,
+    hasGithubIntegration,
   } = useUserRepositoryIntegration();
+
+  // Stay optimistic while the integration list resolves to avoid flicker.
+  const cloudAvailable = isLoadingRepos || hasGithubIntegration;
+  const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
+    if (initialCloudRepository) return "cloud";
+    if (!cloudAvailable && lastUsedWorkspaceMode === "cloud") {
+      return lastUsedLocalWorkspaceMode;
+    }
+    return lastUsedWorkspaceMode || "local";
+  });
+
+  const setWorkspaceMode = (mode: WorkspaceMode) => {
+    setWorkspaceModeState(mode);
+    setLastUsedWorkspaceMode(mode);
+    if (mode !== "cloud") {
+      setLastUsedLocalWorkspaceMode(mode);
+    }
+  };
+
+  useEffect(() => {
+    if (workspaceMode === "cloud" && !cloudAvailable) {
+      setWorkspaceModeState(lastUsedLocalWorkspaceMode);
+    }
+  }, [workspaceMode, cloudAvailable, lastUsedLocalWorkspaceMode]);
   const {
     repositories: visibleCloudRepositories,
     isPending: cloudRepositoriesLoading,
@@ -280,9 +301,9 @@ export function TaskInput({
 
   useEffect(() => {
     if (!initialCloudRepository) return;
-    setLastUsedWorkspaceMode("cloud");
+    setWorkspaceModeState("cloud");
     setSelectedRepository(initialCloudRepository.toLowerCase());
-  }, [initialCloudRepository, setLastUsedWorkspaceMode]);
+  }, [initialCloudRepository]);
 
   const handleRefreshRepositories = useCallback(() => {
     void refreshRepositories().catch((error) => {
@@ -353,7 +374,18 @@ export function TaskInput({
   }, [lastUsedCloudRepository, selectedRepository]);
 
   useEffect(() => {
-    if (isLoadingRepos || !selectedRepository || selectedCloudRepository) {
+    // Clear `selectedRepository` only when the list has actually loaded AND the
+    // selection is missing from it — i.e. the repo was removed from the user's
+    // integrations. Bail out when `repositories` is empty: that can happen
+    // transiently after `isLoadingRepos` flips false but before the
+    // per-integration queries have produced data, and clearing here would
+    // wipe out a freshly-supplied `initialCloudRepository` prefill.
+    if (
+      isLoadingRepos ||
+      repositories.length === 0 ||
+      !selectedRepository ||
+      selectedCloudRepository
+    ) {
       return;
     }
 
@@ -363,6 +395,7 @@ export function TaskInput({
     }
   }, [
     isLoadingRepos,
+    repositories.length,
     lastUsedCloudRepository,
     selectedCloudRepository,
     selectedRepository,
@@ -471,9 +504,10 @@ export function TaskInput({
     (value: string) => {
       if (thoughtOption) {
         setConfigOption(thoughtOption.id, value);
+        setLastUsedReasoningEffort(value);
       }
     },
-    [thoughtOption, setConfigOption],
+    [thoughtOption, setConfigOption, setLastUsedReasoningEffort],
   );
 
   const { isOnline } = useConnectivity();
@@ -545,18 +579,11 @@ export function TaskInput({
     const files = e.dataTransfer.files;
     if (!files || files.length === 0) return;
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const filePath = getFilePath(file);
-      if (filePath) {
-        editorRef.current?.addAttachment({
-          id: filePath,
-          label: file.name,
-        });
-      }
-    }
-
-    editorRef.current?.focus();
+    resolveAndAttachDroppedFiles(files, (a) =>
+      editorRef.current?.addAttachment(a),
+    )
+      .then(() => editorRef.current?.focus())
+      .catch(() => toast.error("Failed to attach files"));
   }, []);
 
   const handleContainerClick = useCallback((e: React.MouseEvent) => {
@@ -599,6 +626,7 @@ export function TaskInput({
               onChange={setWorkspaceMode}
               selectedCloudEnvironmentId={selectedCloudEnvId}
               onCloudEnvironmentChange={setSelectedCloudEnvId}
+              cloudAvailable={cloudAvailable}
               size="1"
             />
             {workspaceMode === "worktree" && (
@@ -774,6 +802,13 @@ export function TaskInput({
                 </Tooltip>
               </div>
             )}
+            {effectiveWorkspaceMode === "cloud" &&
+              !isLoadingRepos &&
+              !hasGithubIntegration && (
+                <div className="mx-2 mt-2">
+                  <CloudGithubMissingNotice />
+                </div>
+              )}
           </Flex>
         </Flex>
       </Flex>

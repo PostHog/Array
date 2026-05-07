@@ -113,6 +113,16 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     return this.getState();
   }
   async getValidAccessToken(): Promise<ValidAccessTokenOutput> {
+    const override = process.env.VITE_POSTHOG_ACCESS_TOKEN_OVERRIDE;
+    if (override) {
+      await this.initialize();
+      const region = this.session?.cloudRegion ?? "us";
+      return {
+        accessToken: override,
+        apiHost: getCloudUrlFromRegion(region),
+      };
+    }
+
     await this.initialize();
 
     const session = await this.ensureValidSession();
@@ -122,6 +132,16 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     };
   }
   async refreshAccessToken(): Promise<ValidAccessTokenOutput> {
+    const override = process.env.VITE_POSTHOG_ACCESS_TOKEN_OVERRIDE;
+    if (override) {
+      await this.initialize();
+      const region = this.session?.cloudRegion ?? "us";
+      return {
+        accessToken: override,
+        apiHost: getCloudUrlFromRegion(region),
+      };
+    }
+
     await this.initialize();
 
     const session = await this.ensureValidSession(true);

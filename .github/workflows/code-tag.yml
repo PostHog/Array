@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: "0 1,17 * * *"
   workflow_dispatch:
+    inputs:
+      quiet_retries:
+        type: number
+        default: 0
   pull_request:
     types: [closed]
     branches:
@@ -37,25 +41,55 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
+      - name: Check quiet period
+        id: quiet
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.quiet_retries != '0')
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          QUIET_RETRIES: ${{ github.event.inputs.quiet_retries || 0 }}
+        run: |
+          RETRIES="${QUIET_RETRIES}"
+          MAX_RETRIES=5
+          LAST_COMMIT_EPOCH=$(git log -1 --format=%ct HEAD)
+          NOW_EPOCH=$(date +%s)
+          AGE_MINUTES=$(( (NOW_EPOCH - LAST_COMMIT_EPOCH) / 60 ))
+
+          if [ "$AGE_MINUTES" -ge 15 ]; then
+            echo "Last commit to main was ${AGE_MINUTES}m ago. Quiet period met."
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$RETRIES" -ge "$MAX_RETRIES" ]; then
+            echo "Retried ${MAX_RETRIES} times and commits are still landing. Proceeding anyway."
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          NEXT=$((RETRIES + 1))
+          WAIT_SECONDS=$(( (15 - AGE_MINUTES) * 60 ))
+          echo "Last commit was ${AGE_MINUTES}m ago (< 15m). Sleeping ${WAIT_SECONDS}s before retry ${NEXT}/${MAX_RETRIES}..."
+          sleep "$WAIT_SECONDS"
+          gh workflow run code-tag.yml -f quiet_retries="$NEXT"
+          echo "proceed=false" >> "$GITHUB_OUTPUT"
+
       - name: Compute version and create tag
+        if: steps.quiet.outputs.proceed != 'false'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          # Find the latest base version tag (vX.Y or vX.Y.0 format)
-          LATEST_TAG=$(git tag --list 'v[0-9]*.[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+(\.0)?$' | head -1)
+          LATEST_TAG=$(git tag --list 'v[0-9]*.[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+(\.0)?$' | head -1 || true)
 
           if [ -z "$LATEST_TAG" ]; then
             echo "No version tag found. Create one with: git tag v0.15 && git push origin v0.15"
             exit 1
           fi
 
-          # Extract major.minor from tag
           VERSION_PART=${LATEST_TAG#v}
           MAJOR=$(echo "$VERSION_PART" | cut -d. -f1)
           MINOR=$(echo "$VERSION_PART" | cut -d. -f2)
 
-          # Count commits since the base tag
           PATCH=$(git rev-list "$LATEST_TAG"..HEAD --count)
 
           if [ "$PATCH" -eq 0 ]; then
@@ -63,8 +97,13 @@ jobs:
             exit 0
           fi
 
-          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          TAG="v$NEW_VERSION"
+          TAG="v${MAJOR}.${MINOR}.${PATCH}"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists. Nothing new to release."
+            exit 0
+          fi
+
           echo "Creating tag: $TAG (from base tag $LATEST_TAG + $PATCH commits)"
 
           git config user.email "github-actions[bot]@users.noreply.github.com"

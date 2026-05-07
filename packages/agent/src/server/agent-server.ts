@@ -29,6 +29,7 @@ import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
 import { PostHogAPIClient } from "../posthog-api";
+import { extractCreatedPrUrl } from "../pr-url-detector";
 import {
   formatConversationForResume,
   type ResumeState,
@@ -72,6 +73,8 @@ const errorWithClassificationSchema = z.object({
 });
 
 type MessageCallback = (message: unknown) => void;
+
+export const SSE_KEEPALIVE_INTERVAL_MS = 25_000;
 
 class NdJsonTap {
   private decoder = new TextDecoder();
@@ -329,41 +332,73 @@ export class AgentServer {
         );
       }
 
+      let keepaliveInterval: ReturnType<typeof setInterval> | null = null;
+      const clearKeepalive = (): void => {
+        if (keepaliveInterval) {
+          clearInterval(keepaliveInterval);
+          keepaliveInterval = null;
+        }
+      };
+
       const stream = new ReadableStream({
         start: async (controller) => {
-          const sseController: SseController = {
+          let sseController: SseController | null = null;
+          const encoder = new TextEncoder();
+          const detachCurrentSseController = (): void => {
+            if (sseController) {
+              this.detachSseController(sseController);
+            }
+          };
+          const enqueueSseFrame = (frame: string): void => {
+            try {
+              controller.enqueue(encoder.encode(frame));
+            } catch {
+              clearKeepalive();
+              detachCurrentSseController();
+            }
+          };
+
+          sseController = {
             send: (data: unknown) => {
-              try {
-                controller.enqueue(
-                  new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`),
-                );
-              } catch {
-                this.detachSseController(sseController);
-              }
+              enqueueSseFrame(`data: ${JSON.stringify(data)}\n\n`);
             },
             close: () => {
               try {
+                clearKeepalive();
                 controller.close();
               } catch {
-                this.detachSseController(sseController);
+                detachCurrentSseController();
               }
             },
           };
 
-          if (!this.session || this.session.payload.run_id !== payload.run_id) {
-            await this.initializeSession(payload, sseController);
-          } else {
-            this.session.sseController = sseController;
-            this.session.hasDesktopConnected = true;
-            this.replayPendingEvents();
-          }
+          keepaliveInterval = setInterval(() => {
+            enqueueSseFrame(": keepalive\n\n");
+          }, SSE_KEEPALIVE_INTERVAL_MS);
 
-          this.sendSseEvent(sseController, {
-            type: "connected",
-            run_id: payload.run_id,
-          });
+          try {
+            if (
+              !this.session ||
+              this.session.payload.run_id !== payload.run_id
+            ) {
+              await this.initializeSession(payload, sseController);
+            } else {
+              this.session.sseController = sseController;
+              this.session.hasDesktopConnected = true;
+              this.replayPendingEvents();
+            }
+
+            this.sendSseEvent(sseController, {
+              type: "connected",
+              run_id: payload.run_id,
+            });
+          } catch (error) {
+            clearKeepalive();
+            throw error;
+          }
         },
         cancel: () => {
+          clearKeepalive();
           this.logger.debug("SSE connection closed");
           if (this.session?.sseController) {
             this.session.sseController = null;
@@ -554,7 +589,7 @@ export class AgentServer {
     switch (method) {
       case POSTHOG_NOTIFICATIONS.USER_MESSAGE:
       case "user_message": {
-        this.logger.info("Received user_message command", {
+        this.logger.debug("Received user_message command", {
           hasContent:
             typeof params.content === "string"
               ? params.content.trim().length > 0
@@ -574,7 +609,7 @@ export class AgentServer {
         if (prompt.length === 0) {
           throw new Error("User message cannot be empty");
         }
-        this.logger.info("Built user_message prompt", {
+        this.logger.debug("Built user_message prompt", {
           blockTypes: prompt.map((block) => block.type),
         });
         const promptPreview = promptBlocksToText(prompt);
@@ -684,7 +719,7 @@ export class AgentServer {
           ? params.mcpServers
           : [];
 
-        this.logger.info("Refresh session requested", {
+        this.logger.debug("Refresh session requested", {
           serverCount: mcpServers.length,
         });
 
@@ -969,6 +1004,7 @@ export class AgentServer {
         sessionId: acpSessionId,
         runId: payload.run_id,
         taskId: payload.task_id,
+        agentVersion: this.config.version ?? packageJson.version,
       },
     };
     this.broadcastEvent({
@@ -1156,7 +1192,7 @@ export class AgentServer {
             this.resumeState.latestGitCheckpoint,
           );
           checkpointApplied = true;
-          this.logger.info("Git checkpoint applied", {
+          this.logger.debug("Git checkpoint applied", {
             branch: this.resumeState.latestGitCheckpoint.branch,
             head: this.resumeState.latestGitCheckpoint.head,
             packBytes: metrics.packBytes,
@@ -1279,7 +1315,7 @@ export class AgentServer {
       taskId: taskRun.task,
       runId: taskRun.id,
     });
-    this.logger.info("Built pending user prompt", {
+    this.logger.debug("Built pending user prompt", {
       hasMessage: typeof message === "string" && message.trim().length > 0,
       requestedArtifactCount: artifactIds.length,
       blockTypes: prompt.map((block) => block.type),
@@ -1605,6 +1641,19 @@ ${attributionInstructions}
     }
 
     if (!this.config.repositoryPath) {
+      const publishInstructions =
+        this.config.createPr === false
+          ? `
+When the user asks for code changes:
+- You may clone a repository and make local edits in that clone
+- Do NOT create branches, commits, push changes, or open pull requests in this run`
+          : `
+When the user explicitly asks to clone or work in a GitHub repository:
+- Clone the repository into /tmp/workspace/repos/<owner>/<repo> using \`gh repo clone <owner>/<repo> /tmp/workspace/repos/<owner>/<repo>\`
+- Work from inside that cloned repository for follow-up code changes
+- If the user explicitly asks you to open or update a pull request, create a branch, commit the requested changes, push it, and open a draft pull request from inside the clone
+- Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
+
       return `
 # Cloud Task Execution — No Repository Mode
 
@@ -1617,11 +1666,12 @@ When the user asks about analytics, data, metrics, events, funnels, dashboards, 
 
 When the user asks for code changes or software engineering tasks:
 - Let them know you can help but don't have a repository connected for this session
-- Offer to write code snippets, scripts, or provide guidance
+- If they have not specified a repository to clone, offer to write code snippets, scripts, or provide guidance
+${publishInstructions}
 
 Important:
-- Do NOT create branches, commits, or pull requests in this mode.
 - Prefer using MCP tools to answer questions with real data over giving generic advice.
+${attributionInstructions}
 `;
     }
 
@@ -2082,45 +2132,21 @@ ${attributionInstructions}
       const meta = (update?._meta as Record<string, unknown>)?.claudeCode as
         | Record<string, unknown>
         | undefined;
-      const toolResponse = meta?.toolResponse;
 
-      // Extract text content from tool response
-      let textToSearch = "";
+      const content = update?.content as
+        | Array<{ type?: string; text?: string }>
+        | undefined;
 
-      if (toolResponse) {
-        if (typeof toolResponse === "string") {
-          textToSearch = toolResponse;
-        } else if (typeof toolResponse === "object" && toolResponse !== null) {
-          const respObj = toolResponse as Record<string, unknown>;
-          textToSearch =
-            String(respObj.stdout || "") + String(respObj.stderr || "");
-          if (!textToSearch && respObj.output) {
-            textToSearch = String(respObj.output);
-          }
-        }
-      }
+      const prUrl = extractCreatedPrUrl({
+        toolName: meta?.toolName as string | undefined,
+        bashCommand: meta?.bashCommand as string | undefined,
+        toolResponse: meta?.toolResponse,
+        content,
+      });
+      if (!prUrl) return;
 
-      // Also check content array
-      const content = update?.content;
-      if (Array.isArray(content)) {
-        for (const item of content) {
-          if (item.type === "text" && item.text) {
-            textToSearch += ` ${item.text}`;
-          }
-        }
-      }
-
-      if (!textToSearch) return;
-
-      // Match GitHub PR URLs
-      const prUrlMatch = textToSearch.match(
-        /https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/,
-      );
-      if (!prUrlMatch) return;
-
-      const prUrl = prUrlMatch[0];
       this.detectedPrUrl = prUrl;
-      this.logger.debug("Detected PR URL in bash output", {
+      this.logger.debug("Detected PR URL from gh pr create", {
         runId: payload.run_id,
         prUrl,
       });

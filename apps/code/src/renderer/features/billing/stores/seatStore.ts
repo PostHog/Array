@@ -14,6 +14,7 @@ const log = logger.scope("seat-store");
 
 interface SeatStoreState {
   seat: SeatData | null;
+  orgSeat: SeatData | null;
   isLoading: boolean;
   error: string | null;
   redirectUrl: string | null;
@@ -38,6 +39,25 @@ async function getClient() {
     throw new Error("Not authenticated");
   }
   return client;
+}
+
+async function fetchAndProvision(
+  client: Awaited<ReturnType<typeof getClient>>,
+  options: { best: boolean; autoProvision: boolean },
+): Promise<SeatData | null> {
+  let seat = await client.getMySeat({ best: options.best });
+  if (!seat && options.autoProvision) {
+    log.info("No seat found, auto-provisioning free plan", {
+      best: options.best,
+    });
+    try {
+      seat = await client.createSeat(PLAN_FREE);
+    } catch {
+      log.info("Auto-provision failed, re-fetching seat");
+      seat = await client.getMySeat({ best: options.best });
+    }
+  }
+  return seat;
 }
 
 function handleSeatError(
@@ -77,6 +97,7 @@ function invalidatePlanCache(): void {
 
 const initialState: SeatStoreState = {
   seat: null,
+  orgSeat: null,
   isLoading: false,
   error: null,
   redirectUrl: null,
@@ -90,18 +111,14 @@ export const useSeatStore = create<SeatStore>()((set, get) => ({
     set({ isLoading: true, error: null, redirectUrl: null });
     try {
       const client = await getClient();
-      let seat = await client.getMySeat();
-      if (!seat && options?.autoProvision) {
-        log.info("No seat found, auto-provisioning free plan");
-        try {
-          seat = await client.createSeat(PLAN_FREE);
-        } catch {
-          log.info("Auto-provision failed, re-fetching seat");
-          seat = await client.getMySeat();
-        }
-      }
+      const autoProvision = options?.autoProvision ?? false;
+      const [seat, orgSeat] = await Promise.all([
+        fetchAndProvision(client, { best: true, autoProvision }),
+        fetchAndProvision(client, { best: false, autoProvision }),
+      ]);
       set({
         seat,
+        orgSeat,
         isLoading: false,
         billingOrgId: seat?.organization_id ?? null,
       });
@@ -165,6 +182,7 @@ export const useSeatStore = create<SeatStore>()((set, get) => ({
         const seat = await client.upgradeSeat(PLAN_PRO);
         set({
           seat,
+          orgSeat: seat,
           isLoading: false,
           billingOrgId: seat.organization_id ?? null,
         });
@@ -174,6 +192,7 @@ export const useSeatStore = create<SeatStore>()((set, get) => ({
       const seat = await client.createSeat(PLAN_PRO);
       set({
         seat,
+        orgSeat: seat,
         isLoading: false,
         billingOrgId: seat.organization_id ?? null,
       });
@@ -191,6 +210,7 @@ export const useSeatStore = create<SeatStore>()((set, get) => ({
       const seat = await client.getMySeat();
       set({
         seat,
+        orgSeat: seat,
         isLoading: false,
         billingOrgId: seat?.organization_id ?? null,
       });
@@ -207,6 +227,7 @@ export const useSeatStore = create<SeatStore>()((set, get) => ({
       const seat = await client.reactivateSeat();
       set({
         seat,
+        orgSeat: seat,
         isLoading: false,
         billingOrgId: seat.organization_id ?? null,
       });

@@ -1,4 +1,4 @@
-import { useMcpInstallationTools } from "@features/settings/hooks/useMcpInstallationTools";
+import { useMcpInstallationTools } from "@features/mcp-servers/hooks/useMcpInstallationTools";
 import {
   ArrowClockwise,
   ArrowLeft,
