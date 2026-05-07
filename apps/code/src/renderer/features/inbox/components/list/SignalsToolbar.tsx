@@ -53,9 +53,12 @@ interface SignalsToolbarProps {
   onToggleSelectAll?: (checked: boolean) => void;
   /** Called when the "Configure sources" button is clicked. */
   onConfigureSources?: () => void;
-  /** Opens the shared dismiss report dialog (0–1 selected toolbar flow). */
+  /**
+   * Opens the dismiss flow: exactly one report selected (snooze or permanent suppress, with a reason).
+   * With 2+ reports selected, use the Snooze and Suppress toolbar actions instead.
+   */
   onOpenDismissDialog?: () => void;
-  /** True while the shared dismiss dialog mutation is in-flight for this toolbar context. */
+  /** True while the single-report dismiss dialog has a mutation in flight for this toolbar. */
   isDismissMutationPending?: boolean;
 }
 
@@ -88,7 +91,8 @@ function formatPauseRemaining(pausedUntil: string): string {
 const inboxLivePollingTooltip = `Inbox is focused – syncing reports every ${Math.round(INBOX_REFETCH_INTERVAL_MS / 1000)}s…`;
 
 function bulkMenuItemTooltip(
-  primary: string,
+  explanationWhenEnabled: string,
+  headlineWhenDisabled: string,
   disabled: boolean,
   disabledReason: string | null | undefined,
 ): ReactNode {
@@ -100,7 +104,7 @@ function bulkMenuItemTooltip(
     return (
       <Flex direction="column" gap="2" className="max-w-[280px]">
         <Text as="span" className="text-(--gray-12) text-[13px]">
-          {primary}
+          {headlineWhenDisabled}
         </Text>
         <Text as="span" color="gray" className="text-[13px] leading-[1.45]">
           Disabled because {reason}.
@@ -108,7 +112,14 @@ function bulkMenuItemTooltip(
       </Flex>
     );
   }
-  return primary;
+  return (
+    <Text
+      as="span"
+      className="block max-w-[280px] text-(--gray-12) text-[13px] leading-[1.45]"
+    >
+      {explanationWhenEnabled}
+    </Text>
+  );
 }
 
 type InboxBulkActionButtonProps = Pick<
@@ -150,7 +161,10 @@ function InboxBulkActionButton({
 }
 
 interface BulkOverflowMenuItemProps {
+  /** Shown as the first line when the item is disabled (with reason below). */
   menuPrimary: string;
+  /** Shown on hover when the item is enabled; explains what the action does. */
+  tooltipExplanation: string;
   disabled: boolean;
   disabledReason: string | null | undefined;
   destructive?: boolean;
@@ -162,6 +176,7 @@ interface BulkOverflowMenuItemProps {
 
 function BulkOverflowMenuItem({
   menuPrimary,
+  tooltipExplanation,
   disabled,
   disabledReason,
   destructive = false,
@@ -170,7 +185,12 @@ function BulkOverflowMenuItem({
   label,
   onSelect,
 }: BulkOverflowMenuItemProps) {
-  const tooltip = bulkMenuItemTooltip(menuPrimary, disabled, disabledReason);
+  const tooltip = bulkMenuItemTooltip(
+    tooltipExplanation,
+    menuPrimary,
+    disabled,
+    disabledReason,
+  );
   const content = (
     <span className="flex items-center gap-2">
       {loading ? <Spinner size="1" /> : icon}
@@ -181,7 +201,7 @@ function BulkOverflowMenuItem({
 
   if (disabled) {
     return (
-      <ActionTooltip side="right" content={tooltip}>
+      <ActionTooltip side="right" align="start" content={tooltip}>
         <span
           className={`inline-flex w-full cursor-not-allowed opacity-50 ${destructive ? "text-(--red-11)" : "text-gray-10"}`}
         >
@@ -198,7 +218,7 @@ function BulkOverflowMenuItem({
   }
 
   return (
-    <ActionTooltip side="right" content={tooltip}>
+    <ActionTooltip side="right" align="start" content={tooltip}>
       <DropdownMenuItem
         variant={variant}
         className={
@@ -236,6 +256,8 @@ export function SignalsToolbar({
 }: SignalsToolbarProps) {
   const searchQuery = useInboxSignalsFilterStore((s) => s.searchQuery);
   const setSearchQuery = useInboxSignalsFilterStore((s) => s.setSearchQuery);
+  const [showSnoozeConfirm, setShowSnoozeConfirm] = useState(false);
+  const [showBulkSuppressConfirm, setShowBulkSuppressConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [moreActionsOpen, setMoreActionsOpen] = useState(false);
 
@@ -285,15 +307,46 @@ export function SignalsToolbar({
       ? "Reingest selected reports to gather more context"
       : "Reingest this report to gather more context";
 
+  const reingestTooltipExplanation =
+    selectedCount > 1
+      ? "Runs the signals pipeline again for each selected report to pull in refreshed context and observations."
+      : "Runs the signals pipeline again for this report to pull in refreshed context and observations.";
+
   const deleteMenuPrimary =
     selectedCount > 1
       ? "Delete selected reports and their signals"
       : "Delete this report and its signals";
 
+  const deleteTooltipExplanation =
+    selectedCount > 1
+      ? "Permanently removes these inbox reports and their linked signal data from your project."
+      : "Permanently removes this inbox report and its linked signal data from your project.";
+
+  const deleteConfirmTitle =
+    selectedCount > 1 ? "Delete reports" : "Delete report";
+  const deleteConfirmDescription =
+    selectedCount > 1
+      ? "Permanently delete these reports and their signals?"
+      : "Permanently delete this report and its signals?";
+
   const handleConfirmDelete = async () => {
     const ok = await deleteSelected();
     if (ok) {
       setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleConfirmSnooze = async () => {
+    const ok = await snoozeSelected();
+    if (ok) {
+      setShowSnoozeConfirm(false);
+    }
+  };
+
+  const handleConfirmBulkSuppress = async () => {
+    const ok = await suppressSelected();
+    if (ok) {
+      setShowBulkSuppressConfirm(false);
     }
   };
 
@@ -442,6 +495,7 @@ export function SignalsToolbar({
               >
                 <BulkOverflowMenuItem
                   menuPrimary={reingestMenuPrimary}
+                  tooltipExplanation={reingestTooltipExplanation}
                   disabled={reingestDisabledReason !== null || isReingesting}
                   disabledReason={reingestDisabledReason}
                   loading={isReingesting}
@@ -451,6 +505,7 @@ export function SignalsToolbar({
                 />
                 <BulkOverflowMenuItem
                   menuPrimary={deleteMenuPrimary}
+                  tooltipExplanation={deleteTooltipExplanation}
                   disabled={deleteDisabledReason !== null || isDeleting}
                   disabledReason={deleteDisabledReason}
                   destructive
@@ -471,17 +526,17 @@ export function SignalsToolbar({
                   tooltipContent="Wait for selected reports to gather more context"
                   disabledReason={snoozeDisabledReason}
                   disabled={snoozeDisabledReason !== null || isSnoozing}
-                  onClick={() => void snoozeSelected()}
+                  onClick={() => setShowSnoozeConfirm(true)}
                 />
                 <InboxBulkActionButton
                   color="gray"
                   loading={isSuppressing}
                   icon={<EyeSlashIcon size={12} />}
                   label="Suppress"
-                  tooltipContent="Suppress selected reports — no confirmation dialog"
+                  tooltipContent="Permanently suppress selected reports"
                   disabledReason={suppressDisabledReason}
                   disabled={suppressDisabledReason !== null || isSuppressing}
-                  onClick={() => void suppressSelected()}
+                  onClick={() => setShowBulkSuppressConfirm(true)}
                 />
               </>
             ) : (
@@ -504,6 +559,86 @@ export function SignalsToolbar({
       </Flex>
 
       <AlertDialog.Root
+        open={showSnoozeConfirm}
+        onOpenChange={setShowSnoozeConfirm}
+      >
+        <AlertDialog.Content maxWidth="420px">
+          <AlertDialog.Title>
+            <Flex align="center" gap="2">
+              <PauseIcon size={18} />
+              <Text className="font-bold">Snooze reports</Text>
+            </Flex>
+          </AlertDialog.Title>
+          <AlertDialog.Description className="text-sm">
+            <Text className="text-[13px]">
+              Selected reports will go back to gathering context. You can review
+              them again once they are ready. Continue?
+            </Text>
+          </AlertDialog.Description>
+          <Flex gap="3" mt="4" justify="end">
+            <AlertDialog.Cancel>
+              <Button variant="soft" color="gray">
+                Cancel
+              </Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button
+                variant="solid"
+                color="gray"
+                onClick={() => void handleConfirmSnooze()}
+                disabled={isSnoozing}
+              >
+                {isSnoozing ? <Spinner size="1" /> : <PauseIcon size={14} />}
+                Snooze
+              </Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
+
+      <AlertDialog.Root
+        open={showBulkSuppressConfirm}
+        onOpenChange={setShowBulkSuppressConfirm}
+      >
+        <AlertDialog.Content maxWidth="420px">
+          <AlertDialog.Title>
+            <Flex align="center" gap="2">
+              <EyeSlashIcon size={18} />
+              <Text className="font-bold">Suppress reports</Text>
+            </Flex>
+          </AlertDialog.Title>
+          <AlertDialog.Description className="text-sm">
+            <Text className="text-[13px]">
+              Suppressing a report causes all future signals matched to that
+              report to be ignored. Are you sure?
+            </Text>
+          </AlertDialog.Description>
+          <Flex gap="3" mt="4" justify="end">
+            <AlertDialog.Cancel>
+              <Button variant="soft" color="gray">
+                Cancel
+              </Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button
+                variant="solid"
+                color="orange"
+                onClick={() => void handleConfirmBulkSuppress()}
+                disabled={isSuppressing}
+              >
+                {isSuppressing ? (
+                  <Spinner size="1" />
+                ) : (
+                  <EyeSlashIcon size={14} />
+                )}
+                Suppress
+              </Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
+
+      <AlertDialog.Root
         open={showDeleteConfirm}
         onOpenChange={setShowDeleteConfirm}
       >
@@ -511,11 +646,11 @@ export function SignalsToolbar({
           <AlertDialog.Title>
             <Flex align="center" gap="2">
               <TrashIcon size={18} />
-              <Text className="font-bold">Delete reports</Text>
+              <Text className="font-bold">{deleteConfirmTitle}</Text>
             </Flex>
           </AlertDialog.Title>
           <AlertDialog.Description className="text-sm">
-            <Text className="text-[13px]">Delete this report?</Text>
+            <Text className="text-[13px]">{deleteConfirmDescription}</Text>
           </AlertDialog.Description>
           <Flex gap="3" mt="4" justify="end">
             <AlertDialog.Cancel>

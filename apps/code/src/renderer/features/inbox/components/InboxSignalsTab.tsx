@@ -221,10 +221,8 @@ export function InboxSignalsTab() {
 
   const [dismissReport, setDismissReport] = useState<SignalReport | null>(null);
 
-  const dismissBulkActions = useInboxBulkActions(
-    allReports,
-    dismissReport ? [dismissReport.id] : [],
-  );
+  const dismissTargetId = dismissReport?.id ?? null;
+  const dismissBulkActions = useInboxBulkActions(allReports, dismissTargetId);
 
   const handleDismissDialogOpenChange = useCallback((open: boolean) => {
     if (!open) setDismissReport(null);
@@ -232,20 +230,15 @@ export function InboxSignalsTab() {
 
   const handleDismissConfirm = useCallback(
     async (result: DismissReportDialogResult) => {
-      const dismissedId = dismissReport?.id;
-      if (dismissedId == null) return;
+      if (dismissTargetId == null) return;
       const ok = isDismissalReasonSnooze(result.reason)
         ? await dismissBulkActions.snoozeSelected()
         : await dismissBulkActions.suppressSelected(result);
       if (ok) {
         setDismissReport(null);
-        const sel = useInboxReportSelectionStore.getState().selectedReportIds;
-        if (sel.length === 1 && sel[0] === dismissedId) {
-          clearSelection();
-        }
       }
     },
-    [dismissBulkActions, dismissReport?.id, clearSelection],
+    [dismissBulkActions, dismissTargetId],
   );
 
   const { selectedReport } = useInboxDeepLinkListSync({

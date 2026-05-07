@@ -2,8 +2,7 @@ import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-ef
 import type { PermissionMode } from "@posthog/agent/execution-mode";
 import {
   DISMISSAL_REASON_OPTIONS,
-  type DismissalReason,
-  LEGACY_DISMISSAL_REASONS,
+  type DismissalReasonOptionValue,
 } from "@shared/dismissalReasons";
 import type {
   ActionabilityJudgmentArtefact,
@@ -19,7 +18,6 @@ import type {
   SignalReportArtefact,
   SignalReportArtefactsResponse,
   SignalReportSignalsResponse,
-  SignalReportStatus,
   SignalReportsQueryParams,
   SignalReportsResponse,
   SignalReportTask,
@@ -271,10 +269,9 @@ type AnyArtefact =
   | SuggestedReviewersArtefact
   | DismissalArtefact;
 
-const DISMISSAL_REASONS = new Set<DismissalReason>([
-  ...DISMISSAL_REASON_OPTIONS.map((o) => o.value),
-  ...LEGACY_DISMISSAL_REASONS,
-]);
+const DISMISSAL_REASONS = new Set<DismissalReasonOptionValue>(
+  DISMISSAL_REASON_OPTIONS.map((o) => o.value),
+);
 
 const PRIORITY_VALUES = new Set(["P0", "P1", "P2", "P3", "P4"]);
 
@@ -390,9 +387,13 @@ function normalizeDismissalArtefact(
 
   const rawReason = optionalString(contentValue.reason);
   const reason =
-    rawReason && DISMISSAL_REASONS.has(rawReason as DismissalReason)
-      ? (rawReason as DismissalReason)
+    rawReason && DISMISSAL_REASONS.has(rawReason as DismissalReasonOptionValue)
+      ? (rawReason as DismissalReasonOptionValue)
       : null;
+
+  if (reason == null) {
+    return null;
+  }
 
   return {
     id,
@@ -2031,15 +2032,21 @@ export class PostHogAPIClient {
 
   async updateSignalReportState(
     reportId: string,
-    input: {
-      state: Extract<SignalReportStatus, "suppressed" | "potential">;
-      snooze_for?: number;
-      reset_weight?: boolean;
-      error?: string;
-      /** Optional dismissal feedback persisted as a `dismissal` artefact. Only honored when state == "suppressed". */
-      dismissal_reason?: DismissalReason;
-      dismissal_note?: string;
-    },
+    input:
+      | {
+          state: "potential";
+          snooze_for?: number;
+          reset_weight?: boolean;
+          error?: string;
+        }
+      | {
+          state: "suppressed";
+          /** When omitted, the server suppresses without creating a dismissal artefact. */
+          dismissal_reason?: DismissalReasonOptionValue;
+          dismissal_note?: string;
+          reset_weight?: boolean;
+          error?: string;
+        },
   ): Promise<SignalReport> {
     const teamId = await this.getTeamId();
     const url = new URL(

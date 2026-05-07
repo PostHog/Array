@@ -3,10 +3,17 @@ import {
   ExplainedPauseLabel,
   ExplainedSuppressLabel,
 } from "@features/inbox/components/utils/ExplainedDismissOptionLabels";
-import { Dialog, Flex, RadioGroup, Text, TextArea } from "@radix-ui/themes";
+import {
+  AlertDialog,
+  Flex,
+  RadioGroup,
+  Text,
+  TextArea,
+} from "@radix-ui/themes";
 import {
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
+  isDismissalReasonSnooze,
 } from "@shared/dismissalReasons";
 import type { SignalReport } from "@shared/types";
 import { useEffect, useState } from "react";
@@ -54,22 +61,24 @@ export function DismissReportDialog({
 
   const alreadyFixedDisabled = snoozeDisabledReason !== null;
 
-  const title = report.title?.trim() ? report.title : "Untitled signal";
+  const titleText = `Dismiss report "${report.title?.trim() ? report.title : "Untitled signal"}"?`;
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Content maxWidth="480px" size="1">
-        <Flex direction="column" gap="2">
-          <Text className="text-balance font-medium text-sm leading-tight">
-            Dismiss report "{title}"?
+    <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
+      <AlertDialog.Content maxWidth="480px">
+        <AlertDialog.Title>
+          <Text className="text-balance font-bold leading-tight">
+            {titleText}
           </Text>
-
-          <Text color="gray" className="mb-1 text-[13px]">
-            This report will be removed from your inbox.
-            <br />
-            Your feedback is saved on the report and helps the agents do better.
+        </AlertDialog.Title>
+        <AlertDialog.Description className="text-sm">
+          <Text color="gray" className="text-[13px]">
+            This report will be removed from your inbox. Your feedback is saved
+            on the report and helps the agents do better.
           </Text>
+        </AlertDialog.Description>
 
+        <Flex direction="column" gap="4" mt="2">
           <RadioGroup.Root
             size="1"
             value={reason ?? ""}
@@ -79,9 +88,9 @@ export function DismissReportDialog({
           >
             <Flex direction="column" gap="2">
               {DISMISSAL_REASON_OPTIONS.map((option) => {
-                const snoozesInsteadOfDismiss =
-                  "snoozesInsteadOfDismiss" in option &&
-                  option.snoozesInsteadOfDismiss === true;
+                const snoozesInsteadOfDismiss = isDismissalReasonSnooze(
+                  option.value,
+                );
                 const disabled =
                   snoozesInsteadOfDismiss && alreadyFixedDisabled;
 
@@ -113,27 +122,26 @@ export function DismissReportDialog({
             maxLength={4000}
             disabled={isSubmitting}
           />
-
-          <Flex gap="2" justify="end">
-            <Dialog.Close>
-              <Button size="1" variant="soft" color="gray">
-                Cancel
-              </Button>
-            </Dialog.Close>
-            <Button
-              size="1"
-              variant="solid"
-              color="gray"
-              disabled={!reason || isSubmitting}
-              disabledReason={!reason ? "you haven't picked a reason" : null}
-              onClick={handleConfirm}
-              loading={isSubmitting}
-            >
-              Dismiss & teach the agent
-            </Button>
-          </Flex>
         </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
+
+        <Flex gap="3" mt="4" justify="end">
+          <AlertDialog.Cancel>
+            <Button variant="soft" color="gray">
+              Cancel
+            </Button>
+          </AlertDialog.Cancel>
+          <Button
+            variant="solid"
+            color="gray"
+            disabled={!reason || isSubmitting}
+            disabledReason={!reason ? "you haven't picked a reason" : null}
+            onClick={handleConfirm}
+            loading={isSubmitting}
+          >
+            Dismiss & teach the agent
+          </Button>
+        </Flex>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
   );
 }

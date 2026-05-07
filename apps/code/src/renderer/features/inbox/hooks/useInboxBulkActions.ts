@@ -1,16 +1,11 @@
+import type { DismissReportDialogResult } from "@features/inbox/components/DismissReportDialog";
 import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
 import { inboxStatusLabel } from "@features/inbox/utils/inboxSort";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
-import type { DismissalReason } from "@shared/dismissalReasons";
 import type { SignalReport } from "@shared/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
-
-interface SuppressDismissal {
-  reason: DismissalReason;
-  note: string;
-}
 
 type BulkActionName = "suppress" | "snooze" | "delete" | "reingest";
 
@@ -21,40 +16,22 @@ interface BulkActionResult {
 
 const inboxQueryKey = ["inbox", "signal-reports"] as const;
 
-/** Only these reports may be dismissed (suppressed) from the inbox. */
+/** Active workflow statuses for snooze and suppress. Terminal `suppressed` / `deleted` are excluded. */
 const suppressibleStatuses = new Set<SignalReport["status"]>([
-  "failed",
-  "pending_input",
-  "ready",
-]);
-
-const snoozableStatuses = new Set<SignalReport["status"]>([
+  "potential",
+  "candidate",
   "in_progress",
-  "ready",
   "pending_input",
+  "ready",
+  "failed",
 ]);
 
 /** Clause after "Disabled because …" (see `@components/ui/Button`). */
 const DISABLED_NO_SELECTION = "you haven't selected a report";
 
-/** Matches labels in the inbox list/filter (`inboxStatusLabel`). */
-const SNOOZE_ALLOWED_STATUS_PHRASE = (
-  [
-    "in_progress",
-    "ready",
-    "pending_input",
-  ] as const satisfies readonly SignalReport["status"][]
-)
-  .map((status) => inboxStatusLabel(status))
-  .join(" or ");
-
-/** Matches labels in the inbox list/filter (`inboxStatusLabel`). */
-const SUPPRESS_ALLOWED_STATUS_PHRASE = (
-  [
-    "failed",
-    "pending_input",
-    "ready",
-  ] as const satisfies readonly SignalReport["status"][]
+/** Statuses that block suppression; labels match `inboxStatusLabel`. */
+const SUPPRESS_BLOCKED_STATUS_PHRASE = (
+  ["suppressed", "deleted"] as const satisfies readonly SignalReport["status"][]
 )
   .map((status) => inboxStatusLabel(status))
   .join(" or ");
@@ -89,23 +66,7 @@ function formatBulkActionSummary(
   return `${successCount} ${formulated}, ${failureCount} failed`;
 }
 
-function getSnoozeDisabledReason(
-  selectedCount: number,
-  selectedReports: SignalReport[],
-): string | null {
-  if (selectedCount === 0) {
-    return DISABLED_NO_SELECTION;
-  }
-  const ok = selectedReports.every((report) =>
-    snoozableStatuses.has(report.status),
-  );
-  if (ok) {
-    return null;
-  }
-  return `every selected report must be ${SNOOZE_ALLOWED_STATUS_PHRASE} to snooze`;
-}
-
-function getSuppressDisabledReason(
+function getSnoozeOrSuppressDisabledReason(
   selectedCount: number,
   selectedReports: SignalReport[],
 ): string | null {
@@ -118,7 +79,7 @@ function getSuppressDisabledReason(
   if (ok) {
     return null;
   }
-  return `every selected report must be ${SUPPRESS_ALLOWED_STATUS_PHRASE} to suppress`;
+  return `every selected report must not already be ${SUPPRESS_BLOCKED_STATUS_PHRASE}`;
 }
 
 function getSelectedReportEligibility(
@@ -131,21 +92,47 @@ function getSelectedReportEligibility(
   );
   const selectedCount = selectedReports.length;
 
+  const snoozeOrSuppressDisabledReason = getSnoozeOrSuppressDisabledReason(
+    selectedCount,
+    selectedReports,
+  );
+
   return {
     selectedReports,
     selectedIds: selectedReports.map((report) => report.id),
     selectedCount,
-    snoozeDisabledReason: getSnoozeDisabledReason(
-      selectedCount,
-      selectedReports,
-    ),
-    suppressDisabledReason: getSuppressDisabledReason(
-      selectedCount,
-      selectedReports,
-    ),
+    snoozeDisabledReason: snoozeOrSuppressDisabledReason,
+    suppressDisabledReason: snoozeOrSuppressDisabledReason,
     deleteDisabledReason: selectedCount === 0 ? DISABLED_NO_SELECTION : null,
     reingestDisabledReason: selectedCount === 0 ? DISABLED_NO_SELECTION : null,
   };
+}
+
+/** Toolbar: selected report ids. Dismiss dialog: that report's id, or null when closed. */
+export type InboxBulkSelection = string[] | string | null;
+
+const emptyBulkIds: string[] = [];
+
+function effectiveBulkIdsFromSelection(
+  selection: InboxBulkSelection,
+): string[] {
+  if (selection == null) {
+    return emptyBulkIds;
+  }
+  if (Array.isArray(selection)) {
+    return selection;
+  }
+  return [selection];
+}
+
+function bulkSelectionKey(selection: InboxBulkSelection): string {
+  if (selection == null) {
+    return "";
+  }
+  if (Array.isArray(selection)) {
+    return selection.join("\0");
+  }
+  return selection;
 }
 
 /** Snooze disabled reason when `selectedIds` are treated as the bulk selection (matches toolbar logic). */
@@ -168,16 +155,19 @@ export function inboxBulkSuppressDisabledReason(
 
 export function useInboxBulkActions(
   reports: SignalReport[],
-  effectiveBulkIds: string[],
+  selection: InboxBulkSelection,
 ) {
   const queryClient = useQueryClient();
   const clearSelection = useInboxReportSelectionStore(
     (state) => state.clearSelection,
   );
 
+  const effectiveBulkIds = effectiveBulkIdsFromSelection(selection);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `bulkKeys` serializes selection so callers may pass fresh array literals (or a lone id) without busting this memo.
   const eligibility = useMemo(
     () => getSelectedReportEligibility(reports, effectiveBulkIds),
-    [reports, effectiveBulkIds],
+    [reports, bulkSelectionKey(selection)],
   );
 
   const invalidateInboxQueries = useCallback(async () => {
@@ -190,7 +180,7 @@ export function useInboxBulkActions(
   const suppressMutation = useAuthenticatedMutation(
     async (
       client,
-      input: { reportIds: string[]; dismissal?: SuppressDismissal },
+      input: { reportIds: string[]; dismissal?: DismissReportDialogResult },
     ) => {
       const results = await Promise.allSettled(
         input.reportIds.map((reportId) =>
@@ -338,14 +328,14 @@ export function useInboxBulkActions(
   );
 
   const suppressSelected = useCallback(
-    async (dismissal?: SuppressDismissal) => {
+    async (dismissal?: DismissReportDialogResult) => {
       if (eligibility.suppressDisabledReason !== null) {
         return false;
       }
 
       await suppressMutation.mutateAsync({
         reportIds: eligibility.selectedIds,
-        dismissal,
+        ...(dismissal != null ? { dismissal } : {}),
       });
       return true;
     },
