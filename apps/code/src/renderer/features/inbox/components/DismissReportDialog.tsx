@@ -61,24 +61,22 @@ export function DismissReportDialog({
 
   const alreadyFixedDisabled = snoozeDisabledReason !== null;
 
-  const titleText = `Dismiss report "${report.title?.trim() ? report.title : "Untitled signal"}"?`;
-
   return (
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialog.Content maxWidth="480px">
         <AlertDialog.Title>
-          <Text className="text-balance font-bold leading-tight">
-            {titleText}
+          <Text className="text-balance font-bold text-lg">
+            Dismiss report "
+            {report.title?.trim() ? report.title : "Untitled signal"}"?
           </Text>
         </AlertDialog.Title>
-        <AlertDialog.Description className="text-sm">
-          <Text color="gray" className="text-[13px]">
-            This report will be removed from your inbox. Your feedback is saved
-            on the report and helps the agents do better.
-          </Text>
+        <AlertDialog.Description className="text-gray-10 text-sm">
+          This report will be removed from your inbox.
+          <br />
+          Your feedback is saved on the report and helps the agent.
         </AlertDialog.Description>
 
-        <Flex direction="column" gap="4" mt="2">
+        <Flex direction="column" gap="4" mt="4">
           <RadioGroup.Root
             size="1"
             value={reason ?? ""}
@@ -132,7 +130,6 @@ export function DismissReportDialog({
           </AlertDialog.Cancel>
           <Button
             variant="solid"
-            color="gray"
             disabled={!reason || isSubmitting}
             disabledReason={!reason ? "you haven't picked a reason" : null}
             onClick={handleConfirm}
