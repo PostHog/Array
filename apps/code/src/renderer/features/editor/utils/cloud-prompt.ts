@@ -1,9 +1,13 @@
-import { pathToFileURL } from "node:url";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { CLOUD_PROMPT_PREFIX, serializeCloudPrompt } from "@posthog/shared";
 import { trpcClient } from "@renderer/trpc/client";
 import { getImageMimeType, isImageFile } from "@shared/constants/image";
-import { getFileExtension, getFileName, isAbsolutePath } from "@utils/path";
+import {
+  getFileExtension,
+  getFileName,
+  isAbsolutePath,
+  pathToFileUri,
+} from "@utils/path";
 import { unescapeXmlAttr } from "@utils/xml";
 
 const ABSOLUTE_FILE_TAG_REGEX = /<file\s+path="([^"]+)"\s*\/>/g;
@@ -80,10 +84,6 @@ function estimateBase64Bytes(base64: string): number {
   return Math.floor((base64.length * 3) / 4) - padding;
 }
 
-function pathToFileUri(filePath: string): string {
-  return pathToFileURL(filePath).href;
-}
-
 function collectAbsoluteFileTagPaths(prompt: string): string[] {
   const filePaths: string[] = [];
 
@@ -133,7 +133,15 @@ export function getAbsoluteAttachmentPaths(
     ...collectAbsoluteFileTagPaths(prompt),
     ...filePaths.filter(isAbsolutePath),
   ];
-  return unique(absolutePaths).filter((p) => !folderPaths.has(p));
+  const normalizedFolderPaths = new Set(
+    Array.from(folderPaths, (p) => p.replaceAll("\\", "/")),
+  );
+  const normalizedAbsolutePaths = absolutePaths.map((p) =>
+    p.replaceAll("\\", "/"),
+  );
+  return unique(normalizedAbsolutePaths).filter(
+    (p) => !normalizedFolderPaths.has(p),
+  );
 }
 
 export function buildCloudTaskDescription(

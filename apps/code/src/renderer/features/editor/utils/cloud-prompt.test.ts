@@ -117,6 +117,27 @@ describe("cloud-prompt", () => {
     expect(mockFs.readAbsoluteFile.query).not.toHaveBeenCalled();
   });
 
+  it("encodes Windows drive paths as file URIs", async () => {
+    const blocks = await buildCloudPromptBlocks(
+      'read <file path="C:\\\\tmp\\\\100%\\\\a#b?.txt" />',
+    );
+
+    const uris = resourceLinksFrom(blocks);
+    expect(uris).toHaveLength(1);
+    // C:\tmp\100%\a#b?.txt → file:///C:/tmp/100%25/a%23b%3F.txt
+    expect(uris[0]).toBe("file:///C:/tmp/100%25/a%23b%3F.txt");
+  });
+
+  it("encodes Windows UNC paths as file URIs", async () => {
+    const blocks = await buildCloudPromptBlocks(
+      'read <file path="\\\\\\\\server\\\\share\\\\My Folder\\\\file.txt" />',
+    );
+
+    const uris = resourceLinksFrom(blocks);
+    expect(uris).toHaveLength(1);
+    expect(uris[0]).toBe("file://server/share/My%20Folder/file.txt");
+  });
+
   it("embeds image attachments as ACP image blocks", async () => {
     const fakeBase64 = btoa("tiny-image-data");
     mockFs.readFileAsBase64.query.mockResolvedValue(fakeBase64);

@@ -3,7 +3,15 @@
  * Handles both Unix (/path) and Windows (C:\path) formats.
  */
 export function isAbsolutePath(filePath: string): boolean {
-  return filePath.startsWith("/") || /^[a-zA-Z]:/.test(filePath);
+  return (
+    filePath.startsWith("/") ||
+    // Windows drive, e.g. C:\path or C:/path
+    /^[a-zA-Z]:/.test(filePath) ||
+    // Windows UNC, e.g. \\server\share\path
+    filePath.startsWith("\\\\") ||
+    // UNC normalized to forward slashes, e.g. //server/share/path
+    filePath.startsWith("//")
+  );
 }
 
 /**
@@ -45,4 +53,49 @@ export function getFileExtension(filePath: string): string {
   const name = getFileName(filePath);
   const lastDot = name.lastIndexOf(".");
   return lastDot >= 0 ? name.slice(lastDot + 1).toLowerCase() : "";
+}
+
+/**
+ * Convert a local file path to a `file://` URI.
+ * Renderer-safe (no `node:*` imports) and supports Windows drive and UNC paths.
+ */
+export function pathToFileUri(filePath: string): string {
+  if (filePath.startsWith("file://")) {
+    return filePath;
+  }
+
+  // Normalize Windows separators for string processing.
+  const normalized = filePath.replaceAll("\\", "/");
+
+  // UNC path: \\server\share\dir\file.txt → file://server/share/dir/file.txt
+  if (normalized.startsWith("//")) {
+    const withoutPrefix = normalized.slice(2);
+    const parts = withoutPrefix.split("/").filter(Boolean);
+    const host = parts.shift() ?? "";
+    const encodedPath = parts.map(encodeURIComponent).join("/");
+    return `file://${host}/${encodedPath}`;
+  }
+
+  // Drive path: C:\dir\file.txt or C:/dir/file.txt → file:///C:/dir/file.txt
+  const drive = normalized.match(/^([A-Za-z]):\/(.*)$/);
+  if (drive) {
+    const letter = drive[1].toUpperCase();
+    const rest = drive[2];
+    const encoded = rest
+      .split("/")
+      .filter((segment) => segment.length > 0)
+      .map(encodeURIComponent)
+      .join("/");
+    return `file:///${letter}:/${encoded}`;
+  }
+
+  // POSIX absolute path: /tmp/test.txt → file:///tmp/test.txt
+  if (normalized.startsWith("/")) {
+    const encoded = normalized.split("/").map(encodeURIComponent).join("/");
+    return `file://${encoded}`;
+  }
+
+  // Fallback.
+  const encoded = normalized.split("/").map(encodeURIComponent).join("/");
+  return `file://${encoded}`;
 }
