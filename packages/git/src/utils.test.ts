@@ -249,6 +249,8 @@ describe("parseGithubUrl", () => {
       "https://github.com/PostHog/code/issues/",
       "https://github.com/PostHog/code/pull/abc",
       "https://github.com/PostHog/code/pull/0",
+      "https://github.com/PostHog/code/pull/-1",
+      "https://github.com/PostHog/code/pull/42.5",
       "https://github.com/PostHog/code/pull/",
     ])("returns null for %s", (url) => {
       expect(parseGithubUrl(url)).toBeNull();
