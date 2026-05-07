@@ -6,6 +6,31 @@ import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 
 type ImageMimeType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 
+const PDF_EXTENSIONS = new Set(["pdf"]);
+
+const COMMON_IMAGE_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "svg",
+  "heic",
+  "tif",
+  "tiff",
+]);
+
+const VIDEO_EXTENSIONS = new Set([
+  "mp4",
+  "mov",
+  "webm",
+  "mkv",
+  "avi",
+  "mpeg",
+  "mpg",
+]);
+
 function sdkText(value: string): ContentBlockParam {
   return { type: "text", text: value };
 }
@@ -22,19 +47,44 @@ function formatUriAsLink(uri: string): string {
   }
 }
 
-function formatFileAttachment(uri: string): string {
+/** Chunking hints for Claude Code `Read` (`file_path`, optional `pages` / `offset` / `limit`). */
+export function readToolGuidanceForPath(filePath: string): string {
+  const ext = path.extname(filePath).slice(1).toLowerCase();
+  if (PDF_EXTENSIONS.has(ext)) {
+    return 'Optional `pages` string (e.g. "1-5") per Read call instead of loading the entire PDF.';
+  }
+  if (COMMON_IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext)) {
+    return "Binary file — use Read with `file_path`; prefer bounded reads where supported.";
+  }
+  return "Large text — use multiple Read calls with optional `offset` and `limit`.";
+}
+
+/** Path-only workspace attach text (never embed `resource.text` from disk). */
+export function workspacePromptFromFileUri(uri: string): string {
   try {
     const filePath = fileURLToPath(uri);
     const name = path.basename(filePath) || filePath;
     return [
-      "Attached file available in the workspace:",
-      `- name: ${name}`,
-      `- path: ${filePath}`,
-      "Use the available tools to inspect this file if needed.",
+      "Attached workspace file — use Read with required `file_path`:",
+      `- file_path: ${filePath}`,
+      `- name (context): ${name}`,
+      readToolGuidanceForPath(filePath),
     ].join("\n");
   } catch {
-    return `Attached file available at ${uri}`;
+    return [
+      "Attached file — decode path from URI, call Read with that path as `file_path`:",
+      uri,
+      'Chunk PDFs with `pages` (e.g. "1-5"); long text with `offset`/`limit`.',
+    ].join("\n");
   }
+}
+
+function formatFileAttachment(uri: string): string {
+  return workspacePromptFromFileUri(uri);
+}
+
+function isFileSchemeUri(uri: string | undefined | null): boolean {
+  return Boolean(uri?.startsWith("file://"));
 }
 
 function transformMcpCommand(text: string): string {
@@ -68,10 +118,16 @@ function processPromptChunk(
 
     case "resource":
       if ("text" in chunk.resource) {
-        content.push(sdkText(formatUriAsLink(chunk.resource.uri)));
+        const uri = chunk.resource.uri;
+        if (uri != null && isFileSchemeUri(uri)) {
+          content.push(sdkText(workspacePromptFromFileUri(uri)));
+          break;
+        }
+
+        content.push(sdkText(formatUriAsLink(uri ?? "")));
         context.push(
           sdkText(
-            `\n<context ref="${chunk.resource.uri}">\n${chunk.resource.text}\n</context>`,
+            `\n<context ref="${uri ?? ""}">\n${chunk.resource.text}\n</context>`,
           ),
         );
       }
@@ -92,6 +148,8 @@ function processPromptChunk(
           type: "image",
           source: { type: "url", url: chunk.uri },
         });
+      } else if (chunk.uri != null && isFileSchemeUri(chunk.uri)) {
+        content.push(sdkText(workspacePromptFromFileUri(chunk.uri)));
       }
       break;
 

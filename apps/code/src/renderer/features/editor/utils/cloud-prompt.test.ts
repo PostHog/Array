@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFs = vi.hoisted(() => ({
@@ -31,13 +33,18 @@ vi.mock("@renderer/trpc/client", () => ({
   },
 }));
 
-import { parseAttachmentUri } from "@utils/promptContent";
 import {
   buildCloudPromptBlocks,
   buildCloudTaskDescription,
   serializeCloudPrompt,
   stripAbsoluteFileTags,
 } from "./cloud-prompt";
+
+function resourceLinksFrom(blocks: ContentBlock[]): string[] {
+  return blocks.flatMap((b) =>
+    b.type === "resource_link" && typeof b.uri === "string" ? [b.uri] : [],
+  );
+}
 
 describe("cloud-prompt", () => {
   beforeEach(() => {
@@ -63,8 +70,6 @@ describe("cloud-prompt", () => {
   });
 
   it("excludes folder paths from absolute attachment list", async () => {
-    mockFs.readAbsoluteFile.query.mockResolvedValue("hi");
-
     const prompt =
       'scan <folder path="/abs/dir" /> and <file path="/tmp/test.txt" />';
     const blocks = await buildCloudPromptBlocks(prompt, [
@@ -72,15 +77,10 @@ describe("cloud-prompt", () => {
       "/tmp/test.txt",
     ]);
 
-    const uris = blocks.flatMap((b) =>
-      b.type === "resource" ? [b.resource.uri] : [],
-    );
+    const uris = resourceLinksFrom(blocks);
     expect(uris).toHaveLength(1);
     expect(uris[0]).toContain("test.txt");
-    expect(mockFs.readAbsoluteFile.query).toHaveBeenCalledTimes(1);
-    expect(mockFs.readAbsoluteFile.query).toHaveBeenCalledWith({
-      filePath: "/tmp/test.txt",
-    });
+    expect(mockFs.readAbsoluteFile.query).not.toHaveBeenCalled();
   });
 
   it("builds a safe cloud task description for local attachments", () => {
@@ -93,34 +93,28 @@ describe("cloud-prompt", () => {
     );
   });
 
-  it("embeds text attachments as ACP resources", async () => {
-    mockFs.readAbsoluteFile.query.mockResolvedValue("hello from file");
-
+  it("uses resource_link path references for text attachments", async () => {
     const blocks = await buildCloudPromptBlocks(
       'read this <file path="/tmp/test.txt" />',
     );
 
     expect(blocks).toEqual([
       { type: "text", text: "read this" },
-      expect.objectContaining({
-        type: "resource",
-        resource: expect.objectContaining({
-          text: "hello from file",
-          mimeType: "text/plain",
-        }),
-      }),
+      {
+        type: "resource_link",
+        uri: expect.stringMatching(/^file:\/\/.+/),
+        name: "test.txt",
+      },
     ]);
 
     const attachmentBlock = blocks[1];
-    expect(attachmentBlock.type).toBe("resource");
-    if (attachmentBlock.type !== "resource") {
-      throw new Error("Expected a resource attachment block");
+    expect(attachmentBlock.type).toBe("resource_link");
+    if (attachmentBlock.type !== "resource_link") {
+      throw new Error("Expected a resource_link attachment block");
     }
 
-    expect(parseAttachmentUri(attachmentBlock.resource.uri)).toEqual({
-      id: attachmentBlock.resource.uri,
-      label: "test.txt",
-    });
+    expect(fileURLToPath(attachmentBlock.uri)).toBe("/tmp/test.txt");
+    expect(mockFs.readAbsoluteFile.query).not.toHaveBeenCalled();
   });
 
   it("embeds image attachments as ACP image blocks", async () => {
@@ -156,12 +150,17 @@ describe("cloud-prompt", () => {
     ).rejects.toThrow(/Unsupported image/);
   });
 
-  it("throws when readAbsoluteFile returns null", async () => {
+  it("does not rely on readAbsoluteFile for txt attachments", async () => {
     mockFs.readAbsoluteFile.query.mockResolvedValue(null);
 
-    await expect(
-      buildCloudPromptBlocks('read <file path="/tmp/missing.txt" />'),
-    ).rejects.toThrow(/Unable to read/);
+    const blocks = await buildCloudPromptBlocks(
+      'read <file path="/tmp/maybe-missing-on-disk.txt" />',
+    );
+    expect(blocks[1]).toMatchObject({
+      type: "resource_link",
+      name: "maybe-missing-on-disk.txt",
+    });
+    expect(mockFs.readAbsoluteFile.query).not.toHaveBeenCalled();
   });
 
   it("throws when readFileAsBase64 returns falsy for images", async () => {
@@ -180,16 +179,13 @@ describe("cloud-prompt", () => {
     const serialized = serializeCloudPrompt([
       { type: "text", text: "read this" },
       {
-        type: "resource",
-        resource: {
-          uri: "attachment://test.txt",
-          text: "hello from file",
-          mimeType: "text/plain",
-        },
+        type: "resource_link",
+        uri: "file:///tmp/test.txt",
+        name: "test.txt",
       },
     ]);
 
     expect(serialized).toContain("__twig_cloud_prompt_v1__:");
-    expect(serialized).toContain('"type":"resource"');
+    expect(serialized).toContain('"type":"resource_link"');
   });
 });
