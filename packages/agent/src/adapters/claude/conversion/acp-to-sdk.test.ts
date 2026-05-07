@@ -7,14 +7,15 @@ import {
 } from "./acp-to-sdk";
 
 describe("readToolGuidanceForPath", () => {
-  it("guides PDF reads with optional pages ranges", () => {
-    expect(readToolGuidanceForPath("/docs/x.pdf")).toContain("pages");
-  });
-
-  it("guides arbitrary text extensions with offset and limit", () => {
-    const g = readToolGuidanceForPath("/proj/app.ts");
-    expect(g).toContain("offset");
-    expect(g).toContain("limit");
+  it.each([
+    ["/docs/x.pdf", ["pages"]],
+    ["/proj/app.ts", ["offset", "limit"]],
+    ["/assets/logo.png", ["Binary", "file_path"]],
+  ])("guides reads for %s", (filePath, keywords) => {
+    const guidance = readToolGuidanceForPath(filePath);
+    for (const keyword of keywords) {
+      expect(guidance).toContain(keyword);
+    }
   });
 });
 

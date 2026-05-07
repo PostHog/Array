@@ -79,10 +79,6 @@ export function workspacePromptFromFileUri(uri: string): string {
   }
 }
 
-function formatFileAttachment(uri: string): string {
-  return workspacePromptFromFileUri(uri);
-}
-
 function isFileSchemeUri(uri: string | undefined | null): boolean {
   return Boolean(uri?.startsWith("file://"));
 }
@@ -110,7 +106,7 @@ function processPromptChunk(
       content.push(
         sdkText(
           chunk.uri.startsWith("file://")
-            ? formatFileAttachment(chunk.uri)
+            ? workspacePromptFromFileUri(chunk.uri)
             : formatUriAsLink(chunk.uri),
         ),
       );

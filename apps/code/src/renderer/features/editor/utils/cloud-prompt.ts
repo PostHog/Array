@@ -1,3 +1,4 @@
+import { pathToFileURL } from "node:url";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { CLOUD_PROMPT_PREFIX, serializeCloudPrompt } from "@posthog/shared";
 import { trpcClient } from "@renderer/trpc/client";
@@ -80,11 +81,7 @@ function estimateBase64Bytes(base64: string): number {
 }
 
 function pathToFileUri(filePath: string): string {
-  const encoded = filePath
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-  return `file://${encoded}`;
+  return pathToFileURL(filePath).href;
 }
 
 function collectAbsoluteFileTagPaths(prompt: string): string[] {
