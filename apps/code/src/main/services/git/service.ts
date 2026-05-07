@@ -1549,13 +1549,7 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
     if (urlRef && urlRef.kind !== "repo" && kinds.includes(urlRef.kind)) {
       const repoSlug = `${urlRef.owner}/${urlRef.repo}`;
       return this.fetchGhRefs(
-        [
-          urlRef.kind === "pr" ? "pr" : "issue",
-          "view",
-          String(urlRef.number),
-          "--repo",
-          repoSlug,
-        ],
+        [urlRef.kind, "view", String(urlRef.number), "--repo", repoSlug],
         repoSlug,
         urlRef.kind,
       );
