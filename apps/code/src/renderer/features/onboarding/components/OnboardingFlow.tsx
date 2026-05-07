@@ -4,7 +4,6 @@ import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { ArrowRight, SignOut } from "@phosphor-icons/react";
 import { Button, Flex } from "@radix-ui/themes";
-import { IS_DEV } from "@shared/constants/environment";
 import { useNavigationStore } from "@stores/navigationStore";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -40,11 +39,15 @@ export function OnboardingFlow() {
   const completeOnboarding = useOnboardingStore(
     (state) => state.completeOnboarding,
   );
+  const completeSetup = useOnboardingStore((state) => state.completeSetup);
   const hasCompletedSetup = useOnboardingStore(
     (state) => state.hasCompletedSetup,
   );
   const resetOnboarding = useOnboardingStore((state) => state.resetOnboarding);
   const navigateToSetup = useNavigationStore((state) => state.navigateToSetup);
+  const navigateToTaskInput = useNavigationStore(
+    (state) => state.navigateToTaskInput,
+  );
   const logoutMutation = useLogoutMutation();
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
@@ -59,6 +62,12 @@ export function OnboardingFlow() {
     if (!hasCompletedSetup) {
       navigateToSetup();
     }
+  };
+
+  const handleSkip = () => {
+    completeOnboarding();
+    completeSetup();
+    navigateToTaskInput();
   };
 
   const footerRight = (
@@ -78,18 +87,16 @@ export function OnboardingFlow() {
           Log out
         </Button>
       )}
-      {IS_DEV && (
-        <Button
-          size="1"
-          variant="ghost"
-          color="gray"
-          onClick={handleComplete}
-          className="opacity-50"
-        >
-          <ArrowRight size={14} weight="bold" />
-          Skip setup
-        </Button>
-      )}
+      <Button
+        size="1"
+        variant="ghost"
+        color="gray"
+        onClick={handleSkip}
+        className="opacity-50"
+      >
+        <ArrowRight size={14} weight="bold" />
+        Skip setup
+      </Button>
     </Flex>
   );
 
