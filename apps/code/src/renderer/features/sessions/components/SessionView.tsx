@@ -101,22 +101,21 @@ function resolveAllowAlwaysUpgradeMode(
 }
 
 function useRevisitShortcut(taskId: string | undefined) {
-  const toggle = useRevisitStore((s) => s.toggle);
-  const revisitTaskIds = useRevisitStore((s) => s.revisitTaskIds);
   useHotkeys(
     SHORTCUTS.TOGGLE_REVISIT,
     (e) => {
       if (!taskId) return;
       e.preventDefault();
-      const wasMarked = revisitTaskIds.has(taskId);
-      toggle(taskId);
+      const store = useRevisitStore.getState();
+      const wasMarked = store.revisitTaskIds.has(taskId);
+      store.toggle(taskId);
       track(ANALYTICS_EVENTS.TASK_REVISIT_TOGGLED, {
         task_id: taskId,
         enabled: !wasMarked,
       });
     },
     { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskId, toggle, revisitTaskIds],
+    [taskId],
   );
 }
 

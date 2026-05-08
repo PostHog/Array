@@ -1,6 +1,7 @@
 import { useCommandCenterStore } from "@features/command-center/stores/commandCenterStore";
 import { getSessionService } from "@features/sessions/service/service";
 import { pinnedTasksApi } from "@features/sidebar/hooks/usePinnedTasks";
+import { useRevisitStore } from "@features/task-detail/stores/revisitStore";
 import { useTerminalStore } from "@features/terminal/stores/terminalStore";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { trpc, trpcClient } from "@renderer/trpc";
@@ -37,6 +38,7 @@ export async function archiveTaskImperative(
   pinnedTasksApi.unpin(taskId);
   useTerminalStore.getState().clearTerminalStatesForTask(taskId);
   useCommandCenterStore.getState().removeTaskById(taskId);
+  useRevisitStore.getState().setRevisit(taskId, false);
 
   queryClient.setQueryData<string[]>(
     trpc.archive.archivedTaskIds.queryKey(),
