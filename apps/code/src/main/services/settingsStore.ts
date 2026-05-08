@@ -11,6 +11,7 @@ interface SettingsSchema {
   autoSuspendEnabled: boolean;
   maxActiveWorktrees: number;
   autoSuspendAfterDays: number;
+  autoDownloadUpdates: boolean;
 }
 
 function getDefaultWorktreeLocation(): string {
@@ -84,6 +85,10 @@ const schema = {
     minimum: 1,
     maximum: 365,
   },
+  autoDownloadUpdates: {
+    type: "boolean" as const,
+    default: true,
+  },
 };
 
 export const settingsStore = new Store<SettingsSchema>({
@@ -96,6 +101,7 @@ export const settingsStore = new Store<SettingsSchema>({
     autoSuspendEnabled: true,
     maxActiveWorktrees: 5,
     autoSuspendAfterDays: 7,
+    autoDownloadUpdates: true,
   },
 });
 
@@ -165,4 +171,12 @@ export function getAutoSuspendAfterDays(): number {
 
 export function setAutoSuspendAfterDays(value: number): void {
   settingsStore.set("autoSuspendAfterDays", value);
+}
+
+export function getAutoDownloadUpdatesEnabled(): boolean {
+  return settingsStore.get("autoDownloadUpdates", true);
+}
+
+export function setAutoDownloadUpdatesEnabled(value: boolean): void {
+  settingsStore.set("autoDownloadUpdates", value);
 }

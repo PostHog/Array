@@ -98,6 +98,14 @@ vi.mock("../../utils/env.js", () => ({
   isDevBuild: () => !mockAppMeta.isProduction,
 }));
 
+const mockAutoDownloadUpdatesEnabled = vi.hoisted(() => vi.fn(() => true));
+const mockSetAutoDownloadUpdatesEnabled = vi.hoisted(() => vi.fn());
+
+vi.mock("../settingsStore.js", () => ({
+  getAutoDownloadUpdatesEnabled: mockAutoDownloadUpdatesEnabled,
+  setAutoDownloadUpdatesEnabled: mockSetAutoDownloadUpdatesEnabled,
+}));
+
 // Import the service after mocks are set up
 import { UpdatesService } from "./service";
 
@@ -135,6 +143,7 @@ describe("UpdatesService", () => {
     mockAppMeta.version = "1.0.0";
     mockUpdater.isSupported.mockReturnValue(true);
     mockAppLifecycle.whenReady.mockResolvedValue(undefined);
+    mockAutoDownloadUpdatesEnabled.mockReturnValue(true);
 
     // Set default platform to darwin (macOS)
     Object.defineProperty(process, "platform", {
@@ -255,6 +264,16 @@ describe("UpdatesService", () => {
       newService.init();
 
       expect(mockAppLifecycle.whenReady).not.toHaveBeenCalled();
+    });
+
+    it("skips startup and periodic checks when auto-download is disabled", async () => {
+      mockAutoDownloadUpdatesEnabled.mockReturnValue(false);
+
+      await initializeService(service);
+
+      expect(mockUpdater.check).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(60 * 60 * 1000);
+      expect(mockUpdater.check).not.toHaveBeenCalled();
     });
 
     it("prevents multiple initializations", async () => {
@@ -401,6 +420,18 @@ describe("UpdatesService", () => {
       }
 
       expect(service.hasUpdateReady).toBe(true);
+    });
+  });
+
+  describe("settings", () => {
+    it("reads auto-download toggle from settings store", () => {
+      mockAutoDownloadUpdatesEnabled.mockReturnValue(false);
+      expect(service.autoDownloadUpdatesEnabled).toBe(false);
+    });
+
+    it("persists auto-download toggle changes", () => {
+      service.setAutoDownloadUpdatesEnabled(false);
+      expect(mockSetAutoDownloadUpdatesEnabled).toHaveBeenCalledWith(false);
     });
   });
 

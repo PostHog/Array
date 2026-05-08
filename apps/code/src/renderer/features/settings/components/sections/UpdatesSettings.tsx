@@ -1,9 +1,11 @@
 import { SettingRow } from "@features/settings/components/SettingRow";
 import { CheckCircle, XCircle } from "@phosphor-icons/react";
-import { Badge, Button, Flex, Spinner, Text } from "@radix-ui/themes";
+import { Badge, Button, Flex, Spinner, Switch, Text } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
+import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -16,6 +18,10 @@ export function UpdatesSettings() {
   );
   const [checkingForUpdates, setCheckingForUpdates] = useState(false);
   const [updatesDisabled, setUpdatesDisabled] = useState(false);
+  const { data: autoDownload } = useQuery(
+    trpcReact.updates.getAutoDownload.queryOptions(),
+  );
+  const [autoDownloadEnabled, setAutoDownloadEnabled] = useState(true);
   const [updateStatus, setUpdateStatus] = useState<{
     message?: string;
     type?: "info" | "success" | "error";
@@ -24,6 +30,9 @@ export function UpdatesSettings() {
 
   const checkUpdatesMutation = useMutation(
     trpcReact.updates.check.mutationOptions(),
+  );
+  const setAutoDownloadMutation = useMutation(
+    trpcReact.updates.setAutoDownload.mutationOptions(),
   );
 
   const handleCheckForUpdates = useCallback(async () => {
@@ -68,6 +77,12 @@ export function UpdatesSettings() {
     }
   }, [handleCheckForUpdates]);
 
+  useEffect(() => {
+    if (typeof autoDownload?.enabled === "boolean") {
+      setAutoDownloadEnabled(autoDownload.enabled);
+    }
+  }, [autoDownload?.enabled]);
+
   useSubscription(
     trpcReact.updates.onStatus.subscriptionOptions(undefined, {
       onData: (status) => {
@@ -100,6 +115,39 @@ export function UpdatesSettings() {
         <Badge size="1" variant="soft" color="gray">
           {appVersion || "Loading..."}
         </Badge>
+      </SettingRow>
+
+      <SettingRow
+        label="Auto-download updates"
+        description="When enabled, checks and downloads updates automatically on startup."
+      >
+        <Switch
+          checked={autoDownloadEnabled}
+          onCheckedChange={(checked) => {
+            const previous = autoDownloadEnabled;
+            if (previous === checked) return;
+
+            setAutoDownloadEnabled(checked);
+            track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+              setting_name: "auto_download_updates",
+              old_value: previous,
+              new_value: checked,
+            });
+
+            setAutoDownloadMutation.mutate(
+              { enabled: checked },
+              {
+                onError: () => {
+                  setAutoDownloadEnabled(previous);
+                },
+                onSuccess: (result) => {
+                  setAutoDownloadEnabled(result.enabled);
+                },
+              },
+            );
+          }}
+          disabled={setAutoDownloadMutation.isPending}
+        />
       </SettingRow>
 
       <SettingRow

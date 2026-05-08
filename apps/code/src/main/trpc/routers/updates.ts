@@ -1,9 +1,11 @@
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
 import {
+  autoDownloadUpdatesOutput,
   checkForUpdatesOutput,
   installUpdateOutput,
   isEnabledOutput,
+  setAutoDownloadUpdatesInput,
   UpdatesEvent,
   type UpdatesEvents,
 } from "../../services/updates/schemas";
@@ -38,6 +40,19 @@ export const updatesRouter = router({
     const service = getService();
     return service.installUpdate();
   }),
+
+  getAutoDownload: publicProcedure
+    .output(autoDownloadUpdatesOutput)
+    .query(() => ({ enabled: getService().autoDownloadUpdatesEnabled })),
+
+  setAutoDownload: publicProcedure
+    .input(setAutoDownloadUpdatesInput)
+    .output(autoDownloadUpdatesOutput)
+    .mutation(({ input }) => {
+      const service = getService();
+      service.setAutoDownloadUpdatesEnabled(input.enabled);
+      return { enabled: service.autoDownloadUpdatesEnabled };
+    }),
 
   onReady: subscribe(UpdatesEvent.Ready),
   onStatus: subscribe(UpdatesEvent.Status),

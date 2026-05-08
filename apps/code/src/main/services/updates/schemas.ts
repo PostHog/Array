@@ -17,6 +17,14 @@ export const installUpdateOutput = z.object({
   installed: z.boolean(),
 });
 
+export const autoDownloadUpdatesOutput = z.object({
+  enabled: z.boolean(),
+});
+
+export const setAutoDownloadUpdatesInput = z.object({
+  enabled: z.boolean(),
+});
+
 export type IsEnabledOutput = z.infer<typeof isEnabledOutput>;
 
 export type CheckForUpdatesOutput = z.infer<typeof checkForUpdatesOutput>;
