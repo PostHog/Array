@@ -1,6 +1,5 @@
 import { isOtherOption } from "@components/action-selector/constants";
 import { PermissionSelector } from "@components/permissions/PermissionSelector";
-import { Tooltip } from "@components/ui/Tooltip";
 import {
   PromptInput,
   type EditorHandle as PromptInputHandle,
@@ -21,11 +20,8 @@ import { useRevisitStore } from "@features/task-detail/stores/revisitStore";
 import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
 import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
-import { Box, Button, ContextMenu, Flex, Switch, Text } from "@radix-ui/themes";
-import {
-  formatHotkey,
-  SHORTCUTS,
-} from "@renderer/constants/keyboard-shortcuts";
+import { Box, Button, ContextMenu, Flex, Text } from "@radix-ui/themes";
+import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
 import { toast } from "@renderer/utils/toast";
 import type { Task, TaskRunStatus } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
@@ -104,50 +100,23 @@ function resolveAllowAlwaysUpgradeMode(
   return undefined;
 }
 
-function RevisitToggleInline({ taskId }: { taskId: string }) {
-  const isRevisit = useRevisitStore((s) => s.revisitTaskIds.has(taskId));
-  const setRevisit = useRevisitStore((s) => s.setRevisit);
-
-  const applyChange = useCallback(
-    (next: boolean) => {
-      setRevisit(taskId, next);
-      track(ANALYTICS_EVENTS.TASK_REVISIT_TOGGLED, {
+function useMarkAsUnreadShortcut(taskId: string | undefined) {
+  const toggle = useRevisitStore((s) => s.toggle);
+  const revisitTaskIds = useRevisitStore((s) => s.revisitTaskIds);
+  useHotkeys(
+    SHORTCUTS.TOGGLE_MARK_AS_UNREAD,
+    (e) => {
+      if (!taskId) return;
+      e.preventDefault();
+      const wasMarked = revisitTaskIds.has(taskId);
+      toggle(taskId);
+      track(ANALYTICS_EVENTS.TASK_MARK_AS_UNREAD_TOGGLED, {
         task_id: taskId,
-        enabled: next,
+        enabled: !wasMarked,
       });
     },
-    [taskId, setRevisit],
-  );
-
-  useHotkeys(
-    SHORTCUTS.TOGGLE_REVISIT,
-    (e) => {
-      e.preventDefault();
-      applyChange(!isRevisit);
-    },
     { enableOnFormTags: true, enableOnContentEditable: true },
-    [isRevisit, applyChange],
-  );
-
-  return (
-    <Flex align="center" justify="end" className="pb-1">
-      <Tooltip
-        content={`Come back to revisit the task later (${formatHotkey(SHORTCUTS.TOGGLE_REVISIT)})`}
-        side="top"
-      >
-        <Flex align="center" gap="2">
-          <Text size="1" color="gray">
-            Revisit
-          </Text>
-          <Switch
-            size="1"
-            checked={isRevisit}
-            onCheckedChange={applyChange}
-            aria-label="Mark this task for revisit"
-          />
-        </Flex>
-      </Tooltip>
-    </Flex>
+    [taskId, toggle, revisitTaskIds],
   );
 }
 
@@ -180,6 +149,7 @@ export function SessionView({
   isActiveSession = true,
   hideInput = false,
 }: SessionViewProps) {
+  useMarkAsUnreadShortcut(taskId);
   const showRawLogs = useShowRawLogs();
   const { setShowRawLogs } = useSessionViewActions();
   const pendingPermissions = usePendingPermissionsForTask(taskId);
@@ -669,9 +639,6 @@ export function SessionView({
                             : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
                         }
                       >
-                        {taskId ? (
-                          <RevisitToggleInline taskId={taskId} />
-                        ) : null}
                         <PromptInput
                           ref={editorRef}
                           sessionId={sessionId}

@@ -111,12 +111,16 @@ export class ContextMenuService {
       isSuspended,
       isInCommandCenter,
       hasEmptyCommandCenterCell,
+      isMarkedAsUnread,
     } = input;
     const { apps, lastUsedAppId } = await this.getExternalAppsData();
     const hasPath = worktreePath || folderPath;
 
     return this.showMenu<TaskAction>([
       this.item(isPinned ? "Unpin" : "Pin", { type: "pin" }),
+      this.item(isMarkedAsUnread ? "Unmark as unread" : "Mark as unread", {
+        type: "mark-as-unread",
+      }),
       this.item("Rename", { type: "rename" }),
       ...(worktreePath
         ? [

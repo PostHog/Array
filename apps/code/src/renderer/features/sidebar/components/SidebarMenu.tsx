@@ -9,6 +9,7 @@ import {
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { getSessionService } from "@features/sessions/service/service";
 import { useSetupStore } from "@features/setup/stores/setupStore";
+import { useRevisitStore } from "@features/task-detail/stores/revisitStore";
 import {
   archiveTaskImperative,
   useArchiveTask,
@@ -19,9 +20,11 @@ import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
 import { ScrollArea, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
 import { useQueryClient } from "@tanstack/react-query";
+import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
 import { memo, useCallback, useEffect, useRef } from "react";
@@ -62,6 +65,7 @@ function SidebarMenuComponent() {
     useTaskContextMenu();
   const { archiveTask } = useArchiveTask();
   const { togglePin } = usePinnedTasks();
+  const toggleMarkAsUnread = useRevisitStore((s) => s.toggle);
 
   const hasCompletedSetup = useOnboardingStore(
     (state) => state.hasCompletedSetup,
@@ -172,6 +176,10 @@ function SidebarMenuComponent() {
         (id) => id == null || !taskMap.has(id),
       );
 
+      const isMarkedAsUnread = useRevisitStore
+        .getState()
+        .revisitTaskIds.has(taskId);
+
       showContextMenu(task, e, {
         worktreePath: workspace?.worktreePath ?? undefined,
         folderPath: workspace?.folderPath ?? undefined,
@@ -179,8 +187,19 @@ function SidebarMenuComponent() {
         isSuspended: taskData?.isSuspended,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
+        isMarkedAsUnread,
         onTogglePin: () => togglePin(taskId),
         onArchivePrior: handleArchivePrior,
+        onToggleMarkAsUnread: () => {
+          const wasMarked = useRevisitStore
+            .getState()
+            .revisitTaskIds.has(taskId);
+          toggleMarkAsUnread(taskId);
+          track(ANALYTICS_EVENTS.TASK_MARK_AS_UNREAD_TOGGLED, {
+            task_id: taskId,
+            enabled: !wasMarked,
+          });
+        },
         onAddToCommandCenter: () => {
           const cells = useCommandCenterStore.getState().cells;
           const idx = cells.findIndex((id) => id == null || !taskMap.has(id));
