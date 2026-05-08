@@ -198,22 +198,22 @@ function TaskFilterMenu() {
 
         <MenuLabel>Filter</MenuLabel>
         <DropdownMenuRadioGroup
-          value={showRevisitOnly ? "marked_as_unread" : "all"}
+          value={showRevisitOnly ? "revisit" : "all"}
           onValueChange={(value) => {
-            const next = value === "marked_as_unread";
-            const previous = showRevisitOnly ? "marked_as_unread" : "all";
+            const next = value === "revisit";
+            const previous = showRevisitOnly ? "revisit" : "all";
             if (previous === value) return;
             setShowRevisitOnly(next);
-            track(ANALYTICS_EVENTS.TASK_UNREAD_LIST_FILTER_CHANGED, {
-              filter_name: "marked_as_unread_only",
+            track(ANALYTICS_EVENTS.TASK_REVISIT_LIST_FILTER_CHANGED, {
+              filter_name: "revisit_only",
               value,
               previous_value: previous,
             });
           }}
         >
           <DropdownMenuRadioItem value="all">All tasks</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="marked_as_unread">
-            Marked as unread only
+          <DropdownMenuRadioItem value="revisit">
+            Revisit only
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
 

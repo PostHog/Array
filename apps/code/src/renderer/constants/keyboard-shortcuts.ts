@@ -24,7 +24,7 @@ export const SHORTCUTS = {
   FIND_IN_CONVERSATION: "mod+f",
   BLUR: "escape",
   SUBMIT_BLUR: "mod+enter",
-  TOGGLE_MARK_AS_UNREAD: "mod+shift+m",
+  TOGGLE_REVISIT: "mod+shift+m",
 } as const;
 
 export type ShortcutCategory = "general" | "navigation" | "panels" | "editor";
@@ -162,9 +162,9 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     context: "Task detail",
   },
   {
-    id: "toggle-mark-as-unread",
-    keys: SHORTCUTS.TOGGLE_MARK_AS_UNREAD,
-    description: "Mark as unread",
+    id: "toggle-revisit",
+    keys: SHORTCUTS.TOGGLE_REVISIT,
+    description: "Toggle revisit task",
     category: "panels",
     context: "Task detail",
   },

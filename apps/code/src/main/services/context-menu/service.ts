@@ -111,15 +111,15 @@ export class ContextMenuService {
       isSuspended,
       isInCommandCenter,
       hasEmptyCommandCenterCell,
-      isMarkedAsUnread,
+      isRevisit,
     } = input;
     const { apps, lastUsedAppId } = await this.getExternalAppsData();
     const hasPath = worktreePath || folderPath;
 
     return this.showMenu<TaskAction>([
       this.item(isPinned ? "Unpin" : "Pin", { type: "pin" }),
-      this.item(isMarkedAsUnread ? "Unmark as unread" : "Mark as unread", {
-        type: "mark-as-unread",
+      this.item(isRevisit ? "Unmark for revisit" : "Mark for revisit", {
+        type: "toggle-revisit",
       }),
       this.item("Rename", { type: "rename" }),
       ...(worktreePath

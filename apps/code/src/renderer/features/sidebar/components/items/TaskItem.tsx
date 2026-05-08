@@ -279,7 +279,7 @@ export function TaskItem({
   ) : isPinned ? (
     <PushPin size={ICON_SIZE} className="text-accent-11" />
   ) : isRevisit ? (
-    <Tooltip content="Marked as unread" side="right">
+    <Tooltip content="Marked for revisit" side="right">
       <span className="flex items-center justify-center">
         <ChatCircle size={ICON_SIZE} weight="fill" className="text-yellow-10" />
       </span>

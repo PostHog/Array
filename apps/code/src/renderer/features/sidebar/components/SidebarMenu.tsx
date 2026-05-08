@@ -65,7 +65,7 @@ function SidebarMenuComponent() {
     useTaskContextMenu();
   const { archiveTask } = useArchiveTask();
   const { togglePin } = usePinnedTasks();
-  const toggleMarkAsUnread = useRevisitStore((s) => s.toggle);
+  const toggleRevisit = useRevisitStore((s) => s.toggle);
 
   const hasCompletedSetup = useOnboardingStore(
     (state) => state.hasCompletedSetup,
@@ -176,9 +176,7 @@ function SidebarMenuComponent() {
         (id) => id == null || !taskMap.has(id),
       );
 
-      const isMarkedAsUnread = useRevisitStore
-        .getState()
-        .revisitTaskIds.has(taskId);
+      const isRevisit = useRevisitStore.getState().revisitTaskIds.has(taskId);
 
       showContextMenu(task, e, {
         worktreePath: workspace?.worktreePath ?? undefined,
@@ -187,15 +185,15 @@ function SidebarMenuComponent() {
         isSuspended: taskData?.isSuspended,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
-        isMarkedAsUnread,
+        isRevisit,
         onTogglePin: () => togglePin(taskId),
         onArchivePrior: handleArchivePrior,
-        onToggleMarkAsUnread: () => {
+        onToggleRevisit: () => {
           const wasMarked = useRevisitStore
             .getState()
             .revisitTaskIds.has(taskId);
-          toggleMarkAsUnread(taskId);
-          track(ANALYTICS_EVENTS.TASK_MARK_AS_UNREAD_TOGGLED, {
+          toggleRevisit(taskId);
+          track(ANALYTICS_EVENTS.TASK_REVISIT_TOGGLED, {
             task_id: taskId,
             enabled: !wasMarked,
           });

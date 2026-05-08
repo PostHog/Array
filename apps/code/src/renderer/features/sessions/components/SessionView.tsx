@@ -100,17 +100,17 @@ function resolveAllowAlwaysUpgradeMode(
   return undefined;
 }
 
-function useMarkAsUnreadShortcut(taskId: string | undefined) {
+function useRevisitShortcut(taskId: string | undefined) {
   const toggle = useRevisitStore((s) => s.toggle);
   const revisitTaskIds = useRevisitStore((s) => s.revisitTaskIds);
   useHotkeys(
-    SHORTCUTS.TOGGLE_MARK_AS_UNREAD,
+    SHORTCUTS.TOGGLE_REVISIT,
     (e) => {
       if (!taskId) return;
       e.preventDefault();
       const wasMarked = revisitTaskIds.has(taskId);
       toggle(taskId);
-      track(ANALYTICS_EVENTS.TASK_MARK_AS_UNREAD_TOGGLED, {
+      track(ANALYTICS_EVENTS.TASK_REVISIT_TOGGLED, {
         task_id: taskId,
         enabled: !wasMarked,
       });
@@ -149,7 +149,7 @@ export function SessionView({
   isActiveSession = true,
   hideInput = false,
 }: SessionViewProps) {
-  useMarkAsUnreadShortcut(taskId);
+  useRevisitShortcut(taskId);
   const showRawLogs = useShowRawLogs();
   const { setShowRawLogs } = useSessionViewActions();
   const pendingPermissions = usePendingPermissionsForTask(taskId);

@@ -29,11 +29,11 @@ export function useTaskContextMenu() {
         isSuspended?: boolean;
         isInCommandCenter?: boolean;
         hasEmptyCommandCenterCell?: boolean;
-        isMarkedAsUnread?: boolean;
+        isRevisit?: boolean;
         onTogglePin?: () => void;
         onArchivePrior?: (taskId: string) => void;
         onAddToCommandCenter?: () => void;
-        onToggleMarkAsUnread?: () => void;
+        onToggleRevisit?: () => void;
       },
     ) => {
       event.preventDefault();
@@ -46,11 +46,11 @@ export function useTaskContextMenu() {
         isSuspended,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
-        isMarkedAsUnread,
+        isRevisit,
         onTogglePin,
         onArchivePrior,
         onAddToCommandCenter,
-        onToggleMarkAsUnread,
+        onToggleRevisit,
       } = options ?? {};
 
       try {
@@ -62,7 +62,7 @@ export function useTaskContextMenu() {
           isSuspended,
           isInCommandCenter,
           hasEmptyCommandCenterCell,
-          isMarkedAsUnread,
+          isRevisit,
         });
 
         if (!result.action) return;
@@ -97,8 +97,8 @@ export function useTaskContextMenu() {
           case "add-to-command-center":
             onAddToCommandCenter?.();
             break;
-          case "mark-as-unread":
-            onToggleMarkAsUnread?.();
+          case "toggle-revisit":
+            onToggleRevisit?.();
             break;
           case "external-app": {
             const effectivePath = worktreePath ?? folderPath;
