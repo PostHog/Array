@@ -13,6 +13,8 @@ export interface ActionItemDef<T> {
   enabled?: boolean;
   icon?: string;
   confirm?: ConfirmOptions;
+  /** Renders the item as a native checkbox menu entry that shows a check mark when true. */
+  checked?: boolean;
 }
 
 export interface SubmenuItemDef<T> {

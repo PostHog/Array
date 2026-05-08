@@ -29,6 +29,10 @@ function toElectronItem(item: ContextMenuItem): MenuItemConstructorOptions {
     enabled: action.enabled ?? true,
     accelerator: action.accelerator,
   };
+  if (action.checked !== undefined) {
+    options.type = "checkbox";
+    options.checked = action.checked;
+  }
   if (action.icon) {
     options.icon = resizeIcon(action.icon);
   }

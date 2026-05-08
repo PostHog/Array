@@ -118,9 +118,11 @@ export class ContextMenuService {
 
     return this.showMenu<TaskAction>([
       this.item(isPinned ? "Unpin" : "Pin", { type: "pin" }),
-      this.item(isRevisit ? "Unmark for revisit" : "Mark for revisit", {
-        type: "toggle-revisit",
-      }),
+      this.item(
+        "Revisit",
+        { type: "toggle-revisit" },
+        { checked: isRevisit ?? false },
+      ),
       this.item("Rename", { type: "rename" }),
       ...(worktreePath
         ? [
@@ -340,6 +342,7 @@ export class ContextMenuService {
               enabled: def.enabled,
               accelerator: def.accelerator,
               icon: def.icon,
+              checked: def.checked,
               click,
             };
           }
