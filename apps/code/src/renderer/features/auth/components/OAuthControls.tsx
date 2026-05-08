@@ -1,7 +1,6 @@
 import { useOAuthFlow } from "@features/auth/hooks/useOAuthFlow";
 import { Callout, Flex, Spinner } from "@radix-ui/themes";
 import posthogIcon from "@renderer/assets/images/posthog-icon.svg";
-import { REGION_LABELS } from "@shared/types/regions";
 import { RegionSelect } from "./RegionSelect";
 
 export function OAuthControls() {
@@ -13,10 +12,6 @@ export function OAuthControls() {
     isPending,
     errorMessage,
   } = useOAuthFlow();
-
-  // Display the chosen region inline on the sign-in button so a user who
-  // doesn't read labels still spots EU vs US before clicking through.
-  const regionLabel = REGION_LABELS[region];
 
   return (
     <Flex direction="column" gap="3" className="w-full">
@@ -58,9 +53,7 @@ export function OAuthControls() {
         ) : (
           <img src={posthogIcon} alt="" className="h-[20px] w-[20px]" />
         )}
-        {isPending
-          ? "Cancel"
-          : `Sign in / sign up with PostHog \u00B7 ${regionLabel}`}
+        {isPending ? "Cancel" : `Sign in / sign up with PostHog`}
       </button>
     </Flex>
   );
