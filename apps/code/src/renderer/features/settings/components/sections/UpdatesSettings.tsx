@@ -102,6 +102,12 @@ export function UpdatesSettings() {
             type: "success",
           });
           setCheckingForUpdates(false);
+        } else if (status.checking === false && status.error) {
+          setUpdateStatus({
+            message: status.error,
+            type: "error",
+          });
+          setCheckingForUpdates(false);
         } else if (status.checking === false) {
           setCheckingForUpdates(false);
         }
