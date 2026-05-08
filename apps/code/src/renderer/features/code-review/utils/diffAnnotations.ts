@@ -3,6 +3,7 @@ import type {
   FileDiffMetadata,
   SelectedLineRange,
 } from "@pierre/diffs";
+import type { DraftComment } from "../stores/reviewDraftsStore";
 import type { AnnotationMetadata, DiffOptions } from "../types";
 
 export function getLastChangeLineNumber(
@@ -33,6 +34,22 @@ export function buildHunkAnnotations(
       },
     ];
   });
+}
+
+export function buildDraftAnnotations(
+  drafts: DraftComment[],
+): DiffLineAnnotation<AnnotationMetadata>[] {
+  return drafts.map((d) => ({
+    side: d.side,
+    lineNumber: d.endLine,
+    metadata: {
+      kind: "draft-comment" as const,
+      draftId: d.id,
+      startLine: d.startLine,
+      endLine: d.endLine,
+      side: d.side,
+    },
+  }));
 }
 
 export function buildCommentMergedOptions(

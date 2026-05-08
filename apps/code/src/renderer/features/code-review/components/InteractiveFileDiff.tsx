@@ -8,8 +8,12 @@ import { FileDiff, MultiFileDiff } from "@pierre/diffs/react";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useCommentState } from "../hooks/useCommentState";
+import {
+  type CommentEditSeed,
+  useCommentState,
+} from "../hooks/useCommentState";
 import { useExpandableFileDiff } from "../hooks/useExpandableFileDiff";
+import { useReviewDraftsStore } from "../stores/reviewDraftsStore";
 import type {
   AnnotationMetadata,
   FilesDiffProps,
@@ -18,29 +22,50 @@ import type {
 } from "../types";
 import {
   buildCommentMergedOptions,
+  buildDraftAnnotations,
   buildHunkAnnotations,
 } from "../utils/diffAnnotations";
 import { buildFileAnnotations } from "../utils/prCommentAnnotations";
 import { CommentAnnotation } from "./CommentAnnotation";
+import { DraftCommentAnnotation } from "./DraftCommentAnnotation";
 import { PrCommentThread } from "./PrCommentThread";
+
+interface SharedAnnotationContext {
+  taskId: string;
+  filePath: string;
+  prUrl: string | null;
+  reset: () => void;
+  editSeed: CommentEditSeed | null;
+  onEditDraft: (draftId: string) => void;
+}
 
 function renderSharedAnnotation(
   annotation: DiffLineAnnotation<AnnotationMetadata>,
-  filePath: string,
-  taskId: string,
-  prUrl: string | null,
-  reset: () => void,
+  ctx: SharedAnnotationContext,
 ): React.ReactNode {
   if (annotation.metadata.kind === "comment") {
     const { startLine, endLine, side } = annotation.metadata;
+    const seed = ctx.editSeed;
     return (
       <CommentAnnotation
-        taskId={taskId}
-        filePath={filePath}
+        taskId={ctx.taskId}
+        filePath={ctx.filePath}
         startLine={startLine}
         endLine={endLine}
         side={side}
-        onDismiss={reset}
+        onDismiss={ctx.reset}
+        initialText={seed?.text}
+        editingDraftId={seed?.draftId}
+      />
+    );
+  }
+
+  if (annotation.metadata.kind === "draft-comment") {
+    return (
+      <DraftCommentAnnotation
+        taskId={ctx.taskId}
+        draftId={annotation.metadata.draftId}
+        onEdit={ctx.onEditDraft}
       />
     );
   }
@@ -48,9 +73,9 @@ function renderSharedAnnotation(
   if (annotation.metadata.kind === "pr-comment") {
     return (
       <PrCommentThread
-        taskId={taskId}
-        prUrl={prUrl}
-        filePath={filePath}
+        taskId={ctx.taskId}
+        prUrl={ctx.prUrl}
+        filePath={ctx.filePath}
         metadata={annotation.metadata}
       />
     );
@@ -97,6 +122,35 @@ export function InteractiveFileDiff(props: InteractiveFileDiffProps) {
   return <FilesDiffView {...props} />;
 }
 
+function useFileDrafts(taskId: string | undefined, filePath: string) {
+  return useReviewDraftsStore((s) =>
+    taskId
+      ? (s.drafts[taskId] ?? []).filter((d) => d.filePath === filePath)
+      : [],
+  );
+}
+
+function useEditDraftHandler(
+  fileDrafts: ReturnType<typeof useFileDrafts>,
+  openCommentForEdit: (seed: CommentEditSeed) => void,
+) {
+  return useCallback(
+    (draftId: string) => {
+      const draft = fileDrafts.find((d) => d.id === draftId);
+      if (!draft) return;
+      openCommentForEdit({
+        draftId: draft.id,
+        text: draft.text,
+        filePath: draft.filePath,
+        startLine: draft.startLine,
+        endLine: draft.endLine,
+        side: draft.side,
+      });
+    },
+    [fileDrafts, openCommentForEdit],
+  );
+}
+
 function PatchDiffView({
   fileDiff: patchFileDiff,
   repoPath,
@@ -123,8 +177,10 @@ function PatchDiffView({
     selectedRange,
     commentAnnotation,
     hasOpenComment,
+    editSeed,
     reset,
     handleLineSelectionEnd,
+    openCommentForEdit,
   } = useCommentState();
 
   const [lastPatch, setLastPatch] = useState(patchFileDiff);
@@ -144,6 +200,9 @@ function PatchDiffView({
   const filePathRef = useRef(currentFilePath);
   filePathRef.current = currentFilePath;
 
+  const fileDrafts = useFileDrafts(taskId, currentFilePath);
+  const handleEditDraft = useEditDraftHandler(fileDrafts, openCommentForEdit);
+
   const hunkAnnotations = useMemo(
     () => (repoPath ? buildHunkAnnotations(fileDiff) : []),
     [fileDiff, repoPath],
@@ -155,11 +214,17 @@ function PatchDiffView({
         : [],
     [commentThreads, currentFilePath],
   );
+  const draftAnnotations = useMemo(() => {
+    const drafts = editSeed
+      ? fileDrafts.filter((d) => d.id !== editSeed.draftId)
+      : fileDrafts;
+    return buildDraftAnnotations(drafts);
+  }, [fileDrafts, editSeed]);
   const annotations = useMemo(() => {
-    const all = [...hunkAnnotations, ...prAnnotations];
+    const all = [...hunkAnnotations, ...prAnnotations, ...draftAnnotations];
     if (commentAnnotation) all.push(commentAnnotation);
     return all;
-  }, [hunkAnnotations, prAnnotations, commentAnnotation]);
+  }, [hunkAnnotations, prAnnotations, draftAnnotations, commentAnnotation]);
 
   const handleRevert = useCallback(
     async (hunkIndex: number) => {
@@ -226,15 +291,25 @@ function PatchDiffView({
         );
       }
 
-      return renderSharedAnnotation(
-        annotation,
-        currentFilePath,
-        taskId ?? "",
-        prUrl ?? null,
+      return renderSharedAnnotation(annotation, {
+        taskId: taskId ?? "",
+        filePath: currentFilePath,
+        prUrl: prUrl ?? null,
         reset,
-      );
+        editSeed,
+        onEditDraft: handleEditDraft,
+      });
     },
-    [handleRevert, revertingHunks, reset, taskId, prUrl, currentFilePath],
+    [
+      handleRevert,
+      revertingHunks,
+      reset,
+      taskId,
+      prUrl,
+      currentFilePath,
+      editSeed,
+      handleEditDraft,
+    ],
   );
 
   const mergedOptions = useMemo(
@@ -272,33 +347,45 @@ function FilesDiffView({
     selectedRange,
     commentAnnotation,
     hasOpenComment,
+    editSeed,
     reset,
     handleLineSelectionEnd,
+    openCommentForEdit,
   } = useCommentState();
 
   const filePath = newFile.name || oldFile.name;
+
+  const fileDrafts = useFileDrafts(taskId, filePath);
+  const handleEditDraft = useEditDraftHandler(fileDrafts, openCommentForEdit);
 
   const prAnnotations = useMemo(
     () =>
       commentThreads ? buildFileAnnotations(commentThreads, filePath) : [],
     [commentThreads, filePath],
   );
+  const draftAnnotations = useMemo(() => {
+    const drafts = editSeed
+      ? fileDrafts.filter((d) => d.id !== editSeed.draftId)
+      : fileDrafts;
+    return buildDraftAnnotations(drafts);
+  }, [fileDrafts, editSeed]);
   const annotations = useMemo(() => {
-    const all = [...prAnnotations];
+    const all = [...prAnnotations, ...draftAnnotations];
     if (commentAnnotation) all.push(commentAnnotation);
     return all;
-  }, [prAnnotations, commentAnnotation]);
+  }, [prAnnotations, draftAnnotations, commentAnnotation]);
 
   const renderAnnotation = useCallback(
     (annotation: DiffLineAnnotation<AnnotationMetadata>) =>
-      renderSharedAnnotation(
-        annotation,
+      renderSharedAnnotation(annotation, {
+        taskId: taskId ?? "",
         filePath,
-        taskId ?? "",
-        prUrl ?? null,
+        prUrl: prUrl ?? null,
         reset,
-      ),
-    [reset, taskId, prUrl, filePath],
+        editSeed,
+        onEditDraft: handleEditDraft,
+      }),
+    [reset, taskId, prUrl, filePath, editSeed, handleEditDraft],
   );
 
   const mergedOptions = useMemo(

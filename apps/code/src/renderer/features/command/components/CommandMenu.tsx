@@ -1,9 +1,20 @@
 import { useReviewNavigationStore } from "@features/code-review/stores/reviewNavigationStore";
-import { Command } from "@features/command/components/Command";
 import { CommandKeyHints } from "@features/command/components/CommandKeyHints";
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
+import {
+  Autocomplete,
+  AutocompleteCollection,
+  AutocompleteGroup,
+  AutocompleteInput,
+  AutocompleteItem,
+  AutocompleteLabel,
+  AutocompleteList,
+  AutocompleteStatus,
+  Dialog,
+  DialogContent,
+} from "@posthog/quill";
 import {
   DesktopIcon,
   FileTextIcon,
@@ -13,27 +24,37 @@ import {
   SunIcon,
   ViewVerticalIcon,
 } from "@radix-ui/react-icons";
-import { Flex, Text } from "@radix-ui/themes";
 import {
   ANALYTICS_EVENTS,
   type CommandMenuAction,
 } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
-import { THEME_CYCLE_LABELS, useThemeStore } from "@stores/themeStore";
+import { useThemeStore } from "@stores/themeStore";
 import { track } from "@utils/analytics";
-import { useCallback, useEffect, useRef } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 interface CommandMenuProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+type Command = {
+  id: string;
+  label: string;
+  keywords?: string;
+  icon: React.ReactNode;
+  action: CommandMenuAction;
+  onRun: () => void;
+};
+
+type CommandSection = { label: string; items: Command[] };
+
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const { navigateToTaskInput } = useNavigationStore();
   const openSettingsDialog = useSettingsDialogStore((state) => state.open);
+  const closeSettingsDialog = useSettingsDialogStore((state) => state.close);
   const { folders } = useFolders();
-  const { theme, cycleTheme } = useThemeStore();
+  const { theme, setTheme } = useThemeStore();
   const toggleLeftSidebar = useSidebarStore((state) => state.toggle);
   const view = useNavigationStore((state) => state.view);
   const setReviewMode = useReviewNavigationStore(
@@ -42,6 +63,19 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const getReviewMode = useReviewNavigationStore(
     (state) => state.getReviewMode,
   );
+  const [query, setQuery] = useState("");
+  const [systemPrefersDark, setSystemPrefersDark] = useState(
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e: MediaQueryListEvent) =>
+      setSystemPrefersDark(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
   const openReviewPanel = useCallback(() => {
     const taskId = view.type === "task-detail" ? view.data?.id : undefined;
     if (!taskId) return;
@@ -50,179 +84,209 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       setReviewMode(taskId, "split");
     }
   }, [view, getReviewMode, setReviewMode]);
-  const commandRef = useRef<HTMLDivElement>(null);
-
-  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
-
-  const trackAction = useCallback((action: CommandMenuAction) => {
-    track(ANALYTICS_EVENTS.COMMAND_MENU_ACTION, { action_type: action });
-  }, []);
-
-  const runAndClose = useCallback(
-    <T extends unknown[]>(
-      fn: (...args: T) => void,
-      action?: CommandMenuAction,
-    ) =>
-      (...args: T) => {
-        if (action) {
-          trackAction(action);
-        }
-        fn(...args);
-        close();
-      },
-    [close, trackAction],
-  );
 
   useEffect(() => {
     if (open) {
       track(ANALYTICS_EVENTS.COMMAND_MENU_OPENED);
+    } else {
+      setQuery("");
     }
   }, [open]);
 
-  useHotkeys("escape", close, {
-    enabled: open,
-    enableOnContentEditable: true,
-    enableOnFormTags: true,
-    preventDefault: true,
-  });
+  const themeOptions = useMemo<Command[]>(() => {
+    const options: Command[] = [];
+    if (theme !== "light") {
+      options.push({
+        id: "switch-theme-light",
+        label: "Switch to light mode",
+        keywords: "theme appearance",
+        icon: <SunIcon className="h-3 w-3 text-gray-11" />,
+        action: "toggle-theme",
+        onRun: () => setTheme("light"),
+      });
+    }
+    if (theme !== "dark") {
+      options.push({
+        id: "switch-theme-dark",
+        label: "Switch to dark mode",
+        keywords: "theme appearance",
+        icon: <MoonIcon className="h-3 w-3 text-gray-11" />,
+        action: "toggle-theme",
+        onRun: () => setTheme("dark"),
+      });
+    }
+    const systemMatchesCurrent =
+      (theme === "dark" && systemPrefersDark) ||
+      (theme === "light" && !systemPrefersDark);
+    if (theme !== "system" && !systemMatchesCurrent) {
+      options.push({
+        id: "switch-theme-system",
+        label: "Switch to system theme",
+        keywords: "theme appearance auto",
+        icon: <DesktopIcon className="h-3 w-3 text-gray-11" />,
+        action: "toggle-theme",
+        onRun: () => setTheme("system"),
+      });
+    }
+    return options;
+  }, [theme, setTheme, systemPrefersDark]);
 
-  useHotkeys("mod+k", close, {
-    enabled: open,
-    enableOnContentEditable: true,
-    enableOnFormTags: true,
-    preventDefault: true,
-  });
+  const sections = useMemo<CommandSection[]>(() => {
+    const navigation: Command[] = [
+      {
+        id: "home",
+        label: "Home",
+        icon: <HomeIcon className="h-3 w-3 text-gray-11" />,
+        action: "home",
+        onRun: () => {
+          closeSettingsDialog();
+          navigateToTaskInput();
+        },
+      },
+      {
+        id: "settings",
+        label: "Settings",
+        icon: <GearIcon className="h-3 w-3 text-gray-11" />,
+        action: "settings",
+        onRun: () => openSettingsDialog(),
+      },
+    ];
 
-  useHotkeys("mod+p", close, {
-    enabled: open,
-    enableOnContentEditable: true,
-    enableOnFormTags: true,
-    preventDefault: true,
-  });
+    const actions: Command[] = [
+      ...themeOptions,
+      {
+        id: "toggle-left-sidebar",
+        label: "Toggle left sidebar",
+        icon: <ViewVerticalIcon className="h-3 w-3 text-gray-11" />,
+        action: "toggle-left-sidebar",
+        onRun: toggleLeftSidebar,
+      },
+      {
+        id: "open-review-panel",
+        label: "Open review panel",
+        icon: <ViewVerticalIcon className="h-3 w-3 rotate-180 text-gray-11" />,
+        action: "open-review-panel",
+        onRun: openReviewPanel,
+      },
+      {
+        id: "new-task",
+        label: "New task",
+        keywords: "create",
+        icon: <FileTextIcon className="h-3 w-3 text-gray-11" />,
+        action: "new-task",
+        onRun: () => {
+          closeSettingsDialog();
+          navigateToTaskInput();
+        },
+      },
+    ];
 
-  useEffect(() => {
-    if (!open) return;
+    const out: CommandSection[] = [
+      { label: "Navigation", items: navigation },
+      { label: "Actions", items: actions },
+    ];
 
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        commandRef.current &&
-        !commandRef.current.contains(event.target as Node)
-      ) {
-        close();
-      }
-    };
+    if (folders.length > 0) {
+      out.push({
+        label: "New task in folder",
+        items: folders.map((folder) => ({
+          id: `new-task-folder-${folder.id}`,
+          label: `New task in ${folder.name}`,
+          keywords: folder.path,
+          icon: <FileTextIcon className="h-3 w-3 text-gray-11" />,
+          action: "new-task",
+          onRun: () => {
+            closeSettingsDialog();
+            navigateToTaskInput(folder.id);
+          },
+        })),
+      });
+    }
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [open, close]);
+    return out;
+  }, [
+    folders,
+    themeOptions,
+    navigateToTaskInput,
+    openSettingsDialog,
+    closeSettingsDialog,
+    toggleLeftSidebar,
+    openReviewPanel,
+  ]);
 
-  if (!open) return null;
+  const allCommands = useMemo(
+    () => sections.flatMap((s) => s.items),
+    [sections],
+  );
+
+  const handleSelect = (id: string | null): void => {
+    if (id === null) return;
+    const cmd = allCommands.find((c) => c.id === id);
+    if (!cmd) return;
+    track(ANALYTICS_EVENTS.COMMAND_MENU_ACTION, { action_type: cmd.action });
+    cmd.onRun();
+    onOpenChange(false);
+    setQuery("");
+  };
 
   return (
-    <Flex
-      align="start"
-      justify="center"
-      className="fixed inset-0 z-50 bg-black/20"
-      pt="9"
-      data-overlay="command-menu"
-    >
-      <div
-        ref={commandRef}
-        className="flex w-[640px] max-w-[90vw] flex-col overflow-hidden rounded-2 border border-gray-6 bg-gray-1 shadow-6"
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="w-[720px] max-w-[90vw] gap-0 p-0"
+        showCloseButton={false}
       >
-        <Command.Root className="min-h-0 flex-1">
-          <div className="flex items-center border-gray-6 border-b px-3">
-            <Command.Input
-              placeholder="Search commands..."
-              autoFocus={true}
-              className="w-full bg-transparent py-3 text-xs outline-none placeholder:text-gray-9"
-            />
-          </div>
-
-          <Command.List className="max-h-[400px]">
-            <Command.Empty>No results found.</Command.Empty>
-
-            <Command.Group heading="Navigation">
-              <Command.Item
-                value="Home"
-                onSelect={runAndClose(navigateToTaskInput, "home")}
-              >
-                <HomeIcon className="mr-3 h-3 w-3 text-gray-11" />
-                <Text className="text-[13px]">Home</Text>
-              </Command.Item>
-              <Command.Item
-                value="Settings"
-                onSelect={runAndClose(() => openSettingsDialog(), "settings")}
-              >
-                <GearIcon className="mr-3 h-3 w-3 text-gray-11" />
-                <Text className="text-[13px]">Settings</Text>
-              </Command.Item>
-            </Command.Group>
-
-            <Command.Group heading="Actions">
-              <Command.Item
-                value="Toggle theme dark light system mode"
-                onSelect={runAndClose(cycleTheme, "toggle-theme")}
-              >
-                {theme === "dark" && (
-                  <SunIcon className="mr-3 h-3 w-3 text-gray-11" />
-                )}
-                {theme === "light" && (
-                  <DesktopIcon className="mr-3 h-3 w-3 text-gray-11" />
-                )}
-                {theme === "system" && (
-                  <MoonIcon className="mr-3 h-3 w-3 text-gray-11" />
-                )}
-                <Text className="text-[13px]">{THEME_CYCLE_LABELS[theme]}</Text>
-              </Command.Item>
-              <Command.Item
-                value="Toggle left sidebar"
-                onSelect={runAndClose(toggleLeftSidebar, "toggle-left-sidebar")}
-              >
-                <ViewVerticalIcon className="mr-3 h-3 w-3 text-gray-11" />
-                <Text className="text-[13px]">Toggle left sidebar</Text>
-              </Command.Item>
-              <Command.Item
-                value="Open review panel"
-                onSelect={runAndClose(openReviewPanel, "open-review-panel")}
-              >
-                <ViewVerticalIcon className="mr-3 h-3 w-3 rotate-180 text-gray-11" />
-                <Text className="text-[13px]">Open review panel</Text>
-              </Command.Item>
-              <Command.Item
-                value="Create new task"
-                onSelect={runAndClose(navigateToTaskInput, "new-task")}
-              >
-                <FileTextIcon className="mr-3 h-3 w-3 text-gray-11" />
-                <Text className="text-[13px]">New task</Text>
-              </Command.Item>
-            </Command.Group>
-
-            {folders.length > 0 && (
-              <Command.Group heading="New task in folder">
-                {folders.map((folder) => (
-                  <Command.Item
-                    key={folder.id}
-                    value={`New task in ${folder.name} folder ${folder.path}`}
-                    onSelect={runAndClose(
-                      () => navigateToTaskInput(folder.id),
-                      "new-task",
-                    )}
-                  >
-                    <FileTextIcon className="mr-3 h-3 w-3 text-gray-11" />
-                    <Text className="text-[13px]">
-                      New task in{" "}
-                      <Text className="font-bold">{folder.name}</Text>
-                    </Text>
-                  </Command.Item>
-                ))}
-              </Command.Group>
+        <Autocomplete<Command>
+          inline
+          defaultOpen
+          items={sections}
+          value={query}
+          autoHighlight="always"
+          onValueChange={(val, eventDetails) => {
+            if (eventDetails.reason !== "input-change") return;
+            if (typeof val === "string") {
+              setQuery(val);
+            }
+          }}
+          filter={(cmd, q) => {
+            if (!q) return true;
+            const haystack = `${cmd.label} ${cmd.keywords ?? ""}`.toLowerCase();
+            return haystack.includes(q.toLowerCase());
+          }}
+        >
+          <AutocompleteInput
+            placeholder="Type a command…"
+            autoFocus
+            showClear
+          />
+          <AutocompleteStatus
+            emptyContent={
+              <span>
+                No commands match <strong>"{query}"</strong>
+              </span>
+            }
+          />
+          <AutocompleteList className="max-h-[60vh]">
+            {(section: CommandSection) => (
+              <AutocompleteGroup key={section.label} items={section.items}>
+                <AutocompleteLabel>{section.label}</AutocompleteLabel>
+                <AutocompleteCollection>
+                  {(cmd: Command) => (
+                    <AutocompleteItem
+                      key={cmd.id}
+                      value={cmd.id}
+                      onClick={() => handleSelect(cmd.id)}
+                    >
+                      {cmd.icon}
+                      {cmd.label}
+                    </AutocompleteItem>
+                  )}
+                </AutocompleteCollection>
+              </AutocompleteGroup>
             )}
-          </Command.List>
-        </Command.Root>
-
+          </AutocompleteList>
+        </Autocomplete>
         <CommandKeyHints />
-      </div>
-    </Flex>
+      </DialogContent>
+    </Dialog>
   );
 }

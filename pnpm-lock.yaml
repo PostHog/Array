@@ -176,8 +176,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/platform
       '@posthog/quill':
-        specifier: 0.1.0-alpha.7
-        version: 0.1.0-alpha.7(@types/react-dom@19.2.3(@types/react@19.2.11))(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)
+        specifier: 0.3.0-beta.1
+        version: 0.3.0-beta.1(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)
       '@posthog/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -364,6 +364,9 @@ importers:
       tailwind-merge:
         specifier: ^3.5.0
         version: 3.5.0
+      tailwindcss-scroll-mask:
+        specifier: ^0.0.3
+        version: 0.0.3(tailwindcss@4.2.2)
       tippy.js:
         specifier: ^6.3.7
         version: 6.3.7
@@ -3643,12 +3646,12 @@ packages:
   '@posthog/plugin-utils@1.0.1':
     resolution: {integrity: sha512-+x3LFZlUVPNUPQBx9kvRV/hXd1j3JcYf9iYClJCORjuuA0RV5FICUZMMFbwsSOPuKoW9rQAaW3zFoQMYEfM+YA==}
 
-  '@posthog/quill@0.1.0-alpha.7':
-    resolution: {integrity: sha512-meJd4gEUchZHx71GJ3NdZ7j/NxIAai5Srda6IQP3pJEMpY3VddwHn+r/xUG42eHt88vBbZsnlCwvyLYXhla5eQ==}
+  '@posthog/quill@0.3.0-beta.1':
+    resolution: {integrity: sha512-VOW3iuufIvYujBD1GWU9YNdGwWc9p4JkdP7aNaErCF41Lk6gQkwjiu/qNplHTJppjgbgItPSV0FoonwS9WmNrQ==}
     engines: {node: '>=20'}
     peerDependencies:
-      react: ^19.0.0
-      react-dom: ^19.0.0
+      react: ^18.3.1 || ^19.0.0
+      react-dom: ^18.3.1 || ^19.0.0
       tailwindcss: ^4.0.0
 
   '@posthog/rollup-plugin@1.4.0':
@@ -10825,6 +10828,11 @@ packages:
   tailwind-merge@3.5.0:
     resolution: {integrity: sha512-I8K9wewnVDkL1NTGoqWmVEIlUcB9gFriAEkXkfCjX5ib8ezGxtR3xD7iZIxrfArjEsH7F1CHD4RFUtxefdqV/A==}
 
+  tailwindcss-scroll-mask@0.0.3:
+    resolution: {integrity: sha512-vPuacFs5yHJRZ8MFP/qqKKRbnWlVDPAJ5VfRzOwrmtEJQ4pHm5K1xw/dXdF4v6Sx1QdbtCWJuGs9ucSTc+YanQ==}
+    peerDependencies:
+      tailwindcss: ^4
+
   tailwindcss@3.4.19:
     resolution: {integrity: sha512-3ofp+LL8E+pK/JuPLPggVAIaEuhvIz4qNcf3nA1Xn2o/7fb7s/TYpHhwGDv1ZU3PkBluUVaF8PyCHcm48cKLWQ==}
     engines: {node: '>=14.0.0'}
@@ -15287,22 +15295,19 @@ snapshots:
     dependencies:
       cross-spawn: 7.0.6
 
-  '@posthog/quill@0.1.0-alpha.7(@types/react-dom@19.2.3(@types/react@19.2.11))(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)':
+  '@posthog/quill@0.3.0-beta.1(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)':
     dependencies:
       '@base-ui/react': 1.3.0(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       class-variance-authority: 0.7.1
       clsx: 2.1.1
-      cmdk: 1.1.1(@types/react-dom@19.2.3(@types/react@19.2.11))(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       lucide-react: 0.577.0(react@19.1.0)
       react: 19.1.0
       react-dom: 19.1.0(react@19.1.0)
       react-resizable-panels: 4.10.0(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       tailwind-merge: 2.6.1
       tailwindcss: 4.2.2
-      vaul: 1.1.2(@types/react-dom@19.2.3(@types/react@19.2.11))(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
     transitivePeerDependencies:
       - '@types/react'
-      - '@types/react-dom'
 
   '@posthog/rollup-plugin@1.4.0(rollup@4.57.1)':
     dependencies:
@@ -23493,6 +23498,10 @@ snapshots:
   tailwind-merge@2.6.1: {}
 
   tailwind-merge@3.5.0: {}
+
+  tailwindcss-scroll-mask@0.0.3(tailwindcss@4.2.2):
+    dependencies:
+      tailwindcss: 4.2.2
 
   tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.2):
     dependencies:

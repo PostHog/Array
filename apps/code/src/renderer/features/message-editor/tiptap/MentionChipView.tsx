@@ -87,7 +87,6 @@ function DefaultChip({
   const chipContent = (
     <Chip
       size="xs"
-      variant="outline"
       contentEditable={false}
       onClick={canOpenUrl ? () => window.open(id, "_blank") : undefined}
       className={`${chipBase} max-w-full whitespace-nowrap ${isGithubRef ? "cursor-pointer!" : "cursor-default! active:translate-y-0!"} ${isCommand ? "cli-slash-command" : "cli-file-mention"} ${selected ? selectedRing : ""}`}
@@ -148,7 +147,6 @@ function PastedTextChip({
     <Tooltip content="Click to paste as text instead">
       <Chip
         size="xs"
-        variant="outline"
         contentEditable={false}
         onClick={handleClick}
         className={`${chipBase} cli-file-mention cursor-pointer! ${selected ? selectedRing : ""}`}
