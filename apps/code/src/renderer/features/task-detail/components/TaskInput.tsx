@@ -12,6 +12,7 @@ import {
   getBranchNameInputState,
 } from "@features/git-interaction/utils/branchCreation";
 import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
+import { PromptHistoryDialog } from "@features/message-editor/components/PromptHistoryDialog";
 import { PromptInput } from "@features/message-editor/components/PromptInput";
 import { useTaskInputHistoryStore } from "@features/message-editor/stores/taskInputHistoryStore";
 import type { EditorHandle } from "@features/message-editor/types";
@@ -529,9 +530,17 @@ export function TaskInput({
     };
   }, [promptSessionId]);
 
-  const hasHistory = useTaskInputHistoryStore((s) => s.prompts.length > 0);
+  const hasHistory = useTaskInputHistoryStore((s) => s.entries.length > 0);
   const getPromptHistory = useCallback(
-    () => useTaskInputHistoryStore.getState().prompts,
+    () => useTaskInputHistoryStore.getState().entries.map((e) => e.text),
+    [],
+  );
+  const handleHistorySelect = useCallback((text: string) => {
+    editorRef.current?.setContent(text);
+    editorRef.current?.focus();
+  }, []);
+  const hasPendingDraft = useCallback(
+    () => !(editorRef.current?.isEmpty() ?? true),
     [],
   );
   const hints = [
@@ -757,6 +766,13 @@ export function TaskInput({
                   disabled={isCreatingTask}
                   isConnecting={isPreviewLoading}
                   onModelChange={handleModelChange}
+                />
+              }
+              historyButton={
+                <PromptHistoryDialog
+                  onSelect={handleHistorySelect}
+                  hasPendingDraft={hasPendingDraft}
+                  disabled={isCreatingTask}
                 />
               }
               reasoningSelector={

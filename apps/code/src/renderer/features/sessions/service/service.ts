@@ -3560,23 +3560,18 @@ export class SessionService {
       return;
     }
 
+    // The fetched logs lag behind expectedCount and `newEntries` is the latest
+    // tail slice of the snapshot — appending it here would create duplicates
+    // and gaps in `session.events` (and bump processedLineCount past entries
+    // we don't actually have). Skip; the next snapshot/log update will retry
+    // once the source has caught up.
     log.warn("Cloud task log count inconsistency", {
       taskRunId,
       currentCount,
       expectedCount,
+      fetchedCount: rawEntries.length,
       entriesReceived: newEntries.length,
     });
-    let newEvents = convertStoredEntriesToEvents(newEntries);
-    newEvents = this.filterSkippedPromptEvents(taskRunId, session, newEvents);
-    if (hasSessionPromptEvent(newEvents)) {
-      sessionStoreSetters.clearTailOptimisticItems(taskRunId);
-    }
-    sessionStoreSetters.appendEvents(
-      taskRunId,
-      newEvents,
-      latestCount + newEntries.length,
-    );
-    this.updatePromptStateFromEvents(taskRunId, newEvents);
   }
 
   private createBaseSession(

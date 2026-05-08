@@ -9,6 +9,7 @@ import {
   Funnel,
   Lightning,
   Lock,
+  Sparkle,
   Trash,
   Warning,
   Wrench,
@@ -36,7 +37,8 @@ export const CATEGORY_CONFIG: Record<
   error_tracking: { icon: Warning, color: "orange", label: "Error tracking" },
   event_tracking: { icon: ChartLine, color: "blue", label: "Event tracking" },
   funnel: { icon: Funnel, color: "violet", label: "Funnel" },
-  experiment: { icon: Flask, color: "violet", label: "Experiment" },
+  posthog_setup: { icon: Sparkle, color: "violet", label: "PostHog setup" },
+  experiment: { icon: Flask, color: "purple", label: "Experiment" },
 };
 
 // Fallback when a `DiscoveredTask.category` somehow doesn't match the map

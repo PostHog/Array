@@ -87,11 +87,7 @@ export class CreatePrSaga extends Saga<CreatePrSagaInput, CreatePrSagaOutput> {
         await this.step({
           name: "creating-branch",
           execute: () => this.deps.createBranch(directoryPath, branchName),
-          rollback: async () => {
-            if (currentBranch) {
-              await this.deps.checkoutBranch(directoryPath, currentBranch);
-            }
-          },
+          rollback: async () => {},
         });
       }
     }

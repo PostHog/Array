@@ -926,6 +926,33 @@ export async function listAllFiles(
   return [...tracked, ...untracked];
 }
 
+// Tracked + untracked files containing `pattern` (literal, case-insensitive).
+// Skips binaries (`-I`). Empty array on no matches.
+export async function listFilesContainingText(
+  baseDir: string,
+  pattern: string,
+  options?: CreateGitClientOptions,
+): Promise<string[]> {
+  const manager = getGitOperationManager();
+  return manager.executeRead(
+    baseDir,
+    async (git) => {
+      const output = await git.raw([
+        "grep",
+        "-l",
+        "-i",
+        "-I",
+        "--untracked",
+        "--no-color",
+        "--fixed-strings",
+        pattern,
+      ]);
+      return output.split("\n").filter(Boolean);
+    },
+    { signal: options?.abortSignal },
+  );
+}
+
 export async function hasTrackedFiles(
   baseDir: string,
   options?: CreateGitClientOptions,

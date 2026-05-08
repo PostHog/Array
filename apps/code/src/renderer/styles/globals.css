@@ -55,6 +55,24 @@
  */
 @source "../../../../node_modules/@posthog/quill/dist/**/*.js";
 
+/*
+ * Quill ships its dialog backdrop at `opacity-20` (light) / `opacity-70`
+ * (dark). The light value is barely visible — bump it so dialogs feel
+ * properly modal across the app, matching Radix Themes.
+ *
+ * The doubled `[data-slot]` attribute selector raises specificity to
+ * (0,2,0) so it beats Tailwind's `dark:opacity-70` (which compiles to
+ * `.opacity-70:where(.dark, .dark *)` at (0,1,0)) without `!important`.
+ */
+[data-slot="dialog-overlay"][data-slot="dialog-overlay"] {
+  background-color: rgba(0, 0, 0, 0.55);
+  opacity: 1;
+}
+.dark [data-slot="dialog-overlay"][data-slot="dialog-overlay"] {
+  background-color: rgba(0, 0, 0, 0.7);
+  opacity: 1;
+}
+
 @config "../../../tailwind.config.js";
 
 /*

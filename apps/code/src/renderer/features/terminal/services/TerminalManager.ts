@@ -273,11 +273,23 @@ class TerminalManagerImpl {
   handleExit(sessionId: string, exitCode?: number): void {
     const instance = this.instances.get(sessionId);
     if (instance) {
+      // Without this, ResizeObserver keeps firing shell.resize against the dead
+      // session on every layout shift, producing a TRPC error per call and
+      // wedging the renderer.
+      instance.isReady = false;
+      this.disconnectResizeObserver(instance);
       this.emit("exit", {
         sessionId,
         persistenceKey: instance.persistenceKey,
         exitCode,
       });
+    }
+  }
+
+  private disconnectResizeObserver(instance: TerminalInstance): void {
+    if (instance.resizeObserver) {
+      instance.resizeObserver.disconnect();
+      instance.resizeObserver = null;
     }
   }
 
@@ -307,10 +319,7 @@ class TerminalManagerImpl {
       return;
     }
 
-    if (instance.resizeObserver) {
-      instance.resizeObserver.disconnect();
-      instance.resizeObserver = null;
-    }
+    this.disconnectResizeObserver(instance);
 
     instance.attachedElement = element;
 
@@ -355,10 +364,7 @@ class TerminalManagerImpl {
       return;
     }
 
-    if (instance.resizeObserver) {
-      instance.resizeObserver.disconnect();
-      instance.resizeObserver = null;
-    }
+    this.disconnectResizeObserver(instance);
 
     const serialized = instance.serializeAddon.serialize();
     this.emit("stateChange", {

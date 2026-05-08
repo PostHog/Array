@@ -1,3 +1,5 @@
+export type DiscoveredTaskSource = "agent" | "enricher";
+
 export interface DiscoveredTask {
   id: string;
   title: string;
@@ -12,11 +14,14 @@ export interface DiscoveredTask {
     | "error_tracking"
     | "event_tracking"
     | "funnel"
+    | "posthog_setup"
     | "experiment";
+  source: DiscoveredTaskSource;
   file?: string;
   lineHint?: number;
   impact?: string;
   recommendation?: string;
+  prompt?: string;
 }
 
 const BASE_CATEGORY_ENUM = [

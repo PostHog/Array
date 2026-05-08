@@ -36,7 +36,14 @@ const DISCOVERY_PROMPT_EXPERIMENT_TIER = `
 
 If you find at least one credible Tier 3 experiment opportunity, include at least one experiment-category task in your output — even if doing so displaces a lower-impact Tier 1/2 finding. Do not fabricate an experiment to fill the slot: if no credible candidate exists, omit the category entirely.`;
 
-const DISCOVERY_PROMPT_RULES = `
+const BASE_ALLOWED_CATEGORIES =
+  "bug, security, dead_code, duplication, performance, stale_feature_flag, error_tracking, event_tracking, funnel";
+
+function buildDiscoveryRules(includeExperiments: boolean): string {
+  const allowed = includeExperiments
+    ? `${BASE_ALLOWED_CATEGORIES}, experiment`
+    : BASE_ALLOWED_CATEGORIES;
+  return `
 
 ## Rules
 
@@ -48,8 +55,10 @@ const DISCOVERY_PROMPT_RULES = `
 - Prioritize by impact. Lead with findings that save the most time or prevent the most damage.
 - Do NOT suggest documentation, comment, or style/formatting changes.
 - Maximum 4 tasks. Quality over quantity.
+- Allowed \`category\` values: ${allowed}. Do NOT emit any other category.
 
 When you are done analyzing, call create_output with your findings.`;
+}
 
 export function buildDiscoveryPrompt({
   includeExperiments,
@@ -57,5 +66,5 @@ export function buildDiscoveryPrompt({
   includeExperiments: boolean;
 }): string {
   const middle = includeExperiments ? DISCOVERY_PROMPT_EXPERIMENT_TIER : "";
-  return `${DISCOVERY_PROMPT_BASE}${middle}${DISCOVERY_PROMPT_RULES}`;
+  return `${DISCOVERY_PROMPT_BASE}${middle}${buildDiscoveryRules(includeExperiments)}`;
 }

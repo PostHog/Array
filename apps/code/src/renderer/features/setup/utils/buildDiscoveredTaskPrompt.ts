@@ -31,6 +31,7 @@ function buildExperimentTaskPrompt(task: DiscoveredTask): string {
 }
 
 export function buildDiscoveredTaskPrompt(task: DiscoveredTask): string {
+  if (task.prompt) return task.prompt;
   if (task.category === "experiment") {
     return buildExperimentTaskPrompt(task);
   }

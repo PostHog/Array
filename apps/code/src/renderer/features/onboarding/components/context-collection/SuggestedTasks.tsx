@@ -69,9 +69,9 @@ function SuggestedTaskCard({
 
   return (
     <motion.button
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.08 }}
+      transition={{ duration: 0.18, delay: index * 0.04 }}
       onClick={() => onSelect(task)}
       type="button"
       className={`flex w-full cursor-pointer items-start rounded-xl border border-(--gray-a3) bg-(--color-panel-solid) text-left transition-[border-color,box-shadow] ${
