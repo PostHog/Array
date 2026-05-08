@@ -1527,7 +1527,7 @@ describe("SessionService", () => {
       expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();
     });
 
-    it("processes a pending cloud log gap after active reconciliation finishes", async () => {
+    it("queues a pending cloud log gap when stale fetches can't fill it, without appending", async () => {
       const service = getSessionService();
       let sessionState = createMockSession({
         taskRunId: "run-123",
@@ -1628,38 +1628,18 @@ describe("SessionService", () => {
       });
       resolveFirstLocalLogs("");
 
+      // The pending request must drain after the in-flight one resolves —
+      // verify the second readLocalLogs call eventually happens.
       await vi.waitFor(() => {
-        expect(mockSessionStoreSetters.appendEvents).toHaveBeenCalledTimes(2);
+        expect(mockTrpcLogs.readLocalLogs.query).toHaveBeenCalledTimes(2);
       });
-      expect(mockSessionStoreSetters.appendEvents).toHaveBeenNthCalledWith(
-        1,
-        "run-123",
-        [
-          expect.objectContaining({
-            message: expect.objectContaining({
-              params: { entry: firstEntry },
-            }),
-          }),
-        ],
-        6,
-      );
-      expect(mockSessionStoreSetters.appendEvents).toHaveBeenNthCalledWith(
-        2,
-        "run-123",
-        [
-          expect.objectContaining({
-            message: expect.objectContaining({
-              params: { entry: secondEntry },
-            }),
-          }),
-          expect.objectContaining({
-            message: expect.objectContaining({
-              params: { entry: thirdEntry },
-            }),
-          }),
-        ],
-        8,
-      );
+      // Stale fetches can't fill the gap; we must NOT append the snapshot's
+      // tail slice (positions [expectedCount-N, expectedCount]) on top of an
+      // events array that's still at processedLineCount=5 — that path used
+      // to corrupt the array with duplicates/gaps and ratchet
+      // processedLineCount past entries we don't actually have, leading to
+      // unbounded growth on long-running cloud runs.
+      expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();
     });
     it("flips status to connected on _posthog/run_started", async () => {
       const service = getSessionService();

@@ -1,6 +1,8 @@
 import type { DiscoveredTask } from "@features/setup/types";
 
 export function buildDiscoveredTaskPrompt(task: DiscoveredTask): string {
+  if (task.prompt) return task.prompt;
+
   const sections: string[] = [
     "Investigate this issue and implement the fix. Open a PR if appropriate.",
     "",

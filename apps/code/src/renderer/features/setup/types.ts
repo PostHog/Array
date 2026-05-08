@@ -1,3 +1,5 @@
+export type DiscoveredTaskSource = "agent" | "enricher";
+
 export interface DiscoveredTask {
   id: string;
   title: string;
@@ -11,11 +13,14 @@ export interface DiscoveredTask {
     | "stale_feature_flag"
     | "error_tracking"
     | "event_tracking"
-    | "funnel";
+    | "funnel"
+    | "posthog_setup";
+  source: DiscoveredTaskSource;
   file?: string;
   lineHint?: number;
   impact?: string;
   recommendation?: string;
+  prompt?: string;
 }
 
 export const TASK_DISCOVERY_JSON_SCHEMA = {

@@ -1,5 +1,10 @@
 // Analytics event types and properties
 
+import type {
+  PromptHistoryOpenedProperties,
+  PromptHistorySelectedProperties,
+} from "@features/message-editor/analytics";
+
 type ExecutionType = "cloud" | "local";
 type RepositoryProvider = "github" | "gitlab" | "local" | "none";
 type TaskCreatedFrom = "cli" | "command-menu";
@@ -279,7 +284,8 @@ type SetupDiscoveredTaskCategory =
   | "stale_feature_flag"
   | "error_tracking"
   | "event_tracking"
-  | "funnel";
+  | "funnel"
+  | "posthog_setup";
 
 export interface SetupViewedProperties {
   discovery_status: "idle" | "running" | "done" | "error";
@@ -325,19 +331,14 @@ export interface SetupSkippedProperties {
   entry_point: "during_scan" | "after_done";
 }
 
-export interface SetupWizardStartedProperties {
-  wizard_task_id: string;
-  workspace_mode?: string;
+// Subscription / billing events
+export interface SubscriptionStartedProperties {
+  plan_key: string;
+  previous_plan_key?: string;
 }
 
-export interface SetupWizardFailedProperties {
-  reason:
-    | "unauthenticated_client"
-    | "missing_directory"
-    | "startup_error"
-    | "already_installed"
-    | "task_run_terminal";
-  error_message?: string;
+export interface SubscriptionCancelledProperties {
+  plan_key: string;
 }
 
 // Event names as constants
@@ -417,8 +418,6 @@ export const ANALYTICS_EVENTS = {
   SETUP_TASK_SELECTED: "Setup task selected",
   SETUP_TASK_DISMISSED: "Setup task dismissed",
   SETUP_SKIPPED: "Setup skipped",
-  SETUP_WIZARD_STARTED: "Setup wizard started",
-  SETUP_WIZARD_FAILED: "Setup wizard failed",
 
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
@@ -426,6 +425,14 @@ export const ANALYTICS_EVENTS = {
 
   // Inbox events
   INBOX_INTEREST_REGISTERED: "Inbox interest registered",
+
+  // Prompt history events
+  PROMPT_HISTORY_OPENED: "Prompt history opened",
+  PROMPT_HISTORY_SELECTED: "Prompt history selected",
+
+  // Subscription events
+  SUBSCRIPTION_STARTED: "Subscription started",
+  SUBSCRIPTION_CANCELLED: "Subscription cancelled",
 } as const;
 
 // Event property mapping
@@ -498,8 +505,6 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SETUP_TASK_SELECTED]: SetupTaskSelectedProperties;
   [ANALYTICS_EVENTS.SETUP_TASK_DISMISSED]: SetupTaskDismissedProperties;
   [ANALYTICS_EVENTS.SETUP_SKIPPED]: SetupSkippedProperties;
-  [ANALYTICS_EVENTS.SETUP_WIZARD_STARTED]: SetupWizardStartedProperties;
-  [ANALYTICS_EVENTS.SETUP_WIZARD_FAILED]: SetupWizardFailedProperties;
 
   // Error events
   [ANALYTICS_EVENTS.TASK_CREATION_FAILED]: TaskCreationFailedProperties;
@@ -507,4 +512,12 @@ export type EventPropertyMap = {
 
   // Inbox events
   [ANALYTICS_EVENTS.INBOX_INTEREST_REGISTERED]: never;
+
+  // Prompt history events
+  [ANALYTICS_EVENTS.PROMPT_HISTORY_OPENED]: PromptHistoryOpenedProperties;
+  [ANALYTICS_EVENTS.PROMPT_HISTORY_SELECTED]: PromptHistorySelectedProperties;
+
+  // Subscription events
+  [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
+  [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
 };
