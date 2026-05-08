@@ -41,13 +41,13 @@
  *                because tailwind-merge inside quill dedupes and this
  *                app's utilities land in the same `utilities` layer.
  */
-@import '@posthog/quill/tokens.css';
-@import '@posthog/quill/base.css';
-@import '@posthog/quill/primitives.css';
-@import '@posthog/quill/tailwind.css';
+@import "@posthog/quill/tokens.css";
+@import "@posthog/quill/base.css";
+@import "@posthog/quill/primitives.css";
+@import "@posthog/quill/tailwind.css";
 
 /* Edge-fade utilities (`scroll-mask-*`) used by quill scrollable lists. */
-@import 'tailwindcss-scroll-mask';
+@import "tailwindcss-scroll-mask";
 
 /*
  * Explicit @source directive alongside the import above. Tailwind v4's
