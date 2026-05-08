@@ -103,6 +103,14 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     const previous = this.autoDownloadUpdatesEnabled;
     setAutoDownloadUpdatesEnabled(enabled);
 
+    if (this.initialized) {
+      if (enabled) {
+        this.startAutoDownloadChecks();
+      } else {
+        this.stopAutoDownloadChecks();
+      }
+    }
+
     log.info("Auto-download updates setting changed", {
       previous,
       current: enabled,
@@ -209,14 +217,8 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       ),
     );
 
-    // Perform initial check and periodic checks only when auto-download is enabled
     if (this.autoDownloadUpdatesEnabled) {
-      this.checkForUpdates("periodic");
-
-      this.checkIntervalId = setInterval(
-        () => this.checkForUpdates("periodic"),
-        UpdatesService.CHECK_INTERVAL_MS,
-      );
+      this.startAutoDownloadChecks();
       return;
     }
 
@@ -353,13 +355,31 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     }
   }
 
+  private startAutoDownloadChecks(): void {
+    if (this.checkIntervalId) {
+      return;
+    }
+
+    this.checkForUpdates("periodic");
+    this.checkIntervalId = setInterval(
+      () => this.checkForUpdates("periodic"),
+      UpdatesService.CHECK_INTERVAL_MS,
+    );
+  }
+
+  private stopAutoDownloadChecks(): void {
+    if (!this.checkIntervalId) {
+      return;
+    }
+
+    clearInterval(this.checkIntervalId);
+    this.checkIntervalId = null;
+  }
+
   @preDestroy()
   shutdown(): void {
     this.clearCheckTimeout();
-    if (this.checkIntervalId) {
-      clearInterval(this.checkIntervalId);
-      this.checkIntervalId = null;
-    }
+    this.stopAutoDownloadChecks();
     for (const unsub of this.unsubscribes) unsub();
     this.unsubscribes = [];
   }

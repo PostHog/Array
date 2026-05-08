@@ -433,6 +433,31 @@ describe("UpdatesService", () => {
       service.setAutoDownloadUpdatesEnabled(false);
       expect(mockSetAutoDownloadUpdatesEnabled).toHaveBeenCalledWith(false);
     });
+
+    it("stops periodic checks when auto-download is disabled at runtime", async () => {
+      await initializeService(service);
+      updaterHandlers.noUpdate?.();
+      mockUpdater.check.mockClear();
+
+      service.setAutoDownloadUpdatesEnabled(false);
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+
+      expect(mockUpdater.check).not.toHaveBeenCalled();
+    });
+
+    it("starts periodic checks when auto-download is enabled at runtime", async () => {
+      mockAutoDownloadUpdatesEnabled.mockReturnValue(false);
+      await initializeService(service);
+      mockUpdater.check.mockClear();
+
+      service.setAutoDownloadUpdatesEnabled(true);
+      expect(mockUpdater.check).toHaveBeenCalledTimes(1);
+
+      updaterHandlers.noUpdate?.();
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+
+      expect(mockUpdater.check).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe("installUpdate", () => {
