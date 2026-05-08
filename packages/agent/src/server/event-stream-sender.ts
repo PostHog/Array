@@ -1,5 +1,10 @@
 import { Buffer } from "node:buffer";
 import type { Logger } from "../utils/logger";
+import {
+  createNodeStreamingUpload,
+  type StreamingUpload,
+  type StreamingUploadFactory,
+} from "./streaming-upload";
 
 interface TaskRunEventStreamSenderConfig {
   apiUrl: string;
@@ -13,12 +18,11 @@ interface TaskRunEventStreamSenderConfig {
   retryDelayMs?: number;
   requestTimeoutMs?: number;
   stopTimeoutMs?: number;
-  maxBatchEvents?: number;
-  maxBatchBytes?: number;
   maxEventBytes?: number;
   maxStreamEvents?: number;
   maxStreamBytes?: number;
   streamWindowMs?: number;
+  createStreamingUpload?: StreamingUploadFactory;
 }
 
 interface EventEnvelope {
@@ -32,21 +36,20 @@ interface IngestResponse {
 
 interface ActiveStream {
   abortController: AbortController;
-  writer: WritableStreamDefaultWriter<Uint8Array>;
+  upload: StreamingUpload;
   responsePromise: Promise<Response>;
   startedAtMs: number;
   sentThroughSeq: number;
   sentEvents: number;
   sentBytes: number;
+  windowTimer: ReturnType<typeof setTimeout> | null;
 }
-
-type StreamingRequestInit = RequestInit & { duplex: "half" };
 
 const DEFAULT_MAX_BUFFERED_EVENTS = 20_000;
 const DEFAULT_MAX_STREAM_EVENTS = 900;
 const DEFAULT_MAX_STREAM_BYTES = 4_000_000;
 const DEFAULT_MAX_EVENT_BYTES = 900_000;
-const DEFAULT_WRITE_DELAY_MS = 0;
+const DEFAULT_FLUSH_DELAY_MS = 0;
 const DEFAULT_RETRY_DELAY_MS = 1_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_STOP_TIMEOUT_MS = 30_000;
@@ -59,17 +62,18 @@ export class TaskRunEventStreamSender {
   private readonly maxStreamEvents: number;
   private readonly maxStreamBytes: number;
   private readonly maxEventBytes: number;
-  private readonly writeDelayMs: number;
+  private readonly flushDelayMs: number;
   private readonly retryDelayMs: number;
   private readonly requestTimeoutMs: number;
   private readonly stopTimeoutMs: number;
   private readonly streamWindowMs: number;
+  private readonly createStreamingUpload: StreamingUploadFactory;
   private readonly encoder = new TextEncoder();
   private sequence = 0;
   private lastKnownAcceptedSeq = 0;
   private bufferedEvents: EventEnvelope[] = [];
-  private writeTimer: ReturnType<typeof setTimeout> | null = null;
-  private writePromise: Promise<void> | null = null;
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  private flushPromise: Promise<void> | null = null;
   private streamClosePromise: Promise<void> | null = null;
   private activeStream: ActiveStream | null = null;
   private stopPromise: Promise<void> | null = null;
@@ -87,19 +91,17 @@ export class TaskRunEventStreamSender {
     )}/runs/${encodeURIComponent(config.runId)}/event_stream/`;
     this.maxBufferedEvents =
       config.maxBufferedEvents ?? DEFAULT_MAX_BUFFERED_EVENTS;
-    this.maxStreamEvents =
-      config.maxStreamEvents ??
-      config.maxBatchEvents ??
-      DEFAULT_MAX_STREAM_EVENTS;
-    this.maxStreamBytes =
-      config.maxStreamBytes ?? config.maxBatchBytes ?? DEFAULT_MAX_STREAM_BYTES;
+    this.maxStreamEvents = config.maxStreamEvents ?? DEFAULT_MAX_STREAM_EVENTS;
+    this.maxStreamBytes = config.maxStreamBytes ?? DEFAULT_MAX_STREAM_BYTES;
     this.maxEventBytes = config.maxEventBytes ?? DEFAULT_MAX_EVENT_BYTES;
-    this.writeDelayMs = config.flushDelayMs ?? DEFAULT_WRITE_DELAY_MS;
+    this.flushDelayMs = config.flushDelayMs ?? DEFAULT_FLUSH_DELAY_MS;
     this.retryDelayMs = config.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     this.requestTimeoutMs =
       config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.stopTimeoutMs = config.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS;
     this.streamWindowMs = config.streamWindowMs ?? DEFAULT_STREAM_WINDOW_MS;
+    this.createStreamingUpload =
+      config.createStreamingUpload ?? createNodeStreamingUpload;
   }
 
   enqueue(event: Record<string, unknown>): void {
@@ -114,7 +116,7 @@ export class TaskRunEventStreamSender {
       event,
     };
     this.bufferedEvents.push(envelope);
-    this.scheduleWrite();
+    this.scheduleFlush();
   }
 
   async stop(): Promise<void> {
@@ -125,20 +127,20 @@ export class TaskRunEventStreamSender {
 
     this.stopped = true;
 
-    if (this.writeTimer) {
-      clearTimeout(this.writeTimer);
-      this.writeTimer = null;
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
     }
 
     this.stopPromise = this.drainForStop();
     await this.stopPromise;
   }
 
-  private scheduleWrite(delayMs = this.writeDelayMs): void {
-    if (this.writeTimer || this.writePromise || this.stopped) return;
+  private scheduleFlush(delayMs = this.flushDelayMs): void {
+    if (this.flushTimer || this.flushPromise || this.stopped) return;
 
-    this.writeTimer = setTimeout(() => {
-      this.writeTimer = null;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
       void this.flush();
     }, delayMs);
   }
@@ -180,8 +182,8 @@ export class TaskRunEventStreamSender {
   }
 
   private async flush(): Promise<boolean> {
-    if (this.writePromise) {
-      await this.writePromise.catch(() => undefined);
+    if (this.flushPromise) {
+      await this.flushPromise.catch(() => undefined);
     }
 
     if (this.bufferedEvents.length === 0) {
@@ -189,11 +191,11 @@ export class TaskRunEventStreamSender {
     }
 
     const previousBufferLength = this.bufferedEvents.length;
-    const writePromise = this.writeBufferedEvents();
-    this.writePromise = writePromise;
+    const flushPromise = this.flushBufferedEvents();
+    this.flushPromise = flushPromise;
 
     try {
-      await writePromise;
+      await flushPromise;
       return this.bufferedEvents.length < previousBufferLength;
     } catch (error) {
       this.config.logger.warn(
@@ -202,20 +204,20 @@ export class TaskRunEventStreamSender {
       );
       await this.abortActiveStream();
       if (!this.stopped) {
-        this.scheduleWrite(this.retryDelayMs);
+        this.scheduleFlush(this.retryDelayMs);
       }
       return false;
     } finally {
-      if (this.writePromise === writePromise) {
-        this.writePromise = null;
+      if (this.flushPromise === flushPromise) {
+        this.flushPromise = null;
       }
       if (!this.stopped && this.hasUnwrittenBufferedEvents()) {
-        this.scheduleWrite(0);
+        this.scheduleFlush(0);
       }
     }
   }
 
-  private async writeBufferedEvents(): Promise<void> {
+  private async flushBufferedEvents(): Promise<void> {
     while (true) {
       const stream = await this.ensureActiveStream();
       const nextEvent = this.bufferedEvents.find(
@@ -232,7 +234,7 @@ export class TaskRunEventStreamSender {
         continue;
       }
 
-      await stream.writer.write(this.encoder.encode(line));
+      await stream.upload.write(this.encoder.encode(line));
       stream.sentThroughSeq = nextEvent.seq;
       stream.sentEvents += 1;
       stream.sentBytes += lineBytes;
@@ -254,7 +256,7 @@ export class TaskRunEventStreamSender {
         (event) => event.seq > stream.sentThroughSeq,
       );
       if (hasUnwrittenEvents) {
-        await this.writeBufferedEvents();
+        await this.flushBufferedEvents();
         continue;
       }
 
@@ -272,7 +274,7 @@ export class TaskRunEventStreamSender {
         continue;
       }
 
-      await stream.writer.write(this.encoder.encode(line));
+      await stream.upload.write(this.encoder.encode(line));
       stream.sentBytes += lineBytes;
       return;
     }
@@ -310,30 +312,75 @@ export class TaskRunEventStreamSender {
 
     await this.syncSequenceWithServer();
 
-    const bodyStream = new TransformStream<Uint8Array, Uint8Array>();
     const abortController = new AbortController();
-    const requestInit: StreamingRequestInit = {
-      method: "POST",
+    const upload = this.createStreamingUpload({
+      url: this.ingestUrl,
       headers: this.buildHeaders(),
-      body: bodyStream.readable as BodyInit,
-      signal: abortController.signal,
-      duplex: "half",
-    };
-    const responsePromise = fetch(this.ingestUrl, requestInit);
+      abortController,
+    });
     const activeStream: ActiveStream = {
       abortController,
-      writer: bodyStream.writable.getWriter(),
-      responsePromise,
+      upload,
+      responsePromise: upload.responsePromise,
       startedAtMs: Date.now(),
       sentThroughSeq: this.lastKnownAcceptedSeq,
       sentEvents: 0,
       sentBytes: 0,
+      windowTimer: null,
     };
     this.activeStream = activeStream;
-    responsePromise.catch((error) => {
+    this.scheduleStreamWindowClose(activeStream);
+    upload.responsePromise.catch((error) => {
       void this.handleActiveStreamResponseFailure(activeStream, error);
     });
     return activeStream;
+  }
+
+  private scheduleStreamWindowClose(
+    stream: ActiveStream,
+    delayOverrideMs?: number,
+  ): void {
+    this.clearStreamWindowClose(stream);
+    // Rotate long-lived uploads even when the agent goes idle; this is a
+    // transport boundary, not a batching window.
+    const delayMs =
+      delayOverrideMs ??
+      Math.max(0, stream.startedAtMs + this.streamWindowMs - Date.now());
+    stream.windowTimer = setTimeout(() => {
+      stream.windowTimer = null;
+      void this.closeExpiredStream(stream);
+    }, delayMs);
+  }
+
+  private clearStreamWindowClose(stream: ActiveStream): void {
+    if (!stream.windowTimer) {
+      return;
+    }
+    clearTimeout(stream.windowTimer);
+    stream.windowTimer = null;
+  }
+
+  private async closeExpiredStream(stream: ActiveStream): Promise<void> {
+    if (this.activeStream !== stream || this.stopped) {
+      return;
+    }
+
+    if (this.flushPromise) {
+      this.scheduleStreamWindowClose(stream, 50);
+      return;
+    }
+
+    try {
+      await this.closeActiveStream();
+    } catch (error) {
+      this.config.logger.warn(
+        "Task run event ingest stream window close failed",
+        this.describeError(error),
+      );
+      if (!this.stopped && this.bufferedEvents.length > 0) {
+        this.scheduleFlush(this.retryDelayMs);
+      }
+    }
   }
 
   private async handleActiveStreamResponseFailure(
@@ -357,7 +404,7 @@ export class TaskRunEventStreamSender {
       );
     }
     if (!this.stopped && this.bufferedEvents.length > 0) {
-      this.scheduleWrite(this.retryDelayMs);
+      this.scheduleFlush(this.retryDelayMs);
     }
   }
 
@@ -377,6 +424,7 @@ export class TaskRunEventStreamSender {
     try {
       await closePromise;
     } finally {
+      this.clearStreamWindowClose(stream);
       if (this.activeStream === stream) {
         this.activeStream = null;
       }
@@ -388,7 +436,7 @@ export class TaskRunEventStreamSender {
 
   private async closeStream(stream: ActiveStream): Promise<void> {
     try {
-      await stream.writer.close();
+      await stream.upload.close();
     } catch (error) {
       stream.abortController.abort();
       this.sequenceSynced = false;
@@ -418,10 +466,11 @@ export class TaskRunEventStreamSender {
     }
 
     stream.abortController.abort();
+    this.clearStreamWindowClose(stream);
     try {
-      await stream.writer.abort();
+      await stream.upload.abort();
     } catch {
-      // The writer may already be closed by fetch after the abort.
+      // The upload may already be closed by the transport after the abort.
     } finally {
       if (this.activeStream === stream) {
         this.activeStream = null;

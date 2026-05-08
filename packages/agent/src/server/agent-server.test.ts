@@ -203,6 +203,247 @@ describe("AgentServer HTTP Mode", () => {
   });
 
   describe("turn completion", () => {
+    function stubSessionCleanup(testServer: unknown): {
+      cleanupSession: (options?: {
+        completeEventStream?: boolean;
+      }) => Promise<void>;
+      eventStreamSender: {
+        enqueue: ReturnType<typeof vi.fn>;
+        stop: ReturnType<typeof vi.fn>;
+      };
+    } {
+      const cleanupServer = testServer as {
+        session: unknown;
+        eventStreamSender: {
+          enqueue: ReturnType<typeof vi.fn>;
+          stop: ReturnType<typeof vi.fn>;
+        };
+        captureCheckpointState: ReturnType<typeof vi.fn>;
+        cleanupSession: (options?: {
+          completeEventStream?: boolean;
+        }) => Promise<void>;
+      };
+      cleanupServer.captureCheckpointState = vi.fn(async () => {});
+      cleanupServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      cleanupServer.session = {
+        payload: { run_id: "run-1" },
+        pendingHandoffGitState: undefined,
+        logWriter: { flush: vi.fn(async () => {}) },
+        acpConnection: { cleanup: vi.fn(async () => {}) },
+        sseController: { close: vi.fn() },
+      };
+      return cleanupServer;
+    }
+
+    it("keeps event ingest open for non-terminal session cleanup", async () => {
+      const testServer = stubSessionCleanup(createServer());
+
+      await testServer.cleanupSession();
+
+      expect(testServer.eventStreamSender.enqueue).not.toHaveBeenCalled();
+      expect(testServer.eventStreamSender.stop).not.toHaveBeenCalled();
+    });
+
+    it("stops event ingest for terminal session cleanup without fake task completion", async () => {
+      const testServer = stubSessionCleanup(createServer());
+
+      await testServer.cleanupSession({ completeEventStream: true });
+
+      expect(testServer.eventStreamSender.enqueue).not.toHaveBeenCalled();
+      expect(testServer.eventStreamSender.stop).toHaveBeenCalledOnce();
+    });
+
+    it("writes terminal failure status before completing event ingest", async () => {
+      const order: string[] = [];
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        eventStreamSender: {
+          enqueue: (event: Record<string, unknown>) => void;
+          stop: () => Promise<void>;
+        };
+        posthogAPI: {
+          updateTaskRun: (
+            taskId: string,
+            runId: string,
+            payload: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+        signalTaskComplete(
+          payload: JwtPayload,
+          stopReason: string,
+          errorMessage?: string,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(() => {
+          order.push("enqueue");
+        }),
+        stop: vi.fn(async () => {
+          order.push("stop");
+        }),
+      };
+      testServer.posthogAPI = {
+        updateTaskRun: vi.fn(async () => {
+          order.push("update");
+          return {};
+        }),
+      };
+
+      await testServer.signalTaskComplete(
+        {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+        "error",
+        "boom",
+      );
+
+      expect(order).toEqual(["enqueue", "update", "stop"]);
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "notification",
+          notification: expect.objectContaining({
+            method: "_posthog/error",
+            params: expect.objectContaining({ error: "boom" }),
+          }),
+        }),
+      );
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledWith(
+        "task-1",
+        "run-1",
+        {
+          status: "failed",
+          error_message: "boom",
+        },
+      );
+    });
+
+    it("still stops event ingest when terminal failure status update fails", async () => {
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        eventStreamSender: {
+          enqueue: (event: Record<string, unknown>) => void;
+          stop: () => Promise<void>;
+        };
+        posthogAPI: {
+          updateTaskRun: (
+            taskId: string,
+            runId: string,
+            payload: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+        signalTaskComplete(
+          payload: JwtPayload,
+          stopReason: string,
+          errorMessage?: string,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.posthogAPI = {
+        updateTaskRun: vi.fn(async () => {
+          throw new Error("update failed");
+        }),
+      };
+
+      await testServer.signalTaskComplete(
+        {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+        "error",
+        "boom",
+      );
+
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledOnce();
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledOnce();
+      expect(testServer.eventStreamSender.stop).toHaveBeenCalledOnce();
+    });
+
+    it("leaves event ingest open for non-error stop reasons", async () => {
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        eventStreamSender: {
+          enqueue: (event: Record<string, unknown>) => void;
+          stop: () => Promise<void>;
+        };
+        posthogAPI: {
+          updateTaskRun: (
+            taskId: string,
+            runId: string,
+            payload: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+        signalTaskComplete(
+          payload: JwtPayload,
+          stopReason: string,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.posthogAPI = {
+        updateTaskRun: vi.fn(async () => ({})),
+      };
+
+      await testServer.signalTaskComplete(
+        {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+        "end_turn",
+      );
+
+      expect(testServer.eventStreamSender.enqueue).not.toHaveBeenCalled();
+      expect(testServer.eventStreamSender.stop).not.toHaveBeenCalled();
+      expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+    });
+
     it("persists structured turn completion notifications", () => {
       const appendRawLine = vi.fn();
       const testServer = new AgentServer({
