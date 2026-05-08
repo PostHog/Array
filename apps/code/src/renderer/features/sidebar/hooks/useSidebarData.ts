@@ -10,6 +10,7 @@ import type { Task, TaskRunStatus } from "@shared/types";
 import { useEffect, useMemo, useRef } from "react";
 import { useSidebarStore } from "../stores/sidebarStore";
 import type { SortMode } from "../types";
+import { applyRevisitFilter } from "../utils/applyRevisitFilter";
 import {
   type TaskGroup as GenericTaskGroup,
   getRepositoryInfo,
@@ -260,10 +261,7 @@ export function useSidebarData({
   ]);
 
   const filteredTaskData = useMemo(
-    () =>
-      showRevisitOnly
-        ? taskData.filter((task) => revisitTaskIds.has(task.id))
-        : taskData,
+    () => applyRevisitFilter(taskData, showRevisitOnly, revisitTaskIds),
     [taskData, showRevisitOnly, revisitTaskIds],
   );
 
