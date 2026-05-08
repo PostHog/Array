@@ -2,6 +2,7 @@ import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { useProvisioningStore } from "@features/provisioning/stores/provisioningStore";
 import { useSessions } from "@features/sessions/stores/sessionStore";
 import { useSuspendedTaskIds } from "@features/suspension/hooks/useSuspendedTaskIds";
+import { useRevisitStore } from "@features/task-detail/stores/revisitStore";
 import { useTaskSummaries, useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import type { Schemas } from "@renderer/api/generated";
@@ -91,6 +92,8 @@ export function useSidebarData({
 }: UseSidebarDataProps): SidebarData {
   const showAllUsers = useSidebarStore((state) => state.showAllUsers);
   const showInternal = useSidebarStore((state) => state.showInternal);
+  const showRevisitOnly = useSidebarStore((state) => state.showRevisitOnly);
+  const revisitTaskIds = useRevisitStore((state) => state.revisitTaskIds);
   const { data: workspaces, isFetched: isWorkspacesFetched } = useWorkspaces();
   const archivedTaskIds = useArchivedTaskIds();
   const suspendedTaskIds = useSuspendedTaskIds();
@@ -256,14 +259,22 @@ export function useSidebarData({
     workspaces,
   ]);
 
+  const filteredTaskData = useMemo(
+    () =>
+      showRevisitOnly
+        ? taskData.filter((task) => revisitTaskIds.has(task.id))
+        : taskData,
+    [taskData, showRevisitOnly, revisitTaskIds],
+  );
+
   const pinnedTasks = useMemo(() => {
-    const pinned = taskData.filter((task) => task.isPinned);
+    const pinned = filteredTaskData.filter((task) => task.isPinned);
     return sortTasks(pinned, sortMode);
-  }, [taskData, sortMode]);
+  }, [filteredTaskData, sortMode]);
 
   const unpinnedTasks = useMemo(
-    () => taskData.filter((task) => !task.isPinned),
-    [taskData],
+    () => filteredTaskData.filter((task) => !task.isPinned),
+    [filteredTaskData],
   );
 
   const sortedUnpinnedTasks = useMemo(

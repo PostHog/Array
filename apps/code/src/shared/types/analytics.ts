@@ -331,6 +331,18 @@ export interface SetupSkippedProperties {
   entry_point: "during_scan" | "after_done";
 }
 
+// Task revisit + sidebar filter events
+export interface TaskRevisitToggledProperties {
+  task_id: string;
+  enabled: boolean;
+}
+
+export interface TaskRevisitListFilterChangedProperties {
+  filter_name: string;
+  value: string;
+  previous_value?: string;
+}
+
 // Subscription / billing events
 export interface SubscriptionStartedProperties {
   plan_key: string;
@@ -433,6 +445,10 @@ export const ANALYTICS_EVENTS = {
   // Subscription events
   SUBSCRIPTION_STARTED: "Subscription started",
   SUBSCRIPTION_CANCELLED: "Subscription cancelled",
+
+  // Task revisit + sidebar filter events
+  TASK_REVISIT_TOGGLED: "Task revisit toggled",
+  TASK_REVISIT_LIST_FILTER_CHANGED: "Task revisit list filter changed",
 } as const;
 
 // Event property mapping
@@ -520,4 +536,8 @@ export type EventPropertyMap = {
   // Subscription events
   [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
+
+  // Task revisit + sidebar filter events
+  [ANALYTICS_EVENTS.TASK_REVISIT_TOGGLED]: TaskRevisitToggledProperties;
+  [ANALYTICS_EVENTS.TASK_REVISIT_LIST_FILTER_CHANGED]: TaskRevisitListFilterChangedProperties;
 };

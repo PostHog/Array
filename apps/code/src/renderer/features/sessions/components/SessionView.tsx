@@ -1,5 +1,6 @@
 import { isOtherOption } from "@components/action-selector/constants";
 import { PermissionSelector } from "@components/permissions/PermissionSelector";
+import { Tooltip } from "@components/ui/Tooltip";
 import {
   PromptInput,
   type EditorHandle as PromptInputHandle,
@@ -16,18 +17,26 @@ import {
 } from "@features/sessions/stores/sessionStore";
 import type { Plan } from "@features/sessions/types";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import { useRevisitStore } from "@features/task-detail/stores/revisitStore";
 import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
 import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
-import { Box, Button, ContextMenu, Flex, Text } from "@radix-ui/themes";
+import { Box, Button, ContextMenu, Flex, Switch, Text } from "@radix-ui/themes";
+import {
+  formatHotkey,
+  SHORTCUTS,
+} from "@renderer/constants/keyboard-shortcuts";
 import { toast } from "@renderer/utils/toast";
 import type { Task, TaskRunStatus } from "@shared/types";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import {
   type AcpMessage,
   isJsonRpcNotification,
   isJsonRpcResponse,
 } from "@shared/types/session-events";
+import { track } from "@utils/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { getSessionService } from "../service/service";
 import { flattenSelectOptions } from "../stores/sessionStore";
 import {
@@ -93,6 +102,53 @@ function resolveAllowAlwaysUpgradeMode(
   if (availableIds.has("acceptEdits")) return "acceptEdits";
   if (availableIds.has("auto")) return "auto";
   return undefined;
+}
+
+function RevisitToggleInline({ taskId }: { taskId: string }) {
+  const isRevisit = useRevisitStore((s) => s.revisitTaskIds.has(taskId));
+  const setRevisit = useRevisitStore((s) => s.setRevisit);
+
+  const applyChange = useCallback(
+    (next: boolean) => {
+      setRevisit(taskId, next);
+      track(ANALYTICS_EVENTS.TASK_REVISIT_TOGGLED, {
+        task_id: taskId,
+        enabled: next,
+      });
+    },
+    [taskId, setRevisit],
+  );
+
+  useHotkeys(
+    SHORTCUTS.TOGGLE_REVISIT,
+    (e) => {
+      e.preventDefault();
+      applyChange(!isRevisit);
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+    [isRevisit, applyChange],
+  );
+
+  return (
+    <Flex align="center" justify="end" className="pb-1">
+      <Tooltip
+        content={`Come back to revisit the task later (${formatHotkey(SHORTCUTS.TOGGLE_REVISIT)})`}
+        side="top"
+      >
+        <Flex align="center" gap="2">
+          <Text size="1" color="gray">
+            Revisit
+          </Text>
+          <Switch
+            size="1"
+            checked={isRevisit}
+            onCheckedChange={applyChange}
+            aria-label="Mark this task for revisit"
+          />
+        </Flex>
+      </Tooltip>
+    </Flex>
+  );
 }
 
 export function SessionView({
@@ -613,6 +669,9 @@ export function SessionView({
                             : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
                         }
                       >
+                        {taskId ? (
+                          <RevisitToggleInline taskId={taskId} />
+                        ) : null}
                         <PromptInput
                           ref={editorRef}
                           sessionId={sessionId}

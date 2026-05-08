@@ -2,6 +2,7 @@ import { PointerSensor } from "@dnd-kit/dom";
 import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useFolders } from "@features/folders/hooks/useFolders";
+import { useRevisitStore } from "@features/task-detail/stores/revisitStore";
 import { useMeQuery } from "@hooks/useMeQuery";
 import {
   FunnelSimple as FunnelSimpleIcon,
@@ -20,8 +21,10 @@ import {
 import { Flex, Text } from "@radix-ui/themes";
 import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
 import { useWorkspace } from "@renderer/features/workspace/hooks/useWorkspace";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { normalizeRepoKey } from "@shared/utils/repo";
 import { useNavigationStore } from "@stores/navigationStore";
+import { track } from "@utils/analytics";
 import { getRelativeDateGroup } from "@utils/time";
 import { motion } from "framer-motion";
 import { Fragment, useCallback, useEffect, useMemo } from "react";
@@ -102,6 +105,7 @@ function TaskRow({
     workspace?.mode ??
     (task.taskRunEnvironment === "cloud" ? "cloud" : undefined);
   const { prState, hasDiff } = useTaskPrStatus(task);
+  const isRevisit = useRevisitStore((s) => s.revisitTaskIds.has(task.id));
 
   return (
     <TaskItem
@@ -116,6 +120,7 @@ function TaskRow({
       isGenerating={task.isGenerating}
       isUnread={task.isUnread}
       isPinned={task.isPinned}
+      isRevisit={isRevisit}
       needsPermission={task.needsPermission}
       taskRunStatus={task.taskRunStatus}
       prState={prState}
@@ -137,10 +142,14 @@ function TaskFilterMenu() {
   const sortMode = useSidebarStore((state) => state.sortMode);
   const showAllUsers = useSidebarStore((state) => state.showAllUsers);
   const showInternal = useSidebarStore((state) => state.showInternal);
+  const showRevisitOnly = useSidebarStore((state) => state.showRevisitOnly);
   const setOrganizeMode = useSidebarStore((state) => state.setOrganizeMode);
   const setSortMode = useSidebarStore((state) => state.setSortMode);
   const setShowAllUsers = useSidebarStore((state) => state.setShowAllUsers);
   const setShowInternal = useSidebarStore((state) => state.setShowInternal);
+  const setShowRevisitOnly = useSidebarStore(
+    (state) => state.setShowRevisitOnly,
+  );
   const { data: currentUser } = useMeQuery();
   const isStaff = currentUser?.is_staff === true;
 
@@ -183,6 +192,29 @@ function TaskFilterMenu() {
         >
           <DropdownMenuRadioItem value="created">Created</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="updated">Updated</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+
+        <DropdownMenuSeparator />
+
+        <MenuLabel>Filter</MenuLabel>
+        <DropdownMenuRadioGroup
+          value={showRevisitOnly ? "revisit" : "all"}
+          onValueChange={(value) => {
+            const next = value === "revisit";
+            const previous = showRevisitOnly ? "revisit" : "all";
+            if (previous === value) return;
+            setShowRevisitOnly(next);
+            track(ANALYTICS_EVENTS.TASK_REVISIT_LIST_FILTER_CHANGED, {
+              filter_name: "revisit_only",
+              value,
+              previous_value: previous,
+            });
+          }}
+        >
+          <DropdownMenuRadioItem value="all">All tasks</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="revisit">
+            Revisit only
+          </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
 
         {import.meta.env.DEV && (

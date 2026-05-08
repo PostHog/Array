@@ -29,6 +29,7 @@ interface TaskItemProps {
   isGenerating?: boolean;
   isUnread?: boolean;
   isPinned?: boolean;
+  isRevisit?: boolean;
   isSuspended?: boolean;
   needsPermission?: boolean;
   taskRunStatus?: TaskRunStatus;
@@ -233,6 +234,7 @@ export function TaskItem({
   isGenerating,
   isUnread,
   isPinned = false,
+  isRevisit = false,
   needsPermission = false,
   taskRunStatus,
   prState,
@@ -276,6 +278,12 @@ export function TaskItem({
     <PrStatusIcon prState={prState} hasDiff={hasDiff} />
   ) : isPinned ? (
     <PushPin size={ICON_SIZE} className="text-accent-11" />
+  ) : isRevisit ? (
+    <Tooltip content="Marked for revisit" side="right">
+      <span className="flex items-center justify-center">
+        <ChatCircle size={ICON_SIZE} weight="fill" className="text-yellow-10" />
+      </span>
+    </Tooltip>
   ) : (
     <ChatCircle size={ICON_SIZE} className="text-gray-10" />
   );
