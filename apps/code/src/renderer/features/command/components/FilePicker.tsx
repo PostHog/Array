@@ -30,6 +30,10 @@ interface FilePickerProps {
 
 type FileSection = { label?: string; items: FileItem[] };
 
+// Cap the empty-query list to keep render cost bounded without virtualization.
+// Typed queries are already capped upstream by fzf (MENTION_DISPLAY_LIMIT = 20).
+const EMPTY_QUERY_LIMIT = 200;
+
 export function FilePicker({
   open,
   onOpenChange,
@@ -57,22 +61,27 @@ export function FilePicker({
       return [{ items: searchFiles(fzf, fileItems, searchQuery) }];
     }
     if (recentFiles.length === 0) {
-      return [{ items: searchFiles(fzf, fileItems, "") }];
+      return [{ items: fileItems.slice(0, EMPTY_QUERY_LIMIT) }];
     }
-    const recentSet = new Set(recentFiles);
+    // recentFiles is string[] of paths from panelLayoutStore, ordered most-recent-first.
+    const recentPathSet = new Set(recentFiles);
     const recentItems = recentFiles.map(pathToFileItem);
-    const rest = fileItems.filter((f) => !recentSet.has(f.path));
+    const rest = fileItems
+      .filter((f) => !recentPathSet.has(f.path))
+      .slice(0, Math.max(0, EMPTY_QUERY_LIMIT - recentItems.length));
     return [
       { label: "Recent", items: recentItems },
       { label: "Other files", items: rest },
     ];
   }, [fzf, fileItems, searchQuery, recentFiles]);
 
-  const handleSelect = (path: string | null): void => {
-    if (path === null) return;
-    openFileInSplit(taskId, path, false);
-    handleOpenChange(false);
-  };
+  const handleSelect = useCallback(
+    (path: string) => {
+      openFileInSplit(taskId, path, false);
+      handleOpenChange(false);
+    },
+    [openFileInSplit, taskId, handleOpenChange],
+  );
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -80,6 +89,11 @@ export function FilePicker({
         className="w-[720px] max-w-[90vw] gap-0 p-0"
         showCloseButton={false}
       >
+        {/*
+         * `items` accepts `Value[] | { items: Value[] }[]` — we always use the
+         * grouped shape so the same render path covers both the labeled
+         * (Recent / Other files) and unlabeled (search results) cases.
+         */}
         <Autocomplete<FileItem>
           inline
           defaultOpen
@@ -103,9 +117,9 @@ export function FilePicker({
           <AutocompleteList
             className={`max-h-[60vh] ${sections[0]?.label ? "" : "pt-1"}`}
           >
-            {(section: FileSection) => (
+            {(section: FileSection, index: number) => (
               <AutocompleteGroup
-                key={section.label ?? "all"}
+                key={section.label ?? `group-${index}`}
                 items={section.items}
               >
                 {section.label && (
