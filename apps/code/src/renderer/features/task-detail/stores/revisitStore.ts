@@ -28,16 +28,7 @@ export const useRevisitStore = create<RevisitStore>()(
           }
           return { revisitTaskIds: next };
         }),
-      toggle: (taskId) =>
-        set((state) => {
-          const next = new Set(state.revisitTaskIds);
-          if (next.has(taskId)) {
-            next.delete(taskId);
-          } else {
-            next.add(taskId);
-          }
-          return { revisitTaskIds: next };
-        }),
+      toggle: (taskId) => get().setRevisit(taskId, !get().revisitTaskIds.has(taskId)),
     }),
     {
       name: "revisit-tasks-storage",
