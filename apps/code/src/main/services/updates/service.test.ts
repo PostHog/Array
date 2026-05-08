@@ -424,15 +424,21 @@ describe("UpdatesService", () => {
   });
 
   describe("settings", () => {
-    it("reads auto-download toggle from settings store", () => {
-      mockAutoDownloadUpdatesEnabled.mockReturnValue(false);
-      expect(service.autoDownloadUpdatesEnabled).toBe(false);
-    });
+    it.each([true, false])(
+      "reads auto-download toggle from settings store (%s)",
+      (value) => {
+        mockAutoDownloadUpdatesEnabled.mockReturnValue(value);
+        expect(service.autoDownloadUpdatesEnabled).toBe(value);
+      },
+    );
 
-    it("persists auto-download toggle changes", () => {
-      service.setAutoDownloadUpdatesEnabled(false);
-      expect(mockSetAutoDownloadUpdatesEnabled).toHaveBeenCalledWith(false);
-    });
+    it.each([true, false])(
+      "persists auto-download toggle changes (%s)",
+      (value) => {
+        service.setAutoDownloadUpdatesEnabled(value);
+        expect(mockSetAutoDownloadUpdatesEnabled).toHaveBeenCalledWith(value);
+      },
+    );
 
     it("stops periodic checks when auto-download is disabled at runtime", async () => {
       await initializeService(service);

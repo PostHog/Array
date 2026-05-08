@@ -21,7 +21,9 @@ export function UpdatesSettings() {
   const { data: autoDownload } = useQuery(
     trpcReact.updates.getAutoDownload.queryOptions(),
   );
-  const [autoDownloadEnabled, setAutoDownloadEnabled] = useState(true);
+  const [autoDownloadEnabled, setAutoDownloadEnabled] = useState<
+    boolean | undefined
+  >(undefined);
   const [updateStatus, setUpdateStatus] = useState<{
     message?: string;
     type?: "info" | "success" | "error";
@@ -71,11 +73,13 @@ export function UpdatesSettings() {
   }, [checkUpdatesMutation]);
 
   useEffect(() => {
-    if (!hasCheckedRef.current) {
-      hasCheckedRef.current = true;
-      handleCheckForUpdates();
+    if (hasCheckedRef.current || autoDownload?.enabled !== true) {
+      return;
     }
-  }, [handleCheckForUpdates]);
+
+    hasCheckedRef.current = true;
+    handleCheckForUpdates();
+  }, [autoDownload?.enabled, handleCheckForUpdates]);
 
   useEffect(() => {
     if (typeof autoDownload?.enabled === "boolean") {
@@ -125,40 +129,43 @@ export function UpdatesSettings() {
 
       <SettingRow
         label="Auto-download updates"
-        description="When enabled, checks and downloads updates automatically on startup."
+        description="When enabled, checks and downloads updates on startup and periodically."
       >
-        <Switch
-          checked={autoDownloadEnabled}
-          onCheckedChange={(checked) => {
-            const previous = autoDownloadEnabled;
-            if (previous === checked) return;
+        {typeof autoDownloadEnabled === "boolean" && (
+          <Switch
+            checked={autoDownloadEnabled}
+            onCheckedChange={(checked) => {
+              const previous = autoDownloadEnabled;
+              if (previous === checked) return;
 
-            setAutoDownloadEnabled(checked);
-            track(ANALYTICS_EVENTS.SETTING_CHANGED, {
-              setting_name: "auto_download_updates",
-              old_value: previous,
-              new_value: checked,
-            });
-
-            setAutoDownloadMutation.mutate(
-              { enabled: checked },
-              {
-                onError: () => {
-                  setAutoDownloadEnabled(previous);
+              setAutoDownloadEnabled(checked);
+              setAutoDownloadMutation.mutate(
+                { enabled: checked },
+                {
+                  onError: () => {
+                    setAutoDownloadEnabled(previous);
+                  },
+                  onSuccess: (result) => {
+                    setAutoDownloadEnabled(result.enabled);
+                    if (result.enabled !== previous) {
+                      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+                        setting_name: "auto_download_updates",
+                        old_value: previous,
+                        new_value: result.enabled,
+                      });
+                    }
+                  },
                 },
-                onSuccess: (result) => {
-                  setAutoDownloadEnabled(result.enabled);
-                },
-              },
-            );
-          }}
-          disabled={setAutoDownloadMutation.isPending}
-        />
+              );
+            }}
+            disabled={setAutoDownloadMutation.isPending}
+          />
+        )}
       </SettingRow>
 
       <SettingRow
         label="Check for updates"
-        description="Automatically checks for new versions on startup"
+        description="Manually checks for a newer version and downloads it if available."
         noBorder
       >
         <Flex align="center" gap="3">
