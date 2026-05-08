@@ -3569,6 +3569,7 @@ export class SessionService {
       taskRunId,
       currentCount,
       expectedCount,
+      fetchedCount: rawEntries.length,
       entriesReceived: newEntries.length,
     });
   }
