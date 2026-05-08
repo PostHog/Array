@@ -279,7 +279,8 @@ type SetupDiscoveredTaskCategory =
   | "stale_feature_flag"
   | "error_tracking"
   | "event_tracking"
-  | "funnel";
+  | "funnel"
+  | "experiment";
 
 export interface SetupViewedProperties {
   discovery_status: "idle" | "running" | "done" | "error";
