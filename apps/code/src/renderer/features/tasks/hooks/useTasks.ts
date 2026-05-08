@@ -8,9 +8,7 @@ import { useFocusStore } from "@renderer/stores/focusStore";
 import { useNavigationStore } from "@renderer/stores/navigationStore";
 import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
-import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
-import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback } from "react";
 
@@ -111,15 +109,6 @@ export function useCreateTask() {
         repository,
         github_integration,
       }) as unknown as Promise<Task>,
-    {
-      onSuccess: (_task, variables) => {
-        track(ANALYTICS_EVENTS.TASK_CREATED, {
-          auto_run: false,
-          created_from: variables.createdFrom || "cli",
-          repository_provider: variables.repository ? "github" : "none",
-        });
-      },
-    },
   );
 
   return { ...mutation, invalidateTasks };
