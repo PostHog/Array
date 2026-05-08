@@ -237,6 +237,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       >
         <Autocomplete<Command>
           inline
+          defaultOpen
           items={sections}
           value={query}
           autoHighlight="always"
