@@ -74,12 +74,14 @@ export function UpdatesSettings() {
   }, [checkUpdatesMutation]);
 
   useEffect(() => {
-    if (hasCheckedRef.current || autoDownload?.enabled !== true) {
+    if (typeof autoDownload?.enabled !== "boolean" || hasCheckedRef.current) {
       return;
     }
 
     hasCheckedRef.current = true;
-    handleCheckForUpdates();
+    if (autoDownload.enabled) {
+      handleCheckForUpdates();
+    }
   }, [autoDownload?.enabled, handleCheckForUpdates]);
 
   useEffect(() => {
