@@ -53,7 +53,7 @@ export function OAuthControls() {
         ) : (
           <img src={posthogIcon} alt="" className="h-[20px] w-[20px]" />
         )}
-        {isPending ? "Cancel" : `Sign in / sign up with PostHog`}
+        {isPending ? "Cancel" : "Sign in / sign up with PostHog"}
       </button>
     </Flex>
   );
