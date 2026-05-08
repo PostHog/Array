@@ -9,8 +9,11 @@ import {
 } from "@hooks/useRepoFiles";
 import {
   Autocomplete,
+  AutocompleteCollection,
+  AutocompleteGroup,
   AutocompleteInput,
   AutocompleteItem,
+  AutocompleteLabel,
   AutocompleteList,
   AutocompleteStatus,
   Dialog,
@@ -24,6 +27,8 @@ interface FilePickerProps {
   taskId: string;
   repoPath: string | undefined;
 }
+
+type FileSection = { label?: string; items: FileItem[] };
 
 export function FilePicker({
   open,
@@ -47,11 +52,20 @@ export function FilePicker({
 
   const { files: fileItems, fzf } = useRepoFiles(repoPath, open);
 
-  const displayedFiles = useMemo<FileItem[]>(() => {
-    if (!searchQuery.trim() && recentFiles.length > 0) {
-      return recentFiles.map(pathToFileItem);
+  const sections = useMemo<FileSection[]>(() => {
+    if (searchQuery.trim()) {
+      return [{ items: searchFiles(fzf, fileItems, searchQuery) }];
     }
-    return searchFiles(fzf, fileItems, searchQuery);
+    if (recentFiles.length === 0) {
+      return [{ items: searchFiles(fzf, fileItems, "") }];
+    }
+    const recentSet = new Set(recentFiles);
+    const recentItems = recentFiles.map(pathToFileItem);
+    const rest = fileItems.filter((f) => !recentSet.has(f.path));
+    return [
+      { label: "Recent", items: recentItems },
+      { label: "Other files", items: rest },
+    ];
   }, [fzf, fileItems, searchQuery, recentFiles]);
 
   const handleSelect = (path: string | null): void => {
@@ -69,7 +83,7 @@ export function FilePicker({
         <Autocomplete<FileItem>
           inline
           defaultOpen
-          items={displayedFiles}
+          items={sections}
           filter={null}
           value={searchQuery}
           autoHighlight="always"
@@ -86,22 +100,36 @@ export function FilePicker({
               </span>
             }
           />
-          <AutocompleteList className="max-h-[60vh] pt-1">
-            {(file: FileItem) => (
-              <AutocompleteItem
-                key={file.path}
-                value={file.path}
-                onClick={() => handleSelect(file.path)}
-                className="block"
+          <AutocompleteList
+            className={`max-h-[60vh] ${sections[0]?.label ? "" : "pt-1"}`}
+          >
+            {(section: FileSection) => (
+              <AutocompleteGroup
+                key={section.label ?? "all"}
+                items={section.items}
               >
-                <FileIcon filename={file.name} size={14} />
-                {file.name}
-                {file.dir && (
-                  <span className="text-muted-foreground text-xs">
-                    {file.dir}
-                  </span>
+                {section.label && (
+                  <AutocompleteLabel>{section.label}</AutocompleteLabel>
                 )}
-              </AutocompleteItem>
+                <AutocompleteCollection>
+                  {(file: FileItem) => (
+                    <AutocompleteItem
+                      key={file.path}
+                      value={file.path}
+                      onClick={() => handleSelect(file.path)}
+                      className="block"
+                    >
+                      <FileIcon filename={file.name} size={14} />
+                      {file.name}
+                      {file.dir && (
+                        <span className="text-muted-foreground text-xs">
+                          {file.dir}
+                        </span>
+                      )}
+                    </AutocompleteItem>
+                  )}
+                </AutocompleteCollection>
+              </AutocompleteGroup>
             )}
           </AutocompleteList>
         </Autocomplete>
