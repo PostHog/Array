@@ -70,6 +70,7 @@ export function usePreviewConfig(
         const {
           defaultInitialTaskMode,
           lastUsedInitialTaskMode,
+          defaultReasoningEffort,
           lastUsedReasoningEffort,
         } = useSettingsStore.getState();
 
@@ -121,13 +122,22 @@ export function usePreviewConfig(
               options?: Array<{ value: string }>;
             }>,
           );
-          if (
-            lastUsedReasoningEffort &&
-            validValues.includes(lastUsedReasoningEffort)
-          ) {
+          if (defaultReasoningEffort === "last_used") {
+            if (
+              lastUsedReasoningEffort &&
+              validValues.includes(lastUsedReasoningEffort)
+            ) {
+              return {
+                ...opt,
+                currentValue: lastUsedReasoningEffort,
+              } as SessionConfigOption;
+            }
+            return opt;
+          }
+          if (validValues.includes(defaultReasoningEffort)) {
             return {
               ...opt,
-              currentValue: lastUsedReasoningEffort,
+              currentValue: defaultReasoningEffort,
             } as SessionConfigOption;
           }
           return opt;
@@ -168,26 +178,33 @@ export function usePreviewConfig(
                 ? "reasoning_effort"
                 : "effort";
 
-          const { lastUsedReasoningEffort } = useSettingsStore.getState();
+          const { lastUsedReasoningEffort, defaultReasoningEffort } =
+            useSettingsStore.getState();
           const isValidEffort = (effort: unknown): effort is string =>
             typeof effort === "string" &&
             !!effortOpts?.some((e) => e.value === effort);
+          const resolveEffortFallback = (): string => {
+            if (defaultReasoningEffort !== "last_used") {
+              return isValidEffort(defaultReasoningEffort)
+                ? defaultReasoningEffort
+                : "high";
+            }
+            return isValidEffort(lastUsedReasoningEffort)
+              ? lastUsedReasoningEffort
+              : "high";
+          };
           if (effortOpts && existingIdx >= 0) {
             const currentEffort = updated[existingIdx].currentValue;
             const nextEffort = isValidEffort(currentEffort)
               ? currentEffort
-              : isValidEffort(lastUsedReasoningEffort)
-                ? lastUsedReasoningEffort
-                : "high";
+              : resolveEffortFallback();
             updated[existingIdx] = {
               ...updated[existingIdx],
               currentValue: nextEffort,
               options: effortOpts,
             } as SessionConfigOption;
           } else if (effortOpts && existingIdx === -1) {
-            const nextEffort = isValidEffort(lastUsedReasoningEffort)
-              ? lastUsedReasoningEffort
-              : "high";
+            const nextEffort = resolveEffortFallback();
             updated = [
               ...updated,
               {

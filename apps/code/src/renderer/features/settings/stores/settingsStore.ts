@@ -10,6 +10,13 @@ export type DefaultRunMode = "local" | "cloud" | "last_used";
 export type LocalWorkspaceMode = "worktree" | "local";
 export type AgentAdapter = "claude" | "codex";
 export type DefaultInitialTaskMode = "plan" | "last_used";
+export type DefaultReasoningEffort =
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "last_used";
 
 export type SendMessagesWith = "enter" | "cmd+enter";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
@@ -56,6 +63,7 @@ interface SettingsStore {
   lastUsedEnvironments: Record<string, string>;
   defaultInitialTaskMode: DefaultInitialTaskMode;
   lastUsedInitialTaskMode: ExecutionMode;
+  defaultReasoningEffort: DefaultReasoningEffort;
   setDefaultRunMode: (mode: DefaultRunMode) => void;
   setLastUsedRunMode: (mode: "local" | "cloud") => void;
   setLastUsedLocalWorkspaceMode: (mode: LocalWorkspaceMode) => void;
@@ -71,6 +79,7 @@ interface SettingsStore {
   getLastUsedEnvironment: (repoPath: string) => string | null;
   setDefaultInitialTaskMode: (mode: DefaultInitialTaskMode) => void;
   setLastUsedInitialTaskMode: (mode: ExecutionMode) => void;
+  setDefaultReasoningEffort: (effort: DefaultReasoningEffort) => void;
 
   // Notifications
   desktopNotifications: boolean;
@@ -140,6 +149,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedEnvironments: {},
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
+      defaultReasoningEffort: "last_used",
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
       setLastUsedRunMode: (mode) => set({ lastUsedRunMode: mode }),
       setLastUsedLocalWorkspaceMode: (mode) =>
@@ -167,6 +177,8 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ defaultInitialTaskMode: mode }),
       setLastUsedInitialTaskMode: (mode) =>
         set({ lastUsedInitialTaskMode: mode }),
+      setDefaultReasoningEffort: (effort) =>
+        set({ defaultReasoningEffort: effort }),
 
       // Notifications
       desktopNotifications: true,
@@ -264,6 +276,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedEnvironments: state.lastUsedEnvironments,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,
+        defaultReasoningEffort: state.defaultReasoningEffort,
 
         // Notifications
         desktopNotifications: state.desktopNotifications,
