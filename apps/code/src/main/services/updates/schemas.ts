@@ -29,6 +29,12 @@ export type IsEnabledOutput = z.infer<typeof isEnabledOutput>;
 
 export type CheckForUpdatesOutput = z.infer<typeof checkForUpdatesOutput>;
 export type InstallUpdateOutput = z.infer<typeof installUpdateOutput>;
+export type AutoDownloadUpdatesOutput = z.infer<
+  typeof autoDownloadUpdatesOutput
+>;
+export type SetAutoDownloadUpdatesInput = z.infer<
+  typeof setAutoDownloadUpdatesInput
+>;
 
 export const UpdatesEvent = {
   Ready: "ready",

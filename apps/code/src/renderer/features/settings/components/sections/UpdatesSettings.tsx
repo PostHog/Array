@@ -3,7 +3,7 @@ import { CheckCircle, XCircle } from "@phosphor-icons/react";
 import { Badge, Button, Flex, Spinner, Switch, Text } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
@@ -13,6 +13,7 @@ const log = logger.scope("updates-settings");
 
 export function UpdatesSettings() {
   const trpcReact = useTRPC();
+  const queryClient = useQueryClient();
   const { data: appVersion } = useQuery(
     trpcReact.os.getAppVersion.queryOptions(),
   );
@@ -147,6 +148,9 @@ export function UpdatesSettings() {
                   },
                   onSuccess: (result) => {
                     setAutoDownloadEnabled(result.enabled);
+                    void queryClient.invalidateQueries(
+                      trpcReact.updates.getAutoDownload.queryFilter(),
+                    );
                     if (result.enabled !== previous) {
                       track(ANALYTICS_EVENTS.SETTING_CHANGED, {
                         setting_name: "auto_download_updates",
