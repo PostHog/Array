@@ -1,10 +1,22 @@
 import { FileIcon } from "@components/ui/FileIcon";
+import { CommandKeyHints } from "@features/command/components/CommandKeyHints";
 import { usePanelLayoutStore } from "@features/panels/store/panelLayoutStore";
-import { pathToFileItem, searchFiles, useRepoFiles } from "@hooks/useRepoFiles";
-import { Popover, Text } from "@radix-ui/themes";
+import {
+  type FileItem,
+  pathToFileItem,
+  searchFiles,
+  useRepoFiles,
+} from "@hooks/useRepoFiles";
+import {
+  Autocomplete,
+  AutocompleteInput,
+  AutocompleteItem,
+  AutocompleteList,
+  AutocompleteStatus,
+  Dialog,
+  DialogContent,
+} from "@posthog/quill";
 import { useCallback, useMemo, useState } from "react";
-import { Command } from "./Command";
-import "./FilePicker.css";
 
 interface FilePickerProps {
   open: boolean;
@@ -28,84 +40,73 @@ export function FilePicker({
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
       onOpenChange(isOpen);
-      if (!isOpen) {
-        setSearchQuery("");
-      }
+      if (!isOpen) setSearchQuery("");
     },
     [onOpenChange],
   );
 
   const { files: fileItems, fzf } = useRepoFiles(repoPath, open);
 
-  const displayedFiles = useMemo(() => {
+  const displayedFiles = useMemo<FileItem[]>(() => {
     if (!searchQuery.trim() && recentFiles.length > 0) {
       return recentFiles.map(pathToFileItem);
     }
     return searchFiles(fzf, fileItems, searchQuery);
   }, [fzf, fileItems, searchQuery, recentFiles]);
 
-  const resultsKey = useMemo(
-    () => displayedFiles.map((f) => f.path).join(","),
-    [displayedFiles],
-  );
-
-  const handleSelect = useCallback(
-    (filePath: string) => {
-      openFileInSplit(taskId, filePath, false);
-      handleOpenChange(false);
-    },
-    [openFileInSplit, taskId, handleOpenChange],
-  );
+  const handleSelect = (path: string | null): void => {
+    if (path === null) return;
+    openFileInSplit(taskId, path, false);
+    handleOpenChange(false);
+  };
 
   return (
-    <Popover.Root open={open} onOpenChange={handleOpenChange}>
-      <Popover.Trigger>
-        <div
-          style={{
-            left: "50%",
-          }}
-          className="pointer-events-none fixed top-[60px] h-[1px] w-[1px] opacity-0"
-        />
-      </Popover.Trigger>
-      <Popover.Content
-        className="file-picker-popover p-0"
-        maxWidth="640px"
-        side="bottom"
-        align="center"
-        sideOffset={0}
-        onInteractOutside={() => handleOpenChange(false)}
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="w-[720px] max-w-[90vw] gap-0 p-0"
+        showCloseButton={false}
       >
-        <Command.Root shouldFilter={false} label="File picker" key={resultsKey}>
-          <Command.Input
-            placeholder="Search files by name"
-            autoFocus={true}
-            value={searchQuery}
-            onValueChange={setSearchQuery}
+        <Autocomplete<FileItem>
+          inline
+          defaultOpen
+          items={displayedFiles}
+          filter={null}
+          value={searchQuery}
+          autoHighlight="always"
+          onValueChange={(val, eventDetails) => {
+            if (eventDetails.reason !== "input-change") return;
+            if (typeof val === "string") setSearchQuery(val);
+          }}
+        >
+          <AutocompleteInput placeholder="Search files…" autoFocus showClear />
+          <AutocompleteStatus
+            emptyContent={
+              <span>
+                No files match <strong>"{searchQuery}"</strong>
+              </span>
+            }
           />
-
-          <Command.List>
-            <Command.Empty>No files found.</Command.Empty>
-
-            {displayedFiles.map((file) => (
-              <Command.Item
+          <AutocompleteList className="max-h-[60vh] pt-1">
+            {(file: FileItem) => (
+              <AutocompleteItem
                 key={file.path}
                 value={file.path}
-                onSelect={() => handleSelect(file.path)}
+                onClick={() => handleSelect(file.path)}
+                className="block"
               >
                 <FileIcon filename={file.name} size={14} />
-                <Text ml="2" className="text-[13px]">
-                  {file.name}
-                </Text>
+                {file.name}
                 {file.dir && (
-                  <Text color="gray" ml="2" className="text-[13px]">
+                  <span className="text-muted-foreground text-xs">
                     {file.dir}
-                  </Text>
+                  </span>
                 )}
-              </Command.Item>
-            ))}
-          </Command.List>
-        </Command.Root>
-      </Popover.Content>
-    </Popover.Root>
+              </AutocompleteItem>
+            )}
+          </AutocompleteList>
+        </Autocomplete>
+        <CommandKeyHints />
+      </DialogContent>
+    </Dialog>
   );
 }
