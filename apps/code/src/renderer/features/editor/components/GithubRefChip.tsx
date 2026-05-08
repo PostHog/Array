@@ -15,7 +15,6 @@ export function GithubRefChip({
   return (
     <Chip
       size="xs"
-      variant="outline"
       onClick={() => window.open(href, "_blank")}
       className="cli-file-mention mx-0.5 max-w-full cursor-pointer! whitespace-nowrap pl-1 align-middle active:translate-y-0"
     >

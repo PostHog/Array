@@ -7,6 +7,7 @@ import type { FileDiffMetadata } from "@pierre/diffs/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import WorkerUrl from "@pierre/diffs/worker/worker.js?worker&url";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
+import { useReviewDraftsStore } from "@renderer/features/code-review/stores/reviewDraftsStore";
 import { useReviewNavigationStore } from "@renderer/features/code-review/stores/reviewNavigationStore";
 import type { ChangedFile, Task } from "@shared/types";
 import { useThemeStore } from "@stores/themeStore";
@@ -24,6 +25,7 @@ import {
   REVIEW_LIST_ESTIMATED_ITEM_SIZE,
 } from "../constants";
 import type { ResolvedDiffSource } from "../utils/resolveDiffSource";
+import { PendingReviewBar } from "./PendingReviewBar";
 import { ReviewToolbar } from "./ReviewToolbar";
 
 export function splitFilePath(fullPath: string): {
@@ -283,7 +285,10 @@ export function ReviewShell({
   const clearTask = useReviewNavigationStore((s) => s.clearTask);
 
   useEffect(() => {
-    return () => clearTask(taskId);
+    return () => {
+      clearTask(taskId);
+      useReviewDraftsStore.getState().clearDrafts(taskId);
+    };
   }, [taskId, clearTask]);
 
   useEffect(() => {
@@ -374,30 +379,33 @@ export function ReviewShell({
           defaultBranch={defaultBranch}
         />
         <Flex className="min-h-0 flex-1">
-          {isLoading ? (
-            <Flex align="center" justify="center" className="min-w-0 flex-1">
-              <Spinner size="2" />
-            </Flex>
-          ) : isEmpty ? (
-            <Flex align="center" justify="center" className="min-w-0 flex-1">
-              <Text color="gray" className="text-sm">
-                No file changes to review
-              </Text>
-            </Flex>
-          ) : (
-            <VList
-              ref={listRef}
-              bufferSize={REVIEW_LIST_BUFFER_PX}
-              itemSize={REVIEW_LIST_ESTIMATED_ITEM_SIZE}
-              className="pierre-scroll-root scrollbar-overlay-y min-w-0 flex-1 overflow-auto bg-(--gray-2)"
-              shift={false}
-              style={{ scrollbarGutter: "stable" }}
-              onScroll={handleScroll}
-              data={items}
-            >
-              {renderItem}
-            </VList>
-          )}
+          <Flex direction="column" className="min-w-0 flex-1">
+            {isLoading ? (
+              <Flex align="center" justify="center" className="min-h-0 flex-1">
+                <Spinner size="2" />
+              </Flex>
+            ) : isEmpty ? (
+              <Flex align="center" justify="center" className="min-h-0 flex-1">
+                <Text color="gray" className="text-sm">
+                  No file changes to review
+                </Text>
+              </Flex>
+            ) : (
+              <VList
+                ref={listRef}
+                bufferSize={REVIEW_LIST_BUFFER_PX}
+                itemSize={REVIEW_LIST_ESTIMATED_ITEM_SIZE}
+                className="pierre-scroll-root scrollbar-overlay-y min-h-0 flex-1 overflow-auto bg-(--gray-2)"
+                shift={false}
+                style={{ scrollbarGutter: "stable" }}
+                onScroll={handleScroll}
+                data={items}
+              >
+                {renderItem}
+              </VList>
+            )}
+            <PendingReviewBar taskId={taskId} />
+          </Flex>
 
           {isExpanded && <ExpandedSidebar task={task} />}
         </Flex>

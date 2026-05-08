@@ -16,6 +16,8 @@ import {
   getTaskTimestampsOutput,
   getWorkspaceInfoInput,
   getWorkspaceInfoOutput,
+  getWorktreeFileUsageInput,
+  getWorktreeFileUsageOutput,
   getWorktreeSizeInput,
   getWorktreeSizeOutput,
   getWorktreeTasksInput,
@@ -105,6 +107,13 @@ export const workspaceRouter = router({
     .input(getWorktreeSizeInput)
     .output(getWorktreeSizeOutput)
     .query(({ input }) => getService().getWorktreeSize(input.worktreePath)),
+
+  getWorktreeFileUsage: publicProcedure
+    .input(getWorktreeFileUsageInput)
+    .output(getWorktreeFileUsageOutput)
+    .query(({ input }) =>
+      getService().getWorktreeFileUsage(input.mainRepoPath),
+    ),
 
   deleteWorktree: publicProcedure
     .input(deleteWorktreeInput)

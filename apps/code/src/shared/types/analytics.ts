@@ -52,6 +52,19 @@ export interface TaskCreateProperties {
   auto_run: boolean;
   created_from: TaskCreatedFrom;
   repository_provider?: RepositoryProvider;
+  workspace_mode?: "local" | "worktree" | "cloud";
+  has_branch?: boolean;
+  /** Worktree mode: a project environment with a setup script was selected */
+  has_environment_setup?: boolean;
+  /** Cloud mode: a sandbox environment was selected */
+  has_sandbox_environment?: boolean;
+  cloud_run_source?: "manual" | "signal_report";
+  cloud_pr_authorship_mode?: "user" | "bot";
+  /** Worktree mode: repo has a non-empty .worktreelink file */
+  uses_worktree_link?: boolean;
+  /** Worktree mode: repo has a non-empty .worktreeinclude file */
+  uses_worktree_include?: boolean;
+  adapter?: "claude" | "codex";
 }
 
 export interface TaskViewProperties {

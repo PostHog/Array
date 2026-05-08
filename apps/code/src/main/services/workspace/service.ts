@@ -59,6 +59,28 @@ type TaskAssociation =
       branchName: string | null;
     };
 
+/**
+ * True if a worktree exclude file (.worktreelink / .worktreeinclude) exists and has at least
+ * one non-empty, non-comment entry.
+ */
+async function hasExcludeFileEntries(
+  mainRepoPath: string,
+  fileName: string,
+): Promise<boolean> {
+  try {
+    const contents = await fsPromises.readFile(
+      path.join(mainRepoPath, fileName),
+      "utf8",
+    );
+    return contents.split("\n").some((line) => {
+      const trimmed = line.trim();
+      return trimmed.length > 0 && !trimmed.startsWith("#");
+    });
+  } catch {
+    return false;
+  }
+}
+
 async function hasAnyFiles(repoPath: string): Promise<boolean> {
   try {
     const entries = await fsPromises.readdir(repoPath);
@@ -1087,6 +1109,16 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         taskIds,
       };
     });
+  }
+
+  async getWorktreeFileUsage(
+    mainRepoPath: string,
+  ): Promise<{ usesWorktreeLink: boolean; usesWorktreeInclude: boolean }> {
+    const [usesWorktreeLink, usesWorktreeInclude] = await Promise.all([
+      hasExcludeFileEntries(mainRepoPath, ".worktreelink"),
+      hasExcludeFileEntries(mainRepoPath, ".worktreeinclude"),
+    ]);
+    return { usesWorktreeLink, usesWorktreeInclude };
   }
 
   async getWorktreeSize(worktreePath: string): Promise<{ sizeBytes: number }> {

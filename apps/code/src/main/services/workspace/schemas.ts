@@ -169,6 +169,15 @@ export const listGitWorktreesInput = z.object({
   mainRepoPath: z.string(),
 });
 
+export const getWorktreeFileUsageInput = z.object({
+  mainRepoPath: z.string(),
+});
+
+export const getWorktreeFileUsageOutput = z.object({
+  usesWorktreeLink: z.boolean(),
+  usesWorktreeInclude: z.boolean(),
+});
+
 export const gitWorktreeEntrySchema = z.object({
   worktreePath: z.string(),
   head: z.string(),
