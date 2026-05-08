@@ -153,13 +153,11 @@ export function UpdatesSettings() {
                     void queryClient.invalidateQueries(
                       trpcReact.updates.getAutoDownload.queryFilter(),
                     );
-                    if (result.enabled !== previous) {
-                      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
-                        setting_name: "auto_download_updates",
-                        old_value: previous,
-                        new_value: result.enabled,
-                      });
-                    }
+                    track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+                      setting_name: "auto_download_updates",
+                      old_value: previous,
+                      new_value: result.enabled,
+                    });
                   },
                 },
               );
