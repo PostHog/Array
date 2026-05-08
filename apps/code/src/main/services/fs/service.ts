@@ -6,13 +6,14 @@ import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { FileWatcherEvent } from "../file-watcher/schemas";
 import type { FileWatcherService } from "../file-watcher/service";
-import type { FileEntry } from "./schemas";
+import type { BoundedReadResult, FileEntry } from "./schemas";
 
 const log = logger.scope("fs");
 
 @injectable()
 export class FsService {
   private static readonly CACHE_TTL = 30000;
+  private static readonly READ_REPO_FILES_CONCURRENCY = 24;
   private cache = new Map<string, { files: FileEntry[]; timestamp: number }>();
 
   constructor(
@@ -101,11 +102,68 @@ export class FsService {
         "utf-8",
       );
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "EISDIR") {
         log.error(`Failed to read file ${filePath}:`, error);
       }
       return null;
     }
+  }
+
+  async readRepoFiles(
+    repoPath: string,
+    filePaths: string[],
+  ): Promise<Record<string, string | null>> {
+    const uniqueFilePaths = [...new Set(filePaths)];
+    const entries = await this.mapWithConcurrency(
+      uniqueFilePaths,
+      FsService.READ_REPO_FILES_CONCURRENCY,
+      async (filePath) =>
+        [filePath, await this.readRepoFile(repoPath, filePath)] as const,
+    );
+    return Object.fromEntries(entries);
+  }
+
+  async readRepoFileBounded(
+    repoPath: string,
+    filePath: string,
+    maxLines: number,
+  ): Promise<BoundedReadResult> {
+    try {
+      const content = await fs.promises.readFile(
+        this.resolvePath(repoPath, filePath),
+        "utf-8",
+      );
+      if (exceedsLineLimit(content, maxLines)) {
+        return { kind: "too-large" };
+      }
+      return { kind: "content", content };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "EISDIR") {
+        return { kind: "missing" };
+      }
+      log.error(`Failed to read file ${filePath}:`, error);
+      return { kind: "missing" };
+    }
+  }
+
+  async readRepoFilesBounded(
+    repoPath: string,
+    filePaths: string[],
+    maxLines: number,
+  ): Promise<Record<string, BoundedReadResult>> {
+    const uniqueFilePaths = [...new Set(filePaths)];
+    const entries = await this.mapWithConcurrency(
+      uniqueFilePaths,
+      FsService.READ_REPO_FILES_CONCURRENCY,
+      async (filePath) =>
+        [
+          filePath,
+          await this.readRepoFileBounded(repoPath, filePath, maxLines),
+        ] as const,
+    );
+    return Object.fromEntries(entries);
   }
 
   async readAbsoluteFile(filePath: string): Promise<string | null> {
@@ -166,12 +224,12 @@ export class FsService {
   }
 
   private resolvePath(repoPath: string, filePath: string): string {
-    const fullPath = path.join(repoPath, filePath);
-    const resolved = path.resolve(fullPath);
-    if (!resolved.startsWith(path.resolve(repoPath))) {
+    const base = path.resolve(repoPath);
+    const resolved = path.resolve(base, filePath);
+    if (resolved !== base && !resolved.startsWith(base + path.sep)) {
       throw new Error("Access denied: path outside repository");
     }
-    return fullPath;
+    return resolved;
   }
 
   private toFileEntries(
@@ -206,4 +264,43 @@ export class FsService {
     }
     return Array.from(dirs).sort();
   }
+
+  private async mapWithConcurrency<T, R>(
+    items: readonly T[],
+    concurrency: number,
+    mapper: (item: T) => Promise<R>,
+  ): Promise<R[]> {
+    if (items.length === 0) return [];
+
+    const results = new Array<R>(items.length);
+    let index = 0;
+
+    const worker = async () => {
+      while (index < items.length) {
+        const currentIndex = index++;
+        results[currentIndex] = await mapper(items[currentIndex]);
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, items.length) }, () =>
+        worker(),
+      ),
+    );
+
+    return results;
+  }
+}
+
+function exceedsLineLimit(content: string, maxLines: number): boolean {
+  let lineCount = 1;
+  for (let i = 0; i < content.length; i++) {
+    if (content.charCodeAt(i) === 10) {
+      lineCount++;
+      if (lineCount > maxLines) {
+        return true;
+      }
+    }
+  }
+  return false;
 }

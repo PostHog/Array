@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { CreateGitClientOptions } from "./client";
 import { getGitOperationManager } from "./operation-manager";
+import { streamGitStatus } from "./status-stream";
 
 export interface WorktreeListEntry {
   path: string;
@@ -20,6 +21,9 @@ export interface GitStatus {
   modified: string[];
   deleted: string[];
   untracked: string[];
+  overflowedDirs?: string[];
+  totalUntrackedSeen?: number;
+  totalUntrackedTruncated?: boolean;
 }
 
 type GitLike = {
@@ -139,21 +143,19 @@ export async function getStatus(
   baseDir: string,
   options?: CreateGitClientOptions,
 ): Promise<GitStatus> {
-  const manager = getGitOperationManager();
-  return manager.executeRead(
-    baseDir,
-    async (git) => {
-      const status = await git.status(["--untracked-files=all"]);
-      return {
-        isClean: status.isClean(),
-        staged: status.staged,
-        modified: status.modified,
-        deleted: status.deleted,
-        untracked: status.not_added,
-      };
-    },
-    { signal: options?.abortSignal },
-  );
+  const status = await streamGitStatus(baseDir, {
+    signal: options?.abortSignal,
+  });
+  return {
+    isClean: status.isClean,
+    staged: status.staged,
+    modified: status.modified,
+    deleted: status.deleted,
+    untracked: status.untracked,
+    overflowedDirs: status.overflowedDirs,
+    totalUntrackedSeen: status.totalUntrackedSeen,
+    totalUntrackedTruncated: status.totalUntrackedTruncated,
+  };
 }
 
 export async function hasChanges(
@@ -338,14 +340,17 @@ export async function getChangedFiles(
             }
           } catch {}
         }
+      } catch {}
 
-        const status = await git.status(["--untracked-files=all"]);
+      try {
+        const status = await streamGitStatus(baseDir, {
+          signal: options?.abortSignal,
+        });
         for (const file of [
           ...status.modified,
           ...status.created,
           ...status.deleted,
-          ...status.renamed.map((r) => r.to),
-          ...status.not_added,
+          ...status.untracked,
         ]) {
           changedFiles.add(file);
         }
@@ -418,6 +423,26 @@ async function countFileLines(filePath: string): Promise<number> {
   }
 }
 
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let index = 0;
+  const worker = async () => {
+    while (index < items.length) {
+      const i = index++;
+      results[i] = await mapper(items[i]);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  );
+  return results;
+}
+
 export async function getChangedFilesDetailed(
   baseDir: string,
   options?: GetChangedFilesDetailedOptions,
@@ -432,8 +457,11 @@ export async function getChangedFilesDetailed(
         const [stagedSummary, unstagedSummary, status] = await Promise.all([
           git.diffSummary(["--cached", "-M", "HEAD"]),
           git.diffSummary(["-M"]),
-          git.status(["--untracked-files=all"]),
+          streamGitStatus(baseDir, { signal: gitOptions?.abortSignal }),
         ]);
+
+        const deletedSet = new Set(status.deleted);
+        const createdSet = new Set(status.created);
 
         const diffSeenPaths = new Set<string>();
         const excludedPaths = new Set<string>();
@@ -456,9 +484,9 @@ export async function getChangedFilesDetailed(
             path: file.file,
             status: hasFrom
               ? "renamed"
-              : status.deleted.includes(file.file)
+              : deletedSet.has(file.file)
                 ? "deleted"
-                : status.created.includes(file.file)
+                : createdSet.has(file.file)
                   ? "added"
                   : "modified",
             originalPath: hasFrom ? (file.from as string) : undefined,
@@ -481,22 +509,27 @@ export async function getChangedFilesDetailed(
           pushDiffFile(file, false);
         }
 
-        const MAX_UNTRACKED_FILES = 10_000;
-        let untrackedProcessed = 0;
-        for (const file of status.not_added) {
-          if (untrackedProcessed >= MAX_UNTRACKED_FILES) break;
+        const untrackedToCount: string[] = [];
+        for (const file of status.untracked) {
           if (diffSeenPaths.has(file) || excludedPaths.has(file)) continue;
           if (excludePatterns && matchesExcludePattern(file, excludePatterns)) {
             continue;
           }
-          const lineCount = await countFileLines(path.join(baseDir, file));
+          untrackedToCount.push(file);
+        }
+
+        const untrackedLineCounts = await mapWithConcurrency(
+          untrackedToCount,
+          16,
+          (file) => countFileLines(path.join(baseDir, file)),
+        );
+        for (let i = 0; i < untrackedToCount.length; i++) {
           files.push({
-            path: file,
+            path: untrackedToCount[i],
             status: "untracked",
-            linesAdded: lineCount,
+            linesAdded: untrackedLineCounts[i],
             linesRemoved: 0,
           });
-          untrackedProcessed++;
         }
 
         return files;

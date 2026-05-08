@@ -310,14 +310,34 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     const files = await getChangedFilesDetailed(directoryPath, {
       excludePatterns: [".claude", "CLAUDE.local.md"],
     });
-    return files.map((f) => ({
-      path: f.path,
-      status: f.status,
-      originalPath: f.originalPath,
-      linesAdded: f.linesAdded,
-      linesRemoved: f.linesRemoved,
-      staged: f.staged,
-    }));
+    type HeadChangedFile = Omit<ChangedFile, "patch">;
+    const filteredFiles: Array<HeadChangedFile | null> = await Promise.all(
+      files.map(async (file) => {
+        if (file.status === "untracked") {
+          try {
+            const stats = await fs.promises.stat(
+              path.join(directoryPath, file.path),
+            );
+            if (!stats.isFile()) return null;
+          } catch {
+            return null;
+          }
+        }
+
+        return {
+          path: file.path,
+          status: file.status,
+          originalPath: file.originalPath,
+          linesAdded: file.linesAdded,
+          linesRemoved: file.linesRemoved,
+          staged: file.staged,
+        };
+      }),
+    );
+
+    return filteredFiles.filter(
+      (file): file is HeadChangedFile => file !== null,
+    );
   }
 
   public async getFileAtHead(

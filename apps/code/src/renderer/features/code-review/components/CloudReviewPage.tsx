@@ -6,8 +6,13 @@ import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { useReviewNavigationStore } from "@renderer/features/code-review/stores/reviewNavigationStore";
 import type { Task } from "@shared/types";
 import { useMemo } from "react";
-import { RemoteDiffList } from "./RemoteDiffList";
-import { ReviewShell, useReviewState } from "./ReviewShell";
+import { PatchedFileDiff } from "./PatchedFileDiff";
+import {
+  buildItemIndex,
+  type ReviewListItem,
+  ReviewShell,
+  useReviewState,
+} from "./ReviewShell";
 
 interface CloudReviewPageProps {
   task: Task;
@@ -43,8 +48,6 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     expandAll,
     collapseAll,
     uncollapseFile,
-    revealFile,
-    getDeferredReason,
   } = useReviewState(reviewFiles, allPaths);
 
   const toolCallFallbacks = useMemo(() => {
@@ -59,6 +62,45 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     }
     return diffs;
   }, [remoteFiles.length, toolCalls, reviewFiles]);
+
+  const items = useMemo<ReviewListItem[]>(() => {
+    return reviewFiles.map((file) => {
+      const isCollapsed = collapsedFiles.has(file.path);
+      const githubFileUrl = prUrl
+        ? `${prUrl}/files#diff-${file.path.replaceAll("/", "-")}`
+        : undefined;
+
+      return {
+        key: file.path,
+        scrollKey: file.path,
+        node: (
+          <PatchedFileDiff
+            file={file}
+            taskId={taskId}
+            prUrl={prUrl}
+            options={diffOptions}
+            collapsed={isCollapsed}
+            onToggle={() => toggleFile(file.path)}
+            commentThreads={showReviewComments ? commentThreads : undefined}
+            fallback={toolCallFallbacks?.get(file.path) ?? null}
+            externalUrl={githubFileUrl}
+          />
+        ),
+      };
+    });
+  }, [
+    collapsedFiles,
+    commentThreads,
+    diffOptions,
+    prUrl,
+    reviewFiles,
+    showReviewComments,
+    taskId,
+    toggleFile,
+    toolCallFallbacks,
+  ]);
+
+  const itemIndexByFilePath = useMemo(() => buildItemIndex(items), [items]);
 
   if (!prUrl && !effectiveBranch && reviewFiles.length === 0) {
     if (isRunActive) {
@@ -91,19 +133,8 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
       onExpandAll={expandAll}
       onCollapseAll={collapseAll}
       onUncollapseFile={uncollapseFile}
-    >
-      <RemoteDiffList
-        files={reviewFiles}
-        taskId={taskId}
-        prUrl={prUrl}
-        options={diffOptions}
-        collapsedFiles={collapsedFiles}
-        toggleFile={toggleFile}
-        revealFile={revealFile}
-        getDeferredReason={getDeferredReason}
-        commentThreads={showReviewComments ? commentThreads : undefined}
-        fallbacks={toolCallFallbacks}
-      />
-    </ReviewShell>
+      items={items}
+      itemIndexByFilePath={itemIndexByFilePath}
+    />
   );
 }

@@ -2,10 +2,32 @@ import "reflect-metadata";
 // Side effect: attaches window focus/visibility listeners so `focused` is accurate before inbox queries mount.
 import "@stores/rendererWindowFocusStore";
 import { Providers } from "@components/Providers";
+import { preloadHighlighter } from "@pierre/diffs";
 import App from "@renderer/App";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./styles/globals.css";
+
+void preloadHighlighter({
+  themes: ["github-dark", "github-light"],
+  langs: [
+    "typescript",
+    "tsx",
+    "javascript",
+    "jsx",
+    "json",
+    "css",
+    "html",
+    "markdown",
+    "python",
+    "ruby",
+    "go",
+    "rust",
+    "shell",
+    "yaml",
+    "sql",
+  ],
+});
 
 // HACK(@posthog/hedgehog-mode): The package bundles react-dom 18 code that
 // accesses React 18 internals at module scope. React 19 moved these to

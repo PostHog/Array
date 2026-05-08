@@ -8,9 +8,16 @@ const GIT_QUERY_DEFAULTS = {
   staleTime: 30_000,
 } as const;
 
-export function useGitQueries(repoPath?: string) {
+interface UseGitQueriesOptions {
+  enabled?: boolean;
+}
+
+export function useGitQueries(
+  repoPath?: string,
+  options?: UseGitQueriesOptions,
+) {
   const trpc = useTRPC();
-  const enabled = !!repoPath;
+  const enabled = !!repoPath && (options?.enabled ?? true);
 
   const { data: isRepo = false, isLoading: isRepoLoading } = useQuery(
     trpc.git.validateRepo.queryOptions(
