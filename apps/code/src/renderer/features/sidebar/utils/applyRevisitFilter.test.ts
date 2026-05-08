@@ -23,48 +23,80 @@ function makeTask(overrides: Partial<TaskData> = {}): TaskData {
 }
 
 describe("applyRevisitFilter", () => {
-  it("returns input unchanged when showRevisitOnly is false", () => {
-    const tasks = [makeTask({ id: "a" }), makeTask({ id: "b" })];
-    const result = applyRevisitFilter(tasks, false, new Set(["a"]));
-    expect(result).toBe(tasks);
-  });
-
-  it("filters to only tasks marked for revisit when showRevisitOnly is true", () => {
-    const tasks = [
-      makeTask({ id: "a" }),
-      makeTask({ id: "b" }),
-      makeTask({ id: "c" }),
-    ];
-    const result = applyRevisitFilter(tasks, true, new Set(["a", "c"]));
-    expect(result.map((t) => t.id)).toEqual(["a", "c"]);
-  });
-
-  it("returns empty array when showRevisitOnly is true and no tasks are marked", () => {
-    const tasks = [makeTask({ id: "a" }), makeTask({ id: "b" })];
-    const result = applyRevisitFilter(tasks, true, new Set());
-    expect(result).toEqual([]);
-  });
-
-  it("preserves pinned tasks that are also marked for revisit", () => {
-    const tasks = [
-      makeTask({ id: "a", isPinned: true }),
-      makeTask({ id: "b", isPinned: true }),
-      makeTask({ id: "c", isPinned: false }),
-    ];
-    const result = applyRevisitFilter(tasks, true, new Set(["a", "c"]));
-    expect(result.map((t) => t.id)).toEqual(["a", "c"]);
-    expect(result.find((t) => t.id === "a")?.isPinned).toBe(true);
-  });
-
-  it("returns empty array for empty input regardless of filter", () => {
-    expect(applyRevisitFilter([], true, new Set(["a"]))).toEqual([]);
-    expect(applyRevisitFilter([], false, new Set(["a"]))).toEqual([]);
-  });
-
-  it("does not mutate the input array", () => {
-    const tasks = [makeTask({ id: "a" }), makeTask({ id: "b" })];
-    const snapshot = [...tasks];
-    applyRevisitFilter(tasks, true, new Set(["a"]));
-    expect(tasks).toEqual(snapshot);
-  });
+  it.each<{
+    name: string;
+    tasks: TaskData[];
+    showRevisitOnly: boolean;
+    revisitIds: string[];
+    expectedIds: string[];
+    /** When true, the filter is expected to short-circuit and return the input by reference. */
+    expectSameRef?: boolean;
+  }>([
+    {
+      name: "returns input unchanged when showRevisitOnly is false",
+      tasks: [makeTask({ id: "a" }), makeTask({ id: "b" })],
+      showRevisitOnly: false,
+      revisitIds: ["a"],
+      expectedIds: ["a", "b"],
+      expectSameRef: true,
+    },
+    {
+      name: "filters to only tasks marked for revisit when showRevisitOnly is true",
+      tasks: [
+        makeTask({ id: "a" }),
+        makeTask({ id: "b" }),
+        makeTask({ id: "c" }),
+      ],
+      showRevisitOnly: true,
+      revisitIds: ["a", "c"],
+      expectedIds: ["a", "c"],
+    },
+    {
+      name: "returns empty array when showRevisitOnly is true and no tasks are marked",
+      tasks: [makeTask({ id: "a" }), makeTask({ id: "b" })],
+      showRevisitOnly: true,
+      revisitIds: [],
+      expectedIds: [],
+    },
+    {
+      name: "preserves pinned tasks that are also marked for revisit",
+      tasks: [
+        makeTask({ id: "a", isPinned: true }),
+        makeTask({ id: "b", isPinned: true }),
+        makeTask({ id: "c", isPinned: false }),
+      ],
+      showRevisitOnly: true,
+      revisitIds: ["a", "c"],
+      expectedIds: ["a", "c"],
+    },
+    {
+      name: "empty input with filter on returns empty",
+      tasks: [],
+      showRevisitOnly: true,
+      revisitIds: ["a"],
+      expectedIds: [],
+    },
+    {
+      name: "empty input with filter off returns empty",
+      tasks: [],
+      showRevisitOnly: false,
+      revisitIds: ["a"],
+      expectedIds: [],
+      expectSameRef: true,
+    },
+  ])(
+    "$name",
+    ({ tasks, showRevisitOnly, revisitIds, expectedIds, expectSameRef }) => {
+      const snapshot = [...tasks];
+      const result = applyRevisitFilter(
+        tasks,
+        showRevisitOnly,
+        new Set(revisitIds),
+      );
+      expect(result.map((t) => t.id)).toEqual(expectedIds);
+      if (expectSameRef) expect(result).toBe(tasks);
+      // Filter must never mutate the input array.
+      expect(tasks).toEqual(snapshot);
+    },
+  );
 });
