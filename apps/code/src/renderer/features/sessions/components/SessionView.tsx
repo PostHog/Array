@@ -18,6 +18,7 @@ import type { Plan } from "@features/sessions/types";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
 import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
+import { useConnectivity } from "@hooks/useConnectivity";
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
 import { Box, Button, ContextMenu, Flex, Text } from "@radix-ui/themes";
 import { toast } from "@renderer/utils/toast";
@@ -131,6 +132,7 @@ export function SessionView({
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
   const adapter = useAdapterForTask(taskId);
   const { allowBypassPermissions } = useSettingsStore();
+  const { isOnline } = useConnectivity();
   const currentModeId = modeOption?.currentValue;
   const handoffInProgress =
     useSessionForTask(taskId)?.handoffInProgress ?? false;
@@ -618,7 +620,9 @@ export function SessionView({
                           sessionId={sessionId}
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}
-                          submitDisabledExternal={handoffInProgress}
+                          submitDisabledExternal={
+                            handoffInProgress || !isOnline
+                          }
                           isLoading={!!isPromptPending}
                           isActiveSession={isActiveSession}
                           taskId={taskId}
