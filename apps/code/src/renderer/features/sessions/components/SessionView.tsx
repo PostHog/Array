@@ -623,6 +623,9 @@ export function SessionView({
                           submitDisabledExternal={
                             handoffInProgress || !isOnline
                           }
+                          submitTooltipOverride={
+                            !isOnline ? "No internet connection" : undefined
+                          }
                           isLoading={!!isPromptPending}
                           isActiveSession={isActiveSession}
                           taskId={taskId}
