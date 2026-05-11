@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import os from "node:os";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import log from "electron-log/main";
 import "./utils/logger";
 import "./services/index.js";
@@ -34,6 +34,7 @@ import {
   getLogFilePath,
   readChromiumLogTail,
 } from "./utils/logger";
+import { isMacosPackagedUnsafeBundleLocation } from "./utils/macos-packaged-install-guard";
 import { createWindow } from "./window";
 
 // Single instance lock must be acquired FIRST before any other app setup
@@ -180,6 +181,31 @@ registerDeepLinkHandlers();
 initializePostHog();
 
 app.whenReady().then(async () => {
+  if (
+    process.platform === "darwin" &&
+    app.isPackaged &&
+    isMacosPackagedUnsafeBundleLocation(app.getAppPath(), process.execPath)
+  ) {
+    const appPath = app.getAppPath();
+    const exePath = process.execPath;
+    log.warn(
+      "Refusing to start: packaged app is on App Translocation or a read-only non-root volume",
+      { appPath, exePath },
+    );
+    dialog.showMessageBoxSync({
+      type: "warning",
+      title: "Read-only install location",
+      message:
+        "PostHog Code is running from a location with read-only access (for example App Translocation or a read-only disk image). The exact folder can differ depending on how you opened the app.",
+      detail:
+        "This prevents updates and tasks from running correctly. Move PostHog Code to the Applications folder (or another folder on a writable disk), quit the app completely, then open it again from the new location.",
+      buttons: ["OK"],
+      defaultId: 0,
+    });
+    app.quit();
+    return;
+  }
+
   const commit = __BUILD_COMMIT__ ?? "dev";
   const buildDate = __BUILD_DATE__ ?? "dev";
   log.info(
