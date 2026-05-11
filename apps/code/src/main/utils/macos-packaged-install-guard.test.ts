@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   isMacosAppTranslocationPath,
   isMacosPackagedUnsafeBundleLocation,
@@ -119,13 +119,24 @@ describe("isMacosPathOnReadOnlyNonRootMountFromTable", () => {
 });
 
 describe("isMacosPackagedUnsafeBundleLocation", () => {
-  it("is true when translocated", () => {
+  const writableMountTable = `/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
+/dev/disk5s1 on /Volumes/build (apfs, local, journaled)
+/dev/disk6s1 on /Applications (apfs, local, journaled)
+`;
+  const readOnlyMountTable = `/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
+/dev/disk7s1 on /Volumes/ReadOnlyVol (apfs, local, read-only, journaled)
+`;
+
+  it("is true when translocated (mount table never consulted)", () => {
+    const readMountTable = vi.fn(() => writableMountTable);
     expect(
       isMacosPackagedUnsafeBundleLocation(
         "/private/var/.../AppTranslocation/UUID/d/PostHog Code.app/Contents/Resources/app.asar",
         "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
+        readMountTable,
       ),
     ).toBe(true);
+    expect(readMountTable).not.toHaveBeenCalled();
   });
 
   it("is false for ordinary non-translocated paths on writable mounts", () => {
@@ -133,6 +144,27 @@ describe("isMacosPackagedUnsafeBundleLocation", () => {
       isMacosPackagedUnsafeBundleLocation(
         "/Volumes/build/out/PostHog Code.app/Contents/Resources/app.asar",
         "/Volumes/build/out/PostHog Code.app/Contents/MacOS/PostHog Code",
+        () => writableMountTable,
+      ),
+    ).toBe(false);
+  });
+
+  it("is true when the bundle lives on a read-only non-root volume", () => {
+    expect(
+      isMacosPackagedUnsafeBundleLocation(
+        "/Volumes/ReadOnlyVol/PostHog Code.app/Contents/Resources/app.asar",
+        "/Volumes/ReadOnlyVol/PostHog Code.app/Contents/MacOS/PostHog Code",
+        () => readOnlyMountTable,
+      ),
+    ).toBe(true);
+  });
+
+  it("is false when the mount table cannot be read (degrade to non-blocking)", () => {
+    expect(
+      isMacosPackagedUnsafeBundleLocation(
+        "/Applications/PostHog Code.app/Contents/Resources/app.asar",
+        "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
+        () => null,
       ),
     ).toBe(false);
   });

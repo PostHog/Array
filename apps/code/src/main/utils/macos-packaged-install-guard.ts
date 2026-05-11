@@ -2,11 +2,18 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 const APP_TRANSLOCATION_SEGMENT = "AppTranslocation";
+const MOUNT_READ_TIMEOUT_MS = 3000;
 
 export type DarwinMountEntry = {
   mountPoint: string;
   options: string;
 };
+
+/**
+ * Reads the Darwin mount table. Returns `null` when the table cannot be
+ * obtained (e.g. `/sbin/mount` is missing, times out, or exits non-zero).
+ */
+export type ReadDarwinMountTable = () => string | null;
 
 /** Parse `/sbin/mount` lines: `<device> on <mountPoint> (<opts>)` */
 export function parseDarwinMountTable(output: string): DarwinMountEntry[] {
@@ -35,7 +42,12 @@ function longestMatchingMount(
   let best: DarwinMountEntry | null = null;
   for (const e of entries) {
     const mp = e.mountPoint;
-    const under = resolvedPath === mp || resolvedPath.startsWith(`${mp}/`);
+    // For `/` we'd otherwise build `//` which no real path starts with, so the
+    // root mount would silently drop out of the comparison and the
+    // `best.mountPoint === "/"` guard below would be unreachable.
+    const under =
+      resolvedPath === mp ||
+      resolvedPath.startsWith(mp === "/" ? "/" : `${mp}/`);
     if (!under) continue;
     if (!best || mp.length > best.mountPoint.length) {
       best = e;
@@ -64,22 +76,22 @@ export function isMacosPathOnReadOnlyNonRootMountFromTable(
   return mountOptionsImplyReadOnly(best.options);
 }
 
-function isMacosPathOnReadOnlyNonRootMount(
-  resolvedAbsolutePath: string,
-): boolean {
-  let output: string;
+/**
+ * Reads `/sbin/mount` synchronously. A short timeout keeps a hung NFS/SMB
+ * share from freezing app startup — the exact failure mode this guard exists
+ * to prevent. Returns `null` on any failure so callers can degrade to "don't
+ * block".
+ */
+function readDarwinMountTableSync(): string | null {
   try {
-    output = execFileSync("/sbin/mount", {
+    return execFileSync("/sbin/mount", {
       encoding: "utf8",
       maxBuffer: 10 * 1024 * 1024,
+      timeout: MOUNT_READ_TIMEOUT_MS,
     });
   } catch {
-    return false;
+    return null;
   }
-  return isMacosPathOnReadOnlyNonRootMountFromTable(
-    resolvedAbsolutePath,
-    output,
-  );
 }
 
 /**
@@ -96,13 +108,27 @@ export function isMacosAppTranslocationPath(
   );
 }
 
-/** Packaged macOS: translocated bundle path, or binary on a non-root read-only mount (see mount(8)). */
+/**
+ * Packaged macOS: translocated bundle path, or binary on a non-root read-only
+ * mount (see mount(8)).
+ *
+ * `readMountTable` is injectable so tests can drive the mount-table branch
+ * deterministically instead of relying on the host's real `/sbin/mount`.
+ */
 export function isMacosPackagedUnsafeBundleLocation(
   appPath: string,
   exePath: string,
+  readMountTable: ReadDarwinMountTable = readDarwinMountTableSync,
 ): boolean {
   if (isMacosAppTranslocationPath(appPath, exePath)) {
     return true;
   }
-  return isMacosPathOnReadOnlyNonRootMount(path.resolve(exePath));
+  const table = readMountTable();
+  if (table === null) {
+    return false;
+  }
+  return isMacosPathOnReadOnlyNonRootMountFromTable(
+    path.resolve(exePath),
+    table,
+  );
 }
