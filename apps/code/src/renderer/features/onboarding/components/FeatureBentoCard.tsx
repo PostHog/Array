@@ -1,0 +1,78 @@
+import { Flex, Text } from "@radix-ui/themes";
+import { motion } from "framer-motion";
+import type { ReactNode } from "react";
+import "./FeatureBentoCard.css";
+
+interface FeatureBentoCardProps {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  /** Hint text rendered inside the screenshot placeholder until a real asset lands. */
+  placeholderLabel?: string;
+  active?: boolean;
+  index?: number;
+  /** Tailwind classes controlling the cell's grid placement (e.g. "col-span-4 row-span-2"). */
+  className?: string;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+}
+
+export function FeatureBentoCard({
+  icon,
+  title,
+  description,
+  placeholderLabel,
+  active = false,
+  index = 0,
+  className = "",
+  onMouseEnter,
+  onMouseLeave,
+}: FeatureBentoCardProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: index * 0.08 }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      className={`feature-bento-card ${active ? "feature-bento-card--active" : ""} ${className}`}
+    >
+      <div className="feature-bento-card__placeholder">
+        <div
+          className="feature-bento-card__placeholder-grid"
+          aria-hidden="true"
+        />
+        <div
+          className="feature-bento-card__placeholder-glow"
+          aria-hidden="true"
+        />
+        <Flex
+          direction="column"
+          align="center"
+          justify="center"
+          gap="2"
+          className="relative z-10 text-(--gray-9)"
+        >
+          <div className="feature-bento-card__icon">{icon}</div>
+          {placeholderLabel ? (
+            <Text className="text-(--gray-9) text-[10px] uppercase tracking-[0.12em]">
+              {placeholderLabel}
+            </Text>
+          ) : null}
+        </Flex>
+      </div>
+      <Flex
+        direction="column"
+        gap="1"
+        className="feature-bento-card__content shrink-0 px-1 pt-3 pb-1"
+      >
+        <Text className="font-medium text-(--gray-12) text-sm leading-snug">
+          {title}
+        </Text>
+        <Text className="text-(--gray-11) text-[12px] leading-snug">
+          {description}
+        </Text>
+      </Flex>
+    </motion.div>
+  );
+}
