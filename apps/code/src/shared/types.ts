@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { DismissalReasonOptionValue } from "./dismissalReasons";
 import type { StoredLogEntry } from "./types/session-events";
 
 // Execution mode schema and type - shared between main and renderer
@@ -365,6 +366,24 @@ export interface SuggestedReviewersArtefact {
   created_at: string;
 }
 
+/** Artefact with `type: "dismissal"` — captures the user's rationale when suppressing a report. */
+export interface DismissalArtefact {
+  id: string;
+  type: "dismissal";
+  content: DismissalContent;
+  created_at: string;
+}
+
+export interface DismissalContent {
+  reason: DismissalReasonOptionValue;
+  /** Optional free-form detail provided alongside the reason. */
+  note: string;
+  /** PostHog numeric user id of the dismisser, when available. */
+  user_id: number | null;
+  /** PostHog UUID of the dismisser, when available. */
+  user_uuid: string | null;
+}
+
 export interface SuggestedReviewerCommit {
   sha: string;
   url: string;
@@ -444,6 +463,7 @@ export interface SignalReportArtefactsResponse {
     | ActionabilityJudgmentArtefact
     | SignalFindingArtefact
     | SuggestedReviewersArtefact
+    | DismissalArtefact
   )[];
   count: number;
   unavailableReason?:

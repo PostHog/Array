@@ -1,8 +1,13 @@
 import { Badge } from "@components/ui/Badge";
+import { Button } from "@components/ui/Button";
 import {
   useInboxReportArtefacts,
   useInboxReportSignals,
 } from "@features/inbox/hooks/useInboxReports";
+import {
+  getTaskPrUrl,
+  useReportTasks,
+} from "@features/inbox/hooks/useReportTasks";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import { useDetectedCloudRepository } from "@hooks/useDetectedCloudRepository";
 import { useMeQuery } from "@hooks/useMeQuery";
@@ -12,10 +17,18 @@ import {
   CaretRightIcon,
   EyeIcon,
   LinkSimpleIcon,
+  ThumbsDownIcon,
   WarningIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { Box, Flex, ScrollArea, Text, Tooltip } from "@radix-ui/themes";
+import {
+  Box,
+  Flex,
+  ScrollArea,
+  Spinner,
+  Text,
+  Tooltip,
+} from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { EXTERNAL_LINKS } from "@renderer/utils/links";
 import { getDeeplinkProtocol } from "@shared/deeplink";
@@ -34,6 +47,7 @@ import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ReportImplementationPrLink } from "../utils/ReportImplementationPrLink";
 import { SignalReportActionabilityBadge } from "../utils/SignalReportActionabilityBadge";
 import { SignalReportPriorityBadge } from "../utils/SignalReportPriorityBadge";
 import { SignalReportStatusBadge } from "../utils/SignalReportStatusBadge";
@@ -133,9 +147,18 @@ function DetailRow({
 interface ReportDetailPaneProps {
   report: SignalReport;
   onClose: () => void;
+  onRequestDismissReport: () => void;
+  suppressDisabledReason: string | null;
+  isDismissMutationPending?: boolean;
 }
 
-export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
+export function ReportDetailPane({
+  report,
+  onClose,
+  onRequestDismissReport,
+  suppressDisabledReason,
+  isDismissMutationPending = false,
+}: ReportDetailPaneProps) {
   const { data: me } = useMeQuery();
 
   // ── Report data ─────────────────────────────────────────────────────────
@@ -213,6 +236,16 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
   );
   const effectiveCloudRepository = reportRepository ?? detectedFallbackRepo;
 
+  const { data: reportTasksData } = useReportTasks(report.id, report.status);
+  const implementationTaskFromHook =
+    reportTasksData?.find((t) => t.relationship === "implementation")?.task ??
+    null;
+  const implementationPrFromTask = implementationTaskFromHook
+    ? getTaskPrUrl(implementationTaskFromHook)
+    : null;
+  const headerImplementationPrUrl =
+    implementationPrFromTask ?? report.implementation_pr_url ?? null;
+
   /** True when the report is waiting on user input before implementation can proceed.
    * Covers the `pending_input` status and the `ready + requires_human_input` combination
    * (the actionability badge shows "Needs input" in that case). */
@@ -264,7 +297,32 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
             {report.title ?? "Untitled signal"}
           </Text>
         </Flex>
-        <Flex align="center" gap="1" className="shrink-0">
+        <Flex align="center" gap="2" className="shrink-0">
+          {headerImplementationPrUrl ? (
+            <ReportImplementationPrLink
+              prUrl={headerImplementationPrUrl}
+              size="md"
+            />
+          ) : null}
+          <Button
+            size="1"
+            variant="soft"
+            color="gray"
+            className="text-[12px]"
+            tooltipContent="This report is not useful to me"
+            disabledReason={suppressDisabledReason}
+            disabled={
+              suppressDisabledReason !== null || isDismissMutationPending
+            }
+            onClick={() => onRequestDismissReport()}
+          >
+            {isDismissMutationPending ? (
+              <Spinner size="1" />
+            ) : (
+              <ThumbsDownIcon size={12} />
+            )}
+            Dismiss
+          </Button>
           <Tooltip content="Copy link to this report">
             <button
               type="button"

@@ -116,14 +116,14 @@ export function ReportListRow({
       }}
       className={[
         "relative isolate w-full cursor-pointer overflow-hidden border-gray-5 border-b py-1.5 pr-4 pl-1.5 text-left",
-        "before:pointer-events-none before:absolute before:inset-0 before:z-[1]",
+        "before:pointer-events-none before:absolute before:inset-0 before:z-1",
         hoverOverlayClass,
         rowBgClass,
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      <Flex align="start" gap="1" className="relative z-[2]">
+      <Flex align="start" gap="1" className="relative z-2">
         <Flex
           align="center"
           justify="center"

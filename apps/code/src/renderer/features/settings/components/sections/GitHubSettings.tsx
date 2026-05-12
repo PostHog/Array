@@ -3,7 +3,6 @@ import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import {
   describeGithubConnectError,
   invalidateGithubQueries,
-  openUrlInBrowser,
   useGithubUserConnect,
 } from "@features/integrations/hooks/useGithubUserConnect";
 import {
@@ -33,6 +32,7 @@ import type { UserGitHubIntegration } from "@renderer/api/posthogClient";
 import { formatRelativeTimeLong } from "@renderer/utils/time";
 import { toast } from "@renderer/utils/toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { openUrlInBrowser } from "@utils/browser";
 import { useState } from "react";
 
 const REPO_PREVIEW_COUNT = 3;
