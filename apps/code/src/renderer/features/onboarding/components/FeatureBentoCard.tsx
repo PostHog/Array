@@ -7,8 +7,6 @@ interface FeatureBentoCardProps {
   icon: ReactNode;
   title: string;
   description: string;
-  /** Hint text rendered inside the screenshot placeholder until a real asset lands. */
-  placeholderLabel?: string;
   active?: boolean;
   index?: number;
   /** Tailwind classes controlling the cell's grid placement (e.g. "col-span-4 row-span-2"). */
@@ -21,7 +19,6 @@ export function FeatureBentoCard({
   icon,
   title,
   description,
-  placeholderLabel,
   active = false,
   index = 0,
   className = "",
@@ -54,11 +51,6 @@ export function FeatureBentoCard({
           className="relative z-10 text-(--gray-9)"
         >
           <div className="feature-bento-card__icon">{icon}</div>
-          {placeholderLabel ? (
-            <Text className="text-(--gray-9) text-[10px] uppercase tracking-[0.12em]">
-              {placeholderLabel}
-            </Text>
-          ) : null}
         </Flex>
       </div>
       <Flex

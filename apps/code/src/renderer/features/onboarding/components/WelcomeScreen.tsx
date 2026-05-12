@@ -20,39 +20,34 @@ const FEATURES = [
     title: "Your signals inbox",
     description:
       "Automatically surfaces the highest-impact work from your product data so you always know what to do next.",
-    placeholderLabel: "Inbox preview",
     className: "col-span-4",
   },
   {
     icon: <ChartLine size={26} />,
     title: "Product data as context",
     description:
-      "Agents pull in analytics, session replays and feature flags automatically.",
-    placeholderLabel: "Context preview",
+      "Built-in context on analytics, session replays, experiments, feature flags, and more.",
     className: "col-span-2",
   },
   {
     icon: <Robot size={22} />,
-    title: "Any model, any harness",
+    title: "Your pick of Claude Code or Codex",
     description:
-      "Bring your own agent framework or pick one of ours. Swap models without changing your flow.",
-    placeholderLabel: "Model picker",
+      "PostHog is harness-agnostic – both Anthropic and OpenAI supported.",
     className: "col-span-2",
   },
   {
     icon: <Cloud size={22} />,
-    title: "Ship work, not messages",
+    title: "Build non-stop",
     description:
-      "Run tasks in parallel across local and cloud environments — even while you're away.",
-    placeholderLabel: "Parallel tasks",
+      "Run tasks in parallel across local and cloud environments - even while you're away.",
     className: "col-span-2",
   },
   {
     icon: <GitPullRequest size={22} />,
     title: "Review and ship with confidence",
     description:
-      "Inline diffs, AI-assisted review and PR creation in a single flow.",
-    placeholderLabel: "Diff & PR",
+      "Inline diffs, AI-assisted code review and PR creation in a single flow.",
     className: "col-span-2",
   },
 ];
@@ -106,15 +101,12 @@ export function WelcomeScreen({ onNext }: WelcomeScreenProps) {
         <Flex
           direction="column"
           align="center"
-          className="min-h-0 w-full flex-1 overflow-y-auto"
+          className="min-h-0 w-full flex-1"
         >
           <Flex
             direction="column"
             align="start"
-            style={{
-              margin: "auto 0",
-            }}
-            className="w-full max-w-[760px] gap-6"
+            className="mx-0 my-auto w-full max-w-[760px] gap-6 overflow-hidden"
           >
             <Flex direction="row" align="center" gap="3">
               <Text
@@ -126,14 +118,13 @@ export function WelcomeScreen({ onNext }: WelcomeScreenProps) {
               <Logo />
             </Flex>
 
-            <div className="grid w-full grid-cols-6 grid-rows-[18rem_14rem] gap-3">
+            <div className="grid w-full grid-cols-6 grid-rows-[18rem_14rem] gap-3 overflow-y-auto rounded-lg">
               {FEATURES.map((feature, index) => (
                 <FeatureBentoCard
                   key={feature.title}
                   icon={feature.icon}
                   title={feature.title}
                   description={feature.description}
-                  placeholderLabel={feature.placeholderLabel}
                   active={activeIndex === index}
                   index={index}
                   className={feature.className}
