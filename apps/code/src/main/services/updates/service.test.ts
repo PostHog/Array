@@ -144,6 +144,9 @@ describe("UpdatesService", () => {
     mockUpdater.isSupported.mockReturnValue(true);
     mockAppLifecycle.whenReady.mockResolvedValue(undefined);
     mockAutoDownloadUpdatesEnabled.mockReturnValue(true);
+    mockSetAutoDownloadUpdatesEnabled.mockImplementation((value: boolean) => {
+      mockAutoDownloadUpdatesEnabled.mockReturnValue(value);
+    });
 
     // Set default platform to darwin (macOS)
     Object.defineProperty(process, "platform", {
