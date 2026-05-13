@@ -32,3 +32,7 @@ export {
   convertRawEntriesToEvents,
   parseSessionLogs,
 } from "./utils/parseSessionLogs";
+export {
+  createWatchMissionEnvelope,
+  createWatchMissionSnapshot,
+} from "./utils/watchMissionControl";
