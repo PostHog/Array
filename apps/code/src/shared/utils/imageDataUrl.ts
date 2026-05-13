@@ -23,10 +23,11 @@ export interface ParsedImageDataUrl {
 
 export function parseImageDataUrl(value: string): ParsedImageDataUrl | null {
   if (typeof value !== "string" || value.length === 0) return null;
-  if (!/^\s*data:/.test(value.slice(0, 32))) return null;
+  if (value.length > MAX_DATA_URL_LENGTH) return null;
+  if (!/^\s{0,1024}data:/.test(value)) return null;
 
   const trimmed = value.trim();
-  if (trimmed.length === 0 || trimmed.length > MAX_DATA_URL_LENGTH) return null;
+  if (trimmed.length === 0) return null;
 
   const match = DATA_URL_PATTERN.exec(trimmed);
   if (!match) return null;

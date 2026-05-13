@@ -80,6 +80,14 @@ describe("parseImageDataUrl", () => {
     expect(result?.mimeType).toBe("image/png");
   });
 
+  it("tolerates long leading-whitespace prefixes", () => {
+    const padding = " ".repeat(256);
+    const result = parseImageDataUrl(
+      `${padding}data:image/png;base64,${TINY_PNG_BASE64}`,
+    );
+    expect(result?.mimeType).toBe("image/png");
+  });
+
   it("strips whitespace inside base64 payload", () => {
     const withNewlines = TINY_PNG_BASE64.match(/.{1,40}/g)?.join("\n") ?? "";
     const result = parseImageDataUrl(`data:image/png;base64,${withNewlines}`);
