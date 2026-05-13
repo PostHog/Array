@@ -19,16 +19,20 @@ describe("parseImageDataUrl", () => {
     });
   });
 
-  it("accepts other allowed mime types", () => {
-    expect(
-      parseImageDataUrl(`data:image/jpeg;base64,${TINY_PNG_BASE64}`),
-    ).not.toBeNull();
-    expect(
-      parseImageDataUrl(`data:image/webp;base64,${TINY_PNG_BASE64}`),
-    ).not.toBeNull();
-    expect(
-      parseImageDataUrl(`data:image/gif;base64,${TINY_PNG_BASE64}`),
-    ).not.toBeNull();
+  it.each([
+    ["image/jpeg"],
+    ["image/webp"],
+    ["image/gif"],
+    ["image/bmp"],
+    ["image/avif"],
+    ["image/tiff"],
+    ["image/x-icon"],
+  ])("accepts allowed mime type %s", (mimeType) => {
+    const result = parseImageDataUrl(
+      `data:${mimeType};base64,${TINY_PNG_BASE64}`,
+    );
+    expect(result).not.toBeNull();
+    expect(result?.mimeType).toBe(mimeType);
   });
 
   it("rejects SVG data URLs to prevent script execution", () => {
@@ -37,14 +41,14 @@ describe("parseImageDataUrl", () => {
     ).toBeNull();
   });
 
-  it("rejects non-image mime types", () => {
+  it.each([
+    ["text/html"],
+    ["application/javascript"],
+    ["application/octet-stream"],
+    ["text/plain"],
+  ])("rejects non-image mime type %s", (mimeType) => {
     expect(
-      parseImageDataUrl(`data:text/html;base64,${TINY_PNG_BASE64}`),
-    ).toBeNull();
-    expect(
-      parseImageDataUrl(
-        `data:application/javascript;base64,${TINY_PNG_BASE64}`,
-      ),
+      parseImageDataUrl(`data:${mimeType};base64,${TINY_PNG_BASE64}`),
     ).toBeNull();
   });
 
@@ -52,16 +56,16 @@ describe("parseImageDataUrl", () => {
     expect(parseImageDataUrl("data:image/png,not-base64")).toBeNull();
   });
 
-  it("rejects empty or non-data-URL strings", () => {
-    expect(parseImageDataUrl("")).toBeNull();
-    expect(parseImageDataUrl("hello world")).toBeNull();
-    expect(parseImageDataUrl("https://example.com/image.png")).toBeNull();
-  });
-
-  it("rejects malformed data URLs", () => {
-    expect(parseImageDataUrl("data:")).toBeNull();
-    expect(parseImageDataUrl("data:image/png;base64")).toBeNull();
-    expect(parseImageDataUrl("data:image/png;base64,")).toBeNull();
+  it.each([
+    ["empty string", ""],
+    ["plain text", "hello world"],
+    ["http URL", "https://example.com/image.png"],
+    ["truncated data prefix", "data"],
+    ["missing payload separator", "data:image/png;base64"],
+    ["empty payload", "data:image/png;base64,"],
+    ["bare prefix", "data:"],
+  ])("rejects non-data-URL or malformed input: %s", (_label, value) => {
+    expect(parseImageDataUrl(value)).toBeNull();
   });
 
   it("rejects extremely large payloads", () => {
@@ -96,22 +100,29 @@ describe("parseImageDataUrl", () => {
     expect(result?.mimeType).toBe("image/png");
   });
 
-  it("handles non-string input safely", () => {
-    expect(parseImageDataUrl(null as unknown as string)).toBeNull();
-    expect(parseImageDataUrl(undefined as unknown as string)).toBeNull();
-    expect(parseImageDataUrl(123 as unknown as string)).toBeNull();
-  });
+  it.each([[null], [undefined], [123], [{}]])(
+    "handles non-string input safely: %p",
+    (value) => {
+      expect(parseImageDataUrl(value as unknown as string)).toBeNull();
+    },
+  );
 });
 
 describe("isAllowedImageMimeType", () => {
-  it("accepts standard image mime types", () => {
-    expect(isAllowedImageMimeType("image/png")).toBe(true);
-    expect(isAllowedImageMimeType("IMAGE/JPEG")).toBe(true);
-  });
+  it.each([["image/png"], ["IMAGE/JPEG"], ["image/webp"], ["image/gif"]])(
+    "accepts %s",
+    (mimeType) => {
+      expect(isAllowedImageMimeType(mimeType)).toBe(true);
+    },
+  );
 
-  it("rejects SVG and non-image types", () => {
-    expect(isAllowedImageMimeType("image/svg+xml")).toBe(false);
-    expect(isAllowedImageMimeType("text/html")).toBe(false);
+  it.each([
+    ["image/svg+xml"],
+    ["text/html"],
+    ["application/javascript"],
+    ["text/plain"],
+  ])("rejects %s", (mimeType) => {
+    expect(isAllowedImageMimeType(mimeType)).toBe(false);
   });
 });
 

@@ -57,8 +57,8 @@ export function ReadToolView({
         />
         <ToolTitle className="shrink-0 whitespace-nowrap">
           {imageContent
-            ? "Read image"
-            : `Read${lineCount !== null ? ` ${lineCount} lines` : ""} in`}
+            ? "Read image in"
+            : `Read${lineCount !== null ? ` ${lineCount} lines in` : ""}`}
         </ToolTitle>
         {filePath && <FileMentionChip filePath={filePath} />}
         <StatusIndicators isFailed={isFailed} wasCancelled={wasCancelled} />
@@ -68,7 +68,7 @@ export function ReadToolView({
         <Box className="mt-2 ml-5">
           <Box className="max-w-4xl overflow-hidden rounded-lg border border-gray-6 bg-(--gray-2) p-2">
             <SafeImagePreview
-              base64={imageContent.data}
+              base64={imageContent.base64}
               mimeType={imageContent.mimeType}
               alt={filePath || "Read tool image preview"}
               className="max-h-96 max-w-full object-contain"

@@ -69,7 +69,7 @@ export function getContentText(
 }
 
 export interface ImageContentData {
-  data: string;
+  base64: string;
   mimeType: string;
 }
 
@@ -81,7 +81,7 @@ export function getContentImage(
     if (item.type === "content" && item.content.type === "image") {
       const { data, mimeType } = item.content;
       if (typeof data === "string" && typeof mimeType === "string") {
-        return { data, mimeType };
+        return { base64: data, mimeType };
       }
     }
   }

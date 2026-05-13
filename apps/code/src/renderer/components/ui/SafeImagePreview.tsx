@@ -1,8 +1,8 @@
-import { ErrorBoundary } from "@components/ErrorBoundary";
 import { Flex, Text } from "@radix-ui/themes";
 import {
   buildImageDataUrl,
   isAllowedImageMimeType,
+  MAX_IMAGE_BASE64_LENGTH,
 } from "@shared/utils/imageDataUrl";
 import { useState } from "react";
 
@@ -28,7 +28,7 @@ function DefaultFallback() {
   );
 }
 
-function SafeImagePreviewInner({
+export function SafeImagePreview({
   base64,
   mimeType,
   alt,
@@ -36,12 +36,19 @@ function SafeImagePreviewInner({
   fallback,
 }: SafeImagePreviewProps) {
   const [hasError, setHasError] = useState(false);
+  const [lastSource, setLastSource] = useState({ base64, mimeType });
 
-  if (!isAllowedImageMimeType(mimeType) || base64.length === 0) {
-    return <>{fallback ?? <DefaultFallback />}</>;
+  if (lastSource.base64 !== base64 || lastSource.mimeType !== mimeType) {
+    setLastSource({ base64, mimeType });
+    setHasError(false);
   }
 
-  if (hasError) {
+  const isPayloadValid =
+    base64.length > 0 &&
+    base64.length <= MAX_IMAGE_BASE64_LENGTH &&
+    isAllowedImageMimeType(mimeType);
+
+  if (!isPayloadValid || hasError) {
     return <>{fallback ?? <DefaultFallback />}</>;
   }
 
@@ -52,16 +59,5 @@ function SafeImagePreviewInner({
       className={className ?? "max-h-full max-w-full object-contain"}
       onError={() => setHasError(true)}
     />
-  );
-}
-
-export function SafeImagePreview(props: SafeImagePreviewProps) {
-  return (
-    <ErrorBoundary
-      name="safe-image-preview"
-      fallback={props.fallback ?? <DefaultFallback />}
-    >
-      <SafeImagePreviewInner {...props} />
-    </ErrorBoundary>
   );
 }

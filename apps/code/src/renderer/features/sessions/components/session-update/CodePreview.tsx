@@ -33,6 +33,10 @@ export function CodePreview({
   cacheKey,
 }: CodePreviewProps) {
   const isDiff = oldContent !== undefined && oldContent !== null;
+  const imageDataUrl = useMemo(
+    () => (isDiff ? null : parseImageDataUrl(content)),
+    [isDiff, content],
+  );
 
   if (isDiff) {
     return (
@@ -47,7 +51,6 @@ export function CodePreview({
     );
   }
 
-  const imageDataUrl = parseImageDataUrl(content);
   if (imageDataUrl) {
     return (
       <ImageDataUrlPreview

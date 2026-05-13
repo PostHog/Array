@@ -31,6 +31,40 @@ interface CodeEditorPanelProps {
   absolutePath: string;
 }
 
+function FilePanelImagePreview({
+  base64,
+  mimeType,
+  filePath,
+  absolutePath,
+}: {
+  base64: string;
+  mimeType: string;
+  filePath: string;
+  absolutePath: string;
+}) {
+  return (
+    <Flex
+      align="center"
+      justify="center"
+      height="100%"
+      p="4"
+      className="overflow-auto"
+    >
+      <SafeImagePreview
+        base64={base64}
+        mimeType={mimeType}
+        alt={filePath}
+        className="max-h-[100%] max-w-[100%] object-contain"
+        fallback={
+          <PanelMessage detail={absolutePath}>
+            Failed to render image
+          </PanelMessage>
+        }
+      />
+    </Flex>
+  );
+}
+
 export function CodeEditorPanel({
   taskId,
   task: _task,
@@ -130,6 +164,12 @@ export function CodeEditorPanel({
     content: isImage ? null : fileContent,
   });
 
+  const dataUrlImage = useMemo(
+    () =>
+      isImage || fileContent == null ? null : parseImageDataUrl(fileContent),
+    [isImage, fileContent],
+  );
+
   if (isImage) {
     if (isCloudRun) {
       return (
@@ -146,27 +186,13 @@ export function CodeEditorPanel({
         <PanelMessage detail={absolutePath}>Failed to load image</PanelMessage>
       );
     }
-    const mimeType = getImageMimeType(absolutePath);
     return (
-      <Flex
-        align="center"
-        justify="center"
-        height="100%"
-        p="4"
-        className="overflow-auto"
-      >
-        <SafeImagePreview
-          base64={imageQuery.data}
-          mimeType={mimeType}
-          alt={filePath}
-          className="max-h-[100%] max-w-[100%] object-contain"
-          fallback={
-            <PanelMessage detail={absolutePath}>
-              Failed to render image
-            </PanelMessage>
-          }
-        />
-      </Flex>
+      <FilePanelImagePreview
+        base64={imageQuery.data}
+        mimeType={getImageMimeType(absolutePath)}
+        filePath={filePath}
+        absolutePath={absolutePath}
+      />
     );
   }
 
@@ -200,28 +226,14 @@ export function CodeEditorPanel({
     return <PanelMessage>File is empty</PanelMessage>;
   }
 
-  const dataUrlImage = parseImageDataUrl(fileContent);
   if (dataUrlImage) {
     return (
-      <Flex
-        align="center"
-        justify="center"
-        height="100%"
-        p="4"
-        className="overflow-auto"
-      >
-        <SafeImagePreview
-          base64={dataUrlImage.base64}
-          mimeType={dataUrlImage.mimeType}
-          alt={filePath}
-          className="max-h-[100%] max-w-[100%] object-contain"
-          fallback={
-            <PanelMessage detail={absolutePath}>
-              Failed to render image
-            </PanelMessage>
-          }
-        />
-      </Flex>
+      <FilePanelImagePreview
+        base64={dataUrlImage.base64}
+        mimeType={dataUrlImage.mimeType}
+        filePath={filePath}
+        absolutePath={absolutePath}
+      />
     );
   }
 
