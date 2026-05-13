@@ -203,6 +203,54 @@ pnpm format
 
 The `--clean` flag removes existing `ios/` and `android/` directories before regenerating.
 
+## Apple Watch companion
+
+The watchOS companion is a native SwiftUI target generated during Expo prebuild by the local config plugin at `plugins/withWatchApp.js`.
+
+Canonical native source lives outside generated iOS output:
+
+- `native/watch/` — SwiftUI watch app source, Info.plists, and entitlements
+- `native/ios/` — iPhone WatchConnectivity bridge
+
+Generated output lives under `ios/`, including `ios/watch/`, `ios/PostHogCode/WatchMissionControlModule.*`, and `PostHogCode.xcodeproj/project.pbxproj`.
+
+### Watch architecture
+
+- iPhone remains the authenticated relay for the paired watch.
+- Mobile derives compact mission snapshots from task/session state and sends them through WatchConnectivity.
+- Desktop-started local tasks work through the shared PostHog task run log/status backend, then iPhone relays to the watch.
+- Watch actions send compact commands back to iPhone, which routes them through existing mobile commands (`permission_response`, `cancel`, retry/resume, and handoff URLs).
+- Direct watch-to-Mac WatchConnectivity is not supported by Apple; Mac handoff uses `posthog-code://task/{taskId}/run/{taskRunId}`.
+
+### Rebuilding native watch targets
+
+```bash
+cd apps/mobile
+pnpm prebuild
+# or, when regenerating native projects:
+pnpm prebuild:clean
+```
+
+The `./plugins/withWatchApp` plugin copies native sources from `native/`, recreates the watch app/extension targets, and embeds them in the iOS app. If generated iOS files or Xcode targets drift, update `native/` and rerun prebuild instead of editing generated project files manually.
+
+### Running in simulators
+
+1. Open `ios/PostHogCode.xcworkspace` in Xcode.
+2. Select the iOS app scheme with a paired iPhone + Apple Watch simulator destination.
+3. Build/run the iOS app; Xcode should install the embedded watch app.
+4. Sign in on iPhone and open or start a PostHog Code task.
+5. Open the watch app and verify the mission overview, checklist, timeline, approvals, and blocker cards.
+
+### Verification checklist
+
+- Cloud task from phone/mac updates progress on watch.
+- Desktop/local task shows a `Local` badge and receives progress through persisted task run logs.
+- Approval card actions reach the existing permission response path.
+- Stop maps to the existing cancel command; retry maps to resume/retry from iPhone.
+- Open on iPhone uses `posthog://task/{taskId}`; Open on Mac uses `posthog-code://task/{taskId}/run/{taskRunId}`.
+- Haptics fire once for approval needed, completion, failure/stale blockers, and action acceptance — not on every polling update.
+- Intermittent connectivity shows cached mission state rather than raw errors/logs.
+
 ## Build Profiles
 
 Defined in `eas.json`:
