@@ -385,4 +385,108 @@ describe("PostHogAPIClient", () => {
       expect(result.length).toBe(50);
     });
   });
+
+  describe("Task automations", () => {
+    function buildAutomationClient() {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      const api = {
+        get: vi.fn(),
+        post: vi.fn(),
+        patch: vi.fn(),
+        delete: vi.fn(),
+      };
+      (client as unknown as { api: typeof api }).api = api;
+      return { client, api };
+    }
+
+    it("listTaskAutomations returns the paginated results array", async () => {
+      const { client, api } = buildAutomationClient();
+      api.get.mockResolvedValue({ results: [{ id: "a" }, { id: "b" }] });
+      const result = await client.listTaskAutomations();
+      expect(api.get).toHaveBeenCalledWith(
+        "/api/projects/{project_id}/task_automations/",
+        expect.objectContaining({
+          path: { project_id: "123" },
+          query: {},
+        }),
+      );
+      expect(result).toEqual([{ id: "a" }, { id: "b" }]);
+    });
+
+    it("listTaskAutomations handles a missing results field", async () => {
+      const { client, api } = buildAutomationClient();
+      api.get.mockResolvedValue({});
+      expect(await client.listTaskAutomations()).toEqual([]);
+    });
+
+    it("createTaskAutomation POSTs the input body to the team-scoped path", async () => {
+      const { client, api } = buildAutomationClient();
+      api.post.mockResolvedValue({ id: "new" });
+      const result = await client.createTaskAutomation({
+        name: "Daily audit",
+        prompt: "Audit my flags",
+        cron_expression: "0 9 * * *",
+        repository: "",
+        timezone: "America/New_York",
+        enabled: true,
+      });
+      expect(api.post).toHaveBeenCalledWith(
+        "/api/projects/{project_id}/task_automations/",
+        expect.objectContaining({
+          path: { project_id: "123" },
+          body: expect.objectContaining({
+            name: "Daily audit",
+            prompt: "Audit my flags",
+            cron_expression: "0 9 * * *",
+            repository: "",
+            timezone: "America/New_York",
+            enabled: true,
+          }),
+        }),
+      );
+      expect(result).toEqual({ id: "new" });
+    });
+
+    it("updateTaskAutomation PATCHes the team-and-id-scoped path", async () => {
+      const { client, api } = buildAutomationClient();
+      api.patch.mockResolvedValue({ id: "abc" });
+      await client.updateTaskAutomation("abc", { enabled: false });
+      expect(api.patch).toHaveBeenCalledWith(
+        "/api/projects/{project_id}/task_automations/{id}/",
+        expect.objectContaining({
+          path: { project_id: "123", id: "abc" },
+          body: { enabled: false },
+        }),
+      );
+    });
+
+    it("deleteTaskAutomation DELETEs the team-and-id-scoped path", async () => {
+      const { client, api } = buildAutomationClient();
+      api.delete.mockResolvedValue(undefined);
+      await client.deleteTaskAutomation("abc");
+      expect(api.delete).toHaveBeenCalledWith(
+        "/api/projects/{project_id}/task_automations/{id}/",
+        expect.objectContaining({
+          path: { project_id: "123", id: "abc" },
+        }),
+      );
+    });
+
+    it("runTaskAutomationNow POSTs to the /run/ endpoint", async () => {
+      const { client, api } = buildAutomationClient();
+      api.post.mockResolvedValue({ id: "abc" });
+      await client.runTaskAutomationNow("abc");
+      expect(api.post).toHaveBeenCalledWith(
+        "/api/projects/{project_id}/task_automations/{id}/run/",
+        expect.objectContaining({
+          path: { project_id: "123", id: "abc" },
+        }),
+      );
+    });
+  });
 });

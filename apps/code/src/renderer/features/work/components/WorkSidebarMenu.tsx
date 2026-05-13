@@ -12,7 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import { ScrollArea } from "@posthog/quill";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { useNavigationStore } from "@stores/navigationStore";
+import { useNavigationStore, type WorkView } from "@stores/navigationStore";
 import { useWorkSkillsStore } from "@stores/workSkillsStore";
 import type { ComponentType } from "react";
 import { NewTaskItem } from "../../sidebar/components/items/HomeItem";
@@ -21,12 +21,17 @@ import { SidebarItem } from "../../sidebar/components/SidebarItem";
 interface WorkSidebarItemSpec {
   icon: ComponentType<IconProps>;
   label: string;
-  active?: boolean;
+  /** When set, the item navigates to that workView and lights up while active. */
+  workView?: WorkView | "scheduled-section";
 }
 
 const STATIC_ITEMS: WorkSidebarItemSpec[] = [
   { icon: FolderSimple, label: "Projects" },
-  { icon: ClockClockwise, label: "Automations" },
+  {
+    icon: ClockClockwise,
+    label: "Scheduled",
+    workView: "scheduled-section",
+  },
   { icon: Notebook, label: "Artifacts" },
   { icon: Plugs, label: "MCP" },
   { icon: Brain, label: "Memory" },
@@ -45,6 +50,9 @@ export function WorkSidebarMenu() {
   const navigateToWorkLibrary = useNavigationStore(
     (s) => s.navigateToWorkLibrary,
   );
+  const navigateToWorkScheduledList = useNavigationStore(
+    (s) => s.navigateToWorkScheduledList,
+  );
   const skills = useWorkSkillsStore((s) => s.skills);
 
   const handleNewTaskClick = () => {
@@ -55,6 +63,8 @@ export function WorkSidebarMenu() {
   const isHomeActive = workView === "home";
   const isGenerateActive = workView === "generate";
   const isLibraryActive = workView === "library";
+  const isScheduledActive =
+    workView === "scheduled-list" || workView === "scheduled-edit";
 
   return (
     <Box height="100%" position="relative">
@@ -82,15 +92,21 @@ export function WorkSidebarMenu() {
 
           {STATIC_ITEMS.map((item) => {
             const Icon = item.icon;
+            const isScheduled = item.workView === "scheduled-section";
+            const isActive = isScheduled && isScheduledActive;
+            const onClick = isScheduled
+              ? navigateToWorkScheduledList
+              : undefined;
             return (
               <Box key={item.label}>
                 <SidebarItem
                   depth={0}
                   icon={
-                    <Icon size={16} weight={item.active ? "fill" : "regular"} />
+                    <Icon size={16} weight={isActive ? "fill" : "regular"} />
                   }
                   label={item.label}
-                  isActive={item.active}
+                  isActive={isActive}
+                  onClick={onClick}
                 />
               </Box>
             );

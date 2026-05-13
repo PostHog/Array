@@ -1013,6 +1013,77 @@ export class PostHogAPIClient {
     });
   }
 
+  async listTaskAutomations(): Promise<Schemas.TaskAutomation[]> {
+    const teamId = await this.getTeamId();
+    const data = await this.api.get(
+      `/api/projects/{project_id}/task_automations/`,
+      {
+        path: { project_id: teamId.toString() },
+        query: {},
+      },
+    );
+    return data.results ?? [];
+  }
+
+  async createTaskAutomation(
+    input: Pick<
+      Schemas.TaskAutomation,
+      "name" | "prompt" | "cron_expression" | "repository"
+    > &
+      Partial<
+        Pick<
+          Schemas.TaskAutomation,
+          "github_integration" | "timezone" | "template_id" | "enabled"
+        >
+      >,
+  ): Promise<Schemas.TaskAutomation> {
+    const teamId = await this.getTeamId();
+    const data = await this.api.post(
+      `/api/projects/{project_id}/task_automations/`,
+      {
+        path: { project_id: teamId.toString() },
+        body: input as unknown as Schemas.TaskAutomation,
+      },
+    );
+    return data;
+  }
+
+  async updateTaskAutomation(
+    automationId: string,
+    updates: Schemas.PatchedTaskAutomation,
+  ): Promise<Schemas.TaskAutomation> {
+    const teamId = await this.getTeamId();
+    const data = await this.api.patch(
+      `/api/projects/{project_id}/task_automations/{id}/`,
+      {
+        path: { project_id: teamId.toString(), id: automationId },
+        body: updates,
+      },
+    );
+    return data;
+  }
+
+  async deleteTaskAutomation(automationId: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    await this.api.delete(`/api/projects/{project_id}/task_automations/{id}/`, {
+      path: { project_id: teamId.toString(), id: automationId },
+    });
+  }
+
+  async runTaskAutomationNow(
+    automationId: string,
+  ): Promise<Schemas.TaskAutomation> {
+    const teamId = await this.getTeamId();
+    const data = await this.api.post(
+      `/api/projects/{project_id}/task_automations/{id}/run/`,
+      {
+        path: { project_id: teamId.toString(), id: automationId },
+        body: {} as unknown as Schemas.TaskAutomation,
+      },
+    );
+    return data;
+  }
+
   async sendRunCommand(
     taskId: string,
     runId: string,

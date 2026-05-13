@@ -1,38 +1,9 @@
 import { Box, Flex, Text } from "@radix-ui/themes";
 import beachHog from "@renderer/assets/images/hedgehogs/beach-hog.png";
-import { useNavigationStore } from "@stores/navigationStore";
-import { ScheduledTaskEditor } from "./ScheduledTaskEditor";
-import { ScheduledTasksList } from "./ScheduledTasksList";
-import { WorkGenerateView } from "./WorkGenerateView";
 import { WorkHomePrompt } from "./WorkHomePrompt";
 import { WorkSampleProjects } from "./WorkSampleProjects";
-import { WorkSkillDetailView } from "./WorkSkillDetailView";
-import { WorkSkillsView } from "./WorkSkillsView";
 
-export function WorkView() {
-  const workView = useNavigationStore((s) => s.workView);
-  const scheduledEditId = useNavigationStore((s) => s.workScheduledEditId);
-
-  if (workView === "generate") {
-    return <WorkGenerateView />;
-  }
-
-  if (workView === "skill-detail") {
-    return <WorkSkillDetailView />;
-  }
-
-  if (workView === "library") {
-    return <WorkSkillsView />;
-  }
-
-  if (workView === "scheduled-list") {
-    return <ScheduledTasksList />;
-  }
-
-  if (workView === "scheduled-edit") {
-    return <ScheduledTaskEditor editingId={scheduledEditId ?? null} />;
-  }
-
+export function WorkHome() {
   return (
     <Box className="scrollbar-overlay-y h-full w-full overflow-y-auto">
       <Flex

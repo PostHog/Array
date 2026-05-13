@@ -37,7 +37,13 @@ interface TaskInputNavigationOptions {
 
 export type AppMode = "code" | "work";
 
-export type WorkView = "home" | "generate" | "skill-detail" | "library";
+export type WorkView =
+  | "home"
+  | "generate"
+  | "skill-detail"
+  | "library"
+  | "scheduled-list"
+  | "scheduled-edit";
 
 interface ViewState {
   type: ViewType;
@@ -57,10 +63,14 @@ interface NavigationStore {
   skipWorkOnboarding: () => void;
   workView: WorkView;
   workSelectedSkillId?: string;
+  workScheduledEditId?: string;
   navigateToWorkHome: () => void;
   navigateToWorkGenerate: () => void;
   navigateToWorkSkill: (skillId: string) => void;
   navigateToWorkLibrary: () => void;
+  navigateToWorkScheduledList: () => void;
+  navigateToWorkScheduledCreate: () => void;
+  navigateToWorkScheduledEdit: (scheduledId: string) => void;
   view: ViewState;
   history: ViewState[];
   historyIndex: number;
@@ -143,14 +153,49 @@ export const useNavigationStore = create<NavigationStore>()(
         skipWorkOnboarding: () => set({ workOnboardingSkipped: true }),
         workView: "home",
         workSelectedSkillId: undefined,
+        workScheduledEditId: undefined,
         navigateToWorkHome: () =>
-          set({ workView: "home", workSelectedSkillId: undefined }),
+          set({
+            workView: "home",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+          }),
         navigateToWorkGenerate: () =>
-          set({ workView: "generate", workSelectedSkillId: undefined }),
+          set({
+            workView: "generate",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+          }),
         navigateToWorkSkill: (skillId: string) =>
-          set({ workView: "skill-detail", workSelectedSkillId: skillId }),
+          set({
+            workView: "skill-detail",
+            workSelectedSkillId: skillId,
+            workScheduledEditId: undefined,
+          }),
         navigateToWorkLibrary: () =>
-          set({ workView: "library", workSelectedSkillId: undefined }),
+          set({
+            workView: "library",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+          }),
+        navigateToWorkScheduledList: () =>
+          set({
+            workView: "scheduled-list",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+          }),
+        navigateToWorkScheduledCreate: () =>
+          set({
+            workView: "scheduled-edit",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+          }),
+        navigateToWorkScheduledEdit: (scheduledId: string) =>
+          set({
+            workView: "scheduled-edit",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: scheduledId,
+          }),
         view: { type: "task-input" },
         history: [{ type: "task-input" }],
         historyIndex: 0,
@@ -370,6 +415,7 @@ export const useNavigationStore = create<NavigationStore>()(
         workOnboardingSkipped: state.workOnboardingSkipped,
         workView: state.workView,
         workSelectedSkillId: state.workSelectedSkillId,
+        workScheduledEditId: state.workScheduledEditId,
         view: {
           type: state.view.type,
           taskId: state.view.taskId,
