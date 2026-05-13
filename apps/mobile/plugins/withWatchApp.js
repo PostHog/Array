@@ -87,6 +87,31 @@ function hasTarget(project, targetName) {
   return !!targetUuid(project, targetName);
 }
 
+function ensureDependencySections(project) {
+  const objects = project.hash.project.objects;
+  objects.PBXContainerItemProxy ??= {};
+  objects.PBXTargetDependency ??= {};
+}
+
+function hasTargetDependency(project, target, dependencyTarget) {
+  const nativeTarget = project.hash.project.objects.PBXNativeTarget[target];
+  const dependencies = nativeTarget?.dependencies ?? [];
+  const targetDependencies =
+    project.hash.project.objects.PBXTargetDependency ?? {};
+
+  return dependencies.some((dependency) => {
+    const targetDependency = targetDependencies[dependency.value];
+    return targetDependency?.target === dependencyTarget;
+  });
+}
+
+function ensureTargetDependency(project, target, dependencyTarget) {
+  ensureDependencySections(project);
+  if (!hasTargetDependency(project, target, dependencyTarget)) {
+    project.addTargetDependency(target, [dependencyTarget]);
+  }
+}
+
 function groupKeyByName(project, groupName) {
   const groups = project.hash.project.objects.PBXGroup;
   for (const [key, value] of Object.entries(groups)) {
@@ -162,6 +187,9 @@ function addWatchTargets(project) {
   ensureBuildPhases(project, watchExtension.uuid);
 
   const hostTargetUuid = project.getFirstTarget().uuid;
+  ensureTargetDependency(project, hostTargetUuid, watchApp.uuid);
+  ensureTargetDependency(project, watchApp.uuid, watchExtension.uuid);
+
   ensureSource(
     project,
     "PostHogCode/WatchMissionControlModule.swift",

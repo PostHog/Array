@@ -60,8 +60,8 @@ final class WatchMissionControlModule: RCTEventEmitter, WCSessionDelegate {
   @objc
   func sendUrgentUpdate(
     _ envelope: NSDictionary,
-    resolver resolve: RCTPromiseResolveBlock,
-    rejecter reject: RCTPromiseRejectBlock
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
   ) {
     guard WCSession.isSupported() else {
       resolve(false)
