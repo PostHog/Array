@@ -74,30 +74,26 @@ export function useChatTitleGenerator(taskId: string): void {
         if (result) {
           const { title, summary } = result;
           if (title) {
-            const isFirstGeneration = lastGeneratedAtCount.current === 0;
-            if (
-              !isFirstGeneration &&
-              getCachedTask(taskId)?.title_manually_set
-            ) {
+            if (getCachedTask(taskId)?.title_manually_set) {
               log.debug("Skipping auto-title, user renamed task", { taskId });
-              return;
-            }
-            const client = await getAuthenticatedClient();
-            if (client) {
-              await client.updateTask(taskId, { title });
-              queryClient.setQueriesData<Task[]>(
-                { queryKey: ["tasks", "list"] },
-                (old) =>
-                  old?.map((task) =>
-                    task.id === taskId ? { ...task, title } : task,
-                  ),
-              );
-              getSessionService().updateSessionTaskTitle(taskId, title);
-              log.debug("Updated task title from conversation", {
-                taskId,
-                title,
-                promptCount,
-              });
+            } else {
+              const client = await getAuthenticatedClient();
+              if (client) {
+                await client.updateTask(taskId, { title });
+                queryClient.setQueriesData<Task[]>(
+                  { queryKey: ["tasks", "list"] },
+                  (old) =>
+                    old?.map((task) =>
+                      task.id === taskId ? { ...task, title } : task,
+                    ),
+                );
+                getSessionService().updateSessionTaskTitle(taskId, title);
+                log.debug("Updated task title from conversation", {
+                  taskId,
+                  title,
+                  promptCount,
+                });
+              }
             }
           }
 

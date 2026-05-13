@@ -103,7 +103,7 @@ describe("useChatTitleGenerator", () => {
     });
   });
 
-  it("allows first generation even when title_manually_set", async () => {
+  it("skips first generation when title_manually_set", async () => {
     mockGetCachedTask.mockReturnValue({
       id: TASK_ID,
       title_manually_set: true,
@@ -117,10 +117,31 @@ describe("useChatTitleGenerator", () => {
     renderHook(() => useChatTitleGenerator(TASK_ID));
 
     await waitFor(() => {
-      expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
-        title: "Auto title",
-      });
+      expect(mockGenerateTitle).toHaveBeenCalled();
     });
+    expect(mockUpdateTask).not.toHaveBeenCalled();
+  });
+
+  it("still updates summary when title is skipped due to manual rename", async () => {
+    mockGetCachedTask.mockReturnValue({
+      id: TASK_ID,
+      title_manually_set: true,
+    });
+    mockGenerateTitle.mockResolvedValue({
+      title: "Auto title",
+      summary: "User wants to fix auth",
+    });
+    mockPrompts.value = ["fix auth"];
+
+    renderHook(() => useChatTitleGenerator(TASK_ID));
+
+    await waitFor(() => {
+      expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+        "run-1",
+        { conversationSummary: "User wants to fix auth" },
+      );
+    });
+    expect(mockUpdateTask).not.toHaveBeenCalled();
   });
 
   it("calls enrichDescriptionWithFileContent before generating", async () => {
