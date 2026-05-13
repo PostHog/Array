@@ -211,8 +211,93 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: pnpm --filter code run publish
 
+  publish-linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      id-token: write
+      contents: write
+    env:
+      NODE_OPTIONS: "--max-old-space-size=8192"
+      NODE_ENV: production
+      VITE_POSTHOG_API_KEY: ${{ secrets.VITE_POSTHOG_API_KEY }}
+      VITE_POSTHOG_API_HOST: ${{ secrets.VITE_POSTHOG_API_HOST }}
+    steps:
+      - name: Get app token
+        id: app-token
+        uses: getsentry/action-github-app-token@d4b5da6c5e37703f8c3b3e43abb5705b46e159cc # v3
+        with:
+          app_id: ${{ secrets.GH_APP_ARRAY_RELEASER_APP_ID }}
+          private_key: ${{ secrets.GH_APP_ARRAY_RELEASER_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
+
+      - name: Install AppImage build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            squashfs-tools zsync libfuse2t64
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "Version: $TAG_VERSION"
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set version in package.json
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          jq --arg v "$APP_VERSION" '.version = $v' apps/code/package.json > tmp.json && mv tmp.json apps/code/package.json
+          echo "Set apps/code/package.json version to $APP_VERSION"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build electron-trpc package
+        run: pnpm --filter @posthog/electron-trpc run build
+
+      - name: Build platform package
+        run: pnpm --filter @posthog/platform run build
+
+      - name: Build shared package
+        run: pnpm --filter @posthog/shared run build
+
+      - name: Build git package
+        run: pnpm --filter @posthog/git run build
+
+      - name: Build enricher package
+        run: pnpm --filter @posthog/enricher run build
+
+      - name: Build agent package
+        run: pnpm --filter @posthog/agent run build
+
+      - name: Publish with Electron Forge
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: pnpm --filter code run publish
+
   finalize-release:
-    needs: [publish-macos, publish-windows]
+    needs: [publish-macos, publish-windows, publish-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write

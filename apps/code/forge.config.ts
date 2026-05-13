@@ -8,6 +8,7 @@ import { MakerZIP } from "@electron-forge/maker-zip";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { PublisherGithub } from "@electron-forge/publisher-github";
 import type { ForgeConfig } from "@electron-forge/shared-types";
+import { MakerAppImage } from "@reforged/maker-appimage";
 
 const appleCodesignIdentity = process.env.APPLE_CODESIGN_IDENTITY;
 const appleTeamId = process.env.APPLE_TEAM_ID;
@@ -81,7 +82,7 @@ const osxSignConfig =
   shouldSignMacApp && appleCodesignIdentity
     ? ({
         identity: appleCodesignIdentity,
-        optionsForFile: (_filePath) => {
+        optionsForFile: () => {
           // Entitlements for all binaries/frameworks
           return {
             hardenedRuntime: true,
@@ -139,6 +140,8 @@ function copySync(dependency: string, destinationRoot: string, source: string) {
   );
 }
 
+const hasAssetsCar = existsSync("build/Assets.car");
+
 const config: ForgeConfig = {
   packagerConfig: {
     asar: {
@@ -151,8 +154,10 @@ const config: ForgeConfig = {
     icon: "./build/app-icon", // Forge adds .icns/.ico/.png based on platform
     appBundleId: "com.posthog.array",
     appCategoryType: "public.app-category.productivity",
-    extraResource: existsSync("build/Assets.car") ? ["build/Assets.car"] : [],
-    extendInfo: existsSync("build/Assets.car")
+    extraResource: hasAssetsCar
+      ? ["build/Assets.car", "build/app-icon.png"]
+      : ["build/app-icon.png"],
+    extendInfo: hasAssetsCar
       ? {
           CFBundleIconName: "Icon",
         }
@@ -192,6 +197,13 @@ const config: ForgeConfig = {
     new MakerSquirrel({
       name: "PostHogCode",
       setupIcon: "./build/app-icon.ico",
+    }),
+    new MakerAppImage({
+      options: {
+        icon: "./build/app-icon.png",
+        categories: ["Development"],
+        bin: "PostHog Code",
+      },
     }),
     new MakerZIP({}, ["darwin", "linux"]),
   ],
@@ -247,6 +259,12 @@ const config: ForgeConfig = {
           process.arch === "arm64"
             ? "@parcel/watcher-win32-arm64"
             : "@parcel/watcher-win32-x64";
+        copyNativeDependency(watcherPkg, buildPath);
+      } else if (process.platform === "linux") {
+        const watcherPkg =
+          process.arch === "arm64"
+            ? "@parcel/watcher-linux-arm64-glibc"
+            : "@parcel/watcher-linux-x64-glibc";
         copyNativeDependency(watcherPkg, buildPath);
       }
 

@@ -24,6 +24,7 @@ import {
 import { autoServicesPlugin } from "./vite-plugin-auto-services";
 
 function getGitCommit(): string {
+  if (process.env.BUILD_COMMIT) return process.env.BUILD_COMMIT;
   try {
     return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
   } catch {
