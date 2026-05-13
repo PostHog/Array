@@ -32,7 +32,7 @@ export function FeatureBentoCard({
       transition={{ duration: 0.3, delay: index * 0.08 }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      className={`feature-bento-card ${active ? "feature-bento-card--active" : ""} ${className}`}
+      className={`feature-bento-card${active ? " feature-bento-card--active" : ""} ${className}`}
     >
       <div className="feature-bento-card__placeholder">
         <div
