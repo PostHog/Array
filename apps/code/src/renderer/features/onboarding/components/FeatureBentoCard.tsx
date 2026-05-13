@@ -44,10 +44,8 @@ export function FeatureBentoCard({
           aria-hidden="true"
         />
         <Flex
-          direction="column"
           align="center"
           justify="center"
-          gap="2"
           className="relative z-10 text-(--gray-9)"
         >
           <div className="feature-bento-card__icon">{icon}</div>
