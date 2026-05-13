@@ -1,4 +1,5 @@
 import { PanelMessage } from "@components/ui/PanelMessage";
+import { SafeImagePreview } from "@components/ui/SafeImagePreview";
 import { Tooltip } from "@components/ui/Tooltip";
 import { CodeMirrorEditor } from "@features/code-editor/components/CodeMirrorEditor";
 import { EnrichmentPopover } from "@features/code-editor/components/EnrichmentPopover";
@@ -16,6 +17,7 @@ import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { getImageMimeType, isImageFile } from "@shared/constants/image";
 import type { Task } from "@shared/types";
+import { parseImageDataUrl } from "@shared/utils/imageDataUrl";
 
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
@@ -153,10 +155,16 @@ export function CodeEditorPanel({
         p="4"
         className="overflow-auto"
       >
-        <img
-          src={`data:${mimeType};base64,${imageQuery.data}`}
+        <SafeImagePreview
+          base64={imageQuery.data}
+          mimeType={mimeType}
           alt={filePath}
           className="max-h-[100%] max-w-[100%] object-contain"
+          fallback={
+            <PanelMessage detail={absolutePath}>
+              Failed to render image
+            </PanelMessage>
+          }
         />
       </Flex>
     );
@@ -190,6 +198,31 @@ export function CodeEditorPanel({
 
   if (fileContent.length === 0) {
     return <PanelMessage>File is empty</PanelMessage>;
+  }
+
+  const dataUrlImage = parseImageDataUrl(fileContent);
+  if (dataUrlImage) {
+    return (
+      <Flex
+        align="center"
+        justify="center"
+        height="100%"
+        p="4"
+        className="overflow-auto"
+      >
+        <SafeImagePreview
+          base64={dataUrlImage.base64}
+          mimeType={dataUrlImage.mimeType}
+          alt={filePath}
+          className="max-h-[100%] max-w-[100%] object-contain"
+          fallback={
+            <PanelMessage detail={absolutePath}>
+              Failed to render image
+            </PanelMessage>
+          }
+        />
+      </Flex>
+    );
   }
 
   if (isMarkdown) {
