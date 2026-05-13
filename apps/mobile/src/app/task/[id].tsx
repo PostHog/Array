@@ -52,6 +52,8 @@ export default function TaskDetailScreen() {
     cancelPrompt,
     sendPermissionResponse,
     getSessionForTask,
+    setActiveWatchTask,
+    registerWatchTask,
   } = useTaskSessionStore();
 
   const session = taskId ? getSessionForTask(taskId) : undefined;
@@ -59,9 +61,11 @@ export default function TaskDetailScreen() {
   const connectFetchedTask = useCallback(
     async (fetchedTask: Task) => {
       setTask(fetchedTask);
+      registerWatchTask(fetchedTask);
+      setActiveWatchTask(fetchedTask.id);
       await connectToTask(fetchedTask);
     },
-    [connectToTask],
+    [connectToTask, registerWatchTask, setActiveWatchTask],
   );
 
   const { height } = useReanimatedKeyboardAnimation();

@@ -1,4 +1,5 @@
 import * as Haptics from "expo-haptics";
+import * as Linking from "expo-linking";
 import { AppState } from "react-native";
 import { create } from "zustand";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
@@ -16,12 +17,19 @@ import type {
   SessionNotification,
   StoredLogEntry,
   Task,
+  WatchMissionCommand,
 } from "../types";
 import {
   convertRawEntriesToEvents,
   parseSessionLogs,
 } from "../utils/parseSessionLogs";
 import { playMeepSound } from "../utils/sounds";
+import { createWatchMissionEnvelope } from "../utils/watchMissionControl";
+import {
+  publishWatchMissionEnvelope,
+  sendUrgentWatchMissionUpdate,
+  subscribeToWatchMissionCommands,
+} from "../watchMissionControlBridge";
 
 // Infer whether the agent is actively working or idle (waiting for user input).
 // Primary signal: _posthog/turn_complete or _posthog/task_complete in raw log
@@ -94,9 +102,13 @@ export interface TaskSession {
 
 interface TaskSessionStore {
   sessions: Record<string, TaskSession>;
+  watchMissionTasks: Record<string, Task>;
+  activeWatchTaskId?: string;
 
   connectToTask: (task: Task) => Promise<void>;
   disconnectFromTask: (taskId: string) => void;
+  setActiveWatchTask: (taskId?: string) => void;
+  registerWatchTask: (task: Task) => void;
   sendPrompt: (taskId: string, prompt: string) => Promise<void>;
   sendPermissionResponse: (
     taskId: string,
@@ -109,6 +121,8 @@ interface TaskSessionStore {
     },
   ) => Promise<void>;
   cancelPrompt: (taskId: string) => Promise<boolean>;
+  retryTaskFromWatch: (taskId: string, taskRunId?: string) => Promise<void>;
+  handleWatchCommand: (command: WatchMissionCommand) => Promise<void>;
   getSessionForTask: (taskId: string) => TaskSession | undefined;
 
   _startCloudPolling: (taskRunId: string, logUrl: string) => void;
@@ -133,6 +147,7 @@ const POLL_IN_FLIGHT_TIMEOUT_MS = 30_000;
 const pollTicks = new Map<string, number>();
 // How many S3 polling ticks between each backend task-run status check.
 const STATUS_CHECK_TICK_INTERVAL = 5;
+const WATCH_SNAPSHOT_DEBOUNCE_MS = 250;
 const TRANSIENT_CLOUD_COMMAND_STATUSES = new Set([502, 503, 504]);
 const VISIBLE_AGENT_SESSION_UPDATES = new Set([
   "agent_message_chunk",
@@ -141,6 +156,10 @@ const VISIBLE_AGENT_SESSION_UPDATES = new Set([
   "tool_call",
   "tool_call_update",
 ]);
+
+let watchPublishTimeout: ReturnType<typeof setTimeout> | null = null;
+let watchPublishUrgent = false;
+let watchCommandUnsubscribe: (() => void) | null = null;
 
 function sessionUpdateType(event: SessionEvent): string | undefined {
   return event.type === "session_update"
@@ -162,10 +181,84 @@ function isTransientCloudCommandError(
   );
 }
 
+function macTaskUrl(command: {
+  taskId: string;
+  taskRunId?: string;
+  url?: string;
+}) {
+  if (command.url) return command.url;
+  const runPath = command.taskRunId ? `/run/${command.taskRunId}` : "";
+  return `posthog-code://task/${command.taskId}${runPath}`;
+}
+
+function buildWatchMissionEnvelopeFromStore() {
+  const state = useTaskSessionStore.getState();
+  const sessionsByTaskId: Record<string, TaskSession | undefined> = {};
+  for (const session of Object.values(state.sessions)) {
+    sessionsByTaskId[session.taskId] = session;
+  }
+  return createWatchMissionEnvelope(
+    Object.values(state.watchMissionTasks),
+    sessionsByTaskId,
+    state.activeWatchTaskId,
+  );
+}
+
+function scheduleWatchMissionPublish(options: { urgent?: boolean } = {}) {
+  if (options.urgent) watchPublishUrgent = true;
+  if (watchPublishTimeout) return;
+
+  watchPublishTimeout = setTimeout(() => {
+    watchPublishTimeout = null;
+    const urgent = watchPublishUrgent;
+    watchPublishUrgent = false;
+    const envelope = buildWatchMissionEnvelopeFromStore();
+    const publish = urgent
+      ? sendUrgentWatchMissionUpdate(envelope)
+      : publishWatchMissionEnvelope(envelope);
+    publish.catch((error) => {
+      logger.warn("Failed to publish watch mission envelope", { error });
+    });
+  }, WATCH_SNAPSHOT_DEBOUNCE_MS);
+}
+
+function ensureWatchCommandSubscription() {
+  if (watchCommandUnsubscribe) return;
+  watchCommandUnsubscribe = subscribeToWatchMissionCommands((command) => {
+    useTaskSessionStore
+      .getState()
+      .handleWatchCommand(command)
+      .catch((error) => {
+        logger.warn("Failed to handle watch mission command", { error });
+      });
+  });
+}
+
 export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   sessions: {},
+  watchMissionTasks: {},
+
+  setActiveWatchTask: (taskId?: string) => {
+    ensureWatchCommandSubscription();
+    set({ activeWatchTaskId: taskId });
+    scheduleWatchMissionPublish();
+  },
+
+  registerWatchTask: (task: Task) => {
+    ensureWatchCommandSubscription();
+    set((state) => ({
+      watchMissionTasks: {
+        ...state.watchMissionTasks,
+        [task.id]: task,
+      },
+      activeWatchTaskId: state.activeWatchTaskId ?? task.id,
+    }));
+    scheduleWatchMissionPublish();
+  },
 
   connectToTask: async (task: Task) => {
+    ensureWatchCommandSubscription();
+    get().registerWatchTask(task);
     const taskId = task.id;
     const latestRunId = task.latest_run?.id;
     const latestRunLogUrl = task.latest_run?.log_url;
@@ -196,6 +289,10 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         }
 
         set((state) => ({
+          watchMissionTasks: {
+            ...state.watchMissionTasks,
+            [taskId]: updatedTask,
+          },
           sessions: {
             ...state.sessions,
             [newRunId]: {
@@ -211,6 +308,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             },
           },
         }));
+        scheduleWatchMissionPublish();
 
         get()._startCloudPolling(newRunId, newLogUrl);
         logger.debug("Started new cloud session", {
@@ -254,6 +352,10 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       const isPromptPending = isTerminal ? false : !agentIsIdle;
 
       set((state) => ({
+        watchMissionTasks: {
+          ...state.watchMissionTasks,
+          [taskId]: task,
+        },
         sessions: {
           ...state.sessions,
           [latestRunId]: {
@@ -274,6 +376,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           },
         },
       }));
+      scheduleWatchMissionPublish({ urgent: !!terminalStatus });
 
       get()._startCloudPolling(latestRunId, latestRunLogUrl);
       logger.debug("Connected to cloud session", {
@@ -299,6 +402,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       const { [session.taskRunId]: _, ...rest } = state.sessions;
       return { sessions: rest };
     });
+    scheduleWatchMissionPublish();
     logger.debug("Disconnected from task", { taskId });
   },
 
@@ -345,6 +449,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         },
       };
     });
+    scheduleWatchMissionPublish();
 
     try {
       await sendCloudCommand(taskId, session.taskRunId, "user_message", {
@@ -380,6 +485,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             },
           };
         });
+        scheduleWatchMissionPublish();
         throw err;
       }
 
@@ -418,6 +524,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           },
         };
       });
+      scheduleWatchMissionPublish();
       throw rollbackError;
     }
   },
@@ -464,6 +571,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         },
       };
     });
+    scheduleWatchMissionPublish();
 
     try {
       await sendCloudCommand(taskId, session.taskRunId, "permission_response", {
@@ -497,6 +605,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           },
         };
       });
+      scheduleWatchMissionPublish();
       throw err;
     }
   },
@@ -521,10 +630,55 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           },
         },
       }));
+      scheduleWatchMissionPublish({ urgent: true });
       return true;
     } catch (error) {
       logger.error("Failed to send cancel request", error);
       return false;
+    }
+  },
+
+  retryTaskFromWatch: async (taskId: string, taskRunId?: string) => {
+    const currentTask =
+      get().watchMissionTasks[taskId] ?? (await getTask(taskId));
+    const resumeFromRunId = taskRunId ?? currentTask.latest_run?.id;
+
+    get().disconnectFromTask(taskId);
+    const updatedTask = await runTaskInCloud(taskId, {
+      resumeFromRunId,
+    });
+
+    get().registerWatchTask(updatedTask);
+    await get().connectToTask(updatedTask);
+    scheduleWatchMissionPublish({ urgent: true });
+  },
+
+  handleWatchCommand: async (command: WatchMissionCommand) => {
+    switch (command.type) {
+      case "approval_response":
+        await get().sendPermissionResponse(command.taskId, {
+          toolCallId: command.toolCallId,
+          optionId: command.optionId,
+          answers: command.answers,
+          customInput: command.customInput,
+          displayText: command.displayText,
+        });
+        break;
+      case "stop":
+        await get().cancelPrompt(command.taskId);
+        break;
+      case "retry":
+        await get().retryTaskFromWatch(command.taskId, command.taskRunId);
+        break;
+      case "open_phone":
+      case "view_diff":
+        await Linking.openURL(
+          command.url ?? `posthog://task/${command.taskId}`,
+        );
+        break;
+      case "open_mac":
+        await Linking.openURL(macTaskUrl(command));
+        break;
     }
   },
 
@@ -593,6 +747,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
                   },
                 };
               });
+              scheduleWatchMissionPublish({ urgent: true });
               if (shouldPing && usePreferencesStore.getState().pingsEnabled) {
                 playMeepSound().catch(() => {});
                 Haptics.notificationAsync(
@@ -780,6 +935,13 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
               },
             };
           });
+          scheduleWatchMissionPublish({
+            urgent:
+              shouldPingAfterBatch ||
+              batchedEvents.some(
+                (event) => sessionUpdateType(event) === "tool_call",
+              ),
+          });
           if (
             shouldPingAfterBatch &&
             usePreferencesStore.getState().pingsEnabled
@@ -844,6 +1006,10 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       if (!previousSession) return state;
       const { [previousRunId]: _old, ...rest } = state.sessions;
       return {
+        watchMissionTasks: {
+          ...state.watchMissionTasks,
+          [taskId]: updatedTask,
+        },
         sessions: {
           ...rest,
           [newRun.id]: {
@@ -860,6 +1026,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         },
       };
     });
+    scheduleWatchMissionPublish({ urgent: true });
 
     get()._startCloudPolling(newRun.id, newRun.log_url);
     logger.debug("Swapped to resume run", {
@@ -890,5 +1057,7 @@ AppState.addEventListener("change", (nextState) => {
           ._startCloudPolling(session.taskRunId, session.logUrl);
       }
     }
+    ensureWatchCommandSubscription();
+    scheduleWatchMissionPublish();
   }
 });
