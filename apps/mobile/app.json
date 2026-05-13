@@ -57,6 +57,7 @@
           "cameraPermission": "Allow PostHog to use your camera to scan QR codes for sign-in"
         }
       ],
+      "./plugins/withWatchApp",
       [
         "expo-font",
         {
