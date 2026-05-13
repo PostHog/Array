@@ -108,6 +108,16 @@ function ensureSource(project, filePath, target, groupName = WATCH_SOURCE_DIR) {
   );
 }
 
+function ensureWatchSource(project, fileName, target) {
+  const watchGroupKey = groupKeyByName(project, WATCH_SOURCE_DIR);
+  project.removeSourceFile(
+    `${WATCH_SOURCE_DIR}/${fileName}`,
+    { target },
+    watchGroupKey,
+  );
+  ensureSource(project, fileName, target, WATCH_SOURCE_DIR);
+}
+
 function updateTargetBuildSettings(project, targetUuid, settings) {
   const target = project.hash.project.objects.PBXNativeTarget[targetUuid];
   const configListId = target?.buildConfigurationList;
@@ -165,31 +175,11 @@ function addWatchTargets(project) {
     "PostHogCode",
   );
 
-  ensureSource(
-    project,
-    `${WATCH_SOURCE_DIR}/PostHogCodeWatchApp.swift`,
-    watchExtension.uuid,
-  );
-  ensureSource(
-    project,
-    `${WATCH_SOURCE_DIR}/WatchMissionStore.swift`,
-    watchExtension.uuid,
-  );
-  ensureSource(
-    project,
-    `${WATCH_SOURCE_DIR}/WatchMissionModels.swift`,
-    watchExtension.uuid,
-  );
-  ensureSource(
-    project,
-    `${WATCH_SOURCE_DIR}/MissionViews.swift`,
-    watchExtension.uuid,
-  );
-  ensureSource(
-    project,
-    `${WATCH_SOURCE_DIR}/HapticsPolicy.swift`,
-    watchExtension.uuid,
-  );
+  ensureWatchSource(project, "PostHogCodeWatchApp.swift", watchExtension.uuid);
+  ensureWatchSource(project, "WatchMissionStore.swift", watchExtension.uuid);
+  ensureWatchSource(project, "WatchMissionModels.swift", watchExtension.uuid);
+  ensureWatchSource(project, "MissionViews.swift", watchExtension.uuid);
+  ensureWatchSource(project, "HapticsPolicy.swift", watchExtension.uuid);
 
   updateTargetBuildSettings(project, watchApp.uuid, {
     ASSETCATALOG_COMPILER_APPICON_NAME: "AppIcon",
