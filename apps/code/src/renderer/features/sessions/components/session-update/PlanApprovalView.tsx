@@ -1,7 +1,7 @@
 import { PlanContent } from "@components/permissions/PlanContent";
-import { CheckCircle } from "@phosphor-icons/react";
+import { CaretDown, CaretRight, CheckCircle } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { type ToolViewProps, useToolCallStatus } from "./toolCallUtils";
 
 export function PlanApprovalView({
@@ -15,6 +15,7 @@ export function PlanApprovalView({
     turnCancelled,
     turnComplete,
   );
+  const [isPlanExpanded, setIsPlanExpanded] = useState(false);
 
   const planText = useMemo(() => {
     const rawPlan = (toolCall.rawInput as { plan?: string } | undefined)?.plan;
@@ -33,30 +34,57 @@ export function PlanApprovalView({
     return null;
   }, [content, toolCall.rawInput]);
 
-  const showPlanContent = !isComplete && !wasCancelled;
   const showResult = isComplete || wasCancelled;
+  const showPlanInline = !showResult;
+  const canTogglePlan = showResult && !!planText;
 
   if (!planText && !showResult) return null;
 
   return (
     <Box className="my-3">
-      {showPlanContent && planText && (
+      {showPlanInline && planText && (
         <PlanContent id={toolCall.toolCallId} plan={planText} />
       )}
 
       {showResult && (
-        <Flex align="center" gap="2" className="px-1">
-          {isComplete ? (
-            <>
-              <CheckCircle size={14} weight="fill" className="text-green-9" />
-              <Text className="text-[13px] text-green-11">
-                Plan approved — proceeding with implementation
+        <Box>
+          <Flex
+            align="center"
+            gap="2"
+            className={`px-1 ${canTogglePlan ? "cursor-pointer select-none" : ""}`}
+            onClick={
+              canTogglePlan ? () => setIsPlanExpanded((v) => !v) : undefined
+            }
+          >
+            {canTogglePlan &&
+              (isPlanExpanded ? (
+                <CaretDown size={10} className="text-gray-10" />
+              ) : (
+                <CaretRight size={10} className="text-gray-10" />
+              ))}
+            {isComplete ? (
+              <>
+                <CheckCircle size={14} weight="fill" className="text-green-9" />
+                <Text className="text-[13px] text-green-11">
+                  Plan approved — proceeding with implementation
+                </Text>
+              </>
+            ) : wasCancelled ? (
+              <Text className="text-[13px] text-gray-10">(Plan rejected)</Text>
+            ) : null}
+            {canTogglePlan && (
+              <Text className="text-[13px] text-gray-9">
+                · {isPlanExpanded ? "hide plan" : "show plan"}
               </Text>
-            </>
-          ) : wasCancelled ? (
-            <Text className="text-[13px] text-gray-10">(Plan rejected)</Text>
-          ) : null}
-        </Flex>
+            )}
+          </Flex>
+
+          {canTogglePlan && isPlanExpanded && (
+            <Box className="mt-2">
+              <PlanContent id={toolCall.toolCallId} plan={planText} />
+            </Box>
+          )}
+        </Box>
       )}
     </Box>
   );
