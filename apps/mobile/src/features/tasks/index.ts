@@ -36,3 +36,10 @@ export {
   createWatchMissionEnvelope,
   createWatchMissionSnapshot,
 } from "./utils/watchMissionControl";
+export {
+  isWatchMissionControlAvailable,
+  isWatchMissionControlSupported,
+  publishWatchMissionEnvelope,
+  sendUrgentWatchMissionUpdate,
+  subscribeToWatchMissionCommands,
+} from "./watchMissionControlBridge";
