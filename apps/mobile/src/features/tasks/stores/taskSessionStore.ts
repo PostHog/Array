@@ -133,6 +133,34 @@ const POLL_IN_FLIGHT_TIMEOUT_MS = 30_000;
 const pollTicks = new Map<string, number>();
 // How many S3 polling ticks between each backend task-run status check.
 const STATUS_CHECK_TICK_INTERVAL = 5;
+const TRANSIENT_CLOUD_COMMAND_STATUSES = new Set([502, 503, 504]);
+const VISIBLE_AGENT_SESSION_UPDATES = new Set([
+  "agent_message_chunk",
+  "agent_message",
+  "agent_thought_chunk",
+  "tool_call",
+  "tool_call_update",
+]);
+
+function sessionUpdateType(event: SessionEvent): string | undefined {
+  return event.type === "session_update"
+    ? event.notification.update?.sessionUpdate
+    : undefined;
+}
+
+function isVisibleAgentOutputEvent(event: SessionEvent): boolean {
+  const updateType = sessionUpdateType(event);
+  return !!updateType && VISIBLE_AGENT_SESSION_UPDATES.has(updateType);
+}
+
+function isTransientCloudCommandError(
+  error: unknown,
+): error is CloudCommandError {
+  return (
+    error instanceof CloudCommandError &&
+    TRANSIENT_CLOUD_COMMAND_STATUSES.has(error.status)
+  );
+}
 
 export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   sessions: {},
@@ -141,7 +169,6 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     const taskId = task.id;
     const latestRunId = task.latest_run?.id;
     const latestRunLogUrl = task.latest_run?.log_url;
-    const _taskDescription = task.description;
 
     if (connectAttempts.has(taskId)) {
       logger.debug("Connection already in progress", { taskId });
@@ -243,18 +270,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             // that haven't produced visible agent output yet.
             awaitingAgentOutput:
               isPromptPending &&
-              !historicalEvents.some((e) => {
-                if (e.type !== "session_update") return false;
-                const su = (e.notification as SessionNotification)?.update
-                  ?.sessionUpdate;
-                return (
-                  su === "agent_message_chunk" ||
-                  su === "agent_message" ||
-                  su === "agent_thought_chunk" ||
-                  su === "tool_call" ||
-                  su === "tool_call_update"
-                );
-              }),
+              !historicalEvents.some(isVisibleAgentOutputEvent),
           },
         },
       }));
@@ -342,10 +358,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       // Transient server errors (504 gateway timeout, etc.) — the sandbox
       // may still be alive, just temporarily unreachable.  Roll back so the
       // user can retry but don't attempt a full resume.
-      if (
-        err instanceof CloudCommandError &&
-        (err.status === 504 || err.status === 502 || err.status === 503)
-      ) {
+      if (isTransientCloudCommandError(err)) {
         logger.warn("Transient server error sending prompt, rolling back", {
           status: err.status,
           taskId,
@@ -737,19 +750,9 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
 
             // Clear awaitingAgentOutput once a visibly-rendered event arrives
             // (agent message, thought, tool call) — not just any non-user event.
-            const visibleSessionUpdates = new Set([
-              "agent_message_chunk",
-              "agent_message",
-              "agent_thought_chunk",
-              "tool_call",
-              "tool_call_update",
-            ]);
-            const hasVisibleAgentOutput = batchedEvents.some((e) => {
-              if (e.type !== "session_update") return false;
-              const su = (e.notification as SessionNotification)?.update
-                ?.sessionUpdate;
-              return su !== undefined && visibleSessionUpdates.has(su);
-            });
+            const hasVisibleAgentOutput = batchedEvents.some(
+              isVisibleAgentOutputEvent,
+            );
             const nextAwaitingAgentOutput =
               current.awaitingAgentOutput && !hasVisibleAgentOutput;
 

@@ -27,6 +27,13 @@ import { useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-detail");
 
+const VISIBLE_AGENT_OUTPUT_TYPES = new Set([
+  "agent_message_chunk",
+  "agent_message",
+  "agent_thought_chunk",
+  "tool_call",
+]);
+
 export default function TaskDetailScreen() {
   const { id: taskId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -48,6 +55,14 @@ export default function TaskDetailScreen() {
   } = useTaskSessionStore();
 
   const session = taskId ? getSessionForTask(taskId) : undefined;
+
+  const connectFetchedTask = useCallback(
+    async (fetchedTask: Task) => {
+      setTask(fetchedTask);
+      await connectToTask(fetchedTask);
+    },
+    [connectToTask],
+  );
 
   const { height } = useReanimatedKeyboardAnimation();
 
@@ -75,8 +90,7 @@ export default function TaskDetailScreen() {
     getTask(taskId)
       .then((fetchedTask) => {
         if (cancelled) return;
-        setTask(fetchedTask);
-        return connectToTask(fetchedTask);
+        return connectFetchedTask(fetchedTask);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -94,7 +108,7 @@ export default function TaskDetailScreen() {
       cancelled = true;
       disconnectFromTask(taskId);
     };
-  }, [taskId, connectToTask, disconnectFromTask]);
+  }, [taskId, connectFetchedTask, disconnectFromTask]);
 
   // Auto-reconnect if the session disappears while the screen is active
   // (e.g., cloud sandbox expired and the session was cleaned up).
@@ -108,8 +122,7 @@ export default function TaskDetailScreen() {
     getTask(taskId)
       .then((freshTask) => {
         if (cancelled) return;
-        setTask(freshTask);
-        return connectToTask(freshTask);
+        return connectFetchedTask(freshTask);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -119,7 +132,7 @@ export default function TaskDetailScreen() {
     return () => {
       cancelled = true;
     };
-  }, [taskId, task, loading, session, connectToTask, retrying]);
+  }, [taskId, task, loading, session, connectFetchedTask, retrying]);
 
   const handleSendPrompt = useCallback(
     (text: string) => {
@@ -155,18 +168,25 @@ export default function TaskDetailScreen() {
     [queryClient],
   );
 
-  const handleRetry = useCallback(async () => {
-    if (!taskId || !task) return;
-    try {
-      setRetrying(true);
-      disconnectFromTask(taskId);
+  const runCurrentTaskInCloud = useCallback(async () => {
+    if (!taskId || !task) return null;
 
-      const updatedTask = await runTaskInCloud(taskId, {
-        resumeFromRunId: task.latest_run?.id,
-      });
-      setTask(updatedTask);
-      await connectToTask(updatedTask);
-      updateTaskInCache(updatedTask);
+    setRetrying(true);
+    disconnectFromTask(taskId);
+
+    const updatedTask = await runTaskInCloud(taskId, {
+      resumeFromRunId: task.latest_run?.id,
+    });
+    setTask(updatedTask);
+    await connectToTask(updatedTask);
+    updateTaskInCache(updatedTask);
+    return updatedTask;
+  }, [taskId, task, disconnectFromTask, connectToTask, updateTaskInCache]);
+
+  const handleRetry = useCallback(async () => {
+    try {
+      const updatedTask = await runCurrentTaskInCloud();
+      if (!updatedTask) return;
       // Don't clear retrying here — the effect below clears it
       // once the session shows meaningful state (thinking or terminal).
     } catch (err) {
@@ -177,7 +197,7 @@ export default function TaskDetailScreen() {
         "Could not restart the task. Please try again.",
       );
     }
-  }, [taskId, task, disconnectFromTask, connectToTask, updateTaskInCache]);
+  }, [runCurrentTaskInCloud]);
 
   // Clear retrying once the agent finishes a turn or the run terminates.
   useEffect(() => {
@@ -225,16 +245,9 @@ export default function TaskDetailScreen() {
   }, [isLocal, session?.isPromptPending, session?.lastEventAt]);
 
   const handleContinueInCloud = useCallback(async () => {
-    if (!taskId || !task) return;
     try {
-      setRetrying(true);
-      disconnectFromTask(taskId);
-      const updatedTask = await runTaskInCloud(taskId, {
-        resumeFromRunId: task.latest_run?.id,
-      });
-      setTask(updatedTask);
-      await connectToTask(updatedTask);
-      updateTaskInCache(updatedTask);
+      const updatedTask = await runCurrentTaskInCloud();
+      if (!updatedTask) return;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
       log.error("Failed to continue in cloud", err);
@@ -244,21 +257,46 @@ export default function TaskDetailScreen() {
         "Could not continue this task in the cloud. Please try again.",
       );
     }
-  }, [taskId, task, disconnectFromTask, connectToTask, updateTaskInCache]);
+  }, [runCurrentTaskInCloud]);
 
   const environment = task?.latest_run?.environment;
 
-  const visibleAgentTypes = [
-    "agent_message_chunk",
-    "agent_message",
-    "agent_thought_chunk",
-    "tool_call",
-  ];
+  const showLocalRunOptions = useCallback(() => {
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options: ["Keep locally", "Move to Cloud"],
+        cancelButtonIndex: 0,
+        title: isStale ? "Desktop may be offline" : "Running on your desktop",
+      },
+      (index) => {
+        if (index === 1) handleContinueInCloud();
+      },
+    );
+  }, [handleContinueInCloud, isStale]);
+
+  const renderEnvironmentBadge = useCallback(() => {
+    if (!environment) return null;
+
+    const isCloud = environment === "cloud";
+    return (
+      <Pressable
+        onPress={isLocal ? showLocalRunOptions : undefined}
+        className={`rounded-full px-3 py-1 ${isCloud ? "bg-accent-3" : "bg-gray-4"}`}
+      >
+        <Text
+          className={`font-medium text-xs ${isCloud ? "text-accent-11" : "text-gray-11"}`}
+        >
+          {isCloud ? "Cloud" : "Local"}
+        </Text>
+      </Pressable>
+    );
+  }, [environment, isLocal, showLocalRunOptions]);
+
   const hasAnyAgentOutput =
     session?.events.some((e) => {
       if (e.type !== "session_update") return false;
       const su = (e.notification as Record<string, unknown>)?.update;
-      return visibleAgentTypes.includes(
+      return VISIBLE_AGENT_OUTPUT_TYPES.has(
         (su as Record<string, unknown>)?.sessionUpdate as string,
       );
     }) ?? false;
@@ -318,42 +356,7 @@ export default function TaskDetailScreen() {
             fontWeight: "600",
           },
           presentation: "modal",
-          headerRight: environment
-            ? () => (
-                <Pressable
-                  onPress={
-                    isLocal
-                      ? () =>
-                          ActionSheetIOS.showActionSheetWithOptions(
-                            {
-                              options: ["Keep locally", "Move to Cloud"],
-                              cancelButtonIndex: 0,
-                              title: isStale
-                                ? "Desktop may be offline"
-                                : "Running on your desktop",
-                            },
-                            (index) => {
-                              if (index === 1) handleContinueInCloud();
-                            },
-                          )
-                      : undefined
-                  }
-                  className={`rounded-full px-3 py-1 ${
-                    environment === "cloud" ? "bg-accent-3" : "bg-gray-4"
-                  }`}
-                >
-                  <Text
-                    className={`font-medium text-xs ${
-                      environment === "cloud"
-                        ? "text-accent-11"
-                        : "text-gray-11"
-                    }`}
-                  >
-                    {environment === "cloud" ? "Cloud" : "Local"}
-                  </Text>
-                </Pressable>
-              )
-            : undefined,
+          headerRight: environment ? renderEnvironmentBadge : undefined,
         }}
       />
       <Animated.View className="flex-1 bg-background" style={contentPosition}>
@@ -398,7 +401,7 @@ export default function TaskDetailScreen() {
               onSend={handleSendPrompt}
               onStop={handleStop}
               isUserTurn={!(session?.isPromptPending ?? true)}
-              placeholder={"Ask a question"}
+              placeholder="Ask a question"
             />
           </Animated.View>
         )}
