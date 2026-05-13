@@ -212,6 +212,7 @@ function addWatchTargets(project) {
   updateTargetBuildSettings(project, watchApp.uuid, {
     ASSETCATALOG_COMPILER_APPICON_NAME: "AppIcon",
     CODE_SIGN_ENTITLEMENTS: `${WATCH_SOURCE_DIR}/PostHogCodeWatch.entitlements`,
+    CURRENT_PROJECT_VERSION: "1",
     INFOPLIST_FILE: `${WATCH_SOURCE_DIR}/Info.plist`,
     LD_RUNPATH_SEARCH_PATHS: quote("$(inherited) @executable_path/Frameworks"),
     MARKETING_VERSION: "1.0",
@@ -226,6 +227,7 @@ function addWatchTargets(project) {
 
   updateTargetBuildSettings(project, watchExtension.uuid, {
     CODE_SIGN_ENTITLEMENTS: `${WATCH_SOURCE_DIR}/PostHogCodeWatchExtension.entitlements`,
+    CURRENT_PROJECT_VERSION: "1",
     INFOPLIST_FILE: `${WATCH_SOURCE_DIR}/ExtensionInfo.plist`,
     LD_RUNPATH_SEARCH_PATHS: quote("$(inherited) @executable_path/Frameworks"),
     MARKETING_VERSION: "1.0",

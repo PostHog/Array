@@ -9,7 +9,7 @@
     "ios": "expo run:ios",
     "ios:device": "expo run:ios --device",
     "web": "expo start --web",
-    "prebuild": "expo prebuild",
+    "prebuild": "expo prebuild --clean",
     "prebuild:clean": "expo prebuild --clean",
     "build:dev": "eas build --profile development --platform ios",
     "build:dev:local": "eas build --profile development --platform ios --local",

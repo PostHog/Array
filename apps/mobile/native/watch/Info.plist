@@ -22,6 +22,8 @@
   <string>$(CURRENT_PROJECT_VERSION)</string>
   <key>WKCompanionAppBundleIdentifier</key>
   <string>com.posthog.code.mobile</string>
+  <key>WKWatchKitApp</key>
+  <true/>
   <key>WKWatchOnly</key>
   <false/>
 </dict>

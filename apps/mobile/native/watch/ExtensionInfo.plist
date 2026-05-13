@@ -22,6 +22,11 @@
   <string>$(CURRENT_PROJECT_VERSION)</string>
   <key>NSExtension</key>
   <dict>
+    <key>NSExtensionAttributes</key>
+    <dict>
+      <key>WKAppBundleIdentifier</key>
+      <string>com.posthog.code.mobile.watchkitapp</string>
+    </dict>
     <key>NSExtensionPointIdentifier</key>
     <string>com.apple.watchkit</string>
   </dict>
