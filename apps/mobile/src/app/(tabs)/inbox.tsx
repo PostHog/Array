@@ -33,13 +33,9 @@ export default function InboxScreen() {
   const setCurrentIndex = useInboxStore((s) => s.setCurrentIndex);
   const { repositoryOptions } = useIntegrations();
 
-  // Same data as the list view, filtered to reports where the user is a
-  // suggested reviewer (the eye icon in the list) and not yet dismissed.
+  // Same data as the list view, just excluding dismissed reports.
   const tinderReports = useMemo(
-    () =>
-      reports.filter(
-        (r) => r.is_suggested_reviewer && !dismissedIds.includes(r.id),
-      ),
+    () => reports.filter((r) => !dismissedIds.includes(r.id)),
     [reports, dismissedIds],
   );
 

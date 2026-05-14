@@ -20,10 +20,7 @@ export default function ReviewScreen() {
   const { reports, isLoading } = useInboxReports();
 
   const tinderReports = useMemo(
-    () =>
-      reports.filter(
-        (r) => r.is_suggested_reviewer && !dismissedIds.includes(r.id),
-      ),
+    () => reports.filter((r) => !dismissedIds.includes(r.id)),
     [reports, dismissedIds],
   );
 

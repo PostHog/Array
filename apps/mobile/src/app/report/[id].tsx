@@ -1,24 +1,35 @@
 import { Text } from "@components/text";
 import { differenceInHours, format, formatDistanceToNow } from "date-fns";
-import { GlassContainer, GlassView } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Lightning, Play, Warning } from "phosphor-react-native";
-import { useCallback, useEffect, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  ScrollView,
-  View,
-} from "react-native";
+  CaretDown,
+  CaretRight,
+  Lightning,
+  Play,
+  Plus,
+  ThumbsDown,
+  Warning,
+} from "phosphor-react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { getReportRepository } from "@/features/inbox/api";
-import { useInboxReport } from "@/features/inbox/hooks/useInboxReports";
+import { DismissReportSheet } from "@/features/inbox/components/DismissReportSheet";
+import { SignalCard } from "@/features/inbox/components/SignalCard";
+import { SuggestedReviewers } from "@/features/inbox/components/SuggestedReviewers";
+import {
+  useInboxReport,
+  useInboxReportArtefacts,
+  useInboxReportSignals,
+} from "@/features/inbox/hooks/useInboxReports";
 import type {
+  ActionabilityJudgmentContent,
+  SignalFindingContent,
   SignalReportPriority,
   SignalReportStatus,
+  SuggestedReviewer,
 } from "@/features/inbox/types";
 import { inboxStatusLabel } from "@/features/inbox/utils";
 import { useThemeColors } from "@/lib/theme";
@@ -40,6 +51,24 @@ const priorityColorMap: Record<string, { bg: string; text: string }> = {
   P2: { bg: "bg-status-warning/20", text: "text-status-warning" },
   P3: { bg: "bg-gray-5/20", text: "text-gray-9" },
   P4: { bg: "bg-gray-5/20", text: "text-gray-9" },
+};
+
+const actionabilityColorMap: Record<string, { bg: string; text: string }> = {
+  immediately_actionable: {
+    bg: "bg-status-success/20",
+    text: "text-status-success",
+  },
+  requires_human_input: {
+    bg: "bg-status-warning/20",
+    text: "text-status-warning",
+  },
+  not_actionable: { bg: "bg-gray-5/20", text: "text-gray-9" },
+};
+
+const actionabilityLabel: Record<string, string> = {
+  immediately_actionable: "Actionable",
+  requires_human_input: "Needs input",
+  not_actionable: "Not actionable",
 };
 
 function StatusBadge({ status }: { status: SignalReportStatus }) {
@@ -64,11 +93,14 @@ function PriorityBadge({ priority }: { priority: SignalReportPriority }) {
   );
 }
 
-function SectionHeader({ title }: { title: string }) {
+function ActionabilityBadge({ value }: { value: string }) {
+  const colors =
+    actionabilityColorMap[value] ?? actionabilityColorMap.not_actionable;
+  const label = actionabilityLabel[value] ?? value;
   return (
-    <Text className="mb-1.5 font-semibold text-[13px] text-gray-10 uppercase tracking-wide">
-      {title}
-    </Text>
+    <View className={`rounded px-2 py-1 ${colors.bg}`}>
+      <Text className={`font-medium text-[12px] ${colors.text}`}>{label}</Text>
+    </View>
   );
 }
 
@@ -79,6 +111,11 @@ export default function ReportDetailScreen() {
   const insets = useSafeAreaInsets();
   const { data: report, isLoading, error } = useInboxReport(reportId ?? null);
   const [reportRepo, setReportRepo] = useState<string | null>(null);
+  const [dismissOpen, setDismissOpen] = useState(false);
+  const [signalsExpanded, setSignalsExpanded] = useState(false);
+
+  const artefactsQuery = useInboxReportArtefacts(reportId ?? null);
+  const signalsQuery = useInboxReportSignals(reportId ?? null);
 
   useEffect(() => {
     if (!reportId) return;
@@ -92,6 +129,49 @@ export default function ReportDetailScreen() {
       cancelled = true;
     };
   }, [reportId]);
+
+  // ── Derive artefact bits ────────────────────────────────────────────────
+  const artefacts = artefactsQuery.data?.results ?? [];
+
+  const actionabilityJudgment =
+    useMemo((): ActionabilityJudgmentContent | null => {
+      for (const a of artefacts) {
+        if (a.type === "actionability_judgment") {
+          return a.content as ActionabilityJudgmentContent;
+        }
+      }
+      return null;
+    }, [artefacts]);
+
+  const suggestedReviewers = useMemo((): SuggestedReviewer[] => {
+    for (const a of artefacts) {
+      if (a.type === "suggested_reviewers") {
+        return (a.content as SuggestedReviewer[]) ?? [];
+      }
+    }
+    return [];
+  }, [artefacts]);
+
+  const findingsBySignalId = useMemo(() => {
+    const map = new Map<string, SignalFindingContent>();
+    for (const a of artefacts) {
+      if (a.type === "signal_finding") {
+        const c = a.content as SignalFindingContent;
+        map.set(c.signal_id, c);
+      }
+    }
+    return map;
+  }, [artefacts]);
+
+  const allSignals = signalsQuery.data?.signals ?? [];
+  // Match web: split session_problem evidence from main Signals list.
+  const signals = allSignals.filter(
+    (s) =>
+      !(
+        s.source_product === "session_replay" &&
+        s.source_type === "session_problem"
+      ),
+  );
 
   const handleStartTask = useCallback(() => {
     if (!report) return;
@@ -107,49 +187,32 @@ export default function ReportDetailScreen() {
     });
   }, [report, router, reportRepo]);
 
+  const handleDismissed = useCallback(() => {
+    setDismissOpen(false);
+    if (router.canGoBack()) router.back();
+  }, [router]);
+
   if (error) {
     return (
-      <>
-        <Stack.Screen
-          options={{
-            headerShown: true,
-            headerTitle: "Error",
-            headerStyle: { backgroundColor: themeColors.background },
-            headerTintColor: themeColors.gray[12],
-            presentation: "modal",
-          }}
-        />
-        <View className="flex-1 items-center justify-center bg-background px-4">
-          <Text className="mb-4 text-center text-status-error">
-            Failed to load report
-          </Text>
-          <Pressable
-            onPress={() => router.back()}
-            className="rounded-lg bg-gray-3 px-4 py-2"
-          >
-            <Text className="text-gray-12">Go back</Text>
-          </Pressable>
-        </View>
-      </>
+      <View className="flex-1 items-center justify-center bg-background px-4">
+        <Text className="mb-4 text-center text-status-error">
+          Failed to load report
+        </Text>
+        <Pressable
+          onPress={() => router.back()}
+          className="rounded-lg bg-gray-3 px-4 py-2"
+        >
+          <Text className="text-gray-12">Go back</Text>
+        </Pressable>
+      </View>
     );
   }
 
   if (isLoading || !report) {
     return (
-      <>
-        <Stack.Screen
-          options={{
-            headerShown: true,
-            headerTitle: "Loading...",
-            headerStyle: { backgroundColor: themeColors.background },
-            headerTintColor: themeColors.gray[12],
-            presentation: "modal",
-          }}
-        />
-        <View className="flex-1 items-center justify-center bg-background">
-          <ActivityIndicator size="large" color={themeColors.accent[9]} />
-        </View>
-      </>
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator size="large" color={themeColors.accent[9]} />
+      </View>
     );
   }
 
@@ -173,18 +236,17 @@ export default function ReportDetailScreen() {
       report.actionability === "immediately_actionable" &&
       report.already_addressed !== true);
 
+  const alreadyAddressed =
+    report.already_addressed ??
+    actionabilityJudgment?.already_addressed ??
+    false;
+
+  const primaryActionLabel = isAwaitingInput
+    ? "Implement as new task"
+    : "Start task";
+
   return (
     <>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          headerTitle: report.title ?? "Untitled signal",
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.gray[12],
-          headerTitleStyle: { fontWeight: "600" },
-          presentation: "modal",
-        }}
-      />
       <ScrollView
         className="flex-1 bg-background"
         contentContainerStyle={{
@@ -197,17 +259,13 @@ export default function ReportDetailScreen() {
         <View className="mb-3 flex-row flex-wrap items-center gap-1.5">
           <StatusBadge status={report.status} />
           {report.priority && <PriorityBadge priority={report.priority} />}
+          {report.actionability && (
+            <ActionabilityBadge value={report.actionability} />
+          )}
           {report.is_suggested_reviewer && (
             <View className="rounded bg-status-warning/20 px-2 py-1">
               <Text className="font-medium text-[12px] text-status-warning">
                 For you
-              </Text>
-            </View>
-          )}
-          {report.already_addressed && (
-            <View className="rounded bg-status-warning/20 px-2 py-1">
-              <Text className="font-medium text-[12px] text-status-warning">
-                May be addressed
               </Text>
             </View>
           )}
@@ -245,6 +303,20 @@ export default function ReportDetailScreen() {
           </View>
         )}
 
+        {/* Already-addressed banner */}
+        {alreadyAddressed && (
+          <View className="mb-4 flex-row items-start gap-2 rounded-lg border border-status-warning/40 bg-status-warning/10 p-3">
+            <Warning
+              size={16}
+              color={themeColors.status.warning}
+              weight="fill"
+            />
+            <Text className="flex-1 text-[13px] text-status-warning">
+              This issue may already be addressed in recent code changes.
+            </Text>
+          </View>
+        )}
+
         {/* Summary */}
         {report.summary && (
           <View className="mb-4" style={{ opacity: isReady ? 1 : 0.7 }}>
@@ -252,79 +324,86 @@ export default function ReportDetailScreen() {
           </View>
         )}
 
-        {/* Actionability info */}
-        {report.actionability && (
+        {/* Suggested reviewers */}
+        <SuggestedReviewers reviewers={suggestedReviewers} />
+
+        {/* Signals */}
+        {signals.length > 0 && (
           <View className="mb-4">
-            <SectionHeader title="Actionability" />
-            <View className="rounded-lg bg-gray-2 p-3">
-              <Text className="text-[13px] text-gray-12">
-                {report.actionability === "immediately_actionable"
-                  ? "This report is immediately actionable — a task can be created directly."
-                  : report.actionability === "requires_human_input"
-                    ? "This report needs human input before it can be acted on."
-                    : "This report is not directly actionable at this time."}
+            <Pressable
+              onPress={() => setSignalsExpanded((v) => !v)}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: signalsExpanded }}
+              className="mb-2 flex-row items-center gap-1.5 self-start py-1 active:opacity-60"
+            >
+              {signalsExpanded ? (
+                <CaretDown size={14} color={themeColors.gray[12]} />
+              ) : (
+                <CaretRight size={14} color={themeColors.gray[12]} />
+              )}
+              <Text className="font-semibold text-[14px] text-gray-12">
+                Signals ({signals.length})
               </Text>
-            </View>
+            </Pressable>
+            {signalsExpanded && (
+              <View className="gap-2">
+                {signals.map((signal) => (
+                  <SignalCard
+                    key={signal.signal_id}
+                    signal={signal}
+                    finding={findingsBySignalId.get(signal.signal_id)}
+                  />
+                ))}
+              </View>
+            )}
           </View>
         )}
-
-        {/* PR link */}
-        {report.implementation_pr_url && (
-          <View className="mb-4">
-            <SectionHeader title="Implementation" />
-            <View className="rounded-lg bg-gray-2 p-3">
-              <Text className="text-[13px] text-accent-11" numberOfLines={1}>
-                {report.implementation_pr_url}
-              </Text>
-            </View>
-          </View>
+        {signalsQuery.isLoading && (
+          <Text className="text-[12px] text-gray-9">Loading signals…</Text>
         )}
       </ScrollView>
 
-      {/* Floating "Start task" button */}
-      {canStartTask && (
-        <View
-          className="absolute inset-x-0 items-center"
-          style={{ bottom: insets.bottom + 16 }}
-          pointerEvents="box-none"
+      <View
+        className="absolute inset-x-0 flex-row items-center justify-center gap-3 px-4"
+        style={{ bottom: insets.bottom + 16 }}
+        pointerEvents="box-none"
+      >
+        <Pressable
+          onPress={() => setDismissOpen(true)}
+          accessibilityLabel="Dismiss report"
+          className="flex-row items-center gap-2 rounded-full border border-gray-6 bg-background px-5 py-3.5 shadow-lg active:opacity-80"
         >
-          {Platform.OS === "ios" ? (
-            <GlassContainer spacing={0} style={{ borderRadius: 28 }}>
-              <Pressable
-                onPress={handleStartTask}
-                style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
-              >
-                <GlassView
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 8,
-                    paddingHorizontal: 24,
-                    paddingVertical: 14,
-                    borderRadius: 28,
-                  }}
-                  isInteractive
-                >
-                  <Play size={18} color={themeColors.accent[9]} weight="fill" />
-                  <Text className="font-semibold text-[15px] text-gray-12">
-                    Start task
-                  </Text>
-                </GlassView>
-              </Pressable>
-            </GlassContainer>
-          ) : (
-            <Pressable
-              onPress={handleStartTask}
-              className="elevation-4 flex-row items-center gap-2 rounded-full border border-gray-6 bg-gray-2 px-6 py-3.5 shadow-lg active:opacity-80"
-            >
-              <Play size={18} color={themeColors.accent[9]} weight="fill" />
-              <Text className="font-semibold text-[15px] text-gray-12">
-                Start task
-              </Text>
-            </Pressable>
-          )}
-        </View>
-      )}
+          <ThumbsDown size={16} color={themeColors.gray[11]} weight="fill" />
+          <Text className="font-semibold text-[15px] text-gray-11">
+            Dismiss
+          </Text>
+        </Pressable>
+
+        {canStartTask && (
+          <Pressable
+            onPress={handleStartTask}
+            className="flex-row items-center gap-2 rounded-full bg-accent-9 px-5 py-3.5 shadow-lg active:opacity-80"
+          >
+            {isAwaitingInput ? (
+              <Plus size={18} color="#ffffff" weight="bold" />
+            ) : (
+              <Play size={18} color="#ffffff" weight="fill" />
+            )}
+            <Text className="font-semibold text-[15px] text-white">
+              {primaryActionLabel}
+            </Text>
+          </Pressable>
+        )}
+      </View>
+
+      <DismissReportSheet
+        visible={dismissOpen}
+        reportId={report.id}
+        reportTitle={report.title?.trim() ? report.title : "Untitled signal"}
+        onClose={() => setDismissOpen(false)}
+        onDismissed={handleDismissed}
+      />
     </>
   );
 }

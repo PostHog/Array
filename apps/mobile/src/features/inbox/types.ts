@@ -77,3 +77,95 @@ export interface SignalReportTask {
   task_id: string;
   created_at: string;
 }
+
+export interface Signal {
+  signal_id: string;
+  content: string;
+  source_product: string;
+  source_type: string;
+  source_id: string;
+  weight: number;
+  timestamp: string;
+  extra: Record<string, unknown>;
+}
+
+export interface SignalFindingContent {
+  signal_id: string;
+  relevant_code_paths: string[];
+  relevant_commit_hashes: Record<string, string>;
+  data_queried: string;
+  verified: boolean;
+}
+
+export interface PriorityJudgmentContent {
+  explanation: string;
+  priority: SignalReportPriority;
+}
+
+export interface ActionabilityJudgmentContent {
+  explanation: string;
+  actionability: SignalReportActionability;
+  already_addressed: boolean;
+}
+
+export interface SuggestedReviewerCommit {
+  sha: string;
+  url: string;
+  reason: string;
+}
+
+export interface SuggestedReviewerUser {
+  id: number;
+  uuid: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+}
+
+export interface SuggestedReviewer {
+  github_login: string;
+  github_name: string | null;
+  relevant_commits: SuggestedReviewerCommit[];
+  user: SuggestedReviewerUser | null;
+}
+
+export type ReportArtefact =
+  | {
+      id: string;
+      type: "priority_judgment";
+      created_at: string;
+      content: PriorityJudgmentContent;
+    }
+  | {
+      id: string;
+      type: "actionability_judgment";
+      created_at: string;
+      content: ActionabilityJudgmentContent;
+    }
+  | {
+      id: string;
+      type: "signal_finding";
+      created_at: string;
+      content: SignalFindingContent;
+    }
+  | {
+      id: string;
+      type: "suggested_reviewers";
+      created_at: string;
+      content: SuggestedReviewer[];
+    }
+  | {
+      id: string;
+      type: string;
+      created_at: string;
+      content: unknown;
+    };
+
+export interface SignalReportArtefactsResponse {
+  results: ReportArtefact[];
+  count: number;
+}
+
+export interface SignalReportSignalsResponse {
+  signals: Signal[];
+}

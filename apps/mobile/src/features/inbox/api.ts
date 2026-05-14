@@ -2,14 +2,18 @@ import { fetch } from "expo/fetch";
 import { HttpError } from "@/features/tasks/api";
 import { getBaseUrl, getHeaders, getProjectId } from "@/lib/api";
 import { logger } from "@/lib/logger";
+import type { DismissalReasonOptionValue } from "./constants";
 
 const log = logger.scope("inbox-api");
 
 import type {
   AvailableSuggestedReviewer,
   AvailableSuggestedReviewersResponse,
+  ReportArtefact,
   SignalProcessingStateResponse,
   SignalReport,
+  SignalReportArtefactsResponse,
+  SignalReportSignalsResponse,
   SignalReportsQueryParams,
   SignalReportsResponse,
   SignalReportTask,
@@ -175,10 +179,9 @@ export async function getSignalReportTasks(
   return data.results ?? [];
 }
 
-/** Resolve the repository associated with a signal report via its repo_selection artefact. */
-export async function getReportRepository(
+export async function getSignalReportArtefacts(
   reportId: string,
-): Promise<string | null> {
+): Promise<SignalReportArtefactsResponse> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
   const headers = getHeaders();
@@ -195,22 +198,51 @@ export async function getReportRepository(
       status: response.status,
       body: body.slice(0, 500),
     });
-    return null;
+    return { results: [], count: 0 };
   }
 
   const data = await response.json();
-  const artefacts: { type: string; content: unknown }[] = data.results ?? [];
-  const repoArtefact = artefacts.find((a) => a.type === "repo_selection");
+  const results: ReportArtefact[] = data.results ?? [];
+  return { results, count: data.count ?? results.length };
+}
 
+export async function getSignalReportSignals(
+  reportId: string,
+): Promise<SignalReportSignalsResponse> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/signals/`,
+    { headers },
+  );
+
+  if (!response.ok) {
+    log.warn("Failed to fetch report signals", {
+      reportId,
+      status: response.status,
+    });
+    return { signals: [] };
+  }
+
+  const data = await response.json();
+  return { signals: data.signals ?? [] };
+}
+
+/** Resolve the repository associated with a signal report via its repo_selection artefact. */
+export async function getReportRepository(
+  reportId: string,
+): Promise<string | null> {
+  const { results } = await getSignalReportArtefacts(reportId);
+  const repoArtefact = results.find((a) => a.type === "repo_selection");
   if (!repoArtefact) return null;
 
-  // content may be a JSON string or an already-parsed object
   let parsed: unknown = repoArtefact.content;
   if (typeof parsed === "string") {
     try {
       parsed = JSON.parse(parsed);
     } catch {
-      // Plain string like "org/repo"
       return (parsed as string).toLowerCase();
     }
   }
@@ -223,4 +255,42 @@ export async function getReportRepository(
   }
 
   return null;
+}
+
+export interface DismissSignalReportInput {
+  reason: DismissalReasonOptionValue;
+  note?: string;
+}
+
+export async function dismissSignalReport(
+  reportId: string,
+  input: DismissSignalReportInput,
+): Promise<SignalReport> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/state/`,
+    {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        state: "suppressed",
+        dismissal_reason: input.reason,
+        ...(input.note?.trim() ? { dismissal_note: input.note.trim() } : {}),
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      errorText || "Failed to dismiss signal report",
+    );
+  }
+
+  return await response.json();
 }

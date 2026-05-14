@@ -1,9 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/features/auth";
 import {
+  type DismissSignalReportInput,
+  dismissSignalReport,
   getAvailableSuggestedReviewers,
   getSignalProcessingState,
   getSignalReport,
+  getSignalReportArtefacts,
+  getSignalReportSignals,
   getSignalReports,
 } from "../api";
 import { INBOX_REFETCH_INTERVAL_MS } from "../constants";
@@ -12,6 +16,8 @@ import type {
   AvailableSuggestedReviewersResponse,
   SignalProcessingStateResponse,
   SignalReport,
+  SignalReportArtefactsResponse,
+  SignalReportSignalsResponse,
   SignalReportsQueryParams,
   SignalReportsResponse,
 } from "../types";
@@ -26,6 +32,10 @@ export const inboxKeys = {
   list: (params?: SignalReportsQueryParams) =>
     [...inboxKeys.all, "list", params ?? {}] as const,
   detail: (reportId: string) => [...inboxKeys.all, reportId, "detail"] as const,
+  artefacts: (reportId: string) =>
+    [...inboxKeys.all, reportId, "artefacts"] as const,
+  signals: (reportId: string) =>
+    [...inboxKeys.all, reportId, "signals"] as const,
   processingState: ["inbox", "signal-processing-state"] as const,
 };
 
@@ -101,5 +111,37 @@ export function useAvailableSuggestedReviewers(options?: {
     enabled: !!projectId && !!oauthAccessToken && (options?.enabled ?? true),
     staleTime: 5 * 60 * 1000,
     refetchInterval: 60_000,
+  });
+}
+
+export function useInboxReportArtefacts(reportId: string | null) {
+  const { projectId, oauthAccessToken } = useAuthStore();
+
+  return useQuery<SignalReportArtefactsResponse>({
+    queryKey: inboxKeys.artefacts(reportId ?? ""),
+    queryFn: () => getSignalReportArtefacts(reportId!),
+    enabled: !!projectId && !!oauthAccessToken && !!reportId,
+  });
+}
+
+export function useInboxReportSignals(reportId: string | null) {
+  const { projectId, oauthAccessToken } = useAuthStore();
+
+  return useQuery<SignalReportSignalsResponse>({
+    queryKey: inboxKeys.signals(reportId ?? ""),
+    queryFn: () => getSignalReportSignals(reportId!),
+    enabled: !!projectId && !!oauthAccessToken && !!reportId,
+  });
+}
+
+export function useDismissReport(reportId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<SignalReport, Error, DismissSignalReportInput>({
+    mutationFn: (input) => dismissSignalReport(reportId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inboxKeys.detail(reportId) });
+      queryClient.invalidateQueries({ queryKey: inboxKeys.all });
+    },
   });
 }

@@ -51,12 +51,16 @@ export function FloatingInboxHeader({
       />
 
       <View
-        className="flex-row items-center px-3"
+        className="flex-row items-center justify-between px-3"
         style={{ paddingTop: insets.top + 6, paddingBottom: 8 }}
       >
         <MenuButton />
 
-        <View className="min-w-0 flex-1 flex-row items-center justify-center gap-1.5 px-2">
+        <View
+          pointerEvents="none"
+          className="absolute inset-x-0 flex-row items-center justify-center gap-1.5"
+          style={{ top: insets.top + 6, bottom: 8 }}
+        >
           <Text
             className="font-semibold text-[15px] text-gray-12"
             numberOfLines={1}

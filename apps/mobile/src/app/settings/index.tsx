@@ -105,9 +105,6 @@ export default function SettingsScreen() {
   const setDefaultInitialTaskMode = usePreferencesStore(
     (s) => s.setDefaultInitialTaskMode,
   );
-  const hedgehogMode = usePreferencesStore((s) => s.hedgehogMode);
-  const setHedgehogMode = usePreferencesStore((s) => s.setHedgehogMode);
-
   const dismissedCount = useDismissedReportsStore((s) => s.dismissedIds.length);
   const clearDismissed = useDismissedReportsStore((s) => s.clearDismissed);
 
@@ -275,16 +272,9 @@ export default function SettingsScreen() {
           <SettingsRow
             label="PostHog AI chat"
             description="Show the Chats tab for PostHog AI conversations"
-            rightSlot={
-              <Switch value={aiChatEnabled} onValueChange={setAiChatEnabled} />
-            }
-          />
-          <SettingsRow
-            label="Hedgehog mode"
-            description="Release a hedgehog buddy to wander your screen"
             showDivider={false}
             rightSlot={
-              <Switch value={hedgehogMode} onValueChange={setHedgehogMode} />
+              <Switch value={aiChatEnabled} onValueChange={setAiChatEnabled} />
             }
           />
         </SettingsSection>

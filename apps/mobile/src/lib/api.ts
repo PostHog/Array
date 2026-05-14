@@ -40,21 +40,17 @@ export async function registerPushToken(args: {
   platform: string;
 }): Promise<void> {
   const baseUrl = getBaseUrl();
-  const projectId = getProjectId();
   const headers = getHeaders();
 
-  const response = await fetch(
-    `${baseUrl}/api/projects/${projectId}/users/@me/push_tokens/`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify(args),
-    },
-  );
+  // Push tokens are per-user, not per-project — endpoint lives under
+  // /api/users/@me/ alongside the other user-scoped APIs.
+  const response = await fetch(`${baseUrl}/api/users/@me/push_tokens/`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(args),
+  });
 
   if (!response.ok) {
-    // Endpoint may not exist yet (backend rollout in posthog/posthog is a
-    // separate PR). Log at debug so we can verify the call without spamming.
     log.debug("registerPushToken non-OK response", {
       status: response.status,
     });
@@ -64,13 +60,14 @@ export async function registerPushToken(args: {
 
 export async function deletePushToken(args: { token: string }): Promise<void> {
   const baseUrl = getBaseUrl();
-  const projectId = getProjectId();
   const headers = getHeaders();
 
+  // Unregister is a POST sub-action (not DELETE) because some clients and
+  // proxies strip request bodies on DELETE.
   const response = await fetch(
-    `${baseUrl}/api/projects/${projectId}/users/@me/push_tokens/`,
+    `${baseUrl}/api/users/@me/push_tokens/unregister/`,
     {
-      method: "DELETE",
+      method: "POST",
       headers,
       body: JSON.stringify(args),
     },

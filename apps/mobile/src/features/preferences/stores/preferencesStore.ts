@@ -36,9 +36,6 @@ interface PreferencesState {
    *  `defaultInitialTaskMode === "last_used"` can pre-fill it next time. */
   lastNewTaskMode: string;
   setLastNewTaskMode: (mode: string) => void;
-
-  hedgehogMode: boolean;
-  setHedgehogMode: (enabled: boolean) => void;
 }
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -68,9 +65,6 @@ export const usePreferencesStore = create<PreferencesState>()(
         set({ defaultInitialTaskMode: mode }),
       lastNewTaskMode: "plan",
       setLastNewTaskMode: (mode) => set({ lastNewTaskMode: mode }),
-
-      hedgehogMode: false,
-      setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
     }),
     {
       name: "posthog-preferences",
@@ -84,7 +78,6 @@ export const usePreferencesStore = create<PreferencesState>()(
         completionVolume: state.completionVolume,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastNewTaskMode: state.lastNewTaskMode,
-        hedgehogMode: state.hedgehogMode,
       }),
     },
   ),
