@@ -13,7 +13,7 @@ export interface AutomationStatusPresentation {
 export function getAutomationStatusPresentation({
   lastRunStatus,
   lastTaskRunStatus,
-}: AutomationStatusInput): AutomationStatusPresentation {
+}: AutomationStatusInput): AutomationStatusPresentation | null {
   switch (lastTaskRunStatus) {
     case "not_started":
     case "queued":
@@ -23,10 +23,7 @@ export function getAutomationStatusPresentation({
       };
     case "started":
     case "in_progress":
-      return {
-        label: "Running",
-        className: "bg-status-info/20 text-status-info",
-      };
+      return null;
     case "completed":
       return {
         label: "Success",
@@ -44,10 +41,7 @@ export function getAutomationStatusPresentation({
 
   switch (lastRunStatus) {
     case "running":
-      return {
-        label: "Running",
-        className: "bg-status-info/20 text-status-info",
-      };
+      return null;
     case "success":
       return {
         label: "Success",

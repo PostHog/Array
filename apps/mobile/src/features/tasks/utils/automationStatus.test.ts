@@ -13,15 +13,21 @@ describe("automationStatus", () => {
     });
   });
 
-  it("shows running only when the linked task run is actively in progress", () => {
+  it("hides the running badge while the linked task run is actively in progress", () => {
     expect(
       getAutomationStatusPresentation({
         lastRunStatus: "running",
         lastTaskRunStatus: "in_progress",
       }),
-    ).toMatchObject({
-      label: "Running",
-    });
+    ).toBeNull();
+  });
+
+  it("hides the running badge when only the automation-level status is available", () => {
+    expect(
+      getAutomationStatusPresentation({
+        lastRunStatus: "running",
+      }),
+    ).toBeNull();
   });
 
   it("falls back to automation status when task-run detail is unavailable", () => {
