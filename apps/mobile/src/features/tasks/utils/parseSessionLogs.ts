@@ -88,3 +88,46 @@ export function convertRawEntriesToEvents(
 
   return events;
 }
+
+function inferDirection(entry: StoredLogEntry): "client" | "agent" {
+  if (entry.direction) return entry.direction;
+  const msg = entry.notification;
+  if (!msg) return "agent";
+  const hasId = msg.id !== undefined;
+  const hasMethod = msg.method !== undefined;
+  const hasResult = msg.result !== undefined || msg.error !== undefined;
+  if (hasId && hasMethod) return "client";
+  if (hasId && hasResult) return "agent";
+  return "agent";
+}
+
+export function convertStoredEntriesToEvents(
+  entries: StoredLogEntry[],
+): SessionEvent[] {
+  const events: SessionEvent[] = [];
+  for (const entry of entries) {
+    const ts = entry.timestamp
+      ? new Date(entry.timestamp).getTime()
+      : Date.now();
+
+    events.push({
+      type: "acp_message",
+      direction: inferDirection(entry),
+      ts,
+      message: entry.notification,
+    });
+
+    if (
+      entry.type === "notification" &&
+      entry.notification?.method === "session/update" &&
+      entry.notification?.params
+    ) {
+      events.push({
+        type: "session_update",
+        ts,
+        notification: entry.notification.params as SessionNotification,
+      });
+    }
+  }
+  return events;
+}

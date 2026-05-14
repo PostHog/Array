@@ -277,14 +277,26 @@ function processNewEvents(
 
   const flushAgentText = () => {
     if (!state.pendingAgentText) return;
-    const msg: ParsedMessage = {
-      id: `agent-${state.agentMessageCount++}`,
-      type: "agent",
-      content: state.pendingAgentText,
-      ts: state.pendingAgentTs,
-    };
-    state.messages.push(msg);
-    state.lastAgentMsgIdx = state.messages.length - 1;
+    // If the last message is an in-progress agent message from a previous
+    // batch, append to it instead of creating a new bubble. This keeps
+    // streaming chunks that arrive across multiple SSE batches unified
+    // into a single rendered message.
+    if (
+      state.lastAgentMsgIdx !== null &&
+      state.messages[state.lastAgentMsgIdx]?.type === "agent"
+    ) {
+      state.messages[state.lastAgentMsgIdx].content += state.pendingAgentText;
+      hasItemMutation = true;
+    } else {
+      const msg: ParsedMessage = {
+        id: `agent-${state.agentMessageCount++}`,
+        type: "agent",
+        content: state.pendingAgentText,
+        ts: state.pendingAgentTs,
+      };
+      state.messages.push(msg);
+      state.lastAgentMsgIdx = state.messages.length - 1;
+    }
     state.pendingAgentText = "";
     state.pendingAgentTs = undefined;
   };
@@ -336,7 +348,7 @@ function processNewEvents(
         break;
       case "agent_complete":
         flushThoughtText();
-        // If we already flushed an agent message from chunks, replace it
+        // Replace accumulated chunks with the finalized message
         if (
           state.lastAgentMsgIdx !== null &&
           state.messages[state.lastAgentMsgIdx]?.type === "agent"
@@ -345,6 +357,7 @@ function processNewEvents(
           if (!state.messages[state.lastAgentMsgIdx].ts) {
             state.messages[state.lastAgentMsgIdx].ts = event.ts;
           }
+          hasItemMutation = true;
           state.pendingAgentText = "";
           state.pendingAgentTs = undefined;
         } else {
@@ -825,7 +838,10 @@ export function TaskSessionView({
       // In the inverted list, paddingTop becomes visual bottom spacing.
       // Reserve enough room so the floating activity indicator never
       // covers the last visible row while the agent is working.
-      paddingTop: (baseStyle.paddingTop ?? 0) + 28,
+      // 28pt was tight at default text sizes and let cards (e.g. the
+      // Agent loading card) peek into the indicator strip — 44pt gives
+      // a real buffer plus headroom for larger dynamic-type settings.
+      paddingTop: (baseStyle.paddingTop ?? 0) + 44,
     };
   }, [contentContainerStyle, showActivityIndicator]);
   // Inverted FlatList: scrollY is the distance from the visual bottom, so
@@ -965,10 +981,13 @@ export function TaskSessionView({
           ) : null
         }
       />
-      {/* Thinking/connecting indicators absolutely positioned above the Composer area.
-          Rendered outside FlatList to avoid inverted-list double-mount bugs. */}
+      {/* Thinking/connecting indicators pinned to the bottom of the list area.
+          The Composer is a sibling below TaskSessionView in flex flow, so
+          `bottom-0` here sits the strip right above the composer's top edge.
+          Solid bg so list rows scrolling under it are occluded instead of
+          bleeding through. */}
       {showActivityIndicator && (
-        <View className="absolute inset-x-0 bottom-[92px] pb-2">
+        <View className="absolute inset-x-0 bottom-0 bg-background pt-1 pb-2">
           {isConnecting ? (
             <ConnectingIndicator />
           ) : isThinking ? (
