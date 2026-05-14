@@ -1,9 +1,18 @@
+import type {
+  AvailableSuggestedReviewer,
+  SignalReport,
+  SuggestedReviewer,
+} from "@/features/inbox/types";
 import type { TaskSession } from "../stores/taskSessionStore";
 import type {
   PlanEntry,
   SessionEvent,
   SessionNotification,
   Task,
+  WatchInboxReportAction,
+  WatchInboxReportSnapshot,
+  WatchInboxReviewer,
+  WatchInboxSuggestedReviewer,
   WatchTaskActionType,
   WatchTaskApproval,
   WatchTaskApprovalOption,
@@ -28,6 +37,12 @@ interface TaskBuildOptions {
   isStale?: boolean;
   staleReason?: string;
   isArchived?: boolean;
+}
+
+interface WatchInboxBuildOptions {
+  reviewers?: SuggestedReviewer[];
+  repository?: string | null;
+  currentUserUuid?: string;
 }
 
 interface ToolState {
@@ -425,7 +440,7 @@ function deriveStatus(args: {
   isStale: boolean;
   runStatus?: string | null;
 }): WatchTaskStatus {
-  const { session, approval, progress, isStale, runStatus } = args;
+  const { session, approval, isStale, runStatus } = args;
   if (session?.terminalStatus === "failed") return "failed";
   if (session?.terminalStatus === "completed") return "completed";
   if (runStatus === "completed") return "completed";
@@ -616,6 +631,138 @@ export function createWatchTaskSnapshot(
   };
 }
 
+function inboxStatusText(status: SignalReport["status"]): string {
+  switch (status) {
+    case "ready":
+      return "Ready";
+    case "pending_input":
+      return "Needs input";
+    case "in_progress":
+      return "Researching";
+    case "candidate":
+      return "Queued";
+    case "potential":
+      return "Gathering";
+    case "failed":
+      return "Failed";
+    case "suppressed":
+      return "Suppressed";
+    case "deleted":
+      return "Deleted";
+    default:
+      return status;
+  }
+}
+
+function actionabilityText(
+  value: SignalReport["actionability"],
+): string | undefined {
+  switch (value) {
+    case "immediately_actionable":
+      return "Actionable";
+    case "requires_human_input":
+      return "Needs input";
+    case "not_actionable":
+      return "Not actionable";
+    default:
+      return undefined;
+  }
+}
+
+function toWatchReviewer(
+  reviewer: SuggestedReviewer,
+  currentUserUuid?: string,
+): WatchInboxSuggestedReviewer {
+  const uuid = reviewer.user?.uuid;
+  return {
+    uuid,
+    name:
+      reviewer.user?.first_name?.trim() ||
+      reviewer.github_name?.trim() ||
+      reviewer.github_login,
+    githubLogin: reviewer.github_login,
+    isMe: !!uuid && uuid === currentUserUuid,
+  };
+}
+
+export function createWatchInboxReviewers(
+  reviewers: AvailableSuggestedReviewer[],
+  currentUserUuid?: string,
+): WatchInboxReviewer[] {
+  const seen = new Set<string>();
+  return reviewers
+    .filter((reviewer) => {
+      if (!reviewer.uuid || seen.has(reviewer.uuid)) return false;
+      seen.add(reviewer.uuid);
+      return true;
+    })
+    .map((reviewer) => ({
+      uuid: reviewer.uuid,
+      name: reviewer.name?.trim() || reviewer.email?.trim() || "Unknown user",
+      email: reviewer.email?.trim() || undefined,
+      githubLogin: reviewer.github_login?.trim() || undefined,
+      isMe: reviewer.uuid === currentUserUuid,
+    }))
+    .sort((a, b) => {
+      if (a.isMe && !b.isMe) return -1;
+      if (!a.isMe && b.isMe) return 1;
+      return a.name.localeCompare(b.name);
+    });
+}
+
+export function createWatchInboxReportSnapshot(
+  report: SignalReport,
+  options: WatchInboxBuildOptions = {},
+): WatchInboxReportSnapshot {
+  const suggestedReviewers = (options.reviewers ?? []).map((reviewer) =>
+    toWatchReviewer(reviewer, options.currentUserUuid),
+  );
+  const suggestedReviewerUuids = suggestedReviewers
+    .map((reviewer) => reviewer.uuid)
+    .filter((uuid): uuid is string => !!uuid);
+  const isAwaitingInput =
+    report.status === "pending_input" ||
+    (report.status === "ready" &&
+      report.actionability === "requires_human_input");
+  const canStartTask =
+    isAwaitingInput ||
+    (report.status === "ready" &&
+      report.actionability === "immediately_actionable" &&
+      report.already_addressed !== true);
+  const allowedActions: WatchInboxReportAction[] = ["dismiss"];
+  if (canStartTask) {
+    allowedActions.push(isAwaitingInput ? "implement_as_task" : "start_task");
+  }
+  allowedActions.push("open_phone");
+
+  return {
+    schemaVersion: 1,
+    id: report.id,
+    title: truncate(report.title, MAX_TITLE_LENGTH) ?? "Untitled signal",
+    summary: report.summary ?? undefined,
+    status: report.status,
+    statusText: inboxStatusText(report.status),
+    priority: report.priority,
+    actionability: report.actionability,
+    actionabilityText: actionabilityText(report.actionability),
+    alreadyAddressed: report.already_addressed,
+    isSuggestedReviewer: report.is_suggested_reviewer,
+    suggestedReviewerUuids,
+    suggestedReviewers,
+    sourceProducts: report.source_products ?? [],
+    signalCount: report.signal_count,
+    totalWeight: report.total_weight,
+    createdAt: toMillis(report.created_at),
+    updatedAt: toMillis(report.updated_at),
+    implementationPrUrl: report.implementation_pr_url,
+    repository: options.repository ?? undefined,
+    allowedActions,
+    handoff: {
+      phoneUrl: `posthog://report/${report.id}`,
+    },
+  };
+}
+
 export function createWatchTaskEnvelope(
   sourceTasks: Task[],
   sessionsByTaskId: Record<string, TaskSession | undefined>,
@@ -623,6 +770,8 @@ export function createWatchTaskEnvelope(
   options: TaskBuildOptions & {
     archivedTaskIds?: Set<string>;
     isAuthenticated?: boolean;
+    inboxReports?: WatchInboxReportSnapshot[];
+    inboxReviewers?: WatchInboxReviewer[];
   } = {},
 ): WatchTaskEnvelope {
   const now = options.now ?? Date.now();
@@ -646,5 +795,7 @@ export function createWatchTaskEnvelope(
       (snapshot) => snapshot.taskId === activeTaskId,
     )?.id,
     tasks: taskSnapshots,
+    inboxReports: options.inboxReports ?? [],
+    inboxReviewers: options.inboxReviewers ?? [],
   };
 }

@@ -6,7 +6,7 @@ struct PostHogCodeWatchApp: App {
 
     var body: some Scene {
         WindowGroup {
-            TasksRootView()
+            WatchHomeView()
                 .environmentObject(store)
         }
     }

@@ -2,6 +2,16 @@ import * as Haptics from "expo-haptics";
 import { Alert, AppState, Linking } from "react-native";
 import { create } from "zustand";
 import { useAuthStore } from "@/features/auth/stores/authStore";
+import {
+  dismissSignalReport,
+  getAvailableSuggestedReviewers,
+  getReportRepository,
+  getSignalReport,
+  getSignalReportArtefacts,
+  getSignalReports,
+} from "@/features/inbox/api";
+import type { DismissalReasonOptionValue } from "@/features/inbox/constants";
+import type { SuggestedReviewer } from "@/features/inbox/types";
 import { presentLocalNotification } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { logger } from "@/lib/logger";
@@ -28,11 +38,17 @@ import {
   type SessionNotificationAttachment,
   type StoredLogEntry,
   type Task,
+  type WatchInboxReportSnapshot,
+  type WatchInboxReviewer,
   type WatchTaskCommand,
 } from "../types";
 import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
 import { playMeepSound } from "../utils/sounds";
-import { createWatchTaskEnvelope } from "../utils/watchTaskControl";
+import {
+  createWatchInboxReportSnapshot,
+  createWatchInboxReviewers,
+  createWatchTaskEnvelope,
+} from "../utils/watchTaskControl";
 import {
   publishWatchTaskEnvelope,
   sendUrgentWatchTaskUpdate,
@@ -260,6 +276,8 @@ interface TaskSessionStore {
   sessions: Record<string, TaskSession>;
   focusedTaskId: string | null;
   watchTasks: Record<string, Task>;
+  watchInboxReports: WatchInboxReportSnapshot[];
+  watchInboxReviewers: WatchInboxReviewer[];
   activeWatchTaskId?: string;
 
   setFocusedTaskId: (taskId: string | null) => void;
@@ -315,7 +333,7 @@ let watchPublishUrgent = false;
 let watchCommandUnsubscribe: (() => void) | null = null;
 const WATCH_SNAPSHOT_DEBOUNCE_MS = 250;
 
-type WatchCurrentUser = { id: number };
+type WatchCurrentUser = { id: number; uuid?: string };
 
 async function fetchCurrentUserForWatch(): Promise<WatchCurrentUser> {
   const cached = queryClient.getQueryData<WatchCurrentUser>(["user", "me"]);
@@ -343,18 +361,91 @@ async function fetchCurrentUserForWatch(): Promise<WatchCurrentUser> {
   });
 }
 
-async function fetchCurrentWatchTasks(): Promise<Task[]> {
-  const currentUser = await fetchCurrentUserForWatch();
-  return getTasks({
-    createdBy: currentUser.id,
-    originProduct: "user_created",
-  });
+type SignalReportArtefact = Awaited<
+  ReturnType<typeof getSignalReportArtefacts>
+>["results"][number];
+
+function extractSuggestedReviewers(
+  artefacts: SignalReportArtefact[],
+): SuggestedReviewer[] {
+  const artefact = artefacts.find(
+    (item) => item.type === "suggested_reviewers",
+  );
+  return Array.isArray(artefact?.content)
+    ? (artefact.content as SuggestedReviewer[])
+    : [];
+}
+
+function extractReportRepository(
+  artefacts: SignalReportArtefact[],
+): string | null {
+  const artefact = artefacts.find((item) => item.type === "repo_selection");
+  if (!artefact) return null;
+  let parsed: unknown = artefact.content;
+  if (typeof parsed === "string") {
+    const raw = parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return raw.toLowerCase();
+    }
+  }
+  if (typeof parsed === "object" && parsed !== null) {
+    const repo =
+      (parsed as Record<string, unknown>).repository ??
+      (parsed as Record<string, unknown>).repo;
+    if (typeof repo === "string") return repo.toLowerCase();
+  }
+  return null;
+}
+
+async function fetchCurrentWatchInbox(currentUser: WatchCurrentUser): Promise<{
+  reports: WatchInboxReportSnapshot[];
+  reviewers: WatchInboxReviewer[];
+}> {
+  const [reportsResponse, availableReviewers] = await Promise.all([
+    getSignalReports({
+      limit: 50,
+      status: "ready,pending_input,in_progress,failed,candidate,potential",
+      ordering: "status,-is_suggested_reviewer,priority",
+    }),
+    getAvailableSuggestedReviewers(),
+  ]);
+
+  const reviewers = createWatchInboxReviewers(
+    availableReviewers.results,
+    currentUser.uuid,
+  );
+
+  const reports = await Promise.all(
+    reportsResponse.results.map(async (report) => {
+      const artefacts = await getSignalReportArtefacts(report.id);
+      return createWatchInboxReportSnapshot(report, {
+        reviewers: extractSuggestedReviewers(artefacts.results),
+        repository: extractReportRepository(artefacts.results),
+        currentUserUuid: currentUser.uuid,
+      });
+    }),
+  );
+
+  return { reports, reviewers };
 }
 
 async function refreshCurrentWatchTasks(): Promise<void> {
-  const tasks = await fetchCurrentWatchTasks();
+  const currentUser = await fetchCurrentUserForWatch();
+  const [tasks, inbox] = await Promise.all([
+    getTasks({
+      createdBy: currentUser.id,
+    }),
+    fetchCurrentWatchInbox(currentUser).catch((error) => {
+      log.warn("Failed to refresh Watch inbox", { error });
+      return { reports: [], reviewers: [] };
+    }),
+  ]);
   useTaskSessionStore.setState({
     watchTasks: Object.fromEntries(tasks.map((task) => [task.id, task])),
+    watchInboxReports: inbox.reports,
+    watchInboxReviewers: inbox.reviewers,
   });
 }
 
@@ -385,6 +476,8 @@ function buildWatchTaskEnvelopeFromStore() {
     {
       archivedTaskIds: new Set(Object.keys(archivedTasks)),
       isAuthenticated: useAuthStore.getState().isAuthenticated,
+      inboxReports: state.watchInboxReports,
+      inboxReviewers: state.watchInboxReviewers,
     },
   );
 }
@@ -469,6 +562,8 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   sessions: {},
   focusedTaskId: null,
   watchTasks: {},
+  watchInboxReports: [],
+  watchInboxReviewers: [],
 
   setFocusedTaskId: (taskId) => set({ focusedTaskId: taskId }),
 
@@ -917,6 +1012,38 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           command.url ?? `posthog://task/${command.taskId}`,
         );
         break;
+      case "open_report":
+        await Linking.openURL(
+          command.url ??
+            `posthog://report/${command.reportId ?? command.taskId}`,
+        );
+        break;
+      case "dismiss_report": {
+        const reportId = command.reportId ?? command.taskId;
+        await dismissSignalReport(reportId, {
+          reason: (command.optionId ?? "other") as DismissalReasonOptionValue,
+          note: command.customInput,
+        });
+        await refreshCurrentWatchTasks();
+        scheduleWatchTaskPublish({ urgent: true });
+        break;
+      }
+      case "start_report_task": {
+        const reportId = command.reportId ?? command.taskId;
+        const report = await getSignalReport(reportId);
+        if (!report) throw new Error("Signal report not found");
+        const repository = await getReportRepository(reportId).catch(
+          () => null,
+        );
+        const prompt = `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`;
+        const params = new URLSearchParams({
+          prompt,
+          signalReport: reportId,
+        });
+        if (repository) params.set("repo", repository);
+        await Linking.openURL(`posthog://task?${params.toString()}`);
+        break;
+      }
       case "open_mac":
         await Linking.openURL(macTaskUrl(command));
         break;

@@ -6,6 +6,8 @@ struct WatchTaskEnvelope: Codable {
     let isAuthenticated: Bool?
     let activeTaskId: String?
     let tasks: [WatchTaskSnapshot]
+    let inboxReports: [WatchInboxReportSnapshot]?
+    let inboxReviewers: [WatchInboxReviewer]?
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion
@@ -13,7 +15,51 @@ struct WatchTaskEnvelope: Codable {
         case isAuthenticated
         case activeTaskId = "activeTaskId"
         case tasks = "tasks"
+        case inboxReports = "inboxReports"
+        case inboxReviewers = "inboxReviewers"
     }
+}
+
+struct WatchInboxReviewer: Codable, Identifiable {
+    var id: String { uuid }
+    let uuid: String
+    let name: String
+    let email: String?
+    let githubLogin: String?
+    let isMe: Bool?
+}
+
+struct WatchInboxSuggestedReviewer: Codable, Identifiable {
+    var id: String { uuid ?? githubLogin }
+    let uuid: String?
+    let name: String
+    let githubLogin: String
+    let isMe: Bool?
+}
+
+struct WatchInboxReportSnapshot: Codable, Identifiable {
+    let schemaVersion: Int
+    let id: String
+    let title: String
+    let summary: String?
+    let status: String
+    let statusText: String
+    let priority: String?
+    let actionability: String?
+    let actionabilityText: String?
+    let alreadyAddressed: Bool?
+    let isSuggestedReviewer: Bool?
+    let suggestedReviewerUuids: [String]
+    let suggestedReviewers: [WatchInboxSuggestedReviewer]
+    let sourceProducts: [String]
+    let signalCount: Int
+    let totalWeight: Double
+    let createdAt: TimeInterval?
+    let updatedAt: TimeInterval?
+    let implementationPrUrl: String?
+    let repository: String?
+    let allowedActions: [String]
+    let handoff: WatchTaskHandoff
 }
 
 struct WatchTaskSnapshot: Codable, Identifiable {
@@ -122,4 +168,34 @@ struct WatchTaskCommand: Codable {
     let answers: [String: String]?
     let customInput: String?
     let url: String?
+    let reportId: String?
+    let dismissalReason: String?
+
+    init(
+        id: String,
+        type: String,
+        taskId: String,
+        taskRunId: String? = nil,
+        toolCallId: String? = nil,
+        optionId: String? = nil,
+        displayText: String? = nil,
+        answers: [String: String]? = nil,
+        customInput: String? = nil,
+        url: String? = nil,
+        reportId: String? = nil,
+        dismissalReason: String? = nil
+    ) {
+        self.id = id
+        self.type = type
+        self.taskId = taskId
+        self.taskRunId = taskRunId
+        self.toolCallId = toolCallId
+        self.optionId = optionId
+        self.displayText = displayText
+        self.answers = answers
+        self.customInput = customInput
+        self.url = url
+        self.reportId = reportId
+        self.dismissalReason = dismissalReason
+    }
 }

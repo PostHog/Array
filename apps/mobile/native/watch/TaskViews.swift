@@ -665,3 +665,394 @@ struct HandoffButtons: View {
     store.send(command: WatchTaskCommand(id: UUID().uuidString, type: "send_prompt", taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: "Demo prompt from Apple Watch", answers: nil, customInput: nil, url: nil))
   }
 }
+
+struct WatchHomeView: View {
+  @EnvironmentObject private var store: WatchTaskStore
+
+  var body: some View {
+    NavigationStack {
+      List {
+        Button { store.requestSnapshot() } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+          .font(.caption2)
+        }
+        .buttonStyle(.plain)
+        NavigationLink { TasksRootView() } label: {
+          Label {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("Tasks")
+              Text("\(store.tasks.count) synced")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          } icon: {
+            Image(systemName: "checklist")
+          }
+        }
+        NavigationLink { InboxListView() } label: {
+          Label {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("Inbox")
+              Text("\((store.envelope?.inboxReports ?? []).count) reports")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          } icon: {
+            Image(systemName: "tray")
+          }
+        }
+      }
+      .navigationTitle("PostHog Code")
+    }
+  }
+}
+
+enum WatchInboxSortMode: String, CaseIterable {
+  case priority
+  case updated
+  case strongest
+
+  var label: String {
+    switch self {
+    case .priority: return "Priority"
+    case .updated: return "Updated"
+    case .strongest: return "Strongest"
+    }
+  }
+}
+
+enum WatchInboxStatusFilter: String, CaseIterable {
+  case active
+  case ready
+  case needsInput
+  case all
+
+  var label: String {
+    switch self {
+    case .active: return "Active"
+    case .ready: return "Ready"
+    case .needsInput: return "Needs input"
+    case .all: return "All"
+    }
+  }
+}
+
+func inboxStatusColor(_ status: String) -> Color {
+  switch status {
+  case "ready": return .green
+  case "pending_input", "in_progress": return .orange
+  case "candidate": return .blue
+  case "failed": return .red
+  default: return .secondary
+  }
+}
+
+func priorityRank(_ priority: String?) -> Int {
+  switch priority {
+  case "P0": return 0
+  case "P1": return 1
+  case "P2": return 2
+  case "P3": return 3
+  case "P4": return 4
+  default: return 9
+  }
+}
+
+func sourceProductLabel(_ source: String) -> String {
+  source
+    .split(separator: "_")
+    .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+    .joined(separator: " ")
+}
+
+struct InboxListView: View {
+  @EnvironmentObject private var store: WatchTaskStore
+  @AppStorage("watch_inbox_sort_mode") private var sortModeRaw = WatchInboxSortMode.priority.rawValue
+  @AppStorage("watch_inbox_status_filter") private var statusFilterRaw = WatchInboxStatusFilter.active.rawValue
+  @AppStorage("watch_inbox_source_filter") private var sourceFilter = "all"
+  @AppStorage("watch_inbox_reviewer_filter") private var reviewerFilter = "all"
+
+  private var sortMode: WatchInboxSortMode {
+    WatchInboxSortMode(rawValue: sortModeRaw) ?? .priority
+  }
+
+  private var statusFilter: WatchInboxStatusFilter {
+    WatchInboxStatusFilter(rawValue: statusFilterRaw) ?? .active
+  }
+
+  private var reports: [WatchInboxReportSnapshot] {
+    (store.envelope?.inboxReports ?? [])
+      .filter(matchesStatus)
+      .filter { sourceFilter == "all" || $0.sourceProducts.contains(sourceFilter) }
+      .filter { report in
+        if reviewerFilter == "all" { return true }
+        if reviewerFilter == "me" { return report.isSuggestedReviewer == true }
+        return report.suggestedReviewerUuids.contains(reviewerFilter)
+      }
+      .sorted(by: sortReports)
+  }
+
+  var body: some View {
+    if store.envelope?.isAuthenticated == false {
+      SignedOutWatchView(state: store.connectionState)
+    } else {
+      List {
+        NavigationLink { InboxFilterView() } label: {
+          Label("Filter & Sort", systemImage: "line.3.horizontal.decrease.circle")
+        }
+        if reports.isEmpty {
+          Text("No matching reports")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else {
+          ForEach(reports) { report in
+            NavigationLink { InboxReportDetailView(report: report) } label: {
+              InboxReportRow(report: report)
+            }
+          }
+        }
+      }
+      .navigationTitle("Inbox")
+    }
+  }
+
+  private func matchesStatus(_ report: WatchInboxReportSnapshot) -> Bool {
+    switch statusFilter {
+    case .active:
+      return ["ready", "pending_input", "in_progress", "failed", "candidate", "potential"].contains(report.status)
+    case .ready:
+      return report.status == "ready"
+    case .needsInput:
+      return report.status == "pending_input" || report.actionability == "requires_human_input"
+    case .all:
+      return true
+    }
+  }
+
+  private func sortReports(_ lhs: WatchInboxReportSnapshot, _ rhs: WatchInboxReportSnapshot) -> Bool {
+    if lhs.isSuggestedReviewer == true && rhs.isSuggestedReviewer != true { return true }
+    if lhs.isSuggestedReviewer != true && rhs.isSuggestedReviewer == true { return false }
+    switch sortMode {
+    case .priority:
+      let lhsRank = priorityRank(lhs.priority)
+      let rhsRank = priorityRank(rhs.priority)
+      if lhsRank != rhsRank { return lhsRank < rhsRank }
+      return (lhs.updatedAt ?? 0) > (rhs.updatedAt ?? 0)
+    case .updated:
+      return (lhs.updatedAt ?? 0) > (rhs.updatedAt ?? 0)
+    case .strongest:
+      return lhs.totalWeight > rhs.totalWeight
+    }
+  }
+}
+
+struct InboxReportRow: View {
+  let report: WatchInboxReportSnapshot
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 8) {
+      Circle()
+        .fill(inboxStatusColor(report.status))
+        .frame(width: 9, height: 9)
+        .padding(.top, 4)
+      VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .firstTextBaseline) {
+          Text(report.title).font(.caption).lineLimit(2)
+          Spacer(minLength: 4)
+          Text(shortTime(report.updatedAt))
+            .font(.system(size: 10))
+            .foregroundStyle(.secondary)
+        }
+        HStack(spacing: 4) {
+          Text(report.statusText)
+          if let priority = report.priority { Text(priority) }
+          if let actionability = report.actionabilityText { Text(actionability) }
+          if report.isSuggestedReviewer == true { Text("For you") }
+        }
+        .font(.system(size: 9))
+        .foregroundStyle(.secondary)
+        HStack(spacing: 4) {
+          Image(systemName: "bolt.fill")
+            .font(.system(size: 8))
+          Text("\(report.signalCount)")
+          if let firstSource = report.sourceProducts.first { Text(sourceProductLabel(firstSource)) }
+        }
+        .font(.system(size: 9))
+        .foregroundStyle(.secondary)
+      }
+    }
+  }
+}
+
+struct InboxFilterView: View {
+  @EnvironmentObject private var store: WatchTaskStore
+  @AppStorage("watch_inbox_sort_mode") private var sortModeRaw = WatchInboxSortMode.priority.rawValue
+  @AppStorage("watch_inbox_status_filter") private var statusFilterRaw = WatchInboxStatusFilter.active.rawValue
+  @AppStorage("watch_inbox_source_filter") private var sourceFilter = "all"
+  @AppStorage("watch_inbox_reviewer_filter") private var reviewerFilter = "all"
+
+  private var sources: [String] {
+    Array(Set((store.envelope?.inboxReports ?? []).flatMap { $0.sourceProducts })).sorted()
+  }
+
+  var body: some View {
+    Form {
+      Picker("Sort by", selection: $sortModeRaw) {
+        ForEach(WatchInboxSortMode.allCases, id: \.rawValue) { mode in
+          Text(mode.label).tag(mode.rawValue)
+        }
+      }
+      Picker("Status", selection: $statusFilterRaw) {
+        ForEach(WatchInboxStatusFilter.allCases, id: \.rawValue) { filter in
+          Text(filter.label).tag(filter.rawValue)
+        }
+      }
+      Picker("Source", selection: $sourceFilter) {
+        Text("All").tag("all")
+        ForEach(sources, id: \.self) { source in
+          Text(sourceProductLabel(source)).tag(source)
+        }
+      }
+      Picker("Reviewer", selection: $reviewerFilter) {
+        Text("All").tag("all")
+        Text("Me").tag("me")
+        ForEach(store.envelope?.inboxReviewers ?? []) { reviewer in
+          Text(reviewer.isMe == true ? "\(reviewer.name) (Me)" : reviewer.name)
+            .tag(reviewer.uuid)
+        }
+      }
+    }
+    .navigationTitle("Filter")
+  }
+}
+
+struct InboxReportDetailView: View {
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: WatchTaskStore
+  let report: WatchInboxReportSnapshot
+
+  private var reportIds: String {
+    (store.envelope?.inboxReports ?? [])
+      .map(\.id)
+      .sorted()
+      .joined(separator: ",")
+  }
+
+  private var primaryActionTitle: String? {
+    if report.allowedActions.contains("implement_as_task") { return "Implement as task" }
+    if report.allowedActions.contains("start_task") { return "Start task" }
+    return nil
+  }
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
+          HStack(spacing: 6) {
+            Chip(text: report.statusText, color: inboxStatusColor(report.status))
+            if let priority = report.priority { Chip(text: priority, color: .orange) }
+            if report.isSuggestedReviewer == true { Chip(text: "For you", color: .orange) }
+          }
+          Text(report.title).font(.headline).lineLimit(3)
+          HStack(spacing: 4) {
+            Image(systemName: "bolt.fill")
+              .font(.system(size: 10))
+            Text("\(report.signalCount) signal\(report.signalCount == 1 ? "" : "s")")
+            if let updatedAt = report.updatedAt { Text("· \(shortTime(updatedAt))") }
+          }
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+        }
+
+        if report.alreadyAddressed == true {
+          Label("May already be addressed", systemImage: "exclamationmark.triangle.fill")
+            .font(.caption)
+            .foregroundStyle(.orange)
+        }
+
+        if let summary = report.summary, !summary.isEmpty {
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Summary").font(.caption2).foregroundStyle(.secondary)
+            Text(summary).font(.caption).lineLimit(10)
+          }
+          .padding(10)
+          .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        }
+
+        if !report.suggestedReviewers.isEmpty {
+          VStack(alignment: .leading, spacing: 6) {
+            Text("Suggested reviewers").font(.caption2).foregroundStyle(.secondary)
+            ForEach(report.suggestedReviewers) { reviewer in
+              HStack(spacing: 6) {
+                Image(systemName: reviewer.isMe == true ? "eye.fill" : "person.crop.circle")
+                  .foregroundStyle(reviewer.isMe == true ? .orange : .secondary)
+                Text(reviewer.isMe == true ? "\(reviewer.name) (Me)" : reviewer.name)
+                  .font(.caption)
+                  .lineLimit(1)
+              }
+            }
+          }
+        }
+
+        if !report.sourceProducts.isEmpty {
+          HStack(spacing: 4) {
+            ForEach(report.sourceProducts.prefix(3), id: \.self) { source in
+              Chip(text: sourceProductLabel(source))
+            }
+          }
+        }
+
+        VStack(spacing: 6) {
+          if let primaryActionTitle {
+            Button(primaryActionTitle) {
+              send(type: "start_report_task")
+              dismiss()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(accent)
+          }
+          if report.allowedActions.contains("dismiss") {
+            Button("Dismiss") {
+              sendDismiss()
+              dismiss()
+            }
+            .tint(.red)
+          }
+          Button("Open on iPhone") { send(type: "open_report") }
+          if let status = store.lastCommandStatus {
+            Text(status).font(.caption2).foregroundStyle(.secondary)
+          }
+        }
+      }
+      .padding(.vertical, 4)
+    }
+    .navigationTitle("Report")
+    .onChange(of: reportIds) { ids in
+      if !ids.split(separator: ",").contains(Substring(report.id)) {
+        dismiss()
+      }
+    }
+  }
+
+  private func send(type: String) {
+    store.send(command: WatchTaskCommand(
+      id: UUID().uuidString,
+      type: type,
+      taskId: report.id,
+      url: report.handoff.phoneUrl,
+      reportId: report.id
+    ))
+  }
+
+  private func sendDismiss() {
+    store.send(command: WatchTaskCommand(
+      id: UUID().uuidString,
+      type: "dismiss_report",
+      taskId: report.id,
+      optionId: "other",
+      displayText: "Dismiss report",
+      url: report.handoff.phoneUrl,
+      reportId: report.id
+    ))
+  }
+}

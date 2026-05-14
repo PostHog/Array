@@ -159,6 +159,69 @@ export type WatchTaskActionType =
   | "open_mac"
   | "view_diff";
 
+export type WatchInboxReportStatus =
+  | "potential"
+  | "candidate"
+  | "in_progress"
+  | "ready"
+  | "failed"
+  | "pending_input"
+  | "suppressed"
+  | "deleted";
+
+export type WatchInboxReportPriority = "P0" | "P1" | "P2" | "P3" | "P4";
+
+export type WatchInboxReportActionability =
+  | "immediately_actionable"
+  | "requires_human_input"
+  | "not_actionable";
+
+export interface WatchInboxReviewer {
+  uuid: string;
+  name: string;
+  email?: string;
+  githubLogin?: string;
+  isMe?: boolean;
+}
+
+export interface WatchInboxSuggestedReviewer {
+  uuid?: string;
+  name: string;
+  githubLogin: string;
+  isMe?: boolean;
+}
+
+export type WatchInboxReportAction =
+  | "dismiss"
+  | "start_task"
+  | "implement_as_task"
+  | "open_phone";
+
+export interface WatchInboxReportSnapshot {
+  schemaVersion: 1;
+  id: string;
+  title: string;
+  summary?: string;
+  status: WatchInboxReportStatus;
+  statusText: string;
+  priority?: WatchInboxReportPriority | null;
+  actionability?: WatchInboxReportActionability | null;
+  actionabilityText?: string;
+  alreadyAddressed?: boolean | null;
+  isSuggestedReviewer?: boolean;
+  suggestedReviewerUuids: string[];
+  suggestedReviewers: WatchInboxSuggestedReviewer[];
+  sourceProducts: string[];
+  signalCount: number;
+  totalWeight: number;
+  createdAt?: number;
+  updatedAt?: number;
+  implementationPrUrl?: string | null;
+  repository?: string | null;
+  allowedActions: WatchInboxReportAction[];
+  handoff: WatchTaskHandoff;
+}
+
 export interface WatchTaskProgress {
   completed: number;
   running: number;
@@ -261,6 +324,8 @@ export interface WatchTaskEnvelope {
   isAuthenticated: boolean;
   activeTaskId?: string;
   tasks: WatchTaskSnapshot[];
+  inboxReports?: WatchInboxReportSnapshot[];
+  inboxReviewers?: WatchInboxReviewer[];
 }
 
 interface WatchTaskCommandBase {
@@ -295,8 +360,13 @@ export type WatchTaskCommand =
         | "view_diff"
         | "archive"
         | "restore"
-        | "create_task";
+        | "create_task"
+        | "open_report"
+        | "dismiss_report"
+        | "start_report_task";
       url?: string;
+      reportId?: string;
+      optionId?: string;
       displayText?: string;
       customInput?: string;
     });
