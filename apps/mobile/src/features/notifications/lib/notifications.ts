@@ -2,16 +2,33 @@ import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+import { externalUrlToAppPath, paths } from "@/lib/deep-links";
 import { logger } from "@/lib/logger";
 
 const log = logger.scope("notifications");
 
+/**
+ * Shape of `content.data` we expect on incoming notifications.
+ *
+ * Two forms are accepted (in priority order):
+ *   1. `{ url: "posthog://task/abc" }` or `{ url: "/task/abc" }` — generic
+ *      deep link. Preferred for new notification types.
+ *   2. `{ taskId, taskRunId? }` — legacy task-specific shape kept for
+ *      backwards compatibility with already-queued server notifications.
+ */
 export interface NotificationData {
   taskId: string;
   taskRunId: string;
 }
 
-export type NotificationResponseHandler = (data: NotificationData) => void;
+export interface NotificationTapPayload {
+  /** App-relative path to navigate to (e.g. "/task/abc"). */
+  path: string;
+}
+
+export type NotificationResponseHandler = (
+  payload: NotificationTapPayload,
+) => void;
 
 let handlerConfigured = false;
 
@@ -101,20 +118,30 @@ export async function presentLocalNotification(args: {
   }
 }
 
-function extractNotificationData(
+function extractTapPayload(
   response: Notifications.NotificationResponse,
-): NotificationData | null {
+): NotificationTapPayload | null {
   const data = response.notification.request.content.data as
-    | Partial<NotificationData>
+    | { url?: unknown; taskId?: unknown; taskRunId?: unknown }
     | undefined;
-  if (
-    !data ||
-    typeof data.taskId !== "string" ||
-    typeof data.taskRunId !== "string"
-  ) {
+  if (!data) return null;
+
+  if (typeof data.url === "string" && data.url.length > 0) {
+    // Already-shaped app path → use as-is. External URL → translate to one.
+    if (data.url.startsWith("/")) return { path: data.url };
+    const path = externalUrlToAppPath(data.url);
+    if (path) return { path };
+    log.warn("Notification url did not match a known scheme", {
+      url: data.url,
+    });
     return null;
   }
-  return { taskId: data.taskId, taskRunId: data.taskRunId };
+
+  if (typeof data.taskId === "string") {
+    return { path: paths.task(data.taskId) };
+  }
+
+  return null;
 }
 
 /**
@@ -130,8 +157,8 @@ export function setupNotificationResponseListener(
   Notifications.getLastNotificationResponseAsync()
     .then((response) => {
       if (!response) return;
-      const data = extractNotificationData(response);
-      if (data) onTap(data);
+      const payload = extractTapPayload(response);
+      if (payload) onTap(payload);
     })
     .catch((err) => {
       log.warn("Failed to read last notification response", { error: err });
@@ -139,8 +166,8 @@ export function setupNotificationResponseListener(
 
   const subscription = Notifications.addNotificationResponseReceivedListener(
     (response) => {
-      const data = extractNotificationData(response);
-      if (data) onTap(data);
+      const payload = extractTapPayload(response);
+      if (payload) onTap(payload);
     },
   );
 

@@ -1,6 +1,6 @@
 import { Text } from "@components/text";
 import { CaretRight, GitBranch } from "phosphor-react-native";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -12,6 +12,7 @@ import { useThemeColors } from "@/lib/theme";
 import { useIntegrations } from "../hooks/useIntegrations";
 import { useTasks } from "../hooks/useTasks";
 import { useArchivedTasksStore } from "../stores/archivedTasksStore";
+import { useTaskSessionStore } from "../stores/taskSessionStore";
 import { taskActivityTimestamp, useTaskStore } from "../stores/taskStore";
 import type { Task } from "../types";
 import { GitHubConnectionPrompt } from "./GitHubConnectionPrompt";
@@ -41,7 +42,7 @@ function CreateTaskEmptyState({ onCreateTask }: CreateTaskEmptyStateProps) {
         No tasks yet
       </Text>
       <Text className="mb-6 text-center text-gray-11 text-sm">
-        Create your first task to get PostHog working.
+        Create a task to get started
       </Text>
       {onCreateTask && (
         <Pressable
@@ -104,10 +105,23 @@ export function TaskList({
   } = useIntegrations();
   const themeColors = useThemeColors();
   const { archivedTasks, archive, unarchive } = useArchivedTasksStore();
+  const registerWatchTask = useTaskSessionStore(
+    (state) => state.registerWatchTask,
+  );
+  const publishWatchSnapshot = useTaskSessionStore(
+    (state) => state.publishWatchSnapshot,
+  );
   const organizeMode = useTaskStore((s) => s.organizeMode);
   const sortMode = useTaskStore((s) => s.sortMode);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
+
+  useEffect(() => {
+    for (const task of tasks) {
+      registerWatchTask(task);
+    }
+    publishWatchSnapshot({ urgent: true });
+  }, [tasks, registerWatchTask, publishWatchSnapshot]);
 
   const handleTaskPress = (task: Task) => {
     onTaskPress?.(task.id);

@@ -62,6 +62,7 @@ interface TaskChatComposerProps {
   onStop?: () => void;
   disabled?: boolean;
   placeholder?: string;
+  initialMessage?: string;
   isUserTurn?: boolean;
   /** Current pill values (persisted per-task by the caller). */
   mode: ExecutionMode;
@@ -142,6 +143,7 @@ export function TaskChatComposer({
   onStop,
   disabled = false,
   placeholder = "Ask a question",
+  initialMessage,
   isUserTurn = false,
   mode,
   model,
@@ -151,9 +153,14 @@ export function TaskChatComposer({
   onReasoningChange,
 }: TaskChatComposerProps) {
   const themeColors = useThemeColors();
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(() => initialMessage ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
+
+  useEffect(() => {
+    if (!initialMessage) return;
+    setMessage(initialMessage);
+  }, [initialMessage]);
 
   const appendTranscript = useCallback((transcript: string) => {
     setMessage((prev) => (prev ? `${prev} ${transcript}` : transcript));

@@ -18,6 +18,7 @@
       "icon": "./assets/app.icon",
       "supportsTablet": true,
       "bundleIdentifier": "com.posthog.code.mobile",
+      "associatedDomains": ["applinks:code.posthog.com"],
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Allow PostHog to use your microphone for voice-to-text input",
         "NSSpeechRecognitionUsageDescription": "Allow PostHog to transcribe your voice input on-device",
@@ -39,6 +40,19 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.CAMERA"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "code.posthog.com"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
     "web": {
@@ -58,6 +72,7 @@
           "cameraPermission": "Allow PostHog to use your camera to scan QR codes for sign-in"
         }
       ],
+      "./plugins/withWatchApp",
       [
         "expo-font",
         {

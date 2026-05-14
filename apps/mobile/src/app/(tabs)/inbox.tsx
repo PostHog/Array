@@ -49,7 +49,7 @@ export default function InboxScreen() {
   // ── List mode handlers ────────────────────────────────────────────────────
   const handleReportPress = useCallback(
     (report: SignalReport) => {
-      router.push(`/report/${report.id}`);
+      router.push(`/inbox/${report.id}`);
     },
     [router],
   );
