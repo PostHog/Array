@@ -25,11 +25,14 @@ import { useTasks } from "@features/tasks/hooks/useTasks";
 import { TourOverlay } from "@features/tour/components/TourOverlay";
 import { useTourStore } from "@features/tour/stores/tourStore";
 import { createFirstTaskTour } from "@features/tour/tours/createFirstTaskTour";
-import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
+import {
+  useWorkspaces,
+  workspaceApi,
+} from "@features/workspace/hooks/useWorkspace";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { Box, Flex } from "@radix-ui/themes";
-import { trpcClient, useTRPC } from "@renderer/trpc/client";
+import { useTRPC } from "@renderer/trpc/client";
 import { BILLING_FLAG } from "@shared/constants";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
@@ -99,7 +102,7 @@ export function MainLayout() {
     for (const t of missing) reconcilingTaskIds.current.add(t.id);
     void Promise.allSettled(
       missing.map((t) =>
-        trpcClient.workspace.create.mutate({
+        workspaceApi.create({
           taskId: t.id,
           mainRepoPath: "",
           folderId: "",
@@ -108,16 +111,21 @@ export function MainLayout() {
         }),
       ),
     ).then((results) => {
+      let anySucceeded = false;
       for (const [i, r] of results.entries()) {
         const id = missing[i].id;
         reconcilingTaskIds.current.delete(id);
         if (r.status === "rejected") {
           log.warn(`Failed to reconcile workspace for task ${id}`, r.reason);
+        } else {
+          anySucceeded = true;
         }
       }
-      void queryClient.invalidateQueries(
-        trpcReact.workspace.getAll.pathFilter(),
-      );
+      if (anySucceeded) {
+        void queryClient.invalidateQueries(
+          trpcReact.workspace.getAll.pathFilter(),
+        );
+      }
     });
   }, [tasks, workspaces, workspacesFetched, queryClient, trpcReact]);
 
