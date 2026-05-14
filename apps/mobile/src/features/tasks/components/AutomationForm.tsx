@@ -44,6 +44,7 @@ interface AutomationFormProps {
   generalError?: string | null;
   onSubmit: (values: CreateTaskAutomationOptions) => Promise<void> | void;
   onCancel?: () => void;
+  repositoryRequired?: boolean;
 }
 
 export function AutomationForm({
@@ -54,6 +55,7 @@ export function AutomationForm({
   generalError,
   onSubmit,
   onCancel,
+  repositoryRequired = true,
 }: AutomationFormProps) {
   const themeColors = useThemeColors();
   const {
@@ -63,7 +65,7 @@ export function AutomationForm({
     repositoryWarning,
     isLoading,
     refetch,
-  } = useIntegrations();
+  } = useIntegrations({ enabled: repositoryRequired });
 
   const [name, setName] = useState(initialValues?.name ?? "");
   const [prompt, setPrompt] = useState(initialValues?.prompt ?? "");
@@ -111,7 +113,8 @@ export function AutomationForm({
       repository:
         fieldError?.attr === "repository"
           ? fieldError.message
-          : hasAttemptedSubmit &&
+          : repositoryRequired &&
+              hasAttemptedSubmit &&
               !isRepositorySelectionComplete(repositorySelection)
             ? "Repository selection is required."
             : null,
@@ -130,6 +133,7 @@ export function AutomationForm({
       name,
       prompt,
       repositorySelection,
+      repositoryRequired,
       timezone,
     ],
   );
@@ -138,10 +142,11 @@ export function AutomationForm({
     !!name.trim() &&
     !!prompt.trim() &&
     !!timezone.trim() &&
-    isRepositorySelectionComplete(repositorySelection) &&
+    (!repositoryRequired ||
+      isRepositorySelectionComplete(repositorySelection)) &&
     !isSubmitting;
   const repositoryLoadBlocked =
-    !!repositoryWarning && repositoryOptions.length === 0;
+    repositoryRequired && !!repositoryWarning && repositoryOptions.length === 0;
 
   const handleSubmit = async () => {
     setHasAttemptedSubmit(true);
@@ -152,15 +157,19 @@ export function AutomationForm({
     await onSubmit({
       name: name.trim(),
       prompt: prompt.trim(),
-      repository: repositorySelection.repository ?? "",
-      github_integration: repositorySelection.integrationId,
+      repository: repositoryRequired
+        ? (repositorySelection.repository ?? "")
+        : "",
+      github_integration: repositoryRequired
+        ? repositorySelection.integrationId
+        : null,
       cron_expression: buildCronExpression(scheduleDraft),
       timezone: timezone.trim(),
       enabled,
     });
   };
 
-  if (isLoading && hasGithubIntegration === null) {
+  if (repositoryRequired && isLoading && hasGithubIntegration === null) {
     return (
       <View className="items-center rounded-xl border border-gray-6 bg-gray-2 p-5">
         <ActivityIndicator size="small" color={themeColors.accent[9]} />
@@ -171,7 +180,7 @@ export function AutomationForm({
     );
   }
 
-  if (error || repositoryLoadBlocked) {
+  if (repositoryRequired && (error || repositoryLoadBlocked)) {
     return (
       <GitHubLoadNotice
         message={
@@ -182,7 +191,7 @@ export function AutomationForm({
     );
   }
 
-  if (hasGithubIntegration === false) {
+  if (repositoryRequired && hasGithubIntegration === false) {
     return (
       <GitHubConnectionPrompt
         onConnected={refetch}
@@ -239,31 +248,33 @@ export function AutomationForm({
         )}
       </View>
 
-      <View className="rounded-xl bg-gray-2 p-4">
-        {repositoryWarning && (
-          <GitHubLoadNotice
-            message={repositoryWarning}
-            onRetry={refetch}
-            tone="warning"
-          />
-        )}
-        <Text
-          className="mb-2 text-[11px] text-gray-9 uppercase"
-          style={{ letterSpacing: 0.5 }}
-        >
-          Repository
-        </Text>
-        <RepositorySelector
-          options={repositoryOptions}
-          value={repositorySelection}
-          onChange={setRepositorySelection}
-        />
-        {validationErrors.repository && (
-          <Text className="mt-1 text-status-error text-xs">
-            {validationErrors.repository}
+      {repositoryRequired && (
+        <View className="rounded-xl bg-gray-2 p-4">
+          {repositoryWarning && (
+            <GitHubLoadNotice
+              message={repositoryWarning}
+              onRetry={refetch}
+              tone="warning"
+            />
+          )}
+          <Text
+            className="mb-2 text-[11px] text-gray-9 uppercase"
+            style={{ letterSpacing: 0.5 }}
+          >
+            Repository
           </Text>
-        )}
-      </View>
+          <RepositorySelector
+            options={repositoryOptions}
+            value={repositorySelection}
+            onChange={setRepositorySelection}
+          />
+          {validationErrors.repository && (
+            <Text className="mt-1 text-status-error text-xs">
+              {validationErrors.repository}
+            </Text>
+          )}
+        </View>
+      )}
 
       <View className="rounded-xl bg-gray-2 p-4">
         <ScheduleEditor

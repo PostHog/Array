@@ -112,6 +112,7 @@ const automationPayload = {
   github_integration: 7,
   cron_expression: "0 9 * * *",
   timezone: "Europe/London",
+  template_id: "developer-morning-brief",
   enabled: true,
   last_run_at: null,
   last_run_status: null,
@@ -199,9 +200,19 @@ describe("useAutomations", () => {
         github_integration: 7,
         cron_expression: "0 9 * * *",
         timezone: "Europe/London",
+        template_id: "developer-morning-brief",
       });
     });
 
+    expect(mockCreateTaskAutomation).toHaveBeenCalledWith({
+      name: "Daily PRs",
+      prompt: "Check PRs",
+      repository: "posthog/posthog",
+      github_integration: 7,
+      cron_expression: "0 9 * * *",
+      timezone: "Europe/London",
+      template_id: "developer-morning-brief",
+    });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: automationKeys.lists(),
     });
@@ -243,7 +254,39 @@ describe("useAutomations", () => {
     ).toMatchObject({
       enabled: false,
       cron_expression: "30 14 * * *",
+      template_id: "developer-morning-brief",
     });
+    unmount();
+  });
+
+  it("does not populate automation caches when creation fails", async () => {
+    const queryClient = new QueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    mockCreateTaskAutomation.mockRejectedValueOnce(
+      new Error("Repository is still required for this template."),
+    );
+
+    const { result, unmount } = renderTestHook(
+      () => useCreateTaskAutomation(),
+      createWrapper(queryClient),
+    );
+
+    await expect(
+      result.current.mutateAsync({
+        name: "PM pulse",
+        prompt: "Summarize feature usage for my product areas.",
+        repository: "",
+        github_integration: null,
+        cron_expression: "0 8 * * 1-5",
+        timezone: "America/New_York",
+        template_id: "pm-product-pulse",
+      }),
+    ).rejects.toThrow("Repository is still required for this template.");
+
+    expect(
+      queryClient.getQueryData(automationKeys.detail("automation-1")),
+    ).toBe(undefined);
+    expect(invalidateSpy).not.toHaveBeenCalled();
     unmount();
   });
 });

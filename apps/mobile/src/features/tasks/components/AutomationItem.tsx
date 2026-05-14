@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Pressable, View } from "react-native";
 import type { TaskAutomation, TaskRun } from "../types";
 import { formatAutomationScheduleSummary } from "../utils/automationSchedule";
+import { getAutomationTemplatePresentation } from "../utils/automationTemplatePresentation";
 import { AutomationStatusBadge } from "./AutomationStatusBadge";
 
 interface AutomationItemProps {
@@ -17,6 +18,7 @@ function AutomationItemComponent({
   onPress,
   lastTaskRunStatus,
 }: AutomationItemProps) {
+  const presentation = getAutomationTemplatePresentation(automation);
   const lastRunDisplay = automation.last_run_at
     ? new Date(automation.last_run_at).getTime() >
       Date.now() - 24 * 60 * 60 * 1000
@@ -50,7 +52,7 @@ function AutomationItemComponent({
       </View>
 
       <Text className="mt-2 text-gray-11 text-xs" numberOfLines={1}>
-        {automation.repository}
+        {presentation.secondaryLabel}
       </Text>
       <Text className="mt-0.5 text-gray-9 text-xs" numberOfLines={1}>
         {formatAutomationScheduleSummary(automation)}

@@ -106,6 +106,16 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
         options={{
           presentation: "modal",
           headerShown: true,
+          title: "Choose a template",
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.gray[12],
+        }}
+      />
+      <Stack.Screen
+        name="automation/create"
+        options={{
+          presentation: "modal",
+          headerShown: true,
           title: "New automation",
           headerStyle: { backgroundColor: themeColors.background },
           headerTintColor: themeColors.gray[12],

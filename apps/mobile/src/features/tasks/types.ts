@@ -143,6 +143,31 @@ export interface RepositorySelection {
   repository: string | null;
 }
 
+export type AutomationTemplateAudience = "developer" | "pm" | "executive";
+
+export interface AutomationTemplate {
+  id: string;
+  name: string;
+  description: string;
+  audience: AutomationTemplateAudience;
+  audienceLabel: string;
+  categoryLabel: string;
+  prompt: string;
+  suggestedName: string;
+  cron_expression: string;
+  enabled: boolean;
+  requiresRepository: boolean;
+  hero?: boolean;
+}
+
+export interface AutomationTemplateInitialValues {
+  name: string;
+  prompt: string;
+  cron_expression: string;
+  enabled: boolean;
+  template_id: string;
+}
+
 export interface CreateTaskOptions {
   description: string;
   title?: string;

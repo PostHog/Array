@@ -174,4 +174,31 @@ describe("useIntegrations", () => {
     expect(result.current.repositoryWarning).toBeNull();
     unmount();
   });
+
+  it("skips integration loading when repository requirements are disabled", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    });
+    const { result, unmount } = renderTestHook(
+      () => useIntegrations({ enabled: false }),
+      createWrapper(queryClient),
+    );
+
+    expect(result.current.hasGithubIntegration).toBeNull();
+    expect(result.current.githubIntegrations).toEqual([]);
+    expect(result.current.repositories).toEqual([]);
+    expect(result.current.repositoryOptions).toEqual([]);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.error).toBeNull();
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(mockGetIntegrations).not.toHaveBeenCalled();
+    expect(mockGetGithubRepositories).not.toHaveBeenCalled();
+    unmount();
+  });
 });

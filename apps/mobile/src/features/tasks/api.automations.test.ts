@@ -35,6 +35,7 @@ const automationPayload = {
   github_integration: 7,
   cron_expression: "0 9 * * *",
   timezone: "Europe/London",
+  template_id: "developer-morning-brief",
   enabled: true,
   last_run_at: null,
   last_run_status: null,
@@ -87,6 +88,7 @@ describe("task automation api", () => {
       cron_expression: "0 9 * * *",
       timezone: "Europe/London",
       enabled: true,
+      template_id: "developer-morning-brief",
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -101,6 +103,51 @@ describe("task automation api", () => {
           cron_expression: "0 9 * * *",
           timezone: "Europe/London",
           enabled: true,
+          template_id: "developer-morning-brief",
+        }),
+      }),
+    );
+  });
+
+  it("serializes repo-optional template creation payloads with an empty repository", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ...automationPayload,
+          id: "automation-2",
+          name: "PM pulse",
+          repository: "",
+          github_integration: null,
+          template_id: "pm-product-pulse",
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await createTaskAutomation({
+      name: "PM pulse",
+      prompt: "Summarize feature usage for my product areas.",
+      repository: "",
+      github_integration: null,
+      cron_expression: "0 8 * * 1-5",
+      timezone: "America/New_York",
+      enabled: true,
+      template_id: "pm-product-pulse",
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://app.posthog.test/api/projects/42/task_automations/",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          name: "PM pulse",
+          prompt: "Summarize feature usage for my product areas.",
+          repository: "",
+          github_integration: null,
+          cron_expression: "0 8 * * 1-5",
+          timezone: "America/New_York",
+          enabled: true,
+          template_id: "pm-product-pulse",
         }),
       }),
     );
@@ -143,6 +190,37 @@ describe("task automation api", () => {
     ).rejects.toMatchObject({
       attr: "cron_expression",
       code: "invalid_input",
+    });
+  });
+
+  it("surfaces repo-optional template validation failures without losing backend attr info", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          type: "validation_error",
+          code: "invalid_input",
+          detail: "Repository is still required for this template.",
+          attr: "repository",
+        }),
+        { status: 400, statusText: "Bad Request" },
+      ),
+    );
+
+    await expect(
+      createTaskAutomation({
+        name: "PM pulse",
+        prompt: "Summarize feature usage for my product areas.",
+        repository: "",
+        github_integration: null,
+        cron_expression: "0 8 * * 1-5",
+        timezone: "America/New_York",
+        enabled: true,
+        template_id: "pm-product-pulse",
+      }),
+    ).rejects.toMatchObject({
+      attr: "repository",
+      code: "invalid_input",
+      message: "Repository is still required for this template.",
     });
   });
 
