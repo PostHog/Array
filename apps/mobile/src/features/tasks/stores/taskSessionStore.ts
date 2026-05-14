@@ -238,6 +238,11 @@ export interface TaskSession {
   // Timestamp of the last new event received. Used to detect stale local
   // sessions (desktop stopped syncing).
   lastEventAt?: number;
+  // Maps toolCallId → cloud requestId for routing permission responses. The
+  // cloud's permission_response command requires the requestId it generated
+  // when emitting the original permission_request SSE event; we capture it
+  // here so the response can be routed back to the awaiting tool call.
+  cloudPermissionRequestIds?: Record<string, string>;
 }
 
 interface TaskSessionStore {
@@ -551,8 +556,14 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       };
     });
 
+    // The cloud command requires the requestId it generated when emitting
+    // the permission_request SSE event — toolCallId alone is not sufficient
+    // for routing the response back to the awaiting tool call.
+    const cloudRequestId = session.cloudPermissionRequestIds?.[args.toolCallId];
+
     try {
       await sendCloudCommand(taskId, session.taskRunId, "permission_response", {
+        ...(cloudRequestId ? { requestId: cloudRequestId } : {}),
         toolCallId: args.toolCallId,
         optionId: args.optionId,
         ...(args.answers ? { answers: args.answers } : {}),
@@ -562,7 +573,28 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         taskId,
         runId: session.taskRunId,
         toolCallId: args.toolCallId,
+        requestId: cloudRequestId,
       });
+
+      // One-shot: drop the mapping once we've responded so we don't reuse
+      // it accidentally.
+      if (cloudRequestId) {
+        set((state) => {
+          const current = state.sessions[session.taskRunId];
+          if (!current?.cloudPermissionRequestIds) return state;
+          const next = { ...current.cloudPermissionRequestIds };
+          delete next[args.toolCallId];
+          return {
+            sessions: {
+              ...state.sessions,
+              [session.taskRunId]: {
+                ...current,
+                cloudPermissionRequestIds: next,
+              },
+            },
+          };
+        });
+      }
     } catch (err) {
       log.error("Failed to send permission_response", err);
       set((state) => {
@@ -683,9 +715,29 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     }
 
     if (update.kind === "permission_request") {
-      // Permission requests surface via `session/update` tool_call entries
-      // that already flow through the log stream; this dedicated payload is a
-      // desktop convenience and a no-op on mobile.
+      // The tool_call UI itself comes from the `session/update` log stream;
+      // this SSE-only payload exists so we can capture the cloud-side
+      // requestId required to route a permission_response back to the
+      // correct pending tool call.
+      const toolCallId = update.toolCall?.toolCallId;
+      if (toolCallId && update.requestId) {
+        set((state) => {
+          const current = state.sessions[taskRunId];
+          if (!current) return state;
+          return {
+            sessions: {
+              ...state.sessions,
+              [taskRunId]: {
+                ...current,
+                cloudPermissionRequestIds: {
+                  ...(current.cloudPermissionRequestIds ?? {}),
+                  [toolCallId]: update.requestId,
+                },
+              },
+            },
+          };
+        });
+      }
       return;
     }
 
