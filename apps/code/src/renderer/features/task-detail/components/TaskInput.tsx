@@ -36,6 +36,10 @@ import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useAuthStore } from "@renderer/features/auth/stores/authStore";
 import { useDraftStore } from "@renderer/features/message-editor/stores/draftStore";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
+import {
+  findMatchingRepository,
+  normalizeRepositoryLookupKey,
+} from "@renderer/utils/repository";
 import { toast } from "@renderer/utils/toast";
 import {
   type TaskInputReportAssociation,
@@ -212,16 +216,34 @@ export function TaskInput({
     loadMore: loadMoreCloudRepositories,
   } = useUserGithubRepositories(cloudRepoSearchQuery, isCloudRepoPickerOpen);
   const [selectedRepository, setSelectedRepository] = useState<string | null>(
-    () =>
-      initialCloudRepository?.toLowerCase() ??
-      lastUsedCloudRepository?.toLowerCase() ??
-      null,
+    () => initialCloudRepository ?? lastUsedCloudRepository ?? null,
   );
   const selectedCloudRepository = useMemo(() => {
-    if (!selectedRepository) return null;
-    const lower = selectedRepository.toLowerCase();
-    return repositories.includes(lower) ? lower : null;
+    return findMatchingRepository(selectedRepository, repositories);
   }, [selectedRepository, repositories]);
+  const cloudRepoPickerRepositories = useMemo(() => {
+    if (!isCloudRepoPickerOpen) {
+      return repositories;
+    }
+
+    if (
+      !selectedCloudRepository ||
+      visibleCloudRepositories.some(
+        (repo) =>
+          normalizeRepositoryLookupKey(repo) ===
+          normalizeRepositoryLookupKey(selectedCloudRepository),
+      )
+    ) {
+      return visibleCloudRepositories;
+    }
+
+    return [selectedCloudRepository, ...visibleCloudRepositories];
+  }, [
+    isCloudRepoPickerOpen,
+    repositories,
+    selectedCloudRepository,
+    visibleCloudRepositories,
+  ]);
   const { currentBranch, branchLoading, defaultBranch } =
     useGitQueries(selectedDirectory);
 
@@ -293,9 +315,8 @@ export function TaskInput({
         return;
       }
 
-      const normalizedRepo = repo.toLowerCase();
-      setSelectedRepository(normalizedRepo);
-      setLastUsedCloudRepository(normalizedRepo);
+      setSelectedRepository(repo);
+      setLastUsedCloudRepository(repo);
     },
     [setLastUsedCloudRepository],
   );
@@ -303,8 +324,17 @@ export function TaskInput({
   useEffect(() => {
     if (!initialCloudRepository) return;
     setWorkspaceModeState("cloud");
-    setSelectedRepository(initialCloudRepository.toLowerCase());
+    setSelectedRepository(initialCloudRepository);
   }, [initialCloudRepository]);
+
+  useEffect(() => {
+    if (!prefillRequestKey) return;
+
+    setIsCloudRepoPickerOpen(false);
+    setCloudRepoSearchQuery("");
+    setIsCloudBranchPickerOpen(false);
+    setCloudBranchSearchQuery("");
+  }, [prefillRequestKey]);
 
   const handleRefreshRepositories = useCallback(() => {
     void refreshRepositories().catch((error) => {
@@ -371,8 +401,22 @@ export function TaskInput({
       return;
     }
 
-    setSelectedRepository(lastUsedCloudRepository.toLowerCase());
+    setSelectedRepository(lastUsedCloudRepository);
   }, [lastUsedCloudRepository, selectedRepository]);
+
+  useEffect(() => {
+    if (
+      !selectedCloudRepository ||
+      !selectedRepository ||
+      normalizeRepositoryLookupKey(selectedCloudRepository) !==
+        normalizeRepositoryLookupKey(selectedRepository) ||
+      selectedCloudRepository === selectedRepository
+    ) {
+      return;
+    }
+
+    setSelectedRepository(selectedCloudRepository);
+  }, [selectedCloudRepository, selectedRepository]);
 
   useEffect(() => {
     // Clear `selectedRepository` only when the list has actually loaded AND the
@@ -391,7 +435,11 @@ export function TaskInput({
     }
 
     setSelectedRepository(null);
-    if (lastUsedCloudRepository === selectedRepository) {
+    if (
+      lastUsedCloudRepository &&
+      normalizeRepositoryLookupKey(lastUsedCloudRepository) ===
+        normalizeRepositoryLookupKey(selectedRepository)
+    ) {
       setLastUsedCloudRepository(null);
     }
   }, [
@@ -661,13 +709,9 @@ export function TaskInput({
             >
               {workspaceMode === "cloud" ? (
                 <GitHubRepoPicker
-                  value={selectedRepository}
+                  value={selectedCloudRepository ?? selectedRepository}
                   onChange={handleRepositorySelect}
-                  repositories={
-                    isCloudRepoPickerOpen
-                      ? visibleCloudRepositories
-                      : repositories
-                  }
+                  repositories={cloudRepoPickerRepositories}
                   isLoading={
                     isLoadingRepos ||
                     (isCloudRepoPickerOpen && cloudRepositoriesLoading)
