@@ -30,11 +30,13 @@ struct TasksRootView: View {
             } else {
                 List(store.missions) { mission in
                     NavigationLink(value: mission.id) {
-                        TaskRow(
-                            mission: mission,
+                        TaskRow(mission: mission)
+                    }
+                    .listRowBackground(
+                        ActiveTaskRowBackground(
                             isActive: store.envelope?.activeMissionId == mission.id
                         )
-                    }
+                    )
                 }
                 .navigationTitle("Tasks")
                 .navigationDestination(for: String.self) { id in
@@ -86,7 +88,6 @@ struct EmptyTasksView: View {
 
 struct TaskRow: View {
     let mission: WatchMissionSnapshot
-    let isActive: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -98,15 +99,23 @@ struct TaskRow: View {
             Text(mission.title).font(.caption).lineLimit(2)
             ProgressView(value: mission.progress.fraction).tint(statusColor(mission.status))
         }
-        .overlay(alignment: .leading) {
-            if isActive {
-                Rectangle()
-                    .fill(Color.orange)
-                    .frame(width: 4)
-                    .ignoresSafeArea(.container, edges: .vertical)
+    }
+}
+
+struct ActiveTaskRowBackground: View {
+    let isActive: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(Color.secondary.opacity(0.16))
+            .overlay(alignment: .leading) {
+                if isActive {
+                    Rectangle()
+                        .fill(Color.orange)
+                        .frame(width: 4)
+                }
             }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -151,6 +160,9 @@ struct TaskHeader: View {
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                 }
                 VStack(alignment: .leading, spacing: 2) {
+                    if let slug = mission.slug {
+                        Text(slug).font(.caption2).foregroundStyle(.secondary)
+                    }
                     Text(mission.title).font(.headline).lineLimit(2)
                     Text(mission.statusText).font(.caption).foregroundStyle(statusColor(mission.status))
                 }
