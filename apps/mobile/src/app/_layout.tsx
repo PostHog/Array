@@ -2,7 +2,7 @@ import "../../global.css";
 import "@/lib/textDefaults";
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import { router, Stack } from "expo-router";
+import { router, Stack, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import { PostHogProvider } from "posthog-react-native";
@@ -32,8 +32,10 @@ interface RootLayoutNavProps {
 
 function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   const { isLoading, initializeAuth } = useAuthStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const aiChatEnabled = usePreferencesStore((s) => s.aiChatEnabled);
   const themeColors = useThemeColors();
+  const pathname = usePathname();
 
   useScreenTracking();
 
@@ -42,10 +44,22 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   }, [initializeAuth]);
 
   useEffect(() => {
-    return setupNotificationResponseListener(({ taskId }) => {
-      router.push(`/task/${taskId}`);
+    return setupNotificationResponseListener(({ path }) => {
+      router.push(path);
     });
   }, []);
+
+  // Auth gate. If a deep link drops an unauthed user on a protected route
+  // (e.g. `posthog://task/abc` from a notification or shared link), bounce
+  // them to /auth with a `next` param so the sign-in flow can resume the
+  // originally-intended navigation.
+  useEffect(() => {
+    if (isLoading) return;
+    if (isAuthenticated) return;
+    if (!pathname || pathname === "/auth") return;
+    const next = pathname !== "/" ? pathname : undefined;
+    router.replace(next ? { pathname: "/auth", params: { next } } : "/auth");
+  }, [isAuthenticated, isLoading, pathname]);
 
   if (isLoading) {
     return (
@@ -100,10 +114,11 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
         options={{ headerShown: false }}
       />
 
-      {/* Report detail - modal presentation, no native header
-          (the in-content title block is the canonical header). */}
+      {/* Inbox report detail - modal presentation, no native header
+          (the in-content title block is the canonical header). Path mirrors
+          the desktop app's `posthog-code://inbox/<reportId>` deep-link shape. */}
       <Stack.Screen
-        name="report/[id]"
+        name="inbox/[id]"
         options={{ presentation: "modal", headerShown: false }}
       />
 

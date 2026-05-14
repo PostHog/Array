@@ -1,5 +1,5 @@
-import { router } from "expo-router";
-import { useMemo, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -27,6 +27,7 @@ const DEV_REGIONS: RegionOption[] = [
 
 export default function AuthScreen() {
   const themeColors = useThemeColors();
+  const { next } = useLocalSearchParams<{ next?: string }>();
 
   // Only show dev region in development builds
   const regions = useMemo<RegionOption[]>(
@@ -42,6 +43,19 @@ export default function AuthScreen() {
 
   const { loginWithOAuth, loginWithPersonalApiKey } = useAuthStore();
 
+  // After successful sign-in, resume the originally-requested deep link if
+  // there was one, otherwise drop into the default tab. Guards against `next`
+  // pointing back at /auth (which would loop) or being a non-local URL.
+  const navigateAfterLogin = useCallback(() => {
+    const target =
+      typeof next === "string" &&
+      next.startsWith("/") &&
+      !next.startsWith("/auth")
+        ? next
+        : "/(tabs)";
+    router.replace(target);
+  }, [next]);
+
   const handleQrScan = async (result: QrScanResult) => {
     setScannerVisible(false);
     setDevToken(result.apiKey);
@@ -54,7 +68,7 @@ export default function AuthScreen() {
         projectId: result.projectId,
         region: selectedRegion,
       });
-      router.replace("/(tabs)");
+      navigateAfterLogin();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to sign in");
     } finally {
@@ -75,7 +89,7 @@ export default function AuthScreen() {
         projectId: projectIdNum,
         region: selectedRegion,
       });
-      router.replace("/(tabs)");
+      navigateAfterLogin();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to sign in");
     } finally {
@@ -90,7 +104,7 @@ export default function AuthScreen() {
     try {
       await loginWithOAuth(selectedRegion);
       // Navigate to tabs on success
-      router.replace("/(tabs)");
+      navigateAfterLogin();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to authenticate";
