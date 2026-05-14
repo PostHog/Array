@@ -27,7 +27,7 @@ struct WatchTaskSnapshot: Codable, Identifiable {
     let subtitle: String?
     let repository: String?
     let branch: String?
-    let internal: Bool?
+    let `internal`: Bool?
     let isArchived: Bool?
     let environment: String
     let status: String

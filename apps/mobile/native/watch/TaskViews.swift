@@ -18,7 +18,7 @@ func statusColor(_ status: String) -> Color {
     }
 }
 
-func shortTime(_ milliseconds: Int?) -> String {
+func shortTime(_ milliseconds: TimeInterval?) -> String {
     guard let milliseconds else { return "" }
     let date = Date(timeIntervalSince1970: TimeInterval(milliseconds) / 1000)
     let hours = Date().timeIntervalSince(date) / 3600
@@ -135,7 +135,7 @@ struct TasksRootView: View {
         }
     }
 
-    private func taskSortTimestamp(_ task: WatchTaskSnapshot) -> Int {
+    private func taskSortTimestamp(_ task: WatchTaskSnapshot) -> TimeInterval {
         if sortMode == .created { return task.createdAt ?? task.generatedAt }
         return task.updatedAt ?? task.generatedAt
     }
@@ -173,19 +173,10 @@ struct EmptyTasksView: View {
                 .foregroundStyle(accent)
             Text("Tasks").font(.headline)
             Text(state).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            if let envelopeStatus = store.lastEnvelopeStatus {
-                Text(envelopeStatus).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            }
             Text("Start or open a PostHog Code task on iPhone or Mac.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Button("Ping iPhone") { sendPing() }
-                .buttonStyle(.borderedProminent)
-            Button("Request Snapshot") { requestSnapshot() }
-            if let status = store.lastCommandStatus {
-                Text(status).font(.caption2).foregroundStyle(.secondary)
-            }
         }
         .padding()
     }
