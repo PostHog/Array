@@ -17,6 +17,7 @@ import {
 import { useAuthStore } from "@/features/auth";
 import { setupNotificationResponseListener } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
+import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import {
   POSTHOG_API_KEY,
@@ -32,7 +33,10 @@ interface RootLayoutNavProps {
 
 function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   const { isLoading, initializeAuth } = useAuthStore();
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const _aiChatEnabled = usePreferencesStore((s) => s.aiChatEnabled);
+  const publishWatchSnapshot = useTaskSessionStore(
+    (s) => s.publishWatchSnapshot,
+  );
   const themeColors = useThemeColors();
   const pathname = usePathname();
 
@@ -43,8 +47,13 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   }, [initializeAuth]);
 
   useEffect(() => {
-    return setupNotificationResponseListener(({ path }) => {
-      router.push(path);
+    if (isLoading) return;
+    publishWatchSnapshot({ urgent: true });
+  }, [isLoading, publishWatchSnapshot]);
+
+  useEffect(() => {
+    return setupNotificationResponseListener(({ taskId }) => {
+      router.push(`/task/${taskId}`);
     });
   }, []);
 
@@ -58,7 +67,7 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
     if (!pathname || pathname === "/auth") return;
     const next = pathname !== "/" ? pathname : undefined;
     router.replace(next ? { pathname: "/auth", params: { next } } : "/auth");
-  }, [isAuthenticated, isLoading, pathname]);
+  }, [isLoading, pathname]);
 
   if (isLoading) {
     return (
