@@ -222,6 +222,14 @@ export type WatchMissionCommand =
       customInput?: string;
     })
   | (WatchMissionCommandBase & {
+      type: "send_prompt";
+      displayText: string;
+    })
+  | (WatchMissionCommandBase & {
+      type: "debug_ping" | "debug_request_snapshot";
+      displayText?: string;
+    })
+  | (WatchMissionCommandBase & {
       type: "stop" | "retry" | "open_phone" | "open_mac" | "view_diff";
       url?: string;
     });

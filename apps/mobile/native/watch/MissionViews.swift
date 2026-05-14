@@ -43,6 +43,7 @@ struct MissionRootView: View {
 }
 
 struct EmptyMissionView: View {
+    @EnvironmentObject private var store: WatchMissionStore
     let state: String
 
     var body: some View {
@@ -52,12 +53,29 @@ struct EmptyMissionView: View {
                 .foregroundStyle(accent)
             Text("Mission Control").font(.headline)
             Text(state).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            if let envelopeStatus = store.lastEnvelopeStatus {
+                Text(envelopeStatus).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
             Text("Start or open a PostHog Code task on iPhone or Mac.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            Button("Ping iPhone") { sendPing() }
+                .buttonStyle(.borderedProminent)
+            Button("Request Snapshot") { requestSnapshot() }
+            if let status = store.lastCommandStatus {
+                Text(status).font(.caption2).foregroundStyle(.secondary)
+            }
         }
         .padding()
+    }
+
+    private func sendPing() {
+        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: "debug_ping", taskId: "debug", taskRunId: nil, toolCallId: nil, optionId: nil, displayText: "Ping from Apple Watch", answers: nil, customInput: nil, url: nil))
+    }
+
+    private func requestSnapshot() {
+        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: "debug_request_snapshot", taskId: "debug", taskRunId: nil, toolCallId: nil, optionId: nil, displayText: "Request snapshot from Apple Watch", answers: nil, customInput: nil, url: nil))
     }
 }
 
@@ -93,6 +111,9 @@ struct MissionOverviewView: View {
                 HandoffButtons(mission: mission)
                 if let status = store.lastCommandStatus {
                     Text(status).font(.caption2).foregroundStyle(.secondary)
+                }
+                if let envelopeStatus = store.lastEnvelopeStatus {
+                    Text(envelopeStatus).font(.caption2).foregroundStyle(.secondary)
                 }
             }
             .padding(.vertical, 4)
@@ -279,6 +300,7 @@ struct HandoffButtons: View {
     var body: some View {
         VStack(spacing: 6) {
             Button("Open on iPhone") { send(type: "open_phone", url: mission.handoff.phoneUrl) }
+            Button("Send Demo Prompt") { sendDemoPrompt() }
             if mission.handoff.macUrl != nil { Button("Open on Mac") { send(type: "open_mac", url: mission.handoff.macUrl) } }
             if mission.allowedActions.contains("stop") { Button("Stop Agent") { send(type: "stop", url: nil) }.tint(.red) }
         }
@@ -286,5 +308,9 @@ struct HandoffButtons: View {
 
     private func send(type: String, url: String?) {
         store.send(command: WatchMissionCommand(id: UUID().uuidString, type: type, taskId: mission.taskId, taskRunId: mission.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: url))
+    }
+
+    private func sendDemoPrompt() {
+        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: "send_prompt", taskId: mission.taskId, taskRunId: mission.taskRunId, toolCallId: nil, optionId: nil, displayText: "Demo prompt from Apple Watch", answers: nil, customInput: nil, url: nil))
     }
 }

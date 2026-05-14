@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
-import { AppState } from "react-native";
+import { Alert, AppState } from "react-native";
 import { create } from "zustand";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { logger } from "@/lib/logger";
@@ -241,11 +241,12 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   setActiveWatchTask: (taskId?: string) => {
     ensureWatchCommandSubscription();
     set({ activeWatchTaskId: taskId });
-    scheduleWatchMissionPublish();
+    scheduleWatchMissionPublish({ urgent: true });
   },
 
   registerWatchTask: (task: Task) => {
     ensureWatchCommandSubscription();
+    const shouldSetActive = !get().activeWatchTaskId;
     set((state) => ({
       watchMissionTasks: {
         ...state.watchMissionTasks,
@@ -253,7 +254,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       },
       activeWatchTaskId: state.activeWatchTaskId ?? task.id,
     }));
-    scheduleWatchMissionPublish();
+    scheduleWatchMissionPublish({ urgent: shouldSetActive });
   },
 
   connectToTask: async (task: Task) => {
@@ -669,6 +670,20 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         break;
       case "retry":
         await get().retryTaskFromWatch(command.taskId, command.taskRunId);
+        break;
+      case "send_prompt":
+        await get().sendPrompt(command.taskId, command.displayText);
+        break;
+      case "debug_ping":
+        logger.info("Received debug ping from watch", { command });
+        Alert.alert(
+          "Watch ping",
+          command.displayText ?? "Ping from Apple Watch",
+        );
+        break;
+      case "debug_request_snapshot":
+        logger.info("Watch requested mission snapshot", { command });
+        scheduleWatchMissionPublish({ urgent: true });
         break;
       case "open_phone":
       case "view_diff":

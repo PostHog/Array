@@ -7,6 +7,7 @@ final class WatchMissionStore: NSObject, ObservableObject {
     @Published var envelope: WatchMissionEnvelope?
     @Published var connectionState: String = "Waiting for iPhone"
     @Published var lastCommandStatus: String?
+    @Published var lastEnvelopeStatus: String?
 
     let haptics = HapticsPolicy()
     private let cacheKey = "watch_mission_envelope"
@@ -37,6 +38,7 @@ final class WatchMissionStore: NSObject, ObservableObject {
         let payload = encodeDictionary(command)
         let message: [String: Any] = ["type": "mission_command", "payload": payload]
         let session = WCSession.default
+        activateSession()
 
         if session.isReachable {
             session.sendMessage(message, replyHandler: { [weak self] reply in
@@ -70,12 +72,16 @@ final class WatchMissionStore: NSObject, ObservableObject {
     }
 
     private func handleEnvelopePayload(_ payload: Any?) {
-        guard let payload else { return }
+        guard let payload else {
+            lastEnvelopeStatus = "Envelope missing payload"
+            return
+        }
         do {
             let data = try JSONSerialization.data(withJSONObject: payload)
             let envelope = try JSONDecoder().decode(WatchMissionEnvelope.self, from: data)
             self.envelope = envelope
             self.connectionState = "Live"
+            self.lastEnvelopeStatus = "iPhone update received at \(Date().formatted(date: .omitted, time: .standard))"
             if let activeId = envelope.activeMissionId,
                let active = envelope.missions.first(where: { $0.id == activeId }) {
                 haptics.apply(snapshot: active)
@@ -85,6 +91,7 @@ final class WatchMissionStore: NSObject, ObservableObject {
             cache(data: data)
         } catch {
             connectionState = "Snapshot decode failed"
+            lastEnvelopeStatus = error.localizedDescription
         }
     }
 
@@ -133,6 +140,21 @@ extension WatchMissionStore: WCSessionDelegate {
         Task { @MainActor in
             guard message["type"] as? String == "mission_envelope" else { return }
             self.handleEnvelopePayload(message["payload"])
+        }
+    }
+
+    nonisolated func session(
+        _ session: WCSession,
+        didReceiveMessage message: [String: Any],
+        replyHandler: @escaping ([String: Any]) -> Void
+    ) {
+        Task { @MainActor in
+            guard message["type"] as? String == "mission_envelope" else {
+                replyHandler(["ok": false, "error": "unknown_type"])
+                return
+            }
+            self.handleEnvelopePayload(message["payload"])
+            replyHandler(["ok": true])
         }
     }
 }

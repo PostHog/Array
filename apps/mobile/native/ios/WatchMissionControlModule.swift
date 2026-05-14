@@ -53,7 +53,11 @@ final class WatchMissionControlModule: RCTEventEmitter, WCSessionDelegate {
       try session.updateApplicationContext(["type": "mission_envelope", "payload": payload])
       resolve(true)
     } catch {
-      reject("watch_context_failed", "Failed to update watch application context", error)
+      reject(
+        "watch_context_failed",
+        "Failed to update watch application context: \(error.localizedDescription)",
+        error
+      )
     }
   }
 
@@ -73,20 +77,21 @@ final class WatchMissionControlModule: RCTEventEmitter, WCSessionDelegate {
     activateSessionIfAvailable()
 
     let message: [String: Any] = ["type": "mission_envelope", "payload": payload]
-    if WCSession.default.isReachable {
-      WCSession.default.sendMessage(message, replyHandler: { _ in
-        resolve(true)
-      }, errorHandler: { error in
-        reject("watch_message_failed", "Failed to send urgent watch update", error)
-      })
-    } else {
-      do {
-        try WCSession.default.updateApplicationContext(message)
-        resolve(true)
-      } catch {
-        reject("watch_context_failed", "Failed to update watch application context", error)
-      }
+    do {
+      try WCSession.default.updateApplicationContext(message)
+    } catch {
+      reject(
+        "watch_context_failed",
+        "Failed to update watch application context: \(error.localizedDescription)",
+        error
+      )
+      return
     }
+
+    if WCSession.default.isReachable {
+      WCSession.default.sendMessage(message, replyHandler: nil, errorHandler: nil)
+    }
+    resolve(true)
   }
 
   private func activateSessionIfAvailable() {
@@ -108,17 +113,17 @@ final class WatchMissionControlModule: RCTEventEmitter, WCSessionDelegate {
   private func sanitizeDictionary(_ dictionary: NSDictionary) -> [String: Any] {
     var result: [String: Any] = [:]
     for (key, value) in dictionary {
-      guard let key = key as? String else { continue }
-      result[key] = sanitizeValue(value)
+      guard let key = key as? String, let sanitized = sanitizeValue(value) else { continue }
+      result[key] = sanitized
     }
     return result
   }
 
   private func sanitizeArray(_ array: NSArray) -> [Any] {
-    array.map { sanitizeValue($0) }
+    array.compactMap { sanitizeValue($0) }
   }
 
-  private func sanitizeValue(_ value: Any) -> Any {
+  private func sanitizeValue(_ value: Any) -> Any? {
     if let dictionary = value as? NSDictionary {
       return sanitizeDictionary(dictionary)
     }
@@ -126,7 +131,7 @@ final class WatchMissionControlModule: RCTEventEmitter, WCSessionDelegate {
       return sanitizeArray(array)
     }
     if value is NSNull {
-      return NSNull()
+      return nil
     }
     return value
   }

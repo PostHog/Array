@@ -143,6 +143,26 @@ function ensureWatchSource(project, fileName, target) {
   ensureSource(project, fileName, target, WATCH_SOURCE_DIR);
 }
 
+function ensureResource(
+  project,
+  filePath,
+  target,
+  groupName = WATCH_SOURCE_DIR,
+) {
+  const resources = project.pbxResourcesBuildPhaseObj(target)?.files ?? [];
+  if (
+    resources.some((file) => file.comment?.startsWith(path.basename(filePath)))
+  ) {
+    return;
+  }
+
+  project.addResourceFile(
+    filePath,
+    { target },
+    groupKeyByName(project, groupName),
+  );
+}
+
 function updateTargetBuildSettings(project, targetUuid, settings) {
   const target = project.hash.project.objects.PBXNativeTarget[targetUuid];
   const configListId = target?.buildConfigurationList;
@@ -209,8 +229,15 @@ function addWatchTargets(project) {
   ensureWatchSource(project, "MissionViews.swift", watchExtension.uuid);
   ensureWatchSource(project, "HapticsPolicy.swift", watchExtension.uuid);
 
+  ensureResource(
+    project,
+    "PostHogCode/posthog.icon",
+    watchApp.uuid,
+    "PostHogCode",
+  );
+
   updateTargetBuildSettings(project, watchApp.uuid, {
-    ASSETCATALOG_COMPILER_APPICON_NAME: "AppIcon",
+    ASSETCATALOG_COMPILER_APPICON_NAME: "posthog",
     CODE_SIGN_ENTITLEMENTS: `${WATCH_SOURCE_DIR}/PostHogCodeWatch.entitlements`,
     CURRENT_PROJECT_VERSION: "1",
     INFOPLIST_FILE: `${WATCH_SOURCE_DIR}/Info.plist`,

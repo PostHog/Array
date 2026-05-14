@@ -15,8 +15,11 @@ import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Composer } from "@/features/chat";
 import {
+  createWatchMissionEnvelope,
   getTask,
+  isWatchMissionControlSupported,
   runTaskInCloud,
+  sendUrgentWatchMissionUpdate,
   type Task,
   TaskSessionView,
   taskKeys,
@@ -232,6 +235,41 @@ export default function TaskDetailScreen() {
     [router],
   );
 
+  const handleSendWatchDemo = useCallback(async () => {
+    if (!task || !taskId) return;
+
+    try {
+      registerWatchTask(task);
+      setActiveWatchTask(task.id);
+      const supported = await isWatchMissionControlSupported();
+      if (!supported) {
+        Alert.alert(
+          "Watch unavailable",
+          "WatchConnectivity is not available on this device.",
+        );
+        return;
+      }
+
+      const envelope = createWatchMissionEnvelope(
+        [task],
+        { [task.id]: session },
+        task.id,
+        { now: Date.now() },
+      );
+      const sent = await sendUrgentWatchMissionUpdate(envelope);
+      Alert.alert(
+        sent ? "Sent to Watch" : "Watch send failed",
+        sent
+          ? "Sent the current task snapshot to the watch app."
+          : "The native bridge did not accept the watch update.",
+      );
+    } catch (err) {
+      log.error("Failed to send watch demo update", err);
+      const message = err instanceof Error ? err.message : String(err);
+      Alert.alert("Watch send failed", message);
+    }
+  }, [task, taskId, session, registerWatchTask, setActiveWatchTask]);
+
   // Stale detection for local tasks: if no new S3 data arrives for 30s
   // while the agent is supposedly working, the desktop may be offline.
   const isLocal = task?.latest_run?.environment === "local";
@@ -364,6 +402,19 @@ export default function TaskDetailScreen() {
         }}
       />
       <Animated.View className="flex-1 bg-background" style={contentPosition}>
+        {task && !loading && (
+          <View className="absolute top-3 right-3 z-10">
+            <Pressable
+              onPress={handleSendWatchDemo}
+              className="rounded-full bg-accent-9 px-3 py-2 shadow-sm"
+            >
+              <Text className="font-medium text-white text-xs">
+                Send to Watch
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
         {/* Always render TaskSessionView so the FlatList can layout behind
             the loading overlay. This prevents the "flash of messages" when
             switching from loading spinner to rendered content. */}
