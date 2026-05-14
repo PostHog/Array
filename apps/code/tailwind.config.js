@@ -33,6 +33,17 @@ module.exports = {
           900: "#7f1d1d",
         },
       },
+      // radix-themes-tw replaces Tailwind's lineHeight scale with `{ 1: var(--line-height-1), … 9: var(--line-height-9) }`,
+      // which silently drops the named utilities (`leading-tight`, `leading-snug`, `leading-normal`, …). Re-add them so
+      // utilities written against the standard Tailwind names continue to apply.
+      lineHeight: {
+        none: "1",
+        tight: "1.25",
+        snug: "1.375",
+        normal: "1.5",
+        relaxed: "1.625",
+        loose: "2",
+      },
       // fontFamily lives in globals.css `@theme` (--font-sans / --font-mono)
       // — the Tailwind v4 source of truth. Don't re-declare here.
     },
