@@ -103,46 +103,45 @@ describe("useChatTitleGenerator", () => {
     });
   });
 
-  it("skips title update when title_manually_set", async () => {
-    mockGetCachedTask.mockReturnValue({
-      id: TASK_ID,
-      title_manually_set: true,
-    });
-    mockGenerateTitle.mockResolvedValue({
-      title: "Auto title",
-      summary: "",
-    });
-    mockPrompts.value = ["some prompt"];
-
-    renderHook(() => useChatTitleGenerator(TASK_ID));
-
-    await waitFor(() => {
-      expect(mockGenerateTitle).toHaveBeenCalled();
-    });
-    expect(mockUpdateTask).not.toHaveBeenCalled();
-  });
-
-  it("still updates summary when title is skipped due to manual rename", async () => {
-    mockGetCachedTask.mockReturnValue({
-      id: TASK_ID,
-      title_manually_set: true,
-    });
-    mockGenerateTitle.mockResolvedValue({
-      title: "Auto title",
+  it.each([
+    { name: "no summary", summary: "", expectsSummaryUpdate: false },
+    {
+      name: "with summary",
       summary: "User wants to fix auth",
-    });
-    mockPrompts.value = ["fix auth"];
+      expectsSummaryUpdate: true,
+    },
+  ])(
+    "skips title update when title_manually_set ($name)",
+    async ({ summary, expectsSummaryUpdate }) => {
+      mockGetCachedTask.mockReturnValue({
+        id: TASK_ID,
+        title_manually_set: true,
+      });
+      mockGenerateTitle.mockResolvedValue({
+        title: "Auto title",
+        summary,
+      });
+      mockPrompts.value = ["fix auth"];
 
-    renderHook(() => useChatTitleGenerator(TASK_ID));
+      renderHook(() => useChatTitleGenerator(TASK_ID));
 
-    await waitFor(() => {
-      expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
-        "run-1",
-        { conversationSummary: "User wants to fix auth" },
-      );
-    });
-    expect(mockUpdateTask).not.toHaveBeenCalled();
-  });
+      await waitFor(() => {
+        expect(mockGenerateTitle).toHaveBeenCalled();
+      });
+      expect(mockUpdateTask).not.toHaveBeenCalled();
+
+      if (expectsSummaryUpdate) {
+        await waitFor(() => {
+          expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+            "run-1",
+            { conversationSummary: summary },
+          );
+        });
+      } else {
+        expect(mockSessionStoreSetters.updateSession).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it("calls enrichDescriptionWithFileContent before generating", async () => {
     mockEnrichDescription.mockResolvedValue("enriched content");
