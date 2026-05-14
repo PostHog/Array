@@ -62,7 +62,6 @@ import {
 } from "../watchTaskControlBridge";
 import { useArchivedTasksStore } from "./archivedTasksStore";
 import { useAttachmentEchoStore } from "./attachmentEchoStore";
-import { useTaskStore } from "./taskStore";
 
 const log = logger.scope("task-session-store");
 
@@ -592,6 +591,32 @@ function mapTerminalStatus(
   return undefined;
 }
 
+async function sendWatchPromptToTask(
+  taskId: string,
+  prompt: string,
+): Promise<void> {
+  const store = useTaskSessionStore.getState();
+  const task = store.watchTasks[taskId] ?? (await getTask(taskId));
+
+  if (isTerminalStatus(task.latest_run?.status)) {
+    store.disconnectFromTask(taskId);
+    const updatedTask = await runTaskInCloud(taskId, {
+      resumeFromRunId: task.latest_run?.id,
+      pendingUserMessage: prompt,
+    });
+    store.registerWatchTask(updatedTask);
+    await store.connectToTask(updatedTask);
+    scheduleWatchTaskPublish({ urgent: true });
+    return;
+  }
+
+  if (!store.getSessionForTask(taskId)) {
+    await store.connectToTask(task);
+  }
+  await store.sendPrompt(taskId, prompt);
+  scheduleWatchTaskPublish({ urgent: true });
+}
+
 export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   sessions: {},
   focusedTaskId: null,
@@ -1048,11 +1073,24 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         );
         break;
       case "open_task_prompt": {
+        const taskId = command.taskId;
         const prompt = (command.customInput ?? command.displayText)?.trim();
+
         if (prompt) {
-          useTaskStore.getState().setPendingPrompt(command.taskId, prompt);
+          try {
+            await sendWatchPromptToTask(taskId, prompt);
+          } catch (error) {
+            log.error("Failed to send watch prompt", { error });
+            Alert.alert(
+              "Failed to send",
+              "Your message from Apple Watch could not be delivered.",
+            );
+          }
         }
-        router.push(`/task/${command.taskId}`);
+
+        if (get().focusedTaskId !== taskId) {
+          router.push(`/task/${taskId}`);
+        }
         break;
       }
       case "open_report":
