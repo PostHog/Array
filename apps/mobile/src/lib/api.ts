@@ -52,17 +52,24 @@ export async function registerPushToken(args: {
 
   // Push tokens are per-user, not per-project — endpoint lives under
   // /api/users/@me/ alongside the other user-scoped APIs.
-  const response = await fetch(`${baseUrl}/api/users/@me/push_tokens/`, {
+  const url = `${baseUrl}/api/users/@me/push_tokens/`;
+  const response = await fetch(url, {
     method: "POST",
     headers,
     body: JSON.stringify(args),
   });
 
   if (!response.ok) {
-    log.debug("registerPushToken non-OK response", {
+    const body = await response.text().catch(() => "");
+    log.warn("registerPushToken failed", {
+      url,
       status: response.status,
+      statusText: response.statusText,
+      body: body.slice(0, 500),
     });
-    return;
+    throw new Error(
+      `registerPushToken failed: ${response.status} ${response.statusText} — ${body.slice(0, 200)}`,
+    );
   }
 }
 

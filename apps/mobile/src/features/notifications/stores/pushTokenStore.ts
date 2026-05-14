@@ -66,19 +66,18 @@ export const usePushTokenStore = create<PushTokenState>((set, get) => ({
       set({ expoPushToken: token });
     }
 
-    if (token === get().lastUploadedToken) {
-      log.debug("Push token unchanged, skipping upload");
-      return;
-    }
+    if (token === get().lastUploadedToken) return;
 
     try {
       await registerPushToken({ token, platform: Platform.OS });
       await writeSecure(LAST_UPLOADED_KEY, token);
       set({ lastUploadedToken: token });
-      log.debug("Uploaded push token to backend");
     } catch (err) {
-      log.debug("Push token upload failed (endpoint may not exist yet)", {
-        error: err,
+      // Surface as warn so a misconfigured OAuth scope or backend regression
+      // doesn't fail silently — push notifications won't work until this row
+      // lands on the backend.
+      log.warn("Push token upload failed", {
+        error: err instanceof Error ? err.message : String(err),
       });
     }
   },

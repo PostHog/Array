@@ -6,6 +6,9 @@ export const POSTHOG_DEV_CLIENT_ID = "DC5uRLVbGI02YQ82grxgnK6Qn12SXWpCqdPb60oZ";
 
 export const OAUTH_SCOPES = [
   "user:read",
+  // Required for POST /api/users/@me/push_tokens/ — without it the backend
+  // rejects push-token registration with 403 and notifications never fire.
+  "user:write",
   "project:read",
   "task:write",
   "integration:read",
