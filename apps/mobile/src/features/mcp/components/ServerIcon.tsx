@@ -23,7 +23,7 @@ export function ServerIcon({ iconKey, size = 32, className }: ServerIconProps) {
       className={`shrink-0 items-center justify-center overflow-hidden rounded-md bg-card ${className ?? ""}`}
       style={{ width: size, height: size }}
     >
-      {logo?.kind === "svg" ? (
+      {logo?.kind === "svg" && typeof logo.component === "function" ? (
         <logo.component width={size} height={size} />
       ) : logo?.kind === "png" ? (
         <Image

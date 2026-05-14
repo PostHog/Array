@@ -1,6 +1,9 @@
 import type { ComponentType } from "react";
 import type { ImageSourcePropType } from "react-native";
 import type { SvgProps } from "react-native-svg";
+import { logger } from "@/lib/logger";
+
+const log = logger.scope("server-icons");
 
 // SVG imports are turned into React components by react-native-svg-transformer.
 import AtlassianSvg from "../../../../assets/services/atlassian.svg";
@@ -48,6 +51,11 @@ export type ServerLogo =
   | { kind: "png"; source: ImageSourcePropType };
 
 function svg(component: ComponentType<SvgProps>): ServerLogo {
+  if (typeof component !== "function") {
+    log.warn("SVG import resolved as non-component", {
+      type: typeof component,
+    });
+  }
   return { kind: "svg", component };
 }
 
