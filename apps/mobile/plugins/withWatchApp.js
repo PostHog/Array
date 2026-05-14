@@ -8,7 +8,7 @@ const WATCH_SOURCE_DIR = "watch";
 const WATCH_BUNDLE_ID = "com.posthog.code.mobile.watchkitapp";
 const WATCH_EXTENSION_BUNDLE_ID = `${WATCH_BUNDLE_ID}.watchkitextension`;
 
-function copyNativeFiles(sourceDir, destinationDir) {
+function copyNativeSupportFiles(sourceDir, destinationDir) {
   if (!fs.existsSync(sourceDir)) {
     throw new Error(`Missing native source directory: ${sourceDir}`);
   }
@@ -17,9 +17,12 @@ function copyNativeFiles(sourceDir, destinationDir) {
   for (const entry of fs.readdirSync(sourceDir)) {
     const source = path.join(sourceDir, entry);
     const destination = path.join(destinationDir, entry);
-    if (fs.statSync(source).isFile()) {
-      fs.copyFileSync(source, destination);
+    if (!fs.statSync(source).isFile()) continue;
+    if (entry.endsWith(".swift") || entry.endsWith(".m")) {
+      fs.rmSync(destination, { force: true });
+      continue;
     }
+    fs.copyFileSync(source, destination);
   }
 }
 
@@ -27,11 +30,11 @@ function ensureWatchScaffold(iosRoot) {
   const mobileRoot = path.resolve(__dirname, "..");
   const nativeRoot = path.join(mobileRoot, "native");
 
-  copyNativeFiles(
+  copyNativeSupportFiles(
     path.join(nativeRoot, "watch"),
     path.join(iosRoot, WATCH_SOURCE_DIR),
   );
-  copyNativeFiles(
+  copyNativeSupportFiles(
     path.join(nativeRoot, "ios"),
     path.join(iosRoot, "PostHogCode"),
   );
@@ -141,6 +144,24 @@ function ensureWatchSource(project, fileName, target) {
     watchGroupKey,
   );
   ensureSource(project, fileName, target, WATCH_SOURCE_DIR);
+  setFileReferencePath(project, fileName, `../native/watch/${fileName}`);
+}
+
+function setFileReferencePath(project, fileName, filePath) {
+  const fileReferences = project.hash.project.objects.PBXFileReference;
+  for (const [key, ref] of Object.entries(fileReferences)) {
+    if (key.endsWith("_comment")) continue;
+    const comment = fileReferences[`${key}_comment`];
+    if (
+      comment === fileName ||
+      ref.name === fileName ||
+      ref.path === fileName
+    ) {
+      ref.name = fileName;
+      ref.path = filePath;
+      ref.sourceTree = "SOURCE_ROOT";
+    }
+  }
 }
 
 function ensureResource(
@@ -212,20 +233,30 @@ function addWatchTargets(project) {
 
   ensureSource(
     project,
-    "PostHogCode/WatchMissionControlModule.swift",
+    "PostHogCode/WatchTaskControlModule.swift",
     hostTargetUuid,
     "PostHogCode",
+  );
+  setFileReferencePath(
+    project,
+    "WatchTaskControlModule.swift",
+    "../native/ios/WatchTaskControlModule.swift",
   );
   ensureSource(
     project,
-    "PostHogCode/WatchMissionControlModule.m",
+    "PostHogCode/WatchTaskControlModule.m",
     hostTargetUuid,
     "PostHogCode",
   );
+  setFileReferencePath(
+    project,
+    "WatchTaskControlModule.m",
+    "../native/ios/WatchTaskControlModule.m",
+  );
 
   ensureWatchSource(project, "PostHogCodeWatchApp.swift", watchExtension.uuid);
-  ensureWatchSource(project, "WatchMissionStore.swift", watchExtension.uuid);
-  ensureWatchSource(project, "WatchMissionModels.swift", watchExtension.uuid);
+  ensureWatchSource(project, "WatchTaskStore.swift", watchExtension.uuid);
+  ensureWatchSource(project, "WatchTaskModels.swift", watchExtension.uuid);
   ensureWatchSource(project, "TaskViews.swift", watchExtension.uuid);
   ensureWatchSource(project, "HapticsPolicy.swift", watchExtension.uuid);
 
