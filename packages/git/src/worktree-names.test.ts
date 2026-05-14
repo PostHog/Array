@@ -33,12 +33,11 @@ describe("worktree name word lists", () => {
     expect(ADJECTIVES.length * NOUNS.length).toBeGreaterThanOrEqual(10_000);
   });
 
-  it("has no duplicate adjectives", () => {
-    expect(new Set(ADJECTIVES).size).toBe(ADJECTIVES.length);
-  });
-
-  it("has no duplicate nouns", () => {
-    expect(new Set(NOUNS).size).toBe(NOUNS.length);
+  it.each([
+    ["adjectives", ADJECTIVES],
+    ["nouns", NOUNS],
+  ] as const)("%s contain no duplicates", (_label, list) => {
+    expect(new Set(list).size).toBe(list.length);
   });
 
   it("has no overlap between adjectives and nouns", () => {
