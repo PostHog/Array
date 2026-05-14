@@ -279,6 +279,17 @@ export default function SettingsScreen() {
           />
         </SettingsSection>
 
+        {/* Integrations */}
+        <SettingsSection title="Integrations">
+          <SettingsRow
+            label="MCP servers"
+            description="Browse the marketplace, manage installed servers, approve tools"
+            onPress={() => router.push("/mcp-servers")}
+            showDivider={false}
+            rightSlot={<CaretRight size={14} color={themeColors.gray[10]} />}
+          />
+        </SettingsSection>
+
         {/* Inbox */}
         <SettingsSection title="Inbox">
           <SettingsRow

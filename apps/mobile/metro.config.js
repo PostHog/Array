@@ -7,6 +7,19 @@ const monorepoRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
 
+// Treat .svg files as React components via react-native-svg-transformer so
+// we can `import Icon from "./logo.svg"` and render it like any RN component.
+const { transformer, resolver } = config;
+config.transformer = {
+  ...transformer,
+  babelTransformerPath: require.resolve("react-native-svg-transformer/expo"),
+};
+config.resolver = {
+  ...resolver,
+  assetExts: resolver.assetExts.filter((ext) => ext !== "svg"),
+  sourceExts: [...resolver.sourceExts, "svg"],
+};
+
 // Watch monorepo root for changes
 config.watchFolders = [monorepoRoot];
 

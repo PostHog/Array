@@ -85,6 +85,21 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
           back / iOS swipe-back / Android hardware-back all return to it. */}
       <Stack.Screen name="settings/index" options={{ headerShown: false }} />
 
+      {/* MCP servers — marketplace + installed management. */}
+      <Stack.Screen name="mcp-servers/index" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="mcp-servers/add-custom"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="mcp-servers/template/[id]"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="mcp-servers/installation/[id]"
+        options={{ headerShown: false }}
+      />
+
       {/* Report detail - modal presentation, no native header
           (the in-content title block is the canonical header). */}
       <Stack.Screen

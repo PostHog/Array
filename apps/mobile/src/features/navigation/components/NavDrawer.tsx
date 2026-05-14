@@ -1,6 +1,13 @@
 import { Text } from "@components/text";
 import { usePathname, useRouter } from "expo-router";
-import { Clock, GearSix, ListBullets, Plus, Tray } from "phosphor-react-native";
+import {
+  Clock,
+  GearSix,
+  ListBullets,
+  Plus,
+  PuzzlePiece,
+  Tray,
+} from "phosphor-react-native";
 import { memo, type ReactNode, useEffect } from "react";
 import {
   Dimensions,
@@ -94,6 +101,11 @@ const NavDrawerContent = memo(function NavDrawerContent({
     if (pathname === "/settings") return;
     router.push("/settings");
   };
+  const handleMcpServers = () => {
+    close();
+    if (pathname === "/mcp-servers") return;
+    router.push("/mcp-servers");
+  };
   const handleHome = () => navigateTo("/tasks");
 
   const handleTaskPress = (taskId: string) => {
@@ -107,6 +119,7 @@ const NavDrawerContent = memo(function NavDrawerContent({
   const isOnInbox = pathname === "/inbox";
   const isOnAutomations = pathname === "/automations";
   const isOnSettings = pathname === "/settings";
+  const isOnMcpServers = pathname === "/mcp-servers";
 
   return (
     <View
@@ -158,6 +171,18 @@ const NavDrawerContent = memo(function NavDrawerContent({
           label="Automations"
           active={isOnAutomations}
           onPress={handleAutomations}
+        />
+        <DrawerItem
+          icon={
+            <PuzzlePiece
+              size={22}
+              color={isOnMcpServers ? iconColorActive : iconColor}
+              weight={isOnMcpServers ? "fill" : "regular"}
+            />
+          }
+          label="MCP servers"
+          active={isOnMcpServers}
+          onPress={handleMcpServers}
         />
       </View>
 

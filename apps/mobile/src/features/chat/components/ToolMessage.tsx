@@ -27,6 +27,8 @@ import {
   getPostHogExecDisplay,
   isPostHogExecTool,
 } from "@/features/chat/utils/posthogExecDisplay";
+import { McpAppHost } from "@/features/mcp/components/McpAppHost";
+import { isMcpToolName } from "@/features/mcp/utils/mcpToolName";
 import {
   getColorForClass,
   highlightCode,
@@ -933,6 +935,24 @@ export function ToolMessage({
   const resultText = extractResultText(result);
   const isPostHogExec = isPostHogExecTool(effectiveToolName);
   const posthogExecDisplay = isPostHogExec ? getPostHogExecDisplay(args) : null;
+
+  // MCP App tools render via the WebView host — skip PostHog exec (which has
+  // its own renderer above) and only kick in once the tool finished or while
+  // it's running so we don't show empty WebView shells for pending tools.
+  const isMcpAppTool = !isPostHogExec && isMcpToolName(effectiveToolName);
+
+  if (isMcpAppTool && !isPending) {
+    return (
+      <View className="px-4 py-1">
+        <McpAppHost
+          rawToolName={effectiveToolName}
+          toolArgs={args}
+          toolResult={result}
+          status={status}
+        />
+      </View>
+    );
+  }
 
   if (isPostHogExec) {
     const label = posthogExecDisplay?.label ?? "exec";
