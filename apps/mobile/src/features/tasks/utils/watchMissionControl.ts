@@ -4,17 +4,17 @@ import type {
   SessionEvent,
   SessionNotification,
   Task,
-  WatchMissionActionType,
-  WatchMissionApproval,
-  WatchMissionApprovalOption,
-  WatchMissionChecklistItem,
-  WatchMissionChecklistStatus,
-  WatchMissionEnvelope,
-  WatchMissionProgress,
-  WatchMissionRisk,
-  WatchMissionSnapshot,
-  WatchMissionStatus,
-  WatchMissionTimelineItem,
+  WatchTaskActionType,
+  WatchTaskApproval,
+  WatchTaskApprovalOption,
+  WatchTaskChecklistItem,
+  WatchTaskChecklistStatus,
+  WatchTaskEnvelope,
+  WatchTaskProgress,
+  WatchTaskRisk,
+  WatchTaskSnapshot,
+  WatchTaskStatus,
+  WatchTaskTimelineItem,
 } from "../types";
 
 const MAX_TITLE_LENGTH = 72;
@@ -23,16 +23,17 @@ const MAX_CHECKLIST_ITEMS = 8;
 const MAX_TIMELINE_ITEMS = 6;
 const STALE_AFTER_MS = 30_000;
 
-interface MissionBuildOptions {
+interface TaskBuildOptions {
   now?: number;
   isStale?: boolean;
   staleReason?: string;
+  isArchived?: boolean;
 }
 
 interface ToolState {
   id: string;
   title: string;
-  status: WatchMissionChecklistStatus;
+  status: WatchTaskChecklistStatus;
   args?: Record<string, unknown>;
   result?: unknown;
   ts: number;
@@ -57,9 +58,7 @@ function toMillis(value?: string | null): number | undefined {
   return Number.isFinite(timestamp) ? timestamp : undefined;
 }
 
-function mapPlanStatus(
-  status: PlanEntry["status"],
-): WatchMissionChecklistStatus {
+function mapPlanStatus(status: PlanEntry["status"]): WatchTaskChecklistStatus {
   if (status === "in_progress") return "running";
   if (status === "completed") return "completed";
   if (status === "failed") return "failed";
@@ -68,7 +67,7 @@ function mapPlanStatus(
 
 function mapToolStatus(
   status?: "pending" | "in_progress" | "completed" | "failed" | null,
-): WatchMissionChecklistStatus {
+): WatchTaskChecklistStatus {
   switch (status) {
     case "in_progress":
       return "running";
@@ -81,9 +80,7 @@ function mapToolStatus(
   }
 }
 
-function calculateProgress(
-  items: WatchMissionChecklistItem[],
-): WatchMissionProgress {
+function calculateProgress(items: WatchTaskChecklistItem[]): WatchTaskProgress {
   const total = items.length;
   const completed = items.filter((item) => item.status === "completed").length;
   const running = items.filter((item) => item.status === "running").length;
@@ -146,7 +143,7 @@ function extractQuestions(args?: Record<string, unknown>): Array<{
   );
 }
 
-function deriveToolRisk(tool: ToolState): WatchMissionRisk {
+function deriveToolRisk(tool: ToolState): WatchTaskRisk {
   const haystack =
     `${tool.title} ${JSON.stringify(tool.args ?? {})}`.toLowerCase();
   if (
@@ -181,7 +178,7 @@ function formatToolSummary(tool: ToolState): string {
   return tool.title;
 }
 
-function extractApproval(tool: ToolState): WatchMissionApproval | undefined {
+function extractApproval(tool: ToolState): WatchTaskApproval | undefined {
   if (tool.status === "completed" || tool.status === "failed") return undefined;
 
   const questions = extractQuestions(tool.args);
@@ -201,7 +198,7 @@ function extractApproval(tool: ToolState): WatchMissionApproval | undefined {
       ) ?? "Agent is waiting for approval.";
     const risk = deriveToolRisk(tool);
     const questionOptions = firstQuestion?.options ?? [];
-    const options: WatchMissionApprovalOption[] =
+    const options: WatchTaskApprovalOption[] =
       questionOptions.length > 0
         ? questionOptions.slice(0, 3).map((option, index) => {
             const title = option.label ?? `Option ${index + 1}`;
@@ -293,7 +290,7 @@ function collectTools(events: SessionEvent[]): ToolState[] {
 function buildChecklist(
   plan: PlanEntry[] | null,
   tools: ToolState[],
-): WatchMissionChecklistItem[] {
+): WatchTaskChecklistItem[] {
   if (plan?.length) {
     return plan.slice(0, MAX_CHECKLIST_ITEMS).map((entry, index) => ({
       id: `plan-${index}`,
@@ -326,11 +323,11 @@ function buildChecklist(
 function buildTimeline(
   events: SessionEvent[],
   tools: ToolState[],
-): WatchMissionTimelineItem[] {
-  const timeline: WatchMissionTimelineItem[] = [];
+): WatchTaskTimelineItem[] {
+  const timeline: WatchTaskTimelineItem[] = [];
   const seen = new Set<string>();
 
-  const push = (item: WatchMissionTimelineItem) => {
+  const push = (item: WatchTaskTimelineItem) => {
     if (seen.has(item.id)) return;
     seen.add(item.id);
     timeline.push(item);
@@ -409,7 +406,7 @@ function buildTimeline(
 }
 
 function getCurrentTask(
-  checklist: WatchMissionChecklistItem[],
+  checklist: WatchTaskChecklistItem[],
   tools: ToolState[],
 ): string | undefined {
   const runningPlan = checklist.find((item) => item.status === "running");
@@ -423,10 +420,10 @@ function getCurrentTask(
 
 function deriveStatus(args: {
   session?: TaskSession;
-  approval?: WatchMissionApproval;
-  progress: WatchMissionProgress;
+  approval?: WatchTaskApproval;
+  progress: WatchTaskProgress;
   isStale: boolean;
-}): WatchMissionStatus {
+}): WatchTaskStatus {
   const { session, approval, progress, isStale } = args;
   if (session?.terminalStatus === "failed") return "failed";
   if (session?.terminalStatus === "completed") return "completed";
@@ -438,7 +435,7 @@ function deriveStatus(args: {
   return "idle";
 }
 
-function statusText(status: WatchMissionStatus): string {
+function statusText(status: WatchTaskStatus): string {
   switch (status) {
     case "connecting":
       return "Connecting";
@@ -460,10 +457,10 @@ function statusText(status: WatchMissionStatus): string {
 }
 
 function allowedActions(
-  status: WatchMissionStatus,
-  approval?: WatchMissionApproval,
-): WatchMissionActionType[] {
-  const actions: WatchMissionActionType[] = ["open_phone", "open_mac"];
+  status: WatchTaskStatus,
+  approval?: WatchTaskApproval,
+): WatchTaskActionType[] {
+  const actions: WatchTaskActionType[] = ["open_phone", "open_mac"];
   if (approval) {
     actions.unshift("reject");
     actions.unshift("approve");
@@ -482,11 +479,11 @@ function allowedActions(
   return [...new Set(actions)];
 }
 
-export function createWatchMissionSnapshot(
+export function createWatchTaskSnapshot(
   task: Task,
   session?: TaskSession,
-  options: MissionBuildOptions = {},
-): WatchMissionSnapshot {
+  options: TaskBuildOptions = {},
+): WatchTaskSnapshot {
   const now = options.now ?? Date.now();
   const run = task.latest_run;
   const events = session?.events ?? [];
@@ -553,8 +550,11 @@ export function createWatchMissionSnapshot(
     title:
       truncate(task.title || task.description, MAX_TITLE_LENGTH) ??
       "PostHog Code task",
+    subtitle: truncate(task.description, 96),
     repository: task.repository,
     branch: run?.branch,
+    internal: task.internal,
+    isArchived: options.isArchived,
     environment,
     status,
     statusText: statusText(status),
@@ -605,18 +605,19 @@ export function createWatchMissionSnapshot(
   };
 }
 
-export function createWatchMissionEnvelope(
-  tasks: Task[],
+export function createWatchTaskEnvelope(
+  sourceTasks: Task[],
   sessionsByTaskId: Record<string, TaskSession | undefined>,
   activeTaskId?: string,
-  options: MissionBuildOptions = {},
-): WatchMissionEnvelope {
+  options: TaskBuildOptions & { archivedTaskIds?: Set<string> } = {},
+): WatchTaskEnvelope {
   const now = options.now ?? Date.now();
-  const missions = tasks
+  const taskSnapshots = sourceTasks
     .map((task) =>
-      createWatchMissionSnapshot(task, sessionsByTaskId[task.id], {
+      createWatchTaskSnapshot(task, sessionsByTaskId[task.id], {
         ...options,
         now,
+        isArchived: options.archivedTaskIds?.has(task.id) ?? false,
       }),
     )
     .sort(
@@ -626,8 +627,9 @@ export function createWatchMissionEnvelope(
   return {
     schemaVersion: 1,
     generatedAt: now,
-    activeMissionId: missions.find((mission) => mission.taskId === activeTaskId)
-      ?.id,
-    missions,
+    activeTaskId: taskSnapshots.find(
+      (snapshot) => snapshot.taskId === activeTaskId,
+    )?.id,
+    tasks: taskSnapshots,
   };
 }

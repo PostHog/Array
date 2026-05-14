@@ -3,14 +3,14 @@ import SwiftUI
 import WatchConnectivity
 
 @MainActor
-final class WatchMissionStore: NSObject, ObservableObject {
-    @Published var envelope: WatchMissionEnvelope?
+final class WatchTaskStore: NSObject, ObservableObject {
+    @Published var envelope: WatchTaskEnvelope?
     @Published var connectionState: String = "Waiting for iPhone"
     @Published var lastCommandStatus: String?
     @Published var lastEnvelopeStatus: String?
 
     let haptics = HapticsPolicy()
-    private let cacheKey = "watch_mission_envelope"
+    private let cacheKey = "watch_task_envelope"
 
     var tasks: [WatchTaskSnapshot] { envelope?.tasks ?? [] }
 
@@ -28,7 +28,7 @@ final class WatchMissionStore: NSObject, ObservableObject {
         activateSession()
     }
 
-    func send(command: WatchMissionCommand) {
+    func send(command: WatchTaskCommand) {
         lastCommandStatus = "Sending…"
         guard WCSession.isSupported() else {
             lastCommandStatus = "iPhone relay unavailable"
@@ -36,7 +36,7 @@ final class WatchMissionStore: NSObject, ObservableObject {
         }
 
         let payload = encodeDictionary(command)
-        let message: [String: Any] = ["type": "mission_command", "payload": payload]
+        let message: [String: Any] = ["type": "task_command", "payload": payload]
         let session = WCSession.default
         activateSession()
 
@@ -78,7 +78,7 @@ final class WatchMissionStore: NSObject, ObservableObject {
         }
         do {
             let data = try JSONSerialization.data(withJSONObject: payload)
-            let envelope = try JSONDecoder().decode(WatchMissionEnvelope.self, from: data)
+            let envelope = try JSONDecoder().decode(WatchTaskEnvelope.self, from: data)
             self.envelope = envelope
             self.connectionState = "Live"
             self.lastEnvelopeStatus = "iPhone update received at \(Date().formatted(date: .omitted, time: .standard))"
@@ -110,12 +110,12 @@ final class WatchMissionStore: NSObject, ObservableObject {
 
     private func loadCachedEnvelope() {
         guard let data = UserDefaults.standard.data(forKey: cacheKey) else { return }
-        envelope = try? JSONDecoder().decode(WatchMissionEnvelope.self, from: data)
+        envelope = try? JSONDecoder().decode(WatchTaskEnvelope.self, from: data)
         if envelope != nil { connectionState = "Cached" }
     }
 }
 
-extension WatchMissionStore: WCSessionDelegate {
+extension WatchTaskStore: WCSessionDelegate {
     nonisolated func session(
         _ session: WCSession,
         activationDidCompleteWith activationState: WCSessionActivationState,
@@ -131,14 +131,14 @@ extension WatchMissionStore: WCSessionDelegate {
 
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         Task { @MainActor in
-            guard applicationContext["type"] as? String == "mission_envelope" else { return }
+            guard applicationContext["type"] as? String == "task_envelope" else { return }
             self.handleEnvelopePayload(applicationContext["payload"])
         }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         Task { @MainActor in
-            guard message["type"] as? String == "mission_envelope" else { return }
+            guard message["type"] as? String == "task_envelope" else { return }
             self.handleEnvelopePayload(message["payload"])
         }
     }
@@ -149,7 +149,7 @@ extension WatchMissionStore: WCSessionDelegate {
         replyHandler: @escaping ([String: Any]) -> Void
     ) {
         Task { @MainActor in
-            guard message["type"] as? String == "mission_envelope" else {
+            guard message["type"] as? String == "task_envelope" else {
                 replyHandler(["ok": false, "error": "unknown_type"])
                 return
             }

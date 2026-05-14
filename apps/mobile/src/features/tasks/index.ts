@@ -34,13 +34,13 @@ export {
   parseSessionLogs,
 } from "./utils/parseSessionLogs";
 export {
-  createWatchMissionEnvelope,
-  createWatchMissionSnapshot,
+  createWatchTaskEnvelope,
+  createWatchTaskSnapshot,
 } from "./utils/watchMissionControl";
 export {
-  isWatchMissionControlAvailable,
-  isWatchMissionControlSupported,
-  publishWatchMissionEnvelope,
-  sendUrgentWatchMissionUpdate,
-  subscribeToWatchMissionCommands,
+  isWatchTaskControlAvailable,
+  isWatchTaskControlSupported,
+  publishWatchTaskEnvelope,
+  sendUrgentWatchTaskUpdate,
+  subscribeToWatchTaskCommands,
 } from "./watchMissionControlBridge";

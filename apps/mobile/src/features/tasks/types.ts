@@ -120,9 +120,9 @@ export interface PlanEntry {
   priority: string;
 }
 
-export type WatchMissionEnvironment = "cloud" | "local" | "unknown";
+export type WatchTaskEnvironment = "cloud" | "local" | "unknown";
 
-export type WatchMissionStatus =
+export type WatchTaskStatus =
   | "idle"
   | "connecting"
   | "running"
@@ -132,13 +132,13 @@ export type WatchMissionStatus =
   | "completed"
   | "stale";
 
-export type WatchMissionChecklistStatus =
+export type WatchTaskChecklistStatus =
   | "pending"
   | "running"
   | "completed"
   | "failed";
 
-export type WatchMissionTimelineKind =
+export type WatchTaskTimelineKind =
   | "started"
   | "progress"
   | "tool"
@@ -148,9 +148,9 @@ export type WatchMissionTimelineKind =
   | "completed"
   | "handoff";
 
-export type WatchMissionRisk = "low" | "medium" | "high" | "destructive";
+export type WatchTaskRisk = "low" | "medium" | "high" | "destructive";
 
-export type WatchMissionActionType =
+export type WatchTaskActionType =
   | "approve"
   | "reject"
   | "stop"
@@ -159,7 +159,7 @@ export type WatchMissionActionType =
   | "open_mac"
   | "view_diff";
 
-export interface WatchMissionProgress {
+export interface WatchTaskProgress {
   completed: number;
   running: number;
   pending: number;
@@ -169,57 +169,57 @@ export interface WatchMissionProgress {
   fraction: number;
 }
 
-export interface WatchMissionChecklistItem {
+export interface WatchTaskChecklistItem {
   id: string;
   title: string;
   subtitle?: string;
-  status: WatchMissionChecklistStatus;
+  status: WatchTaskChecklistStatus;
   priority?: string;
   depth?: number;
   kind?: "plan" | "agent" | "tool" | "approval" | "system";
   updatedAt?: number;
 }
 
-export interface WatchMissionTimelineItem {
+export interface WatchTaskTimelineItem {
   id: string;
   title: string;
   detail?: string;
-  kind: WatchMissionTimelineKind;
+  kind: WatchTaskTimelineKind;
   timestamp: number;
 }
 
-export interface WatchMissionApprovalOption {
+export interface WatchTaskApprovalOption {
   id: string;
   title: string;
   role: "approve" | "reject" | "neutral";
   destructive?: boolean;
 }
 
-export interface WatchMissionApproval {
+export interface WatchTaskApproval {
   id: string;
   toolCallId: string;
   title: string;
   summary: string;
   detail?: string;
-  risk: WatchMissionRisk;
+  risk: WatchTaskRisk;
   requestedAt: number;
-  options: WatchMissionApprovalOption[];
+  options: WatchTaskApprovalOption[];
   diffAvailable?: boolean;
 }
 
-export interface WatchMissionBlocker {
+export interface WatchTaskBlocker {
   title: string;
   detail?: string;
   kind: "error" | "approval" | "stale" | "offline" | "unknown";
 }
 
-export interface WatchMissionHandoff {
+export interface WatchTaskHandoff {
   phoneUrl: string;
   macUrl?: string;
   webUrl?: string;
 }
 
-export interface WatchMissionSnapshot {
+export interface WatchTaskSnapshot {
   schemaVersion: 1;
   id: string;
   generatedAt: number;
@@ -229,10 +229,13 @@ export interface WatchMissionSnapshot {
   taskNumber?: number | null;
   slug?: string;
   title: string;
+  subtitle?: string;
   repository?: string | null;
   branch?: string | null;
-  environment: WatchMissionEnvironment;
-  status: WatchMissionStatus;
+  internal?: boolean;
+  isArchived?: boolean;
+  environment: WatchTaskEnvironment;
+  status: WatchTaskStatus;
   statusText: string;
   currentTask?: string;
   createdAt?: number;
@@ -240,33 +243,33 @@ export interface WatchMissionSnapshot {
   updatedAt?: number;
   completedAt?: number;
   elapsedSeconds: number;
-  progress: WatchMissionProgress;
-  checklist: WatchMissionChecklistItem[];
-  timeline: WatchMissionTimelineItem[];
-  approval?: WatchMissionApproval;
-  blocker?: WatchMissionBlocker;
+  progress: WatchTaskProgress;
+  checklist: WatchTaskChecklistItem[];
+  timeline: WatchTaskTimelineItem[];
+  approval?: WatchTaskApproval;
+  blocker?: WatchTaskBlocker;
   lastError?: string | null;
   isStale: boolean;
   staleReason?: string;
-  allowedActions: WatchMissionActionType[];
-  handoff: WatchMissionHandoff;
+  allowedActions: WatchTaskActionType[];
+  handoff: WatchTaskHandoff;
 }
 
-export interface WatchMissionEnvelope {
+export interface WatchTaskEnvelope {
   schemaVersion: 1;
   generatedAt: number;
-  activeMissionId?: string;
-  missions: WatchMissionSnapshot[];
+  activeTaskId?: string;
+  tasks: WatchTaskSnapshot[];
 }
 
-interface WatchMissionCommandBase {
+interface WatchTaskCommandBase {
   id: string;
   taskId: string;
   taskRunId?: string;
 }
 
-export type WatchMissionCommand =
-  | (WatchMissionCommandBase & {
+export type WatchTaskCommand =
+  | (WatchTaskCommandBase & {
       type: "approval_response";
       toolCallId: string;
       optionId: string;
@@ -274,16 +277,23 @@ export type WatchMissionCommand =
       answers?: Record<string, string>;
       customInput?: string;
     })
-  | (WatchMissionCommandBase & {
+  | (WatchTaskCommandBase & {
       type: "send_prompt";
       displayText: string;
     })
-  | (WatchMissionCommandBase & {
+  | (WatchTaskCommandBase & {
       type: "debug_ping" | "debug_request_snapshot";
       displayText?: string;
     })
-  | (WatchMissionCommandBase & {
-      type: "stop" | "retry" | "open_phone" | "open_mac" | "view_diff";
+  | (WatchTaskCommandBase & {
+      type:
+        | "stop"
+        | "retry"
+        | "open_phone"
+        | "open_mac"
+        | "view_diff"
+        | "archive"
+        | "restore";
       url?: string;
     });
 

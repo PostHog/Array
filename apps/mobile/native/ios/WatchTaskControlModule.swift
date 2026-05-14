@@ -2,8 +2,8 @@ import Foundation
 import React
 import WatchConnectivity
 
-@objc(WatchMissionControlModule)
-final class WatchMissionControlModule: RCTEventEmitter, WCSessionDelegate {
+@objc(WatchTaskControlModule)
+final class WatchTaskControlModule: RCTEventEmitter, WCSessionDelegate {
   private var hasListeners = false
   private var latestEnvelope: [String: Any]?
 
@@ -17,7 +17,7 @@ final class WatchMissionControlModule: RCTEventEmitter, WCSessionDelegate {
   }
 
   override func supportedEvents() -> [String]! {
-    return ["WatchMissionControlCommand"]
+    return ["WatchTaskControlCommand"]
   }
 
   override func startObserving() {
@@ -50,7 +50,7 @@ final class WatchMissionControlModule: RCTEventEmitter, WCSessionDelegate {
     activateSessionIfAvailable()
 
     do {
-      try session.updateApplicationContext(["type": "mission_envelope", "payload": payload])
+      try session.updateApplicationContext(["type": "task_envelope", "payload": payload])
       resolve(true)
     } catch {
       reject(
@@ -76,7 +76,7 @@ final class WatchMissionControlModule: RCTEventEmitter, WCSessionDelegate {
     latestEnvelope = payload
     activateSessionIfAvailable()
 
-    let message: [String: Any] = ["type": "mission_envelope", "payload": payload]
+    let message: [String: Any] = ["type": "task_envelope", "payload": payload]
     do {
       try WCSession.default.updateApplicationContext(message)
     } catch {
@@ -106,7 +106,7 @@ final class WatchMissionControlModule: RCTEventEmitter, WCSessionDelegate {
   private func emitCommand(_ command: [String: Any]) {
     guard hasListeners else { return }
     DispatchQueue.main.async { [weak self] in
-      self?.sendEvent(withName: "WatchMissionControlCommand", body: command)
+      self?.sendEvent(withName: "WatchTaskControlCommand", body: command)
     }
   }
 
@@ -142,7 +142,7 @@ final class WatchMissionControlModule: RCTEventEmitter, WCSessionDelegate {
     error: Error?
   ) {
     if activationState == .activated, let latestEnvelope {
-      try? session.updateApplicationContext(["type": "mission_envelope", "payload": latestEnvelope])
+      try? session.updateApplicationContext(["type": "task_envelope", "payload": latestEnvelope])
     }
   }
 
@@ -174,7 +174,7 @@ final class WatchMissionControlModule: RCTEventEmitter, WCSessionDelegate {
       return
     }
 
-    if type == "mission_command" {
+    if type == "task_command" {
       if let command = message["payload"] as? [String: Any] {
         emitCommand(command)
         replyHandler?(["ok": true])

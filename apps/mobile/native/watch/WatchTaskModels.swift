@@ -1,6 +1,6 @@
 import Foundation
 
-struct WatchMissionEnvelope: Codable {
+struct WatchTaskEnvelope: Codable {
     let schemaVersion: Int
     let generatedAt: TimeInterval
     let activeTaskId: String?
@@ -9,8 +9,8 @@ struct WatchMissionEnvelope: Codable {
     enum CodingKeys: String, CodingKey {
         case schemaVersion
         case generatedAt
-        case activeTaskId = "activeMissionId"
-        case tasks = "missions"
+        case activeTaskId = "activeTaskId"
+        case tasks = "tasks"
     }
 }
 
@@ -24,8 +24,11 @@ struct WatchTaskSnapshot: Codable, Identifiable {
     let taskNumber: Int?
     let slug: String?
     let title: String
+    let subtitle: String?
     let repository: String?
     let branch: String?
+    let internal: Bool?
+    let isArchived: Bool?
     let environment: String
     let status: String
     let statusText: String
@@ -35,19 +38,19 @@ struct WatchTaskSnapshot: Codable, Identifiable {
     let updatedAt: TimeInterval?
     let completedAt: TimeInterval?
     let elapsedSeconds: Int
-    let progress: WatchMissionProgress
-    let checklist: [WatchMissionChecklistItem]
-    let timeline: [WatchMissionTimelineItem]
-    let approval: WatchMissionApproval?
-    let blocker: WatchMissionBlocker?
+    let progress: WatchTaskProgress
+    let checklist: [WatchTaskChecklistItem]
+    let timeline: [WatchTaskTimelineItem]
+    let approval: WatchTaskApproval?
+    let blocker: WatchTaskBlocker?
     let lastError: String?
     let isStale: Bool
     let staleReason: String?
     let allowedActions: [String]
-    let handoff: WatchMissionHandoff
+    let handoff: WatchTaskHandoff
 }
 
-struct WatchMissionProgress: Codable {
+struct WatchTaskProgress: Codable {
     let completed: Int
     let running: Int
     let pending: Int
@@ -56,7 +59,7 @@ struct WatchMissionProgress: Codable {
     let fraction: Double
 }
 
-struct WatchMissionChecklistItem: Codable, Identifiable {
+struct WatchTaskChecklistItem: Codable, Identifiable {
     let id: String
     let title: String
     let subtitle: String?
@@ -67,7 +70,7 @@ struct WatchMissionChecklistItem: Codable, Identifiable {
     let updatedAt: TimeInterval?
 }
 
-struct WatchMissionTimelineItem: Codable, Identifiable {
+struct WatchTaskTimelineItem: Codable, Identifiable {
     let id: String
     let title: String
     let detail: String?
@@ -75,7 +78,7 @@ struct WatchMissionTimelineItem: Codable, Identifiable {
     let timestamp: TimeInterval
 }
 
-struct WatchMissionApproval: Codable, Identifiable {
+struct WatchTaskApproval: Codable, Identifiable {
     let id: String
     let toolCallId: String
     let title: String
@@ -83,30 +86,30 @@ struct WatchMissionApproval: Codable, Identifiable {
     let detail: String?
     let risk: String
     let requestedAt: TimeInterval
-    let options: [WatchMissionApprovalOption]
+    let options: [WatchTaskApprovalOption]
     let diffAvailable: Bool?
 }
 
-struct WatchMissionApprovalOption: Codable, Identifiable {
+struct WatchTaskApprovalOption: Codable, Identifiable {
     let id: String
     let title: String
     let role: String
     let destructive: Bool?
 }
 
-struct WatchMissionBlocker: Codable {
+struct WatchTaskBlocker: Codable {
     let title: String
     let detail: String?
     let kind: String
 }
 
-struct WatchMissionHandoff: Codable {
+struct WatchTaskHandoff: Codable {
     let phoneUrl: String
     let macUrl: String?
     let webUrl: String?
 }
 
-struct WatchMissionCommand: Codable {
+struct WatchTaskCommand: Codable {
     let id: String
     let type: String
     let taskId: String

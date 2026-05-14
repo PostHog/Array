@@ -18,23 +18,112 @@ func statusColor(_ status: String) -> Color {
     }
 }
 
+func shortTime(_ milliseconds: Int?) -> String {
+    guard let milliseconds else { return "" }
+    let date = Date(timeIntervalSince1970: TimeInterval(milliseconds) / 1000)
+    let hours = Date().timeIntervalSince(date) / 3600
+    if hours < 24 {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+    let formatter = DateFormatter()
+    formatter.setLocalizedDateFormatFromTemplate("MMM d")
+    return formatter.string(from: date)
+}
+
+func taskRepositoryLabel(_ task: WatchTaskSnapshot) -> String {
+    let repo = task.repository?.trimmingCharacters(in: .whitespacesAndNewlines)
+    return repo?.isEmpty == false ? repo! : "No repository"
+}
+
+struct TaskRepositorySection: Identifiable {
+    let id: String
+    let tasks: [WatchTaskSnapshot]
+}
+
+func groupTasksByRepository(_ tasks: [WatchTaskSnapshot]) -> [TaskRepositorySection] {
+    let grouped = Dictionary(grouping: tasks, by: taskRepositoryLabel)
+    return grouped.map { label, tasks in
+        TaskRepositorySection(
+            id: label,
+            tasks: tasks.sorted { ($0.updatedAt ?? $0.generatedAt) > ($1.updatedAt ?? $1.generatedAt) }
+        )
+    }
+    .sorted { lhs, rhs in
+        if lhs.id == "No repository" { return false }
+        if rhs.id == "No repository" { return true }
+        let lhsTime = lhs.tasks.first?.updatedAt ?? lhs.tasks.first?.generatedAt ?? 0
+        let rhsTime = rhs.tasks.first?.updatedAt ?? rhs.tasks.first?.generatedAt ?? 0
+        return lhsTime > rhsTime
+    }
+}
+
+enum WatchTaskOrganizeMode: String, CaseIterable {
+    case byProject
+    case chronological
+}
+
+enum WatchTaskSortMode: String, CaseIterable {
+    case updated
+    case created
+}
+
+enum WatchTaskVisibility: String, CaseIterable {
+    case external
+    case internalOnly = "internal"
+    case all
+}
+
 struct TasksRootView: View {
-    @EnvironmentObject private var store: WatchMissionStore
+    @EnvironmentObject private var store: WatchTaskStore
+    @AppStorage("watch_task_organize_mode") private var organizeModeRaw = WatchTaskOrganizeMode.byProject.rawValue
+    @AppStorage("watch_task_sort_mode") private var sortModeRaw = WatchTaskSortMode.updated.rawValue
+    @AppStorage("watch_task_visibility") private var visibilityRaw = WatchTaskVisibility.external.rawValue
+    @AppStorage("watch_task_show_archived") private var showArchived = false
+
+    private var organizeMode: WatchTaskOrganizeMode { WatchTaskOrganizeMode(rawValue: organizeModeRaw) ?? .byProject }
+    private var sortMode: WatchTaskSortMode { WatchTaskSortMode(rawValue: sortModeRaw) ?? .updated }
+    private var visibility: WatchTaskVisibility { WatchTaskVisibility(rawValue: visibilityRaw) ?? .external }
+
+    private var visibleTasks: [WatchTaskSnapshot] {
+        store.tasks
+            .filter { task in
+                switch visibility {
+                case .external: return task.internal != true
+                case .internalOnly: return task.internal == true
+                case .all: return true
+                }
+            }
+            .filter { showArchived || $0.isArchived != true }
+            .sorted { taskSortTimestamp($0) > taskSortTimestamp($1) }
+    }
 
     var body: some View {
         NavigationStack {
             if store.tasks.isEmpty {
                 EmptyTasksView(state: store.connectionState)
             } else {
-                List(store.tasks) { task in
-                    NavigationLink(value: task.id) {
-                        TaskRow(task: task)
+                List {
+                    NavigationLink { TaskListSettingsView() } label: {
+                        Label("Filter & Sort", systemImage: "line.3.horizontal.decrease.circle")
                     }
-                    .listRowBackground(
-                        ActiveTaskRowBackground(
-                            isActive: store.envelope?.activeTaskId == task.id
-                        )
-                    )
+
+                    if visibleTasks.isEmpty {
+                        Text(showArchived ? "No matching tasks" : "No active tasks")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if organizeMode == .byProject {
+                        ForEach(groupTasksByRepository(visibleTasks)) { section in
+                            Section(header: Text("\(section.id) · \(section.tasks.count)")) {
+                                ForEach(section.tasks) { task in
+                                    taskLink(task)
+                                }
+                            }
+                        }
+                    } else {
+                        ForEach(visibleTasks) { taskLink($0) }
+                    }
                 }
                 .navigationTitle("Tasks")
                 .navigationDestination(for: String.self) { id in
@@ -45,10 +134,36 @@ struct TasksRootView: View {
             }
         }
     }
+
+    private func taskSortTimestamp(_ task: WatchTaskSnapshot) -> Int {
+        if sortMode == .created { return task.createdAt ?? task.generatedAt }
+        return task.updatedAt ?? task.generatedAt
+    }
+
+    private func taskLink(_ task: WatchTaskSnapshot) -> some View {
+        NavigationLink(value: task.id) {
+            TaskRow(task: task, isActive: store.envelope?.activeTaskId == task.id)
+        }
+        .opacity(task.isArchived == true ? 0.45 : 1)
+        .listRowBackground(
+            ActiveTaskRowBackground(isActive: store.envelope?.activeTaskId == task.id)
+        )
+        .contextMenu {
+            if task.isArchived == true {
+                Button("Restore") { sendArchiveCommand(task, type: "restore") }
+            } else {
+                Button("Archive", role: .destructive) { sendArchiveCommand(task, type: "archive") }
+            }
+        }
+    }
+
+    private func sendArchiveCommand(_ task: WatchTaskSnapshot, type: String) {
+        store.send(command: WatchTaskCommand(id: UUID().uuidString, type: type, taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: nil))
+    }
 }
 
 struct EmptyTasksView: View {
-    @EnvironmentObject private var store: WatchMissionStore
+    @EnvironmentObject private var store: WatchTaskStore
     let state: String
 
     var body: some View {
@@ -76,27 +191,77 @@ struct EmptyTasksView: View {
     }
 
     private func sendPing() {
-        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: "debug_ping", taskId: "debug", taskRunId: nil, toolCallId: nil, optionId: nil, displayText: "Ping from Apple Watch", answers: nil, customInput: nil, url: nil))
+        store.send(command: WatchTaskCommand(id: UUID().uuidString, type: "debug_ping", taskId: "debug", taskRunId: nil, toolCallId: nil, optionId: nil, displayText: "Ping from Apple Watch", answers: nil, customInput: nil, url: nil))
     }
 
     private func requestSnapshot() {
-        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: "debug_request_snapshot", taskId: "debug", taskRunId: nil, toolCallId: nil, optionId: nil, displayText: "Request snapshot from Apple Watch", answers: nil, customInput: nil, url: nil))
+        store.send(command: WatchTaskCommand(id: UUID().uuidString, type: "debug_request_snapshot", taskId: "debug", taskRunId: nil, toolCallId: nil, optionId: nil, displayText: "Request snapshot from Apple Watch", answers: nil, customInput: nil, url: nil))
     }
 }
 
 struct TaskRow: View {
     let task: WatchTaskSnapshot
+    let isActive: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(task.slug ?? "CODE").font(.caption2).foregroundStyle(.secondary)
-                Spacer()
-                Circle().fill(statusColor(task.status)).frame(width: 7, height: 7)
+        HStack(alignment: .top, spacing: 8) {
+            TaskStatusDot(task: task)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(task.title).font(.caption).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(shortTime(task.createdAt))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                if let subtitle = task.subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                HStack(spacing: 4) {
+                    if isActive { Text("Active").foregroundStyle(accent) }
+                    if task.isArchived == true { Text("Archived") }
+                    if task.progress.total > 0 { Text("\(task.progress.completed)/\(task.progress.total)") }
+                }
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
             }
-            Text(task.title).font(.caption).lineLimit(2)
-            if task.progress.total > 0 {
-                ProgressView(value: task.progress.fraction).tint(statusColor(task.status))
+        }
+    }
+}
+
+struct TaskStatusDot: View {
+    let task: WatchTaskSnapshot
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(statusColor(task.status).opacity(0.35), lineWidth: 2)
+                .frame(width: 14, height: 14)
+            if task.status == "running" || task.status == "connecting" {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .tint(statusColor(task.status))
+                    .frame(width: 14, height: 14)
+            } else if task.status == "completed" {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(statusColor(task.status))
+            } else if task.status == "failed" || task.status == "blocked" {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(statusColor(task.status))
+            } else if task.status == "waiting_for_approval" {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(statusColor(task.status))
+            } else {
+                Circle()
+                    .fill(statusColor(task.status))
+                    .frame(width: 7, height: 7)
             }
         }
     }
@@ -107,20 +272,40 @@ struct ActiveTaskRowBackground: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(Color.secondary.opacity(0.16))
-            .overlay(alignment: .leading) {
-                if isActive {
-                    Rectangle()
-                        .fill(Color.orange)
-                        .frame(width: 4)
-                }
-            }
+            .fill(isActive ? Color.orange.opacity(0.16) : Color.secondary.opacity(0.10))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
+struct TaskListSettingsView: View {
+    @AppStorage("watch_task_organize_mode") private var organizeModeRaw = WatchTaskOrganizeMode.byProject.rawValue
+    @AppStorage("watch_task_sort_mode") private var sortModeRaw = WatchTaskSortMode.updated.rawValue
+    @AppStorage("watch_task_visibility") private var visibilityRaw = WatchTaskVisibility.external.rawValue
+    @AppStorage("watch_task_show_archived") private var showArchived = false
+
+    var body: some View {
+        Form {
+            Picker("Group by", selection: $organizeModeRaw) {
+                Text("Project").tag(WatchTaskOrganizeMode.byProject.rawValue)
+                Text("None").tag(WatchTaskOrganizeMode.chronological.rawValue)
+            }
+            Picker("Sort by", selection: $sortModeRaw) {
+                Text("Updated").tag(WatchTaskSortMode.updated.rawValue)
+                Text("Created").tag(WatchTaskSortMode.created.rawValue)
+            }
+            Picker("Visibility", selection: $visibilityRaw) {
+                Text("External").tag(WatchTaskVisibility.external.rawValue)
+                Text("Internal").tag(WatchTaskVisibility.internalOnly.rawValue)
+                Text("All").tag(WatchTaskVisibility.all.rawValue)
+            }
+            Toggle("Show archived", isOn: $showArchived)
+        }
+        .navigationTitle("Filter")
+    }
+}
+
 struct TaskOverviewView: View {
-    @EnvironmentObject private var store: WatchMissionStore
+    @EnvironmentObject private var store: WatchTaskStore
     let task: WatchTaskSnapshot
 
     var body: some View {
@@ -255,9 +440,9 @@ struct TimelineView: View {
 }
 
 struct ApprovalCard: View {
-    @EnvironmentObject private var store: WatchMissionStore
+    @EnvironmentObject private var store: WatchTaskStore
     let task: WatchTaskSnapshot
-    let approval: WatchMissionApproval
+    let approval: WatchTaskApproval
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -279,8 +464,8 @@ struct ApprovalCard: View {
         .background(.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
     }
 
-    private func sendApproval(_ option: WatchMissionApprovalOption) {
-        store.send(command: WatchMissionCommand(
+    private func sendApproval(_ option: WatchTaskApprovalOption) {
+        store.send(command: WatchTaskCommand(
             id: UUID().uuidString,
             type: "approval_response",
             taskId: task.taskId,
@@ -295,14 +480,14 @@ struct ApprovalCard: View {
     }
 
     private func send(type: String, url: String?) {
-        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: type, taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: url))
+        store.send(command: WatchTaskCommand(id: UUID().uuidString, type: type, taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: url))
     }
 }
 
 struct BlockerCard: View {
-    @EnvironmentObject private var store: WatchMissionStore
+    @EnvironmentObject private var store: WatchTaskStore
     let task: WatchTaskSnapshot
-    let blocker: WatchMissionBlocker
+    let blocker: WatchTaskBlocker
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -320,12 +505,12 @@ struct BlockerCard: View {
     }
 
     private func send(type: String) {
-        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: type, taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: nil))
+        store.send(command: WatchTaskCommand(id: UUID().uuidString, type: type, taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: nil))
     }
 }
 
 struct HandoffButtons: View {
-    @EnvironmentObject private var store: WatchMissionStore
+    @EnvironmentObject private var store: WatchTaskStore
     let task: WatchTaskSnapshot
 
     var body: some View {
@@ -337,10 +522,10 @@ struct HandoffButtons: View {
     }
 
     private func send(type: String, url: String?) {
-        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: type, taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: url))
+        store.send(command: WatchTaskCommand(id: UUID().uuidString, type: type, taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: url))
     }
 
     private func sendDemoPrompt() {
-        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: "send_prompt", taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: "Demo prompt from Apple Watch", answers: nil, customInput: nil, url: nil))
+        store.send(command: WatchTaskCommand(id: UUID().uuidString, type: "send_prompt", taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: "Demo prompt from Apple Watch", answers: nil, customInput: nil, url: nil))
     }
 }

@@ -1,7 +1,7 @@
 #import <React/RCTBridgeModule.h>
 #import <React/RCTEventEmitter.h>
 
-@interface RCT_EXTERN_MODULE(WatchMissionControlModule, RCTEventEmitter)
+@interface RCT_EXTERN_MODULE(WatchTaskControlModule, RCTEventEmitter)
 
 RCT_EXTERN_METHOD(isSupported:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

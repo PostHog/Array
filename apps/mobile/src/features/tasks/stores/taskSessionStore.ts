@@ -25,15 +25,15 @@ import {
   type SessionNotificationAttachment,
   type StoredLogEntry,
   type Task,
-  type WatchMissionCommand,
+  type WatchTaskCommand,
 } from "../types";
 import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
 import { playMeepSound } from "../utils/sounds";
-import { createWatchMissionEnvelope } from "../utils/watchMissionControl";
+import { createWatchTaskEnvelope } from "../utils/watchMissionControl";
 import {
-  publishWatchMissionEnvelope,
-  sendUrgentWatchMissionUpdate,
-  subscribeToWatchMissionCommands,
+  publishWatchTaskEnvelope,
+  sendUrgentWatchTaskUpdate,
+  subscribeToWatchTaskCommands,
 } from "../watchMissionControlBridge";
 import { useArchivedTasksStore } from "./archivedTasksStore";
 import { useAttachmentEchoStore } from "./attachmentEchoStore";
@@ -256,7 +256,7 @@ export interface TaskSession {
 interface TaskSessionStore {
   sessions: Record<string, TaskSession>;
   focusedTaskId: string | null;
-  watchMissionTasks: Record<string, Task>;
+  watchTasks: Record<string, Task>;
   activeWatchTaskId?: string;
 
   setFocusedTaskId: (taskId: string | null) => void;
@@ -282,7 +282,7 @@ interface TaskSessionStore {
   ) => Promise<void>;
   cancelPrompt: (taskId: string) => Promise<boolean>;
   retryTaskFromWatch: (taskId: string, taskRunId?: string) => Promise<void>;
-  handleWatchCommand: (command: WatchMissionCommand) => Promise<void>;
+  handleWatchCommand: (command: WatchTaskCommand) => Promise<void>;
   setConfigOption: (
     taskId: string,
     configId: string,
@@ -311,7 +311,7 @@ let watchPublishUrgent = false;
 let watchCommandUnsubscribe: (() => void) | null = null;
 const WATCH_SNAPSHOT_DEBOUNCE_MS = 250;
 
-function buildWatchMissionEnvelopeFromStore() {
+function buildWatchTaskEnvelopeFromStore() {
   const state = useTaskSessionStore.getState();
   const sessionsByTaskId: Record<string, TaskSession | undefined> = {};
   for (const session of Object.values(state.sessions)) {
@@ -319,23 +319,22 @@ function buildWatchMissionEnvelopeFromStore() {
   }
 
   const archivedTasks = useArchivedTasksStore.getState().archivedTasks;
-  const visibleTasks = Object.values(state.watchMissionTasks).filter(
-    (task) => !(task.id in archivedTasks),
-  );
+  const visibleTasks = Object.values(state.watchTasks);
   const activeWatchTaskId = state.activeWatchTaskId;
   const visibleActiveTaskId =
     activeWatchTaskId && activeWatchTaskId in archivedTasks
       ? undefined
       : activeWatchTaskId;
 
-  return createWatchMissionEnvelope(
+  return createWatchTaskEnvelope(
     visibleTasks,
     sessionsByTaskId,
     visibleActiveTaskId,
+    { archivedTaskIds: new Set(Object.keys(archivedTasks)) },
   );
 }
 
-function scheduleWatchMissionPublish(options: { urgent?: boolean } = {}) {
+function scheduleWatchTaskPublish(options: { urgent?: boolean } = {}) {
   if (options.urgent) watchPublishUrgent = true;
   if (watchPublishTimeout) return;
 
@@ -343,24 +342,24 @@ function scheduleWatchMissionPublish(options: { urgent?: boolean } = {}) {
     watchPublishTimeout = null;
     const urgent = watchPublishUrgent;
     watchPublishUrgent = false;
-    const envelope = buildWatchMissionEnvelopeFromStore();
+    const envelope = buildWatchTaskEnvelopeFromStore();
     const publish = urgent
-      ? sendUrgentWatchMissionUpdate(envelope)
-      : publishWatchMissionEnvelope(envelope);
+      ? sendUrgentWatchTaskUpdate(envelope)
+      : publishWatchTaskEnvelope(envelope);
     publish.catch((error) => {
-      log.warn("Failed to publish watch mission envelope", { error });
+      log.warn("Failed to publish watch task envelope", { error });
     });
   }, WATCH_SNAPSHOT_DEBOUNCE_MS);
 }
 
 function ensureWatchCommandSubscription() {
   if (watchCommandUnsubscribe) return;
-  watchCommandUnsubscribe = subscribeToWatchMissionCommands((command) => {
+  watchCommandUnsubscribe = subscribeToWatchTaskCommands((command) => {
     useTaskSessionStore
       .getState()
       .handleWatchCommand(command)
       .catch((error) => {
-        log.warn("Failed to handle watch mission command", { error });
+        log.warn("Failed to handle watch task command", { error });
       });
   });
 }
@@ -377,7 +376,7 @@ useArchivedTasksStore.subscribe((state) => {
     .join(",");
   if (nextArchivedWatchTaskIds === archivedWatchTaskIds) return;
   archivedWatchTaskIds = nextArchivedWatchTaskIds;
-  scheduleWatchMissionPublish({ urgent: true });
+  scheduleWatchTaskPublish({ urgent: true });
 });
 
 function macTaskUrl(command: {
@@ -401,25 +400,25 @@ function mapTerminalStatus(
 export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   sessions: {},
   focusedTaskId: null,
-  watchMissionTasks: {},
+  watchTasks: {},
 
   setFocusedTaskId: (taskId) => set({ focusedTaskId: taskId }),
 
   setActiveWatchTask: (taskId) => {
     ensureWatchCommandSubscription();
     set({ activeWatchTaskId: taskId });
-    scheduleWatchMissionPublish({ urgent: true });
+    scheduleWatchTaskPublish({ urgent: true });
   },
 
   registerWatchTask: (task) => {
     ensureWatchCommandSubscription();
     set((state) => ({
-      watchMissionTasks: {
-        ...state.watchMissionTasks,
+      watchTasks: {
+        ...state.watchTasks,
         [task.id]: task,
       },
     }));
-    scheduleWatchMissionPublish();
+    scheduleWatchTaskPublish();
   },
 
   connectToTask: async (task: Task) => {
@@ -493,7 +492,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       const { [session.taskRunId]: _, ...rest } = state.sessions;
       return { sessions: rest };
     });
-    scheduleWatchMissionPublish();
+    scheduleWatchTaskPublish();
     log.debug("Disconnected from task", { taskId });
   },
 
@@ -790,8 +789,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   },
 
   retryTaskFromWatch: async (taskId: string, taskRunId?: string) => {
-    const currentTask =
-      get().watchMissionTasks[taskId] ?? (await getTask(taskId));
+    const currentTask = get().watchTasks[taskId] ?? (await getTask(taskId));
     const resumeFromRunId = taskRunId ?? currentTask.latest_run?.id;
 
     get().disconnectFromTask(taskId);
@@ -799,10 +797,10 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
 
     get().registerWatchTask(updatedTask);
     await get().connectToTask(updatedTask);
-    scheduleWatchMissionPublish({ urgent: true });
+    scheduleWatchTaskPublish({ urgent: true });
   },
 
-  handleWatchCommand: async (command: WatchMissionCommand) => {
+  handleWatchCommand: async (command: WatchTaskCommand) => {
     switch (command.type) {
       case "approval_response":
         await get().sendPermissionResponse(command.taskId, {
@@ -831,7 +829,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         break;
       case "debug_request_snapshot":
         log.info("Watch requested task snapshot", { command });
-        scheduleWatchMissionPublish({ urgent: true });
+        scheduleWatchTaskPublish({ urgent: true });
         break;
       case "open_phone":
       case "view_diff":
@@ -841,6 +839,14 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         break;
       case "open_mac":
         await Linking.openURL(macTaskUrl(command));
+        break;
+      case "archive":
+        useArchivedTasksStore.getState().archive(command.taskId);
+        scheduleWatchTaskPublish({ urgent: true });
+        break;
+      case "restore":
+        useArchivedTasksStore.getState().unarchive(command.taskId);
+        scheduleWatchTaskPublish({ urgent: true });
         break;
     }
   },
@@ -1049,7 +1055,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         }
       }
     }
-    scheduleWatchMissionPublish();
+    scheduleWatchTaskPublish();
   },
 
   _resumeCloudRun: async (
@@ -1111,5 +1117,5 @@ AppState.addEventListener("change", (nextState) => {
     handle.reconnectIfDisconnected();
   }
   ensureWatchCommandSubscription();
-  scheduleWatchMissionPublish();
+  scheduleWatchTaskPublish();
 });

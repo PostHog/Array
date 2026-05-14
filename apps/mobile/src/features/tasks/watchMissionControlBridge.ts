@@ -1,18 +1,18 @@
 import { NativeEventEmitter, NativeModules, Platform } from "react-native";
 import { logger } from "@/lib/logger";
-import type { WatchMissionCommand, WatchMissionEnvelope } from "./types";
+import type { WatchTaskCommand, WatchTaskEnvelope } from "./types";
 
-type NativeWatchMissionControlModule = {
+type NativeWatchTaskControlModule = {
   isSupported: () => Promise<boolean>;
-  publishEnvelope: (envelope: WatchMissionEnvelope) => Promise<boolean>;
-  sendUrgentUpdate: (envelope: WatchMissionEnvelope) => Promise<boolean>;
+  publishEnvelope: (envelope: WatchTaskEnvelope) => Promise<boolean>;
+  sendUrgentUpdate: (envelope: WatchTaskEnvelope) => Promise<boolean>;
 };
 
-const nativeModule = NativeModules.WatchMissionControlModule as
-  | NativeWatchMissionControlModule
+const nativeModule = NativeModules.WatchTaskControlModule as
+  | NativeWatchTaskControlModule
   | undefined;
 
-const log = logger.scope("watch-mission-control");
+const log = logger.scope("watch-task-control");
 
 const isAvailable = Platform.OS === "ios" && !!nativeModule;
 const emitter =
@@ -20,11 +20,11 @@ const emitter =
     ? new NativeEventEmitter(nativeModule as never)
     : null;
 
-export function isWatchMissionControlAvailable(): boolean {
+export function isWatchTaskControlAvailable(): boolean {
   return isAvailable;
 }
 
-export async function isWatchMissionControlSupported(): Promise<boolean> {
+export async function isWatchTaskControlSupported(): Promise<boolean> {
   if (!isAvailable || !nativeModule) return false;
   try {
     return await nativeModule.isSupported();
@@ -33,11 +33,11 @@ export async function isWatchMissionControlSupported(): Promise<boolean> {
   }
 }
 
-export async function publishWatchMissionEnvelope(
-  envelope: WatchMissionEnvelope,
+export async function publishWatchTaskEnvelope(
+  envelope: WatchTaskEnvelope,
 ): Promise<boolean> {
   if (!isAvailable || !nativeModule) {
-    log.warn("WatchMissionControl native module is unavailable", {
+    log.warn("WatchTaskControl native module is unavailable", {
       platform: Platform.OS,
       hasModule: !!nativeModule,
     });
@@ -46,11 +46,11 @@ export async function publishWatchMissionEnvelope(
   return nativeModule.publishEnvelope(envelope);
 }
 
-export async function sendUrgentWatchMissionUpdate(
-  envelope: WatchMissionEnvelope,
+export async function sendUrgentWatchTaskUpdate(
+  envelope: WatchTaskEnvelope,
 ): Promise<boolean> {
   if (!isAvailable || !nativeModule) {
-    log.warn("WatchMissionControl native module is unavailable", {
+    log.warn("WatchTaskControl native module is unavailable", {
       platform: Platform.OS,
       hasModule: !!nativeModule,
     });
@@ -59,13 +59,13 @@ export async function sendUrgentWatchMissionUpdate(
   return nativeModule.sendUrgentUpdate(envelope);
 }
 
-export function subscribeToWatchMissionCommands(
-  handler: (command: WatchMissionCommand) => void,
+export function subscribeToWatchTaskCommands(
+  handler: (command: WatchTaskCommand) => void,
 ): () => void {
   if (!emitter) return () => {};
   const subscription = emitter.addListener(
-    "WatchMissionControlCommand",
-    (payload: WatchMissionCommand) => {
+    "WatchTaskControlCommand",
+    (payload: WatchTaskCommand) => {
       if (
         payload &&
         typeof payload === "object" &&
