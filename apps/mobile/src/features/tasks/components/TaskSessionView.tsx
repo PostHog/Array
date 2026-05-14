@@ -825,7 +825,10 @@ export function TaskSessionView({
       // In the inverted list, paddingTop becomes visual bottom spacing.
       // Reserve enough room so the floating activity indicator never
       // covers the last visible row while the agent is working.
-      paddingTop: (baseStyle.paddingTop ?? 0) + 28,
+      // 28pt was tight at default text sizes and let cards (e.g. the
+      // Agent loading card) peek into the indicator strip — 44pt gives
+      // a real buffer plus headroom for larger dynamic-type settings.
+      paddingTop: (baseStyle.paddingTop ?? 0) + 44,
     };
   }, [contentContainerStyle, showActivityIndicator]);
   // Inverted FlatList: scrollY is the distance from the visual bottom, so
@@ -965,10 +968,13 @@ export function TaskSessionView({
           ) : null
         }
       />
-      {/* Thinking/connecting indicators absolutely positioned above the Composer area.
-          Rendered outside FlatList to avoid inverted-list double-mount bugs. */}
+      {/* Thinking/connecting indicators pinned to the bottom of the list area.
+          The Composer is a sibling below TaskSessionView in flex flow, so
+          `bottom-0` here sits the strip right above the composer's top edge.
+          Solid bg so list rows scrolling under it are occluded instead of
+          bleeding through. */}
       {showActivityIndicator && (
-        <View className="absolute inset-x-0 bottom-[92px] pb-2">
+        <View className="absolute inset-x-0 bottom-0 bg-background pt-1 pb-2">
           {isConnecting ? (
             <ConnectingIndicator />
           ) : isThinking ? (
