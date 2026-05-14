@@ -434,6 +434,20 @@ export interface CloudPermissionToolCall {
   _meta?: Record<string, unknown>;
 }
 
+export interface CloudPermissionResponseSelection {
+  optionId: string;
+  displayText: string;
+  customInput?: string;
+  answers?: Record<string, string>;
+}
+
+export interface CloudPendingPermissionRequest {
+  requestId: string;
+  toolCall: CloudPermissionToolCall;
+  options: CloudPermissionOption[];
+  response?: CloudPermissionResponseSelection;
+}
+
 interface CloudTaskUpdateBase {
   taskId: string;
   runId: string;

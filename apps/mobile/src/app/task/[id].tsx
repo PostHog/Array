@@ -507,6 +507,7 @@ export default function TaskDetailScreen() {
             small visual buffer at the bottom. */}
         <TaskSessionView
           events={session?.events ?? []}
+          pendingPermissions={session?.pendingPermissions}
           isConnecting={isConnecting}
           isThinking={isThinking}
           terminalStatus={retrying ? undefined : session?.terminalStatus}

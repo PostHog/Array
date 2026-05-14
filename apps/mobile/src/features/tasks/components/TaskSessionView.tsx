@@ -23,11 +23,13 @@ import {
 import { getRandomThinkingActivity } from "@/features/chat/utils/thinkingMessages";
 import { useThemeColors } from "@/lib/theme";
 import type {
+  CloudPendingPermissionRequest,
   PlanEntry,
   SessionEvent,
   SessionNotification,
   SessionNotificationAttachment,
 } from "../types";
+import { PlanApprovalCard } from "./PlanApprovalCard";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { QuestionCard } from "./QuestionCard";
 
@@ -41,6 +43,7 @@ interface PermissionResponseArgs {
 
 interface TaskSessionViewProps {
   events: SessionEvent[];
+  pendingPermissions?: Record<string, CloudPendingPermissionRequest>;
   isConnecting?: boolean;
   isThinking?: boolean;
   terminalStatus?: "failed" | "completed";
@@ -216,6 +219,22 @@ function hasPendingQuestionMessage(message: ParsedMessage): boolean {
   }
 
   return message.children?.some(hasPendingQuestionMessage) ?? false;
+}
+
+function isPlanApprovalTool(
+  toolData?: ToolData,
+  permission?: CloudPendingPermissionRequest,
+): boolean {
+  if (permission?.toolCall.kind === "switch_mode") return true;
+  if (toolData?.rawToolName === "ExitPlanMode") return true;
+  return typeof toolData?.args?.plan === "string";
+}
+
+function isInteractivePermissionTool(
+  toolData?: ToolData,
+  permission?: CloudPendingPermissionRequest,
+): boolean {
+  return isQuestionTool(toolData) || isPlanApprovalTool(toolData, permission);
 }
 
 // Mutable processor state persisted across renders via useRef.
@@ -764,6 +783,7 @@ function ConnectingIndicator() {
 
 export function TaskSessionView({
   events,
+  pendingPermissions,
   isConnecting,
   isThinking,
   terminalStatus,
@@ -798,9 +818,14 @@ export function TaskSessionView({
     const state = processorRef.current;
     let swept = false;
     for (const msg of state.toolMessages.values()) {
+      const permission = msg.toolData
+        ? pendingPermissions?.[msg.toolData.toolCallId]
+        : undefined;
       if (
         msg.toolData &&
-        (msg.toolData.status === "pending" || msg.toolData.status === "running")
+        (msg.toolData.status === "pending" ||
+          msg.toolData.status === "running") &&
+        !isInteractivePermissionTool(msg.toolData, permission)
       ) {
         msg.toolData.status = "completed";
         swept = true;
@@ -887,6 +912,20 @@ export function TaskSessionView({
           return <CollapsedThought content={item.content} />;
         case "tool":
           if (!item.toolData) return null;
+          if (
+            isPlanApprovalTool(
+              item.toolData,
+              pendingPermissions?.[item.toolData.toolCallId],
+            )
+          ) {
+            return (
+              <PlanApprovalCard
+                toolData={item.toolData}
+                permission={pendingPermissions?.[item.toolData.toolCallId]}
+                onSendPermissionResponse={onSendPermissionResponse}
+              />
+            );
+          }
           if (isQuestionTool(item.toolData)) {
             return (
               <QuestionCard
@@ -915,7 +954,7 @@ export function TaskSessionView({
           return null;
       }
     },
-    [onOpenTask, onSendPermissionResponse],
+    [onOpenTask, onSendPermissionResponse, pendingPermissions],
   );
 
   return (

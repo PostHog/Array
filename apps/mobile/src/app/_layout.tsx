@@ -32,9 +32,7 @@ interface RootLayoutNavProps {
 }
 
 function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
-  const { isLoading, initializeAuth } = useAuthStore();
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const _aiChatEnabled = usePreferencesStore((s) => s.aiChatEnabled);
+  const { isAuthenticated, isLoading, initializeAuth } = useAuthStore();
   const publishWatchSnapshot = useTaskSessionStore(
     (s) => s.publishWatchSnapshot,
   );
@@ -53,8 +51,8 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   }, [isLoading, publishWatchSnapshot]);
 
   useEffect(() => {
-    return setupNotificationResponseListener(({ taskId }) => {
-      router.push(`/task/${taskId}`);
+    return setupNotificationResponseListener(({ path }) => {
+      router.push(path);
     });
   }, []);
 

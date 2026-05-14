@@ -1,12 +1,18 @@
 import { useMemo } from "react";
 import { Linking, ScrollView, Text, View } from "react-native";
+import { getCloudUrlFromRegion, useAuthStore } from "@/features/auth";
+import { UNIVERSAL_LINK_PREFIX } from "@/lib/deep-links";
 import { parseGithubIssueUrl } from "@/lib/githubIssueUrl";
+import { type ParsePostHogUrlOptions, parsePostHogUrl } from "@/lib/posthogUrl";
 import { getColorForClass, highlightCode } from "@/lib/syntax-highlight";
 import { useThemeColors } from "@/lib/theme";
 import { GithubRefChip } from "./GithubRefChip";
 import { MarkdownImage } from "./MarkdownImage";
+import { PostHogRefChip } from "./PostHogRefChip";
 
 const IMAGE_LINE_PATTERN = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/;
+const BARE_POSTHOG_REF_PATTERN =
+  /(https?:\/\/(?:app\.posthog\.com|(?:us|eu)\.posthog\.com|code\.posthog\.com|(?:www\.)?posthog\.com|localhost(?::\d+)?)\/[^\s<>()\]]+|\/(?:insights|project|organization|settings|feature_flags|experiments|dashboard|dashboards|replay|session_replay|recordings|error_tracking|task|inbox|automation)\b[^\s<>()\]]*)/g;
 
 interface MarkdownTextProps {
   content: string;
@@ -220,7 +226,86 @@ function openUrl(url: string) {
   Linking.openURL(url);
 }
 
-function renderInline(text: string): React.ReactNode[] {
+function splitTrailingPunctuation(text: string): {
+  reference: string;
+  trailing: string;
+} {
+  const reference = text.replace(/[.,!?;:]+$/u, "");
+  return {
+    reference,
+    trailing: text.slice(reference.length),
+  };
+}
+
+function renderPlainText(
+  text: string,
+  posthogUrlOptions: ParsePostHogUrlOptions,
+  keyBase: string,
+): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null = null;
+
+  BARE_POSTHOG_REF_PATTERN.lastIndex = 0;
+
+  // biome-ignore lint/suspicious/noAssignInExpressions: regex exec loop
+  while ((match = BARE_POSTHOG_REF_PATTERN.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    const candidate = match[0];
+    const { reference, trailing } = splitTrailingPunctuation(candidate);
+    const posthogRef = parsePostHogUrl(reference, posthogUrlOptions);
+
+    if (posthogRef) {
+      nodes.push(
+        <PostHogRefChip
+          key={`${keyBase}-${match.index}`}
+          href={posthogRef.normalizedUrl}
+          kind={posthogRef.kind}
+          label={posthogRef.defaultLabel}
+        />,
+      );
+
+      if (trailing) {
+        nodes.push(trailing);
+      }
+    } else {
+      nodes.push(candidate);
+    }
+
+    lastIndex = match.index + candidate.length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes.length > 0 ? nodes : [text];
+}
+
+function formatPostHogChipLabel(
+  posthogRef: ReturnType<typeof parsePostHogUrl>,
+  linkText: string,
+  url: string,
+): string {
+  if (!posthogRef) return linkText;
+  if (linkText === url) return posthogRef.defaultLabel;
+
+  const normalizedLinkText = linkText.trim();
+  if (!posthogRef.refId) return normalizedLinkText;
+  if (normalizedLinkText.endsWith(`(${posthogRef.refId})`)) {
+    return normalizedLinkText;
+  }
+
+  return `${normalizedLinkText} (${posthogRef.refId})`;
+}
+
+function renderInline(
+  text: string,
+  posthogUrlOptions: ParsePostHogUrlOptions,
+): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   // Links must come first to avoid bold/italic consuming text inside [].
   // Order after links: strikethrough, bold, italic, inline code.
@@ -232,7 +317,13 @@ function renderInline(text: string): React.ReactNode[] {
   // biome-ignore lint/suspicious/noAssignInExpressions: regex exec loop
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) {
-      nodes.push(text.slice(lastIndex, match.index));
+      nodes.push(
+        ...renderPlainText(
+          text.slice(lastIndex, match.index),
+          posthogUrlOptions,
+          `plain-${match.index}`,
+        ),
+      );
     }
 
     if (match[2] && match[3]) {
@@ -254,16 +345,28 @@ function renderInline(text: string): React.ReactNode[] {
           />,
         );
       } else {
-        nodes.push(
-          <Text
-            key={match.index}
-            className="text-accent-11 underline"
-            onPress={() => openUrl(url)}
-          >
-            {linkText}
-            <Text className="text-accent-11">{" ↗"}</Text>
-          </Text>,
-        );
+        const posthogRef = parsePostHogUrl(url, posthogUrlOptions);
+        if (posthogRef) {
+          nodes.push(
+            <PostHogRefChip
+              key={match.index}
+              href={posthogRef.normalizedUrl}
+              kind={posthogRef.kind}
+              label={formatPostHogChipLabel(posthogRef, linkText, url)}
+            />,
+          );
+        } else {
+          nodes.push(
+            <Text
+              key={match.index}
+              className="text-accent-11 underline"
+              onPress={() => openUrl(url)}
+            >
+              {linkText}
+              <Text className="text-accent-11">{" ↗"}</Text>
+            </Text>,
+          );
+        }
       }
     } else if (match[4]) {
       // Strikethrough: ~~text~~
@@ -302,7 +405,13 @@ function renderInline(text: string): React.ReactNode[] {
   }
 
   if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex));
+    nodes.push(
+      ...renderPlainText(
+        text.slice(lastIndex),
+        posthogUrlOptions,
+        `plain-tail-${lastIndex}`,
+      ),
+    );
   }
 
   return nodes.length > 0 ? nodes : [text];
@@ -310,6 +419,14 @@ function renderInline(text: string): React.ReactNode[] {
 
 export function MarkdownText({ content }: MarkdownTextProps) {
   const blocks = parseBlocks(content);
+  const cloudRegion = useAuthStore((state) => state.cloudRegion);
+  const posthogUrlOptions = useMemo<ParsePostHogUrlOptions>(
+    () => ({
+      appBaseUrl: cloudRegion ? getCloudUrlFromRegion(cloudRegion) : null,
+      codeBaseUrl: UNIVERSAL_LINK_PREFIX,
+    }),
+    [cloudRegion],
+  );
 
   return (
     <View style={{ gap: 8 }}>
@@ -360,7 +477,7 @@ export function MarkdownText({ content }: MarkdownTextProps) {
                       : "text-[13px]"
                 }`}
               >
-                {renderInline(block.content)}
+                {renderInline(block.content, posthogUrlOptions)}
               </Text>
             );
 
@@ -399,7 +516,7 @@ export function MarkdownText({ content }: MarkdownTextProps) {
                             : "text-gray-12"
                         }`}
                       >
-                        {renderInline(itemText)}
+                        {renderInline(itemText, posthogUrlOptions)}
                       </Text>
                     </View>
                   );
@@ -436,7 +553,7 @@ export function MarkdownText({ content }: MarkdownTextProps) {
                             }
                           >
                             <Text className="font-bold text-[12px] text-gray-12">
-                              {renderInline(cell)}
+                              {renderInline(cell, posthogUrlOptions)}
                             </Text>
                           </View>
                         );
@@ -466,7 +583,7 @@ export function MarkdownText({ content }: MarkdownTextProps) {
                               }
                             >
                               <Text className="text-[12px] text-gray-12">
-                                {renderInline(cell)}
+                                {renderInline(cell, posthogUrlOptions)}
                               </Text>
                             </View>
                           );
@@ -483,7 +600,7 @@ export function MarkdownText({ content }: MarkdownTextProps) {
             return (
               <View key={key} className="border-accent-6 border-l-2 pl-3">
                 <Text className="text-[13px] text-gray-11 italic leading-5">
-                  {renderInline(block.content)}
+                  {renderInline(block.content, posthogUrlOptions)}
                 </Text>
               </View>
             );
@@ -499,7 +616,7 @@ export function MarkdownText({ content }: MarkdownTextProps) {
           default:
             return (
               <Text key={key} className="text-[13px] text-gray-12 leading-5">
-                {renderInline(block.content)}
+                {renderInline(block.content, posthogUrlOptions)}
               </Text>
             );
         }

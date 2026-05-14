@@ -35,6 +35,7 @@ import {
   watchCloudTask,
 } from "../lib/cloudTaskStream";
 import {
+  type CloudPendingPermissionRequest,
   type CloudTaskUpdatePayload,
   isTerminalStatus,
   type SessionEvent,
@@ -276,6 +277,7 @@ export interface TaskSession {
   // when emitting the original permission_request SSE event; we capture it
   // here so the response can be routed back to the awaiting tool call.
   cloudPermissionRequestIds?: Record<string, string>;
+  pendingPermissions?: Record<string, CloudPendingPermissionRequest>;
 }
 
 interface TaskSessionStore {
@@ -900,7 +902,37 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     // The cloud command requires the requestId it generated when emitting
     // the permission_request SSE event — toolCallId alone is not sufficient
     // for routing the response back to the awaiting tool call.
-    const cloudRequestId = session.cloudPermissionRequestIds?.[args.toolCallId];
+    const cloudRequestId =
+      session.cloudPermissionRequestIds?.[args.toolCallId] ??
+      session.pendingPermissions?.[args.toolCallId]?.requestId;
+
+    set((state) => {
+      const current = state.sessions[session.taskRunId];
+      const currentPermission = current?.pendingPermissions?.[args.toolCallId];
+      if (!current || !currentPermission) return state;
+      return {
+        sessions: {
+          ...state.sessions,
+          [session.taskRunId]: {
+            ...current,
+            pendingPermissions: {
+              ...(current.pendingPermissions ?? {}),
+              [args.toolCallId]: {
+                ...currentPermission,
+                response: {
+                  optionId: args.optionId,
+                  displayText: args.displayText,
+                  ...(args.answers ? { answers: args.answers } : {}),
+                  ...(args.customInput
+                    ? { customInput: args.customInput }
+                    : {}),
+                },
+              },
+            },
+          },
+        },
+      };
+    });
 
     try {
       await sendCloudCommand(taskId, session.taskRunId, "permission_response", {
@@ -943,6 +975,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         if (!current) return state;
         const nextLocalEchoes = new Set(current.localUserEchoes ?? []);
         nextLocalEchoes.delete(args.displayText);
+        const currentPermission = current.pendingPermissions?.[args.toolCallId];
         return {
           sessions: {
             ...state.sessions,
@@ -950,6 +983,15 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
               ...current,
               events: current.events.filter((e) => e !== userEvent),
               localUserEchoes: nextLocalEchoes,
+              pendingPermissions: currentPermission
+                ? {
+                    ...(current.pendingPermissions ?? {}),
+                    [args.toolCallId]: {
+                      ...currentPermission,
+                      response: undefined,
+                    },
+                  }
+                : current.pendingPermissions,
               isPromptPending: false,
             },
           },
@@ -1244,6 +1286,14 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
                 cloudPermissionRequestIds: {
                   ...(current.cloudPermissionRequestIds ?? {}),
                   [toolCallId]: update.requestId,
+                },
+                pendingPermissions: {
+                  ...(current.pendingPermissions ?? {}),
+                  [toolCallId]: {
+                    requestId: update.requestId,
+                    toolCall: update.toolCall,
+                    options: update.options,
+                  },
                 },
               },
             },
