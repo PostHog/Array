@@ -33,6 +33,7 @@ interface RootLayoutNavProps {
 
 function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   const { isLoading, initializeAuth } = useAuthStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const _aiChatEnabled = usePreferencesStore((s) => s.aiChatEnabled);
   const publishWatchSnapshot = useTaskSessionStore(
     (s) => s.publishWatchSnapshot,
@@ -67,7 +68,7 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
     if (!pathname || pathname === "/auth") return;
     const next = pathname !== "/" ? pathname : undefined;
     router.replace(next ? { pathname: "/auth", params: { next } } : "/auth");
-  }, [isLoading, pathname]);
+  }, [isAuthenticated, isLoading, pathname]);
 
   if (isLoading) {
     return (
