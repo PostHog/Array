@@ -42,6 +42,10 @@ import { useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-detail");
 
+function getFirstParam(value?: string | string[]): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 export default function TaskDetailScreen() {
   const {
     id: taskId,
@@ -129,12 +133,8 @@ export default function TaskDetailScreen() {
 
   useEffect(() => {
     if (!taskId) return;
-    const promptParam = Array.isArray(initialPrompt)
-      ? initialPrompt[0]
-      : initialPrompt;
-    if (promptParam?.trim()) {
-      setPendingPrompt(taskId, promptParam.trim());
-    }
+    const prompt = getFirstParam(initialPrompt)?.trim();
+    if (prompt) setPendingPrompt(taskId, prompt);
   }, [taskId, initialPrompt, setPendingPrompt]);
 
   useEffect(() => {

@@ -292,16 +292,15 @@ struct EmptyTasksView: View {
   }
 }
 
+private let newTaskInputSuggestions = [
+  "Create or update my CLAUDE.md file",
+  "Search for a TODO comment and fix it",
+  "Recommend areas to improve our tests",
+]
+
 func presentNewTaskInput(includeSuggestions: Bool = true, _ completion: @escaping (String) -> Void) {
-  let suggestions = includeSuggestions
-    ? [
-      "Create or update my CLAUDE.md file",
-      "Search for a TODO comment and fix it",
-      "Recommend areas to improve our tests",
-    ]
-    : nil
   WKExtension.shared().visibleInterfaceController?.presentTextInputController(
-    withSuggestions: suggestions,
+    withSuggestions: includeSuggestions ? newTaskInputSuggestions : nil,
     allowedInputMode: .plain
   ) { results in
     let firstNonEmpty = results?
@@ -452,8 +451,8 @@ struct TaskOverviewView: View {
   let task: WatchTaskSnapshot?
 
   private var currentTask: WatchTaskSnapshot? {
-    guard let id = task?.id else { return task }
-    return store.tasks.first(where: { $0.id == id }) ?? task
+    guard let task else { return nil }
+    return store.tasks.first(where: { $0.id == task.id }) ?? task
   }
 
   var body: some View {
@@ -472,14 +471,14 @@ struct TaskOverviewView: View {
           CurrentTaskCard(task: task)
 
           VStack(spacing: 6) {
-            Button("Open on iPhone") { send(type: "open_phone", task: task, url: task.handoff.phoneUrl, prompt: nil) }
+            Button("Open on iPhone") { openOnPhone(task) }
             Button { promptForTask(task) } label: {
               Label("Tap to Speak", systemImage: "mic")
             }
             .buttonStyle(.borderedProminent)
             .tint(accent)
             if task.allowedActions.contains("stop") {
-              Button("Stop Agent") { send(type: "stop", task: task, url: nil, prompt: nil) }.tint(.red)
+              Button("Stop Agent") { stopAgent(task) }.tint(.red)
             }
           }
 
@@ -500,6 +499,14 @@ struct TaskOverviewView: View {
       }
     }
     .navigationTitle("Task")
+  }
+
+  private func openOnPhone(_ task: WatchTaskSnapshot) {
+    send(type: "open_phone", task: task, url: task.handoff.phoneUrl, prompt: nil)
+  }
+
+  private func stopAgent(_ task: WatchTaskSnapshot) {
+    send(type: "stop", task: task, url: nil, prompt: nil)
   }
 
   private func promptForTask(_ task: WatchTaskSnapshot) {

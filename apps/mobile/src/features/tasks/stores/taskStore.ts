@@ -85,8 +85,8 @@ export const useTaskStore = create<TaskUIState>()(
         const prompt = get().pendingPromptByTaskId[taskId];
         if (!prompt) return undefined;
         set((state) => {
-          const { [taskId]: _consumed, ...remaining } =
-            state.pendingPromptByTaskId;
+          const remaining = { ...state.pendingPromptByTaskId };
+          delete remaining[taskId];
           return { pendingPromptByTaskId: remaining };
         });
         return prompt;

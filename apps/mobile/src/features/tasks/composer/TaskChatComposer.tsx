@@ -153,12 +153,13 @@ export function TaskChatComposer({
   onReasoningChange,
 }: TaskChatComposerProps) {
   const themeColors = useThemeColors();
-  const [message, setMessage] = useState(initialMessage ?? "");
+  const [message, setMessage] = useState(() => initialMessage ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
 
   useEffect(() => {
-    if (initialMessage) setMessage(initialMessage);
+    if (!initialMessage) return;
+    setMessage(initialMessage);
   }, [initialMessage]);
 
   const appendTranscript = useCallback((transcript: string) => {
