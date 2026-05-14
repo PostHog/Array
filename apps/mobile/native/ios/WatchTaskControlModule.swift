@@ -6,6 +6,7 @@ import WatchConnectivity
 final class WatchTaskControlModule: RCTEventEmitter, WCSessionDelegate {
   private var hasListeners = false
   private var latestEnvelope: [String: Any]?
+  private var pendingCommands: [[String: Any]] = []
 
   override init() {
     super.init()
@@ -21,11 +22,16 @@ final class WatchTaskControlModule: RCTEventEmitter, WCSessionDelegate {
   }
 
   override func startObserving() {
-    hasListeners = true
+    DispatchQueue.main.async { [weak self] in
+      self?.hasListeners = true
+      self?.flushPendingCommands()
+    }
   }
 
   override func stopObserving() {
-    hasListeners = false
+    DispatchQueue.main.async { [weak self] in
+      self?.hasListeners = false
+    }
   }
 
   @objc
@@ -104,9 +110,22 @@ final class WatchTaskControlModule: RCTEventEmitter, WCSessionDelegate {
   }
 
   private func emitCommand(_ command: [String: Any]) {
-    guard hasListeners else { return }
     DispatchQueue.main.async { [weak self] in
-      self?.sendEvent(withName: "WatchTaskControlCommand", body: command)
+      guard let self else { return }
+      guard self.hasListeners else {
+        self.pendingCommands.append(command)
+        return
+      }
+      self.sendEvent(withName: "WatchTaskControlCommand", body: command)
+    }
+  }
+
+  private func flushPendingCommands() {
+    guard hasListeners, !pendingCommands.isEmpty else { return }
+    let commands = pendingCommands
+    pendingCommands.removeAll()
+    for command in commands {
+      sendEvent(withName: "WatchTaskControlCommand", body: command)
     }
   }
 

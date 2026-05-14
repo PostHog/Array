@@ -26,6 +26,23 @@ final class WatchTaskStore: NSObject, ObservableObject {
         super.init()
         loadCachedEnvelope()
         activateSession()
+        requestSnapshot()
+    }
+
+    func requestSnapshot() {
+        lastCommandStatus = "Requesting latest tasks…"
+        send(command: WatchTaskCommand(
+            id: UUID().uuidString,
+            type: "request_snapshot",
+            taskId: "snapshot",
+            taskRunId: nil,
+            toolCallId: nil,
+            optionId: nil,
+            displayText: "Request latest task snapshot",
+            answers: nil,
+            customInput: nil,
+            url: nil
+        ))
     }
 
     func send(command: WatchTaskCommand) {
@@ -125,6 +142,9 @@ extension WatchTaskStore: WCSessionDelegate {
             self.connectionState = activationState == .activated ? "Connected" : "Disconnected"
             if let payload = session.receivedApplicationContext["payload"] {
                 self.handleEnvelopePayload(payload)
+            }
+            if activationState == .activated {
+                self.requestSnapshot()
             }
         }
     }

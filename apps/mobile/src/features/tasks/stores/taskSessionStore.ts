@@ -5,9 +5,11 @@ import { useAuthStore } from "@/features/auth/stores/authStore";
 import { presentLocalNotification } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { logger } from "@/lib/logger";
+import { queryClient } from "@/lib/queryClient";
 import {
   CloudCommandError,
   getTask,
+  getTasks,
   runTaskInCloud,
   sendCloudCommand,
 } from "../api";
@@ -30,12 +32,12 @@ import {
 } from "../types";
 import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
 import { playMeepSound } from "../utils/sounds";
-import { createWatchTaskEnvelope } from "../utils/watchMissionControl";
+import { createWatchTaskEnvelope } from "../utils/watchTaskControl";
 import {
   publishWatchTaskEnvelope,
   sendUrgentWatchTaskUpdate,
   subscribeToWatchTaskCommands,
-} from "../watchMissionControlBridge";
+} from "../watchTaskControlBridge";
 import { useArchivedTasksStore } from "./archivedTasksStore";
 import { useAttachmentEchoStore } from "./attachmentEchoStore";
 
@@ -313,6 +315,49 @@ let watchPublishUrgent = false;
 let watchCommandUnsubscribe: (() => void) | null = null;
 const WATCH_SNAPSHOT_DEBOUNCE_MS = 250;
 
+type WatchCurrentUser = { id: number };
+
+async function fetchCurrentUserForWatch(): Promise<WatchCurrentUser> {
+  const cached = queryClient.getQueryData<WatchCurrentUser>(["user", "me"]);
+  if (typeof cached?.id === "number") return cached;
+
+  return queryClient.fetchQuery({
+    queryKey: ["user", "me"],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { cloudRegion, oauthAccessToken, getCloudUrlFromRegion } =
+        useAuthStore.getState();
+      if (!cloudRegion || !oauthAccessToken) {
+        throw new Error("Missing auth state for Watch task refresh");
+      }
+
+      const response = await fetch(
+        `${getCloudUrlFromRegion(cloudRegion)}/api/users/@me/`,
+        { headers: { Authorization: `Bearer ${oauthAccessToken}` } },
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to fetch current user: ${response.statusText}`);
+      }
+      return (await response.json()) as WatchCurrentUser;
+    },
+  });
+}
+
+async function fetchCurrentWatchTasks(): Promise<Task[]> {
+  const currentUser = await fetchCurrentUserForWatch();
+  return getTasks({
+    createdBy: currentUser.id,
+    originProduct: "user_created",
+  });
+}
+
+async function refreshCurrentWatchTasks(): Promise<void> {
+  const tasks = await fetchCurrentWatchTasks();
+  useTaskSessionStore.setState({
+    watchTasks: Object.fromEntries(tasks.map((task) => [task.id, task])),
+  });
+}
+
 function buildWatchTaskEnvelopeFromStore() {
   const state = useTaskSessionStore.getState();
   const sessionsByTaskId: Record<string, TaskSession | undefined> = {};
@@ -323,10 +368,15 @@ function buildWatchTaskEnvelopeFromStore() {
   const archivedTasks = useArchivedTasksStore.getState().archivedTasks;
   const visibleTasks = Object.values(state.watchTasks);
   const activeWatchTaskId = state.activeWatchTaskId;
+  const activeWatchTask = activeWatchTaskId
+    ? state.watchTasks[activeWatchTaskId]
+    : undefined;
   const visibleActiveTaskId =
-    activeWatchTaskId && activeWatchTaskId in archivedTasks
-      ? undefined
-      : activeWatchTaskId;
+    activeWatchTaskId &&
+    !(activeWatchTaskId in archivedTasks) &&
+    !isTerminalStatus(activeWatchTask?.latest_run?.status)
+      ? activeWatchTaskId
+      : undefined;
 
   return createWatchTaskEnvelope(
     visibleTasks,
@@ -339,21 +389,34 @@ function buildWatchTaskEnvelopeFromStore() {
   );
 }
 
+function publishCurrentWatchTaskEnvelope(urgent: boolean) {
+  const envelope = buildWatchTaskEnvelopeFromStore();
+  const publish = urgent
+    ? sendUrgentWatchTaskUpdate(envelope)
+    : publishWatchTaskEnvelope(envelope);
+  publish.catch((error) => {
+    log.warn("Failed to publish watch task envelope", { error });
+  });
+}
+
 function scheduleWatchTaskPublish(options: { urgent?: boolean } = {}) {
-  if (options.urgent) watchPublishUrgent = true;
+  if (options.urgent) {
+    if (watchPublishTimeout) {
+      clearTimeout(watchPublishTimeout);
+      watchPublishTimeout = null;
+    }
+    watchPublishUrgent = false;
+    publishCurrentWatchTaskEnvelope(true);
+    return;
+  }
+
   if (watchPublishTimeout) return;
 
   watchPublishTimeout = setTimeout(() => {
     watchPublishTimeout = null;
     const urgent = watchPublishUrgent;
     watchPublishUrgent = false;
-    const envelope = buildWatchTaskEnvelopeFromStore();
-    const publish = urgent
-      ? sendUrgentWatchTaskUpdate(envelope)
-      : publishWatchTaskEnvelope(envelope);
-    publish.catch((error) => {
-      log.warn("Failed to publish watch task envelope", { error });
-    });
+    publishCurrentWatchTaskEnvelope(urgent);
   }, WATCH_SNAPSHOT_DEBOUNCE_MS);
 }
 
@@ -783,9 +846,12 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           [session.taskRunId]: {
             ...state.sessions[session.taskRunId],
             isPromptPending: false,
+            awaitingPing: false,
+            awaitingAgentOutput: false,
           },
         },
       }));
+      scheduleWatchTaskPublish({ urgent: true });
       return true;
     } catch (error) {
       log.error("Failed to send cancel request", error);
@@ -833,9 +899,18 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         );
         break;
       case "debug_request_snapshot":
+      case "request_snapshot": {
         log.info("Watch requested task snapshot", { command });
+        if (useAuthStore.getState().isAuthenticated) {
+          try {
+            await refreshCurrentWatchTasks();
+          } catch (error) {
+            log.warn("Failed to refresh Watch tasks", { error });
+          }
+        }
         scheduleWatchTaskPublish({ urgent: true });
         break;
+      }
       case "open_phone":
       case "view_diff":
         await Linking.openURL(
@@ -853,9 +928,14 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         useArchivedTasksStore.getState().unarchive(command.taskId);
         scheduleWatchTaskPublish({ urgent: true });
         break;
-      case "create_task":
-        await Linking.openURL("posthog://task");
+      case "create_task": {
+        const prompt = (command.customInput ?? command.displayText)?.trim();
+        const path = prompt
+          ? `posthog://task?prompt=${encodeURIComponent(prompt)}`
+          : "posthog://task";
+        await Linking.openURL(path);
         break;
+      }
     }
   },
 
@@ -1068,7 +1148,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         }
       }
     }
-    scheduleWatchTaskPublish();
+    scheduleWatchTaskPublish({ urgent: update.kind === "status" });
   },
 
   _resumeCloudRun: async (
@@ -1120,6 +1200,33 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     });
   },
 }));
+
+ensureWatchCommandSubscription();
+
+useAuthStore.subscribe((state, previousState) => {
+  if (state.isLoading) return;
+
+  if (!state.isAuthenticated) {
+    if (previousState.isLoading || previousState.isAuthenticated) {
+      scheduleWatchTaskPublish({ urgent: true });
+    }
+    return;
+  }
+
+  if (
+    previousState.isLoading ||
+    !previousState.isAuthenticated ||
+    previousState.projectId !== state.projectId
+  ) {
+    refreshCurrentWatchTasks()
+      .catch((error) => {
+        log.warn("Failed to refresh Watch tasks after auth change", { error });
+      })
+      .finally(() => {
+        scheduleWatchTaskPublish({ urgent: true });
+      });
+  }
+});
 
 // When the app returns from background, iOS may have killed the SSE
 // connection. Nudge every active watcher to reconnect so the stream resumes

@@ -283,7 +283,7 @@ export type WatchTaskCommand =
       displayText: string;
     })
   | (WatchTaskCommandBase & {
-      type: "debug_ping" | "debug_request_snapshot";
+      type: "debug_ping" | "debug_request_snapshot" | "request_snapshot";
       displayText?: string;
     })
   | (WatchTaskCommandBase & {
@@ -297,6 +297,8 @@ export type WatchTaskCommand =
         | "restore"
         | "create_task";
       url?: string;
+      displayText?: string;
+      customInput?: string;
     });
 
 export interface AcpMessage {

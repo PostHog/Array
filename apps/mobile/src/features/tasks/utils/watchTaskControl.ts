@@ -423,15 +423,20 @@ function deriveStatus(args: {
   approval?: WatchTaskApproval;
   progress: WatchTaskProgress;
   isStale: boolean;
+  runStatus?: string | null;
 }): WatchTaskStatus {
-  const { session, approval, progress, isStale } = args;
+  const { session, approval, progress, isStale, runStatus } = args;
   if (session?.terminalStatus === "failed") return "failed";
   if (session?.terminalStatus === "completed") return "completed";
+  if (runStatus === "completed") return "completed";
+  if (runStatus === "failed" || runStatus === "cancelled") return "failed";
   if (isStale) return "stale";
   if (approval) return "waiting_for_approval";
   if (session?.status === "connecting") return "connecting";
   if (session?.lastError) return "blocked";
-  if (session?.isPromptPending || progress.running > 0) return "running";
+  if (session?.isPromptPending) {
+    return "running";
+  }
   return "idle";
 }
 
@@ -504,7 +509,13 @@ export function createWatchTaskSnapshot(
       !!session?.isPromptPending &&
       lastEventAt > 0 &&
       now - lastEventAt > STALE_AFTER_MS);
-  const status = deriveStatus({ session, approval, progress, isStale });
+  const status = deriveStatus({
+    session,
+    approval,
+    progress,
+    isStale,
+    runStatus: run?.status,
+  });
   const startedAt =
     toMillis(run?.created_at) ?? toMillis(task.created_at) ?? now;
   const completedAt = toMillis(run?.completed_at);

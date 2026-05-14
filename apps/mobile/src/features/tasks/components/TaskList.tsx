@@ -42,7 +42,7 @@ function CreateTaskEmptyState({ onCreateTask }: CreateTaskEmptyStateProps) {
         No tasks yet
       </Text>
       <Text className="mb-6 text-center text-gray-11 text-sm">
-        Create your first task to get PostHog working.
+        Create a task to get started
       </Text>
       {onCreateTask && (
         <Pressable

@@ -212,12 +212,12 @@ Canonical native source lives outside generated iOS output:
 - `native/watch/` — SwiftUI watch app source, Info.plists, and entitlements
 - `native/ios/` — iPhone WatchConnectivity bridge
 
-Generated output lives under `ios/`, including `ios/watch/`, `ios/PostHogCode/WatchMissionControlModule.*`, and `PostHogCode.xcodeproj/project.pbxproj`.
+Generated output lives under `ios/`, including `ios/watch/`, `ios/PostHogCode/WatchTaskControlModule.*`, and `PostHogCode.xcodeproj/project.pbxproj`.
 
 ### Watch architecture
 
 - iPhone remains the authenticated relay for the paired watch.
-- Mobile derives compact mission snapshots from task/session state and sends them through WatchConnectivity.
+- Mobile derives compact task snapshots from task/session state and sends them through WatchConnectivity.
 - Desktop-started local tasks work through the shared PostHog task run log/status backend, then iPhone relays to the watch.
 - Watch actions send compact commands back to iPhone, which routes them through existing mobile commands (`permission_response`, `cancel`, retry/resume, and handoff URLs).
 - Direct watch-to-Mac WatchConnectivity is not supported by Apple; Mac handoff uses `posthog-code://task/{taskId}/run/{taskRunId}`.
