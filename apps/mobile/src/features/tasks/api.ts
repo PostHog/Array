@@ -1,5 +1,10 @@
 import { fetch } from "expo/fetch";
-import { getBaseUrl, getHeaders, getProjectId } from "@/lib/api";
+import {
+  getAccessToken,
+  getBaseUrl,
+  getHeaders,
+  getProjectId,
+} from "@/lib/api";
 import { logger } from "@/lib/logger";
 import type {
   CreateTaskAutomationOptions,
@@ -640,28 +645,85 @@ export async function sendCloudCommand(
   return data?.result;
 }
 
-export async function fetchS3Logs(logUrl: string): Promise<string> {
+export interface SessionLogsPage {
+  entries: StoredLogEntry[];
+  hasMore: boolean;
+}
+
+export async function fetchSessionLogs(
+  taskId: string,
+  runId: string,
+  options: { limit?: number; offset?: number } = {},
+): Promise<SessionLogsPage> {
   return withRetry(
     async () => {
-      const response = await fetch(logUrl, {
-        signal: AbortSignal.timeout(10_000),
+      const baseUrl = getBaseUrl();
+      const projectId = getProjectId();
+      const headers = getHeaders();
+
+      const params = new URLSearchParams({
+        limit: String(options.limit ?? 5000),
+        offset: String(options.offset ?? 0),
       });
 
+      const response = await fetch(
+        `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/session_logs/?${params}`,
+        { headers, signal: AbortSignal.timeout(10_000) },
+      );
+
       if (!response.ok) {
-        if (response.status === 404) {
-          return "";
-        }
         throw new HttpError(
           response.status,
           response.statusText,
-          "Failed to fetch logs",
+          "Failed to fetch session logs",
         );
       }
 
-      return await response.text();
+      const entries = (await response.json()) as StoredLogEntry[];
+      return {
+        entries,
+        hasMore: response.headers.get("X-Has-More") === "true",
+      };
     },
     { shouldRetry: isRetryableError },
   );
+}
+
+export interface StreamCloudTaskOptions {
+  lastEventId?: string | null;
+  startLatest?: boolean;
+  signal: AbortSignal;
+}
+
+export async function streamCloudTask(
+  taskId: string,
+  runId: string,
+  options: StreamCloudTaskOptions,
+): Promise<Response> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const accessToken = getAccessToken();
+
+  const url = new URL(
+    `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/stream/`,
+  );
+  if (options.startLatest && !options.lastEventId) {
+    url.searchParams.set("start", "latest");
+  }
+
+  const headers: Record<string, string> = {
+    Accept: "text/event-stream",
+    Authorization: `Bearer ${accessToken}`,
+  };
+  if (options.lastEventId) {
+    headers["Last-Event-ID"] = options.lastEventId;
+  }
+
+  return await fetch(url.toString(), {
+    method: "GET",
+    headers,
+    signal: options.signal,
+  });
 }
 
 export async function getIntegrations(): Promise<Integration[]> {

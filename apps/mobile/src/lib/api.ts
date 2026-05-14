@@ -19,6 +19,14 @@ export function getHeaders(): Record<string, string> {
   };
 }
 
+export function getAccessToken(): string {
+  const { oauthAccessToken } = useAuthStore.getState();
+  if (!oauthAccessToken) {
+    throw new Error("Not authenticated");
+  }
+  return oauthAccessToken;
+}
+
 export function getBaseUrl(): string {
   const { cloudRegion, getCloudUrlFromRegion } = useAuthStore.getState();
   if (!cloudRegion) {

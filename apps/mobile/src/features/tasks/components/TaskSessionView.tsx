@@ -277,14 +277,26 @@ function processNewEvents(
 
   const flushAgentText = () => {
     if (!state.pendingAgentText) return;
-    const msg: ParsedMessage = {
-      id: `agent-${state.agentMessageCount++}`,
-      type: "agent",
-      content: state.pendingAgentText,
-      ts: state.pendingAgentTs,
-    };
-    state.messages.push(msg);
-    state.lastAgentMsgIdx = state.messages.length - 1;
+    // If the last message is an in-progress agent message from a previous
+    // batch, append to it instead of creating a new bubble. This keeps
+    // streaming chunks that arrive across multiple SSE batches unified
+    // into a single rendered message.
+    if (
+      state.lastAgentMsgIdx !== null &&
+      state.messages[state.lastAgentMsgIdx]?.type === "agent"
+    ) {
+      state.messages[state.lastAgentMsgIdx].content += state.pendingAgentText;
+      hasItemMutation = true;
+    } else {
+      const msg: ParsedMessage = {
+        id: `agent-${state.agentMessageCount++}`,
+        type: "agent",
+        content: state.pendingAgentText,
+        ts: state.pendingAgentTs,
+      };
+      state.messages.push(msg);
+      state.lastAgentMsgIdx = state.messages.length - 1;
+    }
     state.pendingAgentText = "";
     state.pendingAgentTs = undefined;
   };
@@ -336,7 +348,7 @@ function processNewEvents(
         break;
       case "agent_complete":
         flushThoughtText();
-        // If we already flushed an agent message from chunks, replace it
+        // Replace accumulated chunks with the finalized message
         if (
           state.lastAgentMsgIdx !== null &&
           state.messages[state.lastAgentMsgIdx]?.type === "agent"
@@ -345,6 +357,7 @@ function processNewEvents(
           if (!state.messages[state.lastAgentMsgIdx].ts) {
             state.messages[state.lastAgentMsgIdx].ts = event.ts;
           }
+          hasItemMutation = true;
           state.pendingAgentText = "";
           state.pendingAgentTs = undefined;
         } else {
