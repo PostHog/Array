@@ -15,8 +15,6 @@ export type CompletionSound =
 export type InitialTaskMode = "plan" | "last_used";
 
 interface PreferencesState {
-  aiChatEnabled: boolean;
-  setAiChatEnabled: (enabled: boolean) => void;
   pingsEnabled: boolean;
   setPingsEnabled: (enabled: boolean) => void;
   pushNotificationsEnabled: boolean;
@@ -41,8 +39,6 @@ interface PreferencesState {
 export const usePreferencesStore = create<PreferencesState>()(
   persist(
     (set) => ({
-      aiChatEnabled: false,
-      setAiChatEnabled: (enabled) => set({ aiChatEnabled: enabled }),
       pingsEnabled: true,
       setPingsEnabled: (enabled) => set({ pingsEnabled: enabled }),
       pushNotificationsEnabled: true,
@@ -70,7 +66,6 @@ export const usePreferencesStore = create<PreferencesState>()(
       name: "posthog-preferences",
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
-        aiChatEnabled: state.aiChatEnabled,
         pingsEnabled: state.pingsEnabled,
         pushNotificationsEnabled: state.pushNotificationsEnabled,
         theme: state.theme,

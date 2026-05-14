@@ -1,5 +1,6 @@
 import { useTRPC } from "@renderer/trpc";
 import { useQuery } from "@tanstack/react-query";
+import { normalizeRepositoryLookupKey } from "@utils/repository";
 
 export function useDetectedCloudRepository(
   folderPath: string | null | undefined,
@@ -16,5 +17,7 @@ export function useDetectedCloudRepository(
   );
 
   if (!data?.organization || !data?.repository) return null;
-  return `${data.organization}/${data.repository}`.toLowerCase();
+  return normalizeRepositoryLookupKey(
+    `${data.organization}/${data.repository}`,
+  );
 }

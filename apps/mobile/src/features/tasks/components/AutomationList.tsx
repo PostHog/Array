@@ -15,6 +15,8 @@ import { AutomationItem } from "./AutomationItem";
 interface AutomationListProps {
   onAutomationPress?: (automationId: string) => void;
   onCreateAutomation?: () => void;
+  /** Top inset so the list can scroll behind a floating header. */
+  contentInsetTop?: number;
 }
 
 function EmptyAutomationState({
@@ -37,7 +39,7 @@ function EmptyAutomationState({
           style={{ backgroundColor: themeColors.accent[9] }}
         >
           <Text className="font-semibold text-accent-contrast">
-            Create automation
+            New automation
           </Text>
         </Pressable>
       )}
@@ -48,6 +50,7 @@ function EmptyAutomationState({
 export function AutomationList({
   onAutomationPress,
   onCreateAutomation,
+  contentInsetTop = 0,
 }: AutomationListProps) {
   const { automations, isLoading, error, refetch } = useAutomations();
   const { allTasks: automationTasks } = useTasks({
@@ -116,7 +119,10 @@ export function AutomationList({
           tintColor={themeColors.accent[9]}
         />
       }
-      contentContainerStyle={{ paddingBottom: 100 }}
+      contentContainerStyle={{
+        paddingTop: contentInsetTop,
+        paddingBottom: 100,
+      }}
     />
   );
 }

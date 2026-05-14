@@ -31,6 +31,7 @@ import {
 } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { EXTERNAL_LINKS } from "@renderer/utils/links";
+import { normalizeRepositoryLookupKey } from "@renderer/utils/repository";
 import { getDeeplinkProtocol } from "@shared/deeplink";
 import type {
   ActionabilityJudgmentArtefact,
@@ -84,7 +85,7 @@ function useReportRepository(reportId: string) {
           reportTask.task_id,
         )) as unknown as Task | null;
         if (task?.repository) {
-          return task.repository.toLowerCase();
+          return normalizeRepositoryLookupKey(task.repository);
         }
       }
 

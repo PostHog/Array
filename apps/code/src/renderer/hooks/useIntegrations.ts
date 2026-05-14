@@ -7,6 +7,7 @@ import {
 } from "@features/integrations/stores/integrationStore";
 import type { UserGitHubIntegration } from "@renderer/api/posthogClient";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { normalizeRepositoryLookupKey } from "@utils/repository";
 import {
   useCallback,
   useDeferredValue,
@@ -61,7 +62,13 @@ const userGithubIntegrationKeys = {
     ] as const,
 };
 
+interface RepositoryIntegrationRef {
+  repository: string;
+  integrationId: number;
+}
+
 interface UserRepositoryIntegrationRef {
+  repository: string;
   userIntegrationId: string;
   installationId: string;
 }
@@ -99,14 +106,18 @@ function useAllGithubRepositories(githubIntegrations: Integration[]) {
       meta: AUTH_SCOPED_QUERY_META,
     })),
     combine: (results) => {
-      const map: Record<string, number> = {};
+      const map: Record<string, RepositoryIntegrationRef> = {};
       let pending = false;
       for (const result of results) {
         if (result.isPending) pending = true;
         if (!result.data) continue;
         for (const repo of result.data.repos ?? []) {
-          if (!(repo in map)) {
-            map[repo] = result.data.integrationId;
+          const repoKey = normalizeRepositoryLookupKey(repo);
+          if (!(repoKey in map)) {
+            map[repoKey] = {
+              repository: repo,
+              integrationId: result.data.integrationId,
+            };
           }
         }
       }
@@ -162,8 +173,10 @@ function useAllUserGithubRepositories(
         const installationRepos = result.data.repos ?? [];
         reposByInstallationId[result.data.installationId] = installationRepos;
         for (const repo of installationRepos) {
-          if (!(repo in map)) {
-            map[repo] = {
+          const repoKey = normalizeRepositoryLookupKey(repo);
+          if (!(repoKey in map)) {
+            map[repoKey] = {
+              repository: repo,
               userIntegrationId: result.data.userIntegrationId,
               installationId: result.data.installationId,
             };
@@ -223,7 +236,7 @@ export function useGithubRepositories(
       meta: AUTH_SCOPED_QUERY_META,
     })),
     combine: (results) => {
-      const map: Record<string, number> = {};
+      const map: Record<string, RepositoryIntegrationRef> = {};
       let pending = false;
       let refreshing = false;
       let hasMoreResults = false;
@@ -238,8 +251,12 @@ export function useGithubRepositories(
         }
 
         for (const repo of result.data.repositories ?? []) {
-          if (!(repo in map)) {
-            map[repo] = result.data.integrationId;
+          const repoKey = normalizeRepositoryLookupKey(repo);
+          if (!(repoKey in map)) {
+            map[repoKey] = {
+              repository: repo,
+              integrationId: result.data.integrationId,
+            };
           }
         }
       }
@@ -258,7 +275,9 @@ export function useGithubRepositories(
   }, []);
 
   return {
-    repositories: Object.keys(repositoryMap),
+    repositories: Object.values(repositoryMap).map(
+      ({ repository }) => repository,
+    ),
     isPending: queryEnabled ? isPending : false,
     isRefreshing: queryEnabled ? isRefreshing : false,
     hasMore,
@@ -323,8 +342,10 @@ export function useUserGithubRepositories(
         }
 
         for (const repo of result.data.repositories ?? []) {
-          if (!(repo in map)) {
-            map[repo] = {
+          const repoKey = normalizeRepositoryLookupKey(repo);
+          if (!(repoKey in map)) {
+            map[repoKey] = {
+              repository: repo,
               userIntegrationId: result.data.userIntegrationId,
               installationId: result.data.installationId,
             };
@@ -346,7 +367,9 @@ export function useUserGithubRepositories(
   }, []);
 
   return {
-    repositories: Object.keys(repositoryMap),
+    repositories: Object.values(repositoryMap).map(
+      ({ repository }) => repository,
+    ),
     isPending: queryEnabled ? isPending : false,
     isRefreshing: queryEnabled ? isRefreshing : false,
     hasMore,
@@ -511,23 +534,25 @@ export function useUserRepositoryIntegration() {
   } = useAllUserGithubRepositories(githubIntegrations);
 
   const repositories = useMemo(
-    () => Object.keys(repositoryMap),
+    () => Object.values(repositoryMap).map(({ repository }) => repository),
     [repositoryMap],
   );
 
   const getUserIntegrationIdForRepo = useCallback(
     (repoKey: string) =>
-      repositoryMap[repoKey?.toLowerCase()]?.userIntegrationId,
+      repositoryMap[normalizeRepositoryLookupKey(repoKey)]?.userIntegrationId,
     [repositoryMap],
   );
 
   const getInstallationIdForRepo = useCallback(
-    (repoKey: string) => repositoryMap[repoKey?.toLowerCase()]?.installationId,
+    (repoKey: string) =>
+      repositoryMap[normalizeRepositoryLookupKey(repoKey)]?.installationId,
     [repositoryMap],
   );
 
   const isRepoInIntegration = useCallback(
-    (repoKey: string) => !repoKey || repoKey.toLowerCase() in repositoryMap,
+    (repoKey: string) =>
+      !repoKey || normalizeRepositoryLookupKey(repoKey) in repositoryMap,
     [repositoryMap],
   );
 
@@ -590,17 +615,19 @@ export function useRepositoryIntegration() {
     useAllGithubRepositories(githubIntegrations);
 
   const repositories = useMemo(
-    () => Object.keys(repositoryMap),
+    () => Object.values(repositoryMap).map(({ repository }) => repository),
     [repositoryMap],
   );
 
   const getIntegrationIdForRepo = useCallback(
-    (repoKey: string) => repositoryMap[repoKey?.toLowerCase()],
+    (repoKey: string) =>
+      repositoryMap[normalizeRepositoryLookupKey(repoKey)]?.integrationId,
     [repositoryMap],
   );
 
   const isRepoInIntegration = useCallback(
-    (repoKey: string) => !repoKey || repoKey.toLowerCase() in repositoryMap,
+    (repoKey: string) =>
+      !repoKey || normalizeRepositoryLookupKey(repoKey) in repositoryMap,
     [repositoryMap],
   );
 
