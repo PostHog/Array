@@ -8,13 +8,14 @@
     "newArchEnabled": true,
     "bundler": "metro",
     "scheme": "posthog",
+    "icon": "./assets/app-icon.png",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#0f0f0f"
     },
     "ios": {
-      "icon": "./assets/posthog.icon",
+      "icon": "./assets/app.icon",
       "supportsTablet": true,
       "bundleIdentifier": "com.posthog.code.mobile",
       "infoPlist": {
@@ -29,7 +30,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#E6E6E6"
+        "backgroundColor": "#FFFFFF"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
