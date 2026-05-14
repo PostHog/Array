@@ -25,16 +25,22 @@ import { useTasks } from "@features/tasks/hooks/useTasks";
 import { TourOverlay } from "@features/tour/components/TourOverlay";
 import { useTourStore } from "@features/tour/stores/tourStore";
 import { createFirstTaskTour } from "@features/tour/tours/createFirstTaskTour";
+import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { Box, Flex } from "@radix-ui/themes";
+import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { BILLING_FLAG } from "@shared/constants";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
-import { useCallback, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { logger } from "@utils/logger";
+import { useCallback, useEffect, useRef } from "react";
 import { useTaskDeepLink } from "../hooks/useTaskDeepLink";
 import { GlobalEventHandlers } from "./GlobalEventHandlers";
+
+const log = logger.scope("main-layout");
 
 export function MainLayout() {
   const {
@@ -56,6 +62,10 @@ export function MainLayout() {
     close: closeShortcutsSheet,
   } = useShortcutsSheetStore();
   const { data: tasks } = useTasks();
+  const { data: workspaces, isFetched: workspacesFetched } = useWorkspaces();
+  const trpcReact = useTRPC();
+  const queryClient = useQueryClient();
+  const reconcilingTaskIds = useRef<Set<string>>(new Set());
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
 
   // Space switcher data
@@ -79,6 +89,37 @@ export function MainLayout() {
       hydrateTask(tasks);
     }
   }, [tasks, hydrateTask]);
+
+  useEffect(() => {
+    if (!tasks || !workspaces || !workspacesFetched) return;
+    const missing = tasks.filter(
+      (t) => !workspaces[t.id] && !reconcilingTaskIds.current.has(t.id),
+    );
+    if (missing.length === 0) return;
+    for (const t of missing) reconcilingTaskIds.current.add(t.id);
+    void Promise.allSettled(
+      missing.map((t) =>
+        trpcClient.workspace.create.mutate({
+          taskId: t.id,
+          mainRepoPath: "",
+          folderId: "",
+          folderPath: "",
+          mode: "cloud",
+        }),
+      ),
+    ).then((results) => {
+      for (const [i, r] of results.entries()) {
+        const id = missing[i].id;
+        reconcilingTaskIds.current.delete(id);
+        if (r.status === "rejected") {
+          log.warn(`Failed to reconcile workspace for task ${id}`, r.reason);
+        }
+      }
+      void queryClient.invalidateQueries(
+        trpcReact.workspace.getAll.pathFilter(),
+      );
+    });
+  }, [tasks, workspaces, workspacesFetched, queryClient, trpcReact]);
 
   useEffect(() => {
     if (view.type === "task-detail" && !view.data && !view.taskId) {
