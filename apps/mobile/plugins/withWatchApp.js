@@ -226,7 +226,7 @@ function addWatchTargets(project) {
   ensureWatchSource(project, "PostHogCodeWatchApp.swift", watchExtension.uuid);
   ensureWatchSource(project, "WatchMissionStore.swift", watchExtension.uuid);
   ensureWatchSource(project, "WatchMissionModels.swift", watchExtension.uuid);
-  ensureWatchSource(project, "MissionViews.swift", watchExtension.uuid);
+  ensureWatchSource(project, "TaskViews.swift", watchExtension.uuid);
   ensureWatchSource(project, "HapticsPolicy.swift", watchExtension.uuid);
 
   ensureResource(

@@ -18,23 +18,28 @@ func statusColor(_ status: String) -> Color {
     }
 }
 
-struct MissionRootView: View {
+struct TasksRootView: View {
     @EnvironmentObject private var store: WatchMissionStore
 
     var body: some View {
         NavigationStack {
             if store.missions.isEmpty {
-                EmptyMissionView(state: store.connectionState)
+                EmptyTasksView(state: store.connectionState)
             } else if store.missions.count == 1, let mission = store.activeMission {
-                MissionOverviewView(mission: mission)
+                TaskOverviewView(mission: mission)
             } else {
                 List(store.missions) { mission in
-                    NavigationLink(value: mission.id) { MissionRow(mission: mission) }
+                    NavigationLink(value: mission.id) {
+                        TaskRow(
+                            mission: mission,
+                            isActive: store.envelope?.activeMissionId == mission.id
+                        )
+                    }
                 }
-                .navigationTitle("Missions")
+                .navigationTitle("Tasks")
                 .navigationDestination(for: String.self) { id in
                     if let mission = store.missions.first(where: { $0.id == id }) {
-                        MissionOverviewView(mission: mission)
+                        TaskOverviewView(mission: mission)
                     }
                 }
             }
@@ -42,7 +47,7 @@ struct MissionRootView: View {
     }
 }
 
-struct EmptyMissionView: View {
+struct EmptyTasksView: View {
     @EnvironmentObject private var store: WatchMissionStore
     let state: String
 
@@ -51,7 +56,7 @@ struct EmptyMissionView: View {
             Image(systemName: "antenna.radiowaves.left.and.right")
                 .font(.title2)
                 .foregroundStyle(accent)
-            Text("Mission Control").font(.headline)
+            Text("Tasks").font(.headline)
             Text(state).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             if let envelopeStatus = store.lastEnvelopeStatus {
                 Text(envelopeStatus).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -79,8 +84,9 @@ struct EmptyMissionView: View {
     }
 }
 
-struct MissionRow: View {
+struct TaskRow: View {
     let mission: WatchMissionSnapshot
+    let isActive: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -92,17 +98,26 @@ struct MissionRow: View {
             Text(mission.title).font(.caption).lineLimit(2)
             ProgressView(value: mission.progress.fraction).tint(statusColor(mission.status))
         }
+        .overlay(alignment: .leading) {
+            if isActive {
+                Rectangle()
+                    .fill(Color.orange)
+                    .frame(width: 4)
+                    .ignoresSafeArea(.container, edges: .vertical)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
-struct MissionOverviewView: View {
+struct TaskOverviewView: View {
     @EnvironmentObject private var store: WatchMissionStore
     let mission: WatchMissionSnapshot
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                MissionHeader(mission: mission)
+                TaskHeader(mission: mission)
                 if let approval = mission.approval { ApprovalCard(mission: mission, approval: approval) }
                 if let blocker = mission.blocker, mission.approval == nil { BlockerCard(mission: mission, blocker: blocker) }
                 CurrentTaskCard(mission: mission)
@@ -118,11 +133,11 @@ struct MissionOverviewView: View {
             }
             .padding(.vertical, 4)
         }
-        .navigationTitle("Mission")
+        .navigationTitle("Task")
     }
 }
 
-struct MissionHeader: View {
+struct TaskHeader: View {
     let mission: WatchMissionSnapshot
 
     var body: some View {
