@@ -136,6 +136,43 @@ function ensureSource(project, filePath, target, groupName = WATCH_SOURCE_DIR) {
   );
 }
 
+function targetHasSource(project, target, fileName, acceptedPaths) {
+  const fileReferences = project.hash.project.objects.PBXFileReference;
+  const matchingFileReferenceIds = new Set();
+
+  for (const [key, ref] of Object.entries(fileReferences)) {
+    if (key.endsWith("_comment")) continue;
+    const comment = fileReferences[`${key}_comment`];
+    if (
+      comment === fileName ||
+      ref.name === fileName ||
+      acceptedPaths.includes(ref.path)
+    ) {
+      matchingFileReferenceIds.add(key);
+    }
+  }
+
+  const buildFiles = project.hash.project.objects.PBXBuildFile;
+  const sourceFiles = project.pbxSourcesBuildPhaseObj(target)?.files ?? [];
+  return sourceFiles.some((sourceFile) => {
+    const buildFile = buildFiles[sourceFile.value];
+    return matchingFileReferenceIds.has(buildFile?.fileRef);
+  });
+}
+
+function ensureHostSource(project, fileName, target) {
+  const projectPath = `PostHogCode/${fileName}`;
+  const nativePath = `../native/ios/${fileName}`;
+  if (!targetHasSource(project, target, fileName, [projectPath, nativePath])) {
+    project.addSourceFile(
+      projectPath,
+      { target },
+      groupKeyByName(project, "PostHogCode"),
+    );
+  }
+  setFileReferencePath(project, fileName, nativePath);
+}
+
 function ensureWatchSource(project, fileName, target) {
   const watchGroupKey = groupKeyByName(project, WATCH_SOURCE_DIR);
   project.removeSourceFile(
@@ -231,28 +268,8 @@ function addWatchTargets(project) {
   ensureTargetDependency(project, hostTargetUuid, watchApp.uuid);
   ensureTargetDependency(project, watchApp.uuid, watchExtension.uuid);
 
-  ensureSource(
-    project,
-    "PostHogCode/WatchTaskControlModule.swift",
-    hostTargetUuid,
-    "PostHogCode",
-  );
-  setFileReferencePath(
-    project,
-    "WatchTaskControlModule.swift",
-    "../native/ios/WatchTaskControlModule.swift",
-  );
-  ensureSource(
-    project,
-    "PostHogCode/WatchTaskControlModule.m",
-    hostTargetUuid,
-    "PostHogCode",
-  );
-  setFileReferencePath(
-    project,
-    "WatchTaskControlModule.m",
-    "../native/ios/WatchTaskControlModule.m",
-  );
+  ensureHostSource(project, "WatchTaskControlModule.swift", hostTargetUuid);
+  ensureHostSource(project, "WatchTaskControlModule.m", hostTargetUuid);
 
   ensureWatchSource(project, "PostHogCodeWatchApp.swift", watchExtension.uuid);
   ensureWatchSource(project, "WatchTaskStore.swift", watchExtension.uuid);
