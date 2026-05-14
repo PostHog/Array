@@ -9,7 +9,10 @@ import { ReportList } from "@/features/inbox/components/ReportList";
 import { ReviewerFilterSheet } from "@/features/inbox/components/ReviewerFilterSheet";
 import { TinderView } from "@/features/inbox/components/TinderView";
 import { useInboxReports } from "@/features/inbox/hooks/useInboxReports";
-import { useDismissedReportsStore } from "@/features/inbox/stores/dismissedReportsStore";
+import {
+  decidedIds,
+  useDismissedReportsStore,
+} from "@/features/inbox/stores/dismissedReportsStore";
 import { useInboxFilterStore } from "@/features/inbox/stores/inboxFilterStore";
 import { useInboxStore } from "@/features/inbox/stores/inboxStore";
 import type { SignalReport } from "@/features/inbox/types";
@@ -29,14 +32,14 @@ export default function InboxScreen() {
   );
 
   // ── Tinder mode data ──────────────────────────────────────────────────────
-  const dismissedIds = useDismissedReportsStore((s) => s.dismissedIds);
+  const decided = useDismissedReportsStore(decidedIds);
   const setCurrentIndex = useInboxStore((s) => s.setCurrentIndex);
   const { repositoryOptions } = useIntegrations();
 
-  // Same data as the list view, just excluding dismissed reports.
+  // Same data as the list view, excluding already-decided reports.
   const tinderReports = useMemo(
-    () => reports.filter((r) => !dismissedIds.includes(r.id)),
-    [reports, dismissedIds],
+    () => reports.filter((r) => !decided.includes(r.id)),
+    [reports, decided],
   );
 
   // Reset card index when switching to tinder mode

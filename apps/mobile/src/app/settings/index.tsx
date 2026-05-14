@@ -103,7 +103,9 @@ export default function SettingsScreen() {
   const setDefaultInitialTaskMode = usePreferencesStore(
     (s) => s.setDefaultInitialTaskMode,
   );
-  const dismissedCount = useDismissedReportsStore((s) => s.dismissedIds.length);
+  const decidedCount = useDismissedReportsStore(
+    (s) => s.dismissedIds.length + s.acceptedIds.length,
+  );
   const clearDismissed = useDismissedReportsStore((s) => s.clearDismissed);
 
   const [themeSheetOpen, setThemeSheetOpen] = useState(false);
@@ -276,15 +278,15 @@ export default function SettingsScreen() {
         {/* Inbox */}
         <SettingsSection title="Inbox">
           <SettingsRow
-            label="Dismissed reports"
-            description={`${dismissedCount} report${dismissedCount === 1 ? "" : "s"} dismissed in review mode`}
+            label="Reviewed reports"
+            description={`${decidedCount} report${decidedCount === 1 ? "" : "s"} reviewed in tinder mode`}
             showDivider={false}
             rightSlot={
               <Pressable
                 onPress={clearDismissed}
-                disabled={dismissedCount === 0}
+                disabled={decidedCount === 0}
                 hitSlop={6}
-                className={`rounded-md border px-3 py-1.5 ${dismissedCount > 0 ? "border-gray-6 bg-gray-3 active:opacity-60" : "border-gray-4 opacity-40"}`}
+                className={`rounded-md border px-3 py-1.5 ${decidedCount > 0 ? "border-gray-6 bg-gray-3 active:opacity-60" : "border-gray-4 opacity-40"}`}
               >
                 <Text className="font-medium text-[13px] text-gray-12">
                   Clear
