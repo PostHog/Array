@@ -12,14 +12,14 @@ final class WatchMissionStore: NSObject, ObservableObject {
     let haptics = HapticsPolicy()
     private let cacheKey = "watch_mission_envelope"
 
-    var missions: [WatchMissionSnapshot] { envelope?.missions ?? [] }
+    var tasks: [WatchTaskSnapshot] { envelope?.tasks ?? [] }
 
-    var activeMission: WatchMissionSnapshot? {
-        guard let envelope else { return missions.first }
-        if let activeId = envelope.activeMissionId {
-            return envelope.missions.first { $0.id == activeId } ?? envelope.missions.first
+    var activeTask: WatchTaskSnapshot? {
+        guard let envelope else { return tasks.first }
+        if let activeId = envelope.activeTaskId {
+            return envelope.tasks.first { $0.id == activeId } ?? envelope.tasks.first
         }
-        return envelope.missions.first
+        return envelope.tasks.first
     }
 
     override init() {
@@ -82,10 +82,10 @@ final class WatchMissionStore: NSObject, ObservableObject {
             self.envelope = envelope
             self.connectionState = "Live"
             self.lastEnvelopeStatus = "iPhone update received at \(Date().formatted(date: .omitted, time: .standard))"
-            if let activeId = envelope.activeMissionId,
-               let active = envelope.missions.first(where: { $0.id == activeId }) {
+            if let activeId = envelope.activeTaskId,
+               let active = envelope.tasks.first(where: { $0.id == activeId }) {
                 haptics.apply(snapshot: active)
-            } else if let first = envelope.missions.first {
+            } else if let first = envelope.tasks.first {
                 haptics.apply(snapshot: first)
             }
             cache(data: data)

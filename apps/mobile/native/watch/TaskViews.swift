@@ -23,25 +23,23 @@ struct TasksRootView: View {
 
     var body: some View {
         NavigationStack {
-            if store.missions.isEmpty {
+            if store.tasks.isEmpty {
                 EmptyTasksView(state: store.connectionState)
-            } else if store.missions.count == 1, let mission = store.activeMission {
-                TaskOverviewView(mission: mission)
             } else {
-                List(store.missions) { mission in
-                    NavigationLink(value: mission.id) {
-                        TaskRow(mission: mission)
+                List(store.tasks) { task in
+                    NavigationLink(value: task.id) {
+                        TaskRow(task: task)
                     }
                     .listRowBackground(
                         ActiveTaskRowBackground(
-                            isActive: store.envelope?.activeMissionId == mission.id
+                            isActive: store.envelope?.activeTaskId == task.id
                         )
                     )
                 }
                 .navigationTitle("Tasks")
                 .navigationDestination(for: String.self) { id in
-                    if let mission = store.missions.first(where: { $0.id == id }) {
-                        TaskOverviewView(mission: mission)
+                    if let task = store.tasks.first(where: { $0.id == id }) {
+                        TaskOverviewView(task: task)
                     }
                 }
             }
@@ -87,17 +85,19 @@ struct EmptyTasksView: View {
 }
 
 struct TaskRow: View {
-    let mission: WatchMissionSnapshot
+    let task: WatchTaskSnapshot
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(mission.slug ?? "CODE").font(.caption2).foregroundStyle(.secondary)
+                Text(task.slug ?? "CODE").font(.caption2).foregroundStyle(.secondary)
                 Spacer()
-                Circle().fill(statusColor(mission.status)).frame(width: 7, height: 7)
+                Circle().fill(statusColor(task.status)).frame(width: 7, height: 7)
             }
-            Text(mission.title).font(.caption).lineLimit(2)
-            ProgressView(value: mission.progress.fraction).tint(statusColor(mission.status))
+            Text(task.title).font(.caption).lineLimit(2)
+            if task.progress.total > 0 {
+                ProgressView(value: task.progress.fraction).tint(statusColor(task.status))
+            }
         }
     }
 }
@@ -121,18 +121,18 @@ struct ActiveTaskRowBackground: View {
 
 struct TaskOverviewView: View {
     @EnvironmentObject private var store: WatchMissionStore
-    let mission: WatchMissionSnapshot
+    let task: WatchTaskSnapshot
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                TaskHeader(mission: mission)
-                if let approval = mission.approval { ApprovalCard(mission: mission, approval: approval) }
-                if let blocker = mission.blocker, mission.approval == nil { BlockerCard(mission: mission, blocker: blocker) }
-                CurrentTaskCard(mission: mission)
-                NavigationLink { ChecklistView(mission: mission) } label: { Label("Checklist", systemImage: "checklist") }
-                NavigationLink { TimelineView(mission: mission) } label: { Label("Timeline", systemImage: "point.3.connected.trianglepath.dotted") }
-                HandoffButtons(mission: mission)
+                TaskHeader(task: task)
+                if let approval = task.approval { ApprovalCard(task: task, approval: approval) }
+                if let blocker = task.blocker, task.approval == nil { BlockerCard(task: task, blocker: blocker) }
+                CurrentTaskCard(task: task)
+                NavigationLink { ChecklistView(task: task) } label: { Label("Checklist", systemImage: "checklist") }
+                NavigationLink { TimelineView(task: task) } label: { Label("Timeline", systemImage: "point.3.connected.trianglepath.dotted") }
+                HandoffButtons(task: task)
                 if let status = store.lastCommandStatus {
                     Text(status).font(.caption2).foregroundStyle(.secondary)
                 }
@@ -147,34 +147,38 @@ struct TaskOverviewView: View {
 }
 
 struct TaskHeader: View {
-    let mission: WatchMissionSnapshot
+    let task: WatchTaskSnapshot
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
-                ZStack {
-                    ProgressView(value: mission.progress.fraction)
-                        .progressViewStyle(.circular)
-                        .tint(statusColor(mission.status))
-                    Text("\(Int(mission.progress.fraction * 100))")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                if task.progress.total > 0 {
+                    ZStack {
+                        ProgressView(value: task.progress.fraction)
+                            .progressViewStyle(.circular)
+                            .tint(statusColor(task.status))
+                        Text("\(Int(task.progress.fraction * 100))")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                    }
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    if let slug = mission.slug {
+                    if let slug = task.slug {
                         Text(slug).font(.caption2).foregroundStyle(.secondary)
                     }
-                    Text(mission.title).font(.headline).lineLimit(2)
-                    Text(mission.statusText).font(.caption).foregroundStyle(statusColor(mission.status))
+                    Text(task.title).font(.headline).lineLimit(2)
+                    Text(task.statusText).font(.caption).foregroundStyle(statusColor(task.status))
                 }
             }
             HStack(spacing: 6) {
-                Chip(text: mission.environment == "local" ? "Local" : mission.environment.capitalized)
-                Chip(text: formatElapsed(mission.elapsedSeconds))
-                if mission.isStale { Chip(text: "Stale", color: .orange) }
+                Chip(text: task.environment == "local" ? "Local" : task.environment.capitalized)
+                Chip(text: formatElapsed(task.elapsedSeconds))
+                if task.isStale { Chip(text: "Stale", color: .orange) }
             }
-            Text("\(mission.progress.completed)/\(mission.progress.total) done")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            if task.progress.total > 0 {
+                Text("\(task.progress.completed)/\(task.progress.total) done")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }
@@ -193,12 +197,12 @@ struct Chip: View {
 }
 
 struct CurrentTaskCard: View {
-    let mission: WatchMissionSnapshot
+    let task: WatchTaskSnapshot
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Current").font(.caption2).foregroundStyle(.secondary)
-            Text(mission.currentTask ?? "Waiting for next step").font(.caption).lineLimit(3)
+            Text(task.currentTask ?? "Waiting for next step").font(.caption).lineLimit(3)
         }
         .padding(10)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
@@ -206,10 +210,10 @@ struct CurrentTaskCard: View {
 }
 
 struct ChecklistView: View {
-    let mission: WatchMissionSnapshot
+    let task: WatchTaskSnapshot
 
     var body: some View {
-        List(mission.checklist) { item in
+        List(task.checklist) { item in
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: icon(for: item.status))
                     .foregroundStyle(statusColor(item.status == "running" ? "running" : item.status))
@@ -235,10 +239,10 @@ struct ChecklistView: View {
 }
 
 struct TimelineView: View {
-    let mission: WatchMissionSnapshot
+    let task: WatchTaskSnapshot
 
     var body: some View {
-        List(mission.timeline) { item in
+        List(task.timeline) { item in
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title).font(.caption)
                 if let detail = item.detail {
@@ -252,7 +256,7 @@ struct TimelineView: View {
 
 struct ApprovalCard: View {
     @EnvironmentObject private var store: WatchMissionStore
-    let mission: WatchMissionSnapshot
+    let task: WatchTaskSnapshot
     let approval: WatchMissionApproval
 
     var body: some View {
@@ -268,7 +272,7 @@ struct ApprovalCard: View {
                     .tint(option.role == "reject" ? .red : accent)
             }
             if approval.diffAvailable == true {
-                Button("View Diff") { send(type: "view_diff", url: mission.handoff.phoneUrl) }
+                Button("View Diff") { send(type: "view_diff", url: task.handoff.phoneUrl) }
             }
         }
         .padding(10)
@@ -279,8 +283,8 @@ struct ApprovalCard: View {
         store.send(command: WatchMissionCommand(
             id: UUID().uuidString,
             type: "approval_response",
-            taskId: mission.taskId,
-            taskRunId: mission.taskRunId,
+            taskId: task.taskId,
+            taskRunId: task.taskRunId,
             toolCallId: approval.toolCallId,
             optionId: option.id,
             displayText: option.title,
@@ -291,13 +295,13 @@ struct ApprovalCard: View {
     }
 
     private func send(type: String, url: String?) {
-        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: type, taskId: mission.taskId, taskRunId: mission.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: url))
+        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: type, taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: url))
     }
 }
 
 struct BlockerCard: View {
     @EnvironmentObject private var store: WatchMissionStore
-    let mission: WatchMissionSnapshot
+    let task: WatchTaskSnapshot
     let blocker: WatchMissionBlocker
 
     var body: some View {
@@ -316,28 +320,27 @@ struct BlockerCard: View {
     }
 
     private func send(type: String) {
-        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: type, taskId: mission.taskId, taskRunId: mission.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: nil))
+        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: type, taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: nil))
     }
 }
 
 struct HandoffButtons: View {
     @EnvironmentObject private var store: WatchMissionStore
-    let mission: WatchMissionSnapshot
+    let task: WatchTaskSnapshot
 
     var body: some View {
         VStack(spacing: 6) {
-            Button("Open on iPhone") { send(type: "open_phone", url: mission.handoff.phoneUrl) }
+            Button("Open on iPhone") { send(type: "open_phone", url: task.handoff.phoneUrl) }
             Button("Send Demo Prompt") { sendDemoPrompt() }
-            if mission.handoff.macUrl != nil { Button("Open on Mac") { send(type: "open_mac", url: mission.handoff.macUrl) } }
-            if mission.allowedActions.contains("stop") { Button("Stop Agent") { send(type: "stop", url: nil) }.tint(.red) }
+            if task.allowedActions.contains("stop") { Button("Stop Agent") { send(type: "stop", url: nil) }.tint(.red) }
         }
     }
 
     private func send(type: String, url: String?) {
-        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: type, taskId: mission.taskId, taskRunId: mission.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: url))
+        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: type, taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: url))
     }
 
     private func sendDemoPrompt() {
-        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: "send_prompt", taskId: mission.taskId, taskRunId: mission.taskRunId, toolCallId: nil, optionId: nil, displayText: "Demo prompt from Apple Watch", answers: nil, customInput: nil, url: nil))
+        store.send(command: WatchMissionCommand(id: UUID().uuidString, type: "send_prompt", taskId: task.taskId, taskRunId: task.taskRunId, toolCallId: nil, optionId: nil, displayText: "Demo prompt from Apple Watch", answers: nil, customInput: nil, url: nil))
     }
 }

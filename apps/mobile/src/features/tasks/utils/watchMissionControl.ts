@@ -619,18 +619,15 @@ export function createWatchMissionEnvelope(
         now,
       }),
     )
-    .sort((a, b) => {
-      if (a.taskId === activeTaskId) return -1;
-      if (b.taskId === activeTaskId) return 1;
-      return (b.updatedAt ?? b.generatedAt) - (a.updatedAt ?? a.generatedAt);
-    });
+    .sort(
+      (a, b) => (b.updatedAt ?? b.generatedAt) - (a.updatedAt ?? a.generatedAt),
+    );
 
   return {
     schemaVersion: 1,
     generatedAt: now,
-    activeMissionId:
-      missions.find((mission) => mission.taskId === activeTaskId)?.id ??
-      missions[0]?.id,
+    activeMissionId: missions.find((mission) => mission.taskId === activeTaskId)
+      ?.id,
     missions,
   };
 }

@@ -4,15 +4,15 @@ import WatchKit
 @MainActor
 final class HapticsPolicy {
     private var lastApprovalId: String?
-    private var lastTerminalMissionId: String?
-    private var lastFailureMissionId: String?
+    private var lastTerminalTaskId: String?
+    private var lastFailureTaskId: String?
     private var lastApprovalHapticAt: Date = .distantPast
     private var lastActionHapticAt: Date = .distantPast
 
     private let approvalCooldown: TimeInterval = 20
     private let actionCooldown: TimeInterval = 0.6
 
-    func apply(snapshot: WatchMissionSnapshot) {
+    func apply(snapshot: WatchTaskSnapshot) {
         let now = Date()
 
         if let approval = snapshot.approval,
@@ -23,14 +23,14 @@ final class HapticsPolicy {
             WKInterfaceDevice.current().play(.notification)
         }
 
-        if snapshot.status == "completed", snapshot.id != lastTerminalMissionId {
-            lastTerminalMissionId = snapshot.id
+        if snapshot.status == "completed", snapshot.id != lastTerminalTaskId {
+            lastTerminalTaskId = snapshot.id
             WKInterfaceDevice.current().play(.success)
         }
 
         if (snapshot.status == "failed" || snapshot.status == "blocked" || snapshot.status == "stale"),
-           snapshot.id != lastFailureMissionId {
-            lastFailureMissionId = snapshot.id
+           snapshot.id != lastFailureTaskId {
+            lastFailureTaskId = snapshot.id
             WKInterfaceDevice.current().play(.failure)
         }
     }

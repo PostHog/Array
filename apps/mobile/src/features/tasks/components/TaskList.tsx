@@ -1,7 +1,7 @@
 import { Text } from "@components/text";
 import * as WebBrowser from "expo-web-browser";
 import { CaretRight } from "phosphor-react-native";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -14,6 +14,7 @@ import { useThemeColors } from "@/lib/theme";
 import { useIntegrations } from "../hooks/useIntegrations";
 import { useTasks } from "../hooks/useTasks";
 import { useArchivedTasksStore } from "../stores/archivedTasksStore";
+import { useTaskSessionStore } from "../stores/taskSessionStore";
 import type { Task } from "../types";
 import { SwipeableTaskItem } from "./SwipeableTaskItem";
 
@@ -121,8 +122,17 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
     useIntegrations();
   const themeColors = useThemeColors();
   const { archivedTasks, archive, unarchive } = useArchivedTasksStore();
+  const registerWatchTask = useTaskSessionStore(
+    (state) => state.registerWatchTask,
+  );
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
+
+  useEffect(() => {
+    for (const task of tasks) {
+      if (!(task.id in archivedTasks)) registerWatchTask(task);
+    }
+  }, [tasks, archivedTasks, registerWatchTask]);
 
   const handleTaskPress = (task: Task) => {
     onTaskPress?.(task.id);

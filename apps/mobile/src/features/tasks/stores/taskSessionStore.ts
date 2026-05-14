@@ -30,6 +30,7 @@ import {
   sendUrgentWatchMissionUpdate,
   subscribeToWatchMissionCommands,
 } from "../watchMissionControlBridge";
+import { useArchivedTasksStore } from "./archivedTasksStore";
 
 // Infer whether the agent is actively working or idle (waiting for user input).
 // Primary signal: _posthog/turn_complete or _posthog/task_complete in raw log
@@ -197,10 +198,20 @@ function buildWatchMissionEnvelopeFromStore() {
   for (const session of Object.values(state.sessions)) {
     sessionsByTaskId[session.taskId] = session;
   }
+  const archivedTasks = useArchivedTasksStore.getState().archivedTasks;
+  const visibleTasks = Object.values(state.watchMissionTasks).filter(
+    (task) => !(task.id in archivedTasks),
+  );
+  const activeWatchTaskId = state.activeWatchTaskId;
+  const visibleActiveTaskId =
+    activeWatchTaskId && activeWatchTaskId in archivedTasks
+      ? undefined
+      : activeWatchTaskId;
+
   return createWatchMissionEnvelope(
-    Object.values(state.watchMissionTasks),
+    visibleTasks,
     sessionsByTaskId,
-    state.activeWatchTaskId,
+    visibleActiveTaskId,
   );
 }
 
@@ -234,6 +245,21 @@ function ensureWatchCommandSubscription() {
   });
 }
 
+let archivedWatchTaskIds = Object.keys(
+  useArchivedTasksStore.getState().archivedTasks,
+)
+  .sort()
+  .join(",");
+
+useArchivedTasksStore.subscribe((state) => {
+  const nextArchivedWatchTaskIds = Object.keys(state.archivedTasks)
+    .sort()
+    .join(",");
+  if (nextArchivedWatchTaskIds === archivedWatchTaskIds) return;
+  archivedWatchTaskIds = nextArchivedWatchTaskIds;
+  scheduleWatchMissionPublish({ urgent: true });
+});
+
 export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   sessions: {},
   watchMissionTasks: {},
@@ -246,15 +272,13 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
 
   registerWatchTask: (task: Task) => {
     ensureWatchCommandSubscription();
-    const shouldSetActive = !get().activeWatchTaskId;
     set((state) => ({
       watchMissionTasks: {
         ...state.watchMissionTasks,
         [task.id]: task,
       },
-      activeWatchTaskId: state.activeWatchTaskId ?? task.id,
     }));
-    scheduleWatchMissionPublish({ urgent: shouldSetActive });
+    scheduleWatchMissionPublish();
   },
 
   connectToTask: async (task: Task) => {

@@ -3,11 +3,18 @@ import Foundation
 struct WatchMissionEnvelope: Codable {
     let schemaVersion: Int
     let generatedAt: TimeInterval
-    let activeMissionId: String?
-    let missions: [WatchMissionSnapshot]
+    let activeTaskId: String?
+    let tasks: [WatchTaskSnapshot]
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case generatedAt
+        case activeTaskId = "activeMissionId"
+        case tasks = "missions"
+    }
 }
 
-struct WatchMissionSnapshot: Codable, Identifiable {
+struct WatchTaskSnapshot: Codable, Identifiable {
     let schemaVersion: Int
     let id: String
     let generatedAt: TimeInterval
