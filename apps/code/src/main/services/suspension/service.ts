@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import { createGitClient } from "@posthog/git/client";
 import {
@@ -23,6 +22,7 @@ import type { IWorktreeRepository } from "../../db/repositories/worktree-reposit
 import { MAIN_TOKENS } from "../../di/tokens.js";
 import { logger } from "../../utils/logger.js";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter.js";
+import { deriveWorktreePath } from "../../utils/worktree-helpers.js";
 import type { AgentService } from "../agent/service.js";
 import type { FileWatcherService } from "../file-watcher/service.js";
 import type { ProcessTrackingService } from "../process-tracking/service.js";
@@ -396,7 +396,7 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
         },
         async () => {
           if (restoredWorktreeName) {
-            const worktreePath = await this.deriveWorktreePath(
+            const worktreePath = deriveWorktreePath(
               folderPath,
               restoredWorktreeName,
             );
@@ -409,7 +409,7 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
         async () => {
           if (!restoredWorktreeName)
             throw new Error("Failed to restore worktree");
-          const worktreePath = await this.deriveWorktreePath(
+          const worktreePath = deriveWorktreePath(
             folderPath,
             restoredWorktreeName,
           );
@@ -506,28 +506,4 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
     return newWorktree.worktreeName;
   }
 
-  private async deriveWorktreePath(
-    folderPath: string,
-    worktreeName: string,
-  ): Promise<string> {
-    const worktreeBasePath = getWorktreeLocation();
-    const repoName = path.basename(folderPath);
-
-    const newFormatPath = path.join(worktreeBasePath, worktreeName, repoName);
-    const legacyFormatPath = path.join(
-      worktreeBasePath,
-      repoName,
-      worktreeName,
-    );
-
-    try {
-      await fs.access(newFormatPath);
-      return newFormatPath;
-    } catch {}
-    try {
-      await fs.access(legacyFormatPath);
-      return legacyFormatPath;
-    } catch {}
-    return newFormatPath;
-  }
 }

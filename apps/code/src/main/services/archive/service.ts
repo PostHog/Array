@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import { createGitClient } from "@posthog/git/client";
 import { isGitRepository } from "@posthog/git/queries";
@@ -26,6 +25,7 @@ import type {
 import type { WorktreeRepository } from "../../db/repositories/worktree-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
+import { deriveWorktreePath } from "../../utils/worktree-helpers";
 import type { AgentService } from "../agent/service";
 import type { FileWatcherService } from "../file-watcher/service";
 import type { ProcessTrackingService } from "../process-tracking/service";
@@ -347,7 +347,7 @@ export class ArchiveService {
                 mainRepoPath: folderPath,
                 worktreeBasePath: getWorktreeLocation(),
               });
-              const worktreePath = await this.deriveWorktreePath(
+              const worktreePath = deriveWorktreePath(
                 folderPath,
                 restoredWorktreeName,
               );
@@ -363,7 +363,7 @@ export class ArchiveService {
             if (!restoredWorktreeName) {
               throw new Error("Failed to restore worktree");
             }
-            const worktreePath = await this.deriveWorktreePath(
+            const worktreePath = deriveWorktreePath(
               folderPath,
               restoredWorktreeName,
             );
@@ -469,33 +469,6 @@ export class ArchiveService {
       branchName: archive.branchName,
       checkpointId: archive.checkpointId,
     };
-  }
-
-  private async deriveWorktreePath(
-    folderPath: string,
-    worktreeName: string,
-  ): Promise<string> {
-    const worktreeBasePath = getWorktreeLocation();
-    const repoName = path.basename(folderPath);
-
-    const newFormatPath = path.join(worktreeBasePath, worktreeName, repoName);
-    const legacyFormatPath = path.join(
-      worktreeBasePath,
-      repoName,
-      worktreeName,
-    );
-
-    try {
-      await fs.access(newFormatPath);
-      return newFormatPath;
-    } catch {}
-
-    try {
-      await fs.access(legacyFormatPath);
-      return legacyFormatPath;
-    } catch {}
-
-    return newFormatPath;
   }
 
   private async getCurrentBranchName(worktreePath: string): Promise<string> {
