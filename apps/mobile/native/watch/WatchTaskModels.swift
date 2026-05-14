@@ -8,6 +8,7 @@ struct WatchTaskEnvelope: Codable {
     let tasks: [WatchTaskSnapshot]
     let inboxReports: [WatchInboxReportSnapshot]?
     let inboxReviewers: [WatchInboxReviewer]?
+    let automations: [WatchAutomationSnapshot]?
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion
@@ -17,7 +18,32 @@ struct WatchTaskEnvelope: Codable {
         case tasks = "tasks"
         case inboxReports = "inboxReports"
         case inboxReviewers = "inboxReviewers"
+        case automations = "automations"
     }
+}
+
+struct WatchAutomationSnapshot: Codable, Identifiable {
+    let schemaVersion: Int
+    let id: String
+    let name: String
+    let prompt: String
+    let repository: String?
+    let templateName: String?
+    let secondaryLabel: String
+    let scheduleSummary: String
+    let cronExpression: String
+    let timezone: String?
+    let enabled: Bool
+    let statusText: String
+    let lastRunStatus: String?
+    let lastTaskRunStatus: String?
+    let lastRunAt: TimeInterval?
+    let lastTaskId: String?
+    let lastError: String?
+    let createdAt: TimeInterval?
+    let updatedAt: TimeInterval?
+    let allowedActions: [String]
+    let handoff: WatchTaskHandoff
 }
 
 struct WatchInboxReviewer: Codable, Identifiable {
@@ -168,6 +194,7 @@ struct WatchTaskCommand: Codable {
     let answers: [String: String]?
     let customInput: String?
     let url: String?
+    let automationId: String?
     let reportId: String?
     let dismissalReason: String?
 
@@ -182,6 +209,7 @@ struct WatchTaskCommand: Codable {
         answers: [String: String]? = nil,
         customInput: String? = nil,
         url: String? = nil,
+        automationId: String? = nil,
         reportId: String? = nil,
         dismissalReason: String? = nil
     ) {
@@ -195,6 +223,7 @@ struct WatchTaskCommand: Codable {
         self.answers = answers
         self.customInput = customInput
         self.url = url
+        self.automationId = automationId
         self.reportId = reportId
         self.dismissalReason = dismissalReason
     }

@@ -9,6 +9,9 @@ import type {
   SessionEvent,
   SessionNotification,
   Task,
+  TaskAutomation,
+  TaskRun,
+  WatchAutomationSnapshot,
   WatchInboxReportAction,
   WatchInboxReportSnapshot,
   WatchInboxReviewer,
@@ -25,6 +28,9 @@ import type {
   WatchTaskStatus,
   WatchTaskTimelineItem,
 } from "../types";
+import { formatAutomationScheduleSummary } from "./automationSchedule";
+import { getAutomationStatusPresentation } from "./automationStatus";
+import { getAutomationTemplatePresentation } from "./automationTemplatePresentation";
 
 const MAX_TITLE_LENGTH = 72;
 const MAX_DETAIL_LENGTH = 160;
@@ -763,6 +769,47 @@ export function createWatchInboxReportSnapshot(
   };
 }
 
+export function createWatchAutomationSnapshot(
+  automation: TaskAutomation,
+  lastTaskRunStatus?: TaskRun["status"] | null,
+): WatchAutomationSnapshot {
+  const presentation = getAutomationTemplatePresentation(automation);
+  const runStatus = getAutomationStatusPresentation({
+    lastRunStatus: automation.last_run_status,
+    lastTaskRunStatus,
+  });
+
+  return {
+    schemaVersion: 1,
+    id: automation.id,
+    name: truncate(automation.name, MAX_TITLE_LENGTH) ?? "Untitled automation",
+    prompt: automation.prompt,
+    repository: automation.repository || null,
+    templateName: presentation.templateName,
+    secondaryLabel: presentation.secondaryLabel,
+    scheduleSummary: formatAutomationScheduleSummary(automation),
+    cronExpression: automation.cron_expression,
+    timezone: automation.timezone ?? null,
+    enabled: automation.enabled,
+    statusText: runStatus.label,
+    lastRunStatus: automation.last_run_status,
+    lastTaskRunStatus,
+    lastRunAt: toMillis(automation.last_run_at),
+    lastTaskId: automation.last_task_id,
+    lastError: automation.last_error,
+    createdAt: toMillis(automation.created_at),
+    updatedAt: toMillis(automation.updated_at),
+    allowedActions: [
+      automation.enabled ? "pause" : "resume",
+      "run",
+      "open_phone",
+    ],
+    handoff: {
+      phoneUrl: `posthog://automation/${automation.id}`,
+    },
+  };
+}
+
 export function createWatchTaskEnvelope(
   sourceTasks: Task[],
   sessionsByTaskId: Record<string, TaskSession | undefined>,
@@ -772,6 +819,7 @@ export function createWatchTaskEnvelope(
     isAuthenticated?: boolean;
     inboxReports?: WatchInboxReportSnapshot[];
     inboxReviewers?: WatchInboxReviewer[];
+    automations?: WatchAutomationSnapshot[];
   } = {},
 ): WatchTaskEnvelope {
   const now = options.now ?? Date.now();
@@ -797,5 +845,6 @@ export function createWatchTaskEnvelope(
     tasks: taskSnapshots,
     inboxReports: options.inboxReports ?? [],
     inboxReviewers: options.inboxReviewers ?? [],
+    automations: options.automations ?? [],
   };
 }

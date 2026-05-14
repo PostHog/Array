@@ -1,4 +1,5 @@
 import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
 import { Alert, AppState, Linking } from "react-native";
 import { create } from "zustand";
 import { useAuthStore } from "@/features/auth/stores/authStore";
@@ -19,9 +20,12 @@ import { queryClient } from "@/lib/queryClient";
 import {
   CloudCommandError,
   getTask,
+  getTaskAutomations,
   getTasks,
+  runTaskAutomation,
   runTaskInCloud,
   sendCloudCommand,
+  updateTaskAutomation,
 } from "../api";
 import { buildCloudPromptBlocks } from "../composer/attachments/buildCloudPrompt";
 import { serializeCloudPrompt } from "../composer/attachments/cloudPrompt";
@@ -38,6 +42,7 @@ import {
   type SessionNotificationAttachment,
   type StoredLogEntry,
   type Task,
+  type WatchAutomationSnapshot,
   type WatchInboxReportSnapshot,
   type WatchInboxReviewer,
   type WatchTaskCommand,
@@ -45,6 +50,7 @@ import {
 import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
 import { playMeepSound } from "../utils/sounds";
 import {
+  createWatchAutomationSnapshot,
   createWatchInboxReportSnapshot,
   createWatchInboxReviewers,
   createWatchTaskEnvelope,
@@ -278,6 +284,7 @@ interface TaskSessionStore {
   watchTasks: Record<string, Task>;
   watchInboxReports: WatchInboxReportSnapshot[];
   watchInboxReviewers: WatchInboxReviewer[];
+  watchAutomations: WatchAutomationSnapshot[];
   activeWatchTaskId?: string;
 
   setFocusedTaskId: (taskId: string | null) => void;
@@ -431,9 +438,29 @@ async function fetchCurrentWatchInbox(currentUser: WatchCurrentUser): Promise<{
   return { reports, reviewers };
 }
 
+async function fetchCurrentWatchAutomations(): Promise<
+  WatchAutomationSnapshot[]
+> {
+  const [automations, automationTasks] = await Promise.all([
+    getTaskAutomations(),
+    getTasks({ originProduct: "automation" }),
+  ]);
+  const taskStatusById = new Map(
+    automationTasks.map((task) => [task.id, task.latest_run?.status ?? null]),
+  );
+  return automations.map((automation) =>
+    createWatchAutomationSnapshot(
+      automation,
+      automation.last_task_id
+        ? (taskStatusById.get(automation.last_task_id) ?? null)
+        : null,
+    ),
+  );
+}
+
 async function refreshCurrentWatchTasks(): Promise<void> {
   const currentUser = await fetchCurrentUserForWatch();
-  const [tasks, inbox] = await Promise.all([
+  const [tasks, inbox, automations] = await Promise.all([
     getTasks({
       createdBy: currentUser.id,
     }),
@@ -441,11 +468,16 @@ async function refreshCurrentWatchTasks(): Promise<void> {
       log.warn("Failed to refresh Watch inbox", { error });
       return { reports: [], reviewers: [] };
     }),
+    fetchCurrentWatchAutomations().catch((error) => {
+      log.warn("Failed to refresh Watch automations", { error });
+      return [];
+    }),
   ]);
   useTaskSessionStore.setState({
     watchTasks: Object.fromEntries(tasks.map((task) => [task.id, task])),
     watchInboxReports: inbox.reports,
     watchInboxReviewers: inbox.reviewers,
+    watchAutomations: automations,
   });
 }
 
@@ -478,6 +510,7 @@ function buildWatchTaskEnvelopeFromStore() {
       isAuthenticated: useAuthStore.getState().isAuthenticated,
       inboxReports: state.watchInboxReports,
       inboxReviewers: state.watchInboxReviewers,
+      automations: state.watchAutomations,
     },
   );
 }
@@ -564,6 +597,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   watchTasks: {},
   watchInboxReports: [],
   watchInboxReviewers: [],
+  watchAutomations: [],
 
   setFocusedTaskId: (taskId) => set({ focusedTaskId: taskId }),
 
@@ -1044,6 +1078,36 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         await Linking.openURL(`posthog://task?${params.toString()}`);
         break;
       }
+      case "new_automation":
+        router.push("/automation");
+        break;
+      case "open_automation":
+        await Linking.openURL(
+          command.url ??
+            `posthog://automation/${command.automationId ?? command.taskId}`,
+        );
+        break;
+      case "run_automation": {
+        const automation = await runTaskAutomation(
+          command.automationId ?? command.taskId,
+        );
+        if (automation.last_task_id) {
+          await Linking.openURL(
+            `posthog://task/${automation.last_task_id}?fromAutomation=1&automationName=${encodeURIComponent(automation.name)}`,
+          );
+        }
+        await refreshCurrentWatchTasks();
+        scheduleWatchTaskPublish({ urgent: true });
+        break;
+      }
+      case "pause_automation":
+      case "resume_automation":
+        await updateTaskAutomation(command.automationId ?? command.taskId, {
+          enabled: command.type === "resume_automation",
+        });
+        await refreshCurrentWatchTasks();
+        scheduleWatchTaskPublish({ urgent: true });
+        break;
       case "open_mac":
         await Linking.openURL(macTaskUrl(command));
         break;

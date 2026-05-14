@@ -197,6 +197,30 @@ export type WatchInboxReportAction =
   | "implement_as_task"
   | "open_phone";
 
+export interface WatchAutomationSnapshot {
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  prompt: string;
+  repository?: string | null;
+  templateName?: string | null;
+  secondaryLabel: string;
+  scheduleSummary: string;
+  cronExpression: string;
+  timezone?: string | null;
+  enabled: boolean;
+  statusText: string;
+  lastRunStatus: string | null;
+  lastTaskRunStatus?: TaskRunStatus | null;
+  lastRunAt?: number;
+  lastTaskId?: string | null;
+  lastError?: string | null;
+  createdAt?: number;
+  updatedAt?: number;
+  allowedActions: Array<"pause" | "resume" | "run" | "open_phone">;
+  handoff: WatchTaskHandoff;
+}
+
 export interface WatchInboxReportSnapshot {
   schemaVersion: 1;
   id: string;
@@ -326,6 +350,7 @@ export interface WatchTaskEnvelope {
   tasks: WatchTaskSnapshot[];
   inboxReports?: WatchInboxReportSnapshot[];
   inboxReviewers?: WatchInboxReviewer[];
+  automations?: WatchAutomationSnapshot[];
 }
 
 interface WatchTaskCommandBase {
@@ -363,8 +388,14 @@ export type WatchTaskCommand =
         | "create_task"
         | "open_report"
         | "dismiss_report"
-        | "start_report_task";
+        | "start_report_task"
+        | "new_automation"
+        | "open_automation"
+        | "run_automation"
+        | "pause_automation"
+        | "resume_automation";
       url?: string;
+      automationId?: string;
       reportId?: string;
       optionId?: string;
       displayText?: string;

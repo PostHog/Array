@@ -167,6 +167,9 @@ struct TasksRootView: View {
             TaskOverviewView(task: task)
           }
         }
+        .refreshable {
+          store.requestSnapshot()
+        }
       }
     }
   }
@@ -672,11 +675,11 @@ struct WatchHomeView: View {
   var body: some View {
     NavigationStack {
       List {
-        Button { store.requestSnapshot() } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
-          .font(.caption2)
-        }
-        .buttonStyle(.plain)
+//        Button { store.requestSnapshot() } label: {
+//          Label("Refresh", systemImage: "arrow.clockwise")
+//          .font(.caption2)
+//        }
+//        .buttonStyle(.plain)
         NavigationLink { TasksRootView() } label: {
           Label {
             VStack(alignment: .leading, spacing: 2) {
@@ -701,8 +704,23 @@ struct WatchHomeView: View {
             Image(systemName: "tray")
           }
         }
+        NavigationLink { AutomationsListView() } label: {
+          Label {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("Automations")
+              Text("\((store.envelope?.automations ?? []).count) synced")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          } icon: {
+            Image(systemName: "clock.arrow.circlepath")
+          }
+        }
       }
       .navigationTitle("PostHog Code")
+      .refreshable {
+        store.requestSnapshot()
+      }
     }
   }
 }
@@ -813,6 +831,9 @@ struct InboxListView: View {
         }
       }
       .navigationTitle("Inbox")
+      .refreshable {
+        store.requestSnapshot()
+      }
     }
   }
 
@@ -1054,5 +1075,187 @@ struct InboxReportDetailView: View {
       url: report.handoff.phoneUrl,
       reportId: report.id
     ))
+  }
+}
+
+func automationStatusColor(_ automation: WatchAutomationSnapshot) -> Color {
+  if automation.statusText == "Running" || automation.statusText == "Queued" { return .blue }
+  if automation.statusText == "Failed" { return .red }
+  if automation.statusText == "Success" { return .green }
+  return automation.enabled ? .orange : .secondary
+}
+
+struct AutomationsListView: View {
+  @EnvironmentObject private var store: WatchTaskStore
+
+  private var automations: [WatchAutomationSnapshot] {
+    (store.envelope?.automations ?? [])
+      .sorted { ($0.updatedAt ?? 0) > ($1.updatedAt ?? 0) }
+  }
+
+  var body: some View {
+    List {
+      Button { send(type: "new_automation", automationId: "new") } label: {
+        Label("New Automation", systemImage: "plus")
+      }
+      .tint(accent)
+
+      if automations.isEmpty {
+        Text("No automations yet")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      } else {
+        ForEach(automations) { automation in
+          NavigationLink { AutomationDetailView(automation: automation) } label: {
+            AutomationRow(automation: automation)
+          }
+        }
+      }
+    }
+    .navigationTitle("Automations")
+    .toolbar {
+      Button { store.requestSnapshot() } label: {
+        Image(systemName: "arrow.clockwise")
+          .font(.system(size: 12, weight: .semibold))
+      }
+      .buttonStyle(.plain)
+      .foregroundStyle(accent)
+      .accessibilityLabel("Refresh Automations")
+    }
+  }
+
+  private func send(type: String, automationId: String) {
+    store.send(command: WatchTaskCommand(
+      id: UUID().uuidString,
+      type: type,
+      taskId: automationId,
+      automationId: automationId
+    ))
+  }
+}
+
+struct AutomationRow: View {
+  let automation: WatchAutomationSnapshot
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 8) {
+      Circle()
+        .fill(automationStatusColor(automation))
+        .frame(width: 9, height: 9)
+        .padding(.top, 4)
+      VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .firstTextBaseline) {
+          Text(automation.name).font(.caption).lineLimit(1)
+          Spacer(minLength: 4)
+          Text(shortTime(automation.lastRunAt))
+            .font(.system(size: 10))
+            .foregroundStyle(.secondary)
+        }
+        HStack(spacing: 4) {
+          Text(automation.enabled ? "Enabled" : "Paused")
+          Text(automation.statusText)
+        }
+        .font(.system(size: 9))
+        .foregroundStyle(.secondary)
+        Text(automation.secondaryLabel)
+          .font(.system(size: 9))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+        Text(automation.scheduleSummary)
+          .font(.system(size: 9))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+      }
+    }
+  }
+}
+
+struct AutomationDetailView: View {
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: WatchTaskStore
+  let automation: WatchAutomationSnapshot
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
+          HStack(spacing: 6) {
+            Chip(text: automation.enabled ? "Enabled" : "Paused", color: automation.enabled ? .orange : .secondary)
+            Chip(text: automation.statusText, color: automationStatusColor(automation))
+          }
+          Text(automation.name).font(.headline).lineLimit(3)
+          Text(automation.scheduleSummary)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text(automation.repository?.isEmpty == false ? "Repository" : "Context")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+          Text(automation.secondaryLabel)
+            .font(.caption)
+            .lineLimit(3)
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Prompt").font(.caption2).foregroundStyle(.secondary)
+          Text(automation.prompt).font(.caption).lineLimit(8)
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+
+        if let lastTaskId = automation.lastTaskId, !lastTaskId.isEmpty {
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Last task").font(.caption2).foregroundStyle(.secondary)
+            Text(lastTaskId).font(.caption).lineLimit(1)
+          }
+        }
+
+        if let lastError = automation.lastError, !lastError.isEmpty {
+          Label(lastError, systemImage: "xmark.octagon.fill")
+            .font(.caption)
+            .foregroundStyle(.red)
+            .lineLimit(4)
+        }
+
+        VStack(spacing: 6) {
+          Button("Run now") { sendAndDismiss(type: "run_automation") }
+            .buttonStyle(.borderedProminent)
+            .tint(accent)
+          if automation.allowedActions.contains("pause") {
+            Button("Pause") { sendAndDismiss(type: "pause_automation") }
+              .tint(.orange)
+          }
+          if automation.allowedActions.contains("resume") {
+            Button("Resume") { sendAndDismiss(type: "resume_automation") }
+              .tint(accent)
+          }
+          Button("Open on iPhone") { send(type: "open_automation") }
+          if let status = store.lastCommandStatus {
+            Text(status).font(.caption2).foregroundStyle(.secondary)
+          }
+        }
+      }
+      .padding(.vertical, 4)
+    }
+    .navigationTitle("Automation")
+  }
+
+  private func send(type: String) {
+    store.send(command: WatchTaskCommand(
+      id: UUID().uuidString,
+      type: type,
+      taskId: automation.id,
+      url: automation.handoff.phoneUrl,
+      automationId: automation.id
+    ))
+  }
+
+  private func sendAndDismiss(type: String) {
+    send(type: type)
+    dismiss()
   }
 }
