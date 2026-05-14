@@ -3,12 +3,14 @@ import Foundation
 struct WatchTaskEnvelope: Codable {
     let schemaVersion: Int
     let generatedAt: TimeInterval
+    let isAuthenticated: Bool?
     let activeTaskId: String?
     let tasks: [WatchTaskSnapshot]
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion
         case generatedAt
+        case isAuthenticated
         case activeTaskId = "activeTaskId"
         case tasks = "tasks"
     }

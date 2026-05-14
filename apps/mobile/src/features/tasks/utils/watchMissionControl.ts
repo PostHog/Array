@@ -609,7 +609,10 @@ export function createWatchTaskEnvelope(
   sourceTasks: Task[],
   sessionsByTaskId: Record<string, TaskSession | undefined>,
   activeTaskId?: string,
-  options: TaskBuildOptions & { archivedTaskIds?: Set<string> } = {},
+  options: TaskBuildOptions & {
+    archivedTaskIds?: Set<string>;
+    isAuthenticated?: boolean;
+  } = {},
 ): WatchTaskEnvelope {
   const now = options.now ?? Date.now();
   const taskSnapshots = sourceTasks
@@ -627,6 +630,7 @@ export function createWatchTaskEnvelope(
   return {
     schemaVersion: 1,
     generatedAt: now,
+    isAuthenticated: options.isAuthenticated ?? true,
     activeTaskId: taskSnapshots.find(
       (snapshot) => snapshot.taskId === activeTaskId,
     )?.id,

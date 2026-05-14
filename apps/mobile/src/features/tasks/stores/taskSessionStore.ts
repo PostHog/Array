@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { Alert, AppState, Linking } from "react-native";
 import { create } from "zustand";
+import { useAuthStore } from "@/features/auth/stores/authStore";
 import { presentLocalNotification } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { logger } from "@/lib/logger";
@@ -289,6 +290,7 @@ interface TaskSessionStore {
     value: string,
   ) => Promise<void>;
   getSessionForTask: (taskId: string) => TaskSession | undefined;
+  publishWatchSnapshot: (options?: { urgent?: boolean }) => void;
 
   _handleCloudUpdate: (
     taskRunId: string,
@@ -330,7 +332,10 @@ function buildWatchTaskEnvelopeFromStore() {
     visibleTasks,
     sessionsByTaskId,
     visibleActiveTaskId,
-    { archivedTaskIds: new Set(Object.keys(archivedTasks)) },
+    {
+      archivedTaskIds: new Set(Object.keys(archivedTasks)),
+      isAuthenticated: useAuthStore.getState().isAuthenticated,
+    },
   );
 }
 
@@ -848,11 +853,19 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         useArchivedTasksStore.getState().unarchive(command.taskId);
         scheduleWatchTaskPublish({ urgent: true });
         break;
+      case "create_task":
+        await Linking.openURL("posthog://task");
+        break;
     }
   },
 
   getSessionForTask: (taskId: string) => {
     return Object.values(get().sessions).find((s) => s.taskId === taskId);
+  },
+
+  publishWatchSnapshot: (options) => {
+    ensureWatchCommandSubscription();
+    scheduleWatchTaskPublish(options);
   },
 
   _startWatcher: (taskRunId: string, taskId: string) => {

@@ -101,7 +101,9 @@ struct TasksRootView: View {
 
     var body: some View {
         NavigationStack {
-            if store.tasks.isEmpty {
+            if store.envelope?.isAuthenticated == false {
+                SignedOutWatchView(state: store.connectionState)
+            } else if store.tasks.isEmpty {
                 EmptyTasksView(state: store.connectionState)
             } else {
                 List {
@@ -162,31 +164,62 @@ struct TasksRootView: View {
     }
 }
 
-struct EmptyTasksView: View {
-    @EnvironmentObject private var store: WatchTaskStore
+struct ConnectivityIndicator: View {
+    let state: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(state == "Live" || state == "Connected" || state == "Cached" ? .green : .orange)
+                .frame(width: 6, height: 6)
+            Text(state)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct SignedOutWatchView: View {
     let state: String
 
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: "antenna.radiowaves.left.and.right")
+            ConnectivityIndicator(state: state)
+            Image(systemName: "iphone.and.arrow.forward")
                 .font(.title2)
                 .foregroundStyle(accent)
-            Text("Tasks").font(.headline)
-            Text(state).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            Text("Start or open a PostHog Code task on iPhone or Mac.")
+            Text("Sign in on iPhone").font(.headline)
+            Text("Open the PostHog app on your iPhone and log in to sync tasks to your watch.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .padding()
     }
+}
 
-    private func sendPing() {
-        store.send(command: WatchTaskCommand(id: UUID().uuidString, type: "debug_ping", taskId: "debug", taskRunId: nil, toolCallId: nil, optionId: nil, displayText: "Ping from Apple Watch", answers: nil, customInput: nil, url: nil))
+struct EmptyTasksView: View {
+    @EnvironmentObject private var store: WatchTaskStore
+    let state: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ConnectivityIndicator(state: state)
+            Text("✨").font(.title2)
+            Text("No tasks yet").font(.headline)
+            Text("Create your first task to get PostHog working.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Create task") { createTask() }
+                .buttonStyle(.borderedProminent)
+                .tint(accent)
+        }
+        .padding()
     }
 
-    private func requestSnapshot() {
-        store.send(command: WatchTaskCommand(id: UUID().uuidString, type: "debug_request_snapshot", taskId: "debug", taskRunId: nil, toolCallId: nil, optionId: nil, displayText: "Request snapshot from Apple Watch", answers: nil, customInput: nil, url: nil))
+    private func createTask() {
+        store.send(command: WatchTaskCommand(id: UUID().uuidString, type: "create_task", taskId: "new", taskRunId: nil, toolCallId: nil, optionId: nil, displayText: nil, answers: nil, customInput: nil, url: nil))
     }
 }
 

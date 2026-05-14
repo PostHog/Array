@@ -108,6 +108,9 @@ export function TaskList({
   const registerWatchTask = useTaskSessionStore(
     (state) => state.registerWatchTask,
   );
+  const publishWatchSnapshot = useTaskSessionStore(
+    (state) => state.publishWatchSnapshot,
+  );
   const organizeMode = useTaskStore((s) => s.organizeMode);
   const sortMode = useTaskStore((s) => s.sortMode);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
@@ -115,9 +118,10 @@ export function TaskList({
 
   useEffect(() => {
     for (const task of tasks) {
-      if (!(task.id in archivedTasks)) registerWatchTask(task);
+      registerWatchTask(task);
     }
-  }, [tasks, archivedTasks, registerWatchTask]);
+    publishWatchSnapshot({ urgent: true });
+  }, [tasks, registerWatchTask, publishWatchSnapshot]);
 
   const handleTaskPress = (task: Task) => {
     onTaskPress?.(task.id);

@@ -258,6 +258,7 @@ export interface WatchTaskSnapshot {
 export interface WatchTaskEnvelope {
   schemaVersion: 1;
   generatedAt: number;
+  isAuthenticated: boolean;
   activeTaskId?: string;
   tasks: WatchTaskSnapshot[];
 }
@@ -293,7 +294,8 @@ export type WatchTaskCommand =
         | "open_mac"
         | "view_diff"
         | "archive"
-        | "restore";
+        | "restore"
+        | "create_task";
       url?: string;
     });
 
