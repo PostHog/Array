@@ -6,7 +6,7 @@ import { useNavDrawerStore } from "@/features/navigation/stores/navDrawerStore";
 import { useThemeColors } from "@/lib/theme";
 
 const HOME_ROUTE = "/tasks";
-const TAB_ROUTES = new Set(["/", "/tasks", "/inbox", "/automations"]);
+const TAB_ROUTES = new Set(["/tasks", "/inbox", "/automations"]);
 
 export default function TabsLayout() {
   const themeColors = useThemeColors();
@@ -50,7 +50,6 @@ export default function TabsLayout() {
         <Stack.Screen name="tasks" />
         <Stack.Screen name="inbox" />
         <Stack.Screen name="automations" />
-        <Stack.Screen name="index" />
       </Stack>
       <NavDrawer />
     </View>

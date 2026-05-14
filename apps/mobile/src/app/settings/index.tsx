@@ -83,8 +83,6 @@ export default function SettingsScreen() {
   const { logout, cloudRegion, getCloudUrlFromRegion } = useAuthStore();
   const { data: userData } = useUserQuery();
 
-  const aiChatEnabled = usePreferencesStore((s) => s.aiChatEnabled);
-  const setAiChatEnabled = usePreferencesStore((s) => s.setAiChatEnabled);
   const pingsEnabled = usePreferencesStore((s) => s.pingsEnabled);
   const setPingsEnabled = usePreferencesStore((s) => s.setPingsEnabled);
   const pushNotificationsEnabled = usePreferencesStore(
@@ -260,21 +258,6 @@ export default function SettingsScreen() {
                 </Text>
                 <CaretRight size={14} color={themeColors.gray[10]} />
               </>
-            }
-          />
-        </SettingsSection>
-
-        {/* Labs */}
-        <SettingsSection
-          title="Labs"
-          description="Experimental features — may break, may change"
-        >
-          <SettingsRow
-            label="PostHog AI chat"
-            description="Show the Chats tab for PostHog AI conversations"
-            showDivider={false}
-            rightSlot={
-              <Switch value={aiChatEnabled} onValueChange={setAiChatEnabled} />
             }
           />
         </SettingsSection>

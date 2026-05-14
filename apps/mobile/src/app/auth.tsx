@@ -52,7 +52,7 @@ export default function AuthScreen() {
       next.startsWith("/") &&
       !next.startsWith("/auth")
         ? next
-        : "/(tabs)";
+        : "/(tabs)/tasks";
     router.replace(target);
   }, [next]);
 

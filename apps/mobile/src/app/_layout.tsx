@@ -33,7 +33,6 @@ interface RootLayoutNavProps {
 function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   const { isLoading, initializeAuth } = useAuthStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const aiChatEnabled = usePreferencesStore((s) => s.aiChatEnabled);
   const themeColors = useThemeColors();
   const pathname = usePathname();
 
@@ -82,15 +81,6 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="auth" options={{ headerShown: false }} />
       <Stack.Screen name="index" options={{ headerShown: false }} />
-
-      {/* Chat routes - only registered when AI chat feature is enabled.
-          Screens use a FloatingBackButton instead of the native header. */}
-      {aiChatEnabled && (
-        <>
-          <Stack.Screen name="chat/index" options={{ headerShown: false }} />
-          <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
-        </>
-      )}
 
       {/* Tinder-style inbox review */}
       <Stack.Screen name="review" options={{ headerShown: false }} />
