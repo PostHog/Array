@@ -1,4 +1,5 @@
 import { createElement } from "react";
+import { TextInput } from "react-native";
 import { act, create } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
@@ -43,10 +44,15 @@ vi.mock("./ScheduleEditor", () => ({
     createElement("ScheduleEditor", props),
 }));
 
+vi.mock("@/features/chat/components/MarkdownText", () => ({
+  MarkdownText: (props: Record<string, unknown>) =>
+    createElement("MarkdownText", props),
+}));
+
 import { AutomationForm } from "./AutomationForm";
 
 describe("AutomationForm", () => {
-  it("submits repo-optional templates without repository context", async () => {
+  it("submits successfully when repository selection is optional", async () => {
     mockUseIntegrations.mockReturnValue({
       error: null,
       hasGithubIntegration: null,
@@ -138,6 +144,45 @@ describe("AutomationForm", () => {
 
     expect(renderer.root.findAllByType("GitHubConnectionPrompt")).toHaveLength(
       1,
+    );
+  });
+
+  it("renders markdown preview when the prompt starts in preview mode", () => {
+    mockUseIntegrations.mockReturnValue({
+      error: null,
+      hasGithubIntegration: null,
+      repositoryOptions: [],
+      repositoryWarning: null,
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+    let renderer: ReturnType<typeof create> | null = null;
+
+    act(() => {
+      renderer = create(
+        createElement(AutomationForm, {
+          initialValues: {
+            name: "Daily brief",
+            prompt: "## Summary\n- Check PRs",
+            timezone: "UTC",
+            enabled: true,
+          },
+          initialPromptMode: "preview",
+          isSubmitting: false,
+          submitLabel: "Create automation",
+          repositoryRequired: false,
+          onSubmit: vi.fn(),
+        }),
+      );
+    });
+
+    if (!renderer) {
+      throw new Error("Renderer not created");
+    }
+
+    expect(renderer.root.findAllByType(TextInput)).toHaveLength(1);
+    expect(renderer.root.findByType("MarkdownText").props.content).toBe(
+      "## Summary\n- Check PRs",
     );
   });
 

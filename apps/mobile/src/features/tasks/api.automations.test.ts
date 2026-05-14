@@ -35,7 +35,7 @@ const automationPayload = {
   github_integration: 7,
   cron_expression: "0 9 * * *",
   timezone: "Europe/London",
-  template_id: "developer-morning-brief",
+  template_id: "llm-skill:shared-daily-brief",
   enabled: true,
   last_run_at: null,
   last_run_status: null,
@@ -88,7 +88,7 @@ describe("task automation api", () => {
       cron_expression: "0 9 * * *",
       timezone: "Europe/London",
       enabled: true,
-      template_id: "developer-morning-brief",
+      template_id: "llm-skill:shared-daily-brief",
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -103,36 +103,34 @@ describe("task automation api", () => {
           cron_expression: "0 9 * * *",
           timezone: "Europe/London",
           enabled: true,
-          template_id: "developer-morning-brief",
+          template_id: "llm-skill:shared-daily-brief",
         }),
       }),
     );
   });
 
-  it("serializes repo-optional template creation payloads with an empty repository", async () => {
+  it("serializes skill-backed automation payloads with a prefixed template id", async () => {
     mockFetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
           ...automationPayload,
           id: "automation-2",
-          name: "PM pulse",
-          repository: "",
-          github_integration: null,
-          template_id: "pm-product-pulse",
+          name: "Shared daily brief",
+          template_id: "llm-skill:shared-daily-brief",
         }),
         { status: 200 },
       ),
     );
 
     await createTaskAutomation({
-      name: "PM pulse",
+      name: "Shared daily brief",
       prompt: "Summarize feature usage for my product areas.",
-      repository: "",
-      github_integration: null,
+      repository: "posthog/posthog",
+      github_integration: 7,
       cron_expression: "0 8 * * 1-5",
       timezone: "America/New_York",
       enabled: true,
-      template_id: "pm-product-pulse",
+      template_id: "llm-skill:shared-daily-brief",
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -140,14 +138,14 @@ describe("task automation api", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          name: "PM pulse",
+          name: "Shared daily brief",
           prompt: "Summarize feature usage for my product areas.",
-          repository: "",
-          github_integration: null,
+          repository: "posthog/posthog",
+          github_integration: 7,
           cron_expression: "0 8 * * 1-5",
           timezone: "America/New_York",
           enabled: true,
-          template_id: "pm-product-pulse",
+          template_id: "llm-skill:shared-daily-brief",
         }),
       }),
     );
@@ -193,7 +191,7 @@ describe("task automation api", () => {
     });
   });
 
-  it("surfaces repo-optional template validation failures without losing backend attr info", async () => {
+  it("surfaces skill-backed validation failures without losing backend attr info", async () => {
     mockFetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -208,14 +206,14 @@ describe("task automation api", () => {
 
     await expect(
       createTaskAutomation({
-        name: "PM pulse",
+        name: "Shared daily brief",
         prompt: "Summarize feature usage for my product areas.",
         repository: "",
         github_integration: null,
         cron_expression: "0 8 * * 1-5",
         timezone: "America/New_York",
         enabled: true,
-        template_id: "pm-product-pulse",
+        template_id: "llm-skill:shared-daily-brief",
       }),
     ).rejects.toMatchObject({
       attr: "repository",

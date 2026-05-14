@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 import { queryClient } from "@/lib/queryClient";
 import {
   getCloudUrlFromRegion,
+  OAUTH_SCOPE_VERSION,
   OAUTH_SCOPES,
   TOKEN_REFRESH_BUFFER_MS,
 } from "../lib/constants";
@@ -44,6 +45,19 @@ interface AuthState {
 }
 
 let refreshTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+function buildStoredTokens(args: {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  cloudRegion: CloudRegion;
+  scopedTeams?: number[];
+}): StoredTokens {
+  return {
+    ...args,
+    scopeVersion: OAUTH_SCOPE_VERSION,
+  };
+}
 
 function maybeRegisterPushToken(): void {
   if (!usePreferencesStore.getState().pushNotificationsEnabled) return;
@@ -90,13 +104,13 @@ export const useAuthStore = create<AuthState>()(
           throw new Error("No team found in OAuth scopes");
         }
 
-        const storedTokens: StoredTokens = {
+        const storedTokens = buildStoredTokens({
           accessToken: tokenResponse.access_token,
           refreshToken: tokenResponse.refresh_token,
           expiresAt,
           cloudRegion: region,
           scopedTeams: tokenResponse.scoped_teams,
-        };
+        });
 
         // Save tokens securely
         await saveTokens(storedTokens);
@@ -128,13 +142,13 @@ export const useAuthStore = create<AuthState>()(
           throw new Error("Valid project ID is required");
         }
 
-        const storedTokens: StoredTokens = {
+        const storedTokens = buildStoredTokens({
           accessToken: trimmed,
           refreshToken: "",
           expiresAt: Number.MAX_SAFE_INTEGER,
           cloudRegion: region,
           scopedTeams: [projectId],
-        };
+        });
 
         await saveTokens(storedTokens);
 
@@ -165,13 +179,13 @@ export const useAuthStore = create<AuthState>()(
         const expiresAt = Date.now() + tokenResponse.expires_in * 1000;
         const projectId = tokenResponse.scoped_teams?.[0] || state.projectId;
 
-        const storedTokens: StoredTokens = {
+        const storedTokens = buildStoredTokens({
           accessToken: tokenResponse.access_token,
           refreshToken: tokenResponse.refresh_token,
           expiresAt,
           cloudRegion: state.cloudRegion,
           scopedTeams: tokenResponse.scoped_teams,
-        };
+        });
 
         // Save tokens securely
         await saveTokens(storedTokens);
@@ -230,6 +244,21 @@ export const useAuthStore = create<AuthState>()(
             return false;
           }
 
+          if (tokens.scopeVersion !== OAUTH_SCOPE_VERSION) {
+            await deleteTokens();
+            queryClient.clear();
+            set({
+              oauthAccessToken: null,
+              oauthRefreshToken: null,
+              tokenExpiry: null,
+              cloudRegion: null,
+              projectId: null,
+              isLoading: false,
+              isAuthenticated: false,
+            });
+            return false;
+          }
+
           const now = Date.now();
           const isExpired = tokens.expiresAt <= now;
 
@@ -247,7 +276,16 @@ export const useAuthStore = create<AuthState>()(
             } catch (error) {
               logger.error("Failed to refresh expired token:", error);
               await deleteTokens();
-              set({ isLoading: false, isAuthenticated: false });
+              queryClient.clear();
+              set({
+                oauthAccessToken: null,
+                oauthRefreshToken: null,
+                tokenExpiry: null,
+                cloudRegion: null,
+                projectId: null,
+                isLoading: false,
+                isAuthenticated: false,
+              });
               return false;
             }
           }

@@ -11,7 +11,10 @@ export const OAUTH_SCOPES = [
   "integration:read",
   "conversation:write",
   "query:read",
+  "llm_skill:read",
 ];
+
+export const OAUTH_SCOPE_VERSION = 1;
 
 // Token refresh settings
 export const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000; // 5 minutes before expiry

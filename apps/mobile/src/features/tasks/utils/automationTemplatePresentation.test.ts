@@ -2,31 +2,31 @@ import { describe, expect, it } from "vitest";
 import { getAutomationTemplatePresentation } from "./automationTemplatePresentation";
 
 describe("automationTemplatePresentation", () => {
-  it("prefers repository context when one exists", () => {
+  it("prefers repository context when one exists for skill-backed automations", () => {
     expect(
       getAutomationTemplatePresentation({
         repository: "posthog/posthog",
-        template_id: "developer-morning-brief",
+        template_id: "llm-skill:shared-daily-brief",
       }),
     ).toMatchObject({
-      templateName: "Developer morning briefing",
+      templateName: "shared-daily-brief",
       repositoryLabel: "posthog/posthog",
-      contextLabel: "Developer · Daily briefing",
+      contextLabel: "Skill store",
       secondaryLabel: "posthog/posthog",
     });
   });
 
-  it("falls back to template context for repo-optional automations", () => {
+  it("falls back to skill-store context when no repository is present", () => {
     expect(
       getAutomationTemplatePresentation({
         repository: "",
-        template_id: "pm-product-pulse",
+        template_id: "llm-skill:shared-daily-brief",
       }),
     ).toMatchObject({
-      templateName: "PM product pulse",
+      templateName: "shared-daily-brief",
       repositoryLabel: null,
-      contextLabel: "PM · Daily briefing",
-      secondaryLabel: "PM · Daily briefing",
+      contextLabel: "Skill store",
+      secondaryLabel: "Skill store",
     });
   });
 

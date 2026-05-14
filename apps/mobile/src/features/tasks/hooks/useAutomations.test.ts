@@ -112,7 +112,7 @@ const automationPayload = {
   github_integration: 7,
   cron_expression: "0 9 * * *",
   timezone: "Europe/London",
-  template_id: "developer-morning-brief",
+  template_id: "llm-skill:shared-daily-brief",
   enabled: true,
   last_run_at: null,
   last_run_status: null,
@@ -200,7 +200,7 @@ describe("useAutomations", () => {
         github_integration: 7,
         cron_expression: "0 9 * * *",
         timezone: "Europe/London",
-        template_id: "developer-morning-brief",
+        template_id: "llm-skill:shared-daily-brief",
       });
     });
 
@@ -211,7 +211,7 @@ describe("useAutomations", () => {
       github_integration: 7,
       cron_expression: "0 9 * * *",
       timezone: "Europe/London",
-      template_id: "developer-morning-brief",
+      template_id: "llm-skill:shared-daily-brief",
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: automationKeys.lists(),
@@ -254,7 +254,7 @@ describe("useAutomations", () => {
     ).toMatchObject({
       enabled: false,
       cron_expression: "30 14 * * *",
-      template_id: "developer-morning-brief",
+      template_id: "llm-skill:shared-daily-brief",
     });
     unmount();
   });
@@ -273,13 +273,13 @@ describe("useAutomations", () => {
 
     await expect(
       result.current.mutateAsync({
-        name: "PM pulse",
+        name: "Shared daily brief",
         prompt: "Summarize feature usage for my product areas.",
         repository: "",
         github_integration: null,
         cron_expression: "0 8 * * 1-5",
         timezone: "America/New_York",
-        template_id: "pm-product-pulse",
+        template_id: "llm-skill:shared-daily-brief",
       }),
     ).rejects.toThrow("Repository is still required for this template.");
 

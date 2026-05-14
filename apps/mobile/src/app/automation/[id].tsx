@@ -20,7 +20,7 @@ import {
   useUpdateTaskAutomation,
 } from "@/features/tasks/hooks/useAutomations";
 import { useTask } from "@/features/tasks/hooks/useTasks";
-import { getAutomationTemplate } from "@/features/tasks/templates/automationTemplates";
+import { parseSkillTemplateId } from "@/features/tasks/skills/skillTemplateIds";
 import { useThemeColors } from "@/lib/theme";
 
 export default function AutomationDetailScreen() {
@@ -38,12 +38,9 @@ export default function AutomationDetailScreen() {
     message: string | null;
   } | null>(null);
   const [generalError, setGeneralError] = useState<string | null>(null);
-  const automationTemplate = automation
-    ? getAutomationTemplate(automation.template_id)
-    : null;
   const repositoryRequired = automation
-    ? (automationTemplate?.requiresRepository ??
-      automation.repository.trim().length > 0)
+    ? parseSkillTemplateId(automation.template_id) !== null ||
+      automation.repository.trim().length > 0
     : true;
 
   if (error || (!automation && !isLoading)) {

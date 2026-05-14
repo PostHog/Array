@@ -1,7 +1,7 @@
 import { Stack, useRouter } from "expo-router";
 import { ScrollView, View } from "react-native";
 import { Text } from "@/components/text";
-import { AutomationTemplateGallery } from "@/features/tasks/components/AutomationTemplateGallery";
+import { AutomationSkillChooser } from "@/features/tasks/components/AutomationSkillChooser";
 import { useThemeColors } from "@/lib/theme";
 
 export default function AutomationTemplateScreen() {
@@ -13,7 +13,7 @@ export default function AutomationTemplateScreen() {
       <Stack.Screen
         options={{
           headerShown: true,
-          headerTitle: "Choose a template",
+          headerTitle: "Create automation",
           headerStyle: { backgroundColor: themeColors.background },
           headerTintColor: themeColors.gray[12],
           presentation: "modal",
@@ -24,21 +24,21 @@ export default function AutomationTemplateScreen() {
         contentContainerStyle={{ paddingBottom: 40 }}
       >
         <View className="gap-4">
-          <View className="rounded-xl bg-gray-2 px-4 py-4">
+          <View>
             <Text className="font-semibold text-[16px] text-gray-12">
-              Start with a template
+              Choose how to start
             </Text>
             <Text className="mt-2 text-gray-11 text-sm">
-              Pick a daily briefing template, tweak the prompt and schedule,
-              then save it as an automation.
+              Start from scratch, or pick a shared skill from the store and
+              tailor it before saving.
             </Text>
           </View>
 
-          <AutomationTemplateGallery
-            onSelectTemplate={(templateId) =>
+          <AutomationSkillChooser
+            onSelectSkill={(skillName) =>
               router.push({
                 pathname: "/automation/create",
-                params: { templateId },
+                params: { skillName },
               })
             }
             onCreateCustom={() => router.push("/automation/create")}

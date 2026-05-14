@@ -121,7 +121,7 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
         options={{
           presentation: "modal",
           headerShown: true,
-          title: "Choose a template",
+          title: "Create automation",
           headerStyle: { backgroundColor: themeColors.background },
           headerTintColor: themeColors.gray[12],
         }}

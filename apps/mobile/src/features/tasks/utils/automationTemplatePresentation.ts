@@ -1,4 +1,4 @@
-import { getAutomationTemplate } from "../templates/automationTemplates";
+import { parseSkillTemplateId } from "../skills/skillTemplateIds";
 import type { TaskAutomation } from "../types";
 
 export interface AutomationTemplatePresentation {
@@ -12,14 +12,12 @@ export function getAutomationTemplatePresentation(
   automation: Pick<TaskAutomation, "repository" | "template_id">,
 ): AutomationTemplatePresentation {
   const repositoryLabel = automation.repository.trim() || null;
-  const template = getAutomationTemplate(automation.template_id);
-  const contextLabel = template
-    ? `${template.audienceLabel} · ${template.categoryLabel}`
-    : null;
+  const skillName = parseSkillTemplateId(automation.template_id);
+  const contextLabel = skillName ? "Skill store" : null;
 
   return {
     templateName:
-      template?.name ?? (automation.template_id ? "Template automation" : null),
+      skillName ?? (automation.template_id ? "Template automation" : null),
     repositoryLabel,
     contextLabel,
     secondaryLabel: repositoryLabel ?? contextLabel ?? "No repository context",

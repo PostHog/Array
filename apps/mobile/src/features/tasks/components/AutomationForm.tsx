@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { useThemeColors } from "@/lib/theme";
 import { useIntegrations } from "../hooks/useIntegrations";
 import type {
@@ -45,6 +46,7 @@ interface AutomationFormProps {
   onSubmit: (values: CreateTaskAutomationOptions) => Promise<void> | void;
   onCancel?: () => void;
   repositoryRequired?: boolean;
+  initialPromptMode?: "edit" | "preview";
 }
 
 export function AutomationForm({
@@ -56,6 +58,7 @@ export function AutomationForm({
   onSubmit,
   onCancel,
   repositoryRequired = true,
+  initialPromptMode = "edit",
 }: AutomationFormProps) {
   const themeColors = useThemeColors();
   const {
@@ -87,6 +90,9 @@ export function AutomationForm({
     !!initialValues?.name?.trim(),
   );
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+  const [promptMode, setPromptMode] = useState<"edit" | "preview">(
+    initialPromptMode,
+  );
 
   useEffect(() => {
     if (hasEditedName) {
@@ -232,15 +238,52 @@ export function AutomationForm({
         >
           Prompt
         </Text>
-        <TextInput
-          className="min-h-[128px] rounded-xl border border-gray-5 bg-background px-3.5 py-3 text-[15px] text-gray-12"
-          placeholder="What should this automation ask the agent to do?"
-          placeholderTextColor={themeColors.gray[9]}
-          value={prompt}
-          onChangeText={setPrompt}
-          multiline
-          textAlignVertical="top"
-        />
+        <View className="mb-2 flex-row gap-2">
+          {(["edit", "preview"] as const).map((mode) => {
+            const active = promptMode === mode;
+
+            return (
+              <Pressable
+                key={mode}
+                onPress={() => setPromptMode(mode)}
+                className={`rounded-lg border px-3 py-2 ${
+                  active
+                    ? "border-accent-9 bg-accent-3"
+                    : "border-gray-5 bg-background"
+                }`}
+              >
+                <Text
+                  className={`font-medium text-[13px] ${
+                    active ? "text-accent-11" : "text-gray-11"
+                  }`}
+                >
+                  {mode === "edit" ? "Edit" : "Preview"}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {promptMode === "edit" ? (
+          <TextInput
+            className="min-h-[128px] rounded-xl border border-gray-5 bg-background px-3.5 py-3 text-[15px] text-gray-12"
+            placeholder="What should this automation ask the agent to do?"
+            placeholderTextColor={themeColors.gray[9]}
+            value={prompt}
+            onChangeText={setPrompt}
+            multiline
+            textAlignVertical="top"
+          />
+        ) : (
+          <View className="min-h-[128px] rounded-xl border border-gray-5 bg-background px-3.5 py-3">
+            {prompt.trim() ? (
+              <MarkdownText content={prompt} />
+            ) : (
+              <Text className="text-gray-9 text-sm">
+                Nothing to preview yet.
+              </Text>
+            )}
+          </View>
+        )}
         {validationErrors.prompt && (
           <Text className="mt-1 text-status-error text-xs">
             {validationErrors.prompt}

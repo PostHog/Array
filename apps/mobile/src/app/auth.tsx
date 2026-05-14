@@ -196,7 +196,8 @@ export default function AuthScreen() {
               <Text className="text-gray-11 text-xs">
                 Skips OAuth. Create a personal API key at Settings → User API
                 keys with scopes: user:read, project:read, task:write,
-                integration:read, conversation:write, query:read.
+                integration:read, conversation:write, query:read,
+                llm_skill:read.
               </Text>
               <TextInput
                 value={devToken}
