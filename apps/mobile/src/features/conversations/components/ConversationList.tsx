@@ -25,11 +25,18 @@ export function ConversationList({
     onConversationPress?.(conversation);
   };
 
+  const handleRetry = () => {
+    void refetch();
+  };
+
   if (error) {
     return (
       <View className="flex-1 items-center justify-center p-6">
         <Text className="mb-4 text-center text-status-error">{error}</Text>
-        <Pressable onPress={refetch} className="rounded-lg bg-gray-3 px-4 py-2">
+        <Pressable
+          onPress={handleRetry}
+          className="rounded-lg bg-gray-3 px-4 py-2"
+        >
           <Text className="text-gray-12">Retry</Text>
         </Pressable>
       </View>
@@ -69,7 +76,7 @@ export function ConversationList({
       refreshControl={
         <RefreshControl
           refreshing={isLoading}
-          onRefresh={refetch}
+          onRefresh={handleRetry}
           tintColor={themeColors.accent[9]}
         />
       }

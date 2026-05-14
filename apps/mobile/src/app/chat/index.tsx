@@ -1,16 +1,14 @@
 import { Text } from "@components/text";
-import { Stack } from "expo-router";
 import { useCallback } from "react";
-import { TouchableOpacity } from "react-native";
+import { Pressable } from "react-native";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FloatingBackButton } from "@/components/FloatingBackButton";
 import { Composer, MessagesList, useChatStore } from "@/features/chat";
-import { useThemeColors } from "@/lib/theme";
 
 export default function NewChatScreen() {
   const insets = useSafeAreaInsets();
-  const themeColors = useThemeColors();
   const { thread, streamingActive, askMax, stopGeneration, resetThread } =
     useChatStore();
 
@@ -20,24 +18,6 @@ export default function NewChatScreen() {
     },
     [askMax],
   );
-
-  const headerRight = useCallback(() => {
-    if (streamingActive) {
-      return (
-        <TouchableOpacity onPress={stopGeneration} className="px-2">
-          <Text className="font-medium text-status-error">Stop</Text>
-        </TouchableOpacity>
-      );
-    }
-    if (thread.length > 0) {
-      return (
-        <TouchableOpacity onPress={resetThread} className="px-2">
-          <Text className="font-medium text-accent-9">New</Text>
-        </TouchableOpacity>
-      );
-    }
-    return null;
-  }, [streamingActive, thread.length, stopGeneration, resetThread]);
 
   const { height } = useReanimatedKeyboardAnimation();
 
@@ -56,38 +36,40 @@ export default function NewChatScreen() {
   }, [insets.bottom]);
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          headerTitle: "Chat",
-          headerBackTitle: "Back",
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.gray[12],
-          headerTitleStyle: {
-            fontWeight: "600",
-          },
-          headerRight,
+    <Animated.View className="flex-1 bg-background" style={contentPosition}>
+      <FloatingBackButton />
+      {/* Top-right Stop / New action that used to live in the header. */}
+      {(streamingActive || thread.length > 0) && (
+        <Pressable
+          onPress={streamingActive ? stopGeneration : resetThread}
+          className="absolute right-3 z-10 px-2 py-1.5"
+          style={{ top: insets.top + 10 }}
+        >
+          <Text
+            className={`font-medium text-[13px] ${
+              streamingActive ? "text-status-error" : "text-accent-9"
+            }`}
+          >
+            {streamingActive ? "Stop" : "New"}
+          </Text>
+        </Pressable>
+      )}
+      <MessagesList
+        messages={thread}
+        contentContainerStyle={{
+          paddingTop: insets.top + 56,
+          paddingBottom: 16,
+          flexGrow: thread.length === 0 ? 1 : undefined,
         }}
       />
-      <Animated.View className="flex-1 bg-background" style={contentPosition}>
-        <MessagesList
-          messages={thread}
-          contentContainerStyle={{
-            paddingTop: 80 + insets.bottom,
-            paddingBottom: 16,
-            flexGrow: thread.length === 0 ? 1 : undefined,
-          }}
-        />
 
-        {/* Fixed input at bottom */}
-        <Animated.View
-          className="absolute inset-x-0 bottom-0"
-          style={inputContainerStyle}
-        >
-          <Composer onSend={handleSend} disabled={streamingActive} />
-        </Animated.View>
+      {/* Fixed input at bottom */}
+      <Animated.View
+        className="absolute inset-x-0 bottom-0"
+        style={inputContainerStyle}
+      >
+        <Composer onSend={handleSend} disabled={streamingActive} />
       </Animated.View>
-    </>
+    </Animated.View>
   );
 }

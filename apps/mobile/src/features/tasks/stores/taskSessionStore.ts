@@ -1,28 +1,33 @@
 import * as Haptics from "expo-haptics";
-import * as Linking from "expo-linking";
-import { Alert, AppState } from "react-native";
+import { Alert, AppState, Linking } from "react-native";
 import { create } from "zustand";
+import { presentLocalNotification } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { logger } from "@/lib/logger";
 import {
   CloudCommandError,
-  fetchS3Logs,
   getTask,
-  getTaskRun,
   runTaskInCloud,
   sendCloudCommand,
 } from "../api";
-import type {
-  SessionEvent,
-  SessionNotification,
-  StoredLogEntry,
-  Task,
-  WatchMissionCommand,
-} from "../types";
+import { buildCloudPromptBlocks } from "../composer/attachments/buildCloudPrompt";
+import { serializeCloudPrompt } from "../composer/attachments/cloudPrompt";
+import type { PendingAttachment } from "../composer/attachments/types";
 import {
-  convertRawEntriesToEvents,
-  parseSessionLogs,
-} from "../utils/parseSessionLogs";
+  type WatchCloudTaskHandle,
+  watchCloudTask,
+} from "../lib/cloudTaskStream";
+import {
+  type CloudTaskUpdatePayload,
+  isTerminalStatus,
+  type SessionEvent,
+  type SessionNotification,
+  type SessionNotificationAttachment,
+  type StoredLogEntry,
+  type Task,
+  type WatchMissionCommand,
+} from "../types";
+import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
 import { playMeepSound } from "../utils/sounds";
 import { createWatchMissionEnvelope } from "../utils/watchMissionControl";
 import {
@@ -31,62 +36,204 @@ import {
   subscribeToWatchMissionCommands,
 } from "../watchMissionControlBridge";
 import { useArchivedTasksStore } from "./archivedTasksStore";
+import { useAttachmentEchoStore } from "./attachmentEchoStore";
 
-// Infer whether the agent is actively working or idle (waiting for user input).
-// Primary signal: _posthog/turn_complete or _posthog/task_complete in raw log
-// entries. Fallback: session update notification heuristic for older logs.
-function inferAgentIsIdle(
-  rawEntries: StoredLogEntry[],
-  notifications: SessionNotification[],
-): boolean {
-  // Check raw entries for explicit turn/task completion signals
-  for (let i = rawEntries.length - 1; i >= 0; i--) {
-    const method = rawEntries[i].notification?.method;
-    if (
-      method === "_posthog/turn_complete" ||
-      method === "_posthog/task_complete"
-    ) {
-      return true;
-    }
-    // If we hit a client-direction entry (user message), the agent hasn't
-    // completed a turn since the last user input.
-    if (rawEntries[i].direction === "client") break;
-  }
+const log = logger.scope("task-session-store");
 
-  // Fallback: check session update notifications for agent responses
-  for (let i = notifications.length - 1; i >= 0; i--) {
-    const su = notifications[i].update?.sessionUpdate;
-    if (su === "agent_message" || su === "agent_message_chunk") {
-      return true;
+// Match historical `user_message_chunk` events (text-only, as the cloud
+// stores them) against locally-cached attachment echoes by position+text.
+// Echoes are written in send-order; we walk user messages in receive-order
+// and zip them up. Drift (text mismatch at the same index) is treated as a
+// no-op rather than a misattribution.
+function reinjectAttachmentEchoes(
+  taskRunId: string,
+  events: SessionEvent[],
+): void {
+  const echoes = useAttachmentEchoStore.getState().getEchoes(taskRunId);
+  if (echoes.length === 0) return;
+
+  let echoIdx = 0;
+  for (const event of events) {
+    if (echoIdx >= echoes.length) return;
+    if (event.type !== "session_update") continue;
+    const update = event.notification?.update;
+    if (update?.sessionUpdate !== "user_message_chunk") continue;
+    if (update.attachments && update.attachments.length > 0) {
+      echoIdx++;
+      continue;
     }
-    if (
-      su === "user_message_chunk" ||
-      su === "tool_call" ||
-      su === "tool_call_update" ||
-      su === "agent_thought_chunk"
-    ) {
-      return false;
+    const echo = echoes[echoIdx];
+    echoIdx++;
+    if (echo.text === (update.content?.text ?? "")) {
+      update.attachments = echo.attachments;
     }
   }
-  return false;
 }
 
-const CLOUD_POLLING_INTERVAL_MS = 500;
+type LocalNotificationKind =
+  | "turn_complete"
+  | "awaiting_user_input"
+  | "task_failed";
+
+function maybePresentLocalNotification(args: {
+  taskRunId: string;
+  kind: LocalNotificationKind;
+}): void {
+  if (!usePreferencesStore.getState().pushNotificationsEnabled) return;
+
+  const storeState = useTaskSessionStore.getState();
+  const session = storeState.sessions[args.taskRunId];
+  if (!session) return;
+
+  // Skip when the user is actively viewing this task — the UI already
+  // surfaces what changed; an OS banner would be redundant noise.
+  if (storeState.focusedTaskId === session.taskId) return;
+
+  const title = session.taskTitle ?? "PostHog Code";
+  let body: string;
+  switch (args.kind) {
+    case "awaiting_user_input":
+      body = `"${title}" needs your input`;
+      break;
+    case "task_failed":
+      body = `"${title}" failed`;
+      break;
+    default:
+      body = `"${title}" finished`;
+      break;
+  }
+
+  presentLocalNotification({
+    title: "PostHog Code",
+    body,
+    data: { taskId: session.taskId, taskRunId: session.taskRunId },
+  }).catch(() => {});
+}
+
+// Session-update kinds that count as "the agent produced visible output" —
+// once we've seen one of these the connecting/thinking indicator should clear.
+const VISIBLE_AGENT_SESSION_UPDATES = new Set([
+  "agent_message_chunk",
+  "agent_message",
+  "agent_thought_chunk",
+  "tool_call",
+  "tool_call_update",
+]);
+
+// Notification methods that mark the end of an agent turn — clearing
+// isPromptPending so the composer unblocks.
+const TURN_END_METHODS = new Set([
+  "_posthog/turn_complete",
+  "_posthog/task_complete",
+  "_posthog/error",
+  "_posthog/awaiting_user_input",
+]);
+
+interface BatchAnalysis {
+  hasTurnEnd: boolean;
+  hasAwaitingUserInput: boolean;
+  hasError: boolean;
+  hasVisibleAgentOutput: boolean;
+  externalUserMessageCount: number;
+  agentMessageFinalized: boolean;
+}
+
+function analyzeEntries(
+  entries: StoredLogEntry[],
+  localUserEchoes: Set<string>,
+): BatchAnalysis {
+  let hasTurnEnd = false;
+  let hasAwaitingUserInput = false;
+  let hasError = false;
+  let hasVisibleAgentOutput = false;
+  let externalUserMessageCount = 0;
+  let agentMessageFinalized = false;
+
+  for (const entry of entries) {
+    const method = entry.notification?.method;
+    if (method && TURN_END_METHODS.has(method)) {
+      hasTurnEnd = true;
+      if (method === "_posthog/awaiting_user_input") {
+        hasAwaitingUserInput = true;
+      }
+      if (method === "_posthog/error") {
+        hasError = true;
+      }
+    }
+
+    if (
+      entry.type === "notification" &&
+      method === "session/update" &&
+      entry.notification?.params
+    ) {
+      const params = entry.notification.params as SessionNotification;
+      const sessionUpdate = params.update?.sessionUpdate;
+      if (sessionUpdate && VISIBLE_AGENT_SESSION_UPDATES.has(sessionUpdate)) {
+        hasVisibleAgentOutput = true;
+      }
+      if (sessionUpdate === "agent_message") {
+        agentMessageFinalized = true;
+      }
+      if (sessionUpdate === "user_message_chunk") {
+        const text = params.update?.content?.text;
+        if (text && !localUserEchoes.has(text)) {
+          externalUserMessageCount += 1;
+        }
+      }
+    }
+  }
+
+  return {
+    hasTurnEnd,
+    hasAwaitingUserInput,
+    hasError,
+    hasVisibleAgentOutput,
+    externalUserMessageCount,
+    agentMessageFinalized,
+  };
+}
+
+// Strip user_message_chunk entries whose text matches a pending local echo
+// (one match per echo). The echo set is mutated so each echo only cancels
+// one canonical copy.
+function dedupAgainstLocalEchoes(
+  entries: StoredLogEntry[],
+  localUserEchoes: Set<string>,
+): StoredLogEntry[] {
+  if (localUserEchoes.size === 0) return entries;
+  const result: StoredLogEntry[] = [];
+  for (const entry of entries) {
+    if (
+      entry.type === "notification" &&
+      entry.notification?.method === "session/update"
+    ) {
+      const params = entry.notification?.params as SessionNotification;
+      const sessionUpdate = params?.update?.sessionUpdate;
+      if (sessionUpdate === "user_message_chunk") {
+        const text = params?.update?.content?.text;
+        if (text && localUserEchoes.has(text)) {
+          localUserEchoes.delete(text);
+          continue;
+        }
+      }
+    }
+    result.push(entry);
+  }
+  return result;
+}
 
 export interface TaskSession {
   taskRunId: string;
   taskId: string;
+  taskTitle?: string;
   events: SessionEvent[];
   status: "connecting" | "connected" | "disconnected" | "error";
   isPromptPending: boolean;
-  logUrl: string;
-  processedLineCount: number;
-  processedHashes?: Set<string>;
   // Content of user prompts echoed locally (before the agent writes them to
-  // the log). Used by polling to dedup the canonical copy against the echo.
+  // the log). Used to dedup the canonical copy against the echo.
   localUserEchoes?: Set<string>;
-  // Terminal backend status for this run, populated by the status-check
-  // poller so the UI can surface "Run failed" / "Run completed".
+  // Terminal backend status for this run, populated by status updates so the
+  // UI can surface "Run failed" / "Run completed".
   terminalStatus?: "failed" | "completed";
   lastError?: string | null;
   // True when the user initiated work (new task, sendPrompt, resume) and
@@ -94,23 +241,35 @@ export interface TaskSession {
   // to an already-running task to avoid spurious pings.
   awaitingPing?: boolean;
   // True after a user prompt is sent, cleared when the first piece of
-  // agent output (tool call, message, etc.) arrives from polling.
+  // agent output (tool call, message, etc.) arrives.
   awaitingAgentOutput?: boolean;
-  // Timestamp of the last new event received via polling. Used to detect
-  // stale local sessions (desktop stopped syncing).
+  // Timestamp of the last new event received. Used to detect stale local
+  // sessions (desktop stopped syncing).
   lastEventAt?: number;
+  // Maps toolCallId → cloud requestId for routing permission responses. The
+  // cloud's permission_response command requires the requestId it generated
+  // when emitting the original permission_request SSE event; we capture it
+  // here so the response can be routed back to the awaiting tool call.
+  cloudPermissionRequestIds?: Record<string, string>;
 }
 
 interface TaskSessionStore {
   sessions: Record<string, TaskSession>;
+  focusedTaskId: string | null;
   watchMissionTasks: Record<string, Task>;
   activeWatchTaskId?: string;
 
-  connectToTask: (task: Task) => Promise<void>;
-  disconnectFromTask: (taskId: string) => void;
+  setFocusedTaskId: (taskId: string | null) => void;
   setActiveWatchTask: (taskId?: string) => void;
   registerWatchTask: (task: Task) => void;
-  sendPrompt: (taskId: string, prompt: string) => Promise<void>;
+
+  connectToTask: (task: Task) => Promise<void>;
+  disconnectFromTask: (taskId: string) => void;
+  sendPrompt: (
+    taskId: string,
+    prompt: string,
+    attachments?: PendingAttachment[],
+  ) => Promise<void>;
   sendPermissionResponse: (
     taskId: string,
     args: {
@@ -124,10 +283,19 @@ interface TaskSessionStore {
   cancelPrompt: (taskId: string) => Promise<boolean>;
   retryTaskFromWatch: (taskId: string, taskRunId?: string) => Promise<void>;
   handleWatchCommand: (command: WatchMissionCommand) => Promise<void>;
+  setConfigOption: (
+    taskId: string,
+    configId: string,
+    value: string,
+  ) => Promise<void>;
   getSessionForTask: (taskId: string) => TaskSession | undefined;
 
-  _startCloudPolling: (taskRunId: string, logUrl: string) => void;
-  _stopCloudPolling: (taskRunId: string) => void;
+  _handleCloudUpdate: (
+    taskRunId: string,
+    update: CloudTaskUpdatePayload,
+  ) => void;
+  _startWatcher: (taskRunId: string, taskId: string) => void;
+  _stopWatcher: (taskRunId: string) => void;
   _resumeCloudRun: (
     taskId: string,
     previousRunId: string,
@@ -135,62 +303,13 @@ interface TaskSessionStore {
   ) => Promise<void>;
 }
 
-const cloudPollers = new Map<string, ReturnType<typeof setInterval>>();
+const watchHandles = new Map<string, WatchCloudTaskHandle>();
 const connectAttempts = new Set<string>();
-// Guard against overlapping poll ticks — if a fetch takes >500ms, the next
-// interval fires while the previous is still running, causing both to read
-// the same processedLineCount and produce duplicate events.
-const pollInFlight = new Set<string>();
-// Timestamps for when each poll tick started — used to force-clear stuck ticks.
-const pollInFlightSince = new Map<string, number>();
-const POLL_IN_FLIGHT_TIMEOUT_MS = 30_000;
-// Tick counts per task run used to throttle backend task-run status polling.
-const pollTicks = new Map<string, number>();
-// How many S3 polling ticks between each backend task-run status check.
-const STATUS_CHECK_TICK_INTERVAL = 5;
-const WATCH_SNAPSHOT_DEBOUNCE_MS = 250;
-const TRANSIENT_CLOUD_COMMAND_STATUSES = new Set([502, 503, 504]);
-const VISIBLE_AGENT_SESSION_UPDATES = new Set([
-  "agent_message_chunk",
-  "agent_message",
-  "agent_thought_chunk",
-  "tool_call",
-  "tool_call_update",
-]);
 
 let watchPublishTimeout: ReturnType<typeof setTimeout> | null = null;
 let watchPublishUrgent = false;
 let watchCommandUnsubscribe: (() => void) | null = null;
-
-function sessionUpdateType(event: SessionEvent): string | undefined {
-  return event.type === "session_update"
-    ? event.notification.update?.sessionUpdate
-    : undefined;
-}
-
-function isVisibleAgentOutputEvent(event: SessionEvent): boolean {
-  const updateType = sessionUpdateType(event);
-  return !!updateType && VISIBLE_AGENT_SESSION_UPDATES.has(updateType);
-}
-
-function isTransientCloudCommandError(
-  error: unknown,
-): error is CloudCommandError {
-  return (
-    error instanceof CloudCommandError &&
-    TRANSIENT_CLOUD_COMMAND_STATUSES.has(error.status)
-  );
-}
-
-function macTaskUrl(command: {
-  taskId: string;
-  taskRunId?: string;
-  url?: string;
-}) {
-  if (command.url) return command.url;
-  const runPath = command.taskRunId ? `/run/${command.taskRunId}` : "";
-  return `posthog-code://task/${command.taskId}${runPath}`;
-}
+const WATCH_SNAPSHOT_DEBOUNCE_MS = 250;
 
 function buildWatchMissionEnvelopeFromStore() {
   const state = useTaskSessionStore.getState();
@@ -198,6 +317,7 @@ function buildWatchMissionEnvelopeFromStore() {
   for (const session of Object.values(state.sessions)) {
     sessionsByTaskId[session.taskId] = session;
   }
+
   const archivedTasks = useArchivedTasksStore.getState().archivedTasks;
   const visibleTasks = Object.values(state.watchMissionTasks).filter(
     (task) => !(task.id in archivedTasks),
@@ -228,7 +348,7 @@ function scheduleWatchMissionPublish(options: { urgent?: boolean } = {}) {
       ? sendUrgentWatchMissionUpdate(envelope)
       : publishWatchMissionEnvelope(envelope);
     publish.catch((error) => {
-      logger.warn("Failed to publish watch mission envelope", { error });
+      log.warn("Failed to publish watch mission envelope", { error });
     });
   }, WATCH_SNAPSHOT_DEBOUNCE_MS);
 }
@@ -240,7 +360,7 @@ function ensureWatchCommandSubscription() {
       .getState()
       .handleWatchCommand(command)
       .catch((error) => {
-        logger.warn("Failed to handle watch mission command", { error });
+        log.warn("Failed to handle watch mission command", { error });
       });
   });
 }
@@ -260,17 +380,38 @@ useArchivedTasksStore.subscribe((state) => {
   scheduleWatchMissionPublish({ urgent: true });
 });
 
+function macTaskUrl(command: {
+  taskId: string;
+  taskRunId?: string;
+  url?: string;
+}) {
+  if (command.url) return command.url;
+  const runPath = command.taskRunId ? `/run/${command.taskRunId}` : "";
+  return `posthog-code://task/${command.taskId}${runPath}`;
+}
+
+function mapTerminalStatus(
+  status: string | undefined | null,
+): "completed" | "failed" | undefined {
+  if (status === "completed") return "completed";
+  if (status === "failed" || status === "cancelled") return "failed";
+  return undefined;
+}
+
 export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   sessions: {},
+  focusedTaskId: null,
   watchMissionTasks: {},
 
-  setActiveWatchTask: (taskId?: string) => {
+  setFocusedTaskId: (taskId) => set({ focusedTaskId: taskId }),
+
+  setActiveWatchTask: (taskId) => {
     ensureWatchCommandSubscription();
     set({ activeWatchTaskId: taskId });
     scheduleWatchMissionPublish({ urgent: true });
   },
 
-  registerWatchTask: (task: Task) => {
+  registerWatchTask: (task) => {
     ensureWatchCommandSubscription();
     set((state) => ({
       watchMissionTasks: {
@@ -286,132 +427,57 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     get().registerWatchTask(task);
     const taskId = task.id;
     const latestRunId = task.latest_run?.id;
-    const latestRunLogUrl = task.latest_run?.log_url;
 
     if (connectAttempts.has(taskId)) {
-      logger.debug("Connection already in progress", { taskId });
+      log.debug("Connection already in progress", { taskId });
       return;
     }
 
     const existing = get().getSessionForTask(taskId);
     if (existing && existing.status === "connected") {
-      logger.debug("Already connected to task", { taskId });
+      log.debug("Already connected to task", { taskId });
       return;
     }
 
     connectAttempts.add(taskId);
 
     try {
-      if (!latestRunId || !latestRunLogUrl) {
-        logger.debug("Task has no run yet, starting cloud run", { taskId });
-        const updatedTask = await runTaskInCloud(taskId);
-        const newRunId = updatedTask.latest_run?.id;
-        const newLogUrl = updatedTask.latest_run?.log_url;
+      let runId = latestRunId;
+      let awaitingPing = false;
 
-        if (!newRunId || !newLogUrl) {
-          logger.error("Failed to start cloud run");
+      if (!runId) {
+        log.debug("Task has no run yet, starting cloud run", { taskId });
+        const updatedTask = await runTaskInCloud(taskId);
+        runId = updatedTask.latest_run?.id;
+        if (!runId) {
+          log.error("Failed to start cloud run");
           return;
         }
-
-        set((state) => ({
-          watchMissionTasks: {
-            ...state.watchMissionTasks,
-            [taskId]: updatedTask,
-          },
-          sessions: {
-            ...state.sessions,
-            [newRunId]: {
-              taskRunId: newRunId,
-              taskId,
-              events: [],
-              status: "connected",
-              isPromptPending: true,
-              logUrl: newLogUrl,
-              processedLineCount: 0,
-              awaitingPing: true,
-              awaitingAgentOutput: true,
-            },
-          },
-        }));
-        scheduleWatchMissionPublish();
-
-        get()._startCloudPolling(newRunId, newLogUrl);
-        logger.debug("Started new cloud session", {
-          taskId,
-          taskRunId: newRunId,
-        });
-        return;
+        awaitingPing = true;
       }
 
-      logger.debug("Fetching cloud session history from S3", {
-        taskId,
-        latestRunId,
-      });
-      const content = await fetchS3Logs(latestRunLogUrl);
-      const { notifications, rawEntries } = parseSessionLogs(content);
-      logger.debug("Loaded cloud historical logs", {
-        notifications: notifications.length,
-        rawEntries: rawEntries.length,
-        backendStatus: task.latest_run?.status,
-      });
-
-      const historicalEvents = convertRawEntriesToEvents(
-        rawEntries,
-        notifications,
-      );
-
-      // Terminal runs (completed/failed) always clear isPromptPending.
-      // For non-terminal runs we infer idle vs working from the log shape
-      // because the backend has no "waiting_for_input" status.
-      const backendStatus = task.latest_run?.status;
-      const isTerminal =
-        backendStatus === "completed" || backendStatus === "failed";
-      const terminalStatus: "completed" | "failed" | undefined = isTerminal
-        ? (backendStatus as "completed" | "failed")
-        : undefined;
-      const lastError = isTerminal
-        ? (task.latest_run?.error_message ?? null)
-        : null;
-
-      const agentIsIdle = inferAgentIsIdle(rawEntries, notifications);
-      const isPromptPending = isTerminal ? false : !agentIsIdle;
-
       set((state) => ({
-        watchMissionTasks: {
-          ...state.watchMissionTasks,
-          [taskId]: task,
-        },
         sessions: {
           ...state.sessions,
-          [latestRunId]: {
-            taskRunId: latestRunId,
+          [runId]: {
+            taskRunId: runId,
             taskId,
-            events: historicalEvents,
-            status: "connected",
-            isPromptPending,
-            logUrl: latestRunLogUrl,
-            processedLineCount: rawEntries.length,
-            terminalStatus,
-            lastError,
-            // Show "Connecting/Thinking" for active non-terminal runs
-            // that haven't produced visible agent output yet.
-            awaitingAgentOutput:
-              isPromptPending &&
-              !historicalEvents.some(isVisibleAgentOutputEvent),
+            taskTitle: task.title,
+            events: [],
+            status: "connecting",
+            // Assume the run is working until the bootstrap snapshot tells
+            // us otherwise — the SSE watcher will refine these fields.
+            isPromptPending: true,
+            awaitingPing,
+            awaitingAgentOutput: true,
           },
         },
       }));
-      scheduleWatchMissionPublish({ urgent: !!terminalStatus });
 
-      get()._startCloudPolling(latestRunId, latestRunLogUrl);
-      logger.debug("Connected to cloud session", {
-        taskId,
-        latestRunId,
-        backendStatus,
-        isTerminal,
-      });
+      get()._startWatcher(runId, taskId);
+      log.debug("Started SSE watcher", { taskId, runId });
     } catch (error) {
-      logger.error("Failed to connect to task", error);
+      log.error("Failed to connect to task", error);
     } finally {
       connectAttempts.delete(taskId);
     }
@@ -421,30 +487,47 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     const session = get().getSessionForTask(taskId);
     if (!session) return;
 
-    get()._stopCloudPolling(session.taskRunId);
+    get()._stopWatcher(session.taskRunId);
 
     set((state) => {
       const { [session.taskRunId]: _, ...rest } = state.sessions;
       return { sessions: rest };
     });
     scheduleWatchMissionPublish();
-    logger.debug("Disconnected from task", { taskId });
+    log.debug("Disconnected from task", { taskId });
   },
 
-  sendPrompt: async (taskId: string, prompt: string) => {
+  sendPrompt: async (
+    taskId: string,
+    prompt: string,
+    attachments: PendingAttachment[] = [],
+  ) => {
     const session = get().getSessionForTask(taskId);
     if (!session) {
       throw new Error("No active session for task");
     }
 
-    // Mobile is a dumb relay for local runs — always push the message to
-    // the backend and let the desktop decide whether/when to process it.
-    // No local gating, no client-side queueing.
+    // The local echo always shows the plain prompt text in the chat. When
+    // attachments are present we send a structured cloud-prompt blob on the
+    // wire (`__twig_cloud_prompt_v1__:…`) so the agent receives the image
+    // and resource blocks alongside the text.
+    const wirePayload =
+      attachments.length > 0
+        ? serializeCloudPrompt(
+            await buildCloudPromptBlocks(prompt, attachments),
+          )
+        : prompt;
 
-    // Local echo for immediate UX feedback — polling will re-surface the
-    // canonical copy once the agent writes it to the log; any duplicate is
-    // removed by content-based dedup in the polling loop below.
     const ts = Date.now();
+    const echoAttachments: SessionNotificationAttachment[] =
+      attachments.length > 0
+        ? attachments.map((a) => ({
+            kind: a.kind,
+            uri: a.uri,
+            fileName: a.fileName,
+            mimeType: a.mimeType,
+          }))
+        : [];
     const userEvent: SessionEvent = {
       type: "session_update",
       ts,
@@ -452,9 +535,15 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         update: {
           sessionUpdate: "user_message_chunk",
           content: { type: "text", text: prompt },
+          attachments: echoAttachments.length > 0 ? echoAttachments : undefined,
         },
       },
     };
+    if (echoAttachments.length > 0) {
+      useAttachmentEchoStore
+        .getState()
+        .recordEcho(session.taskRunId, prompt, echoAttachments);
+    }
 
     set((state) => {
       const current = state.sessions[session.taskRunId];
@@ -474,22 +563,21 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         },
       };
     });
-    scheduleWatchMissionPublish();
 
     try {
       await sendCloudCommand(taskId, session.taskRunId, "user_message", {
-        content: prompt,
+        content: wirePayload,
       });
-      logger.debug("Sent cloud command user_message", {
+      log.debug("Sent cloud command user_message", {
         taskId,
         runId: session.taskRunId,
       });
     } catch (err) {
-      // Transient server errors (504 gateway timeout, etc.) — the sandbox
-      // may still be alive, just temporarily unreachable.  Roll back so the
-      // user can retry but don't attempt a full resume.
-      if (isTransientCloudCommandError(err)) {
-        logger.warn("Transient server error sending prompt, rolling back", {
+      if (
+        err instanceof CloudCommandError &&
+        (err.status === 504 || err.status === 502 || err.status === 503)
+      ) {
+        log.warn("Transient server error sending prompt, rolling back", {
           status: err.status,
           taskId,
         });
@@ -510,28 +598,24 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             },
           };
         });
-        scheduleWatchMissionPublish();
         throw err;
       }
 
-      // Sandbox for this run has shut down — create a resume run on the
-      // backend and swap the local session to the new run id.
       let rollbackError: unknown = err;
       if (err instanceof CloudCommandError && err.isSandboxInactive()) {
-        logger.info("Sandbox inactive, creating resume run", {
+        log.info("Sandbox inactive, creating resume run", {
           taskId,
           previousRunId: session.taskRunId,
         });
         try {
-          await get()._resumeCloudRun(taskId, session.taskRunId, prompt);
+          await get()._resumeCloudRun(taskId, session.taskRunId, wirePayload);
           return;
         } catch (resumeErr) {
-          logger.error("Failed to resume cloud run", resumeErr);
+          log.error("Failed to resume cloud run", resumeErr);
           rollbackError = resumeErr;
         }
       }
 
-      // Roll back the local echo + pending state so the user can retry.
       set((state) => {
         const current = state.sessions[session.taskRunId];
         if (!current) return state;
@@ -549,16 +633,10 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           },
         };
       });
-      scheduleWatchMissionPublish();
       throw rollbackError;
     }
   },
 
-  // Resolve an outstanding requestPermission on the desktop/agent side
-  // (e.g. AskUserQuestion). Unlike sendPrompt, this never queues — a
-  // permission reply only makes sense while the agent is paused inside
-  // requestPermission, and it completes an existing turn rather than
-  // starting a new one.
   sendPermissionResponse: async (taskId, args) => {
     const session = get().getSessionForTask(taskId);
     if (!session) {
@@ -596,23 +674,48 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         },
       };
     });
-    scheduleWatchMissionPublish();
+
+    // The cloud command requires the requestId it generated when emitting
+    // the permission_request SSE event — toolCallId alone is not sufficient
+    // for routing the response back to the awaiting tool call.
+    const cloudRequestId = session.cloudPermissionRequestIds?.[args.toolCallId];
 
     try {
       await sendCloudCommand(taskId, session.taskRunId, "permission_response", {
+        ...(cloudRequestId ? { requestId: cloudRequestId } : {}),
         toolCallId: args.toolCallId,
         optionId: args.optionId,
         ...(args.answers ? { answers: args.answers } : {}),
         ...(args.customInput ? { customInput: args.customInput } : {}),
       });
-      logger.debug("Sent permission_response", {
+      log.debug("Sent permission_response", {
         taskId,
         runId: session.taskRunId,
         toolCallId: args.toolCallId,
+        requestId: cloudRequestId,
       });
+
+      // One-shot: drop the mapping once we've responded so we don't reuse
+      // it accidentally.
+      if (cloudRequestId) {
+        set((state) => {
+          const current = state.sessions[session.taskRunId];
+          if (!current?.cloudPermissionRequestIds) return state;
+          const next = { ...current.cloudPermissionRequestIds };
+          delete next[args.toolCallId];
+          return {
+            sessions: {
+              ...state.sessions,
+              [session.taskRunId]: {
+                ...current,
+                cloudPermissionRequestIds: next,
+              },
+            },
+          };
+        });
+      }
     } catch (err) {
-      logger.error("Failed to send permission_response", err);
-      // Roll back the optimistic state so the UI reflects reality.
+      log.error("Failed to send permission_response", err);
       set((state) => {
         const current = state.sessions[session.taskRunId];
         if (!current) return state;
@@ -630,7 +733,31 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           },
         };
       });
-      scheduleWatchMissionPublish();
+      throw err;
+    }
+  },
+
+  setConfigOption: async (taskId, configId, value) => {
+    const session = get().getSessionForTask(taskId);
+    if (!session || session.terminalStatus) return;
+
+    try {
+      await sendCloudCommand(taskId, session.taskRunId, "set_config_option", {
+        configId,
+        value,
+      });
+      log.debug("Sent set_config_option", {
+        taskId,
+        runId: session.taskRunId,
+        configId,
+        value,
+      });
+    } catch (err) {
+      log.warn("Failed to send set_config_option", {
+        taskId,
+        configId,
+        error: err,
+      });
       throw err;
     }
   },
@@ -641,7 +768,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
 
     try {
       await sendCloudCommand(taskId, session.taskRunId, "cancel");
-      logger.debug("Sent cancel command", {
+      log.debug("Sent cancel command", {
         taskId,
         runId: session.taskRunId,
       });
@@ -655,10 +782,9 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           },
         },
       }));
-      scheduleWatchMissionPublish({ urgent: true });
       return true;
     } catch (error) {
-      logger.error("Failed to send cancel request", error);
+      log.error("Failed to send cancel request", error);
       return false;
     }
   },
@@ -669,9 +795,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     const resumeFromRunId = taskRunId ?? currentTask.latest_run?.id;
 
     get().disconnectFromTask(taskId);
-    const updatedTask = await runTaskInCloud(taskId, {
-      resumeFromRunId,
-    });
+    const updatedTask = await runTaskInCloud(taskId, { resumeFromRunId });
 
     get().registerWatchTask(updatedTask);
     await get().connectToTask(updatedTask);
@@ -699,14 +823,14 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         await get().sendPrompt(command.taskId, command.displayText);
         break;
       case "debug_ping":
-        logger.info("Received debug ping from watch", { command });
+        log.info("Received debug ping from watch", { command });
         Alert.alert(
           "Watch ping",
           command.displayText ?? "Ping from Apple Watch",
         );
         break;
       case "debug_request_snapshot":
-        logger.info("Watch requested mission snapshot", { command });
+        log.info("Watch requested task snapshot", { command });
         scheduleWatchMissionPublish({ urgent: true });
         break;
       case "open_phone":
@@ -725,291 +849,207 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     return Object.values(get().sessions).find((s) => s.taskId === taskId);
   },
 
-  _startCloudPolling: (taskRunId: string, logUrl: string) => {
-    if (cloudPollers.has(taskRunId)) return;
-    logger.debug("Starting cloud S3 polling", { taskRunId });
+  _startWatcher: (taskRunId: string, taskId: string) => {
+    if (watchHandles.has(taskRunId)) return;
 
-    const pollS3 = async () => {
-      // Skip if previous tick is still in flight — but force-clear if stuck
-      if (pollInFlight.has(taskRunId)) {
-        const startedAt = pollInFlightSince.get(taskRunId) ?? 0;
-        if (Date.now() - startedAt < POLL_IN_FLIGHT_TIMEOUT_MS) return;
-        logger.warn("Force-clearing stuck pollInFlight", { taskRunId });
-        pollInFlight.delete(taskRunId);
-        pollInFlightSince.delete(taskRunId);
-      }
-      pollInFlight.add(taskRunId);
-      pollInFlightSince.set(taskRunId, Date.now());
-
-      try {
-        const session = get().sessions[taskRunId];
-        if (!session) {
-          get()._stopCloudPolling(taskRunId);
-          return;
-        }
-
-        // Check backend status periodically, or every tick while the agent
-        // is pending (so "Thinking..." clears promptly when the run finishes).
-        const tick = (pollTicks.get(taskRunId) ?? 0) + 1;
-        pollTicks.set(taskRunId, tick);
-        const shouldCheckStatus =
-          session.isPromptPending || tick % STATUS_CHECK_TICK_INTERVAL === 0;
-        if (shouldCheckStatus) {
-          try {
-            const run = await getTaskRun(session.taskId, taskRunId);
-            logger.debug("Status check", {
-              taskRunId,
-              status: run.status,
-              error: run.error_message,
-            });
-            if (run.status === "failed" || run.status === "completed") {
-              logger.debug("Backend run reached terminal status", {
-                taskRunId,
-                status: run.status,
-                error: run.error_message,
-              });
-              const shouldPing =
-                get().sessions[taskRunId]?.awaitingPing ?? false;
-              set((state) => {
-                const current = state.sessions[taskRunId];
-                if (!current) return state;
-                return {
-                  sessions: {
-                    ...state.sessions,
-                    [taskRunId]: {
-                      ...current,
-                      isPromptPending: false,
-                      terminalStatus: run.status as "failed" | "completed",
-                      lastError: run.error_message,
-                      awaitingPing: false,
-                    },
-                  },
-                };
-              });
-              scheduleWatchMissionPublish({ urgent: true });
-              if (shouldPing && usePreferencesStore.getState().pingsEnabled) {
-                playMeepSound().catch(() => {});
-                Haptics.notificationAsync(
-                  Haptics.NotificationFeedbackType.Success,
-                );
-              }
-            }
-          } catch (statusErr) {
-            logger.warn("Failed to fetch task run status", {
-              error: statusErr,
-            });
-          }
-        }
-
-        const text = await fetchS3Logs(logUrl);
-        if (!text) return;
-
-        const lines = text.trim().split("\n").filter(Boolean);
-        const processedCount = session.processedLineCount ?? 0;
-
-        if (lines.length > processedCount) {
-          const newLines = lines.slice(processedCount);
-          logger.debug("Poll picked up new log lines", {
-            taskRunId,
-            newLineCount: newLines.length,
-            totalLines: lines.length,
-          });
-          const currentHashes = new Set(session.processedHashes ?? []);
-          const remainingLocalEchoes = new Set(session.localUserEchoes ?? []);
-          // Collect all new events in a batch, then do a single store
-          // update. This prevents N re-renders per poll tick.
-          const batchedEvents: SessionEvent[] = [];
-          let receivedAgentMessage = false;
-          // Track when a user_message_chunk arrives that wasn't sent from
-          // this device — means someone prompted from the desktop app.
-          let receivedExternalUserMessage = false;
-
-          for (const line of newLines) {
-            try {
-              const entry = JSON.parse(line);
-              const ts = entry.timestamp
-                ? new Date(entry.timestamp).getTime()
-                : Date.now();
-
-              // Build a dedup hash specific enough to distinguish different
-              // events at the same timestamp. For session/update entries,
-              // include the update type, toolCallId, and status so that a
-              // tool_call and its tool_call_update don't collide.
-              const params = entry.notification?.params;
-              const suDetail = params?.update
-                ? `-${params.update.sessionUpdate ?? ""}-${params.update.toolCallId ?? ""}-${params.update.status ?? ""}`
-                : `-${entry.direction ?? ""}`;
-              const hash = `${entry.timestamp ?? ""}-${entry.notification?.method ?? ""}${suDetail}`;
-              if (currentHashes.has(hash)) {
-                continue;
-              }
-              currentHashes.add(hash);
-
-              // Check for local echo dedup BEFORE pushing any events for
-              // this entry — otherwise the acp_message duplicate gets in.
-              if (
-                entry.type === "notification" &&
-                entry.notification?.method === "session/update" &&
-                entry.notification?.params
-              ) {
-                const params = entry.notification.params as SessionNotification;
-                const sessionUpdate = params?.update?.sessionUpdate;
-
-                if (sessionUpdate === "user_message_chunk") {
-                  const text = params?.update?.content?.text;
-                  if (text && remainingLocalEchoes.has(text)) {
-                    remainingLocalEchoes.delete(text);
-                    continue;
-                  }
-                  // User message not from this device (e.g. desktop app)
-                  receivedExternalUserMessage = true;
-                }
-              }
-
-              batchedEvents.push({
-                type: "acp_message",
-                direction: entry.direction ?? "agent",
-                ts,
-                message: entry.notification,
-              });
-
-              if (
-                entry.type === "notification" &&
-                (entry.notification?.method === "_posthog/turn_complete" ||
-                  entry.notification?.method === "_posthog/task_complete" ||
-                  entry.notification?.method === "_posthog/error" ||
-                  // Agent explicitly blocked on a user reply (e.g. a question
-                  // tool invoked via requestPermission). Treat this as a
-                  // turn boundary so the input UI unblocks — otherwise the
-                  // user's answer would be stuck in the "queue while busy"
-                  // path in sendPrompt.
-                  entry.notification?.method === "_posthog/awaiting_user_input")
-              ) {
-                receivedAgentMessage = true;
-              }
-
-              if (
-                entry.type === "notification" &&
-                entry.notification?.method === "session/update" &&
-                entry.notification?.params
-              ) {
-                const params = entry.notification.params as SessionNotification;
-                const sessionUpdate = params?.update?.sessionUpdate;
-
-                batchedEvents.push({
-                  type: "session_update",
-                  ts,
-                  notification: params,
-                });
-
-                // agent_message (finalized, non-chunk) is a reasonable proxy
-                // for turn completion — it's emitted once the full response
-                // is assembled. Chunks and thoughts fire mid-turn and are NOT
-                // reliable. The proper signal is _posthog/turn_complete but
-                // it's not yet written to S3 logs by the server.
-                if (sessionUpdate === "agent_message") {
-                  receivedAgentMessage = true;
-                }
-              }
-            } catch {
-              // Skip invalid JSON
-            }
-          }
-
-          // Determine if we should ping. If an external user message armed
-          // the ping in this same batch, honour it even though the store
-          // hasn't updated yet.
-          const wasAwaitingPing =
-            get().sessions[taskRunId]?.awaitingPing ?? false;
-          const shouldPingAfterBatch =
-            receivedAgentMessage &&
-            (wasAwaitingPing || receivedExternalUserMessage);
-          set((state) => {
-            const current = state.sessions[taskRunId];
-            if (!current) return state;
-
-            // Determine isPromptPending: external user message starts work,
-            // turn/task completion ends it.
-            let nextIsPromptPending = current.isPromptPending;
-            if (receivedExternalUserMessage) nextIsPromptPending = true;
-            if (receivedAgentMessage) nextIsPromptPending = false;
-
-            // awaitingPing: arm when work starts (even from another device),
-            // disarm when it completes and the ping fires.
-            let nextAwaitingPing = current.awaitingPing;
-            if (receivedExternalUserMessage && !current.awaitingPing) {
-              nextAwaitingPing = true;
-            }
-            if (receivedAgentMessage) nextAwaitingPing = false;
-
-            // Clear awaitingAgentOutput once a visibly-rendered event arrives
-            // (agent message, thought, tool call) — not just any non-user event.
-            const hasVisibleAgentOutput = batchedEvents.some(
-              isVisibleAgentOutputEvent,
-            );
-            const nextAwaitingAgentOutput =
-              current.awaitingAgentOutput && !hasVisibleAgentOutput;
-
-            return {
-              sessions: {
-                ...state.sessions,
-                [taskRunId]: {
-                  ...current,
-                  events:
-                    batchedEvents.length > 0
-                      ? [...current.events, ...batchedEvents]
-                      : current.events,
-                  processedLineCount: lines.length,
-                  processedHashes: currentHashes,
-                  localUserEchoes:
-                    remainingLocalEchoes.size > 0
-                      ? remainingLocalEchoes
-                      : undefined,
-                  isPromptPending: nextIsPromptPending,
-                  awaitingPing: nextAwaitingPing,
-                  awaitingAgentOutput: nextAwaitingAgentOutput,
-                  lastEventAt:
-                    batchedEvents.length > 0 ? Date.now() : current.lastEventAt,
-                },
-              },
-            };
-          });
-          scheduleWatchMissionPublish({
-            urgent:
-              shouldPingAfterBatch ||
-              batchedEvents.some(
-                (event) => sessionUpdateType(event) === "tool_call",
-              ),
-          });
-          if (
-            shouldPingAfterBatch &&
-            usePreferencesStore.getState().pingsEnabled
-          ) {
-            playMeepSound().catch(() => {});
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          }
-        }
-      } catch (err) {
-        logger.warn("Cloud polling error", { error: err });
-      } finally {
-        pollInFlight.delete(taskRunId);
-        pollInFlightSince.delete(taskRunId);
-      }
-    };
-
-    pollS3();
-    const interval = setInterval(pollS3, CLOUD_POLLING_INTERVAL_MS);
-    cloudPollers.set(taskRunId, interval);
+    const handle = watchCloudTask({
+      taskId,
+      runId: taskRunId,
+      onUpdate: (update) => get()._handleCloudUpdate(taskRunId, update),
+    });
+    watchHandles.set(taskRunId, handle);
   },
 
-  _stopCloudPolling: (taskRunId: string) => {
-    const interval = cloudPollers.get(taskRunId);
-    if (interval) {
-      clearInterval(interval);
-      cloudPollers.delete(taskRunId);
-      pollTicks.delete(taskRunId);
-      logger.debug("Stopped cloud S3 polling", { taskRunId });
+  _stopWatcher: (taskRunId: string) => {
+    const handle = watchHandles.get(taskRunId);
+    if (handle) {
+      handle.stop();
+      watchHandles.delete(taskRunId);
+      log.debug("Stopped SSE watcher", { taskRunId });
     }
+  },
+
+  _handleCloudUpdate: (taskRunId: string, update: CloudTaskUpdatePayload) => {
+    if (update.kind === "error") {
+      set((state) => {
+        const current = state.sessions[taskRunId];
+        if (!current) return state;
+        return {
+          sessions: {
+            ...state.sessions,
+            [taskRunId]: {
+              ...current,
+              status: "error",
+              isPromptPending: false,
+              lastError: update.errorMessage,
+            },
+          },
+        };
+      });
+      return;
+    }
+
+    if (update.kind === "permission_request") {
+      // The tool_call UI itself comes from the `session/update` log stream;
+      // this SSE-only payload exists so we can capture the cloud-side
+      // requestId required to route a permission_response back to the
+      // correct pending tool call.
+      const toolCallId = update.toolCall?.toolCallId;
+      if (toolCallId && update.requestId) {
+        set((state) => {
+          const current = state.sessions[taskRunId];
+          if (!current) return state;
+          return {
+            sessions: {
+              ...state.sessions,
+              [taskRunId]: {
+                ...current,
+                cloudPermissionRequestIds: {
+                  ...(current.cloudPermissionRequestIds ?? {}),
+                  [toolCallId]: update.requestId,
+                },
+              },
+            },
+          };
+        });
+      }
+      return;
+    }
+
+    if (update.kind === "snapshot" || update.kind === "logs") {
+      const isSnapshot = update.kind === "snapshot";
+
+      // Snapshot replaces all events; drop pending echoes since the snapshot
+      // already includes the canonical copies.
+      const existing = get().sessions[taskRunId];
+      const echoSet = isSnapshot
+        ? new Set<string>()
+        : new Set(existing?.localUserEchoes ?? []);
+
+      const dedupedEntries = isSnapshot
+        ? update.newEntries
+        : dedupAgainstLocalEchoes(update.newEntries, echoSet);
+
+      const events = convertStoredEntriesToEvents(dedupedEntries);
+      // Snapshots are S3-backed and lose attachment metadata; reattach from
+      // the local echo store so historical user messages keep their images.
+      if (isSnapshot) {
+        reinjectAttachmentEchoes(taskRunId, events);
+      }
+
+      const analysis = analyzeEntries(
+        dedupedEntries,
+        isSnapshot ? new Set() : echoSet,
+      );
+
+      const wasAwaitingPing = existing?.awaitingPing ?? false;
+
+      set((state) => {
+        const current = state.sessions[taskRunId];
+        if (!current) return state;
+
+        let nextIsPromptPending = current.isPromptPending;
+        if (analysis.externalUserMessageCount > 0) nextIsPromptPending = true;
+        if (analysis.hasTurnEnd || analysis.agentMessageFinalized) {
+          nextIsPromptPending = false;
+        }
+
+        // Snapshots replay historical content — we don't mutate awaitingPing
+        // based on history, otherwise turn-end markers inside an existing
+        // run's snapshot would clear the user's pending ping before the
+        // status block has a chance to fire its (more specific, e.g.
+        // "task_failed") notification. The status block below is the
+        // canonical owner of awaitingPing for terminal snapshots.
+        let nextAwaitingPing = current.awaitingPing;
+        if (!isSnapshot) {
+          if (analysis.externalUserMessageCount > 0 && !current.awaitingPing) {
+            nextAwaitingPing = true;
+          }
+          if (analysis.hasTurnEnd || analysis.agentMessageFinalized) {
+            nextAwaitingPing = false;
+          }
+        }
+
+        const nextAwaitingAgentOutput =
+          current.awaitingAgentOutput && !analysis.hasVisibleAgentOutput;
+
+        const nextEvents = isSnapshot
+          ? events
+          : events.length > 0
+            ? [...current.events, ...events]
+            : current.events;
+
+        return {
+          sessions: {
+            ...state.sessions,
+            [taskRunId]: {
+              ...current,
+              events: nextEvents,
+              status: "connected",
+              isPromptPending: nextIsPromptPending,
+              awaitingPing: nextAwaitingPing,
+              awaitingAgentOutput: nextAwaitingAgentOutput,
+              localUserEchoes: echoSet.size > 0 ? echoSet : undefined,
+              lastEventAt: events.length > 0 ? Date.now() : current.lastEventAt,
+            },
+          },
+        };
+      });
+
+      // Only fire on live `logs` deltas — snapshots are historical replay
+      // and the status block below handles their terminal-state notification.
+      const shouldPingNow =
+        !isSnapshot &&
+        (analysis.hasTurnEnd || analysis.agentMessageFinalized) &&
+        (wasAwaitingPing || analysis.externalUserMessageCount > 0);
+      if (shouldPingNow && usePreferencesStore.getState().pingsEnabled) {
+        playMeepSound().catch(() => {});
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      if (shouldPingNow) {
+        const kind: LocalNotificationKind = analysis.hasError
+          ? "task_failed"
+          : analysis.hasAwaitingUserInput
+            ? "awaiting_user_input"
+            : "turn_complete";
+        maybePresentLocalNotification({ taskRunId, kind });
+      }
+    }
+
+    if (update.kind === "status" || update.kind === "snapshot") {
+      if (isTerminalStatus(update.status)) {
+        const preState = get().sessions[taskRunId];
+        const shouldPing = preState?.awaitingPing ?? false;
+        const terminal = mapTerminalStatus(update.status);
+        set((state) => {
+          const current = state.sessions[taskRunId];
+          if (!current) return state;
+          return {
+            sessions: {
+              ...state.sessions,
+              [taskRunId]: {
+                ...current,
+                isPromptPending: false,
+                terminalStatus: terminal,
+                lastError: update.errorMessage ?? null,
+                awaitingPing: false,
+              },
+            },
+          };
+        });
+        if (shouldPing && usePreferencesStore.getState().pingsEnabled) {
+          playMeepSound().catch(() => {});
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+        if (shouldPing) {
+          maybePresentLocalNotification({
+            taskRunId,
+            kind: terminal === "failed" ? "task_failed" : "turn_complete",
+          });
+        }
+      }
+    }
+    scheduleWatchMissionPublish();
   },
 
   _resumeCloudRun: async (
@@ -1017,9 +1057,6 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     previousRunId: string,
     prompt: string,
   ) => {
-    // Fetch the latest task to pick up the branch the previous run was using —
-    // otherwise the backend would create a new branch and we'd lose working
-    // tree context.
     const freshTask = await getTask(taskId);
     const previousBranch = freshTask.latest_run?.branch ?? null;
 
@@ -1030,45 +1067,34 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     });
 
     const newRun = updatedTask.latest_run;
-    if (!newRun?.id || !newRun.log_url) {
-      throw new Error("Resume run was created but has no id or log_url");
+    if (!newRun?.id) {
+      throw new Error("Resume run was created but has no id");
     }
 
-    // Stop polling the dead run and swap the session over to the new run id.
-    // Read the CURRENT session state to preserve the local echo that was
-    // just added in sendPrompt (the captured `session` variable in the
-    // caller is stale).
-    get()._stopCloudPolling(previousRunId);
+    get()._stopWatcher(previousRunId);
 
     set((state) => {
       const previousSession = state.sessions[previousRunId];
       if (!previousSession) return state;
       const { [previousRunId]: _old, ...rest } = state.sessions;
       return {
-        watchMissionTasks: {
-          ...state.watchMissionTasks,
-          [taskId]: updatedTask,
-        },
         sessions: {
           ...rest,
           [newRun.id]: {
             ...previousSession,
             taskRunId: newRun.id,
-            logUrl: newRun.log_url,
-            status: "connected",
+            status: "connecting",
             isPromptPending: true,
-            processedLineCount: 0,
-            processedHashes: new Set<string>(),
             awaitingPing: true,
             awaitingAgentOutput: true,
           },
         },
       };
     });
-    scheduleWatchMissionPublish({ urgent: true });
 
-    get()._startCloudPolling(newRun.id, newRun.log_url);
-    logger.debug("Swapped to resume run", {
+    get().registerWatchTask(updatedTask);
+    get()._startWatcher(newRun.id, taskId);
+    log.debug("Swapped to resume run", {
       taskId,
       previousRunId,
       newRunId: newRun.id,
@@ -1076,27 +1102,14 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   },
 }));
 
-// When the app returns from background, iOS resumes JS execution but
-// in-flight fetches may have been killed. Clear the pollInFlight guards
-// and restart polling for all active sessions to catch up immediately.
+// When the app returns from background, iOS may have killed the SSE
+// connection. Nudge every active watcher to reconnect so the stream resumes
+// with Last-Event-ID.
 AppState.addEventListener("change", (nextState) => {
-  if (nextState === "active") {
-    pollInFlight.clear();
-    pollInFlightSince.clear();
-    pollTicks.clear();
-    for (const [taskRunId, interval] of cloudPollers) {
-      clearInterval(interval);
-      cloudPollers.delete(taskRunId);
-    }
-    const sessions = useTaskSessionStore.getState().sessions;
-    for (const session of Object.values(sessions)) {
-      if (session.status === "connected" && !session.terminalStatus) {
-        useTaskSessionStore
-          .getState()
-          ._startCloudPolling(session.taskRunId, session.logUrl);
-      }
-    }
-    ensureWatchCommandSubscription();
-    scheduleWatchMissionPublish();
+  if (nextState !== "active") return;
+  for (const handle of watchHandles.values()) {
+    handle.reconnectIfDisconnected();
   }
+  ensureWatchCommandSubscription();
+  scheduleWatchMissionPublish();
 });

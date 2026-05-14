@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/features/auth";
 import { getGithubRepositories, getIntegrations } from "../api";
+import { buildRepositoryOptions } from "../utils/repositorySelection";
 
 export const integrationKeys = {
   all: ["integrations"] as const,
@@ -10,7 +11,17 @@ export const integrationKeys = {
     [...integrationKeys.all, "repos", integrationId] as const,
 };
 
-export function useIntegrations() {
+interface RepositoryLoadResult {
+  repositoriesByIntegration: Record<number, string[]>;
+  partialError: string | null;
+}
+
+interface UseIntegrationsOptions {
+  enabled?: boolean;
+}
+
+export function useIntegrations(options: UseIntegrationsOptions = {}) {
+  const { enabled = true } = options;
   const { projectId, oauthAccessToken } = useAuthStore();
 
   const integrationsQuery = useQuery({
@@ -19,10 +30,10 @@ export function useIntegrations() {
       const data = await getIntegrations();
       return data.filter((i) => i.kind === "github");
     },
-    enabled: !!projectId && !!oauthAccessToken,
+    enabled: enabled && !!projectId && !!oauthAccessToken,
   });
 
-  const githubIntegrations = integrationsQuery.data ?? [];
+  const githubIntegrations = enabled ? (integrationsQuery.data ?? []) : [];
 
   const repositoriesQuery = useQuery({
     queryKey: [
@@ -30,33 +41,73 @@ export function useIntegrations() {
       "repos",
       githubIntegrations.map((i) => i.id),
     ],
-    queryFn: async () => {
-      const allRepos: string[] = [];
-      for (const integration of githubIntegrations) {
-        const repos = await getGithubRepositories(integration.id);
-        allRepos.push(...repos);
+    queryFn: async (): Promise<RepositoryLoadResult> => {
+      const repositoriesByIntegration: Record<number, string[]> = {};
+      const results = await Promise.allSettled(
+        githubIntegrations.map(async (integration) => ({
+          integrationId: integration.id,
+          repositories: await getGithubRepositories(integration.id),
+        })),
+      );
+
+      let failedCount = 0;
+
+      for (const result of results) {
+        if (result.status === "fulfilled") {
+          repositoriesByIntegration[result.value.integrationId] =
+            result.value.repositories;
+          continue;
+        }
+
+        failedCount += 1;
       }
-      return allRepos.sort();
+
+      return {
+        repositoriesByIntegration,
+        partialError:
+          failedCount === 0
+            ? null
+            : failedCount === githubIntegrations.length
+              ? "Could not load GitHub repositories. Pull to retry."
+              : "Some GitHub repositories could not be loaded. Pull to retry.",
+      };
     },
-    enabled: githubIntegrations.length > 0,
+    enabled: enabled && githubIntegrations.length > 0,
   });
 
+  const repositoriesByIntegration =
+    repositoriesQuery.data?.repositoriesByIntegration ?? {};
+  const repositories = Object.values(repositoriesByIntegration).flat().sort();
+  const repositoryOptions = buildRepositoryOptions(
+    githubIntegrations,
+    repositoriesByIntegration,
+  );
+  const repositoryWarning = repositoriesQuery.data?.partialError ?? null;
+
   const refetch = async () => {
+    if (!enabled) {
+      return;
+    }
+
     await integrationsQuery.refetch();
     await repositoriesQuery.refetch();
   };
 
   return {
-    hasGithubIntegration: integrationsQuery.isFetched
-      ? githubIntegrations.length > 0
-      : null,
+    hasGithubIntegration: !enabled
+      ? null
+      : integrationsQuery.isFetched
+        ? githubIntegrations.length > 0
+        : null,
     githubIntegrations,
-    repositories: repositoriesQuery.data ?? [],
-    isLoading: integrationsQuery.isLoading || repositoriesQuery.isLoading,
-    error:
-      integrationsQuery.error?.message ??
-      repositoriesQuery.error?.message ??
-      null,
+    repositories,
+    repositoriesByIntegration,
+    repositoryOptions,
+    isLoading: enabled
+      ? integrationsQuery.isLoading || repositoriesQuery.isLoading
+      : false,
+    error: enabled ? (integrationsQuery.error?.message ?? null) : null,
+    repositoryWarning: enabled ? repositoryWarning : null,
     refetch,
   };
 }

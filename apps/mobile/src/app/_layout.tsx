@@ -1,7 +1,8 @@
 import "../../global.css";
+import "@/lib/textDefaults";
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import { PostHogProvider } from "posthog-react-native";
@@ -9,9 +10,14 @@ import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { OfflineBanner } from "@/components/OfflineBanner";
+import {
+  OFFLINE_BANNER_HEIGHT,
+  OfflineBanner,
+} from "@/components/OfflineBanner";
 import { useAuthStore } from "@/features/auth";
+import { setupNotificationResponseListener } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import {
   POSTHOG_API_KEY,
   POSTHOG_OPTIONS,
@@ -20,7 +26,11 @@ import {
 import { queryClient } from "@/lib/queryClient";
 import { darkTheme, lightTheme, useThemeColors } from "@/lib/theme";
 
-function RootLayoutNav() {
+interface RootLayoutNavProps {
+  isConnected: boolean;
+}
+
+function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   const { isLoading, initializeAuth } = useAuthStore();
   const aiChatEnabled = usePreferencesStore((s) => s.aiChatEnabled);
   const themeColors = useThemeColors();
@@ -30,6 +40,12 @@ function RootLayoutNav() {
   useEffect(() => {
     initializeAuth();
   }, [initializeAuth]);
+
+  useEffect(() => {
+    return setupNotificationResponseListener(({ taskId }) => {
+      router.push(`/task/${taskId}`);
+    });
+  }, []);
 
   if (isLoading) {
     return (
@@ -43,53 +59,83 @@ function RootLayoutNav() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: themeColors.background },
+        contentStyle: {
+          backgroundColor: themeColors.background,
+          paddingTop: isConnected ? 0 : OFFLINE_BANNER_HEIGHT,
+        },
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="auth" options={{ headerShown: false }} />
       <Stack.Screen name="index" options={{ headerShown: false }} />
 
-      {/* Chat routes - only registered when AI chat feature is enabled */}
+      {/* Chat routes - only registered when AI chat feature is enabled.
+          Screens use a FloatingBackButton instead of the native header. */}
       {aiChatEnabled && (
         <>
-          <Stack.Screen
-            name="chat/index"
-            options={{
-              headerShown: true,
-              headerBackTitle: "",
-              headerStyle: { backgroundColor: themeColors.background },
-              headerTintColor: themeColors.gray[12],
-            }}
-          />
-          <Stack.Screen
-            name="chat/[id]"
-            options={{
-              headerShown: true,
-              headerBackTitle: "Back",
-              headerStyle: { backgroundColor: themeColors.background },
-              headerTintColor: themeColors.gray[12],
-            }}
-          />
+          <Stack.Screen name="chat/index" options={{ headerShown: false }} />
+          <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
         </>
       )}
 
-      {/* Task routes - modal presentation */}
+      {/* Tinder-style inbox review */}
+      <Stack.Screen name="review" options={{ headerShown: false }} />
+
+      {/* Settings — pushed on top of whatever the user was viewing, so
+          back / iOS swipe-back / Android hardware-back all return to it. */}
+      <Stack.Screen name="settings/index" options={{ headerShown: false }} />
+
+      {/* Report detail - modal presentation, no native header
+          (the in-content title block is the canonical header). */}
+      <Stack.Screen
+        name="report/[id]"
+        options={{ presentation: "modal", headerShown: false }}
+      />
+
+      {/* Task routes - modal presentation, no native header. */}
       <Stack.Screen
         name="task/index"
-        options={{
-          presentation: "modal",
-          headerShown: true,
-          title: "New task",
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.accent[9],
-        }}
+        options={{ presentation: "modal", headerShown: false }}
       />
       <Stack.Screen
         name="task/[id]"
+        options={{ presentation: "modal", headerShown: false }}
+      />
+      <Stack.Screen
+        name="automation/index"
         options={{
           presentation: "modal",
           headerShown: true,
+          title: "Choose a template",
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.gray[12],
+        }}
+      />
+      <Stack.Screen
+        name="automation/create"
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          title: "New automation",
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.gray[12],
+        }}
+      />
+      <Stack.Screen
+        name="automation/[id]"
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.gray[12],
+        }}
+      />
+      <Stack.Screen
+        name="pr-diff"
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          title: "Files changed",
           headerStyle: { backgroundColor: themeColors.background },
           headerTintColor: themeColors.gray[12],
         }}
@@ -99,8 +145,17 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme, setColorScheme } = useColorScheme();
+  const themePreference = usePreferencesStore((s) => s.theme);
+
+  // Sync the user's theme preference into NativeWind's color scheme so the
+  // entire app honours it (including light/dark/system).
+  useEffect(() => {
+    setColorScheme(themePreference);
+  }, [themePreference, setColorScheme]);
+
   const themeVars = colorScheme === "dark" ? darkTheme : lightTheme;
+  const { isConnected } = useNetworkStatus();
 
   return (
     <SafeAreaProvider>
@@ -115,8 +170,8 @@ export default function RootLayout() {
         >
           <QueryClientProvider client={queryClient}>
             <View style={themeVars} className="flex-1">
-              <RootLayoutNav />
-              <OfflineBanner />
+              <RootLayoutNav isConnected={isConnected} />
+              <OfflineBanner isConnected={isConnected} />
             </View>
             <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
           </QueryClientProvider>

@@ -116,7 +116,7 @@ export default function AuthScreen() {
       >
         {/* Header */}
         <View className="mb-10">
-          <Text className="mb-2 font-bold text-3xl text-gray-12">
+          <Text className="mb-2 font-semibold text-2xl text-gray-12">
             PostHog Mobile
           </Text>
           <Text className="text-base text-gray-11">

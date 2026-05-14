@@ -29,16 +29,18 @@ export default function ConversationsScreen() {
       <View className="border-gray-6 border-b px-4 pt-16 pb-4">
         <View className="flex-row items-center justify-between">
           <View>
-            <Text className="font-bold text-2xl text-gray-12">
+            <Text className="font-semibold text-[22px] text-gray-12">
               Conversations
             </Text>
-            <Text className="text-gray-11 text-sm">Your PostHog AI chats</Text>
+            <Text className="text-[13px] text-gray-11">
+              Your PostHog AI chats
+            </Text>
           </View>
           <Pressable
             onPress={handleNewChat}
-            className="rounded-lg bg-accent-9 px-4 py-2"
+            className="rounded-md bg-accent-9 px-3.5 py-2 active:opacity-80"
           >
-            <Text className="font-semibold text-accent-contrast text-sm">
+            <Text className="font-semibold text-[13px] text-accent-contrast">
               New chat
             </Text>
           </Pressable>

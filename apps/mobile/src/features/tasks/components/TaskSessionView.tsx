@@ -20,8 +20,14 @@ import {
   ToolMessage,
   type ToolStatus,
 } from "@/features/chat";
+import { getRandomThinkingActivity } from "@/features/chat/utils/thinkingMessages";
 import { useThemeColors } from "@/lib/theme";
-import type { PlanEntry, SessionEvent, SessionNotification } from "../types";
+import type {
+  PlanEntry,
+  SessionEvent,
+  SessionNotification,
+  SessionNotificationAttachment,
+} from "../types";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { QuestionCard } from "./QuestionCard";
 
@@ -47,6 +53,7 @@ interface TaskSessionViewProps {
 
 interface ToolData {
   toolName: string;
+  rawToolName?: string;
   toolCallId: string;
   status: ToolStatus;
   args?: Record<string, unknown>;
@@ -62,6 +69,7 @@ interface ParsedMessage {
   ts?: number;
   toolData?: ToolData;
   children?: ParsedMessage[];
+  attachments?: SessionNotificationAttachment[];
 }
 
 function mapToolStatus(
@@ -82,7 +90,12 @@ function mapToolStatus(
 }
 
 type ParsedNotification =
-  | { type: "user" | "agent" | "agent_complete" | "thought"; content: string }
+  | {
+      type: "user";
+      content: string;
+      attachments?: SessionNotificationAttachment[];
+    }
+  | { type: "agent" | "agent_complete" | "thought"; content: string }
   | { type: "tool" | "tool_update"; toolData: ToolData }
   | { type: "plan"; entries: PlanEntry[] };
 
@@ -97,11 +110,24 @@ function parseSessionNotification(
   switch (update.sessionUpdate) {
     case "user_message_chunk":
     case "agent_message_chunk": {
-      if (update.content?.type === "text") {
+      const hasText = update.content?.type === "text";
+      const isUser = update.sessionUpdate === "user_message_chunk";
+      if (isUser) {
+        const attachments = update.attachments;
+        // Drop only if there's neither text nor attachments to render.
+        if (!hasText && (!attachments || attachments.length === 0)) {
+          return null;
+        }
         return {
-          type:
-            update.sessionUpdate === "user_message_chunk" ? "user" : "agent",
-          content: update.content.text,
+          type: "user",
+          content: hasText ? (update.content?.text ?? "") : "",
+          attachments,
+        };
+      }
+      if (hasText) {
+        return {
+          type: "agent",
+          content: update.content?.text ?? "",
         };
       }
       return null;
@@ -131,6 +157,7 @@ function parseSessionNotification(
         type: "tool",
         toolData: {
           toolName: update.title ?? "Unknown Tool",
+          rawToolName: meta?.toolName,
           toolCallId: update.toolCallId ?? "",
           status: mapToolStatus(update.status),
           args: update.rawInput,
@@ -145,6 +172,7 @@ function parseSessionNotification(
         type: "tool_update",
         toolData: {
           toolName: update.title ?? "Unknown Tool",
+          rawToolName: meta?.toolName,
           toolCallId: update.toolCallId ?? "",
           status: mapToolStatus(update.status),
           args: update.rawInput,
@@ -174,6 +202,20 @@ function isQuestionTool(toolData?: ToolData): boolean {
   if (toolData.toolName.toLowerCase().includes("question")) return true;
   if (Array.isArray(toolData.args?.questions)) return true;
   return false;
+}
+
+function hasPendingQuestionMessage(message: ParsedMessage): boolean {
+  const isPendingQuestion =
+    message.type === "tool" &&
+    isQuestionTool(message.toolData) &&
+    (message.toolData?.status === "pending" ||
+      message.toolData?.status === "running");
+
+  if (isPendingQuestion) {
+    return true;
+  }
+
+  return message.children?.some(hasPendingQuestionMessage) ?? false;
 }
 
 // Mutable processor state persisted across renders via useRef.
@@ -235,14 +277,26 @@ function processNewEvents(
 
   const flushAgentText = () => {
     if (!state.pendingAgentText) return;
-    const msg: ParsedMessage = {
-      id: `agent-${state.agentMessageCount++}`,
-      type: "agent",
-      content: state.pendingAgentText,
-      ts: state.pendingAgentTs,
-    };
-    state.messages.push(msg);
-    state.lastAgentMsgIdx = state.messages.length - 1;
+    // If the last message is an in-progress agent message from a previous
+    // batch, append to it instead of creating a new bubble. This keeps
+    // streaming chunks that arrive across multiple SSE batches unified
+    // into a single rendered message.
+    if (
+      state.lastAgentMsgIdx !== null &&
+      state.messages[state.lastAgentMsgIdx]?.type === "agent"
+    ) {
+      state.messages[state.lastAgentMsgIdx].content += state.pendingAgentText;
+      hasItemMutation = true;
+    } else {
+      const msg: ParsedMessage = {
+        id: `agent-${state.agentMessageCount++}`,
+        type: "agent",
+        content: state.pendingAgentText,
+        ts: state.pendingAgentTs,
+      };
+      state.messages.push(msg);
+      state.lastAgentMsgIdx = state.messages.length - 1;
+    }
     state.pendingAgentText = "";
     state.pendingAgentTs = undefined;
   };
@@ -283,6 +337,7 @@ function processNewEvents(
           type: "user",
           content: parsed.content ?? "",
           ts: event.ts,
+          attachments: parsed.attachments,
         });
         state.lastAgentMsgIdx = null;
         break;
@@ -293,7 +348,7 @@ function processNewEvents(
         break;
       case "agent_complete":
         flushThoughtText();
-        // If we already flushed an agent message from chunks, replace it
+        // Replace accumulated chunks with the finalized message
         if (
           state.lastAgentMsgIdx !== null &&
           state.messages[state.lastAgentMsgIdx]?.type === "agent"
@@ -302,6 +357,7 @@ function processNewEvents(
           if (!state.messages[state.lastAgentMsgIdx].ts) {
             state.messages[state.lastAgentMsgIdx].ts = event.ts;
           }
+          hasItemMutation = true;
           state.pendingAgentText = "";
           state.pendingAgentTs = undefined;
         } else {
@@ -385,22 +441,58 @@ function processNewEvents(
   return { messages: state.lastSnapshot, plan: state.plan };
 }
 
+const THOUGHT_COLLAPSED_LINE_COUNT = 5;
+
 function CollapsedThought({ content }: { content: string }) {
   const themeColors = useThemeColors();
   const [expanded, setExpanded] = useState(false);
+  const [showAllLines, setShowAllLines] = useState(false);
+
+  const hasContent = content.trim().length > 0;
+  const contentLines = content.split("\n");
+  const isLineCollapsible =
+    hasContent && contentLines.length > THOUGHT_COLLAPSED_LINE_COUNT;
+  const hiddenLineCount = contentLines.length - THOUGHT_COLLAPSED_LINE_COUNT;
+  const displayedContent =
+    showAllLines || !isLineCollapsible
+      ? content
+      : contentLines.slice(0, THOUGHT_COLLAPSED_LINE_COUNT).join("\n");
 
   return (
-    <Pressable onPress={() => setExpanded(!expanded)} className="px-4 py-0.5">
-      <View className="flex-row items-center gap-2">
-        <Brain size={12} color={themeColors.gray[8]} />
-        <Text className="font-mono text-[12px] text-gray-8">Thought</Text>
-      </View>
-      {expanded && (
-        <Text className="mt-1 ml-5 font-mono text-[11px] text-gray-8 leading-4">
-          {content}
-        </Text>
+    <View className="px-4 py-0.5">
+      <Pressable
+        onPress={() => {
+          if (!hasContent) return;
+          setExpanded((v) => !v);
+          if (!expanded) setShowAllLines(false);
+        }}
+        className="flex-row items-center gap-2"
+      >
+        <Brain size={12} color={themeColors.gray[11]} />
+        <Text className="text-[13px] text-gray-11">Thinking</Text>
+      </Pressable>
+      {expanded && hasContent && (
+        <View className="mt-1 ml-5 overflow-hidden rounded-lg border border-gray-6 px-3 py-2">
+          <Text
+            className="font-mono text-[12px] text-gray-11 leading-4"
+            selectable
+          >
+            {displayedContent}
+          </Text>
+          {isLineCollapsible && !showAllLines && (
+            <Pressable
+              onPress={() => setShowAllLines(true)}
+              className="mt-1 self-start"
+              hitSlop={6}
+            >
+              <Text className="text-[12px] text-gray-10">
+                +{hiddenLineCount} more lines
+              </Text>
+            </Pressable>
+          )}
+        </View>
       )}
-    </Pressable>
+    </View>
   );
 }
 
@@ -568,7 +660,10 @@ function AgentToolCard({
               <ToolMessage
                 key={child.id}
                 toolName={child.toolData.toolName}
-                kind={deriveToolKind(child.toolData.toolName)}
+                rawToolName={child.toolData.rawToolName}
+                kind={deriveToolKind(
+                  child.toolData.rawToolName ?? child.toolData.toolName,
+                )}
                 status={child.toolData.status}
                 args={child.toolData.args}
                 result={child.toolData.result}
@@ -601,14 +696,22 @@ function useElapsedTimer() {
 }
 
 function ThinkingIndicator() {
-  const themeColors = useThemeColors();
   const [dots, setDots] = useState(1);
+  const [activity, setActivity] = useState(getRandomThinkingActivity);
   const elapsed = useElapsedTimer();
+  const themeColors = useThemeColors();
 
   useEffect(() => {
     const interval = setInterval(() => {
       setDots((d) => (d % 3) + 1);
     }, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActivity(getRandomThinkingActivity());
+    }, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -618,7 +721,8 @@ function ThinkingIndicator() {
         <View className="flex-row items-center gap-2">
           <Brain size={12} color={themeColors.gray[8]} />
           <Text className="font-mono text-[12px] text-gray-8">
-            Thinking{".".repeat(dots)}
+            {activity}
+            {".".repeat(dots)}
           </Text>
         </View>
         <Text className="font-mono text-[12px] text-gray-8">
@@ -630,9 +734,9 @@ function ThinkingIndicator() {
 }
 
 function ConnectingIndicator() {
-  const themeColors = useThemeColors();
   const [dots, setDots] = useState(1);
   const elapsed = useElapsedTimer();
+  const themeColors = useThemeColors();
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -714,25 +818,48 @@ export function TaskSessionView({
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
   const themeColors = useThemeColors();
   const flatListRef = useRef<FlatList>(null);
-  const buttonRef = useRef<View>(null);
-  const isScrolledRef = useRef(false);
+  const hasPendingQuestion = useMemo(
+    () => messages.some(hasPendingQuestionMessage),
+    [messages],
+  );
+  const showActivityIndicator = agentActive && !hasPendingQuestion;
+  const effectiveContentContainerStyle = useMemo(() => {
+    const baseStyle = (contentContainerStyle ?? {}) as {
+      paddingTop?: number;
+      [key: string]: unknown;
+    };
+
+    if (!showActivityIndicator) {
+      return baseStyle;
+    }
+
+    return {
+      ...baseStyle,
+      // In the inverted list, paddingTop becomes visual bottom spacing.
+      // Reserve enough room so the floating activity indicator never
+      // covers the last visible row while the agent is working.
+      // 28pt was tight at default text sizes and let cards (e.g. the
+      // Agent loading card) peek into the indicator strip — 44pt gives
+      // a real buffer plus headroom for larger dynamic-type settings.
+      paddingTop: (baseStyle.paddingTop ?? 0) + 44,
+    };
+  }, [contentContainerStyle, showActivityIndicator]);
+  // Inverted FlatList: scrollY is the distance from the visual bottom, so
+  // any non-trivial value means the user has scrolled up from the latest
+  // message. Use a small threshold to ignore iOS bounce.
+  const [scrolledFromBottom, setScrolledFromBottom] = useState(false);
 
   const scrollToBottom = useCallback(() => {
+    // Optimistically hide the button — the scroll animation will fire
+    // onScroll events too, but the throttle can leave the button visible
+    // for a beat after tap if we rely on those alone.
+    setScrolledFromBottom(false);
     flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
   }, []);
 
   const handleScroll = useCallback(
     (e: { nativeEvent: { contentOffset: { y: number } } }) => {
-      const scrolled = e.nativeEvent.contentOffset.y > 0;
-      if (scrolled !== isScrolledRef.current) {
-        isScrolledRef.current = scrolled;
-        buttonRef.current?.setNativeProps({
-          style: {
-            opacity: scrolled ? 1 : 0,
-            pointerEvents: scrolled ? "auto" : "none",
-          },
-        });
-      }
+      setScrolledFromBottom(e.nativeEvent.contentOffset.y > 100);
     },
     [],
   );
@@ -741,7 +868,13 @@ export function TaskSessionView({
     ({ item }: { item: ParsedMessage }) => {
       switch (item.type) {
         case "user":
-          return <HumanMessage content={item.content} timestamp={item.ts} />;
+          return (
+            <HumanMessage
+              content={item.content}
+              timestamp={item.ts}
+              attachments={item.attachments}
+            />
+          );
         case "agent":
           return (
             <AgentMessage
@@ -768,7 +901,10 @@ export function TaskSessionView({
           return (
             <ToolMessage
               toolName={item.toolData.toolName}
-              kind={deriveToolKind(item.toolData.toolName)}
+              rawToolName={item.toolData.rawToolName}
+              kind={deriveToolKind(
+                item.toolData.rawToolName ?? item.toolData.toolName,
+              )}
               status={item.toolData.status}
               args={item.toolData.args}
               result={item.toolData.result}
@@ -791,7 +927,7 @@ export function TaskSessionView({
         renderItem={renderMessage}
         keyExtractor={(item) => item.id}
         inverted
-        contentContainerStyle={contentContainerStyle}
+        contentContainerStyle={effectiveContentContainerStyle}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator
@@ -845,10 +981,13 @@ export function TaskSessionView({
           ) : null
         }
       />
-      {/* Thinking/connecting indicators absolutely positioned above the Composer area.
-          Rendered outside FlatList to avoid inverted-list double-mount bugs. */}
-      {(isConnecting || isThinking) && (
-        <View className="absolute inset-x-0 bottom-[92px] pb-2">
+      {/* Thinking/connecting indicators pinned to the bottom of the list area.
+          The Composer is a sibling below TaskSessionView in flex flow, so
+          `bottom-0` here sits the strip right above the composer's top edge.
+          Solid bg so list rows scrolling under it are occluded instead of
+          bleeding through. */}
+      {showActivityIndicator && (
+        <View className="absolute inset-x-0 bottom-0 bg-background pt-1 pb-2">
           {isConnecting ? (
             <ConnectingIndicator />
           ) : isThinking ? (
@@ -856,15 +995,10 @@ export function TaskSessionView({
           ) : null}
         </View>
       )}
-      <View
-        ref={buttonRef}
-        className="absolute right-4 bottom-32"
-        style={{ opacity: 0 }}
-        pointerEvents="none"
-      >
+      {scrolledFromBottom && (
         <Pressable
           onPress={scrollToBottom}
-          className="h-10 w-10 items-center justify-center rounded-full bg-gray-3"
+          className="absolute right-4 bottom-4 h-10 w-10 items-center justify-center rounded-full bg-gray-3"
           style={{
             shadowColor: "#000",
             shadowOffset: { width: 0, height: 2 },
@@ -875,7 +1009,7 @@ export function TaskSessionView({
         >
           <ArrowDown size={18} color={themeColors.gray[11]} />
         </Pressable>
-      </View>
+      )}
     </View>
   );
 }

@@ -1,7 +1,12 @@
 import { useMemo } from "react";
 import { Linking, ScrollView, Text, View } from "react-native";
+import { parseGithubIssueUrl } from "@/lib/githubIssueUrl";
 import { getColorForClass, highlightCode } from "@/lib/syntax-highlight";
 import { useThemeColors } from "@/lib/theme";
+import { GithubRefChip } from "./GithubRefChip";
+import { MarkdownImage } from "./MarkdownImage";
+
+const IMAGE_LINE_PATTERN = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/;
 
 interface MarkdownTextProps {
   content: string;
@@ -52,6 +57,7 @@ interface Block {
     | "list"
     | "table"
     | "blockquote"
+    | "image"
     | "hr";
   content: string;
   language?: string;
@@ -59,6 +65,8 @@ interface Block {
   items?: string[];
   ordered?: boolean;
   rows?: string[][];
+  url?: string;
+  alt?: string;
 }
 
 function parseBlocks(text: string): Block[] {
@@ -80,6 +88,19 @@ function parseBlocks(text: string): Block[] {
       }
       i++; // skip closing ```
       blocks.push({ type: "code", content: codeLines.join("\n"), language });
+      continue;
+    }
+
+    // Image on its own line: ![alt](url)
+    const imageMatch = line.match(IMAGE_LINE_PATTERN);
+    if (imageMatch) {
+      blocks.push({
+        type: "image",
+        content: "",
+        alt: imageMatch[1],
+        url: imageMatch[2],
+      });
+      i++;
       continue;
     }
 
@@ -173,6 +194,7 @@ function parseBlocks(text: string): Block[] {
       lines[i].trim() !== "" &&
       !lines[i].startsWith("```") &&
       !lines[i].match(/^#{1,6}\s/) &&
+      !IMAGE_LINE_PATTERN.test(lines[i]) &&
       !/^\s*[-*]\s/.test(lines[i]) &&
       !/^\s*\d+[.)]\s/.test(lines[i]) &&
       !/^>\s?/.test(lines[i]) &&
@@ -200,9 +222,10 @@ function openUrl(url: string) {
 
 function renderInline(text: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
-  // Links must come first to avoid bold/italic consuming text inside []
+  // Links must come first to avoid bold/italic consuming text inside [].
+  // Order after links: strikethrough, bold, italic, inline code.
   const pattern =
-    /(\[([^\]]+)\]\(([^)]+)\)|\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`)/g;
+    /(\[([^\]]+)\]\(([^)]+)\)|~~(.+?)~~|\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null = null;
 
@@ -214,38 +237,63 @@ function renderInline(text: string): React.ReactNode[] {
 
     if (match[2] && match[3]) {
       // Link: [text](url)
+      const linkText = match[2];
       const url = match[3];
-      nodes.push(
-        <Text
-          key={match.index}
-          className="text-accent-11 underline"
-          onPress={() => openUrl(url)}
-        >
-          {match[2]}
-        </Text>,
-      );
+      const githubRef = parseGithubIssueUrl(url);
+      if (githubRef) {
+        const isAutoLink = linkText === url;
+        const label = isAutoLink
+          ? `${githubRef.owner}/${githubRef.repo}#${githubRef.number}`
+          : linkText;
+        nodes.push(
+          <GithubRefChip
+            key={match.index}
+            href={githubRef.normalizedUrl}
+            kind={githubRef.kind}
+            label={label}
+          />,
+        );
+      } else {
+        nodes.push(
+          <Text
+            key={match.index}
+            className="text-accent-11 underline"
+            onPress={() => openUrl(url)}
+          >
+            {linkText}
+            <Text className="text-accent-11">{" ↗"}</Text>
+          </Text>,
+        );
+      }
     } else if (match[4]) {
-      // Bold
+      // Strikethrough: ~~text~~
       nodes.push(
-        <Text key={match.index} className="font-bold">
+        <Text key={match.index} className="text-gray-9 line-through">
           {match[4]}
         </Text>,
       );
     } else if (match[5]) {
-      // Italic
+      // Bold
       nodes.push(
-        <Text key={match.index} className="italic">
+        <Text key={match.index} className="font-bold text-accent-11">
           {match[5]}
         </Text>,
       );
     } else if (match[6]) {
+      // Italic
+      nodes.push(
+        <Text key={match.index} className="italic">
+          {match[6]}
+        </Text>,
+      );
+    } else if (match[7]) {
       // Inline code
       nodes.push(
         <Text
           key={match.index}
           className="rounded bg-gray-4 px-1 font-mono text-[12px] text-accent-11"
         >
-          {match[6]}
+          {match[7]}
         </Text>,
       );
     }
@@ -304,7 +352,7 @@ export function MarkdownText({ content }: MarkdownTextProps) {
             return (
               <Text
                 key={key}
-                className={`font-bold text-gray-12 ${
+                className={`font-bold text-accent-11 ${
                   block.level === 1
                     ? "text-[16px]"
                     : block.level === 2
@@ -319,19 +367,43 @@ export function MarkdownText({ content }: MarkdownTextProps) {
           case "list":
             return (
               <View key={key} style={{ gap: 4 }}>
-                {block.items?.map((item, idx) => (
-                  <View
-                    key={`${key}-${idx}-${item}`}
-                    className="flex-row items-start pl-2"
-                  >
-                    <Text className="mr-2 text-[13px] text-gray-9">
-                      {block.ordered ? `${idx + 1}.` : "•"}
-                    </Text>
-                    <Text className="flex-1 text-[13px] text-gray-12 leading-5">
-                      {renderInline(item)}
-                    </Text>
-                  </View>
-                ))}
+                {block.items?.map((item, idx) => {
+                  const taskMatch = !block.ordered
+                    ? item.match(/^\[([ xX])\]\s+(.*)$/)
+                    : null;
+                  const isTask = taskMatch !== null;
+                  const isChecked = isTask && /[xX]/.test(taskMatch[1]);
+                  const itemText = isTask ? taskMatch[2] : item;
+                  return (
+                    <View
+                      key={`${key}-${idx}-${item}`}
+                      className="flex-row items-start pl-2"
+                    >
+                      {isTask ? (
+                        <Text
+                          className={`mr-2 font-mono text-[13px] ${
+                            isChecked ? "text-accent-11" : "text-gray-9"
+                          }`}
+                        >
+                          {isChecked ? "☑" : "☐"}
+                        </Text>
+                      ) : (
+                        <Text className="mr-2 text-[13px] text-gray-9">
+                          {block.ordered ? `${idx + 1}.` : "•"}
+                        </Text>
+                      )}
+                      <Text
+                        className={`flex-1 text-[13px] leading-5 ${
+                          isTask && isChecked
+                            ? "text-gray-10 line-through"
+                            : "text-gray-12"
+                        }`}
+                      >
+                        {renderInline(itemText)}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
             );
 
@@ -409,12 +481,17 @@ export function MarkdownText({ content }: MarkdownTextProps) {
 
           case "blockquote":
             return (
-              <View key={key} className="border-gray-8 border-l-2 pl-3">
+              <View key={key} className="border-accent-6 border-l-2 pl-3">
                 <Text className="text-[13px] text-gray-11 italic leading-5">
                   {renderInline(block.content)}
                 </Text>
               </View>
             );
+
+          case "image":
+            return block.url ? (
+              <MarkdownImage key={key} url={block.url} alt={block.alt} />
+            ) : null;
 
           case "hr":
             return <View key={key} className="my-1 h-px bg-gray-6" />;

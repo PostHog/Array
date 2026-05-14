@@ -1,7 +1,7 @@
 import { GlassContainer, GlassView } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
 import { ArrowUp, Microphone, Stop } from "phosphor-react-native";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -86,8 +86,13 @@ export function Composer({
 }: ComposerProps) {
   const themeColors = useThemeColors();
   const [message, setMessage] = useState("");
+
+  const appendTranscript = useCallback((transcript: string) => {
+    setMessage((prev) => (prev ? `${prev} ${transcript}` : transcript));
+  }, []);
+
   const { status, startRecording, stopRecording, cancelRecording } =
-    useVoiceRecording();
+    useVoiceRecording({ onTranscript: appendTranscript });
 
   const isRecording = status === "recording";
   const isTranscribing = status === "transcribing";
@@ -102,10 +107,7 @@ export function Composer({
 
   const handleMicPress = async () => {
     if (isRecording) {
-      const transcript = await stopRecording();
-      if (transcript) {
-        setMessage((prev) => (prev ? `${prev} ${transcript}` : transcript));
-      }
+      await stopRecording();
     } else if (!isTranscribing) {
       await startRecording();
     }

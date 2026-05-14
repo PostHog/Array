@@ -1,44 +1,119 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import type { Task } from "../types";
+import { createJSONStorage, persist } from "zustand/middleware";
+import type { ExecutionMode, ReasoningEffort } from "../composer/options";
+import type { RepositorySelection, Task } from "../types";
 
-export type OrderByField = "created_at" | "status" | "title";
-export type OrderDirection = "asc" | "desc";
+export type OrganizeMode = "by-project" | "chronological";
+export type SortMode = "created" | "updated";
+
+const EMPTY_REPOSITORY_SELECTION: RepositorySelection = {
+  integrationId: null,
+  repository: null,
+};
+
+/** Per-task chat composer pill values. Persisted so reopening a task keeps
+ *  the mode/model/reasoning the user last selected for it. */
+export interface TaskComposerConfig {
+  mode?: ExecutionMode;
+  model?: string;
+  reasoning?: ReasoningEffort;
+}
 
 interface TaskUIState {
   selectedTaskId: string | null;
-  orderBy: OrderByField;
-  orderDirection: OrderDirection;
+  organizeMode: OrganizeMode;
+  sortMode: SortMode;
+  showInternal: boolean;
   filter: string;
+  /** Most-recently-used repository for the new-task composer. Pre-fills the
+   *  repo pill so users don't have to re-pick the same repo every time. */
+  lastRepository: RepositorySelection;
+  composerConfigByTaskId: Record<string, TaskComposerConfig>;
 
   selectTask: (taskId: string | null) => void;
-  setOrderBy: (orderBy: OrderByField) => void;
-  setOrderDirection: (direction: OrderDirection) => void;
+  setOrganizeMode: (mode: OrganizeMode) => void;
+  setSortMode: (mode: SortMode) => void;
+  setShowInternal: (showInternal: boolean) => void;
   setFilter: (filter: string) => void;
+  setLastRepository: (selection: RepositorySelection) => void;
+  setComposerConfig: (
+    taskId: string,
+    config: Partial<TaskComposerConfig>,
+  ) => void;
 }
 
-export const useTaskStore = create<TaskUIState>((set) => ({
-  selectedTaskId: null,
-  orderBy: "created_at",
-  orderDirection: "desc",
-  filter: "",
+export const useTaskStore = create<TaskUIState>()(
+  persist(
+    (set) => ({
+      selectedTaskId: null,
+      organizeMode: "by-project",
+      sortMode: "updated",
+      showInternal: false,
+      filter: "",
+      lastRepository: EMPTY_REPOSITORY_SELECTION,
+      composerConfigByTaskId: {},
 
-  selectTask: (selectedTaskId) => set({ selectedTaskId }),
-  setOrderBy: (orderBy) => set({ orderBy }),
-  setOrderDirection: (orderDirection) => set({ orderDirection }),
-  setFilter: (filter) => set({ filter }),
-}));
+      selectTask: (selectedTaskId) => set({ selectedTaskId }),
+      setOrganizeMode: (organizeMode) => set({ organizeMode }),
+      setSortMode: (sortMode) => set({ sortMode }),
+      setShowInternal: (showInternal) => set({ showInternal }),
+      setFilter: (filter) => set({ filter }),
+      setLastRepository: (lastRepository) => set({ lastRepository }),
+      setComposerConfig: (taskId, config) =>
+        set((state) => ({
+          composerConfigByTaskId: {
+            ...state.composerConfigByTaskId,
+            [taskId]: {
+              ...state.composerConfigByTaskId[taskId],
+              ...config,
+            },
+          },
+        })),
+    }),
+    {
+      name: "posthog-task-ui",
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        organizeMode: state.organizeMode,
+        sortMode: state.sortMode,
+        showInternal: state.showInternal,
+        lastRepository: state.lastRepository,
+        composerConfigByTaskId: state.composerConfigByTaskId,
+      }),
+    },
+  ),
+);
+
+export function taskActivityTimestamp(task: Task, sortMode: SortMode): number {
+  if (sortMode === "created") {
+    return new Date(task.created_at).getTime();
+  }
+  // "updated" — take the most recent of task.updated_at and latest_run.updated_at.
+  const runUpdated = task.latest_run?.updated_at;
+  const taskUpdated = task.updated_at ?? task.created_at;
+  return Math.max(
+    runUpdated ? new Date(runUpdated).getTime() : 0,
+    new Date(taskUpdated).getTime(),
+  );
+}
 
 export function filterAndSortTasks(
   tasks: Task[],
-  orderBy: OrderByField,
-  orderDirection: OrderDirection,
+  sortMode: SortMode,
+  showInternal: boolean,
   filter: string,
 ): Task[] {
   let filtered = tasks;
 
+  // Visibility filter — mirrors desktop radio: External hides internal, Internal shows only internal.
+  filtered = filtered.filter((task) =>
+    showInternal ? task.internal === true : task.internal !== true,
+  );
+
   if (filter) {
     const lowerFilter = filter.toLowerCase();
-    filtered = tasks.filter(
+    filtered = filtered.filter(
       (task) =>
         task.title.toLowerCase().includes(lowerFilter) ||
         task.slug.toLowerCase().includes(lowerFilter) ||
@@ -46,27 +121,8 @@ export function filterAndSortTasks(
     );
   }
 
-  return [...filtered].sort((a, b) => {
-    let comparison = 0;
-
-    switch (orderBy) {
-      case "created_at":
-        comparison =
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-        break;
-      case "status": {
-        const statusOrder = ["failed", "in_progress", "started", "completed"];
-        const aStatus = a.latest_run?.status || "backlog";
-        const bStatus = b.latest_run?.status || "backlog";
-        comparison =
-          statusOrder.indexOf(aStatus) - statusOrder.indexOf(bStatus);
-        break;
-      }
-      case "title":
-        comparison = a.title.localeCompare(b.title);
-        break;
-    }
-
-    return orderDirection === "desc" ? -comparison : comparison;
-  });
+  return [...filtered].sort(
+    (a, b) =>
+      taskActivityTimestamp(b, sortMode) - taskActivityTimestamp(a, sortMode),
+  );
 }

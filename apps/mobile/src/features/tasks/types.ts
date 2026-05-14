@@ -9,7 +9,48 @@ export interface Task {
   origin_product: string;
   repository?: string | null;
   github_integration?: number | null;
+  internal?: boolean;
   latest_run?: TaskRun;
+}
+
+export interface TaskAutomation {
+  id: string;
+  name: string;
+  prompt: string;
+  repository: string;
+  github_integration?: number | null;
+  cron_expression: string;
+  timezone?: string | null;
+  template_id?: string | null;
+  enabled: boolean;
+  last_run_at: string | null;
+  last_run_status: string | null;
+  last_task_id: string | null;
+  last_task_run_id: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TaskRunStatus =
+  | "not_started"
+  | "queued"
+  | "started"
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
+
+export function isTerminalStatus(
+  status: TaskRunStatus | string | null | undefined,
+): boolean {
+  return (
+    status !== null &&
+    status !== undefined &&
+    TERMINAL_STATUSES.includes(status as (typeof TERMINAL_STATUSES)[number])
+  );
 }
 
 export interface TaskRun {
@@ -19,7 +60,7 @@ export interface TaskRun {
   branch: string | null;
   stage?: string | null;
   environment?: "local" | "cloud";
-  status: "started" | "in_progress" | "completed" | "failed";
+  status: TaskRunStatus;
   log_url: string;
   error_message: string | null;
   output: Record<string, unknown> | null;
@@ -42,10 +83,22 @@ export interface StoredLogEntry {
   direction?: "client" | "agent";
 }
 
+export interface SessionNotificationAttachment {
+  kind: "image" | "document";
+  uri: string;
+  fileName: string;
+  mimeType?: string;
+}
+
 export interface SessionNotification {
   update?: {
     sessionUpdate?: string;
     content?: { type: string; text: string };
+    // Sidecar carrying user-uploaded attachments on user_message_chunk events.
+    // The wire format embeds the bytes themselves in a separate serialized
+    // cloud-prompt payload sent to the agent; this field exists only so the
+    // local feed can render the attachments alongside the echoed text.
+    attachments?: SessionNotificationAttachment[];
     title?: string;
     toolCallId?: string;
     status?: "pending" | "in_progress" | "completed" | "failed" | null;
@@ -249,6 +302,132 @@ export interface SessionUpdateEvent {
 
 export type SessionEvent = AcpMessage | SessionUpdateEvent;
 
+export interface CloudPermissionOption {
+  kind: string;
+  optionId: string;
+  name: string;
+  _meta?: Record<string, unknown>;
+}
+
+export interface CloudPermissionToolCall {
+  toolCallId: string;
+  title: string;
+  kind: string;
+  content?: unknown[];
+  rawInput?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
+}
+
+interface CloudTaskUpdateBase {
+  taskId: string;
+  runId: string;
+}
+
+export interface CloudTaskLogsUpdate extends CloudTaskUpdateBase {
+  kind: "logs";
+  newEntries: StoredLogEntry[];
+  totalEntryCount: number;
+}
+
+export interface CloudTaskStatusUpdate extends CloudTaskUpdateBase {
+  kind: "status";
+  status?: TaskRunStatus;
+  stage?: string | null;
+  output?: Record<string, unknown> | null;
+  errorMessage?: string | null;
+  branch?: string | null;
+}
+
+export interface CloudTaskSnapshotUpdate extends CloudTaskUpdateBase {
+  kind: "snapshot";
+  newEntries: StoredLogEntry[];
+  totalEntryCount: number;
+  status?: TaskRunStatus;
+  stage?: string | null;
+  output?: Record<string, unknown> | null;
+  errorMessage?: string | null;
+  branch?: string | null;
+}
+
+export interface CloudTaskErrorUpdate extends CloudTaskUpdateBase {
+  kind: "error";
+  errorTitle: string;
+  errorMessage: string;
+  retryable: boolean;
+}
+
+export interface CloudTaskPermissionRequestUpdate extends CloudTaskUpdateBase {
+  kind: "permission_request";
+  requestId: string;
+  toolCall: CloudPermissionToolCall;
+  options: CloudPermissionOption[];
+}
+
+export type CloudTaskUpdatePayload =
+  | CloudTaskLogsUpdate
+  | CloudTaskStatusUpdate
+  | CloudTaskSnapshotUpdate
+  | CloudTaskErrorUpdate
+  | CloudTaskPermissionRequestUpdate;
+
+export interface TaskRunStateEvent {
+  type: "task_run_state";
+  status?: TaskRunStatus;
+  stage?: string | null;
+  output?: Record<string, unknown> | null;
+  error_message?: string | null;
+  branch?: string | null;
+  updated_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface PermissionRequestEventData {
+  type: "permission_request";
+  requestId: string;
+  toolCall: CloudPermissionToolCall;
+  options: CloudPermissionOption[];
+}
+
+export interface SseErrorEventData {
+  error: string;
+}
+
+export function isTaskRunStateEvent(data: unknown): data is TaskRunStateEvent {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as { type?: string }).type === "task_run_state"
+  );
+}
+
+export function isPermissionRequestEvent(
+  data: unknown,
+): data is PermissionRequestEventData {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as { type?: string }).type === "permission_request" &&
+    typeof (data as { requestId?: string }).requestId === "string"
+  );
+}
+
+export function isKeepaliveEvent(data: unknown): boolean {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as { type?: string }).type === "keepalive"
+  );
+}
+
+export function isSseErrorEvent(data: unknown): data is SseErrorEventData {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "error" in data &&
+    typeof (data as SseErrorEventData).error === "string"
+  );
+}
+
 export interface Integration {
   id: number;
   kind: string;
@@ -260,9 +439,67 @@ export interface Integration {
   };
 }
 
+export interface RepositoryOption {
+  integrationId: number;
+  integrationLabel: string;
+  repository: string;
+}
+
+export interface RepositorySelection {
+  integrationId: number | null;
+  repository: string | null;
+}
+
+export type AutomationTemplateAudience = "developer" | "pm" | "executive";
+
+export interface AutomationTemplate {
+  id: string;
+  name: string;
+  description: string;
+  audience: AutomationTemplateAudience;
+  audienceLabel: string;
+  categoryLabel: string;
+  prompt: string;
+  suggestedName: string;
+  cron_expression: string;
+  enabled: boolean;
+  requiresRepository: boolean;
+  hero?: boolean;
+}
+
+export interface AutomationTemplateInitialValues {
+  name: string;
+  prompt: string;
+  cron_expression: string;
+  enabled: boolean;
+  template_id: string;
+}
+
 export interface CreateTaskOptions {
   description: string;
   title?: string;
   repository?: string;
   github_integration?: number;
+}
+
+export interface CreateTaskAutomationOptions {
+  name: string;
+  prompt: string;
+  repository: string;
+  github_integration?: number | null;
+  cron_expression: string;
+  timezone: string;
+  enabled?: boolean;
+  template_id?: string | null;
+}
+
+export interface UpdateTaskAutomationOptions {
+  name?: string;
+  prompt?: string;
+  repository?: string;
+  github_integration?: number | null;
+  cron_expression?: string;
+  timezone?: string;
+  enabled?: boolean;
+  template_id?: string | null;
 }

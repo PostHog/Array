@@ -73,10 +73,26 @@ export const THINKING_MESSAGES = [
   "Scuttling",
   "Framing",
   "Sharpening",
+  "Flibbertigibbeting",
+  "Kerfuffling",
+  "Dithering",
+  "Discombobulating",
+  "Rambling",
+  "Befuddling",
+  "Waffling",
+  "Muckling",
+  "Hobnobbing",
+  "Galumphing",
+  "Puttering",
+  "Whiffling",
   "Thinking",
 ];
 
-export function getRandomThinkingMessage(): string {
+export function getRandomThinkingActivity(): string {
   const randomIndex = Math.floor(Math.random() * THINKING_MESSAGES.length);
-  return `${THINKING_MESSAGES[randomIndex]}...`;
+  return THINKING_MESSAGES[randomIndex];
+}
+
+export function getRandomThinkingMessage(): string {
+  return `${getRandomThinkingActivity()}...`;
 }

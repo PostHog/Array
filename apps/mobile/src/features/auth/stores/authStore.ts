@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { usePushTokenStore } from "@/features/notifications/stores/pushTokenStore";
+import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { logger } from "@/lib/logger";
 import { queryClient } from "@/lib/queryClient";
 import {
@@ -42,6 +44,16 @@ interface AuthState {
 }
 
 let refreshTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+function maybeRegisterPushToken(): void {
+  if (!usePreferencesStore.getState().pushNotificationsEnabled) return;
+  usePushTokenStore
+    .getState()
+    .registerAndUpload()
+    .catch((error) => {
+      logger.warn("Push token registration failed", error);
+    });
+}
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -99,6 +111,7 @@ export const useAuthStore = create<AuthState>()(
         });
 
         get().scheduleTokenRefresh();
+        maybeRegisterPushToken();
       },
 
       loginWithPersonalApiKey: async ({ token, projectId, region }) => {
@@ -133,6 +146,8 @@ export const useAuthStore = create<AuthState>()(
           projectId,
           isAuthenticated: true,
         });
+
+        maybeRegisterPushToken();
       },
 
       refreshAccessToken: async () => {
@@ -239,6 +254,7 @@ export const useAuthStore = create<AuthState>()(
 
           set({ isLoading: false, isAuthenticated: true });
           get().scheduleTokenRefresh();
+          maybeRegisterPushToken();
           return true;
         } catch (error) {
           logger.error("Failed to initialize auth:", error);
@@ -252,6 +268,9 @@ export const useAuthStore = create<AuthState>()(
           clearTimeout(refreshTimeoutId);
           refreshTimeoutId = null;
         }
+
+        // Delete push token from the backend before we drop credentials.
+        await usePushTokenStore.getState().clear();
 
         await deleteTokens();
 

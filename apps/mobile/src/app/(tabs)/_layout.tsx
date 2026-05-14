@@ -1,78 +1,52 @@
-import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
-import { DynamicColorIOS, Platform } from "react-native";
-import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
+import { Stack, usePathname, useRouter } from "expo-router";
+import { useEffect } from "react";
+import { BackHandler, View } from "react-native";
+import { NavDrawer } from "@/features/navigation/components/NavDrawer";
+import { useNavDrawerStore } from "@/features/navigation/stores/navDrawerStore";
 import { useThemeColors } from "@/lib/theme";
+
+const HOME_ROUTE = "/tasks";
 
 export default function TabsLayout() {
   const themeColors = useThemeColors();
-  const aiChatEnabled = usePreferencesStore((s) => s.aiChatEnabled);
+  const router = useRouter();
+  const pathname = usePathname();
 
-  // Dynamic colors for liquid glass effect on iOS
-  const dynamicTextColor =
-    Platform.OS === "ios"
-      ? DynamicColorIOS({
-          dark: themeColors.gray[12],
-          light: themeColors.gray[12],
-        })
-      : themeColors.gray[12];
-
-  const dynamicTintColor =
-    Platform.OS === "ios"
-      ? DynamicColorIOS({
-          dark: themeColors.accent[9],
-          light: themeColors.accent[9],
-        })
-      : themeColors.accent[9];
+  // Android: each drawer destination replaces (no back stack between them), so
+  // hardware back from a non-home destination should go home instead of exiting.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        const store = useNavDrawerStore.getState();
+        // Drawer always-mounted: close it explicitly here since there's no
+        // Modal onRequestClose to fall through to.
+        if (store.isOpen) {
+          store.close();
+          return true;
+        }
+        if (pathname === HOME_ROUTE) return false;
+        router.replace(HOME_ROUTE);
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [pathname, router]);
 
   return (
-    <NativeTabs
-      labelStyle={{
-        color: dynamicTextColor,
-      }}
-      tintColor={dynamicTintColor}
-      minimizeBehavior="onScrollDown"
-    >
-      {/* Conversations - Chats tab, hidden by default to focus on Code */}
-      {aiChatEnabled && (
-        <NativeTabs.Trigger name="index">
-          <Label>Chats</Label>
-          <Icon
-            sf={{
-              default: "bubble.left.and.bubble.right",
-              selected: "bubble.left.and.bubble.right.fill",
-            }}
-            drawable="ic_menu_send"
-          />
-        </NativeTabs.Trigger>
-      )}
-
-      {/* Code tab (task list for PostHog Code) */}
-      <NativeTabs.Trigger name="tasks">
-        <Label>Code</Label>
-        <Icon
-          sf={{ default: "checklist", selected: "checklist" }}
-          drawable="ic_menu_agenda"
-        />
-      </NativeTabs.Trigger>
-
-      {/* Settings Tab */}
-      <NativeTabs.Trigger name="settings">
-        <Label>Settings</Label>
-        <Icon
-          sf={{ default: "gearshape", selected: "gearshape.fill" }}
-          drawable="ic_menu_preferences"
-        />
-      </NativeTabs.Trigger>
-
-      {/* TODO: Fix this and use NativeTabs.Trigger for opening the chat */}
-      {/* Chat - Separate floating button (iOS search role style) */}
-      {/* <NativeTabs.Trigger name="chat" role="search">
-        <Label hidden />
-        <Icon
-          sf={{ default: "plus", selected: "plus" }}
-          drawable="ic_menu_add"
-        />
-      </NativeTabs.Trigger> */}
-    </NativeTabs>
+    <View className="flex-1 bg-background">
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: themeColors.background },
+        }}
+      >
+        <Stack.Screen name="tasks" />
+        <Stack.Screen name="inbox" />
+        <Stack.Screen name="automations" />
+        <Stack.Screen name="index" />
+      </Stack>
+      <NavDrawer />
+    </View>
   );
 }

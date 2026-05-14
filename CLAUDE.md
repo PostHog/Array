@@ -127,6 +127,13 @@ See [ARCHITECTURE.md](./apps/code/ARCHITECTURE.md) for detailed patterns (DI, se
 - Saga pattern for atomic multi-step operations with automatic rollback
 - Built with tsup, outputs ESM
 
+### Mobile App (apps/mobile)
+
+- React Native + Expo (SDK 54), expo-router for file-based routing
+- NativeWind v4 for styling (Tailwind classes compiled to RN styles)
+- React Query for server state, Zustand for client state
+- See [Mobile App](#mobile-app-appsmobile-1) section below for UI rules and patterns — Electron patterns in `Code Patterns` do NOT apply on mobile
+
 ## Agent Integration Guidelines
 
 - **No rawInput**: Don't use Claude Code SDK's `rawInput` - only use Zod validated meta fields. This keeps us agent agnostic and gives us a maintainable, extensible format for logs.
@@ -363,6 +370,82 @@ export const useNavigationStore = create<NavigationStore>()(
   })
 );
 ```
+
+## Mobile App (apps/mobile)
+
+When working in `apps/mobile/`, the patterns in `Code Patterns` above are for the **Electron renderer** (web DOM, Radix, web Tailwind v4). They do NOT apply here. Mobile is React Native: no `<div>`, no `window`/`document`/`localStorage`, no `:hover`/`cursor-*`/`focus-visible:`, no CSS `position: fixed`, no `overflow-y-auto`. If a feature only exists in CSS, it doesn't exist on mobile — design for touch and native primitives.
+
+See [apps/mobile/README.md](./apps/mobile/README.md) for setup, build profiles, and full command list.
+
+### Mobile UI Principles
+
+Every screen must be designed for a phone: portrait-first, touch-driven, dark + light mode, safe areas honoured, keyboard-aware. Treat tablet/landscape as a stretch goal, not a baseline — but never let layouts hard-break on them.
+
+- **Touch targets are 44pt minimum.** Use `hitSlop` to widen the hit area when the visual element is smaller. Never assume a pointer.
+- **Provide press feedback.** `active:opacity-*` or `active:bg-*` on every `Pressable`. There is no hover state — feedback only happens on press.
+- **Honour safe areas.** Use `useSafeAreaInsets()` from `react-native-safe-area-context` for top/bottom padding. Never hardcode status-bar height. Edge-to-edge screens (no native header) MUST account for the notch and home indicator.
+- **Keyboard handling is mandatory for any input.** Use `react-native-keyboard-controller`'s `KeyboardAvoidingView` / `KeyboardAwareScrollView`. Set `keyboardShouldPersistTaps="handled"` on scroll containers that contain inputs. Verify the composer/input remains visible with the keyboard up.
+- **Dark mode is not optional.** Every new screen must work in both light and dark. Pick from theme tokens, never raw hex.
+- **One-handed reachability.** Primary actions belong in the bottom half of the screen where the thumb actually lives. Avoid forcing reach to the top corners for frequent actions — that's what `FloatingBackButton` / floating CTAs are for.
+- **Respect platform conventions.** iOS swipe-back gestures, Android hardware back, sheet/modal idioms. Don't reinvent navigation.
+
+### Primitives
+
+- **Layout & containers:** `View`, `ScrollView`, `FlatList`. Never reach for HTML elements; they don't exist.
+- **Long lists:** Always `FlatList` (or `SectionList`) with a stable `keyExtractor`. Plain `ScrollView` is for short, bounded content only.
+- **Text:** Import from `@components/text` — it applies the project's default font stack. Direct `react-native` `Text` is monkey-patched in [textDefaults.ts](apps/mobile/src/lib/textDefaults.ts) but the wrapper is preferred for consistency.
+- **Buttons / tappables:** `Pressable`. Always set `hitSlop` and an `active:*` class.
+- **Icons:** `phosphor-react-native`. Pass color via `useThemeColors()` (e.g. `color={themeColors.gray[12]}`), never a hex literal.
+- **Animations:** `react-native-reanimated` v4. Do not use the legacy `Animated` API.
+- **Haptics:** `expo-haptics` for confirmation / destructive actions. Pair with visual feedback — haptics alone are not a signal.
+
+### Styling: NativeWind + Theme Tokens
+
+Mobile uses NativeWind v3 with the token system defined in [theme.ts](apps/mobile/src/lib/theme.ts) and exposed via [tailwind.config.js](apps/mobile/tailwind.config.js).
+
+- **Use named token classes**, not hex: `bg-gray-1`, `bg-gray-2`, `text-gray-12`, `border-gray-6`, `bg-accent-9`, `text-accent-11`, `bg-background`, `bg-card`, `text-status-error`. These automatically switch between light and dark.
+- **Arbitrary values** (`text-[15px]`, `pl-[18px]`) are fine when the design token doesn't match. Pair body text with `leading-snug`, titles with `leading-tight`.
+- **For native props that take a color directly** — `ActivityIndicator`, `RefreshControl`, `StatusBar`, gradient stops, icon `color={...}` — call `useThemeColors()` and pass the hex. Don't hardcode.
+- **For transparent variants** (gradients, overlays), use `toRgba(themeColors.background, 0.92)` rather than guessing rgba values.
+
+Inline `style={{}}` on mobile is acceptable ONLY for:
+
+1. **Runtime-computed values:** `style={{ paddingTop: insets.top + 8 }}`, `style={{ height: fadeHeight }}`, `transform: [{ translateY }]` driven by Reanimated/measurement.
+2. **Library configuration objects** that aren't React props (e.g. `LinearGradient`'s absolute fill, gesture handler configs).
+3. **Theme tokens consumed by native components** that don't accept className (passed to `contentStyle`, `headerStyle`, etc.).
+
+Do NOT use inline `style` for static color, spacing, layout, border, radius, opacity, position, or z-index — those are all NativeWind classes. If a conditional looks like `style={{ color: isActive ? a : b }}`, rewrite as ``className={`base ${isActive ? "text-accent-9" : "text-gray-10"}`}``.
+
+When writing custom components, accept `className?: string` and merge it into the inner element so call sites can override styling without inline `style`.
+
+### Navigation & Screen Patterns
+
+- **expo-router**, file-based. Routes live in [src/app/](apps/mobile/src/app/). `(group)/` is a layout group, `[id].tsx` is a dynamic param.
+- **Modals:** Configure on the Stack screen with `presentation: "modal"` — see [_layout.tsx](apps/mobile/src/app/_layout.tsx). Don't roll a custom modal component when a stack modal will do.
+- **Headers:** Prefer the existing floating header pattern ([FloatingBackButton](apps/mobile/src/components/FloatingBackButton.tsx), [FloatingTaskHeader](apps/mobile/src/features/tasks/components/FloatingTaskHeader.tsx)) over the native stack header. It lets content fill the full screen (incl. behind the status bar) and looks correct in both light/dark.
+- **Don't go back blindly.** Always guard with `if (router.canGoBack()) router.back()`.
+
+### Storage & Side Effects
+
+- **Persistent key/value:** `@react-native-async-storage/async-storage` — NOT `localStorage` (doesn't exist on RN).
+- **Secrets / tokens:** `expo-secure-store`.
+- **Logger:** Use `@/lib/logger`. Never `console.*` in source.
+- **Path alias:** `@/*` → `apps/mobile/src/*`. Don't use deep relative imports.
+
+### Platform Differences
+
+- Split iOS/Android behavior with `Platform.OS === "ios"`. Don't ship iOS-only APIs (`expo-glass-effect`, certain haptics, modal `presentation: "formSheet"`) without an Android fallback.
+- iOS swipe-back is on by default — don't disable it without a strong reason. On Android, ensure hardware back behaves the same.
+
+### Verifying Mobile UI Work
+
+You cannot fully validate mobile UI from a typecheck. Before claiming a mobile UI task is done:
+
+1. Mentally (or actually) walk the layout through: small iPhone (e.g. iPhone SE), large iPhone (Pro Max), with and without dynamic type bumped.
+2. Check both light and dark mode — switch the simulator's appearance and verify token-based colors still read.
+3. With the keyboard up — does the focused input stay visible? Does the back/submit button still tap?
+4. Safe areas — does anything sit under the notch or home indicator?
+5. If you can't actually run it, say so explicitly rather than reporting success.
 
 ## Testing
 

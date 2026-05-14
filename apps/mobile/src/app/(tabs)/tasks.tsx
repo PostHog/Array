@@ -1,12 +1,20 @@
-import { Text } from "@components/text";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef } from "react";
-import { InteractionManager, Pressable, View } from "react-native";
-import { TaskList } from "@/features/tasks";
+import { InteractionManager, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FloatingNewTaskButton } from "@/features/tasks/components/FloatingNewTaskButton";
+import { FloatingTasksHeader } from "@/features/tasks/components/FloatingTasksHeader";
+import {
+  TaskFilterMenu,
+  useTaskFilterMenu,
+} from "@/features/tasks/components/TaskFilterMenu";
+import { TaskList } from "@/features/tasks/components/TaskList";
 
 export default function TasksScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const readyRef = useRef(true);
+  const filterMenu = useTaskFilterMenu();
 
   // Block navigation while a modal dismiss animation is in progress.
   // When the screen loses focus (modal opens), readyRef is false.
@@ -39,30 +47,23 @@ export default function TasksScreen() {
     [router],
   );
 
+  // Header occupies insets.top + 6 (top pad) + 44 (button) + 8 (bottom pad),
+  // plus a small visual buffer so the first row isn't hugging the divider.
+  const headerHeight = insets.top + 64;
+
   return (
     <View className="flex-1 bg-background">
-      {/* Header */}
-      <View className="border-gray-6 border-b px-4 pt-16 pb-4">
-        <View className="flex-row items-center justify-between">
-          <View>
-            <Text className="font-bold text-2xl text-gray-12">Code</Text>
-            <Text className="text-gray-11 text-sm">
-              Your PostHog Code sessions
-            </Text>
-          </View>
-          <Pressable
-            onPress={handleCreateTask}
-            className="rounded-lg bg-accent-9 px-4 py-2"
-          >
-            <Text className="font-semibold text-accent-contrast text-sm">
-              New task
-            </Text>
-          </Pressable>
-        </View>
-      </View>
+      <TaskList
+        onTaskPress={handleTaskPress}
+        onCreateTask={handleCreateTask}
+        contentInsetTop={headerHeight}
+      />
 
-      {/* Task List */}
-      <TaskList onTaskPress={handleTaskPress} onCreateTask={handleCreateTask} />
+      <FloatingTasksHeader onFilterPress={filterMenu.show} />
+
+      <FloatingNewTaskButton onPress={handleCreateTask} />
+
+      <TaskFilterMenu open={filterMenu.open} onClose={filterMenu.hide} />
     </View>
   );
 }

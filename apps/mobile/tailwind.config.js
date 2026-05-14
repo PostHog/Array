@@ -41,9 +41,11 @@ module.exports = {
           info: "rgb(var(--status-info) / <alpha-value>)",
         },
         background: "rgb(var(--background) / <alpha-value>)",
+        card: "rgb(var(--card) / <alpha-value>)",
       },
       fontFamily: {
-        mono: ["JetBrains Mono"],
+        sans: ["Open Runde"],
+        mono: ["Open Runde"],
       },
     },
   },

@@ -3,27 +3,12 @@ import { differenceInHours, format, formatDistanceToNow } from "date-fns";
 import { memo } from "react";
 import { Pressable, View } from "react-native";
 import type { Task } from "../types";
+import { TaskStatusIcon } from "./TaskStatusIcon";
 
 interface TaskItemProps {
   task: Task;
   onPress: (task: Task) => void;
 }
-
-const statusColorMap: Record<string, { bg: string; text: string }> = {
-  completed: { bg: "bg-status-success/20", text: "text-status-success" },
-  failed: { bg: "bg-status-error/20", text: "text-status-error" },
-  in_progress: { bg: "bg-status-info/20", text: "text-status-info" },
-  started: { bg: "bg-status-warning/20", text: "text-status-warning" },
-  backlog: { bg: "bg-gray-5/20", text: "text-gray-9" },
-};
-
-const statusDisplayMap: Record<string, string> = {
-  completed: "Completed",
-  failed: "Failed",
-  in_progress: "In progress",
-  started: "Started",
-  backlog: "Backlog",
-};
 
 function TaskItemComponent({ task, onPress }: TaskItemProps) {
   const createdAt = new Date(task.created_at);
@@ -33,68 +18,40 @@ function TaskItemComponent({ task, onPress }: TaskItemProps) {
       ? formatDistanceToNow(createdAt, { addSuffix: true })
       : format(createdAt, "MMM d");
 
-  const prUrl = task.latest_run?.output?.pr_url as string | undefined;
-  const hasPR = !!prUrl;
-  const status = hasPR ? "completed" : task.latest_run?.status || "backlog";
-  const environment = task.latest_run?.environment;
-
-  const statusColors = statusColorMap[status] || statusColorMap.backlog;
-
   return (
     <Pressable
       onPress={() => onPress(task)}
-      className="border-gray-6 border-b px-3 py-3 active:bg-gray-3"
+      className="flex-row items-start gap-3 border-gray-6 border-b px-3 py-3 active:bg-gray-3"
     >
-      <View className="flex-row items-center gap-2">
-        {/* Slug */}
-        <Text className="flex-shrink-0 text-gray-9 text-xs">{task.slug}</Text>
+      {/* Status icon column */}
+      <View className="mt-0.5 h-5 w-5 shrink-0 items-center justify-center">
+        <TaskStatusIcon task={task} size={16} />
+      </View>
 
-        {/* Status Badge */}
-        <View className={`rounded px-1.5 py-0.5 ${statusColors.bg}`}>
-          <Text className={`text-xs ${statusColors.text}`}>
-            {statusDisplayMap[status] || status}
+      {/* Content column */}
+      <View className="min-w-0 flex-1">
+        <View className="flex-row items-center gap-2">
+          <Text
+            className="flex-1 font-medium text-[14px] text-gray-12"
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {task.title}
+          </Text>
+          <Text className="shrink-0 text-[11px] text-gray-9">
+            {timeDisplay}
           </Text>
         </View>
 
-        {/* Environment badge */}
-        {environment === "cloud" && (
-          <View className="rounded bg-accent-3 px-1.5 py-0.5">
-            <Text className="text-accent-11 text-xs">Cloud</Text>
-          </View>
-        )}
-        {environment === "local" && (
-          <View className="rounded bg-gray-4 px-1.5 py-0.5">
-            <Text className="text-gray-11 text-xs">Local</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Title */}
-      <Text
-        className="mt-1 font-medium text-gray-12 text-sm"
-        numberOfLines={1}
-        ellipsizeMode="tail"
-      >
-        {task.title}
-      </Text>
-
-      {/* Description preview */}
-      {task.description && (
-        <Text
-          className="mt-0.5 text-gray-11 text-xs"
-          numberOfLines={2}
-          ellipsizeMode="tail"
-        >
-          {task.description}
-        </Text>
-      )}
-
-      {/* Bottom row: repo + time */}
-      <View className="mt-1.5 flex-row items-center justify-between">
-        <Text className="text-gray-9 text-xs" numberOfLines={1}>
-          {task.repository || "No repository"}
-        </Text>
-        <Text className="flex-shrink-0 text-gray-8 text-xs">{timeDisplay}</Text>
+        {task.description ? (
+          <Text
+            className="mt-0.5 text-[12px] text-gray-10"
+            numberOfLines={2}
+            ellipsizeMode="tail"
+          >
+            {task.description}
+          </Text>
+        ) : null}
       </View>
     </Pressable>
   );

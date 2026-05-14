@@ -61,3 +61,7 @@ plugins/posthog/local-skills/
 
 # Symlinked copies of posthog, to make developing against those APIs easier
 posthog-sym
+
+.claude/settings.local.json
+
+apps/mobile/ROADMAP.md

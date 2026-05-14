@@ -1,0 +1,296 @@
+import { fetch } from "expo/fetch";
+import { HttpError } from "@/features/tasks/api";
+import { getBaseUrl, getHeaders, getProjectId } from "@/lib/api";
+import { logger } from "@/lib/logger";
+import type { DismissalReasonOptionValue } from "./constants";
+
+const log = logger.scope("inbox-api");
+
+import type {
+  AvailableSuggestedReviewer,
+  AvailableSuggestedReviewersResponse,
+  ReportArtefact,
+  SignalProcessingStateResponse,
+  SignalReport,
+  SignalReportArtefactsResponse,
+  SignalReportSignalsResponse,
+  SignalReportsQueryParams,
+  SignalReportsResponse,
+  SignalReportTask,
+} from "./types";
+
+export async function getSignalReports(
+  params?: SignalReportsQueryParams,
+): Promise<SignalReportsResponse> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const url = new URL(`${baseUrl}/api/projects/${projectId}/signals/reports/`);
+
+  if (params?.limit != null) {
+    url.searchParams.set("limit", String(params.limit));
+  }
+  if (params?.offset != null) {
+    url.searchParams.set("offset", String(params.offset));
+  }
+  if (params?.status) {
+    url.searchParams.set("status", params.status);
+  }
+  if (params?.ordering) {
+    url.searchParams.set("ordering", params.ordering);
+  }
+  if (params?.source_product) {
+    url.searchParams.set("source_product", params.source_product);
+  }
+  if (params?.suggested_reviewers) {
+    url.searchParams.set("suggested_reviewers", params.suggested_reviewers);
+  }
+
+  const response = await fetch(url.toString(), { headers });
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch signal reports",
+    );
+  }
+
+  const data = await response.json();
+  return {
+    results: data.results ?? [],
+    count: data.count ?? data.results?.length ?? 0,
+  };
+}
+
+export async function getSignalReport(
+  reportId: string,
+): Promise<SignalReport | null> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/`,
+    { headers },
+  );
+
+  if (response.status === 404 || response.status === 403) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch signal report",
+    );
+  }
+
+  return await response.json();
+}
+
+export async function getSignalProcessingState(): Promise<SignalProcessingStateResponse> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/signals/processing_state/`,
+    { headers },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch signal processing state",
+    );
+  }
+
+  return await response.json();
+}
+
+export async function getAvailableSuggestedReviewers(
+  query?: string,
+): Promise<AvailableSuggestedReviewersResponse> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const url = new URL(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/available_reviewers/`,
+  );
+
+  if (query?.trim()) {
+    url.searchParams.set("query", query.trim());
+  }
+
+  const response = await fetch(url.toString(), { headers });
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch available suggested reviewers",
+    );
+  }
+
+  // API returns a dict keyed by UUID: { "uuid": { name, email, github_login } }
+  const data = await response.json();
+  const results = Object.entries(data)
+    .map(([uuid, value]) => {
+      if (typeof value !== "object" || value === null) return null;
+      const v = value as Record<string, unknown>;
+      return {
+        uuid,
+        name: typeof v.name === "string" ? v.name : "",
+        email: typeof v.email === "string" ? v.email : "",
+        github_login: typeof v.github_login === "string" ? v.github_login : "",
+      };
+    })
+    .filter((r): r is AvailableSuggestedReviewer => r !== null);
+
+  return { results, count: results.length };
+}
+
+export async function getSignalReportTasks(
+  reportId: string,
+): Promise<SignalReportTask[]> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/tasks/`,
+    { headers },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch signal report tasks",
+    );
+  }
+
+  const data = await response.json();
+  return data.results ?? [];
+}
+
+export async function getSignalReportArtefacts(
+  reportId: string,
+): Promise<SignalReportArtefactsResponse> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/artefacts/`,
+    { headers },
+  );
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    log.warn("Failed to fetch report artefacts", {
+      reportId,
+      status: response.status,
+      body: body.slice(0, 500),
+    });
+    return { results: [], count: 0 };
+  }
+
+  const data = await response.json();
+  const results: ReportArtefact[] = data.results ?? [];
+  return { results, count: data.count ?? results.length };
+}
+
+export async function getSignalReportSignals(
+  reportId: string,
+): Promise<SignalReportSignalsResponse> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/signals/`,
+    { headers },
+  );
+
+  if (!response.ok) {
+    log.warn("Failed to fetch report signals", {
+      reportId,
+      status: response.status,
+    });
+    return { signals: [] };
+  }
+
+  const data = await response.json();
+  return { signals: data.signals ?? [] };
+}
+
+/** Resolve the repository associated with a signal report via its repo_selection artefact. */
+export async function getReportRepository(
+  reportId: string,
+): Promise<string | null> {
+  const { results } = await getSignalReportArtefacts(reportId);
+  const repoArtefact = results.find((a) => a.type === "repo_selection");
+  if (!repoArtefact) return null;
+
+  let parsed: unknown = repoArtefact.content;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return (parsed as string).toLowerCase();
+    }
+  }
+
+  if (typeof parsed === "object" && parsed !== null) {
+    const repo =
+      (parsed as Record<string, unknown>).repository ??
+      (parsed as Record<string, unknown>).repo;
+    if (typeof repo === "string") return repo.toLowerCase();
+  }
+
+  return null;
+}
+
+export interface DismissSignalReportInput {
+  reason: DismissalReasonOptionValue;
+  note?: string;
+}
+
+export async function dismissSignalReport(
+  reportId: string,
+  input: DismissSignalReportInput,
+): Promise<SignalReport> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/state/`,
+    {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        state: "suppressed",
+        dismissal_reason: input.reason,
+        ...(input.note?.trim() ? { dismissal_note: input.note.trim() } : {}),
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      errorText || "Failed to dismiss signal report",
+    );
+  }
+
+  return await response.json();
+}

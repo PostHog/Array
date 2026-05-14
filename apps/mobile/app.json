@@ -8,13 +8,14 @@
     "newArchEnabled": true,
     "bundler": "metro",
     "scheme": "posthog",
+    "icon": "./assets/app-icon.png",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#0f0f0f"
     },
     "ios": {
-      "icon": "./assets/posthog.icon",
+      "icon": "./assets/app.icon",
       "supportsTablet": true,
       "bundleIdentifier": "com.posthog.code.mobile",
       "infoPlist": {
@@ -29,7 +30,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#E6E6E6"
+        "backgroundColor": "#FFFFFF"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -64,79 +65,23 @@
           "android": {
             "fonts": [
               {
-                "fontFamily": "JetBrains Mono",
+                "fontFamily": "Open Runde",
                 "fontDefinitions": [
                   {
-                    "path": "./assets/fonts/JetBrainsMono-Thin.ttf",
-                    "weight": 100
-                  },
-                  {
-                    "path": "./assets/fonts/JetBrainsMono-ThinItalic.ttf",
-                    "weight": 100,
-                    "style": "italic"
-                  },
-                  {
-                    "path": "./assets/fonts/JetBrainsMono-ExtraLight.ttf",
-                    "weight": 200
-                  },
-                  {
-                    "path": "./assets/fonts/JetBrainsMono-ExtraLightItalic.ttf",
-                    "weight": 200,
-                    "style": "italic"
-                  },
-                  {
-                    "path": "./assets/fonts/JetBrainsMono-Light.ttf",
-                    "weight": 300
-                  },
-                  {
-                    "path": "./assets/fonts/JetBrainsMono-LightItalic.ttf",
-                    "weight": 300,
-                    "style": "italic"
-                  },
-                  {
-                    "path": "./assets/fonts/JetBrainsMono-Regular.ttf",
+                    "path": "./assets/fonts/OpenRunde/OpenRunde-Regular.ttf",
                     "weight": 400
                   },
                   {
-                    "path": "./assets/fonts/JetBrainsMono-Italic.ttf",
-                    "weight": 400,
-                    "style": "italic"
-                  },
-                  {
-                    "path": "./assets/fonts/JetBrainsMono-Medium.ttf",
+                    "path": "./assets/fonts/OpenRunde/OpenRunde-Medium.ttf",
                     "weight": 500
                   },
                   {
-                    "path": "./assets/fonts/JetBrainsMono-MediumItalic.ttf",
-                    "weight": 500,
-                    "style": "italic"
-                  },
-                  {
-                    "path": "./assets/fonts/JetBrainsMono-SemiBold.ttf",
+                    "path": "./assets/fonts/OpenRunde/OpenRunde-Semibold.ttf",
                     "weight": 600
                   },
                   {
-                    "path": "./assets/fonts/JetBrainsMono-SemiBoldItalic.ttf",
-                    "weight": 600,
-                    "style": "italic"
-                  },
-                  {
-                    "path": "./assets/fonts/JetBrainsMono-Bold.ttf",
+                    "path": "./assets/fonts/OpenRunde/OpenRunde-Bold.ttf",
                     "weight": 700
-                  },
-                  {
-                    "path": "./assets/fonts/JetBrainsMono-BoldItalic.ttf",
-                    "weight": 700,
-                    "style": "italic"
-                  },
-                  {
-                    "path": "./assets/fonts/JetBrainsMono-ExtraBold.ttf",
-                    "weight": 800
-                  },
-                  {
-                    "path": "./assets/fonts/JetBrainsMono-ExtraBoldItalic.ttf",
-                    "weight": 800,
-                    "style": "italic"
                   }
                 ]
               }
@@ -144,27 +89,16 @@
           },
           "ios": {
             "fonts": [
-              "./assets/fonts/JetBrainsMono-Thin.ttf",
-              "./assets/fonts/JetBrainsMono-ThinItalic.ttf",
-              "./assets/fonts/JetBrainsMono-ExtraLight.ttf",
-              "./assets/fonts/JetBrainsMono-ExtraLightItalic.ttf",
-              "./assets/fonts/JetBrainsMono-Light.ttf",
-              "./assets/fonts/JetBrainsMono-LightItalic.ttf",
-              "./assets/fonts/JetBrainsMono-Regular.ttf",
-              "./assets/fonts/JetBrainsMono-Italic.ttf",
-              "./assets/fonts/JetBrainsMono-Medium.ttf",
-              "./assets/fonts/JetBrainsMono-MediumItalic.ttf",
-              "./assets/fonts/JetBrainsMono-SemiBold.ttf",
-              "./assets/fonts/JetBrainsMono-SemiBoldItalic.ttf",
-              "./assets/fonts/JetBrainsMono-Bold.ttf",
-              "./assets/fonts/JetBrainsMono-BoldItalic.ttf",
-              "./assets/fonts/JetBrainsMono-ExtraBold.ttf",
-              "./assets/fonts/JetBrainsMono-ExtraBoldItalic.ttf"
+              "./assets/fonts/OpenRunde/OpenRunde-Regular.ttf",
+              "./assets/fonts/OpenRunde/OpenRunde-Medium.ttf",
+              "./assets/fonts/OpenRunde/OpenRunde-Semibold.ttf",
+              "./assets/fonts/OpenRunde/OpenRunde-Bold.ttf"
             ]
           }
         }
       ],
       "expo-localization",
+      "expo-notifications",
       [
         "expo-speech-recognition",
         {

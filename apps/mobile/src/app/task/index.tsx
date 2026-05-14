@@ -1,280 +1,656 @@
 import { Text } from "@components/text";
-import { Stack, useRouter } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import {
+  ArrowUp,
+  BrainIcon,
+  CaretDown,
+  GithubLogo,
+  MicrophoneIcon,
+  PaperclipIcon,
+  PauseIcon,
+  PencilIcon,
+  Robot,
+  ShieldCheck,
+  StopIcon,
+} from "phosphor-react-native";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   TextInput,
   View,
 } from "react-native";
-import { useAuthStore } from "@/features/auth";
 import {
-  createTask,
-  getGithubRepositories,
-  getIntegrations,
-  type Integration,
-  runTaskInCloud,
-} from "@/features/tasks";
+  useKeyboardHandler,
+  useReanimatedKeyboardAnimation,
+} from "react-native-keyboard-controller";
+import Animated, { runOnJS, useAnimatedStyle } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { useVoiceRecording } from "@/features/chat";
+import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
+import { createTask, runTaskInCloud } from "@/features/tasks/api";
+import { GitHubConnectionPrompt } from "@/features/tasks/components/GitHubConnectionPrompt";
+import { GitHubLoadNotice } from "@/features/tasks/components/GitHubLoadNotice";
+import { AttachmentSheet } from "@/features/tasks/composer/attachments/AttachmentSheet";
+import { AttachmentsBar } from "@/features/tasks/composer/attachments/AttachmentsBar";
+import { buildCloudPromptBlocks } from "@/features/tasks/composer/attachments/buildCloudPrompt";
+import { serializeCloudPrompt } from "@/features/tasks/composer/attachments/cloudPrompt";
+import {
+  captureFromCamera,
+  pickDocument,
+  pickPhotoFromLibrary,
+} from "@/features/tasks/composer/attachments/pickers";
+import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
+import { DotBackground } from "@/features/tasks/composer/DotBackground";
+import {
+  DEFAULT_EXECUTION_MODE,
+  DEFAULT_MODEL,
+  DEFAULT_REASONING,
+  EXECUTION_MODES,
+  type ExecutionMode,
+  MODELS,
+  modeLabel,
+  modelLabel,
+  modelSupportsReasoning,
+  REASONING_LEVELS,
+  type ReasoningEffort,
+  reasoningLabel,
+} from "@/features/tasks/composer/options";
+import { Pill } from "@/features/tasks/composer/Pill";
+import { RepositoryPickerSheet } from "@/features/tasks/composer/RepositoryPickerSheet";
+import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
+import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
+import { useTaskStore } from "@/features/tasks/stores/taskStore";
+import type {
+  CreateTaskOptions,
+  RepositorySelection,
+} from "@/features/tasks/types";
+import {
+  findRepositoryOption,
+  isRepositorySelectionComplete,
+  toRepositorySelection,
+} from "@/features/tasks/utils/repositorySelection";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-create");
 
-interface ConnectGitHubPromptProps {
-  onConnected?: () => void;
-}
+const SUGGESTIONS = [
+  "Create or update my CLAUDE.md file",
+  "Search for a TODO comment and fix it",
+  "Recommend areas to improve our tests",
+] as const;
 
-function ConnectGitHubPrompt({ onConnected }: ConnectGitHubPromptProps) {
-  const { cloudRegion, projectId, getCloudUrlFromRegion } = useAuthStore();
-  const themeColors = useThemeColors();
-
-  const handleConnectGitHub = async () => {
-    if (!cloudRegion || !projectId) return;
-    const baseUrl = getCloudUrlFromRegion(cloudRegion);
-    const authorizeUrl = `${baseUrl}/api/environments/${projectId}/integrations/authorize/?kind=github`;
-
-    // Open in-app browser - will auto-detect when user returns
-    const result = await WebBrowser.openAuthSessionAsync(
-      authorizeUrl,
-      "posthog://github/callback",
-    );
-
-    // When browser session ends, refresh integrations
-    if (
-      result.type === "dismiss" ||
-      result.type === "cancel" ||
-      result.type === "success"
-    ) {
-      onConnected?.();
-    }
-  };
-
-  return (
-    <View className="mb-4 rounded-lg border border-gray-6 p-4">
-      <View className="mb-3 flex-row items-center">
-        <Text className="mr-2 text-xl">🔗</Text>
-        <Text className="font-semibold text-gray-12">
-          Connect GitHub to continue
-        </Text>
-      </View>
-      <Text className="mb-4 text-gray-11 text-sm">
-        You need to connect your GitHub account before creating tasks. This
-        allows PostHog to work on your repositories.
-      </Text>
-      <Pressable
-        onPress={handleConnectGitHub}
-        className="items-center rounded-lg py-3"
-        style={{ backgroundColor: themeColors.accent[9] }}
-      >
-        <Text className="font-semibold text-accent-contrast">
-          Connect GitHub
-        </Text>
-      </Pressable>
-    </View>
-  );
+function modeIcon(mode: ExecutionMode, color: string, size = 14) {
+  switch (mode) {
+    case "plan":
+      return <PauseIcon size={size} color={color} weight="bold" />;
+    case "default":
+      return <PencilIcon size={size} color={color} />;
+    case "acceptEdits":
+      return <ShieldCheck size={size} color={color} />;
+  }
 }
 
 export default function NewTaskScreen() {
+  const {
+    prompt: initialPrompt,
+    repo: initialRepo,
+    signalReport,
+  } = useLocalSearchParams<{
+    prompt?: string;
+    repo?: string;
+    signalReport?: string;
+  }>();
   const router = useRouter();
   const themeColors = useThemeColors();
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [repositories, setRepositories] = useState<string[]>([]);
-  const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
-  const [repoSearch, setRepoSearch] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [loadingRepos, setLoadingRepos] = useState(true);
+  const insets = useSafeAreaInsets();
+  const keyboard = useReanimatedKeyboardAnimation();
+  const restingBottom = insets.bottom + 12;
+  const {
+    error,
+    hasGithubIntegration,
+    repositoryOptions,
+    repositoryWarning,
+    isLoading,
+    refetch,
+  } = useIntegrations();
 
-  const filteredRepositories = useMemo(() => {
-    const query = repoSearch.trim().toLowerCase();
-    if (!query) return repositories;
-    return repositories.filter((repo) => repo.toLowerCase().includes(query));
-  }, [repositories, repoSearch]);
+  const containerStyle = useAnimatedStyle(() => {
+    const kbHeight = -keyboard.height.value;
+    const progress = keyboard.progress.value;
+    return {
+      paddingBottom: kbHeight + restingBottom * (1 - progress),
+    };
+  });
 
-  const loadIntegrations = useCallback(async () => {
-    try {
-      setLoadingRepos(true);
-      const data = await getIntegrations();
-      const githubIntegrations = data.filter((i) => i.kind === "github");
-      setIntegrations(githubIntegrations);
+  const suggestionsStyle = useAnimatedStyle(() => ({
+    opacity: 1 - keyboard.progress.value,
+  }));
 
-      if (githubIntegrations.length > 0) {
-        const allRepos: string[] = [];
-        for (const integration of githubIntegrations) {
-          const repos = await getGithubRepositories(integration.id);
-          allRepos.push(...repos);
-        }
-        setRepositories(allRepos.sort());
-      }
-    } catch (error) {
-      log.error("Failed to fetch integrations", error);
-    } finally {
-      setLoadingRepos(false);
+  const [keyboardActive, setKeyboardActive] = useState(false);
+  useKeyboardHandler(
+    {
+      onStart: (event) => {
+        "worklet";
+        runOnJS(setKeyboardActive)(event.height > 0);
+      },
+    },
+    [],
+  );
+
+  // Default the repo to the URL param (deep-link from a signal report etc.),
+  // falling back to the most recently used repo so the user doesn't have to
+  // re-pick the same one for every new task.
+  const lastRepository = useTaskStore((s) => s.lastRepository);
+  const setLastRepository = useTaskStore((s) => s.setLastRepository);
+  const [prompt, setPrompt] = useState(initialPrompt ?? "");
+  const [selection, setSelectionState] = useState<RepositorySelection>(() => {
+    if (initialRepo) {
+      const match = repositoryOptions.find(
+        (o) => o.repository.toLowerCase() === initialRepo.toLowerCase(),
+      );
+      if (match) return toRepositorySelection(match);
+      // Repo known but integration not yet loaded — set repo, integrationId will resolve later
+      return { integrationId: null, repository: initialRepo };
     }
+    return lastRepository;
+  });
+  const setSelection = useCallback(
+    (next: RepositorySelection) => {
+      setSelectionState(next);
+      setLastRepository(next);
+    },
+    [setLastRepository],
+  );
+  const [mode, setMode] = useState<ExecutionMode>(() => {
+    const prefs = usePreferencesStore.getState();
+    if (prefs.defaultInitialTaskMode === "last_used") {
+      const last = prefs.lastNewTaskMode;
+      const isValidMode = EXECUTION_MODES.some((m) => m.value === last);
+      if (isValidMode) return last as ExecutionMode;
+    }
+    return DEFAULT_EXECUTION_MODE;
+  });
+  const [model, setModel] = useState<string>(DEFAULT_MODEL);
+  const [reasoning, setReasoning] =
+    useState<ReasoningEffort>(DEFAULT_REASONING);
+  const [creating, setCreating] = useState(false);
+  const [repoSheetOpen, setRepoSheetOpen] = useState(false);
+  const [modeSheetOpen, setModeSheetOpen] = useState(false);
+  const [modelSheetOpen, setModelSheetOpen] = useState(false);
+  const [reasoningSheetOpen, setReasoningSheetOpen] = useState(false);
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
+
+  const appendTranscript = useCallback((transcript: string) => {
+    setPrompt((prev) => (prev ? `${prev} ${transcript}` : transcript));
   }, []);
 
-  useEffect(() => {
-    loadIntegrations();
-  }, [loadIntegrations]);
+  const {
+    status: voiceStatus,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+  } = useVoiceRecording({ onTranscript: appendTranscript });
+  const isRecording = voiceStatus === "recording";
+  const isTranscribing = voiceStatus === "transcribing";
+
+  const handleMicPress = useCallback(async () => {
+    if (isRecording) {
+      await stopRecording();
+    } else if (!isTranscribing) {
+      await startRecording();
+    }
+  }, [isRecording, isTranscribing, startRecording, stopRecording]);
+
+  const handleMicLongPress = useCallback(async () => {
+    if (isRecording) {
+      await cancelRecording();
+    }
+  }, [isRecording, cancelRecording]);
+
+  const addAttachment = useCallback(
+    async (picker: () => Promise<PendingAttachment | null>) => {
+      try {
+        const att = await picker();
+        if (att) setAttachments((prev) => [...prev, att]);
+      } catch (err) {
+        log.error("Failed to pick attachment", err);
+      }
+    },
+    [],
+  );
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
+  const selectedRepositoryOption = findRepositoryOption(
+    repositoryOptions,
+    selection,
+  );
+  const repositoryLabel = selectedRepositoryOption
+    ? repositoryOptions.filter(
+        (option) => option.repository === selectedRepositoryOption.repository,
+      ).length > 1
+      ? `${selectedRepositoryOption.repository} · ${selectedRepositoryOption.integrationLabel}`
+      : selectedRepositoryOption.repository
+    : "Select repository…";
+  const repositoryLoadBlocked =
+    !!repositoryWarning && repositoryOptions.length === 0;
 
   const handleCreateTask = useCallback(async () => {
-    if (!prompt.trim() || !selectedRepo) return;
+    const hasContent = !!prompt.trim() || attachments.length > 0;
+    if (!hasContent || !isRepositorySelectionComplete(selection) || creating) {
+      return;
+    }
 
     setCreating(true);
+
     try {
-      const githubIntegration = integrations.find((i) => i.kind === "github");
-
       const trimmedPrompt = prompt.trim();
+      // The task description is plain text (it shows up as the task title and
+      // in metadata). Attachments only enter the agent prompt via the cloud
+      // payload below.
+      const descriptionText =
+        trimmedPrompt ||
+        (attachments.length === 1
+          ? `Attached: ${attachments[0].fileName}`
+          : `Attached ${attachments.length} files`);
+
       const task = await createTask({
-        description: trimmedPrompt,
-        title: trimmedPrompt.slice(0, 100),
-        repository: selectedRepo,
-        github_integration: githubIntegration?.id,
-      });
+        description: descriptionText,
+        title: descriptionText.slice(0, 100),
+        repository: selection.repository ?? undefined,
+        github_integration: selection.integrationId ?? undefined,
+        ...(signalReport
+          ? {
+              origin_product: "signal_report",
+              signal_report: signalReport,
+              signal_report_task_relationship: "implementation",
+            }
+          : {}),
+      } as CreateTaskOptions);
 
-      // Pass the prompt as pending_user_message so the cloud agent has
-      // something to process on start — matches how the desktop launches
-      // new cloud runs. Without this the sandbox starts idle and the UI
-      // stays stuck on "Thinking...".
+      const pendingUserMessage =
+        attachments.length > 0
+          ? serializeCloudPrompt(
+              await buildCloudPromptBlocks(trimmedPrompt, attachments),
+            )
+          : trimmedPrompt;
+
+      const supportsReasoning = modelSupportsReasoning(model);
+
       await runTaskInCloud(task.id, {
-        pendingUserMessage: trimmedPrompt,
+        pendingUserMessage,
+        runtimeAdapter: "claude",
+        model,
+        reasoningEffort: supportsReasoning ? reasoning : undefined,
+        initialPermissionMode: mode,
+        ...(signalReport
+          ? {
+              runSource: "signal_report" as const,
+              signalReportId: signalReport,
+            }
+          : {}),
       });
 
-      // Navigate to task detail (replaces current modal)
       router.replace(`/task/${task.id}`);
-    } catch (error) {
-      log.error("Failed to create task", error);
+    } catch (creationError) {
+      log.error("Failed to create task", creationError);
     } finally {
       setCreating(false);
     }
-  }, [prompt, selectedRepo, integrations, router]);
+  }, [
+    attachments,
+    creating,
+    mode,
+    model,
+    prompt,
+    reasoning,
+    router,
+    selection,
+    signalReport,
+  ]);
 
-  const hasGithubIntegration = integrations.length > 0;
-  const canSubmit = prompt.trim() && selectedRepo && !creating;
+  const hasContent = !!prompt.trim() || attachments.length > 0;
+  const canSubmit =
+    hasContent && isRepositorySelectionComplete(selection) && !creating;
+  const showReasoningPill = modelSupportsReasoning(model);
+
+  if (isLoading && hasGithubIntegration === null) {
+    return (
+      <>
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            headerTitle: "New task",
+            headerStyle: { backgroundColor: themeColors.background },
+            headerTintColor: themeColors.gray[12],
+            presentation: "modal",
+          }}
+        />
+        <View className="flex-1 items-center justify-center bg-background">
+          <ActivityIndicator size="large" color={themeColors.accent[9]} />
+          <Text className="mt-4 text-gray-11">Loading repositories...</Text>
+        </View>
+      </>
+    );
+  }
+
+  if (error || repositoryLoadBlocked) {
+    return (
+      <>
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            headerTitle: "New task",
+            headerStyle: { backgroundColor: themeColors.background },
+            headerTintColor: themeColors.gray[12],
+            presentation: "modal",
+          }}
+        />
+        <View className="flex-1 justify-center bg-background px-4">
+          <GitHubLoadNotice
+            message={
+              error ??
+              repositoryWarning ??
+              "Could not load GitHub repositories."
+            }
+            onRetry={refetch}
+          />
+        </View>
+      </>
+    );
+  }
+
+  if (hasGithubIntegration === false) {
+    return (
+      <View className="flex-1 bg-background">
+        <View style={{ paddingTop: insets.top + 56 }} className="flex-1">
+          <GitHubConnectionPrompt
+            onConnected={refetch}
+            title="Connect GitHub to continue"
+            description="You need to connect your GitHub account before creating tasks. This allows PostHog to work on your repositories."
+          />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          headerTitle: "New task",
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.gray[12],
-          presentation: "modal",
-        }}
-      />
-      <KeyboardAvoidingView
-        className="flex-1 bg-background"
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={90}
-      >
-        <ScrollView
-          className="flex-1 px-3 pt-4"
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 40 }}
-        >
-          <Pressable onPress={Keyboard.dismiss} accessible={false}>
-            {loadingRepos ? (
-              <View className="mb-4 items-center rounded-lg border border-gray-6 p-4">
-                <ActivityIndicator size="small" color={themeColors.accent[9]} />
-                <Text className="mt-2 text-gray-11 text-sm">
-                  Loading repositories...
+      <View className="flex-1 bg-background">
+        <DotBackground />
+
+        <Animated.View style={[{ flex: 1 }, containerStyle]}>
+          <View className="flex-1 items-stretch justify-center px-3">
+            {prompt.trim().length === 0 ? (
+              <Animated.View
+                style={suggestionsStyle}
+                pointerEvents={keyboardActive ? "none" : "auto"}
+              >
+                <Text className="mb-3 px-1 text-[13px] text-gray-10">
+                  Suggestions
                 </Text>
-              </View>
-            ) : !hasGithubIntegration ? (
-              <ConnectGitHubPrompt onConnected={loadIntegrations} />
-            ) : (
-              <>
-                <Text className="mb-2 text-gray-9 text-xs">Repository</Text>
-                <TextInput
-                  className="mb-2 rounded-lg border border-gray-6 px-3 py-2 text-gray-12 text-sm"
-                  placeholder="Search repositories"
-                  placeholderTextColor={themeColors.gray[9]}
-                  value={repoSearch}
-                  onChangeText={setRepoSearch}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  clearButtonMode="while-editing"
-                />
-                <ScrollView
-                  className="mb-4 max-h-48 rounded-lg border border-gray-6"
-                  keyboardShouldPersistTaps="handled"
-                  nestedScrollEnabled
-                >
-                  {filteredRepositories.length === 0 ? (
-                    <View className="px-3 py-4">
-                      <Text className="text-center text-gray-9 text-sm">
-                        {repoSearch
-                          ? `No repositories match "${repoSearch}"`
-                          : "No repositories available"}
+                <View className="gap-2">
+                  {SUGGESTIONS.map((suggestion) => (
+                    <Pressable
+                      key={suggestion}
+                      onPress={() => setPrompt(suggestion)}
+                      className="rounded-2xl border border-gray-6 bg-card px-4 py-3 active:bg-gray-2"
+                    >
+                      <Text className="text-[14px] text-gray-12">
+                        {suggestion}
                       </Text>
-                    </View>
-                  ) : (
-                    filteredRepositories.map((item) => (
-                      <Pressable
-                        key={item}
-                        onPress={() => setSelectedRepo(item)}
-                        className={`border-gray-6 border-b px-3 py-3 ${
-                          selectedRepo === item ? "bg-accent-3" : ""
-                        }`}
-                      >
-                        <Text
-                          className={`text-sm ${
-                            selectedRepo === item
-                              ? "text-accent-11"
-                              : "text-gray-11"
-                          }`}
-                        >
-                          {item}
-                        </Text>
-                      </Pressable>
-                    ))
-                  )}
+                    </Pressable>
+                  ))}
+                </View>
+              </Animated.View>
+            ) : null}
+          </View>
+
+          <View className="px-3">
+            {repositoryWarning ? (
+              <GitHubLoadNotice
+                message={repositoryWarning}
+                onRetry={refetch}
+                tone="warning"
+              />
+            ) : null}
+
+            <View className="mb-2 flex-row">
+              <Pressable
+                onPress={() => setRepoSheetOpen(true)}
+                className="flex-row items-center gap-2 rounded-full border border-gray-6 bg-card py-1.5 pr-2.5 pl-2 active:bg-gray-2"
+              >
+                <GithubLogo
+                  size={16}
+                  color={
+                    selectedRepositoryOption
+                      ? themeColors.gray[12]
+                      : themeColors.gray[10]
+                  }
+                  weight={selectedRepositoryOption ? "fill" : "regular"}
+                />
+                <Text
+                  className={`text-[13px] ${
+                    selectedRepositoryOption ? "text-gray-12" : "text-gray-10"
+                  }`}
+                  numberOfLines={1}
+                >
+                  {repositoryLabel}
+                </Text>
+                <CaretDown size={12} color={themeColors.gray[10]} />
+              </Pressable>
+            </View>
+
+            <View className="overflow-hidden rounded-2xl border border-gray-6 bg-card">
+              <AttachmentsBar
+                attachments={attachments}
+                onRemove={removeAttachment}
+              />
+              <TextInput
+                className="px-4 pt-3.5 pb-3 text-[15px] text-gray-12"
+                style={{ minHeight: 56, maxHeight: 200 }}
+                placeholder="Describe what you want to build…"
+                placeholderTextColor={themeColors.gray[9]}
+                value={prompt}
+                onChangeText={setPrompt}
+                multiline
+                textAlignVertical="top"
+              />
+
+              <View className="flex-row items-center gap-2 px-2 pb-2">
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => setAttachmentSheetOpen(true)}
+                  accessibilityLabel="Add attachment"
+                  accessibilityRole="button"
+                  className="h-9 w-9 items-center justify-center active:opacity-60"
+                >
+                  <PaperclipIcon
+                    size={18}
+                    color={
+                      attachments.length > 0
+                        ? themeColors.accent[11]
+                        : themeColors.gray[10]
+                    }
+                    weight={attachments.length > 0 ? "fill" : "regular"}
+                  />
+                </Pressable>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  className="flex-1"
+                  contentContainerStyle={{
+                    alignItems: "center",
+                    gap: 6,
+                    paddingRight: 4,
+                  }}
+                >
+                  <Pill
+                    icon={modeIcon(
+                      mode,
+                      mode === "plan"
+                        ? themeColors.accent[11]
+                        : themeColors.gray[11],
+                    )}
+                    label={modeLabel(mode)}
+                    accent={mode === "plan"}
+                    onPress={() => setModeSheetOpen(true)}
+                  />
+
+                  <Pill
+                    icon={<Robot size={14} color={themeColors.gray[11]} />}
+                    label={modelLabel(model)}
+                    onPress={() => setModelSheetOpen(true)}
+                  />
+
+                  {showReasoningPill ? (
+                    <Pill
+                      icon={
+                        <BrainIcon size={14} color={themeColors.gray[11]} />
+                      }
+                      label={reasoningLabel(reasoning)}
+                      onPress={() => setReasoningSheetOpen(true)}
+                    />
+                  ) : null}
                 </ScrollView>
 
-                <Text className="mb-2 text-gray-9 text-xs">
-                  Task description
-                </Text>
-                <TextInput
-                  className="mb-4 min-h-[100px] rounded-lg border border-gray-6 px-3 py-3 font-mono text-gray-12 text-sm"
-                  placeholder="What would you like the agent to do?"
-                  placeholderTextColor={themeColors.gray[9]}
-                  value={prompt}
-                  onChangeText={setPrompt}
-                  multiline
-                  textAlignVertical="top"
-                />
-
                 <Pressable
-                  onPress={handleCreateTask}
-                  disabled={!canSubmit}
-                  className={`rounded-lg py-3 ${canSubmit ? "bg-accent-9" : "bg-gray-3"}`}
+                  onPress={
+                    isTranscribing
+                      ? undefined
+                      : isRecording
+                        ? handleMicPress
+                        : hasContent
+                          ? handleCreateTask
+                          : handleMicPress
+                  }
+                  onLongPress={handleMicLongPress}
+                  disabled={
+                    isTranscribing || (hasContent && !canSubmit && !isRecording)
+                  }
+                  accessibilityLabel={
+                    isRecording
+                      ? "Stop recording"
+                      : hasContent
+                        ? "Create task"
+                        : "Record voice"
+                  }
+                  className={`h-9 w-9 items-center justify-center rounded-lg ${
+                    canSubmit || isRecording || (!hasContent && !isTranscribing)
+                      ? "bg-gray-12"
+                      : "bg-gray-5"
+                  }`}
                 >
-                  {creating ? (
+                  {creating || isTranscribing ? (
                     <ActivityIndicator
                       size="small"
-                      color={themeColors.accent.contrast}
+                      color={themeColors.background}
+                    />
+                  ) : isRecording ? (
+                    <StopIcon
+                      size={18}
+                      color={themeColors.status.error}
+                      weight="fill"
+                    />
+                  ) : hasContent ? (
+                    <ArrowUp
+                      size={18}
+                      color={
+                        canSubmit ? themeColors.background : themeColors.gray[9]
+                      }
+                      weight="bold"
                     />
                   ) : (
-                    <Text
-                      className={`text-center font-medium ${
-                        canSubmit ? "text-accent-contrast" : "text-gray-9"
-                      }`}
-                    >
-                      Create task
-                    </Text>
+                    <MicrophoneIcon size={18} color={themeColors.background} />
                   )}
                 </Pressable>
-              </>
-            )}
-          </Pressable>
-        </ScrollView>
-      </KeyboardAvoidingView>
+              </View>
+            </View>
+          </View>
+        </Animated.View>
+      </View>
+
+      <RepositoryPickerSheet
+        open={repoSheetOpen}
+        repositoryOptions={repositoryOptions}
+        selected={selectedRepositoryOption}
+        loading={isLoading}
+        onChange={(option) => setSelection(toRepositorySelection(option))}
+        onClose={() => setRepoSheetOpen(false)}
+      />
+
+      <SelectSheet
+        open={modeSheetOpen}
+        title="Execution mode"
+        value={mode}
+        onChange={(value) => {
+          const next = value as ExecutionMode;
+          setMode(next);
+          usePreferencesStore.getState().setLastNewTaskMode(next);
+        }}
+        onClose={() => setModeSheetOpen(false)}
+        options={EXECUTION_MODES.map((executionMode) => ({
+          value: executionMode.value,
+          label: executionMode.label,
+          description: executionMode.description,
+          icon: modeIcon(
+            executionMode.value,
+            executionMode.value === "plan"
+              ? themeColors.accent[11]
+              : themeColors.gray[11],
+            16,
+          ),
+        }))}
+      />
+
+      <SelectSheet
+        open={modelSheetOpen}
+        title="Model"
+        value={model}
+        onChange={(value) => {
+          setModel(value);
+          if (!modelSupportsReasoning(value)) {
+            setReasoning(DEFAULT_REASONING);
+          }
+        }}
+        onClose={() => setModelSheetOpen(false)}
+        options={MODELS.map((modelOption) => ({
+          value: modelOption.value,
+          label: modelOption.label,
+          description: modelOption.description,
+          icon: <Robot size={16} color={themeColors.gray[11]} />,
+        }))}
+      />
+
+      <SelectSheet
+        open={reasoningSheetOpen}
+        title="Reasoning"
+        value={reasoning}
+        onChange={(value) => setReasoning(value as ReasoningEffort)}
+        onClose={() => setReasoningSheetOpen(false)}
+        options={REASONING_LEVELS.map((reasoningLevel) => ({
+          value: reasoningLevel.value,
+          label: reasoningLevel.label,
+          icon: <BrainIcon size={16} color={themeColors.gray[11]} />,
+        }))}
+      />
+
+      <AttachmentSheet
+        open={attachmentSheetOpen}
+        onClose={() => setAttachmentSheetOpen(false)}
+        onPickPhoto={() => addAttachment(pickPhotoFromLibrary)}
+        onPickCamera={() => addAttachment(captureFromCamera)}
+        onPickDocument={() => addAttachment(pickDocument)}
+      />
     </>
   );
 }

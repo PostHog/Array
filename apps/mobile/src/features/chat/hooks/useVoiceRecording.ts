@@ -1,39 +1,94 @@
 import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { logger } from "@/lib/logger";
 
 const log = logger.scope("voice-recording");
 
 type RecordingStatus = "idle" | "recording" | "transcribing" | "error";
 
+interface UseVoiceRecordingOptions {
+  /**
+   * Fires with the final transcript whenever recognition finishes — whether
+   * the caller invoked stopRecording() or the engine ended on its own
+   * (silence timeout on iOS 17-, `isFinal` result on iOS 18+/Android, etc).
+   * Use this to append voice input to a text field reliably; the previous
+   * promise-only API silently dropped transcripts when the engine auto-ended
+   * before the user tapped stop.
+   */
+  onTranscript?: (transcript: string) => void;
+}
+
 interface UseVoiceRecordingReturn {
   status: RecordingStatus;
   error: string | null;
   startRecording: () => Promise<void>;
-  stopRecording: () => Promise<string | null>;
+  stopRecording: () => Promise<void>;
   cancelRecording: () => Promise<void>;
 }
 
-export function useVoiceRecording(): UseVoiceRecordingReturn {
+export function useVoiceRecording(
+  options: UseVoiceRecordingOptions = {},
+): UseVoiceRecordingReturn {
   const [status, setStatus] = useState<RecordingStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const transcriptRef = useRef<string>("");
-  const resolveRef = useRef<((text: string | null) => void) | null>(null);
   const listenersRef = useRef<(() => void)[]>([]);
+  /** Resolves stopRecording() when a final event arrives. Null otherwise. */
+  const stopWaitRef = useRef<(() => void) | null>(null);
+  /** Set by cancelRecording so the next event discards the transcript. */
+  const canceledRef = useRef(false);
+  /** Keep the latest callback without re-attaching listeners. */
+  const onTranscriptRef = useRef(options.onTranscript);
+  useEffect(() => {
+    onTranscriptRef.current = options.onTranscript;
+  });
 
-  const cleanup = useCallback(() => {
+  const removeListeners = useCallback(() => {
     for (const remove of listenersRef.current) {
-      remove();
+      try {
+        remove();
+      } catch {}
     }
     listenersRef.current = [];
-    resolveRef.current = null;
-    transcriptRef.current = "";
   }, []);
+
+  /**
+   * Called when the engine emits a terminal event: a `result` with
+   * `isFinal: true`, an `end` event, or a non-fatal error like `no-speech`.
+   * Delivers the transcript via the callback and tears down listeners.
+   *
+   * This must work even when the user hasn't called stopRecording() — on
+   * iOS 17- the engine ends after ~3s of silence regardless, and on iOS 18+
+   * a short utterance can finalize before the user taps stop.
+   */
+  const handleFinalEvent = useCallback(() => {
+    const wasCanceled = canceledRef.current;
+    canceledRef.current = false;
+    const text = wasCanceled ? "" : transcriptRef.current.trim();
+    log.debug("final event", { text: text.slice(0, 60), wasCanceled });
+
+    removeListeners();
+    transcriptRef.current = "";
+    setStatus("idle");
+
+    if (text) {
+      onTranscriptRef.current?.(text);
+    }
+
+    const waiter = stopWaitRef.current;
+    stopWaitRef.current = null;
+    if (waiter) waiter();
+  }, [removeListeners]);
 
   const startRecording = useCallback(async () => {
     try {
-      setError(null);
+      // Tear down any lingering state from a prior session so we don't pick
+      // up stale listeners or transcripts.
+      removeListeners();
+      stopWaitRef.current = null;
+      canceledRef.current = false;
       transcriptRef.current = "";
+      setError(null);
 
       if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) {
         setError("Speech recognition is not available on this device");
@@ -49,18 +104,14 @@ export function useVoiceRecording(): UseVoiceRecordingReturn {
         return;
       }
 
-      // Listen for results — accumulate the latest transcript
       const resultSub = ExpoSpeechRecognitionModule.addListener(
         "result",
         (event) => {
           const best = event.results[0]?.transcript;
-          if (best) {
-            transcriptRef.current = best;
-          }
-          if (event.isFinal && resolveRef.current) {
-            resolveRef.current(transcriptRef.current || null);
-            cleanup();
-            setStatus("idle");
+          if (best) transcriptRef.current = best;
+          log.debug("result", { isFinal: event.isFinal, hasText: !!best });
+          if (event.isFinal) {
+            handleFinalEvent();
           }
         },
       );
@@ -68,31 +119,29 @@ export function useVoiceRecording(): UseVoiceRecordingReturn {
       const errorSub = ExpoSpeechRecognitionModule.addListener(
         "error",
         (event) => {
-          // "no-speech" is not a real error — just means the user didn't say anything
-          if (event.error === "no-speech") {
-            if (resolveRef.current) {
-              resolveRef.current(null);
-            }
-            cleanup();
-            setStatus("idle");
+          log.debug("error event", {
+            code: event.error,
+            message: event.message,
+          });
+          // "no-speech" and "aborted" are non-fatal — fall through the
+          // normal end path so any accumulated transcript still delivers.
+          if (event.error === "no-speech" || event.error === "aborted") {
+            handleFinalEvent();
             return;
           }
           setError(event.message || "Speech recognition failed");
-          if (resolveRef.current) {
-            resolveRef.current(null);
-          }
-          cleanup();
+          removeListeners();
+          transcriptRef.current = "";
+          const waiter = stopWaitRef.current;
+          stopWaitRef.current = null;
           setStatus("error");
+          waiter?.();
         },
       );
 
-      // If recognition ends without a final result (e.g. silence timeout)
       const endSub = ExpoSpeechRecognitionModule.addListener("end", () => {
-        if (resolveRef.current) {
-          resolveRef.current(transcriptRef.current || null);
-          cleanup();
-          setStatus("idle");
-        }
+        log.debug("end event", { hasTranscript: !!transcriptRef.current });
+        handleFinalEvent();
       });
 
       listenersRef.current = [
@@ -117,42 +166,72 @@ export function useVoiceRecording(): UseVoiceRecordingReturn {
       setError("Failed to start speech recognition");
       setStatus("error");
     }
-  }, [cleanup]);
+  }, [removeListeners, handleFinalEvent]);
 
-  const stopRecording = useCallback(async (): Promise<string | null> => {
-    if (status !== "recording") {
-      return null;
-    }
+  const stopRecording = useCallback(async (): Promise<void> => {
+    // Engine already auto-finished — transcript was delivered via callback.
+    if (status !== "recording") return;
 
     setStatus("transcribing");
 
-    return new Promise<string | null>((resolve) => {
-      // Some Android engines go silent (e.g. backgrounded mid-recognition)
-      // and never fire result/error/end — without this timeout the UI
-      // would stay stuck on "Transcribing…" with no way out.
-      let timedOut = false;
-      const timeoutId = setTimeout(() => {
-        timedOut = true;
-        log.warn("Speech recognition did not finalize, falling back");
-        cleanup();
-        setStatus("idle");
-        resolve(transcriptRef.current || null);
-      }, 5000);
-      resolveRef.current = (value) => {
-        if (timedOut) return;
-        clearTimeout(timeoutId);
-        resolve(value);
-      };
+    try {
       ExpoSpeechRecognitionModule.stop();
+    } catch (err) {
+      log.warn("Speech recognition stop failed", err);
+    }
+
+    // Wait briefly for the platform's final event so the transcript is fully
+    // formed. Some Android engines never fire result/end after a manual stop;
+    // the timeout flushes whatever interim results we captured so the caller
+    // doesn't hang on "Transcribing…" forever.
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const timeoutId = setTimeout(() => {
+        log.warn("stop timeout — flushing interim transcript");
+        const text = transcriptRef.current.trim();
+        removeListeners();
+        transcriptRef.current = "";
+        stopWaitRef.current = null;
+        setStatus("idle");
+        if (text) onTranscriptRef.current?.(text);
+        finish();
+      }, 1500);
+      stopWaitRef.current = () => {
+        clearTimeout(timeoutId);
+        finish();
+      };
     });
-  }, [status, cleanup]);
+  }, [status, removeListeners]);
 
   const cancelRecording = useCallback(async () => {
-    ExpoSpeechRecognitionModule.abort();
-    cleanup();
+    canceledRef.current = true;
+    try {
+      ExpoSpeechRecognitionModule.abort();
+    } catch {}
+    removeListeners();
+    transcriptRef.current = "";
+    const waiter = stopWaitRef.current;
+    stopWaitRef.current = null;
     setStatus("idle");
     setError(null);
-  }, [cleanup]);
+    waiter?.();
+  }, [removeListeners]);
+
+  // Tear down any in-flight recognition on unmount so events don't dispatch
+  // into a torn-down component.
+  useEffect(() => {
+    return () => {
+      try {
+        ExpoSpeechRecognitionModule.abort();
+      } catch {}
+      removeListeners();
+    };
+  }, [removeListeners]);
 
   return {
     status,
