@@ -113,6 +113,7 @@
       ],
       "expo-localization",
       "expo-notifications",
+      "./plugins/with-adi-registration",
       [
         "expo-speech-recognition",
         {
