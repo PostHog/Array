@@ -16,7 +16,12 @@ interface RepositoryLoadResult {
   partialError: string | null;
 }
 
-export function useIntegrations() {
+interface UseIntegrationsOptions {
+  enabled?: boolean;
+}
+
+export function useIntegrations(options: UseIntegrationsOptions = {}) {
+  const { enabled = true } = options;
   const { projectId, oauthAccessToken } = useAuthStore();
 
   const integrationsQuery = useQuery({
@@ -25,10 +30,10 @@ export function useIntegrations() {
       const data = await getIntegrations();
       return data.filter((i) => i.kind === "github");
     },
-    enabled: !!projectId && !!oauthAccessToken,
+    enabled: enabled && !!projectId && !!oauthAccessToken,
   });
 
-  const githubIntegrations = integrationsQuery.data ?? [];
+  const githubIntegrations = enabled ? (integrationsQuery.data ?? []) : [];
 
   const repositoriesQuery = useQuery({
     queryKey: [
@@ -67,7 +72,7 @@ export function useIntegrations() {
               : "Some GitHub repositories could not be loaded. Pull to retry.",
       };
     },
-    enabled: githubIntegrations.length > 0,
+    enabled: enabled && githubIntegrations.length > 0,
   });
 
   const repositoriesByIntegration =
@@ -80,21 +85,29 @@ export function useIntegrations() {
   const repositoryWarning = repositoriesQuery.data?.partialError ?? null;
 
   const refetch = async () => {
+    if (!enabled) {
+      return;
+    }
+
     await integrationsQuery.refetch();
     await repositoriesQuery.refetch();
   };
 
   return {
-    hasGithubIntegration: integrationsQuery.isFetched
-      ? githubIntegrations.length > 0
-      : null,
+    hasGithubIntegration: !enabled
+      ? null
+      : integrationsQuery.isFetched
+        ? githubIntegrations.length > 0
+        : null,
     githubIntegrations,
     repositories,
     repositoriesByIntegration,
     repositoryOptions,
-    isLoading: integrationsQuery.isLoading || repositoriesQuery.isLoading,
-    error: integrationsQuery.error?.message ?? null,
-    repositoryWarning,
+    isLoading: enabled
+      ? integrationsQuery.isLoading || repositoriesQuery.isLoading
+      : false,
+    error: enabled ? (integrationsQuery.error?.message ?? null) : null,
+    repositoryWarning: enabled ? repositoryWarning : null,
     refetch,
   };
 }

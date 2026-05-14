@@ -83,8 +83,6 @@ export default function SettingsScreen() {
   const { logout, cloudRegion, getCloudUrlFromRegion } = useAuthStore();
   const { data: userData } = useUserQuery();
 
-  const aiChatEnabled = usePreferencesStore((s) => s.aiChatEnabled);
-  const setAiChatEnabled = usePreferencesStore((s) => s.setAiChatEnabled);
   const pingsEnabled = usePreferencesStore((s) => s.pingsEnabled);
   const setPingsEnabled = usePreferencesStore((s) => s.setPingsEnabled);
   const pushNotificationsEnabled = usePreferencesStore(
@@ -105,7 +103,9 @@ export default function SettingsScreen() {
   const setDefaultInitialTaskMode = usePreferencesStore(
     (s) => s.setDefaultInitialTaskMode,
   );
-  const dismissedCount = useDismissedReportsStore((s) => s.dismissedIds.length);
+  const decidedCount = useDismissedReportsStore(
+    (s) => s.dismissedIds.length + s.acceptedIds.length,
+  );
   const clearDismissed = useDismissedReportsStore((s) => s.clearDismissed);
 
   const [themeSheetOpen, setThemeSheetOpen] = useState(false);
@@ -264,33 +264,29 @@ export default function SettingsScreen() {
           />
         </SettingsSection>
 
-        {/* Labs */}
-        <SettingsSection
-          title="Labs"
-          description="Experimental features — may break, may change"
-        >
+        {/* Integrations */}
+        <SettingsSection title="Integrations">
           <SettingsRow
-            label="PostHog AI chat"
-            description="Show the Chats tab for PostHog AI conversations"
+            label="MCP servers"
+            description="Browse the marketplace, manage installed servers, approve tools"
+            onPress={() => router.push("/mcp-servers")}
             showDivider={false}
-            rightSlot={
-              <Switch value={aiChatEnabled} onValueChange={setAiChatEnabled} />
-            }
+            rightSlot={<CaretRight size={14} color={themeColors.gray[10]} />}
           />
         </SettingsSection>
 
         {/* Inbox */}
         <SettingsSection title="Inbox">
           <SettingsRow
-            label="Dismissed reports"
-            description={`${dismissedCount} report${dismissedCount === 1 ? "" : "s"} dismissed in review mode`}
+            label="Reviewed reports"
+            description={`${decidedCount} report${decidedCount === 1 ? "" : "s"} reviewed in tinder mode`}
             showDivider={false}
             rightSlot={
               <Pressable
                 onPress={clearDismissed}
-                disabled={dismissedCount === 0}
+                disabled={decidedCount === 0}
                 hitSlop={6}
-                className={`rounded-md border px-3 py-1.5 ${dismissedCount > 0 ? "border-gray-6 bg-gray-3 active:opacity-60" : "border-gray-4 opacity-40"}`}
+                className={`rounded-md border px-3 py-1.5 ${decidedCount > 0 ? "border-gray-6 bg-gray-3 active:opacity-60" : "border-gray-4 opacity-40"}`}
               >
                 <Text className="font-medium text-[13px] text-gray-12">
                   Clear

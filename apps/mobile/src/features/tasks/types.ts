@@ -116,9 +116,292 @@ export interface SessionNotification {
 
 export interface PlanEntry {
   content: string;
-  status: "pending" | "in_progress" | "completed";
+  status: "pending" | "in_progress" | "completed" | "failed";
   priority: string;
 }
+
+export type WatchTaskEnvironment = "cloud" | "local" | "unknown";
+
+export type WatchTaskStatus =
+  | "idle"
+  | "connecting"
+  | "running"
+  | "waiting_for_approval"
+  | "blocked"
+  | "failed"
+  | "completed"
+  | "stale";
+
+export type WatchTaskChecklistStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed";
+
+export type WatchTaskTimelineKind =
+  | "started"
+  | "progress"
+  | "tool"
+  | "approval"
+  | "blocked"
+  | "failed"
+  | "completed"
+  | "handoff";
+
+export type WatchTaskRisk = "low" | "medium" | "high" | "destructive";
+
+export type WatchTaskActionType =
+  | "approve"
+  | "reject"
+  | "stop"
+  | "retry"
+  | "open_phone"
+  | "open_mac"
+  | "view_diff";
+
+export type WatchInboxReportStatus =
+  | "potential"
+  | "candidate"
+  | "in_progress"
+  | "ready"
+  | "failed"
+  | "pending_input"
+  | "suppressed"
+  | "deleted";
+
+export type WatchInboxReportPriority = "P0" | "P1" | "P2" | "P3" | "P4";
+
+export type WatchInboxReportActionability =
+  | "immediately_actionable"
+  | "requires_human_input"
+  | "not_actionable";
+
+export interface WatchInboxReviewer {
+  uuid: string;
+  name: string;
+  email?: string;
+  githubLogin?: string;
+  isMe?: boolean;
+}
+
+export interface WatchInboxSuggestedReviewer {
+  uuid?: string;
+  name: string;
+  githubLogin: string;
+  isMe?: boolean;
+}
+
+export type WatchInboxReportAction =
+  | "dismiss"
+  | "start_task"
+  | "implement_as_task"
+  | "open_phone";
+
+export interface WatchAutomationSnapshot {
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  prompt: string;
+  repository?: string | null;
+  templateName?: string | null;
+  secondaryLabel: string;
+  scheduleSummary: string;
+  cronExpression: string;
+  timezone?: string | null;
+  enabled: boolean;
+  statusText: string;
+  lastRunStatus: string | null;
+  lastTaskRunStatus?: TaskRunStatus | null;
+  lastRunAt?: number;
+  lastTaskId?: string | null;
+  lastError?: string | null;
+  createdAt?: number;
+  updatedAt?: number;
+  allowedActions: Array<"pause" | "resume" | "run" | "open_phone">;
+  handoff: WatchTaskHandoff;
+}
+
+export interface WatchInboxReportSnapshot {
+  schemaVersion: 1;
+  id: string;
+  title: string;
+  summary?: string;
+  status: WatchInboxReportStatus;
+  statusText: string;
+  priority?: WatchInboxReportPriority | null;
+  actionability?: WatchInboxReportActionability | null;
+  actionabilityText?: string;
+  alreadyAddressed?: boolean | null;
+  isSuggestedReviewer?: boolean;
+  suggestedReviewerUuids: string[];
+  suggestedReviewers: WatchInboxSuggestedReviewer[];
+  sourceProducts: string[];
+  signalCount: number;
+  totalWeight: number;
+  createdAt?: number;
+  updatedAt?: number;
+  implementationPrUrl?: string | null;
+  repository?: string | null;
+  allowedActions: WatchInboxReportAction[];
+  handoff: WatchTaskHandoff;
+}
+
+export interface WatchTaskProgress {
+  completed: number;
+  running: number;
+  pending: number;
+  failed: number;
+  total: number;
+  /** 0...1 progress fraction for SwiftUI ProgressView/rings. */
+  fraction: number;
+}
+
+export interface WatchTaskChecklistItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  status: WatchTaskChecklistStatus;
+  priority?: string;
+  depth?: number;
+  kind?: "plan" | "agent" | "tool" | "approval" | "system";
+  updatedAt?: number;
+}
+
+export interface WatchTaskTimelineItem {
+  id: string;
+  title: string;
+  detail?: string;
+  kind: WatchTaskTimelineKind;
+  timestamp: number;
+}
+
+export interface WatchTaskApprovalOption {
+  id: string;
+  title: string;
+  role: "approve" | "reject" | "neutral";
+  destructive?: boolean;
+}
+
+export interface WatchTaskApproval {
+  id: string;
+  toolCallId: string;
+  title: string;
+  summary: string;
+  detail?: string;
+  risk: WatchTaskRisk;
+  requestedAt: number;
+  options: WatchTaskApprovalOption[];
+  diffAvailable?: boolean;
+}
+
+export interface WatchTaskBlocker {
+  title: string;
+  detail?: string;
+  kind: "error" | "approval" | "stale" | "offline" | "unknown";
+}
+
+export interface WatchTaskHandoff {
+  phoneUrl: string;
+  macUrl?: string;
+  webUrl?: string;
+}
+
+export interface WatchTaskSnapshot {
+  schemaVersion: 1;
+  id: string;
+  generatedAt: number;
+  source: "mobile" | "desktop" | "cloud";
+  taskId: string;
+  taskRunId?: string;
+  taskNumber?: number | null;
+  slug?: string;
+  title: string;
+  subtitle?: string;
+  repository?: string | null;
+  branch?: string | null;
+  internal?: boolean;
+  isArchived?: boolean;
+  environment: WatchTaskEnvironment;
+  status: WatchTaskStatus;
+  statusText: string;
+  currentTask?: string;
+  createdAt?: number;
+  startedAt?: number;
+  updatedAt?: number;
+  completedAt?: number;
+  elapsedSeconds: number;
+  progress: WatchTaskProgress;
+  checklist: WatchTaskChecklistItem[];
+  timeline: WatchTaskTimelineItem[];
+  approval?: WatchTaskApproval;
+  blocker?: WatchTaskBlocker;
+  lastError?: string | null;
+  isStale: boolean;
+  staleReason?: string;
+  allowedActions: WatchTaskActionType[];
+  handoff: WatchTaskHandoff;
+}
+
+export interface WatchTaskEnvelope {
+  schemaVersion: 1;
+  generatedAt: number;
+  isAuthenticated: boolean;
+  activeTaskId?: string;
+  tasks: WatchTaskSnapshot[];
+  inboxReports?: WatchInboxReportSnapshot[];
+  inboxReviewers?: WatchInboxReviewer[];
+  automations?: WatchAutomationSnapshot[];
+}
+
+interface WatchTaskCommandBase {
+  id: string;
+  taskId: string;
+  taskRunId?: string;
+}
+
+export type WatchTaskCommand =
+  | (WatchTaskCommandBase & {
+      type: "approval_response";
+      toolCallId: string;
+      optionId: string;
+      displayText: string;
+      answers?: Record<string, string>;
+      customInput?: string;
+    })
+  | (WatchTaskCommandBase & {
+      type: "send_prompt";
+      displayText: string;
+    })
+  | (WatchTaskCommandBase & {
+      type: "debug_ping" | "debug_request_snapshot" | "request_snapshot";
+      displayText?: string;
+    })
+  | (WatchTaskCommandBase & {
+      type:
+        | "stop"
+        | "retry"
+        | "open_phone"
+        | "open_mac"
+        | "view_diff"
+        | "archive"
+        | "restore"
+        | "create_task"
+        | "open_task_prompt"
+        | "open_report"
+        | "dismiss_report"
+        | "start_report_task"
+        | "new_automation"
+        | "open_automation"
+        | "run_automation"
+        | "pause_automation"
+        | "resume_automation";
+      url?: string;
+      automationId?: string;
+      reportId?: string;
+      optionId?: string;
+      displayText?: string;
+      customInput?: string;
+    });
 
 export interface AcpMessage {
   type: "acp_message";
@@ -149,6 +432,20 @@ export interface CloudPermissionToolCall {
   content?: unknown[];
   rawInput?: Record<string, unknown>;
   _meta?: Record<string, unknown>;
+}
+
+export interface CloudPermissionResponseSelection {
+  optionId: string;
+  displayText: string;
+  customInput?: string;
+  answers?: Record<string, string>;
+}
+
+export interface CloudPendingPermissionRequest {
+  requestId: string;
+  toolCall: CloudPermissionToolCall;
+  options: CloudPermissionOption[];
+  response?: CloudPermissionResponseSelection;
 }
 
 interface CloudTaskUpdateBase {

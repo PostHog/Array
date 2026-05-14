@@ -8,15 +8,15 @@ import {
 } from "react-native";
 import { useThemeColors } from "@/lib/theme";
 import { useAutomations } from "../hooks/useAutomations";
-import { useIntegrations } from "../hooks/useIntegrations";
 import { useTasks } from "../hooks/useTasks";
 import type { TaskAutomation } from "../types";
 import { AutomationItem } from "./AutomationItem";
-import { GitHubConnectionPrompt } from "./GitHubConnectionPrompt";
 
 interface AutomationListProps {
   onAutomationPress?: (automationId: string) => void;
   onCreateAutomation?: () => void;
+  /** Top inset so the list can scroll behind a floating header. */
+  contentInsetTop?: number;
 }
 
 function EmptyAutomationState({
@@ -39,7 +39,7 @@ function EmptyAutomationState({
           style={{ backgroundColor: themeColors.accent[9] }}
         >
           <Text className="font-semibold text-accent-contrast">
-            Create automation
+            New automation
           </Text>
         </Pressable>
       )}
@@ -50,20 +50,16 @@ function EmptyAutomationState({
 export function AutomationList({
   onAutomationPress,
   onCreateAutomation,
+  contentInsetTop = 0,
 }: AutomationListProps) {
   const { automations, isLoading, error, refetch } = useAutomations();
   const { allTasks: automationTasks } = useTasks({
     originProduct: "automation",
   });
-  const {
-    error: integrationsError,
-    hasGithubIntegration,
-    refetch: refetchIntegrations,
-  } = useIntegrations();
   const themeColors = useThemeColors();
 
   const handleRefresh = async () => {
-    await Promise.all([refetch(), refetchIntegrations()]);
+    await refetch();
   };
 
   const handleAutomationPress = (automation: TaskAutomation) => {
@@ -73,10 +69,6 @@ export function AutomationList({
   const taskStatusById = new Map(
     automationTasks.map((task) => [task.id, task.latest_run?.status ?? null]),
   );
-
-  const isInitialLoading =
-    (isLoading && automations.length === 0) ||
-    (automations.length === 0 && hasGithubIntegration === null);
 
   if (error) {
     return (
@@ -92,33 +84,13 @@ export function AutomationList({
     );
   }
 
-  if (integrationsError && automations.length === 0) {
-    return (
-      <View className="flex-1 items-center justify-center p-6">
-        <Text className="mb-4 text-center text-status-error">
-          {integrationsError}
-        </Text>
-        <Pressable
-          onPress={handleRefresh}
-          className="rounded-lg bg-gray-3 px-4 py-2"
-        >
-          <Text className="text-gray-12">Retry</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  if (isInitialLoading) {
+  if (isLoading && automations.length === 0) {
     return (
       <View className="flex-1 items-center justify-center">
         <ActivityIndicator size="large" color={themeColors.accent[9]} />
         <Text className="mt-4 text-gray-11">Loading automations...</Text>
       </View>
     );
-  }
-
-  if (hasGithubIntegration === false && automations.length === 0) {
-    return <GitHubConnectionPrompt mode="empty" onConnected={handleRefresh} />;
   }
 
   if (automations.length === 0) {
@@ -147,7 +119,10 @@ export function AutomationList({
           tintColor={themeColors.accent[9]}
         />
       }
-      contentContainerStyle={{ paddingBottom: 100 }}
+      contentContainerStyle={{
+        paddingTop: contentInsetTop,
+        paddingBottom: 100,
+      }}
     />
   );
 }

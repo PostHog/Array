@@ -20,6 +20,7 @@ import {
   useUpdateTaskAutomation,
 } from "@/features/tasks/hooks/useAutomations";
 import { useTask } from "@/features/tasks/hooks/useTasks";
+import { parseSkillTemplateId } from "@/features/tasks/skills/skillTemplateIds";
 import { useThemeColors } from "@/lib/theme";
 
 export default function AutomationDetailScreen() {
@@ -37,6 +38,10 @@ export default function AutomationDetailScreen() {
     message: string | null;
   } | null>(null);
   const [generalError, setGeneralError] = useState<string | null>(null);
+  const repositoryRequired = automation
+    ? parseSkillTemplateId(automation.template_id) !== null ||
+      automation.repository.trim().length > 0
+    : true;
 
   if (error || (!automation && !isLoading)) {
     return (
@@ -100,7 +105,7 @@ export default function AutomationDetailScreen() {
                 prompt: automation.prompt,
                 repositorySelection: {
                   integrationId: automation.github_integration ?? null,
-                  repository: automation.repository,
+                  repository: automation.repository || null,
                 },
                 cronExpression: automation.cron_expression,
                 timezone: automation.timezone ?? "UTC",
@@ -110,6 +115,7 @@ export default function AutomationDetailScreen() {
               submitLabel="Save changes"
               fieldError={fieldError}
               generalError={generalError}
+              repositoryRequired={repositoryRequired}
               onCancel={() => {
                 setFieldError(null);
                 setGeneralError(null);
@@ -122,7 +128,10 @@ export default function AutomationDetailScreen() {
                 try {
                   await updateAutomation.mutateAsync({
                     automationId: automation.id,
-                    updates: values,
+                    updates: {
+                      ...values,
+                      template_id: automation.template_id ?? null,
+                    },
                   });
                   setIsEditing(false);
                 } catch (error) {

@@ -42,15 +42,21 @@ import { useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-detail");
 
+function getFirstParam(value?: string | string[]): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 export default function TaskDetailScreen() {
   const {
     id: taskId,
     fromAutomation,
     automationName,
+    prompt: initialPrompt,
   } = useLocalSearchParams<{
     id: string;
     fromAutomation?: string;
     automationName?: string;
+    prompt?: string;
   }>();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -70,13 +76,18 @@ export default function TaskDetailScreen() {
     setConfigOption,
     getSessionForTask,
     setFocusedTaskId,
+    setActiveWatchTask,
   } = useTaskSessionStore();
 
   useEffect(() => {
     if (!taskId) return;
     setFocusedTaskId(taskId);
-    return () => setFocusedTaskId(null);
-  }, [taskId, setFocusedTaskId]);
+    setActiveWatchTask(taskId);
+    return () => {
+      setFocusedTaskId(null);
+      setActiveWatchTask(undefined);
+    };
+  }, [taskId, setFocusedTaskId, setActiveWatchTask]);
 
   const session = taskId ? getSessionForTask(taskId) : undefined;
 
@@ -86,7 +97,15 @@ export default function TaskDetailScreen() {
   const composerConfig = useTaskStore((s) =>
     taskId ? s.composerConfigByTaskId[taskId] : undefined,
   );
+  const pendingPrompt = useTaskStore((s) =>
+    taskId ? s.pendingPromptByTaskId[taskId] : undefined,
+  );
   const setComposerConfig = useTaskStore((s) => s.setComposerConfig);
+  const setPendingPrompt = useTaskStore((s) => s.setPendingPrompt);
+  const consumePendingPrompt = useTaskStore((s) => s.consumePendingPrompt);
+  const [initialComposerMessage, setInitialComposerMessage] = useState<
+    string | undefined
+  >();
   const composerMode: ExecutionMode =
     composerConfig?.mode ?? DEFAULT_EXECUTION_MODE;
   const composerModel = composerConfig?.model ?? DEFAULT_MODEL;
@@ -111,6 +130,18 @@ export default function TaskDetailScreen() {
       marginBottom: height.value < 0 ? 0 : Math.max(insets.bottom, 50),
     };
   }, [insets.bottom]);
+
+  useEffect(() => {
+    if (!taskId) return;
+    const prompt = getFirstParam(initialPrompt)?.trim();
+    if (prompt) setPendingPrompt(taskId, prompt);
+  }, [taskId, initialPrompt, setPendingPrompt]);
+
+  useEffect(() => {
+    if (!taskId || !pendingPrompt) return;
+    const prompt = consumePendingPrompt(taskId);
+    if (prompt) setInitialComposerMessage(prompt);
+  }, [taskId, pendingPrompt, consumePendingPrompt]);
 
   useEffect(() => {
     if (!taskId) return;
@@ -476,6 +507,7 @@ export default function TaskDetailScreen() {
             small visual buffer at the bottom. */}
         <TaskSessionView
           events={session?.events ?? []}
+          pendingPermissions={session?.pendingPermissions}
           isConnecting={isConnecting}
           isThinking={isThinking}
           terminalStatus={retrying ? undefined : session?.terminalStatus}
@@ -516,6 +548,7 @@ export default function TaskDetailScreen() {
             placeholder={
               session?.terminalStatus ? "Resume this task..." : "Ask a question"
             }
+            initialMessage={initialComposerMessage}
             mode={composerMode}
             model={composerModel}
             reasoning={composerReasoning}

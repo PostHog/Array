@@ -35,6 +35,7 @@ const automationPayload = {
   github_integration: 7,
   cron_expression: "0 9 * * *",
   timezone: "Europe/London",
+  template_id: "llm-skill:shared-daily-brief",
   enabled: true,
   last_run_at: null,
   last_run_status: null,
@@ -87,6 +88,7 @@ describe("task automation api", () => {
       cron_expression: "0 9 * * *",
       timezone: "Europe/London",
       enabled: true,
+      template_id: "llm-skill:shared-daily-brief",
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -101,6 +103,49 @@ describe("task automation api", () => {
           cron_expression: "0 9 * * *",
           timezone: "Europe/London",
           enabled: true,
+          template_id: "llm-skill:shared-daily-brief",
+        }),
+      }),
+    );
+  });
+
+  it("serializes skill-backed automation payloads with a prefixed template id", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ...automationPayload,
+          id: "automation-2",
+          name: "Shared daily brief",
+          template_id: "llm-skill:shared-daily-brief",
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await createTaskAutomation({
+      name: "Shared daily brief",
+      prompt: "Summarize feature usage for my product areas.",
+      repository: "posthog/posthog",
+      github_integration: 7,
+      cron_expression: "0 8 * * 1-5",
+      timezone: "America/New_York",
+      enabled: true,
+      template_id: "llm-skill:shared-daily-brief",
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://app.posthog.test/api/projects/42/task_automations/",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          name: "Shared daily brief",
+          prompt: "Summarize feature usage for my product areas.",
+          repository: "posthog/posthog",
+          github_integration: 7,
+          cron_expression: "0 8 * * 1-5",
+          timezone: "America/New_York",
+          enabled: true,
+          template_id: "llm-skill:shared-daily-brief",
         }),
       }),
     );
@@ -143,6 +188,37 @@ describe("task automation api", () => {
     ).rejects.toMatchObject({
       attr: "cron_expression",
       code: "invalid_input",
+    });
+  });
+
+  it("surfaces skill-backed validation failures without losing backend attr info", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          type: "validation_error",
+          code: "invalid_input",
+          detail: "Repository is still required for this template.",
+          attr: "repository",
+        }),
+        { status: 400, statusText: "Bad Request" },
+      ),
+    );
+
+    await expect(
+      createTaskAutomation({
+        name: "Shared daily brief",
+        prompt: "Summarize feature usage for my product areas.",
+        repository: "",
+        github_integration: null,
+        cron_expression: "0 8 * * 1-5",
+        timezone: "America/New_York",
+        enabled: true,
+        template_id: "llm-skill:shared-daily-brief",
+      }),
+    ).rejects.toMatchObject({
+      attr: "repository",
+      code: "invalid_input",
+      message: "Repository is still required for this template.",
     });
   });
 

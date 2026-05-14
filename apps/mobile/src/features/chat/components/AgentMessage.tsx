@@ -6,10 +6,16 @@ import { Alert, Pressable, Text, View } from "react-native";
 import { formatRelativeTime } from "@/lib/format";
 import { useThemeColors } from "@/lib/theme";
 import { usePeriodicRerender } from "../hooks/usePeriodicRerender";
-import type { AssistantToolCall } from "../types";
 import { getRandomThinkingMessage } from "../utils/thinkingMessages";
 import { MarkdownText } from "./MarkdownText";
 import { ToolMessage } from "./ToolMessage";
+
+interface AssistantToolCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  type: "tool_call";
+}
 
 interface AgentMessageProps {
   content: string;

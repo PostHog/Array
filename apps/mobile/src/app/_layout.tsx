@@ -2,7 +2,7 @@ import "../../global.css";
 import "@/lib/textDefaults";
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import { router, Stack } from "expo-router";
+import { router, Stack, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import { PostHogProvider } from "posthog-react-native";
@@ -17,6 +17,7 @@ import {
 import { useAuthStore } from "@/features/auth";
 import { setupNotificationResponseListener } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
+import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import {
   POSTHOG_API_KEY,
@@ -31,9 +32,12 @@ interface RootLayoutNavProps {
 }
 
 function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
-  const { isLoading, initializeAuth } = useAuthStore();
-  const aiChatEnabled = usePreferencesStore((s) => s.aiChatEnabled);
+  const { isAuthenticated, isLoading, initializeAuth } = useAuthStore();
+  const publishWatchSnapshot = useTaskSessionStore(
+    (s) => s.publishWatchSnapshot,
+  );
   const themeColors = useThemeColors();
+  const pathname = usePathname();
 
   useScreenTracking();
 
@@ -42,10 +46,27 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   }, [initializeAuth]);
 
   useEffect(() => {
-    return setupNotificationResponseListener(({ taskId }) => {
-      router.push(`/task/${taskId}`);
+    if (isLoading) return;
+    publishWatchSnapshot({ urgent: true });
+  }, [isLoading, publishWatchSnapshot]);
+
+  useEffect(() => {
+    return setupNotificationResponseListener(({ path }) => {
+      router.push(path);
     });
   }, []);
+
+  // Auth gate. If a deep link drops an unauthed user on a protected route
+  // (e.g. `posthog://task/abc` from a notification or shared link), bounce
+  // them to /auth with a `next` param so the sign-in flow can resume the
+  // originally-intended navigation.
+  useEffect(() => {
+    if (isLoading) return;
+    if (isAuthenticated) return;
+    if (!pathname || pathname === "/auth") return;
+    const next = pathname !== "/" ? pathname : undefined;
+    router.replace(next ? { pathname: "/auth", params: { next } } : "/auth");
+  }, [isAuthenticated, isLoading, pathname]);
 
   if (isLoading) {
     return (
@@ -69,15 +90,6 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
       <Stack.Screen name="auth" options={{ headerShown: false }} />
       <Stack.Screen name="index" options={{ headerShown: false }} />
 
-      {/* Chat routes - only registered when AI chat feature is enabled.
-          Screens use a FloatingBackButton instead of the native header. */}
-      {aiChatEnabled && (
-        <>
-          <Stack.Screen name="chat/index" options={{ headerShown: false }} />
-          <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
-        </>
-      )}
-
       {/* Tinder-style inbox review */}
       <Stack.Screen name="review" options={{ headerShown: false }} />
 
@@ -85,10 +97,26 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
           back / iOS swipe-back / Android hardware-back all return to it. */}
       <Stack.Screen name="settings/index" options={{ headerShown: false }} />
 
-      {/* Report detail - modal presentation, no native header
-          (the in-content title block is the canonical header). */}
+      {/* MCP servers — marketplace + installed management. */}
+      <Stack.Screen name="mcp-servers/index" options={{ headerShown: false }} />
       <Stack.Screen
-        name="report/[id]"
+        name="mcp-servers/add-custom"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="mcp-servers/template/[id]"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="mcp-servers/installation/[id]"
+        options={{ headerShown: false }}
+      />
+
+      {/* Inbox report detail - modal presentation, no native header
+          (the in-content title block is the canonical header). Path mirrors
+          the desktop app's `posthog-code://inbox/<reportId>` deep-link shape. */}
+      <Stack.Screen
+        name="inbox/[id]"
         options={{ presentation: "modal", headerShown: false }}
       />
 
@@ -103,6 +131,16 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
       />
       <Stack.Screen
         name="automation/index"
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          title: "Create automation",
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.gray[12],
+        }}
+      />
+      <Stack.Screen
+        name="automation/create"
         options={{
           presentation: "modal",
           headerShown: true,

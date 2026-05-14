@@ -1,14 +1,31 @@
 import * as Haptics from "expo-haptics";
-import { AppState } from "react-native";
+import { router } from "expo-router";
+import { Alert, AppState, Linking } from "react-native";
 import { create } from "zustand";
+import { useAuthStore } from "@/features/auth/stores/authStore";
+import {
+  dismissSignalReport,
+  getAvailableSuggestedReviewers,
+  getReportRepository,
+  getSignalReport,
+  getSignalReportArtefacts,
+  getSignalReports,
+} from "@/features/inbox/api";
+import type { DismissalReasonOptionValue } from "@/features/inbox/constants";
+import type { SuggestedReviewer } from "@/features/inbox/types";
 import { presentLocalNotification } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { logger } from "@/lib/logger";
+import { queryClient } from "@/lib/queryClient";
 import {
   CloudCommandError,
   getTask,
+  getTaskAutomations,
+  getTasks,
+  runTaskAutomation,
   runTaskInCloud,
   sendCloudCommand,
+  updateTaskAutomation,
 } from "../api";
 import { buildCloudPromptBlocks } from "../composer/attachments/buildCloudPrompt";
 import { serializeCloudPrompt } from "../composer/attachments/cloudPrompt";
@@ -18,6 +35,7 @@ import {
   watchCloudTask,
 } from "../lib/cloudTaskStream";
 import {
+  type CloudPendingPermissionRequest,
   type CloudTaskUpdatePayload,
   isTerminalStatus,
   type SessionEvent,
@@ -25,9 +43,25 @@ import {
   type SessionNotificationAttachment,
   type StoredLogEntry,
   type Task,
+  type WatchAutomationSnapshot,
+  type WatchInboxReportSnapshot,
+  type WatchInboxReviewer,
+  type WatchTaskCommand,
 } from "../types";
 import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
 import { playMeepSound } from "../utils/sounds";
+import {
+  createWatchAutomationSnapshot,
+  createWatchInboxReportSnapshot,
+  createWatchInboxReviewers,
+  createWatchTaskEnvelope,
+} from "../utils/watchTaskControl";
+import {
+  publishWatchTaskEnvelope,
+  sendUrgentWatchTaskUpdate,
+  subscribeToWatchTaskCommands,
+} from "../watchTaskControlBridge";
+import { useArchivedTasksStore } from "./archivedTasksStore";
 import { useAttachmentEchoStore } from "./attachmentEchoStore";
 
 const log = logger.scope("task-session-store");
@@ -243,13 +277,21 @@ export interface TaskSession {
   // when emitting the original permission_request SSE event; we capture it
   // here so the response can be routed back to the awaiting tool call.
   cloudPermissionRequestIds?: Record<string, string>;
+  pendingPermissions?: Record<string, CloudPendingPermissionRequest>;
 }
 
 interface TaskSessionStore {
   sessions: Record<string, TaskSession>;
   focusedTaskId: string | null;
+  watchTasks: Record<string, Task>;
+  watchInboxReports: WatchInboxReportSnapshot[];
+  watchInboxReviewers: WatchInboxReviewer[];
+  watchAutomations: WatchAutomationSnapshot[];
+  activeWatchTaskId?: string;
 
   setFocusedTaskId: (taskId: string | null) => void;
+  setActiveWatchTask: (taskId?: string) => void;
+  registerWatchTask: (task: Task) => void;
 
   connectToTask: (task: Task) => Promise<void>;
   disconnectFromTask: (taskId: string) => void;
@@ -269,12 +311,15 @@ interface TaskSessionStore {
     },
   ) => Promise<void>;
   cancelPrompt: (taskId: string) => Promise<boolean>;
+  retryTaskFromWatch: (taskId: string, taskRunId?: string) => Promise<void>;
+  handleWatchCommand: (command: WatchTaskCommand) => Promise<void>;
   setConfigOption: (
     taskId: string,
     configId: string,
     value: string,
   ) => Promise<void>;
   getSessionForTask: (taskId: string) => TaskSession | undefined;
+  publishWatchSnapshot: (options?: { urgent?: boolean }) => void;
 
   _handleCloudUpdate: (
     taskRunId: string,
@@ -292,6 +337,254 @@ interface TaskSessionStore {
 const watchHandles = new Map<string, WatchCloudTaskHandle>();
 const connectAttempts = new Set<string>();
 
+let watchPublishTimeout: ReturnType<typeof setTimeout> | null = null;
+let watchPublishUrgent = false;
+let watchCommandUnsubscribe: (() => void) | null = null;
+const WATCH_SNAPSHOT_DEBOUNCE_MS = 250;
+
+type WatchCurrentUser = { id: number; uuid?: string };
+
+async function fetchCurrentUserForWatch(): Promise<WatchCurrentUser> {
+  const cached = queryClient.getQueryData<WatchCurrentUser>(["user", "me"]);
+  if (typeof cached?.id === "number") return cached;
+
+  return queryClient.fetchQuery({
+    queryKey: ["user", "me"],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { cloudRegion, oauthAccessToken, getCloudUrlFromRegion } =
+        useAuthStore.getState();
+      if (!cloudRegion || !oauthAccessToken) {
+        throw new Error("Missing auth state for Watch task refresh");
+      }
+
+      const response = await fetch(
+        `${getCloudUrlFromRegion(cloudRegion)}/api/users/@me/`,
+        { headers: { Authorization: `Bearer ${oauthAccessToken}` } },
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to fetch current user: ${response.statusText}`);
+      }
+      return (await response.json()) as WatchCurrentUser;
+    },
+  });
+}
+
+type SignalReportArtefact = Awaited<
+  ReturnType<typeof getSignalReportArtefacts>
+>["results"][number];
+
+function extractSuggestedReviewers(
+  artefacts: SignalReportArtefact[],
+): SuggestedReviewer[] {
+  const artefact = artefacts.find(
+    (item) => item.type === "suggested_reviewers",
+  );
+  return Array.isArray(artefact?.content)
+    ? (artefact.content as SuggestedReviewer[])
+    : [];
+}
+
+function extractReportRepository(
+  artefacts: SignalReportArtefact[],
+): string | null {
+  const artefact = artefacts.find((item) => item.type === "repo_selection");
+  if (!artefact) return null;
+  let parsed: unknown = artefact.content;
+  if (typeof parsed === "string") {
+    const raw = parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return raw.toLowerCase();
+    }
+  }
+  if (typeof parsed === "object" && parsed !== null) {
+    const repo =
+      (parsed as Record<string, unknown>).repository ??
+      (parsed as Record<string, unknown>).repo;
+    if (typeof repo === "string") return repo.toLowerCase();
+  }
+  return null;
+}
+
+async function fetchCurrentWatchInbox(currentUser: WatchCurrentUser): Promise<{
+  reports: WatchInboxReportSnapshot[];
+  reviewers: WatchInboxReviewer[];
+}> {
+  const [reportsResponse, availableReviewers] = await Promise.all([
+    getSignalReports({
+      limit: 50,
+      status: "ready,pending_input,in_progress,failed,candidate,potential",
+      ordering: "status,-is_suggested_reviewer,priority",
+    }),
+    getAvailableSuggestedReviewers(),
+  ]);
+
+  const reviewers = createWatchInboxReviewers(
+    availableReviewers.results,
+    currentUser.uuid,
+  );
+
+  const reports = await Promise.all(
+    reportsResponse.results.map(async (report) => {
+      const artefacts = await getSignalReportArtefacts(report.id);
+      return createWatchInboxReportSnapshot(report, {
+        reviewers: extractSuggestedReviewers(artefacts.results),
+        repository: extractReportRepository(artefacts.results),
+        currentUserUuid: currentUser.uuid,
+      });
+    }),
+  );
+
+  return { reports, reviewers };
+}
+
+async function fetchCurrentWatchAutomations(): Promise<
+  WatchAutomationSnapshot[]
+> {
+  const [automations, automationTasks] = await Promise.all([
+    getTaskAutomations(),
+    getTasks({ originProduct: "automation" }),
+  ]);
+  const taskStatusById = new Map(
+    automationTasks.map((task) => [task.id, task.latest_run?.status ?? null]),
+  );
+  return automations.map((automation) =>
+    createWatchAutomationSnapshot(
+      automation,
+      automation.last_task_id
+        ? (taskStatusById.get(automation.last_task_id) ?? null)
+        : null,
+    ),
+  );
+}
+
+async function refreshCurrentWatchTasks(): Promise<void> {
+  const currentUser = await fetchCurrentUserForWatch();
+  const [tasks, inbox, automations] = await Promise.all([
+    getTasks({
+      createdBy: currentUser.id,
+    }),
+    fetchCurrentWatchInbox(currentUser).catch((error) => {
+      log.warn("Failed to refresh Watch inbox", { error });
+      return { reports: [], reviewers: [] };
+    }),
+    fetchCurrentWatchAutomations().catch((error) => {
+      log.warn("Failed to refresh Watch automations", { error });
+      return [];
+    }),
+  ]);
+  useTaskSessionStore.setState({
+    watchTasks: Object.fromEntries(tasks.map((task) => [task.id, task])),
+    watchInboxReports: inbox.reports,
+    watchInboxReviewers: inbox.reviewers,
+    watchAutomations: automations,
+  });
+}
+
+function buildWatchTaskEnvelopeFromStore() {
+  const state = useTaskSessionStore.getState();
+  const sessionsByTaskId: Record<string, TaskSession | undefined> = {};
+  for (const session of Object.values(state.sessions)) {
+    sessionsByTaskId[session.taskId] = session;
+  }
+
+  const archivedTasks = useArchivedTasksStore.getState().archivedTasks;
+  const visibleTasks = Object.values(state.watchTasks);
+  const activeWatchTaskId = state.activeWatchTaskId;
+  const activeWatchTask = activeWatchTaskId
+    ? state.watchTasks[activeWatchTaskId]
+    : undefined;
+  const visibleActiveTaskId =
+    activeWatchTaskId &&
+    !(activeWatchTaskId in archivedTasks) &&
+    !isTerminalStatus(activeWatchTask?.latest_run?.status)
+      ? activeWatchTaskId
+      : undefined;
+
+  return createWatchTaskEnvelope(
+    visibleTasks,
+    sessionsByTaskId,
+    visibleActiveTaskId,
+    {
+      archivedTaskIds: new Set(Object.keys(archivedTasks)),
+      isAuthenticated: useAuthStore.getState().isAuthenticated,
+      inboxReports: state.watchInboxReports,
+      inboxReviewers: state.watchInboxReviewers,
+      automations: state.watchAutomations,
+    },
+  );
+}
+
+function publishCurrentWatchTaskEnvelope(urgent: boolean) {
+  const envelope = buildWatchTaskEnvelopeFromStore();
+  const publish = urgent
+    ? sendUrgentWatchTaskUpdate(envelope)
+    : publishWatchTaskEnvelope(envelope);
+  publish.catch((error) => {
+    log.warn("Failed to publish watch task envelope", { error });
+  });
+}
+
+function scheduleWatchTaskPublish(options: { urgent?: boolean } = {}) {
+  if (options.urgent) {
+    if (watchPublishTimeout) {
+      clearTimeout(watchPublishTimeout);
+      watchPublishTimeout = null;
+    }
+    watchPublishUrgent = false;
+    publishCurrentWatchTaskEnvelope(true);
+    return;
+  }
+
+  if (watchPublishTimeout) return;
+
+  watchPublishTimeout = setTimeout(() => {
+    watchPublishTimeout = null;
+    const urgent = watchPublishUrgent;
+    watchPublishUrgent = false;
+    publishCurrentWatchTaskEnvelope(urgent);
+  }, WATCH_SNAPSHOT_DEBOUNCE_MS);
+}
+
+function ensureWatchCommandSubscription() {
+  if (watchCommandUnsubscribe) return;
+  watchCommandUnsubscribe = subscribeToWatchTaskCommands((command) => {
+    useTaskSessionStore
+      .getState()
+      .handleWatchCommand(command)
+      .catch((error) => {
+        log.warn("Failed to handle watch task command", { error });
+      });
+  });
+}
+
+let archivedWatchTaskIds = Object.keys(
+  useArchivedTasksStore.getState().archivedTasks,
+)
+  .sort()
+  .join(",");
+
+useArchivedTasksStore.subscribe((state) => {
+  const nextArchivedWatchTaskIds = Object.keys(state.archivedTasks)
+    .sort()
+    .join(",");
+  if (nextArchivedWatchTaskIds === archivedWatchTaskIds) return;
+  archivedWatchTaskIds = nextArchivedWatchTaskIds;
+  scheduleWatchTaskPublish({ urgent: true });
+});
+
+function macTaskUrl(command: {
+  taskId: string;
+  taskRunId?: string;
+  url?: string;
+}) {
+  if (command.url) return command.url;
+  const runPath = command.taskRunId ? `/run/${command.taskRunId}` : "";
+  return `posthog-code://task/${command.taskId}${runPath}`;
+}
+
 function mapTerminalStatus(
   status: string | undefined | null,
 ): "completed" | "failed" | undefined {
@@ -300,13 +593,62 @@ function mapTerminalStatus(
   return undefined;
 }
 
+async function sendWatchPromptToTask(
+  taskId: string,
+  prompt: string,
+): Promise<void> {
+  const store = useTaskSessionStore.getState();
+  const task = store.watchTasks[taskId] ?? (await getTask(taskId));
+
+  if (isTerminalStatus(task.latest_run?.status)) {
+    store.disconnectFromTask(taskId);
+    const updatedTask = await runTaskInCloud(taskId, {
+      resumeFromRunId: task.latest_run?.id,
+      pendingUserMessage: prompt,
+    });
+    store.registerWatchTask(updatedTask);
+    await store.connectToTask(updatedTask);
+    scheduleWatchTaskPublish({ urgent: true });
+    return;
+  }
+
+  if (!store.getSessionForTask(taskId)) {
+    await store.connectToTask(task);
+  }
+  await store.sendPrompt(taskId, prompt);
+  scheduleWatchTaskPublish({ urgent: true });
+}
+
 export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   sessions: {},
   focusedTaskId: null,
+  watchTasks: {},
+  watchInboxReports: [],
+  watchInboxReviewers: [],
+  watchAutomations: [],
 
   setFocusedTaskId: (taskId) => set({ focusedTaskId: taskId }),
 
+  setActiveWatchTask: (taskId) => {
+    ensureWatchCommandSubscription();
+    set({ activeWatchTaskId: taskId });
+    scheduleWatchTaskPublish({ urgent: true });
+  },
+
+  registerWatchTask: (task) => {
+    ensureWatchCommandSubscription();
+    set((state) => ({
+      watchTasks: {
+        ...state.watchTasks,
+        [task.id]: task,
+      },
+    }));
+    scheduleWatchTaskPublish();
+  },
+
   connectToTask: async (task: Task) => {
+    ensureWatchCommandSubscription();
+    get().registerWatchTask(task);
     const taskId = task.id;
     const latestRunId = task.latest_run?.id;
 
@@ -375,6 +717,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       const { [session.taskRunId]: _, ...rest } = state.sessions;
       return { sessions: rest };
     });
+    scheduleWatchTaskPublish();
     log.debug("Disconnected from task", { taskId });
   },
 
@@ -559,7 +902,37 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     // The cloud command requires the requestId it generated when emitting
     // the permission_request SSE event — toolCallId alone is not sufficient
     // for routing the response back to the awaiting tool call.
-    const cloudRequestId = session.cloudPermissionRequestIds?.[args.toolCallId];
+    const cloudRequestId =
+      session.cloudPermissionRequestIds?.[args.toolCallId] ??
+      session.pendingPermissions?.[args.toolCallId]?.requestId;
+
+    set((state) => {
+      const current = state.sessions[session.taskRunId];
+      const currentPermission = current?.pendingPermissions?.[args.toolCallId];
+      if (!current || !currentPermission) return state;
+      return {
+        sessions: {
+          ...state.sessions,
+          [session.taskRunId]: {
+            ...current,
+            pendingPermissions: {
+              ...(current.pendingPermissions ?? {}),
+              [args.toolCallId]: {
+                ...currentPermission,
+                response: {
+                  optionId: args.optionId,
+                  displayText: args.displayText,
+                  ...(args.answers ? { answers: args.answers } : {}),
+                  ...(args.customInput
+                    ? { customInput: args.customInput }
+                    : {}),
+                },
+              },
+            },
+          },
+        },
+      };
+    });
 
     try {
       await sendCloudCommand(taskId, session.taskRunId, "permission_response", {
@@ -602,6 +975,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         if (!current) return state;
         const nextLocalEchoes = new Set(current.localUserEchoes ?? []);
         nextLocalEchoes.delete(args.displayText);
+        const currentPermission = current.pendingPermissions?.[args.toolCallId];
         return {
           sessions: {
             ...state.sessions,
@@ -609,6 +983,15 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
               ...current,
               events: current.events.filter((e) => e !== userEvent),
               localUserEchoes: nextLocalEchoes,
+              pendingPermissions: currentPermission
+                ? {
+                    ...(current.pendingPermissions ?? {}),
+                    [args.toolCallId]: {
+                      ...currentPermission,
+                      response: undefined,
+                    },
+                  }
+                : current.pendingPermissions,
               isPromptPending: false,
             },
           },
@@ -660,9 +1043,12 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           [session.taskRunId]: {
             ...state.sessions[session.taskRunId],
             isPromptPending: false,
+            awaitingPing: false,
+            awaitingAgentOutput: false,
           },
         },
       }));
+      scheduleWatchTaskPublish({ urgent: true });
       return true;
     } catch (error) {
       log.error("Failed to send cancel request", error);
@@ -670,8 +1056,176 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     }
   },
 
+  retryTaskFromWatch: async (taskId: string, taskRunId?: string) => {
+    const currentTask = get().watchTasks[taskId] ?? (await getTask(taskId));
+    const resumeFromRunId = taskRunId ?? currentTask.latest_run?.id;
+
+    get().disconnectFromTask(taskId);
+    const updatedTask = await runTaskInCloud(taskId, { resumeFromRunId });
+
+    get().registerWatchTask(updatedTask);
+    await get().connectToTask(updatedTask);
+    scheduleWatchTaskPublish({ urgent: true });
+  },
+
+  handleWatchCommand: async (command: WatchTaskCommand) => {
+    switch (command.type) {
+      case "approval_response":
+        await get().sendPermissionResponse(command.taskId, {
+          toolCallId: command.toolCallId,
+          optionId: command.optionId,
+          answers: command.answers,
+          customInput: command.customInput,
+          displayText: command.displayText,
+        });
+        break;
+      case "stop":
+        await get().cancelPrompt(command.taskId);
+        break;
+      case "retry":
+        await get().retryTaskFromWatch(command.taskId, command.taskRunId);
+        break;
+      case "send_prompt":
+        await get().sendPrompt(command.taskId, command.displayText);
+        break;
+      case "debug_ping":
+        log.info("Received debug ping from watch", { command });
+        Alert.alert(
+          "Watch ping",
+          command.displayText ?? "Ping from Apple Watch",
+        );
+        break;
+      case "debug_request_snapshot":
+      case "request_snapshot": {
+        log.info("Watch requested task snapshot", { command });
+        if (useAuthStore.getState().isAuthenticated) {
+          try {
+            await refreshCurrentWatchTasks();
+          } catch (error) {
+            log.warn("Failed to refresh Watch tasks", { error });
+          }
+        }
+        scheduleWatchTaskPublish({ urgent: true });
+        break;
+      }
+      case "open_phone":
+      case "view_diff":
+        await Linking.openURL(
+          command.url ?? `posthog://task/${command.taskId}`,
+        );
+        break;
+      case "open_task_prompt": {
+        const taskId = command.taskId;
+        const prompt = (command.customInput ?? command.displayText)?.trim();
+
+        if (prompt) {
+          try {
+            await sendWatchPromptToTask(taskId, prompt);
+          } catch (error) {
+            log.error("Failed to send watch prompt", { error });
+            Alert.alert(
+              "Failed to send",
+              "Your message from Apple Watch could not be delivered.",
+            );
+          }
+        }
+
+        if (get().focusedTaskId !== taskId) {
+          router.push(`/task/${taskId}`);
+        }
+        break;
+      }
+      case "open_report":
+        await Linking.openURL(
+          command.url ??
+            `posthog://report/${command.reportId ?? command.taskId}`,
+        );
+        break;
+      case "dismiss_report": {
+        const reportId = command.reportId ?? command.taskId;
+        await dismissSignalReport(reportId, {
+          reason: (command.optionId ?? "other") as DismissalReasonOptionValue,
+          note: command.customInput,
+        });
+        await refreshCurrentWatchTasks();
+        scheduleWatchTaskPublish({ urgent: true });
+        break;
+      }
+      case "start_report_task": {
+        const reportId = command.reportId ?? command.taskId;
+        const report = await getSignalReport(reportId);
+        if (!report) throw new Error("Signal report not found");
+        const repository = await getReportRepository(reportId).catch(
+          () => null,
+        );
+        const prompt = `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`;
+        const params = new URLSearchParams({
+          prompt,
+          signalReport: reportId,
+        });
+        if (repository) params.set("repo", repository);
+        await Linking.openURL(`posthog://task?${params.toString()}`);
+        break;
+      }
+      case "new_automation":
+        router.push("/automation");
+        break;
+      case "open_automation":
+        await Linking.openURL(
+          command.url ??
+            `posthog://automation/${command.automationId ?? command.taskId}`,
+        );
+        break;
+      case "run_automation": {
+        const automation = await runTaskAutomation(
+          command.automationId ?? command.taskId,
+        );
+        if (automation.last_task_id) {
+          await Linking.openURL(
+            `posthog://task/${automation.last_task_id}?fromAutomation=1&automationName=${encodeURIComponent(automation.name)}`,
+          );
+        }
+        await refreshCurrentWatchTasks();
+        scheduleWatchTaskPublish({ urgent: true });
+        break;
+      }
+      case "pause_automation":
+      case "resume_automation":
+        await updateTaskAutomation(command.automationId ?? command.taskId, {
+          enabled: command.type === "resume_automation",
+        });
+        await refreshCurrentWatchTasks();
+        scheduleWatchTaskPublish({ urgent: true });
+        break;
+      case "open_mac":
+        await Linking.openURL(macTaskUrl(command));
+        break;
+      case "archive":
+        useArchivedTasksStore.getState().archive(command.taskId);
+        scheduleWatchTaskPublish({ urgent: true });
+        break;
+      case "restore":
+        useArchivedTasksStore.getState().unarchive(command.taskId);
+        scheduleWatchTaskPublish({ urgent: true });
+        break;
+      case "create_task": {
+        const prompt = (command.customInput ?? command.displayText)?.trim();
+        const path = prompt
+          ? `posthog://task?prompt=${encodeURIComponent(prompt)}`
+          : "posthog://task";
+        await Linking.openURL(path);
+        break;
+      }
+    }
+  },
+
   getSessionForTask: (taskId: string) => {
     return Object.values(get().sessions).find((s) => s.taskId === taskId);
+  },
+
+  publishWatchSnapshot: (options) => {
+    ensureWatchCommandSubscription();
+    scheduleWatchTaskPublish(options);
   },
 
   _startWatcher: (taskRunId: string, taskId: string) => {
@@ -732,6 +1286,14 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
                 cloudPermissionRequestIds: {
                   ...(current.cloudPermissionRequestIds ?? {}),
                   [toolCallId]: update.requestId,
+                },
+                pendingPermissions: {
+                  ...(current.pendingPermissions ?? {}),
+                  [toolCallId]: {
+                    requestId: update.requestId,
+                    toolCall: update.toolCall,
+                    options: update.options,
+                  },
                 },
               },
             },
@@ -874,6 +1436,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         }
       }
     }
+    scheduleWatchTaskPublish({ urgent: update.kind === "status" });
   },
 
   _resumeCloudRun: async (
@@ -916,6 +1479,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       };
     });
 
+    get().registerWatchTask(updatedTask);
     get()._startWatcher(newRun.id, taskId);
     log.debug("Swapped to resume run", {
       taskId,
@@ -925,6 +1489,33 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   },
 }));
 
+ensureWatchCommandSubscription();
+
+useAuthStore.subscribe((state, previousState) => {
+  if (state.isLoading) return;
+
+  if (!state.isAuthenticated) {
+    if (previousState.isLoading || previousState.isAuthenticated) {
+      scheduleWatchTaskPublish({ urgent: true });
+    }
+    return;
+  }
+
+  if (
+    previousState.isLoading ||
+    !previousState.isAuthenticated ||
+    previousState.projectId !== state.projectId
+  ) {
+    refreshCurrentWatchTasks()
+      .catch((error) => {
+        log.warn("Failed to refresh Watch tasks after auth change", { error });
+      })
+      .finally(() => {
+        scheduleWatchTaskPublish({ urgent: true });
+      });
+  }
+});
+
 // When the app returns from background, iOS may have killed the SSE
 // connection. Nudge every active watcher to reconnect so the stream resumes
 // with Last-Event-ID.
@@ -933,4 +1524,6 @@ AppState.addEventListener("change", (nextState) => {
   for (const handle of watchHandles.values()) {
     handle.reconnectIfDisconnected();
   }
+  ensureWatchCommandSubscription();
+  scheduleWatchTaskPublish();
 });

@@ -32,11 +32,13 @@ export function AutomationStatusBadge({
           {enabled ? "Enabled" : "Paused"}
         </Text>
       </View>
-      <View className={`rounded px-1.5 py-0.5 ${runStatus.className}`}>
-        <Text className={`text-xs ${runStatus.className.split(" ")[1]}`}>
-          {runStatus.label}
-        </Text>
-      </View>
+      {runStatus ? (
+        <View className={`rounded px-1.5 py-0.5 ${runStatus.className}`}>
+          <Text className={`text-xs ${runStatus.className.split(" ")[1]}`}>
+            {runStatus.label}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }

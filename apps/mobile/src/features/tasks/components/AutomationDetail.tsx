@@ -2,6 +2,7 @@ import { Text } from "@components/text";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import type { TaskAutomation, TaskRun } from "../types";
 import { formatAutomationScheduleSummary } from "../utils/automationSchedule";
+import { getAutomationTemplatePresentation } from "../utils/automationTemplatePresentation";
 import { AutomationStatusBadge } from "./AutomationStatusBadge";
 
 interface AutomationDetailProps {
@@ -23,6 +24,8 @@ export function AutomationDetail({
   onEdit,
   onDelete,
 }: AutomationDetailProps) {
+  const presentation = getAutomationTemplatePresentation(automation);
+
   return (
     <View>
       <View className="rounded-xl border border-gray-6 bg-gray-1 px-4 py-4">
@@ -38,12 +41,29 @@ export function AutomationDetail({
         </View>
 
         <View className="mt-4 gap-3">
-          <View>
-            <Text className="text-gray-9 text-xs">Repository</Text>
-            <Text className="mt-1 text-gray-12 text-sm">
-              {automation.repository}
-            </Text>
-          </View>
+          {presentation.templateName && (
+            <View>
+              <Text className="text-gray-9 text-xs">Template</Text>
+              <Text className="mt-1 text-gray-12 text-sm">
+                {presentation.templateName}
+              </Text>
+            </View>
+          )}
+          {presentation.repositoryLabel ? (
+            <View>
+              <Text className="text-gray-9 text-xs">Repository</Text>
+              <Text className="mt-1 text-gray-12 text-sm">
+                {presentation.repositoryLabel}
+              </Text>
+            </View>
+          ) : presentation.contextLabel ? (
+            <View>
+              <Text className="text-gray-9 text-xs">Context</Text>
+              <Text className="mt-1 text-gray-12 text-sm">
+                {presentation.contextLabel}
+              </Text>
+            </View>
+          ) : null}
           <View>
             <Text className="text-gray-9 text-xs">Schedule</Text>
             <Text className="mt-1 text-gray-12 text-sm">

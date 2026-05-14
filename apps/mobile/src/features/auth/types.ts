@@ -21,4 +21,5 @@ export interface StoredTokens {
   expiresAt: number;
   cloudRegion: CloudRegion;
   scopedTeams?: number[];
+  scopeVersion?: number;
 }

@@ -1,25 +1,18 @@
-// Chat feature - Core messaging functionality
+// Shared chat-style UI primitives reused by tasks and inbox. The standalone
+// PostHog AI conversations feature has been removed, but these components
+// (markdown rendering, tool-call display, agent/human bubbles, voice input)
+// are still used elsewhere.
 
 // Components
 export { AgentMessage } from "./components/AgentMessage";
-export { Composer } from "./components/Composer";
-export { FailureMessage } from "./components/FailureMessage";
 export { HumanMessage } from "./components/HumanMessage";
-export { MessagesList } from "./components/MessagesList";
 export type {
   ToolKind,
   ToolMessageProps,
   ToolStatus,
 } from "./components/ToolMessage";
 export { deriveToolKind, ToolMessage } from "./components/ToolMessage";
-export { VisualizationArtifact } from "./components/VisualizationArtifact";
 
 // Hooks
 export { usePeriodicRerender } from "./hooks/usePeriodicRerender";
 export { useVoiceRecording } from "./hooks/useVoiceRecording";
-
-// Store
-export { useChatStore } from "./stores/chatStore";
-
-// Types
-export * from "./types";

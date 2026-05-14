@@ -85,7 +85,9 @@ function PriorityBadge({ priority }: { priority: SignalReportPriority }) {
 // ─── Empty state ───
 
 function EmptyState() {
-  const dismissedCount = useDismissedReportsStore((s) => s.dismissedIds.length);
+  const decidedCount = useDismissedReportsStore(
+    (s) => s.dismissedIds.length + s.acceptedIds.length,
+  );
   const clearDismissed = useDismissedReportsStore((s) => s.clearDismissed);
 
   return (
@@ -98,13 +100,13 @@ function EmptyState() {
         You've reviewed all reports assigned to you. Check back later for new
         ones.
       </Text>
-      {dismissedCount > 0 && (
+      {decidedCount > 0 && (
         <Pressable
           onPress={clearDismissed}
           className="mt-2 rounded-full border border-gray-6 bg-gray-2 px-4 py-2 active:bg-gray-3"
         >
           <Text className="text-[13px] text-gray-11">
-            Reset {dismissedCount} dismissed
+            Reset {decidedCount} reviewed
           </Text>
         </Pressable>
       )}
@@ -131,8 +133,9 @@ export function TinderView({
 
   // Store state
   const currentIndex = useInboxStore((s) => s.currentIndex);
-  const advanceCard = useInboxStore((s) => s.advanceCard);
+  const _advanceCard = useInboxStore((s) => s.advanceCard);
   const dismissReport = useDismissedReportsStore((s) => s.dismissReport);
+  const acceptReport = useDismissedReportsStore((s) => s.acceptReport);
 
   // Local state
   const [expandedReport, setExpandedReport] = useState<SignalReport | null>(
@@ -209,7 +212,7 @@ export function TinderView({
           signalReportId: report.id,
         });
 
-        advanceCard();
+        acceptReport(report.id);
         showToastDone(task.id, report.title ?? "Untitled report");
       } catch (e) {
         const message =
@@ -221,7 +224,7 @@ export function TinderView({
         setCreating(false);
       }
     },
-    [repositoryOptions, advanceCard, showToastPending, showToastDone],
+    [repositoryOptions, showToastPending, showToastDone, acceptReport],
   );
 
   const currentReport =
