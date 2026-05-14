@@ -33,7 +33,7 @@ import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { Box, Flex } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc/client";
-import { BILLING_FLAG } from "@shared/constants";
+import { BILLING_FLAG, SYNC_CLOUD_TASKS_FLAG } from "@shared/constants";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
@@ -70,6 +70,7 @@ export function MainLayout() {
   const queryClient = useQueryClient();
   const reconcilingTaskIds = useRef<Set<string>>(new Set());
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
 
   // Space switcher data
   const sidebarData = useSidebarData({ activeView: view });
@@ -94,6 +95,7 @@ export function MainLayout() {
   }, [tasks, hydrateTask]);
 
   useEffect(() => {
+    if (!syncCloudTasksEnabled) return;
     if (!tasks || !workspaces || !workspacesFetched) return;
     const missing = tasks.filter(
       (t) => !workspaces[t.id] && !reconcilingTaskIds.current.has(t.id),
@@ -127,7 +129,14 @@ export function MainLayout() {
         );
       }
     });
-  }, [tasks, workspaces, workspacesFetched, queryClient, trpcReact]);
+  }, [
+    syncCloudTasksEnabled,
+    tasks,
+    workspaces,
+    workspacesFetched,
+    queryClient,
+    trpcReact,
+  ]);
 
   useEffect(() => {
     if (view.type === "task-detail" && !view.data && !view.taskId) {
