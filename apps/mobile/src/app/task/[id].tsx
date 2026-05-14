@@ -47,10 +47,12 @@ export default function TaskDetailScreen() {
     id: taskId,
     fromAutomation,
     automationName,
+    prompt: initialPrompt,
   } = useLocalSearchParams<{
     id: string;
     fromAutomation?: string;
     automationName?: string;
+    prompt?: string;
   }>();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -91,7 +93,15 @@ export default function TaskDetailScreen() {
   const composerConfig = useTaskStore((s) =>
     taskId ? s.composerConfigByTaskId[taskId] : undefined,
   );
+  const pendingPrompt = useTaskStore((s) =>
+    taskId ? s.pendingPromptByTaskId[taskId] : undefined,
+  );
   const setComposerConfig = useTaskStore((s) => s.setComposerConfig);
+  const setPendingPrompt = useTaskStore((s) => s.setPendingPrompt);
+  const consumePendingPrompt = useTaskStore((s) => s.consumePendingPrompt);
+  const [initialComposerMessage, setInitialComposerMessage] = useState<
+    string | undefined
+  >();
   const composerMode: ExecutionMode =
     composerConfig?.mode ?? DEFAULT_EXECUTION_MODE;
   const composerModel = composerConfig?.model ?? DEFAULT_MODEL;
@@ -116,6 +126,22 @@ export default function TaskDetailScreen() {
       marginBottom: height.value < 0 ? 0 : Math.max(insets.bottom, 50),
     };
   }, [insets.bottom]);
+
+  useEffect(() => {
+    if (!taskId) return;
+    const promptParam = Array.isArray(initialPrompt)
+      ? initialPrompt[0]
+      : initialPrompt;
+    if (promptParam?.trim()) {
+      setPendingPrompt(taskId, promptParam.trim());
+    }
+  }, [taskId, initialPrompt, setPendingPrompt]);
+
+  useEffect(() => {
+    if (!taskId || !pendingPrompt) return;
+    const prompt = consumePendingPrompt(taskId);
+    if (prompt) setInitialComposerMessage(prompt);
+  }, [taskId, pendingPrompt, consumePendingPrompt]);
 
   useEffect(() => {
     if (!taskId) return;
@@ -521,6 +547,7 @@ export default function TaskDetailScreen() {
             placeholder={
               session?.terminalStatus ? "Resume this task..." : "Ask a question"
             }
+            initialMessage={initialComposerMessage}
             mode={composerMode}
             model={composerModel}
             reasoning={composerReasoning}

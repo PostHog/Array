@@ -386,6 +386,7 @@ export type WatchTaskCommand =
         | "archive"
         | "restore"
         | "create_task"
+        | "open_task_prompt"
         | "open_report"
         | "dismiss_report"
         | "start_report_task"

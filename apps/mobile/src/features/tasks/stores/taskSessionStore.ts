@@ -62,6 +62,7 @@ import {
 } from "../watchTaskControlBridge";
 import { useArchivedTasksStore } from "./archivedTasksStore";
 import { useAttachmentEchoStore } from "./attachmentEchoStore";
+import { useTaskStore } from "./taskStore";
 
 const log = logger.scope("task-session-store");
 
@@ -1046,6 +1047,14 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           command.url ?? `posthog://task/${command.taskId}`,
         );
         break;
+      case "open_task_prompt": {
+        const prompt = (command.customInput ?? command.displayText)?.trim();
+        if (prompt) {
+          useTaskStore.getState().setPendingPrompt(command.taskId, prompt);
+        }
+        router.push(`/task/${command.taskId}`);
+        break;
+      }
       case "open_report":
         await Linking.openURL(
           command.url ??

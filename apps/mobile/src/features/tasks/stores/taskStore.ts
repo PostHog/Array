@@ -30,6 +30,7 @@ interface TaskUIState {
    *  repo pill so users don't have to re-pick the same repo every time. */
   lastRepository: RepositorySelection;
   composerConfigByTaskId: Record<string, TaskComposerConfig>;
+  pendingPromptByTaskId: Record<string, string>;
 
   selectTask: (taskId: string | null) => void;
   setOrganizeMode: (mode: OrganizeMode) => void;
@@ -41,11 +42,13 @@ interface TaskUIState {
     taskId: string,
     config: Partial<TaskComposerConfig>,
   ) => void;
+  setPendingPrompt: (taskId: string, prompt: string) => void;
+  consumePendingPrompt: (taskId: string) => string | undefined;
 }
 
 export const useTaskStore = create<TaskUIState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       selectedTaskId: null,
       organizeMode: "by-project",
       sortMode: "updated",
@@ -53,6 +56,7 @@ export const useTaskStore = create<TaskUIState>()(
       filter: "",
       lastRepository: EMPTY_REPOSITORY_SELECTION,
       composerConfigByTaskId: {},
+      pendingPromptByTaskId: {},
 
       selectTask: (selectedTaskId) => set({ selectedTaskId }),
       setOrganizeMode: (organizeMode) => set({ organizeMode }),
@@ -70,6 +74,23 @@ export const useTaskStore = create<TaskUIState>()(
             },
           },
         })),
+      setPendingPrompt: (taskId, prompt) =>
+        set((state) => ({
+          pendingPromptByTaskId: {
+            ...state.pendingPromptByTaskId,
+            [taskId]: prompt,
+          },
+        })),
+      consumePendingPrompt: (taskId) => {
+        const prompt = get().pendingPromptByTaskId[taskId];
+        if (!prompt) return undefined;
+        set((state) => {
+          const { [taskId]: _consumed, ...remaining } =
+            state.pendingPromptByTaskId;
+          return { pendingPromptByTaskId: remaining };
+        });
+        return prompt;
+      },
     }),
     {
       name: "posthog-task-ui",

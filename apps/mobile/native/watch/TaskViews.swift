@@ -79,6 +79,7 @@ enum WatchTaskVisibility: String, CaseIterable {
 
 struct TasksRootView: View {
   @EnvironmentObject private var store: WatchTaskStore
+  @State private var selectedTaskId: String?
   @AppStorage("watch_task_organize_mode") private var organizeModeRaw = WatchTaskOrganizeMode.chronological.rawValue
   @AppStorage("watch_task_sort_mode") private var sortModeRaw = WatchTaskSortMode.updated.rawValue
   @AppStorage("watch_task_visibility") private var visibilityRaw = WatchTaskVisibility.external.rawValue
@@ -162,10 +163,9 @@ struct TasksRootView: View {
           }
         }
         .navigationTitle("Tasks")
-        .navigationDestination(for: String.self) { id in
-          if let task = store.tasks.first(where: { $0.id == id }) {
-            TaskOverviewView(task: task)
-          }
+        .navigationDestination(item: $selectedTaskId) { id in
+          let task = store.tasks.first(where: { $0.id == id })
+          TaskOverviewView(task: task)
         }
         .refreshable {
           store.requestSnapshot()
@@ -180,7 +180,9 @@ struct TasksRootView: View {
   }
 
   private func taskLink(_ task: WatchTaskSnapshot) -> some View {
-    NavigationLink(value: task.id) {
+    Button {
+      selectedTaskId = task.id
+    } label: {
       TaskRow(task: task, isActive: store.envelope?.activeTaskId == task.id)
     }
     .opacity(task.isArchived == true ? 0.45 : 1)
@@ -290,12 +292,14 @@ struct EmptyTasksView: View {
   }
 }
 
-func presentNewTaskInput(_ completion: @escaping (String) -> Void) {
-  let suggestions = [
-    "Create or update my CLAUDE.md file",
-    "Search for a TODO comment and fix it",
-    "Recommend areas to improve our tests",
-  ]
+func presentNewTaskInput(includeSuggestions: Bool = true, _ completion: @escaping (String) -> Void) {
+  let suggestions = includeSuggestions
+    ? [
+      "Create or update my CLAUDE.md file",
+      "Search for a TODO comment and fix it",
+      "Recommend areas to improve our tests",
+    ]
+    : nil
   WKExtension.shared().visibleInterfaceController?.presentTextInputController(
     withSuggestions: suggestions,
     allowedInputMode: .plain
@@ -445,28 +449,78 @@ struct TaskListSettingsView: View {
 
 struct TaskOverviewView: View {
   @EnvironmentObject private var store: WatchTaskStore
-  let task: WatchTaskSnapshot
+  let task: WatchTaskSnapshot?
+
+  private var currentTask: WatchTaskSnapshot? {
+    guard let id = task?.id else { return task }
+    return store.tasks.first(where: { $0.id == id }) ?? task
+  }
 
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 12) {
-        TaskHeader(task: task)
-        if let approval = task.approval { ApprovalCard(task: task, approval: approval) }
-        if let blocker = task.blocker, task.approval == nil { BlockerCard(task: task, blocker: blocker) }
-        CurrentTaskCard(task: task)
-        NavigationLink { ChecklistView(task: task) } label: { Label("Checklist", systemImage: "checklist") }
-        NavigationLink { TimelineView(task: task) } label: { Label("Timeline", systemImage: "point.3.connected.trianglepath.dotted") }
-        HandoffButtons(task: task)
-        if let status = store.lastCommandStatus {
-          Text(status).font(.caption2).foregroundStyle(.secondary)
+      if let task = currentTask {
+        VStack(alignment: .leading, spacing: 12) {
+          VStack(alignment: .leading, spacing: 6) {
+            Text(task.title)
+              .font(.headline)
+              .lineLimit(3)
+            Text(task.statusText)
+              .font(.caption)
+              .foregroundStyle(statusColor(task.status))
+          }
+
+          CurrentTaskCard(task: task)
+
+          VStack(spacing: 6) {
+            Button("Open on iPhone") { send(type: "open_phone", task: task, url: task.handoff.phoneUrl, prompt: nil) }
+            Button { promptForTask(task) } label: {
+              Label("Tap to Speak", systemImage: "mic")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(accent)
+            if task.allowedActions.contains("stop") {
+              Button("Stop Agent") { send(type: "stop", task: task, url: nil, prompt: nil) }.tint(.red)
+            }
+          }
+
+          if let approval = task.approval { ApprovalCard(task: task, approval: approval) }
+          if let blocker = task.blocker, task.approval == nil { BlockerCard(task: task, blocker: blocker) }
+
+          if let status = store.lastCommandStatus {
+            Text(status).font(.caption2).foregroundStyle(.secondary)
+          }
         }
-        if let envelopeStatus = store.lastEnvelopeStatus {
-          Text(envelopeStatus).font(.caption2).foregroundStyle(.secondary)
-        }
+        .padding(.vertical, 4)
+      } else {
+        ContentUnavailableView(
+          "Task unavailable",
+          systemImage: "exclamationmark.triangle",
+          description: Text("Pull to refresh tasks.")
+        )
       }
-      .padding(.vertical, 4)
     }
     .navigationTitle("Task")
+  }
+
+  private func promptForTask(_ task: WatchTaskSnapshot) {
+    presentNewTaskInput(includeSuggestions: false) { prompt in
+      send(type: "open_task_prompt", task: task, url: task.handoff.phoneUrl, prompt: prompt)
+    }
+  }
+
+  private func send(type: String, task: WatchTaskSnapshot, url: String?, prompt: String?) {
+    store.send(command: WatchTaskCommand(
+      id: UUID().uuidString,
+      type: type,
+      taskId: task.taskId,
+      taskRunId: task.taskRunId,
+      toolCallId: nil,
+      optionId: nil,
+      displayText: prompt,
+      answers: nil,
+      customInput: prompt,
+      url: url
+    ))
   }
 }
 
