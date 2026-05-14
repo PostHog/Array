@@ -61,7 +61,7 @@ function ToastComponent(props: ToastProps) {
                   color="gray"
                   onClick={() => sonnerToast.dismiss(id)}
                 >
-                  <XIcon size={12} />
+                  <XIcon size={12} className="pointer-events-none" />
                 </IconButton>
               )}
             </Flex>
