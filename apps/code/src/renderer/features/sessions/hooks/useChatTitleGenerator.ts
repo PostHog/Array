@@ -73,27 +73,26 @@ export function useChatTitleGenerator(taskId: string): void {
         const result = await generateTitleAndSummary(content);
         if (result) {
           const { title, summary } = result;
-          if (title) {
-            if (getCachedTask(taskId)?.title_manually_set) {
-              log.debug("Skipping auto-title, user renamed task", { taskId });
-            } else {
-              const client = await getAuthenticatedClient();
-              if (client) {
-                await client.updateTask(taskId, { title });
-                queryClient.setQueriesData<Task[]>(
-                  { queryKey: ["tasks", "list"] },
-                  (old) =>
-                    old?.map((task) =>
-                      task.id === taskId ? { ...task, title } : task,
-                    ),
-                );
-                getSessionService().updateSessionTaskTitle(taskId, title);
-                log.debug("Updated task title from conversation", {
-                  taskId,
-                  title,
-                  promptCount,
-                });
-              }
+          const titleLocked = !!getCachedTask(taskId)?.title_manually_set;
+
+          if (title && titleLocked) {
+            log.debug("Skipping auto-title, user renamed task", { taskId });
+          } else if (title) {
+            const client = await getAuthenticatedClient();
+            if (client) {
+              await client.updateTask(taskId, { title });
+              queryClient.setQueriesData<Task[]>(
+                { queryKey: ["tasks", "list"] },
+                (old) =>
+                  old?.map((task) =>
+                    task.id === taskId ? { ...task, title } : task,
+                  ),
+              );
+              getSessionService().updateSessionTaskTitle(taskId, title);
+              log.debug("Updated task title from conversation", {
+                taskId,
+                promptCount,
+              });
             }
           }
 
@@ -104,7 +103,6 @@ export function useChatTitleGenerator(taskId: string): void {
 
             log.debug("Updated task summary from conversation", {
               taskId,
-              summary,
               promptCount,
             });
           }

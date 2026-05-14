@@ -103,7 +103,7 @@ describe("useChatTitleGenerator", () => {
     });
   });
 
-  it("skips first generation when title_manually_set", async () => {
+  it("skips title update when title_manually_set", async () => {
     mockGetCachedTask.mockReturnValue({
       id: TASK_ID,
       title_manually_set: true,
