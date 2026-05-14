@@ -73,6 +73,7 @@
         }
       ],
       "./plugins/withWatchApp",
+      "./plugins/withPodfileResourceBundleFix",
       [
         "expo-font",
         {
