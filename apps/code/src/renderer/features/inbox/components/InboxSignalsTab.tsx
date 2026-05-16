@@ -283,18 +283,12 @@ export function InboxSignalsTab() {
         );
       } else if (event.metaKey) {
         toggleReportSelection(reportId);
-      } else if (
-        selectedReportIdsRef.current.length === 1 &&
-        selectedReportIdsRef.current[0] === reportId
-      ) {
-        // Plain click on the only selected report — deselect it
-        clearSelection();
       } else {
-        // Plain click — select only this report
+        // Plain click — select only this report (no-op if already the sole selection)
         setSelectedReportIds([reportId]);
       }
     },
-    [selectRange, toggleReportSelection, setSelectedReportIds, clearSelection],
+    [selectRange, toggleReportSelection, setSelectedReportIds],
   );
 
   // Select-all checkbox
