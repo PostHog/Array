@@ -7,7 +7,6 @@ import {
   CaretDownIcon,
   CaretRightIcon,
   CheckCircleIcon,
-  QuestionIcon,
   TagIcon,
 } from "@phosphor-icons/react";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
@@ -221,23 +220,16 @@ function isErrorTrackingExtra(
 
 // ── Shared components ────────────────────────────────────────────────────────
 
-function VerificationBadge({ verified }: { verified: boolean }) {
+function VerificationBadge() {
   return (
     <Flex
       align="center"
       gap="1"
-      className="shrink-0 text-[11px]"
-      title={
-        verified ? "Verified by code or data evidence" : "Could not be verified"
-      }
-      style={{ color: verified ? "var(--green-9)" : "var(--gray-9)" }}
+      className="shrink-0 text-(--green-9) text-[11px]"
+      title="Verified by code or data evidence"
     >
-      {verified ? (
-        <CheckCircleIcon size={12} weight="fill" />
-      ) : (
-        <QuestionIcon size={12} weight="bold" />
-      )}
-      <span>{verified ? "Verified" : "Unverified"}</span>
+      <CheckCircleIcon size={12} weight="fill" />
+      <span>Verified</span>
     </Flex>
   );
 }
@@ -267,7 +259,7 @@ function SignalCardHeader({
         {signalCardSourceLine(signal)}
       </Text>
       <span className="flex-1" />
-      {verified !== undefined && <VerificationBadge verified={verified} />}
+      {verified === true && <VerificationBadge />}
     </Flex>
   );
 }
