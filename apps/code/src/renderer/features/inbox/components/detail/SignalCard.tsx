@@ -12,6 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import type { Signal, SignalFindingContent } from "@shared/types";
+import { errorTrackingIssueUrl } from "@utils/posthogLinks";
 import { useRef, useState } from "react";
 
 const COLLAPSE_THRESHOLD = 300;
@@ -267,14 +268,6 @@ function SignalCardHeader({
       </Text>
       <span className="flex-1" />
       {verified !== undefined && <VerificationBadge verified={verified} />}
-      <Badge
-        variant="soft"
-        color="gray"
-        size="1"
-        className="shrink-0 text-[11px]"
-      >
-        Weight: {signal.weight.toFixed(1)}
-      </Badge>
     </Flex>
   );
 }
@@ -669,10 +662,34 @@ function ErrorTrackingSignalCard({
   codePaths?: string[];
   dataQueried?: string;
 }) {
+  const projectId = useAuthStateValue((s) => s.projectId);
+  const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+  const issueUrl = signal.source_id
+    ? errorTrackingIssueUrl(signal.source_id, { projectId, cloudRegion })
+    : null;
+
   return (
     <Box className="min-w-0 overflow-hidden rounded-lg border border-gray-6 bg-gray-1 p-3">
       <SignalCardHeader signal={signal} verified={verified} />
       <CollapsibleBody body={signal.content} />
+      {issueUrl && (
+        <Flex
+          align="center"
+          justify="end"
+          mt="2"
+          className="text-(--gray-10) text-[11px]"
+        >
+          <a
+            href={issueUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] text-gray-10 hover:text-gray-12"
+          >
+            View issue
+            <ArrowSquareOutIcon size={12} />
+          </a>
+        </Flex>
+      )}
       <CodePathsCollapsible paths={codePaths ?? []} />
       <DataQueriedCollapsible text={dataQueried ?? ""} />
     </Box>
