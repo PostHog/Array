@@ -17,6 +17,7 @@ import {
   CaretRightIcon,
   EyeIcon,
   LinkSimpleIcon,
+  Plus,
   ThumbsDownIcon,
   WarningIcon,
   XIcon,
@@ -298,31 +299,6 @@ export function ReportDetailPane({
           </Text>
         </Flex>
         <Flex align="center" gap="2" className="shrink-0">
-          {headerImplementationPrUrl ? (
-            <ReportImplementationPrLink
-              prUrl={headerImplementationPrUrl}
-              size="md"
-            />
-          ) : null}
-          <Button
-            size="1"
-            variant="soft"
-            color="gray"
-            className="text-[12px]"
-            tooltipContent="This report is not useful to me"
-            disabledReason={suppressDisabledReason}
-            disabled={
-              suppressDisabledReason !== null || isDismissMutationPending
-            }
-            onClick={() => onRequestDismissReport()}
-          >
-            {isDismissMutationPending ? (
-              <Spinner size="1" />
-            ) : (
-              <ThumbsDownIcon size={12} />
-            )}
-            Dismiss
-          </Button>
           <Tooltip content="Copy link to this report">
             <button
               type="button"
@@ -342,6 +318,41 @@ export function ReportDetailPane({
               <LinkSimpleIcon size={14} />
             </button>
           </Tooltip>
+          <Button
+            size="1"
+            variant="soft"
+            color="gray"
+            className="text-[12px]"
+            tooltipContent="This report is not useful to me"
+            disabledReason={suppressDisabledReason}
+            disabled={
+              suppressDisabledReason !== null || isDismissMutationPending
+            }
+            onClick={() => onRequestDismissReport()}
+          >
+            {isDismissMutationPending ? (
+              <Spinner size="1" />
+            ) : (
+              <ThumbsDownIcon size={12} />
+            )}
+            Dismiss
+          </Button>
+          {headerImplementationPrUrl ? (
+            <ReportImplementationPrLink
+              prUrl={headerImplementationPrUrl}
+              size="md"
+            />
+          ) : canCreateImplementationPr ? (
+            <Button
+              size="1"
+              variant="solid"
+              className="gap-1 text-[12px]"
+              onClick={handleCreateImplementationTask}
+            >
+              <Plus size={12} />
+              Create PR
+            </Button>
+          ) : null}
           <button
             type="button"
             onClick={onClose}
@@ -594,10 +605,6 @@ export function ReportDetailPane({
         key={report.id}
         reportId={report.id}
         reportStatus={report.status}
-        isAwaitingInput={isAwaitingInput}
-        onCreateImplementationTask={
-          canCreateImplementationPr ? handleCreateImplementationTask : undefined
-        }
       />
     </>
   );
