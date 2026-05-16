@@ -19,8 +19,8 @@ type Relationship = SignalReportTask["relationship"];
 
 const RELATIONSHIP_LABELS: Record<Relationship, string> = {
   repo_selection: "Repository selection",
-  research: "Research task",
-  implementation: "Implementation task",
+  research: "Research",
+  implementation: "Implementation",
 };
 
 interface BarSummary {
@@ -79,7 +79,7 @@ function getResearchPendingSummary(
         color: "var(--gray-9)",
         icon: <Spinner size="1" />,
       },
-      tooltip: "Checking if a research task exists for this report.",
+      tooltip: "Checking if research exists for this report.",
     };
   }
   if (reportStatus === "candidate") {
@@ -111,7 +111,7 @@ function getResearchPendingSummary(
       icon: <XCircleIcon size={14} />,
     },
     tooltip:
-      "No research task is recorded for this report. It may have been created before research tracking was in place.",
+      "No research is recorded for this report. It may have been created before research tracking was in place.",
   };
 }
 
