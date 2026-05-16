@@ -36,7 +36,7 @@ export function ReportCardContent({
     <Flex
       direction="column"
       gap={compact ? undefined : "1"}
-      className={compact ? "gap-0.5" : undefined}
+      className={compact ? "gap-1.5" : undefined}
     >
       <Flex align="start" gapX={compact ? "1" : "2"} className="min-w-0">
         <Text className="min-w-0 flex-1 break-words font-medium text-[13px]">
@@ -71,7 +71,7 @@ export function ReportCardContent({
             <Tooltip content="You are a suggested reviewer">
               <Badge
                 color="amber"
-                className="!leading-none inline-flex items-center justify-center"
+                className="inline-flex items-center justify-center"
               >
                 <EyeIcon size={10} weight="bold" className="shrink-0" />
               </Badge>
