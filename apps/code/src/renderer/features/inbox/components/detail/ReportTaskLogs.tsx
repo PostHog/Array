@@ -191,11 +191,7 @@ export function ReportTaskLogs({
 
   const isPendingInput = reportStatus === "pending_input";
   const awaitingInput = isPendingInput || isAwaitingInput;
-  const runActionLabel = onCreateImplementationTask
-    ? awaitingInput
-      ? "Implement as new task"
-      : "Create PR"
-    : undefined;
+  const runActionLabel = onCreateImplementationTask ? "Create PR" : undefined;
 
   if (implementationTask) {
     bars.push({
