@@ -4,6 +4,7 @@ import {
   sessionStoreSetters,
   useSessionStore,
 } from "@features/sessions/stores/sessionStore";
+import type { Schemas } from "@renderer/api/generated";
 import type { Task } from "@shared/types";
 import {
   enrichDescriptionWithFileContent,
@@ -83,6 +84,13 @@ export function useChatTitleGenerator(taskId: string): void {
               await client.updateTask(taskId, { title });
               queryClient.setQueriesData<Task[]>(
                 { queryKey: ["tasks", "list"] },
+                (old) =>
+                  old?.map((task) =>
+                    task.id === taskId ? { ...task, title } : task,
+                  ),
+              );
+              queryClient.setQueriesData<Schemas.TaskSummary[]>(
+                { queryKey: ["tasks", "summaries"] },
                 (old) =>
                   old?.map((task) =>
                     task.id === taskId ? { ...task, title } : task,
