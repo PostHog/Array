@@ -34,9 +34,9 @@ vi.mock("./GitHubLoadNotice", () => ({
     createElement("GitHubLoadNotice", props, props.message as string),
 }));
 
-vi.mock("./RepositorySelector", () => ({
-  RepositorySelector: (props: Record<string, unknown>) =>
-    createElement("RepositorySelector", props),
+vi.mock("../composer/RepositoryPickerInline", () => ({
+  RepositoryPickerInline: (props: Record<string, unknown>) =>
+    createElement("RepositoryPickerInline", props),
 }));
 
 vi.mock("./ScheduleEditor", () => ({
@@ -85,7 +85,10 @@ describe("AutomationForm", () => {
       throw new Error("Renderer not created");
     }
 
-    expect(renderer.root.findAllByType("RepositorySelector")).toHaveLength(0);
+    // Repository picker is only mounted when `repositoryRequired` is true.
+    expect(renderer.root.findAllByType("RepositoryPickerInline")).toHaveLength(
+      0,
+    );
 
     const submitButton = renderer.root
       .findAll(
@@ -225,11 +228,15 @@ describe("AutomationForm", () => {
       throw new Error("Renderer not created");
     }
 
-    const repositorySelector = renderer.root.findByType("RepositorySelector");
+    const repositoryPicker = renderer.root.findByType("RepositoryPickerInline");
 
+    // The new picker emits `RepositoryOption` objects (with the integration
+    // label too) rather than the raw `RepositorySelection` shape used by
+    // the old inline list.
     act(() => {
-      repositorySelector.props.onChange({
+      repositoryPicker.props.onChange({
         integrationId: 7,
+        integrationLabel: "PostHog",
         repository: "posthog/posthog",
       });
     });

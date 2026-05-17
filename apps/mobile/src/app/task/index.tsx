@@ -59,7 +59,7 @@ import {
   reasoningLabel,
 } from "@/features/tasks/composer/options";
 import { Pill } from "@/features/tasks/composer/Pill";
-import { RepositoryPickerSheet } from "@/features/tasks/composer/RepositoryPickerSheet";
+import { RepositoryPickerInline } from "@/features/tasks/composer/RepositoryPickerInline";
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
 import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
@@ -115,6 +115,7 @@ export default function NewTaskScreen() {
     repositoryOptions,
     repositoryWarning,
     isLoading,
+    isRefreshingInBackground,
     refetch,
   } = useIntegrations();
 
@@ -387,11 +388,12 @@ export default function NewTaskScreen() {
         <DotBackground />
 
         <Animated.View style={[{ flex: 1 }, containerStyle]}>
-          <View className="flex-1 items-stretch justify-center px-3">
-            {prompt.trim().length === 0 ? (
+          <View className="flex-1 items-stretch justify-end px-3">
+            {repoSheetOpen ? null : prompt.trim().length === 0 ? (
               <Animated.View
                 style={suggestionsStyle}
                 pointerEvents={keyboardActive ? "none" : "auto"}
+                className="flex-1 justify-center"
               >
                 <Text className="mb-3 px-1 text-[13px] text-gray-10">
                   Suggestions
@@ -411,6 +413,24 @@ export default function NewTaskScreen() {
                 </View>
               </Animated.View>
             ) : null}
+
+            {/* Inline repo picker: pops up directly above the pill when
+                open, replacing the suggestions area. Rendered inline (not
+                a Modal) so it feels like a dropdown anchored to the pill
+                rather than a slide-in sheet. */}
+            <View className="mb-2">
+              <RepositoryPickerInline
+                open={repoSheetOpen}
+                repositoryOptions={repositoryOptions}
+                selected={selectedRepositoryOption}
+                loading={isLoading && repositoryOptions.length === 0}
+                isRefreshing={isRefreshingInBackground}
+                onChange={(option) =>
+                  setSelection(toRepositorySelection(option))
+                }
+                onClose={() => setRepoSheetOpen(false)}
+              />
+            </View>
           </View>
 
           <View className="px-3">
@@ -424,8 +444,12 @@ export default function NewTaskScreen() {
 
             <View className="mb-2 flex-row">
               <Pressable
-                onPress={() => setRepoSheetOpen(true)}
-                className="flex-row items-center gap-2 rounded-full border border-gray-6 bg-card py-1.5 pr-2.5 pl-2 active:bg-gray-2"
+                onPress={() => setRepoSheetOpen((prev) => !prev)}
+                className={`flex-row items-center gap-2 rounded-full border py-1.5 pr-2.5 pl-2 active:bg-gray-2 ${
+                  repoSheetOpen
+                    ? "border-accent-7 bg-accent-3"
+                    : "border-gray-6 bg-card"
+                }`}
               >
                 <GithubLogo
                   size={16}
@@ -444,7 +468,13 @@ export default function NewTaskScreen() {
                 >
                   {repositoryLabel}
                 </Text>
-                <CaretDown size={12} color={themeColors.gray[10]} />
+                <CaretDown
+                  size={12}
+                  color={themeColors.gray[10]}
+                  style={{
+                    transform: [{ rotate: repoSheetOpen ? "180deg" : "0deg" }],
+                  }}
+                />
               </Pressable>
             </View>
 
@@ -578,15 +608,6 @@ export default function NewTaskScreen() {
           </View>
         </Animated.View>
       </View>
-
-      <RepositoryPickerSheet
-        open={repoSheetOpen}
-        repositoryOptions={repositoryOptions}
-        selected={selectedRepositoryOption}
-        loading={isLoading}
-        onChange={(option) => setSelection(toRepositorySelection(option))}
-        onClose={() => setRepoSheetOpen(false)}
-      />
 
       <SelectSheet
         open={modeSheetOpen}

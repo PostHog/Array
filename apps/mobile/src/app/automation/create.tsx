@@ -1,6 +1,6 @@
 import { getCalendars } from "expo-localization";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -9,6 +9,7 @@ import {
   ScrollView,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/text";
 import { TaskAutomationValidationError } from "@/features/tasks/api";
 import { AutomationForm } from "@/features/tasks/components/AutomationForm";
@@ -16,6 +17,14 @@ import { useCreateTaskAutomation } from "@/features/tasks/hooks/useAutomations";
 import { useSkillStoreSkill } from "@/features/tasks/skills/hooks";
 import { formatSkillTemplateId } from "@/features/tasks/skills/skillTemplateIds";
 import { useThemeColors } from "@/lib/theme";
+
+// Reserved space below the scrolling form content. Tall enough that the
+// floating Create button never covers the prompt editor's tail — the
+// user can scroll the very last line of the prompt up above the button.
+// Composed of the button's own area + safe-area inset at the bottom of
+// the screen.
+const FLOATING_BUTTON_AREA_HEIGHT = 64;
+const FLOATING_BUTTON_DEAD_SPACE = 32;
 
 export default function CreateAutomationScreen() {
   const { skillName: skillNameParam } = useLocalSearchParams<{
@@ -26,6 +35,7 @@ export default function CreateAutomationScreen() {
     : skillNameParam;
   const router = useRouter();
   const themeColors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const createAutomation = useCreateTaskAutomation();
   const defaultTimezone = useMemo(
     () => getCalendars()[0]?.timeZone ?? "UTC",
@@ -51,6 +61,29 @@ export default function CreateAutomationScreen() {
   } | null>(null);
   const [generalError, setGeneralError] = useState<string | null>(null);
 
+  // Bridge to the form's internal submit handler so the floating button
+  // — rendered outside the form's tree — can trigger validation+submit.
+  // Mirrored `canSubmit` lets us disable the button in lockstep with form
+  // validity without lifting all of the form's state up to the screen.
+  const submitRef = useRef<(() => void) | null>(null);
+  const [canSubmit, setCanSubmit] = useState(false);
+  const isSubmitting = createAutomation.isPending;
+
+  // Whether the form is even mounted yet — controls whether the floating
+  // button is shown. While the skill is still loading or failed to load,
+  // the form isn't on screen, so there's nothing to submit.
+  const formMounted =
+    !skillName || (!selectedSkill.isPending && !!selectedSkill.data);
+
+  // Dead space at the bottom of the scroll content so the floating button
+  // can sit over a region with no form content. When the user scrolls to
+  // the very end of the prompt editor, the last line clears above the
+  // button instead of being hidden behind it.
+  const scrollPaddingBottom =
+    FLOATING_BUTTON_AREA_HEIGHT + insets.bottom + FLOATING_BUTTON_DEAD_SPACE;
+
+  const handleCreate = () => submitRef.current?.();
+
   return (
     <>
       <Stack.Screen
@@ -70,7 +103,7 @@ export default function CreateAutomationScreen() {
         <ScrollView
           className="flex-1 px-4 pt-4"
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={{ paddingBottom: scrollPaddingBottom }}
         >
           <View className="gap-4">
             {skillName && selectedSkill.isPending ? (
@@ -129,10 +162,14 @@ export default function CreateAutomationScreen() {
                     enabled: skillInitialValues?.enabled ?? true,
                   }}
                   initialPromptMode={selectedSkillName ? "preview" : "edit"}
-                  isSubmitting={createAutomation.isPending}
-                  submitLabel="Create automation"
+                  isSubmitting={isSubmitting}
+                  submitLabel="Create"
                   fieldError={fieldError}
                   generalError={generalError}
+                  // Footer is rendered by the screen as a floating button.
+                  hideFooter
+                  submitRef={submitRef}
+                  onCanSubmitChange={setCanSubmit}
                   onSubmit={async (values) => {
                     setFieldError(null);
                     setGeneralError(null);
@@ -157,12 +194,49 @@ export default function CreateAutomationScreen() {
                       );
                     }
                   }}
-                  onCancel={() => router.back()}
                 />
               </>
             )}
           </View>
         </ScrollView>
+
+        {/* Floating Create button — sits inside the KeyboardAvoidingView
+            so it rises with the keyboard, but outside the ScrollView so
+            it stays anchored to the bottom of the screen regardless of
+            how far the user has scrolled. The ScrollView's bottom padding
+            (above) reserves enough dead space that the prompt editor's
+            last line can always be scrolled clear of this button. */}
+        {formMounted && (
+          <View
+            className="absolute inset-x-0 bottom-0 border-gray-6 border-t bg-background px-4 pt-3"
+            style={{ paddingBottom: insets.bottom + 12 }}
+          >
+            <Pressable
+              onPress={handleCreate}
+              disabled={!canSubmit || isSubmitting}
+              accessibilityRole="button"
+              accessibilityLabel="Create automation"
+              className={`rounded-xl py-3.5 ${
+                canSubmit && !isSubmitting ? "bg-accent-9" : "bg-gray-3"
+              }`}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator
+                  size="small"
+                  color={themeColors.accent.contrast}
+                />
+              ) : (
+                <Text
+                  className={`text-center font-semibold text-[15px] ${
+                    canSubmit ? "text-accent-contrast" : "text-gray-9"
+                  }`}
+                >
+                  Create
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        )}
       </KeyboardAvoidingView>
     </>
   );
