@@ -17,7 +17,7 @@
     "build:dev:local": "eas build --profile development --platform ios --local",
     "build:preview": "eas build --profile preview --platform ios",
     "build:production": "eas build --profile production --platform ios",
-    "testflight": "npx testflight",
+    "testflight": "eas submit --platform ios",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",

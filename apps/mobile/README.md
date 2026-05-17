@@ -183,9 +183,7 @@ npx eas build --profile preview --platform android
 npx eas build --profile production --platform android
 
 # TestFlight
-pnpm testflight             # alias for: npx testflight
-# Or, for the canonical EAS submission flow:
-npx eas submit --platform ios
+pnpm testflight             # alias for: eas submit --platform ios
 
 # Linting
 pnpm lint
