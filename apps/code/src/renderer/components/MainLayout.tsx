@@ -98,7 +98,10 @@ export function MainLayout() {
     if (!syncCloudTasksEnabled) return;
     if (!tasks || !workspaces || !workspacesFetched) return;
     const missing = tasks.filter(
-      (t) => !workspaces[t.id] && !reconcilingTaskIds.current.has(t.id),
+      (t) =>
+        t.latest_run?.environment === "cloud" &&
+        !workspaces[t.id] &&
+        !reconcilingTaskIds.current.has(t.id),
     );
     if (missing.length === 0) return;
     for (const t of missing) reconcilingTaskIds.current.add(t.id);
