@@ -277,12 +277,7 @@ function addWatchTargets(project) {
   ensureWatchSource(project, "TaskViews.swift", watchExtension.uuid);
   ensureWatchSource(project, "HapticsPolicy.swift", watchExtension.uuid);
 
-  ensureResource(
-    project,
-    "PostHogCode/posthog.icon",
-    watchApp.uuid,
-    "PostHogCode",
-  );
+  ensureResource(project, "PostHogCode/app.icon", watchApp.uuid, "PostHogCode");
 
   updateTargetBuildSettings(project, watchApp.uuid, {
     ASSETCATALOG_COMPILER_APPICON_NAME: "posthog",

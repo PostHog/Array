@@ -163,9 +163,7 @@ export default function TaskDetailScreen() {
       })
       .finally(() => {
         if (cancelled) return;
-        // Brief delay for FlatList to render its initial batch behind
-        // the loading overlay before revealing.
-        setTimeout(() => setLoading(false), 150);
+        setLoading(false);
       });
 
     return () => {
@@ -415,6 +413,19 @@ export default function TaskDetailScreen() {
   const activityPhase = getSessionActivityPhase({ retrying, session });
   const isConnecting = activityPhase === "connecting";
   const isThinking = activityPhase === "working";
+
+  // Show the loading overlay until the SSE snapshot has populated the
+  // session's events. For tasks that already have a run (i.e. opening an
+  // old task), `session.status` stays `"connecting"` until the first
+  // snapshot arrives — that's when historical events become available.
+  // For brand-new tasks (no `latest_run`), there's no history to wait
+  // for, so we only gate on the initial metadata fetch.
+  const isHistoryLoading =
+    !!task?.latest_run &&
+    !!session &&
+    session.status === "connecting" &&
+    session.events.length === 0;
+  const showLoading = loading || isHistoryLoading;
   const showAutomationContext =
     fromAutomation === "1" || task?.origin_product === "automation";
   const automationContextLabel =
@@ -453,7 +464,7 @@ export default function TaskDetailScreen() {
   return (
     <View className="flex-1 bg-background">
       <FloatingTaskHeader
-        title={loading ? "Loading..." : task?.title || "Task"}
+        title={showLoading ? "Loading..." : task?.title || "Task"}
         subtitle={task?.repository ?? undefined}
         rightSlot={
           prUrl ? (
@@ -526,12 +537,18 @@ export default function TaskDetailScreen() {
           }}
         />
 
-        {/* Loading overlay — covers the list while it does initial layout */}
-        {loading && (
+        {/* Loading overlay — covers the list while initial task metadata
+            is fetched AND while the SSE watcher is still loading the
+            historical events snapshot for an existing run. */}
+        {showLoading && (
           <View className="absolute inset-0 items-center justify-center bg-background">
             <ActivityIndicator size="large" color={themeColors.accent[9]} />
             <Text className="mt-4 text-gray-11">
-              {task?.latest_run ? "Connecting..." : "Loading task..."}
+              {task?.latest_run
+                ? loading
+                  ? "Connecting..."
+                  : "Loading history..."
+                : "Loading task..."}
             </Text>
           </View>
         )}

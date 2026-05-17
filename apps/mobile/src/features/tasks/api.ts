@@ -1,5 +1,6 @@
 import { fetch } from "expo/fetch";
 import {
+  createTimeoutSignal,
   getAccessToken,
   getBaseUrl,
   getHeaders,
@@ -668,7 +669,7 @@ export async function fetchSessionLogs(
 
       const response = await fetch(
         `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/session_logs/?${params}`,
-        { headers, signal: AbortSignal.timeout(10_000) },
+        { headers, signal: createTimeoutSignal(10_000) },
       );
 
       if (!response.ok) {

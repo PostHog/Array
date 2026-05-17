@@ -43,6 +43,20 @@ export function getProjectId(): number {
   return projectId;
 }
 
+/**
+ * Returns an `AbortSignal` that aborts after `ms` milliseconds.
+ *
+ * Replaces `AbortSignal.timeout(ms)`, which is unimplemented in the Hermes
+ * runtime that React Native uses — calling it throws
+ * `TypeError: AbortSignal.timeout is not a function`. Use this helper for any
+ * fetch that needs a request timeout on mobile.
+ */
+export function createTimeoutSignal(ms: number): AbortSignal {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
 export async function registerPushToken(args: {
   token: string;
   platform: string;

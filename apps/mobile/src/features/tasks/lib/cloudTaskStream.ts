@@ -1,3 +1,5 @@
+import { fetch } from "expo/fetch";
+import { createTimeoutSignal } from "@/lib/api";
 import { logger } from "@/lib/logger";
 import {
   fetchSessionLogs,
@@ -17,6 +19,7 @@ import {
   type TaskRunStateEvent,
   type TaskRunStatus,
 } from "../types";
+import { parseSessionLogs } from "../utils/parseSessionLogs";
 import { type SseEvent, SseEventParser } from "./sseParser";
 
 const log = logger.scope("cloud-task-stream");
@@ -247,7 +250,7 @@ async function bootstrapWatcher(watcher: WatcherState): Promise<void> {
   applyTaskRunState(watcher, run);
 
   if (isTerminalStatus(run.status)) {
-    const historicalEntries = await fetchAllSessionLogs(watcher);
+    const historicalEntries = await fetchHistoricalEntries(watcher, run);
     if (watcher.stopped || watcher.failed) return;
     if (!historicalEntries) {
       failWatcher(watcher, {
@@ -270,7 +273,7 @@ async function bootstrapWatcher(watcher: WatcherState): Promise<void> {
   watcher.bufferedLogBatches = [];
   void connectSse(watcher, { startLatest: true });
 
-  const historicalEntries = await fetchAllSessionLogs(watcher);
+  const historicalEntries = await fetchHistoricalEntries(watcher, run);
   if (watcher.stopped || watcher.failed) return;
   if (!historicalEntries) {
     failWatcher(watcher, {
@@ -793,6 +796,71 @@ async function fetchTaskRunState(
       return null;
     }
     log.warn("Cloud task status fetch error", {
+      runId: watcher.runId,
+      error,
+    });
+    return null;
+  }
+}
+
+/**
+ * Loads the historical log entries for the run, mirroring the desktop's
+ * dual-source strategy:
+ *  1. Try the paginated `session_logs/` API — the live source while a run
+ *     is active. For older / archived runs this can come back empty even
+ *     though the canonical log exists on S3.
+ *  2. Fall back to the run's presigned `log_url` (S3 NDJSON), which is the
+ *     canonical archive for completed runs.
+ *
+ * Returns `null` only when both sources fail outright (so the bootstrap can
+ * surface a retryable error). An empty paginated result is treated as "no
+ * data yet" and falls through to S3 — if S3 also has nothing we return the
+ * empty array so the snapshot can still flip the session to `"connected"`.
+ */
+async function fetchHistoricalEntries(
+  watcher: WatcherState,
+  run: TaskRun,
+): Promise<StoredLogEntry[] | null> {
+  const paginated = await fetchAllSessionLogs(watcher);
+  if (watcher.stopped || watcher.failed) return null;
+  if (paginated && paginated.length > 0) return paginated;
+
+  if (run.log_url) {
+    const s3Entries = await fetchS3LogEntries(watcher, run.log_url);
+    if (watcher.stopped || watcher.failed) return null;
+    if (s3Entries && s3Entries.length > 0) return s3Entries;
+  }
+
+  // Both sources returned no rows. Prefer the paginated result (which is
+  // `[]` rather than `null`) so the caller can still emit an empty snapshot
+  // and the session flips to `"connected"` instead of hanging on loading.
+  return paginated ?? null;
+}
+
+async function fetchS3LogEntries(
+  watcher: WatcherState,
+  logUrl: string,
+): Promise<StoredLogEntry[] | null> {
+  try {
+    const response = await fetch(logUrl, {
+      signal: createTimeoutSignal(15_000),
+    });
+    if (response.status === 404) {
+      // No archived log yet for this run — not an error, just no data.
+      return [];
+    }
+    if (!response.ok) {
+      log.warn("S3 session log fetch returned non-OK", {
+        runId: watcher.runId,
+        status: response.status,
+      });
+      return null;
+    }
+    const content = await response.text();
+    if (!content.trim()) return [];
+    return parseSessionLogs(content).rawEntries;
+  } catch (error) {
+    log.warn("S3 session log fetch failed", {
       runId: watcher.runId,
       error,
     });
