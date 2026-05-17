@@ -101,6 +101,14 @@ describe("useChatTitleGenerator", () => {
         title: "Fix login bug",
       });
     });
+    expect(mockSetQueriesData).toHaveBeenCalledWith(
+      { queryKey: ["tasks", "list"] },
+      expect.any(Function),
+    );
+    expect(mockSetQueriesData).toHaveBeenCalledWith(
+      { queryKey: ["tasks", "summaries"] },
+      expect.any(Function),
+    );
   });
 
   it.each([
