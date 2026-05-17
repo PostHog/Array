@@ -136,6 +136,9 @@ export function useUpdateTask() {
       onSuccess: (_, { taskId }) => {
         queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
         queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+        queryClient.invalidateQueries({
+          queryKey: [...taskKeys.all, "summaries"],
+        });
       },
     },
   );

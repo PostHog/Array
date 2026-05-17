@@ -18,6 +18,7 @@ import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
 import { ScrollArea, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
+import type { Schemas } from "@renderer/api/generated";
 import type { Task } from "@shared/types";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
@@ -273,6 +274,13 @@ function SidebarMenuComponent() {
               : task,
           ),
       );
+      queryClient.setQueriesData<Schemas.TaskSummary[]>(
+        { queryKey: ["tasks", "summaries"] },
+        (old) =>
+          old?.map((task) =>
+            task.id === taskId ? { ...task, title: newTitle } : task,
+          ),
+      );
 
       // Sync to session store so notifications use the updated title
       getSessionService().updateSessionTaskTitle(taskId, newTitle);
@@ -286,6 +294,7 @@ function SidebarMenuComponent() {
         log.error("Failed to rename task", error);
         // Refetch to revert optimistic update on failure
         queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
+        queryClient.invalidateQueries({ queryKey: ["tasks", "summaries"] });
       }
     },
     [setEditingTaskId, updateTask, queryClient, log],
