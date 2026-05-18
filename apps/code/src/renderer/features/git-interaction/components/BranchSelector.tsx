@@ -257,6 +257,11 @@ export function BranchSelector({
                   return;
                 }
 
+                // If the combobox already has a highlighted item, let Base UI select it.
+                if (event.currentTarget.getAttribute("aria-activedescendant")) {
+                  return;
+                }
+
                 event.preventDefault();
                 event.stopPropagation();
                 handleUseInputBranch();
