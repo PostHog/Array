@@ -40,7 +40,8 @@ interface TaskListViewProps {
   groupedTasks: TaskGroup[];
   activeTaskId: string | null;
   editingTaskId: string | null;
-  onTaskClick: (taskId: string) => void;
+  selectedTaskIds: string[];
+  onTaskClick: (taskId: string, e: React.MouseEvent) => void;
   onTaskDoubleClick: (taskId: string) => void;
   onTaskContextMenu: (
     taskId: string,
@@ -75,6 +76,8 @@ function SectionLabel({
 function TaskRow({
   task,
   isActive,
+  isSelected,
+  hideHoverActions,
   isEditing,
   onClick,
   onDoubleClick,
@@ -88,8 +91,10 @@ function TaskRow({
 }: {
   task: TaskData;
   isActive: boolean;
+  isSelected: boolean;
+  hideHoverActions: boolean;
   isEditing: boolean;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onDoubleClick: () => void;
   onContextMenu: (e: React.MouseEvent, isPinned: boolean) => void;
   onArchive: () => void;
@@ -111,6 +116,8 @@ function TaskRow({
       taskId={task.id}
       label={task.title}
       isActive={isActive}
+      isSelected={isSelected}
+      hideHoverActions={hideHoverActions}
       isEditing={isEditing}
       workspaceMode={effectiveMode}
       worktreePath={workspace?.worktreePath ?? undefined}
@@ -251,6 +258,7 @@ export function TaskListView({
   groupedTasks,
   activeTaskId,
   editingTaskId,
+  selectedTaskIds,
   onTaskClick,
   onTaskDoubleClick,
   onTaskContextMenu,
@@ -260,6 +268,11 @@ export function TaskListView({
   onTaskEditCancel,
   hasMore,
 }: TaskListViewProps) {
+  const selectedIdSet = useMemo(
+    () => new Set(selectedTaskIds),
+    [selectedTaskIds],
+  );
+  const hasMultiSelection = selectedTaskIds.length > 1;
   const organizeMode = useSidebarStore((state) => state.organizeMode);
   const sortMode = useSidebarStore((state) => state.sortMode);
   const collapsedSections = useSidebarStore((state) => state.collapsedSections);
@@ -322,8 +335,10 @@ export function TaskListView({
               key={task.id}
               task={task}
               isActive={activeTaskId === task.id}
+              isSelected={selectedIdSet.has(task.id)}
+              hideHoverActions={hasMultiSelection}
               isEditing={editingTaskId === task.id}
-              onClick={() => onTaskClick(task.id)}
+              onClick={(e) => onTaskClick(task.id, e)}
               onDoubleClick={() => onTaskDoubleClick(task.id)}
               onContextMenu={(e, isPinned) =>
                 onTaskContextMenu(task.id, e, isPinned)
@@ -433,8 +448,10 @@ export function TaskListView({
                         key={task.id}
                         task={task}
                         isActive={activeTaskId === task.id}
+                        isSelected={selectedIdSet.has(task.id)}
+                        hideHoverActions={hasMultiSelection}
                         isEditing={editingTaskId === task.id}
-                        onClick={() => onTaskClick(task.id)}
+                        onClick={(e) => onTaskClick(task.id, e)}
                         onDoubleClick={() => onTaskDoubleClick(task.id)}
                         onContextMenu={(e, isPinned) =>
                           onTaskContextMenu(task.id, e, isPinned)
@@ -465,8 +482,10 @@ export function TaskListView({
                   key={task.id}
                   task={task}
                   isActive={activeTaskId === task.id}
+                  isSelected={selectedIdSet.has(task.id)}
+                  hideHoverActions={hasMultiSelection}
                   isEditing={editingTaskId === task.id}
-                  onClick={() => onTaskClick(task.id)}
+                  onClick={(e) => onTaskClick(task.id, e)}
                   onDoubleClick={() => onTaskDoubleClick(task.id)}
                   onContextMenu={(e, isPinned) =>
                     onTaskContextMenu(task.id, e, isPinned)

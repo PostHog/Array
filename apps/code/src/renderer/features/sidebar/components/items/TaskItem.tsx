@@ -13,6 +13,8 @@ interface TaskItemProps {
   taskId: string;
   label: string;
   isActive: boolean;
+  isSelected?: boolean;
+  hideHoverActions?: boolean;
   workspaceMode?: WorkspaceMode;
   worktreePath?: string;
   isGenerating?: boolean;
@@ -27,7 +29,7 @@ interface TaskItemProps {
   hasDiff?: boolean;
   timestamp?: number;
   isEditing?: boolean;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onDoubleClick?: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
   onArchive?: () => void;
@@ -108,6 +110,8 @@ export function TaskItem({
   taskId,
   label,
   isActive,
+  isSelected = false,
+  hideHoverActions = false,
   workspaceMode,
   isSuspended = false,
   isGenerating,
@@ -152,7 +156,7 @@ export function TaskItem({
   ) : null;
 
   const toolbar =
-    onArchive || onTogglePin ? (
+    !hideHoverActions && (onArchive || onTogglePin) ? (
       <TaskHoverToolbar
         isPinned={isPinned}
         onTogglePin={onTogglePin}
@@ -195,6 +199,7 @@ export function TaskItem({
       icon={icon}
       label={label}
       isActive={isActive}
+      isSelected={isSelected}
       draggable
       onDragStart={handleDragStart}
       onClick={onClick}

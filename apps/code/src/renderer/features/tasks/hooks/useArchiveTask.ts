@@ -92,6 +92,35 @@ export async function archiveTaskImperative(
   }
 }
 
+export async function archiveTasksImperative(
+  taskIds: string[],
+  queryClient: QueryClient,
+): Promise<{ archived: number; failed: number }> {
+  if (taskIds.length === 0) return { archived: 0, failed: 0 };
+
+  const nav = useNavigationStore.getState();
+  const idSet = new Set(taskIds);
+  if (
+    nav.view.type === "task-detail" &&
+    nav.view.data &&
+    idSet.has(nav.view.data.id)
+  ) {
+    nav.navigateToTaskInput();
+  }
+
+  let archived = 0;
+  let failed = 0;
+  for (const id of taskIds) {
+    try {
+      await archiveTaskImperative(id, queryClient, { skipNavigate: true });
+      archived++;
+    } catch {
+      failed++;
+    }
+  }
+  return { archived, failed };
+}
+
 export function useArchiveTask() {
   const queryClient = useQueryClient();
 

@@ -3,6 +3,8 @@ import { MAIN_TOKENS } from "../../di/tokens";
 import {
   archivedTaskContextMenuInput,
   archivedTaskContextMenuOutput,
+  bulkTaskContextMenuInput,
+  bulkTaskContextMenuOutput,
   confirmDeleteArchivedTaskInput,
   confirmDeleteArchivedTaskOutput,
   confirmDeleteTaskInput,
@@ -45,6 +47,11 @@ export const contextMenuRouter = router({
     .input(taskContextMenuInput)
     .output(taskContextMenuOutput)
     .mutation(({ input }) => getService().showTaskContextMenu(input)),
+
+  showBulkTaskContextMenu: publicProcedure
+    .input(bulkTaskContextMenuInput)
+    .output(bulkTaskContextMenuOutput)
+    .mutation(({ input }) => getService().showBulkTaskContextMenu(input)),
 
   showArchivedTaskContextMenu: publicProcedure
     .input(archivedTaskContextMenuInput)

@@ -11,6 +11,8 @@ import type {
   ArchivedTaskAction,
   ArchivedTaskContextMenuInput,
   ArchivedTaskContextMenuResult,
+  BulkTaskAction,
+  BulkTaskContextMenuInput,
   ConfirmDeleteArchivedTaskInput,
   ConfirmDeleteArchivedTaskResult,
   ConfirmDeleteTaskInput,
@@ -153,6 +155,27 @@ export class ContextMenuService {
             message: "Archive all tasks older than this one?",
             detail:
               "This will archive every task created before this one. You can unarchive them later.",
+            confirmLabel: "Archive",
+          },
+        },
+      ),
+    ]);
+  }
+
+  async showBulkTaskContextMenu(
+    input: BulkTaskContextMenuInput,
+  ): Promise<{ action: BulkTaskAction | null }> {
+    const { taskCount } = input;
+    const label = `Archive ${taskCount} tasks`;
+    return this.showMenu<BulkTaskAction>([
+      this.item(
+        label,
+        { type: "archive" },
+        {
+          confirm: {
+            title: "Archive Tasks",
+            message: `Archive ${taskCount} tasks?`,
+            detail: "You can unarchive them later.",
             confirmLabel: "Archive",
           },
         },
