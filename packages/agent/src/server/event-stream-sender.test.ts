@@ -2,39 +2,104 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Logger } from "../utils/logger";
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 
+const STREAM_COMPLETE_CONTROL_TYPE = "_posthog/stream_complete";
+
+async function readRequestBody(init?: RequestInit): Promise<string> {
+  const body = init?.body;
+  if (!body) {
+    return "";
+  }
+  if (typeof body === "string") {
+    return body;
+  }
+  if (body instanceof Uint8Array) {
+    return new TextDecoder().decode(body);
+  }
+  if (body instanceof ReadableStream) {
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      chunks.push(value);
+    }
+    const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const bytes = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return new TextDecoder().decode(bytes);
+  }
+  return String(body);
+}
+
+function parseLines(body: string): Record<string, unknown>[] {
+  const trimmed = body.trim();
+  if (!trimmed) {
+    return [];
+  }
+  return trimmed.split("\n").map((line) => JSON.parse(line));
+}
+
+function eventSequences(body: string): number[] {
+  return parseLines(body)
+    .map((line) => line.seq)
+    .filter((seq): seq is number => typeof seq === "number");
+}
+
+function completionSequences(body: string): number[] {
+  return parseLines(body)
+    .filter((line) => line.type === STREAM_COMPLETE_CONTROL_TYPE)
+    .map((line) => line.final_seq)
+    .filter((seq): seq is number => typeof seq === "number");
+}
+
+function responseForBody(body: string, lastAcceptedSeq = 0): Response {
+  const sequences = eventSequences(body);
+  const acceptedSeq = sequences.at(-1) ?? lastAcceptedSeq;
+  return new Response(JSON.stringify({ last_accepted_seq: acceptedSeq }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function createSender(
+  options: Partial<
+    ConstructorParameters<typeof TaskRunEventStreamSender>[0]
+  > = {},
+): TaskRunEventStreamSender {
+  return new TaskRunEventStreamSender({
+    apiUrl: "http://localhost:8000/",
+    projectId: 1,
+    taskId: "task-1",
+    runId: "run-1",
+    token: "ingest-token",
+    logger: new Logger({ debug: false }),
+    ...options,
+  });
+}
+
 describe("TaskRunEventStreamSender", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("posts ordered NDJSON batches with the run-scoped token", async () => {
-    let requestBody = "";
+  it("streams ordered NDJSON events with the run-scoped token", async () => {
+    const requestBodies: string[] = [];
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
-        const body = String(init?.body ?? "");
-        if (!body) {
-          return new Response(JSON.stringify({ last_accepted_seq: 0 }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        requestBody = body;
-        return new Response(JSON.stringify({ last_accepted_seq: 2 }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        const body = await readRequestBody(init);
+        requestBodies.push(body);
+        return responseForBody(body);
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = new TaskRunEventStreamSender({
-      apiUrl: "http://localhost:8000/",
-      projectId: 1,
-      taskId: "task-1",
-      runId: "run-1",
-      token: "ingest-token",
-      logger: new Logger({ debug: false }),
-    });
+    const sender = createSender();
 
     sender.enqueue({ type: "notification", notification: { method: "first" } });
     sender.enqueue({
@@ -43,7 +108,7 @@ describe("TaskRunEventStreamSender", () => {
     });
     await sender.stop();
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[1][0]).toBe(
       "http://localhost:8000/api/projects/1/tasks/task-1/runs/run-1/event_stream/",
     );
@@ -51,19 +116,11 @@ describe("TaskRunEventStreamSender", () => {
       Authorization: "Bearer ingest-token",
       "Content-Type": "application/x-ndjson",
     });
-    expect(fetchMock.mock.calls[2][1]?.headers).toEqual({
-      Authorization: "Bearer ingest-token",
-      "Content-Type": "application/x-ndjson",
-      "X-PostHog-Event-Stream-Complete": "true",
-      "X-PostHog-Event-Stream-Final-Seq": "2",
-    });
-    expect(fetchMock.mock.calls[2][1]?.body).toBe("");
+    expect(fetchMock.mock.calls[1][1]?.headers).not.toHaveProperty(
+      "X-PostHog-Event-Stream-Complete",
+    );
 
-    const lines = requestBody
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    expect(lines).toEqual([
+    expect(parseLines(requestBodies[1])).toEqual([
       {
         seq: 1,
         event: { type: "notification", notification: { method: "first" } },
@@ -72,21 +129,24 @@ describe("TaskRunEventStreamSender", () => {
         seq: 2,
         event: { type: "notification", notification: { method: "second" } },
       },
+      { type: STREAM_COMPLETE_CONTROL_TYPE, final_seq: 2 },
     ]);
   });
 
-  it("aborts a stuck ingest request", async () => {
+  it("aborts a stuck ingest response after closing the request body", async () => {
     let aborted = false;
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
-        if (!String(init?.body ?? "")) {
+        if (!init?.body || typeof init.body === "string") {
           return new Response(JSON.stringify({ last_accepted_seq: 0 }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });
         }
+
+        void readRequestBody(init);
         return new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => {
+          init.signal?.addEventListener("abort", () => {
             aborted = true;
             reject(new DOMException("aborted", "AbortError"));
           });
@@ -95,14 +155,7 @@ describe("TaskRunEventStreamSender", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = new TaskRunEventStreamSender({
-      apiUrl: "http://localhost:8000/",
-      projectId: 1,
-      taskId: "task-1",
-      runId: "run-1",
-      token: "ingest-token",
-      logger: new Logger({ debug: false }),
-      flushDelayMs: 0,
+    const sender = createSender({
       requestTimeoutMs: 1,
       retryDelayMs: 1,
       stopTimeoutMs: 1,
@@ -115,18 +168,19 @@ describe("TaskRunEventStreamSender", () => {
     expect(aborted).toBe(true);
   });
 
-  it("waits for the final ingest request before stop resolves", async () => {
+  it("waits for the final ingest response before stop resolves", async () => {
     const ingestRequest: { resolve?: (response: Response) => void } = {};
     let stopped = false;
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
-        const body = String(init?.body ?? "");
-        if (!body) {
+        if (!init?.body || typeof init.body === "string") {
           return new Response(JSON.stringify({ last_accepted_seq: 0 }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });
         }
+
+        void readRequestBody(init);
         return new Promise<Response>((resolve) => {
           ingestRequest.resolve = resolve;
         });
@@ -134,14 +188,7 @@ describe("TaskRunEventStreamSender", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = new TaskRunEventStreamSender({
-      apiUrl: "http://localhost:8000/",
-      projectId: 1,
-      taskId: "task-1",
-      runId: "run-1",
-      token: "ingest-token",
-      logger: new Logger({ debug: false }),
-    });
+    const sender = createSender();
 
     sender.enqueue({ type: "notification", notification: { method: "first" } });
     const stopPromise = sender.stop().then(() => {
@@ -166,41 +213,26 @@ describe("TaskRunEventStreamSender", () => {
     expect(stopped).toBe(true);
   });
 
-  it("posts an empty completion request on shutdown without buffered events", async () => {
+  it("streams only a completion control line on shutdown without buffered events", async () => {
+    const requestBodies: string[] = [];
     const fetchMock = vi.fn(
-      async (_url: string | URL | Request, _init?: RequestInit) => {
-        return new Response(JSON.stringify({ last_accepted_seq: 0 }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = await readRequestBody(init);
+        requestBodies.push(body);
+        return responseForBody(body);
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = new TaskRunEventStreamSender({
-      apiUrl: "http://localhost:8000/",
-      projectId: 1,
-      taskId: "task-1",
-      runId: "run-1",
-      token: "ingest-token",
-      logger: new Logger({ debug: false }),
-    });
+    const sender = createSender();
 
     await sender.stop();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0][1]?.body).toBe("");
-    expect(fetchMock.mock.calls[1][1]?.body).toBe("");
-    expect(fetchMock.mock.calls[0][1]?.headers).toEqual({
-      Authorization: "Bearer ingest-token",
-      "Content-Type": "application/x-ndjson",
-    });
-    expect(fetchMock.mock.calls[1][1]?.headers).toEqual({
-      Authorization: "Bearer ingest-token",
-      "Content-Type": "application/x-ndjson",
-      "X-PostHog-Event-Stream-Complete": "true",
-      "X-PostHog-Event-Stream-Final-Seq": "0",
-    });
+    expect(requestBodies[0]).toBe("");
+    expect(parseLines(requestBodies[1])).toEqual([
+      { type: STREAM_COMPLETE_CONTROL_TYPE, final_seq: 0 },
+    ]);
   });
 
   it.each([
@@ -231,45 +263,24 @@ describe("TaskRunEventStreamSender", () => {
   ])(
     "drops events before assigning sequence $name",
     async ({ senderOptions, events, acceptedMethod }) => {
-      let requestBody = "";
+      const requestBodies: string[] = [];
       const fetchMock = vi.fn(
         async (_url: string | URL | Request, init?: RequestInit) => {
-          const body = String(init?.body ?? "");
-          if (!body) {
-            return new Response(JSON.stringify({ last_accepted_seq: 0 }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            });
-          }
-          requestBody = body;
-          return new Response(JSON.stringify({ last_accepted_seq: 1 }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
+          const body = await readRequestBody(init);
+          requestBodies.push(body);
+          return responseForBody(body);
         },
       );
       vi.stubGlobal("fetch", fetchMock);
 
-      const sender = new TaskRunEventStreamSender({
-        apiUrl: "http://localhost:8000/",
-        projectId: 1,
-        taskId: "task-1",
-        runId: "run-1",
-        token: "ingest-token",
-        logger: new Logger({ debug: false }),
-        ...senderOptions,
-      });
+      const sender = createSender(senderOptions);
 
       for (const event of events) {
         sender.enqueue(event);
       }
       await sender.stop();
 
-      const lines = requestBody
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line));
-      expect(lines).toEqual([
+      expect(parseLines(requestBodies[1])).toEqual([
         {
           seq: 1,
           event: {
@@ -277,26 +288,18 @@ describe("TaskRunEventStreamSender", () => {
             notification: { method: acceptedMethod },
           },
         },
+        { type: STREAM_COMPLETE_CONTROL_TYPE, final_seq: 1 },
       ]);
     },
   );
 
   it("accepts an event at the next sequence size boundary", async () => {
-    let requestBody = "";
+    const requestBodies: string[] = [];
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
-        const body = String(init?.body ?? "");
-        if (!body) {
-          return new Response(JSON.stringify({ last_accepted_seq: 0 }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        requestBody = body;
-        return new Response(JSON.stringify({ last_accepted_seq: 1 }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        const body = await readRequestBody(init);
+        requestBodies.push(body);
+        return responseForBody(body);
       },
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -309,24 +312,12 @@ describe("TaskRunEventStreamSender", () => {
       JSON.stringify({ seq: 1, event }),
     ).length;
 
-    const sender = new TaskRunEventStreamSender({
-      apiUrl: "http://localhost:8000/",
-      projectId: 1,
-      taskId: "task-1",
-      runId: "run-1",
-      token: "ingest-token",
-      logger: new Logger({ debug: false }),
-      maxEventBytes,
-    });
+    const sender = createSender({ maxEventBytes });
 
     sender.enqueue(event);
     await sender.stop();
 
-    const lines = requestBody
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    expect(lines).toEqual([
+    expect(parseLines(requestBodies[1])).toEqual([
       {
         seq: 1,
         event: {
@@ -334,52 +325,22 @@ describe("TaskRunEventStreamSender", () => {
           notification: { method: "boundary" },
         },
       },
+      { type: STREAM_COMPLETE_CONTROL_TYPE, final_seq: 1 },
     ]);
   });
 
-  it("drains multiple capped batches on stop", async () => {
+  it("rolls capped streams on stop", async () => {
     const requestBodies: string[] = [];
-    const completionBodies: string[] = [];
-    const completionFinalSequences: string[] = [];
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
-        const body = String(init?.body ?? "");
-        const headers = init?.headers as Record<string, string> | undefined;
-        if (headers?.["X-PostHog-Event-Stream-Complete"] === "true") {
-          completionBodies.push(body);
-          completionFinalSequences.push(
-            headers["X-PostHog-Event-Stream-Final-Seq"],
-          );
-          return new Response(JSON.stringify({ last_accepted_seq: 2 }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        if (!body) {
-          return new Response(JSON.stringify({ last_accepted_seq: 0 }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
+        const body = await readRequestBody(init);
         requestBodies.push(body);
-        const lastSeq = JSON.parse(body.trim()).seq;
-        return new Response(JSON.stringify({ last_accepted_seq: lastSeq }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        return responseForBody(body);
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = new TaskRunEventStreamSender({
-      apiUrl: "http://localhost:8000/",
-      projectId: 1,
-      taskId: "task-1",
-      runId: "run-1",
-      token: "ingest-token",
-      logger: new Logger({ debug: false }),
-      maxBatchEvents: 1,
-    });
+    const sender = createSender({ maxStreamEvents: 1 });
 
     sender.enqueue({ type: "notification", notification: { method: "first" } });
     sender.enqueue({
@@ -388,27 +349,18 @@ describe("TaskRunEventStreamSender", () => {
     });
     await sender.stop();
 
-    expect(requestBodies).toHaveLength(2);
-    expect(requestBodies.map((body) => JSON.parse(body.trim()).seq)).toEqual([
-      1, 2,
-    ]);
-    const ingestHeaders = fetchMock.mock.calls
-      .filter(([, init]) => String(init?.body ?? "") !== "")
-      .map(([, init]) => init?.headers as Record<string, string> | undefined);
-    expect(
-      ingestHeaders.map(
-        (headers) => headers?.["X-PostHog-Event-Stream-Complete"],
-      ),
-    ).toEqual([undefined, undefined]);
-    expect(completionBodies).toEqual([""]);
-    expect(completionFinalSequences).toEqual(["2"]);
+    expect(requestBodies).toHaveLength(3);
+    expect(eventSequences(requestBodies[1])).toEqual([1]);
+    expect(completionSequences(requestBodies[1])).toEqual([]);
+    expect(eventSequences(requestBodies[2])).toEqual([2]);
+    expect(completionSequences(requestBodies[2])).toEqual([2]);
   });
 
   it("retries stop drain after a transient ingest failure", async () => {
     const requestBodies: string[] = [];
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
-        const body = String(init?.body ?? "");
+        const body = await readRequestBody(init);
         if (!body) {
           return new Response(JSON.stringify({ last_accepted_seq: 0 }), {
             status: 200,
@@ -421,21 +373,12 @@ describe("TaskRunEventStreamSender", () => {
           return new Response("temporary failure", { status: 503 });
         }
 
-        return new Response(JSON.stringify({ last_accepted_seq: 1 }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        return responseForBody(body);
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = new TaskRunEventStreamSender({
-      apiUrl: "http://localhost:8000/",
-      projectId: 1,
-      taskId: "task-1",
-      runId: "run-1",
-      token: "ingest-token",
-      logger: new Logger({ debug: false }),
+    const sender = createSender({
       retryDelayMs: 1,
       stopTimeoutMs: 100,
     });
@@ -443,17 +386,52 @@ describe("TaskRunEventStreamSender", () => {
     sender.enqueue({ type: "notification", notification: { method: "first" } });
     await sender.stop();
 
-    expect(requestBodies.map((body) => JSON.parse(body.trim()).seq)).toEqual([
-      1, 1,
-    ]);
+    expect(requestBodies.map(eventSequences)).toEqual([[1], [1]]);
+    expect(completionSequences(requestBodies[1])).toEqual([1]);
   });
 
-  it("stops draining buffered events after the stop deadline", async () => {
+  it("retries when the active stream response rejects before shutdown", async () => {
+    const requestBodies: string[] = [];
+    let failedStream = false;
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        if (!init?.body || typeof init.body === "string") {
+          return new Response(JSON.stringify({ last_accepted_seq: 0 }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        if (!failedStream) {
+          failedStream = true;
+          throw new TypeError("fetch failed");
+        }
+
+        const body = await readRequestBody(init);
+        requestBodies.push(body);
+        return responseForBody(body);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sender = createSender({
+      retryDelayMs: 1,
+      stopTimeoutMs: 100,
+    });
+
+    sender.enqueue({ type: "notification", notification: { method: "first" } });
+    await sender.stop();
+
+    expect(requestBodies.map(eventSequences)).toEqual([[1]]);
+    expect(completionSequences(requestBodies[0])).toEqual([1]);
+  });
+
+  it("stops retrying after the stop deadline", async () => {
     const requestBodies: string[] = [];
     const warnings: string[] = [];
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
-        const body = String(init?.body ?? "");
+        const body = await readRequestBody(init);
         if (!body) {
           return new Response(JSON.stringify({ last_accepted_seq: 0 }), {
             status: 200,
@@ -461,23 +439,13 @@ describe("TaskRunEventStreamSender", () => {
           });
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 5));
         requestBodies.push(body);
-        const lastSeq = JSON.parse(body.trim()).seq;
-        return new Response(JSON.stringify({ last_accepted_seq: lastSeq }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        return new Response("temporary failure", { status: 503 });
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = new TaskRunEventStreamSender({
-      apiUrl: "http://localhost:8000/",
-      projectId: 1,
-      taskId: "task-1",
-      runId: "run-1",
-      token: "ingest-token",
+    const sender = createSender({
       logger: new Logger({
         debug: false,
         onLog: (level, _scope, message) => {
@@ -486,21 +454,17 @@ describe("TaskRunEventStreamSender", () => {
           }
         },
       }),
-      maxBatchEvents: 1,
+      retryDelayMs: 5,
       stopTimeoutMs: 1,
     });
 
     sender.enqueue({ type: "notification", notification: { method: "first" } });
-    sender.enqueue({
-      type: "notification",
-      notification: { method: "second" },
-    });
     await sender.stop();
 
     expect(requestBodies).toHaveLength(1);
-    expect(JSON.parse(requestBodies[0].trim()).seq).toBe(1);
+    expect(eventSequences(requestBodies[0])).toEqual([1]);
     expect(warnings).toContain(
-      "Task run event ingest stop deadline reached before fully draining buffered events",
+      "Task run event ingest stop deadline reached before fully completing transport",
     );
   });
 
@@ -508,7 +472,7 @@ describe("TaskRunEventStreamSender", () => {
     const requestBodies: string[] = [];
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
-        const body = String(init?.body ?? "");
+        const body = await readRequestBody(init);
         if (!body) {
           return new Response(JSON.stringify({ last_accepted_seq: 0 }), {
             status: 200,
@@ -530,22 +494,14 @@ describe("TaskRunEventStreamSender", () => {
           );
         }
 
-        return new Response(JSON.stringify({ last_accepted_seq: 2 }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        return responseForBody(body);
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = new TaskRunEventStreamSender({
-      apiUrl: "http://localhost:8000/",
-      projectId: 1,
-      taskId: "task-1",
-      runId: "run-1",
-      token: "ingest-token",
-      logger: new Logger({ debug: false }),
-      maxBatchEvents: 2,
+    const sender = createSender({
+      retryDelayMs: 1,
+      stopTimeoutMs: 100,
     });
 
     sender.enqueue({ type: "notification", notification: { method: "first" } });
@@ -555,22 +511,15 @@ describe("TaskRunEventStreamSender", () => {
     });
     await sender.stop();
 
-    expect(requestBodies).toHaveLength(2);
-    expect(
-      requestBodies.map((body) =>
-        body
-          .trim()
-          .split("\n")
-          .map((line) => JSON.parse(line).seq),
-      ),
-    ).toEqual([[1, 2], [2]]);
+    expect(requestBodies.map(eventSequences)).toEqual([[1, 2], [2]]);
+    expect(completionSequences(requestBodies[1])).toEqual([2]);
   });
 
   it("starts after the server's last accepted sequence on restart", async () => {
     const requestBodies: string[] = [];
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
-        const body = String(init?.body ?? "");
+        const body = await readRequestBody(init);
         if (!body) {
           return new Response(JSON.stringify({ last_accepted_seq: 42 }), {
             status: 200,
@@ -578,22 +527,12 @@ describe("TaskRunEventStreamSender", () => {
           });
         }
         requestBodies.push(body);
-        return new Response(JSON.stringify({ last_accepted_seq: 44 }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        return responseForBody(body);
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = new TaskRunEventStreamSender({
-      apiUrl: "http://localhost:8000/",
-      projectId: 1,
-      taskId: "task-1",
-      runId: "run-1",
-      token: "ingest-token",
-      logger: new Logger({ debug: false }),
-    });
+    const sender = createSender();
 
     sender.enqueue({
       type: "notification",
@@ -602,19 +541,15 @@ describe("TaskRunEventStreamSender", () => {
     sender.enqueue({ type: "notification", notification: { method: "next" } });
     await sender.stop();
 
-    expect(
-      requestBodies[0]
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line).seq),
-    ).toEqual([43, 44]);
+    expect(eventSequences(requestBodies[0])).toEqual([43, 44]);
+    expect(completionSequences(requestBodies[0])).toEqual([44]);
   });
 
   it("rebases buffered events after a sequence gap response", async () => {
     const requestBodies: string[] = [];
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
-        const body = String(init?.body ?? "");
+        const body = await readRequestBody(init);
         if (!body) {
           return new Response(JSON.stringify({ last_accepted_seq: 42 }), {
             status: 200,
@@ -636,21 +571,14 @@ describe("TaskRunEventStreamSender", () => {
           );
         }
 
-        return new Response(JSON.stringify({ last_accepted_seq: 2 }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        return responseForBody(body);
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = new TaskRunEventStreamSender({
-      apiUrl: "http://localhost:8000/",
-      projectId: 1,
-      taskId: "task-1",
-      runId: "run-1",
-      token: "ingest-token",
-      logger: new Logger({ debug: false }),
+    const sender = createSender({
+      retryDelayMs: 1,
+      stopTimeoutMs: 100,
     });
 
     sender.enqueue({
@@ -660,16 +588,53 @@ describe("TaskRunEventStreamSender", () => {
     sender.enqueue({ type: "notification", notification: { method: "next" } });
     await sender.stop();
 
-    expect(
-      requestBodies.map((body) =>
-        body
-          .trim()
-          .split("\n")
-          .map((line) => JSON.parse(line).seq),
-      ),
-    ).toEqual([
+    expect(requestBodies.map(eventSequences)).toEqual([
       [43, 44],
       [1, 2],
     ]);
+    expect(completionSequences(requestBodies[1])).toEqual([2]);
+  });
+
+  it("reconnects and replays only events after the server's accepted prefix", async () => {
+    const requestBodies: string[] = [];
+    let syncCount = 0;
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = await readRequestBody(init);
+        if (!body) {
+          syncCount += 1;
+          return new Response(
+            JSON.stringify({ last_accepted_seq: syncCount === 1 ? 0 : 1 }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+
+        requestBodies.push(body);
+        if (requestBodies.length === 1) {
+          throw new Error("connection reset");
+        }
+
+        return responseForBody(body);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sender = createSender({
+      retryDelayMs: 1,
+      stopTimeoutMs: 100,
+    });
+
+    sender.enqueue({ type: "notification", notification: { method: "first" } });
+    sender.enqueue({
+      type: "notification",
+      notification: { method: "second" },
+    });
+    await sender.stop();
+
+    expect(requestBodies.map(eventSequences)).toEqual([[1, 2], [2]]);
+    expect(completionSequences(requestBodies[1])).toEqual([2]);
   });
 });

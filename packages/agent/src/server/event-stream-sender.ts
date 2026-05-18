@@ -16,6 +16,9 @@ interface TaskRunEventStreamSenderConfig {
   maxBatchEvents?: number;
   maxBatchBytes?: number;
   maxEventBytes?: number;
+  maxStreamEvents?: number;
+  maxStreamBytes?: number;
+  streamWindowMs?: number;
 }
 
 interface EventEnvelope {
@@ -27,32 +30,52 @@ interface IngestResponse {
   last_accepted_seq?: unknown;
 }
 
+interface ActiveStream {
+  abortController: AbortController;
+  writer: WritableStreamDefaultWriter<Uint8Array>;
+  responsePromise: Promise<Response>;
+  startedAtMs: number;
+  sentThroughSeq: number;
+  sentEvents: number;
+  sentBytes: number;
+}
+
+type StreamingRequestInit = RequestInit & { duplex: "half" };
+
 const DEFAULT_MAX_BUFFERED_EVENTS = 20_000;
-const DEFAULT_MAX_BATCH_EVENTS = 500;
-const DEFAULT_MAX_BATCH_BYTES = 4_000_000;
+const DEFAULT_MAX_STREAM_EVENTS = 900;
+const DEFAULT_MAX_STREAM_BYTES = 4_000_000;
 const DEFAULT_MAX_EVENT_BYTES = 900_000;
-const DEFAULT_FLUSH_DELAY_MS = 50;
+const DEFAULT_WRITE_DELAY_MS = 0;
 const DEFAULT_RETRY_DELAY_MS = 1_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_STOP_TIMEOUT_MS = 30_000;
+const DEFAULT_STREAM_WINDOW_MS = 5 * 60 * 1_000;
+const STREAM_COMPLETE_CONTROL_TYPE = "_posthog/stream_complete";
 
 export class TaskRunEventStreamSender {
   private readonly ingestUrl: string;
   private readonly maxBufferedEvents: number;
-  private readonly maxBatchEvents: number;
-  private readonly maxBatchBytes: number;
+  private readonly maxStreamEvents: number;
+  private readonly maxStreamBytes: number;
   private readonly maxEventBytes: number;
-  private readonly flushDelayMs: number;
+  private readonly writeDelayMs: number;
   private readonly retryDelayMs: number;
   private readonly requestTimeoutMs: number;
   private readonly stopTimeoutMs: number;
+  private readonly streamWindowMs: number;
+  private readonly encoder = new TextEncoder();
   private sequence = 0;
+  private lastKnownAcceptedSeq = 0;
   private bufferedEvents: EventEnvelope[] = [];
-  private flushTimer: ReturnType<typeof setTimeout> | null = null;
-  private flushPromise: Promise<void> | null = null;
+  private writeTimer: ReturnType<typeof setTimeout> | null = null;
+  private writePromise: Promise<void> | null = null;
+  private streamClosePromise: Promise<void> | null = null;
+  private activeStream: ActiveStream | null = null;
   private stopPromise: Promise<void> | null = null;
   private stopped = false;
   private sequenceSynced = false;
+  private sequenceInitialized = false;
   private transportCompleted = false;
   private droppedBeforeSequenceCount = 0;
   private bufferRevision = 0;
@@ -64,14 +87,19 @@ export class TaskRunEventStreamSender {
     )}/runs/${encodeURIComponent(config.runId)}/event_stream/`;
     this.maxBufferedEvents =
       config.maxBufferedEvents ?? DEFAULT_MAX_BUFFERED_EVENTS;
-    this.maxBatchEvents = config.maxBatchEvents ?? DEFAULT_MAX_BATCH_EVENTS;
-    this.maxBatchBytes = config.maxBatchBytes ?? DEFAULT_MAX_BATCH_BYTES;
+    this.maxStreamEvents =
+      config.maxStreamEvents ??
+      config.maxBatchEvents ??
+      DEFAULT_MAX_STREAM_EVENTS;
+    this.maxStreamBytes =
+      config.maxStreamBytes ?? config.maxBatchBytes ?? DEFAULT_MAX_STREAM_BYTES;
     this.maxEventBytes = config.maxEventBytes ?? DEFAULT_MAX_EVENT_BYTES;
-    this.flushDelayMs = config.flushDelayMs ?? DEFAULT_FLUSH_DELAY_MS;
+    this.writeDelayMs = config.flushDelayMs ?? DEFAULT_WRITE_DELAY_MS;
     this.retryDelayMs = config.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     this.requestTimeoutMs =
       config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.stopTimeoutMs = config.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS;
+    this.streamWindowMs = config.streamWindowMs ?? DEFAULT_STREAM_WINDOW_MS;
   }
 
   enqueue(event: Record<string, unknown>): void {
@@ -86,7 +114,7 @@ export class TaskRunEventStreamSender {
       event,
     };
     this.bufferedEvents.push(envelope);
-    this.scheduleFlush();
+    this.scheduleWrite();
   }
 
   async stop(): Promise<void> {
@@ -97,20 +125,20 @@ export class TaskRunEventStreamSender {
 
     this.stopped = true;
 
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = null;
+    if (this.writeTimer) {
+      clearTimeout(this.writeTimer);
+      this.writeTimer = null;
     }
 
     this.stopPromise = this.drainForStop();
     await this.stopPromise;
   }
 
-  private scheduleFlush(delayMs = this.flushDelayMs): void {
-    if (this.flushTimer || this.flushPromise || this.stopped) return;
+  private scheduleWrite(delayMs = this.writeDelayMs): void {
+    if (this.writeTimer || this.writePromise || this.stopped) return;
 
-    this.flushTimer = setTimeout(() => {
-      this.flushTimer = null;
+    this.writeTimer = setTimeout(() => {
+      this.writeTimer = null;
       void this.flush();
     }, delayMs);
   }
@@ -118,53 +146,42 @@ export class TaskRunEventStreamSender {
   private async drainForStop(): Promise<void> {
     const startedAtMs = Date.now();
     const deadlineAtMs = startedAtMs + this.stopTimeoutMs;
-    while (this.bufferedEvents.length > 0) {
+
+    while (!this.transportCompleted) {
       const previousLength = this.bufferedEvents.length;
       const previousRevision = this.bufferRevision;
 
-      await this.flush();
+      try {
+        await this.flush();
+        await this.writeCompletionLine();
+        await this.closeActiveStream();
+        this.transportCompleted = true;
+        return;
+      } catch (error) {
+        this.config.logger.warn(
+          "Task run event ingest stop request failed",
+          this.describeError(error),
+        );
+      }
+
       const madeProgress =
         this.bufferedEvents.length < previousLength ||
         this.bufferRevision !== previousRevision;
-
       if (!madeProgress && !(await this.waitBeforeStopRetry(deadlineAtMs))) {
         this.warnStopDeadlineReached(startedAtMs);
         return;
       }
 
-      if (Date.now() >= deadlineAtMs && this.bufferedEvents.length > 0) {
+      if (Date.now() >= deadlineAtMs && !this.transportCompleted) {
         this.warnStopDeadlineReached(startedAtMs);
-        return;
-      }
-    }
-
-    while (!this.transportCompleted) {
-      try {
-        await this.completeTransport();
-        return;
-      } catch (error) {
-        this.config.logger.warn(
-          "Task run event ingest completion request failed",
-          this.describeError(error),
-        );
-      }
-
-      if (!(await this.waitBeforeStopRetry(deadlineAtMs))) {
-        this.config.logger.warn(
-          "Task run event ingest stop deadline reached before completing transport",
-          {
-            stopTimeoutMs: this.stopTimeoutMs,
-            elapsedMs: Date.now() - startedAtMs,
-          },
-        );
         return;
       }
     }
   }
 
   private async flush(): Promise<boolean> {
-    if (this.flushPromise) {
-      await this.flushPromise.catch(() => undefined);
+    if (this.writePromise) {
+      await this.writePromise.catch(() => undefined);
     }
 
     if (this.bufferedEvents.length === 0) {
@@ -172,113 +189,248 @@ export class TaskRunEventStreamSender {
     }
 
     const previousBufferLength = this.bufferedEvents.length;
-    const flushPromise = this.sendBufferedEvents();
-    this.flushPromise = flushPromise;
+    const writePromise = this.writeBufferedEvents();
+    this.writePromise = writePromise;
 
     try {
-      await flushPromise;
+      await writePromise;
+      if (!this.stopped) {
+        await this.closeActiveStream();
+      }
       return this.bufferedEvents.length < previousBufferLength;
     } catch (error) {
       this.config.logger.warn(
-        "Task run event ingest request failed",
+        "Task run event ingest stream write failed",
         this.describeError(error),
       );
+      await this.abortActiveStream();
       if (!this.stopped) {
-        this.scheduleFlush(this.retryDelayMs);
+        this.scheduleWrite(this.retryDelayMs);
       }
       return false;
     } finally {
-      if (this.flushPromise === flushPromise) {
-        this.flushPromise = null;
+      if (this.writePromise === writePromise) {
+        this.writePromise = null;
       }
-      if (!this.stopped && this.bufferedEvents.length > 0) {
-        this.scheduleFlush(0);
+      if (!this.stopped && this.hasUnwrittenBufferedEvents()) {
+        this.scheduleWrite(0);
       }
     }
   }
 
-  private async sendBufferedEvents(): Promise<void> {
-    await this.syncSequenceWithServer();
-
-    const body = this.buildBatchBody();
-    const abortController = new AbortController();
-    const timeout = setTimeout(() => {
-      abortController.abort();
-    }, this.requestTimeoutMs);
-
-    let response: Response;
-    try {
-      response = await fetch(this.ingestUrl, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body,
-        signal: abortController.signal,
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    const responseBody = await this.parseResponse(response);
-    const lastAcceptedSeq = responseBody.parsed?.last_accepted_seq;
-    if (typeof lastAcceptedSeq === "number") {
-      const previousLength = this.bufferedEvents.length;
-      this.bufferedEvents = this.bufferedEvents.filter(
-        (event) => event.seq > lastAcceptedSeq,
+  private async writeBufferedEvents(): Promise<void> {
+    while (true) {
+      const stream = await this.ensureActiveStream();
+      const nextEvent = this.bufferedEvents.find(
+        (event) => event.seq > stream.sentThroughSeq,
       );
-      if (this.bufferedEvents.length !== previousLength) {
-        this.bufferRevision += 1;
+      if (!nextEvent) {
+        return;
       }
-      if (response.status === 409) {
-        this.rebaseBufferedEvents(lastAcceptedSeq);
-      }
-    }
 
-    if (!response.ok) {
-      throw new Error(
-        `Event ingest returned HTTP ${response.status}: ${responseBody.text.slice(0, 300)}`,
-      );
+      const line = `${this.serializeEnvelope(nextEvent)}\n`;
+      const lineBytes = Buffer.byteLength(line, "utf8");
+      if (this.shouldRollStreamBeforeWriting(stream, lineBytes)) {
+        await this.closeActiveStream();
+        continue;
+      }
+
+      await stream.writer.write(this.encoder.encode(line));
+      stream.sentThroughSeq = nextEvent.seq;
+      stream.sentEvents += 1;
+      stream.sentBytes += lineBytes;
     }
   }
 
-  private async completeTransport(): Promise<void> {
+  private hasUnwrittenBufferedEvents(): boolean {
+    const sentThroughSeq =
+      this.activeStream?.sentThroughSeq ?? this.lastKnownAcceptedSeq;
+    return this.bufferedEvents.some((event) => event.seq > sentThroughSeq);
+  }
+
+  private async writeCompletionLine(): Promise<void> {
     await this.syncSequenceWithServer();
 
-    const abortController = new AbortController();
-    const timeout = setTimeout(() => {
-      abortController.abort();
-    }, this.requestTimeoutMs);
+    while (true) {
+      const stream = await this.ensureActiveStream();
+      const hasUnwrittenEvents = this.bufferedEvents.some(
+        (event) => event.seq > stream.sentThroughSeq,
+      );
+      if (hasUnwrittenEvents) {
+        await this.writeBufferedEvents();
+        continue;
+      }
 
-    let response: Response;
-    try {
-      response = await fetch(this.ingestUrl, {
-        method: "POST",
-        headers: {
-          ...this.buildHeaders(),
-          "X-PostHog-Event-Stream-Complete": "true",
-          "X-PostHog-Event-Stream-Final-Seq": String(this.sequence),
-        },
-        body: "",
-        signal: abortController.signal,
-      });
-    } finally {
-      clearTimeout(timeout);
+      const line = `${JSON.stringify({
+        type: STREAM_COMPLETE_CONTROL_TYPE,
+        final_seq: this.sequence,
+      })}\n`;
+      const lineBytes = Buffer.byteLength(line, "utf8");
+      if (
+        this.shouldRollStreamBeforeWriting(stream, lineBytes, {
+          ignoreEventCount: true,
+        })
+      ) {
+        await this.closeActiveStream();
+        continue;
+      }
+
+      await stream.writer.write(this.encoder.encode(line));
+      stream.sentBytes += lineBytes;
+      return;
     }
+  }
 
-    const responseBody = await this.parseResponse(response);
-    const lastAcceptedSeq = responseBody.parsed?.last_accepted_seq;
+  private shouldRollStreamBeforeWriting(
+    stream: ActiveStream,
+    lineBytes: number,
+    options: { ignoreEventCount?: boolean } = {},
+  ): boolean {
     if (
-      typeof lastAcceptedSeq === "number" &&
-      lastAcceptedSeq > this.sequence
+      !options.ignoreEventCount &&
+      stream.sentEvents > 0 &&
+      stream.sentEvents >= this.maxStreamEvents
     ) {
-      this.sequence = lastAcceptedSeq;
+      return true;
+    }
+    if (
+      stream.sentBytes > 0 &&
+      stream.sentBytes + lineBytes > this.maxStreamBytes
+    ) {
+      return true;
+    }
+    return Date.now() - stream.startedAtMs >= this.streamWindowMs;
+  }
+
+  private async ensureActiveStream(): Promise<ActiveStream> {
+    if (this.streamClosePromise) {
+      await this.streamClosePromise.catch(() => undefined);
     }
 
-    if (!response.ok) {
-      throw new Error(
-        `Event ingest completion returned HTTP ${response.status}: ${responseBody.text.slice(0, 300)}`,
+    if (this.activeStream) {
+      return this.activeStream;
+    }
+
+    await this.syncSequenceWithServer();
+
+    const bodyStream = new TransformStream<Uint8Array, Uint8Array>();
+    const abortController = new AbortController();
+    const requestInit: StreamingRequestInit = {
+      method: "POST",
+      headers: this.buildHeaders(),
+      body: bodyStream.readable as BodyInit,
+      signal: abortController.signal,
+      duplex: "half",
+    };
+    const responsePromise = fetch(this.ingestUrl, requestInit);
+    const activeStream: ActiveStream = {
+      abortController,
+      writer: bodyStream.writable.getWriter(),
+      responsePromise,
+      startedAtMs: Date.now(),
+      sentThroughSeq: this.lastKnownAcceptedSeq,
+      sentEvents: 0,
+      sentBytes: 0,
+    };
+    this.activeStream = activeStream;
+    responsePromise.catch((error) => {
+      void this.handleActiveStreamResponseFailure(activeStream, error);
+    });
+    return activeStream;
+  }
+
+  private async handleActiveStreamResponseFailure(
+    stream: ActiveStream,
+    error: unknown,
+  ): Promise<void> {
+    if (this.activeStream !== stream) {
+      return;
+    }
+
+    this.config.logger.warn(
+      "Task run event ingest stream request failed",
+      this.describeError(error),
+    );
+    try {
+      await this.abortActiveStream();
+    } catch (abortError) {
+      this.config.logger.warn(
+        "Task run event ingest stream abort failed",
+        this.describeError(abortError),
       );
     }
-    this.transportCompleted = true;
+    if (!this.stopped && this.bufferedEvents.length > 0) {
+      this.scheduleWrite(this.retryDelayMs);
+    }
+  }
+
+  private async closeActiveStream(): Promise<void> {
+    if (this.streamClosePromise) {
+      await this.streamClosePromise;
+      return;
+    }
+
+    const stream = this.activeStream;
+    if (!stream) {
+      return;
+    }
+
+    const closePromise = this.closeStream(stream);
+    this.streamClosePromise = closePromise;
+    try {
+      await closePromise;
+    } finally {
+      if (this.activeStream === stream) {
+        this.activeStream = null;
+      }
+      if (this.streamClosePromise === closePromise) {
+        this.streamClosePromise = null;
+      }
+    }
+  }
+
+  private async closeStream(stream: ActiveStream): Promise<void> {
+    try {
+      await stream.writer.close();
+    } catch (error) {
+      stream.abortController.abort();
+      this.sequenceSynced = false;
+      throw error;
+    }
+
+    let response: Response;
+    try {
+      response = await this.waitForResponseWithTimeout(
+        stream.responsePromise,
+        stream.abortController,
+      );
+    } catch (error) {
+      stream.abortController.abort();
+      this.sequenceSynced = false;
+      throw error;
+    }
+
+    await this.applyIngestResponse(response, "Event ingest stream");
+    this.sequenceSynced = true;
+  }
+
+  private async abortActiveStream(): Promise<void> {
+    const stream = this.activeStream;
+    if (!stream) {
+      return;
+    }
+
+    stream.abortController.abort();
+    try {
+      await stream.writer.abort();
+    } catch {
+      // The writer may already be closed by fetch after the abort.
+    } finally {
+      if (this.activeStream === stream) {
+        this.activeStream = null;
+      }
+      this.sequenceSynced = false;
+    }
   }
 
   private async waitBeforeStopRetry(deadlineAtMs: number): Promise<boolean> {
@@ -295,7 +447,7 @@ export class TaskRunEventStreamSender {
 
   private warnStopDeadlineReached(startedAtMs: number): void {
     this.config.logger.warn(
-      "Task run event ingest stop deadline reached before fully draining buffered events",
+      "Task run event ingest stop deadline reached before fully completing transport",
       {
         remaining: this.bufferedEvents.length,
         stopTimeoutMs: this.stopTimeoutMs,
@@ -307,23 +459,11 @@ export class TaskRunEventStreamSender {
   private async syncSequenceWithServer(): Promise<void> {
     if (this.sequenceSynced) return;
 
-    const abortController = new AbortController();
-    const timeout = setTimeout(() => {
-      abortController.abort();
-    }, this.requestTimeoutMs);
-
-    let response: Response;
-    try {
-      response = await fetch(this.ingestUrl, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body: "",
-        signal: abortController.signal,
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
-
+    const response = await this.fetchWithTimeout({
+      method: "POST",
+      headers: this.buildHeaders(),
+      body: "",
+    });
     const responseBody = await this.parseResponse(response);
 
     if (!response.ok) {
@@ -334,15 +474,89 @@ export class TaskRunEventStreamSender {
 
     const lastAcceptedSeq = responseBody.parsed?.last_accepted_seq;
     if (typeof lastAcceptedSeq === "number" && lastAcceptedSeq > 0) {
-      const offset = lastAcceptedSeq;
-      this.bufferedEvents = this.bufferedEvents.map((event) => ({
-        ...event,
-        seq: event.seq + offset,
-      }));
-      this.sequence += offset;
+      if (!this.sequenceInitialized) {
+        this.bufferedEvents = this.bufferedEvents.map((event) => ({
+          ...event,
+          seq: event.seq + lastAcceptedSeq,
+        }));
+        this.sequence += lastAcceptedSeq;
+        this.bufferRevision += 1;
+      } else {
+        this.acceptThrough(lastAcceptedSeq);
+        if (lastAcceptedSeq > this.sequence) {
+          this.sequence = lastAcceptedSeq;
+        }
+      }
+      this.lastKnownAcceptedSeq = lastAcceptedSeq;
     }
 
     this.sequenceSynced = true;
+    this.sequenceInitialized = true;
+  }
+
+  private async fetchWithTimeout(init: RequestInit): Promise<Response> {
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => {
+      abortController.abort();
+    }, this.requestTimeoutMs);
+
+    try {
+      return await fetch(this.ingestUrl, {
+        ...init,
+        signal: abortController.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async waitForResponseWithTimeout(
+    responsePromise: Promise<Response>,
+    abortController: AbortController,
+  ): Promise<Response> {
+    const timeout = setTimeout(() => {
+      abortController.abort();
+    }, this.requestTimeoutMs);
+
+    try {
+      return await responsePromise;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async applyIngestResponse(
+    response: Response,
+    label: string,
+  ): Promise<void> {
+    const responseBody = await this.parseResponse(response);
+    const lastAcceptedSeq = responseBody.parsed?.last_accepted_seq;
+    if (typeof lastAcceptedSeq === "number") {
+      this.acceptThrough(lastAcceptedSeq);
+      if (lastAcceptedSeq > this.sequence) {
+        this.sequence = lastAcceptedSeq;
+      }
+      this.lastKnownAcceptedSeq = lastAcceptedSeq;
+      if (response.status === 409) {
+        this.rebaseBufferedEvents(lastAcceptedSeq);
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `${label} returned HTTP ${response.status}: ${responseBody.text.slice(0, 300)}`,
+      );
+    }
+  }
+
+  private acceptThrough(lastAcceptedSeq: number): void {
+    const previousLength = this.bufferedEvents.length;
+    this.bufferedEvents = this.bufferedEvents.filter(
+      (event) => event.seq > lastAcceptedSeq,
+    );
+    if (this.bufferedEvents.length !== previousLength) {
+      this.bufferRevision += 1;
+    }
   }
 
   private buildHeaders(): Record<string, string> {
@@ -350,28 +564,6 @@ export class TaskRunEventStreamSender {
       Authorization: `Bearer ${this.config.token}`,
       "Content-Type": "application/x-ndjson",
     };
-  }
-
-  private buildBatchBody(): string {
-    const lines: string[] = [];
-    let batchBytes = 0;
-
-    for (const envelope of this.bufferedEvents) {
-      if (lines.length >= this.maxBatchEvents) {
-        break;
-      }
-
-      const line = `${this.serializeEnvelope(envelope)}\n`;
-      const lineBytes = Buffer.byteLength(line, "utf8");
-      if (lines.length > 0 && batchBytes + lineBytes > this.maxBatchBytes) {
-        break;
-      }
-
-      lines.push(line);
-      batchBytes += lineBytes;
-    }
-
-    return lines.join("");
   }
 
   private rebaseBufferedEvents(lastAcceptedSeq: number): void {
@@ -382,6 +574,8 @@ export class TaskRunEventStreamSender {
     }));
     this.sequence = nextSeq - 1;
     this.sequenceSynced = true;
+    this.sequenceInitialized = true;
+    this.lastKnownAcceptedSeq = lastAcceptedSeq;
     this.bufferRevision += 1;
   }
 
