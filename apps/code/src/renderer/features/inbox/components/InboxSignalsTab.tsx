@@ -68,14 +68,8 @@ export function InboxSignalsTab() {
   const suggestedReviewerFilter = useInboxSignalsFilterStore(
     (s) => s.suggestedReviewerFilter,
   );
-  const hasInitializedSuggestedReviewerFilter = useInboxSignalsFilterStore(
-    (s) => s.hasInitializedSuggestedReviewerFilter,
-  );
-  const setSuggestedReviewerFilter = useInboxSignalsFilterStore(
-    (s) => s.setSuggestedReviewerFilter,
-  );
-  const markSuggestedReviewerFilterInitialized = useInboxSignalsFilterStore(
-    (s) => s.markSuggestedReviewerFilterInitialized,
+  const seedSuggestedReviewerFilterWithCurrentUser = useInboxSignalsFilterStore(
+    (s) => s.seedSuggestedReviewerFilterWithCurrentUser,
   );
 
   // ── Current user (seeds reviewer filter on first inbox visit) ───────────
@@ -86,19 +80,9 @@ export function InboxSignalsTab() {
   });
 
   useEffect(() => {
-    if (hasInitializedSuggestedReviewerFilter) return;
     if (!currentUser?.uuid) return;
-    if (suggestedReviewerFilter.length === 0) {
-      setSuggestedReviewerFilter([currentUser.uuid]);
-    }
-    markSuggestedReviewerFilterInitialized();
-  }, [
-    hasInitializedSuggestedReviewerFilter,
-    currentUser?.uuid,
-    suggestedReviewerFilter.length,
-    setSuggestedReviewerFilter,
-    markSuggestedReviewerFilterInitialized,
-  ]);
+    seedSuggestedReviewerFilterWithCurrentUser(currentUser.uuid);
+  }, [currentUser?.uuid, seedSuggestedReviewerFilterWithCurrentUser]);
 
   // ── GitHub integration ───────────────────────────────────────────────
   const { hasGithubIntegration } = useRepositoryIntegration();
