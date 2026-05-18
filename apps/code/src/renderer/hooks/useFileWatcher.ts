@@ -71,6 +71,7 @@ export function useFileWatcher(repoPath: string | null, taskId?: string) {
       onData: ({ repoPath: rp }) => {
         if (rp !== repoPath) return;
         invalidateGitBranchQueries(repoPath);
+        invalidateGitWorkingTreeQueries(repoPath);
       },
     }),
   );
