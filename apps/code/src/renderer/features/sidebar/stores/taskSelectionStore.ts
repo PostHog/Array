@@ -12,8 +12,14 @@ interface TaskSelectionActions {
   /** Toggle a single task in/out of the selection (cmd-click). */
   toggleTaskSelection: (taskId: string) => void;
   /** Select a contiguous range from the last-clicked task to `toId` within the given ordered list.
-   *  Existing selection outside the range is preserved (shift-click behavior). */
-  selectRange: (toId: string, orderedIds: string[]) => void;
+   *  Existing selection outside the range is preserved (shift-click behavior).
+   *  If there is no last-clicked anchor (e.g. the user just navigated via a plain click),
+   *  `fallbackAnchorId` is used — typically the currently active/routed task. */
+  selectRange: (
+    toId: string,
+    orderedIds: string[],
+    fallbackAnchorId?: string | null,
+  ) => void;
   isTaskSelected: (taskId: string) => boolean;
   clearSelection: () => void;
   pruneSelection: (visibleTaskIds: string[]) => void;
@@ -43,9 +49,9 @@ export const useTaskSelectionStore = create<TaskSelectionStore>()(
         };
       }),
 
-    selectRange: (toId, orderedIds) =>
+    selectRange: (toId, orderedIds, fallbackAnchorId) =>
       set((state) => {
-        const anchorId = state.lastClickedId;
+        const anchorId = state.lastClickedId ?? fallbackAnchorId ?? null;
         if (!anchorId) {
           return { selectedTaskIds: [toId], lastClickedId: toId };
         }

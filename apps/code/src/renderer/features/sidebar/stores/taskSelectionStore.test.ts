@@ -141,6 +141,29 @@ describe("taskSelectionStore", () => {
       expect(useTaskSelectionStore.getState().selectedTaskIds).toEqual(["t3"]);
     });
 
+    it("uses fallbackAnchorId when there is no last-clicked anchor", () => {
+      useTaskSelectionStore.getState().selectRange("t4", orderedIds, "t2");
+
+      expect(useTaskSelectionStore.getState().selectedTaskIds).toEqual([
+        "t2",
+        "t3",
+        "t4",
+      ]);
+      expect(useTaskSelectionStore.getState().lastClickedId).toBe("t4");
+    });
+
+    it("prefers lastClickedId over fallbackAnchorId when both are set", () => {
+      useTaskSelectionStore.setState({ lastClickedId: "t3" });
+
+      useTaskSelectionStore.getState().selectRange("t5", orderedIds, "t1");
+
+      expect(useTaskSelectionStore.getState().selectedTaskIds).toEqual([
+        "t3",
+        "t4",
+        "t5",
+      ]);
+    });
+
     it("updates lastClickedId to the target", () => {
       useTaskSelectionStore.setState({ lastClickedId: "t1" });
 

@@ -159,10 +159,20 @@ function SidebarMenuComponent() {
     pruneSelection(allSidebarTaskIds);
   }, [allSidebarTaskIds, pruneSelection]);
 
+  // The active (routed) task is implicitly part of any bulk selection — the
+  // user expects to see and act on it together with cmd/shift-clicked tasks.
+  const activeTaskId = sidebarData.activeTaskId;
+  const effectiveBulkIds = useMemo(() => {
+    if (selectedTaskIds.length === 0) return [];
+    if (!activeTaskId) return selectedTaskIds;
+    if (selectedTaskIds.includes(activeTaskId)) return selectedTaskIds;
+    return [activeTaskId, ...selectedTaskIds];
+  }, [activeTaskId, selectedTaskIds]);
+
   const handleTaskClick = (taskId: string, e: React.MouseEvent) => {
     if (e.shiftKey) {
       e.preventDefault();
-      selectRange(taskId, allSidebarTaskIds);
+      selectRange(taskId, allSidebarTaskIds, activeTaskId);
       return;
     }
     if (e.metaKey || e.ctrlKey) {
@@ -216,11 +226,11 @@ function SidebarMenuComponent() {
     e: React.MouseEvent,
     isPinned: boolean,
   ) => {
-    // Bulk menu when 2+ tasks are selected and the right-clicked task is in the selection.
-    // Otherwise clear the selection (right-click outside) and fall through to the single menu.
-    if (selectedTaskIds.length > 1) {
-      if (selectedTaskIds.includes(taskId)) {
-        handleBulkContextMenu(e, selectedTaskIds);
+    // Bulk menu when 2+ tasks are in the effective selection (active + cmd/shift-clicked)
+    // and the right-clicked task is one of them. Otherwise clear and fall through.
+    if (effectiveBulkIds.length > 1) {
+      if (effectiveBulkIds.includes(taskId)) {
+        handleBulkContextMenu(e, effectiveBulkIds);
         return;
       }
       clearSelection();
@@ -412,7 +422,7 @@ function SidebarMenuComponent() {
               groupedTasks={sidebarData.groupedTasks}
               activeTaskId={sidebarData.activeTaskId}
               editingTaskId={editingTaskId}
-              selectedTaskIds={selectedTaskIds}
+              selectedTaskIds={effectiveBulkIds}
               onTaskClick={handleTaskClick}
               onTaskDoubleClick={handleTaskDoubleClick}
               onTaskContextMenu={handleTaskContextMenu}
