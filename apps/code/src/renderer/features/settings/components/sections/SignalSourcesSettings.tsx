@@ -2,6 +2,7 @@ import { DataSourceSetup } from "@features/inbox/components/DataSourceSetup";
 import { SignalSourceToggles } from "@features/inbox/components/SignalSourceToggles";
 import { useSignalSourceManager } from "@features/inbox/hooks/useSignalSourceManager";
 import { GitHubIntegrationSection } from "@features/settings/components/sections/GitHubIntegrationSection";
+import { SignalSlackNotificationsSettings } from "@features/settings/components/sections/SignalSlackNotificationsSettings";
 import { useRepositoryIntegration } from "@hooks/useIntegrations";
 import { Box, Flex, Select, Text, Tooltip } from "@radix-ui/themes";
 import type { SignalReportPriority } from "@shared/types";
@@ -120,6 +121,7 @@ export function SignalSourcesSettings() {
           </Select.Content>
         </Select.Root>
       </Flex>
+      <SignalSlackNotificationsSettings />
     </Flex>
   );
 }

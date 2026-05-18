@@ -466,6 +466,42 @@ export function useSignalSourceManager() {
     [client, queryClient],
   );
 
+  const handleUpdateSlackNotifications = useCallback(
+    async (updates: {
+      integrationId?: number | null;
+      channel?: string | null;
+      minPriority?: string | null;
+    }) => {
+      if (!client) return;
+      // Translate frontend camelCase to the API's snake_case body. Only include
+      // keys the caller passed in, so other settings (e.g. autostart_priority)
+      // are not wiped.
+      const body: Record<string, number | string | null> = {};
+      if ("integrationId" in updates) {
+        body.slack_notification_integration_id = updates.integrationId ?? null;
+      }
+      if ("channel" in updates) {
+        body.slack_notification_channel = updates.channel ?? null;
+      }
+      if ("minPriority" in updates) {
+        body.slack_notification_min_priority = updates.minPriority ?? null;
+      }
+      try {
+        await client.updateSignalUserAutonomyConfig(body);
+        await queryClient.invalidateQueries({
+          queryKey: ["signals", "user-autonomy-config"],
+        });
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to update Slack notification setting";
+        toast.error(message);
+      }
+    },
+    [client, queryClient],
+  );
+
   return {
     displayValues,
     sourceStates,
@@ -483,5 +519,6 @@ export function useSignalSourceManager() {
     handleUpdateAutostartPriority,
     userAutonomyConfig,
     handleUpdateUserAutonomyPriority,
+    handleUpdateSlackNotifications,
   };
 }
