@@ -1,120 +1,137 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  type DarwinMountEntry,
   isMacosAppTranslocationPath,
   isMacosPackagedUnsafeBundleLocation,
   isMacosPathOnReadOnlyNonRootMountFromTable,
   parseDarwinMountTable,
+  type ReadDarwinMountTable,
 } from "./macos-packaged-install-guard";
 
 describe("isMacosAppTranslocationPath", () => {
-  it("returns true when appPath contains AppTranslocation", () => {
-    expect(
-      isMacosAppTranslocationPath(
+  it.each([
+    {
+      case: "appPath is translocated",
+      appPath:
         "/private/var/folders/yf/xx/AppTranslocation/C6283C3C-9D6E-4D81-A7D5-8BA2567ED486/d/PostHog Code.app/Contents/Resources/app.asar",
-        "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
-      ),
-    ).toBe(true);
-  });
-
-  it("returns true when exePath contains AppTranslocation", () => {
-    expect(
-      isMacosAppTranslocationPath(
-        "/Applications/PostHog Code.app/Contents/Resources/app.asar",
+      exePath: "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
+      expected: true,
+    },
+    {
+      case: "exePath is translocated",
+      appPath: "/Applications/PostHog Code.app/Contents/Resources/app.asar",
+      exePath:
         "/private/var/folders/yf/xx/AppTranslocation/C6283C3C/d/PostHog Code.app/Contents/MacOS/PostHog Code",
-      ),
-    ).toBe(true);
-  });
-
-  it("returns false for normal /Applications paths", () => {
-    expect(
-      isMacosAppTranslocationPath(
-        "/Applications/PostHog Code.app/Contents/Resources/app.asar",
-        "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
-      ),
-    ).toBe(false);
-  });
-
-  it("returns false when neither path is translocated", () => {
-    expect(
-      isMacosAppTranslocationPath(
-        "/Users/dev/PostHog Code.app/Contents/Resources/app.asar",
-        "/Users/dev/PostHog Code.app/Contents/MacOS/PostHog Code",
-      ),
-    ).toBe(false);
+      expected: true,
+    },
+    {
+      case: "neither path is translocated (/Applications)",
+      appPath: "/Applications/PostHog Code.app/Contents/Resources/app.asar",
+      exePath: "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
+      expected: false,
+    },
+    {
+      case: "neither path is translocated (/Users)",
+      appPath: "/Users/dev/PostHog Code.app/Contents/Resources/app.asar",
+      exePath: "/Users/dev/PostHog Code.app/Contents/MacOS/PostHog Code",
+      expected: false,
+    },
+  ])("$case → $expected", ({ appPath, exePath, expected }) => {
+    expect(isMacosAppTranslocationPath(appPath, exePath)).toBe(expected);
   });
 });
 
 describe("parseDarwinMountTable", () => {
-  it("parses standard macOS mount lines", () => {
-    const sample = `/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
+  it.each<{
+    case: string;
+    input: string;
+    expected: DarwinMountEntry[];
+  }>([
+    {
+      case: "standard macOS mount lines",
+      input: `/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
 /dev/disk7s1 on /Volumes/My Dmg (apfs, local, read-only, journaled)
 /dev/disk5s1 on /Volumes/Writable (apfs, local, journaled)
-`;
-    const entries = parseDarwinMountTable(sample);
-    expect(entries).toEqual([
-      { mountPoint: "/", options: "apfs, sealed, local, read-only, journaled" },
-      {
-        mountPoint: "/Volumes/My Dmg",
-        options: "apfs, local, read-only, journaled",
-      },
-      { mountPoint: "/Volumes/Writable", options: "apfs, local, journaled" },
-    ]);
+`,
+      expected: [
+        {
+          mountPoint: "/",
+          options: "apfs, sealed, local, read-only, journaled",
+        },
+        {
+          mountPoint: "/Volumes/My Dmg",
+          options: "apfs, local, read-only, journaled",
+        },
+        { mountPoint: "/Volumes/Writable", options: "apfs, local, journaled" },
+      ],
+    },
+    {
+      case: "mount point name contains ' (' — anchors to trailing options",
+      input:
+        "/dev/disk9s1 on /Volumes/My Backup (2) (apfs, local, read-only, journaled)\n",
+      expected: [
+        {
+          mountPoint: "/Volumes/My Backup (2)",
+          options: "apfs, local, read-only, journaled",
+        },
+      ],
+    },
+  ])("parses: $case", ({ input, expected }) => {
+    expect(parseDarwinMountTable(input)).toEqual(expected);
   });
 });
 
 describe("isMacosPathOnReadOnlyNonRootMountFromTable", () => {
-  const table = `/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
+  const baseTable = `/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
 /dev/disk7s1 on /Volumes/ReadOnlyVol (apfs, local, read-only, journaled)
 /dev/disk5s1 on /Volumes/Writable (apfs, local, journaled)
 `;
-
-  it("returns false for paths only under read-only / (root is ignored)", () => {
-    expect(
-      isMacosPathOnReadOnlyNonRootMountFromTable("/Users/me/app", table),
-    ).toBe(false);
-    expect(
-      isMacosPathOnReadOnlyNonRootMountFromTable(
-        "/Applications/Foo.app",
-        table,
-      ),
-    ).toBe(false);
-  });
-
-  it("returns true for paths on a read-only non-root volume", () => {
-    expect(
-      isMacosPathOnReadOnlyNonRootMountFromTable(
-        "/Volumes/ReadOnlyVol/PostHog Code.app/Contents/MacOS/PostHog Code",
-        table,
-      ),
-    ).toBe(true);
-  });
-
-  it("returns false for paths on a writable volume", () => {
-    expect(
-      isMacosPathOnReadOnlyNonRootMountFromTable(
-        "/Volumes/Writable/out/PostHog Code.app/Contents/MacOS/PostHog Code",
-        table,
-      ),
-    ).toBe(false);
-  });
-
-  it("picks the longest matching mount prefix", () => {
-    const nested = `/dev/x on / (apfs, read-only)
+  const nestedTable = `/dev/x on / (apfs, read-only)
 /dev/y on /Volumes/RW (apfs, local, journaled)
 /dev/z on /Volumes/RW/nested (apfs, local, read-only)
 `;
-    expect(
-      isMacosPathOnReadOnlyNonRootMountFromTable(
-        "/Volumes/RW/nested/app",
-        nested,
-      ),
-    ).toBe(true);
-    expect(
-      isMacosPathOnReadOnlyNonRootMountFromTable(
-        "/Volumes/RW/other/app",
-        nested,
-      ),
-    ).toBe(false);
+
+  it.each([
+    {
+      case: "path under read-only / is ignored (Users)",
+      table: baseTable,
+      path: "/Users/me/app",
+      expected: false,
+    },
+    {
+      case: "path under read-only / is ignored (Applications)",
+      table: baseTable,
+      path: "/Applications/Foo.app",
+      expected: false,
+    },
+    {
+      case: "read-only non-root volume",
+      table: baseTable,
+      path: "/Volumes/ReadOnlyVol/PostHog Code.app/Contents/MacOS/PostHog Code",
+      expected: true,
+    },
+    {
+      case: "writable non-root volume",
+      table: baseTable,
+      path: "/Volumes/Writable/out/PostHog Code.app/Contents/MacOS/PostHog Code",
+      expected: false,
+    },
+    {
+      case: "nested read-only mount wins over writable parent",
+      table: nestedTable,
+      path: "/Volumes/RW/nested/app",
+      expected: true,
+    },
+    {
+      case: "writable parent wins when no deeper match",
+      table: nestedTable,
+      path: "/Volumes/RW/other/app",
+      expected: false,
+    },
+  ])("$case → $expected", ({ table, path, expected }) => {
+    expect(isMacosPathOnReadOnlyNonRootMountFromTable(path, table)).toBe(
+      expected,
+    );
   });
 });
 
@@ -127,45 +144,59 @@ describe("isMacosPackagedUnsafeBundleLocation", () => {
 /dev/disk7s1 on /Volumes/ReadOnlyVol (apfs, local, read-only, journaled)
 `;
 
-  it("is true when translocated (mount table never consulted)", () => {
-    const readMountTable = vi.fn(() => writableMountTable);
-    expect(
-      isMacosPackagedUnsafeBundleLocation(
+  it.each<{
+    case: string;
+    appPath: string;
+    exePath: string;
+    readMountTable: ReadDarwinMountTable;
+    expected: boolean;
+  }>([
+    {
+      case: "translocated bundle",
+      appPath:
         "/private/var/.../AppTranslocation/UUID/d/PostHog Code.app/Contents/Resources/app.asar",
-        "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
-        readMountTable,
-      ),
-    ).toBe(true);
-    expect(readMountTable).not.toHaveBeenCalled();
-  });
-
-  it("is false for ordinary non-translocated paths on writable mounts", () => {
-    expect(
-      isMacosPackagedUnsafeBundleLocation(
+      exePath: "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
+      readMountTable: () => writableMountTable,
+      expected: true,
+    },
+    {
+      case: "ordinary non-translocated path on a writable mount",
+      appPath:
         "/Volumes/build/out/PostHog Code.app/Contents/Resources/app.asar",
+      exePath:
         "/Volumes/build/out/PostHog Code.app/Contents/MacOS/PostHog Code",
-        () => writableMountTable,
-      ),
-    ).toBe(false);
-  });
-
-  it("is true when the bundle lives on a read-only non-root volume", () => {
-    expect(
-      isMacosPackagedUnsafeBundleLocation(
+      readMountTable: () => writableMountTable,
+      expected: false,
+    },
+    {
+      case: "bundle on a read-only non-root volume",
+      appPath:
         "/Volumes/ReadOnlyVol/PostHog Code.app/Contents/Resources/app.asar",
+      exePath:
         "/Volumes/ReadOnlyVol/PostHog Code.app/Contents/MacOS/PostHog Code",
-        () => readOnlyMountTable,
-      ),
-    ).toBe(true);
+      readMountTable: () => readOnlyMountTable,
+      expected: true,
+    },
+    {
+      case: "mount table cannot be read (degrade to non-blocking)",
+      appPath: "/Applications/PostHog Code.app/Contents/Resources/app.asar",
+      exePath: "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
+      readMountTable: () => null,
+      expected: false,
+    },
+  ])("$case → $expected", ({ appPath, exePath, readMountTable, expected }) => {
+    expect(
+      isMacosPackagedUnsafeBundleLocation(appPath, exePath, readMountTable),
+    ).toBe(expected);
   });
 
-  it("is false when the mount table cannot be read (degrade to non-blocking)", () => {
-    expect(
-      isMacosPackagedUnsafeBundleLocation(
-        "/Applications/PostHog Code.app/Contents/Resources/app.asar",
-        "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
-        () => null,
-      ),
-    ).toBe(false);
+  it("short-circuits on translocation without reading the mount table", () => {
+    const readMountTable = vi.fn(() => writableMountTable);
+    isMacosPackagedUnsafeBundleLocation(
+      "/private/var/.../AppTranslocation/UUID/d/PostHog Code.app/Contents/Resources/app.asar",
+      "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
+      readMountTable,
+    );
+    expect(readMountTable).not.toHaveBeenCalled();
   });
 });

@@ -22,7 +22,11 @@ export function parseDarwinMountTable(output: string): DarwinMountEntry[] {
     const onMarker = line.indexOf(" on ");
     if (onMarker === -1) continue;
     const afterOn = line.slice(onMarker + 4);
-    const openParen = afterOn.indexOf(" (");
+    // `lastIndexOf` anchors to the trailing options block, so mount points
+    // whose display names contain " (" (e.g. "/Volumes/My Backup (2)") still
+    // parse correctly. The `line.endsWith(")")` check guarantees those parens
+    // really are the options.
+    const openParen = afterOn.lastIndexOf(" (");
     if (openParen === -1 || !line.endsWith(")")) continue;
     const mountPoint = afterOn.slice(0, openParen);
     const options = afterOn.slice(openParen + 2, -1);

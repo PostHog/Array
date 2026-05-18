@@ -188,18 +188,18 @@ app.whenReady().then(async () => {
   ) {
     const appPath = app.getAppPath();
     const exePath = process.execPath;
+    const bundleRoot = exePath.replace(/\/Contents\/MacOS\/[^/]+$/, "");
     log.warn(
       "Refusing to start: packaged app is on App Translocation or a read-only non-root volume",
       { appPath, exePath },
     );
     dialog.showMessageBoxSync({
       type: "warning",
-      title: "Read-only install location",
-      message:
-        "PostHog Code is running from a location with read-only access (for example App Translocation or a read-only disk image). The exact folder can differ depending on how you opened the app.",
+      title: "Move PostHog Code to Applications",
+      message: `PostHog Code is running from a location with read-only access:\n\n${bundleRoot}`,
       detail:
-        "This prevents updates and tasks from running correctly. Move PostHog Code to the Applications folder (or another folder on a writable disk), quit the app completely, then open it again from the new location.",
-      buttons: ["OK"],
+        "After quitting, move PostHog Code to your Applications folder, then open it from there.",
+      buttons: ["Quit"],
       defaultId: 0,
     });
     app.quit();
