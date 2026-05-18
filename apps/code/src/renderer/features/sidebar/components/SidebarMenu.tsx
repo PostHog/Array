@@ -145,6 +145,9 @@ function SidebarMenuComponent() {
   const clearSelection = useTaskSelectionStore((s) => s.clearSelection);
   const pruneSelection = useTaskSelectionStore((s) => s.pruneSelection);
 
+  const organizeMode = useSidebarStore((s) => s.organizeMode);
+  const collapsedSections = useSidebarStore((s) => s.collapsedSections);
+
   const allSidebarTasks = useMemo(
     () => [...sidebarData.pinnedTasks, ...sidebarData.flatTasks],
     [sidebarData.pinnedTasks, sidebarData.flatTasks],
@@ -154,6 +157,29 @@ function SidebarMenuComponent() {
     () => allSidebarTasks.map((t) => t.id),
     [allSidebarTasks],
   );
+
+  // Ordered list of currently visible task IDs in display order. Used as the
+  // index for shift-click range selection so it matches what the user sees —
+  // in by-project mode the chronological flat order would span across project
+  // groups and pull in unrelated tasks.
+  const orderedVisibleTaskIds = useMemo(() => {
+    const ids: string[] = sidebarData.pinnedTasks.map((t) => t.id);
+    if (organizeMode === "by-project") {
+      for (const group of sidebarData.groupedTasks) {
+        if (collapsedSections.has(group.id)) continue;
+        for (const t of group.tasks) ids.push(t.id);
+      }
+    } else {
+      for (const t of sidebarData.flatTasks) ids.push(t.id);
+    }
+    return ids;
+  }, [
+    sidebarData.pinnedTasks,
+    sidebarData.flatTasks,
+    sidebarData.groupedTasks,
+    organizeMode,
+    collapsedSections,
+  ]);
 
   useEffect(() => {
     pruneSelection(allSidebarTaskIds);
@@ -172,7 +198,7 @@ function SidebarMenuComponent() {
   const handleTaskClick = (taskId: string, e: React.MouseEvent) => {
     if (e.shiftKey) {
       e.preventDefault();
-      selectRange(taskId, allSidebarTaskIds, activeTaskId);
+      selectRange(taskId, orderedVisibleTaskIds, activeTaskId);
       return;
     }
     if (e.metaKey || e.ctrlKey) {
