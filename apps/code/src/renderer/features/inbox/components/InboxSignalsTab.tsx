@@ -1,3 +1,5 @@
+import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient";
+import { useCurrentUser } from "@features/auth/hooks/authQueries";
 import {
   SelectReportPane,
   SkeletonBackdrop,
@@ -66,6 +68,37 @@ export function InboxSignalsTab() {
   const suggestedReviewerFilter = useInboxSignalsFilterStore(
     (s) => s.suggestedReviewerFilter,
   );
+  const hasInitializedSuggestedReviewerFilter = useInboxSignalsFilterStore(
+    (s) => s.hasInitializedSuggestedReviewerFilter,
+  );
+  const setSuggestedReviewerFilter = useInboxSignalsFilterStore(
+    (s) => s.setSuggestedReviewerFilter,
+  );
+  const markSuggestedReviewerFilterInitialized = useInboxSignalsFilterStore(
+    (s) => s.markSuggestedReviewerFilterInitialized,
+  );
+
+  // ── Current user (seeds reviewer filter on first inbox visit) ───────────
+  const authClient = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({
+    client: authClient,
+    enabled: !!authClient,
+  });
+
+  useEffect(() => {
+    if (hasInitializedSuggestedReviewerFilter) return;
+    if (!currentUser?.uuid) return;
+    if (suggestedReviewerFilter.length === 0) {
+      setSuggestedReviewerFilter([currentUser.uuid]);
+    }
+    markSuggestedReviewerFilterInitialized();
+  }, [
+    hasInitializedSuggestedReviewerFilter,
+    currentUser?.uuid,
+    suggestedReviewerFilter.length,
+    setSuggestedReviewerFilter,
+    markSuggestedReviewerFilterInitialized,
+  ]);
 
   // ── GitHub integration ───────────────────────────────────────────────
   const { hasGithubIntegration } = useRepositoryIntegration();

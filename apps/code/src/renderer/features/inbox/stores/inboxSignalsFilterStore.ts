@@ -39,6 +39,8 @@ interface InboxSignalsFilterState {
   sourceProductFilter: SourceProduct[];
   /** Empty array means "all suggested reviewers" (no filter). Stored as PostHog user UUID strings. */
   suggestedReviewerFilter: string[];
+  /** Tracks whether we've seeded the reviewer filter with the current user once. Persisted so the seed only runs on first inbox visit. */
+  hasInitializedSuggestedReviewerFilter: boolean;
 }
 
 interface InboxSignalsFilterActions {
@@ -49,6 +51,7 @@ interface InboxSignalsFilterActions {
   toggleSourceProduct: (source: SourceProduct) => void;
   toggleSuggestedReviewer: (reviewerUuid: string) => void;
   setSuggestedReviewerFilter: (reviewerUuids: string[]) => void;
+  markSuggestedReviewerFilterInitialized: () => void;
   /** Reset all filters when a deep link arrives so the linked report isn't hidden. */
   resetFilters: () => void;
 }
@@ -65,6 +68,7 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
       statusFilter: DEFAULT_STATUS_FILTER,
       sourceProductFilter: [],
       suggestedReviewerFilter: [],
+      hasInitializedSuggestedReviewerFilter: false,
       setSort: (sortField, sortDirection) => set({ sortField, sortDirection }),
       setSearchQuery: (searchQuery) => set({ searchQuery }),
       setStatusFilter: (statusFilter) => set({ statusFilter }),
@@ -96,6 +100,8 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
         set({
           suggestedReviewerFilter: Array.from(new Set(reviewerUuids)),
         }),
+      markSuggestedReviewerFilterInitialized: () =>
+        set({ hasInitializedSuggestedReviewerFilter: true }),
       resetFilters: () =>
         set({
           searchQuery: "",
@@ -112,6 +118,8 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
         statusFilter: state.statusFilter,
         sourceProductFilter: state.sourceProductFilter,
         suggestedReviewerFilter: state.suggestedReviewerFilter,
+        hasInitializedSuggestedReviewerFilter:
+          state.hasInitializedSuggestedReviewerFilter,
       }),
     },
   ),
