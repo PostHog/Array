@@ -228,18 +228,11 @@ export function GlobalEventHandlers({
   useEffect(() => {
     const handleFocus = () => {
       loadFolders();
-    };
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, [loadFolders]);
-
-  useEffect(() => {
-    const handleFocus = () => {
       getSessionService().retryUnhealthyCloudSessions();
     };
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
-  }, []);
+  }, [loadFolders]);
 
   // Check if current task's folder became invalid (e.g., moved while app was open)
   useEffect(() => {

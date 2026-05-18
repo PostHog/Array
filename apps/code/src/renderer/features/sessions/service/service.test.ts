@@ -2182,7 +2182,7 @@ describe("SessionService", () => {
   });
 
   describe("retryUnhealthyCloudSessions", () => {
-    it("retries every cloud session in `error` state and skips the rest", async () => {
+    it("retries every errored cloud session", async () => {
       const service = getSessionService();
 
       const erroredCloudA: AgentSession = {
@@ -2201,25 +2201,10 @@ describe("SessionService", () => {
         }),
         isCloud: true,
       };
-      const connectedCloud: AgentSession = {
-        ...createMockSession({
-          taskId: "task-c",
-          taskRunId: "run-c",
-          status: "connected",
-        }),
-        isCloud: true,
-      };
-      const erroredLocal: AgentSession = createMockSession({
-        taskId: "task-d",
-        taskRunId: "run-d",
-        status: "error",
-      });
 
       mockSessionStoreSetters.getSessions.mockReturnValue({
         "run-a": erroredCloudA,
         "run-b": erroredCloudB,
-        "run-c": connectedCloud,
-        "run-d": erroredLocal,
       });
       mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
         (taskId: string) => {
@@ -2244,13 +2229,41 @@ describe("SessionService", () => {
       });
     });
 
-    it("is a no-op when no sessions are errored", () => {
+    it.each([
+      [
+        "non-error cloud session (status=connected)",
+        {
+          ...createMockSession({
+            taskId: "task-skip",
+            taskRunId: "run-skip",
+            status: "connected",
+          }),
+          isCloud: true,
+        } as AgentSession,
+      ],
+      [
+        "non-error cloud session (status=disconnected)",
+        {
+          ...createMockSession({
+            taskId: "task-skip",
+            taskRunId: "run-skip",
+            status: "disconnected",
+          }),
+          isCloud: true,
+        } as AgentSession,
+      ],
+      [
+        "errored local session (isCloud=false)",
+        createMockSession({
+          taskId: "task-skip",
+          taskRunId: "run-skip",
+          status: "error",
+        }),
+      ],
+    ])("skips %s", (_label, session) => {
       const service = getSessionService();
       mockSessionStoreSetters.getSessions.mockReturnValue({
-        "run-c": {
-          ...createMockSession({ status: "connected" }),
-          isCloud: true,
-        },
+        "run-skip": session,
       });
 
       service.retryUnhealthyCloudSessions();
