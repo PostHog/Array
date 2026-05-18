@@ -73,7 +73,7 @@ const mockSessionStoreSetters = vi.hoisted(() => ({
   enqueueMessage: vi.fn(),
   removeQueuedMessage: vi.fn(),
   clearMessageQueue: vi.fn(),
-  dequeueMessagesAsText: vi.fn(() => null),
+  dequeueMessagesAsText: vi.fn((): string | null => null),
   dequeueMessages: vi.fn(
     () =>
       [] as Array<{
@@ -3024,6 +3024,95 @@ describe("SessionService", () => {
           errorMessage: expect.stringContaining("Reconnecting"),
         }),
       );
+    });
+  });
+
+  describe("local turn_complete + JSON-RPC response ordering", () => {
+    it("drains queued messages when turn_complete arrives before the JSON-RPC response (local Codex regression)", async () => {
+      const service = getSessionService();
+
+      let session: AgentSession | undefined;
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        () => session,
+      );
+      mockSessionStoreSetters.getSessions.mockImplementation(() =>
+        session ? { "run-123": session } : {},
+      );
+      mockSessionStoreSetters.updateSession.mockImplementation(
+        (_taskRunId, updates) => {
+          if (session) session = { ...session, ...updates };
+        },
+      );
+      mockSessionStoreSetters.setSession.mockImplementation((next) => {
+        session = next as AgentSession;
+      });
+      mockSessionStoreSetters.dequeueMessagesAsText.mockReturnValue(
+        "follow up",
+      );
+
+      mockBuildAuthenticatedClient.mockReturnValue({
+        ...mockAuthenticatedClient,
+        createTaskRun: vi.fn().mockResolvedValue({ id: "run-123" }),
+        appendTaskRunLog: vi.fn(),
+      });
+      mockTrpcAgent.start.mutate.mockResolvedValue({
+        channel: "agent-event:run-123",
+        configOptions: [],
+      });
+      mockTrpcAgent.prompt.mutate.mockResolvedValue({ stopReason: "end_turn" });
+
+      await service.connectToTask({
+        task: createMockTask(),
+        repoPath: "/repo",
+      });
+
+      const onData = mockTrpcAgent.onSessionEvent.subscribe.mock.calls.at(
+        -1,
+      )?.[1]?.onData as ((payload: unknown) => void) | undefined;
+      expect(onData).toBeDefined();
+
+      const queuedMessage = {
+        id: "q-1",
+        content: "follow up",
+        queuedAt: 1700000000,
+      };
+      session = createMockSession({
+        taskRunId: "run-123",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: false,
+        currentPromptId: 42,
+        isPromptPending: true,
+        messageQueue: [queuedMessage],
+      });
+
+      onData?.({
+        type: "acp_message",
+        ts: 1700000001,
+        message: {
+          jsonrpc: "2.0",
+          method: "_posthog/turn_complete",
+          params: { sessionId: "acp-session", stopReason: "end_turn" },
+        },
+      });
+
+      expect(session?.currentPromptId).toBe(42);
+
+      onData?.({
+        type: "acp_message",
+        ts: 1700000002,
+        message: {
+          jsonrpc: "2.0",
+          id: 42,
+          result: { stopReason: "end_turn" },
+        },
+      });
+
+      await vi.waitFor(() => {
+        expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalledWith(
+          expect.objectContaining({ sessionId: "run-123" }),
+        );
+      });
     });
   });
 

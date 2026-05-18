@@ -180,7 +180,7 @@ function buildCloudDefaultConfigOptions(
   ];
 }
 
-function isCloudTurnCompleteEvent(event: AcpMessage): boolean {
+function isTurnCompleteEvent(event: AcpMessage): boolean {
   const msg = event.message;
   return (
     "method" in msg &&
@@ -1111,12 +1111,18 @@ export class SessionService {
           currentPromptId: null,
         });
       }
-      if (isCloudTurnCompleteEvent(acpMsg)) {
-        sessionStoreSetters.updateSession(taskRunId, {
-          isPromptPending: false,
-          promptStartedAt: null,
-          currentPromptId: null,
-        });
+      if (isTurnCompleteEvent(acpMsg)) {
+        // Local sessions use the JSON-RPC response as the canonical turn-done
+        // signal; clearing currentPromptId here would race the id-match guard
+        // above. Cloud sessions never see that response.
+        const session = this.getSessionByRunId(taskRunId);
+        if (session?.isCloud) {
+          sessionStoreSetters.updateSession(taskRunId, {
+            isPromptPending: false,
+            promptStartedAt: null,
+            currentPromptId: null,
+          });
+        }
       }
       // Lifecycle handshake from the agent — flip status to "connected"
       // so the UI can release the queue-while-not-ready guard. This is
