@@ -1,6 +1,7 @@
 import { useReviewNavigationStore } from "@features/code-review/stores/reviewNavigationStore";
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { usePanelLayoutStore } from "@features/panels/store/panelLayoutStore";
+import { getSessionService } from "@features/sessions/service/service";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import { useSidebarData } from "@features/sidebar/hooks/useSidebarData";
 import { useVisualTaskOrder } from "@features/sidebar/hooks/useVisualTaskOrder";
@@ -231,6 +232,14 @@ export function GlobalEventHandlers({
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
   }, [loadFolders]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      getSessionService().retryUnhealthyCloudSessions();
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
 
   // Check if current task's folder became invalid (e.g., moved while app was open)
   useEffect(() => {

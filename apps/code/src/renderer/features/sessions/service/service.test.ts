@@ -2181,6 +2181,107 @@ describe("SessionService", () => {
     });
   });
 
+  describe("retryUnhealthyCloudSessions", () => {
+    it("retries every cloud session in `error` state and skips the rest", async () => {
+      const service = getSessionService();
+
+      const erroredCloudA: AgentSession = {
+        ...createMockSession({
+          taskId: "task-a",
+          taskRunId: "run-a",
+          status: "error",
+        }),
+        isCloud: true,
+      };
+      const erroredCloudB: AgentSession = {
+        ...createMockSession({
+          taskId: "task-b",
+          taskRunId: "run-b",
+          status: "error",
+        }),
+        isCloud: true,
+      };
+      const connectedCloud: AgentSession = {
+        ...createMockSession({
+          taskId: "task-c",
+          taskRunId: "run-c",
+          status: "connected",
+        }),
+        isCloud: true,
+      };
+      const erroredLocal: AgentSession = createMockSession({
+        taskId: "task-d",
+        taskRunId: "run-d",
+        status: "error",
+      });
+
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-a": erroredCloudA,
+        "run-b": erroredCloudB,
+        "run-c": connectedCloud,
+        "run-d": erroredLocal,
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        (taskId: string) => {
+          if (taskId === "task-a") return erroredCloudA;
+          if (taskId === "task-b") return erroredCloudB;
+          return undefined;
+        },
+      );
+
+      service.retryUnhealthyCloudSessions();
+
+      await vi.waitFor(() => {
+        expect(mockTrpcCloudTask.retry.mutate).toHaveBeenCalledTimes(2);
+      });
+      expect(mockTrpcCloudTask.retry.mutate).toHaveBeenCalledWith({
+        taskId: "task-a",
+        runId: "run-a",
+      });
+      expect(mockTrpcCloudTask.retry.mutate).toHaveBeenCalledWith({
+        taskId: "task-b",
+        runId: "run-b",
+      });
+    });
+
+    it("is a no-op when no sessions are errored", () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-c": {
+          ...createMockSession({ status: "connected" }),
+          isCloud: true,
+        },
+      });
+
+      service.retryUnhealthyCloudSessions();
+
+      expect(mockTrpcCloudTask.retry.mutate).not.toHaveBeenCalled();
+    });
+
+    it("swallows failures so one bad retry doesn't block the rest", async () => {
+      const service = getSessionService();
+      const errored: AgentSession = {
+        ...createMockSession({
+          taskId: "task-a",
+          taskRunId: "run-a",
+          status: "error",
+        }),
+        isCloud: true,
+      };
+
+      mockSessionStoreSetters.getSessions.mockReturnValue({ "run-a": errored });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(errored);
+      mockTrpcCloudTask.retry.mutate.mockRejectedValueOnce(
+        new Error("network down"),
+      );
+
+      expect(() => service.retryUnhealthyCloudSessions()).not.toThrow();
+      await vi.waitFor(() => {
+        expect(mockTrpcCloudTask.retry.mutate).toHaveBeenCalled();
+      });
+    });
+  });
+
   describe("reset", () => {
     it("clears connecting tasks", () => {
       const service = getSessionService();

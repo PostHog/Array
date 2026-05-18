@@ -3150,6 +3150,30 @@ export class SessionService {
     }
   }
 
+  /**
+   * Retries every cloud session whose stream is in the `error` state, i.e. the
+   * main process exhausted its SSE reconnect budget and surfaced the manual
+   * Retry button. Invoked on window focus so users coming back to the app
+   * after a Django deploy, laptop sleep, or network blip don't have to click
+   * Retry themselves.
+   */
+  public retryUnhealthyCloudSessions(): void {
+    const sessions = sessionStoreSetters.getSessions();
+    for (const session of Object.values(sessions)) {
+      if (!session.isCloud) continue;
+      if (session.status !== "error") continue;
+      log.info("Auto-retrying errored cloud session on focus", {
+        taskId: session.taskId,
+      });
+      this.retryCloudTaskWatch(session.taskId).catch((error) => {
+        log.warn("Auto-retry of errored cloud session failed", {
+          taskId: session.taskId,
+          error,
+        });
+      });
+    }
+  }
+
   public updateSessionTaskTitle(taskId: string, taskTitle: string): void {
     const session = sessionStoreSetters.getSessionByTaskId(taskId);
     if (!session) return;
