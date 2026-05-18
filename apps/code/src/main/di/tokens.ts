@@ -60,6 +60,7 @@ export const MAIN_TOKENS = Object.freeze({
   HandoffService: Symbol.for("Main.HandoffService"),
   GitHubIntegrationService: Symbol.for("Main.GitHubIntegrationService"),
   LinearIntegrationService: Symbol.for("Main.LinearIntegrationService"),
+  SlackIntegrationService: Symbol.for("Main.SlackIntegrationService"),
   DeepLinkService: Symbol.for("Main.DeepLinkService"),
   NotificationService: Symbol.for("Main.NotificationService"),
   McpCallbackService: Symbol.for("Main.McpCallbackService"),

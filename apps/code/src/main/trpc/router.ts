@@ -30,6 +30,7 @@ import { provisioningRouter } from "./routers/provisioning";
 import { secureStoreRouter } from "./routers/secure-store";
 import { shellRouter } from "./routers/shell";
 import { skillsRouter } from "./routers/skills";
+import { slackIntegrationRouter } from "./routers/slack-integration";
 import { sleepRouter } from "./routers/sleep";
 import { suspensionRouter } from "./routers/suspension.js";
 import { uiRouter } from "./routers/ui";
@@ -72,6 +73,7 @@ export const trpcRouter = router({
   secureStore: secureStoreRouter,
   shell: shellRouter,
   skills: skillsRouter,
+  slackIntegration: slackIntegrationRouter,
   ui: uiRouter,
   updates: updatesRouter,
   deepLink: deepLinkRouter,

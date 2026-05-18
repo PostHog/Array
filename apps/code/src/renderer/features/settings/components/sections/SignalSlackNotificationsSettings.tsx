@@ -1,12 +1,9 @@
-import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { useSignalSourceManager } from "@features/inbox/hooks/useSignalSourceManager";
 import { useSlackChannels } from "@features/inbox/hooks/useSlackChannels";
+import { useSlackConnect } from "@features/integrations/hooks/useSlackConnect";
 import { useIntegrationSelectors } from "@features/integrations/stores/integrationStore";
-import { ArrowSquareOutIcon } from "@phosphor-icons/react";
-import { Box, Button, Flex, Select, Text } from "@radix-ui/themes";
+import { Box, Button, Callout, Flex, Select, Text } from "@radix-ui/themes";
 import type { SignalReportPriority } from "@shared/types";
-import { openUrlInBrowser } from "@utils/browser";
-import { getPostHogUrl } from "@utils/urls";
 
 const NOTIFY_OFF_VALUE = "__off__";
 const NOTIFY_ALL_VALUE = "__all__";
@@ -43,11 +40,10 @@ function parseChannelIdFromTargetValue(
 }
 
 export function SignalSlackNotificationsSettings() {
-  const projectId = useAuthStateValue((s) => s.projectId);
-  const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const { slackIntegrations, hasSlackIntegration } = useIntegrationSelectors();
   const { userAutonomyConfig, handleUpdateSlackNotifications } =
     useSignalSourceManager();
+  const slackConnect = useSlackConnect();
 
   const selectedIntegrationId =
     userAutonomyConfig?.slack_notification_integration_id ?? null;
@@ -69,13 +65,6 @@ export function SignalSlackNotificationsSettings() {
     effectiveIntegrationId,
   );
 
-  const slackSettingsUrl = projectId
-    ? getPostHogUrl(
-        `/project/${projectId}/settings/project-integrations#slack`,
-        cloudRegion,
-      )
-    : null;
-
   const notificationsEnabled =
     !!selectedIntegrationId && !!selectedChannelTarget;
 
@@ -92,21 +81,37 @@ export function SignalSlackNotificationsSettings() {
         </Text>
         <Text className="text-(--gray-11) text-[13px]">
           Get pinged in Slack when a new inbox item lands and you're a suggested
-          reviewer. Connect Slack to PostHog first.
+          reviewer. Connect a Slack workspace to your PostHog project to get
+          started — your browser opens, you approve the install, and you'll be
+          brought back here automatically.
         </Text>
         <Box>
           <Button
             size="1"
             variant="soft"
-            disabled={!slackSettingsUrl}
+            disabled={slackConnect.isConnecting}
             onClick={() => {
-              if (slackSettingsUrl) void openUrlInBrowser(slackSettingsUrl);
+              void slackConnect.connect();
             }}
           >
-            <ArrowSquareOutIcon size={12} />
-            Connect Slack in PostHog
+            {slackConnect.isConnecting
+              ? "Waiting for Slack…"
+              : "Connect Slack workspace"}
           </Button>
         </Box>
+        {slackConnect.hasError && slackConnect.error ? (
+          <Callout.Root size="1" color="red" variant="soft">
+            <Callout.Text>{slackConnect.error.message}</Callout.Text>
+          </Callout.Root>
+        ) : null}
+        {slackConnect.isTimedOut ? (
+          <Callout.Root size="1" color="gray" variant="soft">
+            <Callout.Text>
+              We didn't hear back from PostHog. If you completed the connection
+              in your browser it should appear shortly — otherwise try again.
+            </Callout.Text>
+          </Callout.Root>
+        ) : null}
       </Flex>
     );
   }
@@ -190,6 +195,21 @@ export function SignalSlackNotificationsSettings() {
           </Select.Root>
         </Flex>
       ) : null}
+
+      <Box>
+        <Button
+          size="1"
+          variant="ghost"
+          disabled={slackConnect.isConnecting}
+          onClick={() => {
+            void slackConnect.connect();
+          }}
+        >
+          {slackConnect.isConnecting
+            ? "Waiting for Slack…"
+            : "Connect another Slack workspace"}
+        </Button>
+      </Box>
 
       <Flex direction="column" gap="1">
         <Text className="text-(--gray-11) text-[12px]">
