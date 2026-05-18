@@ -33,7 +33,7 @@ function ToastComponent(props: ToastProps) {
         return <CheckIcon size={16} weight="bold" color="var(--green-9)" />;
       case "error":
         return (
-          <WarningCircleIcon size={16} weight="fill" color="var(--red-9)" />
+          <WarningCircleIcon size={16} weight="bold" color="var(--red-9)" />
         );
       case "info":
         return <InfoIcon size={16} weight="bold" color="var(--blue-9)" />;

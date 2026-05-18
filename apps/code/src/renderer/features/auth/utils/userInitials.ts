@@ -19,7 +19,11 @@ export function getUserInitials(user: UserLike | null | undefined): string {
   if (first) {
     return first.toUpperCase();
   }
-  const emailLetters = user?.email?.match(/\p{L}/gu)?.slice(0, 2).join("");
+  if (last) {
+    return last.toUpperCase();
+  }
+  const emailLocal = user?.email?.split("@")[0];
+  const emailLetters = emailLocal?.match(/\p{L}/gu)?.slice(0, 2).join("");
   if (emailLetters) {
     return emailLetters.toUpperCase();
   }
