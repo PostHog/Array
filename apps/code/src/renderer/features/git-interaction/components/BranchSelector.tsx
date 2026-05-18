@@ -270,6 +270,7 @@ export function BranchSelector({
               disabled={!canUseInputBranch}
               aria-label="Use this branch name"
               onMouseDown={(event) => {
+                // Keep focus inside the combobox so the popover doesn't close before click.
                 event.preventDefault();
                 event.stopPropagation();
               }}
