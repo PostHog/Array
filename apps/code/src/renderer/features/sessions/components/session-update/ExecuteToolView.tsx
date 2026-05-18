@@ -7,6 +7,7 @@ import {
   ExpandedContentBox,
   getContentText,
   StatusIndicators,
+  stripCodeFences,
   ToolTitle,
   type ToolViewProps,
   truncateText,
@@ -40,7 +41,10 @@ export function ExecuteToolView({
   const description =
     executeInput?.description ?? (command ? undefined : title);
 
-  const output = (getContentText(content) ?? "").replace(ANSI_REGEX, "");
+  const output = stripCodeFences(getContentText(content) ?? "").replace(
+    ANSI_REGEX,
+    "",
+  );
   const hasOutput = output.trim().length > 0;
   const isExpandable = hasOutput;
 
