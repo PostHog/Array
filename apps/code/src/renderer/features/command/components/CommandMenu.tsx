@@ -3,6 +3,7 @@ import { CommandKeyHints } from "@features/command/components/CommandKeyHints";
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
+import { useTasks } from "@features/tasks/hooks/useTasks";
 import {
   Autocomplete,
   AutocompleteCollection,
@@ -14,12 +15,19 @@ import {
   AutocompleteStatus,
   Dialog,
   DialogContent,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@posthog/quill";
 import {
   DesktopIcon,
   FileTextIcon,
   GearIcon,
   HomeIcon,
+  MagnifyingGlassIcon,
   MoonIcon,
   SunIcon,
   ViewVerticalIcon,
@@ -28,6 +36,10 @@ import {
   ANALYTICS_EVENTS,
   type CommandMenuAction,
 } from "@shared/types/analytics";
+import {
+  type CommandMenuScope,
+  useCommandMenuStore,
+} from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useThemeStore } from "@stores/themeStore";
 import { track } from "@utils/analytics";
@@ -49,8 +61,52 @@ type Command = {
 
 type CommandSection = { label: string; items: Command[] };
 
+const SCOPE_LABELS: Record<CommandMenuScope, string> = {
+  commands: "Commands",
+  tasks: "Tasks",
+};
+
+const SCOPE_PLACEHOLDERS: Record<CommandMenuScope, string> = {
+  commands: "Type a command…",
+  tasks: "Search tasks…",
+};
+
+/** Scope picker rendered inline at the end of the command input. */
+function ScopeSelect({
+  scope,
+  onScopeChange,
+}: {
+  scope: CommandMenuScope;
+  onScopeChange: (scope: CommandMenuScope) => void;
+}) {
+  return (
+    <Select
+      value={scope}
+      onValueChange={(value) => {
+        if (value === "commands" || value === "tasks") onScopeChange(value);
+      }}
+    >
+      <SelectTrigger
+        size="sm"
+        aria-label="Search scope"
+        className="border-0 bg-transparent shadow-none hover:bg-fill-hover"
+      >
+        <SelectValue>
+          {(value) => SCOPE_LABELS[(value as CommandMenuScope) ?? "commands"]}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          <SelectItem value="commands">Commands</SelectItem>
+          <SelectItem value="tasks">Tasks</SelectItem>
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
-  const { navigateToTaskInput } = useNavigationStore();
+  const { navigateToTaskInput, navigateToTask } = useNavigationStore();
   const openSettingsDialog = useSettingsDialogStore((state) => state.open);
   const closeSettingsDialog = useSettingsDialogStore((state) => state.close);
   const { folders } = useFolders();
@@ -63,6 +119,9 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const getReviewMode = useReviewNavigationStore(
     (state) => state.getReviewMode,
   );
+  const scope = useCommandMenuStore((state) => state.scope);
+  const setScope = useCommandMenuStore((state) => state.setScope);
+  const { data: tasks = [] } = useTasks();
   const [query, setQuery] = useState("");
   const [systemPrefersDark, setSystemPrefersDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches,
@@ -92,6 +151,16 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       setQuery("");
     }
   }, [open]);
+
+  // Clear the query whenever the scope flips so stale text doesn't carry over.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on scope change only
+  useEffect(() => {
+    setQuery("");
+  }, [scope]);
+
+  const cycleScope = useCallback(() => {
+    setScope(scope === "commands" ? "tasks" : "commands");
+  }, [scope, setScope]);
 
   const themeOptions = useMemo<Command[]>(() => {
     const options: Command[] = [];
@@ -131,7 +200,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     return options;
   }, [theme, setTheme, systemPrefersDark]);
 
-  const sections = useMemo<CommandSection[]>(() => {
+  const commandSections = useMemo<CommandSection[]>(() => {
     const navigation: Command[] = [
       {
         id: "home",
@@ -214,6 +283,27 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     openReviewPanel,
   ]);
 
+  const taskSections = useMemo<CommandSection[]>(() => {
+    if (tasks.length === 0) return [];
+    return [
+      {
+        label: "Tasks",
+        items: tasks.map((task) => ({
+          id: `task-${task.id}`,
+          label: task.title,
+          icon: <FileTextIcon className="h-3 w-3 text-gray-11" />,
+          action: "open-task" as CommandMenuAction,
+          onRun: () => {
+            closeSettingsDialog();
+            navigateToTask(task);
+          },
+        })),
+      },
+    ];
+  }, [tasks, navigateToTask, closeSettingsDialog]);
+
+  const sections = scope === "tasks" ? taskSections : commandSections;
+
   const allCommands = useMemo(
     () => sections.flatMap((s) => s.items),
     [sections],
@@ -254,15 +344,33 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           }}
         >
           <AutocompleteInput
-            placeholder="Type a command…"
+            placeholder={SCOPE_PLACEHOLDERS[scope]}
             autoFocus
             showClear
-          />
+            onKeyDown={(event) => {
+              // Tab cycles between the Commands / Tasks scopes instead of
+              // moving focus out of the input.
+              if (event.key === "Tab") {
+                event.preventDefault();
+                event.stopPropagation();
+                cycleScope();
+              }
+            }}
+          >
+            <ScopeSelect scope={scope} onScopeChange={setScope} />
+          </AutocompleteInput>
           <AutocompleteStatus
             emptyContent={
-              <span>
-                No commands match <strong>"{query}"</strong>
-              </span>
+              scope === "tasks" ? (
+                <span className="flex items-center justify-center gap-1.5">
+                  <MagnifyingGlassIcon className="h-3 w-3" />
+                  No tasks match <strong>"{query}"</strong>
+                </span>
+              ) : (
+                <span>
+                  No commands match <strong>"{query}"</strong>
+                </span>
+              )
             }
           />
           <AutocompleteList className="max-h-[60vh]">

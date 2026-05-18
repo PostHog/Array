@@ -20,6 +20,7 @@ import { ScrollArea, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
 import type { Schemas } from "@renderer/api/generated";
 import type { Task } from "@shared/types";
+import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
 import { useQueryClient } from "@tanstack/react-query";
@@ -33,6 +34,7 @@ import { useSidebarStore } from "../stores/sidebarStore";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
 import { McpServersItem } from "./items/McpServersItem";
+import { SearchItem } from "./items/SearchItem";
 import { SetupItem } from "./items/SetupItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
@@ -143,6 +145,11 @@ function SidebarMenuComponent() {
 
   const handleSetupClick = () => {
     navigateToSetup();
+  };
+
+  const openCommandMenu = useCommandMenuStore((s) => s.open);
+  const handleSearchClick = () => {
+    openCommandMenu("tasks");
   };
 
   const handleTaskClick = (taskId: string) => {
@@ -324,6 +331,10 @@ function SidebarMenuComponent() {
               />
             </Box>
           )}
+
+          <Box>
+            <SearchItem onClick={handleSearchClick} />
+          </Box>
 
           <Box>
             <InboxItem
