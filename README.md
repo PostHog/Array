@@ -90,6 +90,7 @@ posthog-code/
 | [docs/LOCAL-DEVELOPMENT.md](./docs/LOCAL-DEVELOPMENT.md) | Connecting PostHog Code to a local PostHog instance |
 | [docs/UPDATES.md](./docs/UPDATES.md) | Release versioning and git tagging |
 | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) | Common issues and fixes |
+| [docs/DEEP-LINKS.md](./docs/DEEP-LINKS.md) | `posthog-code://` deep link schemes and parameters |
 
 ## Contributing
 
