@@ -106,7 +106,6 @@ export function TaskInput({
   const [cloudRepoSearchQuery, setCloudRepoSearchQuery] = useState("");
   const [isCloudRepoPickerOpen, setIsCloudRepoPickerOpen] = useState(false);
   const [cloudBranchSearchQuery, setCloudBranchSearchQuery] = useState("");
-  const [isCloudBranchPickerOpen, setIsCloudBranchPickerOpen] = useState(false);
   const [selectedEnvironment, setSelectedEnvironmentRaw] = useState<
     string | null
   >(null);
@@ -244,7 +243,6 @@ export function TaskInput({
     selectedInstallationId,
     selectedCloudRepository,
     cloudBranchSearchQuery,
-    isCloudBranchPickerOpen,
   );
   const cloudBranches = cloudBranchData?.branches;
   const cloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
@@ -324,10 +322,6 @@ export function TaskInput({
     });
   }, [refreshCloudBranches]);
 
-  const handleCloudBranchPickerOpen = useCallback(() => {
-    setIsCloudBranchPickerOpen(true);
-  }, []);
-
   const handleCloudRepoPickerOpenChange = useCallback((open: boolean) => {
     setIsCloudRepoPickerOpen(open);
     if (!open) {
@@ -344,7 +338,6 @@ export function TaskInput({
   }, [loadMoreCloudRepositories]);
 
   const handleCloudBranchPickerClose = useCallback(() => {
-    setIsCloudBranchPickerOpen(false);
     setCloudBranchSearchQuery("");
   }, []);
 
@@ -414,7 +407,6 @@ export function TaskInput({
 
   useEffect(() => {
     setCloudBranchSearchQuery("");
-    setIsCloudBranchPickerOpen(false);
   }, []);
 
   const effectiveRepoPath =
@@ -717,7 +709,6 @@ export function TaskInput({
                 cloudBranchesFetchingMore={cloudBranchesFetchingMore}
                 cloudBranchesHasMore={cloudBranchesHasMore}
                 cloudSearchQuery={cloudBranchSearchQuery}
-                onCloudPickerOpen={handleCloudBranchPickerOpen}
                 onCloudPickerClose={handleCloudBranchPickerClose}
                 onCloudSearchChange={handleCloudBranchSearchChange}
                 onCloudLoadMore={handleLoadMoreCloudBranches}

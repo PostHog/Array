@@ -107,7 +107,7 @@ export function BranchSelector({
     useQuery(
       trpc.git.getAllBranches.queryOptions(
         { directoryPath: repoPath as string },
-        { enabled: !isCloudMode && !!repoPath && open, staleTime: 10_000 },
+        { enabled: !isCloudMode && !!repoPath, staleTime: 60_000 },
       ),
     );
 
