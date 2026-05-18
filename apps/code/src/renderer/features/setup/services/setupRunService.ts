@@ -210,7 +210,7 @@ function buildPosthogSetupSuggestion(
       category: "posthog_setup",
       title: "Set up PostHog",
       description:
-        "PostHog isn't installed in this repo yet. Open this as a task to detect your framework, install the SDK, instrument analytics + error tracking + replay, and open a PR with the changes.",
+        "PostHog isn't installed in this repo yet. Run this task to detect your framework, install the SDK, instrument analytics + error tracking + replay, and open a PR with the changes.",
       impact:
         "Without PostHog wired in, you have no visibility into how users interact with the product, no error or session-replay coverage, and no way to gate releases behind feature flags.",
       recommendation:

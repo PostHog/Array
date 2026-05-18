@@ -38,12 +38,7 @@ export function OnboardingFlow() {
   const completeOnboarding = useOnboardingStore(
     (state) => state.completeOnboarding,
   );
-  const completeSetup = useOnboardingStore((state) => state.completeSetup);
-  const hasCompletedSetup = useOnboardingStore(
-    (state) => state.hasCompletedSetup,
-  );
   const resetOnboarding = useOnboardingStore((state) => state.resetOnboarding);
-  const navigateToSetup = useNavigationStore((state) => state.navigateToSetup);
   const navigateToTaskInput = useNavigationStore(
     (state) => state.navigateToTaskInput,
   );
@@ -57,14 +52,11 @@ export function OnboardingFlow() {
 
   const handleComplete = () => {
     completeOnboarding();
-    if (!hasCompletedSetup) {
-      navigateToSetup();
-    }
+    navigateToTaskInput();
   };
 
   const handleSkip = () => {
     completeOnboarding();
-    completeSetup();
     navigateToTaskInput();
   };
 
