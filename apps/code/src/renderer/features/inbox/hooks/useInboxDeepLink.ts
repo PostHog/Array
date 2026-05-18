@@ -48,7 +48,7 @@ export function useInboxDeepLink() {
   const openReport = useCallback(
     async (reportId: string) => {
       if (!client) {
-        log.warn("Ignoring inbox deep link — not authenticated");
+        log.warn("Ignoring inbox deep link – not authenticated");
         return;
       }
 

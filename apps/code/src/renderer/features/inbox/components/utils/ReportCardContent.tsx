@@ -86,7 +86,7 @@ export function ReportCardContent({
       <div className="min-w-0" style={{ opacity: isReady ? 1 : 0.82 }}>
         <SignalReportSummaryMarkdown
           content={report.summary}
-          fallback="No summary yet — still collecting context."
+          fallback="No summary yet – still collecting context."
           variant="list"
           pending={!isReady}
         />
