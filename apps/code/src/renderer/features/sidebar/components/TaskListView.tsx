@@ -141,7 +141,7 @@ function TaskSearchButton() {
       type="button"
       aria-label="Search tasks"
       size="icon-sm"
-      onClick={() => openCommandMenu("tasks")}
+      onClick={() => openCommandMenu()}
     >
       <MagnifyingGlass size={14} />
     </Button>

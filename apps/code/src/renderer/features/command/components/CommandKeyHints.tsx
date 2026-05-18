@@ -18,12 +18,6 @@ export function CommandKeyHints() {
       </div>
       <div className="flex items-center gap-2">
         <KbdGroup>
-          <Kbd>Tab</Kbd>
-        </KbdGroup>
-        <span className="text-xs">switch scope</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <KbdGroup>
           <Kbd>Esc</Kbd>
         </KbdGroup>
         <span className="text-xs">close</span>

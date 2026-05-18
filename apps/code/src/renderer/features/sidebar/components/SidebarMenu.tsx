@@ -149,7 +149,7 @@ function SidebarMenuComponent() {
 
   const openCommandMenu = useCommandMenuStore((s) => s.open);
   const handleSearchClick = () => {
-    openCommandMenu("tasks");
+    openCommandMenu();
   };
 
   const handleTaskClick = (taskId: string) => {

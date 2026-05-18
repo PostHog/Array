@@ -2,6 +2,8 @@ import { useReviewNavigationStore } from "@features/code-review/stores/reviewNav
 import { CommandKeyHints } from "@features/command/components/CommandKeyHints";
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { TaskIcon } from "@features/sidebar/components/items/TaskIcon";
+import { useTaskPrStatus } from "@features/sidebar/hooks/useTaskPrStatus";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import {
@@ -15,31 +17,21 @@ import {
   AutocompleteStatus,
   Dialog,
   DialogContent,
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
 } from "@posthog/quill";
 import {
   DesktopIcon,
   FileTextIcon,
   GearIcon,
   HomeIcon,
-  MagnifyingGlassIcon,
   MoonIcon,
   SunIcon,
   ViewVerticalIcon,
 } from "@radix-ui/react-icons";
+import type { Task } from "@shared/types";
 import {
   ANALYTICS_EVENTS,
   type CommandMenuAction,
 } from "@shared/types/analytics";
-import {
-  type CommandMenuScope,
-  useCommandMenuStore,
-} from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useThemeStore } from "@stores/themeStore";
 import { track } from "@utils/analytics";
@@ -61,47 +53,23 @@ type Command = {
 
 type CommandSection = { label: string; items: Command[] };
 
-const SCOPE_LABELS: Record<CommandMenuScope, string> = {
-  commands: "Commands",
-  tasks: "Tasks",
-};
-
-const SCOPE_PLACEHOLDERS: Record<CommandMenuScope, string> = {
-  commands: "Type a command…",
-  tasks: "Search tasks…",
-};
-
-/** Scope picker rendered inline at the end of the command input. */
-function ScopeSelect({
-  scope,
-  onScopeChange,
-}: {
-  scope: CommandMenuScope;
-  onScopeChange: (scope: CommandMenuScope) => void;
-}) {
+/**
+ * Task icon for the command palette. Renders the same shared `TaskIcon` as
+ * the sidebar — cloud run status, PR/branch status, etc. — deriving its
+ * inputs from the raw task and a per-task PR-status query.
+ */
+function TaskCommandIcon({ task }: { task: Task }) {
+  const { prState, hasDiff } = useTaskPrStatus({
+    id: task.id,
+    cloudPrUrl: null,
+  });
   return (
-    <Select
-      value={scope}
-      onValueChange={(value) => {
-        if (value === "commands" || value === "tasks") onScopeChange(value);
-      }}
-    >
-      <SelectTrigger
-        size="sm"
-        aria-label="Search scope"
-        className="border-0 bg-transparent shadow-none hover:bg-fill-hover"
-      >
-        <SelectValue>
-          {(value) => SCOPE_LABELS[(value as CommandMenuScope) ?? "commands"]}
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          <SelectItem value="commands">Commands</SelectItem>
-          <SelectItem value="tasks">Tasks</SelectItem>
-        </SelectGroup>
-      </SelectContent>
-    </Select>
+    <TaskIcon
+      workspaceMode={task.latest_run?.environment}
+      taskRunStatus={task.latest_run?.status}
+      prState={prState}
+      hasDiff={hasDiff}
+    />
   );
 }
 
@@ -119,8 +87,6 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const getReviewMode = useReviewNavigationStore(
     (state) => state.getReviewMode,
   );
-  const scope = useCommandMenuStore((state) => state.scope);
-  const setScope = useCommandMenuStore((state) => state.setScope);
   const { data: tasks = [] } = useTasks();
   const [query, setQuery] = useState("");
   const [systemPrefersDark, setSystemPrefersDark] = useState(
@@ -151,16 +117,6 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       setQuery("");
     }
   }, [open]);
-
-  // Clear the query whenever the scope flips so stale text doesn't carry over.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on scope change only
-  useEffect(() => {
-    setQuery("");
-  }, [scope]);
-
-  const cycleScope = useCallback(() => {
-    setScope(scope === "commands" ? "tasks" : "commands");
-  }, [scope, setScope]);
 
   const themeOptions = useMemo<Command[]>(() => {
     const options: Command[] = [];
@@ -291,7 +247,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         items: tasks.map((task) => ({
           id: `task-${task.id}`,
           label: task.title,
-          icon: <FileTextIcon className="h-3 w-3 text-gray-11" />,
+          icon: <TaskCommandIcon task={task} />,
           action: "open-task" as CommandMenuAction,
           onRun: () => {
             closeSettingsDialog();
@@ -302,7 +258,11 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     ];
   }, [tasks, navigateToTask, closeSettingsDialog]);
 
-  const sections = scope === "tasks" ? taskSections : commandSections;
+  // Commands and tasks share a single filterable list.
+  const sections = useMemo(
+    () => [...commandSections, ...taskSections],
+    [commandSections, taskSections],
+  );
 
   const allCommands = useMemo(
     () => sections.flatMap((s) => s.items),
@@ -344,33 +304,15 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           }}
         >
           <AutocompleteInput
-            placeholder={SCOPE_PLACEHOLDERS[scope]}
+            placeholder="Search commands and tasks…"
             autoFocus
             showClear
-            onKeyDown={(event) => {
-              // Tab cycles between the Commands / Tasks scopes instead of
-              // moving focus out of the input.
-              if (event.key === "Tab") {
-                event.preventDefault();
-                event.stopPropagation();
-                cycleScope();
-              }
-            }}
-          >
-            <ScopeSelect scope={scope} onScopeChange={setScope} />
-          </AutocompleteInput>
+          />
           <AutocompleteStatus
             emptyContent={
-              scope === "tasks" ? (
-                <span className="flex items-center justify-center gap-1.5">
-                  <MagnifyingGlassIcon className="h-3 w-3" />
-                  No tasks match <strong>"{query}"</strong>
-                </span>
-              ) : (
-                <span>
-                  No commands match <strong>"{query}"</strong>
-                </span>
-              )
+              <span>
+                No results for <strong>"{query}"</strong>
+              </span>
             }
           />
           <AutocompleteList className="max-h-[60vh]">
@@ -383,9 +325,14 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                       key={cmd.id}
                       value={cmd.id}
                       onClick={() => handleSelect(cmd.id)}
+                      // Long task names wrap instead of truncating, so the
+                      // item must grow: min-height, not a fixed height.
+                      className="h-auto! min-h-7 py-1.5 text-left"
                     >
                       {cmd.icon}
-                      {cmd.label}
+                      <span className="wrap-break-word min-w-0 whitespace-normal">
+                        {cmd.label}
+                      </span>
                     </AutocompleteItem>
                   )}
                 </AutocompleteCollection>
