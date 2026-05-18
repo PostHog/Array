@@ -11,14 +11,19 @@ export async function withTimeout<T>(
   operation: Promise<T>,
   timeoutMs: number,
 ): Promise<{ result: "success"; value: T } | { result: "timeout" }> {
-  const timeoutPromise = new Promise<{ result: "timeout" }>((resolve) =>
-    setTimeout(() => resolve({ result: "timeout" }), timeoutMs),
-  );
+  let timeoutHandle!: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<{ result: "timeout" }>((resolve) => {
+    timeoutHandle = setTimeout(() => resolve({ result: "timeout" }), timeoutMs);
+  });
   const operationPromise = operation.then((value) => ({
     result: "success" as const,
     value,
   }));
-  return Promise.race([operationPromise, timeoutPromise]);
+  try {
+    return await Promise.race([operationPromise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 }
 
 /**
@@ -26,6 +31,10 @@ export async function withTimeout<T>(
  * any late-arriving subscription is torn down via its `unsubscribe()` method
  * so the underlying resource (e.g. FSEvents/inotify fd, callback closure)
  * does not leak.
+ *
+ * The late teardown is fire-and-forget: the caller does not await it. Errors
+ * during teardown (or a late rejection of the subscribe promise) are logged
+ * at warn level with `label` for diagnostic context.
  */
 export async function subscribeWithTimeout<
   T extends { unsubscribe(): Promise<unknown> },
@@ -34,15 +43,17 @@ export async function subscribeWithTimeout<
   timeoutMs: number,
   label: string,
 ): Promise<{ result: "success"; subscription: T } | { result: "timeout" }> {
-  const timeoutPromise = new Promise<{ result: "timeout" }>((resolve) =>
-    setTimeout(() => resolve({ result: "timeout" }), timeoutMs),
-  );
+  let timeoutHandle!: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<{ result: "timeout" }>((resolve) => {
+    timeoutHandle = setTimeout(() => resolve({ result: "timeout" }), timeoutMs);
+  });
   const successPromise = subscribePromise.then((subscription) => ({
     result: "success" as const,
     subscription,
   }));
 
   const race = await Promise.race([successPromise, timeoutPromise]);
+  clearTimeout(timeoutHandle);
 
   if (race.result === "timeout") {
     subscribePromise
