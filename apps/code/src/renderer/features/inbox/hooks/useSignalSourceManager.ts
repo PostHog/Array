@@ -5,6 +5,10 @@ import type {
   Evaluation,
   SignalSourceConfig,
 } from "@renderer/api/posthogClient";
+import type {
+  SignalReportPriority,
+  SignalUserAutonomyConfig,
+} from "@shared/types";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -486,12 +490,50 @@ export function useSignalSourceManager() {
       if ("minPriority" in updates) {
         body.slack_notification_min_priority = updates.minPriority ?? null;
       }
+
+      const queryKey = ["signals", "user-autonomy-config"];
+      const previous =
+        queryClient.getQueryData<SignalUserAutonomyConfig | null>(queryKey);
+
+      // Optimistic update: reflect the user's choice in the UI before the
+      // server responds. Build the next snapshot from the previous one so
+      // unrelated fields (autostart_priority, etc.) are preserved.
+      const optimisticNext: SignalUserAutonomyConfig = {
+        ...(previous ??
+          ({ autostart_priority: null } as SignalUserAutonomyConfig)),
+        ...("integrationId" in updates
+          ? { slack_notification_integration_id: updates.integrationId ?? null }
+          : {}),
+        ...("channel" in updates
+          ? { slack_notification_channel: updates.channel ?? null }
+          : {}),
+        ...("minPriority" in updates
+          ? {
+              slack_notification_min_priority:
+                (updates.minPriority as
+                  | SignalReportPriority
+                  | null
+                  | undefined) ?? null,
+            }
+          : {}),
+      };
+      queryClient.setQueryData<SignalUserAutonomyConfig | null>(
+        queryKey,
+        optimisticNext,
+      );
+
       try {
-        await client.updateSignalUserAutonomyConfig(body);
-        await queryClient.invalidateQueries({
-          queryKey: ["signals", "user-autonomy-config"],
-        });
+        const fresh = await client.updateSignalUserAutonomyConfig(body);
+        queryClient.setQueryData<SignalUserAutonomyConfig | null>(
+          queryKey,
+          fresh,
+        );
       } catch (error: unknown) {
+        // Roll back to whatever was in the cache before this attempt.
+        queryClient.setQueryData<SignalUserAutonomyConfig | null>(
+          queryKey,
+          previous ?? null,
+        );
         const message =
           error instanceof Error
             ? error.message

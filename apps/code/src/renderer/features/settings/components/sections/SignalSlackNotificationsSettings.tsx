@@ -2,11 +2,24 @@ import { useSignalSourceManager } from "@features/inbox/hooks/useSignalSourceMan
 import { useSlackChannels } from "@features/inbox/hooks/useSlackChannels";
 import { useSlackConnect } from "@features/integrations/hooks/useSlackConnect";
 import { useIntegrationSelectors } from "@features/integrations/stores/integrationStore";
+import { CaretDown, Hash, Lock } from "@phosphor-icons/react";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+  Button as QuillButton,
+} from "@posthog/quill";
 import { Box, Button, Callout, Flex, Select, Text } from "@radix-ui/themes";
 import type { SignalReportPriority } from "@shared/types";
+import { useMemo, useRef, useState } from "react";
 
 const NOTIFY_OFF_VALUE = "__off__";
 const NOTIFY_ALL_VALUE = "__all__";
+const CHANNEL_COMBOBOX_LIMIT = 50;
 
 const MIN_PRIORITY_OPTIONS: {
   value: SignalReportPriority | typeof NOTIFY_ALL_VALUE;
@@ -39,6 +52,15 @@ function parseChannelIdFromTargetValue(
   return value.split("|")[0]?.trim() || null;
 }
 
+function parseChannelNameFromTargetValue(
+  value: string | null | undefined,
+): string | null {
+  if (!value) return null;
+  const display = value.split("|")[1]?.trim();
+  if (!display) return null;
+  return display.startsWith("#") ? display.slice(1) : display;
+}
+
 export function SignalSlackNotificationsSettings() {
   const { slackIntegrations, hasSlackIntegration } = useIntegrationSelectors();
   const { userAutonomyConfig, handleUpdateSlackNotifications } =
@@ -50,6 +72,9 @@ export function SignalSlackNotificationsSettings() {
   const selectedChannelTarget =
     userAutonomyConfig?.slack_notification_channel ?? null;
   const selectedChannelId = parseChannelIdFromTargetValue(
+    selectedChannelTarget,
+  );
+  const selectedChannelName = parseChannelNameFromTargetValue(
     selectedChannelTarget,
   );
   const minPriority =
@@ -67,6 +92,23 @@ export function SignalSlackNotificationsSettings() {
 
   const notificationsEnabled =
     !!selectedIntegrationId && !!selectedChannelTarget;
+
+  const channelAnchorRef = useRef<HTMLDivElement>(null);
+  const [channelComboboxOpen, setChannelComboboxOpen] = useState(false);
+  const [channelSearchQuery, setChannelSearchQuery] = useState("");
+
+  const visibleChannels = useMemo(
+    () =>
+      (channelsData?.channels ?? []).filter(
+        (c) => !c.is_private_without_access,
+      ),
+    [channelsData?.channels],
+  );
+
+  const channelComboboxItems = useMemo(
+    () => [NOTIFY_OFF_VALUE, ...visibleChannels.map((c) => c.id)],
+    [visibleChannels],
+  );
 
   if (!hasSlackIntegration) {
     return (
@@ -116,15 +158,16 @@ export function SignalSlackNotificationsSettings() {
     );
   }
 
-  const onChannelChange = (value: string) => {
-    if (value === NOTIFY_OFF_VALUE) {
-      // Turn off by clearing the channel; integration ID is kept so re-enabling
-      // remembers the previous workspace.
+  const onChannelComboboxChange = (rawValue: string | null) => {
+    setChannelComboboxOpen(false);
+    setChannelSearchQuery("");
+    if (rawValue === null) return;
+    if (rawValue === NOTIFY_OFF_VALUE) {
       void handleUpdateSlackNotifications({ channel: null });
       return;
     }
     if (!effectiveIntegrationId) return;
-    const channel = channelsData?.channels?.find((c) => c.id === value);
+    const channel = visibleChannels.find((c) => c.id === rawValue);
     if (!channel) return;
     void handleUpdateSlackNotifications({
       integrationId: effectiveIntegrationId,
@@ -148,6 +191,14 @@ export function SignalSlackNotificationsSettings() {
       minPriority: value === NOTIFY_ALL_VALUE ? null : value,
     });
   };
+
+  const channelTriggerLabel = (() => {
+    if (channelsLoading && !notificationsEnabled) return "Loading channels…";
+    if (!notificationsEnabled) return "Pick a channel";
+    if (selectedChannelName) return `#${selectedChannelName}`;
+    if (selectedChannelId) return selectedChannelId;
+    return "Pick a channel";
+  })();
 
   return (
     <Flex
@@ -215,36 +266,103 @@ export function SignalSlackNotificationsSettings() {
         <Text className="text-(--gray-11) text-[12px]">
           Notification channel
         </Text>
-        <Select.Root
-          value={
-            notificationsEnabled && selectedChannelId
-              ? selectedChannelId
-              : NOTIFY_OFF_VALUE
-          }
-          disabled={!effectiveIntegrationId || channelsLoading}
-          onValueChange={onChannelChange}
-        >
-          <Select.Trigger
-            className="max-w-[300px]"
-            placeholder={
-              channelsLoading ? "Loading channels..." : "Pick a channel"
+        <div ref={channelAnchorRef} className="inline-flex">
+          <Combobox
+            items={channelComboboxItems}
+            limit={CHANNEL_COMBOBOX_LIMIT}
+            value={
+              notificationsEnabled && selectedChannelId
+                ? selectedChannelId
+                : NOTIFY_OFF_VALUE
             }
-          />
-          <Select.Content>
-            <Select.Item value={NOTIFY_OFF_VALUE}>
-              Off — don't notify me
-            </Select.Item>
-            {(channelsData?.channels ?? [])
-              .filter((c) => !c.is_private_without_access)
-              .map((channel) => (
-                <Select.Item key={channel.id} value={channel.id}>
-                  {channel.is_private ? "🔒" : "#"}
-                  {channel.name}
-                  {channel.is_ext_shared ? "  (shared)" : ""}
-                </Select.Item>
-              ))}
-          </Select.Content>
-        </Select.Root>
+            onValueChange={(v) => onChannelComboboxChange(v as string | null)}
+            open={channelComboboxOpen}
+            onOpenChange={(open) => {
+              setChannelComboboxOpen(open);
+              if (!open) setChannelSearchQuery("");
+            }}
+            inputValue={channelSearchQuery}
+            onInputValueChange={(v) => setChannelSearchQuery(v ?? "")}
+            disabled={!effectiveIntegrationId || channelsLoading}
+          >
+            <ComboboxTrigger
+              render={
+                <QuillButton
+                  variant="outline"
+                  size="sm"
+                  disabled={!effectiveIntegrationId || channelsLoading}
+                  aria-label="Notification channel"
+                  className="min-w-[260px] max-w-[300px] justify-between"
+                >
+                  <span className="flex min-w-0 items-center gap-1">
+                    {notificationsEnabled && selectedChannelId ? (
+                      <Hash size={12} weight="regular" className="shrink-0" />
+                    ) : null}
+                    <span className="min-w-0 truncate">
+                      {channelTriggerLabel}
+                    </span>
+                  </span>
+                  <CaretDown
+                    size={10}
+                    weight="bold"
+                    className="shrink-0 text-muted-foreground"
+                  />
+                </QuillButton>
+              }
+            />
+            <ComboboxContent
+              anchor={channelAnchorRef}
+              side="bottom"
+              sideOffset={6}
+              className="min-w-[300px]"
+            >
+              <ComboboxInput
+                placeholder="Search channels…"
+                showTrigger={false}
+              />
+              <ComboboxEmpty>
+                {channelsLoading
+                  ? "Loading channels…"
+                  : "No channels match — make sure PostHog is in the channel."}
+              </ComboboxEmpty>
+              <ComboboxList className="max-h-[min(18rem,calc(var(--available-height,18rem)-5rem))]">
+                {(itemValue: string) => {
+                  if (itemValue === NOTIFY_OFF_VALUE) {
+                    return (
+                      <ComboboxItem
+                        key={NOTIFY_OFF_VALUE}
+                        value={NOTIFY_OFF_VALUE}
+                        title="Off — don't notify me"
+                      >
+                        Off — don't notify me
+                      </ComboboxItem>
+                    );
+                  }
+                  const channel = visibleChannels.find(
+                    (c) => c.id === itemValue,
+                  );
+                  if (!channel) return null;
+                  const Icon = channel.is_private ? Lock : Hash;
+                  return (
+                    <ComboboxItem
+                      key={channel.id}
+                      value={channel.id}
+                      title={channel.name}
+                    >
+                      <Icon size={12} weight="regular" className="shrink-0" />
+                      <span className="min-w-0 truncate">{channel.name}</span>
+                      {channel.is_ext_shared ? (
+                        <span className="ms-1 shrink-0 text-muted-foreground text-xs">
+                          (shared)
+                        </span>
+                      ) : null}
+                    </ComboboxItem>
+                  );
+                }}
+              </ComboboxList>
+            </ComboboxContent>
+          </Combobox>
+        </div>
         <Text className="text-(--gray-10) text-[12px]">
           PostHog needs to be a member of the channel to post. Invite it with{" "}
           <code>/invite @PostHog</code> in Slack if delivery fails.
