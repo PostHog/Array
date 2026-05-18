@@ -91,10 +91,7 @@ function SlackIntegrationRow({ integration }: SlackIntegrationRowProps) {
     (typeof rawDisplayName === "string" && rawDisplayName.trim()) ||
     "Slack workspace";
   const createdAt =
-    typeof integration.created_at === "string" ||
-    typeof integration.created_at === "number"
-      ? integration.created_at
-      : null;
+    typeof integration.created_at === "string" ? integration.created_at : null;
 
   return (
     <Flex align="start" gap="3" py="3" className="border-(--gray-5) border-b">
