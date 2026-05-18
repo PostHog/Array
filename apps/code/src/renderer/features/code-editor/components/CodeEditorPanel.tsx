@@ -1,4 +1,5 @@
 import { PanelMessage } from "@components/ui/PanelMessage";
+import { SafeImagePreview } from "@components/ui/SafeImagePreview";
 import { Tooltip } from "@components/ui/Tooltip";
 import { CodeMirrorEditor } from "@features/code-editor/components/CodeMirrorEditor";
 import { EnrichmentPopover } from "@features/code-editor/components/EnrichmentPopover";
@@ -16,6 +17,7 @@ import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { getImageMimeType, isImageFile } from "@shared/constants/image";
 import type { Task } from "@shared/types";
+import { parseImageDataUrl } from "@shared/utils/imageDataUrl";
 
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
@@ -27,6 +29,40 @@ interface CodeEditorPanelProps {
   taskId: string;
   task: Task;
   absolutePath: string;
+}
+
+function FilePanelImagePreview({
+  base64,
+  mimeType,
+  filePath,
+  absolutePath,
+}: {
+  base64: string;
+  mimeType: string;
+  filePath: string;
+  absolutePath: string;
+}) {
+  return (
+    <Flex
+      align="center"
+      justify="center"
+      height="100%"
+      p="4"
+      className="overflow-auto"
+    >
+      <SafeImagePreview
+        base64={base64}
+        mimeType={mimeType}
+        alt={filePath}
+        className="max-h-[100%] max-w-[100%] object-contain"
+        fallback={
+          <PanelMessage detail={absolutePath}>
+            Failed to render image
+          </PanelMessage>
+        }
+      />
+    </Flex>
+  );
 }
 
 export function CodeEditorPanel({
@@ -128,6 +164,12 @@ export function CodeEditorPanel({
     content: isImage ? null : fileContent,
   });
 
+  const dataUrlImage = useMemo(
+    () =>
+      isImage || fileContent == null ? null : parseImageDataUrl(fileContent),
+    [isImage, fileContent],
+  );
+
   if (isImage) {
     if (isCloudRun) {
       return (
@@ -144,21 +186,13 @@ export function CodeEditorPanel({
         <PanelMessage detail={absolutePath}>Failed to load image</PanelMessage>
       );
     }
-    const mimeType = getImageMimeType(absolutePath);
     return (
-      <Flex
-        align="center"
-        justify="center"
-        height="100%"
-        p="4"
-        className="overflow-auto"
-      >
-        <img
-          src={`data:${mimeType};base64,${imageQuery.data}`}
-          alt={filePath}
-          className="max-h-[100%] max-w-[100%] object-contain"
-        />
-      </Flex>
+      <FilePanelImagePreview
+        base64={imageQuery.data}
+        mimeType={getImageMimeType(absolutePath)}
+        filePath={filePath}
+        absolutePath={absolutePath}
+      />
     );
   }
 
@@ -190,6 +224,17 @@ export function CodeEditorPanel({
 
   if (fileContent.length === 0) {
     return <PanelMessage>File is empty</PanelMessage>;
+  }
+
+  if (dataUrlImage) {
+    return (
+      <FilePanelImagePreview
+        base64={dataUrlImage.base64}
+        mimeType={dataUrlImage.mimeType}
+        filePath={filePath}
+        absolutePath={absolutePath}
+      />
+    );
   }
 
   if (isMarkdown) {

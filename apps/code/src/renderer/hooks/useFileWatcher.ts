@@ -41,6 +41,12 @@ export function useFileWatcher(repoPath: string | null, taskId?: string) {
             filePath: relativePath,
           }),
         );
+        queryClient.invalidateQueries(
+          trpc.fs.readRepoFileBounded.queryFilter({
+            repoPath,
+            filePath: relativePath,
+          }),
+        );
         invalidateGitWorkingTreeQueries(repoPath);
       },
     }),

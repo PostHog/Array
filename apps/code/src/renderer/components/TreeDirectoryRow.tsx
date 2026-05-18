@@ -71,6 +71,7 @@ interface TreeFileRowProps {
   fileName: string;
   depth: number;
   isActive?: boolean;
+  title?: string;
   onClick?: () => void;
   onDoubleClick?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
@@ -84,6 +85,7 @@ export function TreeFileRow({
   fileName,
   depth,
   isActive = false,
+  title,
   onClick,
   onDoubleClick,
   onContextMenu,
@@ -95,6 +97,7 @@ export function TreeFileRow({
     <Flex
       align="center"
       gap="1"
+      title={title}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}

@@ -2,6 +2,7 @@ import { CloudReviewPage } from "@features/code-review/components/CloudReviewPag
 import { ReviewPage } from "@features/code-review/components/ReviewPage";
 import { useReviewNavigationStore } from "@features/code-review/stores/reviewNavigationStore";
 import { FilePicker } from "@features/command/components/FilePicker";
+import { clearGitReviewQueries } from "@features/git-interaction/utils/gitCacheKeys";
 import { PanelLayout } from "@features/panels";
 import { usePanelLayoutStore } from "@features/panels/store/panelLayoutStore";
 import {
@@ -174,6 +175,11 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const isReviewOpen = reviewMode !== "closed";
   const isExpanded = reviewMode === "expanded";
 
+  useEffect(() => {
+    if (isReviewOpen) return;
+    clearGitReviewQueries();
+  }, [isReviewOpen]);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const [reviewWidth, setReviewWidth] = useState<number | null>(null);
   const isDragging = useRef(false);
@@ -234,28 +240,26 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
           />
         )}
 
-        <Box
-          style={{
-            flex: isExpanded ? 1 : undefined,
-            width: isReviewOpen
-              ? isExpanded
+        {isReviewOpen && (
+          <Box
+            style={{
+              flex: isExpanded ? 1 : undefined,
+              width: isExpanded
                 ? undefined
                 : reviewWidth
                   ? `${reviewWidth}px`
-                  : "50%"
-              : "0px",
-            minWidth: isReviewOpen ? `${MIN_REVIEW_WIDTH}px` : "0px",
-            overflow: isReviewOpen ? undefined : "hidden",
-            visibility: isReviewOpen ? undefined : "hidden",
-          }}
-          className="h-full"
-        >
-          {isCloud ? (
-            <CloudReviewPage task={task} />
-          ) : (
-            <ReviewPage task={task} />
-          )}
-        </Box>
+                  : "50%",
+              minWidth: `${MIN_REVIEW_WIDTH}px`,
+            }}
+            className="h-full"
+          >
+            {isCloud ? (
+              <CloudReviewPage task={task} />
+            ) : (
+              <ReviewPage task={task} />
+            )}
+          </Box>
+        )}
       </Flex>
       <FilePicker
         open={filePickerOpen}

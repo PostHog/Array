@@ -152,7 +152,7 @@ describe("TaskCreationSaga", () => {
       model: "gpt-5.4",
       reasoningLevel: "high",
       sandboxEnvironmentId: undefined,
-      prAuthorshipMode: "bot",
+      prAuthorshipMode: "user",
       runSource: "manual",
       signalReportId: undefined,
       initialPermissionMode: "auto",
@@ -259,7 +259,7 @@ describe("TaskCreationSaga", () => {
       model: "gpt-5.4",
       reasoningLevel: "medium",
       sandboxEnvironmentId: undefined,
-      prAuthorshipMode: "bot",
+      prAuthorshipMode: "user",
       runSource: "manual",
       signalReportId: undefined,
       initialPermissionMode: "auto",
@@ -322,6 +322,55 @@ describe("TaskCreationSaga", () => {
       expect.objectContaining({
         prAuthorshipMode: "user",
         runSource: "manual",
+      }),
+    );
+  });
+
+  it("uses user authorship for signal report cloud task creation", async () => {
+    const createdTask = createTask({ origin_product: "signal_report" });
+    const startedTask = createTask({
+      origin_product: "signal_report",
+      latest_run: createRun(),
+    });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+
+    const saga = new TaskCreationSaga({
+      posthogClient: {
+        createTask: createTaskMock,
+        deleteTask: vi.fn(),
+        getTask: vi.fn(),
+        createTaskRun: createTaskRunMock,
+        startTaskRun: startTaskRunMock,
+        sendRunCommand: vi.fn(),
+        updateTask: vi.fn(),
+      } as never,
+    });
+
+    const result = await saga.run({
+      content: "Ship the report",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+      cloudRunSource: "signal_report",
+      signalReportId: "report-123",
+      githubIntegrationId: 123,
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        github_integration: 123,
+        github_user_integration: undefined,
+        origin_product: "signal_report",
+      }),
+    );
+    expect(createTaskRunMock).toHaveBeenCalledWith(
+      "task-123",
+      expect.objectContaining({
+        prAuthorshipMode: "user",
+        runSource: "signal_report",
       }),
     );
   });

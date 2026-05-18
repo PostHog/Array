@@ -1,9 +1,17 @@
 import { sendPromptToAgent } from "@features/sessions/utils/sendPromptToAgent";
-import { PaperPlaneTilt, X } from "@phosphor-icons/react";
+import { ArrowUp, Trash } from "@phosphor-icons/react";
 import type { AnnotationSide } from "@pierre/diffs";
-import { Button, IconButton } from "@radix-ui/themes";
+import {
+  Checkbox,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupTextarea,
+} from "@posthog/quill";
+import { Text, Tooltip } from "@radix-ui/themes";
 import { isSendMessageSubmitKey } from "@utils/sendMessageKey";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useReviewDraftsStore } from "../stores/reviewDraftsStore";
 import { buildInlineCommentPrompt } from "../utils/reviewPrompts";
 
 interface CommentAnnotationProps {
@@ -13,6 +21,8 @@ interface CommentAnnotationProps {
   endLine: number;
   side: AnnotationSide;
   onDismiss: () => void;
+  initialText?: string;
+  editingDraftId?: string;
 }
 
 export function CommentAnnotation({
@@ -22,28 +32,77 @@ export function CommentAnnotation({
   endLine,
   side,
   onDismiss,
+  initialText,
+  editingDraftId,
 }: CommentAnnotationProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const addDraft = useReviewDraftsStore((s) => s.addDraft);
+  const updateDraft = useReviewDraftsStore((s) => s.updateDraft);
+  const setBatchEnabled = useReviewDraftsStore((s) => s.setBatchEnabled);
+  const initialBatchEnabled = useReviewDraftsStore((s) =>
+    s.isBatchEnabled(taskId),
+  );
 
-  const setTextareaRef = useCallback((el: HTMLTextAreaElement | null) => {
-    (
-      textareaRef as React.MutableRefObject<HTMLTextAreaElement | null>
-    ).current = el;
-    if (el) {
-      requestAnimationFrame(() => el.focus());
-    }
-  }, []);
+  const [batch, setBatch] = useState(
+    editingDraftId ? true : initialBatchEnabled,
+  );
+  const [isEmpty, setIsEmpty] = useState(!initialText?.trim());
+
+  const setTextareaRef = useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      (
+        textareaRef as React.MutableRefObject<HTMLTextAreaElement | null>
+      ).current = el;
+      if (el) {
+        if (initialText !== undefined) {
+          el.value = initialText;
+        }
+        requestAnimationFrame(() => el.focus());
+      }
+    },
+    [initialText],
+  );
+
+  useEffect(() => {
+    if (editingDraftId) return;
+    setBatch(initialBatchEnabled);
+  }, [initialBatchEnabled, editingDraftId]);
 
   const handleSubmit = useCallback(() => {
     const text = textareaRef.current?.value?.trim();
-    if (text) {
+    if (!text) return;
+
+    if (editingDraftId) {
+      updateDraft(taskId, editingDraftId, text);
       onDismiss();
-      sendPromptToAgent(
-        taskId,
-        buildInlineCommentPrompt(filePath, startLine, endLine, side, text),
-      );
+      return;
     }
-  }, [taskId, filePath, startLine, endLine, side, onDismiss]);
+
+    if (batch) {
+      addDraft(taskId, { filePath, startLine, endLine, side, text });
+      setBatchEnabled(taskId, true);
+      onDismiss();
+      return;
+    }
+
+    onDismiss();
+    sendPromptToAgent(
+      taskId,
+      buildInlineCommentPrompt(filePath, startLine, endLine, side, text),
+    );
+  }, [
+    taskId,
+    filePath,
+    startLine,
+    endLine,
+    side,
+    onDismiss,
+    batch,
+    editingDraftId,
+    addDraft,
+    updateDraft,
+    setBatchEnabled,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -59,28 +118,62 @@ export function CommentAnnotation({
     [handleSubmit, onDismiss],
   );
 
+  const submitTooltip = isEmpty
+    ? "Enter a comment"
+    : editingDraftId
+      ? "Save"
+      : batch
+        ? "Add to review"
+        : "Send to agent";
+
   return (
-    <div className="px-3 py-1.5">
-      <div
-        data-comment-annotation=""
-        className="whitespace-normal rounded-md border border-[var(--gray-5)] bg-[var(--gray-2)] px-2.5 py-2 font-sans"
-      >
-        <textarea
+    <div data-comment-annotation="" className="px-3 py-1.5 font-sans">
+      <InputGroup>
+        <InputGroupTextarea
           ref={setTextareaRef}
           placeholder="Describe the changes you'd like..."
           onKeyDown={handleKeyDown}
-          className="min-h-[48px] w-full resize-none rounded border border-[var(--gray-6)] bg-[var(--color-background)] p-1.5 text-[13px] text-[var(--gray-12)] leading-normal outline-none"
+          onChange={(e) => setIsEmpty(!e.currentTarget.value.trim())}
+          className="min-h-[48px] resize-none text-[13px]"
         />
-        <div className="mt-1.5 flex items-center gap-3">
-          <Button size="1" onClick={handleSubmit}>
-            <PaperPlaneTilt size={12} weight="fill" />
-            Send to agent
-          </Button>
-          <IconButton size="1" variant="ghost" color="gray" onClick={onDismiss}>
-            <X size={12} />
-          </IconButton>
-        </div>
-      </div>
+        <InputGroupAddon align="block-end">
+          <Tooltip content="Discard">
+            <InputGroupButton
+              size="icon-sm"
+              variant="default"
+              onClick={onDismiss}
+              aria-label="Discard"
+            >
+              <Trash size={14} />
+            </InputGroupButton>
+          </Tooltip>
+          <div className="ml-auto flex items-center gap-3">
+            {!editingDraftId && (
+              <Text as="label" size="1" color="gray">
+                <span className="flex cursor-pointer items-center gap-2">
+                  <Checkbox
+                    size="sm"
+                    checked={batch}
+                    onCheckedChange={(value) => setBatch(value === true)}
+                  />
+                  Add to review
+                </span>
+              </Text>
+            )}
+            <Tooltip content={submitTooltip}>
+              <InputGroupButton
+                size="icon-sm"
+                variant="primary"
+                onClick={handleSubmit}
+                disabled={isEmpty}
+                aria-label={editingDraftId ? "Save" : "Submit"}
+              >
+                <ArrowUp size={14} weight="bold" />
+              </InputGroupButton>
+            </Tooltip>
+          </div>
+        </InputGroupAddon>
+      </InputGroup>
     </div>
   );
 }

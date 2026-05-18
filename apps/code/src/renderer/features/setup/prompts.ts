@@ -33,5 +33,6 @@ Scan the codebase for issues in two tiers. Tier 1 applies to every repo. Tier 2 
 - Prioritize by impact. Lead with findings that save the most time or prevent the most damage.
 - Do NOT suggest documentation, comment, or style/formatting changes.
 - Maximum 4 tasks. Quality over quantity.
+- Allowed \`category\` values: bug, security, dead_code, duplication, performance, stale_feature_flag, error_tracking, event_tracking, funnel. Do NOT emit any other category.
 
 When you are done analyzing, call create_output with your findings.`;

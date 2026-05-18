@@ -35,7 +35,7 @@ import { CommitSaga } from "@posthog/git/sagas/commit";
 import { DiscardFileChangesSaga } from "@posthog/git/sagas/discard";
 import { PullSaga } from "@posthog/git/sagas/pull";
 import { PushSaga } from "@posthog/git/sagas/push";
-import { parseGitHubUrl, parsePrUrl } from "@posthog/git/utils";
+import { parseGithubUrl } from "@posthog/git/utils";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
@@ -218,15 +218,15 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     const remoteUrl = await getRemoteUrl(directoryPath);
     if (!remoteUrl) return null;
 
-    const repo = parseGitHubUrl(remoteUrl);
-    if (!repo) return null;
+    const parsed = parseGithubUrl(remoteUrl);
+    if (!parsed) return null;
 
     const branch = await getCurrentBranch(directoryPath);
     if (!branch) return null;
 
     return {
-      organization: repo.organization,
-      repository: repo.repository,
+      organization: parsed.owner,
+      repository: parsed.repo,
       remote: remoteUrl,
       branch,
     };
@@ -310,14 +310,34 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     const files = await getChangedFilesDetailed(directoryPath, {
       excludePatterns: [".claude", "CLAUDE.local.md"],
     });
-    return files.map((f) => ({
-      path: f.path,
-      status: f.status,
-      originalPath: f.originalPath,
-      linesAdded: f.linesAdded,
-      linesRemoved: f.linesRemoved,
-      staged: f.staged,
-    }));
+    type HeadChangedFile = Omit<ChangedFile, "patch">;
+    const filteredFiles: Array<HeadChangedFile | null> = await Promise.all(
+      files.map(async (file) => {
+        if (file.status === "untracked") {
+          try {
+            const stats = await fs.promises.stat(
+              path.join(directoryPath, file.path),
+            );
+            if (!stats.isFile()) return null;
+          } catch {
+            return null;
+          }
+        }
+
+        return {
+          path: file.path,
+          status: file.status,
+          originalPath: file.originalPath,
+          linesAdded: file.linesAdded,
+          linesRemoved: file.linesRemoved,
+          staged: file.staged,
+        };
+      }),
+    );
+
+    return filteredFiles.filter(
+      (file): file is HeadChangedFile => file !== null,
+    );
   }
 
   public async getFileAtHead(
@@ -426,7 +446,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
       const remoteUrl = await getRemoteUrl(directoryPath);
       if (!remoteUrl) return null;
 
-      const parsed = parseGitHubUrl(remoteUrl);
+      const parsed = parseGithubUrl(remoteUrl);
       if (!parsed) return null;
 
       const currentBranch = await getCurrentBranch(directoryPath);
@@ -434,12 +454,12 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
 
       let compareUrl: string | null = null;
       if (currentBranch && currentBranch !== defaultBranch) {
-        compareUrl = `https://github.com/${parsed.path}/compare/${defaultBranch}...${currentBranch}?expand=1`;
+        compareUrl = `https://github.com/${parsed.owner}/${parsed.repo}/compare/${defaultBranch}...${currentBranch}?expand=1`;
       }
 
       return {
-        organization: parsed.organization,
-        repository: parsed.repository,
+        organization: parsed.owner,
+        repository: parsed.repo,
         currentBranch: currentBranch ?? null,
         defaultBranch,
         compareUrl,
@@ -819,7 +839,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
 
     try {
       const remoteUrl = await getRemoteUrl(directoryPath);
-      const isGitHubRepo = !!(remoteUrl && parseGitHubUrl(remoteUrl));
+      const isGitHubRepo = !!(remoteUrl && parseGithubUrl(remoteUrl));
       const currentBranch = await getCurrentBranch(directoryPath);
       const defaultBranch = await getDefaultBranch(directoryPath).catch(
         () => null,
@@ -890,7 +910,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
       const remoteUrl = await getRemoteUrl(directoryPath);
       if (!remoteUrl) return null;
 
-      const parsed = parseGitHubUrl(remoteUrl);
+      const parsed = parseGithubUrl(remoteUrl);
       if (!parsed) return null;
 
       const result = await execGh([
@@ -905,7 +925,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
         "--limit",
         "1",
         "--repo",
-        parsed.path,
+        `${parsed.owner}/${parsed.repo}`,
       ]);
 
       if (result.exitCode !== 0) {
@@ -980,8 +1000,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
   }
 
   public async getPrChangedFiles(prUrl: string): Promise<ChangedFile[]> {
-    const pr = parsePrUrl(prUrl);
-    if (!pr) return [];
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return [];
 
     const { owner, repo, number } = pr;
 
@@ -1053,8 +1073,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
   public async getPrDetailsByUrl(
     prUrl: string,
   ): Promise<PrDetailsByUrlOutput | null> {
-    const pr = parsePrUrl(prUrl);
-    if (!pr) return null;
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return null;
 
     try {
       const result = await execGh([
@@ -1089,8 +1109,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     prUrl: string,
     action: PrActionType,
   ): Promise<UpdatePrByUrlOutput> {
-    const pr = parsePrUrl(prUrl);
-    if (!pr) {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") {
       return { success: false, message: "Invalid PR URL" };
     }
 
@@ -1123,8 +1143,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
   }
 
   public async getPrReviewComments(prUrl: string): Promise<PrReviewComment[]> {
-    const pr = parsePrUrl(prUrl);
-    if (!pr) return [];
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return [];
 
     const { owner, repo, number } = pr;
 
@@ -1155,8 +1175,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     commentId: number,
     body: string,
   ): Promise<ReplyToPrCommentOutput> {
-    const pr = parsePrUrl(prUrl);
-    if (!pr) {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") {
       return { success: false, comment: null };
     }
 
@@ -1543,6 +1563,17 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
   ): Promise<GithubRef[]> {
     const repoInfo = await this.getGitRepoInfo(directoryPath);
     if (!repoInfo) return [];
+
+    // Full GitHub URL: look up directly. May target a different repo than the local one.
+    const urlRef = parseGithubUrl(query);
+    if (urlRef && urlRef.kind !== "repo" && kinds.includes(urlRef.kind)) {
+      const repoSlug = `${urlRef.owner}/${urlRef.repo}`;
+      return this.fetchGhRefs(
+        [urlRef.kind, "view", String(urlRef.number), "--repo", repoSlug],
+        repoSlug,
+        urlRef.kind,
+      );
+    }
 
     const repo = await this.resolveCanonicalRepo(
       `${repoInfo.organization}/${repoInfo.repository}`,

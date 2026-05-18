@@ -1,3 +1,18 @@
+export class NotAuthenticatedError extends Error {
+  constructor(message = "Not authenticated") {
+    super(message);
+    this.name = "NotAuthenticatedError";
+  }
+}
+
+export function isNotAuthenticatedError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { name?: unknown }).name === "NotAuthenticatedError"
+  );
+}
+
 const AUTH_ERROR_PATTERNS = [
   "authentication required",
   "failed to authenticate",

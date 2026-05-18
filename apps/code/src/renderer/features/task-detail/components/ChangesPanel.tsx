@@ -54,11 +54,9 @@ interface ChangedFileItemProps {
   file: ChangedFile;
   taskId: string;
   isActive: boolean;
-  /** When provided, enables the hover toolbar (discard, open-with, context menu) */
   repoPath?: string;
   mainRepoPath?: string;
   onStageToggle?: (file: ChangedFile) => void;
-  /** Tree indentation depth (0 = flat list) */
   depth?: number;
 }
 
@@ -140,8 +138,8 @@ function ChangedFileItem({
   const { detectedApps } = useExternalApps();
   const workspace = useWorkspace(taskId);
 
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const isLocal = !!repoPath;
   const isToolbarVisible = isLocal && (isHovered || isDropdownOpen);

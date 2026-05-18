@@ -14,9 +14,12 @@ import { useConnectivity } from "@hooks/useConnectivity";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
+import { trpcClient } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
 import type { ExecutionMode, Task } from "@shared/types";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
+import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback, useState } from "react";
 import type { TaskCreationInput, TaskService } from "../service/service";
@@ -102,6 +105,54 @@ function prepareTaskInput(
         : undefined,
     signalReportId: options.signalReportId,
   };
+}
+
+async function trackTaskCreated(
+  input: TaskCreationInput,
+  selectedDirectory: string,
+): Promise<void> {
+  try {
+    const workspaceMode = input.workspaceMode ?? "local";
+
+    let usesWorktreeLink: boolean | undefined;
+    let usesWorktreeInclude: boolean | undefined;
+    if (workspaceMode === "worktree" && selectedDirectory) {
+      try {
+        const usage = await trpcClient.workspace.getWorktreeFileUsage.query({
+          mainRepoPath: selectedDirectory,
+        });
+        usesWorktreeLink = usage.usesWorktreeLink;
+        usesWorktreeInclude = usage.usesWorktreeInclude;
+      } catch (error) {
+        log.warn("Failed to read worktree file usage for analytics", {
+          error,
+        });
+      }
+    }
+
+    track(ANALYTICS_EVENTS.TASK_CREATED, {
+      auto_run: !!input.executionMode,
+      created_from: "command-menu",
+      repository_provider: input.repository ? "github" : "none",
+      workspace_mode: workspaceMode,
+      has_branch: !!input.branch,
+      has_environment_setup:
+        workspaceMode === "worktree" ? !!input.environmentId : undefined,
+      has_sandbox_environment:
+        workspaceMode === "cloud" ? !!input.sandboxEnvironmentId : undefined,
+      cloud_run_source:
+        workspaceMode === "cloud"
+          ? (input.cloudRunSource ?? "manual")
+          : undefined,
+      cloud_pr_authorship_mode:
+        workspaceMode === "cloud" ? input.cloudPrAuthorshipMode : undefined,
+      uses_worktree_link: usesWorktreeLink,
+      uses_worktree_include: usesWorktreeInclude,
+      adapter: input.adapter,
+    });
+  } catch (error) {
+    log.warn("Failed to track Task created event", { error });
+  }
 }
 
 function getErrorTitle(failedStep: string): string {
@@ -201,6 +252,10 @@ export function useTaskCreation({
         useTourStore.getState().completeTour(createFirstTaskTour.id);
         editor.clear();
       });
+
+      if (result.success) {
+        void trackTaskCreated(input, selectedDirectory);
+      }
 
       if (!result.success) {
         const title = getErrorTitle(result.failedStep);

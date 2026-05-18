@@ -51,6 +51,7 @@ export function Terminal({
     if (!terminalRef.current) return;
 
     terminalManager.attach(sessionId, terminalRef.current);
+    terminalManager.focus(sessionId);
 
     return () => {
       terminalManager.detach(sessionId);
@@ -111,12 +112,13 @@ export function Terminal({
     };
   }, [sessionId, onReady, onExit]);
 
-  const handleClick = useCallback(() => {
+  // mousedown so the xterm textarea is focused before the browser's native focus shift, not after.
+  const handleMouseDown = useCallback(() => {
     terminalManager.focus(sessionId);
   }, [sessionId]);
 
   return (
-    <Box onClick={handleClick} className="relative h-full p-3">
+    <Box onMouseDown={handleMouseDown} className="relative h-full p-3">
       <div ref={terminalRef} className="h-full w-full" />
       <style>
         {`

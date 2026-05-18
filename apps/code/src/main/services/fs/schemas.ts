@@ -11,6 +11,34 @@ export const readRepoFileInput = z.object({
   filePath: z.string(),
 });
 
+export const readRepoFilesInput = z.object({
+  repoPath: z.string(),
+  filePaths: z.array(z.string()),
+});
+
+export const readRepoFileBoundedInput = z.object({
+  repoPath: z.string(),
+  filePath: z.string(),
+  maxLines: z.number().int().positive(),
+});
+
+export const readRepoFilesBoundedInput = z.object({
+  repoPath: z.string(),
+  filePaths: z.array(z.string()),
+  maxLines: z.number().int().positive(),
+});
+
+export const boundedReadResult = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("content"), content: z.string() }),
+  z.object({ kind: z.literal("missing") }),
+  z.object({ kind: z.literal("too-large") }),
+]);
+
+export const readRepoFilesBoundedOutput = z.record(
+  z.string(),
+  boundedReadResult,
+);
+
 export const readAbsoluteFileInput = z.object({
   filePath: z.string(),
 });
@@ -32,9 +60,12 @@ const fileEntry = z.object({
 
 export const listRepoFilesOutput = z.array(fileEntry);
 export const readRepoFileOutput = z.string().nullable();
+export const readRepoFilesOutput = z.record(z.string(), readRepoFileOutput);
 
 export type ListRepoFilesInput = z.infer<typeof listRepoFilesInput>;
 export type ReadRepoFileInput = z.infer<typeof readRepoFileInput>;
+export type ReadRepoFilesInput = z.infer<typeof readRepoFilesInput>;
 export type WriteRepoFileInput = z.infer<typeof writeRepoFileInput>;
 export type FileEntry = z.infer<typeof fileEntry>;
 export type FileEntryKind = z.infer<typeof fileEntryKind>;
+export type BoundedReadResult = z.infer<typeof boundedReadResult>;

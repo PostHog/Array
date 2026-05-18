@@ -11,6 +11,7 @@ export type SettingsCategory =
   | "claude-code"
   | "shortcuts"
   | "github"
+  | "slack"
   | "signals"
   | "updates"
   | "advanced";

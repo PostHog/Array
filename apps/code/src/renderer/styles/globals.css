@@ -43,7 +43,11 @@
  */
 @import "@posthog/quill/tokens.css";
 @import "@posthog/quill/base.css";
+@import "@posthog/quill/primitives.css";
 @import "@posthog/quill/tailwind.css";
+
+/* Edge-fade utilities (`scroll-mask-*`) used by quill scrollable lists. */
+@import "tailwindcss-scroll-mask";
 
 /*
  * Explicit @source directive alongside the import above. Tailwind v4's
@@ -53,7 +57,25 @@
  * actually runs. Pointing the scanner at quill's dist directly here
  * guarantees the primitive/component class strings get compiled.
  */
-@source "../../../../node_modules/@posthog/quill/dist/**/*.js";
+@source "../../../../../node_modules/@posthog/quill/dist/**/*.js";
+
+/*
+ * Quill ships its dialog backdrop at `opacity-20` (light) / `opacity-70`
+ * (dark). The light value is barely visible — bump it so dialogs feel
+ * properly modal across the app, matching Radix Themes.
+ *
+ * The doubled `[data-slot]` attribute selector raises specificity to
+ * (0,2,0) so it beats Tailwind's `dark:opacity-70` (which compiles to
+ * `.opacity-70:where(.dark, .dark *)` at (0,1,0)) without `!important`.
+ */
+[data-slot="dialog-overlay"][data-slot="dialog-overlay"] {
+  background-color: rgba(0, 0, 0, 0.55);
+  opacity: 1;
+}
+.dark [data-slot="dialog-overlay"][data-slot="dialog-overlay"] {
+  background-color: rgba(0, 0, 0, 0.7);
+  opacity: 1;
+}
 
 @config "../../../tailwind.config.js";
 
@@ -455,6 +477,17 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--gray-9);
+}
+
+[data-slot="autocomplete-list"]::-webkit-scrollbar {
+  width: 6px;
+}
+[data-slot="autocomplete-list"]::-webkit-scrollbar-track {
+  background: transparent;
+}
+[data-slot="autocomplete-list"]::-webkit-scrollbar-thumb {
+  background-color: var(--gray-a7);
+  border-radius: 10px;
 }
 
 .drag {

@@ -22,6 +22,7 @@ declare module "node-pty" {
 }
 
 const log = logger.scope("shell");
+const PTY_ENCODING = "utf8";
 
 export interface ShellSession {
   pty: pty.IPty;
@@ -135,7 +136,7 @@ export class ShellService extends TypedEventEmitter<ShellEvents> {
       rows: 24,
       cwd: workingDir,
       env: buildShellEnv(mergedEnv),
-      encoding: null,
+      encoding: PTY_ENCODING,
     });
 
     this.processTracking.register(
@@ -215,7 +216,7 @@ export class ShellService extends TypedEventEmitter<ShellEvents> {
       rows: 24,
       cwd: workingDir,
       env: buildShellEnv(taskEnv),
-      encoding: null,
+      encoding: PTY_ENCODING,
     });
 
     this.processTracking.register(

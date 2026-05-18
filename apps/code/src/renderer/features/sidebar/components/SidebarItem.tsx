@@ -1,4 +1,6 @@
+import { Tooltip } from "@components/ui/Tooltip";
 import { Button, cn } from "@posthog/quill";
+import { useCallback, useRef, useState } from "react";
 import type { SidebarItemAction } from "../types";
 
 const INDENT_SIZE = 8;
@@ -34,6 +36,34 @@ export function SidebarItem({
   endContent,
   disabled,
 }: SidebarItemProps) {
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const [showLabelTooltip, setShowLabelTooltip] = useState(false);
+  const canShowLabelTooltip =
+    typeof label === "string" || typeof label === "number";
+
+  const handleLabelMouseEnter = useCallback(() => {
+    const el = labelRef.current;
+    if (el && el.scrollWidth > el.clientWidth) {
+      setShowLabelTooltip(true);
+    }
+  }, []);
+
+  const handleLabelMouseLeave = useCallback(() => {
+    setShowLabelTooltip(false);
+  }, []);
+
+  const labelSpan = (
+    // biome-ignore lint/a11y/noStaticElementInteractions: hover handlers only drive a visual tooltip for truncated labels
+    <span
+      ref={labelRef}
+      className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+      onMouseEnter={canShowLabelTooltip ? handleLabelMouseEnter : undefined}
+      onMouseLeave={canShowLabelTooltip ? handleLabelMouseLeave : undefined}
+    >
+      {label}
+    </span>
+  );
+
   return (
     <Button
       type="button"
@@ -59,9 +89,13 @@ export function SidebarItem({
       ) : null}
       <span className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <span className="flex h-[18px] items-center gap-1">
-          <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-            {label}
-          </span>
+          {canShowLabelTooltip ? (
+            <Tooltip content={label} open={showLabelTooltip} side="top">
+              {labelSpan}
+            </Tooltip>
+          ) : (
+            labelSpan
+          )}
           {endContent}
         </span>
         {subtitle && (

@@ -5,20 +5,20 @@ import { toast as sonnerToast } from "sonner";
 const TOAST_ID = "connectivity-offline";
 const OFFLINE_DEBOUNCE_MS = 5_000;
 
+export function showOfflineToast() {
+  toast.error("No internet connection", {
+    id: TOAST_ID,
+    duration: Number.POSITIVE_INFINITY,
+    description:
+      "PostHog Code features that need the network are paused until you reconnect.",
+  });
+}
+
 // Debounces flaky transitions: only surfaces a toast when the app has been
 // continuously offline for OFFLINE_DEBOUNCE_MS. The stable id guarantees the
 // toast never stacks; coming back online dismisses it automatically.
 export function initializeConnectivityToast() {
   let pendingTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const showOfflineToast = () => {
-    toast.error("No internet connection", {
-      id: TOAST_ID,
-      duration: Number.POSITIVE_INFINITY,
-      description:
-        "PostHog Code features that need the network are paused until you reconnect.",
-    });
-  };
 
   const clearPending = () => {
     if (pendingTimer) {

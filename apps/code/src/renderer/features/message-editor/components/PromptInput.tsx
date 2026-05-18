@@ -41,6 +41,7 @@ export interface PromptInputProps {
   // toolbar slots
   modelSelector?: React.ReactElement | null | false;
   reasoningSelector?: React.ReactElement | null | false;
+  historyButton?: React.ReactNode;
   // prompt history provider
   getPromptHistory?: () => string[];
   // callbacks
@@ -80,6 +81,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       enableCommands = true,
       modelSelector,
       reasoningSelector,
+      historyButton,
       getPromptHistory,
       onBeforeSubmit,
       onSubmit,
@@ -251,7 +253,6 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
           <InputGroupButton
             variant="destructive"
             size="icon-sm"
-            className="ml-auto"
             onClick={onCancel}
             aria-label="Stop"
           >
@@ -263,7 +264,6 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
           <InputGroupButton
             variant="primary"
             size="icon-sm"
-            className="ml-auto"
             onClick={handleSubmitClick}
             disabled={submitBlocked}
             aria-label="Send message"
@@ -324,7 +324,10 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
                 ! bash
               </Text>
             )}
-            {submitButton}
+            <span className="ml-auto flex items-center gap-1">
+              {historyButton}
+              {submitButton}
+            </span>
           </InputGroupAddon>
         </InputGroup>
       </Flex>

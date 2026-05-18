@@ -1,9 +1,10 @@
 import { useDiffViewerStore } from "@features/code-editor/stores/diffViewerStore";
-import { useGitQueries } from "@features/git-interaction/hooks/useGitQueries";
 import { useLinkedBranchPrUrl } from "@features/git-interaction/hooks/useLinkedBranchPrUrl";
 import type { DiffStats } from "@features/git-interaction/utils/diffStats";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
 import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
+import { useTRPC } from "@renderer/trpc";
+import { useQuery } from "@tanstack/react-query";
 import {
   type ResolvedDiffSource,
   resolveDiffSource,
@@ -20,21 +21,55 @@ export interface EffectiveDiffSource {
   diffStats: DiffStats;
 }
 
-/**
- * Resolves which diff source should be shown for a local task, plus all the
- * context needed to actually fetch that source. Callers (review panel, diff
- * stats badge) share one source-of-truth so UI surfaces never disagree.
- */
 export function useEffectiveDiffSource(taskId: string): EffectiveDiffSource {
+  const trpc = useTRPC();
   const repoPath = useCwd(taskId);
   const workspace = useWorkspace(taskId);
   const linkedBranch = workspace?.linkedBranch ?? null;
 
   const configured = useDiffViewerStore((s) => s.diffSource[taskId] ?? null);
 
-  const { repoInfo, aheadOfDefault, defaultBranch, changedFiles, diffStats } =
-    useGitQueries(repoPath);
-  const hasLocalChanges = changedFiles.length > 0;
+  const enabled = !!repoPath;
+  const emptyDiffStats: DiffStats = {
+    filesChanged: 0,
+    linesAdded: 0,
+    linesRemoved: 0,
+  };
+
+  const { data: syncStatus } = useQuery(
+    trpc.git.getGitSyncStatus.queryOptions(
+      { directoryPath: repoPath as string },
+      {
+        enabled,
+        staleTime: 30_000,
+      },
+    ),
+  );
+
+  const { data: repoInfo } = useQuery(
+    trpc.git.getGitRepoInfo.queryOptions(
+      { directoryPath: repoPath as string },
+      {
+        enabled,
+        staleTime: 60_000,
+      },
+    ),
+  );
+
+  const { data: diffStats = emptyDiffStats } = useQuery(
+    trpc.git.getDiffStats.queryOptions(
+      { directoryPath: repoPath as string },
+      {
+        enabled,
+        staleTime: 30_000,
+        placeholderData: (prev) => prev ?? emptyDiffStats,
+      },
+    ),
+  );
+
+  const aheadOfDefault = syncStatus?.aheadOfDefault ?? 0;
+  const defaultBranch = repoInfo?.defaultBranch ?? null;
+  const hasLocalChanges = diffStats.filesChanged > 0;
   const branchSourceAvailable = !!linkedBranch && aheadOfDefault > 0;
 
   const prUrl = useLinkedBranchPrUrl(taskId);

@@ -250,6 +250,9 @@ function LinearSetup({ onComplete }: SetupFormProps) {
   const client = useAuthenticatedClient();
   const [loading, setLoading] = useState(false);
   const [oauthConnected, setOauthConnected] = useState(false);
+  const [linearIntegrationId, setLinearIntegrationId] = useState<
+    number | string | null
+  >(null);
   const [pollError, setPollError] = useState<string | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -283,13 +286,14 @@ function LinearSetup({ onComplete }: SetupFormProps) {
         try {
           const integrations =
             await client.getIntegrationsForProject(projectId);
-          const hasLinear = integrations.some(
+          const linearIntegration = integrations.find(
             (i: { kind: string }) => i.kind === "linear",
-          );
-          if (hasLinear) {
+          ) as { id: number | string } | undefined;
+          if (linearIntegration) {
             stopPolling();
             setLoading(false);
             setOauthConnected(true);
+            setLinearIntegrationId(linearIntegration.id);
             toast.success("Linear connected");
           }
         } catch {
@@ -312,13 +316,16 @@ function LinearSetup({ onComplete }: SetupFormProps) {
   }, [cloudRegion, projectId, client, stopPolling]);
 
   const handleSubmit = useCallback(async () => {
-    if (!projectId || !client) return;
+    if (!projectId || !client || !linearIntegrationId) return;
 
     setLoading(true);
     try {
       await client.createExternalDataSource(projectId, {
         source_type: "Linear",
-        payload: { schemas: schemasPayload("linear") },
+        payload: {
+          linear_integration_id: linearIntegrationId,
+          schemas: schemasPayload("linear"),
+        },
       });
       toast.success("Linear data source created");
       onComplete();
@@ -329,7 +336,7 @@ function LinearSetup({ onComplete }: SetupFormProps) {
     } finally {
       setLoading(false);
     }
-  }, [projectId, client, onComplete]);
+  }, [projectId, client, linearIntegrationId, onComplete]);
 
   return (
     <SetupFormContainer title="Connect Linear">
