@@ -1,11 +1,19 @@
-import { render } from "@testing-library/react";
+import { render, renderHook } from "@testing-library/react";
+import { useEffect, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@renderer/features/code-review/stores/reviewNavigationStore", () => ({
   useReviewNavigationStore: vi.fn(),
 }));
 vi.mock("@features/code-editor/stores/diffViewerStore", () => ({
-  useDiffViewerStore: vi.fn(),
+  useDiffViewerStore: vi.fn((selector) =>
+    selector({
+      viewMode: "unified",
+      wordWrap: true,
+      loadFullFiles: false,
+      wordDiffs: false,
+    }),
+  ),
 }));
 vi.mock("@features/task-detail/components/ChangesPanel", () => ({
   ChangesPanel: () => null,
@@ -14,7 +22,7 @@ vi.mock("@features/git-interaction/utils/diffStats", () => ({
   computeDiffStats: () => ({ linesAdded: 0, linesRemoved: 0 }),
 }));
 vi.mock("@stores/themeStore", () => ({
-  useThemeStore: vi.fn(() => ({ isDarkMode: false })),
+  useThemeStore: vi.fn((selector) => selector({ isDarkMode: false })),
 }));
 vi.mock("@pierre/diffs/react", () => ({
   WorkerPoolContextProvider: ({ children }: { children: React.ReactNode }) =>
@@ -32,7 +40,11 @@ vi.mock("@features/sessions/service/service", () => ({
   getSessionService: vi.fn(),
 }));
 
-import { DeferredDiffPlaceholder, DiffFileHeader } from "./ReviewShell";
+import {
+  DeferredDiffPlaceholder,
+  DiffFileHeader,
+  useReviewState,
+} from "./ReviewShell";
 
 type FileDiffMetadata = import("@pierre/diffs/react").FileDiffMetadata;
 
@@ -74,6 +86,29 @@ function renderHeader(path: string) {
   );
   return { diff, deferred };
 }
+
+describe("useReviewState", () => {
+  it("does not loop when changedFiles is recreated during render", () => {
+    function useUnstableChangedFiles() {
+      const [_tick, setTick] = useState(0);
+      useEffect(() => setTick(1), []);
+
+      return useReviewState(
+        [
+          {
+            path: "dist/bundle.js",
+            status: "modified",
+            linesAdded: 600,
+            linesRemoved: 0,
+          },
+        ],
+        ["dist/bundle.js"],
+      );
+    }
+
+    expect(() => renderHook(() => useUnstableChangedFiles())).not.toThrow();
+  });
+});
 
 describe.each([
   ["DiffFileHeader", "diff" as const],

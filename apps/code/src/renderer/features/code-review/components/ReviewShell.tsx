@@ -81,6 +81,13 @@ const AUTO_COLLAPSE_PATTERNS = [
 
 export type DeferredReason = "deleted" | "large" | "generated" | "unavailable";
 
+function getDeferredPathsKey(paths: Map<string, DeferredReason>): string {
+  return Array.from(paths.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([path, reason]) => `${path}:${reason}`)
+    .join("\n");
+}
+
 export function computeAutoDeferred(
   files: {
     path: string;
@@ -158,11 +165,17 @@ function useCollapseState(
     () => new Set(),
   );
 
-  const [lastDeferred, setLastDeferred] = useState(deferredPaths);
-  if (deferredPaths !== lastDeferred) {
-    setLastDeferred(deferredPaths);
+  const deferredPathsKey = useMemo(
+    () => getDeferredPathsKey(deferredPaths),
+    [deferredPaths],
+  );
+
+  const lastDeferredPathsKey = useRef(deferredPathsKey);
+  useEffect(() => {
+    if (deferredPathsKey === lastDeferredPathsKey.current) return;
+    lastDeferredPathsKey.current = deferredPathsKey;
     setRevealedFiles(new Set());
-  }
+  }, [deferredPathsKey]);
 
   const revealFile = useCallback((filePath: string) => {
     setRevealedFiles((prev) => new Set(prev).add(filePath));
