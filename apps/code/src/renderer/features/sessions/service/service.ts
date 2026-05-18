@@ -180,7 +180,7 @@ function buildCloudDefaultConfigOptions(
   ];
 }
 
-function isCloudTurnCompleteEvent(event: AcpMessage): boolean {
+function isTurnCompleteEvent(event: AcpMessage): boolean {
   const msg = event.message;
   return (
     "method" in msg &&
@@ -1111,12 +1111,15 @@ export class SessionService {
           currentPromptId: null,
         });
       }
-      if (isCloudTurnCompleteEvent(acpMsg)) {
-        sessionStoreSetters.updateSession(taskRunId, {
-          isPromptPending: false,
-          promptStartedAt: null,
-          currentPromptId: null,
-        });
+      if (isTurnCompleteEvent(acpMsg)) {
+        const session = sessionStoreSetters.getSessions()[taskRunId];
+        if (session?.isCloud) {
+          sessionStoreSetters.updateSession(taskRunId, {
+            isPromptPending: false,
+            promptStartedAt: null,
+            currentPromptId: null,
+          });
+        }
       }
       // Lifecycle handshake from the agent — flip status to "connected"
       // so the UI can release the queue-while-not-ready guard. This is
@@ -1151,10 +1154,7 @@ export class SessionService {
       }
       // Canonical "turn boundary" — flush any queued cloud messages now
       // that the agent is idle and accepting the next prompt.
-      if (
-        "method" in msg &&
-        isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)
-      ) {
+      if (isTurnCompleteEvent(acpMsg)) {
         const session = sessionStoreSetters.getSessions()[taskRunId];
         if (session?.isCloud) {
           // Backward compat: treat turn_complete as an implicit run_started
@@ -1624,6 +1624,7 @@ export class SessionService {
     sessionStoreSetters.updateSession(session.taskRunId, {
       isPromptPending: false,
       promptStartedAt: null,
+      currentPromptId: null,
     });
 
     if (session.isCloud) {
