@@ -90,6 +90,43 @@ describe("streamGitStatus", () => {
     expect(status.isClean).toBe(false);
   });
 
+  it("truncates untracked entries when total cap is reached", async () => {
+    repoDir = await setupRepo();
+    await Promise.all(
+      Array.from({ length: 25 }, (_, i) =>
+        writeFile(path.join(repoDir, `top-${i}.txt`), "x"),
+      ),
+    );
+
+    const status = await streamGitStatus(repoDir, {
+      perDirUntrackedCap: 1000,
+      totalUntrackedCap: 10,
+    });
+
+    expect(status.totalUntrackedTruncated).toBe(true);
+    expect(status.untracked.length).toBe(10);
+    expect(status.totalUntrackedSeen).toBe(25);
+  });
+
+  it("removes already-listed entries when a directory collapses", async () => {
+    repoDir = await setupRepo();
+    const heavy = path.join(repoDir, "node_modules", "pkg");
+    await mkdir(heavy, { recursive: true });
+    await Promise.all(
+      Array.from({ length: 50 }, (_, i) =>
+        writeFile(path.join(heavy, `f${i}.js`), "x"),
+      ),
+    );
+
+    const status = await streamGitStatus(repoDir, { perDirUntrackedCap: 10 });
+
+    expect(status.overflowedDirs).toContain("node_modules");
+    const leaked = status.untracked.filter((f) =>
+      f.startsWith("node_modules/"),
+    );
+    expect(leaked).toEqual([]);
+  });
+
   it("rejects when aborted", async () => {
     repoDir = await setupRepo();
     const controller = new AbortController();

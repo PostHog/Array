@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { PERFORMANCE_CONFIG } from "./client";
 import { getCleanEnv } from "./operation-manager";
 
 export interface StreamedGitStatus {
@@ -33,12 +34,7 @@ export function streamGitStatus(
 
   return new Promise((resolve, reject) => {
     const args = [
-      "-c",
-      "core.untrackedCache=true",
-      "-c",
-      "core.fsmonitor=true",
-      "-c",
-      "core.preloadIndex=true",
+      ...PERFORMANCE_CONFIG.flatMap((cfg) => ["-c", cfg]),
       "status",
       "--porcelain=v1",
       "-z",
@@ -110,6 +106,14 @@ export function streamGitStatus(
         }
         if (triggered) {
           collapsedDirs.add(triggered);
+          const prefix = `${triggered}/`;
+          let writeIdx = 0;
+          for (let readIdx = 0; readIdx < untracked.length; readIdx++) {
+            if (!untracked[readIdx].startsWith(prefix)) {
+              untracked[writeIdx++] = untracked[readIdx];
+            }
+          }
+          untracked.length = writeIdx;
           return;
         }
         untracked.push(filePath);

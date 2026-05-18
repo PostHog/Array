@@ -6,7 +6,7 @@ export interface CreateGitClientOptions extends Partial<SimpleGitOptions> {
   abortSignal?: AbortSignal;
 }
 
-const PERFORMANCE_CONFIG = [
+export const PERFORMANCE_CONFIG = [
   "core.untrackedCache=true",
   "core.fsmonitor=true",
   "core.preloadIndex=true",
