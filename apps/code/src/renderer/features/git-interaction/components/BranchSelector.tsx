@@ -5,6 +5,7 @@ import { invalidateGitBranchQueries } from "@features/git-interaction/utils/gitC
 import {
   ArrowClockwise,
   CaretDown,
+  Check,
   GitBranch,
   Plus,
   Spinner,
@@ -175,6 +176,16 @@ export function BranchSelector({
 
   const isDisabled = !!(disabled || !repoPath || cloudStillLoading);
   const inputValue = isCloudMode ? (cloudSearchQuery ?? "") : searchQuery;
+  const trimmedInputValue = inputValue.trim();
+  const canUseInputBranch =
+    !isDisabled &&
+    trimmedInputValue.length > 0 &&
+    trimmedInputValue !== displayedBranch;
+
+  const handleUseInputBranch = () => {
+    if (!canUseInputBranch) return;
+    handleBranchChange(trimmedInputValue);
+  };
 
   return (
     <Combobox
@@ -237,8 +248,40 @@ export function BranchSelector({
             <ComboboxInput
               placeholder="Search branches..."
               showTrigger={false}
+              onKeyDownCapture={(event) => {
+                if (
+                  event.key !== "Enter" ||
+                  event.nativeEvent.isComposing ||
+                  !canUseInputBranch
+                ) {
+                  return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                handleUseInputBranch();
+              }}
             />
           </div>
+          <Tooltip content="Use this branch name" side="bottom">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!canUseInputBranch}
+              aria-label="Use this branch name"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                handleUseInputBranch();
+              }}
+            >
+              <Check size={14} />
+            </Button>
+          </Tooltip>
           {onRefresh ? (
             <Button
               variant="outline"
