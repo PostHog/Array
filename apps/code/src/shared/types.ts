@@ -549,4 +549,12 @@ export interface SlackChannelOption {
 export interface SlackChannelsResponse {
   channels: SlackChannelOption[];
   lastRefreshedAt?: string;
+  has_more?: boolean;
+}
+
+export interface SlackChannelsQueryParams {
+  search?: string;
+  limit?: number;
+  offset?: number;
+  channelId?: string;
 }

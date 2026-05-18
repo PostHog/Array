@@ -24,6 +24,7 @@ import type {
   SignalReportTaskRelationship,
   SignalTeamConfig,
   SignalUserAutonomyConfig,
+  SlackChannelsQueryParams,
   SlackChannelsResponse,
   SuggestedReviewersArtefact,
   Task,
@@ -2281,12 +2282,26 @@ export class PostHogAPIClient {
 
   async getSlackChannelsForIntegration(
     integrationId: number,
+    params?: SlackChannelsQueryParams,
   ): Promise<SlackChannelsResponse> {
     const teamId = await this.getTeamId();
     const url = new URL(
       `${this.api.baseUrl}/api/environments/${teamId}/integrations/${integrationId}/channels/`,
     );
-    const path = `/api/environments/${teamId}/integrations/${integrationId}/channels/`;
+    const search = params?.search?.trim();
+    if (search) {
+      url.searchParams.set("search", search);
+    }
+    if (params?.limit != null) {
+      url.searchParams.set("limit", String(params.limit));
+    }
+    if (params?.offset != null) {
+      url.searchParams.set("offset", String(params.offset));
+    }
+    if (params?.channelId) {
+      url.searchParams.set("channel_id", params.channelId);
+    }
+    const path = `/api/environments/${teamId}/integrations/${integrationId}/channels/${url.search}`;
 
     const response = await this.api.fetcher.fetch({
       method: "get",

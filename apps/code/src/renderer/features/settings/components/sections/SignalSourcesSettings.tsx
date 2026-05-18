@@ -1,10 +1,11 @@
 import { DataSourceSetup } from "@features/inbox/components/DataSourceSetup";
 import { SignalSourceToggles } from "@features/inbox/components/SignalSourceToggles";
 import { useSignalSourceManager } from "@features/inbox/hooks/useSignalSourceManager";
+import { SettingsOptionSelect } from "@features/settings/components/SettingsOptionSelect";
 import { GitHubIntegrationSection } from "@features/settings/components/sections/GitHubIntegrationSection";
 import { SignalSlackNotificationsSettings } from "@features/settings/components/sections/SignalSlackNotificationsSettings";
 import { useRepositoryIntegration } from "@hooks/useIntegrations";
-import { Box, Flex, Select, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import type { SignalReportPriority } from "@shared/types";
 
 const PRIORITY_OPTIONS: { value: SignalReportPriority; label: string }[] = [
@@ -22,7 +23,14 @@ const USER_PRIORITY_OPTIONS: { value: string; label: string }[] = [
   ...PRIORITY_OPTIONS,
 ];
 
-export function SignalSourcesSettings() {
+interface SignalSourcesSettingsProps {
+  /** Slack channel combobox is inside a Radix modal dialog (Inbox configuration). */
+  slackNotificationsInModal?: boolean;
+}
+
+export function SignalSourcesSettings({
+  slackNotificationsInModal = false,
+}: SignalSourcesSettingsProps) {
   const {
     displayValues,
     sourceStates,
@@ -51,7 +59,7 @@ export function SignalSourcesSettings() {
 
   return (
     <Flex direction="column" gap="4">
-      <Text color="gray" className="text-[13px]">
+      <Text className="text-(--gray-11) text-[13px]">
         Automatically analyze your product data and surface actionable insights.
         Choose which sources to enable for this project.
       </Text>
@@ -93,35 +101,33 @@ export function SignalSourcesSettings() {
       <Flex
         direction="column"
         gap="2"
-        pt="4"
+        pt="3"
         style={{ borderTop: "1px dashed var(--gray-5)" }}
       >
-        <Text className="font-medium text-(--gray-12) text-sm">
-          Your PR auto-start threshold
-        </Text>
-        <Text className="text-(--gray-11) text-[13px]">
-          Automatically start tasks assigned to you for reports at or above this
-          priority. Choose &quot;Never&quot; to opt out entirely.
-        </Text>
-        <Select.Root
+        <Flex direction="column" gap="1">
+          <Text className="font-medium text-(--gray-12) text-sm">
+            Your PR auto-start threshold
+          </Text>
+          <Text className="text-(--gray-11) text-[13px]">
+            Automatically start tasks assigned to you for reports at or above
+            this priority. Choose &quot;Never&quot; to opt out entirely.
+          </Text>
+        </Flex>
+        <SettingsOptionSelect
           value={userPriorityValue}
+          options={USER_PRIORITY_OPTIONS}
+          ariaLabel="PR auto-start threshold"
+          className="min-w-[260px] max-w-[300px]"
           onValueChange={(value) =>
             void handleUpdateUserAutonomyPriority(
               value === NEVER_VALUE ? null : value,
             )
           }
-        >
-          <Select.Trigger className="max-w-[300px]" />
-          <Select.Content>
-            {USER_PRIORITY_OPTIONS.map((opt) => (
-              <Select.Item key={opt.value} value={opt.value}>
-                {opt.label}
-              </Select.Item>
-            ))}
-          </Select.Content>
-        </Select.Root>
+        />
       </Flex>
-      <SignalSlackNotificationsSettings />
+      <SignalSlackNotificationsSettings
+        channelComboboxModal={slackNotificationsInModal}
+      />
     </Flex>
   );
 }

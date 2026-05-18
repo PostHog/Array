@@ -2,6 +2,13 @@ import { SignalSourcesSettings } from "@features/settings/components/sections/Si
 import { XIcon } from "@phosphor-icons/react";
 import { Button, Dialog, Flex, Tooltip } from "@radix-ui/themes";
 
+/** Portaled Quill popups are outside Dialog.Content; ignore outside-dismiss for them. */
+function isQuillPortalEventTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element && target.closest("[data-quill-portal]") !== null
+  );
+}
+
 interface InboxSourcesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -17,8 +24,21 @@ export function InboxSourcesDialog({
 }: InboxSourcesDialogProps) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Content maxWidth="800px">
-        <Flex align="center" justify="between" mb="3">
+      <Dialog.Content
+        maxWidth="800px"
+        className="overflow-visible"
+        onPointerDownOutside={(event) => {
+          if (isQuillPortalEventTarget(event.target)) {
+            event.preventDefault();
+          }
+        }}
+        onFocusOutside={(event) => {
+          if (isQuillPortalEventTarget(event.target)) {
+            event.preventDefault();
+          }
+        }}
+      >
+        <Flex align="center" justify="between" mb="2">
           <Dialog.Title mb="0" className="text-base">
             Inbox configuration
           </Dialog.Title>
@@ -32,7 +52,7 @@ export function InboxSourcesDialog({
             </button>
           </Dialog.Close>
         </Flex>
-        <SignalSourcesSettings />
+        <SignalSourcesSettings slackNotificationsInModal />
         <Flex justify="end" mt="4">
           {hasSignalSources && hasGithubIntegration ? (
             <Dialog.Close>
