@@ -1,5 +1,6 @@
 import { useTokenSpendAnalysis } from "@features/billing/hooks/useTokenSpendAnalysis";
 import type {
+  SpendAnalysisModelRow,
   SpendAnalysisProductRow,
   SpendAnalysisResponse,
   SpendAnalysisToolRow,
@@ -20,7 +21,6 @@ const SKILL_URL =
 function formatUsd(amount: number): string {
   if (amount === 0) return "$0";
   if (amount < 0.01) return "<$0.01";
-  if (amount < 1) return `$${amount.toFixed(2)}`;
   if (amount < 100) return `$${amount.toFixed(2)}`;
   return `$${Math.round(amount).toLocaleString()}`;
 }
@@ -186,6 +186,27 @@ function ToolTable({ rows }: { rows: SpendAnalysisToolRow[] }) {
   );
 }
 
+function ModelTable({ rows }: { rows: SpendAnalysisModelRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <SectionTable
+      title="By model (PostHog Code)"
+      headers={["Model", "Generations", "Input", "Output", "Cost"]}
+      widths={["35%", "15%", "20%", "15%", "15%"]}
+    >
+      {rows.map((r) => (
+        <Table.Row key={r.model ?? "(null)"}>
+          <Table.Cell>{r.model ?? "(unknown)"}</Table.Cell>
+          <Table.Cell>{r.generation_count.toLocaleString()}</Table.Cell>
+          <Table.Cell>{formatTokens(r.input_tokens)}</Table.Cell>
+          <Table.Cell>{formatTokens(r.output_tokens)}</Table.Cell>
+          <Table.Cell>{formatUsd(r.cost_usd)}</Table.Cell>
+        </Table.Row>
+      ))}
+    </SectionTable>
+  );
+}
+
 function TraceTable({ rows }: { rows: SpendAnalysisTraceRow[] }) {
   if (rows.length === 0) return null;
   return (
@@ -310,6 +331,7 @@ export function TokenSpendAnalysisBanner() {
         <SummaryRow data={data} />
         <ProductTable rows={data.by_product} />
         <ToolTable rows={data.by_tool} />
+        <ModelTable rows={data.by_model} />
         <TraceTable rows={data.top_traces} />
         <Flex
           direction="column"

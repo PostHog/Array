@@ -30,6 +30,7 @@ export function useTokenSpendAnalysis(): UseTokenSpendAnalysisReturn {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       log.warn("Failed to fetch spend analysis", { error: message });
+      setData(null);
       setError(message);
     } finally {
       setIsLoading(false);
