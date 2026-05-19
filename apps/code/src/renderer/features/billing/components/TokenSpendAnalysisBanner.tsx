@@ -47,7 +47,9 @@ function formatDate(iso: string | null): string {
 
 function generateSuggestions(data: SpendAnalysisResponse): string[] {
   const suggestions: string[] = [];
-  const { summary, by_tool, top_traces } = data;
+  const { summary } = data;
+  const toolItems = data.by_tool.items;
+  const traceItems = data.top_traces.items;
 
   if (summary.total_cost_usd === 0) {
     return ["No LLM spend in the selected window."];
@@ -64,24 +66,23 @@ function generateSuggestions(data: SpendAnalysisResponse): string[] {
   const codeTotal = summary.scoped_cost_usd;
   // codeTotal is the scoped spend (PostHog Code, since the banner always
   // requests `product=posthog_code`).
-  if (codeTotal > 0 && by_tool.length > 0) {
-    const top = by_tool[0];
-    const share = top.cost_usd / codeTotal;
-    if (share > 0.35 && top.tool) {
+  if (codeTotal > 0 && toolItems.length > 0) {
+    const top = toolItems[0];
+    if (top.share_of_scoped > 0.35 && top.tool) {
       suggestions.push(
-        `${top.tool} drives ${Math.round(share * 100)}% of your PostHog Code spend — averaging ${formatTokens(top.avg_input_tokens)} input tokens per call.`,
+        `${top.tool} drives ${Math.round(top.share_of_scoped * 100)}% of your PostHog Code spend — averaging ${formatTokens(top.avg_input_tokens)} input tokens per call.`,
       );
     }
-    const noToolRow = by_tool.find((r) => r.tool === null);
-    if (noToolRow && noToolRow.cost_usd / codeTotal > 0.1) {
+    const noToolRow = toolItems.find((r) => r.tool === null);
+    if (noToolRow && noToolRow.share_of_scoped > 0.1) {
       suggestions.push(
-        `${Math.round((noToolRow.cost_usd / codeTotal) * 100)}% is spent on generations that take no tool action — pure text replies. Consider tighter prompts or stopping the agent earlier.`,
+        `${Math.round(noToolRow.share_of_scoped * 100)}% is spent on generations that take no tool action — pure text replies. Consider tighter prompts or stopping the agent earlier.`,
       );
     }
   }
 
-  if (top_traces.length > 0 && codeTotal > 0) {
-    const topTrace = top_traces[0];
+  if (traceItems.length > 0 && codeTotal > 0) {
+    const topTrace = traceItems[0];
     const share = topTrace.cost_usd / codeTotal;
     if (share > 0.15) {
       suggestions.push(
@@ -332,10 +333,10 @@ export function TokenSpendAnalysisBanner() {
           </Button>
         </Flex>
         <SummaryRow data={data} />
-        <ProductTable rows={data.by_product} />
-        <ToolTable rows={data.by_tool} />
-        <ModelTable rows={data.by_model} />
-        <TraceTable rows={data.top_traces} />
+        <ProductTable rows={data.by_product.items} />
+        <ToolTable rows={data.by_tool.items} />
+        <ModelTable rows={data.by_model.items} />
+        <TraceTable rows={data.top_traces.items} />
         <Flex
           direction="column"
           gap="2"

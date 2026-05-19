@@ -2865,7 +2865,7 @@ export class PostHogAPIClient {
     options: { days?: number; product?: string } = {},
   ): Promise<SpendAnalysisResponse> {
     const { days = 30, product } = options;
-    const urlPath = `/api/llm_analytics/personal_spend/`;
+    const urlPath = `/api/llm_analytics/@me/spend/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
     url.searchParams.set("days", String(days));
     if (product) {

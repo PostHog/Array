@@ -17,6 +17,7 @@ export interface SpendAnalysisToolRow {
   tool: string | null;
   generation_count: number;
   cost_usd: number;
+  share_of_scoped: number;
   avg_input_tokens: number;
 }
 
@@ -35,10 +36,15 @@ export interface SpendAnalysisTraceRow {
   started_at: string | null;
 }
 
+export interface SpendAnalysisBreakdown<TRow> {
+  items: TRow[];
+  truncated: boolean;
+}
+
 export interface SpendAnalysisResponse {
   summary: SpendAnalysisSummary;
-  by_product: SpendAnalysisProductRow[];
-  by_tool: SpendAnalysisToolRow[];
-  by_model: SpendAnalysisModelRow[];
-  top_traces: SpendAnalysisTraceRow[];
+  by_product: SpendAnalysisBreakdown<SpendAnalysisProductRow>;
+  by_tool: SpendAnalysisBreakdown<SpendAnalysisToolRow>;
+  by_model: SpendAnalysisBreakdown<SpendAnalysisModelRow>;
+  top_traces: SpendAnalysisBreakdown<SpendAnalysisTraceRow>;
 }
