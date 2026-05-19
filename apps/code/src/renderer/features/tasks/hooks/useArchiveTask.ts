@@ -39,9 +39,9 @@ export async function archiveTaskImperative(
       ([key]) => key === taskId || key.startsWith(`${taskId}-`),
     ),
   );
-  const commandCenterIndex = useCommandCenterStore
-    .getState()
-    .cells.indexOf(taskId);
+  const commandCenterState = useCommandCenterStore.getState();
+  const commandCenterIndex = commandCenterState.cells.indexOf(taskId);
+  const wasActiveInCommandCenter = commandCenterState.activeTaskId === taskId;
 
   pinnedTasksApi.unpin(taskId);
   useTerminalStore.getState().clearTerminalStatesForTask(taskId);
@@ -104,7 +104,13 @@ export async function archiveTaskImperative(
       }));
     }
     if (commandCenterIndex !== -1) {
-      useCommandCenterStore.getState().assignTask(commandCenterIndex, taskId);
+      useCommandCenterStore.setState((s) => {
+        const cells = [...s.cells];
+        cells[commandCenterIndex] = taskId;
+        return wasActiveInCommandCenter
+          ? { cells, activeTaskId: taskId }
+          : { cells };
+      });
     }
 
     throw error;
