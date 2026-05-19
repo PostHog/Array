@@ -24,6 +24,7 @@ import {
   GitBranch,
   Plus,
 } from "@phosphor-icons/react";
+import { cn } from "@posthog/quill";
 import {
   AlertDialog,
   Box,
@@ -44,6 +45,23 @@ import type { DetectedRepo } from "../hooks/useOnboardingFlow";
 import { useProjectsWithIntegrations } from "../hooks/useProjectsWithIntegrations";
 import { OnboardingHogTip } from "./OnboardingHogTip";
 import { StepActions } from "./StepActions";
+
+const PANEL_SHADOW = "0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)";
+
+function getPanelMessage(opts: {
+  hasConnectError: boolean;
+  connectError: Parameters<typeof describeGithubConnectError>[0];
+  timedOut: boolean;
+  isConnecting: boolean;
+}): string {
+  if (opts.hasConnectError)
+    return describeGithubConnectError(opts.connectError);
+  if (opts.timedOut) {
+    return "We didn't hear back from GitHub. If the browser tab was closed, click Connect again.";
+  }
+  if (opts.isConnecting) return "Waiting for GitHub...";
+  return "Optional. Lets cloud agents work on this repo and open pull requests for you.";
+}
 
 interface GitIntegrationStepProps {
   onNext: () => void;
@@ -100,13 +118,12 @@ export function GitIntegrationStep({
     projectHasTeamIntegration: selectedProject?.hasGithubIntegration ?? null,
   });
   const canTakeAction = !isConnecting && !timedOut && !hasConnectError;
-  const defaultPanelMessage = hasConnectError
-    ? describeGithubConnectError(connectError)
-    : timedOut
-      ? "We didn't hear back from GitHub. If the browser tab was closed, click Connect again."
-      : isConnecting
-        ? "Waiting for GitHub..."
-        : "Optional. Lets cloud agents work on this repo and open pull requests for you.";
+  const defaultPanelMessage = getPanelMessage({
+    hasConnectError,
+    connectError,
+    timedOut,
+    isConnecting,
+  });
 
   const {
     data: githubUserIntegrations = [],
@@ -191,8 +208,7 @@ export function GitIntegrationStep({
           <Flex
             direction="column"
             gap="5"
-            style={{ margin: "auto auto" }}
-            className="w-full max-w-[560px]"
+            className="m-auto w-full max-w-[560px]"
           >
             {/* Header + content */}
             <Flex direction="column" gap="5" className="w-full">
@@ -220,10 +236,7 @@ export function GitIntegrationStep({
               >
                 <Box
                   p="5"
-                  style={{
-                    boxShadow:
-                      "0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)",
-                  }}
+                  style={{ boxShadow: PANEL_SHADOW }}
                   className="rounded-[12px] border border-(--gray-a3) bg-(--color-panel-solid)"
                 >
                   <Flex direction="column" gap="4">
@@ -286,11 +299,12 @@ export function GitIntegrationStep({
                                 }
                               />
                               <Text
-                                className={`text-[13px] ${
+                                className={cn(
+                                  "text-[13px]",
                                   repoMatchesGitHub
                                     ? "text-(--green-11)"
-                                    : "text-(--gray-11)"
-                                }`}
+                                    : "text-(--gray-11)",
+                                )}
                               >
                                 {repoMatchesGitHub
                                   ? `Linked to ${detectedRepo.fullName} on GitHub`
@@ -329,10 +343,7 @@ export function GitIntegrationStep({
                 >
                   <Box
                     p="5"
-                    style={{
-                      boxShadow:
-                        "0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)",
-                    }}
+                    style={{ boxShadow: PANEL_SHADOW }}
                     className="rounded-[12px] border border-(--gray-a3) bg-(--color-panel-solid)"
                   >
                     <Flex direction="column" gap="4">
