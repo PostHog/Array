@@ -267,22 +267,28 @@ describe("getChangedFilesDetailed", () => {
     expect(noTrailing).toMatchObject({ status: "untracked", linesAdded: 3 });
   });
 
-  // Regression guard for the OOM in https://github.com/PostHog/code/issues/...
-  // (introduced in c617988f). Before the fix `countFileLines` read each
-  // untracked file's full content into memory, 16-way concurrent, with no
-  // size cap. On a monorepo with multi-MB build artifacts / lockfiles this
-  // exhausted the main-process V8 heap (~3GB+) and froze the renderer
-  // waiting on the dead tRPC call. The fix bails on files larger than
-  // COUNT_FILE_LINES_MAX_BYTES (1MB) and stream-counts the rest, so peak
-  // memory stays ~16 * 64KB regardless of file size.
-  it("skips line counting for files over the size cap", async () => {
+  // Regression guard for the OOM in #2218. Before the fix `countFileLines`
+  // read each untracked file's full content into memory via
+  // `fs.readFile(..., "utf-8")`, 16-way concurrent against every untracked
+  // path returned by `streamGitStatus` (up to 50k). On a monorepo with
+  // multi-MB build artifacts this exhausted the main-process V8 heap
+  // (`16 * file_bytes * 2` for V8's UTF-16) and froze the renderer waiting
+  // on the dead tRPC call. The fix stream-counts via `createReadStream`,
+  // so peak per-stream memory is ~64KB regardless of file size — the
+  // multi-MB case below would have OOM'd pre-fix and must still report an
+  // accurate line count.
+  it("stream-counts untracked files larger than the streaming chunk size", async () => {
     repoDir = await setupRepo();
-    const oneAndAHalfMB = "a\n".repeat(800_000);
-    await writeFile(path.join(repoDir, "huge.txt"), oneAndAHalfMB);
+    const lineCount = 800_000; // ~1.6MB at 2 bytes/line, well over default 64KB chunk
+    const content = "a\n".repeat(lineCount);
+    await writeFile(path.join(repoDir, "huge.txt"), content);
 
     const files = await getChangedFilesDetailed(repoDir);
     const huge = files.find((f) => f.path === "huge.txt");
 
-    expect(huge).toMatchObject({ status: "untracked", linesAdded: 0 });
+    expect(huge).toMatchObject({
+      status: "untracked",
+      linesAdded: lineCount,
+    });
   });
 });

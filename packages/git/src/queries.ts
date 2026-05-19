@@ -414,13 +414,10 @@ function matchesExcludePattern(filePath: string, patterns: string[]): boolean {
   });
 }
 
-const COUNT_FILE_LINES_MAX_BYTES = 1 * 1024 * 1024;
-
 async function countFileLines(filePath: string): Promise<number> {
   try {
     const stat = await fs.stat(filePath);
     if (!stat.isFile() || stat.size === 0) return 0;
-    if (stat.size > COUNT_FILE_LINES_MAX_BYTES) return 0;
     return await new Promise<number>((resolve) => {
       let newlines = 0;
       let lastByte = -1;
