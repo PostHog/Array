@@ -396,6 +396,8 @@ export interface InboxViewedProperties {
 
 export interface InboxReportOpenedProperties {
   report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
   status: string | null;
   priority: string | null;
   source_products: string[];
@@ -407,6 +409,8 @@ export interface InboxReportOpenedProperties {
 
 export interface InboxReportClosedProperties {
   report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
   time_spent_ms: number;
   scrolled: boolean;
   engaged: boolean;
@@ -415,6 +419,8 @@ export interface InboxReportClosedProperties {
 
 export interface InboxReportActionProperties {
   report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
   action_type: InboxReportActionType;
   surface: InboxReportActionSurface;
   is_bulk: boolean;
@@ -432,6 +438,8 @@ export interface InboxReportActionProperties {
 
 export interface InboxReportEngagedProperties {
   report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
   engagement_reason: InboxReportEngagementReason;
   time_spent_ms_at_engagement: number;
   rank: number;

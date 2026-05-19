@@ -341,9 +341,20 @@ export function SignalsToolbar({
   ) => {
     if (!onReportAction) return;
     const isBulk = targetIds.length > 1;
+    const reportById = new Map(reports.map((r) => [r.id, r]));
     for (const reportId of targetIds) {
+      const target = reportById.get(reportId);
+      const createdAt = target?.created_at;
+      const ageMs = createdAt
+        ? Date.now() - new Date(createdAt).getTime()
+        : Number.NaN;
+      const reportAgeHours = Number.isFinite(ageMs)
+        ? Math.max(0, Math.round((ageMs / 3_600_000) * 10) / 10)
+        : 0;
       onReportAction({
         report_id: reportId,
+        report_title: target?.title ?? null,
+        report_age_hours: reportAgeHours,
         action_type: actionType,
         surface: "toolbar",
         is_bulk: isBulk,

@@ -13,11 +13,21 @@ const DWELL_THRESHOLD_MS = 5_000;
 
 interface OpenInfo {
   reportId: string;
+  reportTitle: string | null;
+  reportCreatedAt: string | null;
   openedAt: number;
   rank: number;
   listSize: number;
   hasScrolled: boolean;
   hasEngaged: boolean;
+}
+
+/** Report age at fire time in hours, rounded to one decimal. Clamped at 0 to guard against clock skew. */
+function reportAgeHours(createdAt: string | null | undefined): number {
+  if (!createdAt) return 0;
+  const ageMs = Date.now() - new Date(createdAt).getTime();
+  if (!Number.isFinite(ageMs)) return 0;
+  return Math.max(0, Math.round((ageMs / 3_600_000) * 10) / 10);
 }
 
 export interface InboxEngagementTracker {
@@ -57,6 +67,8 @@ export function useInboxEngagementTracker(
       info.hasEngaged = true;
       track(ANALYTICS_EVENTS.INBOX_REPORT_ENGAGED, {
         report_id: info.reportId,
+        report_title: info.reportTitle,
+        report_age_hours: reportAgeHours(info.reportCreatedAt),
         engagement_reason: reason,
         time_spent_ms_at_engagement: Date.now() - info.openedAt,
         rank: info.rank,
@@ -71,6 +83,8 @@ export function useInboxEngagementTracker(
     if (!info) return;
     track(ANALYTICS_EVENTS.INBOX_REPORT_CLOSED, {
       report_id: info.reportId,
+      report_title: info.reportTitle,
+      report_age_hours: reportAgeHours(info.reportCreatedAt),
       time_spent_ms: Date.now() - info.openedAt,
       scrolled: info.hasScrolled,
       engaged: info.hasEngaged,
@@ -103,6 +117,8 @@ export function useInboxEngagementTracker(
 
       const info: OpenInfo = {
         reportId: currentReportId,
+        reportTitle: report?.title ?? null,
+        reportCreatedAt: report?.created_at ?? null,
         openedAt: Date.now(),
         rank,
         listSize,
@@ -113,6 +129,8 @@ export function useInboxEngagementTracker(
 
       track(ANALYTICS_EVENTS.INBOX_REPORT_OPENED, {
         report_id: currentReportId,
+        report_title: info.reportTitle,
+        report_age_hours: reportAgeHours(info.reportCreatedAt),
         status: report?.status ?? null,
         priority: report?.priority ?? null,
         source_products: report?.source_products ?? [],

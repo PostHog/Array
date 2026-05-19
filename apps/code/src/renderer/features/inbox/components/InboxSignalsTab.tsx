@@ -273,8 +273,17 @@ export function InboxSignalsTab() {
         ? await dismissBulkActions.snoozeSelected()
         : await dismissBulkActions.suppressSelected(result);
       if (ok) {
+        const target = allReports.find((r) => r.id === dismissTargetId);
+        const ageMs = target
+          ? Date.now() - new Date(target.created_at).getTime()
+          : Number.NaN;
+        const reportAgeHours = Number.isFinite(ageMs)
+          ? Math.max(0, Math.round((ageMs / 3_600_000) * 10) / 10)
+          : 0;
         tracker.signalAction({
           report_id: dismissTargetId,
+          report_title: target?.title ?? null,
+          report_age_hours: reportAgeHours,
           action_type: isSnooze ? "snooze" : "dismiss",
           surface: dismissDialogSurface,
           is_bulk: false,
@@ -284,7 +293,13 @@ export function InboxSignalsTab() {
         setDismissReport(null);
       }
     },
-    [dismissBulkActions, dismissTargetId, dismissDialogSurface, tracker],
+    [
+      dismissBulkActions,
+      dismissTargetId,
+      dismissDialogSurface,
+      tracker,
+      allReports.find,
+    ],
   );
 
   const openDismissDialogFromToolbar = useCallback(() => {

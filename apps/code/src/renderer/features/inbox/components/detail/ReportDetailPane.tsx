@@ -289,7 +289,8 @@ export function ReportDetailPane({
       report.actionability === "immediately_actionable" &&
       report.already_addressed !== true);
 
-  // Centralized helper for detail-pane action analytics — fills surface/is_bulk/bulk_size.
+  // Centralized helper for detail-pane action analytics — fills boilerplate (surface, is_bulk,
+  // bulk_size) and report-scoped context (title, age) so call sites only pass action-specific extras.
   const fireDetailAction = useCallback(
     (
       actionType: InboxReportActionProperties["action_type"],
@@ -297,6 +298,8 @@ export function ReportDetailPane({
         Omit<
           InboxReportActionProperties,
           | "report_id"
+          | "report_title"
+          | "report_age_hours"
           | "action_type"
           | "surface"
           | "is_bulk"
@@ -306,8 +309,14 @@ export function ReportDetailPane({
         >
       >,
     ) => {
+      const ageMs = Date.now() - new Date(report.created_at).getTime();
+      const reportAgeHours = Number.isFinite(ageMs)
+        ? Math.max(0, Math.round((ageMs / 3_600_000) * 10) / 10)
+        : 0;
       onReportAction?.({
         report_id: report.id,
+        report_title: report.title,
+        report_age_hours: reportAgeHours,
         action_type: actionType,
         surface: "detail_pane",
         is_bulk: false,
@@ -315,7 +324,7 @@ export function ReportDetailPane({
         ...extra,
       });
     },
-    [onReportAction, report.id],
+    [onReportAction, report.id, report.title, report.created_at],
   );
 
   // Build the signal-card interaction handler used by both signal lists (signals + session-problem evidence).
