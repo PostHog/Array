@@ -1,21 +1,22 @@
 import { PanelMessage } from "@components/ui/PanelMessage";
+import { SafeImagePreview } from "@components/ui/SafeImagePreview";
 import { Tooltip } from "@components/ui/Tooltip";
 import { CodeMirrorEditor } from "@features/code-editor/components/CodeMirrorEditor";
 import { EnrichmentPopover } from "@features/code-editor/components/EnrichmentPopover";
 import { useCloudFileContent } from "@features/code-editor/hooks/useCloudFileContent";
 import { useFileEnrichment } from "@features/code-editor/hooks/useFileEnrichment";
-import { useMarkdownViewerStore } from "@features/code-editor/stores/markdownViewerStore";
 import { isMarkdownFile } from "@features/code-editor/utils/markdownUtils";
 import { getRelativePath } from "@features/code-editor/utils/pathUtils";
 import { usePanelLayoutStore } from "@features/panels";
 import { useFileTreeStore } from "@features/right-sidebar/stores/fileTreeStore";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
 import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
-import { Check, Code, Copy, Eye } from "@phosphor-icons/react";
+import { Check, Copy } from "@phosphor-icons/react";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { getImageMimeType, isImageFile } from "@shared/constants/image";
 import type { Task } from "@shared/types";
+import { parseImageDataUrl } from "@shared/utils/imageDataUrl";
 
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
@@ -29,6 +30,40 @@ interface CodeEditorPanelProps {
   absolutePath: string;
 }
 
+function FilePanelImagePreview({
+  base64,
+  mimeType,
+  filePath,
+  absolutePath,
+}: {
+  base64: string;
+  mimeType: string;
+  filePath: string;
+  absolutePath: string;
+}) {
+  return (
+    <Flex
+      align="center"
+      justify="center"
+      height="100%"
+      p="4"
+      className="overflow-auto"
+    >
+      <SafeImagePreview
+        base64={base64}
+        mimeType={mimeType}
+        alt={filePath}
+        className="max-h-[100%] max-w-[100%] object-contain"
+        fallback={
+          <PanelMessage detail={absolutePath}>
+            Failed to render image
+          </PanelMessage>
+        }
+      />
+    </Flex>
+  );
+}
+
 export function CodeEditorPanel({
   taskId,
   task: _task,
@@ -40,10 +75,6 @@ export function CodeEditorPanel({
   const filePath = getRelativePath(absolutePath, repoPath);
   const isImage = isImageFile(absolutePath);
   const isMarkdown = isMarkdownFile(absolutePath);
-  const preferRendered = useMarkdownViewerStore((s) => s.preferRendered);
-  const togglePreferRendered = useMarkdownViewerStore(
-    (s) => s.togglePreferRendered,
-  );
   const openFileInSplit = usePanelLayoutStore((s) => s.openFileInSplit);
   const expandToFile = useFileTreeStore((s) => s.expandToFile);
   const [copied, setCopied] = useState(false);
@@ -128,6 +159,12 @@ export function CodeEditorPanel({
     content: isImage ? null : fileContent,
   });
 
+  const dataUrlImage = useMemo(
+    () =>
+      isImage || fileContent == null ? null : parseImageDataUrl(fileContent),
+    [isImage, fileContent],
+  );
+
   if (isImage) {
     if (isCloudRun) {
       return (
@@ -144,21 +181,13 @@ export function CodeEditorPanel({
         <PanelMessage detail={absolutePath}>Failed to load image</PanelMessage>
       );
     }
-    const mimeType = getImageMimeType(absolutePath);
     return (
-      <Flex
-        align="center"
-        justify="center"
-        height="100%"
-        p="4"
-        className="overflow-auto"
-      >
-        <img
-          src={`data:${mimeType};base64,${imageQuery.data}`}
-          alt={filePath}
-          className="max-h-[100%] max-w-[100%] object-contain"
-        />
-      </Flex>
+      <FilePanelImagePreview
+        base64={imageQuery.data}
+        mimeType={getImageMimeType(absolutePath)}
+        filePath={filePath}
+        absolutePath={absolutePath}
+      />
     );
   }
 
@@ -190,6 +219,17 @@ export function CodeEditorPanel({
 
   if (fileContent.length === 0) {
     return <PanelMessage>File is empty</PanelMessage>;
+  }
+
+  if (dataUrlImage) {
+    return (
+      <FilePanelImagePreview
+        base64={dataUrlImage.base64}
+        mimeType={dataUrlImage.mimeType}
+        filePath={filePath}
+        absolutePath={absolutePath}
+      />
+    );
   }
 
   if (isMarkdown) {
@@ -227,36 +267,17 @@ export function CodeEditorPanel({
                 {copied ? <Check size={14} /> : <Copy size={14} />}
               </IconButton>
             </Tooltip>
-            <Tooltip content={preferRendered ? "View source" : "View rendered"}>
-              <IconButton
-                size="1"
-                variant="ghost"
-                color="gray"
-                className="cursor-pointer"
-                onClick={togglePreferRendered}
-              >
-                {preferRendered ? <Code size={14} /> : <Eye size={14} />}
-              </IconButton>
-            </Tooltip>
           </Flex>
         </Flex>
         <Box className="flex-1 overflow-auto">
-          {preferRendered ? (
-            <Box className="plan-markdown max-w-[750px]" p="5">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={markdownComponents}
-              >
-                {fileContent}
-              </ReactMarkdown>
-            </Box>
-          ) : (
-            <CodeMirrorEditor
-              content={fileContent}
-              filePath={absolutePath}
-              readOnly
-            />
-          )}
+          <Box className="plan-markdown max-w-[750px]" p="5">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={markdownComponents}
+            >
+              {fileContent}
+            </ReactMarkdown>
+          </Box>
         </Box>
       </Flex>
     );

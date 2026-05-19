@@ -8,10 +8,9 @@ import {
   CheckCircleIcon,
   CircleNotchIcon,
   DotOutlineIcon,
-  Plus,
   XCircleIcon,
 } from "@phosphor-icons/react";
-import { Button, Spinner, Text, Tooltip } from "@radix-ui/themes";
+import { Spinner, Text, Tooltip } from "@radix-ui/themes";
 import type { SignalReportStatus, SignalReportTask, Task } from "@shared/types";
 import { useState } from "react";
 
@@ -19,8 +18,8 @@ type Relationship = SignalReportTask["relationship"];
 
 const RELATIONSHIP_LABELS: Record<Relationship, string> = {
   repo_selection: "Repository selection",
-  research: "Research task",
-  implementation: "Implementation task",
+  research: "Research",
+  implementation: "Implementation",
 };
 
 interface BarSummary {
@@ -79,7 +78,7 @@ function getResearchPendingSummary(
         color: "var(--gray-9)",
         icon: <Spinner size="1" />,
       },
-      tooltip: "Checking if a research task exists for this report.",
+      tooltip: "Checking if research exists for this report.",
     };
   }
   if (reportStatus === "candidate") {
@@ -111,7 +110,7 @@ function getResearchPendingSummary(
       icon: <XCircleIcon size={14} />,
     },
     tooltip:
-      "No research task is recorded for this report. It may have been created before research tracking was in place.",
+      "No research is recorded for this report. It may have been created before research tracking was in place.",
   };
 }
 
@@ -123,8 +122,6 @@ interface Bar {
   summary: BarSummary;
   /** Tooltip shown on hover (e.g. pipeline status explanation). */
   tooltip?: string;
-  /** When set, render a run-action button with this label instead of (or alongside) the status label. */
-  runActionLabel?: string;
   /** PR URL produced by the implementation task, if available. */
   prUrl?: string | null;
   /** ISO timestamp from SignalReportTask.created_at — when this task was started for the report. */
@@ -134,18 +131,11 @@ interface Bar {
 interface ReportTaskLogsProps {
   reportId: string;
   reportStatus: SignalReportStatus;
-  /** True when the report is waiting on user input (either `pending_input` status,
-   * or `ready` status with `requires_human_input` actionability). */
-  isAwaitingInput?: boolean;
-  /** Open a prefilled implementation task flow. */
-  onCreateImplementationTask?: () => void;
 }
 
 export function ReportTaskLogs({
   reportId,
   reportStatus,
-  isAwaitingInput = false,
-  onCreateImplementationTask,
 }: ReportTaskLogsProps) {
   const { data, isLoading } = useReportTasks(reportId, reportStatus);
   const [expanded, setExpanded] = useState<Relationship | null>(null);
@@ -163,10 +153,7 @@ export function ReportTaskLogs({
   // Build the stacked bars we'll render. We always surface the research bar
   // (using a pending/unavailable placeholder if no research task exists yet).
   // For `ready` reports without an implementation task yet, we still show the
-  // implementation row ("Not started"); the run-action control only appears
-  // when the parent passes `onCreateImplementationTask`. For `pending_input` reports, we
-  // surface the control as "Provide input for PR" so the user can supply the
-  // additional context the agent is waiting on.
+  // implementation row ("Not started").
   const bars: Bar[] = [];
 
   if (researchTask) {
@@ -190,12 +177,6 @@ export function ReportTaskLogs({
   }
 
   const isPendingInput = reportStatus === "pending_input";
-  const awaitingInput = isPendingInput || isAwaitingInput;
-  const runActionLabel = onCreateImplementationTask
-    ? awaitingInput
-      ? "Implement as new task"
-      : "Create PR"
-    : undefined;
 
   if (implementationTask) {
     bars.push({
@@ -203,7 +184,6 @@ export function ReportTaskLogs({
       task: implementationTask,
       summary: getTaskStatusSummary(implementationTask),
       prUrl,
-      runActionLabel: awaitingInput ? runActionLabel : undefined,
       taskStartedAt: implementationTaskData?.startedAt,
     });
   } else if (reportStatus === "ready" || isPendingInput) {
@@ -215,7 +195,6 @@ export function ReportTaskLogs({
         color: "var(--gray-9)",
         icon: <DotOutlineIcon size={14} />,
       },
-      runActionLabel,
     });
   }
 
@@ -273,31 +252,16 @@ export function ReportTaskLogs({
         {/* Stacked header bars — one per task relationship. */}
         <div className="pointer-events-auto shrink-0">
           {bars.map((bar, index) => {
-            const {
-              relationship,
-              task,
-              summary,
-              tooltip,
-              runActionLabel,
-              taskStartedAt,
-            } = bar;
-            const showRunAction = !!runActionLabel;
+            const { relationship, task, summary, tooltip, taskStartedAt } = bar;
             const isExpanded = expanded === relationship;
             const isInteractive = !!task;
-            // When we have both an expandable task and a run button, the outer
-            // element becomes a <div role="button"> so we can legally nest the
-            // run button inside. Without a task, there's nothing to expand; the
-            // run button becomes the sole interactive control.
-            const hideStatusLabel = showRunAction && !task;
 
             const rowClassName = [
               "flex w-full items-center gap-2 bg-transparent px-2 @md:px-3 @lg:px-4 @xl:px-5 @2xl:px-6 @3xl:px-8 @4xl:px-10 @5xl:px-12 py-2 text-left transition-colors",
               index > 0 ? "border-gray-5 border-t" : "",
               isInteractive
                 ? "cursor-pointer hover:bg-gray-2"
-                : showRunAction
-                  ? "cursor-default"
-                  : "cursor-default opacity-70",
+                : "cursor-default opacity-70",
               isExpanded && isInteractive ? "bg-gray-2" : "",
             ]
               .filter(Boolean)
@@ -314,52 +278,34 @@ export function ReportTaskLogs({
                 <Text className="font-medium text-[12px]">
                   {RELATIONSHIP_LABELS[relationship]}
                 </Text>
-                {hideStatusLabel ? (
-                  <span className="flex-1" />
-                ) : (
-                  <Text
-                    className="flex-1 text-[11px]"
-                    style={{ color: summary.color }}
-                  >
-                    {taskStartedAt ? (
-                      <Tooltip
-                        content={`Started ${new Date(taskStartedAt).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}`}
-                      >
-                        <span className="cursor-help">
-                          {bar.prUrl
-                            ? summary.label
-                            : relationship === "implementation" &&
-                                (task?.latest_run?.status === "queued" ||
-                                  task?.latest_run?.status === "in_progress")
-                              ? "Working on a PR…"
-                              : summary.label}
-                        </span>
-                      </Tooltip>
-                    ) : bar.prUrl ? (
-                      summary.label
-                    ) : relationship === "implementation" &&
-                      (task?.latest_run?.status === "queued" ||
-                        task?.latest_run?.status === "in_progress") ? (
-                      "Working on a PR…"
-                    ) : (
-                      summary.label
-                    )}
-                  </Text>
-                )}
-                {showRunAction && (
-                  <Button
-                    size="1"
-                    variant="solid"
-                    className="gap-1 font-medium text-[11px]"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onCreateImplementationTask?.();
-                    }}
-                  >
-                    <Plus size={12} />
-                    {runActionLabel}
-                  </Button>
-                )}
+                <Text
+                  className="flex-1 text-[11px]"
+                  style={{ color: summary.color }}
+                >
+                  {taskStartedAt ? (
+                    <Tooltip
+                      content={`Started ${new Date(taskStartedAt).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}`}
+                    >
+                      <span className="cursor-help">
+                        {bar.prUrl
+                          ? summary.label
+                          : relationship === "implementation" &&
+                              (task?.latest_run?.status === "queued" ||
+                                task?.latest_run?.status === "in_progress")
+                            ? "Working on a PR…"
+                            : summary.label}
+                      </span>
+                    </Tooltip>
+                  ) : bar.prUrl ? (
+                    summary.label
+                  ) : relationship === "implementation" &&
+                    (task?.latest_run?.status === "queued" ||
+                      task?.latest_run?.status === "in_progress") ? (
+                    "Working on a PR…"
+                  ) : (
+                    summary.label
+                  )}
+                </Text>
                 {isInteractive && (
                   <span
                     className="inline-flex text-gray-9"
@@ -375,36 +321,15 @@ export function ReportTaskLogs({
             );
 
             const row = isInteractive ? (
-              showRunAction ? (
-                // biome-ignore lint/a11y/useSemanticElements: a <button> can't contain the nested run-action <button>
-                <div
-                  key={relationship}
-                  role="button"
-                  tabIndex={0}
-                  onClick={toggleExpand}
-                  onKeyDown={(e) => {
-                    if (e.target !== e.currentTarget) return;
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      toggleExpand();
-                    }
-                  }}
-                  className={rowClassName}
-                  style={{ height: BAR_HEIGHT }}
-                >
-                  {rowInner}
-                </div>
-              ) : (
-                <button
-                  key={relationship}
-                  type="button"
-                  onClick={toggleExpand}
-                  className={rowClassName}
-                  style={{ height: BAR_HEIGHT }}
-                >
-                  {rowInner}
-                </button>
-              )
+              <button
+                key={relationship}
+                type="button"
+                onClick={toggleExpand}
+                className={rowClassName}
+                style={{ height: BAR_HEIGHT }}
+              >
+                {rowInner}
+              </button>
             ) : (
               <div
                 key={relationship}

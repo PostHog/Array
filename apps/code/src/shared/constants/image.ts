@@ -6,7 +6,6 @@ export const IMAGE_MIME_TYPES: Record<string, string> = {
   webp: "image/webp",
   bmp: "image/bmp",
   ico: "image/x-icon",
-  svg: "image/svg+xml",
   tiff: "image/tiff",
   tif: "image/tiff",
 };

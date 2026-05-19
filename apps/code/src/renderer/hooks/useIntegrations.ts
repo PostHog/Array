@@ -78,7 +78,7 @@ export function useIntegrations() {
 
   const query = useAuthenticatedQuery(
     integrationKeys.list(),
-    (client) => client.getIntegrations() as Promise<Integration[]>,
+    (client) => client.getIntegrations("github") as Promise<Integration[]>,
   );
 
   useEffect(() => {
@@ -415,6 +415,7 @@ export function useGithubBranches(
         if (!lastPage.hasMore) return undefined;
         return allPages.reduce((n, p) => n + p.branches.length, 0);
       },
+      staleTime: 5 * 60 * 1000,
     },
   );
 
@@ -483,6 +484,7 @@ export function useUserGithubBranches(
         if (!lastPage.hasMore) return undefined;
         return allPages.reduce((n, p) => n + p.branches.length, 0);
       },
+      staleTime: 5 * 60 * 1000,
     },
   );
 

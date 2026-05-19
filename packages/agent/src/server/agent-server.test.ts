@@ -826,6 +826,9 @@ describe("AgentServer HTTP Mode", () => {
           "If the user explicitly asks you to open or update a pull request",
           "open a draft pull request",
           "unless the user explicitly asks",
+          ".github/pull_request_template.md",
+          "gh issue list --search",
+          "Closes #<n>",
           "Generated-By: PostHog Code",
           "Task-Id: test-task-id",
         ],
@@ -868,6 +871,13 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("Generated-By: PostHog Code");
       expect(prompt).toContain("Task-Id: test-task-id");
       expect(prompt).toContain("Created with [PostHog Code]");
+      // PR template detection (repo first, org `.github` fallback)
+      expect(prompt).toContain(".github/pull_request_template.md");
+      expect(prompt).toContain("org's `.github` repo");
+      // Related-issue linking
+      expect(prompt).toContain("gh issue list --state open --search");
+      expect(prompt).toContain("Closes #<n>");
+      expect(prompt).toContain("Refs #<n>");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
 
@@ -895,6 +905,13 @@ describe("AgentServer HTTP Mode", () => {
       );
       expect(prompt).toContain("Push to the existing PR branch");
       expect(prompt).not.toContain("Create a draft pull request");
+      // Review-comment thread handling: reply + resolve
+      expect(prompt).toContain("review thread");
+      expect(prompt).toContain("/pulls/{n}/comments/{id}/replies");
+      expect(prompt).toContain("resolveReviewThread");
+      expect(prompt).toContain(
+        "Do NOT push fixes for review comments without replying to and resolving each related thread.",
+      );
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
 

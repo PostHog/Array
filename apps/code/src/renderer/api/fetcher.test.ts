@@ -13,15 +13,15 @@ describe("buildApiFetcher", () => {
     status: 200,
     json: () => Promise.resolve(data),
   });
-  const err = (status: number) => {
+  const err = (status: number, body: object = { error: status }) => {
     const response = {
       ok: false,
       status,
       statusText: `Error ${status}`,
-      json: () => Promise.resolve({ error: status }),
+      json: () => Promise.resolve(body),
       clone: () => ({
         ...response,
-        text: () => Promise.resolve(`Error ${status}`),
+        text: () => Promise.resolve(JSON.stringify(body)),
       }),
     };
     return response;
@@ -63,15 +63,51 @@ describe("buildApiFetcher", () => {
     );
   });
 
-  it("does not retry on non-401 errors", async () => {
+  it("does not retry on 403 without authentication_failed body", async () => {
     const getAccessToken = vi.fn().mockResolvedValue("token");
     const refreshAccessToken = vi.fn().mockResolvedValue("new-token");
-    mockFetch.mockResolvedValueOnce(err(403));
+    mockFetch.mockResolvedValueOnce(err(403, { detail: "Permission denied." }));
 
     const fetcher = buildApiFetcher({ getAccessToken, refreshAccessToken });
 
     await expect(fetcher.fetch(mockInput)).rejects.toThrow("[403]");
     expect(getAccessToken).toHaveBeenCalledTimes(1);
+    expect(refreshAccessToken).not.toHaveBeenCalled();
+  });
+
+  it("retries with a fresh token on 403 with authentication_failed body", async () => {
+    const getAccessToken = vi.fn().mockResolvedValue("stale-token");
+    const refreshAccessToken = vi.fn().mockResolvedValue("fresh-token");
+    mockFetch
+      .mockResolvedValueOnce(
+        err(403, {
+          type: "authentication_error",
+          code: "authentication_failed",
+          detail: "Invalid access token.",
+        }),
+      )
+      .mockResolvedValueOnce(ok());
+
+    const fetcher = buildApiFetcher({ getAccessToken, refreshAccessToken });
+    const response = await fetcher.fetch(mockInput);
+
+    expect(response.ok).toBe(true);
+    expect(refreshAccessToken).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[1][1].headers.get("Authorization")).toBe(
+      "Bearer fresh-token",
+    );
+  });
+
+  it("does not retry on other 4xx errors", async () => {
+    const refreshAccessToken = vi.fn().mockResolvedValue("new-token");
+    mockFetch.mockResolvedValueOnce(err(400, { detail: "Bad request." }));
+
+    const fetcher = buildApiFetcher({
+      getAccessToken: vi.fn().mockResolvedValue("token"),
+      refreshAccessToken,
+    });
+
+    await expect(fetcher.fetch(mockInput)).rejects.toThrow("[400]");
     expect(refreshAccessToken).not.toHaveBeenCalled();
   });
 

@@ -13,7 +13,13 @@ import type { Task } from "@shared/types";
 import { useMemo } from "react";
 import { useEffectiveDiffSource } from "./useEffectiveDiffSource";
 
-export function useTaskDiffStats(task: Task): DiffStats {
+const EMPTY_DIFF_STATS: DiffStats = {
+  filesChanged: 0,
+  linesAdded: 0,
+  linesRemoved: 0,
+};
+
+export function useTaskDiffSummaryStats(task: Task): DiffStats {
   const taskId = task.id;
   const workspace = useWorkspace(taskId);
   const isCloud =
@@ -39,11 +45,11 @@ export function useTaskDiffStats(task: Task): DiffStats {
 
   return useMemo<DiffStats>(() => {
     if (isCloud) return computeDiffStats(reviewFiles);
-    if (effectiveSource === "branch" && branchFiles) {
-      return computeDiffStats(branchFiles);
+    if (effectiveSource === "branch") {
+      return branchFiles ? computeDiffStats(branchFiles) : EMPTY_DIFF_STATS;
     }
-    if (effectiveSource === "pr" && prFiles) {
-      return computeDiffStats(prFiles);
+    if (effectiveSource === "pr") {
+      return prFiles ? computeDiffStats(prFiles) : EMPTY_DIFF_STATS;
     }
     return localDiffStats;
   }, [

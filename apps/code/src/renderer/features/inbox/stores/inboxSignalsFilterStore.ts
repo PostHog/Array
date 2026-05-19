@@ -39,6 +39,8 @@ interface InboxSignalsFilterState {
   sourceProductFilter: SourceProduct[];
   /** Empty array means "all suggested reviewers" (no filter). Stored as PostHog user UUID strings. */
   suggestedReviewerFilter: string[];
+  /** Tracks whether we've seeded the reviewer filter with the current user once. Persisted so the seed only runs on first inbox visit. */
+  hasInitializedSuggestedReviewerFilter: boolean;
 }
 
 interface InboxSignalsFilterActions {
@@ -49,6 +51,12 @@ interface InboxSignalsFilterActions {
   toggleSourceProduct: (source: SourceProduct) => void;
   toggleSuggestedReviewer: (reviewerUuid: string) => void;
   setSuggestedReviewerFilter: (reviewerUuids: string[]) => void;
+  /**
+   * Seed the reviewer filter with the current user on first inbox visit.
+   * No-op if already initialized, or if the user has actively chosen reviewers.
+   * Always flips the initialized flag so we don't override later user choices.
+   */
+  seedSuggestedReviewerFilterWithCurrentUser: (currentUserUuid: string) => void;
   /** Reset all filters when a deep link arrives so the linked report isn't hidden. */
   resetFilters: () => void;
 }
@@ -65,6 +73,7 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
       statusFilter: DEFAULT_STATUS_FILTER,
       sourceProductFilter: [],
       suggestedReviewerFilter: [],
+      hasInitializedSuggestedReviewerFilter: false,
       setSort: (sortField, sortDirection) => set({ sortField, sortDirection }),
       setSearchQuery: (searchQuery) => set({ searchQuery }),
       setStatusFilter: (statusFilter) => set({ statusFilter }),
@@ -96,6 +105,17 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
         set({
           suggestedReviewerFilter: Array.from(new Set(reviewerUuids)),
         }),
+      seedSuggestedReviewerFilterWithCurrentUser: (currentUserUuid) =>
+        set((state) => {
+          if (state.hasInitializedSuggestedReviewerFilter) return {};
+          return {
+            hasInitializedSuggestedReviewerFilter: true,
+            suggestedReviewerFilter:
+              state.suggestedReviewerFilter.length === 0
+                ? [currentUserUuid]
+                : state.suggestedReviewerFilter,
+          };
+        }),
       resetFilters: () =>
         set({
           searchQuery: "",
@@ -112,6 +132,8 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
         statusFilter: state.statusFilter,
         sourceProductFilter: state.sourceProductFilter,
         suggestedReviewerFilter: state.suggestedReviewerFilter,
+        hasInitializedSuggestedReviewerFilter:
+          state.hasInitializedSuggestedReviewerFilter,
       }),
     },
   ),

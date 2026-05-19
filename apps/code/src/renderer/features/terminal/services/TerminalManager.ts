@@ -7,6 +7,8 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerm } from "@xterm/xterm";
 
 const log = logger.scope("terminal-manager");
+const TERMINAL_FONT_FAMILY =
+  'var(--code-font-family, "Berkeley Mono", "JetBrains Mono", "Consolas", "Monaco", monospace)';
 
 let parkingContainer: HTMLElement | null = null;
 
@@ -161,7 +163,7 @@ class TerminalManagerImpl {
     const term = new XTerm({
       cursorBlink: true,
       fontSize: 12,
-      fontFamily: "monospace",
+      fontFamily: TERMINAL_FONT_FAMILY,
       theme: getTerminalTheme(this.isDarkMode),
       cursorStyle: "block",
       cursorWidth: 8,

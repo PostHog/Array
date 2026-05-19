@@ -18,6 +18,7 @@ describe("inboxSignalsFilterStore", () => {
       ],
       sourceProductFilter: [],
       suggestedReviewerFilter: [],
+      hasInitializedSuggestedReviewerFilter: false,
     });
   });
 
@@ -127,6 +128,45 @@ describe("inboxSignalsFilterStore", () => {
     ]);
     expect(state.sourceProductFilter).toEqual([]);
     expect(state.suggestedReviewerFilter).toEqual([]);
+  });
+
+  it("seedSuggestedReviewerFilterWithCurrentUser seeds when empty and uninitialized", () => {
+    useInboxSignalsFilterStore
+      .getState()
+      .seedSuggestedReviewerFilterWithCurrentUser("me-uuid");
+
+    const state = useInboxSignalsFilterStore.getState();
+    expect(state.suggestedReviewerFilter).toEqual(["me-uuid"]);
+    expect(state.hasInitializedSuggestedReviewerFilter).toBe(true);
+  });
+
+  it("seedSuggestedReviewerFilterWithCurrentUser is a no-op once initialized", () => {
+    useInboxSignalsFilterStore
+      .getState()
+      .seedSuggestedReviewerFilterWithCurrentUser("me-uuid");
+    useInboxSignalsFilterStore.getState().setSuggestedReviewerFilter([]);
+
+    useInboxSignalsFilterStore
+      .getState()
+      .seedSuggestedReviewerFilterWithCurrentUser("me-uuid");
+
+    expect(
+      useInboxSignalsFilterStore.getState().suggestedReviewerFilter,
+    ).toEqual([]);
+  });
+
+  it("seedSuggestedReviewerFilterWithCurrentUser preserves an existing non-empty filter", () => {
+    useInboxSignalsFilterStore
+      .getState()
+      .setSuggestedReviewerFilter(["someone-else"]);
+
+    useInboxSignalsFilterStore
+      .getState()
+      .seedSuggestedReviewerFilterWithCurrentUser("me-uuid");
+
+    const state = useInboxSignalsFilterStore.getState();
+    expect(state.suggestedReviewerFilter).toEqual(["someone-else"]);
+    expect(state.hasInitializedSuggestedReviewerFilter).toBe(true);
   });
 
   it("resetFilters preserves sort preferences", () => {

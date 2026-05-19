@@ -1,11 +1,11 @@
 import { type SetupServerApi, setupServer } from "msw/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { classifyAgentError } from "../adapters/claude/conversion/sdk-to-acp";
+import { classifyAgentError } from "../adapters/error-classification";
 import type { PostHogAPIClient } from "../posthog-api";
 import { createTestRepo, type TestRepo } from "../test/fixtures/api";
 import { createPostHogHandlers } from "../test/mocks/msw-handlers";
 import type { Task, TaskRun } from "../types";
-import { AgentServer } from "./agent-server";
+import { AgentServer, UPSTREAM_PROVIDER_FAILURE_MESSAGE } from "./agent-server";
 
 interface TestableAgentServer {
   posthogAPI: PostHogAPIClient;
@@ -76,10 +76,28 @@ function createTransientConnectionError(): Error & {
   return error;
 }
 
+function createUpstreamProviderFailureError(): Error & {
+  data: { classification: string; result: string };
+} {
+  const result =
+    'API Error: 529 {"error":{"message":"{\\"type\\":\\"error\\",\\"error\\":{\\"type\\":\\"overloaded_error\\",\\"message\\":\\"Overloaded\\"}}","type":"api_error"}}';
+  const error = new Error(result) as Error & {
+    data: { classification: string; result: string };
+  };
+  error.data = {
+    classification: "upstream_provider_failure",
+    result,
+  };
+  return error;
+}
+
 describe("Question relay", () => {
   it.each([
     ["API Error: terminated", "upstream_stream_terminated"],
     ["API Error: Connection error", "upstream_connection_error"],
+    ["API Error: 429 rate_limit_error", "upstream_provider_failure"],
+    ["API Error: 529 overloaded_error", "upstream_provider_failure"],
+    ["API Error: 503 internal_error", "upstream_provider_failure"],
     ["something else", "agent_error"],
     [undefined, "agent_error"],
   ])("classifies %p as %s", (message, expected) => {
@@ -590,12 +608,56 @@ describe("Question relay", () => {
         "test-run-id",
         {
           status: "failed",
-          error_message: "Upstream LLM stream terminated",
+          error_message: UPSTREAM_PROVIDER_FAILURE_MESSAGE,
         },
       );
     });
 
-    it("surfaces upstream connection errors with the connection-specific message", async () => {
+    it("surfaces upstream provider failures with a retryable message", async () => {
+      vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
+        id: "test-task-id",
+        title: "t",
+        description: "original task description",
+      } as unknown as Task);
+      vi.spyOn(server.posthogAPI, "getTaskRun").mockResolvedValue({
+        id: "test-run-id",
+        task: "test-task-id",
+        state: {},
+      } as unknown as TaskRun);
+
+      const promptSpy = vi
+        .fn()
+        .mockRejectedValueOnce(createUpstreamProviderFailureError());
+      const updateTaskRunSpy = vi
+        .spyOn(server.posthogAPI, "updateTaskRun")
+        .mockResolvedValue({} as TaskRun);
+      server.session = {
+        payload: TEST_PAYLOAD,
+        acpSessionId: "acp-session",
+        clientConnection: { prompt: promptSpy },
+        logWriter: {
+          flushAll: vi.fn().mockResolvedValue(undefined),
+          getFullAgentResponse: vi.fn().mockReturnValue(null),
+          resetTurnMessages: vi.fn(),
+          flush: vi.fn().mockResolvedValue(undefined),
+          isRegistered: vi.fn().mockReturnValue(true),
+        },
+      };
+
+      await server.sendInitialTaskMessage(TEST_PAYLOAD);
+
+      expect(promptSpy).toHaveBeenCalledTimes(1);
+      expect(updateTaskRunSpy).toHaveBeenCalledWith(
+        "test-task-id",
+        "test-run-id",
+        {
+          status: "failed",
+          error_message: UPSTREAM_PROVIDER_FAILURE_MESSAGE,
+        },
+      );
+    });
+
+    it("surfaces upstream connection errors with the shared provider failure message", async () => {
       vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
         id: "test-task-id",
         title: "t",
@@ -634,7 +696,7 @@ describe("Question relay", () => {
         "test-run-id",
         {
           status: "failed",
-          error_message: "Upstream LLM connection error",
+          error_message: UPSTREAM_PROVIDER_FAILURE_MESSAGE,
         },
       );
     });

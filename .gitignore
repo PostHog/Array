@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 
 # Build outputs
 dist/
@@ -41,6 +42,7 @@ MEMORY.md
 .agent-trigger
 .posthog-code/
 .claude/worktrees/
+.claude/settings.local.json
 
 # Testing
 playwright-results/

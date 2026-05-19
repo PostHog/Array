@@ -1,5 +1,6 @@
 import { isOtherOption } from "@components/action-selector/constants";
 import { PermissionSelector } from "@components/permissions/PermissionSelector";
+import { showOfflineToast } from "@features/connectivity/connectivityToast";
 import {
   PromptInput,
   type EditorHandle as PromptInputHandle,
@@ -247,6 +248,17 @@ export function SessionView({
       }
     },
     [onSendPrompt],
+  );
+
+  const handleBeforeSubmit = useCallback(
+    (text: string, clearEditor: () => void): boolean => {
+      if (!isOnline) {
+        showOfflineToast();
+        return false;
+      }
+      return onBeforeSubmit ? onBeforeSubmit(text, clearEditor) : true;
+    },
+    [isOnline, onBeforeSubmit],
   );
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -652,7 +664,7 @@ export function SessionView({
                               />
                             ) : null
                           }
-                          onBeforeSubmit={onBeforeSubmit}
+                          onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
                           onBashCommand={onBashCommand}
                           onCancel={onCancelPrompt}

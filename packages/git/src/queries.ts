@@ -1,7 +1,9 @@
+import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { CreateGitClientOptions } from "./client";
 import { getGitOperationManager } from "./operation-manager";
+import { streamGitStatus } from "./status-stream";
 
 export interface WorktreeListEntry {
   path: string;
@@ -20,6 +22,9 @@ export interface GitStatus {
   modified: string[];
   deleted: string[];
   untracked: string[];
+  overflowedDirs?: string[];
+  totalUntrackedSeen?: number;
+  totalUntrackedTruncated?: boolean;
 }
 
 type GitLike = {
@@ -139,21 +144,19 @@ export async function getStatus(
   baseDir: string,
   options?: CreateGitClientOptions,
 ): Promise<GitStatus> {
-  const manager = getGitOperationManager();
-  return manager.executeRead(
-    baseDir,
-    async (git) => {
-      const status = await git.status(["--untracked-files=all"]);
-      return {
-        isClean: status.isClean(),
-        staged: status.staged,
-        modified: status.modified,
-        deleted: status.deleted,
-        untracked: status.not_added,
-      };
-    },
-    { signal: options?.abortSignal },
-  );
+  const status = await streamGitStatus(baseDir, {
+    signal: options?.abortSignal,
+  });
+  return {
+    isClean: status.isClean,
+    staged: status.staged,
+    modified: status.modified,
+    deleted: status.deleted,
+    untracked: status.untracked,
+    overflowedDirs: status.overflowedDirs,
+    totalUntrackedSeen: status.totalUntrackedSeen,
+    totalUntrackedTruncated: status.totalUntrackedTruncated,
+  };
 }
 
 export async function hasChanges(
@@ -338,14 +341,17 @@ export async function getChangedFiles(
             }
           } catch {}
         }
+      } catch {}
 
-        const status = await git.status(["--untracked-files=all"]);
+      try {
+        const status = await streamGitStatus(baseDir, {
+          signal: options?.abortSignal,
+        });
         for (const file of [
           ...status.modified,
           ...status.created,
           ...status.deleted,
-          ...status.renamed.map((r) => r.to),
-          ...status.not_added,
+          ...status.untracked,
         ]) {
           changedFiles.add(file);
         }
@@ -366,10 +372,89 @@ export async function getAllBranches(
     baseDir,
     async (git) => {
       try {
-        const summary = await git.branchLocal();
-        return summary.all;
+        // Use `for-each-ref` rather than `branch --list` (via simple-git's
+        // branchLocal()): during a rebase or cherry-pick git surfaces a
+        // pseudo-branch like `(no branch, rebasing main)` which simple-git's
+        // parser mistakenly returns as a branch named `(no`.
+        const output = await git.raw([
+          "for-each-ref",
+          "--format=%(refname:short)",
+          "refs/heads/",
+        ]);
+        return output.split("\n").filter(Boolean);
       } catch {
         return [];
+      }
+    },
+    { signal: options?.abortSignal },
+  );
+}
+
+export type GitBusyOperation = "rebase" | "merge" | "cherry-pick" | "revert";
+
+export type GitBusyState =
+  | { busy: false }
+  | { busy: true; operation: GitBusyOperation };
+
+export async function inspectGitBusyState(git: GitLike): Promise<GitBusyState> {
+  const toplevel = (await git.raw(["rev-parse", "--show-toplevel"])).trim();
+
+  const resolveGitPath = async (gitPath: string): Promise<string> => {
+    const relative = (
+      await git.raw(["rev-parse", "--git-path", gitPath])
+    ).trim();
+    return path.isAbsolute(relative)
+      ? relative
+      : path.resolve(toplevel, relative);
+  };
+
+  const pathExists = async (gitPath: string): Promise<boolean> => {
+    const resolved = await resolveGitPath(gitPath);
+    try {
+      await fs.access(resolved);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const dirExists = async (gitPath: string): Promise<boolean> => {
+    const resolved = await resolveGitPath(gitPath);
+    try {
+      const stat = await fs.stat(resolved);
+      return stat.isDirectory();
+    } catch {
+      return false;
+    }
+  };
+
+  if ((await dirExists("rebase-merge")) || (await dirExists("rebase-apply"))) {
+    return { busy: true, operation: "rebase" };
+  }
+  if (await pathExists("MERGE_HEAD")) {
+    return { busy: true, operation: "merge" };
+  }
+  if (await pathExists("CHERRY_PICK_HEAD")) {
+    return { busy: true, operation: "cherry-pick" };
+  }
+  if (await pathExists("REVERT_HEAD")) {
+    return { busy: true, operation: "revert" };
+  }
+  return { busy: false };
+}
+
+export async function getGitBusyState(
+  baseDir: string,
+  options?: CreateGitClientOptions,
+): Promise<GitBusyState> {
+  const manager = getGitOperationManager();
+  return manager.executeRead(
+    baseDir,
+    async (git) => {
+      try {
+        return await inspectGitBusyState(git);
+      } catch {
+        return { busy: false };
       }
     },
     { signal: options?.abortSignal },
@@ -408,14 +493,80 @@ function matchesExcludePattern(filePath: string, patterns: string[]): boolean {
   });
 }
 
-async function countFileLines(filePath: string): Promise<number> {
+async function countFileLines(
+  filePath: string,
+  options?: { signal?: AbortSignal },
+): Promise<number> {
   try {
-    const content = await fs.readFile(filePath, "utf-8");
-    if (!content) return 0;
-    return content.split("\n").length - (content.endsWith("\n") ? 1 : 0);
+    // `lstat` instead of `stat` so an untracked symlink (rare, but legal)
+    // pointing at /dev/zero or a path outside the workdir doesn't stream
+    // forever — symlinks fail `isFile()` and short-circuit to 0.
+    const stat = await fs.lstat(filePath);
+    if (!stat.isFile() || stat.size === 0) return 0;
+    return await new Promise<number>((resolve) => {
+      let newlines = 0;
+      let lastByte = -1;
+      const stream = createReadStream(filePath, { signal: options?.signal });
+      stream.on("data", (rawChunk) => {
+        // Node types stream chunks as `string | Buffer`; without an
+        // `encoding` option `createReadStream` always emits `Buffer`,
+        // so the cast is for the type checker, not the runtime.
+        const chunk = rawChunk as Buffer;
+        // Native `Buffer.indexOf` — ~10x faster than a per-byte JS loop
+        // on multi-MB buffers, which is the workload this whole function
+        // exists to handle.
+        for (
+          let idx = chunk.indexOf(0x0a);
+          idx !== -1;
+          idx = chunk.indexOf(0x0a, idx + 1)
+        ) {
+          newlines++;
+        }
+        if (chunk.length > 0) lastByte = chunk[chunk.length - 1];
+      });
+      stream.on("end", () => {
+        // Guards against TOCTOU truncation between lstat and read —
+        // size > 0 at stat time, zero bytes by the time we open.
+        if (lastByte === -1) {
+          resolve(0);
+          return;
+        }
+        resolve(lastByte === 0x0a ? newlines : newlines + 1);
+      });
+      stream.on("error", (err) => {
+        // Don't propagate — caller already treats any failure as 0 lines.
+        // But log so the next time a "shows 0 lines" mystery shows up
+        // there's a breadcrumb (the original OOM in #2218 hid behind the
+        // same silent-zero return).
+        console.warn(`countFileLines failed for ${filePath}:`, err);
+        resolve(0);
+      });
+    });
   } catch {
     return 0;
   }
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+  options?: { signal?: AbortSignal },
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let index = 0;
+  const worker = async () => {
+    while (index < items.length) {
+      if (options?.signal?.aborted) return;
+      const i = index++;
+      results[i] = await mapper(items[i]);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  );
+  return results;
 }
 
 export async function getChangedFilesDetailed(
@@ -432,8 +583,11 @@ export async function getChangedFilesDetailed(
         const [stagedSummary, unstagedSummary, status] = await Promise.all([
           git.diffSummary(["--cached", "-M", "HEAD"]),
           git.diffSummary(["-M"]),
-          git.status(["--untracked-files=all"]),
+          streamGitStatus(baseDir, { signal: gitOptions?.abortSignal }),
         ]);
+
+        const deletedSet = new Set(status.deleted);
+        const createdSet = new Set(status.created);
 
         const diffSeenPaths = new Set<string>();
         const excludedPaths = new Set<string>();
@@ -456,9 +610,9 @@ export async function getChangedFilesDetailed(
             path: file.file,
             status: hasFrom
               ? "renamed"
-              : status.deleted.includes(file.file)
+              : deletedSet.has(file.file)
                 ? "deleted"
-                : status.created.includes(file.file)
+                : createdSet.has(file.file)
                   ? "added"
                   : "modified",
             originalPath: hasFrom ? (file.from as string) : undefined,
@@ -481,22 +635,31 @@ export async function getChangedFilesDetailed(
           pushDiffFile(file, false);
         }
 
-        const MAX_UNTRACKED_FILES = 10_000;
-        let untrackedProcessed = 0;
-        for (const file of status.not_added) {
-          if (untrackedProcessed >= MAX_UNTRACKED_FILES) break;
+        const untrackedToCount: string[] = [];
+        for (const file of status.untracked) {
           if (diffSeenPaths.has(file) || excludedPaths.has(file)) continue;
           if (excludePatterns && matchesExcludePattern(file, excludePatterns)) {
             continue;
           }
-          const lineCount = await countFileLines(path.join(baseDir, file));
+          untrackedToCount.push(file);
+        }
+
+        const untrackedLineCounts = await mapWithConcurrency(
+          untrackedToCount,
+          16,
+          (file) =>
+            countFileLines(path.join(baseDir, file), {
+              signal: gitOptions?.abortSignal,
+            }),
+          { signal: gitOptions?.abortSignal },
+        );
+        for (let i = 0; i < untrackedToCount.length; i++) {
           files.push({
-            path: file,
+            path: untrackedToCount[i],
             status: "untracked",
-            linesAdded: lineCount,
+            linesAdded: untrackedLineCounts[i],
             linesRemoved: 0,
           });
-          untrackedProcessed++;
         }
 
         return files;

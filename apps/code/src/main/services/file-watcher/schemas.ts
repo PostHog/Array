@@ -25,6 +25,7 @@ export const FileWatcherEvent = {
   FileChanged: "file-changed",
   FileDeleted: "file-deleted",
   GitStateChanged: "git-state-changed",
+  WorkingTreeChanged: "working-tree-changed",
 } as const;
 
 export type DirectoryChangedPayload = {
@@ -46,9 +47,14 @@ export type GitStateChangedPayload = {
   repoPath: string;
 };
 
+export type WorkingTreeChangedPayload = {
+  repoPath: string;
+};
+
 export interface FileWatcherEvents {
   [FileWatcherEvent.DirectoryChanged]: DirectoryChangedPayload;
   [FileWatcherEvent.FileChanged]: FileChangedPayload;
   [FileWatcherEvent.FileDeleted]: FileDeletedPayload;
   [FileWatcherEvent.GitStateChanged]: GitStateChangedPayload;
+  [FileWatcherEvent.WorkingTreeChanged]: WorkingTreeChangedPayload;
 }

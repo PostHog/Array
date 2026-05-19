@@ -40,11 +40,15 @@ export function OnboardingFlow() {
   const completeOnboarding = useOnboardingStore(
     (state) => state.completeOnboarding,
   );
+  const completeSetup = useOnboardingStore((state) => state.completeSetup);
   const hasCompletedSetup = useOnboardingStore(
     (state) => state.hasCompletedSetup,
   );
   const resetOnboarding = useOnboardingStore((state) => state.resetOnboarding);
   const navigateToSetup = useNavigationStore((state) => state.navigateToSetup);
+  const navigateToTaskInput = useNavigationStore(
+    (state) => state.navigateToTaskInput,
+  );
   const logoutMutation = useLogoutMutation();
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
@@ -59,6 +63,12 @@ export function OnboardingFlow() {
     if (!hasCompletedSetup) {
       navigateToSetup();
     }
+  };
+
+  const handleSkip = () => {
+    completeOnboarding();
+    completeSetup();
+    navigateToTaskInput();
   };
 
   const footerRight = (
@@ -83,7 +93,7 @@ export function OnboardingFlow() {
           size="1"
           variant="ghost"
           color="gray"
-          onClick={handleComplete}
+          onClick={handleSkip}
           className="opacity-50"
         >
           <ArrowRight size={14} weight="bold" />

@@ -2,7 +2,10 @@ import { useReviewNavigationStore } from "@features/code-review/stores/reviewNav
 import { CommandKeyHints } from "@features/command/components/CommandKeyHints";
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { TaskIcon } from "@features/sidebar/components/items/TaskIcon";
+import { useTaskPrStatus } from "@features/sidebar/hooks/useTaskPrStatus";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
+import { useTasks } from "@features/tasks/hooks/useTasks";
 import {
   Autocomplete,
   AutocompleteCollection,
@@ -24,6 +27,7 @@ import {
   SunIcon,
   ViewVerticalIcon,
 } from "@radix-ui/react-icons";
+import type { Task } from "@shared/types";
 import {
   ANALYTICS_EVENTS,
   type CommandMenuAction,
@@ -49,8 +53,28 @@ type Command = {
 
 type CommandSection = { label: string; items: Command[] };
 
+/**
+ * Task icon for the command palette. Renders the same shared `TaskIcon` as
+ * the sidebar — cloud run status, PR/branch status, etc. — deriving its
+ * inputs from the raw task and a per-task PR-status query.
+ */
+function TaskCommandIcon({ task }: { task: Task }) {
+  const { prState, hasDiff } = useTaskPrStatus({
+    id: task.id,
+    cloudPrUrl: null,
+  });
+  return (
+    <TaskIcon
+      workspaceMode={task.latest_run?.environment}
+      taskRunStatus={task.latest_run?.status}
+      prState={prState}
+      hasDiff={hasDiff}
+    />
+  );
+}
+
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
-  const { navigateToTaskInput } = useNavigationStore();
+  const { navigateToTaskInput, navigateToTask } = useNavigationStore();
   const openSettingsDialog = useSettingsDialogStore((state) => state.open);
   const closeSettingsDialog = useSettingsDialogStore((state) => state.close);
   const { folders } = useFolders();
@@ -63,6 +87,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const getReviewMode = useReviewNavigationStore(
     (state) => state.getReviewMode,
   );
+  const { data: tasks = [] } = useTasks();
   const [query, setQuery] = useState("");
   const [systemPrefersDark, setSystemPrefersDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches,
@@ -131,7 +156,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     return options;
   }, [theme, setTheme, systemPrefersDark]);
 
-  const sections = useMemo<CommandSection[]>(() => {
+  const commandSections = useMemo<CommandSection[]>(() => {
     const navigation: Command[] = [
       {
         id: "home",
@@ -214,6 +239,31 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     openReviewPanel,
   ]);
 
+  const taskSections = useMemo<CommandSection[]>(() => {
+    if (tasks.length === 0) return [];
+    return [
+      {
+        label: "Tasks",
+        items: tasks.map((task) => ({
+          id: `task-${task.id}`,
+          label: task.title,
+          icon: <TaskCommandIcon task={task} />,
+          action: "open-task" as CommandMenuAction,
+          onRun: () => {
+            closeSettingsDialog();
+            navigateToTask(task);
+          },
+        })),
+      },
+    ];
+  }, [tasks, navigateToTask, closeSettingsDialog]);
+
+  // Commands and tasks share a single filterable list.
+  const sections = useMemo(
+    () => [...commandSections, ...taskSections],
+    [commandSections, taskSections],
+  );
+
   const allCommands = useMemo(
     () => sections.flatMap((s) => s.items),
     [sections],
@@ -254,14 +304,14 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           }}
         >
           <AutocompleteInput
-            placeholder="Type a command…"
+            placeholder="Search commands and tasks…"
             autoFocus
             showClear
           />
           <AutocompleteStatus
             emptyContent={
               <span>
-                No commands match <strong>"{query}"</strong>
+                No results for <strong>"{query}"</strong>
               </span>
             }
           />
@@ -275,9 +325,14 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                       key={cmd.id}
                       value={cmd.id}
                       onClick={() => handleSelect(cmd.id)}
+                      // Long task names wrap instead of truncating, so the
+                      // item must grow: min-height, not a fixed height.
+                      className="h-auto! min-h-7 py-1.5 text-left"
                     >
                       {cmd.icon}
-                      {cmd.label}
+                      <span className="wrap-break-word min-w-0 whitespace-normal">
+                        {cmd.label}
+                      </span>
                     </AutocompleteItem>
                   )}
                 </AutocompleteCollection>

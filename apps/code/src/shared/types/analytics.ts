@@ -39,7 +39,8 @@ export type CommandMenuAction =
   | "logout"
   | "toggle-theme"
   | "toggle-left-sidebar"
-  | "open-review-panel";
+  | "open-review-panel"
+  | "open-task";
 
 // Event property interfaces
 export interface TaskListViewProperties {
@@ -298,7 +299,8 @@ type SetupDiscoveredTaskCategory =
   | "error_tracking"
   | "event_tracking"
   | "funnel"
-  | "posthog_setup";
+  | "posthog_setup"
+  | "experiment";
 
 export interface SetupViewedProperties {
   discovery_status: "idle" | "running" | "done" | "error";

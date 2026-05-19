@@ -1,3 +1,5 @@
+import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient";
+import { useCurrentUser } from "@features/auth/hooks/authQueries";
 import {
   SelectReportPane,
   SkeletonBackdrop,
@@ -66,6 +68,21 @@ export function InboxSignalsTab() {
   const suggestedReviewerFilter = useInboxSignalsFilterStore(
     (s) => s.suggestedReviewerFilter,
   );
+  const seedSuggestedReviewerFilterWithCurrentUser = useInboxSignalsFilterStore(
+    (s) => s.seedSuggestedReviewerFilterWithCurrentUser,
+  );
+
+  // ── Current user (seeds reviewer filter on first inbox visit) ───────────
+  const authClient = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({
+    client: authClient,
+    enabled: !!authClient,
+  });
+
+  useEffect(() => {
+    if (!currentUser?.uuid) return;
+    seedSuggestedReviewerFilterWithCurrentUser(currentUser.uuid);
+  }, [currentUser?.uuid, seedSuggestedReviewerFilterWithCurrentUser]);
 
   // ── GitHub integration ───────────────────────────────────────────────
   const { hasGithubIntegration } = useRepositoryIntegration();
@@ -283,18 +300,12 @@ export function InboxSignalsTab() {
         );
       } else if (event.metaKey) {
         toggleReportSelection(reportId);
-      } else if (
-        selectedReportIdsRef.current.length === 1 &&
-        selectedReportIdsRef.current[0] === reportId
-      ) {
-        // Plain click on the only selected report — deselect it
-        clearSelection();
       } else {
-        // Plain click — select only this report
+        // Plain click — select only this report (no-op if already the sole selection)
         setSelectedReportIds([reportId]);
       }
     },
-    [selectRange, toggleReportSelection, setSelectedReportIds, clearSelection],
+    [selectRange, toggleReportSelection, setSelectedReportIds],
   );
 
   // Select-all checkbox

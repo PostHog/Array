@@ -325,13 +325,5 @@ function buildViewMenu(): MenuItemConstructorOptions {
 }
 
 function buildWindowMenu(): MenuItemConstructorOptions {
-  return {
-    label: "Window",
-    submenu: [
-      { role: "minimize" },
-      { role: "zoom" },
-      { type: "separator" },
-      { role: "front" },
-    ],
-  };
+  return { role: "windowMenu" };
 }
