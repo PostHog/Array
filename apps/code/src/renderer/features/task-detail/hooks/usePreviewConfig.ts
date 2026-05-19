@@ -35,6 +35,45 @@ function flattenValues(
   );
 }
 
+const EFFORT_RANK: Record<string, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  xhigh: 3,
+  max: 4,
+};
+
+/**
+ * Clamp a desired effort to the nearest level the current model supports.
+ * Falls back to the highest supported level when the desired level has no
+ * known rank (e.g. unrecognized value from older settings).
+ */
+function clampEffortToAvailable(
+  desired: string,
+  available: string[],
+): string | null {
+  if (available.length === 0) return null;
+  if (available.includes(desired)) return desired;
+
+  const desiredRank = EFFORT_RANK[desired];
+  if (desiredRank === undefined) {
+    return available[available.length - 1];
+  }
+
+  const ranked = available
+    .map((value) => ({ value, rank: EFFORT_RANK[value] }))
+    .filter((entry): entry is { value: string; rank: number } =>
+      Number.isFinite(entry.rank),
+    );
+  if (ranked.length === 0) return available[0];
+
+  return ranked.reduce((closest, entry) =>
+    Math.abs(entry.rank - desiredRank) < Math.abs(closest.rank - desiredRank)
+      ? entry
+      : closest,
+  ).value;
+}
+
 /**
  * Fetches config options (models, modes, effort levels) for the task input
  * page via a lightweight tRPC query. No agent session is created.
@@ -134,10 +173,14 @@ export function usePreviewConfig(
             }
             return opt;
           }
-          if (validValues.includes(defaultReasoningEffort)) {
+          const clamped = clampEffortToAvailable(
+            defaultReasoningEffort,
+            validValues,
+          );
+          if (clamped) {
             return {
               ...opt,
-              currentValue: defaultReasoningEffort,
+              currentValue: clamped,
             } as SessionConfigOption;
           }
           return opt;
@@ -180,18 +223,21 @@ export function usePreviewConfig(
 
           const { lastUsedReasoningEffort, defaultReasoningEffort } =
             useSettingsStore.getState();
+          const availableValues: string[] =
+            effortOpts?.map((e) => e.value) ?? [];
           const isValidEffort = (effort: unknown): effort is string =>
-            typeof effort === "string" &&
-            !!effortOpts?.some((e) => e.value === effort);
+            typeof effort === "string" && availableValues.includes(effort);
           const resolveEffortFallback = (): string => {
-            if (defaultReasoningEffort !== "last_used") {
-              return isValidEffort(defaultReasoningEffort)
-                ? defaultReasoningEffort
-                : "high";
-            }
-            return isValidEffort(lastUsedReasoningEffort)
-              ? lastUsedReasoningEffort
-              : "high";
+            const desired =
+              defaultReasoningEffort === "last_used"
+                ? lastUsedReasoningEffort
+                : defaultReasoningEffort;
+            if (isValidEffort(desired)) return desired;
+            const clamped =
+              typeof desired === "string"
+                ? clampEffortToAvailable(desired, availableValues)
+                : null;
+            return clamped ?? availableValues[0] ?? "high";
           };
           if (effortOpts && existingIdx >= 0) {
             const currentEffort = updated[existingIdx].currentValue;
