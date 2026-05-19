@@ -367,10 +367,10 @@ export function ReportDetailPane({
   ]);
 
   // Bind native scroll listener to the Radix ScrollArea viewport (Radix doesn't forward onScroll).
+  // The viewport's data-report-id attribute is set from report.id so we both (a) track the
+  // current report in the DOM for debugging and (b) give biome's useExhaustiveDependencies
+  // a real reactive use of report.id, ensuring the effect re-binds on every report swap.
   const scrollAreaRootRef = useRef<HTMLDivElement>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: report.id is intentionally listed
-  // even though it isn't referenced inside the effect body — it forces re-binding when the user
-  // swaps reports, in case Radix internally replaces the viewport element during the swap.
   useEffect(() => {
     if (!onScroll) return;
     const root = scrollAreaRootRef.current;
@@ -379,10 +379,14 @@ export function ReportDetailPane({
       "[data-radix-scroll-area-viewport]",
     );
     if (!viewport) return;
+    viewport.dataset.reportId = report.id;
     const handler = () => onScroll();
     viewport.addEventListener("scroll", handler, { passive: true });
-    return () => viewport.removeEventListener("scroll", handler);
-  }, [onScroll]);
+    return () => {
+      viewport.removeEventListener("scroll", handler);
+      delete viewport.dataset.reportId;
+    };
+  }, [onScroll, report.id]);
 
   useEffect(() => {
     if (!canCreateImplementationPr) return;
