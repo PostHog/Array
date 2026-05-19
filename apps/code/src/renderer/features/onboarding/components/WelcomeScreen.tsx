@@ -118,7 +118,7 @@ export function WelcomeScreen({ onNext }: WelcomeScreenProps) {
               <Logo />
             </Flex>
 
-            <div className="grid w-full grid-cols-6 grid-rows-[18rem_14rem] gap-3 overflow-y-auto rounded-lg">
+            <div className="grid w-full grid-cols-6 grid-rows-[18rem_14rem] gap-3 overflow-hidden rounded-lg">
               {FEATURES.map((feature, index) => (
                 <FeatureBentoCard
                   key={feature.title}
