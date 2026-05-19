@@ -679,6 +679,8 @@ function SessionRecordingVideo({
 }) {
   const projectId = useAuthStateValue((state) => state.projectId);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const hasFiredPlayRef = useRef(false);
+  const interaction = useSignalInteraction();
   const videoQuery = useAuthenticatedQuery<string | null>(
     ["export-video", projectId, exportedAssetId, sessionId],
     async (client) => {
@@ -718,6 +720,11 @@ function SessionRecordingVideo({
         muted
         preload="metadata"
         className="max-h-[300px] w-full rounded"
+        onPlay={() => {
+          if (hasFiredPlayRef.current) return;
+          hasFiredPlayRef.current = true;
+          interaction?.onInteraction({ type: "play_session_recording" });
+        }}
       />
     </Box>
   );

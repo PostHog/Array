@@ -8,7 +8,8 @@ export type SignalInteractionAction =
       type: "expand_signal_section";
       section: "relevant_code" | "data_queried";
     }
-  | { type: "view_signal_external" };
+  | { type: "view_signal_external" }
+  | { type: "play_session_recording" };
 
 export interface SignalInteractionContextValue {
   signal: Signal;
