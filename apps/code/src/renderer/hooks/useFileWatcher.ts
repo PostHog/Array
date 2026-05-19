@@ -8,14 +8,39 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { logger } from "@utils/logger";
 import { toRelativePath } from "@utils/path";
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 const log = logger.scope("file-watcher");
+
+const GIT_INVALIDATION_DEBOUNCE_MS = 500;
 
 export function useFileWatcher(repoPath: string | null, taskId?: string) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const closeTabsForFile = usePanelLayoutStore((s) => s.closeTabsForFile);
+
+  const gitInvalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const scheduleGitWorkingTreeInvalidation = useCallback((rp: string) => {
+    if (gitInvalidateTimerRef.current) {
+      clearTimeout(gitInvalidateTimerRef.current);
+    }
+    gitInvalidateTimerRef.current = setTimeout(() => {
+      gitInvalidateTimerRef.current = null;
+      invalidateGitWorkingTreeQueries(rp);
+    }, GIT_INVALIDATION_DEBOUNCE_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (gitInvalidateTimerRef.current) {
+        clearTimeout(gitInvalidateTimerRef.current);
+        gitInvalidateTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!repoPath) return;
@@ -47,7 +72,7 @@ export function useFileWatcher(repoPath: string | null, taskId?: string) {
             filePath: relativePath,
           }),
         );
-        invalidateGitWorkingTreeQueries(repoPath);
+        scheduleGitWorkingTreeInvalidation(repoPath);
       },
     }),
   );
@@ -57,7 +82,7 @@ export function useFileWatcher(repoPath: string | null, taskId?: string) {
       enabled: !!repoPath,
       onData: ({ repoPath: rp, filePath }) => {
         if (rp !== repoPath) return;
-        invalidateGitWorkingTreeQueries(repoPath);
+        scheduleGitWorkingTreeInvalidation(repoPath);
         if (!taskId) return;
         const relativePath = toRelativePath(filePath, repoPath);
         closeTabsForFile(taskId, relativePath);
@@ -71,7 +96,7 @@ export function useFileWatcher(repoPath: string | null, taskId?: string) {
       onData: ({ repoPath: rp }) => {
         if (rp !== repoPath) return;
         invalidateGitBranchQueries(repoPath);
-        invalidateGitWorkingTreeQueries(repoPath);
+        scheduleGitWorkingTreeInvalidation(repoPath);
       },
     }),
   );
