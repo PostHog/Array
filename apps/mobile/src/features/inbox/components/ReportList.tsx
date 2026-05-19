@@ -21,7 +21,7 @@ export function ReportList({
   onReportPress,
   contentInsetTop = 0,
 }: ReportListProps) {
-  const { reports, totalCount, isLoading, error, refetch } = useInboxReports();
+  const { reports, isLoading, error, refetch } = useInboxReports();
   const themeColors = useThemeColors();
 
   const handlePress = (report: SignalReport) => {

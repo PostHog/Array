@@ -8,9 +8,18 @@ module.exports = function withAdiRegistration(config) {
   return withDangerousMod(config, [
     "android",
     async (cfg) => {
-      const assetsDir = path.join(cfg.modRequest.platformProjectRoot, "app", "src", "main", "assets");
+      const assetsDir = path.join(
+        cfg.modRequest.platformProjectRoot,
+        "app",
+        "src",
+        "main",
+        "assets",
+      );
       fs.mkdirSync(assetsDir, { recursive: true });
-      fs.writeFileSync(path.join(assetsDir, "adi-registration.properties"), ADI_SNIPPET);
+      fs.writeFileSync(
+        path.join(assetsDir, "adi-registration.properties"),
+        ADI_SNIPPET,
+      );
       return cfg;
     },
   ]);

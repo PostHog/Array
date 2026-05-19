@@ -84,7 +84,10 @@ export function useInboxReport(reportId: string | null) {
 
   return useQuery<SignalReport | null>({
     queryKey: inboxKeys.detail(reportId ?? ""),
-    queryFn: () => getSignalReport(reportId!),
+    queryFn: () => {
+      if (!reportId) throw new Error("reportId is required");
+      return getSignalReport(reportId);
+    },
     enabled: !!projectId && !!oauthAccessToken && !!reportId,
   });
 }
@@ -119,7 +122,10 @@ export function useInboxReportArtefacts(reportId: string | null) {
 
   return useQuery<SignalReportArtefactsResponse>({
     queryKey: inboxKeys.artefacts(reportId ?? ""),
-    queryFn: () => getSignalReportArtefacts(reportId!),
+    queryFn: () => {
+      if (!reportId) throw new Error("reportId is required");
+      return getSignalReportArtefacts(reportId);
+    },
     enabled: !!projectId && !!oauthAccessToken && !!reportId,
   });
 }
@@ -129,7 +135,10 @@ export function useInboxReportSignals(reportId: string | null) {
 
   return useQuery<SignalReportSignalsResponse>({
     queryKey: inboxKeys.signals(reportId ?? ""),
-    queryFn: () => getSignalReportSignals(reportId!),
+    queryFn: () => {
+      if (!reportId) throw new Error("reportId is required");
+      return getSignalReportSignals(reportId);
+    },
     enabled: !!projectId && !!oauthAccessToken && !!reportId,
   });
 }
