@@ -8,6 +8,7 @@ export type SettingsCategory =
   | "environments"
   | "cloud-environments"
   | "personalization"
+  | "terminal"
   | "claude-code"
   | "shortcuts"
   | "github"
