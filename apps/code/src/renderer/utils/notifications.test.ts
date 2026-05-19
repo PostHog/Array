@@ -40,11 +40,9 @@ import { notifyPermissionRequest, notifyPromptComplete } from "./notifications";
 const TASK_ID = "task-123";
 const OTHER_TASK_ID = "task-999";
 
-function setView(view: {
-  type: string;
-  data?: { id: string };
-  taskId?: string;
-}) {
+type View = { type: string; data?: { id: string }; taskId?: string };
+
+function setView(view: View) {
   useNavigationStore.setState({
     // biome-ignore lint/suspicious/noExplicitAny: test-only narrow cast
     view: view as any,
@@ -72,91 +70,106 @@ describe("notifications", () => {
   });
 
   describe("shouldNotifyForTask gating (via notifyPermissionRequest)", () => {
-    it("notifies when the window is unfocused", () => {
-      setFocus(false);
-      setView({ type: "task-detail", data: { id: TASK_ID }, taskId: TASK_ID });
+    const cases: ReadonlyArray<{
+      name: string;
+      focused: boolean;
+      view: View;
+      taskId?: string;
+      shouldNotify: boolean;
+    }> = [
+      {
+        name: "window unfocused → notifies",
+        focused: false,
+        view: { type: "task-detail", data: { id: TASK_ID }, taskId: TASK_ID },
+        taskId: TASK_ID,
+        shouldNotify: true,
+      },
+      {
+        name: "focused on the same task → does not notify",
+        focused: true,
+        view: { type: "task-detail", data: { id: TASK_ID }, taskId: TASK_ID },
+        taskId: TASK_ID,
+        shouldNotify: false,
+      },
+      {
+        name: "focused on a different task → notifies",
+        focused: true,
+        view: {
+          type: "task-detail",
+          data: { id: OTHER_TASK_ID },
+          taskId: OTHER_TASK_ID,
+        },
+        taskId: TASK_ID,
+        shouldNotify: true,
+      },
+      {
+        name: "focused but view is not task-detail → notifies",
+        focused: true,
+        view: { type: "inbox" },
+        taskId: TASK_ID,
+        shouldNotify: true,
+      },
+      {
+        name: "focused with no taskId supplied → does not notify",
+        focused: true,
+        view: { type: "inbox" },
+        taskId: undefined,
+        shouldNotify: false,
+      },
+      {
+        name: "focused, view.data missing, falls back to view.taskId → does not notify",
+        focused: true,
+        view: { type: "task-detail", taskId: TASK_ID },
+        taskId: TASK_ID,
+        shouldNotify: false,
+      },
+    ];
 
-      notifyPermissionRequest("My task", TASK_ID);
+    it.each(cases)("$name", ({ focused, view, taskId, shouldNotify }) => {
+      setFocus(focused);
+      setView(view);
 
-      expect(sendMutate).toHaveBeenCalledTimes(1);
-      expect(playSound).toHaveBeenCalledTimes(1);
-    });
+      notifyPermissionRequest("My task", taskId);
 
-    it("does NOT notify when focused on the same task", () => {
-      setFocus(true);
-      setView({ type: "task-detail", data: { id: TASK_ID }, taskId: TASK_ID });
-
-      notifyPermissionRequest("My task", TASK_ID);
-
-      expect(sendMutate).not.toHaveBeenCalled();
-      expect(playSound).not.toHaveBeenCalled();
-    });
-
-    it("notifies when focused but viewing a different task", () => {
-      setFocus(true);
-      setView({
-        type: "task-detail",
-        data: { id: OTHER_TASK_ID },
-        taskId: OTHER_TASK_ID,
-      });
-
-      notifyPermissionRequest("My task", TASK_ID);
-
-      expect(sendMutate).toHaveBeenCalledTimes(1);
-      expect(playSound).toHaveBeenCalledTimes(1);
-    });
-
-    it("notifies when focused but the view is not a task-detail", () => {
-      setFocus(true);
-      setView({ type: "inbox" });
-
-      notifyPermissionRequest("My task", TASK_ID);
-
-      expect(sendMutate).toHaveBeenCalledTimes(1);
-    });
-
-    it("does NOT notify when focused and no taskId is supplied", () => {
-      setFocus(true);
-      setView({ type: "inbox" });
-
-      notifyPermissionRequest("My task");
-
-      expect(sendMutate).not.toHaveBeenCalled();
-    });
-
-    it("falls back to view.taskId when view.data is missing", () => {
-      setFocus(true);
-      setView({ type: "task-detail", taskId: TASK_ID });
-
-      notifyPermissionRequest("My task", TASK_ID);
-
-      expect(sendMutate).not.toHaveBeenCalled();
+      expect(sendMutate).toHaveBeenCalledTimes(shouldNotify ? 1 : 0);
+      expect(playSound).toHaveBeenCalledTimes(shouldNotify ? 1 : 0);
     });
   });
 
   describe("notifyPromptComplete", () => {
-    it("only fires on end_turn", () => {
-      setFocus(false);
-      notifyPromptComplete("My task", "tool_use", TASK_ID);
-      expect(sendMutate).not.toHaveBeenCalled();
+    it.each([
+      { stopReason: "tool_use", shouldNotify: false },
+      { stopReason: "max_tokens", shouldNotify: false },
+      { stopReason: "end_turn", shouldNotify: true },
+    ])(
+      "stop reason '$stopReason' → notifies=$shouldNotify",
+      ({ stopReason, shouldNotify }) => {
+        setFocus(false);
+        notifyPromptComplete("My task", stopReason, TASK_ID);
+        expect(sendMutate).toHaveBeenCalledTimes(shouldNotify ? 1 : 0);
+      },
+    );
 
-      notifyPromptComplete("My task", "end_turn", TASK_ID);
-      expect(sendMutate).toHaveBeenCalledTimes(1);
-    });
-
-    it("applies the same task-aware gating", () => {
+    it.each([
+      {
+        name: "focused on same task → does not notify",
+        view: { type: "task-detail", data: { id: TASK_ID }, taskId: TASK_ID },
+        shouldNotify: false,
+      },
+      {
+        name: "focused on different task → notifies",
+        view: {
+          type: "task-detail",
+          data: { id: OTHER_TASK_ID },
+          taskId: OTHER_TASK_ID,
+        },
+        shouldNotify: true,
+      },
+    ])("$name", ({ view, shouldNotify }) => {
       setFocus(true);
-      setView({ type: "task-detail", data: { id: TASK_ID }, taskId: TASK_ID });
+      setView(view);
       notifyPromptComplete("My task", "end_turn", TASK_ID);
-      expect(sendMutate).not.toHaveBeenCalled();
-
-      setView({
-        type: "task-detail",
-        data: { id: OTHER_TASK_ID },
-        taskId: OTHER_TASK_ID,
-      });
-      notifyPromptComplete("My task", "end_turn", TASK_ID);
-      expect(sendMutate).toHaveBeenCalledTimes(1);
+      expect(sendMutate).toHaveBeenCalledTimes(shouldNotify ? 1 : 0);
     });
   });
 });
