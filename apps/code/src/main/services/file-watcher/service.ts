@@ -171,9 +171,11 @@ export class FileWatcherService extends TypedEventEmitter<FileWatcherEvents> {
 
     const totalChanges = pending.files.size + pending.deletes.size;
 
-    // For bulk changes, emit a single event instead of per-file events
+    if (totalChanges > 0) {
+      this.emit(FileWatcherEvent.WorkingTreeChanged, { repoPath });
+    }
+
     if (totalChanges > BULK_THRESHOLD) {
-      this.emit(FileWatcherEvent.GitStateChanged, { repoPath });
       pending.dirs.clear();
       pending.files.clear();
       pending.deletes.clear();
