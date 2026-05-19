@@ -255,7 +255,7 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                               value={org}
                               title={org.name}
                             >
-                              <Text className="text-sm">{org.name}</Text>
+                              <Text>{org.name}</Text>
                             </ComboboxItem>
                           )}
                         </ComboboxList>
@@ -340,7 +340,7 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                               value={project}
                               title={project.name}
                             >
-                              <Text className="text-sm">{project.name}</Text>
+                              <Text>{project.name}</Text>
                             </ComboboxItem>
                           )}
                         </ComboboxList>

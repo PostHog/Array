@@ -18,7 +18,7 @@ import { Flex, Text } from "@radix-ui/themes";
 import { FIELD_TRIGGER_CLASS } from "@renderer/styles/fieldTrigger";
 import { trpcClient } from "@renderer/trpc";
 import { logger } from "@utils/logger";
-import type { Ref, RefObject } from "react";
+import type { RefObject } from "react";
 
 const log = logger.scope("folder-picker");
 
@@ -28,63 +28,6 @@ interface FolderPickerProps {
   placeholder?: string;
   variant?: "compact" | "field";
   anchor?: RefObject<HTMLElement | null>;
-}
-
-interface TriggerProps {
-  ref?: Ref<HTMLButtonElement>;
-  displayValue: string | null;
-  placeholder: string;
-  onClick?: () => void;
-}
-
-function CompactTrigger({
-  ref,
-  displayValue,
-  placeholder,
-  onClick,
-}: TriggerProps) {
-  return (
-    <Button
-      ref={ref}
-      variant="outline"
-      size="sm"
-      aria-label="Folder"
-      onClick={onClick}
-    >
-      <FolderIcon size={14} weight="regular" className="shrink-0" />
-      <span className="max-w-[120px] truncate">
-        {displayValue || placeholder}
-      </span>
-      <CaretDown size={10} weight="bold" className="text-muted-foreground" />
-    </Button>
-  );
-}
-
-function FieldTrigger({
-  ref,
-  displayValue,
-  placeholder,
-  onClick,
-}: TriggerProps) {
-  return (
-    <button
-      ref={ref}
-      type="button"
-      onClick={onClick}
-      className={FIELD_TRIGGER_CLASS}
-    >
-      <Flex align="center" gap="2" className="min-w-0 flex-1">
-        <FolderIcon size={16} className="shrink-0 text-(--gray-12)" />
-        <Text
-          className="min-w-0 max-w-full truncate text-left font-medium text-(--gray-12)"
-          title={displayValue || undefined}
-        >
-          {displayValue || placeholder}
-        </Text>
-      </Flex>
-      <CaretDown size={14} className="shrink-0 text-(--gray-9)" />
-    </button>
-  );
 }
 
 export function FolderPicker({
@@ -104,6 +47,7 @@ export function FolderPicker({
 
   const recentFolders = getRecentFolders();
   const displayValue = getFolderDisplayName(value);
+  const isField = variant === "field";
 
   const handleSelect = (path: string) => {
     onChange(path);
@@ -122,15 +66,49 @@ export function FolderPicker({
     }
   };
 
-  const Trigger = variant === "field" ? FieldTrigger : CompactTrigger;
+  const fieldContent = (
+    <>
+      <Flex align="center" gap="2" className="min-w-0 flex-1">
+        <FolderIcon size={16} className="shrink-0 text-(--gray-12)" />
+        <Text
+          className="min-w-0 max-w-full truncate text-left font-medium text-(--gray-12)"
+          title={displayValue || undefined}
+        >
+          {displayValue || placeholder}
+        </Text>
+      </Flex>
+      <CaretDown size={14} className="shrink-0 text-(--gray-9)" />
+    </>
+  );
+
+  const compactContent = (
+    <>
+      <FolderIcon size={14} weight="regular" className="shrink-0" />
+      <span className="max-w-[120px] truncate">
+        {displayValue || placeholder}
+      </span>
+      <CaretDown size={10} weight="bold" className="text-muted-foreground" />
+    </>
+  );
 
   if (recentFolders.length === 0) {
-    return (
-      <Trigger
-        displayValue={displayValue}
-        placeholder={placeholder}
+    return isField ? (
+      <button
+        type="button"
         onClick={handleOpenFilePicker}
-      />
+        className={FIELD_TRIGGER_CLASS}
+      >
+        {fieldContent}
+      </button>
+    ) : (
+      <Button
+        variant="outline"
+        size="sm"
+        aria-label="Folder"
+        onClick={handleOpenFilePicker}
+      >
+        {compactContent}
+      </Button>
     );
   }
 
@@ -138,16 +116,24 @@ export function FolderPicker({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Trigger displayValue={displayValue} placeholder={placeholder} />
+          isField ? (
+            <button type="button" className={FIELD_TRIGGER_CLASS}>
+              {fieldContent}
+            </button>
+          ) : (
+            <Button variant="outline" size="sm" aria-label="Folder">
+              {compactContent}
+            </Button>
+          )
         }
       />
       <DropdownMenuContent
         anchor={anchor}
         align="start"
         side="bottom"
-        sideOffset={variant === "field" ? 4 : 6}
+        sideOffset={isField ? 4 : 6}
         className={
-          variant === "field"
+          isField
             ? "w-(--anchor-width) min-w-(--anchor-width) max-w-(--anchor-width)"
             : "min-w-[200px]"
         }

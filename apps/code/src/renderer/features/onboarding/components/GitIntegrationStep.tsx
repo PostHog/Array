@@ -279,19 +279,18 @@ export function GitIntegrationStep({
                               <CheckCircle
                                 size={14}
                                 weight="fill"
-                                style={{
-                                  color: repoMatchesGitHub
-                                    ? "var(--green-9)"
-                                    : "var(--gray-9)",
-                                }}
+                                className={
+                                  repoMatchesGitHub
+                                    ? "text-(--green-9)"
+                                    : "text-(--gray-9)"
+                                }
                               />
                               <Text
-                                style={{
-                                  color: repoMatchesGitHub
-                                    ? "var(--green-11)"
-                                    : "var(--gray-11)",
-                                }}
-                                className="text-[13px]"
+                                className={`text-[13px] ${
+                                  repoMatchesGitHub
+                                    ? "text-(--green-11)"
+                                    : "text-(--gray-11)"
+                                }`}
                               >
                                 {repoMatchesGitHub
                                   ? `Linked to ${detectedRepo.fullName} on GitHub`
@@ -311,7 +310,7 @@ export function GitIntegrationStep({
                             transition={{ duration: 0.2 }}
                           >
                             <Text className="text-(--gray-9) text-[13px]">
-                              No git remote detected -- you can still continue.
+                              No git remote detected. You can still continue.
                             </Text>
                           </motion.div>
                         )}
