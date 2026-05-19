@@ -30,6 +30,7 @@ import {
   Tooltip,
 } from "@radix-ui/themes";
 import type { SignalReport } from "@shared/types";
+import type { InboxReportActionProperties } from "@shared/types/analytics";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { FilterSortMenu } from "./FilterSortMenu";
@@ -60,6 +61,10 @@ interface SignalsToolbarProps {
   onOpenDismissDialog?: () => void;
   /** True while the single-report dismiss dialog has a mutation in flight for this toolbar. */
   isDismissMutationPending?: boolean;
+  /** Optional analytics callback fired when a bulk action succeeds. */
+  onReportAction?: (
+    action: Omit<InboxReportActionProperties, "rank" | "list_size">,
+  ) => void;
 }
 
 function formatPauseRemaining(pausedUntil: string): string {
@@ -253,6 +258,7 @@ export function SignalsToolbar({
   onConfigureSources,
   onOpenDismissDialog,
   isDismissMutationPending = false,
+  onReportAction,
 }: SignalsToolbarProps) {
   const searchQuery = useInboxSignalsFilterStore((s) => s.searchQuery);
   const setSearchQuery = useInboxSignalsFilterStore((s) => s.setSearchQuery);
@@ -329,24 +335,55 @@ export function SignalsToolbar({
       ? "Permanently delete these reports and their signals?"
       : "Permanently delete this report and its signals?";
 
+  const fireBulkAction = (
+    actionType: InboxReportActionProperties["action_type"],
+    targetIds: string[],
+  ) => {
+    if (!onReportAction) return;
+    const isBulk = targetIds.length > 1;
+    for (const reportId of targetIds) {
+      onReportAction({
+        report_id: reportId,
+        action_type: actionType,
+        surface: "toolbar",
+        is_bulk: isBulk,
+        bulk_size: targetIds.length,
+      });
+    }
+  };
+
   const handleConfirmDelete = async () => {
+    const targetIds = [...effectiveBulkIds];
     const ok = await deleteSelected();
     if (ok) {
+      fireBulkAction("delete", targetIds);
       setShowDeleteConfirm(false);
     }
   };
 
   const handleConfirmSnooze = async () => {
+    const targetIds = [...effectiveBulkIds];
     const ok = await snoozeSelected();
     if (ok) {
+      fireBulkAction("snooze", targetIds);
       setShowSnoozeConfirm(false);
     }
   };
 
   const handleConfirmBulkSuppress = async () => {
+    const targetIds = [...effectiveBulkIds];
     const ok = await suppressSelected();
     if (ok) {
+      fireBulkAction("dismiss", targetIds);
       setShowBulkSuppressConfirm(false);
+    }
+  };
+
+  const handleReingest = async () => {
+    const targetIds = [...effectiveBulkIds];
+    const ok = await reingestSelected();
+    if (ok) {
+      fireBulkAction("reingest", targetIds);
     }
   };
 
@@ -501,7 +538,7 @@ export function SignalsToolbar({
                   loading={isReingesting}
                   icon={<ArrowClockwiseIcon size={14} />}
                   label="Reingest"
-                  onSelect={() => void reingestSelected()}
+                  onSelect={() => void handleReingest()}
                 />
                 <BulkOverflowMenuItem
                   menuPrimary={deleteMenuPrimary}

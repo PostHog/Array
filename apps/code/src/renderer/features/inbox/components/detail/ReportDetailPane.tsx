@@ -38,6 +38,7 @@ import type {
   ActionabilityJudgmentArtefact,
   ActionabilityJudgmentContent,
   PriorityJudgmentArtefact,
+  Signal,
   SignalFindingArtefact,
   SignalReport,
   SignalReportTask,
@@ -45,6 +46,7 @@ import type {
   SuggestedReviewersArtefact,
   Task,
 } from "@shared/types";
+import type { InboxReportActionProperties } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
 import { isMac } from "@utils/platform";
@@ -53,6 +55,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { toast } from "sonner";
@@ -63,6 +66,7 @@ import { SignalReportStatusBadge } from "../utils/SignalReportStatusBadge";
 import { SignalReportSummaryMarkdown } from "../utils/SignalReportSummaryMarkdown";
 import { ReportTaskLogs } from "./ReportTaskLogs";
 import { SignalCard } from "./SignalCard";
+import type { SignalInteractionAction } from "./signalInteractionContext";
 
 function isSuggestedReviewerRowMe(
   reviewer: SuggestedReviewer,
@@ -109,10 +113,12 @@ function DetailRow({
   label,
   value,
   explanation,
+  onToggleExplanation,
 }: {
   label: string;
   value: ReactNode;
   explanation?: string | null;
+  onToggleExplanation?: (expanded: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasExplanation = !!explanation;
@@ -127,7 +133,13 @@ function DetailRow({
         {hasExplanation && (
           <button
             type="button"
-            onClick={() => setExpanded((v) => !v)}
+            onClick={() => {
+              setExpanded((v) => {
+                const next = !v;
+                onToggleExplanation?.(next);
+                return next;
+              });
+            }}
             className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[13px] text-gray-9 hover:bg-gray-3 hover:text-gray-11"
           >
             {expanded ? (
@@ -159,6 +171,10 @@ interface ReportDetailPaneProps {
   onRequestDismissReport: () => void;
   suppressDisabledReason: string | null;
   isDismissMutationPending?: boolean;
+  onReportAction?: (
+    action: Omit<InboxReportActionProperties, "rank" | "list_size">,
+  ) => void;
+  onScroll?: () => void;
 }
 
 export function ReportDetailPane({
@@ -167,6 +183,8 @@ export function ReportDetailPane({
   onRequestDismissReport,
   suppressDisabledReason,
   isDismissMutationPending = false,
+  onReportAction,
+  onScroll,
 }: ReportDetailPaneProps) {
   const { data: me } = useMeQuery();
 
@@ -271,8 +289,58 @@ export function ReportDetailPane({
       report.actionability === "immediately_actionable" &&
       report.already_addressed !== true);
 
+  // Centralized helper for detail-pane action analytics — fills surface/is_bulk/bulk_size.
+  const fireDetailAction = useCallback(
+    (
+      actionType: InboxReportActionProperties["action_type"],
+      extra?: Partial<
+        Omit<
+          InboxReportActionProperties,
+          | "report_id"
+          | "action_type"
+          | "surface"
+          | "is_bulk"
+          | "bulk_size"
+          | "rank"
+          | "list_size"
+        >
+      >,
+    ) => {
+      onReportAction?.({
+        report_id: report.id,
+        action_type: actionType,
+        surface: "detail_pane",
+        is_bulk: false,
+        bulk_size: 1,
+        ...extra,
+      });
+    },
+    [onReportAction, report.id],
+  );
+
+  // Build the signal-card interaction handler used by both signal lists (signals + session-problem evidence).
+  const makeSignalInteractionHandler = useCallback(
+    (signal: Signal) => (action: SignalInteractionAction) => {
+      const signalContext = {
+        signal_id: signal.signal_id,
+        signal_source_product: signal.source_product,
+        signal_source_type: signal.source_type,
+      };
+      if (action.type === "expand_signal_section") {
+        fireDetailAction(action.type, {
+          ...signalContext,
+          signal_section: action.section,
+        });
+      } else {
+        fireDetailAction(action.type, signalContext);
+      }
+    },
+    [fireDetailAction],
+  );
+
   const handleCreateImplementationTask = useCallback(() => {
     if (!canCreateImplementationPr) return;
+    fireDetailAction("create_pr");
     navigateToTaskInput({
       initialPrompt: `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`,
       initialCloudRepository: effectiveCloudRepository ?? undefined,
@@ -286,7 +354,23 @@ export function ReportDetailPane({
     navigateToTaskInput,
     effectiveCloudRepository,
     report,
+    fireDetailAction,
   ]);
+
+  // Bind native scroll listener to the Radix ScrollArea viewport (Radix doesn't forward onScroll).
+  const scrollAreaRootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!onScroll) return;
+    const root = scrollAreaRootRef.current;
+    if (!root) return;
+    const viewport = root.querySelector<HTMLElement>(
+      "[data-radix-scroll-area-viewport]",
+    );
+    if (!viewport) return;
+    const handler = () => onScroll();
+    viewport.addEventListener("scroll", handler, { passive: true });
+    return () => viewport.removeEventListener("scroll", handler);
+  }, [onScroll]);
 
   useEffect(() => {
     if (!canCreateImplementationPr) return;
@@ -340,6 +424,7 @@ export function ReportDetailPane({
                   await navigator.clipboard.writeText(
                     `${getDeeplinkProtocol(import.meta.env.DEV)}://inbox/${report.id}`,
                   );
+                  fireDetailAction("copy_link");
                   toast.success("Link copied");
                 } catch {
                   toast.error("Failed to copy link");
@@ -374,6 +459,7 @@ export function ReportDetailPane({
             <ReportImplementationPrLink
               prUrl={headerImplementationPrUrl}
               size="md"
+              onLinkClick={() => fireDetailAction("open_pr")}
             />
           ) : canCreateImplementationPr ? (
             <Tooltip
@@ -407,6 +493,7 @@ export function ReportDetailPane({
 
       {/* ── Scrollable detail area ──────────────────────────────── */}
       <ScrollArea
+        ref={scrollAreaRootRef}
         type="auto"
         scrollbars="vertical"
         className="scroll-area-constrain-width flex-1"
@@ -488,6 +575,10 @@ export function ReportDetailPane({
                     <SignalReportPriorityBadge priority={report.priority} />
                   }
                   explanation={priorityExplanation}
+                  onToggleExplanation={(expanded) => {
+                    if (!expanded) return;
+                    fireDetailAction("expand_why", { why_field: "priority" });
+                  }}
                 />
               )}
               {report.actionability && (
@@ -499,6 +590,12 @@ export function ReportDetailPane({
                     />
                   }
                   explanation={actionabilityJudgment?.explanation}
+                  onToggleExplanation={(expanded) => {
+                    if (!expanded) return;
+                    fireDetailAction("expand_why", {
+                      why_field: "actionability",
+                    });
+                  }}
                 />
               )}
             </Flex>
@@ -568,6 +665,9 @@ export function ReportDetailPane({
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex items-center gap-0.5 text-[11px] text-gray-9 hover:text-gray-11"
+                        onClick={() =>
+                          fireDetailAction("click_suggested_reviewer")
+                        }
                       >
                         @{reviewer.github_login}
                         <ArrowSquareOutIcon size={10} />
@@ -610,6 +710,7 @@ export function ReportDetailPane({
                     key={signal.signal_id}
                     signal={signal}
                     finding={signalFindings.get(signal.signal_id)}
+                    onInteraction={makeSignalInteractionHandler(signal)}
                   />
                 ))}
               </Flex>
@@ -633,6 +734,7 @@ export function ReportDetailPane({
                     key={signal.signal_id}
                     signal={signal}
                     finding={signalFindings.get(signal.signal_id)}
+                    onInteraction={makeSignalInteractionHandler(signal)}
                   />
                 ))}
               </Flex>
@@ -646,6 +748,9 @@ export function ReportDetailPane({
         key={report.id}
         reportId={report.id}
         reportStatus={report.status}
+        onSectionExpand={(section) =>
+          fireDetailAction("expand_task_section", { task_section: section })
+        }
       />
     </>
   );

@@ -345,6 +345,99 @@ export interface SetupSkippedProperties {
   entry_point: "during_scan" | "after_done";
 }
 
+// Inbox events
+export type InboxReportOpenMethod =
+  | "click"
+  | "click_cmd"
+  | "click_shift"
+  | "keyboard"
+  | "deeplink"
+  | "unknown";
+
+export type InboxReportCloseMethod =
+  | "next_report"
+  | "deselected"
+  | "navigated_away"
+  | "unmount";
+
+export type InboxReportActionType =
+  | "dismiss"
+  | "snooze"
+  | "delete"
+  | "reingest"
+  | "create_pr"
+  | "open_pr"
+  | "copy_link"
+  | "expand_signal"
+  | "collapse_signal"
+  | "expand_signal_section"
+  | "view_signal_external"
+  | "expand_why"
+  | "click_suggested_reviewer"
+  | "expand_task_section";
+
+export type InboxReportActionSurface =
+  | "detail_pane"
+  | "toolbar"
+  | "keyboard"
+  | "list_row";
+
+export type InboxReportEngagementReason = "dwell_and_scroll" | "action";
+
+export interface InboxViewedProperties {
+  report_count: number;
+  total_count: number;
+  ready_count: number;
+  has_active_filters: boolean;
+  source_product_filter: string[];
+  status_filter_count: number;
+  is_empty: boolean;
+}
+
+export interface InboxReportOpenedProperties {
+  report_id: string;
+  status: string | null;
+  priority: string | null;
+  source_products: string[];
+  rank: number;
+  list_size: number;
+  open_method: InboxReportOpenMethod;
+  previous_report_id: string | null;
+}
+
+export interface InboxReportClosedProperties {
+  report_id: string;
+  time_spent_ms: number;
+  scrolled: boolean;
+  engaged: boolean;
+  close_method: InboxReportCloseMethod;
+}
+
+export interface InboxReportActionProperties {
+  report_id: string;
+  action_type: InboxReportActionType;
+  surface: InboxReportActionSurface;
+  is_bulk: boolean;
+  bulk_size: number;
+  rank: number;
+  list_size: number;
+  dismissal_reason?: string;
+  signal_id?: string;
+  signal_source_product?: string;
+  signal_source_type?: string;
+  signal_section?: "relevant_code" | "data_queried";
+  why_field?: "priority" | "actionability";
+  task_section?: "research" | "implementation";
+}
+
+export interface InboxReportEngagedProperties {
+  report_id: string;
+  engagement_reason: InboxReportEngagementReason;
+  time_spent_ms_at_engagement: number;
+  rank: number;
+  list_size: number;
+}
+
 // Subscription / billing events
 export interface SubscriptionStartedProperties {
   plan_key: string;
@@ -439,6 +532,11 @@ export const ANALYTICS_EVENTS = {
 
   // Inbox events
   INBOX_INTEREST_REGISTERED: "Inbox interest registered",
+  INBOX_VIEWED: "Inbox viewed",
+  INBOX_REPORT_OPENED: "Inbox report opened",
+  INBOX_REPORT_CLOSED: "Inbox report closed",
+  INBOX_REPORT_ACTION: "Inbox report action",
+  INBOX_REPORT_ENGAGED: "Inbox report engaged",
 
   // Prompt history events
   PROMPT_HISTORY_OPENED: "Prompt history opened",
@@ -526,6 +624,11 @@ export type EventPropertyMap = {
 
   // Inbox events
   [ANALYTICS_EVENTS.INBOX_INTEREST_REGISTERED]: never;
+  [ANALYTICS_EVENTS.INBOX_VIEWED]: InboxViewedProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_OPENED]: InboxReportOpenedProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_ENGAGED]: InboxReportEngagedProperties;
 
   // Prompt history events
   [ANALYTICS_EVENTS.PROMPT_HISTORY_OPENED]: PromptHistoryOpenedProperties;
