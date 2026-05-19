@@ -34,9 +34,20 @@ export async function archiveTaskImperative(
     }
   }
 
+  const terminalStatesSnapshot = Object.fromEntries(
+    Object.entries(useTerminalStore.getState().terminalStates).filter(
+      ([key]) => key === taskId || key.startsWith(`${taskId}-`),
+    ),
+  );
+  const commandCenterIndex = useCommandCenterStore
+    .getState()
+    .cells.indexOf(taskId);
+
   pinnedTasksApi.unpin(taskId);
   useTerminalStore.getState().clearTerminalStatesForTask(taskId);
   useCommandCenterStore.getState().removeTaskById(taskId);
+
+  await queryClient.cancelQueries(trpc.archive.pathFilter());
 
   queryClient.setQueryData<string[]>(
     trpc.archive.archivedTaskIds.queryKey(),
@@ -86,6 +97,14 @@ export async function archiveTaskImperative(
     );
     if (wasPinned) {
       pinnedTasksApi.togglePin(taskId);
+    }
+    if (Object.keys(terminalStatesSnapshot).length > 0) {
+      useTerminalStore.setState((s) => ({
+        terminalStates: { ...s.terminalStates, ...terminalStatesSnapshot },
+      }));
+    }
+    if (commandCenterIndex !== -1) {
+      useCommandCenterStore.getState().assignTask(commandCenterIndex, taskId);
     }
 
     throw error;
