@@ -63,7 +63,10 @@ interface SignalsToolbarProps {
   isDismissMutationPending?: boolean;
   /** Optional analytics callback fired when a bulk action succeeds. */
   onReportAction?: (
-    action: Omit<InboxReportActionProperties, "rank" | "list_size">,
+    action: Omit<InboxReportActionProperties, "rank" | "list_size"> & {
+      rank?: number;
+      list_size?: number;
+    },
   ) => void;
 }
 
@@ -335,9 +338,23 @@ export function SignalsToolbar({
       ? "Permanently delete these reports and their signals?"
       : "Permanently delete this report and its signals?";
 
+  /**
+   * Snapshot of the visible list captured at action-confirm time, so analytics
+   * record rank + list_size as the user saw them — not the post-mutation refetch.
+   */
+  type ListSnapshot = {
+    rankById: Map<string, number>;
+    listSize: number;
+  };
+  const snapshotList = (): ListSnapshot => ({
+    rankById: new Map(reports.map((r, i) => [r.id, i] as const)),
+    listSize: reports.length,
+  });
+
   const fireBulkAction = (
     actionType: InboxReportActionProperties["action_type"],
     targetIds: string[],
+    snapshot: ListSnapshot,
   ) => {
     if (!onReportAction) return;
     const isBulk = targetIds.length > 1;
@@ -359,42 +376,48 @@ export function SignalsToolbar({
         surface: "toolbar",
         is_bulk: isBulk,
         bulk_size: targetIds.length,
+        rank: snapshot.rankById.get(reportId) ?? -1,
+        list_size: snapshot.listSize,
       });
     }
   };
 
   const handleConfirmDelete = async () => {
     const targetIds = [...effectiveBulkIds];
+    const snapshot = snapshotList();
     const ok = await deleteSelected();
     if (ok) {
-      fireBulkAction("delete", targetIds);
+      fireBulkAction("delete", targetIds, snapshot);
       setShowDeleteConfirm(false);
     }
   };
 
   const handleConfirmSnooze = async () => {
     const targetIds = [...effectiveBulkIds];
+    const snapshot = snapshotList();
     const ok = await snoozeSelected();
     if (ok) {
-      fireBulkAction("snooze", targetIds);
+      fireBulkAction("snooze", targetIds, snapshot);
       setShowSnoozeConfirm(false);
     }
   };
 
   const handleConfirmBulkSuppress = async () => {
     const targetIds = [...effectiveBulkIds];
+    const snapshot = snapshotList();
     const ok = await suppressSelected();
     if (ok) {
-      fireBulkAction("dismiss", targetIds);
+      fireBulkAction("dismiss", targetIds, snapshot);
       setShowBulkSuppressConfirm(false);
     }
   };
 
   const handleReingest = async () => {
     const targetIds = [...effectiveBulkIds];
+    const snapshot = snapshotList();
     const ok = await reingestSelected();
     if (ok) {
-      fireBulkAction("reingest", targetIds);
+      fireBulkAction("reingest", targetIds, snapshot);
     }
   };
 

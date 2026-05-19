@@ -29,9 +29,20 @@ function reportAgeHours(createdAt: string | null | undefined): number {
 export interface InboxEngagementTracker {
   /** Fires INBOX_REPORT_SCROLLED once per open on the first scroll inside the detail pane. */
   signalScroll(): void;
-  /** Fires INBOX_REPORT_ACTION for the current open or an explicit report id. */
+  /**
+   * Fires INBOX_REPORT_ACTION for the current open or an explicit report id.
+   *
+   * `rank` and `list_size` default to the live tracker state. Callers that fire after an
+   * async mutation (bulk dismiss/delete/snooze/reingest, single-report dismiss confirm)
+   * should snapshot the pre-mutation values and pass them through — by the time the
+   * promise resolves the visible list has usually been re-queried without the affected
+   * report.
+   */
   signalAction(
-    action: Omit<InboxReportActionProperties, "rank" | "list_size">,
+    action: Omit<InboxReportActionProperties, "rank" | "list_size"> & {
+      rank?: number;
+      list_size?: number;
+    },
   ): void;
 }
 
@@ -148,17 +159,33 @@ export function useInboxEngagementTracker(
   }, []);
 
   const signalAction = useCallback(
-    (action: Omit<InboxReportActionProperties, "rank" | "list_size">) => {
+    (
+      action: Omit<InboxReportActionProperties, "rank" | "list_size"> & {
+        rank?: number;
+        list_size?: number;
+      },
+    ) => {
       const info = openInfoRef.current;
       const visibleReports = reportsRef.current;
+      const {
+        rank: rankOverride,
+        list_size: listSizeOverride,
+        ...rest
+      } = action;
       const rank =
-        info && info.reportId === action.report_id
-          ? info.rank
-          : visibleReports.findIndex((r) => r.id === action.report_id);
+        rankOverride !== undefined
+          ? rankOverride
+          : info && info.reportId === action.report_id
+            ? info.rank
+            : visibleReports.findIndex((r) => r.id === action.report_id);
+      const listSize =
+        listSizeOverride !== undefined
+          ? listSizeOverride
+          : visibleReports.length;
       track(ANALYTICS_EVENTS.INBOX_REPORT_ACTION, {
-        ...action,
+        ...rest,
         rank,
-        list_size: visibleReports.length,
+        list_size: listSize,
       });
     },
     [],

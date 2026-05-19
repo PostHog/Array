@@ -268,18 +268,26 @@ export function InboxSignalsTab() {
   const handleDismissConfirm = useCallback(
     async (result: DismissReportDialogResult) => {
       if (dismissTargetId == null) return;
+      // Snapshot the visible list + report shape before the mutation — by the time it
+      // resolves the inbox query has been invalidated and the report we just dismissed
+      // is gone, so an after-the-fact lookup would record rank: -1 + a smaller list_size.
+      const preMutationRank = reports.findIndex(
+        (r) => r.id === dismissTargetId,
+      );
+      const preMutationListSize = reports.length;
+      const target = allReports.find((r) => r.id === dismissTargetId);
+      const ageMs = target
+        ? Date.now() - new Date(target.created_at).getTime()
+        : Number.NaN;
+      const reportAgeHours = Number.isFinite(ageMs)
+        ? Math.max(0, Math.round((ageMs / 3_600_000) * 10) / 10)
+        : 0;
+
       const isSnooze = isDismissalReasonSnooze(result.reason);
       const ok = isSnooze
         ? await dismissBulkActions.snoozeSelected()
         : await dismissBulkActions.suppressSelected(result);
       if (ok) {
-        const target = allReports.find((r) => r.id === dismissTargetId);
-        const ageMs = target
-          ? Date.now() - new Date(target.created_at).getTime()
-          : Number.NaN;
-        const reportAgeHours = Number.isFinite(ageMs)
-          ? Math.max(0, Math.round((ageMs / 3_600_000) * 10) / 10)
-          : 0;
         tracker.signalAction({
           report_id: dismissTargetId,
           report_title: target?.title ?? null,
@@ -288,6 +296,8 @@ export function InboxSignalsTab() {
           surface: dismissDialogSurface,
           is_bulk: false,
           bulk_size: 1,
+          rank: preMutationRank,
+          list_size: preMutationListSize,
           ...(isSnooze ? {} : { dismissal_reason: result.reason }),
         });
         setDismissReport(null);
@@ -298,7 +308,8 @@ export function InboxSignalsTab() {
       dismissTargetId,
       dismissDialogSurface,
       tracker,
-      allReports.find,
+      allReports,
+      reports,
     ],
   );
 
