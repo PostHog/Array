@@ -1,3 +1,4 @@
+import { useDebounce } from "@hooks/useDebounce";
 import {
   Combobox,
   ComboboxContent,
@@ -8,7 +9,7 @@ import {
 } from "@posthog/quill";
 import { useTRPC } from "@renderer/trpc/client";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { GithubRefKind, GithubRefState } from "../types";
 import type { MentionChip } from "../utils/content";
 import {
@@ -46,24 +47,10 @@ export function IssuePicker({
 }: IssuePickerProps) {
   const trpc = useTRPC();
   const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedQuery = useDebounce(query, 300);
 
   useEffect(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      setDebouncedQuery(query);
-    }, 300);
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [query]);
-
-  useEffect(() => {
-    if (!open) {
-      setQuery("");
-      setDebouncedQuery("");
-    }
+    if (!open) setQuery("");
   }, [open]);
 
   const { data: refs = [], isFetching } = useQuery(
