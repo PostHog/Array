@@ -367,6 +367,8 @@ export function ReportDetailPane({
   ]);
 
   // Bind native scroll listener to the Radix ScrollArea viewport (Radix doesn't forward onScroll).
+  // report.id is in deps so the listener is re-attached on every report swap, even if the
+  // ScrollArea's viewport element happens to be replaced (e.g. by future Radix internals).
   const scrollAreaRootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!onScroll) return;
