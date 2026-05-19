@@ -45,18 +45,18 @@ export function ExecuteToolView({
   const isExpandable = hasOutput;
 
   const handleClick = () => {
-    if (!isExpandable) return;
-    const selection = window.getSelection();
-    if (selection && selection.toString().length > 0) return;
-    setIsExpanded(!isExpanded);
+    if (isExpandable) {
+      setIsExpanded(!isExpanded);
+    }
   };
 
   return (
-    <Box
-      className={`group py-0.5 ${isExpandable ? "cursor-pointer" : ""}`}
-      onClick={handleClick}
-    >
-      <Flex gap="2" className="min-w-0">
+    <Box className="py-0.5">
+      <Flex
+        gap="2"
+        className={`group min-w-0 ${isExpandable ? "cursor-pointer" : ""}`}
+        onClick={handleClick}
+      >
         <Box className="shrink-0 pt-px">
           <ExpandableIcon
             icon={Terminal}
