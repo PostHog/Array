@@ -328,6 +328,137 @@ describe("CloudTaskService", () => {
     );
   });
 
+  it("replays a current snapshot when a subscriber attaches to an existing watcher", async () => {
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    const historicalEntry = {
+      type: "notification",
+      timestamp: "2026-01-01T00:00:00Z",
+      notification: {
+        jsonrpc: "2.0",
+        method: "_posthog/console",
+        params: {
+          sessionId: "run-1",
+          level: "info",
+          message: "older history",
+        },
+      },
+    };
+    const liveEntry = {
+      type: "notification",
+      timestamp: "2026-01-01T00:00:01Z",
+      notification: {
+        jsonrpc: "2.0",
+        method: "_posthog/console",
+        params: {
+          sessionId: "run-1",
+          level: "info",
+          message: "live tail",
+        },
+      },
+    };
+
+    const runResponse = {
+      id: "run-1",
+      status: "in_progress",
+      stage: "build",
+      output: null,
+      error_message: null,
+      branch: "main",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+
+    mockNetFetch
+      .mockResolvedValueOnce(createJsonResponse(runResponse))
+      .mockResolvedValueOnce(
+        createJsonResponse([historicalEntry], 200, { "X-Has-More": "false" }),
+      )
+      .mockResolvedValueOnce(createJsonResponse(runResponse))
+      .mockResolvedValueOnce(
+        createJsonResponse([historicalEntry], 200, { "X-Has-More": "false" }),
+      );
+
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(`id: 1\ndata: ${JSON.stringify(liveEntry)}\n\n`),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => updates.length >= 2);
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() =>
+      updates.some(
+        (update) =>
+          typeof update === "object" &&
+          update !== null &&
+          (update as { kind?: string; totalEntryCount?: number }).kind ===
+            "snapshot" &&
+          (update as { totalEntryCount?: number }).totalEntryCount === 2,
+      ),
+    );
+
+    const replayedSnapshot = updates.find(
+      (update) =>
+        typeof update === "object" &&
+        update !== null &&
+        (update as { kind?: string; totalEntryCount?: number }).kind ===
+          "snapshot" &&
+        (update as { totalEntryCount?: number }).totalEntryCount === 2,
+    );
+
+    expect(replayedSnapshot).toEqual({
+      taskId: "task-1",
+      runId: "run-1",
+      kind: "snapshot",
+      newEntries: [historicalEntry, liveEntry],
+      totalEntryCount: 2,
+      status: "in_progress",
+      stage: "build",
+      output: null,
+      errorMessage: null,
+      branch: "main",
+    });
+
+    const getWatcherEmittedEntryCount = (): number => {
+      const watcher = (
+        service as unknown as {
+          watchers: Map<string, { emittedLogEntries: unknown[] }>;
+        }
+      ).watchers.get("task-1:run-1");
+      return watcher?.emittedLogEntries.length ?? 0;
+    };
+
+    expect(getWatcherEmittedEntryCount()).toBe(1);
+
+    mockNetFetch.mockResolvedValueOnce(
+      createJsonResponse([historicalEntry, liveEntry], 200, {
+        "X-Has-More": "false",
+      }),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => getWatcherEmittedEntryCount() === 0);
+  });
+
   it("ignores keepalive SSE events while keeping the stream open", async () => {
     const updates: unknown[] = [];
     service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
@@ -400,6 +531,79 @@ describe("CloudTaskService", () => {
     ]);
   });
 
+  it("reconnects after clean stream completion when the run remains active", async () => {
+    vi.useFakeTimers();
+
+    const updates: unknown[] = [];
+    const prUrl = "https://github.com/PostHog/code/pull/123";
+    let statusFetchCount = 0;
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    const createInProgressRun = (output: Record<string, unknown> | null) =>
+      createJsonResponse({
+        id: "run-1",
+        status: "in_progress",
+        stage: "build",
+        output,
+        error_message: null,
+        branch: "main",
+        updated_at: output ? "2026-01-01T00:00:01Z" : "2026-01-01T00:00:00Z",
+      });
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+
+      statusFetchCount += 1;
+      return Promise.resolve(
+        createInProgressRun(statusFetchCount === 1 ? null : { pr_url: prUrl }),
+      );
+    });
+
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(createSseResponse("")),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+    await waitFor(() => mockStreamFetch.mock.calls.length >= 7, 20_000);
+
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        taskId: "task-1",
+        runId: "run-1",
+        status: "in_progress",
+        output: { pr_url: prUrl },
+      }),
+    );
+    expect(
+      updates.some(
+        (update) =>
+          typeof update === "object" &&
+          update !== null &&
+          (update as { kind?: string }).kind === "error",
+      ),
+    ).toBe(false);
+
+    expect(
+      (
+        service as unknown as {
+          watchers: Map<string, unknown>;
+        }
+      ).watchers.has("task-1:run-1"),
+    ).toBe(true);
+  });
+
   it("emits a retryable cloud error after repeated stream failures", async () => {
     vi.useFakeTimers();
 
@@ -427,7 +631,9 @@ describe("CloudTaskService", () => {
 
     mockStreamFetch.mockImplementation(() =>
       Promise.resolve(
-        createSseResponse('event: error\ndata: {"error":"boom"}\n\n'),
+        createSseResponse(
+          'event: keepalive\ndata: {"type":"keepalive"}\n\nevent: error\ndata: {"error":"boom"}\n\n',
+        ),
       ),
     );
 
@@ -465,6 +671,93 @@ describe("CloudTaskService", () => {
       retryable: true,
     });
   });
+
+  const guardedFetchStatusExpectations = [
+    [
+      401,
+      {
+        errorTitle: "Cloud authentication expired",
+        errorMessage: "Please reauthenticate and retry the cloud run stream.",
+        retryable: true,
+      },
+    ],
+    [
+      403,
+      {
+        errorTitle: "Cloud access denied",
+        errorMessage:
+          "You no longer have access to this cloud run. Reauthenticate and retry.",
+        retryable: true,
+      },
+    ],
+    [
+      404,
+      {
+        errorTitle: "Cloud run not found",
+        errorMessage:
+          "This cloud run could not be found. It may have been deleted or moved.",
+        retryable: false,
+      },
+    ],
+  ] as const;
+
+  const guardedFetchStatusCases = (
+    ["status fetch", "persisted log fetch"] as const
+  ).flatMap((fetchPhase) =>
+    guardedFetchStatusExpectations.map(([status, expectedError]) => ({
+      fetchPhase,
+      status,
+      expectedError,
+    })),
+  );
+
+  it.each(guardedFetchStatusCases)(
+    "fails the watcher when $fetchPhase returns $status",
+    async ({ fetchPhase, status, expectedError }) => {
+      const updates: unknown[] = [];
+      service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+      if (fetchPhase === "status fetch") {
+        mockNetFetch.mockResolvedValueOnce(
+          createJsonResponse({ detail: "Access denied" }, status),
+        );
+      } else {
+        mockNetFetch
+          .mockResolvedValueOnce(
+            createJsonResponse({
+              id: "run-1",
+              status: "completed",
+              stage: null,
+              output: null,
+              error_message: null,
+              branch: "main",
+              updated_at: "2026-01-01T00:00:00Z",
+              completed_at: "2026-01-01T00:00:01Z",
+            }),
+          )
+          .mockResolvedValueOnce(
+            createJsonResponse({ detail: "Access denied" }, status),
+          );
+      }
+
+      service.watch({
+        taskId: "task-1",
+        runId: "run-1",
+        apiHost: "https://app.example.com",
+        teamId: 2,
+      });
+
+      await waitFor(() => updates.length === 1);
+
+      expect(mockStreamFetch).not.toHaveBeenCalled();
+      expect(updates).toContainEqual({
+        taskId: "task-1",
+        runId: "run-1",
+        kind: "error",
+        ...expectedError,
+      });
+    },
+  );
 
   it("loads paginated persisted logs once for an already terminal run", async () => {
     const updates: unknown[] = [];

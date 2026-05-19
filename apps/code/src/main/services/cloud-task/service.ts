@@ -92,6 +92,7 @@ interface WatcherState {
   isBootstrapping: boolean;
   hasEmittedSnapshot: boolean;
   bufferedLogBatches: StoredLogEntry[][];
+  emittedLogEntries: StoredLogEntry[];
   failed: boolean;
   needsPostBootstrapReconnect: boolean;
   needsStopAfterBootstrap: boolean;
@@ -203,6 +204,10 @@ function createStreamStatusError(status: number): CloudTaskStreamError {
   }
 }
 
+function shouldFailWatcherForFetchStatus(status: number): boolean {
+  return status === 401 || status === 403 || status === 404;
+}
+
 @injectable()
 export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   private watchers = new Map<string, WatcherState>();
@@ -224,6 +229,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         key,
         subscribers: existing.subscriberCount,
       });
+      void this.emitCurrentSnapshot(key);
       return;
     }
 
@@ -399,6 +405,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       isBootstrapping: false,
       hasEmittedSnapshot: false,
       bufferedLogBatches: [],
+      emittedLogEntries: [],
       failed: false,
       needsPostBootstrapReconnect: false,
       needsStopAfterBootstrap: false,
@@ -441,6 +448,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const run = await this.fetchTaskRun(watcher);
     const currentWatcher = this.watchers.get(key);
     if (!currentWatcher || currentWatcher !== watcher) return;
+    if (watcher.failed) return;
 
     if (!run) {
       this.failWatcher(key, {
@@ -541,7 +549,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
     if (watcher.needsPostBootstrapReconnect) {
       watcher.needsPostBootstrapReconnect = false;
-      this.scheduleReconnect(key);
+      this.scheduleReconnect(key, undefined, { countAttempt: false });
     }
 
     void this.verifyPostBootstrapStatus(key);
@@ -647,7 +655,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         return;
       }
 
-      await this.handleStreamCompletion(key);
+      await this.handleStreamCompletion(key, { reconnectIfNonTerminal: true });
     } catch (error) {
       this.flushLogBatch(key);
 
@@ -669,7 +677,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         key,
         error: errorMessage,
       });
-      await this.handleStreamCompletion(key);
+      await this.handleStreamCompletion(key, {
+        reconnectIfNonTerminal: true,
+        reconnectError: error,
+        countReconnectAttempt: true,
+      });
     } finally {
       const currentWatcher = this.watchers.get(key);
       if (currentWatcher?.sseAbortController === controller) {
@@ -693,8 +705,6 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       throw new Error(message);
     }
 
-    watcher.reconnectAttempts = 0;
-
     if (
       event.event === "keepalive" ||
       (typeof event.data === "object" &&
@@ -704,6 +714,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     ) {
       return;
     }
+
+    watcher.reconnectAttempts = 0;
 
     if (isTaskRunStateEvent(event.data)) {
       if (this.applyTaskRunState(watcher, event.data)) {
@@ -767,6 +779,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     watcher.totalEntryCount += entries.length;
+    this.rememberEmittedLogEntries(watcher, entries);
 
     this.emit(CloudTaskEvent.Update, {
       taskId: watcher.taskId,
@@ -812,6 +825,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       }
 
       watcher.totalEntryCount += dedupedEntries.length;
+      this.rememberEmittedLogEntries(watcher, dedupedEntries);
       this.emit(CloudTaskEvent.Update, {
         taskId: watcher.taskId,
         runId: watcher.runId,
@@ -822,6 +836,92 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     watcher.bufferedLogBatches = [];
+  }
+
+  private rememberEmittedLogEntries(
+    watcher: WatcherState,
+    entries: StoredLogEntry[],
+  ): void {
+    watcher.emittedLogEntries.push(...entries);
+  }
+
+  private mergeHistoricalAndEmittedEntries(
+    historicalEntries: StoredLogEntry[],
+    emittedEntries: StoredLogEntry[],
+  ): {
+    snapshotEntries: StoredLogEntry[];
+    missingEmittedEntries: StoredLogEntry[];
+  } {
+    if (emittedEntries.length === 0) {
+      return { snapshotEntries: historicalEntries, missingEmittedEntries: [] };
+    }
+
+    const historicalCounts = new Map<string, number>();
+    for (const entry of historicalEntries) {
+      const serialized = JSON.stringify(entry);
+      historicalCounts.set(
+        serialized,
+        (historicalCounts.get(serialized) ?? 0) + 1,
+      );
+    }
+
+    const missingEmittedEntries = emittedEntries.filter((entry) => {
+      const serialized = JSON.stringify(entry);
+      const remaining = historicalCounts.get(serialized) ?? 0;
+      if (remaining <= 0) {
+        return true;
+      }
+
+      historicalCounts.set(serialized, remaining - 1);
+      return false;
+    });
+
+    return {
+      snapshotEntries: [...historicalEntries, ...missingEmittedEntries],
+      missingEmittedEntries,
+    };
+  }
+
+  private async emitCurrentSnapshot(key: string): Promise<void> {
+    const watcher = this.watchers.get(key);
+    if (!watcher || watcher.failed) return;
+
+    const historicalEntries = await this.fetchAllSessionLogs(watcher);
+    const currentWatcher = this.watchers.get(key);
+    if (!currentWatcher || currentWatcher !== watcher || watcher.failed) {
+      return;
+    }
+
+    if (!historicalEntries) {
+      log.warn("Cloud task snapshot replay failed", {
+        taskId: watcher.taskId,
+        runId: watcher.runId,
+      });
+      return;
+    }
+
+    const { snapshotEntries, missingEmittedEntries } =
+      this.mergeHistoricalAndEmittedEntries(
+        historicalEntries,
+        watcher.emittedLogEntries,
+      );
+    watcher.emittedLogEntries = missingEmittedEntries;
+    if (snapshotEntries.length > watcher.totalEntryCount) {
+      watcher.totalEntryCount = snapshotEntries.length;
+    }
+
+    this.emit(CloudTaskEvent.Update, {
+      taskId: watcher.taskId,
+      runId: watcher.runId,
+      kind: "snapshot",
+      newEntries: snapshotEntries,
+      totalEntryCount: snapshotEntries.length,
+      status: watcher.lastStatus ?? undefined,
+      stage: watcher.lastStage,
+      output: watcher.lastOutput,
+      errorMessage: watcher.lastErrorMessage,
+      branch: watcher.lastBranch,
+    });
   }
 
   private failWatcher(key: string, error: CloudTaskConnectionError): void {
@@ -856,7 +956,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     });
   }
 
-  private scheduleReconnect(key: string, error?: unknown): void {
+  private scheduleReconnect(
+    key: string,
+    error?: unknown,
+    options: { countAttempt?: boolean } = {},
+  ): void {
     const watcher = this.watchers.get(key);
     if (!watcher || watcher.failed || isTerminalStatus(watcher.lastStatus)) {
       return;
@@ -866,7 +970,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       clearTimeout(watcher.reconnectTimeoutId);
     }
 
-    watcher.reconnectAttempts += 1;
+    const countAttempt = options.countAttempt ?? true;
+    if (countAttempt) {
+      watcher.reconnectAttempts += 1;
+    } else {
+      watcher.reconnectAttempts = 0;
+    }
     if (watcher.reconnectAttempts > MAX_SSE_RECONNECT_ATTEMPTS) {
       const details =
         error instanceof CloudTaskStreamError
@@ -882,7 +991,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     const delay = Math.min(
-      SSE_RECONNECT_BASE_DELAY_MS * 2 ** (watcher.reconnectAttempts - 1),
+      SSE_RECONNECT_BASE_DELAY_MS *
+        2 ** Math.max(watcher.reconnectAttempts - 1, 0),
       SSE_RECONNECT_MAX_DELAY_MS,
     );
 
@@ -897,13 +1007,22 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }, delay);
   }
 
-  private async handleStreamCompletion(key: string): Promise<void> {
+  private async handleStreamCompletion(
+    key: string,
+    options: {
+      reconnectIfNonTerminal: boolean;
+      reconnectError?: unknown;
+      countReconnectAttempt?: boolean;
+    },
+  ): Promise<void> {
     const watcher = this.watchers.get(key);
     if (!watcher) return;
 
+    const { reconnectIfNonTerminal } = options;
     const run = await this.fetchTaskRun(watcher);
     const currentWatcher = this.watchers.get(key);
     if (!currentWatcher || currentWatcher !== watcher) return;
+    if (watcher.failed) return;
 
     if (watcher.isBootstrapping) {
       if (!run) {
@@ -912,7 +1031,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       }
 
       this.applyTaskRunState(watcher, run);
-      if (isTerminalStatus(watcher.lastStatus)) {
+      if (isTerminalStatus(watcher.lastStatus) || !reconnectIfNonTerminal) {
         watcher.needsStopAfterBootstrap = true;
       } else {
         watcher.needsPostBootstrapReconnect = true;
@@ -933,20 +1052,34 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return;
     }
 
-    this.applyTaskRunState(watcher, run);
+    const stateChanged = this.applyTaskRunState(watcher, run);
 
-    if (!isTerminalStatus(watcher.lastStatus)) {
+    if (!isTerminalStatus(watcher.lastStatus) && reconnectIfNonTerminal) {
+      if (stateChanged) {
+        this.emit(CloudTaskEvent.Update, {
+          taskId: watcher.taskId,
+          runId: watcher.runId,
+          kind: "status",
+          status: watcher.lastStatus ?? undefined,
+          stage: watcher.lastStage,
+          output: watcher.lastOutput,
+          errorMessage: watcher.lastErrorMessage,
+          branch: watcher.lastBranch,
+        });
+      }
       log.warn("Cloud task stream ended before terminal status", {
         key,
         status: watcher.lastStatus,
       });
-      this.scheduleReconnect(key);
+      this.scheduleReconnect(key, options.reconnectError, {
+        countAttempt: options.countReconnectAttempt ?? false,
+      });
       return;
     }
 
-    // Always emit terminal status — processEvent intentionally skips the emit
-    // for terminal states (to avoid acting on it before the stream fully ends),
-    // so this is the single place that notifies the renderer of completion.
+    // Always emit the latest status before stopping. Terminal states are
+    // intentionally deferred until stream completion; clean EOFs can also mean
+    // the backend has no more stream events even when the run status remains active.
     this.emit(CloudTaskEvent.Update, {
       taskId: watcher.taskId,
       runId: watcher.runId,
@@ -1035,6 +1168,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           runId: watcher.runId,
           offset,
         });
+        if (shouldFailWatcherForFetchStatus(authedResponse.status)) {
+          this.failWatcher(
+            watcherKey(watcher.taskId, watcher.runId),
+            createStreamStatusError(authedResponse.status).details,
+          );
+        }
         return null;
       }
 
@@ -1097,6 +1236,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           taskId: watcher.taskId,
           runId: watcher.runId,
         });
+        if (shouldFailWatcherForFetchStatus(authedResponse.status)) {
+          this.failWatcher(
+            watcherKey(watcher.taskId, watcher.runId),
+            createStreamStatusError(authedResponse.status).details,
+          );
+        }
         return null;
       }
 

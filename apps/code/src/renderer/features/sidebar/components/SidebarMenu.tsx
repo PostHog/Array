@@ -6,7 +6,9 @@ import {
   INBOX_PIPELINE_STATUS_FILTER,
   INBOX_REFETCH_INTERVAL_MS,
 } from "@features/inbox/utils/inboxConstants";
+import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { getSessionService } from "@features/sessions/service/service";
+import { useSetupStore } from "@features/setup/stores/setupStore";
 import {
   archiveTaskImperative,
   useArchiveTask,
@@ -16,7 +18,9 @@ import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
 import { ScrollArea, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
+import type { Schemas } from "@renderer/api/generated";
 import type { Task } from "@shared/types";
+import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
 import { useQueryClient } from "@tanstack/react-query";
@@ -26,8 +30,12 @@ import { memo, useCallback, useEffect, useRef } from "react";
 import { usePinnedTasks } from "../hooks/usePinnedTasks";
 import { useSidebarData } from "../hooks/useSidebarData";
 import { useTaskViewed } from "../hooks/useTaskViewed";
+import { useSidebarStore } from "../stores/sidebarStore";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
+import { McpServersItem } from "./items/McpServersItem";
+import { SearchItem } from "./items/SearchItem";
+import { SetupItem } from "./items/SetupItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
 import { TaskListView } from "./TaskListView";
@@ -40,9 +48,15 @@ function SidebarMenuComponent() {
     navigateToInbox,
     navigateToCommandCenter,
     navigateToSkills,
+    navigateToMcpServers,
+    navigateToSetup,
   } = useNavigationStore();
 
-  const { data: allTasks = [] } = useTasks();
+  // Must mirror useSidebarData's filters so taskMap covers every rendered
+  // task — otherwise handleTaskClick silently bails for tasks not in the map.
+  const showAllUsers = useSidebarStore((s) => s.showAllUsers);
+  const showInternal = useSidebarStore((s) => s.showInternal);
+  const { data: allTasks = [] } = useTasks({ showAllUsers, showInternal });
 
   const { data: workspaces = {} } = useWorkspaces();
   const { markAsViewed } = useTaskViewed();
@@ -51,6 +65,17 @@ function SidebarMenuComponent() {
     useTaskContextMenu();
   const { archiveTask } = useArchiveTask();
   const { togglePin } = usePinnedTasks();
+
+  const hasCompletedSetup = useOnboardingStore(
+    (state) => state.hasCompletedSetup,
+  );
+  const showSetupItem = useSetupStore((s) => {
+    if (!hasCompletedSetup) return true;
+    if (s.discoveryStatus === "running") return true;
+    if (s.discoveryStatus === "done" && s.discoveredTasks.length > 0)
+      return true;
+    return false;
+  });
 
   const sidebarData = useSidebarData({
     activeView: view,
@@ -112,6 +137,19 @@ function SidebarMenuComponent() {
 
   const handleSkillsClick = () => {
     navigateToSkills();
+  };
+
+  const handleMcpServersClick = () => {
+    navigateToMcpServers();
+  };
+
+  const handleSetupClick = () => {
+    navigateToSetup();
+  };
+
+  const openCommandMenu = useCommandMenuStore((s) => s.open);
+  const handleSearchClick = () => {
+    openCommandMenu();
   };
 
   const handleTaskClick = (taskId: string) => {
@@ -243,6 +281,13 @@ function SidebarMenuComponent() {
               : task,
           ),
       );
+      queryClient.setQueriesData<Schemas.TaskSummary[]>(
+        { queryKey: ["tasks", "summaries"] },
+        (old) =>
+          old?.map((task) =>
+            task.id === taskId ? { ...task, title: newTitle } : task,
+          ),
+      );
 
       // Sync to session store so notifications use the updated title
       getSessionService().updateSessionTaskTitle(taskId, newTitle);
@@ -256,6 +301,7 @@ function SidebarMenuComponent() {
         log.error("Failed to rename task", error);
         // Refetch to revert optimistic update on failure
         queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
+        queryClient.invalidateQueries({ queryKey: ["tasks", "summaries"] });
       }
     },
     [setEditingTaskId, updateTask, queryClient, log],
@@ -277,6 +323,19 @@ function SidebarMenuComponent() {
             />
           </Box>
 
+          {showSetupItem && (
+            <Box mb="1" px="1">
+              <SetupItem
+                isActive={sidebarData.isSetupActive}
+                onClick={handleSetupClick}
+              />
+            </Box>
+          )}
+
+          <Box>
+            <SearchItem onClick={handleSearchClick} />
+          </Box>
+
           <Box>
             <InboxItem
               isActive={sidebarData.isInboxActive}
@@ -289,6 +348,13 @@ function SidebarMenuComponent() {
             <SkillsItem
               isActive={sidebarData.isSkillsActive}
               onClick={handleSkillsClick}
+            />
+          </Box>
+
+          <Box>
+            <McpServersItem
+              isActive={sidebarData.isMcpServersActive}
+              onClick={handleMcpServersClick}
             />
           </Box>
 

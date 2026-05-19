@@ -4,7 +4,7 @@
  * includes /opt/homebrew/bin, ~/.local/bin, etc.
  *
  * This reads the PATH from the user's default shell (in login mode) and
- * applies it to process.env.PATH so child processes have access to
+ * merges it into process.env.PATH so child processes have access to
  * user-installed binaries.
  *
  * IMPORTANT: We use `-lc` (login, non-interactive) instead of `-ilc`
@@ -12,6 +12,13 @@
  * include heavy plugins (Oh My Zsh, NVM, thefuck, etc.) that spawn
  * subprocesses and cause zombie process chains when the timeout kills
  * only the parent shell.
+ *
+ * Because `-lc` skips .zshrc, version-manager paths (nvm, mise, volta) and
+ * other entries added there are missing from the resolved shell PATH. We
+ * therefore *merge* with the inherited process.env.PATH rather than
+ * replacing it — when launched from a terminal (e.g. `pnpm dev`), the
+ * inherited PATH already has those entries and must be preserved so git
+ * pre-commit hooks (husky, lint-staged, etc.) can find their tools.
  *
  * See: https://github.com/PostHog/code/issues/1399
  */
@@ -170,8 +177,19 @@ function getShellPath(shell: string): string | undefined {
   return env?.PATH;
 }
 
-function buildFallbackPath(): string {
-  return [...FALLBACK_PATHS, process.env.PATH].filter(Boolean).join(":");
+function mergePaths(sources: (string | undefined)[]): string {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const source of sources) {
+    if (!source) continue;
+    for (const segment of source.split(":")) {
+      if (segment && !seen.has(segment)) {
+        seen.add(segment);
+        result.push(segment);
+      }
+    }
+  }
+  return result.join(":");
 }
 
 export function fixPath(): void {
@@ -179,10 +197,11 @@ export function fixPath(): void {
     return;
   }
 
-  // Try cached PATH first (instant, no shell spawn)
+  const originalPath = process.env.PATH;
+
   const cached = readCachedPath();
   if (cached) {
-    process.env.PATH = cached;
+    process.env.PATH = mergePaths([...FALLBACK_PATHS, originalPath, cached]);
     return;
   }
 
@@ -191,9 +210,9 @@ export function fixPath(): void {
 
   if (shellPath) {
     const cleaned = stripAnsi(shellPath);
-    process.env.PATH = cleaned;
+    process.env.PATH = mergePaths([...FALLBACK_PATHS, originalPath, cleaned]);
     writeCachedPath(cleaned);
   } else {
-    process.env.PATH = buildFallbackPath();
+    process.env.PATH = mergePaths([...FALLBACK_PATHS, originalPath]);
   }
 }

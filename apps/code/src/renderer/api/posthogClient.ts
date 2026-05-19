@@ -1,9 +1,14 @@
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type { PermissionMode } from "@posthog/agent/execution-mode";
+import {
+  DISMISSAL_REASON_OPTIONS,
+  type DismissalReasonOptionValue,
+} from "@shared/dismissalReasons";
 import type {
   ActionabilityJudgmentArtefact,
   AvailableSuggestedReviewer,
   AvailableSuggestedReviewersResponse,
+  DismissalArtefact,
   PriorityJudgmentArtefact,
   SandboxEnvironment,
   SandboxEnvironmentInput,
@@ -13,7 +18,6 @@ import type {
   SignalReportArtefact,
   SignalReportArtefactsResponse,
   SignalReportSignalsResponse,
-  SignalReportStatus,
   SignalReportsQueryParams,
   SignalReportsResponse,
   SignalReportTask,
@@ -63,12 +67,25 @@ export const MCP_CATEGORIES = [
 export type McpCategory = Schemas.CategoryEnum;
 export type McpApprovalState =
   Schemas.MCPServerInstallationToolApprovalStateEnum;
-export type McpAuthType = Schemas.AuthType9cbEnum;
+export type McpAuthType = Schemas.MCPAuthTypeEnum;
 export type McpRecommendedServer = Schemas.MCPServerTemplate;
 export type McpServerInstallation = Schemas.MCPServerInstallation;
 export type McpInstallationTool = Schemas.MCPServerInstallationTool;
 
 export type Evaluation = Schemas.Evaluation;
+
+export interface UserGitHubIntegration {
+  id: string;
+  kind: "github";
+  installation_id: string;
+  repository_selection?: string | null;
+  account?: {
+    type?: string | null;
+    name?: string | null;
+  } | null;
+  uses_shared_installation?: boolean;
+  created_at?: string;
+}
 
 export interface SignalSourceConfig {
   id: string;
@@ -153,7 +170,6 @@ interface CloudRunOptions {
   prAuthorshipMode?: PrAuthorshipMode;
   runSource?: CloudRunSource;
   signalReportId?: string;
-  githubUserToken?: string;
   initialPermissionMode?: PermissionMode;
 }
 
@@ -230,9 +246,6 @@ function buildCloudRunRequestBody(
   if (options?.signalReportId) {
     body.signal_report_id = options.signalReportId;
   }
-  if (options?.githubUserToken) {
-    body.github_user_token = options.githubUserToken;
-  }
   if (options?.initialPermissionMode) {
     body.initial_permission_mode = options.initialPermissionMode;
   }
@@ -253,7 +266,12 @@ type AnyArtefact =
   | PriorityJudgmentArtefact
   | ActionabilityJudgmentArtefact
   | SignalFindingArtefact
-  | SuggestedReviewersArtefact;
+  | SuggestedReviewersArtefact
+  | DismissalArtefact;
+
+const DISMISSAL_REASONS = new Set<DismissalReasonOptionValue>(
+  DISMISSAL_REASON_OPTIONS.map((o) => o.value),
+);
 
 const PRIORITY_VALUES = new Set(["P0", "P1", "P2", "P3", "P4"]);
 
@@ -358,6 +376,39 @@ function normalizeSignalFindingArtefact(
   };
 }
 
+function normalizeDismissalArtefact(
+  value: Record<string, unknown>,
+): DismissalArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+
+  const contentValue = isObjectRecord(value.content) ? value.content : null;
+  if (!contentValue) return null;
+
+  const rawReason = optionalString(contentValue.reason);
+  const reason =
+    rawReason && DISMISSAL_REASONS.has(rawReason as DismissalReasonOptionValue)
+      ? (rawReason as DismissalReasonOptionValue)
+      : null;
+
+  if (reason == null) {
+    return null;
+  }
+
+  return {
+    id,
+    type: "dismissal",
+    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    content: {
+      reason,
+      note: optionalString(contentValue.note) ?? "",
+      user_id:
+        typeof contentValue.user_id === "number" ? contentValue.user_id : null,
+      user_uuid: optionalString(contentValue.user_uuid),
+    },
+  };
+}
+
 function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   if (!isObjectRecord(value)) {
     return null;
@@ -372,6 +423,9 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   }
   if (dispatchType === "priority_judgment") {
     return normalizePriorityJudgmentArtefact(value);
+  }
+  if (dispatchType === "dismissal") {
+    return normalizeDismissalArtefact(value);
   }
 
   const id = optionalString(value.id);
@@ -558,6 +612,76 @@ export class PostHogAPIClient {
     return data.github_login;
   }
 
+  /**
+   * `POST .../integrations/github/start/`. Optional `teamId` matches app project when session `current_team` differs.
+   */
+  async startGithubUserIntegrationConnect(teamId?: number): Promise<{
+    install_url: string;
+    connect_flow?: "oauth_authorize" | "oauth_discover" | "app_install";
+  }> {
+    const id = teamId ?? (await this.getTeamId());
+    const urlPath = `/api/users/@me/integrations/github/start/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ team_id: id, connect_from: "posthog_code" }),
+      },
+    });
+    if (!response.ok) {
+      const err = (await response.json().catch(() => ({}))) as {
+        detail?: unknown;
+      };
+      const detail =
+        typeof err.detail === "string"
+          ? err.detail
+          : "Failed to start GitHub connection";
+      throw new Error(detail);
+    }
+    return (await response.json()) as {
+      install_url: string;
+      connect_flow?: "oauth_authorize" | "oauth_discover" | "app_install";
+    };
+  }
+
+  async getGithubUserIntegrations(): Promise<UserGitHubIntegration[]> {
+    const urlPath = `/api/users/@me/integrations/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch personal GitHub integrations: ${response.statusText}`,
+      );
+    }
+
+    const data = (await response.json()) as {
+      results?: UserGitHubIntegration[];
+    };
+    return data.results ?? [];
+  }
+
+  async disconnectGithubUserIntegration(installationId: string): Promise<void> {
+    const urlPath = `/api/users/@me/integrations/github/${encodeURIComponent(installationId)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Failed to disconnect GitHub integration: ${response.statusText}`,
+      );
+    }
+  }
+
   async switchOrganization(orgId: string): Promise<void> {
     await this.api.patch("/api/users/{uuid}/", {
       path: { uuid: "@me" },
@@ -704,7 +828,7 @@ export class PostHogAPIClient {
       "/api/projects/{project_id}/external_data_sources/",
       {
         path: { project_id: projectId.toString() },
-        body: payload as unknown as Schemas.ExternalDataSourceSerializers,
+        body: payload as unknown as Schemas.ExternalDataSourceCreate,
         withResponse: true,
         throwOnStatusError: false,
       },
@@ -751,9 +875,10 @@ export class PostHogAPIClient {
     repository?: string;
     createdBy?: number;
     originProduct?: string;
+    internal?: boolean;
   }) {
     const teamId = await this.getTeamId();
-    const params: Record<string, string | number> = {
+    const params: Record<string, string | number | boolean> = {
       limit: 500,
     };
 
@@ -769,12 +894,50 @@ export class PostHogAPIClient {
       params.origin_product = options.originProduct;
     }
 
+    if (options?.internal) {
+      params.internal = true;
+    }
+
     const data = await this.api.get(`/api/projects/{project_id}/tasks/`, {
       path: { project_id: teamId.toString() },
       query: params,
     });
 
     return data.results ?? [];
+  }
+
+  async getTaskSummaries(ids: string[]) {
+    if (ids.length === 0) return [];
+    const TASK_SUMMARIES_MAX_PAGES = 50;
+    const teamId = await this.getTeamId();
+    const all: Schemas.TaskSummary[] = [];
+    let urlPath: string = `/api/projects/${teamId}/tasks/summaries/`;
+    for (let i = 0; i < TASK_SUMMARIES_MAX_PAGES; i++) {
+      const url = new URL(`${this.api.baseUrl}${urlPath}`);
+      const response = await this.api.fetcher.fetch({
+        method: "post",
+        url,
+        path: urlPath,
+        overrides: {
+          body: JSON.stringify({ ids } satisfies Schemas.TaskSummariesRequest),
+        },
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch task summaries: ${response.statusText}`,
+        );
+      }
+      const page = (await response.json()) as Schemas.PaginatedTaskSummaryList;
+      all.push(...page.results);
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    log.warn(
+      `getTaskSummaries hit MAX_PAGES (${TASK_SUMMARIES_MAX_PAGES}); returning partial results`,
+      { ids: ids.length, returned: all.length },
+    );
+    return all;
   }
 
   async getTask(taskId: string) {
@@ -798,17 +961,19 @@ export class PostHogAPIClient {
         >
       > & {
         github_integration?: number | null;
+        github_user_integration?: string | null;
         /** POST-only: `SignalReportTask.relationship` to create when linking to `signal_report`. */
         signal_report_task_relationship?: SignalReportTaskRelationship;
       },
   ) {
     const teamId = await this.getTeamId();
+    const { origin_product: originProduct, ...taskOptions } = options;
 
     const data = await this.api.post(`/api/projects/{project_id}/tasks/`, {
       path: { project_id: teamId.toString() },
       body: {
-        origin_product: "user_created",
-        ...options,
+        ...taskOptions,
+        origin_product: originProduct ?? "user_created",
       } as unknown as Schemas.Task,
     });
 
@@ -844,6 +1009,7 @@ export class PostHogAPIClient {
       json_schema: task.json_schema,
       origin_product: task.origin_product,
       github_integration: task.github_integration,
+      github_user_integration: task.github_user_integration,
     });
   }
 
@@ -1399,6 +1565,45 @@ export class PostHogAPIClient {
     };
   }
 
+  async getGithubUserBranchesPage(
+    installationId: string | number,
+    repo: string,
+    offset: number,
+    limit: number,
+    search?: string,
+  ): Promise<{
+    branches: string[];
+    defaultBranch: string | null;
+    hasMore: boolean;
+  }> {
+    const urlPath = `/api/users/@me/integrations/github/${installationId}/branches/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    url.searchParams.set("repo", repo);
+    url.searchParams.set("offset", String(offset));
+    url.searchParams.set("limit", String(limit));
+    if (search?.trim()) {
+      url.searchParams.set("search", search.trim());
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch personal GitHub branches: ${response.statusText}`,
+      );
+    }
+
+    const data = await response.json();
+    return {
+      branches: data.branches ?? data.results ?? data ?? [],
+      defaultBranch: data.default_branch ?? null,
+      hasMore: data.has_more ?? false,
+    };
+  }
+
   async getGithubRepositories(
     integrationId: string | number,
   ): Promise<string[]> {
@@ -1458,6 +1663,63 @@ export class PostHogAPIClient {
     };
   }
 
+  async getGithubUserRepositories(
+    installationId: string | number,
+  ): Promise<string[]> {
+    const repositories: string[] = [];
+    let offset = 0;
+
+    while (true) {
+      const page = await this.getGithubUserRepositoriesPage(
+        installationId,
+        offset,
+        500,
+      );
+      repositories.push(...page.repositories);
+
+      if (!page.hasMore) {
+        return repositories;
+      }
+
+      offset += page.repositories.length;
+    }
+  }
+
+  async getGithubUserRepositoriesPage(
+    installationId: string | number,
+    offset: number,
+    limit: number,
+    search?: string,
+  ): Promise<{
+    repositories: string[];
+    hasMore: boolean;
+  }> {
+    const urlPath = `/api/users/@me/integrations/github/${installationId}/repos/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    url.searchParams.set("offset", String(offset));
+    url.searchParams.set("limit", String(limit));
+    if (search?.trim()) {
+      url.searchParams.set("search", search.trim());
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch personal GitHub repositories: ${response.statusText}`,
+      );
+    }
+
+    const data = await response.json();
+    return {
+      repositories: this.normalizeGithubRepositories(data),
+      hasMore: data.has_more ?? false,
+    };
+  }
+
   async refreshGithubRepositories(
     integrationId: string | number,
   ): Promise<string[]> {
@@ -1474,6 +1736,27 @@ export class PostHogAPIClient {
     if (!response.ok) {
       throw new Error(
         `Failed to refresh GitHub repositories: ${response.statusText}`,
+      );
+    }
+
+    const data = await response.json();
+    return this.normalizeGithubRepositories(data);
+  }
+
+  async refreshGithubUserRepositories(
+    installationId: string | number,
+  ): Promise<string[]> {
+    const urlPath = `/api/users/@me/integrations/github/${installationId}/repos/refresh/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to refresh personal GitHub repositories: ${response.statusText}`,
       );
     }
 
@@ -1783,12 +2066,21 @@ export class PostHogAPIClient {
 
   async updateSignalReportState(
     reportId: string,
-    input: {
-      state: Extract<SignalReportStatus, "suppressed" | "potential">;
-      snooze_for?: number;
-      reset_weight?: boolean;
-      error?: string;
-    },
+    input:
+      | {
+          state: "potential";
+          snooze_for?: number;
+          reset_weight?: boolean;
+          error?: string;
+        }
+      | {
+          state: "suppressed";
+          /** When omitted, the server suppresses without creating a dismissal artefact. */
+          dismissal_reason?: DismissalReasonOptionValue;
+          dismissal_note?: string;
+          reset_weight?: boolean;
+          error?: string;
+        },
   ): Promise<SignalReport> {
     const teamId = await this.getTeamId();
     const url = new URL(
@@ -2256,10 +2548,15 @@ export class PostHogAPIClient {
     return data.results ?? data ?? [];
   }
 
-  async getMySeat(): Promise<SeatData | null> {
+  async getMySeat(
+    options: { best?: boolean } = { best: true },
+  ): Promise<SeatData | null> {
     try {
       const url = new URL(`${this.api.baseUrl}/api/seats/me/`);
       url.searchParams.set("product_key", SEAT_PRODUCT_KEY);
+      if (options.best) {
+        url.searchParams.set("best", "true");
+      }
       const response = await this.api.fetcher.fetch({
         method: "get",
         url,

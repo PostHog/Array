@@ -96,6 +96,87 @@ describe("navigationStore", () => {
       });
     });
 
+    it("navigates to task input with report association", () => {
+      getStore().navigateToTaskInput({
+        initialPrompt: "Fix this report",
+        reportAssociation: { reportId: "report-123", title: "Broken signup" },
+      });
+
+      expect(getView()).toMatchObject({
+        type: "task-input",
+        initialPrompt: "Fix this report",
+        reportAssociation: { reportId: "report-123", title: "Broken signup" },
+      });
+      expect(getView().taskInputRequestId).toBeTruthy();
+    });
+
+    it("clears task input report association", () => {
+      getStore().navigateToTaskInput({
+        initialPrompt: "Fix this report",
+        initialCloudRepository: "posthog/code",
+        reportAssociation: { reportId: "report-123", title: "Broken signup" },
+      });
+
+      getStore().clearTaskInputReportAssociation();
+
+      expect(getView().reportAssociation).toBeUndefined();
+      expect(getView().initialCloudRepository).toBeUndefined();
+      expect(
+        getStore().history[getStore().historyIndex].reportAssociation,
+      ).toBeUndefined();
+      expect(
+        getStore().history[getStore().historyIndex].initialCloudRepository,
+      ).toBeUndefined();
+      expect(getStore().taskInputReportAssociation).toBeUndefined();
+    });
+
+    it("clears cloud-only task input state without report association", () => {
+      getStore().navigateToTaskInput({
+        initialCloudRepository: "posthog/code",
+      });
+
+      getStore().clearTaskInputReportAssociation();
+
+      expect(getView().initialCloudRepository).toBeUndefined();
+      expect(getStore().taskInputCloudRepository).toBeUndefined();
+      expect(
+        getStore().history[getStore().historyIndex].initialCloudRepository,
+      ).toBeUndefined();
+    });
+
+    it("clears persisted task input report association after returning to task input", () => {
+      getStore().navigateToTaskInput({
+        initialPrompt: "Fix this report",
+        initialCloudRepository: "posthog/code",
+        reportAssociation: { reportId: "report-123", title: "Broken signup" },
+      });
+      getStore().navigateToInbox();
+      getStore().navigateToTaskInput();
+
+      getStore().clearTaskInputReportAssociation();
+
+      expect(getStore().taskInputReportAssociation).toBeUndefined();
+      expect(getStore().taskInputCloudRepository).toBeUndefined();
+      expect(getView().initialCloudRepository).toBeUndefined();
+    });
+
+    it("keeps task input report association after leaving task input", () => {
+      getStore().navigateToTaskInput({
+        initialPrompt: "Fix this report",
+        initialCloudRepository: "posthog/code",
+        reportAssociation: { reportId: "report-123", title: "Broken signup" },
+      });
+
+      getStore().navigateToInbox();
+      getStore().navigateToTaskInput();
+
+      expect(getStore().taskInputReportAssociation).toEqual({
+        reportId: "report-123",
+        title: "Broken signup",
+      });
+      expect(getStore().taskInputCloudRepository).toBe("posthog/code");
+    });
+
     it("navigates to inbox", () => {
       getStore().navigateToInbox();
       expect(getView()).toMatchObject({

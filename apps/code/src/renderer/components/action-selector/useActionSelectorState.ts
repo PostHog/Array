@@ -76,6 +76,8 @@ export function useActionSelectorState({
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const prevActiveStepRef = useRef(currentStep);
+  const customInputRef = useRef("");
+  customInputRef.current = customInput;
 
   const activeStep = internalStep;
   const hasSteps = steps !== undefined && steps.length > 1;
@@ -99,6 +101,7 @@ export function useActionSelectorState({
   const selectedOption = allOptions[selectedIndex];
   const showInlineEdit =
     isEditing && selectedOption && needsCustomInput(selectedOption);
+  const canSubmitOrAdvance = checkedOptions.size > 0;
 
   useEffect(() => {
     if (!isInteractiveElementInDifferentCell(containerRef)) {
@@ -164,12 +167,17 @@ export function useActionSelectorState({
   }, [activeStep, restoreStepAnswer]);
 
   useEffect(() => {
-    if (selectedOption && needsCustomInput(selectedOption)) {
-      setIsEditing(true);
-    } else {
-      setIsEditing(false);
+    const isCustom = !!selectedOption && needsCustomInput(selectedOption);
+    setIsEditing(isCustom);
+    if (isCustom && showSubmitButton && customInputRef.current.trim()) {
+      setCheckedOptions((prev) => {
+        if (prev.has(selectedOption.id)) return prev;
+        const next = multiSelect ? new Set(prev) : new Set<string>();
+        next.add(selectedOption.id);
+        return next;
+      });
     }
-  }, [selectedOption]);
+  }, [selectedOption, showSubmitButton, multiSelect]);
 
   const moveUp = useCallback(() => {
     setHoveredIndex(null);
@@ -249,6 +257,7 @@ export function useActionSelectorState({
         onSelect(selected.id);
         return;
       }
+      if (!canSubmitOrAdvance) return;
       if (hasSteps && activeStep < numSteps - 1) {
         saveCurrentStepAnswer();
         setStep(activeStep + 1);
@@ -294,6 +303,7 @@ export function useActionSelectorState({
     saveCurrentStepAnswer,
     setStep,
     isEditing,
+    canSubmitOrAdvance,
   ]);
 
   const selectByIndex = useCallback(
@@ -306,6 +316,7 @@ export function useActionSelectorState({
           onSelect(selected.id);
           return;
         }
+        if (!canSubmitOrAdvance) return;
         if (hasSteps && activeStep < numSteps - 1) {
           saveCurrentStepAnswer();
           setStep(activeStep + 1);
@@ -340,6 +351,7 @@ export function useActionSelectorState({
       onSelect,
       saveCurrentStepAnswer,
       setStep,
+      canSubmitOrAdvance,
     ],
   );
 
@@ -355,6 +367,7 @@ export function useActionSelectorState({
           onSelect(selected.id);
           return;
         }
+        if (!canSubmitOrAdvance) return;
         if (hasSteps && activeStep < numSteps - 1) {
           saveCurrentStepAnswer();
           setStep(activeStep + 1);
@@ -396,6 +409,7 @@ export function useActionSelectorState({
       onSelect,
       saveCurrentStepAnswer,
       setStep,
+      canSubmitOrAdvance,
     ],
   );
 
@@ -451,16 +465,53 @@ export function useActionSelectorState({
 
   const handleInlineSubmit = useCallback(() => {
     if (!selectedOption) return;
-    if (showSubmitButton) {
-      if (customInput.trim()) {
-        ensureChecked(selectedOption.id);
+    const trimmed = customInput.trim();
+
+    if (!showSubmitButton) {
+      if (trimmed) {
+        onSelect(selectedOption.id, trimmed);
       }
-      setIsEditing(false);
-      containerRef.current?.focus();
-    } else if (customInput.trim()) {
-      onSelect(selectedOption.id, customInput.trim());
+      return;
     }
-  }, [showSubmitButton, ensureChecked, selectedOption, customInput, onSelect]);
+
+    if (trimmed) {
+      ensureChecked(selectedOption.id);
+    }
+    setIsEditing(false);
+
+    if (!trimmed && !canSubmitOrAdvance) {
+      containerRef.current?.focus();
+      return;
+    }
+
+    if (hasSteps && activeStep < numSteps - 1) {
+      saveCurrentStepAnswer();
+      setStep(activeStep + 1);
+      containerRef.current?.focus();
+      return;
+    }
+
+    if (multiSelect) {
+      handleSubmitMulti();
+    } else {
+      handleSubmitSingle();
+    }
+  }, [
+    showSubmitButton,
+    ensureChecked,
+    selectedOption,
+    customInput,
+    onSelect,
+    hasSteps,
+    activeStep,
+    numSteps,
+    saveCurrentStepAnswer,
+    setStep,
+    multiSelect,
+    handleSubmitMulti,
+    handleSubmitSingle,
+    canSubmitOrAdvance,
+  ]);
 
   const handleNavigateUp = useCallback(() => {
     if (
@@ -503,6 +554,7 @@ export function useActionSelectorState({
     hasSteps,
     numSteps,
     showSubmitButton,
+    canSubmitOrAdvance,
     allOptions,
     selectedOption,
     showInlineEdit,

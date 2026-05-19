@@ -28,6 +28,11 @@ export interface IWorkspaceRepository {
   updateLastActivityAt(taskId: string, lastActivityAt: string): void;
   updateLinkedBranch(taskId: string, linkedBranch: string | null): void;
   updateMode(taskId: string, mode: WorkspaceMode): void;
+  setModeAndRepository(
+    taskId: string,
+    mode: WorkspaceMode,
+    repositoryId: string | null,
+  ): void;
   deleteAll(): void;
 }
 
@@ -137,6 +142,18 @@ export class WorkspaceRepository implements IWorkspaceRepository {
     this.db
       .update(workspaces)
       .set({ mode, updatedAt: now() })
+      .where(byTaskId(taskId))
+      .run();
+  }
+
+  setModeAndRepository(
+    taskId: string,
+    mode: WorkspaceMode,
+    repositoryId: string | null,
+  ): void {
+    this.db
+      .update(workspaces)
+      .set({ mode, repositoryId, updatedAt: now() })
       .where(byTaskId(taskId))
       .run();
   }

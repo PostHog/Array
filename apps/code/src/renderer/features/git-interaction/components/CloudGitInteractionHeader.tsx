@@ -10,9 +10,13 @@ import { HandoffConfirmDialog } from "@features/sessions/components/HandoffConfi
 import { useSessionForTask } from "@features/sessions/hooks/useSession";
 import { getLocalHandoffService } from "@features/sessions/service/localHandoffService";
 import { useHandoffDialogStore } from "@features/sessions/stores/handoffDialogStore";
-import { Button, Text } from "@radix-ui/themes";
+import { useFeatureFlag } from "@hooks/useFeatureFlag";
+import { Laptop, Spinner } from "@phosphor-icons/react";
+import { Button as QuillButton } from "@posthog/quill";
 import type { Task } from "@shared/types";
 import { useState } from "react";
+
+const CLOUD_HANDOFF_FLAG = "phc-cloud-handoff";
 
 interface CloudGitInteractionHeaderProps {
   taskId: string;
@@ -25,6 +29,8 @@ export function CloudGitInteractionHeader({
 }: CloudGitInteractionHeaderProps) {
   const session = useSessionForTask(taskId);
   const localHandoff = getLocalHandoffService();
+  const cloudHandoffEnabled =
+    useFeatureFlag(CLOUD_HANDOFF_FLAG) || import.meta.env.DEV;
 
   const confirmOpen = useHandoffDialogStore((s) => s.confirmOpen);
   const direction = useHandoffDialogStore((s) => s.direction);
@@ -78,20 +84,29 @@ export function CloudGitInteractionHeader({
     await localHandoff.resumePending();
   };
 
+  if (!cloudHandoffEnabled) return null;
+
+  const inProgress = session?.handoffInProgress ?? false;
+
   return (
     <>
-      <Button
-        size="1"
-        variant="soft"
-        disabled={session?.handoffInProgress}
-        onClick={() =>
-          localHandoff.openConfirm(taskId, session?.cloudBranch ?? null)
-        }
-      >
-        <Text className="text-[13px]">
-          {session?.handoffInProgress ? "Transferring..." : "Continue locally"}
-        </Text>
-      </Button>
+      <div className="no-drag flex items-center">
+        <QuillButton
+          variant="outline"
+          size="sm"
+          disabled={inProgress}
+          onClick={() =>
+            localHandoff.openConfirm(taskId, session?.cloudBranch ?? null)
+          }
+        >
+          {inProgress ? (
+            <Spinner size={14} className="shrink-0 animate-spin" />
+          ) : (
+            <Laptop size={14} weight="regular" className="shrink-0" />
+          )}
+          {inProgress ? "Transferring..." : "Continue locally"}
+        </QuillButton>
+      </div>
       {confirmOpen && direction === "to-local" && (
         <HandoffConfirmDialog
           open={confirmOpen}

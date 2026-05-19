@@ -2,6 +2,8 @@ const BRANCH_NAMING = `
 # Branch Naming
 
 When working in a detached HEAD state, create a descriptive branch name based on the work being done before committing. Do this automatically without asking the user.
+
+When creating a new branch, prefix it with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`).
 `;
 
 const PLAN_MODE = `

@@ -37,6 +37,7 @@ export type ConversationItem =
       content: string;
       timestamp: number;
       attachments?: UserMessageAttachment[];
+      pinToTop?: boolean;
     }
   | { type: "git_action"; id: string; actionType: GitActionType }
   | { type: "skill_button_action"; id: string; buttonId: SkillButtonId }
@@ -292,15 +293,31 @@ function handlePromptResponse(
 ) {
   const turn = b.pendingPrompts.get(msg.id);
   if (!turn) return;
-  turn.isComplete = true;
-  turn.durationMs += ts;
-
   const result = msg.result as {
     stopReason?: string;
     _meta?: { interruptReason?: string };
   };
+  completePromptTurn(b, turn, ts, {
+    stopReason: result?.stopReason,
+    interruptReason: result?._meta?.interruptReason,
+  });
+}
+
+function completePromptTurn(
+  b: ItemBuilder,
+  turn: TurnState,
+  ts: number,
+  result: { stopReason?: string; interruptReason?: string } = {},
+) {
+  if (turn.isComplete) return;
+
+  turn.isComplete = true;
+  if (turn.promptId !== -1) {
+    turn.durationMs += ts;
+  }
+
   turn.stopReason = result?.stopReason;
-  turn.interruptReason = result?._meta?.interruptReason;
+  turn.interruptReason = result?.interruptReason;
   turn.context.turnComplete = true;
 
   const wasCancelled = turn.stopReason === "cancelled";
@@ -323,7 +340,9 @@ function handlePromptResponse(
     });
   }
 
-  b.pendingPrompts.delete(msg.id);
+  if (turn.promptId !== -1) {
+    b.pendingPrompts.delete(turn.promptId);
+  }
 }
 
 function handleNotification(
@@ -361,12 +380,19 @@ function handleNotification(
     return;
   }
 
+  if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)) {
+    const params = msg.params as { stopReason?: string } | undefined;
+    if (!b.currentTurn) return;
+    completePromptTurn(b, b.currentTurn, ts, {
+      stopReason: params?.stopReason,
+    });
+    return;
+  }
+
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.CONSOLE)) {
     const params = msg.params as { level?: string; message?: string };
     if (!params?.message) return;
     const level = params.level ?? "info";
-    // Cloud runs downgrade every console log to debug at the source, so this
-    // gate hides the entire stream unless the user flips the debug toggle.
     if (level === "debug" && !options?.showDebugLogs) return;
     if (!b.currentTurn) ensureImplicitTurn(b, ts);
     pushItem(b, {

@@ -1,4 +1,9 @@
-import { CaretDown, GitBranch, HardDrives } from "@phosphor-icons/react";
+import {
+  CaretDown,
+  GitBranch,
+  GitPullRequest,
+  HardDrives,
+} from "@phosphor-icons/react";
 import {
   Button,
   DropdownMenu,
@@ -13,6 +18,7 @@ interface DiffSourceSelectorProps {
   taskId: string;
   effectiveSource: ResolvedDiffSource;
   branchAvailable: boolean;
+  prSourceAvailable: boolean;
   defaultBranch: string | null;
 }
 
@@ -20,15 +26,21 @@ export function DiffSourceSelector({
   taskId,
   effectiveSource,
   branchAvailable,
+  prSourceAvailable,
   defaultBranch,
 }: DiffSourceSelectorProps) {
   const setDiffSource = useDiffViewerStore((s) => s.setDiffSource);
 
-  if (!branchAvailable || !defaultBranch) return null;
+  const anyAlternative = branchAvailable || prSourceAvailable;
+  if (!anyAlternative) return null;
 
-  const Icon = effectiveSource === "branch" ? GitBranch : HardDrives;
-  const branchLabel = `Branch vs. ${defaultBranch}`;
-  const triggerLabel = effectiveSource === "branch" ? branchLabel : "Local";
+  const branchLabel = defaultBranch ? `Branch vs. ${defaultBranch}` : "Branch";
+  const { icon: Icon, label: triggerLabel } = (() => {
+    if (effectiveSource === "pr") return { icon: GitPullRequest, label: "PR" };
+    if (effectiveSource === "branch")
+      return { icon: GitBranch, label: branchLabel };
+    return { icon: HardDrives, label: "Local" };
+  })();
 
   return (
     <DropdownMenu>
@@ -56,10 +68,18 @@ export function DiffSourceSelector({
           <HardDrives size={12} />
           Local changes
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setDiffSource(taskId, "branch")}>
-          <GitBranch size={12} />
-          {branchLabel}
-        </DropdownMenuItem>
+        {branchAvailable && defaultBranch && (
+          <DropdownMenuItem onClick={() => setDiffSource(taskId, "branch")}>
+            <GitBranch size={12} />
+            {branchLabel}
+          </DropdownMenuItem>
+        )}
+        {prSourceAvailable && (
+          <DropdownMenuItem onClick={() => setDiffSource(taskId, "pr")}>
+            <GitPullRequest size={12} />
+            Pull request
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -8,6 +8,8 @@ const execFileAsync = promisify(execFile);
 import { execGh } from "@posthog/git/gh";
 import {
   getAllBranches,
+  getBranchDiffPatchesByPath,
+  getChangedFilesBetweenBranches,
   getChangedFilesDetailed,
   getCommitConventions,
   getCommitsBetweenBranches,
@@ -33,12 +35,14 @@ import { CommitSaga } from "@posthog/git/sagas/commit";
 import { DiscardFileChangesSaga } from "@posthog/git/sagas/discard";
 import { PullSaga } from "@posthog/git/sagas/pull";
 import { PushSaga } from "@posthog/git/sagas/push";
-import { parseGitHubUrl, parsePrUrl } from "@posthog/git/utils";
+import { parseGithubUrl } from "@posthog/git/utils";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import type { LlmGatewayService } from "../llm-gateway/service";
+import type { SidebarPrState } from "../workspace/schemas";
+import type { WorkspaceService } from "../workspace/service";
 import { CreatePrSaga } from "./create-pr-saga";
 import type {
   ChangedFile,
@@ -91,6 +95,19 @@ const log = logger.scope("git-service");
 const FETCH_THROTTLE_MS = 5 * 60 * 1000;
 const MAX_DIFF_LENGTH = 8000;
 
+export function mapPrState(
+  state: string | null,
+  merged: boolean,
+  draft: boolean,
+): SidebarPrState {
+  const lower = state?.toLowerCase() ?? null;
+  if (merged || lower === "merged") return "merged";
+  if (lower === "closed") return "closed";
+  if (draft) return "draft";
+  if (lower === "open") return "open";
+  return null;
+}
+
 /**
  * Wraps a GitHub API per-file patch (hunk content only) with
  * the `diff --git` / `---` / `+++` header so that unified-diff
@@ -115,6 +132,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
   constructor(
     @inject(MAIN_TOKENS.LlmGatewayService)
     private readonly llmGateway: LlmGatewayService,
+    @inject(MAIN_TOKENS.WorkspaceService)
+    private readonly workspaceService: WorkspaceService,
   ) {
     super();
   }
@@ -199,15 +218,15 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     const remoteUrl = await getRemoteUrl(directoryPath);
     if (!remoteUrl) return null;
 
-    const repo = parseGitHubUrl(remoteUrl);
-    if (!repo) return null;
+    const parsed = parseGithubUrl(remoteUrl);
+    if (!parsed) return null;
 
     const branch = await getCurrentBranch(directoryPath);
     if (!branch) return null;
 
     return {
-      organization: repo.organization,
-      repository: repo.repository,
+      organization: parsed.owner,
+      repository: parsed.repo,
       remote: remoteUrl,
       branch,
     };
@@ -291,14 +310,34 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     const files = await getChangedFilesDetailed(directoryPath, {
       excludePatterns: [".claude", "CLAUDE.local.md"],
     });
-    return files.map((f) => ({
-      path: f.path,
-      status: f.status,
-      originalPath: f.originalPath,
-      linesAdded: f.linesAdded,
-      linesRemoved: f.linesRemoved,
-      staged: f.staged,
-    }));
+    type HeadChangedFile = Omit<ChangedFile, "patch">;
+    const filteredFiles: Array<HeadChangedFile | null> = await Promise.all(
+      files.map(async (file) => {
+        if (file.status === "untracked") {
+          try {
+            const stats = await fs.promises.stat(
+              path.join(directoryPath, file.path),
+            );
+            if (!stats.isFile()) return null;
+          } catch {
+            return null;
+          }
+        }
+
+        return {
+          path: file.path,
+          status: file.status,
+          originalPath: file.originalPath,
+          linesAdded: file.linesAdded,
+          linesRemoved: file.linesRemoved,
+          staged: file.staged,
+        };
+      }),
+    );
+
+    return filteredFiles.filter(
+      (file): file is HeadChangedFile => file !== null,
+    );
   }
 
   public async getFileAtHead(
@@ -407,7 +446,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
       const remoteUrl = await getRemoteUrl(directoryPath);
       if (!remoteUrl) return null;
 
-      const parsed = parseGitHubUrl(remoteUrl);
+      const parsed = parseGithubUrl(remoteUrl);
       if (!parsed) return null;
 
       const currentBranch = await getCurrentBranch(directoryPath);
@@ -415,12 +454,12 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
 
       let compareUrl: string | null = null;
       if (currentBranch && currentBranch !== defaultBranch) {
-        compareUrl = `https://github.com/${parsed.organization}/${parsed.repository}/compare/${defaultBranch}...${currentBranch}?expand=1`;
+        compareUrl = `https://github.com/${parsed.owner}/${parsed.repo}/compare/${defaultBranch}...${currentBranch}?expand=1`;
       }
 
       return {
-        organization: parsed.organization,
-        repository: parsed.repository,
+        organization: parsed.owner,
+        repository: parsed.repo,
         currentBranch: currentBranch ?? null,
         defaultBranch,
         compareUrl,
@@ -624,6 +663,14 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
       includePrStatus: true,
     });
 
+    if (input.taskId) {
+      const linkedBranch =
+        input.branchName ?? (await getCurrentBranch(directoryPath));
+      if (linkedBranch) {
+        this.workspaceService.linkBranch(input.taskId, linkedBranch, "user");
+      }
+    }
+
     emitProgress(
       "complete",
       "Pull request created",
@@ -792,7 +839,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
 
     try {
       const remoteUrl = await getRemoteUrl(directoryPath);
-      const isGitHubRepo = !!(remoteUrl && parseGitHubUrl(remoteUrl));
+      const isGitHubRepo = !!(remoteUrl && parseGithubUrl(remoteUrl));
       const currentBranch = await getCurrentBranch(directoryPath);
       const defaultBranch = await getDefaultBranch(directoryPath).catch(
         () => null,
@@ -863,10 +910,9 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
       const remoteUrl = await getRemoteUrl(directoryPath);
       if (!remoteUrl) return null;
 
-      const parsed = parseGitHubUrl(remoteUrl);
+      const parsed = parseGithubUrl(remoteUrl);
       if (!parsed) return null;
 
-      const repoSlug = `${parsed.organization}/${parsed.repository}`;
       const result = await execGh([
         "pr",
         "list",
@@ -879,7 +925,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
         "--limit",
         "1",
         "--repo",
-        repoSlug,
+        `${parsed.owner}/${parsed.repo}`,
       ]);
 
       if (result.exitCode !== 0) {
@@ -954,8 +1000,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
   }
 
   public async getPrChangedFiles(prUrl: string): Promise<ChangedFile[]> {
-    const pr = parsePrUrl(prUrl);
-    if (!pr) return [];
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return [];
 
     const { owner, repo, number } = pr;
 
@@ -1027,8 +1073,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
   public async getPrDetailsByUrl(
     prUrl: string,
   ): Promise<PrDetailsByUrlOutput | null> {
-    const pr = parsePrUrl(prUrl);
-    if (!pr) return null;
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return null;
 
     try {
       const result = await execGh([
@@ -1063,8 +1109,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     prUrl: string,
     action: PrActionType,
   ): Promise<UpdatePrByUrlOutput> {
-    const pr = parsePrUrl(prUrl);
-    if (!pr) {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") {
       return { success: false, message: "Invalid PR URL" };
     }
 
@@ -1097,8 +1143,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
   }
 
   public async getPrReviewComments(prUrl: string): Promise<PrReviewComment[]> {
-    const pr = parsePrUrl(prUrl);
-    if (!pr) return [];
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") return [];
 
     const { owner, repo, number } = pr;
 
@@ -1129,8 +1175,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     commentId: number,
     body: string,
   ): Promise<ReplyToPrCommentOutput> {
-    const pr = parsePrUrl(prUrl);
-    if (!pr) {
+    const pr = parseGithubUrl(prUrl);
+    if (pr?.kind !== "pr") {
       return { success: false, comment: null };
     }
 
@@ -1235,6 +1281,39 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
           : undefined,
       };
     });
+  }
+
+  public async getLocalBranchChangedFiles(
+    directoryPath: string,
+    branch: string,
+  ): Promise<ChangedFile[]> {
+    await this.fetchIfStale(directoryPath);
+
+    const defaultBranch = await getDefaultBranch(directoryPath);
+    if (!defaultBranch) return [];
+
+    const files = await getChangedFilesBetweenBranches(
+      directoryPath,
+      defaultBranch,
+      branch,
+      { excludePatterns: [".claude", "CLAUDE.local.md"] },
+    );
+    if (files.length === 0) return [];
+
+    const patchByPath = await getBranchDiffPatchesByPath(
+      directoryPath,
+      defaultBranch,
+      branch,
+    );
+
+    return files.map((f) => ({
+      path: f.path,
+      status: f.status,
+      originalPath: f.originalPath,
+      linesAdded: f.linesAdded,
+      linesRemoved: f.linesRemoved,
+      patch: patchByPath.get(f.path),
+    }));
   }
 
   public async generateCommitMessage(
@@ -1485,6 +1564,17 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
     const repoInfo = await this.getGitRepoInfo(directoryPath);
     if (!repoInfo) return [];
 
+    // Full GitHub URL: look up directly. May target a different repo than the local one.
+    const urlRef = parseGithubUrl(query);
+    if (urlRef && urlRef.kind !== "repo" && kinds.includes(urlRef.kind)) {
+      const repoSlug = `${urlRef.owner}/${urlRef.repo}`;
+      return this.fetchGhRefs(
+        [urlRef.kind, "view", String(urlRef.number), "--repo", repoSlug],
+        repoSlug,
+        urlRef.kind,
+      );
+    }
+
     const repo = await this.resolveCanonicalRepo(
       `${repoInfo.organization}/${repoInfo.repository}`,
     );
@@ -1621,5 +1711,74 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
       log.warn("Failed to parse GitHub refs response", { repo, kind, args });
       return [];
     }
+  }
+
+  async getTaskPrStatus(
+    taskId: string,
+    cloudPrUrl: string | null,
+  ): Promise<{ prState: SidebarPrState; hasDiff: boolean }> {
+    const workspace = await this.workspaceService.getWorkspace(taskId);
+    if (!workspace) return { prState: null, hasDiff: false };
+
+    const { mode, worktreePath, folderPath, linkedBranch } = workspace;
+    const isCloud = mode === "cloud";
+    const repoPath = worktreePath ?? (folderPath || null);
+
+    // Cloud tasks: look up PR details by the cloud run's PR URL
+    if (isCloud && cloudPrUrl) {
+      const details = await this.getPrDetailsByUrl(cloudPrUrl);
+      if (details) {
+        return {
+          prState: mapPrState(details.state, details.merged, details.draft),
+          hasDiff: false,
+        };
+      }
+      return { prState: null, hasDiff: false };
+    }
+
+    if (isCloud) return { prState: null, hasDiff: false };
+
+    // Linked branch: look up PR by branch name
+    if (linkedBranch && repoPath) {
+      const prUrl = await this.getPrUrlForBranch(repoPath, linkedBranch);
+      if (prUrl) {
+        const details = await this.getPrDetailsByUrl(prUrl);
+        if (details) {
+          return {
+            prState: mapPrState(details.state, details.merged, details.draft),
+            hasDiff: false,
+          };
+        }
+      }
+      return { prState: null, hasDiff: false };
+    }
+
+    // Worktree tasks without linked branch: check current branch PR + diff
+    if (worktreePath) {
+      const prStatus = await this.getPrStatus(worktreePath);
+      if (prStatus.prExists && prStatus.prState) {
+        return {
+          prState: mapPrState(
+            prStatus.prState,
+            false,
+            prStatus.isDraft ?? false,
+          ),
+          hasDiff: false,
+        };
+      }
+
+      const [diffStats, syncStatus] = await Promise.all([
+        this.getDiffStats(worktreePath),
+        this.getGitSyncStatus(worktreePath),
+      ]);
+
+      const hasDiff =
+        (diffStats?.filesChanged ?? 0) > 0 ||
+        (syncStatus?.aheadOfDefault ?? 0) > 0;
+
+      return { prState: null, hasDiff };
+    }
+
+    return { prState: null, hasDiff: false };
   }
 }

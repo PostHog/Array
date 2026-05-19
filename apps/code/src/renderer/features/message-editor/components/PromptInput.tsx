@@ -6,6 +6,7 @@ import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { cycleModeOption } from "@renderer/features/sessions/stores/sessionStore";
 import { EditorContent } from "@tiptap/react";
 import { hasOpenOverlay } from "@utils/overlay";
+import clsx from "clsx";
 import { forwardRef, useCallback, useEffect, useImperativeHandle } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useDraftStore } from "../stores/draftStore";
@@ -40,6 +41,7 @@ export interface PromptInputProps {
   // toolbar slots
   modelSelector?: React.ReactElement | null | false;
   reasoningSelector?: React.ReactElement | null | false;
+  historyButton?: React.ReactNode;
   // prompt history provider
   getPromptHistory?: () => string[];
   // callbacks
@@ -55,6 +57,7 @@ export interface PromptInputProps {
   // manual submit override (for flows like new-task that submit outside the editor hook)
   onSubmitClick?: () => void;
   submitTooltipOverride?: string;
+  editorHeight?: "default" | "large";
   tourTarget?: string;
 }
 
@@ -78,6 +81,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       enableCommands = true,
       modelSelector,
       reasoningSelector,
+      historyButton,
       getPromptHistory,
       onBeforeSubmit,
       onSubmit,
@@ -90,6 +94,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onBlur,
       onSubmitClick,
       submitTooltipOverride,
+      editorHeight = "default",
       tourTarget,
     },
     ref,
@@ -248,7 +253,6 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
           <InputGroupButton
             variant="destructive"
             size="icon-sm"
-            className="ml-auto"
             onClick={onCancel}
             aria-label="Stop"
           >
@@ -260,7 +264,6 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
           <InputGroupButton
             variant="primary"
             size="icon-sm"
-            className="ml-auto"
             onClick={handleSubmitClick}
             disabled={submitBlocked}
             aria-label="Send message"
@@ -290,7 +293,12 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
               />
             </InputGroupAddon>
           )}
-          <div className="cli-editor-scroll relative max-h-[200px] min-h-[50px] w-full flex-1 overflow-y-auto px-2 py-2 text-[14px]">
+          <div
+            className={clsx(
+              "cli-editor-scroll relative min-h-[50px] w-full flex-1 overflow-y-auto px-2 py-2 text-[14px]",
+              editorHeight === "large" ? "max-h-[45vh]" : "max-h-[200px]",
+            )}
+          >
             <EditorContent editor={editor} />
           </div>
           <InputGroupAddon align="block-end">
@@ -316,7 +324,10 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
                 ! bash
               </Text>
             )}
-            {submitButton}
+            <span className="ml-auto flex items-center gap-1">
+              {historyButton}
+              {submitButton}
+            </span>
           </InputGroupAddon>
         </InputGroup>
       </Flex>

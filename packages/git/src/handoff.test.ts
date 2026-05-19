@@ -180,6 +180,31 @@ describe("GitHandoffTracker", () => {
     });
   }, 15000);
 
+  it("keeps shipped index consistent with worktreeTree for staged large files", async () => {
+    await withRepos(async (repos) => {
+      const largePath = path.join(repos.cloudRepo, "tracked.txt");
+      const modified = Buffer.alloc(1024 * 1024 + 1, 9);
+      await writeFile(largePath, modified);
+      await repos.cloudGit.add(["tracked.txt"]);
+
+      const capture = await captureAndApply(repos);
+
+      try {
+        const restored = await readFile(
+          path.join(repos.localRepo, "tracked.txt"),
+          "utf-8",
+        );
+        expect(restored).toBe("base\n");
+
+        const status = await repos.localGit.raw(["status", "--porcelain"]);
+        expect(status).not.toMatch(/^M[ M] tracked\.txt/m);
+        expect(status).not.toMatch(/^MM tracked\.txt/m);
+      } finally {
+        await cleanupCapture(capture);
+      }
+    });
+  }, 20000);
+
   it("removes tracked files absent from the checkpoint worktree", async () => {
     await withRepos(async (repos) => {
       await rm(path.join(repos.cloudRepo, "tracked.txt"));

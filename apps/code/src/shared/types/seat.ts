@@ -16,6 +16,8 @@ export interface SeatData {
   created_at: number;
   active_until: number | null;
   active_from: number;
+  organization_id?: string;
+  organization_name?: string;
 }
 
 export const SEAT_PRODUCT_KEY = "posthog_code";

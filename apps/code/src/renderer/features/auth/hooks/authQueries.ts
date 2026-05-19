@@ -36,6 +36,13 @@ export async function fetchAuthState(): Promise<AuthState> {
   return await trpcClient.auth.getState.query();
 }
 
+export function getCachedAuthState(): AuthState {
+  return (
+    queryClient.getQueryData<AuthState>(trpc.auth.getState.queryKey()) ??
+    ANONYMOUS_AUTH_STATE
+  );
+}
+
 export async function refreshAuthStateQuery(): Promise<void> {
   await queryClient.invalidateQueries(trpc.auth.getState.pathFilter());
 }

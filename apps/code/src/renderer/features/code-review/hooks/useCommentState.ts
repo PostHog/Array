@@ -6,24 +6,39 @@ import type {
 import { useCallback, useState } from "react";
 import type { AnnotationMetadata } from "../types";
 
+export interface CommentEditSeed {
+  draftId: string;
+  text: string;
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  side: AnnotationSide;
+}
+
 export function useCommentState() {
   const [selectedRange, setSelectedRange] = useState<SelectedLineRange | null>(
     null,
   );
   const [commentAnnotation, setCommentAnnotation] =
     useState<DiffLineAnnotation<AnnotationMetadata> | null>(null);
+  const [editSeed, setEditSeed] = useState<CommentEditSeed | null>(null);
 
   const hasOpenComment = commentAnnotation !== null;
 
   const reset = useCallback(() => {
     setCommentAnnotation(null);
     setSelectedRange(null);
+    setEditSeed(null);
   }, []);
 
   const handleLineSelectionEnd = useCallback(
     (range: SelectedLineRange | null) => {
       setSelectedRange(range);
-      if (range == null) return;
+      setEditSeed(null);
+      if (range == null) {
+        setCommentAnnotation(null);
+        return;
+      }
       const derivedSide = range.endSide ?? range.side;
       const side: AnnotationSide =
         derivedSide === "deletions" ? "deletions" : "additions";
@@ -39,11 +54,33 @@ export function useCommentState() {
     [],
   );
 
+  const openCommentForEdit = useCallback((seed: CommentEditSeed) => {
+    setSelectedRange({
+      start: seed.startLine,
+      end: seed.endLine,
+      side: seed.side,
+      endSide: seed.side,
+    });
+    setCommentAnnotation({
+      side: seed.side,
+      lineNumber: seed.endLine,
+      metadata: {
+        kind: "comment",
+        startLine: seed.startLine,
+        endLine: seed.endLine,
+        side: seed.side,
+      },
+    });
+    setEditSeed(seed);
+  }, []);
+
   return {
     selectedRange,
     commentAnnotation,
     hasOpenComment,
+    editSeed,
     reset,
     handleLineSelectionEnd,
+    openCommentForEdit,
   };
 }

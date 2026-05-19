@@ -23,6 +23,7 @@ import { StashPushSaga } from "@posthog/git/sagas/stash";
 import type { IAppLifecycle } from "@posthog/platform/app-lifecycle";
 import type { IDialog } from "@posthog/platform/dialog";
 import { inject, injectable } from "inversify";
+import type { IRepositoryRepository } from "../../db/repositories/repository-repository";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
 import type { AgentAuthAdapter } from "../agent/auth-adapter";
 import type { AgentService } from "../agent/service";
@@ -34,6 +35,7 @@ import {
   type HandoffToCloudSagaDeps,
 } from "./handoff-to-cloud-saga";
 import {
+  type HandoffErrorCode,
   HandoffEvent,
   type HandoffExecuteInput,
   type HandoffExecuteResult,
@@ -48,6 +50,18 @@ import {
 
 const log = logger.scope("handoff");
 const CONTINUE_DIVERGENCE_BUTTON = 1;
+const GITHUB_AUTHORIZATION_REQUIRED_CODE = "github_authorization_required";
+const GITHUB_AUTHORIZATION_REQUIRED_MESSAGE =
+  "Connect GitHub in your browser, then retry Continue in cloud.";
+
+export function extractHandoffErrorCode(
+  message: string | undefined,
+): HandoffErrorCode | undefined {
+  if (message?.includes(GITHUB_AUTHORIZATION_REQUIRED_CODE)) {
+    return GITHUB_AUTHORIZATION_REQUIRED_CODE;
+  }
+  return undefined;
+}
 
 @injectable()
 export class HandoffService extends TypedEventEmitter<HandoffServiceEvents> {
@@ -61,6 +75,8 @@ export class HandoffService extends TypedEventEmitter<HandoffServiceEvents> {
     private readonly agentAuthAdapter: AgentAuthAdapter,
     @inject(MAIN_TOKENS.WorkspaceRepository)
     private readonly workspaceRepo: IWorkspaceRepository,
+    @inject(MAIN_TOKENS.RepositoryRepository)
+    private readonly repositoryRepo: IRepositoryRepository,
     @inject(MAIN_TOKENS.Dialog)
     private readonly dialog: IDialog,
     @inject(MAIN_TOKENS.AppLifecycle)
@@ -151,6 +167,35 @@ export class HandoffService extends TypedEventEmitter<HandoffServiceEvents> {
         this.workspaceRepo.updateMode(taskId, mode);
       },
 
+      attachWorkspaceToFolder: (taskId, repoPath) => {
+        const repository = this.repositoryRepo.findByPath(repoPath);
+        if (!repository) {
+          throw new Error(
+            `No registered folder for path '${repoPath}' — cannot attach workspace`,
+          );
+        }
+        const previous = this.workspaceRepo.findByTaskId(taskId);
+        if (!previous) {
+          throw new Error(`No workspace exists for task ${taskId}`);
+        }
+        if (
+          previous.mode === "local" &&
+          previous.repositoryId === repository.id
+        ) {
+          return { revert: () => {} };
+        }
+        this.workspaceRepo.setModeAndRepository(taskId, "local", repository.id);
+        return {
+          revert: () => {
+            this.workspaceRepo.setModeAndRepository(
+              taskId,
+              previous.mode,
+              previous.repositoryId,
+            );
+          },
+        };
+      },
+
       seedLocalLogs: async (runId: string, logUrl: string) => {
         const response = await fetch(logUrl);
         if (!response.ok) {
@@ -165,7 +210,11 @@ export class HandoffService extends TypedEventEmitter<HandoffServiceEvents> {
         const logDir = join(homedir(), ".posthog-code", "sessions", runId);
         mkdirSync(logDir, { recursive: true });
         const marker = JSON.stringify({ type: "seed_boundary" });
-        writeFileSync(join(logDir, "logs.ndjson"), `${content}\n${marker}`);
+        const trailingNewline = content.endsWith("\n") ? "" : "\n";
+        writeFileSync(
+          join(logDir, "logs.ndjson"),
+          `${content}${trailingNewline}${marker}\n`,
+        );
         log.info("Seeded local logs from cloud", {
           runId,
           bytes: content.length,
@@ -314,9 +363,14 @@ export class HandoffService extends TypedEventEmitter<HandoffServiceEvents> {
         failedStep: result.failedStep,
       });
       deps.onProgress("failed", result.error ?? "Handoff to cloud failed");
+      const code = extractHandoffErrorCode(result.error);
       return {
         success: false,
-        error: `Handoff to cloud failed at step '${result.failedStep}': ${result.error}`,
+        code,
+        error:
+          code === GITHUB_AUTHORIZATION_REQUIRED_CODE
+            ? GITHUB_AUTHORIZATION_REQUIRED_MESSAGE
+            : `Handoff to cloud failed at step '${result.failedStep}': ${result.error}`,
       };
     }
 

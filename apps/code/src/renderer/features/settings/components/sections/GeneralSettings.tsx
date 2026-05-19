@@ -34,6 +34,7 @@ export function GeneralSettings() {
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
   );
+  const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
 
   // Appearance state
   const theme = useThemeStore((state) => state.theme);
@@ -213,7 +214,7 @@ export function GeneralSettings() {
     [hedgehogMode, setHedgehogMode],
   );
 
-  const accountUrl = getPostHogUrl("/settings/user");
+  const accountUrl = getPostHogUrl("/settings/user", cloudRegion);
 
   return (
     <Flex direction="column">
@@ -225,7 +226,10 @@ export function GeneralSettings() {
           <Button
             size="1"
             variant="outline"
-            onClick={() => window.open(accountUrl, "_blank")}
+            disabled={!accountUrl}
+            onClick={() => {
+              if (accountUrl) window.open(accountUrl, "_blank");
+            }}
           >
             Manage
             <ArrowSquareOut size={12} />
@@ -328,6 +332,7 @@ export function GeneralSettings() {
               <Select.Item value="shoot">Shoot</Select.Item>
               <Select.Item value="slide">Slide</Select.Item>
               <Select.Item value="switch">Switch</Select.Item>
+              <Select.Item value="wilhelm">Wilhelm scream</Select.Item>
             </Select.Content>
           </Select.Root>
           {completionSound !== "none" && (
@@ -488,9 +493,13 @@ export function GeneralSettings() {
 
 function HedgehogDescription() {
   const projectId = useAuthStateValue((state) => state.projectId);
+  const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
 
   const customizeUrl = projectId
-    ? getPostHogUrl(`/project/${projectId}/settings/user-customization`)
+    ? getPostHogUrl(
+        `/project/${projectId}/settings/user-customization`,
+        cloudRegion,
+      )
     : null;
 
   return (

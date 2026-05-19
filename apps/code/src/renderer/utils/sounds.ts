@@ -10,6 +10,7 @@ import ringUrl from "@renderer/assets/sounds/ring.mp3";
 import shootUrl from "@renderer/assets/sounds/shoot.mp3";
 import slideUrl from "@renderer/assets/sounds/slide.mp3";
 import switchUrl from "@renderer/assets/sounds/switch.mp3";
+import wilhelmUrl from "@renderer/assets/sounds/wilhelm.mp3";
 
 const SOUND_URLS: Record<Exclude<CompletionSound, "none">, string> = {
   guitar: guitarUrl,
@@ -23,6 +24,7 @@ const SOUND_URLS: Record<Exclude<CompletionSound, "none">, string> = {
   shoot: shootUrl,
   slide: slideUrl,
   switch: switchUrl,
+  wilhelm: wilhelmUrl,
 };
 
 let currentAudio: HTMLAudioElement | null = null;

@@ -24,6 +24,7 @@ import {
 import type { CodeExecutionMode } from "../tools";
 import type { EffortLevel } from "../types";
 import { APPENDED_INSTRUCTIONS } from "./instructions";
+import { loadUserClaudeJsonMcpServers } from "./mcp-config";
 import { DEFAULT_MODEL } from "./models";
 import type { SettingsManager } from "./settings";
 
@@ -91,14 +92,22 @@ export function buildSystemPrompt(
 function buildMcpServers(
   userServers: Record<string, McpServerConfig> | undefined,
   acpServers: Record<string, McpServerConfig>,
+  projectScopedServers: Record<string, McpServerConfig>,
 ): Record<string, McpServerConfig> {
   return {
+    ...projectScopedServers,
     ...(userServers || {}),
     ...acpServers,
   };
 }
 
 function buildEnvironment(): Record<string, string> {
+  const bedrockFallbackHeader = "x-posthog-use-bedrock-fallback: true";
+  const existingCustomHeaders = process.env.ANTHROPIC_CUSTOM_HEADERS;
+  const customHeaders = existingCustomHeaders
+    ? `${existingCustomHeaders}\n${bedrockFallbackHeader}`
+    : bedrockFallbackHeader;
+
   return {
     ...process.env,
     ELECTRON_RUN_AS_NODE: "1",
@@ -107,6 +116,8 @@ function buildEnvironment(): Record<string, string> {
     ENABLE_TOOL_SEARCH: "auto:0",
     // Enable idle state as end-of-turn signal (required for SDK 0.2.114+)
     CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
+    // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
+    ANTHROPIC_CUSTOM_HEADERS: customHeaders,
   };
 }
 
@@ -154,7 +165,7 @@ function buildHooks(
 const PH_EXPLORE_AGENT: NonNullable<Options["agents"]>[string] = {
   description:
     'Fast agent for exploring and understanding codebases. Use this when you need to find files by pattern (eg. "src/components/**/*.tsx"), search for code or keywords (eg. "where is the auth middleware?"), or answer questions about how the codebase works (eg. "how does the session service handle reconnects?"). When calling this agent, specify a thoroughness level: "quick" for targeted lookups, "medium" for broader exploration, or "very thorough" for comprehensive analysis across multiple locations.',
-  model: "haiku",
+  model: "sonnet",
   prompt: `You are a fast, read-only codebase exploration agent.
 
 Your job is to find files, search code, read the most relevant sources, and report findings clearly.
@@ -330,6 +341,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     mcpServers: buildMcpServers(
       params.userProvidedOptions?.mcpServers,
       params.mcpServers,
+      loadUserClaudeJsonMcpServers(params.cwd, params.logger),
     ),
     env: buildEnvironment(),
     hooks: buildHooks(

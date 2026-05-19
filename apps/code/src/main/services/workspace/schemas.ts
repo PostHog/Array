@@ -169,6 +169,15 @@ export const listGitWorktreesInput = z.object({
   mainRepoPath: z.string(),
 });
 
+export const getWorktreeFileUsageInput = z.object({
+  mainRepoPath: z.string(),
+});
+
+export const getWorktreeFileUsageOutput = z.object({
+  usesWorktreeLink: z.boolean(),
+  usesWorktreeInclude: z.boolean(),
+});
+
 export const gitWorktreeEntrySchema = z.object({
   worktreePath: z.string(),
   head: z.string(),
@@ -228,6 +237,25 @@ export const getAllTaskTimestampsOutput = z.record(
     lastActivityAt: z.string().nullable(),
   }),
 );
+
+// Task PR status
+export const taskPrStatusInput = z.object({
+  taskId: z.string(),
+  cloudPrUrl: z.string().nullable(),
+});
+
+export const sidebarPrStateSchema = z
+  .enum(["merged", "open", "draft", "closed"])
+  .nullable();
+
+export const taskPrStatusOutput = z.object({
+  prState: sidebarPrStateSchema,
+  hasDiff: z.boolean(),
+});
+
+export type TaskPrStatusInput = z.infer<typeof taskPrStatusInput>;
+export type SidebarPrState = z.infer<typeof sidebarPrStateSchema>;
+export type TaskPrStatus = z.infer<typeof taskPrStatusOutput>;
 
 // Type exports
 export type WorkspaceMode = z.infer<typeof workspaceModeSchema>;

@@ -39,7 +39,6 @@ import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import { getIsOnline } from "@renderer/stores/connectivityStore";
 import { trpc } from "@renderer/trpc";
 import { trpcClient } from "@renderer/trpc/client";
-import { getGhUserTokenOrThrow } from "@renderer/utils/github";
 import { toast } from "@renderer/utils/toast";
 import {
   type CloudTaskPermissionRequestUpdate,
@@ -93,6 +92,18 @@ const LOCAL_SESSION_RECOVERY_MESSAGE =
   "Lost connection to the agent. Reconnecting…";
 const LOCAL_SESSION_RECOVERY_FAILED_MESSAGE =
   "Connecting to to the agent has been lost. Retry, or start a new session.";
+const GITHUB_AUTHORIZATION_REQUIRED_CODE = "github_authorization_required";
+const AUTO_RETRY_MAX_ATTEMPTS = 2;
+const AUTO_RETRY_DELAY_MS = 10_000;
+
+class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
+  constructor(
+    message = "Connect GitHub before continuing this task in cloud.",
+  ) {
+    super(message);
+    this.name = "GitHubAuthorizationRequiredForCloudHandoffError";
+  }
+}
 
 /**
  * Build default configOptions for cloud sessions so the mode switcher
@@ -131,6 +142,14 @@ function extractLatestConfigOptionsFromEntries(
   return latest;
 }
 
+function hasSessionPromptEvent(events: AcpMessage[]): boolean {
+  return events.some(
+    (event) =>
+      isJsonRpcRequest(event.message) &&
+      event.message.method === "session/prompt",
+  );
+}
+
 function buildCloudDefaultConfigOptions(
   initialMode: string | undefined,
   adapter: Adapter = "claude",
@@ -161,10 +180,31 @@ function buildCloudDefaultConfigOptions(
   ];
 }
 
+function isTurnCompleteEvent(event: AcpMessage): boolean {
+  const msg = event.message;
+  return (
+    "method" in msg &&
+    isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)
+  );
+}
+
 interface AuthCredentials {
   apiHost: string;
   projectId: number;
   client: NonNullable<Awaited<ReturnType<typeof getAuthenticatedClient>>>;
+}
+
+interface CloudLogGapReconcileRequest {
+  taskId: string;
+  taskRunId: string;
+  expectedCount: number;
+  currentCount: number;
+  newEntries: StoredLogEntry[];
+  logUrl?: string;
+}
+
+interface CloudLogGapReconcileState {
+  pendingRequest?: CloudLogGapReconcileRequest;
 }
 
 export interface ConnectParams {
@@ -205,6 +245,8 @@ export class SessionService {
   private connectingTasks = new Map<string, Promise<void>>();
   private localRepoPaths = new Map<string, string>();
   private localRecoveryAttempts = new Map<string, Promise<boolean>>();
+  /** Re-entrance guard for cloud queue dispatch (per taskId). */
+  private dispatchingCloudQueues = new Set<string>();
   private nextCloudTaskWatchToken = 0;
   private subscriptions = new Map<
     string,
@@ -225,6 +267,7 @@ export class SessionService {
       onStatusChange?: () => void;
     }
   >();
+  private cloudLogGapReconciles = new Map<string, CloudLogGapReconcileState>();
   /** Maps toolCallId → cloud requestId for routing permission responses */
   private cloudPermissionRequestIds = new Map<string, string>();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
@@ -410,13 +453,9 @@ export class SessionService {
 
       const taskRunId = latestRun?.id ?? `error-${taskId}`;
       const session = this.createBaseSession(taskRunId, taskId, taskTitle);
-      session.status = "error";
-      session.errorTitle = "Failed to connect";
-      session.errorMessage = message;
       if (initialPrompt?.length) {
         session.initialPrompt = initialPrompt;
       }
-
       if (latestRun?.log_url) {
         try {
           const { rawEntries } = await this.fetchSessionLogs(
@@ -430,7 +469,60 @@ export class SessionService {
         }
       }
 
+      const shouldAutoRetry = getIsOnline();
+      session.status = shouldAutoRetry ? "connecting" : "error";
+      if (!shouldAutoRetry) {
+        session.errorTitle = "Failed to connect";
+        session.errorMessage = message;
+      }
       sessionStoreSetters.setSession(session);
+
+      if (!shouldAutoRetry) return;
+
+      let lastRetryMessage = message;
+      let wentOffline = false;
+      for (let attempt = 1; attempt <= AUTO_RETRY_MAX_ATTEMPTS; attempt++) {
+        log.warn("Auto-retrying failed connection", {
+          taskId,
+          attempt,
+          delayMs: AUTO_RETRY_DELAY_MS,
+        });
+        await new Promise((resolve) =>
+          setTimeout(resolve, AUTO_RETRY_DELAY_MS),
+        );
+        if (!getIsOnline()) {
+          log.warn("Skipping retry — device went offline", {
+            taskId,
+            attempt,
+          });
+          wentOffline = true;
+          break;
+        }
+        try {
+          await this.clearSessionError(taskId, repoPath);
+          return;
+        } catch (retryError) {
+          lastRetryMessage =
+            retryError instanceof Error
+              ? retryError.message
+              : String(retryError);
+          log.error("Auto-retry via clearSessionError failed", {
+            taskId,
+            attempt,
+            error: lastRetryMessage,
+          });
+        }
+      }
+
+      const currentSession = sessionStoreSetters.getSessionByTaskId(taskId);
+      if (!currentSession) return;
+      sessionStoreSetters.updateSession(currentSession.taskRunId, {
+        status: wentOffline ? "disconnected" : "error",
+        errorTitle: wentOffline ? undefined : "Failed to connect",
+        errorMessage: wentOffline
+          ? "No internet connection. Connect when you're back online."
+          : lastRetryMessage || message,
+      });
     }
   }
 
@@ -979,6 +1071,8 @@ export class SessionService {
     this.localRepoPaths.clear();
     this.localRecoveryAttempts.clear();
     this.cloudPermissionRequestIds.clear();
+    this.cloudLogGapReconciles.clear();
+    this.dispatchingCloudQueues.clear();
     this.idleKilledSubscription?.unsubscribe();
     this.idleKilledSubscription = null;
   }
@@ -996,6 +1090,12 @@ export class SessionService {
           pausedDurationMs: 0,
           currentPromptId: msg.id,
         });
+        const promptSession = sessionStoreSetters.getSessions()[taskRunId];
+        if (promptSession?.isCloud && promptSession.agentIdleForRunId) {
+          sessionStoreSetters.updateSession(taskRunId, {
+            agentIdleForRunId: undefined,
+          });
+        }
       }
       if (
         "id" in msg &&
@@ -1016,6 +1116,77 @@ export class SessionService {
           promptStartedAt: null,
           currentPromptId: null,
         });
+      }
+      if (isTurnCompleteEvent(acpMsg)) {
+        // Local sessions use the JSON-RPC response as the canonical turn-done
+        // signal; clearing currentPromptId here would race the id-match guard
+        // above. Cloud sessions never see that response.
+        const session = this.getSessionByRunId(taskRunId);
+        if (session?.isCloud) {
+          sessionStoreSetters.updateSession(taskRunId, {
+            isPromptPending: false,
+            promptStartedAt: null,
+            currentPromptId: null,
+          });
+        }
+      }
+      // Lifecycle handshake from the agent — flip status to "connected"
+      // so the UI can release the queue-while-not-ready guard. This is
+      // the explicit "agent is up and accepting user messages" signal,
+      // emitted by `agent-server.ts` once the ACP session is fully
+      // wired. We deliberately do NOT drain the queue here: the agent
+      // is about to start `sendInitialTaskMessage` (or `sendResumeMessage`),
+      // and dispatching a queued user_message right now would race with
+      // its `clientConnection.prompt()` and one of the prompts would end
+      // up cancelled. The `turn_complete` handler below drains once the
+      // agent's initial / resume turn is actually finished.
+      if (
+        "method" in msg &&
+        isNotification(msg.method, POSTHOG_NOTIFICATIONS.RUN_STARTED)
+      ) {
+        const session = sessionStoreSetters.getSessions()[taskRunId];
+        const params = (msg as { params?: { agentVersion?: unknown } }).params;
+        const agentVersion =
+          typeof params?.agentVersion === "string"
+            ? params.agentVersion
+            : undefined;
+        const updates: Partial<AgentSession> = {};
+        if (agentVersion && session?.agentVersion !== agentVersion) {
+          updates.agentVersion = agentVersion;
+        }
+        if (session?.isCloud && session.status !== "connected") {
+          updates.status = "connected";
+        }
+        if (Object.keys(updates).length > 0) {
+          sessionStoreSetters.updateSession(taskRunId, updates);
+        }
+      }
+      // Canonical "turn boundary" — flush any queued cloud messages now
+      // that the agent is idle and accepting the next prompt.
+      if (
+        "method" in msg &&
+        isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)
+      ) {
+        const session = sessionStoreSetters.getSessions()[taskRunId];
+        if (session?.isCloud) {
+          // Backward compat: treat turn_complete as an implicit run_started
+          // for agents that predate the run_started notification. The turn
+          // finished, so the agent is idle for this run, lets a later
+          // transport drop recover readiness.
+          const updates: Partial<AgentSession> = {};
+          if (session.status !== "connected") {
+            updates.status = "connected";
+          }
+          if (session.agentIdleForRunId !== taskRunId) {
+            updates.agentIdleForRunId = taskRunId;
+          }
+          if (Object.keys(updates).length > 0) {
+            sessionStoreSetters.updateSession(taskRunId, updates);
+          }
+          if (session.messageQueue.length > 0) {
+            this.scheduleCloudQueueFlush(session.taskId, "turn_complete");
+          }
+        }
       }
     }
   }
@@ -1508,18 +1679,62 @@ export class SessionService {
     }
 
     if (isTerminalStatus(session.cloudStatus)) {
+      // If the agent never booted (no `run_started`), resuming spins another
+      // sandbox that hits the same provisioning failure — surface the error
+      // instead of looping.
+      if (session.cloudStatus === "failed" && session.status !== "connected") {
+        throw new Error(
+          session.cloudErrorMessage ??
+            "Cloud run couldn't start. Check that GitHub is connected for this project, then try again.",
+        );
+      }
       return this.resumeCloudRun(session, prompt);
     }
 
     if (session.cloudStatus !== "in_progress") {
       sessionStoreSetters.enqueueMessage(session.taskId, transport.promptText);
-      sessionStoreSetters.updateSession(session.taskRunId, {
-        isPromptPending: true,
-      });
       log.info("Cloud message queued (sandbox not ready)", {
         taskId: session.taskId,
         cloudStatus: session.cloudStatus,
       });
+      return { stopReason: "queued" };
+    }
+
+    // Agent-readiness guard: until we've received `_posthog/run_started`
+    // (which flips `session.status` to `"connected"`), the agent may
+    // still be booting / restoring after a sandbox restart, or mid-
+    // initial-prompt — sending now would race with its
+    // `clientConnection.prompt(initialPrompt)` on the same ACP session.
+    // Funnel through the queue; the run_started or turn_complete
+    // handlers will drain it once the agent is provably ready.
+    if (
+      !options?.skipQueueGuard &&
+      session.isCloud &&
+      session.status !== "connected"
+    ) {
+      sessionStoreSetters.enqueueMessage(
+        session.taskId,
+        transport.promptText,
+        prompt,
+      );
+      log.info("Cloud message queued (agent not ready)", {
+        taskId: session.taskId,
+        sessionStatus: session.status,
+        queueLength: session.messageQueue.length + 1,
+      });
+      // The watcher may have exhausted its reconnect budget and been left in a
+      // failed state — without an SSE stream, no `turn_complete` will arrive
+      // to drain the queue. Kick a retry so the stream comes back online; the
+      // queued message dispatches naturally once `run_started`/`turn_complete`
+      // is observed.
+      if (session.status === "disconnected" || session.status === "error") {
+        this.retryCloudTaskWatch(session.taskId).catch((err) => {
+          log.warn("Auto-retry of cloud task watch from queue gate failed", {
+            taskId: session.taskId,
+            error: String(err),
+          });
+        });
+      }
       return { stopReason: "queued" };
     }
 
@@ -1543,6 +1758,18 @@ export class SessionService {
     if (!auth || !cloudCommandAuth) {
       throw new Error("Authentication required for cloud commands");
     }
+
+    this.watchCloudTask(
+      session.taskId,
+      session.taskRunId,
+      cloudCommandAuth.apiHost,
+      cloudCommandAuth.teamId,
+      undefined,
+      session.logUrl,
+      undefined,
+      session.adapter ?? "claude",
+    );
+
     const artifactIds = await uploadRunAttachments(
       auth.client,
       session.taskId,
@@ -1559,6 +1786,15 @@ export class SessionService {
 
     sessionStoreSetters.updateSession(session.taskRunId, {
       isPromptPending: true,
+      promptStartedAt: Date.now(),
+      pausedDurationMs: 0,
+      agentIdleForRunId: undefined,
+    });
+    sessionStoreSetters.appendOptimisticItem(session.taskRunId, {
+      type: "user_message",
+      content: transport.promptText,
+      timestamp: Date.now(),
+      pinToTop: false,
     });
 
     track(ANALYTICS_EVENTS.PROMPT_SENT, {
@@ -1578,105 +1814,80 @@ export class SessionService {
         params,
       });
 
-      sessionStoreSetters.updateSession(session.taskRunId, {
-        isPromptPending: false,
-      });
-
       if (!result.success) {
         throw new Error(result.error ?? "Failed to send cloud command");
       }
 
-      const stopReason =
-        (result.result as { stopReason?: string })?.stopReason ?? "end_turn";
-
-      const freshSession = sessionStoreSetters.getSessionByTaskId(
-        session.taskId,
-      );
-      if (freshSession && freshSession.messageQueue.length > 0) {
-        setTimeout(() => {
-          this.sendQueuedCloudMessages(session.taskId).catch((err) => {
-            log.error("Failed to send queued cloud messages", {
-              taskId: session.taskId,
-              error: err,
-            });
-          });
-        }, 0);
-      }
+      const commandResult = result.result as
+        | { queued?: boolean; stopReason?: string }
+        | undefined;
+      const stopReason = commandResult?.queued
+        ? "queued"
+        : (commandResult?.stopReason ?? "end_turn");
 
       return { stopReason };
     } catch (error) {
       sessionStoreSetters.updateSession(session.taskRunId, {
         isPromptPending: false,
+        promptStartedAt: null,
       });
+      sessionStoreSetters.clearTailOptimisticItems(session.taskRunId);
       throw error;
     }
   }
 
-  private async sendQueuedCloudMessages(
-    taskId: string,
-    attempt = 0,
-    pendingPrompt?: string | ContentBlock[],
-  ): Promise<{ stopReason: string }> {
-    // First attempt: atomically dequeue. Retries reuse the already-dequeued prompt.
-    const combinedPrompt =
-      pendingPrompt ??
-      combineQueuedCloudPrompts(sessionStoreSetters.dequeueMessages(taskId));
-    if (!combinedPrompt) return { stopReason: "skipped" };
+  /**
+   * Dispatches all currently queued cloud messages as a single combined
+   * prompt. Drains the queue up-front and rolls it back on failure so the
+   * next dispatch trigger (turn_complete, cloudStatus flip) can retry. A
+   * per-taskId re-entrance guard prevents concurrent triggers from
+   * double-dispatching.
+   *
+   * Pre-flight conditions match what `sendCloudPrompt` would otherwise
+   * silently re-queue on (sandbox not in_progress, prompt already pending).
+   * Skipping early lets the next trigger retry instead of re-queueing the
+   * already-dequeued prompt back into the same queue.
+   */
+  private async sendQueuedCloudMessages(taskId: string): Promise<void> {
+    if (this.dispatchingCloudQueues.has(taskId)) return;
 
-    const session = sessionStoreSetters.getSessionByTaskId(taskId);
-    if (!session) {
-      log.warn("No session found for queued cloud messages, message lost", {
-        taskId,
-      });
-      return { stopReason: "no_session" };
-    }
-
-    log.info("Sending queued cloud messages", {
-      taskId,
-      promptLength: combinedPrompt.length,
-      attempt,
-    });
-
+    this.dispatchingCloudQueues.add(taskId);
     try {
-      return await this.sendCloudPrompt(session, combinedPrompt, {
-        skipQueueGuard: true,
-      });
-    } catch (error) {
-      const maxRetries = 5;
-      if (attempt < maxRetries) {
-        const delayMs = Math.min(1000 * 2 ** attempt, 10_000);
-        log.warn("Cloud message send failed, scheduling retry", {
-          taskId,
-          attempt,
-          delayMs,
-          error: String(error),
-        });
-        return new Promise((resolve) => {
-          setTimeout(() => {
-            resolve(
-              this.sendQueuedCloudMessages(
-                taskId,
-                attempt + 1,
-                combinedPrompt,
-              ).catch((err) => {
-                log.error("Queued cloud message retry failed", {
-                  taskId,
-                  attempt: attempt + 1,
-                  error: err,
-                });
-                return { stopReason: "error" };
-              }),
-            );
-          }, delayMs);
-        });
-      }
+      const session = sessionStoreSetters.getSessionByTaskId(taskId);
+      if (!session?.isCloud || session.messageQueue.length === 0) return;
+      // Terminal cloud runs route through `resumeCloudRun`, which spins a
+      // new run and consumes the prompt itself — so dispatch is fine.
+      // Otherwise gate on the agent-ready handshake (`run_started` flips
+      // status to "connected") to avoid racing with `sendInitialTaskMessage`.
+      const isTerminal = isTerminalStatus(session.cloudStatus);
+      const canSendNow =
+        isTerminal ||
+        (session.cloudStatus === "in_progress" &&
+          session.status === "connected");
+      if (!canSendNow || session.isPromptPending) return;
 
-      log.error("Queued cloud message send failed after max retries", {
+      const drained = sessionStoreSetters.dequeueMessages(taskId);
+      const combined = combineQueuedCloudPrompts(drained);
+      if (!combined) return;
+
+      log.info("Sending queued cloud messages", {
         taskId,
-        attempts: attempt + 1,
+        drainedCount: drained.length,
       });
-      toast.error("Failed to send follow-up message. Please try again.");
-      return { stopReason: "error" };
+
+      try {
+        await this.sendCloudPrompt(session, combined, {
+          skipQueueGuard: true,
+        });
+      } catch (err) {
+        log.warn("Cloud queue dispatch failed; re-enqueueing", {
+          taskId,
+          error: String(err),
+        });
+        sessionStoreSetters.prependQueuedMessages(taskId, drained);
+      }
+    } finally {
+      this.dispatchingCloudQueues.delete(taskId);
     }
   }
 
@@ -1703,11 +1914,10 @@ export class SessionService {
       transport.filePaths,
     );
 
-    const [previousRun, task] = await Promise.all([
-      authCredentials.client.getTaskRun(session.taskId, session.taskRunId),
-      authCredentials.client.getTask(session.taskId),
-    ]);
-    const hasGitHubRepo = !!task.repository && !!task.github_integration;
+    const previousRun = await authCredentials.client.getTaskRun(
+      session.taskId,
+      session.taskRunId,
+    );
     const previousState = previousRun.state as Record<string, unknown>;
     const previousOutput = (previousRun.output ?? {}) as Record<
       string,
@@ -1727,10 +1937,6 @@ export class SessionService {
         : null) ??
       session.cloudBranch;
     const prAuthorshipMode = this.getCloudPrAuthorshipMode(previousState);
-    const githubUserToken =
-      prAuthorshipMode === "user" && hasGitHubRepo
-        ? await getGhUserTokenOrThrow()
-        : undefined;
 
     log.info("Creating resume run for terminal cloud task", {
       taskId: session.taskId,
@@ -1760,7 +1966,6 @@ export class SessionService {
           typeof previousState.signal_report_id === "string"
             ? previousState.signal_report_id
             : undefined,
-        githubUserToken,
       },
     );
     const newRun = updatedTask.latest_run;
@@ -2391,9 +2596,9 @@ export class SessionService {
     initialMode?: string,
     adapter: Adapter = "claude",
     initialModel?: string,
+    taskDescription?: string,
   ): () => void {
     const taskRunId = runId;
-    const startToken = ++this.nextCloudTaskWatchToken;
     const existingWatcher = this.cloudTaskWatchers.get(taskId);
 
     // Resuming same run — reuse the existing watcher.
@@ -2403,7 +2608,9 @@ export class SessionService {
       existingWatcher.apiHost === apiHost &&
       existingWatcher.teamId === teamId
     ) {
-      existingWatcher.onStatusChange = onStatusChange;
+      if (onStatusChange) {
+        existingWatcher.onStatusChange = onStatusChange;
+      }
       // Ensure configOptions is populated on revisit
       const existing = sessionStoreSetters.getSessionByTaskId(taskId);
       if (existing) {
@@ -2436,6 +2643,8 @@ export class SessionService {
       this.stopCloudTaskWatch(taskId);
     }
 
+    const startToken = ++this.nextCloudTaskWatchToken;
+
     // Create session in the store
     const existing = sessionStoreSetters.getSessionByTaskId(taskId);
     // A same-run session with history but no processedLineCount came from a
@@ -2466,6 +2675,10 @@ export class SessionService {
         adapter,
       );
       sessionStoreSetters.setSession(session);
+      // Optimistic seeding for the initial task description is deferred
+      // until `hydrateCloudTaskSessionFromLogs` confirms there's no prior
+      // conversation. Otherwise reopening a task with history would flash
+      // the description at top until hydration replaced it.
     } else {
       // Ensure cloud flag and configOptions are set on existing sessions
       const updates: Partial<AgentSession> = {};
@@ -2496,7 +2709,12 @@ export class SessionService {
     );
 
     if (shouldHydrateSession) {
-      this.hydrateCloudTaskSessionFromLogs(taskId, taskRunId, logUrl);
+      this.hydrateCloudTaskSessionFromLogs(
+        taskId,
+        taskRunId,
+        logUrl,
+        taskDescription,
+      );
     }
 
     // Subscribe before starting the main-process watcher so the first replayed
@@ -2564,15 +2782,35 @@ export class SessionService {
     taskId: string,
     taskRunId: string,
     logUrl?: string,
+    taskDescription?: string,
   ): void {
     void (async () => {
       const { rawEntries } = await this.fetchSessionLogs(logUrl, taskRunId);
-      if (rawEntries.length === 0) {
-        return;
-      }
 
       const session = sessionStoreSetters.getSessionByTaskId(taskId);
       if (!session || session.taskRunId !== taskRunId) {
+        return;
+      }
+
+      const events = convertStoredEntriesToEvents(rawEntries);
+      const hasUserPrompt = events.some(
+        (e) =>
+          isJsonRpcRequest(e.message) && e.message.method === "session/prompt",
+      );
+
+      // Seed the optimistic user-message bubble whenever the agent has
+      // not yet recorded an initial `session/prompt` request — covers the
+      // brand-new task case as well as "agent has emitted lifecycle
+      // notifications but hasn't received its first prompt yet".
+      if (!hasUserPrompt && taskDescription?.trim()) {
+        sessionStoreSetters.appendOptimisticItem(taskRunId, {
+          type: "user_message",
+          content: taskDescription,
+          timestamp: Date.now(),
+        });
+      }
+
+      if (rawEntries.length === 0) {
         return;
       }
 
@@ -2585,7 +2823,6 @@ export class SessionService {
         return;
       }
 
-      const events = convertStoredEntriesToEvents(rawEntries);
       sessionStoreSetters.updateSession(taskRunId, {
         events,
         isCloud: true,
@@ -2615,8 +2852,9 @@ export class SessionService {
   }
 
   /**
-   * Fully stop a cloud task watcher — unsubscribe, unwatch, remove from map.
-   * Called on terminal status or when a new run replaces the old one.
+   * Fully stop a cloud task watcher. The tRPC subscription unwatches from the
+   * main process in its finally handler; the in-flight watch path below sends a
+   * compensating unwatch if teardown wins before watch.mutate lands.
    */
   stopCloudTaskWatch(taskId: string): void {
     const watcher = this.cloudTaskWatchers.get(taskId);
@@ -2624,11 +2862,6 @@ export class SessionService {
 
     watcher.subscription.unsubscribe();
     this.cloudTaskWatchers.delete(taskId);
-    trpcClient.cloudTask.unwatch
-      .mutate({ taskId, runId: watcher.runId })
-      .catch((err: unknown) =>
-        log.warn("Failed to unwatch cloud task", { taskId, err }),
-      );
   }
 
   async preflightToLocal(taskId: string, repoPath: string) {
@@ -2753,6 +2986,11 @@ export class SessionService {
         localGitState: preflight.localGitState,
       });
       if (!result.success) {
+        if (result.code === GITHUB_AUTHORIZATION_REQUIRED_CODE) {
+          throw new GitHubAuthorizationRequiredForCloudHandoffError(
+            result.error,
+          );
+        }
         throw new Error(result.error ?? "Handoff to cloud failed");
       }
 
@@ -2776,14 +3014,52 @@ export class SessionService {
       log.info("Local-to-cloud handoff complete", { taskId, runId });
     } catch (err) {
       log.error("Handoff to cloud failed", { taskId, err });
-      toast.error(
-        err instanceof Error ? err.message : "Handoff to cloud failed",
-      );
+      if (err instanceof GitHubAuthorizationRequiredForCloudHandoffError) {
+        await this.startGithubReauthForCloudHandoff(auth.projectId);
+      } else {
+        toast.error(
+          err instanceof Error ? err.message : "Handoff to cloud failed",
+        );
+      }
       this.subscribeToChannel(runId);
       sessionStoreSetters.updateSession(runId, {
         handoffInProgress: false,
         status: "disconnected",
       });
+    }
+  }
+
+  private async startGithubReauthForCloudHandoff(
+    projectId: number,
+  ): Promise<void> {
+    const client = await getAuthenticatedClient();
+    if (!client) {
+      toast.error("Sign in before connecting GitHub.");
+      return;
+    }
+
+    try {
+      const { install_url: installUrl } =
+        await client.startGithubUserIntegrationConnect(projectId);
+      const url = installUrl?.trim();
+      if (!url) {
+        toast.error(
+          "GitHub connection did not return a URL. Please try again.",
+        );
+        return;
+      }
+
+      await trpcClient.os.openExternal.mutate({ url });
+      toast.info(
+        "Connect GitHub to continue in cloud",
+        "Complete the authorization in your browser, then click Continue again.",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to start GitHub connection",
+      );
     }
   }
 
@@ -2894,6 +3170,39 @@ export class SessionService {
       });
       throw error;
     }
+
+    // The main-process retry of an already-bootstrapped
+    // watcher only reconnects SSE (`start=latest`) and emits no fresh
+    // status/snapshot for an idle run, so the update-driven trigger in
+    // `handleCloudTaskUpdate` would never fire, the queued message would
+    // stay stuck. Attempt the same guarded recovery here once the reconnect
+    // request has been accepted. No-ops unless a queue is stranded on an
+    // idle, provably-alive run.
+    this.tryRecoverIdleCloudQueue(session.taskRunId);
+  }
+
+  /**
+   * Retries every cloud session whose stream is in the `error` state, i.e. the
+   * main process exhausted its SSE reconnect budget and surfaced the manual
+   * Retry button. Invoked on window focus so users coming back to the app
+   * after a Django deploy, laptop sleep, or network blip don't have to click
+   * Retry themselves.
+   */
+  public retryUnhealthyCloudSessions(): void {
+    const sessions = sessionStoreSetters.getSessions();
+    for (const session of Object.values(sessions)) {
+      if (!session.isCloud) continue;
+      if (session.status !== "error") continue;
+      log.info("Auto-retrying errored cloud session on focus", {
+        taskId: session.taskId,
+      });
+      this.retryCloudTaskWatch(session.taskId).catch((error) => {
+        log.warn("Auto-retry of errored cloud session failed", {
+          taskId: session.taskId,
+          error,
+        });
+      });
+    }
   }
 
   public updateSessionTaskTitle(taskId: string, taskTitle: string): void {
@@ -2903,6 +3212,125 @@ export class SessionService {
     if (session.taskTitle === taskTitle) return;
 
     sessionStoreSetters.updateSession(session.taskRunId, { taskTitle });
+  }
+
+  /**
+   * Drain the cloud queue, the deferral breaks out of
+   * the synchronous store-update frame so the dispatcher reads committed
+   * state; `sendQueuedCloudMessages` is reentrancy-guarded so stacked
+   * schedules from multiple triggers collapse to one.
+   */
+  private scheduleCloudQueueFlush(taskId: string, reason: string): void {
+    setTimeout(() => {
+      this.sendQueuedCloudMessages(taskId).catch((err) =>
+        log.error("cloud queue flush failed", { taskId, reason, error: err }),
+      );
+    }, 0);
+  }
+
+  /**
+   * True when the agent for this exact run is idle: it has completed at
+   * least one turn for this run and is not mid-turn. Tracked live via
+   * `agentIdleForRunId` (set only on `_posthog/turn_complete`), with a
+   * fallback that replays events for the case where a session was recreated
+   * from logs and the live flag was never set (no-delta dedup guard skipped
+   * reprocessing).
+   *
+   * Deliberately independent of `isPromptPending`: `retryCloudTaskWatch()`
+   * forcibly clears it on reconnect, so trusting it would let recovery
+   * dispatch a queued follow-up while a remote turn is still running.
+   */
+  private isAgentIdleForRun(session: AgentSession): boolean {
+    if (session.agentIdleForRunId === session.taskRunId) {
+      return true;
+    }
+    let seenCurrentRunStart = false;
+    let idle = false;
+    for (const acpMsg of session.events) {
+      const msg = acpMsg.message;
+      if (
+        "method" in msg &&
+        isNotification(msg.method, POSTHOG_NOTIFICATIONS.RUN_STARTED)
+      ) {
+        const params = (msg as { params?: { runId?: unknown } }).params;
+        if (params?.runId === session.taskRunId) {
+          seenCurrentRunStart = true;
+          idle = false;
+        }
+        continue;
+      }
+      if (!seenCurrentRunStart) {
+        continue;
+      }
+      if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
+        idle = false;
+        continue;
+      }
+      if (isTurnCompleteEvent(acpMsg)) {
+        idle = true;
+      }
+    }
+    return idle;
+  }
+
+  /**
+   * Guarded recovery for a queued cloud message stranded by a transport
+   * drop on an idle, already-bootstrapped run.
+   *
+   * `run_started` is normally the canonical "agent is ready" trigger and
+   * would race with `sendInitialTaskMessage` while still booting, so the
+   * safe default remains "drain only once status is connected". But an
+   * idle run stays `in_progress` on the server while emitting NO fresh
+   * `run_started`/`turn_complete` (those only fire on boot or a new turn).
+   * If an SSE transport drop or the `retryCloudTaskWatch` it triggers
+   * flipped the session to disconnected/error AFTER the agent already
+   * booted for this exact run, nothing flips it back to "connected" and
+   * the queued message is stranded forever. When the run is provably
+   * alive (`cloudStatus === "in_progress"`) and the agent provably idle
+   * for THIS run (`isAgentIdleForRun`), recover readiness and drain.
+   */
+  private tryRecoverIdleCloudQueue(taskRunId: string): void {
+    const session = sessionStoreSetters.getSessions()[taskRunId];
+    if (!session?.isCloud || session.messageQueue.length === 0) {
+      return;
+    }
+    if (session.cloudStatus !== "in_progress") {
+      return;
+    }
+
+    // The agent must be provably idle for this run, the
+    // connected path included. `status: "connected"` alone is NOT proof of
+    // idleness: the `_posthog/run_started` handler flips status to
+    // "connected" before the initial/resume turn even starts, so a
+    // connected-but-not-idle session is mid-boot. Draining now would race
+    // with `sendInitialTaskMessage`/`sendResumeMessage` and one prompt
+    // would be cancelled. Only `_posthog/turn_complete` makes the agent
+    // idle for the run (`isAgentIdleForRun`).
+    if (!this.isAgentIdleForRun(session)) {
+      return;
+    }
+
+    const recoverableAfterTransportDrop =
+      (session.status === "disconnected" || session.status === "error") &&
+      !session.isPromptPending;
+
+    if (session.status !== "connected" && !recoverableAfterTransportDrop) {
+      return;
+    }
+
+    if (recoverableAfterTransportDrop) {
+      sessionStoreSetters.updateSession(taskRunId, {
+        status: "connected",
+        errorTitle: undefined,
+        errorMessage: undefined,
+      });
+      log.info("Recovered cloud session readiness after transport drop", {
+        taskId: session.taskId,
+        previousStatus: session.status,
+      });
+    }
+
+    this.scheduleCloudQueueFlush(session.taskId, "idle-run-recovery");
   }
 
   private handleCloudTaskUpdate(
@@ -2961,45 +3389,30 @@ export class SessionService {
           session,
           newEvents,
         );
+        if (hasSessionPromptEvent(newEvents)) {
+          sessionStoreSetters.clearTailOptimisticItems(taskRunId);
+        }
         sessionStoreSetters.appendEvents(taskRunId, newEvents, expectedCount);
         this.updatePromptStateFromEvents(taskRunId, newEvents);
       } else {
-        // Gap in data — append everything we have but don't jump processedLineCount
-        log.warn("Cloud task log count inconsistency", {
+        this.reconcileCloudLogGap({
+          taskId: update.taskId,
           taskRunId,
-          currentCount,
           expectedCount,
-          entriesReceived: update.newEntries.length,
+          currentCount,
+          newEntries: update.newEntries,
+          logUrl: session?.logUrl,
         });
-        let newEvents = convertStoredEntriesToEvents(update.newEntries);
-        newEvents = this.filterSkippedPromptEvents(
-          taskRunId,
-          session,
-          newEvents,
-        );
-        sessionStoreSetters.appendEvents(
-          taskRunId,
-          newEvents,
-          currentCount + update.newEntries.length,
-        );
-        this.updatePromptStateFromEvents(taskRunId, newEvents);
       }
     }
 
-    // Flush queued messages when a cloud turn completes (detected via live log updates)
-    const sessionAfterLogs = sessionStoreSetters.getSessions()[taskRunId];
-    if (
-      sessionAfterLogs &&
-      !sessionAfterLogs.isPromptPending &&
-      sessionAfterLogs.messageQueue.length > 0
-    ) {
-      this.sendQueuedCloudMessages(sessionAfterLogs.taskId).catch((err) => {
-        log.error("Failed to send queued cloud messages after turn complete", {
-          taskId: sessionAfterLogs.taskId,
-          error: err,
-        });
-      });
-    }
+    // NOTE: Don't auto-flush on `!isPromptPending && queue.length > 0` here.
+    // Setup-phase log batches (`_posthog/progress`, `_posthog/console`) stream
+    // in BEFORE the agent emits its initial `session/prompt` request, so
+    // `isPromptPending` is still false during those batches — firing the
+    // dispatcher then races with the agent's initial `clientConnection.prompt`.
+    // The canonical "agent is idle" signal is `_posthog/turn_complete`, which
+    // is handled in `updatePromptStateFromEvents`.
 
     // Update cloud status fields if present
     if (update.kind === "status" || update.kind === "snapshot") {
@@ -3011,22 +3424,8 @@ export class SessionService {
         branch: update.branch,
       });
 
-      // Auto-send queued messages when a resumed run becomes active
       if (update.status === "in_progress") {
-        const session = sessionStoreSetters.getSessions()[taskRunId];
-        if (session && session.messageQueue.length > 0) {
-          // Clear the pending flag first — resumeCloudRun sets it as a guard
-          // while waiting for the run to start. Now that the run is active,
-          // sendCloudPrompt needs the flag clear to actually send.
-          sessionStoreSetters.updateSession(taskRunId, {
-            isPromptPending: false,
-          });
-          this.sendQueuedCloudMessages(session.taskId).catch(() => {
-            // Retries exhausted — message was re-enqueued by
-            // sendQueuedCloudMessages, future stream-based completion detection
-            // will keep trying
-          });
-        }
+        this.tryRecoverIdleCloudQueue(taskRunId);
       }
 
       if (isTerminalStatus(update.status)) {
@@ -3175,12 +3574,20 @@ export class SessionService {
   private async fetchSessionLogs(
     logUrl: string | undefined,
     taskRunId?: string,
+    options: { minEntryCount?: number } = {},
   ): Promise<{
     rawEntries: StoredLogEntry[];
     sessionId?: string;
     adapter?: Adapter;
   }> {
     if (!logUrl && !taskRunId) return { rawEntries: [] };
+    let localResult:
+      | {
+          rawEntries: StoredLogEntry[];
+          sessionId?: string;
+          adapter?: Adapter;
+        }
+      | undefined;
 
     if (taskRunId) {
       try {
@@ -3188,7 +3595,13 @@ export class SessionService {
           taskRunId,
         });
         if (localContent?.trim()) {
-          return this.parseLogContent(localContent);
+          localResult = this.parseLogContent(localContent);
+          if (
+            !options.minEntryCount ||
+            localResult.rawEntries.length >= options.minEntryCount
+          ) {
+            return localResult;
+          }
         }
       } catch {
         log.warn("Failed to read local logs, falling back to S3", {
@@ -3197,11 +3610,11 @@ export class SessionService {
       }
     }
 
-    if (!logUrl) return { rawEntries: [] };
+    if (!logUrl) return localResult ?? { rawEntries: [] };
 
     try {
       const content = await trpcClient.logs.fetchS3Logs.query({ logUrl });
-      if (!content?.trim()) return { rawEntries: [] };
+      if (!content?.trim()) return localResult ?? { rawEntries: [] };
 
       const result = this.parseLogContent(content);
 
@@ -3213,10 +3626,125 @@ export class SessionService {
           });
       }
 
+      if (
+        localResult &&
+        localResult.rawEntries.length > result.rawEntries.length
+      ) {
+        return localResult;
+      }
+
       return result;
     } catch {
-      return { rawEntries: [] };
+      return localResult ?? { rawEntries: [] };
     }
+  }
+
+  private reconcileCloudLogGap(request: CloudLogGapReconcileRequest): void {
+    const { taskId, taskRunId } = request;
+    const reconcileKey = `${taskId}:${taskRunId}`;
+    const existing = this.cloudLogGapReconciles.get(reconcileKey);
+    if (existing) {
+      existing.pendingRequest = this.mergeCloudLogGapRequests(
+        existing.pendingRequest,
+        request,
+      );
+      return;
+    }
+
+    this.cloudLogGapReconciles.set(reconcileKey, {});
+    void this.runCloudLogGapReconciles(reconcileKey, request)
+      .catch((err: unknown) => {
+        log.warn("Failed to reconcile cloud task log gap", {
+          taskId,
+          taskRunId,
+          err,
+        });
+      })
+      .finally(() => {
+        this.cloudLogGapReconciles.delete(reconcileKey);
+      });
+  }
+
+  private mergeCloudLogGapRequests(
+    current: CloudLogGapReconcileRequest | undefined,
+    next: CloudLogGapReconcileRequest,
+  ): CloudLogGapReconcileRequest {
+    if (!current) return next;
+
+    return {
+      taskId: next.taskId,
+      taskRunId: next.taskRunId,
+      currentCount: Math.min(current.currentCount, next.currentCount),
+      expectedCount: Math.max(current.expectedCount, next.expectedCount),
+      newEntries: [...current.newEntries, ...next.newEntries],
+      logUrl: next.logUrl ?? current.logUrl,
+    };
+  }
+
+  private async runCloudLogGapReconciles(
+    reconcileKey: string,
+    initialRequest: CloudLogGapReconcileRequest,
+  ): Promise<void> {
+    let request: CloudLogGapReconcileRequest | undefined = initialRequest;
+
+    while (request) {
+      await this.reconcileCloudLogGapOnce(request);
+      const state = this.cloudLogGapReconciles.get(reconcileKey);
+      request = state?.pendingRequest;
+      if (state) {
+        state.pendingRequest = undefined;
+      }
+    }
+  }
+
+  private async reconcileCloudLogGapOnce({
+    taskId,
+    taskRunId,
+    expectedCount,
+    currentCount,
+    newEntries,
+    logUrl,
+  }: CloudLogGapReconcileRequest): Promise<void> {
+    const { rawEntries } = await this.fetchSessionLogs(logUrl, taskRunId, {
+      minEntryCount: expectedCount,
+    });
+    const session = sessionStoreSetters.getSessions()[taskRunId];
+    if (!session || session.taskId !== taskId) {
+      return;
+    }
+
+    const latestCount = session.processedLineCount ?? 0;
+    if (latestCount >= expectedCount) {
+      return;
+    }
+
+    if (rawEntries.length >= expectedCount) {
+      const events = convertStoredEntriesToEvents(rawEntries);
+      if (hasSessionPromptEvent(events)) {
+        sessionStoreSetters.clearTailOptimisticItems(taskRunId);
+      }
+      sessionStoreSetters.updateSession(taskRunId, {
+        events,
+        isCloud: true,
+        logUrl: logUrl ?? session.logUrl,
+        processedLineCount: rawEntries.length,
+      });
+      this.updatePromptStateFromEvents(taskRunId, events);
+      return;
+    }
+
+    // The fetched logs lag behind expectedCount and `newEntries` is the latest
+    // tail slice of the snapshot — appending it here would create duplicates
+    // and gaps in `session.events` (and bump processedLineCount past entries
+    // we don't actually have). Skip; the next snapshot/log update will retry
+    // once the source has caught up.
+    log.warn("Cloud task log count inconsistency", {
+      taskRunId,
+      currentCount,
+      expectedCount,
+      fetchedCount: rawEntries.length,
+      entriesReceived: newEntries.length,
+    });
   }
 
   private createBaseSession(

@@ -18,6 +18,10 @@ export interface HandoffSagaOutput {
 }
 
 export interface HandoffSagaDeps extends HandoffBaseDeps {
+  attachWorkspaceToFolder(
+    taskId: string,
+    repoPath: string,
+  ): { revert: () => void };
   applyGitCheckpoint(
     checkpoint: AgentTypes.GitCheckpointEvent,
     repoPath: string,
@@ -120,13 +124,11 @@ export class HandoffSaga extends Saga<HandoffSagaInput, HandoffSagaOutput> {
       });
     }
 
-    await this.step({
-      name: "update_workspace",
-      execute: async () => {
-        this.deps.updateWorkspaceMode(taskId, "local");
-      },
-      rollback: async () => {
-        this.deps.updateWorkspaceMode(taskId, "cloud");
+    await this.step<{ revert: () => void }>({
+      name: "attach_workspace_to_folder",
+      execute: async () => this.deps.attachWorkspaceToFolder(taskId, repoPath),
+      rollback: async ({ revert }) => {
+        revert();
       },
     });
 

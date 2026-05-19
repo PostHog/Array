@@ -46,6 +46,7 @@ export type Session = BaseSession & {
   input: Pushable<SDKUserMessage>;
   settingsManager: SettingsManager;
   permissionMode: CodeExecutionMode;
+  modeBeforePlan?: CodeExecutionMode;
   modelId?: string;
   cwd: string;
   taskRunId?: string;
@@ -75,6 +76,16 @@ export type ToolUseCache = {
   };
 };
 
+/**
+ * Per-content-block-index buffer for tool inputs streamed via
+ * `input_json_delta` events. Keyed by the Anthropic content block index
+ * (which resets per assistant message). Cleared on `content_block_stop`.
+ */
+export type ToolUseStreamCache = Map<
+  number,
+  { toolUseId: string; partialJson: string }
+>;
+
 export type TerminalInfo = {
   terminal_id: string;
 };
@@ -95,6 +106,7 @@ export type ToolUpdateMeta = {
     toolName: string;
     toolResponse?: unknown;
     parentToolCallId?: string;
+    bashCommand?: string;
   };
   terminal_info?: TerminalInfo;
   terminal_output?: TerminalOutput;

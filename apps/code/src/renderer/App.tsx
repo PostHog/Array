@@ -11,14 +11,17 @@ import {
   useCurrentUser,
 } from "@features/auth/hooks/authQueries";
 import { useAuthSession } from "@features/auth/hooks/useAuthSession";
+import { useIsOrgAdmin } from "@features/auth/hooks/useOrgRole";
 import { OnboardingFlow } from "@features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
+import { initializeConnectivityToast } from "@renderer/features/connectivity/connectivityToast";
 import { initializeConnectivityStore } from "@renderer/stores/connectivityStore";
 import { useFocusStore } from "@renderer/stores/focusStore";
 import { useThemeStore } from "@renderer/stores/themeStore";
 import { initializeUpdateStore } from "@renderer/stores/updateStore";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
+import { isNotAuthenticatedError } from "@shared/errors";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
@@ -30,8 +33,6 @@ import { useEffect, useRef, useState } from "react";
 import { Toaster } from "sonner";
 
 const log = logger.scope("app");
-
-const ORGANIZATION_ADMIN_LEVEL = 8;
 
 function App() {
   const trpcReact = useTRPC();
@@ -53,7 +54,12 @@ function App() {
 
   // Initialize connectivity monitoring
   useEffect(() => {
-    return initializeConnectivityStore();
+    const disposeStore = initializeConnectivityStore();
+    const disposeToast = initializeConnectivityToast();
+    return () => {
+      disposeToast();
+      disposeStore();
+    };
   }, []);
 
   // Initialize update store
@@ -111,6 +117,16 @@ function App() {
   );
 
   useSubscription(
+    trpcReact.workspace.onLinkedBranchChanged.subscriptionOptions(undefined, {
+      onData: () => {
+        void queryClient.invalidateQueries(
+          trpcReact.workspace.getAll.pathFilter(),
+        );
+      },
+    }),
+  );
+
+  useSubscription(
     trpcReact.focus.onBranchRenamed.subscriptionOptions(undefined, {
       onData: ({ worktreePath, newBranch }) => {
         useFocusStore.getState().updateSessionBranch(worktreePath, newBranch);
@@ -139,7 +155,12 @@ function App() {
         log.warn(
           `Foreign branch checkout detected: ${focusedBranch} -> ${foreignBranch}. Auto-unfocusing.`,
         );
-        await useFocusStore.getState().disableFocus();
+        const result = await useFocusStore.getState().disableFocus();
+        if (!result.success && result.error) {
+          toast.error("Could not unfocus workspace", {
+            description: result.error,
+          });
+        }
       },
     }),
   );
@@ -163,8 +184,8 @@ function App() {
     hasCodeAccess === true &&
     currentOrg != null &&
     currentOrg.is_ai_data_processing_approved !== true;
-  const isAdmin =
-    (currentOrg?.membership_level ?? 0) >= ORGANIZATION_ADMIN_LEVEL;
+  const { isAdmin: isOrgAdmin } = useIsOrgAdmin();
+  const isAdmin = isOrgAdmin === true;
 
   // Handle transition into main app — only show the dark overlay if dark mode is active
   useEffect(() => {
@@ -258,7 +279,11 @@ function App() {
   const content = renderContent();
 
   return (
-    <ErrorBoundary name="App">
+    <ErrorBoundary
+      name="App"
+      resetKey={authState.status}
+      shouldSuppress={isNotAuthenticatedError}
+    >
       {isAuthenticated ? (
         <AnimatePresence mode="wait">{content}</AnimatePresence>
       ) : (

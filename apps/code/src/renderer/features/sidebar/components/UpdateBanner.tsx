@@ -3,7 +3,11 @@ import { Box } from "@radix-ui/themes";
 import { useUpdateStore } from "@stores/updateStore";
 import { AnimatePresence, motion } from "framer-motion";
 
-export function UpdateBanner() {
+interface UpdateBannerProps {
+  variant?: "sidebar" | "compact";
+}
+
+export function UpdateBanner({ variant = "sidebar" }: UpdateBannerProps) {
   const status = useUpdateStore((s) => s.status);
   const version = useUpdateStore((s) => s.version);
   const isEnabled = useUpdateStore((s) => s.isEnabled);
@@ -12,6 +16,49 @@ export function UpdateBanner() {
   const isVisible =
     isEnabled &&
     (status === "downloading" || status === "ready" || status === "installing");
+
+  if (variant === "compact") {
+    return (
+      <AnimatePresence>
+        {isVisible && (
+          <motion.div
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -8 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+          >
+            {status === "downloading" && (
+              <div className="flex items-center gap-1.5 text-(--green-11) text-[13px] opacity-70">
+                <Spinner size={14} className="animate-spin" />
+                <span>Downloading update...</span>
+              </div>
+            )}
+
+            {status === "ready" && (
+              <button
+                type="button"
+                className="flex items-center gap-1.5 rounded-2 border border-(--green-a5) bg-(--green-a3) px-2.5 py-1 font-medium text-(--green-11) text-[13px] transition-colors hover:bg-(--green-a4)"
+                onClick={() => void installUpdate()}
+              >
+                <Gift size={14} weight="duotone" />
+                <span>
+                  {version ? `${version} available` : "Update available"} —
+                  Restart
+                </span>
+              </button>
+            )}
+
+            {status === "installing" && (
+              <div className="flex items-center gap-1.5 text-(--green-11) text-[13px] opacity-70">
+                <ArrowsClockwise size={14} className="animate-spin" />
+                <span>Restarting...</span>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  }
 
   return (
     <AnimatePresence>

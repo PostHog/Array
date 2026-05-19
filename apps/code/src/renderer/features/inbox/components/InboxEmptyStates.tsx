@@ -1,10 +1,14 @@
 import { AnimatedEllipsis } from "@features/inbox/components/utils/AnimatedEllipsis";
 import { SOURCE_PRODUCT_META } from "@features/inbox/components/utils/source-product-icons";
-import { ArrowDownIcon } from "@phosphor-icons/react";
+import { ArrowDownIcon, CheckCircleIcon } from "@phosphor-icons/react";
 import { Box, Button, Flex, Text, Tooltip } from "@radix-ui/themes";
+import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
 import explorerHog from "@renderer/assets/images/hedgehogs/explorer-hog.png";
 import graphsHog from "@renderer/assets/images/hedgehogs/graphs-hog.png";
 import mailHog from "@renderer/assets/images/mail-hog.png";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import { track } from "@utils/analytics";
+import { useState } from "react";
 
 // ── Full-width empty states ─────────────────────────────────────────────────
 
@@ -125,6 +129,78 @@ export function WarmingUpPane({
             Configure sources
           </Button>
         </Flex>
+      </Flex>
+    </Flex>
+  );
+}
+
+export function GatedDueToScalePane() {
+  const [registered, setRegistered] = useState(false);
+
+  const handleRegisterInterest = () => {
+    track(ANALYTICS_EVENTS.INBOX_INTEREST_REGISTERED);
+    setRegistered(true);
+  };
+
+  return (
+    <Flex
+      direction="column"
+      align="center"
+      justify="center"
+      height="100%"
+      px="5"
+    >
+      <Flex direction="column" align="center" className="max-w-[420px]">
+        <img src={builderHog} alt="" className="mb-[16px] w-[120px]" />
+
+        <Text
+          align="center"
+          className="font-bold text-(--gray-12) text-lg leading-6.5"
+        >
+          We're rolling out self-driving gradually
+          <AnimatedEllipsis />
+        </Text>
+
+        <Flex
+          direction="column"
+          align="center"
+          gap="3"
+          mt="3"
+          className="max-w-[340px]"
+        >
+          <Text
+            align="center"
+            className="text-(--gray-11) text-[13px] leading-[1.35]"
+          >
+            Inbox watches your sessions, issues, and evals around the clock, and
+            surfaces ready-to-run fixes.
+            <br />
+            <Text className="font-medium text-(--gray-12)">
+              We're scaling it up carefully so every report stays high-signal.
+            </Text>
+          </Text>
+        </Flex>
+
+        {registered ? (
+          <Flex align="center" gap="2" className="mt-[20px]">
+            <CheckCircleIcon
+              size={16}
+              weight="fill"
+              className="text-(--grass-9)"
+            />
+            <Text className="text-(--gray-11) text-[13px]">
+              Got it — we'll let you know.
+            </Text>
+          </Flex>
+        ) : (
+          <Button
+            size="2"
+            onClick={handleRegisterInterest}
+            className="mt-[20px]"
+          >
+            Let me know when self-driving is available for my organization
+          </Button>
+        )}
       </Flex>
     </Flex>
   );

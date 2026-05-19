@@ -5,24 +5,25 @@ const mockFs = vi.hoisted(() => ({
   readFileAsBase64: { query: vi.fn() },
 }));
 
-vi.mock("@features/message-editor/utils/imageUtils", () => ({
-  isImageFile: (name: string) =>
-    /\.(png|jpe?g|gif|webp|bmp|svg|ico|tiff?)$/i.test(name),
-}));
-
-vi.mock("@features/code-editor/utils/imageUtils", () => ({
-  getImageMimeType: (name: string) => {
-    const ext = name.split(".").pop()?.toLowerCase();
-    const map: Record<string, string> = {
-      png: "image/png",
-      jpg: "image/jpeg",
-      jpeg: "image/jpeg",
-      gif: "image/gif",
-      webp: "image/webp",
-    };
-    return map[ext ?? ""] ?? "image/png";
-  },
-}));
+vi.mock("@shared/constants/image", async () => {
+  const actual = await vi.importActual<
+    typeof import("@shared/constants/image")
+  >("@shared/constants/image");
+  return {
+    ...actual,
+    getImageMimeType: (name: string) => {
+      const ext = name.split(".").pop()?.toLowerCase();
+      const map: Record<string, string> = {
+        png: "image/png",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        gif: "image/gif",
+        webp: "image/webp",
+      };
+      return map[ext ?? ""] ?? "image/png";
+    },
+  };
+});
 
 vi.mock("@renderer/trpc/client", () => ({
   trpcClient: {

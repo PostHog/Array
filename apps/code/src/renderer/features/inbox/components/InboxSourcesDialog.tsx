@@ -17,10 +17,10 @@ export function InboxSourcesDialog({
 }: InboxSourcesDialogProps) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Content maxWidth="520px">
+      <Dialog.Content maxWidth="800px">
         <Flex align="center" justify="between" mb="3">
           <Dialog.Title mb="0" className="text-base">
-            Signal sources
+            Inbox configuration
           </Dialog.Title>
           <Dialog.Close>
             <button

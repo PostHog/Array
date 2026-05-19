@@ -65,7 +65,7 @@ vi.mock("@main/di/tokens", () => ({
 }));
 
 import type { HandoffPreflightInput } from "./schemas";
-import { HandoffService } from "./service";
+import { extractHandoffErrorCode, HandoffService } from "./service";
 
 const DEFAULT_LOCAL_GIT_STATE = {
   head: "abc123",
@@ -86,7 +86,12 @@ function createService(): HandoffService {
   const agentAuthAdapter = {
     createPosthogConfig: mockCreatePosthogConfig,
   } as never;
-  const workspaceRepo = { updateMode: mockUpdateMode } as never;
+  const workspaceRepo = {
+    updateMode: mockUpdateMode,
+    findByTaskId: vi.fn().mockReturnValue(null),
+    setModeAndRepository: vi.fn(),
+  } as never;
+  const repositoryRepo = { findByPath: vi.fn().mockReturnValue(null) } as never;
   const dialog = { confirm: vi.fn().mockResolvedValue(1) } as never;
   const appLifecycle = {
     whenReady: vi.fn().mockResolvedValue(undefined),
@@ -98,6 +103,7 @@ function createService(): HandoffService {
     cloudTaskService,
     agentAuthAdapter,
     workspaceRepo,
+    repositoryRepo,
     dialog,
     appLifecycle,
   );
@@ -164,5 +170,22 @@ describe("HandoffService.preflight", () => {
 
     expect(result.canHandoff).toBe(true);
     expect(result.localTreeDirty).toBe(false);
+  });
+});
+
+describe("extractHandoffErrorCode", () => {
+  it("detects GitHub authorization failures in backend error payloads", () => {
+    const message =
+      'Failed request: [400] {"type":"validation_error","code":"github_authorization_required","detail":"Link a GitHub account"}';
+
+    expect(extractHandoffErrorCode(message)).toBe(
+      "github_authorization_required",
+    );
+  });
+
+  it("ignores unrelated failures", () => {
+    expect(extractHandoffErrorCode("Failed request: [500] boom")).toBe(
+      undefined,
+    );
   });
 });

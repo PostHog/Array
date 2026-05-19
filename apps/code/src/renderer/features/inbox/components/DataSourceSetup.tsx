@@ -2,6 +2,10 @@ import { useAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { GitHubRepoPicker } from "@features/folder-picker/components/GitHubRepoPicker";
 import {
+  describeGithubConnectError,
+  useGithubConnect,
+} from "@features/integrations/hooks/useGithubUserConnect";
+import {
   useGithubRepositories,
   useRepositoryIntegration,
 } from "@hooks/useIntegrations";
@@ -55,12 +59,8 @@ interface SetupFormProps {
   onCancel: () => void;
 }
 
-const POLL_INTERVAL_GITHUB_MS = 3_000;
-const POLL_TIMEOUT_GITHUB_MS = 300_000;
-
 function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
   const projectId = useAuthStateValue((state) => state.projectId);
-  const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const client = useAuthenticatedClient();
   const {
     repositories,
@@ -80,25 +80,19 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
   } = useGithubRepositories(repoPickerSearchQuery, isRepoPickerOpen);
   const [repo, setRepo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const {
+    error: connectError,
+    isConnecting: connecting,
+    isTimedOut: timedOut,
+    hasError: hasConnectError,
+    connect: handleConnectGitHub,
+  } = useGithubConnect({
+    projectId,
+    projectHasTeamIntegration: hasGithubIntegration,
+  });
   const selectedIntegrationId = repo
     ? getIntegrationIdForRepo(repo)
     : undefined;
-
-  const stopPolling = useCallback(() => {
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-    if (pollTimeoutRef.current) {
-      clearTimeout(pollTimeoutRef.current);
-      pollTimeoutRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => stopPolling, [stopPolling]);
 
   useEffect(() => {
     if (isLoadingRepos || !repo || repositories.includes(repo)) {
@@ -108,61 +102,12 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
     setRepo(null);
   }, [isLoadingRepos, repo, repositories]);
 
-  // Stop polling once integration appears
-  useEffect(() => {
-    if (hasGithubIntegration && connecting) {
-      stopPolling();
-      setConnecting(false);
-    }
-  }, [hasGithubIntegration, connecting, stopPolling]);
-
   // Auto-select the first repo once loaded
   useEffect(() => {
     if (repo === null && repositories.length > 0) {
       setRepo(repositories[0]);
     }
   }, [repo, repositories]);
-
-  const handleConnectGitHub = useCallback(async () => {
-    if (!cloudRegion || !projectId) return;
-    setConnecting(true);
-    try {
-      await trpcClient.githubIntegration.startFlow.mutate({
-        region: cloudRegion,
-        projectId,
-      });
-
-      pollTimerRef.current = setInterval(async () => {
-        try {
-          if (!client) return;
-          // Trigger a refetch of integrations
-          const integrations =
-            await client.getIntegrationsForProject(projectId);
-          const hasGithub = integrations.some(
-            (i: { kind: string }) => i.kind === "github",
-          );
-          if (hasGithub) {
-            stopPolling();
-            setConnecting(false);
-            toast.success("GitHub connected");
-          }
-        } catch {
-          // Ignore individual poll failures
-        }
-      }, POLL_INTERVAL_GITHUB_MS);
-
-      pollTimeoutRef.current = setTimeout(() => {
-        stopPolling();
-        setConnecting(false);
-        toast.error("Connection timed out. Please try again.");
-      }, POLL_TIMEOUT_GITHUB_MS);
-    } catch (error) {
-      setConnecting(false);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to start GitHub flow",
-      );
-    }
-  }, [cloudRegion, projectId, client, stopPolling]);
 
   const handleSubmit = useCallback(async () => {
     if (!projectId || !client || !repo || !selectedIntegrationId) return;
@@ -216,24 +161,28 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
     setRepoPickerSearchQuery(value);
   }, []);
 
-  const handleLoadMoreRepositories = useCallback(() => {
-    loadMoreVisibleRepositories();
-  }, [loadMoreVisibleRepositories]);
-
   if (!hasGithubIntegration) {
+    const statusMessage = hasConnectError
+      ? describeGithubConnectError(connectError)
+      : timedOut
+        ? "We didn't hear back from GitHub. If the browser tab was closed, click Try again."
+        : connecting
+          ? "Waiting for GitHub… finish authorizing in your browser, then return here."
+          : "Connect your GitHub account to import issues as signals.";
     return (
       <SetupFormContainer title="Connect GitHub">
         <Flex direction="column" gap="3">
-          <Text className="text-(--gray-11) text-sm">
-            Connect your GitHub account to import issues as signals.
+          <Text
+            className={
+              hasConnectError
+                ? "text-(--red-11) text-sm"
+                : "text-(--gray-11) text-sm"
+            }
+          >
+            {statusMessage}
           </Text>
           <Flex gap="2" justify="end">
-            <Button
-              size="2"
-              variant="soft"
-              onClick={onCancel}
-              disabled={connecting}
-            >
+            <Button size="2" variant="soft" onClick={onCancel}>
               Cancel
             </Button>
             <Button
@@ -241,7 +190,11 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
               onClick={() => void handleConnectGitHub()}
               disabled={connecting}
             >
-              {connecting ? "Waiting for authorization..." : "Connect GitHub"}
+              {connecting
+                ? "Waiting for authorization..."
+                : hasConnectError || timedOut
+                  ? "Try again"
+                  : "Connect GitHub"}
             </Button>
           </Flex>
         </Flex>
@@ -266,7 +219,7 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
           searchQuery={repoPickerSearchQuery}
           onSearchQueryChange={handleRepoPickerSearchChange}
           hasMore={visibleRepositoriesHasMore}
-          onLoadMore={handleLoadMoreRepositories}
+          onLoadMore={loadMoreVisibleRepositories}
           placeholder="Select repository..."
           size="2"
         />
@@ -297,6 +250,9 @@ function LinearSetup({ onComplete }: SetupFormProps) {
   const client = useAuthenticatedClient();
   const [loading, setLoading] = useState(false);
   const [oauthConnected, setOauthConnected] = useState(false);
+  const [linearIntegrationId, setLinearIntegrationId] = useState<
+    number | string | null
+  >(null);
   const [pollError, setPollError] = useState<string | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -330,13 +286,14 @@ function LinearSetup({ onComplete }: SetupFormProps) {
         try {
           const integrations =
             await client.getIntegrationsForProject(projectId);
-          const hasLinear = integrations.some(
+          const linearIntegration = integrations.find(
             (i: { kind: string }) => i.kind === "linear",
-          );
-          if (hasLinear) {
+          ) as { id: number | string } | undefined;
+          if (linearIntegration) {
             stopPolling();
             setLoading(false);
             setOauthConnected(true);
+            setLinearIntegrationId(linearIntegration.id);
             toast.success("Linear connected");
           }
         } catch {
@@ -359,13 +316,16 @@ function LinearSetup({ onComplete }: SetupFormProps) {
   }, [cloudRegion, projectId, client, stopPolling]);
 
   const handleSubmit = useCallback(async () => {
-    if (!projectId || !client) return;
+    if (!projectId || !client || !linearIntegrationId) return;
 
     setLoading(true);
     try {
       await client.createExternalDataSource(projectId, {
         source_type: "Linear",
-        payload: { schemas: schemasPayload("linear") },
+        payload: {
+          linear_integration_id: linearIntegrationId,
+          schemas: schemasPayload("linear"),
+        },
       });
       toast.success("Linear data source created");
       onComplete();
@@ -376,7 +336,7 @@ function LinearSetup({ onComplete }: SetupFormProps) {
     } finally {
       setLoading(false);
     }
-  }, [projectId, client, onComplete]);
+  }, [projectId, client, linearIntegrationId, onComplete]);
 
   return (
     <SetupFormContainer title="Connect Linear">

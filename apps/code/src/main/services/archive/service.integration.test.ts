@@ -360,6 +360,20 @@ describe("ArchiveService integration", () => {
         expect(archived.checkpointId).toBeTruthy();
         expect(await pathExists(legacyPath)).toBe(false);
       }));
+
+    it("archive succeeds when worktree was deleted externally", () =>
+      withTestContext({}, async (ctx) => {
+        const { worktreePath } = await ctx.setupWorktree("detached");
+
+        await fs.rm(worktreePath, { recursive: true, force: true });
+        expect(await pathExists(worktreePath)).toBe(false);
+
+        const archived = await ctx.service.archiveTask(ctx.archiveInput());
+
+        expect(archived.checkpointId).toBeNull();
+        expect(archived.branchName).toBeNull();
+        expect(ctx.archiveRepo.findAll()).toHaveLength(1);
+      }));
   });
 
   describe("local/cloud mode", () => {

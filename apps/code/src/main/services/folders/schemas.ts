@@ -17,6 +17,7 @@ export const getFoldersOutput = z.array(registeredFolderWithExistsSchema);
 
 export const addFolderInput = z.object({
   folderPath: z.string().min(2, "Folder path must be a valid directory path"),
+  remoteUrl: z.string().min(1).optional(),
 });
 
 export const addFolderOutput = registeredFolderWithExistsSchema;

@@ -155,7 +155,7 @@ export function UserMessage({
             <span>View Slack thread</span>
           </a>
         )}
-        <Box className="absolute top-1 right-1 flex items-center gap-1.5 rounded-md bg-gray-2 py-0.5 pr-1 pl-2 opacity-0 shadow-sm transition-opacity group-hover/msg:opacity-100">
+        <Box className="absolute top-1 right-1 flex select-none items-center gap-1.5 rounded-md bg-gray-2 py-0.5 pr-1 pl-2 opacity-0 shadow-sm transition-opacity group-hover/msg:opacity-100">
           {timestamp != null && (
             <span aria-hidden className="text-[11px] text-gray-10">
               {formatTimestamp(timestamp)}

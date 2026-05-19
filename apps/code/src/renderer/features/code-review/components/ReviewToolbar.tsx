@@ -24,6 +24,7 @@ interface ReviewToolbarProps {
   onRefresh?: () => void;
   effectiveSource?: ResolvedDiffSource;
   branchSourceAvailable?: boolean;
+  prSourceAvailable?: boolean;
   defaultBranch?: string | null;
 }
 
@@ -36,6 +37,7 @@ export const ReviewToolbar = memo(function ReviewToolbar({
   onRefresh,
   effectiveSource,
   branchSourceAvailable,
+  prSourceAvailable,
   defaultBranch,
 }: ReviewToolbarProps) {
   const viewMode = useDiffViewerStore((s) => s.viewMode);
@@ -74,6 +76,7 @@ export const ReviewToolbar = memo(function ReviewToolbar({
             taskId={taskId}
             effectiveSource={effectiveSource}
             branchAvailable={branchSourceAvailable ?? false}
+            prSourceAvailable={prSourceAvailable ?? false}
             defaultBranch={defaultBranch ?? null}
           />
         )}

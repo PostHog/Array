@@ -6,11 +6,12 @@ ignoredBuiltDependencies:
   - msw
   - protobufjs
 
-minimumReleaseAge: 1440
+minimumReleaseAge: 10080
 
 minimumReleaseAgeExclude:
   - '@agentclientprotocol/sdk'
   - '@anthropic-ai/claude-agent-sdk'
+  - '@pierre/diffs'
   - '@posthog/quill'
   - '@posthog/quill-tokens'
 

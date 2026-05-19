@@ -64,6 +64,7 @@ function createDeps(overrides: Partial<HandoffSagaDeps> = {}): HandoffSagaDeps {
     }),
     applyGitCheckpoint: vi.fn().mockResolvedValue(undefined),
     updateWorkspaceMode: vi.fn(),
+    attachWorkspaceToFolder: vi.fn().mockReturnValue({ revert: vi.fn() }),
     reconnectSession: vi.fn().mockResolvedValue({
       sessionId: "session-1",
       channel: "ch-1",
@@ -247,9 +248,11 @@ describe("HandoffSaga", () => {
   });
 
   describe("rollbacks", () => {
-    it("rolls back workspace mode when spawn_agent fails", async () => {
+    it("reverts workspace attachment when spawn_agent fails", async () => {
+      const revert = vi.fn();
       const { deps, result } = await runSaga({
         deps: {
+          attachWorkspaceToFolder: vi.fn().mockReturnValue({ revert }),
           reconnectSession: vi
             .fn()
             .mockRejectedValue(new Error("spawn failed")),
@@ -259,7 +262,11 @@ describe("HandoffSaga", () => {
       expect(result.success).toBe(false);
       if (result.success) return;
       expect(result.failedStep).toBe("spawn_agent");
-      expect(deps.updateWorkspaceMode).toHaveBeenCalledWith("task-1", "cloud");
+      expect(deps.attachWorkspaceToFolder).toHaveBeenCalledWith(
+        "task-1",
+        "/repo",
+      );
+      expect(revert).toHaveBeenCalledTimes(1);
     });
 
     it("kills session on rollback if spawn partially succeeded", async () => {
@@ -274,7 +281,7 @@ describe("HandoffSaga", () => {
       expect(result.failedStep).toBe("spawn_agent");
     });
 
-    it("fails at fetch_and_rebuild without rolling back workspace", async () => {
+    it("fails at fetch_and_rebuild without touching workspace state", async () => {
       mockResumeFromLog.mockRejectedValue(new Error("API down"));
 
       const deps = createDeps();
@@ -284,7 +291,7 @@ describe("HandoffSaga", () => {
       expect(result.success).toBe(false);
       if (result.success) return;
       expect(result.failedStep).toBe("fetch_and_rebuild");
-      expect(deps.updateWorkspaceMode).not.toHaveBeenCalled();
+      expect(deps.attachWorkspaceToFolder).not.toHaveBeenCalled();
       expect(deps.reconnectSession).not.toHaveBeenCalled();
     });
   });

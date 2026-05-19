@@ -7,8 +7,12 @@ import {
   useAuthStateValue,
   useCurrentUser,
 } from "@features/auth/hooks/authQueries";
-import { Command } from "@features/command/components/Command";
-import { useProjects } from "@features/projects/hooks/useProjects";
+import { useSeatStore } from "@features/billing/stores/seatStore";
+import {
+  type ProjectInfo,
+  useProjects,
+} from "@features/projects/hooks/useProjects";
+import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import {
   ArrowLeft,
   ArrowRight,
@@ -16,23 +20,43 @@ import {
   Check,
   CheckCircle,
 } from "@phosphor-icons/react";
-import { Box, Button, Flex, Popover, Spinner, Text } from "@radix-ui/themes";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+} from "@posthog/quill";
+import { Button, Flex, Spinner, Text } from "@radix-ui/themes";
 import happyHog from "@renderer/assets/images/hedgehogs/happy-hog.png";
+import { BILLING_FLAG } from "@shared/constants";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { OnboardingHogTip } from "./OnboardingHogTip";
 import { StepActions } from "./StepActions";
 
-import "./ProjectSelect.css";
-
 const log = logger.scope("project-select-step");
+
+interface Org {
+  id: string;
+  name: string;
+  slug: string;
+}
 
 interface ProjectSelectStepProps {
   onNext: () => void;
   onBack: () => void;
 }
+
+const TRIGGER_CLASS =
+  "box-border flex w-full cursor-pointer appearance-none items-center justify-between gap-3 rounded-[10px] border border-(--gray-a3) bg-(--color-panel-solid) px-[14px] py-[10px] font-[inherit] text-sm shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)]";
+
+const CONTENT_CLASS =
+  "w-(--anchor-width) max-w-(--anchor-width) min-w-(--anchor-width) p-0";
 
 export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
   const authFetched = useAuthStateFetched();
@@ -44,24 +68,41 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
   const [projectOpen, setProjectOpen] = useState(false);
   const [orgOpen, setOrgOpen] = useState(false);
   const [isSwitchingOrg, setIsSwitchingOrg] = useState(false);
+  const orgAnchorRef = useRef<HTMLButtonElement>(null);
+  const projectAnchorRef = useRef<HTMLButtonElement>(null);
 
   const client = useOptionalAuthenticatedClient();
   const queryClient = useQueryClient();
   const { data: fullUser } = useCurrentUser({ client });
+  const billingEnabled = useFeatureFlag(BILLING_FLAG);
 
-  const organizations = useMemo(() => {
+  const organizations = useMemo<Org[]>(() => {
     if (!fullUser?.organizations) return [];
-    return fullUser.organizations as Array<{
-      id: string;
-      name: string;
-      slug: string;
-    }>;
+    return fullUser.organizations as Org[];
   }, [fullUser]);
 
   const currentOrg = fullUser?.organization as
     | { id: string; name: string }
     | undefined;
   const hasMultipleOrgs = organizations.length > 1;
+
+  const sortedOrgs = useMemo(
+    () => [...organizations].sort((a, b) => a.name.localeCompare(b.name)),
+    [organizations],
+  );
+  const sortedProjects = useMemo(
+    () => [...projects].sort((a, b) => a.name.localeCompare(b.name)),
+    [projects],
+  );
+
+  const selectedOrg = useMemo(
+    () => sortedOrgs.find((o) => o.id === currentOrg?.id) ?? null,
+    [sortedOrgs, currentOrg?.id],
+  );
+  const selectedProject = useMemo(
+    () => sortedProjects.find((p) => p.id === currentProjectId) ?? null,
+    [sortedProjects, currentProjectId],
+  );
 
   const switchOrgMutation = useMutation({
     mutationFn: async (orgId: string) => {
@@ -70,6 +111,9 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
       await queryClient.invalidateQueries({
         queryKey: authKeys.currentUsers(),
       });
+      if (billingEnabled) {
+        void useSeatStore.getState().fetchSeat({ autoProvision: true });
+      }
     },
     onMutate: () => {
       setIsSwitchingOrg(true);
@@ -163,82 +207,75 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                       Organization
                     </Text>
 
-                    <Popover.Root open={orgOpen} onOpenChange={setOrgOpen}>
-                      <Popover.Trigger>
-                        <button
-                          type="button"
-                          className="box-border flex w-full cursor-pointer items-center justify-between rounded-[10px] border border-(--gray-a3) bg-(--color-panel-solid) px-[14px] py-[10px] text-sm"
-                          style={{
-                            all: "unset",
-                            boxShadow:
-                              "0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          <Text className="font-medium text-(--gray-12) text-sm">
-                            {currentOrg?.name ?? "Select organization..."}
-                          </Text>
-                          <CaretDown
-                            size={14}
-                            className="shrink-0 text-(--gray-9)"
-                          />
-                        </button>
-                      </Popover.Trigger>
-                      <Popover.Content
-                        className="project-select-popover p-0"
-                        style={{
-                          width: "var(--radix-popover-trigger-width)",
-                        }}
+                    <Combobox<Org>
+                      items={sortedOrgs}
+                      value={selectedOrg}
+                      onValueChange={(value) => {
+                        const org = value as Org | null;
+                        if (org && org.id !== currentOrg?.id) {
+                          switchOrgMutation.mutate(org.id);
+                        }
+                        setOrgOpen(false);
+                      }}
+                      open={orgOpen}
+                      onOpenChange={setOrgOpen}
+                      itemToStringLabel={(org) => org.name}
+                      itemToStringValue={(org) => org.id}
+                    >
+                      <ComboboxTrigger
+                        render={
+                          <button
+                            ref={orgAnchorRef}
+                            type="button"
+                            className={TRIGGER_CLASS}
+                          >
+                            <Text className="min-w-0 flex-1 truncate text-left font-medium text-(--gray-12) text-sm">
+                              {currentOrg?.name ?? "Select organization..."}
+                            </Text>
+                            <CaretDown
+                              size={14}
+                              className="shrink-0 text-(--gray-9)"
+                            />
+                          </button>
+                        }
+                      />
+                      <ComboboxContent
+                        anchor={orgAnchorRef}
                         side="bottom"
-                        align="center"
+                        align="start"
                         sideOffset={4}
-                        avoidCollisions={false}
+                        className={CONTENT_CLASS}
                       >
-                        <Command.Root shouldFilter={true} label="Org picker">
-                          <Command.Input
-                            placeholder="Search organizations..."
-                            autoFocus={true}
-                          />
-                          <Command.List>
-                            <Command.Empty>
-                              No organizations found.
-                            </Command.Empty>
-                            {[...organizations]
-                              .sort((a, b) => a.name.localeCompare(b.name))
-                              .map((org) => (
-                                <Command.Item
-                                  key={org.id}
-                                  value={`${org.name} ${org.id}`}
-                                  onSelect={() => {
-                                    if (org.id !== currentOrg?.id) {
-                                      switchOrgMutation.mutate(org.id);
-                                    }
-                                    setOrgOpen(false);
-                                  }}
-                                >
-                                  <Flex
-                                    align="center"
-                                    justify="between"
-                                    width="100%"
-                                  >
-                                    <Box>
-                                      <Text className="text-sm">
-                                        {org.name}
-                                      </Text>
-                                    </Box>
-                                    {org.id === currentOrg?.id && (
-                                      <Check
-                                        size={14}
-                                        className="text-(--accent-11)"
-                                      />
-                                    )}
-                                  </Flex>
-                                </Command.Item>
-                              ))}
-                          </Command.List>
-                        </Command.Root>
-                      </Popover.Content>
-                    </Popover.Root>
+                        <ComboboxInput
+                          placeholder="Search organizations..."
+                          showTrigger={false}
+                        />
+                        <ComboboxEmpty>No organizations found.</ComboboxEmpty>
+                        <ComboboxList className="max-h-[240px]">
+                          {(org: Org) => (
+                            <ComboboxItem
+                              key={org.id}
+                              value={org}
+                              title={org.name}
+                            >
+                              <Flex
+                                align="center"
+                                justify="between"
+                                width="100%"
+                              >
+                                <Text className="text-sm">{org.name}</Text>
+                                {org.id === currentOrg?.id && (
+                                  <Check
+                                    size={14}
+                                    className="text-(--accent-11)"
+                                  />
+                                )}
+                              </Flex>
+                            </ComboboxItem>
+                          )}
+                        </ComboboxList>
+                      </ComboboxContent>
+                    </Combobox>
                   </Flex>
                 </motion.div>
               )}
@@ -255,91 +292,87 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                     <Text className="font-medium text-(--gray-11) text-sm">
                       Project
                     </Text>
-                    <Popover.Root
+                    <Combobox<ProjectInfo>
+                      items={sortedProjects}
+                      value={selectedProject}
+                      onValueChange={(value) => {
+                        const project = value as ProjectInfo | null;
+                        if (project) {
+                          selectProjectMutation.mutate(project.id);
+                        }
+                        setProjectOpen(false);
+                      }}
                       open={projectOpen}
                       onOpenChange={setProjectOpen}
+                      itemToStringLabel={(project) => project.name}
+                      itemToStringValue={(project) => String(project.id)}
                     >
-                      <Popover.Trigger>
-                        <button
-                          type="button"
-                          className="box-border flex w-full cursor-pointer items-center justify-between rounded-[10px] border border-(--gray-a3) bg-(--color-panel-solid) px-[14px] py-[10px] text-sm"
-                          style={{
-                            all: "unset",
-                            boxShadow:
-                              "0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          <Flex direction="column" gap="1">
-                            <Text className="font-medium text-(--gray-12) text-sm">
-                              {currentProject?.name ?? "Select a project..."}
-                            </Text>
-                            {currentProject && !hasMultipleOrgs && (
-                              <Text className="text-(--gray-11) text-[13px]">
-                                {currentProject.organization.name}
+                      <ComboboxTrigger
+                        render={
+                          <button
+                            ref={projectAnchorRef}
+                            type="button"
+                            className={TRIGGER_CLASS}
+                          >
+                            <Flex
+                              direction="column"
+                              gap="1"
+                              align="start"
+                              className="min-w-0 flex-1 text-left"
+                            >
+                              <Text className="min-w-0 max-w-full truncate font-medium text-(--gray-12) text-sm">
+                                {currentProject?.name ?? "Select a project..."}
                               </Text>
-                            )}
-                          </Flex>
-                          <CaretDown
-                            size={14}
-                            className="shrink-0 text-(--gray-9)"
-                          />
-                        </button>
-                      </Popover.Trigger>
-                      <Popover.Content
-                        className="project-select-popover p-0"
-                        style={{
-                          width: "var(--radix-popover-trigger-width)",
-                        }}
+                              {currentProject && !hasMultipleOrgs && (
+                                <Text className="min-w-0 max-w-full truncate text-(--gray-11) text-[13px]">
+                                  {currentProject.organization.name}
+                                </Text>
+                              )}
+                            </Flex>
+                            <CaretDown
+                              size={14}
+                              className="shrink-0 text-(--gray-9)"
+                            />
+                          </button>
+                        }
+                      />
+                      <ComboboxContent
+                        anchor={projectAnchorRef}
                         side="bottom"
-                        align="center"
+                        align="start"
                         sideOffset={4}
-                        avoidCollisions={false}
+                        className={CONTENT_CLASS}
                       >
-                        <Command.Root
-                          shouldFilter={true}
-                          label="Project picker"
-                        >
-                          <Command.Input
-                            placeholder="Search projects..."
-                            autoFocus={true}
-                          />
-                          <Command.List>
-                            <Command.Empty>No projects found.</Command.Empty>
-                            {[...projects]
-                              .sort((a, b) => a.name.localeCompare(b.name))
-                              .map((project) => (
-                                <Command.Item
-                                  key={project.id}
-                                  value={`${project.name} ${project.id}`}
-                                  onSelect={() => {
-                                    selectProjectMutation.mutate(project.id);
-                                    setProjectOpen(false);
-                                  }}
-                                >
-                                  <Flex
-                                    align="center"
-                                    justify="between"
-                                    width="100%"
-                                  >
-                                    <Box>
-                                      <Text className="text-sm">
-                                        {project.name}
-                                      </Text>
-                                    </Box>
-                                    {project.id === currentProjectId && (
-                                      <Check
-                                        size={14}
-                                        className="text-(--accent-11)"
-                                      />
-                                    )}
-                                  </Flex>
-                                </Command.Item>
-                              ))}
-                          </Command.List>
-                        </Command.Root>
-                      </Popover.Content>
-                    </Popover.Root>
+                        <ComboboxInput
+                          placeholder="Search projects..."
+                          showTrigger={false}
+                        />
+                        <ComboboxEmpty>No projects found.</ComboboxEmpty>
+                        <ComboboxList className="max-h-[240px]">
+                          {(project: ProjectInfo) => (
+                            <ComboboxItem
+                              key={project.id}
+                              value={project}
+                              title={project.name}
+                            >
+                              <Flex
+                                align="center"
+                                justify="between"
+                                width="100%"
+                              >
+                                <Text className="text-sm">{project.name}</Text>
+                                {project.id === currentProjectId && (
+                                  <Check
+                                    size={14}
+                                    className="text-(--accent-11)"
+                                  />
+                                )}
+                              </Flex>
+                            </ComboboxItem>
+                          )}
+                        </ComboboxList>
+                      </ComboboxContent>
+                    </Combobox>
                   </Flex>
                 </motion.div>
               )}

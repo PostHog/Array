@@ -136,7 +136,7 @@ export function SignalsStep({ onNext, onBack }: SignalsStepProps) {
               onClick={() => void handleContinue()}
               disabled={isLoading}
             >
-              Continue
+              Continue to setup
               <ArrowRight size={16} weight="bold" />
             </Button>
           ) : (

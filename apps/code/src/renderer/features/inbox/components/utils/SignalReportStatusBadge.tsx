@@ -12,7 +12,7 @@ const STATUS_TOOLTIPS: Record<string, string> = {
   potential:
     "Gathering signals. The report will be queued once enough signals accumulate.",
   failed: "Research failed. The report may be retried automatically.",
-  suppressed: "This report has been dismissed.",
+  suppressed: "This report has been suppressed and is out of your inbox.",
   deleted: "This report has been deleted.",
 };
 

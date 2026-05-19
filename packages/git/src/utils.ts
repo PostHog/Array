@@ -2,11 +2,12 @@ import { execFile } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import gitUrlParse from "git-url-parse";
 
-export interface GitHubRepo {
-  organization: string;
-  repository: string;
-}
+export type GitHubUrl =
+  | { kind: "repo"; owner: string; repo: string }
+  | { kind: "issue"; owner: string; repo: string; number: number }
+  | { kind: "pr"; owner: string; repo: string; number: number };
 
 export async function safeSymlink(
   source: string,
@@ -107,27 +108,86 @@ function execFileAsync(
   });
 }
 
-export interface GitHubPr {
-  owner: string;
-  repo: string;
-  number: number;
+async function chmodTreeWritable(target: string): Promise<void> {
+  let stat: import("node:fs").Stats;
+  try {
+    stat = await fs.lstat(target);
+  } catch {
+    return;
+  }
+  if (stat.isSymbolicLink()) return;
+  try {
+    await fs.chmod(target, stat.isDirectory() ? 0o700 : 0o600);
+  } catch (error) {
+    console.warn(`forceRemove: chmod failed on ${target}`, error);
+  }
+  if (!stat.isDirectory()) return;
+  let entries: string[];
+  try {
+    entries = await fs.readdir(target);
+  } catch (error) {
+    console.warn(`forceRemove: readdir failed on ${target}`, error);
+    return;
+  }
+  await Promise.all(
+    entries.map((entry) => chmodTreeWritable(path.join(target, entry))),
+  );
 }
 
-export function parsePrUrl(prUrl: string): GitHubPr | null {
-  const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
-  if (!match) return null;
-  return { owner: match[1], repo: match[2], number: Number(match[3]) };
+/**
+ * Recursively remove a path, retrying after chmod'ing the tree writable when
+ * the kernel rejects the initial removal with EACCES/EPERM. Worktrees commonly
+ * contain read-only subtrees populated by Go's module cache (which marks every
+ * cached directory mode 0555); plain `fs.rm` cannot unlink entries from those
+ * parents until we restore the write bit.
+ */
+export async function forceRemove(target: string): Promise<void> {
+  try {
+    await fs.rm(target, { recursive: true, force: true, maxRetries: 3 });
+    return;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "EACCES" && code !== "EPERM") throw error;
+  }
+  await chmodTreeWritable(target);
+  await fs.rm(target, { recursive: true, force: true, maxRetries: 3 });
 }
 
-export function parseGitHubUrl(url: string): GitHubRepo | null {
-  // Trim whitespace/newlines that git commands may include
-  const trimmedUrl = url.trim();
+export function parseGithubUrl(
+  url: string | null | undefined,
+): GitHubUrl | null {
+  if (!url) return null;
+  let parsed: gitUrlParse.GitUrl;
+  try {
+    parsed = gitUrlParse(url.trim());
+  } catch {
+    return null;
+  }
+  // git-url-parse normalizes source to github.com for any *.github.com host,
+  // so check resource to reject api.github.com etc. SSH uses ssh.github.com.
+  const resource = parsed.resource.toLowerCase();
+  if (resource !== "github.com" && resource !== "ssh.github.com") return null;
 
-  const match =
-    trimmedUrl.match(/github\.com[:/](.+?)\/(.+?)(\.git)?$/) ||
-    trimmedUrl.match(/git@github\.com:(.+?)\/(.+?)(\.git)?$/);
+  // Read pathname directly: git-url-parse keeps /pull/N in full_name but
+  // strips /issues/N, and stuffs unknown path segments into owner. Pathname
+  // is consistent across HTTPS, SSH, and shorthand inputs.
+  const raw = parsed.pathname.split("/");
+  if (raw[0] !== "") return null;
+  const parts = raw[raw.length - 1] === "" ? raw.slice(1, -1) : raw.slice(1);
+  if (parts.length < 2 || parts.some((p) => p === "")) return null;
+  const [owner, repoRaw, segment, num] = parts;
+  const repo = repoRaw.replace(/\.git$/, "");
 
-  if (!match) return null;
+  if (segment === "issues" || segment === "pull") {
+    const number = Number(num);
+    if (!Number.isInteger(number) || number <= 0) return null;
+    return {
+      kind: segment === "pull" ? "pr" : "issue",
+      owner,
+      repo,
+      number,
+    };
+  }
 
-  return { organization: match[1], repository: match[2].replace(/\.git$/, "") };
+  return { kind: "repo", owner, repo };
 }

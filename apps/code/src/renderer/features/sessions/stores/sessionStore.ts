@@ -32,6 +32,7 @@ export type OptimisticItem =
       id: string;
       content: string;
       timestamp: number;
+      pinToTop?: boolean;
     }
   | {
       type: "skill_button_action";
@@ -93,6 +94,22 @@ export interface AgentSession {
   /** Pre-computed conversation summary for commit/PR generation context */
   conversationSummary?: string;
   idleKilled?: boolean;
+  /** Semver of the connected agent process. Populated from the
+   * `_posthog/run_started` notification so that the UI can gate features
+   * against agent capabilities (especially relevant for cloud sandboxes
+   * where the agent version can lag behind the desktop). */
+  agentVersion?: string;
+  /** Task run id for which the agent is idle.
+   * Set ONLY on `_posthog/turn_complete`, cleared when a
+   * `session/prompt` (or `sendCloudPrompt`) starts a turn. `run_started`
+   * does NOT set it: the initial/resume turn begins right after that
+   * handshake, so treating run_started as idle would drain a queued
+   * follow-up into the boot/resume turn race. Drives transport-drop queue
+   * recovery. Deliberately tracked independently of `isPromptPending`:
+   * `retryCloudTaskWatch()` forcibly clears `isPromptPending` on reconnect,
+   * so it cannot be trusted to mean "no remote turn in flight", using it
+   * for recovery would dispatch a queued follow-up mid-turn. */
+  agentIdleForRunId?: string;
 }
 
 // --- Config Option Helpers ---
@@ -361,33 +378,65 @@ export const sessionStoreSetters = {
   },
 
   dequeueMessagesAsText: (taskId: string): string | null => {
-    let result: string | null = null;
-    useSessionStore.setState((state) => {
-      const taskRunId = state.taskIdIndex[taskId];
-      if (!taskRunId) return;
+    // Read the queue from the frozen committed state BEFORE entering the
+    // immer draft — same rationale as `dequeueMessages`: anything captured
+    // through a draft proxy can be revoked when setState exits.
+    const state = useSessionStore.getState();
+    const taskRunId = state.taskIdIndex[taskId];
+    if (!taskRunId) return null;
+    const session = state.sessions[taskRunId];
+    if (!session || session.messageQueue.length === 0) return null;
 
-      const session = state.sessions[taskRunId];
-      if (!session || session.messageQueue.length === 0) return;
-
-      result = session.messageQueue.map((msg) => msg.content).join("\n\n");
-      session.messageQueue = [];
+    const combined = session.messageQueue
+      .map((msg) => msg.content)
+      .join("\n\n");
+    useSessionStore.setState((draft) => {
+      const trid = draft.taskIdIndex[taskId];
+      if (!trid) return;
+      const draftSession = draft.sessions[trid];
+      if (draftSession) draftSession.messageQueue = [];
     });
-    return result;
+    return combined;
   },
 
   dequeueMessages: (taskId: string): QueuedMessage[] => {
-    let queuedMessages: QueuedMessage[] = [];
+    // Read the queue from the frozen committed state BEFORE entering the
+    // immer draft, otherwise the items returned are proxies that get
+    // revoked when setState exits and any later access throws
+    // "Cannot perform 'get' on a proxy that has been revoked".
+    const state = useSessionStore.getState();
+    const taskRunId = state.taskIdIndex[taskId];
+    if (!taskRunId) return [];
+    const session = state.sessions[taskRunId];
+    if (!session || session.messageQueue.length === 0) return [];
+
+    const queuedMessages = [...session.messageQueue];
+
+    useSessionStore.setState((draft) => {
+      const trid = draft.taskIdIndex[taskId];
+      if (!trid) return;
+      const draftSession = draft.sessions[trid];
+      if (draftSession) {
+        draftSession.messageQueue = [];
+      }
+    });
+
+    return queuedMessages;
+  },
+
+  /**
+   * Splice messages back at the head of the queue. Used to roll back a
+   * dispatch attempt that drained the queue but failed before delivery.
+   */
+  prependQueuedMessages: (taskId: string, messages: QueuedMessage[]) => {
+    if (messages.length === 0) return;
     useSessionStore.setState((state) => {
       const taskRunId = state.taskIdIndex[taskId];
       if (!taskRunId) return;
-
       const session = state.sessions[taskRunId];
-      if (!session || session.messageQueue.length === 0) return;
-
-      queuedMessages = [...session.messageQueue];
-      session.messageQueue = [];
+      if (!session) return;
+      session.messageQueue = [...messages, ...session.messageQueue];
     });
-    return queuedMessages;
   },
 
   appendOptimisticItem: (
@@ -412,6 +461,17 @@ export const sessionStoreSetters = {
       const session = state.sessions[taskRunId];
       if (session) {
         session.optimisticItems = [];
+      }
+    });
+  },
+
+  clearTailOptimisticItems: (taskRunId: string): void => {
+    useSessionStore.setState((state) => {
+      const session = state.sessions[taskRunId];
+      if (session) {
+        session.optimisticItems = session.optimisticItems.filter(
+          (item) => item.type !== "user_message" || item.pinToTop !== false,
+        );
       }
     });
   },

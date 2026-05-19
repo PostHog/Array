@@ -30,6 +30,7 @@ interface OptionRowProps {
   customInputPlaceholder: string;
   isEditing: boolean;
   submitLabel: string;
+  disabled?: boolean;
   onCustomInputChange: (value: string) => void;
   onNavigateUp: () => void;
   onNavigateDown: () => void;
@@ -52,6 +53,7 @@ export function OptionRow({
   customInputPlaceholder,
   isEditing,
   submitLabel,
+  disabled = false,
   onCustomInputChange,
   onNavigateUp,
   onNavigateDown,
@@ -63,34 +65,37 @@ export function OptionRow({
 }: OptionRowProps) {
   if (isSubmitOption(option.id) || isCancelOption(option.id)) {
     const isCancel = isCancelOption(option.id);
+    const submitBg = disabled
+      ? "bg-(--gray-4)"
+      : isSelected
+        ? "bg-(--blue-8)"
+        : isHovered
+          ? "bg-(--blue-4)"
+          : "bg-(--blue-3)";
     return (
       <Flex
         align="center"
         justify="center"
         gap="2"
-        onClick={onClick}
+        onClick={disabled ? undefined : onClick}
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
         px="2"
-        className={`inline-flex h-[28px] cursor-pointer rounded-(--radius-2) ${
-          isCancel
-            ? isSelected
-              ? "bg-(--gray-6)"
-              : "bg-(--gray-3)"
-            : isSelected
-              ? "bg-(--blue-8)"
-              : isHovered
-                ? "bg-(--blue-4)"
-                : "bg-(--blue-3)"
+        className={`inline-flex h-[28px] rounded-(--radius-2) ${
+          disabled ? "cursor-not-allowed" : "cursor-pointer"
+        } ${
+          isCancel ? (isSelected ? "bg-(--gray-6)" : "bg-(--gray-3)") : submitBg
         }`}
       >
         <Text
           className={`font-medium text-[13px] ${
-            isSelected
-              ? isCancel
-                ? "text-gray-12"
-                : "text-blue-12"
-              : "text-gray-12"
+            disabled
+              ? "text-gray-9"
+              : isSelected
+                ? isCancel
+                  ? "text-gray-12"
+                  : "text-blue-12"
+                : "text-gray-12"
           }`}
         >
           {isCancel ? option.label : submitLabel}
@@ -120,14 +125,14 @@ export function OptionRow({
 
     const displayText = compactHomePath(option.label);
     const textClass = isSelected
-      ? "text-blue-11"
+      ? "text-primary"
       : isHovered
-        ? "text-blue-11"
+        ? "text-primary"
         : "text-gray-12";
 
     return (
       <Text
-        className={`whitespace-pre-wrap font-medium text-[13px] ${textClass}`}
+        className={`whitespace-pre-wrap font-medium text-[13px] leading-4 ${textClass}`}
       >
         {displayText}
       </Text>
@@ -142,24 +147,24 @@ export function OptionRow({
       py="1"
       className={`-mx-3 cursor-pointer select-none rounded-(--radius-2) pt-[4px] pr-3 pb-[4px] pl-3 ${
         isSelected
-          ? "bg-(--blue-3)"
+          ? "bg-primary/10"
           : isHovered
-            ? "bg-(--gray-a3)"
+            ? "bg-fill-hover"
             : "bg-transparent"
       }`}
     >
       <Flex align="center" gap="2" className="leading-4">
         <Text
-          className={`w-[1ch] shrink-0 text-[13px] leading-4 ${isSelected ? "text-blue-11" : "text-gray-11"}`}
+          className={`w-[1ch] shrink-0 text-[13px] leading-4 ${isSelected ? "text-primary" : "text-gray-11"}`}
         >
           {isSelected ? "›" : ""}
         </Text>
         <Text
           className={`min-w-[16px] shrink-0 whitespace-nowrap text-right text-[13px] leading-4 ${
             isSelected
-              ? "text-blue-11"
+              ? "text-primary"
               : isHovered
-                ? "text-blue-11"
+                ? "text-primary"
                 : "text-gray-11"
           }`}
         >

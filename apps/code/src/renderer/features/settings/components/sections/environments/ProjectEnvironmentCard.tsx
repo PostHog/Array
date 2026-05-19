@@ -3,7 +3,7 @@ import type { RegisteredFolder } from "@main/services/folders/schemas";
 import { Folder as FolderIcon, Plus } from "@phosphor-icons/react";
 import { Flex, IconButton, Text } from "@radix-ui/themes";
 import { EnvironmentRow } from "./EnvironmentRow";
-import type { ProjectEnvironments } from "./EnvironmentsSettings";
+import type { ProjectEnvironments } from "./LocalEnvironmentsSettings";
 
 function extractOrgName(remoteUrl: string | null): string | null {
   if (!remoteUrl) return null;

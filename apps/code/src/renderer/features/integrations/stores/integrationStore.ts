@@ -26,6 +26,8 @@ interface IntegrationStore {
 interface IntegrationSelectors {
   githubIntegrations: Integration[];
   hasGithubIntegration: boolean;
+  slackIntegrations: Integration[];
+  hasSlackIntegration: boolean;
 }
 
 export const useIntegrationStore = create<IntegrationStore>((set) => ({
@@ -36,9 +38,12 @@ export const useIntegrationStore = create<IntegrationStore>((set) => ({
 export const useIntegrationSelectors = (): IntegrationSelectors => {
   const integrations = useIntegrationStore((state) => state.integrations);
   const githubIntegrations = integrations.filter((i) => i.kind === "github");
+  const slackIntegrations = integrations.filter((i) => i.kind === "slack");
 
   return {
     githubIntegrations,
     hasGithubIntegration: githubIntegrations.length > 0,
+    slackIntegrations,
+    hasSlackIntegration: slackIntegrations.length > 0,
   };
 };

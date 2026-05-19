@@ -33,7 +33,7 @@ export function SignalReportSummaryMarkdown({
   if (variant === "list") {
     return (
       <Box
-        className="line-clamp-4 min-w-0 overflow-hidden text-pretty text-left text-(--gray-11) text-[12px] [&_.rt-Text]:mb-0! [&_a]:pointer-events-auto [&_li]:mb-0 [&_p]:mb-0! [&_ul]:mb-0!"
+        className="line-clamp-3 min-w-0 overflow-hidden text-pretty text-left text-(--gray-11) text-[12px] [&_.rt-Text]:mb-0! [&_a]:pointer-events-auto [&_li]:mb-0 [&_p]:mb-0! [&_ul]:mb-0!"
         style={italicStyle}
       >
         <MarkdownRenderer content={listMarkdown} />

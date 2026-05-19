@@ -123,7 +123,7 @@ export function CommandCenterToolbar({
         onValueChange={(v) => setLayout(v as LayoutPreset)}
       >
         <Select.Trigger variant="ghost" className="text-[12px]" />
-        <Select.Content>
+        <Select.Content position="popper">
           {LAYOUT_OPTIONS.map((opt) => (
             <Select.Item key={opt.value} value={opt.value}>
               <Flex align="center" gap="2">

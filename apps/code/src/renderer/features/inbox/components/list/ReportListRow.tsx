@@ -4,7 +4,7 @@ import { FileTextIcon } from "@phosphor-icons/react";
 import { Checkbox, Flex, Tooltip } from "@radix-ui/themes";
 import type { SignalReport } from "@shared/types";
 import { motion } from "framer-motion";
-import type { KeyboardEvent, MouseEvent } from "react";
+import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 
 function SourceProductIcon({ sourceProducts }: { sourceProducts?: string[] }) {
   const firstProduct = sourceProducts?.[0];
@@ -45,6 +45,10 @@ interface ReportListRowProps {
   onClick: (event: { metaKey: boolean; shiftKey: boolean }) => void;
   onToggleChecked: () => void;
   index: number;
+  /** Optional badge rendered before the standard status/priority/actionability badges. */
+  prependBadges?: ReactNode;
+  /** Optional override for the icon shown in the left-side icon column. */
+  iconOverride?: ReactNode;
 }
 
 export function ReportListRow({
@@ -54,6 +58,8 @@ export function ReportListRow({
   onClick,
   onToggleChecked,
   index,
+  prependBadges,
+  iconOverride,
 }: ReportListRowProps) {
   const isInteractiveTarget = (target: EventTarget | null): boolean => {
     return (
@@ -69,18 +75,10 @@ export function ReportListRow({
     onClick({ metaKey: e.metaKey, shiftKey: e.shiftKey });
   };
 
-  const rowBgClass = isSelected
-    ? report.is_suggested_reviewer
-      ? "bg-amber-3"
-      : "bg-gray-3"
-    : report.is_suggested_reviewer
-      ? "bg-amber-2"
-      : "";
+  const rowBgClass = isSelected ? "bg-gray-3" : "";
 
   const hoverOverlayClass =
-    isSelected && report.is_suggested_reviewer
-      ? "before:bg-amber-12 before:opacity-0 hover:before:opacity-[0.07]"
-      : "before:bg-gray-12 before:opacity-0 hover:before:opacity-[0.07]";
+    "before:bg-gray-12 before:opacity-0 hover:before:opacity-[0.07]";
 
   return (
     <motion.div
@@ -110,14 +108,14 @@ export function ReportListRow({
       }}
       className={[
         "relative isolate w-full cursor-pointer overflow-hidden border-gray-5 border-b py-1.5 pr-4 pl-1.5 text-left",
-        "before:pointer-events-none before:absolute before:inset-0 before:z-[1]",
+        "before:pointer-events-none before:absolute before:inset-0 before:z-1",
         hoverOverlayClass,
         rowBgClass,
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      <Flex align="start" gap="1" className="relative z-[2]">
+      <Flex align="start" gap="1" className="relative z-2">
         <Flex
           align="center"
           justify="center"
@@ -142,11 +140,17 @@ export function ReportListRow({
               }
             />
           ) : (
-            <SourceProductIcon sourceProducts={report.source_products} />
+            (iconOverride ?? (
+              <SourceProductIcon sourceProducts={report.source_products} />
+            ))
           )}
         </Flex>
         <div className="min-w-0 flex-1">
-          <ReportCardContent report={report} compact />
+          <ReportCardContent
+            report={report}
+            compact
+            prependBadges={prependBadges}
+          />
         </div>
       </Flex>
     </motion.div>

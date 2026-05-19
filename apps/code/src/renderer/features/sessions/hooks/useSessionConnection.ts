@@ -91,6 +91,7 @@ export function useSessionConnection({
       initialMode,
       adapter,
       initialModel,
+      task.description ?? undefined,
     );
     return cleanup;
   }, [
@@ -106,6 +107,7 @@ export function useSessionConnection({
     task.latest_run?.model,
     task.latest_run?.runtime_adapter,
     task.latest_run?.state?.initial_permission_mode,
+    task.description,
   ]);
 
   useEffect(() => {

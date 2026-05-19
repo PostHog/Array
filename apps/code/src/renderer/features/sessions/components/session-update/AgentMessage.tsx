@@ -75,11 +75,7 @@ function InlineFileLink({
         type="button"
         onClick={taskId ? handleClick : undefined}
         disabled={!taskId}
-        className={`inline text-(--accent-11) ${taskId ? "cursor-pointer underline-offset-2 hover:underline" : ""}`}
-        style={{
-          all: "unset",
-          font: "inherit",
-        }}
+        className={`m-0 inline border-0 bg-transparent p-0 font-[inherit] text-(--accent-11) text-[length:inherit] ${taskId ? "cursor-pointer underline decoration-(--accent-a8) underline-offset-2 hover:decoration-(--accent-11)" : ""}`}
       >
         {filename}
         {lineSuffix ? `:${lineSuffix}` : ""}
@@ -158,15 +154,16 @@ export const AgentMessage = memo(function AgentMessage({
         content={content}
         componentsOverride={agentComponents}
       />
-      <Box className="absolute top-1 right-1 opacity-0 transition-opacity group-hover/msg:opacity-100">
+      <Box className="absolute top-1 left-full ml-2 opacity-0 transition-opacity group-hover/msg:opacity-100">
         <Tooltip content={copied ? "Copied!" : "Copy message"}>
           <IconButton
             size="1"
             variant="ghost"
             color={copied ? "green" : "gray"}
             onClick={handleCopy}
+            aria-label="Copy message"
           >
-            {copied ? <Check size={12} /> : <Copy size={12} />}
+            {copied ? <Check size={14} /> : <Copy size={14} />}
           </IconButton>
         </Tooltip>
       </Box>

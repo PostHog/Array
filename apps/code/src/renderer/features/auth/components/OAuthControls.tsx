@@ -1,7 +1,6 @@
 import { useOAuthFlow } from "@features/auth/hooks/useOAuthFlow";
 import { Callout, Flex, Spinner } from "@radix-ui/themes";
 import posthogIcon from "@renderer/assets/images/posthog-icon.svg";
-import { REGION_LABELS } from "@shared/types/regions";
 import { RegionSelect } from "./RegionSelect";
 
 export function OAuthControls() {
@@ -15,7 +14,13 @@ export function OAuthControls() {
   } = useOAuthFlow();
 
   return (
-    <>
+    <Flex direction="column" gap="3" className="w-full">
+      <RegionSelect
+        region={region}
+        onRegionChange={handleRegionChange}
+        disabled={isPending}
+      />
+
       {errorMessage && (
         <Callout.Root color="red" size="1">
           <Callout.Text>{errorMessage}</Callout.Text>
@@ -50,15 +55,6 @@ export function OAuthControls() {
         )}
         {isPending ? "Cancel" : "Sign in / sign up with PostHog"}
       </button>
-
-      <Flex direction="column" gap="2" align="center">
-        <RegionSelect
-          region={region}
-          regionLabel={REGION_LABELS[region]}
-          onRegionChange={handleRegionChange}
-          disabled={isPending}
-        />
-      </Flex>
-    </>
+    </Flex>
   );
 }

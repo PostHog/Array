@@ -92,7 +92,16 @@ export function buildPermissionOptions(
   return permissionOptions("Yes, always allow");
 }
 
-export function buildExitPlanModePermissionOptions(): PermissionOption[] {
+const CONTINUE_LABELS: Record<string, string> = {
+  auto: 'Yes, continue in "auto" mode',
+  acceptEdits: "Yes, continue auto-accepting edits",
+  default: "Yes, continue manually approving edits",
+  bypassPermissions: "Yes, continue bypassing all permissions",
+};
+
+export function buildExitPlanModePermissionOptions(
+  previousMode?: string,
+): PermissionOption[] {
   const options: PermissionOption[] = [];
 
   if (ALLOW_BYPASS) {
@@ -119,13 +128,30 @@ export function buildExitPlanModePermissionOptions(): PermissionOption[] {
       name: "Yes, and manually approve edits",
       optionId: "default",
     },
-    {
-      kind: "reject_once",
-      name: "No, and tell the agent what to do differently",
-      optionId: "reject_with_feedback",
-      _meta: { customInput: true },
-    },
   );
+
+  const previousIndex = previousMode
+    ? options.findIndex((opt) => opt.optionId === previousMode)
+    : -1;
+  if (previousIndex > 0) {
+    const [previous] = options.splice(previousIndex, 1);
+    const continueLabel = CONTINUE_LABELS[previous.optionId];
+    options.unshift(
+      continueLabel ? { ...previous, name: continueLabel } : previous,
+    );
+  } else if (previousIndex === 0) {
+    const continueLabel = CONTINUE_LABELS[options[0].optionId];
+    if (continueLabel) {
+      options[0] = { ...options[0], name: continueLabel };
+    }
+  }
+
+  options.push({
+    kind: "reject_once",
+    name: "No, and tell the agent what to do differently",
+    optionId: "reject_with_feedback",
+    _meta: { customInput: true },
+  });
 
   return options;
 }

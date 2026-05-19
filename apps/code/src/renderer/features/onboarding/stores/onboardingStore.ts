@@ -8,7 +8,7 @@ const log = logger.scope("onboarding-store");
 interface OnboardingStoreState {
   currentStep: OnboardingStep;
   hasCompletedOnboarding: boolean;
-  isConnectingGithub: boolean;
+  hasCompletedSetup: boolean;
   selectedProjectId: number | null;
   selectedDirectory: string;
 }
@@ -16,9 +16,9 @@ interface OnboardingStoreState {
 interface OnboardingStoreActions {
   setCurrentStep: (step: OnboardingStep) => void;
   completeOnboarding: () => void;
+  completeSetup: () => void;
   resetOnboarding: () => void;
   resetSelections: () => void;
-  setConnectingGithub: (isConnecting: boolean) => void;
   selectProjectId: (projectId: number | null) => void;
   setSelectedDirectory: (path: string) => void;
 }
@@ -28,7 +28,7 @@ type OnboardingStore = OnboardingStoreState & OnboardingStoreActions;
 const initialState: OnboardingStoreState = {
   currentStep: "welcome",
   hasCompletedOnboarding: false,
-  isConnectingGithub: false,
+  hasCompletedSetup: false,
   selectedProjectId: null,
   selectedDirectory: "",
 };
@@ -43,14 +43,13 @@ export const useOnboardingStore = create<OnboardingStore>()(
         log.info("completeOnboarding");
         set({ hasCompletedOnboarding: true });
       },
+      completeSetup: () => set({ hasCompletedSetup: true }),
       resetOnboarding: () => set({ ...initialState }),
       resetSelections: () =>
         set({
           currentStep: "welcome",
-          isConnectingGithub: false,
           selectedProjectId: null,
         }),
-      setConnectingGithub: (isConnectingGithub) => set({ isConnectingGithub }),
       selectProjectId: (selectedProjectId) => set({ selectedProjectId }),
       setSelectedDirectory: (selectedDirectory) => set({ selectedDirectory }),
     }),
@@ -59,6 +58,7 @@ export const useOnboardingStore = create<OnboardingStore>()(
       partialize: (state) => ({
         currentStep: state.currentStep,
         hasCompletedOnboarding: state.hasCompletedOnboarding,
+        hasCompletedSetup: state.hasCompletedSetup,
         selectedProjectId: state.selectedProjectId,
         selectedDirectory: state.selectedDirectory,
       }),

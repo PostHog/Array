@@ -92,7 +92,7 @@ export function ModeSelector({
   const currentValue = modeOption.currentValue;
   const currentStyle = getStyle(currentValue);
   const currentLabel =
-    options.find((opt) => opt.value === currentValue)?.name ?? currentValue;
+    allOptions.find((opt) => opt.value === currentValue)?.name ?? currentValue;
 
   return (
     <DropdownMenu>

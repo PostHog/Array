@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { GitSaga, type GitSagaInput } from "../git-saga";
 import { addToLocalExclude, branchExists, getDefaultBranch } from "../queries";
-import { safeSymlink } from "../utils";
+import { forceRemove, safeSymlink } from "../utils";
 import { processWorktreeInclude, runPostCheckoutHook } from "../worktree";
 
 export interface CreateWorktreeInput extends GitSagaInput {
@@ -50,7 +50,7 @@ export class CreateWorktreeSaga extends GitSaga<
         try {
           await this.git.raw(["worktree", "remove", worktreePath, "--force"]);
         } catch {
-          await fs.rm(worktreePath, { recursive: true, force: true });
+          await forceRemove(worktreePath);
           await this.git.raw(["worktree", "prune"]);
         }
         try {
@@ -157,7 +157,7 @@ export class CreateWorktreeForBranchSaga extends GitSaga<
         try {
           await this.git.raw(["worktree", "remove", worktreePath, "--force"]);
         } catch {
-          await fs.rm(worktreePath, { recursive: true, force: true });
+          await forceRemove(worktreePath);
           await this.git.raw(["worktree", "prune"]);
         }
       },
@@ -274,7 +274,7 @@ export class DeleteWorktreeSaga extends GitSaga<
         try {
           await this.git.raw(["worktree", "remove", worktreePath, "--force"]);
         } catch {
-          await fs.rm(worktreePath, { recursive: true, force: true });
+          await forceRemove(worktreePath);
           await this.git.raw(["worktree", "prune"]);
         }
       },

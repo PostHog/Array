@@ -1,4 +1,3 @@
-import { ConnectivityPrompt } from "@components/ConnectivityPrompt";
 import { HeaderRow } from "@components/HeaderRow";
 import { HedgehogMode } from "@components/HedgehogMode";
 import { KeyboardShortcutsSheet } from "@components/KeyboardShortcutsSheet";
@@ -11,9 +10,11 @@ import { CommandMenu } from "@features/command/components/CommandMenu";
 import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
 import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
+import { McpServersView } from "@features/mcp-servers/components/McpServersView";
 import { FolderSettingsView } from "@features/settings/components/FolderSettingsView";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { SetupView } from "@features/setup/components/SetupView";
 import { MainSidebar } from "@features/sidebar/components/MainSidebar";
 import { useSidebarData } from "@features/sidebar/hooks/useSidebarData";
 import { useVisualTaskOrder } from "@features/sidebar/hooks/useVisualTaskOrder";
@@ -24,21 +25,35 @@ import { useTasks } from "@features/tasks/hooks/useTasks";
 import { TourOverlay } from "@features/tour/components/TourOverlay";
 import { useTourStore } from "@features/tour/stores/tourStore";
 import { createFirstTaskTour } from "@features/tour/tours/createFirstTaskTour";
-import { useConnectivity } from "@hooks/useConnectivity";
+import {
+  useWorkspaces,
+  workspaceApi,
+} from "@features/workspace/hooks/useWorkspace";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { Box, Flex } from "@radix-ui/themes";
-import { BILLING_FLAG } from "@shared/constants";
+import { useTRPC } from "@renderer/trpc/client";
+import { BILLING_FLAG, SYNC_CLOUD_TASKS_FLAG } from "@shared/constants";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
-import { useCallback, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { logger } from "@utils/logger";
+import { useCallback, useEffect, useRef } from "react";
 import { useTaskDeepLink } from "../hooks/useTaskDeepLink";
 import { GlobalEventHandlers } from "./GlobalEventHandlers";
 
+const log = logger.scope("main-layout");
+
 export function MainLayout() {
-  const { view, hydrateTask, navigateToTaskInput, navigateToTask } =
-    useNavigationStore();
+  const {
+    view,
+    hydrateTask,
+    navigateToTaskInput,
+    navigateToTask,
+    taskInputReportAssociation,
+    taskInputCloudRepository,
+  } = useNavigationStore();
   const {
     isOpen: commandMenuOpen,
     setOpen: setCommandMenuOpen,
@@ -50,8 +65,12 @@ export function MainLayout() {
     close: closeShortcutsSheet,
   } = useShortcutsSheetStore();
   const { data: tasks } = useTasks();
-  const { showPrompt, isChecking, check, dismiss } = useConnectivity();
+  const { data: workspaces, isFetched: workspacesFetched } = useWorkspaces();
+  const trpcReact = useTRPC();
+  const queryClient = useQueryClient();
+  const reconcilingTaskIds = useRef<Set<string>>(new Set());
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
 
   // Space switcher data
   const sidebarData = useSidebarData({ activeView: view });
@@ -74,6 +93,53 @@ export function MainLayout() {
       hydrateTask(tasks);
     }
   }, [tasks, hydrateTask]);
+
+  useEffect(() => {
+    if (!syncCloudTasksEnabled) return;
+    if (!tasks || !workspaces || !workspacesFetched) return;
+    const missing = tasks.filter(
+      (t) =>
+        t.latest_run?.environment === "cloud" &&
+        !workspaces[t.id] &&
+        !reconcilingTaskIds.current.has(t.id),
+    );
+    if (missing.length === 0) return;
+    for (const t of missing) reconcilingTaskIds.current.add(t.id);
+    void Promise.allSettled(
+      missing.map((t) =>
+        workspaceApi.create({
+          taskId: t.id,
+          mainRepoPath: "",
+          folderId: "",
+          folderPath: "",
+          mode: "cloud",
+        }),
+      ),
+    ).then((results) => {
+      let anySucceeded = false;
+      for (const [i, r] of results.entries()) {
+        const id = missing[i].id;
+        reconcilingTaskIds.current.delete(id);
+        if (r.status === "rejected") {
+          log.warn(`Failed to reconcile workspace for task ${id}`, r.reason);
+        } else {
+          anySucceeded = true;
+        }
+      }
+      if (anySucceeded) {
+        void queryClient.invalidateQueries(
+          trpcReact.workspace.getAll.pathFilter(),
+        );
+      }
+    });
+  }, [
+    syncCloudTasksEnabled,
+    tasks,
+    workspaces,
+    workspacesFetched,
+    queryClient,
+    trpcReact,
+  ]);
 
   useEffect(() => {
     if (view.type === "task-detail" && !view.data && !view.taskId) {
@@ -100,7 +166,18 @@ export function MainLayout() {
         <MainSidebar />
 
         <Box flexGrow="1" overflow="hidden">
-          {view.type === "task-input" && <TaskInput />}
+          {view.type === "task-input" && (
+            <TaskInput
+              initialPrompt={view.initialPrompt}
+              initialPromptKey={view.taskInputRequestId}
+              initialCloudRepository={
+                view.initialCloudRepository ?? taskInputCloudRepository
+              }
+              reportAssociation={
+                view.reportAssociation ?? taskInputReportAssociation
+              }
+            />
+          )}
 
           {view.type === "task-detail" && view.data && (
             <TaskDetail key={view.data.id} task={view.data} />
@@ -115,6 +192,9 @@ export function MainLayout() {
           {view.type === "command-center" && <CommandCenterView />}
 
           {view.type === "skills" && <SkillsView />}
+
+          {view.type === "mcp-servers" && <McpServersView />}
+          {view.type === "setup" && <SetupView />}
         </Box>
       </Flex>
 
@@ -130,12 +210,6 @@ export function MainLayout() {
       <KeyboardShortcutsSheet
         open={shortcutsSheetOpen}
         onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
-      />
-      <ConnectivityPrompt
-        open={showPrompt}
-        isChecking={isChecking}
-        onRetry={check}
-        onDismiss={dismiss}
       />
       <GlobalEventHandlers
         onToggleCommandMenu={handleToggleCommandMenu}

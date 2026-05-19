@@ -4,8 +4,12 @@ import {
   sessionStoreSetters,
   useSessionStore,
 } from "@features/sessions/stores/sessionStore";
+import type { Schemas } from "@renderer/api/generated";
 import type { Task } from "@shared/types";
-import { generateTitleAndSummary } from "@utils/generateTitle";
+import {
+  enrichDescriptionWithFileContent,
+  generateTitleAndSummary,
+} from "@utils/generateTitle";
 import { logger } from "@utils/logger";
 import { getCachedTask, queryClient } from "@utils/queryClient";
 import { extractUserPromptsFromEvents } from "@utils/session";
@@ -32,8 +36,7 @@ export function useChatTitleGenerator(taskId: string): void {
     if (isGenerating.current) return;
 
     if (lastGeneratedAtCount.current === null) {
-      lastGeneratedAtCount.current = promptCount;
-      return;
+      lastGeneratedAtCount.current = 0;
     }
 
     const shouldGenerate =
@@ -61,18 +64,21 @@ export function useChatTitleGenerator(taskId: string): void {
     const promptsForTitle =
       promptCount === 1 ? allPrompts : allPrompts.slice(-REGENERATE_INTERVAL);
 
-    const content = promptsForTitle.map((p, i) => `${i + 1}. ${p}`).join("\n");
+    const rawContent = promptsForTitle
+      .map((p, i) => `${i + 1}. ${p}`)
+      .join("\n");
 
     const run = async () => {
       try {
+        const content = await enrichDescriptionWithFileContent(rawContent);
         const result = await generateTitleAndSummary(content);
         if (result) {
           const { title, summary } = result;
-          if (title) {
-            if (getCachedTask(taskId)?.title_manually_set) {
-              log.debug("Skipping auto-title, user renamed task", { taskId });
-              return;
-            }
+          const titleLocked = !!getCachedTask(taskId)?.title_manually_set;
+
+          if (title && titleLocked) {
+            log.debug("Skipping auto-title, user renamed task", { taskId });
+          } else if (title) {
             const client = await getAuthenticatedClient();
             if (client) {
               await client.updateTask(taskId, { title });
@@ -83,10 +89,16 @@ export function useChatTitleGenerator(taskId: string): void {
                     task.id === taskId ? { ...task, title } : task,
                   ),
               );
+              queryClient.setQueriesData<Schemas.TaskSummary[]>(
+                { queryKey: ["tasks", "summaries"] },
+                (old) =>
+                  old?.map((task) =>
+                    task.id === taskId ? { ...task, title } : task,
+                  ),
+              );
               getSessionService().updateSessionTaskTitle(taskId, title);
               log.debug("Updated task title from conversation", {
                 taskId,
-                title,
                 promptCount,
               });
             }
@@ -99,7 +111,6 @@ export function useChatTitleGenerator(taskId: string): void {
 
             log.debug("Updated task summary from conversation", {
               taskId,
-              summary,
               promptCount,
             });
           }

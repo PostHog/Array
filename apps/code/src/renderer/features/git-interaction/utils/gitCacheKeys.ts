@@ -23,4 +23,21 @@ export function invalidateGitBranchQueries(repoPath: string) {
   queryClient.invalidateQueries(trpc.git.getLatestCommit.queryFilter(input));
   queryClient.invalidateQueries(trpc.git.getPrStatus.queryFilter(input));
   queryClient.invalidateQueries(trpc.git.getFileAtHead.pathFilter());
+  queryClient.invalidateQueries(
+    trpc.git.getLocalBranchChangedFiles.pathFilter(),
+  );
+}
+
+export function clearGitReviewQueries() {
+  queryClient.removeQueries(trpc.git.getDiffCached.pathFilter());
+  queryClient.removeQueries(trpc.git.getDiffUnstaged.pathFilter());
+  queryClient.removeQueries(trpc.git.getFileAtHead.pathFilter());
+  queryClient.removeQueries(trpc.fs.readRepoFile.pathFilter());
+  queryClient.removeQueries(trpc.fs.readRepoFiles.pathFilter());
+  queryClient.removeQueries(trpc.fs.readRepoFileBounded.pathFilter());
+  queryClient.removeQueries(trpc.fs.readRepoFilesBounded.pathFilter());
+  queryClient.removeQueries(trpc.git.getLocalBranchChangedFiles.pathFilter());
+  queryClient.removeQueries(trpc.git.getPrChangedFiles.pathFilter());
+  queryClient.removeQueries(trpc.git.getPrDetailsByUrl.pathFilter());
+  queryClient.removeQueries(trpc.git.getPrReviewComments.pathFilter());
 }

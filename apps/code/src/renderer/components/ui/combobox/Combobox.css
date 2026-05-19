@@ -33,6 +33,9 @@
 }
 
 .combobox-input-wrapper {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -87,8 +90,9 @@
 }
 
 .combobox-content [cmdk-list] {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  max-height: 240px;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -286,6 +290,9 @@
 }
 
 .combobox-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
   border-top: 1px solid var(--gray-a6);
   padding: var(--combobox-content-padding);
   flex-shrink: 0;

@@ -14,9 +14,14 @@ const handoffApiInput = handoffBaseInput.extend({
   teamId: z.number(),
 });
 
+export const handoffErrorCodeSchema = z.enum(["github_authorization_required"]);
+
+export type HandoffErrorCode = z.infer<typeof handoffErrorCodeSchema>;
+
 const handoffBaseResult = z.object({
   success: z.boolean(),
   error: z.string().optional(),
+  code: handoffErrorCodeSchema.optional(),
 });
 
 export const handoffPreflightInput = handoffApiInput;

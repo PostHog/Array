@@ -3,7 +3,7 @@ import { Divider } from "@components/Divider";
 import { HighlightedCode } from "@components/HighlightedCode";
 import { List, ListItem } from "@components/List";
 import { parseGithubIssueUrl } from "@features/message-editor/utils/githubIssueUrl";
-import { Blockquote, Checkbox, Code, Em, Kbd, Text } from "@radix-ui/themes";
+import { Blockquote, Checkbox, Code, Kbd, Text } from "@radix-ui/themes";
 import { memo, useMemo } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
@@ -71,7 +71,7 @@ export const baseComponents: Components = {
     );
   },
   pre: ({ children }) => <CodeBlock size="1">{children}</CodeBlock>,
-  em: ({ children }) => <Em>{children}</Em>,
+  em: ({ children }) => <em>{children}</em>,
   i: ({ children }) => <i>{children}</i>,
   strong: ({ children }) => (
     <strong className="text-(--accent-11)">{children}</strong>

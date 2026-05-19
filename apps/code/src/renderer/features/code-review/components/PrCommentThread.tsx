@@ -1,6 +1,5 @@
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
 import { sendPromptToAgent } from "@features/sessions/utils/sendPromptToAgent";
-import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import type { PrReviewComment } from "@main/services/git/schemas";
 import {
   CaretDown,
@@ -11,15 +10,8 @@ import {
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
-import {
-  Avatar,
-  Badge,
-  Box,
-  Button,
-  Flex,
-  IconButton,
-  Text,
-} from "@radix-ui/themes";
+import { Button } from "@posthog/quill";
+import { Avatar, Badge, Box, Flex, Text } from "@radix-ui/themes";
 import { isSendMessageSubmitKey } from "@utils/sendMessageKey";
 import { formatRelativeTimeShort } from "@utils/time";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -71,8 +63,6 @@ function ThreadActionBar({
   onKeyDown,
   textareaRefCallback,
 }: ThreadActionBarProps) {
-  const agentActionsEnabled = useFeatureFlag("posthog-code-pr-agent-actions");
-
   if (showReplyBox) {
     return (
       <div className="mt-1.5 border-[var(--gray-4)] border-t pt-1.5">
@@ -82,19 +72,19 @@ function ThreadActionBar({
           onKeyDown={onKeyDown}
           className="min-h-[48px] w-full resize-none rounded border border-[var(--gray-6)] bg-[var(--color-background)] p-1.5 text-[13px] text-[var(--gray-12)] leading-normal outline-none"
         />
-        <Flex align="center" gap="3" className="mt-1.5">
-          <Button size="1" onClick={onSubmitReply} disabled={!!pendingReply}>
-            <ChatCircle size={12} />
+        <Flex align="center" gap="2" className="mt-1.5">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onSubmitReply}
+            disabled={!!pendingReply}
+          >
+            <ChatCircle />
             {pendingReply ? "Sending..." : "Reply"}
           </Button>
-          <IconButton
-            size="1"
-            variant="ghost"
-            color="gray"
-            onClick={onHideReplyBox}
-          >
-            <X size={12} />
-          </IconButton>
+          <Button size="icon-sm" onClick={onHideReplyBox}>
+            <X />
+          </Button>
         </Flex>
       </div>
     );
@@ -107,46 +97,37 @@ function ThreadActionBar({
       className="mt-1 border-[var(--gray-4)] border-t pt-1.5"
     >
       {prUrl && (
-        <Button size="1" variant="ghost" color="gray" onClick={onShowReplyBox}>
-          <ChatCircle size={12} />
+        <Button size="sm" onClick={onShowReplyBox}>
+          <ChatCircle />
           Reply
         </Button>
       )}
-      {/* TODO: remove this flag when https://github.com/posthog/code/issues/1533 is fixed
-          currently set to 0% rollout. didn't discover the cloud bug until i had already built this
-          xoxo, adboio */}
-      {agentActionsEnabled && (
-        <>
-          <Button
-            size="1"
-            variant="ghost"
-            color="gray"
-            onClick={() =>
-              sendPromptToAgent(
-                taskId,
-                buildFixPrCommentPrompt(filePath, endLine, side, comments),
-              )
-            }
-          >
-            <Robot size={12} />
-            Fix with agent
-          </Button>
-          <Button
-            size="1"
-            variant="ghost"
-            color="gray"
-            onClick={() =>
-              sendPromptToAgent(
-                taskId,
-                buildAskAboutPrCommentPrompt(filePath, endLine, side, comments),
-              )
-            }
-          >
-            <Robot size={12} />
-            Ask agent
-          </Button>
-        </>
-      )}
+
+      <Button
+        size="sm"
+        onClick={() =>
+          sendPromptToAgent(
+            taskId,
+            buildFixPrCommentPrompt(filePath, endLine, side, comments),
+          )
+        }
+      >
+        <Robot />
+        Fix with agent
+      </Button>
+
+      <Button
+        size="sm"
+        onClick={() =>
+          sendPromptToAgent(
+            taskId,
+            buildAskAboutPrCommentPrompt(filePath, endLine, side, comments),
+          )
+        }
+      >
+        <Robot />
+        Ask agent
+      </Button>
     </Flex>
   );
 }
@@ -232,20 +213,18 @@ function CommentBody({
         </Box>
         {isOverflowing && (
           <Button
-            size="1"
-            variant="ghost"
-            color="gray"
+            size="sm"
             onClick={() => setIsExpanded((prev) => !prev)}
             className="mt-1"
           >
             {isExpanded ? (
               <>
-                <CaretUp size={12} />
+                <CaretUp />
                 Show less
               </>
             ) : (
               <>
-                <CaretDown size={12} />
+                <CaretDown />
                 Show more
               </>
             )}

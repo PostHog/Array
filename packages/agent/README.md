@@ -238,7 +238,7 @@ ACP defines standard methods like `session/prompt`, `session/update`, and `sessi
 
 **Session lifecycle** — events that track the run from start to finish. Clients use these to update UI state (show progress, enable/disable controls, display completion). The Django API uses `task_complete` to mark the run as finished.
 
-- `_posthog/run_started` — `{ sessionId, runId, taskId? }` — session initialized and ready
+- `_posthog/run_started` — `{ sessionId, runId, taskId?, agentVersion }` — session initialized and ready. `agentVersion` is the agent's semver, used by clients to gate UI features against agent capabilities
 - `_posthog/task_complete` — `{ sessionId, taskId }` — agent finished (success or end-turn)
 - `_posthog/error` — `{ sessionId, message, error? }` — unrecoverable error
 - `_posthog/status` — `{ sessionId, status, message? }` — progress updates

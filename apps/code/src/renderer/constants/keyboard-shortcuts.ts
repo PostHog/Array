@@ -21,6 +21,7 @@ export const SHORTCUTS = {
   INBOX: "mod+i",
   SPACE_UP: "mod+up",
   SPACE_DOWN: "mod+down",
+  FIND_IN_CONVERSATION: "mod+f",
   BLUR: "escape",
   SUBMIT_BLUR: "mod+enter",
 } as const;
@@ -89,12 +90,6 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     alternateKeys: "ctrl+tab",
   },
   {
-    id: "space-minimap",
-    keys: "mod",
-    description: "Show space minimap (hold)",
-    category: "navigation",
-  },
-  {
     id: "space-up",
     keys: SHORTCUTS.SPACE_UP,
     description: "Previous space",
@@ -155,6 +150,13 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     id: "copy-path",
     keys: SHORTCUTS.COPY_PATH,
     description: "Copy file path",
+    category: "panels",
+    context: "Task detail",
+  },
+  {
+    id: "find-in-conversation",
+    keys: SHORTCUTS.FIND_IN_CONVERSATION,
+    description: "Find in conversation",
     category: "panels",
     context: "Task detail",
   },

@@ -416,6 +416,12 @@ export const getBranchChangedFilesInput = z.object({
 });
 export const getBranchChangedFilesOutput = z.array(changedFileSchema);
 
+export const getLocalBranchChangedFilesInput = z.object({
+  directoryPath: z.string(),
+  branch: z.string(),
+});
+export const getLocalBranchChangedFilesOutput = z.array(changedFileSchema);
+
 export const generateCommitMessageInput = z.object({
   directoryPath: z.string(),
   conversationContext: z.string().optional(),

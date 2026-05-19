@@ -1,9 +1,14 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createGitClient } from "./client";
-import { detectDefaultBranch } from "./queries";
+import {
+  detectDefaultBranch,
+  getBranchDiffPatchesByPath,
+  getChangedFilesDetailed,
+  splitUnifiedDiffByFile,
+} from "./queries";
 
 async function setupRepo(defaultBranch = "main"): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "posthog-code-queries-"));
@@ -92,5 +97,218 @@ describe("detectDefaultBranch", () => {
     expect(result).toBe("production");
 
     await rm(remoteDir, { recursive: true, force: true });
+  });
+});
+
+describe("splitUnifiedDiffByFile", () => {
+  it("returns an empty map for empty input", () => {
+    expect(splitUnifiedDiffByFile("")).toEqual(new Map());
+  });
+
+  it("splits a two-file diff keyed by post-image path", () => {
+    const raw = [
+      "diff --git a/one.txt b/one.txt",
+      "index 0000000..1111111 100644",
+      "--- a/one.txt",
+      "+++ b/one.txt",
+      "@@ -1 +1 @@",
+      "-hello",
+      "+hello world",
+      "diff --git a/two.txt b/two.txt",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/two.txt",
+      "@@ -0,0 +1 @@",
+      "+brand new",
+      "",
+    ].join("\n");
+
+    const result = splitUnifiedDiffByFile(raw);
+
+    expect([...result.keys()]).toEqual(["one.txt", "two.txt"]);
+    expect(result.get("one.txt")).toContain("diff --git a/one.txt b/one.txt");
+    expect(result.get("one.txt")).toContain("+hello world");
+    expect(result.get("two.txt")).toContain("diff --git a/two.txt b/two.txt");
+    expect(result.get("two.txt")).toContain("+brand new");
+  });
+
+  it("keys renames by the post-rename (b/) path", () => {
+    const raw = [
+      "diff --git a/old.txt b/new.txt",
+      "similarity index 100%",
+      "rename from old.txt",
+      "rename to new.txt",
+      "",
+    ].join("\n");
+
+    const result = splitUnifiedDiffByFile(raw);
+    expect(result.has("new.txt")).toBe(true);
+    expect(result.has("old.txt")).toBe(false);
+    expect(result.get("new.txt")).toContain("rename from old.txt");
+  });
+
+  it("handles binary diffs", () => {
+    const raw = [
+      "diff --git a/image.png b/image.png",
+      "Binary files a/image.png and b/image.png differ",
+      "",
+    ].join("\n");
+
+    const result = splitUnifiedDiffByFile(raw);
+    expect(result.get("image.png")).toContain("Binary files");
+  });
+});
+
+describe("getBranchDiffPatchesByPath", () => {
+  let repoDir: string | undefined;
+
+  afterEach(async () => {
+    if (repoDir) {
+      await rm(repoDir, { recursive: true, force: true });
+      repoDir = undefined;
+    }
+  });
+
+  async function setupBranchWithCommits(): Promise<{
+    repoDir: string;
+    remoteDir: string;
+  }> {
+    const workDir = await mkdtemp(path.join(tmpdir(), "posthog-code-branch-"));
+    const remoteDir = await mkdtemp(path.join(tmpdir(), "posthog-code-bare-"));
+
+    const remoteGit = createGitClient(remoteDir);
+    await remoteGit.init(["--bare", "--initial-branch", "main"]);
+
+    const git = createGitClient(workDir);
+    await git.init(["--initial-branch", "main"]);
+    await git.addConfig("user.name", "Test");
+    await git.addConfig("user.email", "test@example.com");
+    await git.addConfig("commit.gpgsign", "false");
+    await git.addRemote("origin", remoteDir);
+
+    await writeFile(path.join(workDir, "file.txt"), "line1\nline2\n");
+    await git.add(["file.txt"]);
+    await git.commit("initial");
+    await git.push(["origin", "main"]);
+
+    await git.checkoutLocalBranch("feature");
+    await writeFile(path.join(workDir, "file.txt"), "line1\nchanged\n");
+    await writeFile(path.join(workDir, "added.txt"), "new file\n");
+    await git.add(["file.txt", "added.txt"]);
+    await git.commit("feature work, not pushed");
+
+    return { repoDir: workDir, remoteDir };
+  }
+
+  it("returns per-file patches for commits not yet pushed", async () => {
+    const { repoDir: workDir, remoteDir } = await setupBranchWithCommits();
+    repoDir = workDir;
+
+    try {
+      const patches = await getBranchDiffPatchesByPath(
+        workDir,
+        "main",
+        "feature",
+      );
+
+      expect(patches.has("file.txt")).toBe(true);
+      expect(patches.has("added.txt")).toBe(true);
+      expect(patches.get("file.txt")).toContain("-line2");
+      expect(patches.get("file.txt")).toContain("+changed");
+      expect(patches.get("added.txt")).toContain("+new file");
+    } finally {
+      await rm(remoteDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns deletions keyed by their path", async () => {
+    const { repoDir: workDir, remoteDir } = await setupBranchWithCommits();
+    repoDir = workDir;
+
+    try {
+      const git = createGitClient(workDir);
+      await unlink(path.join(workDir, "file.txt"));
+      await git.add(["file.txt"]);
+      await git.commit("delete file.txt");
+
+      const patches = await getBranchDiffPatchesByPath(
+        workDir,
+        "main",
+        "feature",
+      );
+
+      expect(patches.get("file.txt")).toContain("deleted file mode");
+    } finally {
+      await rm(remoteDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// Picked to land well past the default 64KB highWaterMark of
+// `createReadStream` so the regression test actually exercises the
+// across-chunk path of the streaming line counter.
+const LINE_COUNT_LARGER_THAN_READ_STREAM_CHUNK = 800_000;
+
+describe("getChangedFilesDetailed > untracked line counts", () => {
+  let repoDir: string;
+
+  afterEach(async () => {
+    if (repoDir) {
+      await rm(repoDir, { recursive: true, force: true });
+      repoDir = "";
+    }
+  });
+
+  it.each([
+    { name: "trailing newline", content: "a\nb\nc\n", expected: 3 },
+    { name: "no trailing newline", content: "a\nb\nc", expected: 3 },
+    { name: "single byte, no newline", content: "a", expected: 1 },
+    { name: "lone newline", content: "\n", expected: 1 },
+    { name: "consecutive newlines", content: "\n\n", expected: 2 },
+    // CRLF: legacy `split("\n")` counted only `\n` separators, so
+    // `"a\r\nb\r\n"` -> 2 lines. Byte-counter matches.
+    { name: "CRLF endings", content: "a\r\nb\r\n", expected: 2 },
+  ])("counts $name as $expected line(s)", async ({ content, expected }) => {
+    repoDir = await setupRepo();
+    await writeFile(path.join(repoDir, "f.txt"), content);
+
+    const files = await getChangedFilesDetailed(repoDir);
+    const f = files.find((file) => file.path === "f.txt");
+
+    expect(f).toMatchObject({ status: "untracked", linesAdded: expected });
+  });
+
+  it("reports 0 lines for empty untracked files", async () => {
+    repoDir = await setupRepo();
+    await writeFile(path.join(repoDir, "empty.txt"), "");
+
+    const files = await getChangedFilesDetailed(repoDir);
+    const empty = files.find((f) => f.path === "empty.txt");
+
+    expect(empty).toMatchObject({ status: "untracked", linesAdded: 0 });
+  });
+
+  // Regression guard for the OOM in #2218. Before the fix `countFileLines`
+  // read each untracked file's full content into memory via
+  // `fs.readFile(..., "utf-8")`, 16-way concurrent against every untracked
+  // path returned by `streamGitStatus` (up to 50k). On a monorepo with
+  // multi-MB build artifacts this exhausted the main-process V8 heap
+  // (`16 * file_bytes * 2` for V8's UTF-16) and froze the renderer waiting
+  // on the dead tRPC call. The fix stream-counts via `createReadStream`,
+  // so peak per-stream memory is ~64KB regardless of file size — the
+  // multi-MB case below would have OOM'd pre-fix and must still report an
+  // accurate line count.
+  it("stream-counts untracked files larger than the streaming chunk size", async () => {
+    repoDir = await setupRepo();
+    const content = "a\n".repeat(LINE_COUNT_LARGER_THAN_READ_STREAM_CHUNK);
+    await writeFile(path.join(repoDir, "huge.txt"), content);
+
+    const files = await getChangedFilesDetailed(repoDir);
+    const huge = files.find((f) => f.path === "huge.txt");
+
+    expect(huge).toMatchObject({
+      status: "untracked",
+      linesAdded: LINE_COUNT_LARGER_THAN_READ_STREAM_CHUNK,
+    });
   });
 });

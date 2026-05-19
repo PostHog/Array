@@ -64,6 +64,42 @@ export class PostHogApi {
     return data.results.filter((f) => !f.deleted);
   }
 
+  // Keys absent from the returned map have NOT been called in the window.
+  async getFlagLastCalled(
+    flagKeys: string[],
+    daysBack = 30,
+  ): Promise<Map<string, string>> {
+    if (flagKeys.length === 0) return new Map();
+
+    // HogQL over `/query/` rejects typed placeholders (`{name:Type}`) and
+    // placeholder values in INTERVAL, so `days` is inlined (clamped).
+    const days = Math.max(1, Math.min(365, Math.floor(daysBack)));
+    const query = `
+      SELECT
+        properties.$feature_flag AS flag_key,
+        max(timestamp) AS last_called_at
+      FROM events
+      WHERE event = '$feature_flag_called'
+        AND properties.$feature_flag IN {flagKeys}
+        AND timestamp >= now() - INTERVAL ${days} DAY
+      GROUP BY flag_key
+    `;
+
+    const data = await this.post<{ results: [string, string][] }>("/query/", {
+      query: {
+        kind: "HogQLQuery",
+        query,
+        values: { flagKeys },
+      },
+    });
+
+    const lastCalled = new Map<string, string>();
+    for (const [flagKey, lastCalledAt] of data.results) {
+      if (lastCalledAt) lastCalled.set(flagKey, lastCalledAt);
+    }
+    return lastCalled;
+  }
+
   async getExperiments(): Promise<Experiment[]> {
     const data = await this.get<{ results: Experiment[] }>(
       "/experiments/?limit=500",

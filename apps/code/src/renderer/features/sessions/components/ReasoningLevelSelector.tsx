@@ -33,7 +33,7 @@ export function ReasoningLevelSelector({
   const activeLevel = thoughtOption.currentValue;
   const activeLabel =
     options.find((opt) => opt.value === activeLevel)?.name ?? activeLevel;
-  const triggerLabel = `${adapter === "codex" ? "Reasoning" : "Effort"}: ${activeLabel}`;
+  const prefix = adapter === "codex" ? "Reasoning" : "Effort";
 
   return (
     <DropdownMenu>
@@ -44,10 +44,10 @@ export function ReasoningLevelSelector({
             variant="default"
             size="sm"
             disabled={disabled}
-            aria-label={triggerLabel}
+            aria-label={`${prefix}: ${activeLabel}`}
           >
             <Brain size={14} className="text-muted-foreground" />
-            {triggerLabel}
+            {activeLabel}
             <CaretDown
               size={10}
               weight="bold"

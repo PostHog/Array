@@ -196,6 +196,7 @@ export interface ClaudeCodeSettings {
   permissions?: PermissionSettings;
   env?: Record<string, string>;
   model?: string;
+  posthogApprovedExecTools?: string[];
 }
 
 export type PermissionDecision = "allow" | "deny" | "ask";
@@ -295,6 +296,7 @@ export class SettingsManager {
       ask: [],
     };
     const merged: ClaudeCodeSettings = { permissions };
+    const posthogApprovedExecTools = new Set<string>();
 
     for (const settings of allSettings) {
       if (settings.permissions) {
@@ -323,6 +325,15 @@ export class SettingsManager {
       if (settings.model) {
         merged.model = settings.model;
       }
+      if (settings.posthogApprovedExecTools) {
+        for (const tool of settings.posthogApprovedExecTools) {
+          posthogApprovedExecTools.add(tool);
+        }
+      }
+    }
+
+    if (posthogApprovedExecTools.size > 0) {
+      merged.posthogApprovedExecTools = Array.from(posthogApprovedExecTools);
     }
 
     this.mergedSettings = merged;
@@ -395,6 +406,43 @@ export class SettingsManager {
       }
       permissions.allow = Array.from(current);
       const next: ClaudeCodeSettings = { ...existing, permissions };
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      await writeFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
+
+      this.localSettings = next;
+      this.mergeAllSettings();
+    } finally {
+      this.writeMutex.release();
+    }
+  }
+
+  hasPostHogExecApproval(subTool: string): boolean {
+    return (
+      this.mergedSettings.posthogApprovedExecTools?.includes(subTool) ?? false
+    );
+  }
+
+  /**
+   * Persists an approved PostHog MCP `exec` sub-tool (e.g. `experiment-update`)
+   * to the local settings file so future calls skip the prompt. Mirrors
+   * `addAllowRules` — serialised via `writeMutex`, atomic temp-file + rename.
+   */
+  async addPostHogExecApproval(subTool: string): Promise<void> {
+    if (!subTool) return;
+    if (!this.initialized) await this.initialize();
+    await this.writeMutex.acquire();
+    try {
+      const filePath = this.getLocalSettingsPath();
+      const existing = await readSettingsFileForUpdate(filePath);
+      const current = new Set(existing.posthogApprovedExecTools ?? []);
+      if (current.has(subTool)) {
+        return;
+      }
+      current.add(subTool);
+      const next: ClaudeCodeSettings = {
+        ...existing,
+        posthogApprovedExecTools: Array.from(current),
+      };
       await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
       await writeFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
 

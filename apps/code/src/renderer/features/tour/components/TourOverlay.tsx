@@ -105,7 +105,13 @@ export function TourOverlay() {
       }
     };
 
-    const resetTimer = () => {
+    const initialEl = document.querySelector(selector);
+    if (initialEl?.getAttribute("data-tour-ready") === "true") {
+      tryAdvance();
+      return;
+    }
+
+    const onMutation = () => {
       if (settleTimer) clearTimeout(settleTimer);
       const el = document.querySelector(selector);
       if (el?.getAttribute("data-tour-ready") === "true") {
@@ -113,22 +119,13 @@ export function TourOverlay() {
       }
     };
 
-    const observer = new MutationObserver(resetTimer);
-
-    const el = document.querySelector(selector);
-    if (el) {
-      if (el.getAttribute("data-tour-ready") === "true") {
-        tryAdvance();
-        return;
-      }
-
-      observer.observe(el, {
-        subtree: true,
-        childList: true,
-        characterData: true,
-        attributes: true,
-      });
-    }
+    const observer = new MutationObserver(onMutation);
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["data-tour-ready"],
+    });
 
     return () => {
       observer.disconnect();

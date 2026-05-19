@@ -8,9 +8,14 @@ const log = logger.scope("github-integration-callback-hook");
 const DEFAULT_ERROR_MESSAGE =
   "GitHub install failed. Please try connecting again.";
 
+export interface IntegrationCallbackError {
+  message: string;
+  code: string | null;
+}
+
 interface Options {
   onSuccess: (projectId: number | null) => void;
-  onError: (message: string) => void;
+  onError: (error: IntegrationCallbackError) => void;
   onTimedOut?: () => void;
 }
 
@@ -34,7 +39,10 @@ export function useGitHubIntegrationCallback({
       onData: (data) => {
         log.info("Received integration deep link callback", data);
         if (data.status === "error") {
-          optsRef.current.onError(data.errorMessage ?? DEFAULT_ERROR_MESSAGE);
+          optsRef.current.onError({
+            message: data.errorMessage ?? DEFAULT_ERROR_MESSAGE,
+            code: data.errorCode,
+          });
           return;
         }
         optsRef.current.onSuccess(data.projectId);
@@ -61,9 +69,10 @@ export function useGitHubIntegrationCallback({
         if (!pending) return;
         log.info("Consumed pending integration callback on mount", pending);
         if (pending.status === "error") {
-          optsRef.current.onError(
-            pending.errorMessage ?? DEFAULT_ERROR_MESSAGE,
-          );
+          optsRef.current.onError({
+            message: pending.errorMessage ?? DEFAULT_ERROR_MESSAGE,
+            code: pending.errorCode,
+          });
           return;
         }
         optsRef.current.onSuccess(pending.projectId);

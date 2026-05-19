@@ -47,13 +47,12 @@ export function PatchedFileDiff({
   }, [fileDiff, fallback, file.path]);
 
   if (!diffSourceProps) {
-    const hasChanges = (file.linesAdded ?? 0) + (file.linesRemoved ?? 0) > 0;
     return (
       <DeferredDiffPlaceholder
         filePath={file.path}
         linesAdded={file.linesAdded ?? 0}
         linesRemoved={file.linesRemoved ?? 0}
-        reason={hasChanges ? "large" : "unavailable"}
+        reason="unavailable"
         collapsed={collapsed}
         onToggle={onToggle}
         externalUrl={externalUrl}

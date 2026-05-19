@@ -22,7 +22,7 @@ export function LoginTransition({
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
       onAnimationComplete={onComplete}
-      className="fixed inset-0 bg-(--gray-12)"
+      className="fixed inset-0 bg-(--color-background)"
     />
   );
 }

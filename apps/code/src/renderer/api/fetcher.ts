@@ -52,19 +52,37 @@ export const buildApiFetcher: (config: {
     }
   };
 
+  const isAuthFailure = async (response: Response): Promise<boolean> => {
+    if (response.status === 401) return true;
+    if (response.status !== 403) return false;
+    try {
+      const body = await response.clone().json();
+      return (
+        body?.code === "authentication_failed" ||
+        body?.type === "authentication_error"
+      );
+    } catch {
+      return false;
+    }
+  };
+
   return {
     fetch: async (input) => {
       let response = await makeRequest(input, await config.getAccessToken());
 
-      // Retry once on 401 after asking main for a fresh valid token again.
-      if (!response.ok && response.status === 401) {
+      if (!response.ok && (await isAuthFailure(response))) {
         try {
           response = await makeRequest(
             input,
             await config.refreshAccessToken(),
           );
         } catch {
-          const errorResponse = await response.json();
+          const cloned = response.clone();
+          const errorResponse = await response
+            .json()
+            .catch(() =>
+              cloned.text().then((t) => ({ error: t || `${response.status}` })),
+            );
           throw new Error(
             `Failed request: [${response.status}] ${JSON.stringify(errorResponse)}`,
           );
@@ -72,7 +90,12 @@ export const buildApiFetcher: (config: {
       }
 
       if (!response.ok) {
-        const errorResponse = await response.json();
+        const cloned = response.clone();
+        const errorResponse = await response
+          .json()
+          .catch(() =>
+            cloned.text().then((t) => ({ error: t || `${response.status}` })),
+          );
         throw new Error(
           `Failed request: [${response.status}] ${JSON.stringify(errorResponse)}`,
         );

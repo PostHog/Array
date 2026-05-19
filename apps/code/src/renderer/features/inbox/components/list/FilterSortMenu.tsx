@@ -70,6 +70,7 @@ const FILTERABLE_STATUSES: SignalReportStatus[] = [
   "ready",
   "pending_input",
   "in_progress",
+  "failed",
   "candidate",
   "potential",
 ];

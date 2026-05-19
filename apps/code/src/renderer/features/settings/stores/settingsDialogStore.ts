@@ -10,7 +10,8 @@ export type SettingsCategory =
   | "personalization"
   | "claude-code"
   | "shortcuts"
-  | "mcp-servers"
+  | "github"
+  | "slack"
   | "signals"
   | "updates"
   | "advanced";
@@ -24,6 +25,7 @@ interface SettingsDialogState {
   activeCategory: SettingsCategory;
   context: SettingsDialogContext;
   initialAction: string | null;
+  formMode: boolean;
 }
 
 interface SettingsDialogActions {
@@ -35,6 +37,7 @@ interface SettingsDialogActions {
   setCategory: (category: SettingsCategory) => void;
   clearContext: () => void;
   consumeInitialAction: () => string | null;
+  setFormMode: (formMode: boolean) => void;
 }
 
 type SettingsDialogStore = SettingsDialogState & SettingsDialogActions;
@@ -45,6 +48,7 @@ export const useSettingsDialogStore = create<SettingsDialogStore>()(
     activeCategory: "general",
     context: {},
     initialAction: null,
+    formMode: false,
 
     open: (category, contextOrAction) => {
       if (!get().isOpen) {
@@ -56,21 +60,28 @@ export const useSettingsDialogStore = create<SettingsDialogStore>()(
         activeCategory: category ?? "general",
         context: isAction ? {} : (contextOrAction ?? {}),
         initialAction: isAction ? contextOrAction : null,
+        formMode: false,
       });
     },
     close: () => {
       if (get().isOpen && window.history.state?.settingsOpen) {
         window.history.back();
       }
-      set({ isOpen: false, context: {}, initialAction: null });
+      set({
+        isOpen: false,
+        context: {},
+        initialAction: null,
+        formMode: false,
+      });
     },
     setCategory: (category) =>
-      set({ activeCategory: category, initialAction: null }),
+      set({ activeCategory: category, initialAction: null, formMode: false }),
     clearContext: () => set({ context: {} }),
     consumeInitialAction: () => {
       const action = get().initialAction;
       if (action) set({ initialAction: null });
       return action;
     },
+    setFormMode: (formMode) => set({ formMode }),
   }),
 );

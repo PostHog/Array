@@ -205,6 +205,7 @@ function createCodexConnection(config: AcpConnectionConfig): AcpConnection {
       codexProcessOptions: config.codexOptions ?? {},
       processCallbacks: config.processCallbacks,
       posthogApiConfig: resolveEnricherApiConfig(config),
+      onStructuredOutput: config.onStructuredOutput,
     });
     return agent;
   }, agentStream);

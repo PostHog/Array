@@ -62,6 +62,18 @@ function promptResponseMsg(ts: number, id: number): AcpMessage {
   };
 }
 
+function turnCompleteMsg(ts: number, stopReason = "end_turn"): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "_posthog/turn_complete",
+      params: { sessionId: "session-1", stopReason },
+    },
+  };
+}
+
 describe("buildConversationItems", () => {
   it("extracts cloud prompt attachments into user messages", () => {
     const uri = makeAttachmentUri("/tmp/hello world.txt");
@@ -107,6 +119,19 @@ describe("buildConversationItems", () => {
         ],
       },
     ]);
+  });
+
+  it("marks cloud turns complete from structured turn completion notifications", () => {
+    const result = buildConversationItems(
+      [userPromptMsg(10, 42, "hello"), turnCompleteMsg(25)],
+      null,
+    );
+
+    expect(result.lastTurnInfo).toEqual({
+      isComplete: true,
+      durationMs: 15,
+      stopReason: "end_turn",
+    });
   });
 
   it("keeps attachment-only prompts visible", () => {

@@ -68,6 +68,17 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
     updateLastViewedAt: () => {},
     updateLastActivityAt: () => {},
     updateMode: () => {},
+    setModeAndRepository: (taskId, mode, repositoryId) => {
+      const id = taskIndex.get(taskId);
+      const existing = id ? workspaces.get(id) : undefined;
+      if (!id || !existing) return;
+      workspaces.set(id, {
+        ...existing,
+        mode,
+        repositoryId,
+        updatedAt: new Date().toISOString(),
+      });
+    },
     deleteAll: () => {
       workspaces.clear();
       taskIndex.clear();

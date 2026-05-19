@@ -8,9 +8,16 @@ const GIT_QUERY_DEFAULTS = {
   staleTime: 30_000,
 } as const;
 
-export function useGitQueries(repoPath?: string) {
+interface UseGitQueriesOptions {
+  enabled?: boolean;
+}
+
+export function useGitQueries(
+  repoPath?: string,
+  options?: UseGitQueriesOptions,
+) {
   const trpc = useTRPC();
-  const enabled = !!repoPath;
+  const enabled = !!repoPath && (options?.enabled ?? true);
 
   const { data: isRepo = false, isLoading: isRepoLoading } = useQuery(
     trpc.git.validateRepo.queryOptions(
@@ -154,28 +161,25 @@ export function useGitQueries(repoPath?: string) {
   };
 }
 
-export function useCloudPrChangedFiles(
-  prUrl: string | null,
-  isRunActive?: boolean,
-) {
+export function usePrChangedFiles(prUrl: string | null, pollFast?: boolean) {
   const trpc = useTRPC();
   return useQuery(
     trpc.git.getPrChangedFiles.queryOptions(
       { prUrl: prUrl as string },
       {
         enabled: !!prUrl,
-        staleTime: isRunActive ? 10_000 : 5 * 60_000,
-        refetchInterval: isRunActive ? 10_000 : false,
+        staleTime: pollFast ? 10_000 : 5 * 60_000,
+        refetchInterval: pollFast ? 10_000 : false,
         retry: 1,
       },
     ),
   );
 }
 
-export function useCloudBranchChangedFiles(
+export function useBranchChangedFiles(
   repo: string | null,
   branch: string | null,
-  isRunActive?: boolean,
+  pollFast?: boolean,
 ) {
   const trpc = useTRPC();
   return useQuery(
@@ -183,8 +187,29 @@ export function useCloudBranchChangedFiles(
       { repo: repo as string, branch: branch as string },
       {
         enabled: !!repo && !!branch,
-        staleTime: isRunActive ? 10_000 : 30_000,
-        refetchInterval: isRunActive ? 10_000 : 30_000,
+        staleTime: pollFast ? 10_000 : 5 * 60_000,
+        refetchInterval: pollFast ? 10_000 : false,
+        retry: 1,
+      },
+    ),
+  );
+}
+
+export function useLocalBranchChangedFiles(
+  directoryPath: string | null,
+  branch: string | null,
+) {
+  const trpc = useTRPC();
+  return useQuery(
+    trpc.git.getLocalBranchChangedFiles.queryOptions(
+      {
+        directoryPath: directoryPath as string,
+        branch: branch as string,
+      },
+      {
+        enabled: !!directoryPath && !!branch,
+        staleTime: 30_000,
+        refetchOnMount: "always",
         retry: 1,
       },
     ),

@@ -1,11 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createGitClient } from "@posthog/git/client";
+import { isGitRepository } from "@posthog/git/queries";
 import {
   CaptureCheckpointSaga,
   deleteCheckpoint,
   RevertCheckpointSaga,
 } from "@posthog/git/sagas/checkpoint";
+import { forceRemove } from "@posthog/git/utils";
 import { type WorktreeInfo, WorktreeManager } from "@posthog/git/worktree";
 import { inject, injectable } from "inversify";
 import type {
@@ -173,30 +175,46 @@ export class ArchiveService {
 
       if (workspace.mode === "worktree" && worktree) {
         const worktreePath = worktree.path;
-
-        const actualBranch = await this.getCurrentBranchName(worktreePath);
-        if (actualBranch && actualBranch !== "HEAD") {
-          archivedTask.branchName = actualBranch;
-        }
-
-        await step(
-          async () => {
-            if (!archivedTask.checkpointId) {
-              throw new Error("checkpointId must be set for worktree mode");
-            }
-            await this.captureWorktreeCheckpoint(
-              folderPath,
-              worktreePath,
-              archivedTask.checkpointId,
+        const worktreeIsValid = await isGitRepository(worktreePath).catch(
+          (error) => {
+            log.warn(
+              `Failed to check worktree at ${worktreePath}; treating as invalid`,
+              { error },
             );
-          },
-          async () => {
-            if (archivedTask.checkpointId) {
-              const git = createGitClient(folderPath);
-              await deleteCheckpoint(git, archivedTask.checkpointId);
-            }
+            return false;
           },
         );
+
+        if (!worktreeIsValid) {
+          log.warn(
+            `Worktree at ${worktreePath} is missing or not a git repository; skipping checkpoint capture`,
+          );
+          archivedTask.checkpointId = null;
+        } else {
+          const actualBranch = await this.getCurrentBranchName(worktreePath);
+          if (actualBranch && actualBranch !== "HEAD") {
+            archivedTask.branchName = actualBranch;
+          }
+
+          await step(
+            async () => {
+              if (!archivedTask.checkpointId) {
+                throw new Error("checkpointId must be set for worktree mode");
+              }
+              await this.captureWorktreeCheckpoint(
+                folderPath,
+                worktreePath,
+                archivedTask.checkpointId,
+              );
+            },
+            async () => {
+              if (archivedTask.checkpointId) {
+                const git = createGitClient(folderPath);
+                await deleteCheckpoint(git, archivedTask.checkpointId);
+              }
+            },
+          );
+        }
 
         await step(
           async () => {
@@ -215,7 +233,7 @@ export class ArchiveService {
             });
             await manager.deleteWorktree(worktreePath);
             const parentDir = path.dirname(worktreePath);
-            await fs.rm(parentDir, { recursive: true, force: true });
+            await forceRemove(parentDir);
           },
           async () => {},
         );
@@ -335,7 +353,7 @@ export class ArchiveService {
               );
               await manager.deleteWorktree(worktreePath);
               const parentDir = path.dirname(worktreePath);
-              await fs.rm(parentDir, { recursive: true, force: true });
+              await forceRemove(parentDir);
             }
           },
         );

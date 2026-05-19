@@ -7,7 +7,7 @@ import {
 import { useSeat } from "@hooks/useSeat";
 import { SignOut } from "@phosphor-icons/react";
 import { Avatar, Badge, Button, Flex, Spinner, Text } from "@radix-ui/themes";
-import { REGION_LABELS } from "@shared/types/regions";
+import { formatRegionBadge } from "@shared/types/regions";
 
 export function AccountSettings() {
   const isAuthenticated = useAuthStateValue(
@@ -66,7 +66,7 @@ export function AccountSettings() {
             </Text>
             {cloudRegion && (
               <Badge size="1" variant="soft">
-                {REGION_LABELS[cloudRegion]}
+                {formatRegionBadge(cloudRegion)}
               </Badge>
             )}
             {seat && (

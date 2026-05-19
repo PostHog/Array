@@ -3,13 +3,12 @@ import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import { useMeQuery } from "@hooks/useMeQuery";
+import type { Schemas } from "@renderer/api/generated";
 import { useFocusStore } from "@renderer/stores/focusStore";
 import { useNavigationStore } from "@renderer/stores/navigationStore";
 import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
-import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { useQueryClient } from "@tanstack/react-query";
-import { track } from "@utils/analytics";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { useCallback } from "react";
 
@@ -24,26 +23,53 @@ const taskKeys = {
     repository?: string;
     createdBy?: number;
     originProduct?: string;
+    internal?: boolean;
   }) => [...taskKeys.lists(), filters] as const,
+  summaries: (ids: string[]) =>
+    [...taskKeys.all, "summaries", [...ids].sort()] as const,
   details: () => [...taskKeys.all, "detail"] as const,
   detail: (id: string) => [...taskKeys.details(), id] as const,
 };
 
-export function useTasks(filters?: {
-  repository?: string;
-  showAllUsers?: boolean;
-}) {
+export function useTasks(
+  filters?: {
+    repository?: string;
+    showAllUsers?: boolean;
+    showInternal?: boolean;
+  },
+  options?: { enabled?: boolean },
+) {
   const { data: currentUser } = useMeQuery();
   const createdBy = filters?.showAllUsers ? undefined : currentUser?.id;
+  const internal = filters?.showInternal ? true : undefined;
 
   return useAuthenticatedQuery(
-    taskKeys.list({ ...filters, createdBy }),
+    taskKeys.list({ repository: filters?.repository, createdBy, internal }),
     (client) =>
       client.getTasks({
         repository: filters?.repository,
         createdBy,
+        internal,
       }) as unknown as Promise<Task[]>,
-    { enabled: !!currentUser?.id, refetchInterval: TASK_LIST_POLL_INTERVAL_MS },
+    {
+      enabled: (options?.enabled ?? true) && !!currentUser?.id,
+      refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
+    },
+  );
+}
+
+export function useTaskSummaries(
+  ids: string[],
+  options?: { enabled?: boolean },
+) {
+  return useAuthenticatedQuery<Schemas.TaskSummary[]>(
+    taskKeys.summaries(ids),
+    (client) => client.getTaskSummaries(ids),
+    {
+      enabled: (options?.enabled ?? true) && ids.length > 0,
+      refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
+      placeholderData: keepPreviousData,
+    },
   );
 }
 
@@ -51,13 +77,16 @@ export function useCreateTask() {
   const queryClient = useQueryClient();
 
   const invalidateTasks = (newTask?: Task) => {
-    // If a new task is provided, add it to cache immediately for instant UI update
     if (newTask) {
-      queryClient.setQueryData<Task[]>(taskKeys.list(), (old) =>
-        old ? [newTask, ...old] : [newTask],
+      queryClient.setQueriesData<Task[]>(
+        { queryKey: taskKeys.lists() },
+        (old) => {
+          if (!old) return old;
+          if (old.some((task) => task.id === newTask.id)) return old;
+          return [newTask, ...old];
+        },
       );
     }
-    // Also invalidate to ensure we're in sync with server
     queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
   };
 
@@ -80,15 +109,6 @@ export function useCreateTask() {
         repository,
         github_integration,
       }) as unknown as Promise<Task>,
-    {
-      onSuccess: (_task, variables) => {
-        track(ANALYTICS_EVENTS.TASK_CREATED, {
-          auto_run: false,
-          created_from: variables.createdFrom || "cli",
-          repository_provider: variables.repository ? "github" : "none",
-        });
-      },
-    },
   );
 
   return { ...mutation, invalidateTasks };
@@ -116,6 +136,9 @@ export function useUpdateTask() {
       onSuccess: (_, { taskId }) => {
         queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
         queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+        queryClient.invalidateQueries({
+          queryKey: [...taskKeys.all, "summaries"],
+        });
       },
     },
   );

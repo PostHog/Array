@@ -1,19 +1,12 @@
-import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
 import { Tooltip } from "@components/ui/Tooltip";
+import type { SidebarPrState } from "@features/sidebar/hooks/useTaskPrStatus";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
-import {
-  Archive,
-  ChatCircle,
-  Circle,
-  Cloud as CloudIcon,
-  HandPalm,
-  Pause,
-  PushPin,
-} from "@phosphor-icons/react";
-import { isTerminalStatus, type TaskRunStatus } from "@shared/types";
+import { Archive, PushPin } from "@phosphor-icons/react";
+import type { TaskRunStatus } from "@shared/types";
 import { formatRelativeTimeShort } from "@utils/time";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SidebarItem } from "../SidebarItem";
+import { TaskIcon } from "./TaskIcon";
 
 interface TaskItemProps {
   depth?: number;
@@ -28,6 +21,8 @@ interface TaskItemProps {
   isSuspended?: boolean;
   needsPermission?: boolean;
   taskRunStatus?: TaskRunStatus;
+  prState?: SidebarPrState;
+  hasDiff?: boolean;
   timestamp?: number;
   isEditing?: boolean;
   onClick: () => void;
@@ -104,51 +99,7 @@ function TaskHoverToolbar({
   );
 }
 
-const ICON_SIZE = 12;
 const INDENT_SIZE = 8;
-
-function CloudStatusIcon({
-  taskRunStatus,
-}: {
-  taskRunStatus?: TaskItemProps["taskRunStatus"];
-}) {
-  if (taskRunStatus === "queued" || taskRunStatus === "in_progress") {
-    return (
-      <Tooltip content="Cloud (running)" side="right">
-        <span className="flex items-center justify-center">
-          <CloudIcon size={ICON_SIZE} className="ph-pulse" />
-        </span>
-      </Tooltip>
-    );
-  }
-  if (taskRunStatus === "completed") {
-    return (
-      <Tooltip content="Cloud (completed)" side="right">
-        <span className="flex items-center justify-center">
-          <CloudIcon size={ICON_SIZE} weight="fill" className="text-green-11" />
-        </span>
-      </Tooltip>
-    );
-  }
-  if (taskRunStatus === "failed" || taskRunStatus === "cancelled") {
-    const label =
-      taskRunStatus === "cancelled" ? "Cloud (cancelled)" : "Cloud (failed)";
-    return (
-      <Tooltip content={label} side="right">
-        <span className="flex items-center justify-center">
-          <CloudIcon size={ICON_SIZE} weight="fill" className="text-red-11" />
-        </span>
-      </Tooltip>
-    );
-  }
-  return (
-    <Tooltip content="Cloud" side="right">
-      <span className="flex items-center justify-center">
-        <CloudIcon size={ICON_SIZE} />
-      </span>
-    </Tooltip>
-  );
-}
 
 export function TaskItem({
   depth = 0,
@@ -162,6 +113,8 @@ export function TaskItem({
   isPinned = false,
   needsPermission = false,
   taskRunStatus,
+  prState,
+  hasDiff,
   timestamp,
   isEditing = false,
   onClick,
@@ -172,35 +125,18 @@ export function TaskItem({
   onEditSubmit,
   onEditCancel,
 }: TaskItemProps) {
-  const isCloudTask = workspaceMode === "cloud";
-  const isTerminalCloud = isCloudTask && isTerminalStatus(taskRunStatus);
-
-  const icon = needsPermission ? (
-    <Tooltip content="Needs permission" side="right">
-      <span className="flex items-center justify-center">
-        <HandPalm size={ICON_SIZE} className="text-blue-11" />
-      </span>
-    </Tooltip>
-  ) : isTerminalCloud ? (
-    <CloudStatusIcon taskRunStatus={taskRunStatus} />
-  ) : isGenerating ? (
-    <DotsCircleSpinner size={ICON_SIZE} className="text-accent-11" />
-  ) : isCloudTask ? (
-    <CloudStatusIcon taskRunStatus={taskRunStatus} />
-  ) : isSuspended ? (
-    <Tooltip content="Suspended" side="right">
-      <span className="flex items-center justify-center">
-        <Pause size={ICON_SIZE} className="text-gray-9" />
-      </span>
-    </Tooltip>
-  ) : isUnread ? (
-    <span className="flex items-center justify-center">
-      <Circle size={8} weight="fill" className="text-green-11" />
-    </span>
-  ) : isPinned ? (
-    <PushPin size={ICON_SIZE} className="text-accent-11" />
-  ) : (
-    <ChatCircle size={ICON_SIZE} className="text-gray-10" />
+  const icon = (
+    <TaskIcon
+      workspaceMode={workspaceMode}
+      isGenerating={isGenerating}
+      isUnread={isUnread}
+      isPinned={isPinned}
+      isSuspended={isSuspended}
+      needsPermission={needsPermission}
+      taskRunStatus={taskRunStatus}
+      prState={prState}
+      hasDiff={hasDiff}
+    />
   );
 
   const timestampNode = timestamp ? (

@@ -161,6 +161,14 @@ export class FileWatcherService extends TypedEventEmitter<FileWatcherEvents> {
   }
 
   private flushPending(repoPath: string, pending: PendingChanges): void {
+    if (this.watcherRegistry.isShutdown) {
+      pending.dirs.clear();
+      pending.files.clear();
+      pending.deletes.clear();
+      pending.timer = null;
+      return;
+    }
+
     const totalChanges = pending.files.size + pending.deletes.size;
 
     // For bulk changes, emit a single event instead of per-file events

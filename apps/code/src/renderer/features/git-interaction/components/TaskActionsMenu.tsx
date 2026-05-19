@@ -48,6 +48,18 @@ interface TaskActionsMenuProps {
   isCloud: boolean;
 }
 
+// Work-shipping slots flip to disabled solely to signal "nothing to do" (no
+// changes, branch up to date, no commits to publish). Next to a PR badge that
+// noise isn't useful, so we drop them when a PR exists. Other disabled
+// actions stay visible so their `disabledReason` tooltip can still explain
+// why they're unavailable.
+const NO_WORK_SLOTS = new Set<GitMenuActionId>([
+  "commit",
+  "push",
+  "sync",
+  "publish",
+]);
+
 /**
  * Unified actions control shown in the task header. Combines:
  *   - Git interaction (commit/push/create-PR/branch) for local tasks
@@ -59,17 +71,6 @@ interface TaskActionsMenuProps {
  * list. Cloud tasks without a PR render nothing.
  */
 export function TaskActionsMenu({ taskId, isCloud }: TaskActionsMenuProps) {
-  // PR URL resolution — pick the right source based on task kind.
-  const cloudPrUrl = useCloudPrUrl(taskId);
-  const linkedPrUrl = useLinkedBranchPrUrl(taskId);
-  const prUrl = isCloud ? cloudPrUrl : linkedPrUrl;
-
-  const {
-    meta: { state: prState, merged, draft },
-  } = usePrDetails(prUrl);
-  const { execute: executePrAction, isPending: isPrActionPending } =
-    usePrActions(prUrl);
-
   // Git state (skipped for cloud — useGitInteraction handles undefined repo).
   const workspace = useWorkspace(taskId);
   const isFocused = useFocusStore(
@@ -84,18 +85,40 @@ export function TaskActionsMenu({ taskId, isCloud }: TaskActionsMenuProps) {
     actions: gitActions,
   } = useGitInteraction(taskId, isCloud ? undefined : localRepoPath);
 
+  // PR URL resolution — pick the right source based on task kind.
+  // For local tasks, prefer the linked-branch lookup. The agent-side
+  // AgentFileActivity emit is the primary path for keeping `linkedBranch` in
+  // sync with PRs created via bash (see AgentService.detectAndAttachPrUrl);
+  // until that link lands we fall back to whatever `getPrStatus` found on
+  // `localRepoPath`'s current branch. Coverage is partial — when the user is
+  // focused on the worktree, `localRepoPath` is the main repo and
+  // `gitState.prUrl` won't see the worktree's feature-branch PR — but the
+  // primary path closes that gap once the next bash tool call observes the
+  // PR URL.
+  const cloudPrUrl = useCloudPrUrl(taskId);
+  const linkedPrUrl = useLinkedBranchPrUrl(taskId);
+  const prUrl = isCloud ? cloudPrUrl : (linkedPrUrl ?? gitState.prUrl ?? null);
+
+  const {
+    meta: { state: prState, merged, draft },
+  } = usePrDetails(prUrl);
+  const { execute: executePrAction, isPending: isPrActionPending } =
+    usePrActions(prUrl);
+
   const pr = prUrl && prState !== null ? { url: prUrl, state: prState } : null;
 
   // Cloud tasks only appear when they have a PR.
   if (isCloud && !pr) return null;
 
-  // "view-pr" is redundant when the badge itself links to the PR;
-  // "create-pr" is redundant once a PR exists.
+  // When a PR exists the badge handles "view PR" and "create PR" is moot.
   const gitItems = isCloud
     ? []
-    : gitState.actions.filter(
-        (a) => !(pr && (a.id === "view-pr" || a.id === "create-pr")),
-      );
+    : gitState.actions.filter((a) => {
+        if (!pr) return true;
+        if (a.id === "view-pr" || a.id === "create-pr") return false;
+        if (!a.enabled && NO_WORK_SLOTS.has(a.id)) return false;
+        return true;
+      });
 
   return (
     <>
@@ -423,7 +446,7 @@ function GitDropdownItem({
     );
   }
   return (
-    <QDropdownMenuItem onSelect={() => onSelect(action.id)}>
+    <QDropdownMenuItem onClick={() => onSelect(action.id)}>
       {itemContent}
     </QDropdownMenuItem>
   );

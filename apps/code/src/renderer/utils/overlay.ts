@@ -9,3 +9,6 @@ const OVERLAY_SELECTORS = [
 export function hasOpenOverlay(): boolean {
   return document.querySelector(OVERLAY_SELECTORS) !== null;
 }
+
+export const FOCUSABLE_SELECTOR =
+  'button, a, input, textarea, select, [role="button"], [role="link"], [role="combobox"], [role="menuitem"], [contenteditable="true"], [data-interactive]';

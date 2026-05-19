@@ -1,5 +1,6 @@
 import type { IPowerManager } from "@posthog/platform/power-manager";
 import { OAUTH_SCOPE_VERSION } from "@shared/constants/oauth";
+import { NotAuthenticatedError } from "@shared/errors";
 import type { CloudRegion } from "@shared/types/regions";
 import { type BackoffOptions, sleepWithBackoff } from "@shared/utils/backoff";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
@@ -113,6 +114,16 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     return this.getState();
   }
   async getValidAccessToken(): Promise<ValidAccessTokenOutput> {
+    const override = process.env.VITE_POSTHOG_ACCESS_TOKEN_OVERRIDE;
+    if (override) {
+      await this.initialize();
+      const region = this.session?.cloudRegion ?? "us";
+      return {
+        accessToken: override,
+        apiHost: getCloudUrlFromRegion(region),
+      };
+    }
+
     await this.initialize();
 
     const session = await this.ensureValidSession();
@@ -122,6 +133,16 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     };
   }
   async refreshAccessToken(): Promise<ValidAccessTokenOutput> {
+    const override = process.env.VITE_POSTHOG_ACCESS_TOKEN_OVERRIDE;
+    if (override) {
+      await this.initialize();
+      const region = this.session?.cloudRegion ?? "us";
+      return {
+        accessToken: override,
+        apiHost: getCloudUrlFromRegion(region),
+      };
+    }
+
     await this.initialize();
 
     const session = await this.ensureValidSession(true);
@@ -316,7 +337,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
 
     const storedSession = this.resolveStoredSession();
     if (!storedSession) {
-      throw new Error("Not authenticated");
+      throw new NotAuthenticatedError();
     }
 
     return storedSession;
@@ -529,7 +550,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   }
   private requireSession(): InMemorySession {
     if (!this.session) {
-      throw new Error("Not authenticated");
+      throw new NotAuthenticatedError();
     }
     return this.session;
   }

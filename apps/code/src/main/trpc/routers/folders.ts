@@ -24,7 +24,9 @@ export const foldersRouter = router({
     .input(addFolderInput)
     .output(addFolderOutput)
     .mutation(({ input }) => {
-      return getService().addFolder(input.folderPath);
+      return getService().addFolder(input.folderPath, {
+        remoteUrl: input.remoteUrl,
+      });
     }),
 
   removeFolder: publicProcedure

@@ -18,7 +18,7 @@ export interface HandoffCheckpointTrackerConfig {
   logger?: Logger;
 }
 
-type ArtifactTransfer<T extends object = {}> = T & {
+type ArtifactTransfer<T extends object = Record<string, never>> = T & {
   rawBytes: number;
   wireBytes: number;
 };
@@ -300,7 +300,7 @@ export class HandoffCheckpointTracker {
     checkpoint: GitHandoffCheckpoint,
     uploads: Uploads,
   ): void {
-    this.logger.info("Captured handoff checkpoint", {
+    this.logger.debug("Captured handoff checkpoint", {
       branch: checkpoint.branch,
       head: checkpoint.head?.slice(0, 7),
       totalBytes: this.sumRawBytes(uploads.pack, uploads.index),
@@ -312,7 +312,7 @@ export class HandoffCheckpointTracker {
     _downloads: Downloads,
     totalBytes: number,
   ): void {
-    this.logger.info("Applied handoff checkpoint", {
+    this.logger.debug("Applied handoff checkpoint", {
       branch: checkpoint.branch,
       head: checkpoint.head?.slice(0, 7),
       totalBytes,

@@ -118,6 +118,7 @@ export function EditToolView({
           filePath={filePath}
           oldContent={isNewFile ? null : oldText}
           maxHeight="700px"
+          cacheKey={toolCall.toolCallId}
         />
       )}
     </Box>

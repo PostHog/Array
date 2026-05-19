@@ -61,7 +61,7 @@ export const useInboxCloudTaskStore = create<InboxCloudTaskStore>()(
           workspaceMode: "cloud",
           githubIntegrationId: params.githubIntegrationId,
           repository: selectedRepo,
-          cloudPrAuthorshipMode: "user",
+          cloudPrAuthorshipMode: "bot",
           cloudRunSource: "signal_report",
           signalReportId: params.reportId,
         });

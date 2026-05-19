@@ -15,8 +15,10 @@
  */
 
 import dns from "node:dns";
+import { mkdirSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { app, protocol } from "electron";
+import { app, crashReporter, protocol } from "electron";
 import { fixPath } from "./utils/fixPath";
 
 const isDev = !app.isPackaged;
@@ -36,6 +38,26 @@ app.setPath("userData", userDataPath);
 process.env.POSTHOG_CODE_DATA_DIR = userDataPath;
 process.env.POSTHOG_CODE_IS_DEV = String(isDev);
 process.env.POSTHOG_CODE_VERSION = app.getVersion();
+
+// Enable Chromium internal logging to a dedicated file. Without this, Chromium
+// crashes (black screens, render-process-gone, GPU process death) leave no
+// trail because Electron silently swallows the underlying logs. Must run
+// before app.whenReady() so the switches take effect on the GPU/renderer
+// child processes.
+const chromiumLogDir = path.join(
+  os.homedir(),
+  ".posthog-code",
+  isDev ? "logs-dev" : "logs",
+);
+mkdirSync(chromiumLogDir, { recursive: true });
+const chromiumLogPath = path.join(chromiumLogDir, "chromium.log");
+process.env.ELECTRON_ENABLE_LOGGING = "1";
+process.env.POSTHOG_CODE_CHROMIUM_LOG_PATH = chromiumLogPath;
+app.commandLine.appendSwitch("enable-logging", "file");
+app.commandLine.appendSwitch("log-file", chromiumLogPath);
+app.commandLine.appendSwitch("log-level", "0");
+
+crashReporter.start({ uploadToServer: false });
 
 // Force IPv4 resolution when "localhost" is used so the agent hits 127.0.0.1
 // instead of ::1. This matches how the renderer already reaches the PostHog API.

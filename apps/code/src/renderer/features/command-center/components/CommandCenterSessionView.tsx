@@ -55,6 +55,7 @@ export function CommandCenterSessionView({
       <SessionView
         events={events}
         taskId={taskId}
+        task={task}
         isRunning={isRunning}
         isPromptPending={isPromptPending}
         promptStartedAt={promptStartedAt}
@@ -66,7 +67,7 @@ export function CommandCenterSessionView({
         hasError={hasError}
         errorTitle={errorTitle}
         errorMessage={errorMessage ?? undefined}
-        onRetry={isCloud ? undefined : handleRetry}
+        onRetry={handleRetry}
         onNewSession={isCloud ? undefined : handleNewSession}
         isInitializing={isInitializing}
         isCloud={isCloud}

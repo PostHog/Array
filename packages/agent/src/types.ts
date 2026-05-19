@@ -41,6 +41,7 @@ export interface Task {
   github_integration?: number | null;
   repository: string; // Format: "organization/repository" (e.g., "posthog/posthog-js")
   json_schema?: Record<string, unknown> | null; // JSON schema for task output validation
+  internal?: boolean;
   created_at: string;
   updated_at: string;
   created_by?: {

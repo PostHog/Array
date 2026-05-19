@@ -1,9 +1,11 @@
+import { Tooltip } from "@components/ui/Tooltip";
 import { useGitInteractionStore } from "@features/git-interaction/state/gitInteractionStore";
 import { getSuggestedBranchName } from "@features/git-interaction/utils/getSuggestedBranchName";
 import { invalidateGitBranchQueries } from "@features/git-interaction/utils/gitCacheKeys";
 import {
   ArrowClockwise,
   CaretDown,
+  Check,
   GitBranch,
   Plus,
   Spinner,
@@ -25,6 +27,15 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { type RefObject, useEffect, useRef, useState } from "react";
 
 const COMBOBOX_LIMIT = 50;
+
+function LoadingRow({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-1 px-2 py-1.5 text-muted-foreground text-xs">
+      <Spinner size={12} className="animate-spin" />
+      {label}
+    </div>
+  );
+}
 
 interface BranchSelectorProps {
   repoPath: string | null;
@@ -77,6 +88,7 @@ export function BranchSelector({
   anchor,
 }: BranchSelectorProps) {
   const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const localAnchorRef = useRef<HTMLButtonElement>(null);
   const trpc = useTRPC();
@@ -92,17 +104,21 @@ export function BranchSelector({
     }
   }, [isSelectionOnly, defaultBranch, selectedBranch, onBranchSelect]);
 
-  const { data: localBranches = [] } = useQuery(
-    trpc.git.getAllBranches.queryOptions(
-      { directoryPath: repoPath as string },
-      { enabled: !isCloudMode && !!repoPath && open, staleTime: 10_000 },
-    ),
-  );
+  const { data: localBranches = [], isLoading: localBranchesLoading } =
+    useQuery(
+      trpc.git.getAllBranches.queryOptions(
+        { directoryPath: repoPath as string },
+        { enabled: !isCloudMode && !!repoPath, staleTime: 60_000 },
+      ),
+    );
 
   const branches = isCloudMode ? (cloudBranches ?? []) : localBranches;
   const effectiveLoading = loading || (isCloudMode && cloudBranchesLoading);
   const cloudStillLoading =
     isCloudMode && cloudBranchesLoading && branches.length === 0 && !open;
+  const branchListLoading = isCloudMode
+    ? !!cloudBranchesLoading
+    : localBranchesLoading;
 
   const checkoutMutation = useMutation(
     trpc.git.checkoutBranch.mutationOptions({
@@ -112,6 +128,13 @@ export function BranchSelector({
       onError: (error, { branchName }) => {
         const message =
           error instanceof Error ? error.message : "Unknown error occurred";
+        if (/would be overwritten by checkout/i.test(message)) {
+          toast.error(`Can't switch to ${branchName}`, {
+            description:
+              "You have uncommitted changes that would be overwritten. Commit or stash them first.",
+          });
+          return;
+        }
         toast.error(`Failed to checkout ${branchName}`, {
           description: message,
         });
@@ -153,11 +176,22 @@ export function BranchSelector({
 
   const isDisabled = !!(disabled || !repoPath || cloudStillLoading);
   const inputValue = isCloudMode ? (cloudSearchQuery ?? "") : searchQuery;
+  const trimmedInputValue = inputValue.trim();
+  const canUseInputBranch =
+    !isDisabled &&
+    trimmedInputValue.length > 0 &&
+    trimmedInputValue !== displayedBranch;
+
+  const handleUseInputBranch = () => {
+    if (!canUseInputBranch) return;
+    handleBranchChange(trimmedInputValue);
+  };
 
   return (
     <Combobox
       items={branches}
       limit={COMBOBOX_LIMIT}
+      autoHighlight
       value={displayedBranch}
       inputValue={inputValue}
       onInputValueChange={
@@ -171,30 +205,38 @@ export function BranchSelector({
       disabled={isDisabled}
       filter={isCloudMode ? null : undefined}
     >
-      <ComboboxTrigger
-        render={
-          <Button
-            ref={localAnchorRef}
-            variant="outline"
-            size="sm"
-            disabled={isDisabled}
-            aria-label="Branch"
-            title={displayedBranch ?? undefined}
-          >
-            {showSpinner ? (
-              <Spinner size={14} className="shrink-0 animate-spin" />
-            ) : (
-              <GitBranch size={14} weight="regular" className="shrink-0" />
-            )}
-            <span className="min-w-0 truncate">{displayText}</span>
-            <CaretDown
-              size={10}
-              weight="bold"
-              className="text-muted-foreground"
-            />
-          </Button>
-        }
-      />
+      <Tooltip
+        content={displayedBranch ?? "Switch branch"}
+        side="bottom"
+        open={hovered && !open && !effectiveLoading}
+      >
+        <ComboboxTrigger
+          render={
+            <Button
+              ref={localAnchorRef}
+              variant="outline"
+              size="sm"
+              disabled={isDisabled}
+              aria-label="Branch"
+              onMouseEnter={() => setHovered(true)}
+              onMouseLeave={() => setHovered(false)}
+              className="min-w-0 max-w-[250px] shrink"
+            >
+              {showSpinner ? (
+                <Spinner size={14} className="shrink-0 animate-spin" />
+              ) : (
+                <GitBranch size={14} weight="regular" className="shrink-0" />
+              )}
+              <span className="min-w-0 truncate">{displayText}</span>
+              <CaretDown
+                size={10}
+                weight="bold"
+                className="text-muted-foreground"
+              />
+            </Button>
+          }
+        />
+      </Tooltip>
       <ComboboxContent
         anchor={anchor ?? localAnchorRef}
         side="bottom"
@@ -206,8 +248,46 @@ export function BranchSelector({
             <ComboboxInput
               placeholder="Search branches..."
               showTrigger={false}
+              onKeyDownCapture={(event) => {
+                if (
+                  event.key !== "Enter" ||
+                  event.nativeEvent.isComposing ||
+                  !canUseInputBranch
+                ) {
+                  return;
+                }
+
+                // If the combobox already has a highlighted item, let Base UI select it.
+                if (event.currentTarget.getAttribute("aria-activedescendant")) {
+                  return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                handleUseInputBranch();
+              }}
             />
           </div>
+          <Tooltip content="Use this branch name" side="bottom">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!canUseInputBranch}
+              aria-label="Use this branch name"
+              onMouseDown={(event) => {
+                // Keep focus inside the combobox so the popover doesn't close before click.
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                handleUseInputBranch();
+              }}
+            >
+              <Check size={14} />
+            </Button>
+          </Tooltip>
           {onRefresh ? (
             <Button
               variant="outline"
@@ -233,13 +313,14 @@ export function BranchSelector({
         </div>
 
         {isCloudMode && cloudBranchesFetchingMore ? (
-          <div className="flex items-center gap-1 px-2 py-1.5 text-muted-foreground text-xs">
-            <Spinner size={12} className="animate-spin" />
-            Loading more ({branches.length})…
-          </div>
+          <LoadingRow label={`Loading more (${branches.length})…`} />
         ) : null}
 
-        <ComboboxEmpty>No branches found.</ComboboxEmpty>
+        {branchListLoading && branches.length === 0 ? (
+          <LoadingRow label="Loading branches…" />
+        ) : (
+          <ComboboxEmpty>No branches found.</ComboboxEmpty>
+        )}
 
         <ComboboxList className="max-h-[min(14rem,calc(var(--available-height,14rem)-5rem))] pe-2">
           {(item: string) => (

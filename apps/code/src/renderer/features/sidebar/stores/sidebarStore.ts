@@ -13,6 +13,7 @@ interface SidebarStoreState {
   organizeMode: "by-project" | "chronological";
   sortMode: "updated" | "created";
   showAllUsers: boolean;
+  showInternal: boolean;
 }
 
 interface SidebarStoreActions {
@@ -30,6 +31,7 @@ interface SidebarStoreActions {
   setOrganizeMode: (mode: SidebarStoreState["organizeMode"]) => void;
   setSortMode: (mode: SidebarStoreState["sortMode"]) => void;
   setShowAllUsers: (showAllUsers: boolean) => void;
+  setShowInternal: (showInternal: boolean) => void;
 }
 
 type SidebarStore = SidebarStoreState & SidebarStoreActions;
@@ -47,6 +49,7 @@ export const useSidebarStore = create<SidebarStore>()(
       organizeMode: "by-project",
       sortMode: "updated",
       showAllUsers: false,
+      showInternal: false,
       setOpen: (open) => set({ open, hasUserSetOpen: true }),
       setOpenAuto: (open) =>
         set((state) => (state.hasUserSetOpen ? state : { open })),
@@ -96,6 +99,7 @@ export const useSidebarStore = create<SidebarStore>()(
       setOrganizeMode: (organizeMode) => set({ organizeMode }),
       setSortMode: (sortMode) => set({ sortMode }),
       setShowAllUsers: (showAllUsers) => set({ showAllUsers }),
+      setShowInternal: (showInternal) => set({ showInternal }),
     }),
     {
       name: "sidebar-storage",
@@ -109,6 +113,7 @@ export const useSidebarStore = create<SidebarStore>()(
         organizeMode: state.organizeMode,
         sortMode: state.sortMode,
         showAllUsers: state.showAllUsers,
+        showInternal: state.showInternal,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as {
@@ -121,6 +126,7 @@ export const useSidebarStore = create<SidebarStore>()(
           organizeMode?: SidebarStoreState["organizeMode"];
           sortMode?: SidebarStoreState["sortMode"];
           showAllUsers?: boolean;
+          showInternal?: boolean;
         };
         return {
           ...current,
@@ -138,6 +144,7 @@ export const useSidebarStore = create<SidebarStore>()(
           organizeMode: persistedState.organizeMode ?? current.organizeMode,
           sortMode: persistedState.sortMode ?? current.sortMode,
           showAllUsers: persistedState.showAllUsers ?? current.showAllUsers,
+          showInternal: persistedState.showInternal ?? current.showInternal,
         };
       },
     },

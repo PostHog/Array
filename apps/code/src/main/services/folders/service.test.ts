@@ -93,7 +93,7 @@ vi.mock("../../db/repositories/worktree-repository.js", () => ({
   WorktreeRepository: vi.fn(() => mockWorktreeRepo),
 }));
 
-import { isGitRepository } from "@posthog/git/queries";
+import { getRemoteUrl, isGitRepository } from "@posthog/git/queries";
 import type { IDialog } from "@posthog/platform/dialog";
 import type { IRepositoryRepository } from "../../db/repositories/repository-repository";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
@@ -443,6 +443,77 @@ describe("FoldersService", () => {
         commitMessage: "Initial commit",
       });
       expect(result.name).toBe("project");
+    });
+
+    it("tags a new folder with the supplied remoteUrl override", async () => {
+      vi.mocked(isGitRepository).mockResolvedValue(true);
+      mockRepositoryRepo.findByPath.mockReturnValue(null);
+      mockRepositoryRepo.create.mockReturnValue({
+        id: "folder-new",
+        path: "/home/user/fork",
+        remoteUrl: "PostHog/posthog",
+        lastAccessedAt: "2024-01-01T00:00:00.000Z",
+        createdAt: "2024-01-01T00:00:00.000Z",
+        updatedAt: "2024-01-01T00:00:00.000Z",
+      });
+
+      await service.addFolder("/home/user/fork", {
+        remoteUrl: "https://github.com/PostHog/posthog",
+      });
+
+      expect(mockRepositoryRepo.create).toHaveBeenCalledWith({
+        path: "/home/user/fork",
+        remoteUrl: "PostHog/posthog",
+      });
+    });
+
+    it("normalizes a non-GitHub override and skips the local remote lookup", async () => {
+      vi.mocked(isGitRepository).mockResolvedValue(true);
+      vi.mocked(getRemoteUrl).mockResolvedValue(
+        "https://github.com/SomeoneElse/wrong",
+      );
+      mockRepositoryRepo.findByPath.mockReturnValue(null);
+      mockRepositoryRepo.create.mockReturnValue({
+        id: "folder-new",
+        path: "/home/user/fork",
+        remoteUrl: "https://gitlab.com/PostHog/posthog",
+        lastAccessedAt: "2024-01-01T00:00:00.000Z",
+        createdAt: "2024-01-01T00:00:00.000Z",
+        updatedAt: "2024-01-01T00:00:00.000Z",
+      });
+
+      await service.addFolder("/home/user/fork", {
+        remoteUrl: "https://gitlab.com/PostHog/posthog.git",
+      });
+
+      expect(mockRepositoryRepo.create).toHaveBeenCalledWith({
+        path: "/home/user/fork",
+        remoteUrl: "https://gitlab.com/PostHog/posthog",
+      });
+      expect(getRemoteUrl).not.toHaveBeenCalled();
+    });
+
+    it("backfills remoteUrl on an existing folder when override is supplied", async () => {
+      vi.mocked(isGitRepository).mockResolvedValue(true);
+      const existing = {
+        id: "folder-existing",
+        path: "/home/user/project",
+        remoteUrl: null,
+        lastAccessedAt: "2024-01-01T00:00:00.000Z",
+        createdAt: "2024-01-01T00:00:00.000Z",
+        updatedAt: "2024-01-01T00:00:00.000Z",
+      };
+      mockRepositoryRepo.findByPath.mockReturnValue(existing);
+      mockRepositoryRepo.findById.mockReturnValue(existing);
+
+      await service.addFolder("/home/user/project", {
+        remoteUrl: "https://github.com/PostHog/posthog",
+      });
+
+      expect(mockRepositoryRepo.updateRemoteUrl).toHaveBeenCalledWith(
+        "folder-existing",
+        "PostHog/posthog",
+      );
     });
 
     it("throws error when user cancels git init", async () => {

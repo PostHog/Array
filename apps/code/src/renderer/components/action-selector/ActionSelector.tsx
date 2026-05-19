@@ -52,6 +52,7 @@ export function ActionSelector({
     hasSteps,
     numSteps,
     showSubmitButton,
+    canSubmitOrAdvance,
     allOptions,
     showInlineEdit,
     moveUp,
@@ -227,11 +228,19 @@ export function ActionSelector({
           />
         )}
 
-        {title && (
-          <Text className="font-medium text-[13px] text-blue-11" title={title}>
-            {compactHomePath(title)}
-          </Text>
-        )}
+        {title &&
+          (typeof title === "string" ? (
+            <Text
+              className="font-medium text-[13px] text-primary"
+              title={title}
+            >
+              {compactHomePath(title)}
+            </Text>
+          ) : (
+            <Text className="font-medium text-[13px] text-primary">
+              {title}
+            </Text>
+          ))}
 
         {pendingAction && <Box>{pendingAction}</Box>}
 
@@ -240,7 +249,7 @@ export function ActionSelector({
             {question}
           </Text>
 
-          <Flex direction="column" gap="1">
+          <Flex direction="column" gap="1" px="2">
             {allOptions.map((option, index) => {
               if (isSubmitOption(option.id) || isCancelOption(option.id)) {
                 return null;
@@ -284,6 +293,10 @@ export function ActionSelector({
               const isSelected = selectedIndex === index;
 
               const isHovered = hoveredIndex === index;
+              const isDisabled =
+                isSubmitOption(option.id) &&
+                showSubmitButton &&
+                !canSubmitOrAdvance;
               return (
                 <OptionRow
                   key={option.id}
@@ -298,6 +311,7 @@ export function ActionSelector({
                   customInputPlaceholder=""
                   isEditing={false}
                   submitLabel={getSubmitLabel()}
+                  disabled={isDisabled}
                   onCustomInputChange={setCustomInput}
                   onNavigateUp={handleNavigateUp}
                   onNavigateDown={handleNavigateDown}

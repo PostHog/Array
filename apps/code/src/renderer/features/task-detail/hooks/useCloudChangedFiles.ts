@@ -1,6 +1,6 @@
 import {
-  useCloudBranchChangedFiles,
-  useCloudPrChangedFiles,
+  useBranchChangedFiles,
+  usePrChangedFiles,
 } from "@features/git-interaction/hooks/useGitQueries";
 import { useCloudRunState } from "@features/task-detail/hooks/useCloudRunState";
 import type { ChangedFile, Task } from "@shared/types";
@@ -20,13 +20,13 @@ export function useCloudChangedFiles(
     data: prFiles,
     isPending: prPending,
     isError: prError,
-  } = useCloudPrChangedFiles(isActive ? prUrl : null, isRunActive);
+  } = usePrChangedFiles(isActive ? prUrl : null, isRunActive);
 
   const {
     data: branchFiles,
     isPending: branchPending,
     isError: branchError,
-  } = useCloudBranchChangedFiles(
+  } = useBranchChangedFiles(
     isActive && !prUrl ? repo : null,
     isActive && !prUrl ? effectiveBranch : null,
     isRunActive,

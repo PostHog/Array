@@ -37,15 +37,19 @@ export const cloudTaskRouter = router({
     .input(onUpdateInput)
     .subscription(async function* (opts) {
       const service = getService();
-      for await (const data of service.toIterable(CloudTaskEvent.Update, {
-        signal: opts.signal,
-      })) {
-        if (
-          data.taskId === opts.input.taskId &&
-          data.runId === opts.input.runId
-        ) {
-          yield data;
+      try {
+        for await (const data of service.toIterable(CloudTaskEvent.Update, {
+          signal: opts.signal,
+        })) {
+          if (
+            data.taskId === opts.input.taskId &&
+            data.runId === opts.input.runId
+          ) {
+            yield data;
+          }
         }
+      } finally {
+        service.unwatch(opts.input.taskId, opts.input.runId);
       }
     }),
 });

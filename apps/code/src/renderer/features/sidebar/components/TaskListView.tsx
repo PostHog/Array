@@ -2,9 +2,11 @@ import { PointerSensor } from "@dnd-kit/dom";
 import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useFolders } from "@features/folders/hooks/useFolders";
+import { useMeQuery } from "@hooks/useMeQuery";
 import {
   FunnelSimple as FunnelSimpleIcon,
   GitBranch,
+  MagnifyingGlass,
 } from "@phosphor-icons/react";
 import {
   Button,
@@ -20,10 +22,13 @@ import { Flex, Text } from "@radix-ui/themes";
 import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
 import { useWorkspace } from "@renderer/features/workspace/hooks/useWorkspace";
 import { normalizeRepoKey } from "@shared/utils/repo";
+import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
+import { getRelativeDateGroup } from "@utils/time";
 import { motion } from "framer-motion";
-import { useCallback, useEffect } from "react";
+import { Fragment, useCallback, useEffect, useMemo } from "react";
 import type { TaskData, TaskGroup } from "../hooks/useSidebarData";
+import { useTaskPrStatus } from "../hooks/useTaskPrStatus";
 import { useSidebarStore } from "../stores/sidebarStore";
 import { DraggableFolder } from "./DraggableFolder";
 import { TaskItem } from "./items/TaskItem";
@@ -98,6 +103,7 @@ function TaskRow({
   const effectiveMode =
     workspace?.mode ??
     (task.taskRunEnvironment === "cloud" ? "cloud" : undefined);
+  const { prState, hasDiff } = useTaskPrStatus(task);
 
   return (
     <TaskItem
@@ -114,6 +120,8 @@ function TaskRow({
       isPinned={task.isPinned}
       needsPermission={task.needsPermission}
       taskRunStatus={task.taskRunStatus}
+      prState={prState}
+      hasDiff={hasDiff}
       timestamp={timestamp}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
@@ -126,13 +134,31 @@ function TaskRow({
   );
 }
 
+function TaskSearchButton() {
+  const openCommandMenu = useCommandMenuStore((state) => state.open);
+  return (
+    <Button
+      type="button"
+      aria-label="Search tasks"
+      size="icon-sm"
+      onClick={() => openCommandMenu()}
+    >
+      <MagnifyingGlass size={14} />
+    </Button>
+  );
+}
+
 function TaskFilterMenu() {
   const organizeMode = useSidebarStore((state) => state.organizeMode);
   const sortMode = useSidebarStore((state) => state.sortMode);
   const showAllUsers = useSidebarStore((state) => state.showAllUsers);
+  const showInternal = useSidebarStore((state) => state.showInternal);
   const setOrganizeMode = useSidebarStore((state) => state.setOrganizeMode);
   const setSortMode = useSidebarStore((state) => state.setSortMode);
   const setShowAllUsers = useSidebarStore((state) => state.setShowAllUsers);
+  const setShowInternal = useSidebarStore((state) => state.setShowInternal);
+  const { data: currentUser } = useMeQuery();
+  const isStaff = currentUser?.is_staff === true;
 
   return (
     <DropdownMenu>
@@ -189,6 +215,25 @@ function TaskFilterMenu() {
               </DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="all">
                 All tasks
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </>
+        )}
+
+        {isStaff && (
+          <>
+            <DropdownMenuSeparator />
+
+            <MenuLabel>Task visibility</MenuLabel>
+            <DropdownMenuRadioGroup
+              value={showInternal ? "internal" : "external"}
+              onValueChange={(value) => setShowInternal(value === "internal")}
+            >
+              <DropdownMenuRadioItem value="external">
+                External
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="internal">
+                Internal
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </>
@@ -251,6 +296,20 @@ export function TaskListView({
   const timestampKey: "lastActivityAt" | "createdAt" =
     sortMode === "updated" ? "lastActivityAt" : "createdAt";
 
+  const dateGroupedTasks = useMemo(() => {
+    const groups: { label: string | null; tasks: TaskData[] }[] = [];
+    for (const task of flatTasks) {
+      const label = getRelativeDateGroup(task[timestampKey]);
+      const last = groups[groups.length - 1];
+      if (last && last.label === label) {
+        last.tasks.push(task);
+      } else {
+        groups.push({ label, tasks: [task] });
+      }
+    }
+    return groups;
+  }, [flatTasks, timestampKey]);
+
   return (
     <Flex direction="column">
       {pinnedTasks.length > 0 && (
@@ -277,7 +336,15 @@ export function TaskListView({
         </>
       )}
 
-      <SectionLabel label="Tasks" endContent={<TaskFilterMenu />} />
+      <SectionLabel
+        label="Tasks"
+        endContent={
+          <span className="flex items-center">
+            <TaskSearchButton />
+            <TaskFilterMenu />
+          </span>
+        }
+      />
 
       {pinnedTasks.length === 0 &&
       flatTasks.length === 0 &&
@@ -388,23 +455,30 @@ export function TaskListView({
         </DragDropProvider>
       ) : (
         <Flex direction="column" gap="1px">
-          {flatTasks.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              isActive={activeTaskId === task.id}
-              isEditing={editingTaskId === task.id}
-              onClick={() => onTaskClick(task.id)}
-              onDoubleClick={() => onTaskDoubleClick(task.id)}
-              onContextMenu={(e, isPinned) =>
-                onTaskContextMenu(task.id, e, isPinned)
-              }
-              onArchive={() => onTaskArchive(task.id)}
-              onTogglePin={() => onTaskTogglePin(task.id)}
-              onEditSubmit={(newTitle) => onTaskEditSubmit(task.id, newTitle)}
-              onEditCancel={onTaskEditCancel}
-              timestamp={task[timestampKey]}
-            />
+          {dateGroupedTasks.map((group, groupIndex) => (
+            <Fragment key={`${group.label ?? "today"}-${groupIndex}`}>
+              {group.label && <SectionLabel label={group.label} />}
+              {group.tasks.map((task) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  isActive={activeTaskId === task.id}
+                  isEditing={editingTaskId === task.id}
+                  onClick={() => onTaskClick(task.id)}
+                  onDoubleClick={() => onTaskDoubleClick(task.id)}
+                  onContextMenu={(e, isPinned) =>
+                    onTaskContextMenu(task.id, e, isPinned)
+                  }
+                  onArchive={() => onTaskArchive(task.id)}
+                  onTogglePin={() => onTaskTogglePin(task.id)}
+                  onEditSubmit={(newTitle) =>
+                    onTaskEditSubmit(task.id, newTitle)
+                  }
+                  onEditCancel={onTaskEditCancel}
+                  timestamp={task[timestampKey]}
+                />
+              ))}
+            </Fragment>
           ))}
           {hasMore && (
             <div className="px-2 py-2">

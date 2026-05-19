@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readSync,
+  renameSync,
+  unlinkSync,
+} from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 import { initOtelTransport } from "@main/utils/otel-log-transport";
@@ -56,4 +65,42 @@ export { shutdownOtelTransport } from "@main/utils/otel-log-transport";
 
 export function getLogFilePath(): string {
   return join(LOG_DIR, LOG_FILE);
+}
+
+export function getChromiumLogFilePath(): string | undefined {
+  return process.env.POSTHOG_CODE_CHROMIUM_LOG_PATH;
+}
+
+const CHROMIUM_LOG_TAIL_BYTES = 32 * 1024;
+
+/**
+ * Read the last ~32 KB of the Chromium internal log file. Used by crash
+ * handlers to attach the tail to OTEL/electron-log so PostHog gets the native
+ * V8/GPU output around a renderer death — Chromium writes chromium.log
+ * directly from native code and never goes through electron-log otherwise.
+ */
+export function readChromiumLogTail(): string | undefined {
+  const path = getChromiumLogFilePath();
+  if (!path) return undefined;
+
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, "r");
+    const { size } = fstatSync(fd);
+    if (size === 0) return undefined;
+    const length = Math.min(size, CHROMIUM_LOG_TAIL_BYTES);
+    const buf = Buffer.alloc(length);
+    readSync(fd, buf, 0, length, size - length);
+    return buf.toString("utf8");
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        closeSync(fd);
+      } catch {
+        // Best-effort close
+      }
+    }
+  }
 }

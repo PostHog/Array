@@ -1,3 +1,5 @@
+import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient";
+import { useCurrentUser } from "@features/auth/hooks/authQueries";
 import {
   SelectReportPane,
   SkeletonBackdrop,
@@ -5,6 +7,11 @@ import {
   WelcomePane,
 } from "@features/inbox/components/InboxEmptyStates";
 import { InboxSourcesDialog } from "@features/inbox/components/InboxSourcesDialog";
+import {
+  inboxBulkSnoozeDisabledReason,
+  inboxBulkSuppressDisabledReason,
+  useInboxBulkActions,
+} from "@features/inbox/hooks/useInboxBulkActions";
 import { useInboxDeepLinkListSync } from "@features/inbox/hooks/useInboxDeepLinkListSync";
 import {
   useInboxAvailableSuggestedReviewers,
@@ -24,12 +31,23 @@ import {
   isReportUpForReview,
 } from "@features/inbox/utils/filterReports";
 import { INBOX_REFETCH_INTERVAL_MS } from "@features/inbox/utils/inboxConstants";
-import { useRepositoryIntegration } from "@hooks/useIntegrations";
+import { DiscoveredTaskDetailPane } from "@features/setup/components/DiscoveredTaskDetailPane";
+import { RecommendedSetupTasks } from "@features/setup/components/RecommendedSetupTasks";
+import { useSetupStore } from "@features/setup/stores/setupStore";
+import {
+  useIntegrations,
+  useRepositoryIntegration,
+} from "@hooks/useIntegrations";
 import { Box, Flex, ScrollArea } from "@radix-ui/themes";
-import type { SignalReportsQueryParams } from "@shared/types";
+import { isDismissalReasonSnooze } from "@shared/dismissalReasons";
+import type { SignalReport, SignalReportsQueryParams } from "@shared/types";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  DismissReportDialog,
+  type DismissReportDialogResult,
+} from "./DismissReportDialog";
 import { MultiSelectStack } from "./detail/MultiSelectStack";
 import { ReportDetailPane } from "./detail/ReportDetailPane";
 import { GitHubConnectionBanner } from "./list/GitHubConnectionBanner";
@@ -50,12 +68,35 @@ export function InboxSignalsTab() {
   const suggestedReviewerFilter = useInboxSignalsFilterStore(
     (s) => s.suggestedReviewerFilter,
   );
+  const seedSuggestedReviewerFilterWithCurrentUser = useInboxSignalsFilterStore(
+    (s) => s.seedSuggestedReviewerFilterWithCurrentUser,
+  );
+
+  // ── Current user (seeds reviewer filter on first inbox visit) ───────────
+  const authClient = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({
+    client: authClient,
+    enabled: !!authClient,
+  });
+
+  useEffect(() => {
+    if (!currentUser?.uuid) return;
+    seedSuggestedReviewerFilterWithCurrentUser(currentUser.uuid);
+  }, [currentUser?.uuid, seedSuggestedReviewerFilterWithCurrentUser]);
 
   // ── GitHub integration ───────────────────────────────────────────────
   const { hasGithubIntegration } = useRepositoryIntegration();
 
   // ── Signal source configs ───────────────────────────────────────────────
-  const { data: signalSourceConfigs } = useSignalSourceConfigs();
+  const { data: signalSourceConfigs, isPending: signalSourceConfigsPending } =
+    useSignalSourceConfigs();
+  const { isPending: integrationsPending, data: integrationsData } =
+    useIntegrations();
+  /** Matches store-backed `hasGithubIntegration`, but uses query data so there is no lag behind the `useIntegrations` → Zustand sync effect. */
+  const hasGithubIntegrationFromQuery = useMemo(
+    () => integrationsData?.some((i) => i.kind === "github") ?? false,
+    [integrationsData],
+  );
   const hasSignalSources = signalSourceConfigs?.some((c) => c.enabled) ?? false;
   const enabledProducts = useMemo(() => {
     const seen = new Set<string>();
@@ -77,6 +118,9 @@ export function InboxSignalsTab() {
   const windowFocused = useRendererWindowFocusStore((s) => s.focused);
   const isInboxView = useNavigationStore((s) => s.view.type === "inbox");
   const inboxPollingActive = windowFocused && isInboxView;
+
+  const inboxSourcesPrerequisitesLoaded =
+    !integrationsPending && !signalSourceConfigsPending;
 
   // ── Data fetching ───────────────────────────────────────────────────────
   useInboxAvailableSuggestedReviewers({
@@ -121,6 +165,40 @@ export function InboxSignalsTab() {
     staleTime: inboxPollingActive ? INBOX_REFETCH_INTERVAL_MS : 12_000,
   });
 
+  const didAutoOpenSourcesDialogThisInboxVisitRef = useRef(false);
+
+  useEffect(() => {
+    if (!isInboxView) {
+      didAutoOpenSourcesDialogThisInboxVisitRef.current = false;
+      return;
+    }
+    if (!inboxSourcesPrerequisitesLoaded || isLoading || error != null) {
+      return;
+    }
+    if (totalCount <= 0) {
+      return;
+    }
+    const needsSourcesOrGithubSetup =
+      !hasSignalSources || !hasGithubIntegrationFromQuery;
+    if (!needsSourcesOrGithubSetup) {
+      return;
+    }
+    if (didAutoOpenSourcesDialogThisInboxVisitRef.current) {
+      return;
+    }
+    didAutoOpenSourcesDialogThisInboxVisitRef.current = true;
+    setSourcesDialogOpen(true);
+  }, [
+    isInboxView,
+    inboxSourcesPrerequisitesLoaded,
+    isLoading,
+    error,
+    totalCount,
+    hasSignalSources,
+    hasGithubIntegrationFromQuery,
+    setSourcesDialogOpen,
+  ]);
+
   const reports = useMemo(
     () => filterReportsBySearch(allReports, searchQuery),
     [allReports, searchQuery],
@@ -158,10 +236,43 @@ export function InboxSignalsTab() {
   );
   const clearSelection = useInboxReportSelectionStore((s) => s.clearSelection);
 
+  const [dismissReport, setDismissReport] = useState<SignalReport | null>(null);
+
+  const dismissTargetId = dismissReport?.id ?? null;
+  const dismissBulkActions = useInboxBulkActions(allReports, dismissTargetId);
+
+  const handleDismissDialogOpenChange = useCallback((open: boolean) => {
+    if (!open) setDismissReport(null);
+  }, []);
+
+  const handleDismissConfirm = useCallback(
+    async (result: DismissReportDialogResult) => {
+      if (dismissTargetId == null) return;
+      const ok = isDismissalReasonSnooze(result.reason)
+        ? await dismissBulkActions.snoozeSelected()
+        : await dismissBulkActions.suppressSelected(result);
+      if (ok) {
+        setDismissReport(null);
+      }
+    },
+    [dismissBulkActions, dismissTargetId],
+  );
+
   const { selectedReport } = useInboxDeepLinkListSync({
     reports,
     inboxPollingActive,
   });
+
+  const openDismissDialogFromToolbar = useCallback(() => {
+    if (selectedReportIds.length !== 1) return;
+    const id = selectedReportIds[0];
+    const report = allReports.find((r) => r.id === id);
+    if (report) setDismissReport(report);
+  }, [selectedReportIds, allReports]);
+
+  const dismissMutationPending =
+    dismissReport != null &&
+    (dismissBulkActions.isSuppressing || dismissBulkActions.isSnoozing);
 
   // Stable refs so callbacks don't need re-registration on every render
   const selectedReportIdsRef = useRef(selectedReportIds);
@@ -179,6 +290,9 @@ export function InboxSignalsTab() {
   // ── Click handler: plain / cmd / shift ──────────────────────────────────
   const handleReportClick = useCallback(
     (reportId: string, event: { metaKey: boolean; shiftKey: boolean }) => {
+      // Selecting a real report clears any discovered-task selection so the
+      // detail pane can swap to the report.
+      useSetupStore.getState().selectDiscoveredTask(null);
       if (event.shiftKey) {
         selectRange(
           reportId,
@@ -186,18 +300,12 @@ export function InboxSignalsTab() {
         );
       } else if (event.metaKey) {
         toggleReportSelection(reportId);
-      } else if (
-        selectedReportIdsRef.current.length === 1 &&
-        selectedReportIdsRef.current[0] === reportId
-      ) {
-        // Plain click on the only selected report — deselect it
-        clearSelection();
       } else {
-        // Plain click — select only this report
+        // Plain click — select only this report (no-op if already the sole selection)
         setSelectedReportIds([reportId]);
       }
     },
-    [selectRange, toggleReportSelection, setSelectedReportIds, clearSelection],
+    [selectRange, toggleReportSelection, setSelectedReportIds],
   );
 
   // Select-all checkbox
@@ -262,6 +370,28 @@ export function InboxSignalsTab() {
     };
   }, [sidebarIsResizing, setSidebarWidth, setSidebarIsResizing]);
 
+  // ── Discovered-task suggestions (rendered inline at top of list) ───────
+  const discoveredTasks = useSetupStore((s) => s.discoveredTasks);
+  const hasDiscoveredTasks = discoveredTasks.length > 0;
+  const selectedDiscoveredTaskId = useSetupStore(
+    (s) => s.selectedDiscoveredTaskId,
+  );
+  const selectDiscoveredTask = useSetupStore((s) => s.selectDiscoveredTask);
+  const selectedDiscoveredTask =
+    discoveredTasks.find((t) => t.id === selectedDiscoveredTaskId) ?? null;
+
+  const handleSelectDiscoveredTask = useCallback(
+    (taskId: string) => {
+      selectDiscoveredTask(taskId);
+      clearSelection();
+    },
+    [selectDiscoveredTask, clearSelection],
+  );
+
+  const handleCloseDiscoveredTaskPane = useCallback(() => {
+    selectDiscoveredTask(null);
+  }, [selectDiscoveredTask]);
+
   // ── Layout mode (computed early — needed by focus effect below) ────────
   const hasReports = allReports.length > 0;
   const hasActiveFilters =
@@ -269,7 +399,10 @@ export function InboxSignalsTab() {
     suggestedReviewerFilter.length > 0 ||
     statusFilter.length < 5;
   const shouldShowTwoPane =
-    hasReports || !!searchQuery.trim() || hasActiveFilters;
+    hasReports ||
+    !!searchQuery.trim() ||
+    hasActiveFilters ||
+    hasDiscoveredTasks;
 
   // Sticky: once we enter two-pane mode, stay there even if a refetch
   // momentarily empties the list (e.g. when sort order changes).
@@ -470,8 +603,13 @@ export function InboxSignalsTab() {
                     effectiveBulkIds={selectedReportIds}
                     onToggleSelectAll={handleToggleSelectAll}
                     onConfigureSources={() => setSourcesDialogOpen(true)}
+                    onOpenDismissDialog={openDismissDialogFromToolbar}
+                    isDismissMutationPending={dismissMutationPending}
                   />
                 </Box>
+                <RecommendedSetupTasks
+                  onSelectTask={handleSelectDiscoveredTask}
+                />
                 <ReportListPane
                   reports={reports}
                   allReports={allReports}
@@ -518,6 +656,17 @@ export function InboxSignalsTab() {
               <ReportDetailPane
                 report={selectedReport}
                 onClose={clearSelection}
+                onRequestDismissReport={() => setDismissReport(selectedReport)}
+                suppressDisabledReason={inboxBulkSuppressDisabledReason(
+                  allReports,
+                  [selectedReport.id],
+                )}
+                isDismissMutationPending={dismissMutationPending}
+              />
+            ) : selectedDiscoveredTask ? (
+              <DiscoveredTaskDetailPane
+                task={selectedDiscoveredTask}
+                onClose={handleCloseDiscoveredTaskPane}
               />
             ) : (
               <SelectReportPane />
@@ -567,6 +716,22 @@ export function InboxSignalsTab() {
         hasSignalSources={hasSignalSources}
         hasGithubIntegration={hasGithubIntegration}
       />
+
+      {dismissReport != null ? (
+        <DismissReportDialog
+          key={dismissReport.id}
+          open
+          onOpenChange={handleDismissDialogOpenChange}
+          report={dismissReport}
+          isSubmitting={
+            dismissBulkActions.isSuppressing || dismissBulkActions.isSnoozing
+          }
+          snoozeDisabledReason={inboxBulkSnoozeDisabledReason(allReports, [
+            dismissReport.id,
+          ])}
+          onConfirm={(result) => void handleDismissConfirm(result)}
+        />
+      ) : null}
     </>
   );
 }

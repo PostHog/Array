@@ -9,6 +9,8 @@
  * - System prompt injection
  */
 
+import { existsSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import {
   type AgentSideConnection,
   type AuthenticateRequest,
@@ -22,6 +24,7 @@ import {
   type LoadSessionRequest,
   type LoadSessionResponse,
   type McpServer,
+  type McpServerStdio,
   type NewSessionRequest,
   type NewSessionResponse,
   ndJsonStream,
@@ -60,6 +63,7 @@ import {
 } from "../../utils/streams";
 import { BaseAcpAgent, type BaseSession } from "../base-acp-agent";
 import { createCodexClient } from "./codex-client";
+import { normalizeCodexConfigOptions } from "./models";
 import {
   type CodexSessionState,
   createSessionState,
@@ -71,6 +75,15 @@ import {
   type CodexProcessOptions,
   spawnCodexProcess,
 } from "./spawn";
+import {
+  STRUCTURED_OUTPUT_MCP_NAME,
+  STRUCTURED_OUTPUT_TOOL_NAME,
+} from "./structured-output-constants";
+
+export {
+  STRUCTURED_OUTPUT_MCP_NAME,
+  STRUCTURED_OUTPUT_TOOL_NAME,
+} from "./structured-output-constants";
 
 interface NewSessionMeta {
   taskRunId?: string;
@@ -85,12 +98,14 @@ interface NewSessionMeta {
   additionalRoots?: string[];
   disableBuiltInTools?: boolean;
   allowedDomains?: string[];
+  jsonSchema?: Record<string, unknown> | null;
 }
 
 export interface CodexAcpAgentOptions {
   codexProcessOptions: CodexProcessOptions;
   processCallbacks?: ProcessSpawnedCallback;
   posthogApiConfig?: PostHogAPIConfig;
+  onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
 }
 
 type CodexSession = BaseSession & {
@@ -152,6 +167,46 @@ function getCurrentPermissionMode(
   return toCodexPermissionMode(fallbackMode);
 }
 
+const STRUCTURED_OUTPUT_INSTRUCTIONS = `\n\nWhen you have completed the task, call the \`${STRUCTURED_OUTPUT_TOOL_NAME}\` tool with the final structured result. The tool's input schema matches the required output format for this task. Do not describe the result in a plain message — submitting it via the tool is required for the task to be considered complete.`;
+
+/**
+ * Builds the stdio MCP server config that exposes the `create_output` tool.
+ * The child process validates tool input against the JSON schema with AJV.
+ * We pass the schema as a base64-encoded env var to avoid shell escaping.
+ *
+ * Path resolves relative to the compiled adapter location. When bundled into
+ * different entry points (dist/agent.js, dist/server/bin.cjs, dist/server/
+ * harness/bin.js, etc), `import.meta.dirname` sits at different depths. Walk
+ * up until we find the script so each bundle locates the shared dist asset.
+ */
+function resolveStructuredOutputMcpScript(): string {
+  const rel = "adapters/codex/structured-output-mcp-server.js";
+  let dir = import.meta.dirname ?? __dirname;
+  for (let i = 0; i < 5; i++) {
+    const candidate = resolvePath(dir, rel);
+    if (existsSync(candidate)) return candidate;
+    dir = resolvePath(dir, "..");
+  }
+  throw new Error(
+    `Could not locate ${rel} relative to ${import.meta.dirname ?? __dirname}.`,
+  );
+}
+
+function buildStructuredOutputMcpServer(
+  jsonSchema: Record<string, unknown>,
+): McpServerStdio {
+  const scriptPath = resolveStructuredOutputMcpScript();
+  const schemaBase64 = Buffer.from(JSON.stringify(jsonSchema)).toString(
+    "base64",
+  );
+  return {
+    name: STRUCTURED_OUTPUT_MCP_NAME,
+    command: process.execPath,
+    args: [scriptPath],
+    env: [{ name: "POSTHOG_OUTPUT_SCHEMA", value: schemaBase64 }],
+  };
+}
+
 export class CodexAcpAgent extends BaseAcpAgent {
   readonly adapterName = "codex";
   declare session: CodexSession;
@@ -171,6 +226,9 @@ export class CodexAcpAgent extends BaseAcpAgent {
   private promptMutex: Promise<unknown> = Promise.resolve();
   private readonly codexProcessOptions: CodexProcessOptions;
   private readonly processCallbacks?: ProcessSpawnedCallback;
+  private readonly onStructuredOutput?: (
+    output: Record<string, unknown>,
+  ) => Promise<void>;
   // Snapshot of the initialize() request so refreshSession can replay the
   // same handshake against a respawned codex-acp subprocess.
   private lastInitRequest?: InitializeRequest;
@@ -187,6 +245,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
     this.codexProcessOptions = options.codexProcessOptions;
     this.processCallbacks = options.processCallbacks;
+    this.onStructuredOutput = options.onStructuredOutput;
 
     // Spawn the codex-acp subprocess
     this.codexProcess = spawnCodexProcess({
@@ -221,6 +280,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       (_agent) =>
         createCodexClient(this.client, this.logger, this.sessionState, {
           enrichmentDeps: this.enrichment?.deps,
+          onStructuredOutput: this.onStructuredOutput,
         }),
       codexStream,
     );
@@ -264,7 +324,11 @@ export class CodexAcpAgent extends BaseAcpAgent {
     const meta = params._meta as NewSessionMeta | undefined;
     const requestedPermissionMode = toCodexPermissionMode(meta?.permissionMode);
 
-    const response = await this.codexConnection.newSession(params);
+    const injectedParams = this.applyStructuredOutput(params, meta);
+    const response = await this.codexConnection.newSession(injectedParams);
+    response.configOptions = normalizeCodexConfigOptions(
+      response.configOptions,
+    );
 
     // Initialize session state
     this.sessionState = createSessionState(response.sessionId, params.cwd, {
@@ -301,8 +365,12 @@ export class CodexAcpAgent extends BaseAcpAgent {
   }
 
   async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
-    const response = await this.codexConnection.loadSession(params);
     const meta = params._meta as NewSessionMeta | undefined;
+    const injectedParams = this.applyStructuredOutput(params, meta);
+    const response = await this.codexConnection.loadSession(injectedParams);
+    response.configOptions = normalizeCodexConfigOptions(
+      response.configOptions,
+    );
     const currentPermissionMode = getCurrentPermissionMode(
       response.modes?.currentModeId,
       meta?.permissionMode,
@@ -335,14 +403,22 @@ export class CodexAcpAgent extends BaseAcpAgent {
   async unstable_resumeSession(
     params: ResumeSessionRequest,
   ): Promise<ResumeSessionResponse> {
-    // codex-acp doesn't support resume natively, use loadSession instead
-    const loadResponse = await this.codexConnection.loadSession({
-      sessionId: params.sessionId,
-      cwd: params.cwd,
-      mcpServers: params.mcpServers ?? [],
-    });
-
     const meta = params._meta as NewSessionMeta | undefined;
+    const injectedParams = this.applyStructuredOutput(
+      {
+        sessionId: params.sessionId,
+        cwd: params.cwd,
+        mcpServers: params.mcpServers ?? [],
+        _meta: params._meta,
+      },
+      meta,
+    );
+
+    // codex-acp doesn't support resume natively, use loadSession instead
+    const loadResponse = await this.codexConnection.loadSession(injectedParams);
+    loadResponse.configOptions = normalizeCodexConfigOptions(
+      loadResponse.configOptions,
+    );
     const currentPermissionMode = getCurrentPermissionMode(
       loadResponse.modes?.currentModeId,
       meta?.permissionMode,
@@ -374,14 +450,22 @@ export class CodexAcpAgent extends BaseAcpAgent {
   async unstable_forkSession(
     params: ForkSessionRequest,
   ): Promise<ForkSessionResponse> {
-    // Create a new session via codex-acp (fork isn't natively supported)
-    const newResponse = await this.codexConnection.newSession({
-      cwd: params.cwd,
-      mcpServers: params.mcpServers ?? [],
-      _meta: params._meta,
-    });
-
     const meta = params._meta as NewSessionMeta | undefined;
+    const injectedParams = this.applyStructuredOutput(
+      {
+        cwd: params.cwd,
+        mcpServers: params.mcpServers ?? [],
+        _meta: params._meta,
+      },
+      meta,
+    );
+
+    // Create a new session via codex-acp (fork isn't natively supported)
+    const newResponse = await this.codexConnection.newSession(injectedParams);
+    newResponse.configOptions = normalizeCodexConfigOptions(
+      newResponse.configOptions,
+    );
+
     const requestedPermissionMode = toCodexPermissionMode(meta?.permissionMode);
     this.sessionState = createSessionState(newResponse.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
@@ -399,6 +483,38 @@ export class CodexAcpAgent extends BaseAcpAgent {
     );
 
     return newResponse;
+  }
+
+  /**
+   * When the caller wires up `onStructuredOutput` and provides a JSON schema
+   * via `_meta.jsonSchema`, inject the stdio MCP server that exposes
+   * `create_output` and append instructions telling the model to use it.
+   *
+   * Codex has no native equivalent of Claude's `outputFormat`, so we lean on
+   * MCP tool-calling to get validated structured output back.
+   */
+  private applyStructuredOutput<
+    T extends { mcpServers?: McpServer[]; _meta?: unknown },
+  >(request: T, meta: NewSessionMeta | undefined): T {
+    if (!meta?.jsonSchema || !this.onStructuredOutput) {
+      return request;
+    }
+
+    const mcpServer = buildStructuredOutputMcpServer(meta.jsonSchema);
+    const existingMeta = (request._meta ?? {}) as Record<string, unknown>;
+    const existingSystemPrompt =
+      typeof existingMeta.systemPrompt === "string"
+        ? existingMeta.systemPrompt
+        : "";
+
+    return {
+      ...request,
+      mcpServers: [...(request.mcpServers ?? []), mcpServer],
+      _meta: {
+        ...existingMeta,
+        systemPrompt: existingSystemPrompt + STRUCTURED_OUTPUT_INSTRUCTIONS,
+      },
+    };
   }
 
   private async applyInitialPermissionMode(
@@ -617,7 +733,9 @@ export class CodexAcpAgent extends BaseAcpAgent {
     const newAbortController = new AbortController();
     const newConnection = new ClientSideConnection(
       (_agent) =>
-        createCodexClient(this.client, this.logger, this.sessionState),
+        createCodexClient(this.client, this.logger, this.sessionState, {
+          onStructuredOutput: this.onStructuredOutput,
+        }),
       codexStream,
     );
 
@@ -665,6 +783,9 @@ export class CodexAcpAgent extends BaseAcpAgent {
   ): Promise<SetSessionConfigOptionResponse> {
     const response = await this.codexConnection.setSessionConfigOption(params);
     if (response.configOptions) {
+      response.configOptions = normalizeCodexConfigOptions(
+        response.configOptions,
+      ) as typeof response.configOptions;
       this.sessionState.configOptions = response.configOptions;
     }
     if (params.configId === "mode" && typeof params.value === "string") {

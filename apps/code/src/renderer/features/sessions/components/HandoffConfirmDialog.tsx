@@ -36,11 +36,7 @@ export function HandoffConfirmDialog({
     >
       <Text color="gray" className="text-[13px]">
         {isToLocal ? (
-          <>
-            This will bring your changes from the cloud run into your local
-            environment on branch{" "}
-            <Code className="text-[13px]">{branchName ?? "unknown"}</Code>.
-          </>
+          "This will bring your changes from the cloud run into your local environment."
         ) : (
           <>
             This will send your changes on branch{" "}

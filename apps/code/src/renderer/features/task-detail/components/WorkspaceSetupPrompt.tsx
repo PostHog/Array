@@ -67,7 +67,7 @@ export function WorkspaceSetupPrompt({
 
         if (detected) {
           const detectedFullName = `${detected.organization}/${detected.repository}`;
-          if (detectedFullName !== repository) {
+          if (detectedFullName.toLowerCase() !== repository.toLowerCase()) {
             setPendingPath(path);
             setDetectedRepo(detectedFullName);
             return;

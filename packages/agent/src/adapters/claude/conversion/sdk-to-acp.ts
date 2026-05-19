@@ -21,8 +21,14 @@ import { POSTHOG_NOTIFICATIONS } from "@/acp-extensions";
 import { image, text } from "../../../utils/acp-content";
 import { unreachable } from "../../../utils/common";
 import type { Logger } from "../../../utils/logger";
+import { tryParsePartialJson } from "../../../utils/partial-json";
 import { type EnrichedReadCache, registerHookCallback } from "../hooks";
-import type { Session, ToolUpdateMeta, ToolUseCache } from "../types";
+import type {
+  Session,
+  ToolUpdateMeta,
+  ToolUseCache,
+  ToolUseStreamCache,
+} from "../types";
 import {
   type ClaudePlanEntry,
   planEntries,
@@ -67,6 +73,8 @@ export interface MessageHandlerContext {
   sessionId: string;
   client: AgentSideConnection;
   toolUseCache: ToolUseCache;
+  /** Buffers `input_json_delta` partial JSON per content-block index. */
+  toolUseStreamCache: ToolUseStreamCache;
   fileContentCache: { [key: string]: string };
   enrichedReadCache?: EnrichedReadCache;
   logger: Logger;
@@ -82,11 +90,21 @@ function toolMeta(
   toolName: string,
   toolResponse?: unknown,
   parentToolCallId?: string,
+  bashCommand?: string,
 ): ToolUpdateMeta {
   const meta: ToolUpdateMeta["claudeCode"] = { toolName };
   if (toolResponse !== undefined) meta.toolResponse = toolResponse;
   if (parentToolCallId) meta.parentToolCallId = parentToolCallId;
+  if (bashCommand) meta.bashCommand = bashCommand;
   return { claudeCode: meta };
+}
+
+function bashCommandFromToolUse(
+  toolUse: ToolUseCache[string] | undefined,
+): string | undefined {
+  if (!toolUse || toolUse.name !== "Bash") return undefined;
+  const command = (toolUse.input as { command?: unknown } | undefined)?.command;
+  return typeof command === "string" ? command : undefined;
 }
 
 function handleTextChunk(
@@ -173,7 +191,12 @@ function handleToolUseChunk(
           await ctx.client.sessionUpdate({
             sessionId: ctx.sessionId,
             update: {
-              _meta: toolMeta(toolUse.name, toolResponse, ctx.parentToolCallId),
+              _meta: toolMeta(
+                toolUse.name,
+                toolResponse,
+                ctx.parentToolCallId,
+                bashCommandFromToolUse(toolUse),
+              ),
               toolCallId: toolUseId,
               sessionUpdate: "tool_call_update",
               ...(editUpdate ? editUpdate : {}),
@@ -203,7 +226,12 @@ function handleToolUseChunk(
   });
 
   const meta: Record<string, unknown> = {
-    ...toolMeta(chunk.name, undefined, ctx.parentToolCallId),
+    ...toolMeta(
+      chunk.name,
+      undefined,
+      ctx.parentToolCallId,
+      bashCommandFromToolUse(chunk),
+    ),
   };
   if (chunk.name === "Bash" && ctx.supportsTerminalOutput && !alreadyCached) {
     meta.terminal_info = { terminal_id: chunk.id };
@@ -343,7 +371,12 @@ function handleToolResultChunk(
   }
 
   const meta: Record<string, unknown> = {
-    ...toolMeta(toolUse.name, undefined, ctx.parentToolCallId),
+    ...toolMeta(
+      toolUse.name,
+      undefined,
+      ctx.parentToolCallId,
+      bashCommandFromToolUse(toolUse),
+    ),
     ...(resultMeta?.terminal_exit
       ? { terminal_exit: resultMeta.terminal_exit }
       : {}),
@@ -496,6 +529,7 @@ function streamEventToAcpNotifications(
   message: SDKPartialAssistantMessage,
   sessionId: string,
   toolUseCache: ToolUseCache,
+  toolUseStreamCache: ToolUseStreamCache,
   fileContentCache: { [key: string]: string },
   client: AgentSideConnection,
   logger: Logger,
@@ -507,9 +541,16 @@ function streamEventToAcpNotifications(
 ): SessionNotification[] {
   const event = message.event;
   switch (event.type) {
-    case "content_block_start":
+    case "content_block_start": {
+      const block = event.content_block;
+      if (block.type === "tool_use" || block.type === "mcp_tool_use") {
+        toolUseStreamCache.set(event.index, {
+          toolUseId: block.id,
+          partialJson: "",
+        });
+      }
       return toAcpNotifications(
-        [event.content_block],
+        [block],
         "assistant",
         sessionId,
         toolUseCache,
@@ -523,7 +564,16 @@ function streamEventToAcpNotifications(
         undefined,
         enrichedReadCache,
       );
-    case "content_block_delta":
+    }
+    case "content_block_delta": {
+      if (event.delta.type === "input_json_delta") {
+        return inputJsonDeltaToAcpNotifications(
+          event.index,
+          event.delta.partial_json,
+          sessionId,
+          toolUseStreamCache,
+        );
+      }
       return toAcpNotifications(
         [event.delta],
         "assistant",
@@ -539,16 +589,44 @@ function streamEventToAcpNotifications(
         undefined,
         enrichedReadCache,
       );
+    }
+    case "content_block_stop":
+      toolUseStreamCache.delete(event.index);
+      return [];
     case "message_start":
     case "message_delta":
     case "message_stop":
-    case "content_block_stop":
       return [];
 
     default:
       unreachable(event as never, logger);
       return [];
   }
+}
+
+function inputJsonDeltaToAcpNotifications(
+  index: number,
+  partialJson: string,
+  sessionId: string,
+  toolUseStreamCache: ToolUseStreamCache,
+): SessionNotification[] {
+  const entry = toolUseStreamCache.get(index);
+  if (!entry) return [];
+  entry.partialJson += partialJson;
+
+  const parsed = tryParsePartialJson(entry.partialJson);
+  if (!parsed || typeof parsed !== "object") return [];
+
+  return [
+    {
+      sessionId,
+      update: {
+        sessionUpdate: "tool_call_update" as const,
+        toolCallId: entry.toolUseId,
+        rawInput: parsed as Record<string, unknown>,
+      },
+    },
+  ];
 }
 
 export async function handleSystemMessage(
@@ -743,13 +821,21 @@ export async function handleStreamEvent(
   message: SDKPartialAssistantMessage,
   context: MessageHandlerContext,
 ): Promise<void> {
-  const { sessionId, client, toolUseCache, fileContentCache, logger } = context;
+  const {
+    sessionId,
+    client,
+    toolUseCache,
+    toolUseStreamCache,
+    fileContentCache,
+    logger,
+  } = context;
   const parentToolCallId = message.parent_tool_use_id ?? undefined;
 
   for (const notification of streamEventToAcpNotifications(
     message,
     sessionId,
     toolUseCache,
+    toolUseStreamCache,
     fileContentCache,
     client,
     logger,

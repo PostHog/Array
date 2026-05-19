@@ -23,6 +23,7 @@ interface CommandCenterStoreState {
   layout: LayoutPreset;
   cells: (string | null)[];
   activeTaskId: string | null;
+  activeCellIndex: number | null;
   zoom: number;
   creatingCells: number[];
 }
@@ -30,6 +31,7 @@ interface CommandCenterStoreState {
 interface CommandCenterStoreActions {
   setLayout: (preset: LayoutPreset) => void;
   setActiveTask: (taskId: string | null) => void;
+  setActiveCell: (cellIndex: number | null) => void;
   assignTask: (cellIndex: number, taskId: string) => void;
   removeTask: (cellIndex: number) => void;
   removeTaskById: (taskId: string) => void;
@@ -70,6 +72,7 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
       layout: "2x2",
       cells: [null, null, null, null],
       activeTaskId: null,
+      activeCellIndex: null,
       zoom: 1,
       creatingCells: [],
 
@@ -82,6 +85,10 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
             )
               ? state.activeTaskId
               : null,
+            activeCellIndex:
+              state.activeCellIndex !== null && state.activeCellIndex < newCount
+                ? state.activeCellIndex
+                : null,
             layout: preset,
             cells: resizeCells(state.cells, newCount),
             creatingCells: state.creatingCells.filter((i) => i < newCount),
@@ -89,6 +96,8 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
         }),
 
       setActiveTask: (taskId) => set({ activeTaskId: taskId }),
+
+      setActiveCell: (cellIndex) => set({ activeCellIndex: cellIndex }),
 
       assignTask: (cellIndex, taskId) =>
         set((state) => {
@@ -136,6 +145,7 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
       clearAll: () =>
         set((state) => ({
           activeTaskId: null,
+          activeCellIndex: null,
           cells: state.cells.map(() => null),
           creatingCells: [],
         })),
@@ -165,6 +175,7 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
         layout: state.layout,
         cells: state.cells,
         activeTaskId: state.activeTaskId,
+        activeCellIndex: state.activeCellIndex,
         zoom: state.zoom,
         creatingCells: state.creatingCells,
       }),

@@ -6,10 +6,10 @@ import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { useReviewNavigationStore } from "@renderer/features/code-review/stores/reviewNavigationStore";
 import type { Task } from "@shared/types";
 import { useMemo } from "react";
-import { LazyDiff } from "./LazyDiff";
 import { PatchedFileDiff } from "./PatchedFileDiff";
 import {
-  DeferredDiffPlaceholder,
+  buildItemIndex,
+  type ReviewListItem,
   ReviewShell,
   useReviewState,
 } from "./ReviewShell";
@@ -48,12 +48,10 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     expandAll,
     collapseAll,
     uncollapseFile,
-    revealFile,
-    getDeferredReason,
   } = useReviewState(reviewFiles, allPaths);
 
-  const toolCallDiffs = useMemo(() => {
-    if (remoteFiles.length > 0) return null;
+  const toolCallFallbacks = useMemo(() => {
+    if (remoteFiles.length > 0) return undefined;
     const diffs = new Map<
       string,
       { oldText: string | null; newText: string | null }
@@ -64,6 +62,45 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     }
     return diffs;
   }, [remoteFiles.length, toolCalls, reviewFiles]);
+
+  const items = useMemo<ReviewListItem[]>(() => {
+    return reviewFiles.map((file) => {
+      const isCollapsed = collapsedFiles.has(file.path);
+      const githubFileUrl = prUrl
+        ? `${prUrl}/files#diff-${file.path.replaceAll("/", "-")}`
+        : undefined;
+
+      return {
+        key: file.path,
+        scrollKey: file.path,
+        node: (
+          <PatchedFileDiff
+            file={file}
+            taskId={taskId}
+            prUrl={prUrl}
+            options={diffOptions}
+            collapsed={isCollapsed}
+            onToggle={() => toggleFile(file.path)}
+            commentThreads={showReviewComments ? commentThreads : undefined}
+            fallback={toolCallFallbacks?.get(file.path) ?? null}
+            externalUrl={githubFileUrl}
+          />
+        ),
+      };
+    });
+  }, [
+    collapsedFiles,
+    commentThreads,
+    diffOptions,
+    prUrl,
+    reviewFiles,
+    showReviewComments,
+    taskId,
+    toggleFile,
+    toolCallFallbacks,
+  ]);
+
+  const itemIndexByFilePath = useMemo(() => buildItemIndex(items), [items]);
 
   if (!prUrl && !effectiveBranch && reviewFiles.length === 0) {
     if (isRunActive) {
@@ -96,49 +133,8 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
       onExpandAll={expandAll}
       onCollapseAll={collapseAll}
       onUncollapseFile={uncollapseFile}
-    >
-      {reviewFiles.map((file) => {
-        const isCollapsed = collapsedFiles.has(file.path);
-        const deferredReason = getDeferredReason(file.path);
-
-        if (deferredReason) {
-          return (
-            <div key={file.path} data-file-path={file.path}>
-              <DeferredDiffPlaceholder
-                filePath={file.path}
-                linesAdded={file.linesAdded ?? 0}
-                linesRemoved={file.linesRemoved ?? 0}
-                reason={deferredReason}
-                collapsed={isCollapsed}
-                onToggle={() => toggleFile(file.path)}
-                onShow={() => revealFile(file.path)}
-              />
-            </div>
-          );
-        }
-
-        const githubFileUrl = prUrl
-          ? `${prUrl}/files#diff-${file.path.replaceAll("/", "-")}`
-          : undefined;
-
-        return (
-          <div key={file.path} data-file-path={file.path}>
-            <LazyDiff>
-              <PatchedFileDiff
-                file={file}
-                taskId={taskId}
-                prUrl={prUrl}
-                options={diffOptions}
-                collapsed={isCollapsed}
-                onToggle={() => toggleFile(file.path)}
-                commentThreads={showReviewComments ? commentThreads : undefined}
-                fallback={toolCallDiffs?.get(file.path) ?? null}
-                externalUrl={githubFileUrl}
-              />
-            </LazyDiff>
-          </div>
-        );
-      })}
-    </ReviewShell>
+      items={items}
+      itemIndexByFilePath={itemIndexByFilePath}
+    />
   );
 }
