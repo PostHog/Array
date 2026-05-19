@@ -15,14 +15,12 @@ import {
   MenuLabel,
 } from "@posthog/quill";
 import { Flex, Text } from "@radix-ui/themes";
+import { FIELD_TRIGGER_CLASS } from "@renderer/styles/fieldTrigger";
 import { trpcClient } from "@renderer/trpc";
 import { logger } from "@utils/logger";
-import type { RefObject } from "react";
+import type { Ref, RefObject } from "react";
 
 const log = logger.scope("folder-picker");
-
-const FIELD_TRIGGER_CLASS =
-  "box-border flex w-full cursor-pointer appearance-none items-center justify-between gap-3 rounded-[10px] border border-(--gray-a3) bg-(--color-panel-solid) px-[14px] py-[10px] font-[inherit] text-sm shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)]";
 
 interface FolderPickerProps {
   value: string;
@@ -33,14 +31,26 @@ interface FolderPickerProps {
 }
 
 interface TriggerProps {
+  ref?: Ref<HTMLButtonElement>;
   displayValue: string | null;
   placeholder: string;
   onClick?: () => void;
 }
 
-function CompactTrigger({ displayValue, placeholder, onClick }: TriggerProps) {
+function CompactTrigger({
+  ref,
+  displayValue,
+  placeholder,
+  onClick,
+}: TriggerProps) {
   return (
-    <Button variant="outline" size="sm" aria-label="Folder" onClick={onClick}>
+    <Button
+      ref={ref}
+      variant="outline"
+      size="sm"
+      aria-label="Folder"
+      onClick={onClick}
+    >
       <FolderIcon size={14} weight="regular" className="shrink-0" />
       <span className="max-w-[120px] truncate">
         {displayValue || placeholder}
@@ -50,14 +60,24 @@ function CompactTrigger({ displayValue, placeholder, onClick }: TriggerProps) {
   );
 }
 
-function FieldTrigger({ displayValue, placeholder, onClick }: TriggerProps) {
+function FieldTrigger({
+  ref,
+  displayValue,
+  placeholder,
+  onClick,
+}: TriggerProps) {
   return (
-    <button type="button" onClick={onClick} className={FIELD_TRIGGER_CLASS}>
+    <button
+      ref={ref}
+      type="button"
+      onClick={onClick}
+      className={FIELD_TRIGGER_CLASS}
+    >
       <Flex align="center" gap="2" className="min-w-0 flex-1">
         <FolderIcon size={16} className="shrink-0 text-(--gray-12)" />
         <Text
-          className="min-w-0 max-w-full truncate text-left font-medium text-(--gray-12) text-sm"
-          title={displayValue ?? undefined}
+          className="min-w-0 max-w-full truncate text-left font-medium text-(--gray-12)"
+          title={displayValue || undefined}
         >
           {displayValue || placeholder}
         </Text>
@@ -139,7 +159,10 @@ export function FolderPicker({
             onClick={() => handleSelect(folder.path)}
           >
             <GitBranch size={12} className="shrink-0" />
-            <span className="min-w-0 flex-1 truncate" title={folder.path}>
+            <span
+              className="min-w-0 flex-1 truncate text-left"
+              title={folder.path}
+            >
               {folder.name}
             </span>
           </DropdownMenuItem>
