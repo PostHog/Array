@@ -26,6 +26,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   AlertDialog,
+  Badge,
   Box,
   Button,
   DropdownMenu,
@@ -206,7 +207,7 @@ export function GitIntegrationStep({
                     Give your agents access to code
                   </Text>
                   <Text className="text-(--gray-11) text-sm">
-                    Point to a local codebase and optionally connect GitHub.
+                    Select a folder to continue. Connecting GitHub is optional.
                   </Text>
                 </Flex>
               </motion.div>
@@ -227,11 +228,18 @@ export function GitIntegrationStep({
                 >
                   <Flex direction="column" gap="4">
                     <Flex direction="column" gap="1">
-                      <Flex align="center" gap="2">
-                        <FolderOpen size={18} className="text-(--gray-12)" />
-                        <Text className="font-bold text-(--gray-12) text-base">
-                          Choose your codebase
-                        </Text>
+                      <Flex align="center" justify="between" gap="2">
+                        <Flex align="center" gap="2">
+                          <FolderOpen size={18} className="text-(--gray-12)" />
+                          <Text className="font-bold text-(--gray-12) text-base">
+                            Choose your codebase
+                          </Text>
+                        </Flex>
+                        {selectedDirectory ? (
+                          <Badge color="green">Selected</Badge>
+                        ) : (
+                          <Badge color="red">Required</Badge>
+                        )}
                       </Flex>
                       <Text className="text-(--gray-11) text-sm">
                         Select the local folder for your project so we can
@@ -334,7 +342,7 @@ export function GitIntegrationStep({
                   className="rounded-[12px] border border-(--gray-a3) bg-(--color-panel-solid)"
                 >
                   <Flex direction="column" gap="3">
-                    <Flex align="center" justify="between">
+                    <Flex align="center" justify="between" gap="2">
                       <Flex align="center" gap="2">
                         <GitBranch size={18} className="text-(--gray-12)" />
                         <Text className="font-bold text-(--gray-12) text-base">
@@ -362,7 +370,9 @@ export function GitIntegrationStep({
                             </Text>
                           </Flex>
                         )
-                      ) : null}
+                      ) : (
+                        <Badge color="gray">Optional</Badge>
+                      )}
                     </Flex>
                     {hasGitIntegration ? (
                       <Flex direction="column" gap="3">
@@ -522,7 +532,7 @@ export function GitIntegrationStep({
                             <Text className="font-bold">
                               {selectedProject.name}
                             </Text>
-                            . Sign in with one click to link your account — no
+                            . Sign in with one click to link your account, no
                             admin approval needed.
                           </Text>
                           <Button
