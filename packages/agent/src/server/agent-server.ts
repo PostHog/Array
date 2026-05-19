@@ -43,6 +43,7 @@ import type {
   GitCheckpointEvent,
   HandoffLocalGitState,
   LogLevel,
+  Task,
   TaskRun,
   TaskRunArtifact,
 } from "../types";
@@ -1860,7 +1861,7 @@ ${signedCommitInstructions}
     taskUserId,
   }: {
     isInternal?: boolean;
-    originProduct?: string | null;
+    originProduct?: Task["origin_product"] | null;
     signalReportId?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
