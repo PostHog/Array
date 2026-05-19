@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSettingsDialogStore } from "./settingsDialogStore";
 
 describe("settingsDialogStore", () => {
@@ -12,6 +12,10 @@ describe("settingsDialogStore", () => {
       initialAction: null,
       formMode: false,
     });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("defaults the first open to general when no category is given", () => {

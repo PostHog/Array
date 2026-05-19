@@ -29,7 +29,9 @@ export function TerminalSettings() {
     setDraftCustomFont(terminalCustomFontFamily);
   }, [terminalCustomFontFamily]);
 
-  // Commit the debounced draft back to the store.
+  // Commit the debounced draft back to the store. The equality guard breaks
+  // the draft<->store loop: writing the store would re-fire the pull-in effect
+  // above, which would re-fire this one without it.
   useEffect(() => {
     if (debouncedCustomFont === terminalCustomFontFamily) return;
     setTerminalCustomFontFamily(debouncedCustomFont);
