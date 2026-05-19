@@ -5,8 +5,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createGitClient } from "./client";
 import {
   detectDefaultBranch,
+  getAllBranches,
   getBranchDiffPatchesByPath,
   getChangedFilesDetailed,
+  getGitBusyState,
   splitUnifiedDiffByFile,
 } from "./queries";
 
@@ -309,6 +311,88 @@ describe("getChangedFilesDetailed > untracked line counts", () => {
     expect(huge).toMatchObject({
       status: "untracked",
       linesAdded: LINE_COUNT_LARGER_THAN_READ_STREAM_CHUNK,
+    });
+  });
+});
+
+describe("getAllBranches", () => {
+  let repoDir: string | undefined;
+
+  afterEach(async () => {
+    if (repoDir) {
+      await rm(repoDir, { recursive: true, force: true });
+      repoDir = undefined;
+    }
+  });
+
+  async function setupRebaseConflict(dir: string): Promise<void> {
+    const git = createGitClient(dir);
+    await git.checkoutLocalBranch("feature");
+    await writeFile(path.join(dir, "file.txt"), "feature change\n");
+    await git.add(["file.txt"]);
+    await git.commit("on feature");
+    await git.checkout("main");
+    await writeFile(path.join(dir, "file.txt"), "main change\n");
+    await git.add(["file.txt"]);
+    await git.commit("on main");
+    await git.checkout("feature");
+    try {
+      await git.rebase(["main"]);
+    } catch {
+      // expected: rebase pauses on conflict, leaving HEAD on a pseudo-branch
+    }
+  }
+
+  it("returns only real branches, not the rebase pseudo-branch", async () => {
+    repoDir = await setupRepo("main");
+    await setupRebaseConflict(repoDir);
+
+    const branches = await getAllBranches(repoDir);
+    expect(branches).toEqual(expect.arrayContaining(["main", "feature"]));
+    expect(branches).not.toContain("(no");
+    expect(branches.every((b) => !b.startsWith("("))).toBe(true);
+  });
+});
+
+describe("getGitBusyState", () => {
+  let repoDir: string | undefined;
+
+  afterEach(async () => {
+    if (repoDir) {
+      await rm(repoDir, { recursive: true, force: true });
+      repoDir = undefined;
+    }
+  });
+
+  it("reports busy=false in a clean repo", async () => {
+    repoDir = await setupRepo("main");
+    expect(await getGitBusyState(repoDir)).toEqual({ busy: false });
+  });
+
+  it("detects an in-progress rebase", async () => {
+    repoDir = await setupRepo("main");
+    const git = createGitClient(repoDir);
+
+    await git.checkoutLocalBranch("feature");
+    await writeFile(path.join(repoDir, "file.txt"), "feature change\n");
+    await git.add(["file.txt"]);
+    await git.commit("on feature");
+
+    await git.checkout("main");
+    await writeFile(path.join(repoDir, "file.txt"), "main change\n");
+    await git.add(["file.txt"]);
+    await git.commit("on main");
+
+    await git.checkout("feature");
+    try {
+      await git.rebase(["main"]);
+    } catch {
+      // expected: conflict
+    }
+
+    expect(await getGitBusyState(repoDir)).toEqual({
+      busy: true,
+      operation: "rebase",
     });
   });
 });

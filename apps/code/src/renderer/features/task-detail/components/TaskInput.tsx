@@ -221,7 +221,7 @@ export function TaskInput({
     const lower = selectedRepository.toLowerCase();
     return repositories.includes(lower) ? lower : null;
   }, [selectedRepository, repositories]);
-  const { currentBranch, branchLoading, defaultBranch } =
+  const { currentBranch, branchLoading, defaultBranch, busyState } =
     useGitQueries(selectedDirectory);
 
   const selectedGithubUserIntegrationId = selectedCloudRepository
@@ -703,6 +703,7 @@ export function TaskInput({
                 workspaceMode={workspaceMode}
                 selectedBranch={selectedBranch}
                 onBranchSelect={setSelectedBranch}
+                busyState={busyState}
                 cloudBranches={cloudBranches}
                 cloudBranchesLoading={cloudBranchesLoading}
                 isRefreshing={cloudBranchesRefreshing}

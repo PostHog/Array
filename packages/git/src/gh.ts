@@ -12,12 +12,12 @@ export interface GhExecResult {
 
 export async function execGh(
   args: string[],
-  options: { cwd?: string } = {},
+  options: { cwd?: string; env?: Record<string, string> } = {},
 ): Promise<GhExecResult> {
   try {
     const { stdout, stderr } = await execFileAsync("gh", args, {
       cwd: options.cwd,
-      env: process.env,
+      env: options.env ? { ...process.env, ...options.env } : process.env,
     });
     return { stdout, stderr, exitCode: 0 };
   } catch (error) {

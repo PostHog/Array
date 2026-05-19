@@ -23,6 +23,7 @@ import {
 } from "@posthog/quill";
 import { useTRPC } from "@renderer/trpc";
 import { toast } from "@renderer/utils/toast";
+import type { GitBusyOperation, GitBusyState } from "@shared/types";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { type RefObject, useEffect, useRef, useState } from "react";
 
@@ -61,7 +62,20 @@ interface BranchSelectorProps {
   isRefreshing?: boolean;
   taskId?: string;
   anchor?: RefObject<HTMLElement | null>;
+  /**
+   * Local-repo busy state (rebase, merge, cherry-pick, revert in progress).
+   * Used to show a clearer label and prevent checkout attempts that would
+   * fail while the working tree is mid-operation. Only applies in local mode.
+   */
+  busyState?: GitBusyState;
 }
+
+const BUSY_OPERATION_LABEL: Record<GitBusyOperation, string> = {
+  rebase: "Rebasing",
+  merge: "Merging",
+  "cherry-pick": "Cherry-picking",
+  revert: "Reverting",
+};
 
 export function BranchSelector({
   repoPath,
@@ -86,6 +100,7 @@ export function BranchSelector({
   isRefreshing = false,
   taskId,
   anchor,
+  busyState,
 }: BranchSelectorProps) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -167,14 +182,34 @@ export function BranchSelector({
     }
   };
 
+  // In local mode, surface in-progress git operations (rebase/merge/etc.) so the
+  // user understands why there's no current branch and why we won't let them
+  // checkout a different one — checkout would fail with a hard-to-read git error.
+  const localBusy = !isSelectionOnly && busyState?.busy === true;
+  const busyOperationLabel =
+    localBusy && busyState?.busy
+      ? BUSY_OPERATION_LABEL[busyState.operation]
+      : null;
+
   const displayText = effectiveLoading
     ? "Loading..."
-    : (displayedBranch ?? "No branch");
+    : busyOperationLabel && !displayedBranch
+      ? busyOperationLabel
+      : (displayedBranch ?? "No branch");
 
   const showSpinner =
     effectiveLoading || (isCloudMode && open && cloudBranchesFetchingMore);
 
-  const isDisabled = !!(disabled || !repoPath || cloudStillLoading);
+  const isDisabled = !!(
+    disabled ||
+    !repoPath ||
+    cloudStillLoading ||
+    localBusy
+  );
+  const disabledReason =
+    localBusy && busyOperationLabel
+      ? `${busyOperationLabel} in progress — finish or abort it to switch branches.`
+      : null;
   const inputValue = isCloudMode ? (cloudSearchQuery ?? "") : searchQuery;
   const trimmedInputValue = inputValue.trim();
   const canUseInputBranch =
@@ -206,7 +241,7 @@ export function BranchSelector({
       filter={isCloudMode ? null : undefined}
     >
       <Tooltip
-        content={displayedBranch ?? "Switch branch"}
+        content={disabledReason ?? displayedBranch ?? "Switch branch"}
         side="bottom"
         open={hovered && !open && !effectiveLoading}
       >

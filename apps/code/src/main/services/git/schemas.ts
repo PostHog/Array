@@ -147,6 +147,27 @@ export const getCurrentBranchOutput = z.string().nullable();
 export const getAllBranchesInput = directoryPathInput;
 export const getAllBranchesOutput = z.array(z.string());
 
+// getGitBusyState schemas
+export const gitBusyOperationSchema = z.enum([
+  "rebase",
+  "merge",
+  "cherry-pick",
+  "revert",
+]);
+
+export const gitBusyStateSchema = z.union([
+  z.object({ busy: z.literal(false) }),
+  z.object({
+    busy: z.literal(true),
+    operation: gitBusyOperationSchema,
+  }),
+]);
+
+export type { GitBusyOperation, GitBusyState } from "../../../shared/types";
+
+export const getGitBusyStateInput = directoryPathInput;
+export const getGitBusyStateOutput = gitBusyStateSchema;
+
 // createBranch schemas
 export const createBranchInput = z.object({
   directoryPath: z.string(),

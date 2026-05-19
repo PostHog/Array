@@ -15,6 +15,7 @@ export function invalidateGitBranchQueries(repoPath: string) {
   const input = { directoryPath: repoPath };
   queryClient.invalidateQueries(trpc.git.getCurrentBranch.queryFilter(input));
   queryClient.invalidateQueries(trpc.git.getAllBranches.queryFilter(input));
+  queryClient.invalidateQueries(trpc.git.getGitBusyState.queryFilter(input));
   queryClient.invalidateQueries(trpc.git.getGitSyncStatus.queryFilter(input));
   queryClient.invalidateQueries(
     trpc.git.getChangedFilesHead.queryFilter(input),

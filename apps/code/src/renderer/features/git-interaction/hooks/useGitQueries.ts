@@ -65,6 +65,18 @@ export function useGitQueries(
     ),
   );
 
+  const { data: busyState } = useQuery(
+    trpc.git.getGitBusyState.queryOptions(
+      { directoryPath: repoPath as string },
+      {
+        enabled: repoEnabled,
+        staleTime: 5_000,
+        refetchInterval: 30_000,
+        placeholderData: (prev) => prev,
+      },
+    ),
+  );
+
   const { data: syncStatus, isLoading: syncLoading } = useQuery(
     trpc.git.getGitSyncStatus.queryOptions(
       { directoryPath: repoPath as string },
@@ -157,6 +169,7 @@ export function useGitQueries(
     currentBranch,
     branchLoading,
     defaultBranch,
+    busyState,
     isLoading: isRepoLoading || changesLoading || syncLoading,
   };
 }

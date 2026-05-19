@@ -31,7 +31,7 @@ export function useReviewDiffs(
     trpc.git.getDiffCached.queryOptions(
       { directoryPath: repoPath as string, ignoreWhitespace: hideWhitespace },
       {
-        enabled: isActive && !!repoPath && hasStagedFiles,
+        enabled: isActive && !!repoPath,
         staleTime: 30_000,
         gcTime: 0,
         refetchOnMount: "always",
@@ -55,8 +55,7 @@ export function useReviewDiffs(
     ),
   );
 
-  const diffLoading =
-    diffUnstagedLoading || (hasStagedFiles && diffCachedLoading);
+  const diffLoading = diffUnstagedLoading || diffCachedLoading;
 
   const stagedParsedFiles = useMemo(
     () =>
@@ -106,8 +105,8 @@ export function useReviewDiffs(
   const refetch = useCallback(() => {
     if (repoPath) invalidateGitWorkingTreeQueries(repoPath);
     refetchDiffUnstaged();
-    if (hasStagedFiles) refetchDiffCached();
-  }, [repoPath, hasStagedFiles, refetchDiffCached, refetchDiffUnstaged]);
+    refetchDiffCached();
+  }, [repoPath, refetchDiffCached, refetchDiffUnstaged]);
 
   return {
     changedFiles,
