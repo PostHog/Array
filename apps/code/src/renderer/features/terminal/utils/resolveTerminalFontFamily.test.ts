@@ -8,23 +8,28 @@ const FALLBACK =
   '"Berkeley Mono", "JetBrains Mono", "Consolas", "Monaco", monospace';
 
 describe("resolveTerminalFontFamily", () => {
-  it("uses Berkeley Mono as the default and matches the exported constant", () => {
-    expect(resolveTerminalFontFamily("berkeley-mono", "")).toBe(
-      `"Berkeley Mono", ${FALLBACK}`,
-    );
+  it("exports a default that matches the berkeley-mono stack", () => {
     expect(DEFAULT_TERMINAL_FONT_FAMILY).toBe(`"Berkeley Mono", ${FALLBACK}`);
   });
 
-  it("returns the JetBrains Mono stack", () => {
-    expect(resolveTerminalFontFamily("jetbrains-mono", "")).toBe(
-      `"JetBrains Mono", ${FALLBACK}`,
-    );
-  });
-
-  it("returns the system monospace stack and ignores the custom value", () => {
-    expect(resolveTerminalFontFamily("system", "Fira Code")).toBe(
-      "ui-monospace, Menlo, Monaco, Consolas, monospace",
-    );
+  it.each([
+    {
+      font: "berkeley-mono" as const,
+      custom: "",
+      expected: `"Berkeley Mono", ${FALLBACK}`,
+    },
+    {
+      font: "jetbrains-mono" as const,
+      custom: "",
+      expected: `"JetBrains Mono", ${FALLBACK}`,
+    },
+    {
+      font: "system" as const,
+      custom: "Fira Code",
+      expected: "ui-monospace, Menlo, Monaco, Consolas, monospace",
+    },
+  ])("resolves the $font preset", ({ font, custom, expected }) => {
+    expect(resolveTerminalFontFamily(font, custom)).toBe(expected);
   });
 
   it("falls back to the default stack when custom is empty or whitespace", () => {

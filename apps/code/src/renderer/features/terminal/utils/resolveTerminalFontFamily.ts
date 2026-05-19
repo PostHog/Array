@@ -11,7 +11,7 @@ export function resolveTerminalFontFamily(
 ): string {
   switch (font) {
     case "berkeley-mono":
-      return `"Berkeley Mono", ${FALLBACK}`;
+      return DEFAULT_TERMINAL_FONT_FAMILY;
     case "jetbrains-mono":
       return `"JetBrains Mono", ${FALLBACK}`;
     case "system":
