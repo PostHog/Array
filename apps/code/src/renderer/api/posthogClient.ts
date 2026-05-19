@@ -648,6 +648,33 @@ export class PostHogAPIClient {
     };
   }
 
+  /** Seed team GitHub setup callback state before opening github.com installation settings. */
+  async prepareGithubTeamIntegrationCallback(
+    teamId: number,
+    next: string,
+  ): Promise<void> {
+    const urlPath = `/api/environments/${teamId}/integrations/github/prepare_callback/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ next }),
+      },
+    });
+    if (!response.ok && response.status !== 204) {
+      const err = (await response.json().catch(() => ({}))) as {
+        detail?: unknown;
+      };
+      const detail =
+        typeof err.detail === "string"
+          ? err.detail
+          : "Failed to prepare GitHub callback";
+      throw new Error(detail);
+    }
+  }
+
   async getGithubUserIntegrations(): Promise<UserGitHubIntegration[]> {
     const urlPath = `/api/users/@me/integrations/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
