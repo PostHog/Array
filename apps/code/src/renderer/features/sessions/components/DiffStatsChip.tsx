@@ -1,6 +1,5 @@
 import { Tooltip } from "@components/ui/Tooltip";
-import { useTaskDiffStats } from "@features/code-review/hooks/useTaskDiffStats";
-import { useReviewNavigationStore } from "@features/code-review/stores/reviewNavigationStore";
+import { useDiffStatsToggle } from "@features/code-review/hooks/useDiffStatsToggle";
 import { GitDiff } from "@phosphor-icons/react";
 import { Flex, Text } from "@radix-ui/themes";
 import {
@@ -14,21 +13,10 @@ interface DiffStatsChipProps {
 }
 
 export function DiffStatsChip({ task }: DiffStatsChipProps) {
-  const taskId = task.id;
-  const { filesChanged, linesAdded, linesRemoved } = useTaskDiffStats(task);
-
-  const reviewMode = useReviewNavigationStore(
-    (s) => s.reviewModes[taskId] ?? "closed",
-  );
-  const setReviewMode = useReviewNavigationStore((s) => s.setReviewMode);
+  const { filesChanged, linesAdded, linesRemoved, isOpen, toggle } =
+    useDiffStatsToggle(task, "expanded");
 
   if (filesChanged === 0) return null;
-
-  const isOpen = reviewMode !== "closed";
-
-  const handleClick = () => {
-    setReviewMode(taskId, isOpen ? "closed" : "expanded");
-  };
 
   return (
     <Tooltip
@@ -39,7 +27,7 @@ export function DiffStatsChip({ task }: DiffStatsChipProps) {
       <Flex
         align="center"
         gap="1"
-        onClick={handleClick}
+        onClick={toggle}
         className="cursor-pointer select-none text-[13px] text-gray-10 tabular-nums hover:text-gray-12"
       >
         <GitDiff size={12} className="shrink-0" />

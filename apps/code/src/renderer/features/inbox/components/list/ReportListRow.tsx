@@ -75,18 +75,10 @@ export function ReportListRow({
     onClick({ metaKey: e.metaKey, shiftKey: e.shiftKey });
   };
 
-  const rowBgClass = isSelected
-    ? report.is_suggested_reviewer
-      ? "bg-amber-3"
-      : "bg-gray-3"
-    : report.is_suggested_reviewer
-      ? "bg-amber-2"
-      : "";
+  const rowBgClass = isSelected ? "bg-gray-3" : "";
 
   const hoverOverlayClass =
-    isSelected && report.is_suggested_reviewer
-      ? "before:bg-amber-12 before:opacity-0 hover:before:opacity-[0.07]"
-      : "before:bg-gray-12 before:opacity-0 hover:before:opacity-[0.07]";
+    "before:bg-gray-12 before:opacity-0 hover:before:opacity-[0.07]";
 
   return (
     <motion.div
@@ -116,14 +108,14 @@ export function ReportListRow({
       }}
       className={[
         "relative isolate w-full cursor-pointer overflow-hidden border-gray-5 border-b py-1.5 pr-4 pl-1.5 text-left",
-        "before:pointer-events-none before:absolute before:inset-0 before:z-[1]",
+        "before:pointer-events-none before:absolute before:inset-0 before:z-1",
         hoverOverlayClass,
         rowBgClass,
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      <Flex align="start" gap="1" className="relative z-[2]">
+      <Flex align="start" gap="1" className="relative z-2">
         <Flex
           align="center"
           justify="center"

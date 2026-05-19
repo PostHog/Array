@@ -68,6 +68,26 @@ export function getContentText(
   return undefined;
 }
 
+export interface ImageContentData {
+  base64: string;
+  mimeType: string;
+}
+
+export function getContentImage(
+  content: ToolCall["content"],
+): ImageContentData | undefined {
+  if (!content?.length) return undefined;
+  for (const item of content) {
+    if (item.type === "content" && item.content.type === "image") {
+      const { data, mimeType } = item.content;
+      if (typeof data === "string" && typeof mimeType === "string") {
+        return { base64: data, mimeType };
+      }
+    }
+  }
+  return undefined;
+}
+
 export function getReadToolContent(
   content: ToolCall["content"],
 ): string | undefined {

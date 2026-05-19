@@ -185,6 +185,32 @@ describe("ShellService", () => {
     vi.clearAllMocks();
   });
 
+  it.each([
+    [
+      "interactive shell session",
+      () => service.create("session-1", "/home/user/project"),
+    ],
+    [
+      "command session",
+      () =>
+        service.createCommandSession({
+          sessionId: "session-1",
+          command: "echo hello",
+          cwd: "/home/user/project",
+        }),
+    ],
+  ])("spawns %s with UTF-8 output decoding", async (_name, createSession) => {
+    await createSession();
+
+    expect(mockPty.spawn).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({
+        encoding: "utf8",
+      }),
+    );
+  });
+
   describe("create", () => {
     it("creates a new shell session", async () => {
       await service.create("session-1", "/home/user/project");

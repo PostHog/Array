@@ -21,6 +21,7 @@ import { useFocusStore } from "@renderer/stores/focusStore";
 import { useThemeStore } from "@renderer/stores/themeStore";
 import { initializeUpdateStore } from "@renderer/stores/updateStore";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
+import { isNotAuthenticatedError } from "@shared/errors";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
@@ -39,9 +40,6 @@ function App() {
   const authState = useAuthStateValue((state) => state);
   const hasCompletedOnboarding = useOnboardingStore(
     (state) => state.hasCompletedOnboarding,
-  );
-  const selectedDirectory = useOnboardingStore(
-    (state) => state.selectedDirectory,
   );
   const isAuthenticated = authState.status === "authenticated";
   const hasCodeAccess = authState.hasCodeAccess;
@@ -217,11 +215,8 @@ function App() {
   }
 
   // Rendering: onboarding (includes auth + invite code gate) → main app
-  // We also route to onboarding when no directory is selected — without one, the
-  // main app has nothing meaningful to show (the dev "Skip setup" button can
-  // produce this state by flipping hasCompletedOnboarding without picking a directory).
   const renderContent = () => {
-    if (!hasCompletedOnboarding || !selectedDirectory) {
+    if (!hasCompletedOnboarding) {
       return (
         <motion.div key="onboarding" initial={{ opacity: 1 }}>
           <OnboardingFlow />
@@ -284,7 +279,11 @@ function App() {
   const content = renderContent();
 
   return (
-    <ErrorBoundary name="App">
+    <ErrorBoundary
+      name="App"
+      resetKey={authState.status}
+      shouldSuppress={isNotAuthenticatedError}
+    >
       {isAuthenticated ? (
         <AnimatePresence mode="wait">{content}</AnimatePresence>
       ) : (

@@ -12,7 +12,9 @@ export interface TaskPrStatus {
 const SIDEBAR_STALE_TIME = 60_000;
 const EMPTY: TaskPrStatus = { prState: null, hasDiff: false };
 
-export function useTaskPrStatus(task: TaskData): TaskPrStatus {
+export function useTaskPrStatus(
+  task: Pick<TaskData, "id" | "cloudPrUrl">,
+): TaskPrStatus {
   const trpc = useTRPC();
 
   const { data } = useQuery(

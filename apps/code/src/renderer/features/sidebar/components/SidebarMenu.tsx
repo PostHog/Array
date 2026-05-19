@@ -18,7 +18,9 @@ import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
 import { ScrollArea, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
+import type { Schemas } from "@renderer/api/generated";
 import type { Task } from "@shared/types";
+import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
 import { useQueryClient } from "@tanstack/react-query";
@@ -32,6 +34,7 @@ import { useSidebarStore } from "../stores/sidebarStore";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
 import { McpServersItem } from "./items/McpServersItem";
+import { SearchItem } from "./items/SearchItem";
 import { SetupItem } from "./items/SetupItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
@@ -142,6 +145,11 @@ function SidebarMenuComponent() {
 
   const handleSetupClick = () => {
     navigateToSetup();
+  };
+
+  const openCommandMenu = useCommandMenuStore((s) => s.open);
+  const handleSearchClick = () => {
+    openCommandMenu();
   };
 
   const handleTaskClick = (taskId: string) => {
@@ -273,6 +281,13 @@ function SidebarMenuComponent() {
               : task,
           ),
       );
+      queryClient.setQueriesData<Schemas.TaskSummary[]>(
+        { queryKey: ["tasks", "summaries"] },
+        (old) =>
+          old?.map((task) =>
+            task.id === taskId ? { ...task, title: newTitle } : task,
+          ),
+      );
 
       // Sync to session store so notifications use the updated title
       getSessionService().updateSessionTaskTitle(taskId, newTitle);
@@ -286,6 +301,7 @@ function SidebarMenuComponent() {
         log.error("Failed to rename task", error);
         // Refetch to revert optimistic update on failure
         queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
+        queryClient.invalidateQueries({ queryKey: ["tasks", "summaries"] });
       }
     },
     [setEditingTaskId, updateTask, queryClient, log],
@@ -315,6 +331,10 @@ function SidebarMenuComponent() {
               />
             </Box>
           )}
+
+          <Box>
+            <SearchItem onClick={handleSearchClick} />
+          </Box>
 
           <Box>
             <InboxItem

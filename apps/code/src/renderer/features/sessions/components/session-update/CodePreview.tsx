@@ -1,6 +1,8 @@
 import { EditorView } from "@codemirror/view";
+import { SafeImagePreview } from "@components/ui/SafeImagePreview";
 import { MultiFileDiff } from "@pierre/diffs/react";
 import { Code } from "@radix-ui/themes";
+import { parseImageDataUrl } from "@shared/utils/imageDataUrl";
 import { useThemeStore } from "@stores/themeStore";
 import { compactHomePath } from "@utils/path";
 import { useEffect, useMemo, useRef } from "react";
@@ -31,6 +33,10 @@ export function CodePreview({
   cacheKey,
 }: CodePreviewProps) {
   const isDiff = oldContent !== undefined && oldContent !== null;
+  const imageDataUrl = useMemo(
+    () => (isDiff ? null : parseImageDataUrl(content)),
+    [isDiff, content],
+  );
 
   if (isDiff) {
     return (
@@ -45,6 +51,18 @@ export function CodePreview({
     );
   }
 
+  if (imageDataUrl) {
+    return (
+      <ImageDataUrlPreview
+        filePath={filePath}
+        showPath={showPath}
+        mimeType={imageDataUrl.mimeType}
+        base64={imageDataUrl.base64}
+        maxHeight={maxHeight}
+      />
+    );
+  }
+
   return (
     <PlainCodePreview
       content={content}
@@ -53,6 +71,43 @@ export function CodePreview({
       firstLineNumber={firstLineNumber}
       maxHeight={maxHeight}
     />
+  );
+}
+
+function ImageDataUrlPreview({
+  filePath,
+  showPath,
+  mimeType,
+  base64,
+  maxHeight,
+}: {
+  filePath?: string;
+  showPath?: boolean;
+  mimeType: string;
+  base64: string;
+  maxHeight?: string;
+}) {
+  return (
+    <div style={CODE_PREVIEW_CONTAINER_STYLE}>
+      {showPath && filePath && (
+        <div style={CODE_PREVIEW_PATH_STYLE} title={filePath}>
+          <Code variant="ghost" className="truncate text-[13px]">
+            {compactHomePath(filePath)}
+          </Code>
+        </div>
+      )}
+      <div
+        className="flex items-center justify-center bg-(--gray-2) p-2"
+        style={maxHeight ? { maxHeight, overflow: "auto" } : undefined}
+      >
+        <SafeImagePreview
+          base64={base64}
+          mimeType={mimeType}
+          alt={filePath ?? "Image preview"}
+          className="max-h-96 max-w-full object-contain"
+        />
+      </div>
+    </div>
   );
 }
 

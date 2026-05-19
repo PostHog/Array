@@ -41,4 +41,5 @@ export const fileWatcherRouter = router({
   onFileChanged: subscribe(FileWatcherEvent.FileChanged),
   onFileDeleted: subscribe(FileWatcherEvent.FileDeleted),
   onGitStateChanged: subscribe(FileWatcherEvent.GitStateChanged),
+  onWorkingTreeChanged: subscribe(FileWatcherEvent.WorkingTreeChanged),
 });

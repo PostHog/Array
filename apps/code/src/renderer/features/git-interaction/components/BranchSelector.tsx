@@ -5,6 +5,7 @@ import { invalidateGitBranchQueries } from "@features/git-interaction/utils/gitC
 import {
   ArrowClockwise,
   CaretDown,
+  Check,
   GitBranch,
   Plus,
   Spinner,
@@ -22,6 +23,7 @@ import {
 } from "@posthog/quill";
 import { useTRPC } from "@renderer/trpc";
 import { toast } from "@renderer/utils/toast";
+import type { GitBusyOperation, GitBusyState } from "@shared/types";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { type RefObject, useEffect, useRef, useState } from "react";
 
@@ -60,7 +62,20 @@ interface BranchSelectorProps {
   isRefreshing?: boolean;
   taskId?: string;
   anchor?: RefObject<HTMLElement | null>;
+  /**
+   * Local-repo busy state (rebase, merge, cherry-pick, revert in progress).
+   * Used to show a clearer label and prevent checkout attempts that would
+   * fail while the working tree is mid-operation. Only applies in local mode.
+   */
+  busyState?: GitBusyState;
 }
+
+const BUSY_OPERATION_LABEL: Record<GitBusyOperation, string> = {
+  rebase: "Rebasing",
+  merge: "Merging",
+  "cherry-pick": "Cherry-picking",
+  revert: "Reverting",
+};
 
 export function BranchSelector({
   repoPath,
@@ -85,6 +100,7 @@ export function BranchSelector({
   isRefreshing = false,
   taskId,
   anchor,
+  busyState,
 }: BranchSelectorProps) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -107,7 +123,7 @@ export function BranchSelector({
     useQuery(
       trpc.git.getAllBranches.queryOptions(
         { directoryPath: repoPath as string },
-        { enabled: !isCloudMode && !!repoPath && open, staleTime: 10_000 },
+        { enabled: !isCloudMode && !!repoPath, staleTime: 60_000 },
       ),
     );
 
@@ -166,15 +182,45 @@ export function BranchSelector({
     }
   };
 
+  // In local mode, surface in-progress git operations (rebase/merge/etc.) so the
+  // user understands why there's no current branch and why we won't let them
+  // checkout a different one — checkout would fail with a hard-to-read git error.
+  const localBusy = !isSelectionOnly && busyState?.busy === true;
+  const busyOperationLabel =
+    localBusy && busyState?.busy
+      ? BUSY_OPERATION_LABEL[busyState.operation]
+      : null;
+
   const displayText = effectiveLoading
     ? "Loading..."
-    : (displayedBranch ?? "No branch");
+    : busyOperationLabel && !displayedBranch
+      ? busyOperationLabel
+      : (displayedBranch ?? "No branch");
 
   const showSpinner =
     effectiveLoading || (isCloudMode && open && cloudBranchesFetchingMore);
 
-  const isDisabled = !!(disabled || !repoPath || cloudStillLoading);
+  const isDisabled = !!(
+    disabled ||
+    !repoPath ||
+    cloudStillLoading ||
+    localBusy
+  );
+  const disabledReason =
+    localBusy && busyOperationLabel
+      ? `${busyOperationLabel} in progress — finish or abort it to switch branches.`
+      : null;
   const inputValue = isCloudMode ? (cloudSearchQuery ?? "") : searchQuery;
+  const trimmedInputValue = inputValue.trim();
+  const canUseInputBranch =
+    !isDisabled &&
+    trimmedInputValue.length > 0 &&
+    trimmedInputValue !== displayedBranch;
+
+  const handleUseInputBranch = () => {
+    if (!canUseInputBranch) return;
+    handleBranchChange(trimmedInputValue);
+  };
 
   return (
     <Combobox
@@ -195,7 +241,7 @@ export function BranchSelector({
       filter={isCloudMode ? null : undefined}
     >
       <Tooltip
-        content={displayedBranch ?? "Switch branch"}
+        content={disabledReason ?? displayedBranch ?? "Switch branch"}
         side="bottom"
         open={hovered && !open && !effectiveLoading}
       >
@@ -237,8 +283,46 @@ export function BranchSelector({
             <ComboboxInput
               placeholder="Search branches..."
               showTrigger={false}
+              onKeyDownCapture={(event) => {
+                if (
+                  event.key !== "Enter" ||
+                  event.nativeEvent.isComposing ||
+                  !canUseInputBranch
+                ) {
+                  return;
+                }
+
+                // If the combobox already has a highlighted item, let Base UI select it.
+                if (event.currentTarget.getAttribute("aria-activedescendant")) {
+                  return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                handleUseInputBranch();
+              }}
             />
           </div>
+          <Tooltip content="Use this branch name" side="bottom">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!canUseInputBranch}
+              aria-label="Use this branch name"
+              onMouseDown={(event) => {
+                // Keep focus inside the combobox so the popover doesn't close before click.
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                handleUseInputBranch();
+              }}
+            >
+              <Check size={14} />
+            </Button>
+          </Tooltip>
           {onRefresh ? (
             <Button
               variant="outline"

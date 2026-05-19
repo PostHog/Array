@@ -65,3 +65,13 @@ export function experimentUrl(
 export function featureFlagsIndexUrl(overrides?: LinkOverrides): string | null {
   return withProjectId((pid) => `/project/${pid}/feature_flags`, overrides);
 }
+
+export function errorTrackingIssueUrl(
+  issueId: string,
+  overrides?: LinkOverrides,
+): string | null {
+  return withProjectId(
+    (pid) => `/project/${pid}/error_tracking/${encodeURIComponent(issueId)}`,
+    overrides,
+  );
+}

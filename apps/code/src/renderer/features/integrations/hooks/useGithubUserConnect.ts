@@ -6,6 +6,7 @@ import type { PostHogAPIClient } from "@renderer/api/posthogClient";
 import { trpcClient } from "@renderer/trpc/client";
 import { IS_DEV } from "@shared/constants/environment";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { openUrlInBrowser } from "@utils/browser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const POLL_INTERVAL_MS = 3_000;
@@ -89,14 +90,6 @@ export function invalidateGithubQueries(
     queryKey: ["user-github-integrations"],
   });
   void queryClient.invalidateQueries({ queryKey: ["github_login"] });
-}
-
-export async function openUrlInBrowser(url: string): Promise<void> {
-  try {
-    await trpcClient.os.openExternal.mutate({ url });
-  } catch {
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
 }
 
 interface StateMachine {

@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createGitClient } from "./client";
 import {
   detectDefaultBranch,
+  getAllBranches,
   getBranchDiffPatchesByPath,
+  getChangedFilesDetailed,
+  getGitBusyState,
   splitUnifiedDiffByFile,
 } from "./queries";
 
@@ -240,5 +243,156 @@ describe("getBranchDiffPatchesByPath", () => {
     } finally {
       await rm(remoteDir, { recursive: true, force: true });
     }
+  });
+});
+
+// Picked to land well past the default 64KB highWaterMark of
+// `createReadStream` so the regression test actually exercises the
+// across-chunk path of the streaming line counter.
+const LINE_COUNT_LARGER_THAN_READ_STREAM_CHUNK = 800_000;
+
+describe("getChangedFilesDetailed > untracked line counts", () => {
+  let repoDir: string;
+
+  afterEach(async () => {
+    if (repoDir) {
+      await rm(repoDir, { recursive: true, force: true });
+      repoDir = "";
+    }
+  });
+
+  it.each([
+    { name: "trailing newline", content: "a\nb\nc\n", expected: 3 },
+    { name: "no trailing newline", content: "a\nb\nc", expected: 3 },
+    { name: "single byte, no newline", content: "a", expected: 1 },
+    { name: "lone newline", content: "\n", expected: 1 },
+    { name: "consecutive newlines", content: "\n\n", expected: 2 },
+    // CRLF: legacy `split("\n")` counted only `\n` separators, so
+    // `"a\r\nb\r\n"` -> 2 lines. Byte-counter matches.
+    { name: "CRLF endings", content: "a\r\nb\r\n", expected: 2 },
+  ])("counts $name as $expected line(s)", async ({ content, expected }) => {
+    repoDir = await setupRepo();
+    await writeFile(path.join(repoDir, "f.txt"), content);
+
+    const files = await getChangedFilesDetailed(repoDir);
+    const f = files.find((file) => file.path === "f.txt");
+
+    expect(f).toMatchObject({ status: "untracked", linesAdded: expected });
+  });
+
+  it("reports 0 lines for empty untracked files", async () => {
+    repoDir = await setupRepo();
+    await writeFile(path.join(repoDir, "empty.txt"), "");
+
+    const files = await getChangedFilesDetailed(repoDir);
+    const empty = files.find((f) => f.path === "empty.txt");
+
+    expect(empty).toMatchObject({ status: "untracked", linesAdded: 0 });
+  });
+
+  // Regression guard for the OOM in #2218. Before the fix `countFileLines`
+  // read each untracked file's full content into memory via
+  // `fs.readFile(..., "utf-8")`, 16-way concurrent against every untracked
+  // path returned by `streamGitStatus` (up to 50k). On a monorepo with
+  // multi-MB build artifacts this exhausted the main-process V8 heap
+  // (`16 * file_bytes * 2` for V8's UTF-16) and froze the renderer waiting
+  // on the dead tRPC call. The fix stream-counts via `createReadStream`,
+  // so peak per-stream memory is ~64KB regardless of file size — the
+  // multi-MB case below would have OOM'd pre-fix and must still report an
+  // accurate line count.
+  it("stream-counts untracked files larger than the streaming chunk size", async () => {
+    repoDir = await setupRepo();
+    const content = "a\n".repeat(LINE_COUNT_LARGER_THAN_READ_STREAM_CHUNK);
+    await writeFile(path.join(repoDir, "huge.txt"), content);
+
+    const files = await getChangedFilesDetailed(repoDir);
+    const huge = files.find((f) => f.path === "huge.txt");
+
+    expect(huge).toMatchObject({
+      status: "untracked",
+      linesAdded: LINE_COUNT_LARGER_THAN_READ_STREAM_CHUNK,
+    });
+  });
+});
+
+describe("getAllBranches", () => {
+  let repoDir: string | undefined;
+
+  afterEach(async () => {
+    if (repoDir) {
+      await rm(repoDir, { recursive: true, force: true });
+      repoDir = undefined;
+    }
+  });
+
+  async function setupRebaseConflict(dir: string): Promise<void> {
+    const git = createGitClient(dir);
+    await git.checkoutLocalBranch("feature");
+    await writeFile(path.join(dir, "file.txt"), "feature change\n");
+    await git.add(["file.txt"]);
+    await git.commit("on feature");
+    await git.checkout("main");
+    await writeFile(path.join(dir, "file.txt"), "main change\n");
+    await git.add(["file.txt"]);
+    await git.commit("on main");
+    await git.checkout("feature");
+    try {
+      await git.rebase(["main"]);
+    } catch {
+      // expected: rebase pauses on conflict, leaving HEAD on a pseudo-branch
+    }
+  }
+
+  it("returns only real branches, not the rebase pseudo-branch", async () => {
+    repoDir = await setupRepo("main");
+    await setupRebaseConflict(repoDir);
+
+    const branches = await getAllBranches(repoDir);
+    expect(branches).toEqual(expect.arrayContaining(["main", "feature"]));
+    expect(branches).not.toContain("(no");
+    expect(branches.every((b) => !b.startsWith("("))).toBe(true);
+  });
+});
+
+describe("getGitBusyState", () => {
+  let repoDir: string | undefined;
+
+  afterEach(async () => {
+    if (repoDir) {
+      await rm(repoDir, { recursive: true, force: true });
+      repoDir = undefined;
+    }
+  });
+
+  it("reports busy=false in a clean repo", async () => {
+    repoDir = await setupRepo("main");
+    expect(await getGitBusyState(repoDir)).toEqual({ busy: false });
+  });
+
+  it("detects an in-progress rebase", async () => {
+    repoDir = await setupRepo("main");
+    const git = createGitClient(repoDir);
+
+    await git.checkoutLocalBranch("feature");
+    await writeFile(path.join(repoDir, "file.txt"), "feature change\n");
+    await git.add(["file.txt"]);
+    await git.commit("on feature");
+
+    await git.checkout("main");
+    await writeFile(path.join(repoDir, "file.txt"), "main change\n");
+    await git.add(["file.txt"]);
+    await git.commit("on main");
+
+    await git.checkout("feature");
+    try {
+      await git.rebase(["main"]);
+    } catch {
+      // expected: conflict
+    }
+
+    expect(await getGitBusyState(repoDir)).toEqual({
+      busy: true,
+      operation: "rebase",
+    });
   });
 });

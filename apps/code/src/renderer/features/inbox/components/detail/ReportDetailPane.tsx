@@ -1,8 +1,13 @@
 import { Badge } from "@components/ui/Badge";
+import { Button } from "@components/ui/Button";
 import {
   useInboxReportArtefacts,
   useInboxReportSignals,
 } from "@features/inbox/hooks/useInboxReports";
+import {
+  getTaskPrUrl,
+  useReportTasks,
+} from "@features/inbox/hooks/useReportTasks";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import { useDetectedCloudRepository } from "@hooks/useDetectedCloudRepository";
 import { useMeQuery } from "@hooks/useMeQuery";
@@ -12,10 +17,20 @@ import {
   CaretRightIcon,
   EyeIcon,
   LinkSimpleIcon,
+  Plus,
+  ThumbsDownIcon,
   WarningIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { Box, Flex, ScrollArea, Text, Tooltip } from "@radix-ui/themes";
+import { Kbd } from "@posthog/quill";
+import {
+  Box,
+  Flex,
+  ScrollArea,
+  Spinner,
+  Text,
+  Tooltip,
+} from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { EXTERNAL_LINKS } from "@renderer/utils/links";
 import { getDeeplinkProtocol } from "@shared/deeplink";
@@ -32,8 +47,16 @@ import type {
 } from "@shared/types";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useMemo, useState } from "react";
+import { isMac } from "@utils/platform";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { toast } from "sonner";
+import { ReportImplementationPrLink } from "../utils/ReportImplementationPrLink";
 import { SignalReportActionabilityBadge } from "../utils/SignalReportActionabilityBadge";
 import { SignalReportPriorityBadge } from "../utils/SignalReportPriorityBadge";
 import { SignalReportStatusBadge } from "../utils/SignalReportStatusBadge";
@@ -133,9 +156,18 @@ function DetailRow({
 interface ReportDetailPaneProps {
   report: SignalReport;
   onClose: () => void;
+  onRequestDismissReport: () => void;
+  suppressDisabledReason: string | null;
+  isDismissMutationPending?: boolean;
 }
 
-export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
+export function ReportDetailPane({
+  report,
+  onClose,
+  onRequestDismissReport,
+  suppressDisabledReason,
+  isDismissMutationPending = false,
+}: ReportDetailPaneProps) {
   const { data: me } = useMeQuery();
 
   // ── Report data ─────────────────────────────────────────────────────────
@@ -213,6 +245,16 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
   );
   const effectiveCloudRepository = reportRepository ?? detectedFallbackRepo;
 
+  const { data: reportTasksData } = useReportTasks(report.id, report.status);
+  const implementationTaskFromHook =
+    reportTasksData?.find((t) => t.relationship === "implementation")?.task ??
+    null;
+  const implementationPrFromTask = implementationTaskFromHook
+    ? getTaskPrUrl(implementationTaskFromHook)
+    : null;
+  const headerImplementationPrUrl =
+    implementationPrFromTask ?? report.implementation_pr_url ?? null;
+
   /** True when the report is waiting on user input before implementation can proceed.
    * Covers the `pending_input` status and the `ready + requires_human_input` combination
    * (the actionability badge shows "Needs input" in that case). */
@@ -246,6 +288,31 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
     report,
   ]);
 
+  useEffect(() => {
+    if (!canCreateImplementationPr) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (
+        document.querySelector(
+          "[data-radix-popper-content-wrapper], [role='dialog'][data-state='open']",
+        )
+      ) {
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest("input, select, textarea, [contenteditable='true']")
+      ) {
+        return;
+      }
+      e.preventDefault();
+      handleCreateImplementationTask();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [canCreateImplementationPr, handleCreateImplementationTask]);
+
   return (
     <>
       {/* ── Header bar ──────────────────────────────────────────── */}
@@ -264,7 +331,7 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
             {report.title ?? "Untitled signal"}
           </Text>
         </Flex>
-        <Flex align="center" gap="1" className="shrink-0">
+        <Flex align="center" gap="2" className="shrink-0">
           <Tooltip content="Copy link to this report">
             <button
               type="button"
@@ -284,6 +351,49 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
               <LinkSimpleIcon size={14} />
             </button>
           </Tooltip>
+          <Button
+            size="1"
+            variant="soft"
+            color="gray"
+            className="text-[12px]"
+            tooltipContent="This report is not useful to me"
+            disabledReason={suppressDisabledReason}
+            disabled={
+              suppressDisabledReason !== null || isDismissMutationPending
+            }
+            onClick={() => onRequestDismissReport()}
+          >
+            {isDismissMutationPending ? (
+              <Spinner size="1" />
+            ) : (
+              <ThumbsDownIcon size={12} />
+            )}
+            Dismiss
+          </Button>
+          {headerImplementationPrUrl ? (
+            <ReportImplementationPrLink
+              prUrl={headerImplementationPrUrl}
+              size="md"
+            />
+          ) : canCreateImplementationPr ? (
+            <Tooltip
+              content={
+                <Flex align="center" gap="1">
+                  Create PR <Kbd>{isMac ? "⌘↵" : "Ctrl+↵"}</Kbd>
+                </Flex>
+              }
+            >
+              <Button
+                size="1"
+                variant="solid"
+                className="gap-1 text-[12px]"
+                onClick={handleCreateImplementationTask}
+              >
+                <Plus size={12} />
+                Create PR
+              </Button>
+            </Tooltip>
+          ) : null}
           <button
             type="button"
             onClick={onClose}
@@ -536,10 +646,6 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
         key={report.id}
         reportId={report.id}
         reportStatus={report.status}
-        isAwaitingInput={isAwaitingInput}
-        onCreateImplementationTask={
-          canCreateImplementationPr ? handleCreateImplementationTask : undefined
-        }
       />
     </>
   );

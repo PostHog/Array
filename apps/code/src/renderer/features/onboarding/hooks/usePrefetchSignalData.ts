@@ -36,7 +36,7 @@ export function usePrefetchSignalData(): void {
     queryClient.prefetchQuery({
       queryKey: ["integrations", "list"],
       queryFn: async () => {
-        const integrations = await client.getIntegrations();
+        const integrations = await client.getIntegrations("github");
         const ghIntegration = (
           integrations as { id: number; kind: string }[]
         ).find((i) => i.kind === "github");

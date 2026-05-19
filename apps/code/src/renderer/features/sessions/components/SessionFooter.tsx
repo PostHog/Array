@@ -33,7 +33,7 @@ export function SessionFooter({
   usage,
 }: SessionFooterProps) {
   const rightSide = (
-    <Flex align="center" gap="3">
+    <Flex align="center" gap="3" className="shrink-0">
       {task && <DiffStatsChip task={task} />}
       <ContextUsageIndicator usage={usage ?? null} />
     </Flex>
@@ -46,11 +46,13 @@ export function SessionFooter({
             <Flex
               align="center"
               gap="2"
-              className="select-none select-none text-gray-10"
+              className="min-w-0 select-none select-none text-gray-10"
               style={{ WebkitUserSelect: "none" }}
             >
-              <Pause size={14} weight="fill" />
-              <Text className="text-[13px]">Awaiting permission...</Text>
+              <Pause size={14} weight="fill" className="shrink-0" />
+              <Text className="truncate text-[13px]">
+                Awaiting permission...
+              </Text>
             </Flex>
             {rightSide}
           </Flex>
@@ -61,13 +63,13 @@ export function SessionFooter({
     return (
       <Box className="pt-3 pb-1">
         <Flex align="center" justify="between" gap="2">
-          <Flex align="center" gap="2">
+          <Flex align="center" gap="2" className="min-w-0">
             <GeneratingIndicator
               startedAt={promptStartedAt}
               pausedDurationMs={pausedDurationMs}
             />
             {queuedCount > 0 && (
-              <Text color="gray" className="text-[13px]">
+              <Text color="gray" className="truncate text-[13px]">
                 ({queuedCount} queued)
               </Text>
             )}
@@ -90,12 +92,16 @@ export function SessionFooter({
     <Box className="pb-1">
       <Flex align="center" justify="between" gap="2">
         {showDuration && (
-          <Flex align="center" gap="2" className="select-none text-gray-10">
-            <Brain size={12} />
+          <Flex
+            align="center"
+            gap="2"
+            className="min-w-0 select-none text-gray-10"
+          >
+            <Brain size={12} className="shrink-0" />
             <Text
               color="gray"
               style={{ fontVariantNumeric: "tabular-nums" }}
-              className="text-[13px]"
+              className="truncate text-[13px]"
             >
               Generated in {formatDuration(lastGenerationDuration)}
             </Text>

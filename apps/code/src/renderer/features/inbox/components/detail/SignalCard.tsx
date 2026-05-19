@@ -7,11 +7,11 @@ import {
   CaretDownIcon,
   CaretRightIcon,
   CheckCircleIcon,
-  QuestionIcon,
   TagIcon,
 } from "@phosphor-icons/react";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import type { Signal, SignalFindingContent } from "@shared/types";
+import { errorTrackingIssueUrl } from "@utils/posthogLinks";
 import { useRef, useState } from "react";
 
 const COLLAPSE_THRESHOLD = 300;
@@ -111,6 +111,8 @@ interface SessionProblemExtra {
   session_duration?: number;
   session_active_seconds?: number;
   exported_asset_id?: number;
+  moment_preview_url?: string;
+  moment_preview_asset_id?: number;
 }
 
 interface ErrorTrackingExtra {
@@ -220,23 +222,16 @@ function isErrorTrackingExtra(
 
 // ── Shared components ────────────────────────────────────────────────────────
 
-function VerificationBadge({ verified }: { verified: boolean }) {
+function VerificationBadge() {
   return (
     <Flex
       align="center"
       gap="1"
-      className="shrink-0 text-[11px]"
-      title={
-        verified ? "Verified by code or data evidence" : "Could not be verified"
-      }
-      style={{ color: verified ? "var(--green-9)" : "var(--gray-9)" }}
+      className="shrink-0 text-(--green-9) text-[11px]"
+      title="Verified by code or data evidence"
     >
-      {verified ? (
-        <CheckCircleIcon size={12} weight="fill" />
-      ) : (
-        <QuestionIcon size={12} weight="bold" />
-      )}
-      <span>{verified ? "Verified" : "Unverified"}</span>
+      <CheckCircleIcon size={12} weight="fill" />
+      <span>Verified</span>
     </Flex>
   );
 }
@@ -266,15 +261,7 @@ function SignalCardHeader({
         {signalCardSourceLine(signal)}
       </Text>
       <span className="flex-1" />
-      {verified !== undefined && <VerificationBadge verified={verified} />}
-      <Badge
-        variant="soft"
-        color="gray"
-        size="1"
-        className="shrink-0 text-[11px]"
-      >
-        Weight: {signal.weight.toFixed(1)}
-      </Badge>
+      {verified === true && <VerificationBadge />}
     </Flex>
   );
 }
@@ -542,7 +529,17 @@ function SessionProblemSignalCard({
       )}
       <CollapsibleBody body={signal.content} />
 
-      {extra.session_id && (
+      {/* Moment preview GIF — quick visual of the problematic period */}
+      {extra.moment_preview_url && (
+        <MomentPreview
+          url={extra.moment_preview_url}
+          alt={`Session moment: ${extra.segment_title ?? "problem"}`}
+          startTime={extra.start_time}
+          endTime={extra.end_time}
+        />
+      )}
+
+      {extra.session_id && !extra.moment_preview_url && (
         <SessionRecordingVideo
           exportedAssetId={extra.exported_asset_id}
           sessionId={extra.session_id}
@@ -601,6 +598,60 @@ function SessionProblemSignalCard({
       </Flex>
       <CodePathsCollapsible paths={codePaths ?? []} />
       <DataQueriedCollapsible text={dataQueried ?? ""} />
+    </Box>
+  );
+}
+
+function MomentPreview({
+  url,
+  alt,
+  startTime,
+  endTime,
+}: {
+  url: string;
+  alt: string;
+  startTime?: string;
+  endTime?: string;
+}) {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+
+  if (error) return null;
+
+  return (
+    <Box className="relative mt-2 overflow-hidden rounded-md border border-gray-5 bg-gray-2">
+      {!loaded && (
+        <Flex align="center" justify="center" className="absolute inset-0 z-10">
+          <Text
+            size="1"
+            className="text-[11px]"
+            style={{ color: "var(--gray-9)" }}
+          >
+            Loading preview…
+          </Text>
+        </Flex>
+      )}
+      <img
+        src={url}
+        alt={alt}
+        className="w-full rounded-md object-contain"
+        style={{
+          maxHeight: 200,
+          opacity: loaded ? 1 : 0,
+          transition: "opacity 150ms ease-in",
+        }}
+        onLoad={() => setLoaded(true)}
+        onError={() => setError(true)}
+      />
+      {startTime && endTime && (
+        <Flex
+          align="center"
+          gap="1"
+          className="absolute bottom-1.5 left-1.5 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-white"
+        >
+          {startTime} – {endTime}
+        </Flex>
+      )}
     </Box>
   );
 }
@@ -669,10 +720,34 @@ function ErrorTrackingSignalCard({
   codePaths?: string[];
   dataQueried?: string;
 }) {
+  const projectId = useAuthStateValue((s) => s.projectId);
+  const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+  const issueUrl = signal.source_id
+    ? errorTrackingIssueUrl(signal.source_id, { projectId, cloudRegion })
+    : null;
+
   return (
     <Box className="min-w-0 overflow-hidden rounded-lg border border-gray-6 bg-gray-1 p-3">
       <SignalCardHeader signal={signal} verified={verified} />
       <CollapsibleBody body={signal.content} />
+      {issueUrl && (
+        <Flex
+          align="center"
+          justify="end"
+          mt="2"
+          className="text-(--gray-10) text-[11px]"
+        >
+          <a
+            href={issueUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] text-gray-10 hover:text-gray-12"
+          >
+            View issue
+            <ArrowSquareOutIcon size={12} />
+          </a>
+        </Flex>
+      )}
       <CodePathsCollapsible paths={codePaths ?? []} />
       <DataQueriedCollapsible text={dataQueried ?? ""} />
     </Box>

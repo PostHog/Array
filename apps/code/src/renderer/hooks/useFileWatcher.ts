@@ -41,7 +41,12 @@ export function useFileWatcher(repoPath: string | null, taskId?: string) {
             filePath: relativePath,
           }),
         );
-        invalidateGitWorkingTreeQueries(repoPath);
+        queryClient.invalidateQueries(
+          trpc.fs.readRepoFileBounded.queryFilter({
+            repoPath,
+            filePath: relativePath,
+          }),
+        );
       },
     }),
   );
@@ -51,7 +56,6 @@ export function useFileWatcher(repoPath: string | null, taskId?: string) {
       enabled: !!repoPath,
       onData: ({ repoPath: rp, filePath }) => {
         if (rp !== repoPath) return;
-        invalidateGitWorkingTreeQueries(repoPath);
         if (!taskId) return;
         const relativePath = toRelativePath(filePath, repoPath);
         closeTabsForFile(taskId, relativePath);
@@ -65,6 +69,16 @@ export function useFileWatcher(repoPath: string | null, taskId?: string) {
       onData: ({ repoPath: rp }) => {
         if (rp !== repoPath) return;
         invalidateGitBranchQueries(repoPath);
+      },
+    }),
+  );
+
+  useSubscription(
+    trpc.fileWatcher.onWorkingTreeChanged.subscriptionOptions(undefined, {
+      enabled: !!repoPath,
+      onData: ({ repoPath: rp }) => {
+        if (rp !== repoPath) return;
+        invalidateGitWorkingTreeQueries(repoPath);
       },
     }),
   );

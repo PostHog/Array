@@ -1,23 +1,12 @@
-import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
 import { Tooltip } from "@components/ui/Tooltip";
 import type { SidebarPrState } from "@features/sidebar/hooks/useTaskPrStatus";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
-import {
-  Archive,
-  ChatCircle,
-  Circle,
-  Cloud as CloudIcon,
-  GitBranch,
-  GitMerge,
-  GitPullRequest,
-  HandPalm,
-  Pause,
-  PushPin,
-} from "@phosphor-icons/react";
-import { isTerminalStatus, type TaskRunStatus } from "@shared/types";
+import { Archive, PushPin } from "@phosphor-icons/react";
+import type { TaskRunStatus } from "@shared/types";
 import { formatRelativeTimeShort } from "@utils/time";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SidebarItem } from "../SidebarItem";
+import { TaskIcon } from "./TaskIcon";
 
 interface TaskItemProps {
   depth?: number;
@@ -110,118 +99,7 @@ function TaskHoverToolbar({
   );
 }
 
-const ICON_SIZE = 12;
 const INDENT_SIZE = 8;
-
-function CloudStatusIcon({
-  taskRunStatus,
-}: {
-  taskRunStatus?: TaskItemProps["taskRunStatus"];
-}) {
-  if (taskRunStatus === "queued" || taskRunStatus === "in_progress") {
-    return (
-      <Tooltip content="Cloud (running)" side="right">
-        <span className="flex items-center justify-center">
-          <CloudIcon size={ICON_SIZE} className="ph-pulse" />
-        </span>
-      </Tooltip>
-    );
-  }
-  if (taskRunStatus === "completed") {
-    return (
-      <Tooltip content="Cloud (completed)" side="right">
-        <span className="flex items-center justify-center">
-          <CloudIcon size={ICON_SIZE} weight="fill" className="text-green-11" />
-        </span>
-      </Tooltip>
-    );
-  }
-  if (taskRunStatus === "failed" || taskRunStatus === "cancelled") {
-    const label =
-      taskRunStatus === "cancelled" ? "Cloud (cancelled)" : "Cloud (failed)";
-    return (
-      <Tooltip content={label} side="right">
-        <span className="flex items-center justify-center">
-          <CloudIcon size={ICON_SIZE} weight="fill" className="text-red-11" />
-        </span>
-      </Tooltip>
-    );
-  }
-  return (
-    <Tooltip content="Cloud" side="right">
-      <span className="flex items-center justify-center">
-        <CloudIcon size={ICON_SIZE} />
-      </span>
-    </Tooltip>
-  );
-}
-
-function PrStatusIcon({
-  prState,
-  hasDiff,
-}: {
-  prState?: SidebarPrState;
-  hasDiff?: boolean;
-}) {
-  if (prState === "merged") {
-    return (
-      <Tooltip content="PR merged" side="right">
-        <span className="flex items-center justify-center">
-          <GitMerge size={ICON_SIZE} weight="bold" className="text-purple-11" />
-        </span>
-      </Tooltip>
-    );
-  }
-  if (prState === "open") {
-    return (
-      <Tooltip content="PR open" side="right">
-        <span className="flex items-center justify-center">
-          <GitPullRequest
-            size={ICON_SIZE}
-            weight="bold"
-            className="text-green-11"
-          />
-        </span>
-      </Tooltip>
-    );
-  }
-  if (prState === "draft") {
-    return (
-      <Tooltip content="Draft PR" side="right">
-        <span className="flex items-center justify-center">
-          <GitPullRequest
-            size={ICON_SIZE}
-            weight="bold"
-            className="text-gray-9"
-          />
-        </span>
-      </Tooltip>
-    );
-  }
-  if (prState === "closed") {
-    return (
-      <Tooltip content="PR closed" side="right">
-        <span className="flex items-center justify-center">
-          <GitPullRequest
-            size={ICON_SIZE}
-            weight="bold"
-            className="text-red-11"
-          />
-        </span>
-      </Tooltip>
-    );
-  }
-  if (hasDiff) {
-    return (
-      <Tooltip content="Has changes" side="right">
-        <span className="flex items-center justify-center">
-          <GitBranch size={ICON_SIZE} weight="bold" className="text-amber-11" />
-        </span>
-      </Tooltip>
-    );
-  }
-  return null;
-}
 
 export function TaskItem({
   depth = 0,
@@ -247,37 +125,18 @@ export function TaskItem({
   onEditSubmit,
   onEditCancel,
 }: TaskItemProps) {
-  const isCloudTask = workspaceMode === "cloud";
-  const isTerminalCloud = isCloudTask && isTerminalStatus(taskRunStatus);
-
-  const icon = needsPermission ? (
-    <Tooltip content="Needs permission" side="right">
-      <span className="flex items-center justify-center">
-        <HandPalm size={ICON_SIZE} className="text-blue-11" />
-      </span>
-    </Tooltip>
-  ) : isTerminalCloud ? (
-    <CloudStatusIcon taskRunStatus={taskRunStatus} />
-  ) : isGenerating ? (
-    <DotsCircleSpinner size={ICON_SIZE} className="text-accent-11" />
-  ) : isCloudTask ? (
-    <CloudStatusIcon taskRunStatus={taskRunStatus} />
-  ) : isSuspended ? (
-    <Tooltip content="Suspended" side="right">
-      <span className="flex items-center justify-center">
-        <Pause size={ICON_SIZE} className="text-gray-9" />
-      </span>
-    </Tooltip>
-  ) : isUnread ? (
-    <span className="flex items-center justify-center">
-      <Circle size={8} weight="fill" className="text-green-11" />
-    </span>
-  ) : prState || hasDiff ? (
-    <PrStatusIcon prState={prState} hasDiff={hasDiff} />
-  ) : isPinned ? (
-    <PushPin size={ICON_SIZE} className="text-accent-11" />
-  ) : (
-    <ChatCircle size={ICON_SIZE} className="text-gray-10" />
+  const icon = (
+    <TaskIcon
+      workspaceMode={workspaceMode}
+      isGenerating={isGenerating}
+      isUnread={isUnread}
+      isPinned={isPinned}
+      isSuspended={isSuspended}
+      needsPermission={needsPermission}
+      taskRunStatus={taskRunStatus}
+      prState={prState}
+      hasDiff={hasDiff}
+    />
   );
 
   const timestampNode = timestamp ? (

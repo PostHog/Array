@@ -1,5 +1,6 @@
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { trpcClient } from "@renderer/trpc/client";
+import { useNavigationStore } from "@stores/navigationStore";
 import { logger } from "@utils/logger";
 import { playCompletionSound } from "@utils/sounds";
 
@@ -10,6 +11,15 @@ const MAX_TITLE_LENGTH = 50;
 function truncateTitle(title: string): string {
   if (title.length <= MAX_TITLE_LENGTH) return title;
   return `${title.slice(0, MAX_TITLE_LENGTH)}...`;
+}
+
+function shouldNotifyForTask(taskId?: string): boolean {
+  if (!document.hasFocus()) return true;
+  if (!taskId) return false;
+  const view = useNavigationStore.getState().view;
+  const viewedTaskId =
+    view.type === "task-detail" ? (view.data?.id ?? view.taskId) : undefined;
+  return viewedTaskId !== taskId;
 }
 
 function sendDesktopNotification(
@@ -52,8 +62,7 @@ export function notifyPromptComplete(
     dockBounceNotifications,
   } = useSettingsStore.getState();
 
-  const isWindowFocused = document.hasFocus();
-  if (isWindowFocused) return;
+  if (!shouldNotifyForTask(taskId)) return;
 
   const willPlayCustomSound = completionSound !== "none";
   playCompletionSound(completionSound, completionVolume);
@@ -85,25 +94,24 @@ export function notifyPermissionRequest(
     dockBadgeNotifications,
     dockBounceNotifications,
   } = useSettingsStore.getState();
-  const isWindowFocused = document.hasFocus();
 
-  if (!isWindowFocused) {
-    const willPlayCustomSound = completionSound !== "none";
-    playCompletionSound(completionSound, completionVolume);
+  if (!shouldNotifyForTask(taskId)) return;
 
-    if (desktopNotifications) {
-      sendDesktopNotification(
-        "PostHog Code",
-        `"${truncateTitle(taskTitle)}" needs your input`,
-        willPlayCustomSound,
-        taskId,
-      );
-    }
-    if (dockBadgeNotifications) {
-      showDockBadge();
-    }
-    if (dockBounceNotifications) {
-      bounceDock();
-    }
+  const willPlayCustomSound = completionSound !== "none";
+  playCompletionSound(completionSound, completionVolume);
+
+  if (desktopNotifications) {
+    sendDesktopNotification(
+      "PostHog Code",
+      `"${truncateTitle(taskTitle)}" needs your input`,
+      willPlayCustomSound,
+      taskId,
+    );
+  }
+  if (dockBadgeNotifications) {
+    showDockBadge();
+  }
+  if (dockBounceNotifications) {
+    bounceDock();
   }
 }

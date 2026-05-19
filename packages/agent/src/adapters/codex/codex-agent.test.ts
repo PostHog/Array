@@ -306,6 +306,89 @@ describe("CodexAcpAgent", () => {
     ).resolves.toEqual({ stopReason: "end_turn" });
   });
 
+  it.each([
+    ["API Error: 429 rate_limit_error", "upstream_provider_failure"],
+    ["API Error: 503 internal_error", "upstream_provider_failure"],
+    ["API Error: 529 overloaded_error", "upstream_provider_failure"],
+    ["ordinary failure", undefined],
+  ] as const)(
+    "handles prompt failure %p",
+    async (message, expectedClassification) => {
+      const { agent } = createAgent();
+      mockCodexConnection.newSession.mockResolvedValue({
+        sessionId: "session-1",
+        modes: { currentModeId: "auto", availableModes: [] },
+        configOptions: [],
+      } satisfies Partial<NewSessionResponse>);
+      await agent.newSession({
+        cwd: process.cwd(),
+      } as never);
+
+      const promptError = new Error(message);
+      mockCodexConnection.prompt.mockRejectedValueOnce(promptError);
+
+      let thrown: unknown;
+      try {
+        await agent.prompt({
+          sessionId: "session-1",
+          prompt: [{ type: "text", text: "A" }],
+        } as never);
+      } catch (error) {
+        thrown = error;
+      }
+
+      if (!expectedClassification) {
+        expect(thrown).toBe(promptError);
+        return;
+      }
+
+      expect(thrown).toMatchObject({
+        data: {
+          classification: expectedClassification,
+          result: message,
+        },
+      });
+    },
+  );
+
+  it("does not let a classified failing prompt block subsequent prompts", async () => {
+    const { agent } = createAgent();
+    mockCodexConnection.newSession.mockResolvedValue({
+      sessionId: "session-1",
+      modes: { currentModeId: "auto", availableModes: [] },
+      configOptions: [],
+    } satisfies Partial<NewSessionResponse>);
+    await agent.newSession({
+      cwd: process.cwd(),
+    } as never);
+
+    mockCodexConnection.prompt.mockRejectedValueOnce(
+      new Error("API Error: 529 overloaded_error"),
+    );
+    mockCodexConnection.prompt.mockResolvedValueOnce({
+      stopReason: "end_turn",
+    });
+
+    await expect(
+      agent.prompt({
+        sessionId: "session-1",
+        prompt: [{ type: "text", text: "A" }],
+      } as never),
+    ).rejects.toMatchObject({
+      data: {
+        classification: "upstream_provider_failure",
+        result: "API Error: 529 overloaded_error",
+      },
+    });
+
+    await expect(
+      agent.prompt({
+        sessionId: "session-1",
+        prompt: [{ type: "text", text: "B" }],
+      } as never),
+    ).resolves.toEqual({ stopReason: "end_turn" });
+  });
+
   describe("structured output injection", () => {
     const schema = {
       type: "object",

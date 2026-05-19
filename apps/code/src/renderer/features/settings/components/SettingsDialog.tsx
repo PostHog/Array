@@ -4,6 +4,7 @@ import {
   useAuthStateValue,
   useCurrentUser,
 } from "@features/auth/hooks/authQueries";
+import { getUserInitials } from "@features/auth/utils/userInitials";
 import {
   type SettingsCategory,
   useSettingsDialogStore,
@@ -23,6 +24,7 @@ import {
   Keyboard,
   Palette,
   SignOut,
+  SlackLogo,
   TrafficSignal,
   TreeStructure,
   Wrench,
@@ -40,6 +42,7 @@ import { PersonalizationSettings } from "./sections/PersonalizationSettings";
 import { PlanUsageSettings } from "./sections/PlanUsageSettings";
 import { ShortcutsSettings } from "./sections/ShortcutsSettings";
 import { SignalSourcesSettings } from "./sections/SignalSourcesSettings";
+import { SlackSettings } from "./sections/SlackSettings";
 import { UpdatesSettings } from "./sections/UpdatesSettings";
 import { WorkspacesSettings } from "./sections/WorkspacesSettings";
 import { WorktreesSettings } from "./sections/worktrees/WorktreesSettings";
@@ -69,6 +72,7 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: "claude-code", label: "Claude Code", icon: <Code size={16} /> },
   { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
   { id: "github", label: "GitHub", icon: <GithubLogo size={16} /> },
+  { id: "slack", label: "Slack", icon: <SlackLogo size={16} /> },
 
   {
     id: "signals",
@@ -90,6 +94,7 @@ const CATEGORY_TITLES: Record<SettingsCategory, string> = {
   "claude-code": "Claude Code",
   shortcuts: "Shortcuts",
   github: "GitHub",
+  slack: "Slack integration",
 
   signals: "Signals",
   updates: "Updates",
@@ -107,6 +112,7 @@ const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
   "claude-code": ClaudeCodeSettings,
   shortcuts: ShortcutsSettings,
   github: GitHubSettings,
+  slack: SlackSettings,
 
   signals: SignalSourcesSettings,
   updates: UpdatesSettings,
@@ -157,11 +163,7 @@ export function SettingsDialog() {
 
   const ActiveComponent = CATEGORY_COMPONENTS[activeCategory];
 
-  const initials = user
-    ? user.first_name && user.last_name
-      ? `${user.first_name[0]}${user.last_name[0]}`.toUpperCase()
-      : (user.email?.substring(0, 2).toUpperCase() ?? "U")
-    : null;
+  const initials = getUserInitials(user);
 
   return (
     <div
@@ -171,7 +173,7 @@ export function SettingsDialog() {
       <div className="flex h-full w-[256px] shrink-0 flex-col border-gray-6 border-r">
         <div className="drag h-[36px] shrink-0 border-b border-b-(--gray-6)" />
 
-        {isAuthenticated && user && initials && (
+        {isAuthenticated && user && (
           <Flex
             align="center"
             gap="3"

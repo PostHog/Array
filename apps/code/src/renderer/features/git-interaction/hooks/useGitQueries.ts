@@ -8,9 +8,16 @@ const GIT_QUERY_DEFAULTS = {
   staleTime: 30_000,
 } as const;
 
-export function useGitQueries(repoPath?: string) {
+interface UseGitQueriesOptions {
+  enabled?: boolean;
+}
+
+export function useGitQueries(
+  repoPath?: string,
+  options?: UseGitQueriesOptions,
+) {
   const trpc = useTRPC();
-  const enabled = !!repoPath;
+  const enabled = !!repoPath && (options?.enabled ?? true);
 
   const { data: isRepo = false, isLoading: isRepoLoading } = useQuery(
     trpc.git.validateRepo.queryOptions(
@@ -53,6 +60,18 @@ export function useGitQueries(repoPath?: string) {
       {
         enabled: repoEnabled,
         staleTime: 10_000,
+        placeholderData: (prev) => prev,
+      },
+    ),
+  );
+
+  const { data: busyState } = useQuery(
+    trpc.git.getGitBusyState.queryOptions(
+      { directoryPath: repoPath as string },
+      {
+        enabled: repoEnabled,
+        staleTime: 5_000,
+        refetchInterval: 30_000,
         placeholderData: (prev) => prev,
       },
     ),
@@ -150,6 +169,7 @@ export function useGitQueries(repoPath?: string) {
     currentBranch,
     branchLoading,
     defaultBranch,
+    busyState,
     isLoading: isRepoLoading || changesLoading || syncLoading,
   };
 }

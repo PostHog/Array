@@ -69,15 +69,15 @@ export function PlanContent({ id, plan }: PlanContentProps) {
           </Flex>
 
           {createPortal(
-            <Box className="pointer-events-auto absolute inset-0 flex flex-col bg-gray-1">
+            <Box className="pointer-events-auto absolute inset-0 flex flex-col bg-blue-2">
               <Flex
                 align="center"
                 justify="between"
-                className="border-gray-6 border-b px-4 py-2"
+                className="border-blue-6 border-b px-4 py-2"
               >
                 <Flex align="center" gap="2">
-                  <ListChecks size={14} className="text-gray-11" />
-                  <Text className="text-gray-11 text-sm">Plan</Text>
+                  <ListChecks size={14} className="text-blue-11" />
+                  <Text className="text-blue-11 text-sm">Plan</Text>
                 </Flex>
                 <IconButton
                   size="1"
@@ -92,7 +92,7 @@ export function PlanContent({ id, plan }: PlanContentProps) {
 
               <Box
                 ref={scrollRef}
-                className="plan-markdown flex-1 overflow-y-auto p-6"
+                className="plan-markdown flex-1 overflow-y-auto p-6 text-blue-12"
               >
                 {markdown}
               </Box>

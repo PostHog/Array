@@ -132,8 +132,7 @@ export class ParserManager {
       }
       this.queryCache.set(cacheKey, query);
       return query;
-    } catch (err) {
-      warn("Query compilation failed", err);
+    } catch {
       this.failedQueries.add(cacheKey);
       return null;
     }
