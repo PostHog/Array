@@ -1,3 +1,4 @@
+import type { SpendAnalysisResponse } from "@features/billing/types/spend-analysis";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type { PermissionMode } from "@posthog/agent/execution-mode";
 import {
@@ -2853,5 +2854,25 @@ export class PostHogAPIClient {
     if (!response.ok) return null;
     const blob = await response.blob();
     return URL.createObjectURL(blob);
+  }
+
+  /** Fetch the requesting user's PostHog Code token spend analysis. */
+  async getPostHogCodeSpendAnalysis(
+    days: number = 30,
+  ): Promise<SpendAnalysisResponse> {
+    const urlPath = `/api/llm_analytics/posthog_code_spend/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    url.searchParams.set("days", String(days));
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch token spend analysis: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SpendAnalysisResponse;
   }
 }
