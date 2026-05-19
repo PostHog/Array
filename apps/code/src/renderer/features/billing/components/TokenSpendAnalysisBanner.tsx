@@ -1,4 +1,4 @@
-import { useTokenSpendAnalysis } from "@features/billing/hooks/useTokenSpendAnalysis";
+import { useSpendAnalysis } from "@features/billing/hooks/useSpendAnalysis";
 import type {
   SpendAnalysisModelRow,
   SpendAnalysisProductRow,
@@ -54,14 +54,16 @@ function generateSuggestions(data: SpendAnalysisResponse): string[] {
   }
 
   const codeShare =
-    summary.posthog_code_cost_usd / Math.max(summary.total_cost_usd, 0.0001);
+    summary.scoped_cost_usd / Math.max(summary.total_cost_usd, 0.0001);
   if (codeShare > 0.7) {
     suggestions.push(
       `PostHog Code is ${Math.round(codeShare * 100)}% of your spend. Other AI products (background agents, posthog_ai) are minor here.`,
     );
   }
 
-  const codeTotal = summary.posthog_code_cost_usd;
+  const codeTotal = summary.scoped_cost_usd;
+  // codeTotal is the scoped spend (PostHog Code, since the banner always
+  // requests `product=posthog_code`).
   if (codeTotal > 0 && by_tool.length > 0) {
     const top = by_tool[0];
     const share = top.cost_usd / codeTotal;
@@ -101,21 +103,19 @@ function SummaryRow({ data }: { data: SpendAnalysisResponse }) {
   const { summary } = data;
   const codeShare =
     summary.total_cost_usd > 0
-      ? Math.round(
-          (summary.posthog_code_cost_usd / summary.total_cost_usd) * 100,
-        )
+      ? Math.round((summary.scoped_cost_usd / summary.total_cost_usd) * 100)
       : 0;
   return (
     <Flex gap="4" wrap="wrap">
       <StatCard label="Total spend" value={formatUsd(summary.total_cost_usd)} />
       <StatCard
         label="PostHog Code"
-        value={formatUsd(summary.posthog_code_cost_usd)}
+        value={formatUsd(summary.scoped_cost_usd)}
         sub={`${codeShare}% of total`}
       />
       <StatCard
         label="Generations"
-        value={summary.posthog_code_event_count.toLocaleString()}
+        value={summary.scoped_event_count.toLocaleString()}
       />
       <StatCard label="Window" value={`${summary.period_days} days`} />
     </Flex>
@@ -300,7 +300,10 @@ function FooterLinks() {
 }
 
 export function TokenSpendAnalysisBanner() {
-  const { data, isLoading, error, run } = useTokenSpendAnalysis();
+  const { data, isLoading, error, run } = useSpendAnalysis();
+  const triggerRun = (): void => {
+    void run({ days: 30, product: "posthog_code" });
+  };
 
   if (data) {
     const suggestions = generateSuggestions(data);
@@ -322,7 +325,7 @@ export function TokenSpendAnalysisBanner() {
             variant="ghost"
             disabled={isLoading}
             onClick={() => {
-              void run(30);
+              triggerRun();
             }}
           >
             {isLoading ? <Spinner size="1" /> : "Refresh"}
@@ -369,7 +372,7 @@ export function TokenSpendAnalysisBanner() {
               variant="outline"
               color="red"
               onClick={() => {
-                void run(30);
+                triggerRun();
               }}
               className="self-start"
             >
@@ -400,7 +403,7 @@ export function TokenSpendAnalysisBanner() {
             variant="solid"
             disabled={isLoading}
             onClick={() => {
-              void run(30);
+              triggerRun();
             }}
             className="self-start"
           >

@@ -2856,13 +2856,21 @@ export class PostHogAPIClient {
     return URL.createObjectURL(blob);
   }
 
-  /** Fetch the requesting user's PostHog Code token spend analysis. */
-  async getPostHogCodeSpendAnalysis(
-    days: number = 30,
+  /**
+   * Fetch the requesting user's personal LLM spend analysis. When `product` is
+   * set the tool / model / trace breakdowns are scoped to that `ai_product`
+   * (e.g. `posthog_code`); when omitted they aggregate across every product.
+   */
+  async getPersonalSpendAnalysis(
+    options: { days?: number; product?: string } = {},
   ): Promise<SpendAnalysisResponse> {
-    const urlPath = `/api/llm_analytics/posthog_code_spend/`;
+    const { days = 30, product } = options;
+    const urlPath = `/api/llm_analytics/personal_spend/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
     url.searchParams.set("days", String(days));
+    if (product) {
+      url.searchParams.set("product", product);
+    }
     const response = await this.api.fetcher.fetch({
       method: "get",
       url,
@@ -2870,7 +2878,7 @@ export class PostHogAPIClient {
     });
     if (!response.ok) {
       throw new Error(
-        `Failed to fetch token spend analysis: ${response.statusText}`,
+        `Failed to fetch personal spend analysis: ${response.statusText}`,
       );
     }
     return (await response.json()) as SpendAnalysisResponse;

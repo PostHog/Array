@@ -1,9 +1,10 @@
 export interface SpendAnalysisSummary {
   period_days: number;
+  product: string | null;
   total_cost_usd: number;
   event_count: number;
-  posthog_code_cost_usd: number;
-  posthog_code_event_count: number;
+  scoped_cost_usd: number;
+  scoped_event_count: number;
 }
 
 export interface SpendAnalysisProductRow {
