@@ -414,29 +414,54 @@ function matchesExcludePattern(filePath: string, patterns: string[]): boolean {
   });
 }
 
-async function countFileLines(filePath: string): Promise<number> {
+async function countFileLines(
+  filePath: string,
+  options?: { signal?: AbortSignal },
+): Promise<number> {
   try {
-    const stat = await fs.stat(filePath);
+    // `lstat` instead of `stat` so an untracked symlink (rare, but legal)
+    // pointing at /dev/zero or a path outside the workdir doesn't stream
+    // forever — symlinks fail `isFile()` and short-circuit to 0.
+    const stat = await fs.lstat(filePath);
     if (!stat.isFile() || stat.size === 0) return 0;
     return await new Promise<number>((resolve) => {
       let newlines = 0;
       let lastByte = -1;
-      const stream = createReadStream(filePath);
-      stream.on("data", (chunk) => {
-        const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
-        for (let i = 0; i < buf.length; i++) {
-          if (buf[i] === 0x0a) newlines++;
+      const stream = createReadStream(filePath, { signal: options?.signal });
+      stream.on("data", (rawChunk) => {
+        // Node types stream chunks as `string | Buffer`; without an
+        // `encoding` option `createReadStream` always emits `Buffer`,
+        // so the cast is for the type checker, not the runtime.
+        const chunk = rawChunk as Buffer;
+        // Native `Buffer.indexOf` — ~10x faster than a per-byte JS loop
+        // on multi-MB buffers, which is the workload this whole function
+        // exists to handle.
+        for (
+          let idx = chunk.indexOf(0x0a);
+          idx !== -1;
+          idx = chunk.indexOf(0x0a, idx + 1)
+        ) {
+          newlines++;
         }
-        if (buf.length > 0) lastByte = buf[buf.length - 1];
+        if (chunk.length > 0) lastByte = chunk[chunk.length - 1];
       });
       stream.on("end", () => {
+        // Guards against TOCTOU truncation between lstat and read —
+        // size > 0 at stat time, zero bytes by the time we open.
         if (lastByte === -1) {
           resolve(0);
           return;
         }
         resolve(lastByte === 0x0a ? newlines : newlines + 1);
       });
-      stream.on("error", () => resolve(0));
+      stream.on("error", (err) => {
+        // Don't propagate — caller already treats any failure as 0 lines.
+        // But log so the next time a "shows 0 lines" mystery shows up
+        // there's a breadcrumb (the original OOM in #2218 hid behind the
+        // same silent-zero return).
+        console.warn(`countFileLines failed for ${filePath}:`, err);
+        resolve(0);
+      });
     });
   } catch {
     return 0;
@@ -447,12 +472,14 @@ async function mapWithConcurrency<T, R>(
   items: readonly T[],
   concurrency: number,
   mapper: (item: T) => Promise<R>,
+  options?: { signal?: AbortSignal },
 ): Promise<R[]> {
   if (items.length === 0) return [];
   const results = new Array<R>(items.length);
   let index = 0;
   const worker = async () => {
     while (index < items.length) {
+      if (options?.signal?.aborted) return;
       const i = index++;
       results[i] = await mapper(items[i]);
     }
@@ -541,7 +568,11 @@ export async function getChangedFilesDetailed(
         const untrackedLineCounts = await mapWithConcurrency(
           untrackedToCount,
           16,
-          (file) => countFileLines(path.join(baseDir, file)),
+          (file) =>
+            countFileLines(path.join(baseDir, file), {
+              signal: gitOptions?.abortSignal,
+            }),
+          { signal: gitOptions?.abortSignal },
         );
         for (let i = 0; i < untrackedToCount.length; i++) {
           files.push({

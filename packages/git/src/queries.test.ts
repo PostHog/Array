@@ -244,7 +244,12 @@ describe("getBranchDiffPatchesByPath", () => {
   });
 });
 
-describe("getChangedFilesDetailed", () => {
+// Picked to land well past the default 64KB highWaterMark of
+// `createReadStream` so the regression test actually exercises the
+// across-chunk path of the streaming line counter.
+const LINE_COUNT_LARGER_THAN_READ_STREAM_CHUNK = 800_000;
+
+describe("getChangedFilesDetailed > untracked line counts", () => {
   let repoDir: string;
 
   afterEach(async () => {
@@ -254,17 +259,33 @@ describe("getChangedFilesDetailed", () => {
     }
   });
 
-  it("reports line counts for small untracked files", async () => {
+  it.each([
+    { name: "trailing newline", content: "a\nb\nc\n", expected: 3 },
+    { name: "no trailing newline", content: "a\nb\nc", expected: 3 },
+    { name: "single byte, no newline", content: "a", expected: 1 },
+    { name: "lone newline", content: "\n", expected: 1 },
+    { name: "consecutive newlines", content: "\n\n", expected: 2 },
+    // CRLF: legacy `split("\n")` counted only `\n` separators, so
+    // `"a\r\nb\r\n"` -> 2 lines. Byte-counter matches.
+    { name: "CRLF endings", content: "a\r\nb\r\n", expected: 2 },
+  ])("counts $name as $expected line(s)", async ({ content, expected }) => {
     repoDir = await setupRepo();
-    await writeFile(path.join(repoDir, "small.txt"), "a\nb\nc\n");
-    await writeFile(path.join(repoDir, "no-trailing.txt"), "a\nb\nc");
+    await writeFile(path.join(repoDir, "f.txt"), content);
 
     const files = await getChangedFilesDetailed(repoDir);
-    const small = files.find((f) => f.path === "small.txt");
-    const noTrailing = files.find((f) => f.path === "no-trailing.txt");
+    const f = files.find((file) => file.path === "f.txt");
 
-    expect(small).toMatchObject({ status: "untracked", linesAdded: 3 });
-    expect(noTrailing).toMatchObject({ status: "untracked", linesAdded: 3 });
+    expect(f).toMatchObject({ status: "untracked", linesAdded: expected });
+  });
+
+  it("reports 0 lines for empty untracked files", async () => {
+    repoDir = await setupRepo();
+    await writeFile(path.join(repoDir, "empty.txt"), "");
+
+    const files = await getChangedFilesDetailed(repoDir);
+    const empty = files.find((f) => f.path === "empty.txt");
+
+    expect(empty).toMatchObject({ status: "untracked", linesAdded: 0 });
   });
 
   // Regression guard for the OOM in #2218. Before the fix `countFileLines`
@@ -279,8 +300,7 @@ describe("getChangedFilesDetailed", () => {
   // accurate line count.
   it("stream-counts untracked files larger than the streaming chunk size", async () => {
     repoDir = await setupRepo();
-    const lineCount = 800_000; // ~1.6MB at 2 bytes/line, well over default 64KB chunk
-    const content = "a\n".repeat(lineCount);
+    const content = "a\n".repeat(LINE_COUNT_LARGER_THAN_READ_STREAM_CHUNK);
     await writeFile(path.join(repoDir, "huge.txt"), content);
 
     const files = await getChangedFilesDetailed(repoDir);
@@ -288,7 +308,7 @@ describe("getChangedFilesDetailed", () => {
 
     expect(huge).toMatchObject({
       status: "untracked",
-      linesAdded: lineCount,
+      linesAdded: LINE_COUNT_LARGER_THAN_READ_STREAM_CHUNK,
     });
   });
 });
