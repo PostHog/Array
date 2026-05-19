@@ -37,6 +37,13 @@ function formatTrace(traceId: string | null): string {
   return `${traceId.slice(0, 8)}…${traceId.slice(-4)}`;
 }
 
+function formatWindow(fromIso: string, toIso: string): string {
+  const fromMs = new Date(fromIso).getTime();
+  const toMs = new Date(toIso).getTime();
+  const days = Math.max(1, Math.round((toMs - fromMs) / (1000 * 60 * 60 * 24)));
+  return `${days} days`;
+}
+
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString(undefined, {
@@ -118,7 +125,10 @@ function SummaryRow({ data }: { data: SpendAnalysisResponse }) {
         label="Generations"
         value={summary.scoped_event_count.toLocaleString()}
       />
-      <StatCard label="Window" value={`${summary.period_days} days`} />
+      <StatCard
+        label="Window"
+        value={formatWindow(summary.date_from, summary.date_to)}
+      />
     </Flex>
   );
 }
@@ -303,7 +313,7 @@ function FooterLinks() {
 export function TokenSpendAnalysisBanner() {
   const { data, isLoading, error, run } = useSpendAnalysis();
   const triggerRun = (): void => {
-    void run({ days: 30, product: "posthog_code" });
+    void run({ dateFrom: "-30d", product: "posthog_code" });
   };
 
   if (data) {

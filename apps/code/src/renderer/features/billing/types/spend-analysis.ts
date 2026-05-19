@@ -1,5 +1,6 @@
 export interface SpendAnalysisSummary {
-  period_days: number;
+  date_from: string;
+  date_to: string;
   product: string | null;
   total_cost_usd: number;
   event_count: number;

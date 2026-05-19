@@ -2857,17 +2857,22 @@ export class PostHogAPIClient {
   }
 
   /**
-   * Fetch the requesting user's personal LLM spend analysis. When `product` is
-   * set the tool / model / trace breakdowns are scoped to that `ai_product`
-   * (e.g. `posthog_code`); when omitted they aggregate across every product.
+   * Fetch the requesting user's personal LLM spend analysis. `dateFrom` / `dateTo`
+   * accept absolute dates (`2026-04-23`) or relative strings (`-7d`, `-1m`), and
+   * default to the last 30 days. When `product` is set the tool / model / trace
+   * breakdowns are scoped to that `ai_product` (e.g. `posthog_code`); when omitted
+   * they aggregate across every product.
    */
   async getPersonalSpendAnalysis(
-    options: { days?: number; product?: string } = {},
+    options: { dateFrom?: string; dateTo?: string; product?: string } = {},
   ): Promise<SpendAnalysisResponse> {
-    const { days = 30, product } = options;
+    const { dateFrom = "-30d", dateTo, product } = options;
     const urlPath = `/api/llm_analytics/@me/spend/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    url.searchParams.set("days", String(days));
+    url.searchParams.set("date_from", dateFrom);
+    if (dateTo) {
+      url.searchParams.set("date_to", dateTo);
+    }
     if (product) {
       url.searchParams.set("product", product);
     }

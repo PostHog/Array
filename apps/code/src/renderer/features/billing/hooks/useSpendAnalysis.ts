@@ -6,7 +6,8 @@ import { useCallback, useState } from "react";
 const log = logger.scope("spend-analysis");
 
 interface RunOptions {
-  days?: number;
+  dateFrom?: string;
+  dateTo?: string;
   product?: string;
 }
 
