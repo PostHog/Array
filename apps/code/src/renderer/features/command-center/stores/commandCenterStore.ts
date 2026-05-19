@@ -33,6 +33,7 @@ interface CommandCenterStoreActions {
   setActiveTask: (taskId: string | null) => void;
   setActiveCell: (cellIndex: number | null) => void;
   assignTask: (cellIndex: number, taskId: string) => void;
+  autofillCells: (taskIds: string[]) => void;
   removeTask: (cellIndex: number) => void;
   removeTaskById: (taskId: string) => void;
   clearAll: () => void;
@@ -113,6 +114,18 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
             activeTaskId: taskId,
             creatingCells: state.creatingCells.filter((i) => i !== cellIndex),
           };
+        }),
+
+      autofillCells: (taskIds) =>
+        set((state) => {
+          if (!state.cells.every((id) => id == null)) return state;
+          if (taskIds.length === 0) return state;
+          const cells: (string | null)[] = [...state.cells];
+          const limit = Math.min(cells.length, taskIds.length);
+          for (let i = 0; i < limit; i++) {
+            cells[i] = taskIds[i];
+          }
+          return { cells };
         }),
 
       removeTask: (cellIndex) =>

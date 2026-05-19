@@ -3,6 +3,7 @@ import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
 import { Lightning } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useEffect, useMemo } from "react";
+import { useAutofillCommandCenter } from "../hooks/useAutofillCommandCenter";
 import { useCommandCenterData } from "../hooks/useCommandCenterData";
 import { useCommandCenterStore } from "../stores/commandCenterStore";
 import { CommandCenterGrid } from "./CommandCenterGrid";
@@ -12,6 +13,8 @@ export function CommandCenterView() {
   const layout = useCommandCenterStore((s) => s.layout);
   const { cells, summary } = useCommandCenterData();
   const { markAsViewed } = useTaskViewed();
+
+  useAutofillCommandCenter();
 
   const visibleTaskIdsKey = cells
     .map((c) => c.taskId)
