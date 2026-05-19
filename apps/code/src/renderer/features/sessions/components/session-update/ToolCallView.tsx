@@ -88,9 +88,10 @@ export function ToolCallView({
   const isExpandable = !!fullInput || hasOutput;
 
   const handleClick = () => {
-    if (isExpandable) {
-      setIsExpanded(!isExpanded);
-    }
+    if (!isExpandable) return;
+    const selection = window.getSelection();
+    if (selection && selection.toString().length > 0) return;
+    setIsExpanded(!isExpanded);
   };
 
   return (
