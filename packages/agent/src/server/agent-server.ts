@@ -24,7 +24,7 @@ import {
 import {
   type AgentErrorClassification,
   classifyAgentError,
-} from "../adapters/claude/conversion/sdk-to-acp";
+} from "../adapters/error-classification";
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
@@ -65,8 +65,19 @@ import type { AgentServerConfig } from "./types";
 const agentErrorClassificationSchema = z.enum([
   "upstream_stream_terminated",
   "upstream_connection_error",
+  "upstream_provider_failure",
   "agent_error",
 ]) satisfies z.ZodType<AgentErrorClassification>;
+
+export const UPSTREAM_PROVIDER_FAILURE_MESSAGE =
+  "The upstream AI provider failed to process the request. Please retry the task in a few minutes.";
+
+const upstreamProviderFailureClassifications =
+  new Set<AgentErrorClassification>([
+    "upstream_stream_terminated",
+    "upstream_connection_error",
+    "upstream_provider_failure",
+  ]);
 
 const errorWithClassificationSchema = z.object({
   data: z.object({ classification: agentErrorClassificationSchema }),
@@ -1051,12 +1062,11 @@ export class AgentServer {
     error: unknown,
   ): Promise<void> {
     const { classification, message } = this.extractErrorClassification(error);
-    const errorMessage =
-      classification === "upstream_stream_terminated"
-        ? "Upstream LLM stream terminated"
-        : classification === "upstream_connection_error"
-          ? "Upstream LLM connection error"
-          : message || "Agent error";
+    const errorMessage = upstreamProviderFailureClassifications.has(
+      classification,
+    )
+      ? UPSTREAM_PROVIDER_FAILURE_MESSAGE
+      : message || "Agent error";
     this.logger.error(`send_${phase}_task_message_failed`, {
       classification,
       message,
