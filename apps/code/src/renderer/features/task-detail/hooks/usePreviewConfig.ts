@@ -223,21 +223,19 @@ export function usePreviewConfig(
 
           const { lastUsedReasoningEffort, defaultReasoningEffort } =
             useSettingsStore.getState();
-          const availableValues: string[] =
-            effortOpts?.map((e) => e.value) ?? [];
           const isValidEffort = (effort: unknown): effort is string =>
-            typeof effort === "string" && availableValues.includes(effort);
+            typeof effort === "string" &&
+            !!effortOpts?.some((e) => e.value === effort);
           const resolveEffortFallback = (): string => {
-            const desired =
-              defaultReasoningEffort === "last_used"
-                ? lastUsedReasoningEffort
-                : defaultReasoningEffort;
-            if (isValidEffort(desired)) return desired;
-            const clamped =
-              typeof desired === "string"
-                ? clampEffortToAvailable(desired, availableValues)
-                : null;
-            return clamped ?? availableValues[0] ?? "high";
+            if (
+              defaultReasoningEffort !== "last_used" &&
+              isValidEffort(defaultReasoningEffort)
+            ) {
+              return defaultReasoningEffort;
+            }
+            return isValidEffort(lastUsedReasoningEffort)
+              ? lastUsedReasoningEffort
+              : "high";
           };
           if (effortOpts && existingIdx >= 0) {
             const currentEffort = updated[existingIdx].currentValue;
