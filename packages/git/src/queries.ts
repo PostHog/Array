@@ -1,3 +1,4 @@
+import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { CreateGitClientOptions } from "./client";
@@ -413,11 +414,33 @@ function matchesExcludePattern(filePath: string, patterns: string[]): boolean {
   });
 }
 
+const COUNT_FILE_LINES_MAX_BYTES = 1 * 1024 * 1024;
+
 async function countFileLines(filePath: string): Promise<number> {
   try {
-    const content = await fs.readFile(filePath, "utf-8");
-    if (!content) return 0;
-    return content.split("\n").length - (content.endsWith("\n") ? 1 : 0);
+    const stat = await fs.stat(filePath);
+    if (!stat.isFile() || stat.size === 0) return 0;
+    if (stat.size > COUNT_FILE_LINES_MAX_BYTES) return 0;
+    return await new Promise<number>((resolve) => {
+      let newlines = 0;
+      let lastByte = -1;
+      const stream = createReadStream(filePath);
+      stream.on("data", (chunk) => {
+        const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+        for (let i = 0; i < buf.length; i++) {
+          if (buf[i] === 0x0a) newlines++;
+        }
+        if (buf.length > 0) lastByte = buf[buf.length - 1];
+      });
+      stream.on("end", () => {
+        if (lastByte === -1) {
+          resolve(0);
+          return;
+        }
+        resolve(lastByte === 0x0a ? newlines : newlines + 1);
+      });
+      stream.on("error", () => resolve(0));
+    });
   } catch {
     return 0;
   }

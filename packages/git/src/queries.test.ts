@@ -6,6 +6,7 @@ import { createGitClient } from "./client";
 import {
   detectDefaultBranch,
   getBranchDiffPatchesByPath,
+  getChangedFilesDetailed,
   splitUnifiedDiffByFile,
 } from "./queries";
 
@@ -240,5 +241,48 @@ describe("getBranchDiffPatchesByPath", () => {
     } finally {
       await rm(remoteDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("getChangedFilesDetailed", () => {
+  let repoDir: string;
+
+  afterEach(async () => {
+    if (repoDir) {
+      await rm(repoDir, { recursive: true, force: true });
+      repoDir = "";
+    }
+  });
+
+  it("reports line counts for small untracked files", async () => {
+    repoDir = await setupRepo();
+    await writeFile(path.join(repoDir, "small.txt"), "a\nb\nc\n");
+    await writeFile(path.join(repoDir, "no-trailing.txt"), "a\nb\nc");
+
+    const files = await getChangedFilesDetailed(repoDir);
+    const small = files.find((f) => f.path === "small.txt");
+    const noTrailing = files.find((f) => f.path === "no-trailing.txt");
+
+    expect(small).toMatchObject({ status: "untracked", linesAdded: 3 });
+    expect(noTrailing).toMatchObject({ status: "untracked", linesAdded: 3 });
+  });
+
+  // Regression guard for the OOM in https://github.com/PostHog/code/issues/...
+  // (introduced in c617988f). Before the fix `countFileLines` read each
+  // untracked file's full content into memory, 16-way concurrent, with no
+  // size cap. On a monorepo with multi-MB build artifacts / lockfiles this
+  // exhausted the main-process V8 heap (~3GB+) and froze the renderer
+  // waiting on the dead tRPC call. The fix bails on files larger than
+  // COUNT_FILE_LINES_MAX_BYTES (1MB) and stream-counts the rest, so peak
+  // memory stays ~16 * 64KB regardless of file size.
+  it("skips line counting for files over the size cap", async () => {
+    repoDir = await setupRepo();
+    const oneAndAHalfMB = "a\n".repeat(800_000);
+    await writeFile(path.join(repoDir, "huge.txt"), oneAndAHalfMB);
+
+    const files = await getChangedFilesDetailed(repoDir);
+    const huge = files.find((f) => f.path === "huge.txt");
+
+    expect(huge).toMatchObject({ status: "untracked", linesAdded: 0 });
   });
 });
