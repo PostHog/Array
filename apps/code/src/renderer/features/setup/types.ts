@@ -24,7 +24,7 @@ export interface DiscoveredTask {
   prompt?: string;
 }
 
-const BASE_CATEGORY_ENUM = [
+export const BASE_CATEGORY_ENUM = [
   "bug",
   "security",
   "dead_code",

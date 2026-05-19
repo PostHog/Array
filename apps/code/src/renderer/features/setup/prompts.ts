@@ -1,3 +1,5 @@
+import { BASE_CATEGORY_ENUM } from "./types";
+
 export const WIZARD_PROMPT = `/instrument-integration
 
 After the integration is wired up, also instrument error tracking and session replay (run \`/instrument-error-tracking\`, then add session replay if the framework's posthog-js config supports it).
@@ -36,13 +38,12 @@ const DISCOVERY_PROMPT_EXPERIMENT_TIER = `
 
 If you find at least one credible Tier 3 experiment opportunity, include at least one experiment-category task in your output — even if doing so displaces a lower-impact Tier 1/2 finding. Do not fabricate an experiment to fill the slot: if no credible candidate exists, omit the category entirely.`;
 
-const BASE_ALLOWED_CATEGORIES =
-  "bug, security, dead_code, duplication, performance, stale_feature_flag, error_tracking, event_tracking, funnel";
-
 function buildDiscoveryRules(includeExperiments: boolean): string {
-  const allowed = includeExperiments
-    ? `${BASE_ALLOWED_CATEGORIES}, experiment`
-    : BASE_ALLOWED_CATEGORIES;
+  const allowed = (
+    includeExperiments
+      ? [...BASE_CATEGORY_ENUM, "experiment"]
+      : [...BASE_CATEGORY_ENUM]
+  ).join(", ");
   return `
 
 ## Rules
