@@ -7,7 +7,6 @@ export interface IntegrationAccount {
 
 export interface IntegrationConfig {
   account?: IntegrationAccount;
-  installation_id?: string | number | null;
   [key: string]: unknown;
 }
 

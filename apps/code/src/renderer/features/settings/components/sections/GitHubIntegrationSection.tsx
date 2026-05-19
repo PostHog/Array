@@ -1,14 +1,8 @@
-import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import {
   describeGithubConnectError,
   useGithubConnect,
 } from "@features/integrations/hooks/useGithubUserConnect";
-import { useIntegrationSelectors } from "@features/integrations/stores/integrationStore";
-import {
-  githubInstallationSettingsUrl,
-  resolveGithubInstallationId,
-} from "@features/integrations/utils/githubInstallationSettingsUrl";
 import { useRepositoryIntegration } from "@hooks/useIntegrations";
 import {
   ArrowSquareOutIcon,
@@ -17,7 +11,6 @@ import {
   InfoIcon,
 } from "@phosphor-icons/react";
 import { Box, Button, Flex, Spinner, Text, Tooltip } from "@radix-ui/themes";
-import { openUrlInBrowser } from "@utils/browser";
 
 export function GitHubIntegrationSection({
   hasGithubIntegration,
@@ -25,8 +18,6 @@ export function GitHubIntegrationSection({
   hasGithubIntegration: boolean;
 }) {
   const { repositories, isLoadingRepos } = useRepositoryIntegration();
-  const { githubIntegrations } = useIntegrationSelectors();
-  const client = useOptionalAuthenticatedClient();
   const projectId = useAuthStateValue((state) => state.projectId);
   const {
     error: connectError,
@@ -38,25 +29,6 @@ export function GitHubIntegrationSection({
     projectId,
     projectHasTeamIntegration: hasGithubIntegration,
   });
-
-  const handleUpdateInGitHub = async () => {
-    const integration = githubIntegrations[0];
-    if (!integration || projectId === null || !client) return;
-    const installationId = resolveGithubInstallationId(integration);
-    if (!installationId) return;
-    const nextPath = `/account-connected/github-integration?provider=github&project_id=${projectId}&connect_from=posthog_code`;
-    try {
-      await client.prepareGithubTeamIntegrationCallback(projectId, nextPath);
-    } catch {
-      return;
-    }
-    void openUrlInBrowser(
-      githubInstallationSettingsUrl(
-        installationId,
-        integration.config?.account,
-      ),
-    );
-  };
 
   return (
     <Flex
@@ -125,11 +97,7 @@ export function GitHubIntegrationSection({
             weight="fill"
             className="text-(--green-9)"
           />
-          <Button
-            size="1"
-            variant="soft"
-            onClick={() => void handleUpdateInGitHub()}
-          >
+          <Button size="1" variant="soft" onClick={() => void handleConnect()}>
             Update in GitHub
             <ArrowSquareOutIcon size={12} />
           </Button>
