@@ -6,5 +6,18 @@
       "Edit(./apps/cli/**)",
       "Write(./apps/cli/**)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/check-pr-template.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
   }
 }
