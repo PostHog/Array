@@ -318,9 +318,13 @@ function ProjectPickerDialogInner({
           />
           <AutocompleteStatus
             emptyContent={
-              <span>
-                No projects match <strong>"{query}"</strong>
-              </span>
+              query ? (
+                <span>
+                  No projects match <strong>"{query}"</strong>
+                </span>
+              ) : (
+                <span>No projects available</span>
+              )
             }
           />
           <AutocompleteList

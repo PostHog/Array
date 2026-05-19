@@ -103,9 +103,13 @@ export function ProjectSelect({
             />
             <AutocompleteStatus
               emptyContent={
-                <span>
-                  No projects match <strong>"{query}"</strong>
-                </span>
+                query ? (
+                  <span>
+                    No projects match <strong>"{query}"</strong>
+                  </span>
+                ) : (
+                  <span>No projects available</span>
+                )
               }
             />
             <AutocompleteList className="max-h-[240px] pt-1">
