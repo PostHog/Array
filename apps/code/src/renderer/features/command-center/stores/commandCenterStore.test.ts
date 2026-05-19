@@ -23,14 +23,26 @@ describe("commandCenterStore", () => {
   });
 
   describe("autofillCells", () => {
-    it("fills empty cells from index 0", () => {
-      useCommandCenterStore.getState().autofillCells(["t1", "t2"]);
-      expect(useCommandCenterStore.getState().cells).toEqual([
-        "t1",
-        "t2",
-        null,
-        null,
-      ]);
+    it.each([
+      {
+        name: "fills empty cells from index 0",
+        input: ["t1", "t2"],
+        expectedCells: ["t1", "t2", null, null],
+      },
+      {
+        name: "ignores empty task list",
+        input: [],
+        expectedCells: [null, null, null, null],
+      },
+      {
+        name: "caps fill at the number of cells",
+        input: ["t1", "t2", "t3", "t4", "t5", "t6"],
+        expectedCells: ["t1", "t2", "t3", "t4"],
+      },
+    ])("$name and leaves activeTaskId null", ({ input, expectedCells }) => {
+      useCommandCenterStore.getState().autofillCells(input);
+      expect(useCommandCenterStore.getState().cells).toEqual(expectedCells);
+      expect(useCommandCenterStore.getState().activeTaskId).toBeNull();
     });
 
     it("does nothing when any cell is already populated", () => {
@@ -42,33 +54,6 @@ describe("commandCenterStore", () => {
         null,
         null,
       ]);
-    });
-
-    it("ignores empty task list", () => {
-      useCommandCenterStore.getState().autofillCells([]);
-      expect(useCommandCenterStore.getState().cells).toEqual([
-        null,
-        null,
-        null,
-        null,
-      ]);
-    });
-
-    it("caps fill at the number of cells", () => {
-      useCommandCenterStore
-        .getState()
-        .autofillCells(["t1", "t2", "t3", "t4", "t5", "t6"]);
-      expect(useCommandCenterStore.getState().cells).toEqual([
-        "t1",
-        "t2",
-        "t3",
-        "t4",
-      ]);
-    });
-
-    it("does not set activeTaskId", () => {
-      useCommandCenterStore.getState().autofillCells(["t1"]);
-      expect(useCommandCenterStore.getState().activeTaskId).toBeNull();
     });
   });
 });

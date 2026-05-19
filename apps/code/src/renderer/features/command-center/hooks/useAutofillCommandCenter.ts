@@ -16,7 +16,7 @@ function getLastActivity(task: Task): number {
 }
 
 export function useAutofillCommandCenter(): void {
-  const { data: tasks = [] } = useTasks();
+  const { data: tasks = [], isFetched: tasksFetched } = useTasks();
   const { data: workspaces, isFetched: workspacesFetched } = useWorkspaces();
   const archivedTaskIds = useArchivedTaskIds();
 
@@ -28,6 +28,7 @@ export function useAutofillCommandCenter(): void {
   useEffect(() => {
     if (hasRunRef.current) return;
     if (!workspacesFetched || !workspaces) return;
+    if (!tasksFetched) return;
 
     if (!cells.every((id) => id == null)) {
       hasRunRef.current = true;
@@ -55,6 +56,7 @@ export function useAutofillCommandCenter(): void {
     workspaces,
     workspacesFetched,
     tasks,
+    tasksFetched,
     archivedTaskIds,
     autofillCells,
   ]);
