@@ -16,17 +16,17 @@ import { StepActions } from "./StepActions";
 
 const FEATURES = [
   {
-    icon: <Tray size={28} />,
-    title: "Your signals inbox",
-    description:
-      "Automatically surfaces the highest-impact work from your product data so you always know what to do next.",
-    className: "col-span-4",
-  },
-  {
-    icon: <ChartLine size={26} />,
+    icon: <ChartLine size={28} />,
     title: "Product data as context",
     description:
       "Built-in context on analytics, session replays, experiments, feature flags, and more.",
+    className: "col-span-4",
+  },
+  {
+    icon: <Tray size={26} />,
+    title: "Your signals inbox",
+    description:
+      "Automatically surfaces the highest-impact work from your product data so you always know what to do next.",
     className: "col-span-2",
   },
   {
