@@ -17,7 +17,6 @@ import {
 import { useAuthStore } from "@/features/auth";
 import { setupNotificationResponseListener } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
-import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import {
   POSTHOG_API_KEY,
@@ -33,9 +32,6 @@ interface RootLayoutNavProps {
 
 function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   const { isAuthenticated, isLoading, initializeAuth } = useAuthStore();
-  const publishWatchSnapshot = useTaskSessionStore(
-    (s) => s.publishWatchSnapshot,
-  );
   const themeColors = useThemeColors();
   const pathname = usePathname();
 
@@ -44,11 +40,6 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   useEffect(() => {
     initializeAuth();
   }, [initializeAuth]);
-
-  useEffect(() => {
-    if (isLoading) return;
-    publishWatchSnapshot({ urgent: true });
-  }, [isLoading, publishWatchSnapshot]);
 
   useEffect(() => {
     return setupNotificationResponseListener(({ path }) => {

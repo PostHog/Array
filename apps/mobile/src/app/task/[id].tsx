@@ -76,18 +76,15 @@ export default function TaskDetailScreen() {
     setConfigOption,
     getSessionForTask,
     setFocusedTaskId,
-    setActiveWatchTask,
   } = useTaskSessionStore();
 
   useEffect(() => {
     if (!taskId) return;
     setFocusedTaskId(taskId);
-    setActiveWatchTask(taskId);
     return () => {
       setFocusedTaskId(null);
-      setActiveWatchTask(undefined);
     };
-  }, [taskId, setFocusedTaskId, setActiveWatchTask]);
+  }, [taskId, setFocusedTaskId]);
 
   const session = taskId ? getSessionForTask(taskId) : undefined;
 

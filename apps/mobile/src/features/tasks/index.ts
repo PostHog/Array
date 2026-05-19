@@ -33,14 +33,3 @@ export {
   convertStoredEntriesToEvents,
   parseSessionLogs,
 } from "./utils/parseSessionLogs";
-export {
-  createWatchTaskEnvelope,
-  createWatchTaskSnapshot,
-} from "./utils/watchTaskControl";
-export {
-  isWatchTaskControlAvailable,
-  isWatchTaskControlSupported,
-  publishWatchTaskEnvelope,
-  sendUrgentWatchTaskUpdate,
-  subscribeToWatchTaskCommands,
-} from "./watchTaskControlBridge";
