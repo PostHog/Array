@@ -34,11 +34,13 @@ export function useComboboxFilter<T>(
   options?: UseComboboxFilterOptions,
   getValue?: (item: T) => string,
 ): UseComboboxFilterResult<T> {
-  const [inputValue, setInputValue] = useState("");
-  const search = useDebounce(inputValue, DEBOUNCE_MS);
   const limit = options?.limit ?? DEFAULT_LIMIT;
   const pinned = options?.pinned;
   const open = options?.open;
+  const [inputValue, setInputValue] = useState("");
+  // delay=0 while closed so the next open starts on fresh empty-query results,
+  // not a flash of the previous filtered set.
+  const search = useDebounce(inputValue, open ? DEBOUNCE_MS : 0);
 
   useEffect(() => {
     if (!open) setInputValue("");

@@ -449,6 +449,9 @@ class TerminalManagerImpl {
 
     for (const instance of this.instances.values()) {
       instance.term.options.fontFamily = fontFamily;
+      // Parked terminals live in a 0x0 container, so fit would compute garbage.
+      // attach() refits on reattachment, so skipping here is safe.
+      if (!instance.attachedElement) continue;
       try {
         instance.fitAddon.fit();
       } catch (error) {

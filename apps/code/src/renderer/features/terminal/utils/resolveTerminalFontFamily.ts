@@ -5,20 +5,6 @@ const FALLBACK =
 
 export const DEFAULT_TERMINAL_FONT_FAMILY = `"Berkeley Mono", ${FALLBACK}`;
 
-function normalizeFontFamily(input: string): string {
-  return input
-    .split(",")
-    .map((piece) =>
-      piece
-        .trim()
-        .replace(/^['"]|['"]$/g, "")
-        .trim(),
-    )
-    .filter((piece) => piece.length > 0)
-    .map((piece) => `"${piece}"`)
-    .join(", ");
-}
-
 export function resolveTerminalFontFamily(
   font: TerminalFont,
   customFontFamily: string,
@@ -31,8 +17,8 @@ export function resolveTerminalFontFamily(
     case "system":
       return "ui-monospace, Menlo, Monaco, Consolas, monospace";
     case "custom": {
-      const normalized = normalizeFontFamily(customFontFamily);
-      return normalized.length > 0 ? `${normalized}, ${FALLBACK}` : FALLBACK;
+      const trimmed = customFontFamily.trim();
+      return trimmed.length > 0 ? `${trimmed}, ${FALLBACK}` : FALLBACK;
     }
   }
 }
