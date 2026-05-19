@@ -311,6 +311,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
             <AttachmentMenu
               disabled={disabled}
               repoPath={repoPath}
+              taskId={taskId}
               onAddAttachment={addAttachment}
               onAttachFiles={onAttachFiles}
               onInsertChip={insertChip}
