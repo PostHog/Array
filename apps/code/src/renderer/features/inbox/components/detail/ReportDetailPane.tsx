@@ -22,6 +22,7 @@ import {
   WarningIcon,
   XIcon,
 } from "@phosphor-icons/react";
+import { Kbd } from "@posthog/quill";
 import {
   Box,
   Flex,
@@ -46,6 +47,7 @@ import type {
 } from "@shared/types";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
+import { isMac } from "@utils/platform";
 import {
   type ReactNode,
   useCallback,
@@ -382,6 +384,7 @@ export function ReportDetailPane({
             >
               <Plus size={12} />
               Create PR
+              <Kbd>{isMac ? "⌘↵" : "Ctrl+↵"}</Kbd>
             </Button>
           ) : null}
           <button
