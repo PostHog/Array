@@ -4,12 +4,9 @@ import {
   ANALYTICS_EVENTS,
   type InboxReportActionProperties,
   type InboxReportCloseMethod,
-  type InboxReportEngagementReason,
 } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { useCallback, useEffect, useRef } from "react";
-
-const DWELL_THRESHOLD_MS = 5_000;
 
 interface OpenInfo {
   reportId: string;
@@ -19,7 +16,6 @@ interface OpenInfo {
   rank: number;
   listSize: number;
   hasScrolled: boolean;
-  hasEngaged: boolean;
 }
 
 /** Report age at fire time in hours, rounded to one decimal. Clamped at 0 to guard against clock skew. */
@@ -31,9 +27,9 @@ function reportAgeHours(createdAt: string | null | undefined): number {
 }
 
 export interface InboxEngagementTracker {
-  /** Signal a scroll inside the detail pane — contributes to the dwell+scroll engagement criterion. */
+  /** Fires INBOX_REPORT_SCROLLED once per open on the first scroll inside the detail pane. */
   signalScroll(): void;
-  /** Fire INBOX_REPORT_ACTION. If the action targets the currently-open report, also marks it engaged. */
+  /** Fires INBOX_REPORT_ACTION for the current open or an explicit report id. */
   signalAction(
     action: Omit<InboxReportActionProperties, "rank" | "list_size">,
   ): void;
@@ -53,30 +49,12 @@ export function useInboxEngagementTracker(
 
   const openInfoRef = useRef<OpenInfo | null>(null);
   const previousReportIdRef = useRef<string | null>(null);
-  const dwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep reports/currentReport accessible to callbacks without retriggering effects.
   const reportsRef = useRef(reports);
   reportsRef.current = reports;
   const currentReportRef = useRef(currentReport);
   currentReportRef.current = currentReport;
-
-  const fireEngaged = useCallback(
-    (info: OpenInfo, reason: InboxReportEngagementReason) => {
-      if (info.hasEngaged) return;
-      info.hasEngaged = true;
-      track(ANALYTICS_EVENTS.INBOX_REPORT_ENGAGED, {
-        report_id: info.reportId,
-        report_title: info.reportTitle,
-        report_age_hours: reportAgeHours(info.reportCreatedAt),
-        engagement_reason: reason,
-        time_spent_ms_at_engagement: Date.now() - info.openedAt,
-        rank: info.rank,
-        list_size: info.listSize,
-      });
-    },
-    [],
-  );
 
   const fireClose = useCallback((closeMethod: InboxReportCloseMethod) => {
     const info = openInfoRef.current;
@@ -87,14 +65,9 @@ export function useInboxEngagementTracker(
       report_age_hours: reportAgeHours(info.reportCreatedAt),
       time_spent_ms: Date.now() - info.openedAt,
       scrolled: info.hasScrolled,
-      engaged: info.hasEngaged,
       close_method: closeMethod,
     });
     openInfoRef.current = null;
-    if (dwellTimerRef.current) {
-      clearTimeout(dwellTimerRef.current);
-      dwellTimerRef.current = null;
-    }
   }, []);
 
   // Drive OPENED / CLOSED transitions on selection change.
@@ -123,7 +96,6 @@ export function useInboxEngagementTracker(
         rank,
         listSize,
         hasScrolled: false,
-        hasEngaged: false,
       };
       openInfoRef.current = info;
 
@@ -165,21 +137,15 @@ export function useInboxEngagementTracker(
     const info = openInfoRef.current;
     if (!info || info.hasScrolled) return;
     info.hasScrolled = true;
-
-    const elapsed = Date.now() - info.openedAt;
-    if (elapsed >= DWELL_THRESHOLD_MS) {
-      fireEngaged(info, "dwell_and_scroll");
-      return;
-    }
-    // Schedule the engaged event to fire once the dwell threshold is crossed.
-    if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current);
-    dwellTimerRef.current = setTimeout(() => {
-      const currentInfo = openInfoRef.current;
-      if (!currentInfo || currentInfo.reportId !== info.reportId) return;
-      if (!currentInfo.hasScrolled) return;
-      fireEngaged(currentInfo, "dwell_and_scroll");
-    }, DWELL_THRESHOLD_MS - elapsed);
-  }, [fireEngaged]);
+    track(ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED, {
+      report_id: info.reportId,
+      report_title: info.reportTitle,
+      report_age_hours: reportAgeHours(info.reportCreatedAt),
+      rank: info.rank,
+      list_size: info.listSize,
+      time_since_open_ms: Date.now() - info.openedAt,
+    });
+  }, []);
 
   const signalAction = useCallback(
     (action: Omit<InboxReportActionProperties, "rank" | "list_size">) => {
@@ -194,11 +160,8 @@ export function useInboxEngagementTracker(
         rank,
         list_size: visibleReports.length,
       });
-      if (info && info.reportId === action.report_id) {
-        fireEngaged(info, "action");
-      }
     },
-    [fireEngaged],
+    [],
   );
 
   return { signalScroll, signalAction };

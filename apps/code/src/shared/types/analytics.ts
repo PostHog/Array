@@ -383,8 +383,6 @@ export type InboxReportActionSurface =
   | "keyboard"
   | "list_row";
 
-export type InboxReportEngagementReason = "dwell_and_scroll" | "action";
-
 export interface InboxViewedProperties {
   report_count: number;
   total_count: number;
@@ -414,8 +412,16 @@ export interface InboxReportClosedProperties {
   report_age_hours: number;
   time_spent_ms: number;
   scrolled: boolean;
-  engaged: boolean;
   close_method: InboxReportCloseMethod;
+}
+
+export interface InboxReportScrolledProperties {
+  report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
+  rank: number;
+  list_size: number;
+  time_since_open_ms: number;
 }
 
 export interface InboxReportActionProperties {
@@ -435,16 +441,6 @@ export interface InboxReportActionProperties {
   signal_section?: "relevant_code" | "data_queried";
   why_field?: "priority" | "actionability";
   task_section?: "research" | "implementation";
-}
-
-export interface InboxReportEngagedProperties {
-  report_id: string;
-  report_title: string | null;
-  report_age_hours: number;
-  engagement_reason: InboxReportEngagementReason;
-  time_spent_ms_at_engagement: number;
-  rank: number;
-  list_size: number;
 }
 
 // Subscription / billing events
@@ -545,7 +541,7 @@ export const ANALYTICS_EVENTS = {
   INBOX_REPORT_OPENED: "Inbox report opened",
   INBOX_REPORT_CLOSED: "Inbox report closed",
   INBOX_REPORT_ACTION: "Inbox report action",
-  INBOX_REPORT_ENGAGED: "Inbox report engaged",
+  INBOX_REPORT_SCROLLED: "Inbox report scrolled",
 
   // Prompt history events
   PROMPT_HISTORY_OPENED: "Prompt history opened",
@@ -637,7 +633,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_REPORT_OPENED]: InboxReportOpenedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
-  [ANALYTICS_EVENTS.INBOX_REPORT_ENGAGED]: InboxReportEngagedProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
 
   // Prompt history events
   [ANALYTICS_EVENTS.PROMPT_HISTORY_OPENED]: PromptHistoryOpenedProperties;
