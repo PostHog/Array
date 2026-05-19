@@ -2,6 +2,8 @@
 # SessionStart hook: inject PR workflow guidance.
 #  - Always: instruct the agent to leave a reply and resolve each PR review
 #    conversation it deals with.
+#  - Always: instruct the agent to search for matching open issues before
+#    opening a PR and link them via `Closes #N` / `Refs #N`.
 #  - When detectable: inject the repo's PR template (or the org's `.github`
 #    repo template as a fallback) so PRs are opened with the right structure.
 
@@ -59,6 +61,9 @@ Use the GitHub GraphQL API via \`gh\` to resolve threads, e.g.:
   gh api graphql -f query='mutation(\$id:ID!){resolveReviewThread(input:{threadId:\$id}){thread{isResolved}}}' -f id=\"<thread-node-id>\"
 Reply to a thread via \`gh api -X POST /repos/{owner}/{repo}/pulls/{n}/comments/{id}/replies -f body='...'\`. Never silently push fixes without confirming each related thread is replied to and resolved."
 
+issue_block="### Related-issue linking
+Before opening a pull request, search the repo for existing open issues that match the work in the branch. Use \`gh issue list --state open --search '<keywords>'\` (and \`gh issue view <n>\` to confirm relevance) to find candidates derived from the branch name, commit messages, and changed files. For every issue the PR would resolve, include a \`Closes #<n>\` line in the PR body so GitHub auto-links and auto-closes it on merge. If the issue is related but the PR does not fully resolve it, use \`Refs #<n>\` instead. Skip this only when there are clearly no matching issues."
+
 if [[ -n "$template" ]]; then
   template_block="
 
@@ -72,6 +77,8 @@ else
   template_block=""
 fi
 
-ctx="${review_block}${template_block}"
+ctx="${review_block}
+
+${issue_block}${template_block}"
 
 jq -nc --arg c "$ctx" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}'
