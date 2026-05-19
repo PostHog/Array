@@ -376,16 +376,23 @@ export function ReportDetailPane({
               size="md"
             />
           ) : canCreateImplementationPr ? (
-            <Button
-              size="1"
-              variant="solid"
-              className="gap-1 text-[12px]"
-              onClick={handleCreateImplementationTask}
+            <Tooltip
+              content={
+                <Flex align="center" gap="1">
+                  Create PR <Kbd>{isMac ? "⌘↵" : "Ctrl+↵"}</Kbd>
+                </Flex>
+              }
             >
-              <Plus size={12} />
-              Create PR
-              <Kbd>{isMac ? "⌘↵" : "Ctrl+↵"}</Kbd>
-            </Button>
+              <Button
+                size="1"
+                variant="solid"
+                className="gap-1 text-[12px]"
+                onClick={handleCreateImplementationTask}
+              >
+                <Plus size={12} />
+                Create PR
+              </Button>
+            </Tooltip>
           ) : null}
           <button
             type="button"
