@@ -194,9 +194,6 @@ export class TaskRunEventStreamSender {
 
     try {
       await writePromise;
-      if (!this.stopped) {
-        await this.closeActiveStream();
-      }
       return this.bufferedEvents.length < previousBufferLength;
     } catch (error) {
       this.config.logger.warn(

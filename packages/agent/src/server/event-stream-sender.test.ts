@@ -83,6 +83,19 @@ function createSender(
   });
 }
 
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 100,
+): Promise<void> {
+  const deadlineAtMs = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadlineAtMs) {
+      throw new Error("Timed out waiting for condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+}
+
 describe("TaskRunEventStreamSender", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -120,6 +133,58 @@ describe("TaskRunEventStreamSender", () => {
       "X-PostHog-Event-Stream-Complete",
     );
 
+    expect(parseLines(requestBodies[1])).toEqual([
+      {
+        seq: 1,
+        event: { type: "notification", notification: { method: "first" } },
+      },
+      {
+        seq: 2,
+        event: { type: "notification", notification: { method: "second" } },
+      },
+      { type: STREAM_COMPLETE_CONTROL_TYPE, final_seq: 2 },
+    ]);
+  });
+
+  it("keeps the active ingest request open across scheduled flushes", async () => {
+    const requestBodies: string[] = [];
+    let activeStreamClosed = false;
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        if (!init?.body || typeof init.body === "string") {
+          const body = await readRequestBody(init);
+          requestBodies.push(body);
+          return responseForBody(body);
+        }
+
+        const body = await readRequestBody(init);
+        activeStreamClosed = true;
+        requestBodies.push(body);
+        return responseForBody(body);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sender = createSender({ flushDelayMs: 0 });
+
+    sender.enqueue({ type: "notification", notification: { method: "first" } });
+    await waitFor(() => fetchMock.mock.calls.length === 2);
+    expect(activeStreamClosed).toBe(false);
+
+    sender.enqueue({
+      type: "notification",
+      notification: { method: "second" },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(activeStreamClosed).toBe(false);
+
+    await sender.stop();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(activeStreamClosed).toBe(true);
     expect(parseLines(requestBodies[1])).toEqual([
       {
         seq: 1,
