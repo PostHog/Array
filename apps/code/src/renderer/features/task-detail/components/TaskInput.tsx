@@ -681,7 +681,6 @@ export function TaskInput({
                   value={selectedDirectory}
                   onChange={setSelectedDirectory}
                   placeholder="Select repository..."
-                  size="1"
                   anchor={buttonGroupRef}
                 />
               )}
