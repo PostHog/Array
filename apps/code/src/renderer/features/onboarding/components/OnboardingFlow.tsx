@@ -10,12 +10,10 @@ import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { useHotkeys } from "react-hotkeys-hook";
 
 import { useOnboardingFlow } from "../hooks/useOnboardingFlow";
-import { usePrefetchSignalData } from "../hooks/usePrefetchSignalData";
 import { CliInstallStep } from "./CliInstallStep";
 import { GitIntegrationStep } from "./GitIntegrationStep";
 import { InviteCodeStep } from "./InviteCodeStep";
 import { ProjectSelectStep } from "./ProjectSelectStep";
-import { SignalsStep } from "./SignalsStep";
 import { StepIndicator } from "./StepIndicator";
 import { WelcomeScreen } from "./WelcomeScreen";
 
@@ -53,7 +51,6 @@ export function OnboardingFlow() {
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
   );
-  usePrefetchSignalData();
 
   useHotkeys("right", next, { enableOnFormTags: false }, [next]);
   useHotkeys("left", back, { enableOnFormTags: false }, [back]);
@@ -185,22 +182,7 @@ export function OnboardingFlow() {
               transition={{ duration: 0.3 }}
               className="min-h-0 w-full flex-1"
             >
-              <CliInstallStep onNext={next} onBack={back} />
-            </motion.div>
-          )}
-
-          {currentStep === "signals" && (
-            <motion.div
-              key="signals"
-              custom={direction}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              variants={stepVariants}
-              transition={{ duration: 0.3 }}
-              className="min-h-0 w-full flex-1"
-            >
-              <SignalsStep onNext={handleComplete} onBack={back} />
+              <CliInstallStep onNext={handleComplete} onBack={back} />
             </motion.div>
           )}
         </AnimatePresence>
