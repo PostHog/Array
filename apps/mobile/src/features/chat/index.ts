@@ -6,6 +6,7 @@
 // Components
 export { AgentMessage } from "./components/AgentMessage";
 export { HumanMessage } from "./components/HumanMessage";
+export { MarkdownText } from "./components/MarkdownText";
 export type {
   ToolKind,
   ToolMessageProps,
