@@ -107,6 +107,7 @@ export function useSlackConnect(): Result {
       }
       timeoutRef.current = setTimeout(() => {
         setState("timed-out");
+        invalidateIntegrationQueries(queryClient);
       }, POLL_TIMEOUT_MS);
     } catch (e) {
       clearLocalTimeout();
