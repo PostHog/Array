@@ -10,40 +10,45 @@ import { Button, Flex, Text } from "@radix-ui/themes";
 import explorerHog from "@renderer/assets/images/hedgehogs/explorer-hog.png";
 import Logo from "@renderer/assets/logo";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FeatureListItem } from "./FeatureListItem";
+import { FeatureBentoCard } from "./FeatureBentoCard";
 import { OnboardingHogTip } from "./OnboardingHogTip";
 import { StepActions } from "./StepActions";
 
 const FEATURES = [
   {
-    icon: <Tray size={24} />,
+    icon: <ChartLine size={28} />,
+    title: "Product data as context",
+    description:
+      "Built-in context on analytics, session replays, experiments, feature flags, and more.",
+    className: "col-span-4",
+  },
+  {
+    icon: <Tray size={26} />,
     title: "Your signals inbox",
     description:
       "Automatically surfaces the highest-impact work from your product data so you always know what to do next.",
+    className: "col-span-2",
   },
   {
-    icon: <ChartLine size={24} />,
-    title: "Product data as context",
+    icon: <Robot size={22} />,
+    title: "Your pick of Claude Code or Codex",
     description:
-      "Your agents have context from your analytics, session replays and feature flags built in.",
+      "PostHog is harness-agnostic – both Anthropic and OpenAI supported.",
+    className: "col-span-2",
   },
   {
-    icon: <Robot size={24} />,
-    title: "Any model, any harness",
+    icon: <Cloud size={22} />,
+    title: "Build non-stop",
     description:
-      "Bring your own agent framework or use our built-in harnesses. Swap models without changing your workflow.",
+      "Run tasks in parallel across local and cloud environments - even while you're away.",
+    className: "col-span-2",
   },
   {
-    icon: <Cloud size={24} />,
-    title: "Ship work, not messages",
-    description:
-      "Run tasks in parallel across local and cloud environments. Work gets done whether you're watching or not.",
-  },
-  {
-    icon: <GitPullRequest size={24} />,
+    icon: <GitPullRequest size={22} />,
     title: "Review and ship with confidence",
     description:
-      "Inline diffs, AI-assisted code review and automated pull request creation in one flow.",
+      "Inline diffs, AI-assisted code review and PR creation in a single flow.",
+    className: "col-span-2",
   },
 ];
 
@@ -96,57 +101,53 @@ export function WelcomeScreen({ onNext }: WelcomeScreenProps) {
         <Flex
           direction="column"
           align="center"
-          className="min-h-0 w-full flex-1 overflow-y-auto"
+          className="min-h-0 w-full flex-1"
         >
           <Flex
             direction="column"
             align="start"
-            style={{
-              margin: "auto 0",
-            }}
-            className="w-full max-w-[560px] gap-[20px]"
+            className="mx-0 my-auto w-full max-w-[760px] gap-6 overflow-hidden"
           >
-            <Flex direction="column" gap="1">
-              <Flex direction="row" align="center" gap="2">
-                <Text className="font-bold text-(--gray-12) text-2xl">
-                  Welcome to
-                </Text>
-                <Logo />
-              </Flex>
-
-              <Text className="hidden text-(--gray-11) text-sm">
-                Your product workbench.
+            <Flex direction="row" align="center" gap="3">
+              <Text
+                /** Very specifically 25px text to be the same size as the Logo's font size */
+                className="font-bold text-(--gray-12) text-[25px] tracking-[-0.05em]"
+              >
+                Welcome to
               </Text>
+              <Logo />
             </Flex>
 
-            <Flex direction="column" className="w-full gap-[8px]">
+            <div className="grid w-full grid-cols-6 grid-rows-[18rem_14rem] gap-3 overflow-hidden rounded-lg">
               {FEATURES.map((feature, index) => (
-                <FeatureListItem
+                <FeatureBentoCard
                   key={feature.title}
                   icon={feature.icon}
                   title={feature.title}
                   description={feature.description}
                   active={activeIndex === index}
                   index={index}
+                  className={feature.className}
                   onMouseEnter={() => handleMouseEnter(index)}
                   onMouseLeave={handleMouseLeave}
                 />
               ))}
-            </Flex>
-
-            <OnboardingHogTip
-              hogSrc={explorerHog}
-              message="Let's get you set up! It only takes a minute."
-            />
+            </div>
           </Flex>
         </Flex>
 
-        <StepActions>
-          <Button size="3" onClick={onNext}>
-            Start shipping
-            <ArrowRight size={16} weight="bold" />
-          </Button>
-        </StepActions>
+        <Flex direction="column" align="center" className="shrink-0 pt-[16px]">
+          <OnboardingHogTip
+            hogSrc={explorerHog}
+            message="Let's get you set up! It only takes a minute."
+          />
+          <StepActions delay={0.25}>
+            <Button size="3" onClick={onNext}>
+              Start shipping
+              <ArrowRight size={16} weight="bold" />
+            </Button>
+          </StepActions>
+        </Flex>
       </Flex>
     </Flex>
   );

@@ -62,6 +62,7 @@ import {
   nodeWritableToWebWritable,
 } from "../../utils/streams";
 import { BaseAcpAgent, type BaseSession } from "../base-acp-agent";
+import { classifyAgentError } from "../error-classification";
 import { createCodexClient } from "./codex-client";
 import { normalizeCodexConfigOptions } from "./models";
 import {
@@ -136,6 +137,19 @@ function prependPrContext(params: PromptRequest): PromptRequest {
     ...params,
     prompt: [{ type: "text", text: prContext }, ...params.prompt],
   };
+}
+
+function classifyPromptError(error: unknown): unknown {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const classification = classifyAgentError(message);
+  if (classification === "agent_error") {
+    return error;
+  }
+
+  return RequestError.internalError(
+    { classification, result: message },
+    message,
+  );
 }
 
 const CODEX_NATIVE_MODE: Record<CodeExecutionMode, CodexNativeMode> = {
@@ -577,6 +591,8 @@ export class CodexAcpAgent extends BaseAcpAgent {
     let response: PromptResponse;
     try {
       response = await this.codexConnection.prompt(prependPrContext(params));
+    } catch (error) {
+      throw classifyPromptError(error);
     } finally {
       this.session.promptRunning = false;
     }

@@ -299,11 +299,8 @@ type SetupDiscoveredTaskCategory =
   | "error_tracking"
   | "event_tracking"
   | "funnel"
-  | "posthog_setup";
-
-export interface SetupViewedProperties {
-  discovery_status: "idle" | "running" | "done" | "error";
-}
+  | "posthog_setup"
+  | "experiment";
 
 export interface SetupDiscoveryStartedProperties {
   discovery_task_id: string;
@@ -337,12 +334,6 @@ export interface SetupTaskDismissedProperties {
   category: SetupDiscoveredTaskCategory;
   position: number;
   total_discovered: number;
-}
-
-export interface SetupSkippedProperties {
-  discovery_status: "idle" | "running" | "done" | "error";
-  had_discovered_tasks: boolean;
-  entry_point: "during_scan" | "after_done";
 }
 
 // Inbox events
@@ -523,13 +514,11 @@ export const ANALYTICS_EVENTS = {
   TOUR_EVENT: "Tour event",
 
   // Setup / onboarding events
-  SETUP_VIEWED: "Setup viewed",
   SETUP_DISCOVERY_STARTED: "Setup discovery started",
   SETUP_DISCOVERY_COMPLETED: "Setup discovery completed",
   SETUP_DISCOVERY_FAILED: "Setup discovery failed",
   SETUP_TASK_SELECTED: "Setup task selected",
   SETUP_TASK_DISMISSED: "Setup task dismissed",
-  SETUP_SKIPPED: "Setup skipped",
 
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
@@ -615,13 +604,11 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.TOUR_EVENT]: TourEventProperties;
 
   // Setup / onboarding events
-  [ANALYTICS_EVENTS.SETUP_VIEWED]: SetupViewedProperties;
   [ANALYTICS_EVENTS.SETUP_DISCOVERY_STARTED]: SetupDiscoveryStartedProperties;
   [ANALYTICS_EVENTS.SETUP_DISCOVERY_COMPLETED]: SetupDiscoveryCompletedProperties;
   [ANALYTICS_EVENTS.SETUP_DISCOVERY_FAILED]: SetupDiscoveryFailedProperties;
   [ANALYTICS_EVENTS.SETUP_TASK_SELECTED]: SetupTaskSelectedProperties;
   [ANALYTICS_EVENTS.SETUP_TASK_DISMISSED]: SetupTaskDismissedProperties;
-  [ANALYTICS_EVENTS.SETUP_SKIPPED]: SetupSkippedProperties;
 
   // Error events
   [ANALYTICS_EVENTS.TASK_CREATION_FAILED]: TaskCreationFailedProperties;

@@ -297,20 +297,29 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     return getRemoteUrl(directoryPath);
   }
 
-  public async getCurrentBranch(directoryPath: string): Promise<string | null> {
-    return getCurrentBranch(directoryPath);
+  public async getCurrentBranch(
+    directoryPath: string,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
+    return getCurrentBranch(directoryPath, { abortSignal: signal });
   }
 
   public async getDefaultBranch(directoryPath: string): Promise<string> {
     return getDefaultBranch(directoryPath);
   }
 
-  public async getAllBranches(directoryPath: string): Promise<string[]> {
-    return getAllBranches(directoryPath);
+  public async getAllBranches(
+    directoryPath: string,
+    signal?: AbortSignal,
+  ): Promise<string[]> {
+    return getAllBranches(directoryPath, { abortSignal: signal });
   }
 
-  public async getGitBusyState(directoryPath: string): Promise<GitBusyState> {
-    return getGitBusyState(directoryPath);
+  public async getGitBusyState(
+    directoryPath: string,
+    signal?: AbortSignal,
+  ): Promise<GitBusyState> {
+    return getGitBusyState(directoryPath, { abortSignal: signal });
   }
 
   public async createBranch(
@@ -334,9 +343,11 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
 
   public async getChangedFilesHead(
     directoryPath: string,
+    signal?: AbortSignal,
   ): Promise<ChangedFile[]> {
     const files = await getChangedFilesDetailed(directoryPath, {
       excludePatterns: [".claude", "CLAUDE.local.md"],
+      abortSignal: signal,
     });
     type HeadChangedFile = Omit<ChangedFile, "patch">;
     const filteredFiles: Array<HeadChangedFile | null> = await Promise.all(
@@ -371,29 +382,42 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
   public async getFileAtHead(
     directoryPath: string,
     filePath: string,
+    signal?: AbortSignal,
   ): Promise<string | null> {
-    return getFileAtHead(directoryPath, filePath);
+    return getFileAtHead(directoryPath, filePath, { abortSignal: signal });
   }
 
   public async getDiffHead(
     directoryPath: string,
     ignoreWhitespace?: boolean,
+    signal?: AbortSignal,
   ): Promise<string> {
-    return getDiffHead(directoryPath, { ignoreWhitespace });
+    return getDiffHead(directoryPath, {
+      ignoreWhitespace,
+      abortSignal: signal,
+    });
   }
 
   public async getDiffCached(
     directoryPath: string,
     ignoreWhitespace?: boolean,
+    signal?: AbortSignal,
   ): Promise<string> {
-    return getStagedDiff(directoryPath, { ignoreWhitespace });
+    return getStagedDiff(directoryPath, {
+      ignoreWhitespace,
+      abortSignal: signal,
+    });
   }
 
   public async getDiffUnstaged(
     directoryPath: string,
     ignoreWhitespace?: boolean,
+    signal?: AbortSignal,
   ): Promise<string> {
-    return getUnstagedDiff(directoryPath, { ignoreWhitespace });
+    return getUnstagedDiff(directoryPath, {
+      ignoreWhitespace,
+      abortSignal: signal,
+    });
   }
 
   public async stageFiles(
@@ -412,9 +436,13 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     return this.getStateSnapshot(directoryPath);
   }
 
-  public async getDiffStats(directoryPath: string): Promise<DiffStats> {
+  public async getDiffStats(
+    directoryPath: string,
+    signal?: AbortSignal,
+  ): Promise<DiffStats> {
     const stats = await getDiffStats(directoryPath, {
       excludePatterns: [".claude", "CLAUDE.local.md"],
+      abortSignal: signal,
     });
     return {
       filesChanged: stats.filesChanged,
@@ -455,8 +483,11 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
 
   public async getLatestCommit(
     directoryPath: string,
+    signal?: AbortSignal,
   ): Promise<GitCommitInfo | null> {
-    const commit = await getLatestCommit(directoryPath);
+    const commit = await getLatestCommit(directoryPath, {
+      abortSignal: signal,
+    });
     if (!commit) return null;
     return {
       sha: commit.sha,

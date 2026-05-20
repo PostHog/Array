@@ -4,9 +4,17 @@ import { electronStorage } from "@utils/electronStorage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+// ---------- Types ----------
+
 export type DefaultRunMode = "local" | "cloud" | "last_used";
 export type LocalWorkspaceMode = "worktree" | "local";
+export type AgentAdapter = "claude" | "codex";
+export type DefaultInitialTaskMode = "plan" | "last_used";
+
 export type SendMessagesWith = "enter" | "cmd+enter";
+export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
+export type DiffOpenMode = "auto" | "split" | "same-pane" | "last-active-pane";
+
 export type CompletionSound =
   | "none"
   | "guitar"
@@ -21,17 +29,22 @@ export type CompletionSound =
   | "slide"
   | "switch"
   | "wilhelm";
-export type AgentAdapter = "claude" | "codex";
-export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
-export type DefaultInitialTaskMode = "plan" | "last_used";
+
+export type TerminalFont =
+  | "berkeley-mono"
+  | "jetbrains-mono"
+  | "system"
+  | "custom";
 
 export interface HintState {
   count: number;
   learned: boolean;
 }
-export type DiffOpenMode = "auto" | "split" | "same-pane" | "last-active-pane";
+
+// ---------- Store shape ----------
 
 interface SettingsStore {
+  // Run mode + last-used flow defaults
   defaultRunMode: DefaultRunMode;
   lastUsedRunMode: "local" | "cloud";
   lastUsedLocalWorkspaceMode: LocalWorkspaceMode;
@@ -41,31 +54,8 @@ interface SettingsStore {
   lastUsedReasoningEffort: string | null;
   lastUsedCloudRepository: string | null;
   lastUsedEnvironments: Record<string, string>;
-  desktopNotifications: boolean;
-  dockBadgeNotifications: boolean;
-  dockBounceNotifications: boolean;
-
-  autoConvertLongText: AutoConvertLongText;
-  completionSound: CompletionSound;
-  completionVolume: number;
-  sendMessagesWith: SendMessagesWith;
-  allowBypassPermissions: boolean;
-  preventSleepWhileRunning: boolean;
-  debugLogsCloudRuns: boolean;
-  customInstructions: string;
   defaultInitialTaskMode: DefaultInitialTaskMode;
   lastUsedInitialTaskMode: ExecutionMode;
-  diffOpenMode: DiffOpenMode;
-  hedgehogMode: boolean;
-  mcpAppsDisabledServers: string[];
-  hints: Record<string, HintState>;
-
-  shouldShowHint: (key: string, max?: number) => boolean;
-  recordHintShown: (key: string) => void;
-  markHintLearned: (key: string) => void;
-
-  setCompletionSound: (sound: CompletionSound) => void;
-  setCompletionVolume: (volume: number) => void;
   setDefaultRunMode: (mode: DefaultRunMode) => void;
   setLastUsedRunMode: (mode: "local" | "cloud") => void;
   setLastUsedLocalWorkspaceMode: (mode: LocalWorkspaceMode) => void;
@@ -79,26 +69,66 @@ interface SettingsStore {
     environmentId: string | null,
   ) => void;
   getLastUsedEnvironment: (repoPath: string) => string | null;
+  setDefaultInitialTaskMode: (mode: DefaultInitialTaskMode) => void;
+  setLastUsedInitialTaskMode: (mode: ExecutionMode) => void;
+
+  // Notifications
+  desktopNotifications: boolean;
+  dockBadgeNotifications: boolean;
+  dockBounceNotifications: boolean;
+  completionSound: CompletionSound;
+  completionVolume: number;
   setDesktopNotifications: (enabled: boolean) => void;
   setDockBadgeNotifications: (enabled: boolean) => void;
   setDockBounceNotifications: (enabled: boolean) => void;
+  setCompletionSound: (sound: CompletionSound) => void;
+  setCompletionVolume: (volume: number) => void;
 
+  // Composer / chat
+  autoConvertLongText: AutoConvertLongText;
+  sendMessagesWith: SendMessagesWith;
+  customInstructions: string;
   setAutoConvertLongText: (value: AutoConvertLongText) => void;
   setSendMessagesWith: (mode: SendMessagesWith) => void;
+  setCustomInstructions: (instructions: string) => void;
+
+  // Diff viewer
+  diffOpenMode: DiffOpenMode;
+  setDiffOpenMode: (mode: DiffOpenMode) => void;
+
+  // System / power / permissions
+  allowBypassPermissions: boolean;
+  preventSleepWhileRunning: boolean;
+  debugLogsCloudRuns: boolean;
   setAllowBypassPermissions: (enabled: boolean) => void;
   setPreventSleepWhileRunning: (enabled: boolean) => void;
   setDebugLogsCloudRuns: (enabled: boolean) => void;
-  setCustomInstructions: (instructions: string) => void;
-  setDefaultInitialTaskMode: (mode: DefaultInitialTaskMode) => void;
-  setLastUsedInitialTaskMode: (mode: ExecutionMode) => void;
-  setDiffOpenMode: (mode: DiffOpenMode) => void;
+
+  // Terminal
+  terminalFont: TerminalFont;
+  terminalCustomFontFamily: string;
+  setTerminalFont: (font: TerminalFont) => void;
+  setTerminalCustomFontFamily: (value: string) => void;
+
+  // Experimental / misc
+  hedgehogMode: boolean;
+  mcpAppsDisabledServers: string[];
   setHedgehogMode: (enabled: boolean) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
+
+  // Onboarding hints
+  hints: Record<string, HintState>;
+  shouldShowHint: (key: string, max?: number) => boolean;
+  recordHintShown: (key: string) => void;
+  markHintLearned: (key: string) => void;
 }
+
+// ---------- Store ----------
 
 export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
+      // Run mode + last-used flow defaults
       defaultRunMode: "last_used",
       lastUsedRunMode: "local",
       lastUsedLocalWorkspaceMode: "local",
@@ -108,25 +138,90 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedReasoningEffort: null,
       lastUsedCloudRepository: null,
       lastUsedEnvironments: {},
+      defaultInitialTaskMode: "plan",
+      lastUsedInitialTaskMode: "plan",
+      setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
+      setLastUsedRunMode: (mode) => set({ lastUsedRunMode: mode }),
+      setLastUsedLocalWorkspaceMode: (mode) =>
+        set({ lastUsedLocalWorkspaceMode: mode }),
+      setLastUsedWorkspaceMode: (mode) => set({ lastUsedWorkspaceMode: mode }),
+      setLastUsedAdapter: (adapter) => set({ lastUsedAdapter: adapter }),
+      setLastUsedModel: (model) => set({ lastUsedModel: model }),
+      setLastUsedReasoningEffort: (effort) =>
+        set({ lastUsedReasoningEffort: effort }),
+      setLastUsedCloudRepository: (repo) =>
+        set({ lastUsedCloudRepository: repo }),
+      setLastUsedEnvironment: (repoPath, environmentId) =>
+        set((state) => {
+          const next = { ...state.lastUsedEnvironments };
+          if (environmentId) {
+            next[repoPath] = environmentId;
+          } else {
+            delete next[repoPath];
+          }
+          return { lastUsedEnvironments: next };
+        }),
+      getLastUsedEnvironment: (repoPath) =>
+        get().lastUsedEnvironments[repoPath] ?? null,
+      setDefaultInitialTaskMode: (mode) =>
+        set({ defaultInitialTaskMode: mode }),
+      setLastUsedInitialTaskMode: (mode) =>
+        set({ lastUsedInitialTaskMode: mode }),
+
+      // Notifications
       desktopNotifications: true,
       dockBadgeNotifications: true,
       dockBounceNotifications: false,
       completionSound: "none",
       completionVolume: 80,
+      setDesktopNotifications: (enabled) =>
+        set({ desktopNotifications: enabled }),
+      setDockBadgeNotifications: (enabled) =>
+        set({ dockBadgeNotifications: enabled }),
+      setDockBounceNotifications: (enabled) =>
+        set({ dockBounceNotifications: enabled }),
+      setCompletionSound: (sound) => set({ completionSound: sound }),
+      setCompletionVolume: (volume) => set({ completionVolume: volume }),
 
+      // Composer / chat
       autoConvertLongText: "2500",
       sendMessagesWith: "enter",
+      customInstructions: "",
+      setAutoConvertLongText: (value) => set({ autoConvertLongText: value }),
+      setSendMessagesWith: (mode) => set({ sendMessagesWith: mode }),
+      setCustomInstructions: (instructions) =>
+        set({ customInstructions: instructions }),
+
+      // Diff viewer
+      diffOpenMode: "auto",
+      setDiffOpenMode: (mode) => set({ diffOpenMode: mode }),
+
+      // System / power / permissions
       allowBypassPermissions: false,
       preventSleepWhileRunning: false,
       debugLogsCloudRuns: false,
-      customInstructions: "",
-      defaultInitialTaskMode: "plan",
-      lastUsedInitialTaskMode: "plan",
-      diffOpenMode: "auto",
+      setAllowBypassPermissions: (enabled) =>
+        set({ allowBypassPermissions: enabled }),
+      setPreventSleepWhileRunning: (enabled) =>
+        set({ preventSleepWhileRunning: enabled }),
+      setDebugLogsCloudRuns: (enabled) => set({ debugLogsCloudRuns: enabled }),
+
+      // Terminal
+      terminalFont: "berkeley-mono",
+      terminalCustomFontFamily: "",
+      setTerminalFont: (font) => set({ terminalFont: font }),
+      setTerminalCustomFontFamily: (value) =>
+        set({ terminalCustomFontFamily: value }),
+
+      // Experimental / misc
       hedgehogMode: false,
       mcpAppsDisabledServers: [],
-      hints: {},
+      setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
+      setMcpAppsDisabledServers: (servers) =>
+        set({ mcpAppsDisabledServers: servers }),
 
+      // Onboarding hints
+      hints: {},
       shouldShowHint: (key, max = 3) => {
         const hint = get().hints[key];
         if (!hint) return true;
@@ -152,61 +247,12 @@ export const useSettingsStore = create<SettingsStore>()(
             },
           };
         }),
-
-      setCompletionSound: (sound) => set({ completionSound: sound }),
-      setCompletionVolume: (volume) => set({ completionVolume: volume }),
-      setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
-      setLastUsedRunMode: (mode) => set({ lastUsedRunMode: mode }),
-      setLastUsedLocalWorkspaceMode: (mode) =>
-        set({ lastUsedLocalWorkspaceMode: mode }),
-      setLastUsedWorkspaceMode: (mode) => set({ lastUsedWorkspaceMode: mode }),
-      setLastUsedAdapter: (adapter) => set({ lastUsedAdapter: adapter }),
-      setLastUsedModel: (model) => set({ lastUsedModel: model }),
-      setLastUsedReasoningEffort: (effort) =>
-        set({ lastUsedReasoningEffort: effort }),
-      setLastUsedCloudRepository: (repo) =>
-        set({ lastUsedCloudRepository: repo }),
-      setLastUsedEnvironment: (repoPath, environmentId) =>
-        set((state) => {
-          const next = { ...state.lastUsedEnvironments };
-          if (environmentId) {
-            next[repoPath] = environmentId;
-          } else {
-            delete next[repoPath];
-          }
-          return { lastUsedEnvironments: next };
-        }),
-      getLastUsedEnvironment: (repoPath) =>
-        get().lastUsedEnvironments[repoPath] ?? null,
-      setDesktopNotifications: (enabled) =>
-        set({ desktopNotifications: enabled }),
-      setDockBadgeNotifications: (enabled) =>
-        set({ dockBadgeNotifications: enabled }),
-      setDockBounceNotifications: (enabled) =>
-        set({ dockBounceNotifications: enabled }),
-
-      setAutoConvertLongText: (value) => set({ autoConvertLongText: value }),
-      setSendMessagesWith: (mode) => set({ sendMessagesWith: mode }),
-      setAllowBypassPermissions: (enabled) =>
-        set({ allowBypassPermissions: enabled }),
-      setPreventSleepWhileRunning: (enabled) =>
-        set({ preventSleepWhileRunning: enabled }),
-      setDebugLogsCloudRuns: (enabled) => set({ debugLogsCloudRuns: enabled }),
-      setCustomInstructions: (instructions) =>
-        set({ customInstructions: instructions }),
-      setDefaultInitialTaskMode: (mode) =>
-        set({ defaultInitialTaskMode: mode }),
-      setLastUsedInitialTaskMode: (mode) =>
-        set({ lastUsedInitialTaskMode: mode }),
-      setDiffOpenMode: (mode) => set({ diffOpenMode: mode }),
-      setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
-      setMcpAppsDisabledServers: (servers) =>
-        set({ mcpAppsDisabledServers: servers }),
     }),
     {
       name: "settings-storage",
       storage: electronStorage,
       partialize: (state) => ({
+        // Run mode + last-used flow defaults
         defaultRunMode: state.defaultRunMode,
         lastUsedRunMode: state.lastUsedRunMode,
         lastUsedLocalWorkspaceMode: state.lastUsedLocalWorkspaceMode,
@@ -216,24 +262,39 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
         lastUsedEnvironments: state.lastUsedEnvironments,
+        defaultInitialTaskMode: state.defaultInitialTaskMode,
+        lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,
+
+        // Notifications
         desktopNotifications: state.desktopNotifications,
         dockBadgeNotifications: state.dockBadgeNotifications,
         dockBounceNotifications: state.dockBounceNotifications,
-
-        autoConvertLongText: state.autoConvertLongText,
         completionSound: state.completionSound,
         completionVolume: state.completionVolume,
+
+        // Composer / chat
+        autoConvertLongText: state.autoConvertLongText,
         sendMessagesWith: state.sendMessagesWith,
+        customInstructions: state.customInstructions,
+
+        // Diff viewer
+        diffOpenMode: state.diffOpenMode,
+
+        // System / power / permissions
         allowBypassPermissions: state.allowBypassPermissions,
         preventSleepWhileRunning: state.preventSleepWhileRunning,
         debugLogsCloudRuns: state.debugLogsCloudRuns,
-        customInstructions: state.customInstructions,
-        defaultInitialTaskMode: state.defaultInitialTaskMode,
-        lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,
-        diffOpenMode: state.diffOpenMode,
+
+        // Terminal
+        terminalFont: state.terminalFont,
+        terminalCustomFontFamily: state.terminalCustomFontFamily,
+
+        // Experimental / misc
         hedgehogMode: state.hedgehogMode,
-        hints: state.hints,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
+
+        // Onboarding hints
+        hints: state.hints,
       }),
       merge: (persisted, current) => {
         const merged = {

@@ -338,12 +338,12 @@ export function CliInstallStep({ onNext, onBack }: CliInstallStepProps) {
           </Button>
           {allReady ? (
             <Button size="3" onClick={onNext}>
-              Continue
+              Get started
               <ArrowRight size={16} weight="bold" />
             </Button>
           ) : (
             <Button size="3" variant="outline" color="gray" onClick={onNext}>
-              Skip for now
+              Skip & get started
               <ArrowRight size={16} weight="bold" />
             </Button>
           )}
