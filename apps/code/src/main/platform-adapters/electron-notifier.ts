@@ -32,6 +32,7 @@ export class ElectronNotifier implements INotifier {
     const release = () => this.active.delete(notification);
     notification.once("close", release);
     notification.once("click", release);
+    notification.once("failed", release);
     if (options.onClick) {
       notification.on("click", options.onClick);
     }
