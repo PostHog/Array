@@ -1,27 +1,35 @@
-import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import type { SetupRunService } from "@features/setup/services/setupRunService";
-import { useSetupStore } from "@features/setup/stores/setupStore";
+import {
+  selectRepoDiscovery,
+  useSetupStore,
+} from "@features/setup/stores/setupStore";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
-import { useEffect, useRef } from "react";
+import { useActiveRepoStore } from "@stores/activeRepoStore";
+import { useEffect } from "react";
 
 export function useSetupDiscovery() {
-  const selectedDirectory = useOnboardingStore((s) => s.selectedDirectory);
-  const discoveryStatus = useSetupStore((s) => s.discoveryStatus);
-
-  const startedRef = useRef(false);
+  const selectedDirectory = useActiveRepoStore((s) => s.path);
+  const discoveryStatus = useSetupStore(
+    (s) => selectRepoDiscovery(s, selectedDirectory).status,
+  );
+  const discoveryEverStarted = useSetupStore((s) =>
+    Object.values(s.discoveryByRepo).some((d) => d.status !== "idle"),
+  );
 
   useEffect(() => {
-    if (startedRef.current) return;
-    // Only auto-fire from a clean "idle" state. "done" needs no rerun, and
-    // "error" (which now includes interrupted runs persisted across boots —
-    // see setupStore partialize) requires an explicit user retry to recover.
-    if (discoveryStatus !== "idle") return;
     if (!selectedDirectory) return;
+    const service = get<SetupRunService>(RENDERER_TOKENS.SetupRunService);
 
-    startedRef.current = true;
-    get<SetupRunService>(RENDERER_TOKENS.SetupRunService).startSetup(
-      selectedDirectory,
-    );
-  }, [discoveryStatus, selectedDirectory]);
+    if (discoveryEverStarted) {
+      service.startEnricherForRepo(selectedDirectory);
+      return;
+    }
+
+    if (discoveryStatus === "running" || discoveryStatus === "done") {
+      service.startEnricherForRepo(selectedDirectory);
+      return;
+    }
+    service.startSetup(selectedDirectory);
+  }, [discoveryEverStarted, discoveryStatus, selectedDirectory]);
 }

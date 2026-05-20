@@ -1,7 +1,6 @@
 import { Badge } from "@components/ui/Badge";
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
 import { useFolders } from "@features/folders/hooks/useFolders";
-import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { useSetupStore } from "@features/setup/stores/setupStore";
 import type { DiscoveredTask } from "@features/setup/types";
 import { buildDiscoveredTaskPrompt } from "@features/setup/utils/buildDiscoveredTaskPrompt";
@@ -13,6 +12,7 @@ import { useDetectedCloudRepository } from "@hooks/useDetectedCloudRepository";
 import { PlusIcon, SparkleIcon, X as XIcon } from "@phosphor-icons/react";
 import { Box, Button, Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import { useActiveRepoStore } from "@stores/activeRepoStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { track } from "@utils/analytics";
 
@@ -29,7 +29,7 @@ export function DiscoveredTaskDetailPane({
   const CategoryIcon = config.icon;
 
   const tasks = useSetupStore((s) => s.discoveredTasks);
-  const selectedDirectory = useOnboardingStore((s) => s.selectedDirectory);
+  const selectedDirectory = useActiveRepoStore((s) => s.path);
   const navigateToTaskInput = useNavigationStore((s) => s.navigateToTaskInput);
   const { folders } = useFolders();
   const detectedCloudRepository = useDetectedCloudRepository(selectedDirectory);
@@ -45,7 +45,9 @@ export function DiscoveredTaskDetailPane({
 
     const initialPrompt = buildDiscoveredTaskPrompt(task);
     const folderId = folders.find((f) => f.path === selectedDirectory)?.id;
-    useSetupStore.getState().removeDiscoveredTask(task.id);
+    useSetupStore
+      .getState()
+      .removeDiscoveredTask(task.id, task.repoPath ?? null);
     navigateToTaskInput({
       initialPrompt,
       folderId,
@@ -61,7 +63,9 @@ export function DiscoveredTaskDetailPane({
       position: position >= 0 ? position : 0,
       total_discovered: tasks.length,
     });
-    useSetupStore.getState().removeDiscoveredTask(task.id);
+    useSetupStore
+      .getState()
+      .removeDiscoveredTask(task.id, task.repoPath ?? null);
   };
 
   return (

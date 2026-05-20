@@ -14,7 +14,9 @@ export function RecommendedSetupTasks({
   onSelectTask,
 }: RecommendedSetupTasksProps) {
   const tasks = useSetupStore((s) => s.discoveredTasks);
-  const discoveryStatus = useSetupStore((s) => s.discoveryStatus);
+  const anyDiscoveryRunning = useSetupStore((s) =>
+    Object.values(s.discoveryByRepo).some((d) => d.status === "running"),
+  );
   const selectedDiscoveredTaskId = useSetupStore(
     (s) => s.selectedDiscoveredTaskId,
   );
@@ -28,7 +30,7 @@ export function RecommendedSetupTasks({
 
   return (
     <Flex direction="column">
-      {discoveryStatus === "running" && (
+      {anyDiscoveryRunning && (
         <Flex
           align="center"
           gap="1"

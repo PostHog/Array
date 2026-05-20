@@ -1,9 +1,14 @@
 import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
 import { SetupScanFeed } from "@features/setup/components/SetupScanFeed";
-import { useSetupStore } from "@features/setup/stores/setupStore";
+import {
+  selectRepoDiscovery,
+  selectRepoEnricher,
+  useSetupStore,
+} from "@features/setup/stores/setupStore";
 import type { DiscoveredTask } from "@features/setup/types";
 import { ArrowRight, Lightning, MagnifyingGlass } from "@phosphor-icons/react";
 import { Flex, Text } from "@radix-ui/themes";
+import { useActiveRepoStore } from "@stores/activeRepoStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
@@ -29,10 +34,21 @@ interface SuggestedTasksPanelProps {
 }
 
 export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
-  const discoveredTasks = useSetupStore((s) => s.discoveredTasks);
-  const discoveryStatus = useSetupStore((s) => s.discoveryStatus);
-  const enricherStatus = useSetupStore((s) => s.enricherStatus);
-  const discoveryFeed = useSetupStore((s) => s.discoveryFeed);
+  const selectedDirectory = useActiveRepoStore((s) => s.path);
+  const discoveredTasks = useSetupStore((s) =>
+    s.discoveredTasks.filter((task) =>
+      selectedDirectory ? task.repoPath === selectedDirectory : !task.repoPath,
+    ),
+  );
+  const discoveryStatus = useSetupStore(
+    (s) => selectRepoDiscovery(s, selectedDirectory).status,
+  );
+  const enricherStatus = useSetupStore(
+    (s) => selectRepoEnricher(s, selectedDirectory).status,
+  );
+  const discoveryFeed = useSetupStore(
+    (s) => selectRepoDiscovery(s, selectedDirectory).feed,
+  );
   const removeDiscoveredTask = useSetupStore((s) => s.removeDiscoveredTask);
   const selectDiscoveredTask = useSetupStore((s) => s.selectDiscoveredTask);
   const navigateToInbox = useNavigationStore((s) => s.navigateToInbox);
@@ -67,7 +83,7 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
 
   const handleDismiss = useCallback(
     (task: DiscoveredTask) => {
-      removeDiscoveredTask(task.id);
+      removeDiscoveredTask(task.id, task.repoPath ?? null);
     },
     [removeDiscoveredTask],
   );

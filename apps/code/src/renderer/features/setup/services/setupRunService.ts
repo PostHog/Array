@@ -1,7 +1,10 @@
 import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { fetchAuthState } from "@features/auth/hooks/authQueries";
 import { buildDiscoveryPrompt } from "@features/setup/prompts";
-import { useSetupStore } from "@features/setup/stores/setupStore";
+import {
+  selectRepoDiscovery,
+  useSetupStore,
+} from "@features/setup/stores/setupStore";
 import {
   buildTaskDiscoverySchema,
   type DiscoveredTask,
@@ -236,8 +239,8 @@ function buildPosthogSetupSuggestion(
 
 @injectable()
 export class SetupRunService {
-  private discoveryStarting = false;
-  private enricherSuggestionsRunning = false;
+  private discoveryStartingByRepo = new Set<string>();
+  private enricherSuggestionsRunningByRepo = new Set<string>();
 
   startSetup(directory: string): void {
     // Defense in depth: never auto-run from a non-idle persisted state.
@@ -245,31 +248,42 @@ export class SetupRunService {
     // path could otherwise re-enter the loop that wedged users on boot —
     // creating fresh cloud tasks and a tree-sitter parse storm against the
     // user's repo on every launch.
-    const status = useSetupStore.getState().discoveryStatus;
+    const status = selectRepoDiscovery(
+      useSetupStore.getState(),
+      directory,
+    ).status;
     if (status !== "idle") return;
     this.injectEnricherSuggestions(directory);
     this.startDiscovery(directory);
   }
 
+  startEnricherForRepo(directory: string): void {
+    this.injectEnricherSuggestions(directory);
+  }
+
   startDiscovery(directory: string): void {
-    if (this.discoveryStarting) return;
-    const status = useSetupStore.getState().discoveryStatus;
+    if (!directory) return;
+    if (this.discoveryStartingByRepo.has(directory)) return;
+    const status = selectRepoDiscovery(
+      useSetupStore.getState(),
+      directory,
+    ).status;
     if (status === "running" || status === "done") return;
-    this.discoveryStarting = true;
+    this.discoveryStartingByRepo.add(directory);
     this.runDiscovery(directory)
       .catch((err) => {
         log.error("Discovery startup failed", { error: err });
       })
       .finally(() => {
-        this.discoveryStarting = false;
+        this.discoveryStartingByRepo.delete(directory);
       });
   }
 
   injectEnricherSuggestions(directory: string): void {
     if (!directory) return;
-    if (this.enricherSuggestionsRunning) return;
-    this.enricherSuggestionsRunning = true;
-    useSetupStore.getState().startEnrichment();
+    if (this.enricherSuggestionsRunningByRepo.has(directory)) return;
+    this.enricherSuggestionsRunningByRepo.add(directory);
+    useSetupStore.getState().startEnrichment(directory);
 
     void (async () => {
       try {
@@ -279,20 +293,24 @@ export class SetupRunService {
           });
 
         if (installState === "initialized") {
-          useSetupStore
-            .getState()
-            .addEnricherSuggestionIfMissing(buildSdkHealthSuggestion());
+          useSetupStore.getState().addEnricherSuggestionIfMissing({
+            ...buildSdkHealthSuggestion(),
+            repoPath: directory,
+          });
           await this.injectStaleFlagSuggestions(directory);
         } else {
           const suggestion = buildPosthogSetupSuggestion(installState);
-          useSetupStore.getState().addEnricherSuggestionIfMissing(suggestion);
+          useSetupStore.getState().addEnricherSuggestionIfMissing({
+            ...suggestion,
+            repoPath: directory,
+          });
         }
-        useSetupStore.getState().completeEnrichment();
+        useSetupStore.getState().completeEnrichment(directory);
       } catch (err) {
         log.warn("Enricher run failed", { error: err });
-        useSetupStore.getState().failEnrichment();
+        useSetupStore.getState().failEnrichment(directory);
       } finally {
-        this.enricherSuggestionsRunning = false;
+        this.enricherSuggestionsRunningByRepo.delete(directory);
       }
     })();
   }
@@ -304,7 +322,10 @@ export class SetupRunService {
       });
       const store = useSetupStore.getState();
       for (const flag of flags) {
-        store.addEnricherSuggestionIfMissing(buildStaleFlagSuggestion(flag));
+        store.addEnricherSuggestionIfMissing({
+          ...buildStaleFlagSuggestion(flag),
+          repoPath: directory,
+        });
       }
     } catch (err) {
       log.warn("Failed to find stale flag suggestions", { error: err });
@@ -312,11 +333,11 @@ export class SetupRunService {
   }
 
   private async runDiscovery(directory: string): Promise<void> {
-    const state = useSetupStore.getState();
-    if (
-      state.discoveryStatus === "done" ||
-      state.discoveryStatus === "running"
-    ) {
+    const status = selectRepoDiscovery(
+      useSetupStore.getState(),
+      directory,
+    ).status;
+    if (status === "done" || status === "running") {
       return;
     }
 
@@ -333,7 +354,9 @@ export class SetupRunService {
 
       if (!apiHost || !projectId) {
         log.error("Missing auth for discovery", { apiHost, projectId });
-        useSetupStore.getState().failDiscovery("Authentication required.");
+        useSetupStore
+          .getState()
+          .failDiscovery(directory, "Authentication required.");
         track(ANALYTICS_EVENTS.SETUP_DISCOVERY_FAILED, {
           reason: "startup_error",
           error_message: "missing_auth",
@@ -344,7 +367,9 @@ export class SetupRunService {
       const client = await getAuthenticatedClient();
       if (abort.signal.aborted) return;
       if (!client) {
-        useSetupStore.getState().failDiscovery("Authentication required.");
+        useSetupStore
+          .getState()
+          .failDiscovery(directory, "Authentication required.");
         track(ANALYTICS_EVENTS.SETUP_DISCOVERY_FAILED, {
           reason: "startup_error",
           error_message: "unauthenticated_client",
@@ -353,7 +378,9 @@ export class SetupRunService {
       }
 
       if (!directory) {
-        useSetupStore.getState().failDiscovery("No directory selected.");
+        useSetupStore
+          .getState()
+          .failDiscovery(directory, "No directory selected.");
         track(ANALYTICS_EVENTS.SETUP_DISCOVERY_FAILED, {
           reason: "startup_error",
           error_message: "missing_directory",
@@ -380,7 +407,7 @@ export class SetupRunService {
         throw new Error("Failed to create discovery task run");
       }
 
-      useSetupStore.getState().startDiscovery(task.id, taskRun.id);
+      useSetupStore.getState().startDiscovery(directory, task.id, taskRun.id);
       track(ANALYTICS_EVENTS.SETUP_DISCOVERY_STARTED, {
         discovery_task_id: task.id,
         discovery_task_run_id: taskRun.id,
@@ -430,7 +457,7 @@ export class SetupRunService {
           taskCount: tasks.length,
           signalSource,
         });
-        useSetupStore.getState().completeDiscovery(tasks);
+        useSetupStore.getState().completeDiscovery(directory, tasks);
         track(ANALYTICS_EVENTS.SETUP_DISCOVERY_COMPLETED, {
           discovery_task_id: task.id,
           discovery_task_run_id: taskRun.id,
@@ -449,7 +476,7 @@ export class SetupRunService {
         subscription?.unsubscribe();
 
         log.error("Discovery failed", { reason });
-        useSetupStore.getState().failDiscovery(message);
+        useSetupStore.getState().failDiscovery(directory, message);
         track(ANALYTICS_EVENTS.SETUP_DISCOVERY_FAILED, {
           discovery_task_id: task.id,
           discovery_task_run_id: taskRun.id,
@@ -496,7 +523,7 @@ export class SetupRunService {
         if (!structuredOutputSeen) return;
         wrapupBuffer = (wrapupBuffer + text).slice(-200);
         activityIdCounter += 1;
-        useSetupStore.getState().pushDiscoveryActivity({
+        useSetupStore.getState().pushDiscoveryActivity(directory, {
           id: activityIdCounter,
           toolCallId: WRAPUP_TOOL_CALL_ID,
           tool: "WrappingUp",
@@ -512,7 +539,9 @@ export class SetupRunService {
             handleSessionUpdate(
               payload,
               (entry) => {
-                useSetupStore.getState().pushDiscoveryActivity(entry);
+                useSetupStore
+                  .getState()
+                  .pushDiscoveryActivity(directory, entry);
                 if (entry.tool === "StructuredOutput") {
                   structuredOutputSeen = true;
                   handleStructuredOutputSignal().catch((err) =>
@@ -595,7 +624,7 @@ export class SetupRunService {
           subscription?.unsubscribe();
           useSetupStore
             .getState()
-            .failDiscovery("Discovery failed unexpectedly.");
+            .failDiscovery(directory, "Discovery failed unexpectedly.");
           track(ANALYTICS_EVENTS.SETUP_DISCOVERY_FAILED, {
             discovery_task_id: task.id,
             discovery_task_run_id: taskRun.id,
@@ -613,7 +642,7 @@ export class SetupRunService {
       log.error("Failed to start discovery", { error: err });
       const message =
         err instanceof Error ? err.message : "Failed to start discovery.";
-      useSetupStore.getState().failDiscovery(message);
+      useSetupStore.getState().failDiscovery(directory, message);
       track(ANALYTICS_EVENTS.SETUP_DISCOVERY_FAILED, {
         reason: "startup_error",
         error_message: message,

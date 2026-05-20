@@ -5,6 +5,7 @@ import {
   ANALYTICS_EVENTS,
   type RepositoryProvider,
 } from "@shared/types/analytics";
+import { useActiveRepoStore } from "@stores/activeRepoStore";
 import { track } from "@utils/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ONBOARDING_STEPS, type OnboardingStep } from "../types";
@@ -32,12 +33,8 @@ export interface DetectedRepo {
 export function useOnboardingFlow() {
   const currentStep = useOnboardingStore((state) => state.currentStep);
   const setCurrentStep = useOnboardingStore((state) => state.setCurrentStep);
-  const selectedDirectory = useOnboardingStore(
-    (state) => state.selectedDirectory,
-  );
-  const setSelectedDirectory = useOnboardingStore(
-    (state) => state.setSelectedDirectory,
-  );
+  const selectedDirectory = useActiveRepoStore((state) => state.path);
+  const setSelectedDirectory = useActiveRepoStore((state) => state.setPath);
   const directionRef = useRef<1 | -1>(1);
 
   const [detectedRepo, setDetectedRepo] = useState<DetectedRepo | null>(null);
