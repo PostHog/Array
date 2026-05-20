@@ -6,7 +6,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@posthog/quill";
-import type React from "react";
+import { useCallback } from "react";
 import type { SidebarItemAction } from "../types";
 
 const INDENT_SIZE = 8;
@@ -29,8 +29,24 @@ interface SidebarItemProps {
 }
 
 function SidebarItemLabel({ label }: { label: React.ReactNode }) {
-  const span = <span className="min-w-0 flex-1 truncate">{label}</span>;
   const canTooltip = typeof label === "string" || typeof label === "number";
+
+  const measureRef = useCallback((el: HTMLSpanElement | null) => {
+    if (!el) return;
+    const update = () => {
+      el.style.pointerEvents = el.scrollWidth > el.clientWidth ? "" : "none";
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const span = (
+    <span ref={measureRef} className="min-w-0 flex-1 truncate">
+      {label}
+    </span>
+  );
 
   if (!canTooltip) return span;
 
