@@ -521,7 +521,14 @@ export function TaskInput({
     void handleSubmit({
       segments: [{ type: "text", text: initialPrompt }],
     }).then((ok) => {
-      if (!ok) setIsAutoSubmitting(false);
+      if (!ok) {
+        setIsAutoSubmitting(false);
+        return;
+      }
+      const draftActions = useDraftStore.getState().actions;
+      draftActions.clearPendingContent(sessionId);
+      draftActions.setDraft(sessionId, null);
+      editorRef.current?.clear();
     });
   }, [
     isAutoSubmitting,
@@ -529,6 +536,7 @@ export function TaskInput({
     isTaskConfigReady,
     handleSubmit,
     initialPrompt,
+    sessionId,
   ]);
 
   // If preconditions never resolve (no repo, offline, etc.), fall back to the
