@@ -394,17 +394,16 @@ export function ReportDetailPane({
             )}
             Dismiss
           </Button>
-          <Tooltip content="Open a chat session about this report">
-            <Button
-              size="1"
-              variant="soft"
-              className="gap-1 text-[12px]"
-              onClick={handleDiscussReport}
-            >
-              <ChatCircleIcon size={12} />
-              Discuss
-            </Button>
-          </Tooltip>
+          <Button
+            size="1"
+            variant="soft"
+            className="gap-1 text-[12px]"
+            tooltipContent="Open a chat session about this report"
+            onClick={handleDiscussReport}
+          >
+            <ChatCircleIcon size={12} />
+            Discuss
+          </Button>
           {headerImplementationPrUrl ? (
             <ReportImplementationPrLink
               prUrl={headerImplementationPrUrl}
