@@ -42,17 +42,15 @@ export function SuggestedTaskCard({
       }}
       className="group relative"
     >
-      <motion.button
+      <button
         onClick={() => onSelect(task)}
         type="button"
-        className="flex w-full cursor-pointer items-start gap-2.5 rounded-xl border border-(--gray-a3) bg-(--color-panel-solid) px-2.5 py-2 text-left transition-[border-color,box-shadow]"
-        style={{
-          boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)",
-        }}
-        whileHover={{
-          borderColor: `var(--${config.color}-6)`,
-          boxShadow: "0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)",
-        }}
+        className="flex w-full cursor-pointer items-start gap-2.5 rounded-xl border border-(--gray-a3) bg-(--color-panel-solid) px-2.5 py-2 text-left shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] transition-[border-color,box-shadow] hover:border-(--card-hover-border) hover:shadow-[0_2px_8px_rgba(0,0,0,0.06),0_1px_3px_rgba(0,0,0,0.04)]"
+        style={
+          {
+            "--card-hover-border": `var(--${config.color}-6)`,
+          } as React.CSSProperties
+        }
       >
         <Flex
           align="center"
@@ -81,7 +79,7 @@ export function SuggestedTaskCard({
             {task.description}
           </Text>
         </Flex>
-      </motion.button>
+      </button>
       <Flex
         align="center"
         gap="1"

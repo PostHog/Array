@@ -623,7 +623,7 @@ export function TaskInput({
         align="center"
         justify="center"
         height="100%"
-        className="relative px-4 pb-[10vh]"
+        className="relative px-4"
       >
         <DotPatternBackground className="h-[100.333%]" />
         <Flex
@@ -829,10 +829,8 @@ export function TaskInput({
                   <CloudGithubMissingNotice />
                 </div>
               )}
-          </Flex>
-          <div className="absolute top-full right-0 left-0">
             <SuggestedTasksPanel onSelect={handleSelectSuggestion} />
-          </div>
+          </Flex>
         </Flex>
       </Flex>
 

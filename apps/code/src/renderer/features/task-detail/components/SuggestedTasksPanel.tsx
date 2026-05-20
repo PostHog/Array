@@ -1,3 +1,4 @@
+import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
 import { SetupScanFeed } from "@features/setup/components/SetupScanFeed";
 import { useSetupStore } from "@features/setup/stores/setupStore";
 import type { DiscoveredTask } from "@features/setup/types";
@@ -72,6 +73,7 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
 
   const handleViewDetails = useCallback(
     (task: DiscoveredTask) => {
+      useInboxReportSelectionStore.getState().clearSelection();
       selectDiscoveredTask(task.id);
       navigateToInbox();
     },
