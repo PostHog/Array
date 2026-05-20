@@ -49,6 +49,7 @@ import { HandoffService } from "../services/handoff/service";
 import { InboxLinkService } from "../services/inbox-link/service";
 import { LinearIntegrationService } from "../services/linear-integration/service";
 import { LlmGatewayService } from "../services/llm-gateway/service";
+import { LocalLogsService } from "../services/local-logs/service";
 import { McpAppsService } from "../services/mcp-apps/service";
 import { McpCallbackService } from "../services/mcp-callback/service";
 import { McpProxyService } from "../services/mcp-proxy/service";
@@ -134,6 +135,7 @@ container.bind(MAIN_TOKENS.HandoffService).to(HandoffService);
 container
   .bind(MAIN_TOKENS.LinearIntegrationService)
   .to(LinearIntegrationService);
+container.bind(MAIN_TOKENS.LocalLogsService).to(LocalLogsService);
 container.bind(MAIN_TOKENS.McpCallbackService).to(McpCallbackService);
 container.bind(MAIN_TOKENS.NotificationService).to(NotificationService);
 container.bind(MAIN_TOKENS.OAuthService).to(OAuthService);
