@@ -15,6 +15,7 @@ const DEFAULT_LOG_LINES = 4;
 // Rough heights (px) used to drop cards / log lines that wouldn't fit below
 // the editor.
 const TOP_MARGIN = 12;
+const HEADER_HEIGHT = 18;
 const GAP = 8;
 const SCAN_PILL_HEIGHT = 52;
 const CARD_HEIGHT = 56;
@@ -94,6 +95,9 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
   // Sum the sections that will be rendered, including inter-section gaps.
   const measureTotalHeight = (cardCount: number, logLines: number): number => {
     const sections: number[] = [];
+    if (hasTasks) {
+      sections.push(HEADER_HEIGHT);
+    }
     if (cardCount > 0) {
       sections.push(cardCount * CARD_HEIGHT + Math.max(0, cardCount - 1) * GAP);
     }
@@ -139,6 +143,15 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
 
   return (
     <div ref={containerRef} className="mt-3 flex flex-col gap-2">
+      {hasTasks && (
+        <Text
+          size="1"
+          weight="medium"
+          className="px-2.5 text-(--gray-11)"
+        >
+          Suggestions
+        </Text>
+      )}
       <AnimatePresence initial={false} mode="popLayout">
         {visibleTasks.map((task, index) => (
           <SuggestedTaskCard
