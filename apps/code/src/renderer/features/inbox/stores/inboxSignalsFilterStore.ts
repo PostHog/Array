@@ -19,7 +19,8 @@ export type SourceProduct =
   | "github"
   | "linear"
   | "zendesk"
-  | "conversations";
+  | "conversations"
+  | "pganalyze";
 
 const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
   "ready",

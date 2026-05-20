@@ -26,6 +26,7 @@ interface ActivityEntry {
 
 interface SetupScanFeedProps {
   label: string;
+  description?: string;
   icon: Icon;
   color: string;
   currentTool: string | null;
@@ -33,6 +34,7 @@ interface SetupScanFeedProps {
   recentEntries: ActivityEntry[];
   isDone: boolean;
   doneLabel?: string;
+  maxLogLines?: number;
 }
 
 const TOOL_VERBS: Record<string, string> = {
@@ -122,6 +124,7 @@ function toolLabel(tool: string): string {
 
 export function SetupScanFeed({
   label,
+  description,
   icon: LabelIcon,
   color,
   currentTool,
@@ -129,6 +132,7 @@ export function SetupScanFeed({
   recentEntries,
   isDone,
   doneLabel = "Complete",
+  maxLogLines = 4,
 }: SetupScanFeedProps) {
   const activeLabel =
     activeLabelOverride ??
@@ -137,136 +141,147 @@ export function SetupScanFeed({
   return (
     <Flex direction="column" gap="0" className="w-full">
       <Flex
-        align="center"
-        gap="3"
-        px="4"
-        className="h-12 rounded-xl border border-(--gray-a3) bg-(--color-panel-solid)"
+        align="start"
+        className="gap-2.5 rounded-xl border border-(--gray-a3) bg-(--color-panel-solid) px-2.5 py-2"
         style={{
           boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)",
         }}
       >
-        <Flex align="center" gap="2" className="shrink-0">
-          <Flex
-            align="center"
-            justify="center"
-            className="h-7 w-7 shrink-0 rounded-md"
-            style={{
-              backgroundColor: isDone ? "var(--green-3)" : `var(--${color}-3)`,
-            }}
-          >
-            {isDone ? (
-              <motion.div
-                initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: "spring", damping: 15, stiffness: 300 }}
-                className="flex items-center justify-center"
-              >
-                <CheckCircle size={16} weight="fill" color="var(--green-9)" />
-              </motion.div>
-            ) : (
-              <LabelIcon size={16} color={`var(--${color}-9)`} />
-            )}
-          </Flex>
-          <Text
-            size="2"
-            weight="medium"
-            className="whitespace-nowrap text-(--gray-12)"
-          >
-            {label}
-          </Text>
+        <Flex
+          align="center"
+          justify="center"
+          className="h-6 w-6 shrink-0 rounded-md"
+          style={{
+            backgroundColor: isDone ? "var(--green-3)" : `var(--${color}-3)`,
+          }}
+        >
+          {isDone ? (
+            <motion.div
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", damping: 15, stiffness: 300 }}
+              className="flex items-center justify-center"
+            >
+              <CheckCircle size={14} weight="fill" color="var(--green-9)" />
+            </motion.div>
+          ) : (
+            <LabelIcon size={14} color={`var(--${color}-9)`} />
+          )}
         </Flex>
-
-        <div className="relative h-5 min-w-0 flex-1">
-          <AnimatePresence mode="wait">
-            {!isDone && activeLabel && (
-              <motion.div
-                key={activeLabel}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                className="absolute top-0 right-0 flex h-5 max-w-full items-center gap-1.5"
-              >
-                <DotsCircleSpinner size={14} className="text-(--gray-9)" />
-                <Text size="1" className="truncate text-(--gray-9)">
-                  {activeLabel}
-                </Text>
-              </motion.div>
-            )}
-            {isDone && (
-              <motion.div
-                key="done"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.25 }}
-                className="absolute top-0 right-0 flex h-5 items-center gap-1"
-              >
-                <Text size="1" weight="medium" className="text-(--gray-11)">
-                  {doneLabel}
-                </Text>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        <Flex direction="column" gap="1" className="min-w-0 flex-1">
+          <Flex align="center" justify="between" gap="2" className="min-w-0">
+            <Text
+              size="1"
+              weight="medium"
+              className="min-w-0 truncate text-(--gray-12)"
+            >
+              {label}
+            </Text>
+            <div className="relative h-4 shrink-0">
+              <AnimatePresence mode="wait">
+                {!isDone && activeLabel && (
+                  <motion.div
+                    key={activeLabel}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute top-0 right-0 flex h-4 items-center gap-1"
+                  >
+                    <DotsCircleSpinner size={12} className="text-(--gray-9)" />
+                    <Text size="1" className="truncate text-(--gray-9)">
+                      {activeLabel}
+                    </Text>
+                  </motion.div>
+                )}
+                {isDone && (
+                  <motion.div
+                    key="done"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.25 }}
+                    className="absolute top-0 right-0 flex h-4 items-center gap-1"
+                  >
+                    <Text size="1" weight="medium" className="text-(--gray-11)">
+                      {doneLabel}
+                    </Text>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </Flex>
+          {description && (
+            <Text
+              size="1"
+              className="line-clamp-1 text-(--gray-11) leading-normal"
+            >
+              {description}
+            </Text>
+          )}
+        </Flex>
       </Flex>
 
-      {!isDone && recentEntries.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          transition={{
-            height: { duration: 0.3, ease: "easeOut" },
-            opacity: { duration: 0.2 },
-          }}
-          className="overflow-hidden"
-        >
-          <Flex
-            direction="column"
-            gap="0"
-            px="3"
-            py="2"
-            mx="4"
-            className="max-h-[120px] overflow-hidden rounded-b-[10px] bg-(--gray-2)"
+      <AnimatePresence initial={false}>
+        {!isDone && recentEntries.length > 0 && maxLogLines > 0 && (
+          <motion.div
+            key="feed"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{
+              height: { duration: 0.3, ease: "easeOut" },
+              opacity: { duration: 0.2 },
+            }}
+            className="overflow-hidden"
           >
-            <AnimatePresence initial={false} mode="popLayout">
-              {recentEntries.slice(-4).map((entry, index, arr) => {
-                const isLatest = index === arr.length - 1;
-                const kind = TOOL_KIND[entry.tool] ?? "other";
-                const EntryIcon = KIND_ICONS[kind] ?? Wrench;
-                const entryText = entryDisplayText(entry);
-                return (
-                  <motion.div
-                    key={entry.id}
-                    layout
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: isLatest ? 1 : 0.45, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={{
-                      duration: 0.2,
-                      layout: { type: "spring", damping: 25, stiffness: 300 },
-                    }}
-                  >
-                    <Flex align="center" gap="2" className="h-6">
-                      <EntryIcon
-                        size={12}
-                        weight="regular"
-                        color="var(--gray-9)"
-                        className="shrink-0"
-                      />
-                      <Text
-                        size="1"
-                        className="font-(family-name:--code-font-family) truncate text-(--gray-9) text-[11px]"
-                      >
-                        {entryText}
-                      </Text>
-                    </Flex>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-          </Flex>
-        </motion.div>
-      )}
+            <Flex
+              direction="column"
+              gap="0"
+              px="3"
+              py="2"
+              mx="4"
+              className="max-h-[120px] overflow-hidden rounded-b-[10px] bg-(--gray-2)"
+            >
+              <AnimatePresence initial={false} mode="popLayout">
+                {recentEntries.slice(-maxLogLines).map((entry, index, arr) => {
+                  const isLatest = index === arr.length - 1;
+                  const kind = TOOL_KIND[entry.tool] ?? "other";
+                  const EntryIcon = KIND_ICONS[kind] ?? Wrench;
+                  const entryText = entryDisplayText(entry);
+                  return (
+                    <motion.div
+                      key={entry.id}
+                      layout
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: isLatest ? 1 : 0.45, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{
+                        duration: 0.2,
+                        layout: { type: "spring", damping: 25, stiffness: 300 },
+                      }}
+                    >
+                      <Flex align="center" gap="2" className="h-6">
+                        <EntryIcon
+                          size={12}
+                          weight="regular"
+                          color="var(--gray-9)"
+                          className="shrink-0"
+                        />
+                        <Text
+                          size="1"
+                          className="font-(family-name:--code-font-family) truncate text-(--gray-9) text-[11px]"
+                        >
+                          {entryText}
+                        </Text>
+                      </Flex>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            </Flex>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Flex>
   );
 }

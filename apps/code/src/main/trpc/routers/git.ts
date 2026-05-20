@@ -125,17 +125,23 @@ export const gitRouter = router({
   getCurrentBranch: publicProcedure
     .input(getCurrentBranchInput)
     .output(getCurrentBranchOutput)
-    .query(({ input }) => getService().getCurrentBranch(input.directoryPath)),
+    .query(({ input, signal }) =>
+      getService().getCurrentBranch(input.directoryPath, signal),
+    ),
 
   getAllBranches: publicProcedure
     .input(getAllBranchesInput)
     .output(getAllBranchesOutput)
-    .query(({ input }) => getService().getAllBranches(input.directoryPath)),
+    .query(({ input, signal }) =>
+      getService().getAllBranches(input.directoryPath, signal),
+    ),
 
   getGitBusyState: publicProcedure
     .input(getGitBusyStateInput)
     .output(getGitBusyStateOutput)
-    .query(({ input }) => getService().getGitBusyState(input.directoryPath)),
+    .query(({ input, signal }) =>
+      getService().getGitBusyState(input.directoryPath, signal),
+    ),
 
   createBranch: publicProcedure
     .input(createBranchInput)
@@ -154,42 +160,56 @@ export const gitRouter = router({
   getChangedFilesHead: publicProcedure
     .input(getChangedFilesHeadInput)
     .output(getChangedFilesHeadOutput)
-    .query(({ input }) =>
-      getService().getChangedFilesHead(input.directoryPath),
+    .query(({ input, signal }) =>
+      getService().getChangedFilesHead(input.directoryPath, signal),
     ),
 
   getFileAtHead: publicProcedure
     .input(getFileAtHeadInput)
     .output(getFileAtHeadOutput)
-    .query(({ input }) =>
-      getService().getFileAtHead(input.directoryPath, input.filePath),
+    .query(({ input, signal }) =>
+      getService().getFileAtHead(input.directoryPath, input.filePath, signal),
     ),
 
   getDiffHead: publicProcedure
     .input(diffInput)
     .output(diffOutput)
-    .query(({ input }) =>
-      getService().getDiffHead(input.directoryPath, input.ignoreWhitespace),
+    .query(({ input, signal }) =>
+      getService().getDiffHead(
+        input.directoryPath,
+        input.ignoreWhitespace,
+        signal,
+      ),
     ),
 
   getDiffCached: publicProcedure
     .input(diffInput)
     .output(diffOutput)
-    .query(({ input }) =>
-      getService().getDiffCached(input.directoryPath, input.ignoreWhitespace),
+    .query(({ input, signal }) =>
+      getService().getDiffCached(
+        input.directoryPath,
+        input.ignoreWhitespace,
+        signal,
+      ),
     ),
 
   getDiffUnstaged: publicProcedure
     .input(diffInput)
     .output(diffOutput)
-    .query(({ input }) =>
-      getService().getDiffUnstaged(input.directoryPath, input.ignoreWhitespace),
+    .query(({ input, signal }) =>
+      getService().getDiffUnstaged(
+        input.directoryPath,
+        input.ignoreWhitespace,
+        signal,
+      ),
     ),
 
   getDiffStats: publicProcedure
     .input(getDiffStatsInput)
     .output(getDiffStatsOutput)
-    .query(({ input }) => getService().getDiffStats(input.directoryPath)),
+    .query(({ input, signal }) =>
+      getService().getDiffStats(input.directoryPath, signal),
+    ),
 
   stageFiles: publicProcedure
     .input(stageFilesInput)
@@ -233,7 +253,9 @@ export const gitRouter = router({
   getLatestCommit: publicProcedure
     .input(getLatestCommitInput)
     .output(getLatestCommitOutput)
-    .query(({ input }) => getService().getLatestCommit(input.directoryPath)),
+    .query(({ input, signal }) =>
+      getService().getLatestCommit(input.directoryPath, signal),
+    ),
 
   getGitRepoInfo: publicProcedure
     .input(getGitRepoInfoInput)

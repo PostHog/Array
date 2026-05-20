@@ -203,6 +203,13 @@ interface CloudLogGapReconcileRequest {
   logUrl?: string;
 }
 
+interface ParsedSessionLogs {
+  rawEntries: StoredLogEntry[];
+  totalLineCount: number;
+  sessionId?: string;
+  adapter?: Adapter;
+}
+
 interface CloudLogGapReconcileState {
   pendingRequest?: CloudLogGapReconcileRequest;
 }
@@ -2785,7 +2792,10 @@ export class SessionService {
     taskDescription?: string,
   ): void {
     void (async () => {
-      const { rawEntries } = await this.fetchSessionLogs(logUrl, taskRunId);
+      const { rawEntries, totalLineCount } = await this.fetchSessionLogs(
+        logUrl,
+        taskRunId,
+      );
 
       const session = sessionStoreSetters.getSessionByTaskId(taskId);
       if (!session || session.taskRunId !== taskRunId) {
@@ -2827,7 +2837,7 @@ export class SessionService {
         events,
         isCloud: true,
         logUrl: logUrl ?? session.logUrl,
-        processedLineCount: rawEntries.length,
+        processedLineCount: totalLineCount,
       });
       // Without this the "Galumphing…" indicator stays hidden when the hydrated
       // baseline already contains an in-flight session/prompt — the live delta
@@ -3536,16 +3546,13 @@ export class SessionService {
     };
   }
 
-  private parseLogContent(content: string): {
-    rawEntries: StoredLogEntry[];
-    sessionId?: string;
-    adapter?: Adapter;
-  } {
+  private parseLogContent(content: string): ParsedSessionLogs {
     const rawEntries: StoredLogEntry[] = [];
     let sessionId: string | undefined;
     let adapter: Adapter | undefined;
+    const lines = content.trim().split("\n");
 
-    for (const line of content.trim().split("\n")) {
+    for (const line of lines) {
       try {
         const stored = JSON.parse(line) as StoredLogEntry;
         rawEntries.push(stored);
@@ -3568,26 +3575,17 @@ export class SessionService {
       }
     }
 
-    return { rawEntries, sessionId, adapter };
+    return { rawEntries, totalLineCount: lines.length, sessionId, adapter };
   }
 
   private async fetchSessionLogs(
     logUrl: string | undefined,
     taskRunId?: string,
     options: { minEntryCount?: number } = {},
-  ): Promise<{
-    rawEntries: StoredLogEntry[];
-    sessionId?: string;
-    adapter?: Adapter;
-  }> {
-    if (!logUrl && !taskRunId) return { rawEntries: [] };
-    let localResult:
-      | {
-          rawEntries: StoredLogEntry[];
-          sessionId?: string;
-          adapter?: Adapter;
-        }
-      | undefined;
+  ): Promise<ParsedSessionLogs> {
+    const empty: ParsedSessionLogs = { rawEntries: [], totalLineCount: 0 };
+    if (!logUrl && !taskRunId) return empty;
+    let localResult: ParsedSessionLogs | undefined;
 
     if (taskRunId) {
       try {
@@ -3598,7 +3596,7 @@ export class SessionService {
           localResult = this.parseLogContent(localContent);
           if (
             !options.minEntryCount ||
-            localResult.rawEntries.length >= options.minEntryCount
+            localResult.totalLineCount >= options.minEntryCount
           ) {
             return localResult;
           }
@@ -3610,11 +3608,11 @@ export class SessionService {
       }
     }
 
-    if (!logUrl) return localResult ?? { rawEntries: [] };
+    if (!logUrl) return localResult ?? empty;
 
     try {
       const content = await trpcClient.logs.fetchS3Logs.query({ logUrl });
-      if (!content?.trim()) return localResult ?? { rawEntries: [] };
+      if (!content?.trim()) return localResult ?? empty;
 
       const result = this.parseLogContent(content);
 
@@ -3635,7 +3633,7 @@ export class SessionService {
 
       return result;
     } catch {
-      return localResult ?? { rawEntries: [] };
+      return localResult ?? empty;
     }
   }
 
@@ -3705,9 +3703,11 @@ export class SessionService {
     newEntries,
     logUrl,
   }: CloudLogGapReconcileRequest): Promise<void> {
-    const { rawEntries } = await this.fetchSessionLogs(logUrl, taskRunId, {
-      minEntryCount: expectedCount,
-    });
+    const { rawEntries, totalLineCount } = await this.fetchSessionLogs(
+      logUrl,
+      taskRunId,
+      { minEntryCount: expectedCount },
+    );
     const session = sessionStoreSetters.getSessions()[taskRunId];
     if (!session || session.taskId !== taskId) {
       return;
@@ -3718,7 +3718,7 @@ export class SessionService {
       return;
     }
 
-    if (rawEntries.length >= expectedCount) {
+    if (totalLineCount >= expectedCount) {
       const events = convertStoredEntriesToEvents(rawEntries);
       if (hasSessionPromptEvent(events)) {
         sessionStoreSetters.clearTailOptimisticItems(taskRunId);
@@ -3727,7 +3727,7 @@ export class SessionService {
         events,
         isCloud: true,
         logUrl: logUrl ?? session.logUrl,
-        processedLineCount: rawEntries.length,
+        processedLineCount: totalLineCount,
       });
       this.updatePromptStateFromEvents(taskRunId, events);
       return;

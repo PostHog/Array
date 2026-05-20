@@ -27,6 +27,7 @@ const SOURCE_TYPE_MAP: Record<
   linear: "issue",
   zendesk: "ticket",
   conversations: "ticket",
+  pganalyze: "issue",
 };
 
 const ERROR_TRACKING_SOURCE_TYPES: SourceType[] = [
@@ -42,6 +43,7 @@ const SOURCE_LABELS: Record<keyof SignalSourceValues, string> = {
   linear: "Linear Issues",
   zendesk: "Zendesk Tickets",
   conversations: "PostHog Support",
+  pganalyze: "pganalyze",
 };
 
 const DATA_WAREHOUSE_SOURCES: Record<
@@ -51,6 +53,7 @@ const DATA_WAREHOUSE_SOURCES: Record<
   github: { dwSourceType: "Github", requiredTable: "issues" },
   linear: { dwSourceType: "Linear", requiredTable: "issues" },
   zendesk: { dwSourceType: "Zendesk", requiredTable: "tickets" },
+  pganalyze: { dwSourceType: "PgAnalyze", requiredTable: "issues" },
 };
 
 const ALL_SOURCE_PRODUCTS: (keyof SignalSourceValues)[] = [
@@ -60,6 +63,7 @@ const ALL_SOURCE_PRODUCTS: (keyof SignalSourceValues)[] = [
   "linear",
   "zendesk",
   "conversations",
+  "pganalyze",
 ];
 
 function computeValues(
@@ -72,6 +76,7 @@ function computeValues(
     linear: false,
     zendesk: false,
     conversations: false,
+    pganalyze: false,
   };
   if (!configs?.length) return result;
   for (const product of ALL_SOURCE_PRODUCTS) {
@@ -113,7 +118,7 @@ export function useSignalSourceManager() {
   const pendingRef = useRef(new Set<keyof SignalSourceValues>());
 
   const [setupSource, setSetupSource] = useState<
-    "github" | "linear" | "zendesk" | null
+    "github" | "linear" | "zendesk" | "pganalyze" | null
   >(null);
   const [loadingSources, setLoadingSources] = useState<
     Partial<Record<keyof SignalSourceValues, boolean>>
@@ -159,7 +164,8 @@ export function useSignalSourceManager() {
       if (
         product === "github" ||
         product === "linear" ||
-        product === "zendesk"
+        product === "zendesk" ||
+        product === "pganalyze"
       ) {
         const hasExternalSource = !!findExternalSource(product);
         const isEnabled = serverValues[product];
@@ -267,7 +273,12 @@ export function useSignalSourceManager() {
   );
 
   const handleSetup = useCallback((source: keyof SignalSourceValues) => {
-    if (source === "github" || source === "linear" || source === "zendesk") {
+    if (
+      source === "github" ||
+      source === "linear" ||
+      source === "zendesk" ||
+      source === "pganalyze"
+    ) {
       setSetupSource(source);
     }
   }, []);
@@ -295,7 +306,9 @@ export function useSignalSourceManager() {
       if (enabled && product in DATA_WAREHOUSE_SOURCES) {
         const hasExternalSource = !!findExternalSource(product);
         if (!hasExternalSource) {
-          setSetupSource(product as "github" | "linear" | "zendesk");
+          setSetupSource(
+            product as "github" | "linear" | "zendesk" | "pganalyze",
+          );
           return;
         }
 

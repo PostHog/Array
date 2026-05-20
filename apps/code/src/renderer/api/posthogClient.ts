@@ -97,7 +97,8 @@ export interface SignalSourceConfig {
     | "linear"
     | "zendesk"
     | "conversations"
-    | "error_tracking";
+    | "error_tracking"
+    | "pganalyze";
   source_type:
     | "session_analysis_cluster"
     | "evaluation"
@@ -2882,9 +2883,7 @@ export class PostHogAPIClient {
       path: urlPath,
     });
     if (!response.ok) {
-      throw new Error(
-        `Failed to fetch personal spend analysis: ${response.statusText}`,
-      );
+      throw new Error(`Failed to fetch spend analysis: ${response.status}`);
     }
     return (await response.json()) as SpendAnalysisResponse;
   }

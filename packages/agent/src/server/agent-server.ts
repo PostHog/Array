@@ -24,7 +24,7 @@ import {
 import {
   type AgentErrorClassification,
   classifyAgentError,
-} from "../adapters/claude/conversion/sdk-to-acp";
+} from "../adapters/error-classification";
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
@@ -65,8 +65,19 @@ import type { AgentServerConfig } from "./types";
 const agentErrorClassificationSchema = z.enum([
   "upstream_stream_terminated",
   "upstream_connection_error",
+  "upstream_provider_failure",
   "agent_error",
 ]) satisfies z.ZodType<AgentErrorClassification>;
+
+export const UPSTREAM_PROVIDER_FAILURE_MESSAGE =
+  "The upstream AI provider failed to process the request. Please retry the task in a few minutes.";
+
+const upstreamProviderFailureClassifications =
+  new Set<AgentErrorClassification>([
+    "upstream_stream_terminated",
+    "upstream_connection_error",
+    "upstream_provider_failure",
+  ]);
 
 const errorWithClassificationSchema = z.object({
   data: z.object({ classification: agentErrorClassificationSchema }),
@@ -1051,12 +1062,11 @@ export class AgentServer {
     error: unknown,
   ): Promise<void> {
     const { classification, message } = this.extractErrorClassification(error);
-    const errorMessage =
-      classification === "upstream_stream_terminated"
-        ? "Upstream LLM stream terminated"
-        : classification === "upstream_connection_error"
-          ? "Upstream LLM connection error"
-          : message || "Agent error";
+    const errorMessage = upstreamProviderFailureClassifications.has(
+      classification,
+    )
+      ? UPSTREAM_PROVIDER_FAILURE_MESSAGE
+      : message || "Agent error";
     this.logger.error(`send_${phase}_task_message_failed`, {
       classification,
       message,
@@ -1633,9 +1643,14 @@ After completing the requested changes:
 1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
 2. Stage and commit all changes with a clear commit message
 3. Push to the existing PR branch
+4. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:
+   - Reply on the thread with a short note describing what changed (reference the commit SHA when useful) using \`gh api -X POST /repos/{owner}/{repo}/pulls/{n}/comments/{id}/replies -f body='...'\`.
+   - Resolve the thread via the \`resolveReviewThread\` GraphQL mutation: \`gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id="<thread-node-id>"\`.
+   List unresolved threads first with \`gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<n>){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{body}}}}}}}'\` so you can resolve each one you fixed.
 
 Important:
 - Do NOT create a new branch or a new pull request.
+- Do NOT push fixes for review comments without replying to and resolving each related thread.
 ${attributionInstructions}
 `;
     }
@@ -1651,7 +1666,7 @@ When the user asks for code changes:
 When the user explicitly asks to clone or work in a GitHub repository:
 - Clone the repository into /tmp/workspace/repos/<owner>/<repo> using \`gh repo clone <owner>/<repo> /tmp/workspace/repos/<owner>/<repo>\`
 - Work from inside that cloned repository for follow-up code changes
-- If the user explicitly asks you to open or update a pull request, create a branch, commit the requested changes, push it, and open a draft pull request from inside the clone
+- If the user explicitly asks you to open or update a pull request, create a branch, commit the requested changes, push it, and open a draft pull request from inside the clone. Before opening the PR, check the cloned repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links.
 - Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
 
       return `
@@ -1694,7 +1709,11 @@ After completing the requested changes:
 1. Create a new branch prefixed with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`) based on the work done
 2. Stage and commit all changes with a clear commit message
 3. Push the branch to origin
-4. Create a draft pull request using \`gh pr create --draft${this.config.baseBranch ? ` --base ${this.config.baseBranch}` : ""}\` with a descriptive title and body. Add the following footer at the end of the PR description:
+4. Before opening the PR, prepare the body:
+   - Check the repo for a PR template at \`.github/pull_request_template.md\` (also try \`.github/PULL_REQUEST_TEMPLATE.md\`, \`docs/pull_request_template.md\`, and root variants). If one exists, use its exact section headings as the PR body — do NOT fall back to a generic Summary/Test plan format.
+   - If no repo-level template exists, check the org's \`.github\` repo via \`gh api /repos/<owner>/.github/contents/.github/pull_request_template.md\` (and other common paths) and use that as a fallback.
+   - Search for matching open issues with \`gh issue list --state open --search '<keywords>'\` (derive keywords from the branch name, commits, and changed files; \`gh issue view <n>\` to confirm relevance). For every issue this PR would resolve, include a \`Closes #<n>\` line in the body so GitHub auto-links and auto-closes it on merge. For issues that are related but not fully resolved, use \`Refs #<n>\` instead.
+5. Create a draft pull request using \`gh pr create --draft${this.config.baseBranch ? ` --base ${this.config.baseBranch}` : ""}\` with a descriptive title and the body prepared above. Add the following footer at the end of the PR description:
 \`\`\`
 ---
 *Created with [PostHog Code](https://posthog.com/code?ref=pr)*

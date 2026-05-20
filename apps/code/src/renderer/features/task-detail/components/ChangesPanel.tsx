@@ -1,8 +1,13 @@
 import { TreeFileRow } from "@components/TreeDirectoryRow";
 import { PanelMessage } from "@components/ui/PanelMessage";
 import { Tooltip } from "@components/ui/Tooltip";
+import { useEffectiveDiffSource } from "@features/code-review/hooks/useEffectiveDiffSource";
 import { useExternalApps } from "@features/external-apps/hooks/useExternalApps";
-import { useGitQueries } from "@features/git-interaction/hooks/useGitQueries";
+import {
+  useGitQueries,
+  useLocalBranchChangedFiles,
+  usePrChangedFiles,
+} from "@features/git-interaction/hooks/useGitQueries";
 import { makeFileKey } from "@features/git-interaction/utils/fileKey";
 import { invalidateGitWorkingTreeQueries } from "@features/git-interaction/utils/gitCacheKeys";
 import { partitionByStaged } from "@features/git-interaction/utils/partitionByStaged";
@@ -468,7 +473,32 @@ export function ChangesPanel({ taskId, task }: ChangesPanelProps) {
   return <LocalChangesPanel taskId={taskId} task={task} />;
 }
 
-function LocalChangesPanel({ taskId, task: _task }: ChangesPanelProps) {
+function LocalChangesPanel({ taskId, task }: ChangesPanelProps) {
+  const { effectiveSource, prUrl, linkedBranch } =
+    useEffectiveDiffSource(taskId);
+  const repoPath = useCwd(taskId);
+
+  if (effectiveSource === "branch") {
+    return (
+      <BranchChangesPanel
+        taskId={taskId}
+        repoPath={repoPath}
+        branch={linkedBranch}
+      />
+    );
+  }
+
+  if (effectiveSource === "pr") {
+    return <PrChangesPanel taskId={taskId} prUrl={prUrl} />;
+  }
+
+  return <LocalWorkingTreeChangesPanel taskId={taskId} task={task} />;
+}
+
+function LocalWorkingTreeChangesPanel({
+  taskId,
+  task: _task,
+}: ChangesPanelProps) {
   const workspace = useWorkspace(taskId);
   const repoPath = useCwd(taskId);
   const queryClient = useQueryClient();
@@ -574,5 +604,110 @@ function LocalChangesPanel({ taskId, task: _task }: ChangesPanelProps) {
         ))}
       </Flex>
     </Box>
+  );
+}
+
+interface RemoteChangesListProps {
+  taskId: string;
+  files: ChangedFile[];
+  isLoading: boolean;
+  emptyMessage: string;
+  panelId: string;
+}
+
+function RemoteChangesList({
+  taskId,
+  files,
+  isLoading,
+  emptyMessage,
+  panelId,
+}: RemoteChangesListProps) {
+  const activeFilePath = useReviewNavigationStore(
+    (s) => s.activeFilePaths[taskId] ?? null,
+  );
+
+  const renderFile = useCallback(
+    (file: ChangedFile, depth: number) => {
+      const key = makeFileKey(file.staged, file.path);
+      return (
+        <ChangedFileItem
+          key={key}
+          file={file}
+          taskId={taskId}
+          isActive={activeFilePath === key}
+          depth={depth}
+        />
+      );
+    },
+    [taskId, activeFilePath],
+  );
+
+  if (isLoading && files.length === 0) {
+    return <PanelMessage>Loading changes...</PanelMessage>;
+  }
+
+  if (files.length === 0) {
+    return <PanelMessage>{emptyMessage}</PanelMessage>;
+  }
+
+  return (
+    <Box height="100%" overflowY="auto" py="2" id={panelId}>
+      <Flex direction="column">
+        <ChangesTreeView files={files} renderFile={renderFile} />
+      </Flex>
+    </Box>
+  );
+}
+
+function BranchChangesPanel({
+  taskId,
+  repoPath,
+  branch,
+}: {
+  taskId: string;
+  repoPath: string | undefined;
+  branch: string | null;
+}) {
+  const { data: files = [], isLoading } = useLocalBranchChangedFiles(
+    repoPath ?? null,
+    branch,
+  );
+
+  if (!repoPath || !branch) {
+    return <PanelMessage>No branch selected</PanelMessage>;
+  }
+
+  return (
+    <RemoteChangesList
+      taskId={taskId}
+      files={files}
+      isLoading={isLoading}
+      emptyMessage="No file changes in branch"
+      panelId="changes-panel-branch"
+    />
+  );
+}
+
+function PrChangesPanel({
+  taskId,
+  prUrl,
+}: {
+  taskId: string;
+  prUrl: string | null;
+}) {
+  const { data: files = [], isLoading } = usePrChangedFiles(prUrl);
+
+  if (!prUrl) {
+    return <PanelMessage>No pull request linked</PanelMessage>;
+  }
+
+  return (
+    <RemoteChangesList
+      taskId={taskId}
+      files={files}
+      isLoading={isLoading}
+      emptyMessage="No file changes in pull request"
+      panelId="changes-panel-pr"
+    />
   );
 }

@@ -199,6 +199,14 @@ function App() {
     wasInMainApp.current = isInMainApp;
   }, [isAuthenticated, hasCompletedOnboarding, isDarkMode]);
 
+  const wasShowingAiGateRef = useRef(false);
+  useEffect(() => {
+    if (wasShowingAiGateRef.current && !needsAiApproval && currentOrg != null) {
+      track(ANALYTICS_EVENTS.AI_CONSENT_APPROVED);
+    }
+    wasShowingAiGateRef.current = needsAiApproval;
+  }, [needsAiApproval, currentOrg]);
+
   const handleTransitionComplete = () => {
     setShowTransition(false);
   };

@@ -1,6 +1,12 @@
-import { Tooltip } from "@components/ui/Tooltip";
-import { Button, cn } from "@posthog/quill";
-import { useRef, useState } from "react";
+import {
+  Button,
+  cn,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@posthog/quill";
+import { useCallback } from "react";
 import type { SidebarItemAction } from "../types";
 
 const INDENT_SIZE = 8;
@@ -22,29 +28,22 @@ interface SidebarItemProps {
   disabled?: boolean;
 }
 
-/**
- * Label that truncates with an ellipsis and reveals the full text in a
- * tooltip on hover when it's actually clipped. Truncation is scoped to this
- * span so sibling content (e.g. `endContent`) is never hidden.
- */
 function SidebarItemLabel({ label }: { label: React.ReactNode }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [showTooltip, setShowTooltip] = useState(false);
   const canTooltip = typeof label === "string" || typeof label === "number";
 
+  const measureRef = useCallback((el: HTMLSpanElement | null) => {
+    if (!el) return;
+    const update = () => {
+      el.style.pointerEvents = el.scrollWidth > el.clientWidth ? "" : "none";
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const span = (
-    // biome-ignore lint/a11y/noStaticElementInteractions: hover handlers only drive a tooltip for truncated labels
-    <span
-      ref={ref}
-      className="min-w-0 flex-1 truncate"
-      onMouseEnter={() => {
-        const el = ref.current;
-        if (canTooltip && el && el.scrollWidth > el.clientWidth) {
-          setShowTooltip(true);
-        }
-      }}
-      onMouseLeave={() => setShowTooltip(false)}
-    >
+    <span ref={measureRef} className="min-w-0 flex-1 truncate">
       {label}
     </span>
   );
@@ -52,9 +51,14 @@ function SidebarItemLabel({ label }: { label: React.ReactNode }) {
   if (!canTooltip) return span;
 
   return (
-    <Tooltip content={label} open={showTooltip} side="top">
-      {span}
-    </Tooltip>
+    <TooltipProvider delay={600}>
+      <Tooltip>
+        <TooltipTrigger render={span} />
+        <TooltipContent side="top" className="max-w-[900px] break-words">
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
