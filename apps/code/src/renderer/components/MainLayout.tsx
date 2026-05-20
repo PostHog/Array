@@ -97,34 +97,24 @@ export function MainLayout() {
         !reconcilingTaskIds.current.has(t.id),
     );
     if (missing.length === 0) return;
-    for (const t of missing) reconcilingTaskIds.current.add(t.id);
-    void Promise.allSettled(
-      missing.map((t) =>
-        workspaceApi.create({
-          taskId: t.id,
-          mainRepoPath: "",
-          folderId: "",
-          folderPath: "",
-          mode: "cloud",
-        }),
-      ),
-    ).then((results) => {
-      let anySucceeded = false;
-      for (const [i, r] of results.entries()) {
-        const id = missing[i].id;
-        reconcilingTaskIds.current.delete(id);
-        if (r.status === "rejected") {
-          log.warn(`Failed to reconcile workspace for task ${id}`, r.reason);
-        } else {
-          anySucceeded = true;
+    const missingIds = missing.map((t) => t.id);
+    for (const id of missingIds) reconcilingTaskIds.current.add(id);
+    // Single batched IPC instead of one mutation per task — with many cloud
+    // tasks the per-task pattern saturates the main thread at boot.
+    workspaceApi
+      .reconcileCloudWorkspaces(missingIds)
+      .then((result) => {
+        for (const id of missingIds) reconcilingTaskIds.current.delete(id);
+        if (result.created.length > 0) {
+          void queryClient.invalidateQueries(
+            trpcReact.workspace.getAll.pathFilter(),
+          );
         }
-      }
-      if (anySucceeded) {
-        void queryClient.invalidateQueries(
-          trpcReact.workspace.getAll.pathFilter(),
-        );
-      }
-    });
+      })
+      .catch((err) => {
+        for (const id of missingIds) reconcilingTaskIds.current.delete(id);
+        log.warn("Failed to reconcile cloud workspaces", err);
+      });
   }, [
     syncCloudTasksEnabled,
     tasks,

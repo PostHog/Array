@@ -21,6 +21,7 @@ export interface IWorkspaceRepository {
   findAllPinned(): Workspace[];
   findAll(): Workspace[];
   create(data: CreateWorkspaceData): Workspace;
+  createCloudMany(taskIds: string[]): void;
   deleteByTaskId(taskId: string): void;
   deleteById(id: string): void;
   updatePinnedAt(taskId: string, pinnedAt: string | null): void;
@@ -96,6 +97,20 @@ export class WorkspaceRepository implements IWorkspaceRepository {
       throw new Error(`Failed to create workspace with id ${id}`);
     }
     return created;
+  }
+
+  createCloudMany(taskIds: string[]): void {
+    if (taskIds.length === 0) return;
+    const timestamp = now();
+    const rows: NewWorkspace[] = taskIds.map((taskId) => ({
+      id: crypto.randomUUID(),
+      taskId,
+      repositoryId: null,
+      mode: "cloud",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }));
+    this.db.insert(workspaces).values(rows).run();
   }
 
   deleteByTaskId(taskId: string): void {
