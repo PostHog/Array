@@ -346,7 +346,7 @@ export function ReportDetailPane({
                 }
               }}
               aria-label="Copy link to this report"
-              className="rounded p-0.5 text-gray-11 hover:bg-gray-3 hover:text-gray-12"
+              className="flex h-5 w-5 items-center justify-center rounded text-gray-11 transition-colors hover:bg-gray-3 hover:text-gray-12"
             >
               <LinkSimpleIcon size={14} />
             </button>
