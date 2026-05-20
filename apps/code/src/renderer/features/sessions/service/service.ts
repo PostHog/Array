@@ -81,6 +81,7 @@ import {
   uploadRunAttachments,
   uploadTaskStagedAttachments,
 } from "../utils/cloudArtifacts";
+import { CloudRunIdleTracker } from "./cloudRunIdleTracker";
 
 const log = logger.scope("session-service");
 const LOCAL_SESSION_RECONNECT_ATTEMPTS = 3;
@@ -254,6 +255,9 @@ export class SessionService {
   private localRecoveryAttempts = new Map<string, Promise<boolean>>();
   /** Re-entrance guard for cloud queue dispatch (per taskId). */
   private dispatchingCloudQueues = new Set<string>();
+  /** Coalesces deferred cloud queue flush timers (per taskId). */
+  private scheduledCloudQueueFlushes = new Set<string>();
+  private cloudRunIdleTracker = new CloudRunIdleTracker();
   private nextCloudTaskWatchToken = 0;
   private subscriptions = new Map<
     string,
@@ -700,6 +704,7 @@ export class SessionService {
 
     this.unsubscribeFromChannel(taskRunId);
     sessionStoreSetters.removeSession(taskRunId);
+    this.cloudRunIdleTracker.delete(taskRunId);
     if (session) {
       this.localRepoPaths.delete(session.taskId);
       this.localRecoveryAttempts.delete(session.taskId);
@@ -1080,6 +1085,8 @@ export class SessionService {
     this.cloudPermissionRequestIds.clear();
     this.cloudLogGapReconciles.clear();
     this.dispatchingCloudQueues.clear();
+    this.scheduledCloudQueueFlushes.clear();
+    this.cloudRunIdleTracker.clear();
     this.idleKilledSubscription?.unsubscribe();
     this.idleKilledSubscription = null;
   }
@@ -1098,10 +1105,13 @@ export class SessionService {
           currentPromptId: msg.id,
         });
         const promptSession = sessionStoreSetters.getSessions()[taskRunId];
-        if (promptSession?.isCloud && promptSession.agentIdleForRunId) {
-          sessionStoreSetters.updateSession(taskRunId, {
-            agentIdleForRunId: undefined,
-          });
+        if (promptSession?.isCloud) {
+          this.cloudRunIdleTracker.markBusy(promptSession);
+          if (promptSession.agentIdleForRunId) {
+            sessionStoreSetters.updateSession(taskRunId, {
+              agentIdleForRunId: undefined,
+            });
+          }
         }
       }
       if (
@@ -1190,6 +1200,7 @@ export class SessionService {
           if (Object.keys(updates).length > 0) {
             sessionStoreSetters.updateSession(taskRunId, updates);
           }
+          this.cloudRunIdleTracker.markIdle(session);
           if (session.messageQueue.length > 0) {
             this.scheduleCloudQueueFlush(session.taskId, "turn_complete");
           }
@@ -1791,12 +1802,18 @@ export class SessionService {
       params.artifact_ids = artifactIds;
     }
 
+    const currentSessionBeforeSend =
+      this.getSessionByRunId(session.taskRunId) ?? session;
+    const idleEvidenceBeforeSend = this.cloudRunIdleTracker.capture(
+      currentSessionBeforeSend,
+    );
     sessionStoreSetters.updateSession(session.taskRunId, {
       isPromptPending: true,
       promptStartedAt: Date.now(),
       pausedDurationMs: 0,
       agentIdleForRunId: undefined,
     });
+    this.cloudRunIdleTracker.markBusy(currentSessionBeforeSend);
     sessionStoreSetters.appendOptimisticItem(session.taskRunId, {
       type: "user_message",
       content: transport.promptText,
@@ -1839,6 +1856,29 @@ export class SessionService {
         promptStartedAt: null,
       });
       sessionStoreSetters.clearTailOptimisticItems(session.taskRunId);
+      const currentSessionAfterFailure = this.getSessionByRunId(
+        session.taskRunId,
+      );
+      if (currentSessionAfterFailure) {
+        const restoreResult = this.cloudRunIdleTracker.restoreAfterFailedSend(
+          idleEvidenceBeforeSend,
+          currentSessionAfterFailure,
+        );
+        if (restoreResult) {
+          log.warn("Restored idle evidence after failed cloud send", {
+            taskId: session.taskId,
+            taskRunId: session.taskRunId,
+          });
+          if (
+            currentSessionAfterFailure.agentIdleForRunId !==
+            restoreResult.agentIdleForRunId
+          ) {
+            sessionStoreSetters.updateSession(session.taskRunId, {
+              agentIdleForRunId: restoreResult.agentIdleForRunId,
+            });
+          }
+        }
+      }
       throw error;
     }
   }
@@ -3231,56 +3271,20 @@ export class SessionService {
    * schedules from multiple triggers collapse to one.
    */
   private scheduleCloudQueueFlush(taskId: string, reason: string): void {
+    if (
+      this.scheduledCloudQueueFlushes.has(taskId) ||
+      this.dispatchingCloudQueues.has(taskId)
+    ) {
+      return;
+    }
+
+    this.scheduledCloudQueueFlushes.add(taskId);
     setTimeout(() => {
+      this.scheduledCloudQueueFlushes.delete(taskId);
       this.sendQueuedCloudMessages(taskId).catch((err) =>
         log.error("cloud queue flush failed", { taskId, reason, error: err }),
       );
     }, 0);
-  }
-
-  /**
-   * True when the agent for this exact run is idle: it has completed at
-   * least one turn for this run and is not mid-turn. Tracked live via
-   * `agentIdleForRunId` (set only on `_posthog/turn_complete`), with a
-   * fallback that replays events for the case where a session was recreated
-   * from logs and the live flag was never set (no-delta dedup guard skipped
-   * reprocessing).
-   *
-   * Deliberately independent of `isPromptPending`: `retryCloudTaskWatch()`
-   * forcibly clears it on reconnect, so trusting it would let recovery
-   * dispatch a queued follow-up while a remote turn is still running.
-   */
-  private isAgentIdleForRun(session: AgentSession): boolean {
-    if (session.agentIdleForRunId === session.taskRunId) {
-      return true;
-    }
-    let seenCurrentRunStart = false;
-    let idle = false;
-    for (const acpMsg of session.events) {
-      const msg = acpMsg.message;
-      if (
-        "method" in msg &&
-        isNotification(msg.method, POSTHOG_NOTIFICATIONS.RUN_STARTED)
-      ) {
-        const params = (msg as { params?: { runId?: unknown } }).params;
-        if (params?.runId === session.taskRunId) {
-          seenCurrentRunStart = true;
-          idle = false;
-        }
-        continue;
-      }
-      if (!seenCurrentRunStart) {
-        continue;
-      }
-      if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
-        idle = false;
-        continue;
-      }
-      if (isTurnCompleteEvent(acpMsg)) {
-        idle = true;
-      }
-    }
-    return idle;
   }
 
   /**
@@ -3307,16 +3311,10 @@ export class SessionService {
     if (session.cloudStatus !== "in_progress") {
       return;
     }
-
-    // The agent must be provably idle for this run, the
-    // connected path included. `status: "connected"` alone is NOT proof of
-    // idleness: the `_posthog/run_started` handler flips status to
-    // "connected" before the initial/resume turn even starts, so a
-    // connected-but-not-idle session is mid-boot. Draining now would race
-    // with `sendInitialTaskMessage`/`sendResumeMessage` and one prompt
-    // would be cancelled. Only `_posthog/turn_complete` makes the agent
-    // idle for the run (`isAgentIdleForRun`).
-    if (!this.isAgentIdleForRun(session)) {
+    if (
+      this.scheduledCloudQueueFlushes.has(session.taskId) ||
+      this.dispatchingCloudQueues.has(session.taskId)
+    ) {
       return;
     }
 
@@ -3326,6 +3324,30 @@ export class SessionService {
 
     if (session.status !== "connected" && !recoverableAfterTransportDrop) {
       return;
+    }
+
+    // A local prompt in flight means a queued follow-up would double-send.
+    // The idle scan below is still the real safety check after reconnect.
+    if (session.isPromptPending) {
+      return;
+    }
+
+    // The agent must be provably idle for this run, the
+    // connected path included. `status: "connected"` alone is NOT proof of
+    // idleness: the `_posthog/run_started` handler flips status to
+    // "connected" before the initial/resume turn even starts, so a
+    // connected-but-not-idle session is mid-boot. Draining now would race
+    // with `sendInitialTaskMessage`/`sendResumeMessage` and one prompt
+    // would be cancelled. Only `_posthog/turn_complete` makes the agent
+    // idle for the run.
+    const idleResult = this.cloudRunIdleTracker.evaluateIdle(session);
+    if (!idleResult.idle) {
+      return;
+    }
+    if (idleResult.shouldCacheToStore) {
+      sessionStoreSetters.updateSession(taskRunId, {
+        agentIdleForRunId: taskRunId,
+      });
     }
 
     if (recoverableAfterTransportDrop) {
@@ -3723,6 +3745,7 @@ export class SessionService {
       if (hasSessionPromptEvent(events)) {
         sessionStoreSetters.clearTailOptimisticItems(taskRunId);
       }
+      this.cloudRunIdleTracker.delete(taskRunId);
       sessionStoreSetters.updateSession(taskRunId, {
         events,
         isCloud: true,
