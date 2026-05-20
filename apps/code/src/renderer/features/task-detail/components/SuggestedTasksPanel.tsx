@@ -5,7 +5,7 @@ import { ArrowRight, Lightning, MagnifyingGlass } from "@phosphor-icons/react";
 import { Flex, Text } from "@radix-ui/themes";
 import { useNavigationStore } from "@stores/navigationStore";
 import { AnimatePresence, motion } from "framer-motion";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { SuggestedTaskCard } from "./SuggestedTaskCard";
 
 const VISIBLE_LIMIT = 3;
@@ -36,7 +36,11 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
   const navigateToInbox = useNavigationStore((s) => s.navigateToInbox);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const [availableHeight, setAvailableHeight] = useState<number>(Infinity);
+  const [availableHeight, setAvailableHeight] = useState<number>(() =>
+    typeof window === "undefined"
+      ? Number.POSITIVE_INFINITY
+      : window.innerHeight,
+  );
 
   useLayoutEffect(() => {
     const el = containerRef.current;
@@ -49,7 +53,9 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
 
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(document.documentElement);
+    const parent = el.parentElement;
+    if (parent) observer.observe(parent);
+    observer.observe(el);
     window.addEventListener("resize", measure);
     return () => {
       observer.disconnect();
@@ -57,14 +63,20 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
     };
   }, []);
 
-  const handleDismiss = (task: DiscoveredTask) => {
-    removeDiscoveredTask(task.id);
-  };
+  const handleDismiss = useCallback(
+    (task: DiscoveredTask) => {
+      removeDiscoveredTask(task.id);
+    },
+    [removeDiscoveredTask],
+  );
 
-  const handleViewDetails = (task: DiscoveredTask) => {
-    selectDiscoveredTask(task.id);
-    navigateToInbox();
-  };
+  const handleViewDetails = useCallback(
+    (task: DiscoveredTask) => {
+      selectDiscoveredTask(task.id);
+      navigateToInbox();
+    },
+    [selectDiscoveredTask, navigateToInbox],
+  );
 
   const isEnricherRunning = enricherStatus === "running";
   const isDiscoveryRunning = discoveryStatus === "running";
@@ -176,7 +188,7 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
               currentTool={discoveryFeed.currentTool}
               recentEntries={discoveryFeed.recentEntries}
               isDone={false}
-              maxEntries={logLines}
+              maxLogLines={logLines}
             />
           </motion.div>
         )}

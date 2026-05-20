@@ -85,7 +85,7 @@ export function SuggestedTaskCard({
       <Flex
         align="center"
         gap="1"
-        className="absolute top-2 right-2 opacity-0 transition-opacity group-hover:opacity-100"
+        className="pointer-events-none absolute top-2 right-2 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
       >
         <Tooltip content="View details">
           <button

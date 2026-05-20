@@ -34,7 +34,7 @@ interface SetupScanFeedProps {
   recentEntries: ActivityEntry[];
   isDone: boolean;
   doneLabel?: string;
-  maxEntries?: number;
+  maxLogLines?: number;
 }
 
 const TOOL_VERBS: Record<string, string> = {
@@ -132,7 +132,7 @@ export function SetupScanFeed({
   recentEntries,
   isDone,
   doneLabel = "Complete",
-  maxEntries = 4,
+  maxLogLines = 4,
 }: SetupScanFeedProps) {
   const activeLabel =
     activeLabelOverride ??
@@ -222,7 +222,7 @@ export function SetupScanFeed({
       </Flex>
 
       <AnimatePresence initial={false}>
-        {!isDone && recentEntries.length > 0 && maxEntries > 0 && (
+        {!isDone && recentEntries.length > 0 && maxLogLines > 0 && (
           <motion.div
             key="feed"
             initial={{ opacity: 0, height: 0 }}
@@ -243,7 +243,7 @@ export function SetupScanFeed({
               className="max-h-[120px] overflow-hidden rounded-b-[10px] bg-(--gray-2)"
             >
               <AnimatePresence initial={false} mode="popLayout">
-                {recentEntries.slice(-maxEntries).map((entry, index, arr) => {
+                {recentEntries.slice(-maxLogLines).map((entry, index, arr) => {
                   const isLatest = index === arr.length - 1;
                   const kind = TOOL_KIND[entry.tool] ?? "other";
                   const EntryIcon = KIND_ICONS[kind] ?? Wrench;

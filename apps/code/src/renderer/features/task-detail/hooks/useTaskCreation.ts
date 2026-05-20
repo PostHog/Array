@@ -261,7 +261,9 @@ export function useTaskCreation({
             navigateToTask(output.task);
           }
           useTourStore.getState().completeTour(createFirstTaskTour.id);
-          editor.clear();
+          if (!contentOverride) {
+            editor.clear();
+          }
         });
 
         if (result.success) {
