@@ -13,7 +13,10 @@ export function useSetupDiscovery() {
 
   useEffect(() => {
     if (startedRef.current) return;
-    if (discoveryStatus === "done") return;
+    // Only auto-fire from a clean "idle" state. "done" needs no rerun, and
+    // "error" (which now includes interrupted runs persisted across boots —
+    // see setupStore partialize) requires an explicit user retry to recover.
+    if (discoveryStatus !== "idle") return;
     if (!selectedDirectory) return;
 
     startedRef.current = true;

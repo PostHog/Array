@@ -206,12 +206,22 @@ export const useSetupStore = create<SetupStore>()(
     }),
     {
       name: "setup-store",
+      // Persist "running" as "error" so an interrupted run (crash, force-quit,
+      // freeze) doesn't auto-restart on next boot. Otherwise discovery loops
+      // forever, creating new cloud tasks and spawning agents on every launch.
       partialize: (state) => ({
         discoveredTasks: state.discoveredTasks,
         discoveryStatus:
           state.discoveryStatus === "done"
             ? ("done" as const)
-            : ("idle" as const),
+            : state.discoveryStatus === "running" ||
+                state.discoveryStatus === "error"
+              ? ("error" as const)
+              : ("idle" as const),
+        error:
+          state.discoveryStatus === "running"
+            ? "Discovery was interrupted. You can skip or retry."
+            : state.error,
       }),
     },
   ),

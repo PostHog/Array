@@ -240,6 +240,13 @@ export class SetupRunService {
   private enricherSuggestionsRunning = false;
 
   startSetup(directory: string): void {
+    // Defense in depth: never auto-run from a non-idle persisted state.
+    // The hook (useSetupDiscovery) is the primary gate, but a direct call
+    // path could otherwise re-enter the loop that wedged users on boot —
+    // creating fresh cloud tasks and a tree-sitter parse storm against the
+    // user's repo on every launch.
+    const status = useSetupStore.getState().discoveryStatus;
+    if (status !== "idle") return;
     this.injectEnricherSuggestions(directory);
     this.startDiscovery(directory);
   }
