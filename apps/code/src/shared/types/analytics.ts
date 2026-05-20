@@ -6,7 +6,7 @@ import type {
 } from "@features/message-editor/analytics";
 
 type ExecutionType = "cloud" | "local";
-type RepositoryProvider = "github" | "gitlab" | "local" | "none";
+export type RepositoryProvider = "github" | "gitlab" | "local" | "none";
 type TaskCreatedFrom = "cli" | "command-menu";
 type RepositorySelectSource = "task-creation" | "task-detail";
 type GitActionType =
@@ -288,6 +288,75 @@ export interface TaskFeedbackProperties {
   feedback_comment?: string;
 }
 
+// Onboarding events
+export type OnboardingStepId =
+  | "welcome"
+  | "project-select"
+  | "invite-code"
+  | "github"
+  | "install-cli";
+
+type OnboardingSkipReason = "tools_not_installed" | "dev_skip";
+
+export interface OnboardingStepViewedProperties {
+  step_id: OnboardingStepId;
+  step_index: number;
+  total_steps: number;
+}
+
+export interface OnboardingStepCompletedProperties {
+  step_id: OnboardingStepId;
+  step_index: number;
+  total_steps: number;
+  duration_seconds: number;
+}
+
+export interface OnboardingStepSkippedProperties {
+  step_id: OnboardingStepId;
+  step_index: number;
+  reason: OnboardingSkipReason;
+}
+
+export interface OnboardingSignInInitiatedProperties {
+  region: string;
+}
+
+export interface OnboardingProjectSelectedProperties {
+  had_multiple_orgs: boolean;
+  had_multiple_projects: boolean;
+}
+
+export interface OnboardingInviteCodeSubmittedProperties {
+  success: boolean;
+  error_type?: string;
+}
+
+export interface OnboardingFolderSelectedProperties {
+  has_git_remote: boolean;
+  repository_provider: RepositoryProvider;
+}
+
+export interface OnboardingCliCheckCompletedProperties {
+  git_installed: boolean;
+  gh_installed: boolean;
+  gh_authenticated: boolean;
+}
+
+export interface OnboardingCompletedProperties {
+  duration_seconds: number;
+  github_connected: boolean;
+  cli_skipped: boolean;
+}
+
+export interface OnboardingAbandonedProperties {
+  last_step_id: OnboardingStepId;
+  duration_seconds: number;
+}
+
+export interface AiConsentGateShownProperties {
+  is_org_admin: boolean;
+}
+
 // Setup / onboarding events
 type SetupDiscoveredTaskCategory =
   | "bug"
@@ -415,6 +484,23 @@ export const ANALYTICS_EVENTS = {
   // Tour events
   TOUR_EVENT: "Tour event",
 
+  // Onboarding events
+  ONBOARDING_STARTED: "Onboarding started",
+  ONBOARDING_STEP_VIEWED: "Onboarding step viewed",
+  ONBOARDING_STEP_COMPLETED: "Onboarding step completed",
+  ONBOARDING_STEP_SKIPPED: "Onboarding step skipped",
+  ONBOARDING_SIGN_IN_INITIATED: "Onboarding sign in initiated",
+  ONBOARDING_PROJECT_SELECTED: "Onboarding project selected",
+  ONBOARDING_INVITE_CODE_SUBMITTED: "Onboarding invite code submitted",
+  ONBOARDING_FOLDER_SELECTED: "Onboarding folder selected",
+  ONBOARDING_GITHUB_CONNECTED: "Onboarding github connected",
+  ONBOARDING_CLI_CHECK_COMPLETED: "Onboarding cli check completed",
+  ONBOARDING_COMPLETED: "Onboarding completed",
+  ONBOARDING_ABANDONED: "Onboarding abandoned",
+  AI_CONSENT_GATE_SHOWN: "Ai consent gate shown",
+  AI_CONSENT_APPROVED: "Ai consent approved",
+  INBOX_VIEWED: "Inbox viewed",
+
   // Setup / onboarding events
   SETUP_DISCOVERY_STARTED: "Setup discovery started",
   SETUP_DISCOVERY_COMPLETED: "Setup discovery completed",
@@ -499,6 +585,23 @@ export type EventPropertyMap = {
 
   // Tour events
   [ANALYTICS_EVENTS.TOUR_EVENT]: TourEventProperties;
+
+  // Onboarding events
+  [ANALYTICS_EVENTS.ONBOARDING_STARTED]: never;
+  [ANALYTICS_EVENTS.ONBOARDING_STEP_VIEWED]: OnboardingStepViewedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED]: OnboardingStepCompletedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_STEP_SKIPPED]: OnboardingStepSkippedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_SIGN_IN_INITIATED]: OnboardingSignInInitiatedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_PROJECT_SELECTED]: OnboardingProjectSelectedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_INVITE_CODE_SUBMITTED]: OnboardingInviteCodeSubmittedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_FOLDER_SELECTED]: OnboardingFolderSelectedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECTED]: never;
+  [ANALYTICS_EVENTS.ONBOARDING_CLI_CHECK_COMPLETED]: OnboardingCliCheckCompletedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_COMPLETED]: OnboardingCompletedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_ABANDONED]: OnboardingAbandonedProperties;
+  [ANALYTICS_EVENTS.AI_CONSENT_GATE_SHOWN]: AiConsentGateShownProperties;
+  [ANALYTICS_EVENTS.AI_CONSENT_APPROVED]: never;
+  [ANALYTICS_EVENTS.INBOX_VIEWED]: never;
 
   // Setup / onboarding events
   [ANALYTICS_EVENTS.SETUP_DISCOVERY_STARTED]: SetupDiscoveryStartedProperties;

@@ -35,7 +35,9 @@ import {
   FIELD_TRIGGER_CLASS,
 } from "@renderer/styles/fieldTrigger";
 import { BILLING_FLAG } from "@shared/constants";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -179,6 +181,11 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                         hogSrc={happyHog}
                         hogMessage="I don't bite. Just need to know who I'm working with."
                         subtitle="Connect your account to get started."
+                        onAuthInitiated={(region) =>
+                          track(ANALYTICS_EVENTS.ONBOARDING_SIGN_IN_INITIATED, {
+                            region,
+                          })
+                        }
                       />
                     </motion.div>
                   ) : null}
@@ -387,7 +394,13 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
           {isAuthenticated && !isLoading && (
             <Button
               size="3"
-              onClick={onNext}
+              onClick={() => {
+                track(ANALYTICS_EVENTS.ONBOARDING_PROJECT_SELECTED, {
+                  had_multiple_orgs: hasMultipleOrgs,
+                  had_multiple_projects: sortedProjects.length > 1,
+                });
+                onNext();
+              }}
               disabled={currentProjectId == null}
             >
               Continue

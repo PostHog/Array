@@ -37,7 +37,9 @@ import {
 } from "@radix-ui/themes";
 import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
 import { trpcClient } from "@renderer/trpc/client";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { track } from "@utils/analytics";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -116,6 +118,7 @@ export function GitIntegrationStep({
   } = useGithubConnect({
     projectId: selectedProjectId,
     projectHasTeamIntegration: selectedProject?.hasGithubIntegration ?? null,
+    onConnected: () => track(ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECTED),
   });
   const canTakeAction = !isConnecting && !timedOut && !hasConnectError;
   const defaultPanelMessage = getPanelMessage({

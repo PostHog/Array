@@ -2,11 +2,15 @@ import { FullScreenLayout } from "@components/FullScreenLayout";
 import { useLogoutMutation } from "@features/auth/hooks/authMutations";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
+import { useUserGithubIntegrations } from "@hooks/useIntegrations";
 import { ArrowRight, SignOut } from "@phosphor-icons/react";
 import { Button, Flex } from "@radix-ui/themes";
 import { IS_DEV } from "@shared/constants/environment";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
+import { track } from "@utils/analytics";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
+import { useEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 import { useOnboardingFlow } from "../hooks/useOnboardingFlow";
@@ -26,6 +30,7 @@ const stepVariants = {
 export function OnboardingFlow() {
   const {
     currentStep,
+    currentIndex,
     activeSteps,
     direction,
     next,
@@ -46,18 +51,110 @@ export function OnboardingFlow() {
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
   );
+  const { data: githubUserIntegrations = [] } = useUserGithubIntegrations();
 
-  useHotkeys("right", next, { enableOnFormTags: false }, [next]);
-  useHotkeys("left", back, { enableOnFormTags: false }, [back]);
+  const flowStartedAtRef = useRef(Date.now());
+  const stepEnteredAtRef = useRef(Date.now());
 
-  const handleComplete = () => {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fires once on mount; subsequent step views fire from handleNext/handleBack
+  useEffect(() => {
+    track(ANALYTICS_EVENTS.ONBOARDING_STARTED);
+    track(ANALYTICS_EVENTS.ONBOARDING_STEP_VIEWED, {
+      step_id: currentStep,
+      step_index: currentIndex,
+      total_steps: activeSteps.length,
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      track(ANALYTICS_EVENTS.ONBOARDING_ABANDONED, {
+        last_step_id: currentStep,
+        duration_seconds: Math.round(
+          (Date.now() - flowStartedAtRef.current) / 1000,
+        ),
+      });
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [currentStep]);
+
+  const trackStepCompleted = () => {
+    track(ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED, {
+      step_id: currentStep,
+      step_index: currentIndex,
+      total_steps: activeSteps.length,
+      duration_seconds: Math.round(
+        (Date.now() - stepEnteredAtRef.current) / 1000,
+      ),
+    });
+  };
+
+  const trackStepViewed = (stepIndex: number) => {
+    const stepId = activeSteps[stepIndex];
+    if (!stepId) return;
+    track(ANALYTICS_EVENTS.ONBOARDING_STEP_VIEWED, {
+      step_id: stepId,
+      step_index: stepIndex,
+      total_steps: activeSteps.length,
+    });
+    stepEnteredAtRef.current = Date.now();
+  };
+
+  const handleNext = () => {
+    trackStepCompleted();
+    trackStepViewed(currentIndex + 1);
+    next();
+  };
+
+  const handleBack = () => {
+    trackStepViewed(currentIndex - 1);
+    back();
+  };
+
+  useHotkeys("right", handleNext, { enableOnFormTags: false }, [handleNext]);
+  useHotkeys("left", handleBack, { enableOnFormTags: false }, [handleBack]);
+
+  const handleComplete = (cliSkipped: boolean) => {
+    if (cliSkipped) {
+      track(ANALYTICS_EVENTS.ONBOARDING_STEP_SKIPPED, {
+        step_id: currentStep,
+        step_index: currentIndex,
+        reason: "tools_not_installed",
+      });
+    } else {
+      trackStepCompleted();
+    }
+    track(ANALYTICS_EVENTS.ONBOARDING_COMPLETED, {
+      duration_seconds: Math.round(
+        (Date.now() - flowStartedAtRef.current) / 1000,
+      ),
+      github_connected: githubUserIntegrations.length > 0,
+      cli_skipped: cliSkipped,
+    });
     completeOnboarding();
     navigateToTaskInput();
   };
 
   const handleSkip = () => {
+    track(ANALYTICS_EVENTS.ONBOARDING_STEP_SKIPPED, {
+      step_id: currentStep,
+      step_index: currentIndex,
+      reason: "dev_skip",
+    });
     completeOnboarding();
     navigateToTaskInput();
+  };
+
+  const handleLogout = () => {
+    track(ANALYTICS_EVENTS.ONBOARDING_ABANDONED, {
+      last_step_id: currentStep,
+      duration_seconds: Math.round(
+        (Date.now() - flowStartedAtRef.current) / 1000,
+      ),
+    });
+    logoutMutation.mutate();
+    resetOnboarding();
   };
 
   const footerRight = (
@@ -67,10 +164,7 @@ export function OnboardingFlow() {
           size="1"
           variant="ghost"
           color="gray"
-          onClick={() => {
-            logoutMutation.mutate();
-            resetOnboarding();
-          }}
+          onClick={handleLogout}
           className="opacity-50"
         >
           <SignOut size={14} />
@@ -107,7 +201,7 @@ export function OnboardingFlow() {
               transition={{ duration: 0.3 }}
               className="min-h-0 w-full flex-1"
             >
-              <WelcomeScreen onNext={next} />
+              <WelcomeScreen onNext={handleNext} />
             </motion.div>
           )}
 
@@ -122,7 +216,7 @@ export function OnboardingFlow() {
               transition={{ duration: 0.3 }}
               className="min-h-0 w-full flex-1"
             >
-              <ProjectSelectStep onNext={next} onBack={back} />
+              <ProjectSelectStep onNext={handleNext} onBack={handleBack} />
             </motion.div>
           )}
 
@@ -137,7 +231,7 @@ export function OnboardingFlow() {
               transition={{ duration: 0.3 }}
               className="min-h-0 w-full flex-1"
             >
-              <InviteCodeStep onNext={next} onBack={back} />
+              <InviteCodeStep onNext={handleNext} onBack={handleBack} />
             </motion.div>
           )}
 
@@ -153,8 +247,8 @@ export function OnboardingFlow() {
               className="min-h-0 w-full flex-1"
             >
               <GitIntegrationStep
-                onNext={next}
-                onBack={back}
+                onNext={handleNext}
+                onBack={handleBack}
                 selectedDirectory={selectedDirectory}
                 detectedRepo={detectedRepo}
                 isDetectingRepo={isDetectingRepo}
@@ -174,7 +268,7 @@ export function OnboardingFlow() {
               transition={{ duration: 0.3 }}
               className="min-h-0 w-full flex-1"
             >
-              <CliInstallStep onNext={handleComplete} onBack={back} />
+              <CliInstallStep onComplete={handleComplete} onBack={handleBack} />
             </motion.div>
           )}
         </AnimatePresence>
