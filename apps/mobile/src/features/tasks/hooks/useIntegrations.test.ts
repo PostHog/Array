@@ -19,6 +19,7 @@ vi.mock("../api", () => ({
   getIntegrations: mockGetIntegrations,
 }));
 
+import { useRepositoryCacheStore } from "../stores/repositoryCacheStore";
 import { useIntegrations } from "./useIntegrations";
 
 function createWrapper(queryClient: QueryClient) {
@@ -103,6 +104,7 @@ describe("useIntegrations", () => {
     );
     mockGetIntegrations.mockReset();
     mockGetGithubRepositories.mockReset();
+    useRepositoryCacheStore.setState({ options: [], updatedAt: null });
   });
 
   it("keeps repositories from healthy integrations when one repository fetch fails", async () => {
