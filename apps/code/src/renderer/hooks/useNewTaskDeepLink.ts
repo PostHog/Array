@@ -2,7 +2,10 @@ import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { trpcClient, useTRPC } from "@renderer/trpc";
 import type { NewTaskLinkPayload } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { useNavigationStore } from "@stores/navigationStore";
+import {
+  type TaskInputNavigationOptions,
+  useNavigationStore,
+} from "@stores/navigationStore";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
@@ -10,6 +13,8 @@ import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 const log = logger.scope("new-task-deep-link");
+
+type NavigateToTaskInput = (options?: TaskInputNavigationOptions) => void;
 
 export function useNewTaskDeepLink() {
   const trpcReact = useTRPC();
@@ -46,7 +51,9 @@ export function useNewTaskDeepLink() {
         const pending = await trpcClient.deepLink.getPendingNewTaskLink.query();
         if (pending) {
           log.info(`Found pending new task link: action=${pending.action}`);
-          handleAction(pending);
+          handleAction(pending).catch((error) => {
+            log.error("Failed to handle pending new task link:", error);
+          });
         }
       } catch (error) {
         log.error("Failed to check for pending new task link:", error);
@@ -67,14 +74,6 @@ export function useNewTaskDeepLink() {
     }),
   );
 }
-
-type NavigateToTaskInput = (options?: {
-  folderId?: string;
-  initialPrompt?: string;
-  initialCloudRepository?: string;
-  initialModel?: string;
-  initialMode?: string;
-}) => void;
 
 function handleNew(
   payload: Extract<NewTaskLinkPayload, { action: "new" }>,
@@ -130,11 +129,19 @@ async function handleIssue(
     });
 
     if (!issue) {
-      toast.error("GitHub issue not found");
+      toast.error("GitHub issue not found", {
+        description: `${payload.owner}/${payload.issueRepo}#${payload.issueNumber} could not be opened.`,
+      });
       log.warn("GitHub issue not found", {
         owner: payload.owner,
         repo: payload.issueRepo,
         number: payload.issueNumber,
+      });
+      track(ANALYTICS_EVENTS.DEEP_LINK_ISSUE_FAILED, {
+        owner: payload.owner,
+        repo: payload.issueRepo,
+        issue_number: payload.issueNumber,
+        reason: "not_found",
       });
       return;
     }
@@ -164,7 +171,15 @@ async function handleIssue(
       issue: issue.title,
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     log.error("Failed to fetch GitHub issue:", error);
-    toast.error("Failed to fetch GitHub issue");
+    toast.error("Failed to fetch GitHub issue", { description: message });
+    track(ANALYTICS_EVENTS.DEEP_LINK_ISSUE_FAILED, {
+      owner: payload.owner,
+      repo: payload.issueRepo,
+      issue_number: payload.issueNumber,
+      reason: "fetch_failed",
+      error_message: message,
+    });
   }
 }

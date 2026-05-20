@@ -25,11 +25,11 @@ Open the new-task input, optionally pre-filled.
 | Parameter | Required | Description |
 |---|---|---|
 | `prompt` | No* | Pre-filled prompt text |
-| `repo` | No | Cloud repository slug (e.g. `posthog/posthog`) |
-| `mode` | No | Initial mode for the task |
-| `model` | No | Initial model for the task |
+| `repo` | No* | Cloud repository slug (e.g. `posthog/posthog`) |
+| `mode` | No | Initial mode for the task (ignored unless it matches a known mode) |
+| `model` | No | Initial model for the task (ignored unless it matches a known model) |
 
-*At least one of `prompt`, `repo`, `mode`, or `model` must be present.
+*At least one of `prompt` or `repo` must be present. `mode` and `model` alone are not enough to open a task with meaningful context.
 
 ```
 posthog-code://new?prompt=Fix%20the%20login%20bug&repo=posthog%2Fposthog
@@ -42,7 +42,7 @@ Open the new-task input with a longer, base64-encoded plan as the initial prompt
 
 | Parameter | Required | Description |
 |---|---|---|
-| `plan` | Yes | Base64-encoded plan text (decoded with `atob`) |
+| `plan` | Yes | Base64-encoded plan text. Standard or URL-safe alphabet, padding optional. |
 | `repo` | No | Cloud repository slug |
 | `mode` | No | Initial mode |
 | `model` | No | Initial model |
@@ -52,6 +52,8 @@ posthog-code://plan?plan=SGVsbG8gV29ybGQ%3D&repo=posthog%2Fposthog
 ```
 
 The link is rejected if `plan` is missing or is not valid base64.
+
+Encoding tip: prefer URL-safe base64 (`-` and `_` instead of `+` and `/`, padding stripped). Standard base64 also works, but `+` must be percent-encoded as `%2B` or it will be decoded as a space by the URL parser. The decoder transparently handles both alphabets and missing padding.
 
 ### `posthog-code://issue`
 

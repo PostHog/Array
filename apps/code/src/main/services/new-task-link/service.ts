@@ -1,5 +1,5 @@
 import type { IMainWindow } from "@posthog/platform/main-window";
-import type { NewTaskLinkPayload, SharedLinkParams } from "@shared/types";
+import type { NewTaskLinkPayload, NewTaskSharedParams } from "@shared/types";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
@@ -7,6 +7,19 @@ import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import type { DeepLinkService } from "../deep-link/service";
 
 const log = logger.scope("new-task-link-service");
+
+function decodePlanBase64(encoded: string): string | null {
+  try {
+    const normalized = encoded
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .replace(/ /g, "+");
+    const padding = (4 - (normalized.length % 4)) % 4;
+    return atob(normalized + "=".repeat(padding));
+  } catch {
+    return null;
+  }
+}
 
 export const NewTaskLinkEvent = {
   Action: "action",
@@ -41,7 +54,7 @@ export class NewTaskLinkService extends TypedEventEmitter<NewTaskLinkEvents> {
     );
   }
 
-  private extractSharedParams(params: URLSearchParams): SharedLinkParams {
+  private extractSharedParams(params: URLSearchParams): NewTaskSharedParams {
     return {
       repo: params.get("repo") ?? undefined,
       mode: params.get("mode") ?? undefined,
@@ -53,8 +66,8 @@ export class NewTaskLinkService extends TypedEventEmitter<NewTaskLinkEvents> {
     const shared = this.extractSharedParams(params);
     const prompt = params.get("prompt") ?? undefined;
 
-    if (!prompt && !shared.repo && !shared.mode && !shared.model) {
-      log.warn("New task link has no parameters");
+    if (!prompt && !shared.repo) {
+      log.warn("New task link requires at least prompt or repo");
       return false;
     }
 
@@ -79,10 +92,8 @@ export class NewTaskLinkService extends TypedEventEmitter<NewTaskLinkEvents> {
       return false;
     }
 
-    let plan: string;
-    try {
-      plan = atob(planEncoded);
-    } catch {
+    const plan = decodePlanBase64(planEncoded);
+    if (plan === null) {
       log.error("Plan link has invalid base64 encoding");
       return false;
     }

@@ -92,6 +92,30 @@ describe("NewTaskLinkService", () => {
       expect(result).toBe(false);
     });
 
+    it("rejects when only mode is provided", () => {
+      const result = mockDeepLink._invoke(
+        "new",
+        new URLSearchParams("mode=plan"),
+      );
+      expect(result).toBe(false);
+    });
+
+    it("rejects when only model is provided", () => {
+      const result = mockDeepLink._invoke(
+        "new",
+        new URLSearchParams("model=opus"),
+      );
+      expect(result).toBe(false);
+    });
+
+    it("rejects when only mode and model are provided", () => {
+      const result = mockDeepLink._invoke(
+        "new",
+        new URLSearchParams("mode=plan&model=opus"),
+      );
+      expect(result).toBe(false);
+    });
+
     it("accepts prompt only", () => {
       const listener = vi.fn();
       service.on(NewTaskLinkEvent.Action, listener);
@@ -184,6 +208,44 @@ describe("NewTaskLinkService", () => {
           plan: planText,
           repo: "org/repo",
         }),
+      );
+    });
+
+    it("accepts URL-safe base64 with - and _ instead of + and /", () => {
+      const listener = vi.fn();
+      service.on(NewTaskLinkEvent.Action, listener);
+
+      const planText = "\xfb\xff"; // bytes that base64 to "+/8="
+      const standard = btoa(planText);
+      const urlSafe = standard
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+
+      const result = mockDeepLink._invoke(
+        "plan",
+        new URLSearchParams(`plan=${urlSafe}`),
+      );
+
+      expect(result).toBe(true);
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "plan", plan: planText }),
+      );
+    });
+
+    it("recovers when + was decoded to space by URLSearchParams", () => {
+      const listener = vi.fn();
+      service.on(NewTaskLinkEvent.Action, listener);
+
+      // "+/8=" arrives as " /8=" because URLSearchParams turns + into space
+      const result = mockDeepLink._invoke(
+        "plan",
+        new URLSearchParams("plan=+/8="),
+      );
+
+      expect(result).toBe(true);
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "plan", plan: "\xfb\xff" }),
       );
     });
 

@@ -28,7 +28,7 @@ export interface TaskInputReportAssociation {
   title: string;
 }
 
-interface TaskInputNavigationOptions {
+export interface TaskInputNavigationOptions {
   folderId?: string;
   initialPrompt?: string;
   initialCloudRepository?: string;

@@ -301,6 +301,14 @@ export interface DeepLinkIssueProperties {
   model?: string;
 }
 
+export interface DeepLinkIssueFailedProperties {
+  owner: string;
+  repo: string;
+  issue_number: number;
+  reason: "not_found" | "fetch_failed";
+  error_message?: string;
+}
+
 // Feedback events
 export interface TaskFeedbackProperties {
   task_id: string;
@@ -660,6 +668,7 @@ export const ANALYTICS_EVENTS = {
   DEEP_LINK_NEW_TASK: "Deep link new task",
   DEEP_LINK_PLAN: "Deep link plan",
   DEEP_LINK_ISSUE: "Deep link issue",
+  DEEP_LINK_ISSUE_FAILED: "Deep link issue failed",
 
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
@@ -771,6 +780,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.DEEP_LINK_NEW_TASK]: DeepLinkNewTaskProperties;
   [ANALYTICS_EVENTS.DEEP_LINK_PLAN]: DeepLinkPlanProperties;
   [ANALYTICS_EVENTS.DEEP_LINK_ISSUE]: DeepLinkIssueProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_ISSUE_FAILED]: DeepLinkIssueFailedProperties;
 
   // Error events
   [ANALYTICS_EVENTS.TASK_CREATION_FAILED]: TaskCreationFailedProperties;

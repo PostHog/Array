@@ -1,3 +1,4 @@
+import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { DotPatternBackground } from "@components/DotPatternBackground";
 import { EnvironmentSelector } from "@features/environments/components/EnvironmentSelector";
 import { FolderPicker } from "@features/folder-picker/components/FolderPicker";
@@ -64,6 +65,20 @@ interface TaskInputProps {
   initialModel?: string;
   initialMode?: string;
   reportAssociation?: TaskInputReportAssociation;
+}
+
+function isValidConfigValue(
+  option: SessionConfigOption | undefined,
+  value: string,
+): option is Extract<SessionConfigOption, { type: "select" }> {
+  if (!option || option.type !== "select") return false;
+  const items = option.options as Array<{
+    value?: string;
+    options?: Array<{ value: string }>;
+  }>;
+  return items.some((o) =>
+    o.options ? o.options.some((g) => g.value === value) : o.value === value,
+  );
 }
 
 export function TaskInput({
@@ -355,16 +370,24 @@ export function TaskInput({
     setConfigOption,
   } = usePreviewConfig(adapter);
 
+  const lastAppliedDeepLinkConfigKey = useRef<string | undefined>(undefined);
+
   useEffect(() => {
     if (isPreviewLoading) return;
-    if (initialModel && modelOption) {
+    if (!initialPromptKey) return;
+    if (lastAppliedDeepLinkConfigKey.current === initialPromptKey) return;
+    if (!initialModel && !initialMode) return;
+
+    if (initialModel && isValidConfigValue(modelOption, initialModel)) {
       setConfigOption(modelOption.id, initialModel);
     }
-    if (initialMode && modeOption) {
+    if (initialMode && isValidConfigValue(modeOption, initialMode)) {
       setConfigOption(modeOption.id, initialMode);
     }
+    lastAppliedDeepLinkConfigKey.current = initialPromptKey;
   }, [
     isPreviewLoading,
+    initialPromptKey,
     initialModel,
     initialMode,
     modelOption,
