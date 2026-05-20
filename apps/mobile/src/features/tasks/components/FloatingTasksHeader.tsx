@@ -8,6 +8,7 @@ import { TaskFilterButton } from "./TaskFilterMenu";
 
 interface FloatingTasksHeaderProps {
   onFilterPress: () => void;
+  showFilter?: boolean;
 }
 
 /**
@@ -18,6 +19,7 @@ interface FloatingTasksHeaderProps {
  */
 export function FloatingTasksHeader({
   onFilterPress,
+  showFilter = true,
 }: FloatingTasksHeaderProps) {
   const insets = useSafeAreaInsets();
   const themeColors = useThemeColors();
@@ -56,7 +58,11 @@ export function FloatingTasksHeader({
           </Text>
         </View>
 
-        <TaskFilterButton onPress={onFilterPress} />
+        {showFilter ? (
+          <TaskFilterButton onPress={onFilterPress} />
+        ) : (
+          <View className="h-9 w-9" />
+        )}
       </View>
     </View>
   );

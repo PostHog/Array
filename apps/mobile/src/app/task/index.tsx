@@ -393,7 +393,7 @@ export default function NewTaskScreen() {
               <Animated.View
                 style={suggestionsStyle}
                 pointerEvents={keyboardActive ? "none" : "auto"}
-                className="flex-1 justify-center"
+                className="flex-1 justify-end pb-4"
               >
                 <Text className="mb-3 px-1 text-[13px] text-gray-10">
                   Suggestions

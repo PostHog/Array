@@ -1,5 +1,5 @@
 import { Text } from "@components/text";
-import { CaretRight, GitBranch } from "phosphor-react-native";
+import { GitBranch, Plus, Sparkle } from "phosphor-react-native";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,24 +33,28 @@ function CreateTaskEmptyState({ onCreateTask }: CreateTaskEmptyStateProps) {
   const themeColors = useThemeColors();
 
   return (
-    <View className="flex-1 items-center justify-center p-6">
-      <View className="mb-6 h-16 w-16 items-center justify-center rounded-full bg-gray-3">
-        <Text className="text-3xl">✨</Text>
+    <View className="flex-1 items-center justify-center px-8">
+      <View
+        className="mb-6 h-20 w-20 items-center justify-center rounded-full"
+        style={{ backgroundColor: `${themeColors.accent[9]}1A` }}
+      >
+        <Sparkle size={36} color={themeColors.accent[9]} weight="fill" />
       </View>
-      <Text className="mb-2 text-center font-semibold text-gray-12 text-lg">
-        No tasks yet
+      <Text className="mb-2 text-center font-semibold text-[22px] text-gray-12 leading-tight">
+        Start your first task
       </Text>
-      <Text className="mb-6 text-center text-gray-11 text-sm">
-        Create a task to get started
+      <Text className="mb-8 max-w-[280px] text-center text-[15px] text-gray-11 leading-snug">
+        Describe what you want built, fixed, or investigated.
       </Text>
       {onCreateTask && (
         <Pressable
           onPress={onCreateTask}
-          className="rounded-lg px-6 py-3"
+          className="flex-row items-center gap-2 rounded-full px-6 py-3.5 active:opacity-80"
           style={{ backgroundColor: themeColors.accent[9] }}
         >
-          <Text className="font-semibold text-accent-contrast">
-            Create task
+          <Plus size={18} color={themeColors.accent.contrast} weight="bold" />
+          <Text className="font-semibold text-[15px] text-accent-contrast">
+            New task
           </Text>
         </Pressable>
       )}
@@ -59,10 +63,9 @@ function CreateTaskEmptyState({ onCreateTask }: CreateTaskEmptyStateProps) {
 }
 
 type ListItem =
-  | { type: "task"; task: Task; isArchived: boolean }
+  | { type: "task"; task: Task }
   | { type: "repo-header"; repoLabel: string; count: number }
-  | { type: "date-header"; label: string; count: number }
-  | { type: "archived-header"; count: number; expanded: boolean };
+  | { type: "date-header"; label: string; count: number };
 
 const NO_REPO_LABEL = "No repository";
 
@@ -106,7 +109,6 @@ export function TaskList({
   const { archivedTasks, archive, unarchive } = useArchivedTasksStore();
   const organizeMode = useTaskStore((s) => s.organizeMode);
   const sortMode = useTaskStore((s) => s.sortMode);
-  const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
 
   const handleTaskPress = (task: Task) => {
@@ -118,21 +120,7 @@ export function TaskList({
   };
 
   const listItems = useMemo((): ListItem[] => {
-    const active: Task[] = [];
-    const archived: Task[] = [];
-
-    for (const task of tasks) {
-      if (task.id in archivedTasks) {
-        archived.push(task);
-      } else {
-        active.push(task);
-      }
-    }
-
-    archived.sort(
-      (a, b) => (archivedTasks[a.id] ?? 0) - (archivedTasks[b.id] ?? 0),
-    );
-
+    const active = tasks.filter((task) => !(task.id in archivedTasks));
     const items: ListItem[] = [];
 
     if (organizeMode === "by-project") {
@@ -171,7 +159,7 @@ export function TaskList({
           count: tasksInRepo.length,
         });
         for (const task of tasksInRepo) {
-          items.push({ type: "task", task, isArchived: false });
+          items.push({ type: "task", task });
         }
       }
     } else {
@@ -197,27 +185,13 @@ export function TaskList({
         if (!bucket || bucket.length === 0) continue;
         items.push({ type: "date-header", label, count: bucket.length });
         for (const task of bucket) {
-          items.push({ type: "task", task, isArchived: false });
-        }
-      }
-    }
-
-    if (archived.length > 0) {
-      items.push({
-        type: "archived-header",
-        count: archived.length,
-        expanded: archivedExpanded,
-      });
-
-      if (archivedExpanded) {
-        for (const task of archived) {
-          items.push({ type: "task", task, isArchived: true });
+          items.push({ type: "task", task });
         }
       }
     }
 
     return items;
-  }, [tasks, archivedTasks, archivedExpanded, organizeMode, sortMode]);
+  }, [tasks, archivedTasks, organizeMode, sortMode]);
 
   if (error) {
     return (
@@ -262,11 +236,16 @@ export function TaskList({
     );
   }
 
-  if (hasGithubIntegration === false && tasks.length === 0) {
+  const activeTaskCount = tasks.reduce(
+    (count, task) => count + (task.id in archivedTasks ? 0 : 1),
+    0,
+  );
+
+  if (hasGithubIntegration === false && activeTaskCount === 0) {
     return <GitHubConnectionPrompt mode="empty" onConnected={handleRefresh} />;
   }
 
-  if (tasks.length === 0) {
+  if (activeTaskCount === 0) {
     return <CreateTaskEmptyState onCreateTask={onCreateTask} />;
   }
 
@@ -276,14 +255,12 @@ export function TaskList({
       data={listItems}
       keyExtractor={(item) => {
         switch (item.type) {
-          case "archived-header":
-            return "__archived_header__";
           case "repo-header":
             return `__repo__${item.repoLabel}`;
           case "date-header":
             return `__date__${item.label}`;
           case "task":
-            return `${item.task.id}-${item.isArchived ? "a" : "v"}`;
+            return item.task.id;
         }
       }}
       ListHeaderComponent={
@@ -325,31 +302,10 @@ export function TaskList({
           );
         }
 
-        if (item.type === "archived-header") {
-          return (
-            <Pressable
-              onPress={() => setArchivedExpanded(!item.expanded)}
-              className="flex-row items-center gap-2 border-gray-6 border-t bg-gray-2 px-3 py-2.5"
-            >
-              <CaretRight
-                size={14}
-                color={themeColors.gray[9]}
-                style={{
-                  transform: [{ rotate: item.expanded ? "90deg" : "0deg" }],
-                }}
-              />
-              <Text className="flex-1 font-medium text-gray-9 text-xs">
-                Archived
-              </Text>
-              <Text className="text-gray-8 text-xs">{item.count}</Text>
-            </Pressable>
-          );
-        }
-
         return (
           <SwipeableTaskItem
             task={item.task}
-            isArchived={item.isArchived}
+            isArchived={false}
             onPress={handleTaskPress}
             onArchive={archive}
             onUnarchive={unarchive}

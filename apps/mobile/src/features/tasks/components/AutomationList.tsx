@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import { Plus } from "phosphor-react-native";
 import {
   ActivityIndicator,
   FlatList,
@@ -35,10 +36,11 @@ function EmptyAutomationState({
       {onCreateAutomation && (
         <Pressable
           onPress={onCreateAutomation}
-          className="rounded-lg px-6 py-3"
+          className="flex-row items-center gap-2 rounded-full px-6 py-3.5 active:opacity-80"
           style={{ backgroundColor: themeColors.accent[9] }}
         >
-          <Text className="font-semibold text-accent-contrast">
+          <Plus size={18} color={themeColors.accent.contrast} weight="bold" />
+          <Text className="font-semibold text-[15px] text-accent-contrast">
             New automation
           </Text>
         </Pressable>

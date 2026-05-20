@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { InteractionManager, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FloatingNewTaskButton } from "@/features/tasks/components/FloatingNewTaskButton";
@@ -9,12 +9,20 @@ import {
   useTaskFilterMenu,
 } from "@/features/tasks/components/TaskFilterMenu";
 import { TaskList } from "@/features/tasks/components/TaskList";
+import { useTasks } from "@/features/tasks/hooks/useTasks";
+import { useArchivedTasksStore } from "@/features/tasks/stores/archivedTasksStore";
 
 export default function TasksScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const readyRef = useRef(true);
   const filterMenu = useTaskFilterMenu();
+  const { tasks } = useTasks({ originProduct: "user_created" });
+  const archivedTasks = useArchivedTasksStore((s) => s.archivedTasks);
+  const hasActiveTasks = useMemo(
+    () => tasks.some((task) => !(task.id in archivedTasks)),
+    [tasks, archivedTasks],
+  );
 
   // Block navigation while a modal dismiss animation is in progress.
   // When the screen loses focus (modal opens), readyRef is false.
@@ -59,9 +67,14 @@ export default function TasksScreen() {
         contentInsetTop={headerHeight}
       />
 
-      <FloatingTasksHeader onFilterPress={filterMenu.show} />
+      <FloatingTasksHeader
+        onFilterPress={filterMenu.show}
+        showFilter={hasActiveTasks}
+      />
 
-      <FloatingNewTaskButton onPress={handleCreateTask} />
+      {hasActiveTasks ? (
+        <FloatingNewTaskButton onPress={handleCreateTask} />
+      ) : null}
 
       <TaskFilterMenu open={filterMenu.open} onClose={filterMenu.hide} />
     </View>

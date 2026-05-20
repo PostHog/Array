@@ -5,11 +5,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AutomationList } from "@/features/tasks/components/AutomationList";
 import { FloatingAutomationsHeader } from "@/features/tasks/components/FloatingAutomationsHeader";
 import { FloatingNewAutomationButton } from "@/features/tasks/components/FloatingNewAutomationButton";
+import { useAutomations } from "@/features/tasks/hooks/useAutomations";
 
 export default function AutomationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const readyRef = useRef(true);
+  const { automations } = useAutomations();
+  const hasAutomations = automations.length > 0;
 
   useFocusEffect(
     useCallback(() => {
@@ -52,7 +55,9 @@ export default function AutomationsScreen() {
 
       <FloatingAutomationsHeader />
 
-      <FloatingNewAutomationButton onPress={handleCreateAutomation} />
+      {hasAutomations ? (
+        <FloatingNewAutomationButton onPress={handleCreateAutomation} />
+      ) : null}
     </View>
   );
 }
