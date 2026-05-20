@@ -32,6 +32,7 @@ interface TaskInputNavigationOptions {
   initialPrompt?: string;
   initialCloudRepository?: string;
   reportAssociation?: TaskInputReportAssociation;
+  autoSubmit?: boolean;
 }
 
 interface ViewState {
@@ -43,6 +44,7 @@ interface ViewState {
   initialPrompt?: string;
   initialCloudRepository?: string;
   reportAssociation?: TaskInputReportAssociation;
+  autoSubmit?: boolean;
 }
 
 interface NavigationStore {
@@ -194,7 +196,8 @@ export const useNavigationStore = create<NavigationStore>()(
           const hasTransientState =
             !!options.initialPrompt ||
             !!options.initialCloudRepository ||
-            !!options.reportAssociation;
+            !!options.reportAssociation ||
+            !!options.autoSubmit;
           if (options.reportAssociation || options.initialCloudRepository) {
             set({
               taskInputReportAssociation: options.reportAssociation,
@@ -207,6 +210,7 @@ export const useNavigationStore = create<NavigationStore>()(
             initialPrompt: options.initialPrompt,
             initialCloudRepository: options.initialCloudRepository,
             reportAssociation: options.reportAssociation,
+            autoSubmit: options.autoSubmit,
             taskInputRequestId: hasTransientState
               ? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`)
               : undefined,

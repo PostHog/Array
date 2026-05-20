@@ -15,6 +15,7 @@ import {
   ArrowSquareOutIcon,
   CaretDownIcon,
   CaretRightIcon,
+  ChatCircleIcon,
   EyeIcon,
   LinkSimpleIcon,
   Plus,
@@ -288,6 +289,29 @@ export function ReportDetailPane({
     report,
   ]);
 
+  const handleDiscussReport = useCallback(() => {
+    const prompt = [
+      "Let's discuss this PostHog signal report.",
+      "",
+      `Report ID: ${report.id}`,
+      `Title: ${report.title ?? "Untitled signal"}`,
+      "",
+      "Summary:",
+      report.summary ?? "(no summary available)",
+      "",
+      "Use the PostHog inbox MCP tools to fetch full details (signals, artefacts, related tasks) as needed. Then summarise what's going on and ask me what I'd like to dig into.",
+    ].join("\n");
+    navigateToTaskInput({
+      initialPrompt: prompt,
+      initialCloudRepository: effectiveCloudRepository ?? undefined,
+      reportAssociation: {
+        reportId: report.id,
+        title: report.title ?? "Untitled signal",
+      },
+      autoSubmit: true,
+    });
+  }, [navigateToTaskInput, effectiveCloudRepository, report]);
+
   useEffect(() => {
     if (!canCreateImplementationPr) return;
     const handler = (e: KeyboardEvent) => {
@@ -370,6 +394,17 @@ export function ReportDetailPane({
             )}
             Dismiss
           </Button>
+          <Tooltip content="Open a chat session about this report">
+            <Button
+              size="1"
+              variant="soft"
+              className="gap-1 text-[12px]"
+              onClick={handleDiscussReport}
+            >
+              <ChatCircleIcon size={12} />
+              Discuss
+            </Button>
+          </Tooltip>
           {headerImplementationPrUrl ? (
             <ReportImplementationPrLink
               prUrl={headerImplementationPrUrl}
