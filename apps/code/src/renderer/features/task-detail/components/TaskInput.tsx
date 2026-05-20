@@ -43,6 +43,7 @@ import { useAuthStore } from "@renderer/features/auth/stores/authStore";
 import { useDraftStore } from "@renderer/features/message-editor/stores/draftStore";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
+import type { ExecutionMode } from "@shared/types";
 import {
   type TaskInputReportAssociation,
   useNavigationStore,
@@ -64,6 +65,7 @@ interface TaskInputProps {
   initialPromptKey?: string;
   initialCloudRepository?: string;
   reportAssociation?: TaskInputReportAssociation;
+  initialExecutionMode?: ExecutionMode;
   autoSubmit?: boolean;
 }
 
@@ -74,6 +76,7 @@ export function TaskInput({
   initialPromptKey,
   initialCloudRepository,
   reportAssociation,
+  initialExecutionMode,
   autoSubmit,
 }: TaskInputProps = {}) {
   const { cloudRegion } = useAuthStore();

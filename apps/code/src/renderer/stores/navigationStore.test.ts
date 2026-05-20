@@ -114,11 +114,13 @@ describe("navigationStore", () => {
       getStore().navigateToTaskInput({
         initialPrompt: "Discuss this",
         reportAssociation: { reportId: "report-456", title: "Slow checkout" },
+        initialExecutionMode: "auto",
         autoSubmit: true,
       });
 
       expect(getView()).toMatchObject({
         type: "task-input",
+        initialExecutionMode: "auto",
         autoSubmit: true,
       });
       expect(getView().taskInputRequestId).toBeTruthy();
