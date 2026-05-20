@@ -20,7 +20,10 @@ import { resolveAndAttachDroppedFiles } from "@features/message-editor/utils/per
 import { DropZoneOverlay } from "@features/sessions/components/DropZoneOverlay";
 import { ReasoningLevelSelector } from "@features/sessions/components/ReasoningLevelSelector";
 import { UnifiedModelSelector } from "@features/sessions/components/UnifiedModelSelector";
-import { getCurrentModeFromConfigOptions } from "@features/sessions/stores/sessionStore";
+import {
+  flattenSelectOptions,
+  getCurrentModeFromConfigOptions,
+} from "@features/sessions/stores/sessionStore";
 import type { AgentAdapter } from "@features/settings/stores/settingsStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useSetupStore } from "@features/setup/stores/setupStore";
@@ -457,6 +460,19 @@ export function TaskInput({
     modeFallback;
   const currentReasoningLevel =
     thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
+  const isTaskConfigReady =
+    !isPreviewLoading &&
+    (effectiveWorkspaceMode !== "cloud" || typeof currentModel === "string");
+
+  useEffect(() => {
+    if (!initialExecutionMode || modeOption?.type !== "select") return;
+    if (modeOption.currentValue === initialExecutionMode) return;
+    const hasInitialMode = flattenSelectOptions(modeOption.options).some(
+      (option) => option.value === initialExecutionMode,
+    );
+    if (!hasInitialMode) return;
+    setConfigOption(modeOption.id, initialExecutionMode);
+  }, [initialExecutionMode, modeOption, setConfigOption]);
 
   const branchForTaskCreation =
     effectiveWorkspaceMode === "worktree" || effectiveWorkspaceMode === "cloud"
@@ -500,14 +516,20 @@ export function TaskInput({
   // draft store — `handleSubmit` only requires `canSubmitBase` in that path.
   useEffect(() => {
     if (!isAutoSubmitting || hasAutoSubmittedRef.current) return;
-    if (!canSubmitBase || !initialPrompt) return;
+    if (!canSubmitBase || !isTaskConfigReady || !initialPrompt) return;
     hasAutoSubmittedRef.current = true;
     void handleSubmit({
       segments: [{ type: "text", text: initialPrompt }],
     }).then((ok) => {
       if (!ok) setIsAutoSubmitting(false);
     });
-  }, [isAutoSubmitting, canSubmitBase, handleSubmit, initialPrompt]);
+  }, [
+    isAutoSubmitting,
+    canSubmitBase,
+    isTaskConfigReady,
+    handleSubmit,
+    initialPrompt,
+  ]);
 
   // If preconditions never resolve (no repo, offline, etc.), fall back to the
   // normal UI after a short grace period — the prompt stays in the editor so
