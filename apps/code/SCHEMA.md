@@ -244,6 +244,7 @@ Generic event — `setting_name` is the discriminator (`theme`, `terminal_font`,
 
 | Event | Properties |
 |---|---|
+| `Inbox viewed` | — |
 | `Inbox interest registered` | — |
 | `Prompt history opened` | `entry_count` |
 | `Prompt history selected` | `entry_count`, `entry_age_seconds`, `had_pending_draft`, `had_search_query`, `prompt_length` |

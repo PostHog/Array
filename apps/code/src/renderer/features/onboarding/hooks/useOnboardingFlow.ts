@@ -13,9 +13,12 @@ function inferRepositoryProvider(
   remote: string | undefined,
 ): RepositoryProvider {
   if (!remote) return "local";
-  if (remote.includes("gitlab.com")) return "gitlab";
-  if (remote.includes("github.com")) return "github";
-  return "github";
+  const host = remote
+    .match(/^(?:[a-z]+:\/\/)?(?:[^@/]+@)?([a-z0-9.-]+)[:/]/i)?.[1]
+    ?.toLowerCase();
+  if (host === "gitlab.com") return "gitlab";
+  if (host === "github.com") return "github";
+  return "none";
 }
 
 export interface DetectedRepo {
