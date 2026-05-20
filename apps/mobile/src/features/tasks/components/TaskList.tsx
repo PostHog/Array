@@ -1,6 +1,7 @@
 import { Text } from "@components/text";
-import { GitBranch, Plus, Sparkle } from "phosphor-react-native";
-import { useMemo, useState } from "react";
+import * as Haptics from "expo-haptics";
+import { Archive, GitBranch, Plus, Sparkle, X } from "phosphor-react-native";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -106,14 +107,55 @@ export function TaskList({
     refetch: refetchIntegrations,
   } = useIntegrations();
   const themeColors = useThemeColors();
-  const { archivedTasks, archive, unarchive } = useArchivedTasksStore();
+  const { archivedTasks, archive, archiveMany, unarchive } =
+    useArchivedTasksStore();
   const organizeMode = useTaskStore((s) => s.organizeMode);
   const sortMode = useTaskStore((s) => s.sortMode);
   const [scrollEnabled, setScrollEnabled] = useState(true);
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const selectionMode = selectedIds.size > 0;
+
+  const exitSelection = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
+
+  const toggleSelected = useCallback((taskId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  }, []);
+
   const handleTaskPress = (task: Task) => {
+    if (selectionMode) {
+      toggleSelected(task.id);
+      return;
+    }
     onTaskPress?.(task.id);
   };
+
+  const handleTaskLongPress = useCallback((task: Task) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSelectedIds((prev) => {
+      if (prev.has(task.id)) return prev;
+      const next = new Set(prev);
+      next.add(task.id);
+      return next;
+    });
+  }, []);
+
+  const handleBulkArchive = useCallback(() => {
+    if (selectedIds.size === 0) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    archiveMany(Array.from(selectedIds));
+    exitSelection();
+  }, [selectedIds, archiveMany, exitSelection]);
 
   const handleRefresh = async () => {
     await Promise.all([refetch(), refetchIntegrations()]);
@@ -250,81 +292,123 @@ export function TaskList({
   }
 
   return (
-    <FlatList
-      scrollEnabled={scrollEnabled}
-      data={listItems}
-      keyExtractor={(item) => {
-        switch (item.type) {
-          case "repo-header":
-            return `__repo__${item.repoLabel}`;
-          case "date-header":
-            return `__date__${item.label}`;
-          case "task":
-            return item.task.id;
+    <View className="flex-1">
+      <FlatList
+        scrollEnabled={scrollEnabled}
+        data={listItems}
+        keyExtractor={(item) => {
+          switch (item.type) {
+            case "repo-header":
+              return `__repo__${item.repoLabel}`;
+            case "date-header":
+              return `__date__${item.label}`;
+            case "task":
+              return item.task.id;
+          }
+        }}
+        ListHeaderComponent={
+          integrationsError ? (
+            <GitHubLoadNotice
+              message={integrationsError}
+              onRetry={handleRefresh}
+            />
+          ) : null
         }
-      }}
-      ListHeaderComponent={
-        integrationsError ? (
-          <GitHubLoadNotice
-            message={integrationsError}
-            onRetry={handleRefresh}
-          />
-        ) : null
-      }
-      renderItem={({ item }) => {
-        if (item.type === "repo-header") {
-          return (
-            <View className="flex-row items-center gap-2 bg-gray-2 px-3 py-2">
-              <GitBranch size={14} color={themeColors.gray[10]} />
-              <Text
-                className="flex-1 font-medium text-[12px] text-gray-11"
-                numberOfLines={1}
-              >
-                {item.repoLabel}
-              </Text>
-              <Text className="text-[11px] text-gray-9">{item.count}</Text>
-            </View>
-          );
-        }
+        renderItem={({ item }) => {
+          if (item.type === "repo-header") {
+            return (
+              <View className="flex-row items-center gap-2 bg-gray-2 px-3 py-2">
+                <GitBranch size={14} color={themeColors.gray[10]} />
+                <Text
+                  className="flex-1 font-medium text-[12px] text-gray-11"
+                  numberOfLines={1}
+                >
+                  {item.repoLabel}
+                </Text>
+                <Text className="text-[11px] text-gray-9">{item.count}</Text>
+              </View>
+            );
+          }
 
-        if (item.type === "date-header") {
-          return (
-            <View className="flex-row items-center gap-2 bg-gray-2 px-3 py-2">
-              <Text
-                className="flex-1 font-medium text-[12px] text-gray-11 uppercase"
-                style={{ letterSpacing: 0.5 }}
-                numberOfLines={1}
-              >
-                {item.label}
-              </Text>
-              <Text className="text-[11px] text-gray-9">{item.count}</Text>
-            </View>
-          );
-        }
+          if (item.type === "date-header") {
+            return (
+              <View className="flex-row items-center gap-2 bg-gray-2 px-3 py-2">
+                <Text
+                  className="flex-1 font-medium text-[12px] text-gray-11 uppercase"
+                  style={{ letterSpacing: 0.5 }}
+                  numberOfLines={1}
+                >
+                  {item.label}
+                </Text>
+                <Text className="text-[11px] text-gray-9">{item.count}</Text>
+              </View>
+            );
+          }
 
-        return (
-          <SwipeableTaskItem
-            task={item.task}
-            isArchived={false}
-            onPress={handleTaskPress}
-            onArchive={archive}
-            onUnarchive={unarchive}
-            onSwipeStart={() => setScrollEnabled(false)}
-            onSwipeEnd={() => setScrollEnabled(true)}
+          return (
+            <SwipeableTaskItem
+              task={item.task}
+              isArchived={false}
+              onPress={handleTaskPress}
+              onArchive={archive}
+              onUnarchive={unarchive}
+              onLongPress={handleTaskLongPress}
+              selectionMode={selectionMode}
+              selected={selectedIds.has(item.task.id)}
+              onSwipeStart={() => setScrollEnabled(false)}
+              onSwipeEnd={() => setScrollEnabled(true)}
+            />
+          );
+        }}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={handleRefresh}
+            tintColor={themeColors.accent[9]}
           />
-        );
-      }}
-      refreshControl={
-        <RefreshControl
-          refreshing={isLoading}
-          onRefresh={handleRefresh}
-          tintColor={themeColors.accent[9]}
-        />
-      }
-      contentContainerStyle={{
-        paddingTop: contentInsetTop,
-        paddingBottom: 100,
-      }}
-    />
+        }
+        contentContainerStyle={{
+          paddingTop: contentInsetTop,
+          paddingBottom: 100,
+        }}
+      />
+
+      {selectionMode ? (
+        <View
+          className="absolute inset-x-0 bottom-0 flex-row items-center gap-3 border-gray-6 border-t bg-card px-4 pt-3"
+          style={{ paddingBottom: 28 }}
+        >
+          <Pressable
+            onPress={exitSelection}
+            hitSlop={8}
+            className="h-10 w-10 items-center justify-center rounded-full bg-gray-3 active:bg-gray-4"
+            accessibilityLabel="Cancel selection"
+          >
+            <X size={18} color={themeColors.gray[11]} weight="bold" />
+          </Pressable>
+          <Text
+            className="flex-1 font-medium text-[15px] text-gray-12"
+            numberOfLines={1}
+          >
+            {selectedIds.size} selected
+          </Text>
+          <Pressable
+            onPress={handleBulkArchive}
+            className="flex-row items-center gap-2 rounded-full px-4 py-2.5 active:opacity-80"
+            style={{ backgroundColor: themeColors.accent[9] }}
+            accessibilityLabel="Archive selected tasks"
+          >
+            <Archive
+              size={16}
+              color={themeColors.accent.contrast}
+              weight="fill"
+            />
+            <Text className="font-semibold text-[14px] text-accent-contrast">
+              Archive
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
   );
 }

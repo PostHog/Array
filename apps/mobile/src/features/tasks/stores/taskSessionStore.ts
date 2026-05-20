@@ -68,6 +68,26 @@ type LocalNotificationKind =
   | "awaiting_user_input"
   | "task_failed";
 
+// Per-task cooldown so a noisy stream of terminal/awaiting events doesn't
+// fire a burst of identical banners. Keyed by taskId, value is the epoch ms
+// of the most recent notification for that task.
+const NOTIFICATION_DEDUP_WINDOW_MS = 30_000;
+const lastNotificationAt = new Map<string, number>();
+
+// TODO: server-side device presence. Today we can only suppress notifications
+// when *this* device is foregrounded on the task (`focusedTaskId` check
+// below). That leaves the cross-device case uncovered — e.g. desktop is open
+// on the same task, server fans the push to every registered token, mobile
+// still rings. Once the `/api/projects/{team_id}/tasks/{task_id}/presence/`
+// beacon endpoint lands in posthog/posthog, add:
+//   1. A stable per-install device_id (probably derive from pushTokenStore).
+//   2. POST presence every ~30s while a task screen is mounted AND AppState
+//      is "active".
+//   3. DELETE presence on screen blur or AppState → "background"/"inactive".
+// The server will then drop pushes to devices with non-expired presence for
+// the target task, so this client-side maybePresentLocalNotification stays
+// as-is (it's only the OS fanout path we're improving).
+
 function maybePresentLocalNotification(args: {
   taskRunId: string;
   kind: LocalNotificationKind;
@@ -81,6 +101,12 @@ function maybePresentLocalNotification(args: {
   // Skip when the user is actively viewing this task — the UI already
   // surfaces what changed; an OS banner would be redundant noise.
   if (storeState.focusedTaskId === session.taskId) return;
+
+  // Dedup: skip if we just notified about this task.
+  const now = Date.now();
+  const previous = lastNotificationAt.get(session.taskId);
+  if (previous && now - previous < NOTIFICATION_DEDUP_WINDOW_MS) return;
+  lastNotificationAt.set(session.taskId, now);
 
   const title = session.taskTitle ?? "PostHog Code";
   let body: string;
@@ -125,7 +151,6 @@ const TURN_END_METHODS = new Set([
 interface BatchAnalysis {
   hasTurnEnd: boolean;
   hasAwaitingUserInput: boolean;
-  hasError: boolean;
   hasVisibleAgentOutput: boolean;
   externalUserMessageCount: number;
   agentMessageFinalized: boolean;
@@ -137,7 +162,6 @@ function analyzeEntries(
 ): BatchAnalysis {
   let hasTurnEnd = false;
   let hasAwaitingUserInput = false;
-  let hasError = false;
   let hasVisibleAgentOutput = false;
   let externalUserMessageCount = 0;
   let agentMessageFinalized = false;
@@ -148,9 +172,6 @@ function analyzeEntries(
       hasTurnEnd = true;
       if (method === "_posthog/awaiting_user_input") {
         hasAwaitingUserInput = true;
-      }
-      if (method === "_posthog/error") {
-        hasError = true;
       }
     }
 
@@ -179,7 +200,6 @@ function analyzeEntries(
   return {
     hasTurnEnd,
     hasAwaitingUserInput,
-    hasError,
     hasVisibleAgentOutput,
     externalUserMessageCount,
     agentMessageFinalized,
@@ -837,14 +857,18 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         // status block has a chance to fire its (more specific, e.g.
         // "task_failed") notification. The status block below is the
         // canonical owner of awaitingPing for terminal snapshots.
+        //
+        // awaitingPing is only ever set by this-device actions (sendPrompt,
+        // sendPermissionResponse, fresh runs, resumes). External user
+        // messages — i.e. another device chatting in the same task — must
+        // NOT arm it; otherwise mobile would fire notifications for desktop
+        // activity. Clearing on turn-end / finalized agent message stays.
         let nextAwaitingPing = current.awaitingPing;
-        if (!isSnapshot) {
-          if (analysis.externalUserMessageCount > 0 && !current.awaitingPing) {
-            nextAwaitingPing = true;
-          }
-          if (analysis.hasTurnEnd || analysis.agentMessageFinalized) {
-            nextAwaitingPing = false;
-          }
+        if (
+          !isSnapshot &&
+          (analysis.hasTurnEnd || analysis.agentMessageFinalized)
+        ) {
+          nextAwaitingPing = false;
         }
 
         const nextAwaitingAgentOutput =
@@ -873,23 +897,21 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         };
       });
 
-      // Only fire on live `logs` deltas — snapshots are historical replay
-      // and the status block below handles their terminal-state notification.
+      // Live `logs` deltas only fire pings for the "agent is blocked on the
+      // user" case. Terminal completion / failure is handled by the status
+      // block below, so we don't double-fire on every intermediate turn.
+      // Snapshots are historical replay — never ping for those.
       const shouldPingNow =
-        !isSnapshot &&
-        (analysis.hasTurnEnd || analysis.agentMessageFinalized) &&
-        (wasAwaitingPing || analysis.externalUserMessageCount > 0);
+        !isSnapshot && wasAwaitingPing && analysis.hasAwaitingUserInput;
       if (shouldPingNow && usePreferencesStore.getState().pingsEnabled) {
         playMeepSound().catch(() => {});
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
       if (shouldPingNow) {
-        const kind: LocalNotificationKind = analysis.hasError
-          ? "task_failed"
-          : analysis.hasAwaitingUserInput
-            ? "awaiting_user_input"
-            : "turn_complete";
-        maybePresentLocalNotification({ taskRunId, kind });
+        maybePresentLocalNotification({
+          taskRunId,
+          kind: "awaiting_user_input",
+        });
       }
     }
 

@@ -21,6 +21,9 @@ interface SwipeableTaskItemProps {
   onPress: (task: Task) => void;
   onArchive: (taskId: string) => void;
   onUnarchive: (taskId: string) => void;
+  onLongPress?: (task: Task) => void;
+  selectionMode?: boolean;
+  selected?: boolean;
   onSwipeStart?: () => void;
   onSwipeEnd?: () => void;
 }
@@ -31,6 +34,9 @@ export function SwipeableTaskItem({
   onPress,
   onArchive,
   onUnarchive,
+  onLongPress,
+  selectionMode = false,
+  selected = false,
   onSwipeStart,
   onSwipeEnd,
 }: SwipeableTaskItemProps) {
@@ -46,6 +52,7 @@ export function SwipeableTaskItem({
     isArchived,
     onArchive,
     onUnarchive,
+    selectionMode,
     onSwipeStart,
     onSwipeEnd,
   });
@@ -54,6 +61,7 @@ export function SwipeableTaskItem({
     isArchived,
     onArchive,
     onUnarchive,
+    selectionMode,
     onSwipeStart,
     onSwipeEnd,
   };
@@ -69,11 +77,13 @@ export function SwipeableTaskItem({
       // Start tracking immediately on horizontal movement
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gesture) =>
+        !propsRef.current.selectionMode &&
         Math.abs(gesture.dx) > 5 &&
         Math.abs(gesture.dx) > Math.abs(gesture.dy) &&
         gesture.dx < 0,
       // Capture before children so FlatList doesn't steal
       onMoveShouldSetPanResponderCapture: (_, gesture) =>
+        !propsRef.current.selectionMode &&
         Math.abs(gesture.dx) > 8 &&
         Math.abs(gesture.dx) > Math.abs(gesture.dy * 1.2) &&
         gesture.dx < 0,
@@ -153,7 +163,13 @@ export function SwipeableTaskItem({
         }}
         {...panResponder.panHandlers}
       >
-        <TaskItem task={task} onPress={onPress} />
+        <TaskItem
+          task={task}
+          onPress={onPress}
+          onLongPress={onLongPress}
+          selectionMode={selectionMode}
+          selected={selected}
+        />
       </Animated.View>
     </View>
   );

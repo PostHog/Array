@@ -10,6 +10,7 @@ interface ArchivedTasksState {
   // taskId → timestamp (ms) for eviction ordering
   archivedTasks: Record<string, number>;
   archive: (taskId: string) => void;
+  archiveMany: (taskIds: string[]) => void;
   unarchive: (taskId: string) => void;
   isArchived: (taskId: string) => boolean;
 }
@@ -37,6 +38,15 @@ export const useArchivedTasksStore = create<ArchivedTasksState>()(
             [taskId]: Date.now(),
           }),
         })),
+
+      archiveMany: (taskIds: string[]) =>
+        set((state) => {
+          if (taskIds.length === 0) return state;
+          const now = Date.now();
+          const next = { ...state.archivedTasks };
+          for (const id of taskIds) next[id] = now;
+          return { archivedTasks: withCap(next) };
+        }),
 
       unarchive: (taskId: string) =>
         set((state) => {

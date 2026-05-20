@@ -4,7 +4,6 @@ import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   Platform,
@@ -368,44 +367,7 @@ export default function TaskDetailScreen() {
     [router],
   );
 
-  // Stale detection for local tasks: if no new S3 data arrives for 30s
-  // while the agent is supposedly working, the desktop may be offline.
-  const isLocal = task?.latest_run?.environment === "local";
   const prUrl = task?.latest_run?.output?.pr_url as string | undefined;
-  const [isStale, setIsStale] = useState(false);
-  useEffect(() => {
-    if (!isLocal || !session?.isPromptPending) {
-      setIsStale(false);
-      return;
-    }
-    const interval = setInterval(() => {
-      const lastEvent = session.lastEventAt ?? 0;
-      setIsStale(lastEvent > 0 && Date.now() - lastEvent > 30_000);
-    }, 5_000);
-    return () => clearInterval(interval);
-  }, [isLocal, session?.isPromptPending, session?.lastEventAt]);
-
-  const handleContinueInCloud = useCallback(async () => {
-    if (!taskId || !task) return;
-    try {
-      setRetrying(true);
-      disconnectFromTask(taskId);
-      const updatedTask = await runTaskInCloud(taskId, {
-        resumeFromRunId: task.latest_run?.id,
-      });
-      setTask(updatedTask);
-      await connectToTask(updatedTask);
-      updateTaskInCache(updatedTask);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (err) {
-      log.error("Failed to continue in cloud", err);
-      setRetrying(false);
-      Alert.alert(
-        "Failed to switch",
-        "Could not continue this task in the cloud. Please try again.",
-      );
-    }
-  }, [taskId, task, disconnectFromTask, connectToTask, updateTaskInCache]);
 
   const activityPhase = getSessionActivityPhase({ retrying, session });
   const isConnecting = activityPhase === "connecting";
@@ -469,26 +431,6 @@ export default function TaskDetailScreen() {
               <PrDiffStatsBadge prUrl={prUrl} />
               <PrStatusBadge prUrl={prUrl} />
             </>
-          ) : isLocal ? (
-            <Pressable
-              onPress={() =>
-                ActionSheetIOS.showActionSheetWithOptions(
-                  {
-                    options: ["Keep locally", "Move to Cloud"],
-                    cancelButtonIndex: 0,
-                    title: isStale
-                      ? "Desktop may be offline"
-                      : "Running on your desktop",
-                  },
-                  (index) => {
-                    if (index === 1) handleContinueInCloud();
-                  },
-                )
-              }
-              className="rounded-full bg-gray-4 px-2.5 py-1"
-            >
-              <Text className="font-medium text-gray-11 text-xs">Local</Text>
-            </Pressable>
           ) : null
         }
       />

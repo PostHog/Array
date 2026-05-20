@@ -75,8 +75,14 @@ export function useTasks(filters?: {
       getTaskPollingInterval(query.state.data as Task[] | undefined),
   });
 
+  // Mobile never runs tasks locally — hide desktop-only local runs so the
+  // mobile list mirrors what's actually shareable across devices.
+  const cloudTasks = (query.data ?? []).filter(
+    (task) => task.latest_run?.environment !== "local",
+  );
+
   const filteredTasks = filterAndSortTasks(
-    query.data ?? [],
+    cloudTasks,
     sortMode,
     showInternal,
     filter,
@@ -84,7 +90,7 @@ export function useTasks(filters?: {
 
   return {
     tasks: filteredTasks,
-    allTasks: query.data ?? [],
+    allTasks: cloudTasks,
     isLoading: query.isLoading,
     error: query.error?.message ?? null,
     refetch: query.refetch,

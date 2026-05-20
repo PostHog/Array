@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ArrowUp,
@@ -73,7 +74,7 @@ import {
   toRepositorySelection,
 } from "@/features/tasks/utils/repositorySelection";
 import { logger } from "@/lib/logger";
-import { useThemeColors } from "@/lib/theme";
+import { toRgba, useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-create");
 
@@ -513,45 +514,61 @@ export default function NewTaskScreen() {
                   />
                 </Pressable>
 
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
-                  className="flex-1"
-                  contentContainerStyle={{
-                    alignItems: "center",
-                    gap: 6,
-                    paddingRight: 4,
-                  }}
-                >
-                  <Pill
-                    icon={modeIcon(
-                      mode,
-                      mode === "plan"
-                        ? themeColors.accent[11]
-                        : themeColors.gray[11],
-                    )}
-                    label={modeLabel(mode)}
-                    accent={mode === "plan"}
-                    onPress={() => setModeSheetOpen(true)}
-                  />
-
-                  <Pill
-                    icon={<Robot size={14} color={themeColors.gray[11]} />}
-                    label={modelLabel(model)}
-                    onPress={() => setModelSheetOpen(true)}
-                  />
-
-                  {showReasoningPill ? (
+                <View className="relative flex-1">
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={{
+                      alignItems: "center",
+                      gap: 6,
+                      paddingRight: 16,
+                    }}
+                  >
                     <Pill
-                      icon={
-                        <BrainIcon size={14} color={themeColors.gray[11]} />
-                      }
-                      label={reasoningLabel(reasoning)}
-                      onPress={() => setReasoningSheetOpen(true)}
+                      icon={modeIcon(
+                        mode,
+                        mode === "plan"
+                          ? themeColors.accent[11]
+                          : themeColors.gray[11],
+                      )}
+                      label={modeLabel(mode)}
+                      accent={mode === "plan"}
+                      onPress={() => setModeSheetOpen(true)}
                     />
-                  ) : null}
-                </ScrollView>
+
+                    <Pill
+                      icon={<Robot size={14} color={themeColors.gray[11]} />}
+                      label={modelLabel(model)}
+                      onPress={() => setModelSheetOpen(true)}
+                    />
+
+                    {showReasoningPill ? (
+                      <Pill
+                        icon={
+                          <BrainIcon size={14} color={themeColors.gray[11]} />
+                        }
+                        label={reasoningLabel(reasoning)}
+                        onPress={() => setReasoningSheetOpen(true)}
+                      />
+                    ) : null}
+                  </ScrollView>
+                  {/* Right-edge fade hints that more pills exist when the row
+                      overflows. Non-interactive so taps fall through. */}
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={[toRgba(themeColors.card, 0), themeColors.card]}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      bottom: 0,
+                      right: 0,
+                      width: 24,
+                    }}
+                  />
+                </View>
 
                 <Pressable
                   onPress={

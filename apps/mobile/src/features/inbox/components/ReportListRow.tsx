@@ -1,55 +1,34 @@
 import { Text } from "@components/text";
 import { differenceInHours, format, formatDistanceToNow } from "date-fns";
-import { Eye, Lightning } from "phosphor-react-native";
 import { memo } from "react";
 import { Pressable, View } from "react-native";
 import { useThemeColors } from "@/lib/theme";
-import type { SignalReport, SignalReportActionability } from "../types";
-import { inboxStatusLabel } from "../utils";
+import type { SignalReport } from "../types";
 
 interface ReportListRowProps {
   report: SignalReport;
   onPress: (report: SignalReport) => void;
 }
 
-const statusColorMap: Record<string, { bg: string; text: string }> = {
-  ready: { bg: "bg-status-success/20", text: "text-status-success" },
-  pending_input: { bg: "bg-accent-3", text: "text-accent-11" },
-  in_progress: { bg: "bg-status-warning/20", text: "text-status-warning" },
-  candidate: { bg: "bg-status-info/20", text: "text-status-info" },
-  potential: { bg: "bg-gray-5/20", text: "text-gray-9" },
-  failed: { bg: "bg-status-error/20", text: "text-status-error" },
-  suppressed: { bg: "bg-gray-5/20", text: "text-gray-9" },
-  deleted: { bg: "bg-gray-5/20", text: "text-gray-9" },
+// Single colored dot conveys status at a glance — full label still
+// available on the detail screen.
+const statusDotMap: Record<string, string> = {
+  ready: "success",
+  pending_input: "accent",
+  in_progress: "warning",
+  candidate: "info",
+  potential: "muted",
+  failed: "error",
+  suppressed: "muted",
+  deleted: "muted",
 };
 
-const priorityColorMap: Record<string, { bg: string; text: string }> = {
-  P0: { bg: "bg-status-error/20", text: "text-status-error" },
-  P1: { bg: "bg-status-warning/20", text: "text-status-warning" },
-  P2: { bg: "bg-status-warning/20", text: "text-status-warning" },
-  P3: { bg: "bg-gray-5/20", text: "text-gray-9" },
-  P4: { bg: "bg-gray-5/20", text: "text-gray-9" },
-};
-
-const actionabilityMap: Record<
-  SignalReportActionability,
-  { bg: string; text: string; label: string }
-> = {
-  immediately_actionable: {
-    bg: "bg-status-success/20",
-    text: "text-status-success",
-    label: "Actionable",
-  },
-  requires_human_input: {
-    bg: "bg-status-warning/20",
-    text: "text-status-warning",
-    label: "Needs input",
-  },
-  not_actionable: {
-    bg: "bg-gray-5/20",
-    text: "text-gray-9",
-    label: "Not actionable",
-  },
+const priorityColorMap: Record<string, string> = {
+  P0: "text-status-error",
+  P1: "text-status-warning",
+  P2: "text-status-warning",
+  P3: "text-gray-10",
+  P4: "text-gray-10",
 };
 
 function ReportListRowComponent({ report, onPress }: ReportListRowProps) {
@@ -61,59 +40,53 @@ function ReportListRowComponent({ report, onPress }: ReportListRowProps) {
       ? formatDistanceToNow(updatedAt, { addSuffix: true })
       : format(updatedAt, "MMM d");
 
-  const statusColors =
-    statusColorMap[report.status] ?? statusColorMap.potential;
+  const dotKind = statusDotMap[report.status] ?? "muted";
+  const dotColor =
+    dotKind === "success"
+      ? themeColors.status.success
+      : dotKind === "warning"
+        ? themeColors.status.warning
+        : dotKind === "error"
+          ? themeColors.status.error
+          : dotKind === "info"
+            ? themeColors.status.info
+            : dotKind === "accent"
+              ? themeColors.accent[9]
+              : themeColors.gray[8];
+
+  const priorityClass = report.priority
+    ? (priorityColorMap[report.priority] ?? "text-gray-10")
+    : null;
 
   return (
     <Pressable
       onPress={() => onPress(report)}
-      className="border-gray-6 border-b px-3 py-3 active:bg-gray-3"
+      className="flex-row items-start gap-2.5 border-gray-6 border-b px-3 py-2.5 active:bg-gray-3"
     >
-      {/* Title — full wrap, no truncation */}
-      <Text className="font-medium text-[14px] text-gray-12">
-        {report.title ?? "Untitled signal"}
-      </Text>
+      <View
+        className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+        style={{ backgroundColor: dotColor }}
+      />
 
-      {/* Badges + time */}
-      <View className="mt-1.5 flex-row items-center gap-1.5">
-        <View className={`rounded px-1.5 py-0.5 ${statusColors.bg}`}>
-          <Text className={`text-[11px] ${statusColors.text}`}>
-            {inboxStatusLabel(report.status)}
-          </Text>
-        </View>
-        {report.priority && (
-          <View
-            className={`rounded px-1.5 py-0.5 ${(priorityColorMap[report.priority] ?? priorityColorMap.P3).bg}`}
-          >
-            <Text
-              className={`font-medium text-[11px] ${(priorityColorMap[report.priority] ?? priorityColorMap.P3).text}`}
-            >
+      <View className="min-w-0 flex-1">
+        <Text
+          className="font-medium text-[14px] text-gray-12 leading-snug"
+          numberOfLines={2}
+          ellipsizeMode="tail"
+        >
+          {report.title ?? "Untitled signal"}
+        </Text>
+
+        <View className="mt-1 flex-row items-center gap-2">
+          {priorityClass ? (
+            <Text className={`font-semibold text-[11px] ${priorityClass}`}>
               {report.priority}
             </Text>
-          </View>
-        )}
-        {report.actionability && (
-          <View
-            className={`rounded px-1.5 py-0.5 ${actionabilityMap[report.actionability].bg}`}
-          >
-            <Text
-              className={`text-[11px] ${actionabilityMap[report.actionability].text}`}
-            >
-              {actionabilityMap[report.actionability].label}
-            </Text>
-          </View>
-        )}
-        {report.is_suggested_reviewer && (
-          <View className="rounded bg-status-warning/20 px-1 py-0.5">
-            <Eye size={12} color={themeColors.status.warning} weight="bold" />
-          </View>
-        )}
-        <View className="flex-1" />
-        <View className="flex-row items-center gap-1">
-          <Lightning size={11} color={themeColors.gray[9]} />
-          <Text className="text-[11px] text-gray-9">{report.signal_count}</Text>
+          ) : null}
+          <Text className="flex-1 text-[11px] text-gray-9" numberOfLines={1}>
+            {timeDisplay}
+          </Text>
         </View>
-        <Text className="text-[11px] text-gray-8">{timeDisplay}</Text>
       </View>
     </Pressable>
   );

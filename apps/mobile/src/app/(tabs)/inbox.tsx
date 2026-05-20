@@ -82,6 +82,7 @@ export default function InboxScreen() {
         isFetching={isFetching}
         hasError={!!error}
         reviewerFilterCount={reviewerFilterCount}
+        showFilters={viewMode === "list"}
         onReviewerPress={() => setReviewerOpen(true)}
         onFilterPress={() => setFilterOpen(true)}
       />

@@ -11,6 +11,7 @@ interface FloatingInboxHeaderProps {
   isFetching: boolean;
   hasError: boolean;
   reviewerFilterCount: number;
+  showFilters?: boolean;
   onReviewerPress: () => void;
   onFilterPress: () => void;
 }
@@ -25,6 +26,7 @@ export function FloatingInboxHeader({
   isFetching,
   hasError,
   reviewerFilterCount,
+  showFilters = true,
   onReviewerPress,
   onFilterPress,
 }: FloatingInboxHeaderProps) {
@@ -71,38 +73,45 @@ export function FloatingInboxHeader({
         </View>
 
         <View className="flex-row items-center gap-2">
-          <Pressable
-            onPress={onReviewerPress}
-            hitSlop={8}
-            accessibilityLabel="Filter by reviewer"
-            accessibilityRole="button"
-            className={`h-9 flex-row items-center justify-center gap-1 rounded-md border border-gray-6 px-2 active:bg-gray-3 ${
-              reviewerFilterCount > 0 ? "bg-gray-3" : "bg-gray-2"
-            }`}
-          >
-            <UsersThree
-              size={16}
-              color={
-                reviewerFilterCount > 0
-                  ? themeColors.gray[12]
-                  : themeColors.gray[11]
-              }
-            />
-            {reviewerFilterCount > 0 && (
-              <Text className="font-medium text-[12px] text-gray-12">
-                {reviewerFilterCount}
-              </Text>
-            )}
-          </Pressable>
-          <Pressable
-            onPress={onFilterPress}
-            hitSlop={8}
-            accessibilityLabel="Filter and sort reports"
-            accessibilityRole="button"
-            className="h-9 w-9 items-center justify-center rounded-md border border-gray-6 bg-gray-2 active:bg-gray-3"
-          >
-            <FunnelSimple size={16} color={themeColors.gray[11]} />
-          </Pressable>
+          {showFilters ? (
+            <>
+              <Pressable
+                onPress={onReviewerPress}
+                hitSlop={8}
+                accessibilityLabel="Filter by reviewer"
+                accessibilityRole="button"
+                className={`h-9 flex-row items-center justify-center gap-1 rounded-md border border-gray-6 px-2 active:bg-gray-3 ${
+                  reviewerFilterCount > 0 ? "bg-gray-3" : "bg-gray-2"
+                }`}
+              >
+                <UsersThree
+                  size={16}
+                  color={
+                    reviewerFilterCount > 0
+                      ? themeColors.gray[12]
+                      : themeColors.gray[11]
+                  }
+                />
+                {reviewerFilterCount > 0 && (
+                  <Text className="font-medium text-[12px] text-gray-12">
+                    {reviewerFilterCount}
+                  </Text>
+                )}
+              </Pressable>
+              <Pressable
+                onPress={onFilterPress}
+                hitSlop={8}
+                accessibilityLabel="Filter and sort reports"
+                accessibilityRole="button"
+                className="h-9 w-9 items-center justify-center rounded-md border border-gray-6 bg-gray-2 active:bg-gray-3"
+              >
+                <FunnelSimple size={16} color={themeColors.gray[11]} />
+              </Pressable>
+            </>
+          ) : (
+            // Keep horizontal space reserved so the title stays centered.
+            <View className="h-9 w-9" />
+          )}
         </View>
       </View>
     </View>

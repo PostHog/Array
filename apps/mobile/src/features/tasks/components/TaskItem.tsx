@@ -1,16 +1,28 @@
 import { Text } from "@components/text";
 import { differenceInHours, format, formatDistanceToNow } from "date-fns";
+import { Check } from "phosphor-react-native";
 import { memo } from "react";
 import { Pressable, View } from "react-native";
+import { useThemeColors } from "@/lib/theme";
 import type { Task } from "../types";
 import { TaskStatusIcon } from "./TaskStatusIcon";
 
 interface TaskItemProps {
   task: Task;
   onPress: (task: Task) => void;
+  onLongPress?: (task: Task) => void;
+  selectionMode?: boolean;
+  selected?: boolean;
 }
 
-function TaskItemComponent({ task, onPress }: TaskItemProps) {
+function TaskItemComponent({
+  task,
+  onPress,
+  onLongPress,
+  selectionMode = false,
+  selected = false,
+}: TaskItemProps) {
+  const themeColors = useThemeColors();
   const createdAt = new Date(task.created_at);
   const hoursSinceCreated = differenceInHours(new Date(), createdAt);
   const timeDisplay =
@@ -21,11 +33,22 @@ function TaskItemComponent({ task, onPress }: TaskItemProps) {
   return (
     <Pressable
       onPress={() => onPress(task)}
-      className="flex-row items-start gap-3 border-gray-6 border-b px-3 py-3 active:bg-gray-3"
+      onLongPress={onLongPress ? () => onLongPress(task) : undefined}
+      delayLongPress={300}
+      className={`flex-row items-start gap-3 border-gray-6 border-b px-3 py-3 ${selected ? "bg-accent-3" : "active:bg-gray-3"}`}
     >
-      {/* Status icon column */}
+      {/* Status icon column (or selection checkbox in selection mode) */}
       <View className="mt-0.5 h-5 w-5 shrink-0 items-center justify-center">
-        <TaskStatusIcon task={task} size={16} />
+        {selectionMode ? (
+          <View
+            className={`h-5 w-5 items-center justify-center rounded-full border ${selected ? "border-transparent" : "border-gray-7"}`}
+            style={selected ? { backgroundColor: themeColors.accent[9] } : null}
+          >
+            {selected ? <Check size={12} color="#fff" weight="bold" /> : null}
+          </View>
+        ) : (
+          <TaskStatusIcon task={task} size={16} />
+        )}
       </View>
 
       {/* Content column */}

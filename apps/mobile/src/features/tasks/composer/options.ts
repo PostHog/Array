@@ -1,5 +1,5 @@
 export type ExecutionMode = "default" | "acceptEdits" | "plan";
-export type ReasoningEffort = "low" | "medium" | "high";
+export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export const EXECUTION_MODES: {
   value: ExecutionMode;
@@ -58,6 +58,8 @@ export const REASONING_LEVELS: {
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
   { value: "high", label: "High" },
+  { value: "xhigh", label: "Extra High" },
+  { value: "max", label: "Max" },
 ];
 
 export const DEFAULT_EXECUTION_MODE: ExecutionMode = "plan";

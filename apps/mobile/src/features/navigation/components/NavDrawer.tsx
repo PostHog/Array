@@ -5,7 +5,6 @@ import {
   Clock,
   GearSix,
   ListBullets,
-  Plus,
   PuzzlePiece,
   Tray,
 } from "phosphor-react-native";
@@ -107,11 +106,6 @@ const NavDrawerContent = memo(function NavDrawerContent({
     router.replace(target);
   };
 
-  const handleNewTask = () => {
-    close();
-    router.push("/task");
-  };
-
   const handleTasks = () => navigateTo("/tasks");
   const handleInbox = () => navigateTo("/inbox");
   const handleAutomations = () => navigateTo("/automations");
@@ -152,11 +146,6 @@ const NavDrawerContent = memo(function NavDrawerContent({
       </Pressable>
 
       <View className="gap-0.5 px-2 pb-2">
-        <DrawerItem
-          icon={<Plus size={22} color={iconColorActive} weight="bold" />}
-          label="New task"
-          onPress={handleNewTask}
-        />
         <DrawerItem
           icon={
             <ListBullets
