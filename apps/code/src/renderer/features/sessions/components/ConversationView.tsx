@@ -1,6 +1,7 @@
 import { CHAT_CONTENT_MAX_WIDTH } from "@features/sessions/constants";
 import { useContextUsage } from "@features/sessions/hooks/useContextUsage";
 import { useConversationSearch } from "@features/sessions/hooks/useConversationSearch";
+import { SessionTaskIdProvider } from "@features/sessions/hooks/useSessionTaskId";
 import {
   sessionStoreSetters,
   useOptimisticItemsForTask,
@@ -267,37 +268,39 @@ export function ConversationView({
           />
         )}
 
-        <VirtualizedList
-          ref={listRef}
-          items={items}
-          getItemKey={getItemKey}
-          renderItem={renderItem}
-          onScrollStateChange={handleScrollStateChange}
-          keepMounted={mcpAppIndices}
-          className="absolute inset-0 bg-background"
-          itemClassName="mx-auto px-2 py-1.5"
-          itemStyle={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
-          footer={
-            <div className={compact ? "pb-1" : "pb-16"}>
-              <SessionFooter
-                task={task}
-                isPromptPending={isPromptPending}
-                promptStartedAt={promptStartedAt}
-                lastGenerationDuration={
-                  lastTurnInfo?.isComplete
-                    ? Math.max(0, lastTurnInfo.durationMs - pausedDurationMs)
-                    : null
-                }
-                lastStopReason={lastTurnInfo?.stopReason}
-                queuedCount={queuedMessages.length}
-                hasPendingPermission={pendingPermissionsCount > 0}
-                pausedDurationMs={pausedDurationMs}
-                isCompacting={isCompacting}
-                usage={contextUsage}
-              />
-            </div>
-          }
-        />
+        <SessionTaskIdProvider taskId={taskId}>
+          <VirtualizedList
+            ref={listRef}
+            items={items}
+            getItemKey={getItemKey}
+            renderItem={renderItem}
+            onScrollStateChange={handleScrollStateChange}
+            keepMounted={mcpAppIndices}
+            className="absolute inset-0 bg-background"
+            itemClassName="mx-auto px-2 py-1.5"
+            itemStyle={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+            footer={
+              <div className={compact ? "pb-1" : "pb-16"}>
+                <SessionFooter
+                  task={task}
+                  isPromptPending={isPromptPending}
+                  promptStartedAt={promptStartedAt}
+                  lastGenerationDuration={
+                    lastTurnInfo?.isComplete
+                      ? Math.max(0, lastTurnInfo.durationMs - pausedDurationMs)
+                      : null
+                  }
+                  lastStopReason={lastTurnInfo?.stopReason}
+                  queuedCount={queuedMessages.length}
+                  hasPendingPermission={pendingPermissionsCount > 0}
+                  pausedDurationMs={pausedDurationMs}
+                  isCompacting={isCompacting}
+                  usage={contextUsage}
+                />
+              </div>
+            }
+          />
+        </SessionTaskIdProvider>
         {showScrollButton && (
           <Box className="absolute right-4 bottom-4 z-10">
             <Button size="1" variant="solid" onClick={scrollToBottom}>
