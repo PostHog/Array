@@ -459,6 +459,7 @@ export function TaskInput({
       ? (lastUsedInitialTaskMode ?? adapterDefault)
       : adapterDefault;
   const currentExecutionMode =
+    initialExecutionMode ??
     getCurrentModeFromConfigOptions(modeOption ? [modeOption] : undefined) ??
     modeFallback;
   const currentReasoningLevel =
