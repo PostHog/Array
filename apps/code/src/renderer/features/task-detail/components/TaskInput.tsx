@@ -463,26 +463,27 @@ export function TaskInput({
       ? selectedBranch
       : null;
 
-  const { isCreatingTask, canSubmit, handleSubmit } = useTaskCreation({
-    editorRef,
-    selectedDirectory,
-    selectedRepository: selectedCloudRepository,
-    githubUserIntegrationId: selectedGithubUserIntegrationId,
-    workspaceMode: effectiveWorkspaceMode,
-    branch: branchForTaskCreation,
-    editorIsEmpty,
-    adapter,
-    executionMode: currentExecutionMode,
-    model: currentModel,
-    reasoningLevel: currentReasoningLevel,
-    onTaskCreated,
-    environmentId: selectedEnvironment,
-    sandboxEnvironmentId:
-      effectiveWorkspaceMode === "cloud" && selectedCloudEnvId
-        ? selectedCloudEnvId
-        : undefined,
-    signalReportId: activeReportAssociation?.reportId,
-  });
+  const { isCreatingTask, canSubmitBase, canSubmit, handleSubmit } =
+    useTaskCreation({
+      editorRef,
+      selectedDirectory,
+      selectedRepository: selectedCloudRepository,
+      githubUserIntegrationId: selectedGithubUserIntegrationId,
+      workspaceMode: effectiveWorkspaceMode,
+      branch: branchForTaskCreation,
+      editorIsEmpty,
+      adapter,
+      executionMode: currentExecutionMode,
+      model: currentModel,
+      reasoningLevel: currentReasoningLevel,
+      onTaskCreated,
+      environmentId: selectedEnvironment,
+      sandboxEnvironmentId:
+        effectiveWorkspaceMode === "cloud" && selectedCloudEnvId
+          ? selectedCloudEnvId
+          : undefined,
+      signalReportId: activeReportAssociation?.reportId,
+    });
 
   // Reset auto-submit state on each fresh navigation. We key off
   // `prefillRequestKey` (a fresh UUID per navigation) so back-to-back Discuss
@@ -499,14 +500,14 @@ export function TaskInput({
   // draft store — `handleSubmit` only requires `canSubmitBase` in that path.
   useEffect(() => {
     if (!isAutoSubmitting || hasAutoSubmittedRef.current) return;
-    if (!canSubmit || !initialPrompt) return;
+    if (!canSubmitBase || !initialPrompt) return;
     hasAutoSubmittedRef.current = true;
     void handleSubmit({
       segments: [{ type: "text", text: initialPrompt }],
     }).then((ok) => {
       if (!ok) setIsAutoSubmitting(false);
     });
-  }, [isAutoSubmitting, canSubmit, handleSubmit, initialPrompt]);
+  }, [isAutoSubmitting, canSubmitBase, handleSubmit, initialPrompt]);
 
   // If preconditions never resolve (no repo, offline, etc.), fall back to the
   // normal UI after a short grace period — the prompt stays in the editor so

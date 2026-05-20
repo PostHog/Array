@@ -48,6 +48,7 @@ interface UseTaskCreationOptions {
 
 interface UseTaskCreationReturn {
   isCreatingTask: boolean;
+  canSubmitBase: boolean;
   canSubmit: boolean;
   handleSubmit: (contentOverride?: EditorContent) => Promise<boolean>;
 }
@@ -204,17 +205,18 @@ export function useTaskCreation({
   const handleSubmit = useCallback(
     async (contentOverride?: EditorContent): Promise<boolean> => {
       const editor = editorRef.current;
-      if (!editor) return false;
+      if (!editor && !contentOverride) return false;
       const allowSubmit = contentOverride ? canSubmitBase : canSubmit;
       if (!allowSubmit) return false;
 
       setIsCreatingTask(true);
 
       try {
-        const content = contentOverride ?? editor.getContent();
+        const content = contentOverride ?? editor?.getContent();
+        if (!content) return false;
 
         if (!contentOverride) {
-          const plainText = editor.getText()?.trim();
+          const plainText = editor?.getText()?.trim();
           if (plainText) {
             useTaskInputHistoryStore.getState().addPrompt(plainText);
           }
@@ -253,7 +255,7 @@ export function useTaskCreation({
           }
           useTourStore.getState().completeTour(createFirstTaskTour.id);
           if (!contentOverride) {
-            editor.clear();
+            editor?.clear();
           }
         });
 
@@ -306,6 +308,7 @@ export function useTaskCreation({
 
   return {
     isCreatingTask,
+    canSubmitBase,
     canSubmit,
     handleSubmit,
   };
