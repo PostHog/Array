@@ -144,11 +144,7 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
   return (
     <div ref={containerRef} className="mt-3 flex flex-col gap-2">
       {hasTasks && (
-        <Text
-          size="1"
-          weight="medium"
-          className="px-2.5 text-(--gray-11)"
-        >
+        <Text size="1" weight="medium" className="px-2.5 text-(--gray-11)">
           Suggestions
         </Text>
       )}
