@@ -27,9 +27,11 @@ import { Kbd } from "@posthog/quill";
 import {
   Box,
   Flex,
+  Popover,
   ScrollArea,
   Spinner,
   Text,
+  TextField,
   Tooltip,
 } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
@@ -50,6 +52,7 @@ import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
 import { isMac } from "@utils/platform";
 import {
+  type FormEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -169,6 +172,8 @@ export function ReportDetailPane({
   suppressDisabledReason,
   isDismissMutationPending = false,
 }: ReportDetailPaneProps) {
+  const [discussQuestion, setDiscussQuestion] = useState("");
+  const [discussQuestionOpen, setDiscussQuestionOpen] = useState(false);
   const { data: me } = useMeQuery();
 
   // ── Report data ─────────────────────────────────────────────────────────
@@ -289,28 +294,35 @@ export function ReportDetailPane({
     report,
   ]);
 
-  const handleDiscussReport = useCallback(() => {
-    const prompt = [
-      "Let's discuss this PostHog signal report.",
-      "",
-      `Report ID: ${report.id}`,
-      `Title: ${report.title ?? "Untitled signal"}`,
-      "",
-      "Summary:",
-      report.summary ?? "(no summary available)",
-      "",
-      "Use the PostHog inbox MCP tools to fetch full details (signals, artefacts, related tasks) as needed. Then summarise what's going on and ask me what I'd like to dig into.",
-    ].join("\n");
-    navigateToTaskInput({
-      initialPrompt: prompt,
-      initialCloudRepository: effectiveCloudRepository ?? undefined,
-      reportAssociation: {
-        reportId: report.id,
-        title: report.title ?? "Untitled signal",
-      },
-      autoSubmit: true,
-    });
-  }, [navigateToTaskInput, effectiveCloudRepository, report]);
+  const handleDiscussReport = useCallback(
+    (question?: string) => {
+      const trimmedQuestion = question?.trim();
+      const reportLink = `${getDeeplinkProtocol(import.meta.env.DEV)}://inbox/${report.id}`;
+      const prompt = trimmedQuestion
+        ? `Discuss PostHog inbox report ${report.id} ([inbox item](${reportLink})). Use the inbox MCP tools to fetch the report, then answer this first: ${trimmedQuestion}`
+        : `Discuss PostHog inbox report ${report.id} ([inbox item](${reportLink})). Use the inbox MCP tools to fetch the report, then give me a brief readout and ask what I want to dig into.`;
+      setDiscussQuestionOpen(false);
+      navigateToTaskInput({
+        initialPrompt: prompt,
+        initialCloudRepository: effectiveCloudRepository ?? undefined,
+        reportAssociation: {
+          reportId: report.id,
+          title: report.title ?? "Untitled signal",
+        },
+        initialExecutionMode: "auto",
+        autoSubmit: true,
+      });
+    },
+    [navigateToTaskInput, effectiveCloudRepository, report],
+  );
+
+  const handleDiscussSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      handleDiscussReport(discussQuestion);
+    },
+    [discussQuestion, handleDiscussReport],
+  );
 
   useEffect(() => {
     if (!canCreateImplementationPr) return;
@@ -394,16 +406,67 @@ export function ReportDetailPane({
             )}
             Dismiss
           </Button>
-          <Button
-            size="1"
-            variant="soft"
-            className="gap-1 text-[12px]"
-            tooltipContent="Open a chat session about this report"
-            onClick={handleDiscussReport}
-          >
-            <ChatCircleIcon size={12} />
-            Discuss
-          </Button>
+          <Flex align="center" gap="0">
+            <Button
+              size="1"
+              variant="soft"
+              className="gap-1 rounded-r-none text-[12px]"
+              tooltipContent="Open a chat session about this report"
+              onClick={() => handleDiscussReport()}
+            >
+              <ChatCircleIcon size={12} />
+              Discuss
+            </Button>
+            <Popover.Root
+              open={discussQuestionOpen}
+              onOpenChange={setDiscussQuestionOpen}
+            >
+              <Popover.Trigger>
+                <Button
+                  size="1"
+                  variant="soft"
+                  className="rounded-l-none border-l border-l-(--gray-5) px-1"
+                  aria-label="Ask an optional first question"
+                >
+                  <CaretDownIcon size={12} />
+                </Button>
+              </Popover.Trigger>
+              <Popover.Content
+                align="end"
+                className="w-[320px] border border-(--gray-6) bg-(--color-panel-solid) p-3 shadow-6"
+                side="bottom"
+                sideOffset={6}
+              >
+                <form
+                  className="flex flex-col gap-2"
+                  onSubmit={handleDiscussSubmit}
+                >
+                  <TextField.Root
+                    aria-label="Optional first question for Discuss"
+                    autoFocus
+                    placeholder="Ask about this report..."
+                    size="2"
+                    value={discussQuestion}
+                    onChange={(event) => setDiscussQuestion(event.target.value)}
+                  />
+                  <Flex justify="end" gap="2">
+                    <Button
+                      color="gray"
+                      size="1"
+                      type="button"
+                      variant="soft"
+                      onClick={() => setDiscussQuestionOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button size="1" type="submit" variant="soft">
+                      Discuss
+                    </Button>
+                  </Flex>
+                </form>
+              </Popover.Content>
+            </Popover.Root>
+          </Flex>
           {headerImplementationPrUrl ? (
             <ReportImplementationPrLink
               prUrl={headerImplementationPrUrl}
