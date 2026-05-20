@@ -25,6 +25,7 @@ import type { AgentAdapter } from "@features/settings/stores/settingsStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useSetupStore } from "@features/setup/stores/setupStore";
 import type { DiscoveredTask } from "@features/setup/types";
+import { buildDiscoveredTaskPrompt } from "@features/setup/utils/buildDiscoveredTaskPrompt";
 import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
 import { useConnectivity } from "@hooks/useConnectivity";
 import {
@@ -537,7 +538,7 @@ export function TaskInput({
   const handleSelectSuggestion = useCallback(
     async (task: DiscoveredTask) => {
       const ok = await handleSubmit({
-        segments: [{ type: "text", text: task.prompt ?? task.title }],
+        segments: [{ type: "text", text: buildDiscoveredTaskPrompt(task) }],
       });
       if (ok) useSetupStore.getState().removeDiscoveredTask(task.id);
     },

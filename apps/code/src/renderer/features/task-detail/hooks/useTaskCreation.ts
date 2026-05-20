@@ -197,25 +197,16 @@ export function useTaskCreation({
 
   const hasRequiredPath =
     workspaceMode === "cloud" ? !!selectedRepository : !!selectedDirectory;
-  const canSubmit =
-    !!editorRef.current &&
-    isAuthenticated &&
-    isOnline &&
-    hasRequiredPath &&
-    !isCreatingTask &&
-    !editorIsEmpty;
+  const canSubmitBase =
+    isAuthenticated && isOnline && hasRequiredPath && !isCreatingTask;
+  const canSubmit = !!editorRef.current && canSubmitBase && !editorIsEmpty;
 
   const handleSubmit = useCallback(
     async (contentOverride?: EditorContent): Promise<boolean> => {
       const editor = editorRef.current;
-      const allowSubmit = contentOverride
-        ? isAuthenticated &&
-          isOnline &&
-          hasRequiredPath &&
-          !isCreatingTask &&
-          !!editor
-        : canSubmit && !!editor;
-      if (!allowSubmit || !editor) return false;
+      if (!editor) return false;
+      const allowSubmit = contentOverride ? canSubmitBase : canSubmit;
+      if (!allowSubmit) return false;
 
       setIsCreatingTask(true);
 
@@ -291,11 +282,8 @@ export function useTaskCreation({
     },
     [
       canSubmit,
+      canSubmitBase,
       editorRef,
-      isAuthenticated,
-      isOnline,
-      hasRequiredPath,
-      isCreatingTask,
       selectedDirectory,
       selectedRepository,
       githubIntegrationId,
