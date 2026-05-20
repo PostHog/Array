@@ -15,10 +15,12 @@ import {
 import { Box, Button, Flex, IconButton, Text } from "@radix-ui/themes";
 import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { track } from "@utils/analytics";
 import { EXTERNAL_LINKS } from "@utils/links";
 import { motion } from "framer-motion";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { OnboardingHogTip } from "./OnboardingHogTip";
 import { StepActions } from "./StepActions";
 
@@ -62,11 +64,11 @@ function CommandLine({ command }: { command: string }) {
 }
 
 interface CliInstallStepProps {
-  onNext: () => void;
+  onComplete: (cliSkipped: boolean) => void;
   onBack: () => void;
 }
 
-export function CliInstallStep({ onNext, onBack }: CliInstallStepProps) {
+export function CliInstallStep({ onComplete, onBack }: CliInstallStepProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [isCheckingGit, setIsCheckingGit] = useState(false);
@@ -83,6 +85,17 @@ export function CliInstallStep({ onNext, onBack }: CliInstallStepProps) {
   const ghInstalled = ghStatus?.installed ?? false;
   const ghAuthenticated = ghStatus?.authenticated ?? false;
   const allReady = gitInstalled && ghInstalled && ghAuthenticated;
+
+  const checkFiredRef = useRef(false);
+  useEffect(() => {
+    if (checkFiredRef.current || isLoadingGit || isLoadingGh) return;
+    checkFiredRef.current = true;
+    track(ANALYTICS_EVENTS.ONBOARDING_CLI_CHECK_COMPLETED, {
+      git_installed: gitInstalled,
+      gh_installed: ghInstalled,
+      gh_authenticated: ghAuthenticated,
+    });
+  }, [isLoadingGit, isLoadingGh, gitInstalled, ghInstalled, ghAuthenticated]);
 
   const handleCheckGit = useCallback(async () => {
     setIsCheckingGit(true);
@@ -337,13 +350,18 @@ export function CliInstallStep({ onNext, onBack }: CliInstallStepProps) {
             Back
           </Button>
           {allReady ? (
-            <Button size="3" onClick={onNext}>
-              Continue
+            <Button size="3" onClick={() => onComplete(false)}>
+              Get started
               <ArrowRight size={16} weight="bold" />
             </Button>
           ) : (
-            <Button size="3" variant="outline" color="gray" onClick={onNext}>
-              Skip for now
+            <Button
+              size="3"
+              variant="outline"
+              color="gray"
+              onClick={() => onComplete(true)}
+            >
+              Skip & get started
               <ArrowRight size={16} weight="bold" />
             </Button>
           )}

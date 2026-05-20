@@ -38,6 +38,7 @@ import type {
   BranchChangedPayload,
   CreateWorkspaceInput,
   LinkedBranchChangedPayload,
+  ReconcileCloudWorkspacesOutput,
   Workspace,
   WorkspaceErrorPayload,
   WorkspaceInfo,
@@ -431,6 +432,30 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       log.warn(`Error checking local worktree for ${mainRepoPath}:`, error);
       return null;
     }
+  }
+
+  // Batched cloud-workspace reconcile. The renderer calls this once on boot
+  // with every cloud taskId it sees that has no local workspace row, instead
+  // of firing one createWorkspace mutation per task. With 100+ cloud tasks
+  // the N-call pattern saturates the main thread on the tRPC IPC path; this
+  // collapses it to one IPC + one batched insert.
+  async reconcileCloudWorkspaces(
+    taskIds: string[],
+  ): Promise<ReconcileCloudWorkspacesOutput> {
+    if (taskIds.length === 0) return { created: [] };
+
+    const existingTaskIds = new Set(
+      this.workspaceRepo.findAll().map((w) => w.taskId),
+    );
+    const uniqueRequested = Array.from(new Set(taskIds));
+    const toCreate = uniqueRequested.filter((id) => !existingTaskIds.has(id));
+    if (toCreate.length === 0) return { created: [] };
+
+    log.info(
+      `Reconciling ${toCreate.length} cloud workspaces (requested ${taskIds.length})`,
+    );
+    this.workspaceRepo.createCloudMany(toCreate);
+    return { created: toCreate };
   }
 
   async createWorkspace(options: CreateWorkspaceInput): Promise<WorkspaceInfo> {

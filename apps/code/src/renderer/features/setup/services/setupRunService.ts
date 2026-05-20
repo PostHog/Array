@@ -210,7 +210,7 @@ function buildPosthogSetupSuggestion(
       category: "posthog_setup",
       title: "Set up PostHog",
       description:
-        "PostHog isn't installed in this repo yet. Open this as a task to detect your framework, install the SDK, instrument analytics + error tracking + replay, and open a PR with the changes.",
+        "PostHog isn't installed in this repo yet. Run this task to detect your framework, install the SDK, instrument analytics + error tracking + replay, and open a PR with the changes.",
       impact:
         "Without PostHog wired in, you have no visibility into how users interact with the product, no error or session-replay coverage, and no way to gate releases behind feature flags.",
       recommendation:
@@ -240,6 +240,13 @@ export class SetupRunService {
   private enricherSuggestionsRunning = false;
 
   startSetup(directory: string): void {
+    // Defense in depth: never auto-run from a non-idle persisted state.
+    // The hook (useSetupDiscovery) is the primary gate, but a direct call
+    // path could otherwise re-enter the loop that wedged users on boot —
+    // creating fresh cloud tasks and a tree-sitter parse storm against the
+    // user's repo on every launch.
+    const status = useSetupStore.getState().discoveryStatus;
+    if (status !== "idle") return;
     this.injectEnricherSuggestions(directory);
     this.startDiscovery(directory);
   }

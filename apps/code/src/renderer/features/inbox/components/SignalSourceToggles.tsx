@@ -1,4 +1,5 @@
 import { Badge } from "@components/ui/Badge";
+import { PgAnalyzeIcon } from "@features/inbox/components/utils/PgAnalyzeIcon";
 import {
   ArrowSquareOutIcon,
   BrainIcon,
@@ -29,6 +30,7 @@ export interface SignalSourceValues {
   linear: boolean;
   zendesk: boolean;
   conversations: boolean;
+  pganalyze: boolean;
 }
 
 interface SignalSourceToggleCardProps {
@@ -295,9 +297,14 @@ export function SignalSourceToggles({
     (checked: boolean) => onToggle("conversations", checked),
     [onToggle],
   );
+  const togglePgAnalyze = useCallback(
+    (checked: boolean) => onToggle("pganalyze", checked),
+    [onToggle],
+  );
   const setupGithub = useCallback(() => onSetup?.("github"), [onSetup]);
   const setupLinear = useCallback(() => onSetup?.("linear"), [onSetup]);
   const setupZendesk = useCallback(() => onSetup?.("zendesk"), [onSetup]);
+  const setupPgAnalyze = useCallback(() => onSetup?.("pganalyze"), [onSetup]);
 
   return (
     <Flex gap="4">
@@ -394,6 +401,18 @@ export function SignalSourceToggles({
             onSetup={setupZendesk}
             loading={sourceStates?.zendesk?.loading}
             syncStatus={sourceStates?.zendesk?.syncStatus}
+          />
+          <SignalSourceToggleCard
+            icon={<PgAnalyzeIcon size={20} />}
+            label="pganalyze"
+            description="Postgres performance findings, slow queries, and index recommendations"
+            checked={value.pganalyze}
+            onCheckedChange={togglePgAnalyze}
+            disabled={disabled}
+            requiresSetup={sourceStates?.pganalyze?.requiresSetup}
+            onSetup={setupPgAnalyze}
+            loading={sourceStates?.pganalyze?.loading}
+            syncStatus={sourceStates?.pganalyze?.syncStatus}
           />
         </Flex>
       </Flex>

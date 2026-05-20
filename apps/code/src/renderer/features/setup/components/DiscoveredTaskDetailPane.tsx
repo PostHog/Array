@@ -30,7 +30,6 @@ export function DiscoveredTaskDetailPane({
 
   const tasks = useSetupStore((s) => s.discoveredTasks);
   const selectedDirectory = useOnboardingStore((s) => s.selectedDirectory);
-  const completeSetup = useOnboardingStore((s) => s.completeSetup);
   const navigateToTaskInput = useNavigationStore((s) => s.navigateToTaskInput);
   const { folders } = useFolders();
   const detectedCloudRepository = useDetectedCloudRepository(selectedDirectory);
@@ -46,7 +45,6 @@ export function DiscoveredTaskDetailPane({
 
     const initialPrompt = buildDiscoveredTaskPrompt(task);
     const folderId = folders.find((f) => f.path === selectedDirectory)?.id;
-    completeSetup();
     useSetupStore.getState().removeDiscoveredTask(task.id);
     navigateToTaskInput({
       initialPrompt,

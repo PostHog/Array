@@ -177,6 +177,12 @@ export const workspaceApi = {
     return trpcClient.workspace.create.mutate(options);
   },
 
+  async reconcileCloudWorkspaces(
+    taskIds: string[],
+  ): Promise<{ created: string[] }> {
+    return trpcClient.workspace.reconcileCloudWorkspaces.mutate({ taskIds });
+  },
+
   async delete(taskId: string, mainRepoPath: string) {
     return trpcClient.workspace.delete.mutate({ taskId, mainRepoPath });
   },

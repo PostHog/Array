@@ -1,3 +1,4 @@
+import { RelativeTimestamp } from "@components/ui/RelativeTimestamp";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
 import { SOURCE_PRODUCT_META } from "@features/inbox/components/utils/source-product-icons";
@@ -64,6 +65,9 @@ function signalCardSourceLine(signal: {
   }
   if (source_product === "linear" && source_type === "issue") {
     return "Linear · Issue";
+  }
+  if (source_product === "pganalyze" && source_type === "issue") {
+    return "pganalyze · Issue";
   }
 
   const productLabel = source_product.replace(/_/g, " ");
@@ -261,6 +265,7 @@ function SignalCardHeader({
         {signalCardSourceLine(signal)}
       </Text>
       <span className="flex-1" />
+      <RelativeTimestamp timestamp={signal.timestamp} />
       {verified === true && <VerificationBadge />}
     </Flex>
   );
@@ -769,9 +774,6 @@ function GenericSignalCard({
     <Box className="min-w-0 overflow-hidden rounded-lg border border-gray-6 bg-gray-1 p-3">
       <SignalCardHeader signal={signal} verified={verified} />
       <CollapsibleBody body={signal.content} />
-      <Text className="mt-2 block text-(--gray-10) text-[11px]">
-        {new Date(signal.timestamp).toLocaleString()}
-      </Text>
       <CodePathsCollapsible paths={codePaths ?? []} />
       <DataQueriedCollapsible text={dataQueried ?? ""} />
     </Box>

@@ -96,7 +96,8 @@ export interface SignalSourceConfig {
     | "linear"
     | "zendesk"
     | "conversations"
-    | "error_tracking";
+    | "error_tracking"
+    | "pganalyze";
   source_type:
     | "session_analysis_cluster"
     | "evaluation"

@@ -2,7 +2,7 @@ import { isMac } from "@utils/platform";
 
 export const SHORTCUTS = {
   COMMAND_MENU: "mod+k",
-  NEW_TASK: "mod+n,mod+t,mod+0",
+  NEW_TASK: "mod+n,mod+t",
   SETTINGS: "mod+,",
   SHORTCUTS_SHEET: "mod+/",
   GO_BACK: "mod+[",
@@ -43,7 +43,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     keys: "mod+n",
     description: "New task",
     category: "general",
-    alternateKeys: "mod+t, mod+0",
+    alternateKeys: "mod+t",
   },
   {
     id: "command-menu",

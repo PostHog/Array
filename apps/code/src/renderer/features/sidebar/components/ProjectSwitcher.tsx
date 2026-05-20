@@ -3,7 +3,7 @@ import {
   useSelectProjectMutation,
 } from "@features/auth/hooks/authMutations";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
-import { Command } from "@features/command/components/Command";
+import { CommandKeyHints } from "@features/command/components/CommandKeyHints";
 import { useProjects } from "@features/projects/hooks/useProjects";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import {
@@ -18,14 +18,17 @@ import {
   ShieldCheck,
   SignOut,
 } from "@phosphor-icons/react";
-import { Box, Dialog, Flex, Text } from "@radix-ui/themes";
-import { trpcClient } from "@renderer/trpc/client";
-import { getCloudUrlFromRegion } from "@shared/utils/urls";
-import { EXTERNAL_LINKS } from "@utils/links";
-import { isMac } from "@utils/platform";
-import { useState } from "react";
-import "./ProjectSwitcher.css";
 import {
+  Autocomplete,
+  AutocompleteCollection,
+  AutocompleteGroup,
+  AutocompleteInput,
+  AutocompleteItem,
+  AutocompleteLabel,
+  AutocompleteList,
+  AutocompleteStatus,
+  Dialog,
+  DialogContent,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -42,7 +45,16 @@ import {
   ItemTitle,
   Kbd,
 } from "@posthog/quill";
+import { Box } from "@radix-ui/themes";
+import { trpcClient } from "@renderer/trpc/client";
+import { getCloudUrlFromRegion } from "@shared/utils/urls";
+import { EXTERNAL_LINKS } from "@utils/links";
+import { isMac } from "@utils/platform";
 import { ChevronRightIcon } from "lucide-react";
+import { useState } from "react";
+
+type ProjectInfo = { id: number; name: string };
+type ProjectGroup = ReturnType<typeof useProjects>["groupedProjects"][number];
 
 export function ProjectSwitcher() {
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -234,7 +246,6 @@ export function ProjectSwitcher() {
         setDialogOpen={setDialogOpen}
         groupedProjects={groupedProjects}
         currentProjectId={currentProjectId}
-        currentProject={currentProject}
         handleProjectSelect={handleProjectSelect}
       />
     </>
@@ -244,64 +255,113 @@ export function ProjectSwitcher() {
 interface ProjectPickerDialogInnerProps {
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
-  groupedProjects: ReturnType<typeof useProjects>["groupedProjects"];
+  groupedProjects: ProjectGroup[];
   currentProjectId: number | null;
-  currentProject: { id: number; name: string } | undefined;
   handleProjectSelect: (projectId: number) => void;
 }
+
+type ProjectSection = { label?: string; items: ProjectInfo[] };
 
 function ProjectPickerDialogInner({
   dialogOpen,
   setDialogOpen,
   groupedProjects,
   currentProjectId,
-  currentProject,
   handleProjectSelect,
 }: ProjectPickerDialogInnerProps) {
-  const defaultValue = currentProject
-    ? `${currentProject.name} ${currentProject.id}`
-    : undefined;
-  const [highlightedValue, setHighlightedValue] = useState(defaultValue);
+  const [query, setQuery] = useState("");
+
+  const handleOpenChange = (open: boolean) => {
+    setDialogOpen(open);
+    if (!open) setQuery("");
+  };
+
+  // Group by org. When there's a single org, drop the label so we don't
+  // render a single redundant header.
+  const sections: ProjectSection[] = groupedProjects.map((group) => ({
+    label: groupedProjects.length > 1 ? group.orgName : undefined,
+    items: group.projects,
+  }));
+
+  const handleSelect = (id: string | null) => {
+    if (id === null) return;
+    const projectId = Number(id);
+    if (Number.isNaN(projectId)) return;
+    handleProjectSelect(projectId);
+    // handleProjectSelect closes the dialog via parent state, which skips
+    // the Dialog's onOpenChange — so reset the query inline.
+    setQuery("");
+  };
 
   return (
-    <Dialog.Root
-      open={dialogOpen}
-      onOpenChange={(open) => {
-        setDialogOpen(open);
-        if (open) {
-          setHighlightedValue(defaultValue);
-        }
-      }}
-    >
-      <Dialog.Content className="project-picker-dialog max-w-[600px] p-0">
-        <Command.Root
-          shouldFilter={true}
-          label="Project picker"
-          value={highlightedValue}
-          onValueChange={setHighlightedValue}
+    <Dialog open={dialogOpen} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="w-[600px] max-w-[90vw] gap-0 p-0"
+        showCloseButton={false}
+      >
+        <Autocomplete<ProjectInfo>
+          inline
+          defaultOpen
+          items={sections}
+          value={query}
+          autoHighlight="always"
+          onValueChange={(val, eventDetails) => {
+            if (eventDetails.reason !== "input-change") return;
+            if (typeof val === "string") setQuery(val);
+          }}
+          filter={(project, q) => {
+            if (!q) return true;
+            return project.name.toLowerCase().includes(q.toLowerCase());
+          }}
         >
-          <Command.Input placeholder="Search projects..." autoFocus={true} />
-          <Command.List>
-            <Command.Empty>No projects found.</Command.Empty>
-            {groupedProjects.flatMap((group) =>
-              group.projects.map((project) => (
-                <Command.Item
-                  key={project.id}
-                  value={`${project.name} ${project.id}`}
-                  onSelect={() => handleProjectSelect(project.id)}
-                >
-                  <Flex align="center" justify="between" width="100%">
-                    <Text className="text-[13px]">{project.name}</Text>
-                    {project.id === currentProjectId && (
-                      <Check size={14} className="text-accent-11" />
-                    )}
-                  </Flex>
-                </Command.Item>
-              )),
+          <AutocompleteInput
+            placeholder="Search projects…"
+            autoFocus
+            showClear
+          />
+          <AutocompleteStatus
+            emptyContent={
+              query ? (
+                <span>
+                  No projects match <strong>"{query}"</strong>
+                </span>
+              ) : (
+                <span>No projects available</span>
+              )
+            }
+          />
+          <AutocompleteList
+            className={`max-h-[60vh] ${sections[0]?.label ? "" : "pt-1"}`}
+          >
+            {(section: ProjectSection, index: number) => (
+              <AutocompleteGroup
+                key={section.label ?? `group-${index}`}
+                items={section.items}
+              >
+                {section.label && (
+                  <AutocompleteLabel>{section.label}</AutocompleteLabel>
+                )}
+                <AutocompleteCollection>
+                  {(project: ProjectInfo) => (
+                    <AutocompleteItem
+                      key={project.id}
+                      value={String(project.id)}
+                      onClick={() => handleSelect(String(project.id))}
+                      className="flex items-center justify-between gap-3"
+                    >
+                      <span className="text-[13px]">{project.name}</span>
+                      {project.id === currentProjectId && (
+                        <Check size={14} className="text-accent-11" />
+                      )}
+                    </AutocompleteItem>
+                  )}
+                </AutocompleteCollection>
+              </AutocompleteGroup>
             )}
-          </Command.List>
-        </Command.Root>
-      </Dialog.Content>
-    </Dialog.Root>
+          </AutocompleteList>
+        </Autocomplete>
+        <CommandKeyHints />
+      </DialogContent>
+    </Dialog>
   );
 }

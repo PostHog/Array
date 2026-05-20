@@ -44,9 +44,17 @@ export class LlmGatewayService {
       system?: string;
       maxTokens?: number;
       model?: string;
+      signal?: AbortSignal;
+      timeoutMs?: number;
     } = {},
   ): Promise<PromptOutput> {
-    const { system, maxTokens, model = "claude-haiku-4-5" } = options;
+    const {
+      system,
+      maxTokens,
+      model = "claude-haiku-4-5",
+      signal,
+      timeoutMs = 60_000,
+    } = options;
 
     const auth = await this.authService.getValidAccessToken();
     const gatewayUrl = getLlmGatewayUrl(auth.apiHost);
@@ -72,17 +80,38 @@ export class LlmGatewayService {
       messageCount: messages.length,
     });
 
-    const response = await this.authService.authenticatedFetch(
-      fetch,
-      messagesUrl,
-      {
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      timeoutController.abort();
+    }, timeoutMs);
+    const onCallerAbort = () => timeoutController.abort();
+    if (signal) {
+      if (signal.aborted) timeoutController.abort();
+      else signal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+
+    let response: Response;
+    try {
+      response = await this.authService.authenticatedFetch(fetch, messagesUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(requestBody),
-      },
-    );
+        signal: timeoutController.signal,
+      });
+    } catch (err) {
+      if (timeoutController.signal.aborted && !signal?.aborted) {
+        throw new LlmGatewayError(
+          `LLM gateway request timed out after ${timeoutMs}ms`,
+          "timeout",
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener("abort", onCallerAbort);
+    }
 
     if (!response.ok) {
       const errorBody = await response.text();

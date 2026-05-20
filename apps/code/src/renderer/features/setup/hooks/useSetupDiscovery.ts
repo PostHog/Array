@@ -5,32 +5,23 @@ import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
 import { useEffect, useRef } from "react";
 
-export function useSetupRun() {
+export function useSetupDiscovery() {
   const selectedDirectory = useOnboardingStore((s) => s.selectedDirectory);
   const discoveryStatus = useSetupStore((s) => s.discoveryStatus);
-  const enricherStatus = useSetupStore((s) => s.enricherStatus);
-  const discoveredTasks = useSetupStore((s) => s.discoveredTasks);
-  const discoveryFeed = useSetupStore((s) => s.discoveryFeed);
-  const error = useSetupStore((s) => s.error);
 
   const startedRef = useRef(false);
 
   useEffect(() => {
     if (startedRef.current) return;
-    startedRef.current = true;
-
-    if (discoveryStatus === "done") return;
+    // Only auto-fire from a clean "idle" state. "done" needs no rerun, and
+    // "error" (which now includes interrupted runs persisted across boots —
+    // see setupStore partialize) requires an explicit user retry to recover.
+    if (discoveryStatus !== "idle") return;
     if (!selectedDirectory) return;
 
-    const service = get<SetupRunService>(RENDERER_TOKENS.SetupRunService);
-    service.startSetup(selectedDirectory);
+    startedRef.current = true;
+    get<SetupRunService>(RENDERER_TOKENS.SetupRunService).startSetup(
+      selectedDirectory,
+    );
   }, [discoveryStatus, selectedDirectory]);
-
-  return {
-    discoveryFeed,
-    isDiscoveryDone: discoveryStatus === "done",
-    isEnricherRunning: enricherStatus === "running",
-    discoveredTasks,
-    error,
-  };
 }

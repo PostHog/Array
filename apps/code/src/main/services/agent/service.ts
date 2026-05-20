@@ -260,6 +260,19 @@ function getAgentSessionId(session: ManagedSession): string {
   return sessionId;
 }
 
+export function buildAutoApproveOutcome(
+  options: RequestPermissionRequest["options"],
+): RequestPermissionResponse["outcome"] {
+  const allowOption = options.find(
+    (o) => o.kind === "allow_once" || o.kind === "allow_always",
+  );
+  const optionId = allowOption?.optionId ?? options[0]?.optionId;
+  if (!optionId) {
+    return { outcome: "cancelled" };
+  }
+  return { outcome: "selected", optionId };
+}
+
 interface PendingPermission {
   resolve: (response: RequestPermissionResponse) => void;
   reject: (error: Error) => void;
@@ -1258,15 +1271,7 @@ For git operations while detached:
               taskRunId,
               toolName,
             });
-            const allowOption = params.options.find(
-              (o) => o.kind === "allow_once" || o.kind === "allow_always",
-            );
-            return {
-              outcome: {
-                outcome: "selected",
-                optionId: allowOption?.optionId ?? params.options[0].optionId,
-              },
-            };
+            return { outcome: buildAutoApproveOutcome(params.options) };
           }
         }
 
@@ -1341,15 +1346,7 @@ For git operations while detached:
           taskRunId,
           toolName,
         });
-        const allowOption = params.options.find(
-          (o) => o.kind === "allow_once" || o.kind === "allow_always",
-        );
-        return {
-          outcome: {
-            outcome: "selected",
-            optionId: allowOption?.optionId ?? params.options[0].optionId,
-          },
-        };
+        return { outcome: buildAutoApproveOutcome(params.options) };
       },
 
       async readTextFile(params) {

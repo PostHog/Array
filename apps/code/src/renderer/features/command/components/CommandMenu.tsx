@@ -62,6 +62,7 @@ function TaskCommandIcon({ task }: { task: Task }) {
   const { prState, hasDiff } = useTaskPrStatus({
     id: task.id,
     cloudPrUrl: null,
+    taskRunEnvironment: task.latest_run?.environment,
   });
   return (
     <TaskIcon
