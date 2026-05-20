@@ -288,6 +288,9 @@ function ProjectPickerDialogInner({
     const projectId = Number(id);
     if (Number.isNaN(projectId)) return;
     handleProjectSelect(projectId);
+    // handleProjectSelect closes the dialog via parent state, which skips
+    // the Dialog's onOpenChange — so reset the query inline.
+    setQuery("");
   };
 
   return (

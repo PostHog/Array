@@ -42,7 +42,9 @@ export function ProjectSelect({
     const next = Number(id);
     if (Number.isNaN(next)) return;
     onProjectChange(next);
-    setOpen(false);
+    // Route through handleOpenChange so setQuery("") fires — calling
+    // setOpen(false) directly bypasses Popover's onOpenChange.
+    handleOpenChange(false);
   };
 
   if (projects.length <= 1) {
