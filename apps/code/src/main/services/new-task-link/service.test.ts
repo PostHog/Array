@@ -298,6 +298,14 @@ describe("NewTaskLinkService", () => {
       expect(result).toBe(false);
     });
 
+    it("rejects issue URLs with extra trailing path segments", () => {
+      const result = mockDeepLink._invoke(
+        "issue",
+        new URLSearchParams("url=https://github.com/org/repo/issues/42/edit"),
+      );
+      expect(result).toBe(false);
+    });
+
     it("rejects issue URLs with zero or negative issue number", () => {
       expect(
         mockDeepLink._invoke(

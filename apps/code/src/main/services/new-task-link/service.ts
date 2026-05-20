@@ -152,7 +152,7 @@ export class NewTaskLinkService extends TypedEventEmitter<NewTaskLinkEvents> {
       if (parsed.hostname !== "github.com") return null;
 
       const parts = parsed.pathname.split("/").filter(Boolean);
-      if (parts.length < 4 || parts[2] !== "issues") return null;
+      if (parts.length !== 4 || parts[2] !== "issues") return null;
 
       const issueNumber = Number.parseInt(parts[3], 10);
       if (Number.isNaN(issueNumber) || issueNumber <= 0) return null;

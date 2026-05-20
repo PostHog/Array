@@ -21,6 +21,9 @@ export function useNewTaskDeepLink() {
   const navigateToTaskInput = useNavigationStore(
     (state) => state.navigateToTaskInput,
   );
+  const clearTaskInputReportAssociation = useNavigationStore(
+    (state) => state.clearTaskInputReportAssociation,
+  );
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
   );
@@ -29,6 +32,7 @@ export function useNewTaskDeepLink() {
   const handleAction = useCallback(
     async (payload: NewTaskLinkPayload) => {
       log.info(`Handling deep link action: ${payload.action}`);
+      clearTaskInputReportAssociation();
 
       switch (payload.action) {
         case "new":
@@ -39,11 +43,15 @@ export function useNewTaskDeepLink() {
           return handleIssue(payload, navigateToTaskInput);
       }
     },
-    [navigateToTaskInput],
+    [navigateToTaskInput, clearTaskInputReportAssociation],
   );
 
   useEffect(() => {
-    if (!isAuthenticated || hasFetchedPending.current) return;
+    if (!isAuthenticated) {
+      hasFetchedPending.current = false;
+      return;
+    }
+    if (hasFetchedPending.current) return;
 
     const fetchPending = async () => {
       hasFetchedPending.current = true;

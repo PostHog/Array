@@ -1,4 +1,3 @@
-import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { DotPatternBackground } from "@components/DotPatternBackground";
 import { EnvironmentSelector } from "@features/environments/components/EnvironmentSelector";
 import { FolderPicker } from "@features/folder-picker/components/FolderPicker";
@@ -52,6 +51,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInitialDirectoryFromFolderId } from "../hooks/useInitialDirectoryFromFolderId";
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
+import { isValidConfigValue } from "../utils/configOptions";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import { SuggestedTasksPanel } from "./SuggestedTasksPanel";
 import { type WorkspaceMode, WorkspaceModeSelect } from "./WorkspaceModeSelect";
@@ -65,20 +65,6 @@ interface TaskInputProps {
   initialModel?: string;
   initialMode?: string;
   reportAssociation?: TaskInputReportAssociation;
-}
-
-function isValidConfigValue(
-  option: SessionConfigOption | undefined,
-  value: string,
-): option is Extract<SessionConfigOption, { type: "select" }> {
-  if (!option || option.type !== "select") return false;
-  const items = option.options as Array<{
-    value?: string;
-    options?: Array<{ value: string }>;
-  }>;
-  return items.some((o) =>
-    o.options ? o.options.some((g) => g.value === value) : o.value === value,
-  );
 }
 
 export function TaskInput({
