@@ -4,6 +4,7 @@ import {
   type EditorContent,
   extractFilePaths,
   xmlToContent,
+  xmlToPlainText,
 } from "./content";
 
 describe("xmlToContent", () => {
@@ -194,6 +195,30 @@ describe("xmlToContent", () => {
       ],
     };
     expect(extractFilePaths(content)).toEqual(["src/sub", "src/a.ts"]);
+  });
+
+  it("xmlToPlainText renders folder mentions as @mentions", () => {
+    expect(
+      xmlToPlainText('look at <folder path="products/agentic_tests" /> please'),
+    ).toBe("look at @products/agentic_tests please");
+  });
+
+  it("xmlToPlainText renders file mentions as @mentions", () => {
+    expect(
+      xmlToPlainText('see <file path="src/foo/bar.ts" /> for details'),
+    ).toBe("see @foo/bar.ts for details");
+  });
+
+  it("xmlToPlainText renders structured chip types as @label", () => {
+    expect(
+      xmlToPlainText(
+        'investigate <error id="err-1" /> and <feature_flag id="flag-2" />',
+      ),
+    ).toBe("investigate @err-1 and @flag-2");
+  });
+
+  it("xmlToPlainText leaves plain text untouched", () => {
+    expect(xmlToPlainText("ship the fix")).toBe("ship the fix");
   });
 
   it("round-trips contentToXml for a mix of text and chips", () => {
