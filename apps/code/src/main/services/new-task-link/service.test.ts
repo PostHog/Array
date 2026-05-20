@@ -215,8 +215,9 @@ describe("NewTaskLinkService", () => {
       const listener = vi.fn();
       service.on(NewTaskLinkEvent.Action, listener);
 
-      const planText = "\xfb\xff"; // bytes that base64 to "+/8="
-      const standard = btoa(planText);
+      // "??>" base64 is "Pz8+" — contains `+` so URL-safe substitutes to `-`.
+      const planText = "??>";
+      const standard = Buffer.from(planText, "utf-8").toString("base64");
       const urlSafe = standard
         .replace(/\+/g, "-")
         .replace(/\//g, "_")
@@ -237,15 +238,33 @@ describe("NewTaskLinkService", () => {
       const listener = vi.fn();
       service.on(NewTaskLinkEvent.Action, listener);
 
-      // "+/8=" arrives as " /8=" because URLSearchParams turns + into space
+      // "Pz8+" arrives as "Pz8 " because URLSearchParams turns + into space.
       const result = mockDeepLink._invoke(
         "plan",
-        new URLSearchParams("plan=+/8="),
+        new URLSearchParams("plan=Pz8+"),
       );
 
       expect(result).toBe(true);
       expect(listener).toHaveBeenCalledWith(
-        expect.objectContaining({ action: "plan", plan: "\xfb\xff" }),
+        expect.objectContaining({ action: "plan", plan: "??>" }),
+      );
+    });
+
+    it("round-trips UTF-8 (emoji, non-ASCII)", () => {
+      const listener = vi.fn();
+      service.on(NewTaskLinkEvent.Action, listener);
+
+      const planText = "Plan 🚀: café — naïve résumé";
+      const encoded = Buffer.from(planText, "utf-8").toString("base64");
+
+      const result = mockDeepLink._invoke(
+        "plan",
+        new URLSearchParams(`plan=${encoded}`),
+      );
+
+      expect(result).toBe(true);
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "plan", plan: planText }),
       );
     });
 

@@ -42,7 +42,7 @@ Open the new-task input with a longer, base64-encoded plan as the initial prompt
 
 | Parameter | Required | Description |
 |---|---|---|
-| `plan` | Yes | Base64-encoded plan text. Standard or URL-safe alphabet, padding optional. |
+| `plan` | Yes | Base64-encoded UTF-8 plan text. Standard or URL-safe alphabet, padding optional. |
 | `repo` | No | Cloud repository slug |
 | `mode` | No | Initial mode |
 | `model` | No | Initial model |
@@ -52,6 +52,8 @@ posthog-code://plan?plan=SGVsbG8gV29ybGQ%3D&repo=posthog%2Fposthog
 ```
 
 The link is rejected if `plan` is missing or is not valid base64.
+
+Encoding: the plan must be base64-encoded UTF-8 (e.g. `Buffer.from(text, "utf-8").toString("base64")` in Node, or `btoa(unescape(encodeURIComponent(text)))` in the browser). Multibyte characters (emoji, non-English text) round-trip correctly only when the sender uses UTF-8.
 
 Encoding tip: prefer URL-safe base64 (`-` and `_` instead of `+` and `/`, padding stripped). Standard base64 also works, but `+` must be percent-encoded as `%2B` or it will be decoded as a space by the URL parser. The decoder transparently handles both alphabets and missing padding.
 

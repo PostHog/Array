@@ -15,7 +15,9 @@ function decodePlanBase64(encoded: string): string | null {
       .replace(/_/g, "/")
       .replace(/ /g, "+");
     const padding = (4 - (normalized.length % 4)) % 4;
-    return atob(normalized + "=".repeat(padding));
+    const padded = normalized + "=".repeat(padding);
+    if (!/^[A-Za-z0-9+/]*=*$/.test(padded)) return null;
+    return Buffer.from(padded, "base64").toString("utf-8");
   } catch {
     return null;
   }

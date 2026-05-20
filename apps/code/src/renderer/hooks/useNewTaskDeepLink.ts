@@ -64,6 +64,7 @@ export function useNewTaskDeepLink() {
           });
         }
       } catch (error) {
+        hasFetchedPending.current = false;
         log.error("Failed to check for pending new task link:", error);
       }
     };
