@@ -1,8 +1,5 @@
 import type { SetupRunService } from "@features/setup/services/setupRunService";
-import {
-  selectRepoDiscovery,
-  useSetupStore,
-} from "@features/setup/stores/setupStore";
+import { useSetupStore } from "@features/setup/stores/setupStore";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
 import { useActiveRepoStore } from "@stores/activeRepoStore";
@@ -10,9 +7,11 @@ import { useEffect } from "react";
 
 export function useSetupDiscovery() {
   const selectedDirectory = useActiveRepoStore((s) => s.path);
-  const discoveryStatus = useSetupStore(
-    (s) => selectRepoDiscovery(s, selectedDirectory).status,
-  );
+  // Discovery is a one-time-per-user agent run; once any repo has triggered
+  // it we never auto-launch another one from this hook. Errored/interrupted
+  // runs require explicit user retry (see setupStore partialize and #2257).
+  // Enricher runs per repo on every selection (gated on per-repo status
+  // inside the service).
   const discoveryEverStarted = useSetupStore((s) =>
     Object.values(s.discoveryByRepo).some((d) => d.status !== "idle"),
   );
@@ -20,16 +19,10 @@ export function useSetupDiscovery() {
   useEffect(() => {
     if (!selectedDirectory) return;
     const service = get<SetupRunService>(RENDERER_TOKENS.SetupRunService);
-
     if (discoveryEverStarted) {
       service.startEnricherForRepo(selectedDirectory);
-      return;
+    } else {
+      service.startSetup(selectedDirectory);
     }
-
-    if (discoveryStatus === "running" || discoveryStatus === "done") {
-      service.startEnricherForRepo(selectedDirectory);
-      return;
-    }
-    service.startSetup(selectedDirectory);
-  }, [discoveryEverStarted, discoveryStatus, selectedDirectory]);
+  }, [discoveryEverStarted, selectedDirectory]);
 }

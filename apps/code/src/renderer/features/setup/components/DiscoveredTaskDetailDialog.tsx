@@ -1,4 +1,5 @@
 import { Badge } from "@components/ui/Badge";
+import { Button } from "@components/ui/Button";
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { useSetupStore } from "@features/setup/stores/setupStore";
@@ -9,22 +10,53 @@ import {
   FALLBACK_CATEGORY_CONFIG,
 } from "@features/setup/utils/categoryConfig";
 import { useDetectedCloudRepository } from "@hooks/useDetectedCloudRepository";
-import { PlusIcon, SparkleIcon, X as XIcon } from "@phosphor-icons/react";
-import { Box, Button, Flex, ScrollArea, Text } from "@radix-ui/themes";
+import { PlusIcon, SparkleIcon } from "@phosphor-icons/react";
+import {
+  Box,
+  Dialog,
+  Flex,
+  ScrollArea,
+  Text,
+  VisuallyHidden,
+} from "@radix-ui/themes";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useActiveRepoStore } from "@stores/activeRepoStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { track } from "@utils/analytics";
 
-interface DiscoveredTaskDetailPaneProps {
-  task: DiscoveredTask;
+interface DiscoveredTaskDetailDialogProps {
+  task: DiscoveredTask | null;
   onClose: () => void;
 }
 
-export function DiscoveredTaskDetailPane({
+export function DiscoveredTaskDetailDialog({
   task,
   onClose,
-}: DiscoveredTaskDetailPaneProps) {
+}: DiscoveredTaskDetailDialogProps) {
+  return (
+    <Dialog.Root
+      open={task !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <Dialog.Content maxWidth="640px">
+        <VisuallyHidden>
+          <Dialog.Title>{task?.title ?? "Suggestion"}</Dialog.Title>
+        </VisuallyHidden>
+        {task && <DialogBody task={task} onClose={onClose} />}
+      </Dialog.Content>
+    </Dialog.Root>
+  );
+}
+
+function DialogBody({
+  task,
+  onClose,
+}: {
+  task: DiscoveredTask;
+  onClose: () => void;
+}) {
   const config = CATEGORY_CONFIG[task.category] ?? FALLBACK_CATEGORY_CONFIG;
   const CategoryIcon = config.icon;
 
@@ -48,6 +80,7 @@ export function DiscoveredTaskDetailPane({
     useSetupStore
       .getState()
       .removeDiscoveredTask(task.id, task.repoPath ?? null);
+    onClose();
     navigateToTaskInput({
       initialPrompt,
       folderId,
@@ -66,47 +99,30 @@ export function DiscoveredTaskDetailPane({
     useSetupStore
       .getState()
       .removeDiscoveredTask(task.id, task.repoPath ?? null);
+    onClose();
   };
 
   return (
-    <>
-      <Flex
-        align="center"
-        justify="between"
-        gap="2"
-        py="2"
-        className="shrink-0 border-b border-b-(--gray-5) @2xl:px-6 @3xl:px-8 @4xl:px-10 @5xl:px-12 @lg:px-4 @md:px-3 @xl:px-5 px-2"
-      >
-        <Flex align="center" gap="2" className="min-w-0">
-          <Badge
-            color="violet"
-            className="!leading-none inline-flex shrink-0 items-center gap-1"
-          >
-            <SparkleIcon size={10} weight="fill" />
-            Suggested
-          </Badge>
-          <Text className="block min-w-0 text-balance break-words font-bold text-base">
-            {task.title}
-          </Text>
-        </Flex>
-        <Flex align="center" gap="1" className="shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close suggestion"
-            className="rounded p-0.5 text-gray-11 hover:bg-gray-3 hover:text-gray-12"
-          >
-            <XIcon size={14} />
-          </button>
-        </Flex>
+    <Flex direction="column" gap="4">
+      <Flex align="center" gap="2" wrap="wrap">
+        <Badge
+          color="violet"
+          className="!leading-none inline-flex shrink-0 items-center gap-1"
+        >
+          <SparkleIcon size={10} weight="fill" />
+          Suggested
+        </Badge>
+        <Text className="block min-w-0 text-balance break-words font-bold text-base">
+          {task.title}
+        </Text>
       </Flex>
 
-      <ScrollArea type="auto" scrollbars="vertical" className="min-h-0 flex-1">
-        <Flex
-          direction="column"
-          gap="4"
-          className="@2xl:px-6 @3xl:px-8 @4xl:px-10 @5xl:px-12 @lg:px-4 @md:px-3 @xl:px-5 px-2 py-4"
-        >
+      <ScrollArea
+        type="auto"
+        scrollbars="vertical"
+        className="max-h-[60vh] min-h-0"
+      >
+        <Flex direction="column" gap="4" pr="3">
           <Flex align="center" gap="2" className="text-(--gray-11)">
             <span style={{ color: `var(--${config.color}-9)` }}>
               <CategoryIcon size={14} weight="duotone" />
@@ -162,32 +178,16 @@ export function DiscoveredTaskDetailPane({
         </Flex>
       </ScrollArea>
 
-      <Flex
-        align="center"
-        justify="end"
-        gap="2"
-        className="h-[38px] shrink-0 border-t border-t-(--gray-5) bg-(--gray-1) @2xl:px-6 @3xl:px-8 @4xl:px-10 @5xl:px-12 @lg:px-4 @md:px-3 @xl:px-5 px-2"
-      >
-        <Button
-          size="1"
-          variant="ghost"
-          color="gray"
-          className="gap-1 font-medium text-[11px]"
-          onClick={handleDismiss}
-        >
+      <Flex gap="3" justify="end">
+        <Button variant="soft" color="gray" onClick={handleDismiss}>
           Dismiss
         </Button>
-        <Button
-          size="1"
-          variant="solid"
-          className="gap-1 font-medium text-[11px]"
-          onClick={handleCreateTask}
-        >
-          <PlusIcon size={12} />
+        <Button variant="solid" onClick={handleCreateTask}>
+          <PlusIcon size={14} weight="bold" />
           Implement as new task
         </Button>
       </Flex>
-    </>
+    </Flex>
   );
 }
 

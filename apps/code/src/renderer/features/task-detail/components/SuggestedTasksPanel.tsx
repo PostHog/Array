@@ -1,4 +1,4 @@
-import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
+import { DiscoveredTaskDetailDialog } from "@features/setup/components/DiscoveredTaskDetailDialog";
 import { SetupScanFeed } from "@features/setup/components/SetupScanFeed";
 import {
   selectRepoDiscovery,
@@ -6,10 +6,14 @@ import {
   useSetupStore,
 } from "@features/setup/stores/setupStore";
 import type { DiscoveredTask } from "@features/setup/types";
-import { ArrowRight, Lightning, MagnifyingGlass } from "@phosphor-icons/react";
+import {
+  CaretLeft,
+  CaretRight,
+  Lightning,
+  MagnifyingGlass,
+} from "@phosphor-icons/react";
 import { Flex, Text } from "@radix-ui/themes";
 import { useActiveRepoStore } from "@stores/activeRepoStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { SuggestedTaskCard } from "./SuggestedTaskCard";
@@ -17,23 +21,22 @@ import { SuggestedTaskCard } from "./SuggestedTaskCard";
 const VISIBLE_LIMIT = 3;
 const DEFAULT_LOG_LINES = 4;
 
-// Rough heights (px) used to drop cards / log lines that wouldn't fit below
-// the editor.
 const TOP_MARGIN = 12;
-const HEADER_HEIGHT = 18;
+const HEADER_HEIGHT = 24;
 const GAP = 8;
 const SCAN_PILL_HEIGHT = 52;
 const CARD_HEIGHT = 56;
-const SEE_MORE_HEIGHT = 24;
 const BOTTOM_PADDING = 56;
 const LOG_LINE_HEIGHT = 24;
 const LOG_FEED_PADDING = 16;
 
-interface SuggestedTasksPanelProps {
-  onSelect: (task: DiscoveredTask) => void;
-}
+const pageVariants = {
+  enter: (dir: number) => ({ x: dir * 32, opacity: 0 }),
+  center: { x: 0, opacity: 1 },
+  exit: (dir: number) => ({ x: -dir * 32, opacity: 0 }),
+};
 
-export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
+export function SuggestedTasksPanel() {
   const selectedDirectory = useActiveRepoStore((s) => s.path);
   const discoveredTasks = useSetupStore((s) =>
     s.discoveredTasks.filter((task) =>
@@ -50,8 +53,10 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
     (s) => selectRepoDiscovery(s, selectedDirectory).feed,
   );
   const removeDiscoveredTask = useSetupStore((s) => s.removeDiscoveredTask);
-  const selectDiscoveredTask = useSetupStore((s) => s.selectDiscoveredTask);
-  const navigateToInbox = useNavigationStore((s) => s.navigateToInbox);
+
+  const [detailTask, setDetailTask] = useState<DiscoveredTask | null>(null);
+  const [pageStart, setPageStart] = useState(0);
+  const [pageDirection, setPageDirection] = useState<1 | -1>(1);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableHeight, setAvailableHeight] = useState<number>(() =>
@@ -88,42 +93,32 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
     [removeDiscoveredTask],
   );
 
-  const handleViewDetails = useCallback(
-    (task: DiscoveredTask) => {
-      useInboxReportSelectionStore.getState().clearSelection();
-      selectDiscoveredTask(task.id);
-      navigateToInbox();
-    },
-    [selectDiscoveredTask, navigateToInbox],
-  );
+  const handleSelectTask = useCallback((task: DiscoveredTask) => {
+    setDetailTask(task);
+  }, []);
 
-  const isEnricherRunning = enricherStatus === "running";
-  const isDiscoveryRunning = discoveryStatus === "running";
+  const handleCloseDetail = useCallback(() => {
+    setDetailTask(null);
+  }, []);
 
   const hasTasks = discoveredTasks.length > 0;
+  const showEnricherFeed = !hasTasks && enricherStatus === "running";
+  const showDiscoveryFeed = discoveryStatus === "running";
 
-  if (!hasTasks && !isEnricherRunning && !isDiscoveryRunning) return null;
+  if (!hasTasks && !showEnricherFeed && !showDiscoveryFeed) return null;
 
   const totalTasks = discoveredTasks.length;
   const desiredVisible = Math.min(totalTasks, VISIBLE_LIMIT);
   const discoveryFeedHasEntries = discoveryFeed.recentEntries.length > 0;
 
-  // Sum the sections that will be rendered, including inter-section gaps.
   const measureTotalHeight = (cardCount: number, logLines: number): number => {
     const sections: number[] = [];
-    if (hasTasks) {
-      sections.push(HEADER_HEIGHT);
-    }
+    if (hasTasks) sections.push(HEADER_HEIGHT);
     if (cardCount > 0) {
       sections.push(cardCount * CARD_HEIGHT + Math.max(0, cardCount - 1) * GAP);
     }
-    if (totalTasks - cardCount > 0) {
-      sections.push(SEE_MORE_HEIGHT);
-    }
-    if (isEnricherRunning) {
-      sections.push(SCAN_PILL_HEIGHT);
-    }
-    if (isDiscoveryRunning) {
+    if (showEnricherFeed) sections.push(SCAN_PILL_HEIGHT);
+    if (showDiscoveryFeed) {
       let h = SCAN_PILL_HEIGHT;
       if (logLines > 0 && discoveryFeedHasEntries) {
         h += LOG_FEED_PADDING + logLines * LOG_LINE_HEIGHT;
@@ -135,10 +130,8 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
     return TOP_MARGIN + sectionsTotal + gapsTotal + BOTTOM_PADDING;
   };
 
-  // Drop log lines before cards: log lines are decorative, cards are the
-  // actionable items.
   let visibleCount = desiredVisible;
-  let logLines = isDiscoveryRunning ? DEFAULT_LOG_LINES : 0;
+  let logLines = showDiscoveryFeed ? DEFAULT_LOG_LINES : 0;
   if (Number.isFinite(availableHeight)) {
     while (measureTotalHeight(visibleCount, logLines) > availableHeight) {
       if (logLines > 0) logLines -= 1;
@@ -147,8 +140,31 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
     }
   }
 
-  const visibleTasks = discoveredTasks.slice(0, visibleCount);
-  const hiddenCount = totalTasks - visibleTasks.length;
+  const effectivePageStart =
+    visibleCount > 0 && pageStart < totalTasks ? pageStart : 0;
+
+  const visibleTasks = discoveredTasks.slice(
+    effectivePageStart,
+    effectivePageStart + visibleCount,
+  );
+
+  const canGoPrev = effectivePageStart > 0;
+  const canGoNext = effectivePageStart + visibleTasks.length < totalTasks;
+  const showPager = visibleCount > 0 && totalTasks > visibleCount;
+  const currentPage =
+    visibleCount > 0 ? Math.floor(effectivePageStart / visibleCount) + 1 : 1;
+  const totalPages =
+    visibleCount > 0 ? Math.max(1, Math.ceil(totalTasks / visibleCount)) : 1;
+
+  const handleNext = () => {
+    setPageDirection(1);
+    setPageStart(effectivePageStart + visibleCount);
+  };
+
+  const handlePrev = () => {
+    setPageDirection(-1);
+    setPageStart(Math.max(0, effectivePageStart - visibleCount));
+  };
 
   const fadeMotion = {
     initial: { opacity: 0 },
@@ -157,42 +173,77 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
     transition: { duration: 0.15 },
   };
 
+  const pagerButtonClass =
+    "flex h-5 w-5 cursor-pointer items-center justify-center rounded text-(--gray-11) hover:bg-(--gray-3) hover:text-(--gray-12) disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-(--gray-11)";
+
   return (
     <div ref={containerRef} className="mt-3 flex flex-col gap-2">
       {hasTasks && (
-        <Text size="1" weight="medium" className="px-2.5 text-(--gray-11)">
-          Suggestions
-        </Text>
-      )}
-      <AnimatePresence initial={false} mode="popLayout">
-        {visibleTasks.map((task, index) => (
-          <SuggestedTaskCard
-            key={task.id}
-            task={task}
-            index={index}
-            onSelect={onSelect}
-            onDismiss={handleDismiss}
-            onViewDetails={handleViewDetails}
-          />
-        ))}
-        {hiddenCount > 0 && (
-          <motion.button
-            key="see-more"
-            layout
-            type="button"
-            onClick={navigateToInbox}
-            {...fadeMotion}
-            className="cursor-pointer self-end rounded-md px-1.5 py-0.5 text-(--gray-11) hover:text-(--gray-12)"
-          >
-            <Flex align="center" gap="1">
-              <Text size="1" weight="medium">
-                See {hiddenCount} more in Inbox
+        <Flex align="center" justify="between" className="px-2.5">
+          <Text size="1" weight="medium" className="text-(--gray-11)">
+            Suggestions
+          </Text>
+          {showPager && (
+            <Flex align="center" gap="2">
+              <Text size="1" className="text-(--gray-10) tabular-nums">
+                {currentPage} / {totalPages}
               </Text>
-              <ArrowRight size={12} weight="bold" />
+              <Flex align="center" gap="0.5">
+                <button
+                  type="button"
+                  disabled={!canGoPrev}
+                  onClick={handlePrev}
+                  aria-label="Previous suggestions"
+                  className={pagerButtonClass}
+                >
+                  <CaretLeft size={12} weight="bold" />
+                </button>
+                <button
+                  type="button"
+                  disabled={!canGoNext}
+                  onClick={handleNext}
+                  aria-label="More suggestions"
+                  className={pagerButtonClass}
+                >
+                  <CaretRight size={12} weight="bold" />
+                </button>
+              </Flex>
             </Flex>
-          </motion.button>
-        )}
-        {isEnricherRunning && (
+          )}
+        </Flex>
+      )}
+      {hasTasks && (
+        <div className="relative overflow-hidden">
+          <AnimatePresence
+            mode="popLayout"
+            initial={false}
+            custom={pageDirection}
+          >
+            <motion.div
+              key={effectivePageStart}
+              custom={pageDirection}
+              variants={pageVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              className="flex flex-col gap-2"
+            >
+              {visibleTasks.map((task, index) => (
+                <SuggestedTaskCard
+                  key={task.id}
+                  task={task}
+                  index={index}
+                  onSelect={handleSelectTask}
+                  onDismiss={handleDismiss}
+                />
+              ))}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      )}
+      <AnimatePresence initial={false}>
+        {showEnricherFeed && (
           <motion.div key="enricher" layout {...fadeMotion}>
             <SetupScanFeed
               label="Quick wins"
@@ -205,7 +256,7 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
             />
           </motion.div>
         )}
-        {isDiscoveryRunning && (
+        {showDiscoveryFeed && (
           <motion.div key="discovery" layout {...fadeMotion}>
             <SetupScanFeed
               label="Analyzing your codebase"
@@ -220,6 +271,10 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
           </motion.div>
         )}
       </AnimatePresence>
+      <DiscoveredTaskDetailDialog
+        task={detailTask}
+        onClose={handleCloseDetail}
+      />
     </div>
   );
 }

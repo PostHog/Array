@@ -54,7 +54,6 @@ interface SetupStoreState {
   discoveredTasks: DiscoveredTask[];
   discoveryByRepo: Record<string, RepoDiscoveryState>;
   enricherByRepo: Record<string, RepoEnricherState>;
-  selectedDiscoveredTaskId: string | null;
 }
 
 interface SetupStoreActions {
@@ -66,7 +65,6 @@ interface SetupStoreActions {
   completeEnrichment: (repoPath: string) => void;
   failEnrichment: (repoPath: string) => void;
   removeDiscoveredTask: (taskId: string, repoPath: string | null) => void;
-  selectDiscoveredTask: (taskId: string | null) => void;
   addEnricherSuggestionIfMissing: (task: DiscoveredTask) => void;
   pushDiscoveryActivity: (repoPath: string, entry: ActivityEntry) => void;
   resetSetup: () => void;
@@ -77,13 +75,13 @@ type SetupStore = SetupStoreState & SetupStoreActions;
 interface PersistedSetupState {
   discoveredTasks: DiscoveredTask[];
   discoveryByRepo: Record<string, RepoDiscoveryState>;
+  enricherByRepo: Record<string, RepoEnricherState>;
 }
 
 const initialState: SetupStoreState = {
   discoveredTasks: [],
   discoveryByRepo: {},
   enricherByRepo: {},
-  selectedDiscoveredTaskId: null,
 };
 
 export function selectRepoDiscovery(
@@ -265,15 +263,7 @@ export const useSetupStore = create<SetupStore>()(
           discoveredTasks: state.discoveredTasks.filter(
             (t) => !(t.id === taskId && isTaskForRepo(t, repoPath)),
           ),
-          selectedDiscoveredTaskId:
-            state.selectedDiscoveredTaskId === taskId
-              ? null
-              : state.selectedDiscoveredTaskId,
         }));
-      },
-
-      selectDiscoveredTask: (taskId) => {
-        set({ selectedDiscoveredTaskId: taskId });
       },
 
       // Adds an enricher-source suggestion if there isn't already one with
@@ -316,13 +306,45 @@ export const useSetupStore = create<SetupStore>()(
       version: 2,
       migrate: (persistedState, version): PersistedSetupState => {
         if (version < 2) {
-          // v1 stored a global discoveryStatus; drop it. Tasks persist as-is.
-          const state = (persistedState ?? {}) as { discoveredTasks?: unknown };
+          // v1 stored a single global discoveryStatus, not a per-repo map.
+          // We can't recover which repo it belonged to, so for v1 users who
+          // had already finished (or interrupted) a discovery run we plant a
+          // sentinel entry under a synthetic key. That keeps
+          // `discoveryEverStarted` true on first boot post-upgrade,
+          // suppressing an automatic fresh agent launch — without it, every
+          // upgraded user would create a new cloud task and re-trigger the
+          // parse storm we fixed in #2257.
+          //
+          // Pre-v2 tasks are dropped: they have no repoPath, so the new
+          // per-repo filter would never render them anyway.
+          const oldState = (persistedState ?? {}) as {
+            discoveryStatus?: string;
+            error?: unknown;
+          };
+          let sentinel: Record<string, RepoDiscoveryState> = {};
+          if (oldState.discoveryStatus === "done") {
+            sentinel = {
+              __migrated_v1__: { ...DEFAULT_DISCOVERY, status: "done" },
+            };
+          } else if (
+            oldState.discoveryStatus === "error" ||
+            oldState.discoveryStatus === "running"
+          ) {
+            sentinel = {
+              __migrated_v1__: {
+                ...DEFAULT_DISCOVERY,
+                status: "error",
+                error:
+                  typeof oldState.error === "string"
+                    ? oldState.error
+                    : "Discovery was interrupted. You can skip or retry.",
+              },
+            };
+          }
           return {
-            discoveredTasks: Array.isArray(state.discoveredTasks)
-              ? (state.discoveredTasks as DiscoveredTask[])
-              : [],
-            discoveryByRepo: {},
+            discoveredTasks: [],
+            discoveryByRepo: sentinel,
+            enricherByRepo: {},
           };
         }
         return persistedState as PersistedSetupState;
@@ -331,7 +353,10 @@ export const useSetupStore = create<SetupStore>()(
       // doesn't trigger another full agent run on reload. Persist "running"
       // as "error" so an interrupted run (crash, force-quit, freeze) doesn't
       // auto-restart on next boot — otherwise discovery loops forever,
-      // creating new cloud tasks and spawning agents on every launch.
+      // creating new cloud tasks and spawning agents on every launch (#2257).
+      //
+      // Enricher only persists "done" — it's cheap to rerun on error/idle,
+      // and we never want to skip an in-flight "running" across boots.
       partialize: (state): PersistedSetupState => ({
         discoveredTasks: state.discoveredTasks,
         discoveryByRepo: Object.fromEntries(
@@ -353,6 +378,11 @@ export const useSetupStore = create<SetupStore>()(
                 { ...DEFAULT_DISCOVERY, status: d.status, error: d.error },
               ];
             }),
+        ),
+        enricherByRepo: Object.fromEntries(
+          Object.entries(state.enricherByRepo).filter(
+            ([, e]) => e.status === "done",
+          ),
         ),
       }),
     },

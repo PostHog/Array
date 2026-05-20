@@ -3,6 +3,7 @@ import { fetchAuthState } from "@features/auth/hooks/authQueries";
 import { buildDiscoveryPrompt } from "@features/setup/prompts";
 import {
   selectRepoDiscovery,
+  selectRepoEnricher,
   useSetupStore,
 } from "@features/setup/stores/setupStore";
 import {
@@ -282,6 +283,15 @@ export class SetupRunService {
   injectEnricherSuggestions(directory: string): void {
     if (!directory) return;
     if (this.enricherSuggestionsRunningByRepo.has(directory)) return;
+    // Once per repo per success. "done" survives across boots via partialize
+    // so re-selecting a previously-enriched repo doesn't re-hit the PostHog
+    // install-state and stale-flag APIs. "error" and "idle" fall through so
+    // a transient failure can retry on the next selection.
+    const enricherStatus = selectRepoEnricher(
+      useSetupStore.getState(),
+      directory,
+    ).status;
+    if (enricherStatus === "done" || enricherStatus === "running") return;
     this.enricherSuggestionsRunningByRepo.add(directory);
     useSetupStore.getState().startEnrichment(directory);
 
