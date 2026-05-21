@@ -3017,6 +3017,7 @@ export class SessionService {
 
     watcher.subscription.unsubscribe();
     this.cloudTaskWatchers.delete(taskId);
+    this.cloudLogReconcileDeficiency.delete(watcher.runId);
   }
 
   async preflightToLocal(taskId: string, repoPath: string) {
@@ -3874,24 +3875,28 @@ export class SessionService {
       return;
     }
 
-    // The fetched logs lag behind expectedCount. If we've seen the exact same
-    // deficiency before (same expectedCount, same observed line count), S3 is
-    // not catching up — committing what we have and advancing processedLineCount
-    // past the gap is the only way to break the reconcile loop. Otherwise the
-    // snapshot delta stays positive forever, firing a fetch + writeLocalLogs
-    // on every SSE snapshot.
+    // The fetched logs lag behind expectedCount. Two situations break the
+    // reconcile loop early by committing best-effort and advancing
+    // processedLineCount past the gap:
+    //   1. `parseFailureCount > 0` — proven corruption: lines exist but
+    //      don't parse. S3 will never make them parseable. Break on first
+    //      observation.
+    //   2. Same deficiency twice in a row (same expectedCount, same
+    //      observedLineCount) — S3 isn't catching up. Break on second.
+    // Otherwise this is plausibly transient lag — record and wait.
     const previous = this.cloudLogReconcileDeficiency.get(taskRunId);
     const sameDeficiencyAsBefore =
       previous?.expectedCount === expectedCount &&
       previous?.observedLineCount === totalLineCount;
 
-    if (sameDeficiencyAsBefore) {
+    if (parseFailureCount > 0 || sameDeficiencyAsBefore) {
       log.warn("Cloud task log gap unrecoverable; committing best-effort", {
         taskRunId,
         expectedCount,
         observedLineCount: totalLineCount,
         parseFailureCount,
         fetchedEntries: rawEntries.length,
+        reason: parseFailureCount > 0 ? "parse-failure" : "stable-deficit",
       });
       const events = convertStoredEntriesToEvents(rawEntries);
       if (hasSessionPromptEvent(events)) {
