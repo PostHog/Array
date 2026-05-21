@@ -221,6 +221,25 @@ describe("xmlToContent", () => {
     expect(xmlToPlainText("ship the fix")).toBe("ship the fix");
   });
 
+  it("xmlToPlainText renders github_pr and github_issue mentions", () => {
+    expect(
+      xmlToPlainText(
+        '<github_pr number="42" title="Add login" url="https://github.com/x/y/pull/42" />',
+      ),
+    ).toBe("@#42 - Add login");
+    expect(
+      xmlToPlainText(
+        '<github_issue number="7" title="" url="https://github.com/x/y/issues/7" />',
+      ),
+    ).toBe("@#7");
+  });
+
+  it("xmlToPlainText passes through non-chip XML-like text", () => {
+    expect(xmlToPlainText("use Array<string> and <div> tags")).toBe(
+      "use Array<string> and <div> tags",
+    );
+  });
+
   it("round-trips contentToXml for a mix of text and chips", () => {
     const content: EditorContent = {
       segments: [

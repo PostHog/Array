@@ -426,7 +426,6 @@ describe("TaskCreationSaga", () => {
 
     await saga.run({
       taskDescription: '<file path="/tmp/code.ts" />',
-      content: '<file path="/tmp/code.ts" />',
       repository: "posthog/posthog",
       workspaceMode: "cloud",
       branch: "main",
@@ -437,6 +436,37 @@ describe("TaskCreationSaga", () => {
         title: "@tmp/code.ts",
         description: '<file path="/tmp/code.ts" />',
       }),
+    );
+  });
+
+  it("falls back to Untitled when description is empty", async () => {
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+
+    const saga = new TaskCreationSaga({
+      posthogClient: {
+        createTask: createTaskMock,
+        deleteTask: vi.fn(),
+        getTask: vi.fn(),
+        createTaskRun: createTaskRunMock,
+        startTaskRun: startTaskRunMock,
+        sendRunCommand: vi.fn(),
+        updateTask: vi.fn(),
+      } as never,
+    });
+
+    await saga.run({
+      content: "   ",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+    });
+
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Untitled" }),
     );
   });
 

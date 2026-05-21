@@ -142,10 +142,6 @@ function chipFromTag(tag: string, rawAttrs: string): MentionChip | null {
   }
 }
 
-export function xmlToPlainText(xml: string): string {
-  return contentToPlainText(xmlToContent(xml));
-}
-
 export function xmlToContent(xml: string): EditorContent {
   const segments: EditorContent["segments"] = [];
   let lastIndex = 0;
@@ -171,6 +167,10 @@ export function xmlToContent(xml: string): EditorContent {
   }
 
   return { segments };
+}
+
+export function xmlToPlainText(xml: string): string {
+  return contentToPlainText(xmlToContent(xml));
 }
 
 export function isContentEmpty(

@@ -403,7 +403,7 @@ export class TaskCreationSaga extends Saga<
         const description = input.taskDescription ?? input.content ?? "";
         const plainText = xmlToPlainText(description).trim();
         const result = await this.deps.posthogClient.createTask({
-          title: (plainText || "Reading attachment\u2026").slice(0, 255),
+          title: (plainText || "Untitled").slice(0, 255),
           description,
           repository: repository ?? undefined,
           github_integration:

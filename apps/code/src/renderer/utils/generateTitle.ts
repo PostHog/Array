@@ -1,10 +1,10 @@
 import { fetchAuthState } from "@features/auth/hooks/authQueries";
+import { xmlToContent } from "@features/message-editor/utils/content";
 import { trpcClient } from "@renderer/trpc";
 import { logger } from "@utils/logger";
 
 const log = logger.scope("title-generator");
 
-export const createFileTagRegex = () => /<file\s+path="([^"]+)"\s*\/>/g;
 const ATTACHED_FILES_REGEX = /^\[?Attached files:.*]?$/gm;
 const PASTED_TEXT_SNIPPET_LIMIT = 500;
 
@@ -55,18 +55,22 @@ export async function enrichDescriptionWithFileContent(
   description: string,
   filePaths: string[] = [],
 ): Promise<string> {
-  const stripped = description
-    .replace(createFileTagRegex(), "")
+  const content = xmlToContent(description);
+  const textOnly = content.segments
+    .filter((seg) => seg.type === "text")
+    .map((seg) => (seg.type === "text" ? seg.text : ""))
+    .join("");
+  const stripped = textOnly
     .replace(ATTACHED_FILES_REGEX, "")
     .replace(/^\d+\.\s*$/gm, "")
     .trim();
 
   if (stripped.length > 0) return description;
 
-  const paths =
-    filePaths.length > 0
-      ? filePaths
-      : [...description.matchAll(createFileTagRegex())].map((m) => m[1]);
+  const chipFilePaths = content.segments.flatMap((seg) =>
+    seg.type === "chip" && seg.chip.type === "file" ? [seg.chip.id] : [],
+  );
+  const paths = filePaths.length > 0 ? filePaths : chipFilePaths;
 
   if (paths.length === 0) return description;
 
