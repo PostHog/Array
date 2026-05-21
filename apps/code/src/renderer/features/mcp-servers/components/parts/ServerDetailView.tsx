@@ -1,3 +1,4 @@
+import { groupMcpToolsByCapability } from "@features/mcp-servers/hooks/mcpToolGroups";
 import { useMcpInstallationTools } from "@features/mcp-servers/hooks/useMcpInstallationTools";
 import {
   ArrowClockwise,
@@ -25,6 +26,7 @@ import {
 } from "@radix-ui/themes";
 import type {
   McpApprovalState,
+  McpInstallationTool,
   McpRecommendedServer,
   McpServerInstallation,
 } from "@renderer/api/posthogClient";
@@ -48,6 +50,45 @@ interface ServerDetailViewProps {
   onReauthorize: () => void;
   onToggleEnabled: (enabled: boolean) => void;
   onUninstall: () => void;
+}
+
+interface ToolGroupSectionProps {
+  title: string;
+  tools: McpInstallationTool[];
+  onToolApprovalChange: (
+    toolName: string,
+    approval_state: McpApprovalState,
+  ) => void;
+}
+
+function ToolGroupSection({
+  title,
+  tools,
+  onToolApprovalChange,
+}: ToolGroupSectionProps) {
+  if (tools.length === 0) return null;
+
+  return (
+    <Flex direction="column" gap="2">
+      <Flex align="center" gap="2">
+        <Text color="gray" className="font-medium text-[13px]">
+          {title}
+        </Text>
+        <Badge color="gray" variant="soft" size="1">
+          {tools.length}
+        </Badge>
+      </Flex>
+      {tools.map((tool) => (
+        <ToolRow
+          key={tool.tool_name}
+          tool={tool}
+          onChange={(approval_state) =>
+            onToolApprovalChange(tool.tool_name, approval_state)
+          }
+        />
+      ))}
+    </Flex>
+  );
 }
 
 export function ServerDetailView({
@@ -118,6 +159,11 @@ export function ServerDetailView({
     const term = toolSearch.toLowerCase();
     return visibleTools.filter((t) => t.tool_name.toLowerCase().includes(term));
   }, [visibleTools, toolSearch]);
+
+  const groupedTools = useMemo(
+    () => groupMcpToolsByCapability(filteredTools),
+    [filteredTools],
+  );
 
   const removedCount = tools.filter((t) => !!t.removed_at).length;
 
@@ -385,18 +431,28 @@ export function ServerDetailView({
                   </Text>
                 </Flex>
               ) : (
-                filteredTools.map((tool) => (
-                  <ToolRow
-                    key={tool.tool_name}
-                    tool={tool}
-                    onChange={(approval_state) =>
+                <>
+                  <ToolGroupSection
+                    title="Read tools"
+                    tools={groupedTools.read}
+                    onToolApprovalChange={(toolName, approval_state) =>
                       setToolApproval({
-                        toolName: tool.tool_name,
+                        toolName,
                         approval_state,
                       })
                     }
                   />
-                ))
+                  <ToolGroupSection
+                    title="Write / delete tools"
+                    tools={groupedTools.write_delete}
+                    onToolApprovalChange={(toolName, approval_state) =>
+                      setToolApproval({
+                        toolName,
+                        approval_state,
+                      })
+                    }
+                  />
+                </>
               )}
             </Flex>
           )}
