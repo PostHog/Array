@@ -13,6 +13,7 @@ import {
   type ThemePreference,
   usePreferencesStore,
 } from "@/features/preferences/stores/preferencesStore";
+import { DebugInfoSection } from "@/features/settings/components/DebugInfoSection";
 import { FloatingSettingsHeader } from "@/features/settings/components/FloatingSettingsHeader";
 import { SettingsRow } from "@/features/settings/components/SettingsRow";
 import { SettingsSection } from "@/features/settings/components/SettingsSection";
@@ -80,7 +81,8 @@ export default function SettingsScreen() {
   const themeColors = useThemeColors();
   const insets = useSafeAreaInsets();
 
-  const { logout, cloudRegion, getCloudUrlFromRegion } = useAuthStore();
+  const { logout, cloudRegion, projectId, getCloudUrlFromRegion } =
+    useAuthStore();
   const { data: userData } = useUserQuery();
 
   const pingsEnabled = usePreferencesStore((s) => s.pingsEnabled);
@@ -397,6 +399,16 @@ export default function SettingsScreen() {
             }
           />
         </SettingsSection>
+
+        {/* Debug info — staff only */}
+        {userData?.is_staff ? (
+          <DebugInfoSection
+            cloudRegion={cloudRegion}
+            projectId={projectId}
+            userId={userData.id}
+            userUuid={userData.uuid}
+          />
+        ) : null}
       </ScrollView>
 
       <SelectSheet
