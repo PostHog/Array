@@ -14,7 +14,7 @@ interface SidebarStoreState {
   sortMode: "updated" | "created";
   showAllUsers: boolean;
   showInternal: boolean;
-  showRevisitOnly: boolean;
+  showUnreadOnly: boolean;
 }
 
 interface SidebarStoreActions {
@@ -33,7 +33,7 @@ interface SidebarStoreActions {
   setSortMode: (mode: SidebarStoreState["sortMode"]) => void;
   setShowAllUsers: (showAllUsers: boolean) => void;
   setShowInternal: (showInternal: boolean) => void;
-  setShowRevisitOnly: (showRevisitOnly: boolean) => void;
+  setShowUnreadOnly: (showUnreadOnly: boolean) => void;
 }
 
 type SidebarStore = SidebarStoreState & SidebarStoreActions;
@@ -52,7 +52,7 @@ export const useSidebarStore = create<SidebarStore>()(
       sortMode: "updated",
       showAllUsers: false,
       showInternal: false,
-      showRevisitOnly: false,
+      showUnreadOnly: false,
       setOpen: (open) => set({ open, hasUserSetOpen: true }),
       setOpenAuto: (open) =>
         set((state) => (state.hasUserSetOpen ? state : { open })),
@@ -103,7 +103,7 @@ export const useSidebarStore = create<SidebarStore>()(
       setSortMode: (sortMode) => set({ sortMode }),
       setShowAllUsers: (showAllUsers) => set({ showAllUsers }),
       setShowInternal: (showInternal) => set({ showInternal }),
-      setShowRevisitOnly: (showRevisitOnly) => set({ showRevisitOnly }),
+      setShowUnreadOnly: (showUnreadOnly) => set({ showUnreadOnly }),
     }),
     {
       name: "sidebar-storage",
@@ -118,7 +118,7 @@ export const useSidebarStore = create<SidebarStore>()(
         sortMode: state.sortMode,
         showAllUsers: state.showAllUsers,
         showInternal: state.showInternal,
-        showRevisitOnly: state.showRevisitOnly,
+        showUnreadOnly: state.showUnreadOnly,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as {
@@ -132,7 +132,7 @@ export const useSidebarStore = create<SidebarStore>()(
           sortMode?: SidebarStoreState["sortMode"];
           showAllUsers?: boolean;
           showInternal?: boolean;
-          showRevisitOnly?: boolean;
+          showUnreadOnly?: boolean;
         };
         return {
           ...current,
@@ -151,8 +151,8 @@ export const useSidebarStore = create<SidebarStore>()(
           sortMode: persistedState.sortMode ?? current.sortMode,
           showAllUsers: persistedState.showAllUsers ?? current.showAllUsers,
           showInternal: persistedState.showInternal ?? current.showInternal,
-          showRevisitOnly:
-            persistedState.showRevisitOnly ?? current.showRevisitOnly,
+          showUnreadOnly:
+            persistedState.showUnreadOnly ?? current.showUnreadOnly,
         };
       },
     },

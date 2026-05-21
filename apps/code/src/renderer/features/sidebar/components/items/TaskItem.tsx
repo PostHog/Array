@@ -28,8 +28,8 @@ interface TaskItemProps {
   worktreePath?: string;
   isGenerating?: boolean;
   isUnread?: boolean;
+  isExplicitlyUnread?: boolean;
   isPinned?: boolean;
-  isRevisit?: boolean;
   isSuspended?: boolean;
   needsPermission?: boolean;
   taskRunStatus?: TaskRunStatus;
@@ -233,8 +233,8 @@ export function TaskItem({
   isSuspended = false,
   isGenerating,
   isUnread,
+  isExplicitlyUnread = false,
   isPinned = false,
-  isRevisit = false,
   needsPermission = false,
   taskRunStatus,
   prState,
@@ -270,6 +270,12 @@ export function TaskItem({
         <Pause size={ICON_SIZE} className="text-gray-9" />
       </span>
     </Tooltip>
+  ) : isExplicitlyUnread ? (
+    <Tooltip content="Marked as unread" side="right">
+      <span className="flex items-center justify-center">
+        <ChatCircle size={ICON_SIZE} weight="fill" className="text-yellow-10" />
+      </span>
+    </Tooltip>
   ) : isUnread ? (
     <span className="flex items-center justify-center">
       <Circle size={8} weight="fill" className="text-green-11" />
@@ -278,12 +284,6 @@ export function TaskItem({
     <PrStatusIcon prState={prState} hasDiff={hasDiff} />
   ) : isPinned ? (
     <PushPin size={ICON_SIZE} className="text-accent-11" />
-  ) : isRevisit ? (
-    <Tooltip content="Marked for revisit" side="right">
-      <span className="flex items-center justify-center">
-        <ChatCircle size={ICON_SIZE} weight="fill" className="text-yellow-10" />
-      </span>
-    </Tooltip>
   ) : (
     <ChatCircle size={ICON_SIZE} className="text-gray-10" />
   );

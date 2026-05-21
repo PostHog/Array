@@ -5,6 +5,7 @@ import { useCallback, useMemo, useRef } from "react";
 interface TaskTimestamps {
   lastViewedAt: number | null;
   lastActivityAt: number | null;
+  markedUnreadAt: number | null;
 }
 
 function parseTimestamps(
@@ -14,6 +15,7 @@ function parseTimestamps(
       pinnedAt: string | null;
       lastViewedAt: string | null;
       lastActivityAt: string | null;
+      markedUnreadAt: string | null;
     }
   >,
 ): Record<string, TaskTimestamps> {
@@ -25,6 +27,9 @@ function parseTimestamps(
         : null,
       lastActivityAt: ts.lastActivityAt
         ? new Date(ts.lastActivityAt).getTime()
+        : null,
+      markedUnreadAt: ts.markedUnreadAt
+        ? new Date(ts.markedUnreadAt).getTime()
         : null,
     };
   }
@@ -64,6 +69,7 @@ export function useTaskViewed() {
                   pinnedAt: null,
                   lastViewedAt: now,
                   lastActivityAt: null,
+                  markedUnreadAt: null,
                 },
               };
             return {
@@ -104,11 +110,75 @@ export function useTaskViewed() {
                   pinnedAt: null,
                   lastViewedAt: null,
                   lastActivityAt: activityIso,
+                  markedUnreadAt: null,
                 },
               };
             return {
               ...old,
               [taskId]: { ...old[taskId], lastActivityAt: activityIso },
+            };
+          },
+        );
+        return { previous };
+      },
+      onError: (_, __, context) => {
+        if (context?.previous) {
+          queryClient.setQueryData(timestampsQueryKey, context.previous);
+        }
+      },
+    }),
+  );
+
+  const markUnreadMutation = useMutation(
+    trpcReact.workspace.markUnread.mutationOptions({
+      onMutate: async ({ taskId }) => {
+        await queryClient.cancelQueries({ queryKey: timestampsQueryKey });
+        const previous =
+          queryClient.getQueryData<typeof rawTimestamps>(timestampsQueryKey);
+        const now = new Date().toISOString();
+        queryClient.setQueryData<typeof rawTimestamps>(
+          timestampsQueryKey,
+          (old) => {
+            if (!old)
+              return {
+                [taskId]: {
+                  pinnedAt: null,
+                  lastViewedAt: null,
+                  lastActivityAt: null,
+                  markedUnreadAt: now,
+                },
+              };
+            return {
+              ...old,
+              [taskId]: { ...old[taskId], markedUnreadAt: now },
+            };
+          },
+        );
+        return { previous };
+      },
+      onError: (_, __, context) => {
+        if (context?.previous) {
+          queryClient.setQueryData(timestampsQueryKey, context.previous);
+        }
+      },
+    }),
+  );
+
+  const clearMarkedUnreadMutation = useMutation(
+    trpcReact.workspace.clearMarkedUnread.mutationOptions({
+      onMutate: async ({ taskId }) => {
+        await queryClient.cancelQueries({ queryKey: timestampsQueryKey });
+        const previous =
+          queryClient.getQueryData<typeof rawTimestamps>(timestampsQueryKey);
+        queryClient.setQueryData<typeof rawTimestamps>(
+          timestampsQueryKey,
+          (old) => {
+            if (!old) return old;
+            const existing = old[taskId];
+            if (!existing || existing.markedUnreadAt == null) return old;
+            return {
+              ...old,
+              [taskId]: { ...existing, markedUnreadAt: null },
             };
           },
         );
@@ -128,12 +198,26 @@ export function useTaskViewed() {
   const markActivityMutationRef = useRef(markActivityMutation);
   markActivityMutationRef.current = markActivityMutation;
 
+  const markUnreadMutationRef = useRef(markUnreadMutation);
+  markUnreadMutationRef.current = markUnreadMutation;
+
+  const clearMarkedUnreadMutationRef = useRef(clearMarkedUnreadMutation);
+  clearMarkedUnreadMutationRef.current = clearMarkedUnreadMutation;
+
   const markAsViewed = useCallback((taskId: string) => {
     markViewedMutationRef.current.mutate({ taskId });
   }, []);
 
   const markActivity = useCallback((taskId: string) => {
     markActivityMutationRef.current.mutate({ taskId });
+  }, []);
+
+  const markUnread = useCallback((taskId: string) => {
+    markUnreadMutationRef.current.mutate({ taskId });
+  }, []);
+
+  const clearMarkedUnread = useCallback((taskId: string) => {
+    clearMarkedUnreadMutationRef.current.mutate({ taskId });
   }, []);
 
   const getLastViewedAt = useCallback(
@@ -151,6 +235,8 @@ export function useTaskViewed() {
     isLoading,
     markAsViewed,
     markActivity,
+    markUnread,
+    clearMarkedUnread,
     getLastViewedAt,
     getLastActivityAt,
   };
@@ -168,5 +254,13 @@ export const taskViewedApi = {
 
   markActivity(taskId: string): void {
     trpcClient.workspace.markActivity.mutate({ taskId });
+  },
+
+  markUnread(taskId: string): void {
+    trpcClient.workspace.markUnread.mutate({ taskId });
+  },
+
+  clearMarkedUnread(taskId: string): void {
+    trpcClient.workspace.clearMarkedUnread.mutate({ taskId });
   },
 };

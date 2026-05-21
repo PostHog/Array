@@ -1,5 +1,4 @@
 import { pinnedTasksApi } from "@features/sidebar/hooks/usePinnedTasks";
-import { useRevisitStore } from "@features/task-detail/stores/revisitStore";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
@@ -250,7 +249,6 @@ export function useDeleteTask() {
       }
 
       pinnedTasksApi.unpin(taskId);
-      useRevisitStore.getState().setRevisit(taskId, false);
 
       await mutation.mutateAsync(taskId);
 

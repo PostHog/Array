@@ -3,6 +3,7 @@ import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
 import type { GitService } from "../../services/git/service";
 import {
+  clearMarkedUnreadInput,
   createWorkspaceInput,
   createWorkspaceOutput,
   deleteWorkspaceInput,
@@ -24,6 +25,7 @@ import {
   listGitWorktreesInput,
   listGitWorktreesOutput,
   markActivityInput,
+  markUnreadInput,
   markViewedInput,
   taskPrStatusInput,
   taskPrStatusOutput,
@@ -147,6 +149,18 @@ export const workspaceRouter = router({
       );
     }),
 
+  markUnread: publicProcedure.input(markUnreadInput).mutation(({ input }) => {
+    const repo = getWorkspaceRepo();
+    repo.updateMarkedUnreadAt(input.taskId, new Date().toISOString());
+  }),
+
+  clearMarkedUnread: publicProcedure
+    .input(clearMarkedUnreadInput)
+    .mutation(({ input }) => {
+      const repo = getWorkspaceRepo();
+      repo.updateMarkedUnreadAt(input.taskId, null);
+    }),
+
   getPinnedTaskIds: publicProcedure.output(getPinnedTaskIdsOutput).query(() => {
     const repo = getWorkspaceRepo();
     return repo.findAllPinned().map((w) => w.taskId);
@@ -162,6 +176,7 @@ export const workspaceRouter = router({
         pinnedAt: workspace?.pinnedAt ?? null,
         lastViewedAt: workspace?.lastViewedAt ?? null,
         lastActivityAt: workspace?.lastActivityAt ?? null,
+        markedUnreadAt: workspace?.markedUnreadAt ?? null,
       };
     }),
 
@@ -176,6 +191,7 @@ export const workspaceRouter = router({
           pinnedAt: string | null;
           lastViewedAt: string | null;
           lastActivityAt: string | null;
+          markedUnreadAt: string | null;
         }
       > = {};
       for (const w of workspaces) {
@@ -183,6 +199,7 @@ export const workspaceRouter = router({
           pinnedAt: w.pinnedAt,
           lastViewedAt: w.lastViewedAt,
           lastActivityAt: w.lastActivityAt,
+          markedUnreadAt: w.markedUnreadAt,
         };
       }
       return result;

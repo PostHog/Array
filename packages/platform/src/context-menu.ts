@@ -4,8 +4,6 @@ export interface ContextMenuAction {
   enabled?: boolean;
   accelerator?: string;
   submenu?: ContextMenuItem[];
-  /** When defined, renders as a native checkbox item with a tick when `checked` is true. */
-  checked?: boolean;
   click: () => void | Promise<void>;
 }
 

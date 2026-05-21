@@ -16,23 +16,18 @@ import {
 } from "@features/sessions/stores/sessionStore";
 import type { Plan } from "@features/sessions/types";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
-import { useRevisitStore } from "@features/task-detail/stores/revisitStore";
 import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
 import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
 import { Box, Button, ContextMenu, Flex, Text } from "@radix-ui/themes";
-import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
 import { toast } from "@renderer/utils/toast";
 import type { Task, TaskRunStatus } from "@shared/types";
-import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import {
   type AcpMessage,
   isJsonRpcNotification,
   isJsonRpcResponse,
 } from "@shared/types/session-events";
-import { track } from "@utils/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { getSessionService } from "../service/service";
 import { flattenSelectOptions } from "../stores/sessionStore";
 import {
@@ -100,25 +95,6 @@ function resolveAllowAlwaysUpgradeMode(
   return undefined;
 }
 
-function useRevisitShortcut(taskId: string | undefined) {
-  useHotkeys(
-    SHORTCUTS.TOGGLE_REVISIT,
-    (e) => {
-      if (!taskId) return;
-      e.preventDefault();
-      const store = useRevisitStore.getState();
-      const wasMarked = store.revisitTaskIds.has(taskId);
-      store.toggle(taskId);
-      track(ANALYTICS_EVENTS.TASK_REVISIT_TOGGLED, {
-        task_id: taskId,
-        enabled: !wasMarked,
-      });
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-    [taskId],
-  );
-}
-
 export function SessionView({
   events,
   taskId,
@@ -148,7 +124,6 @@ export function SessionView({
   isActiveSession = true,
   hideInput = false,
 }: SessionViewProps) {
-  useRevisitShortcut(taskId);
   const showRawLogs = useShowRawLogs();
   const { setShowRawLogs } = useSessionViewActions();
   const pendingPermissions = usePendingPermissionsForTask(taskId);

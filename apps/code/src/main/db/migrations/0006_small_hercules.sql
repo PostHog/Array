@@ -1,0 +1,1 @@
+ALTER TABLE `workspaces` ADD `marked_unread_at` text;

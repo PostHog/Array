@@ -9,7 +9,6 @@ import {
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { getSessionService } from "@features/sessions/service/service";
 import { useSetupStore } from "@features/setup/stores/setupStore";
-import { useRevisitStore } from "@features/task-detail/stores/revisitStore";
 import {
   archiveTaskImperative,
   useArchiveTask,
@@ -59,13 +58,12 @@ function SidebarMenuComponent() {
   const { data: allTasks = [] } = useTasks({ showAllUsers, showInternal });
 
   const { data: workspaces = {} } = useWorkspaces();
-  const { markAsViewed } = useTaskViewed();
+  const { markAsViewed, markUnread, clearMarkedUnread } = useTaskViewed();
 
   const { showContextMenu, editingTaskId, setEditingTaskId } =
     useTaskContextMenu();
   const { archiveTask } = useArchiveTask();
   const { togglePin } = usePinnedTasks();
-  const toggleRevisit = useRevisitStore((s) => s.toggle);
 
   const hasCompletedSetup = useOnboardingStore(
     (state) => state.hasCompletedSetup,
@@ -119,10 +117,11 @@ function SidebarMenuComponent() {
 
     if (currentTaskId) {
       markAsViewed(currentTaskId);
+      clearMarkedUnread(currentTaskId);
     }
 
     previousTaskIdRef.current = currentTaskId;
-  }, [view, markAsViewed]);
+  }, [view, markAsViewed, clearMarkedUnread]);
 
   const handleNewTaskClick = () => {
     navigateToTaskInput();
@@ -176,8 +175,6 @@ function SidebarMenuComponent() {
         (id) => id == null || !taskMap.has(id),
       );
 
-      const isRevisit = useRevisitStore.getState().revisitTaskIds.has(taskId);
-
       showContextMenu(task, e, {
         worktreePath: workspace?.worktreePath ?? undefined,
         folderPath: workspace?.folderPath ?? undefined,
@@ -185,17 +182,12 @@ function SidebarMenuComponent() {
         isSuspended: taskData?.isSuspended,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
-        isRevisit,
         onTogglePin: () => togglePin(taskId),
         onArchivePrior: handleArchivePrior,
-        onToggleRevisit: () => {
-          const wasMarked = useRevisitStore
-            .getState()
-            .revisitTaskIds.has(taskId);
-          toggleRevisit(taskId);
-          track(ANALYTICS_EVENTS.TASK_REVISIT_TOGGLED, {
+        onMarkAsUnread: () => {
+          markUnread(taskId);
+          track(ANALYTICS_EVENTS.TASK_MARKED_AS_UNREAD, {
             task_id: taskId,
-            enabled: !wasMarked,
           });
         },
         onAddToCommandCenter: () => {

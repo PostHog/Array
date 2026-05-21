@@ -2,7 +2,6 @@ import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { useProvisioningStore } from "@features/provisioning/stores/provisioningStore";
 import { useSessions } from "@features/sessions/stores/sessionStore";
 import { useSuspendedTaskIds } from "@features/suspension/hooks/useSuspendedTaskIds";
-import { useRevisitStore } from "@features/task-detail/stores/revisitStore";
 import { useTaskSummaries, useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import type { Schemas } from "@renderer/api/generated";
@@ -10,7 +9,6 @@ import type { Task, TaskRunStatus } from "@shared/types";
 import { useEffect, useMemo, useRef } from "react";
 import { useSidebarStore } from "../stores/sidebarStore";
 import type { SortMode } from "../types";
-import { applyRevisitFilter } from "../utils/applyRevisitFilter";
 import {
   type TaskGroup as GenericTaskGroup,
   getRepositoryInfo,
@@ -28,6 +26,7 @@ export interface TaskData {
   lastActivityAt: number;
   isGenerating: boolean;
   isUnread: boolean;
+  isExplicitlyUnread: boolean;
   isPinned: boolean;
   needsPermission: boolean;
   repository: TaskRepositoryInfo | null;
@@ -93,8 +92,7 @@ export function useSidebarData({
 }: UseSidebarDataProps): SidebarData {
   const showAllUsers = useSidebarStore((state) => state.showAllUsers);
   const showInternal = useSidebarStore((state) => state.showInternal);
-  const showRevisitOnly = useSidebarStore((state) => state.showRevisitOnly);
-  const revisitTaskIds = useRevisitStore((state) => state.revisitTaskIds);
+  const showUnreadOnly = useSidebarStore((state) => state.showUnreadOnly);
   const { data: workspaces, isFetched: isWorkspacesFetched } = useWorkspaces();
   const archivedTaskIds = useArchivedTaskIds();
   const suspendedTaskIds = useSuspendedTaskIds();
@@ -224,6 +222,7 @@ export function useSidebarData({
       const taskLastViewedAt = taskTimestamps?.lastViewedAt;
       const isUnread =
         taskLastViewedAt != null && lastActivityAt > taskLastViewedAt;
+      const isExplicitlyUnread = taskTimestamps?.markedUnreadAt != null;
 
       const cloudPrUrl =
         typeof task.latest_run?.output?.pr_url === "string"
@@ -237,6 +236,7 @@ export function useSidebarData({
         lastActivityAt,
         isGenerating: session?.isPromptPending ?? false,
         isUnread,
+        isExplicitlyUnread,
         isPinned: pinnedTaskIds.has(task.id),
         isSuspended: suspendedTaskIds.has(task.id),
         needsPermission: (session?.pendingPermissions?.size ?? 0) > 0,
@@ -261,8 +261,11 @@ export function useSidebarData({
   ]);
 
   const filteredTaskData = useMemo(
-    () => applyRevisitFilter(taskData, showRevisitOnly, revisitTaskIds),
-    [taskData, showRevisitOnly, revisitTaskIds],
+    () =>
+      showUnreadOnly
+        ? taskData.filter((task) => task.isUnread || task.isExplicitlyUnread)
+        : taskData,
+    [taskData, showUnreadOnly],
   );
 
   const pinnedTasks = useMemo(() => {

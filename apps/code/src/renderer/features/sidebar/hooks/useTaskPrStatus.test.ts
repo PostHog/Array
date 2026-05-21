@@ -34,6 +34,7 @@ function makeTask(overrides: Partial<TaskData> = {}): TaskData {
     lastActivityAt: Date.now(),
     isGenerating: false,
     isUnread: false,
+    isExplicitlyUnread: false,
     isPinned: false,
     needsPermission: false,
     repository: null,

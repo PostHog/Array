@@ -331,13 +331,12 @@ export interface SetupSkippedProperties {
   entry_point: "during_scan" | "after_done";
 }
 
-// Task revisit + sidebar filter events
-export interface TaskRevisitToggledProperties {
+// Task mark-as-unread + sidebar filter events
+export interface TaskMarkedAsUnreadProperties {
   task_id: string;
-  enabled: boolean;
 }
 
-export interface TaskRevisitListFilterChangedProperties {
+export interface TaskUnreadListFilterChangedProperties {
   filter_name: string;
   value: string;
   previous_value?: string;
@@ -446,9 +445,9 @@ export const ANALYTICS_EVENTS = {
   SUBSCRIPTION_STARTED: "Subscription started",
   SUBSCRIPTION_CANCELLED: "Subscription cancelled",
 
-  // Task revisit + sidebar filter events
-  TASK_REVISIT_TOGGLED: "Task revisit toggled",
-  TASK_REVISIT_LIST_FILTER_CHANGED: "Task revisit list filter changed",
+  // Task mark-as-unread + sidebar filter events
+  TASK_MARKED_AS_UNREAD: "Task marked as unread",
+  TASK_UNREAD_LIST_FILTER_CHANGED: "Task unread list filter changed",
 } as const;
 
 // Event property mapping
@@ -537,7 +536,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
 
-  // Task revisit + sidebar filter events
-  [ANALYTICS_EVENTS.TASK_REVISIT_TOGGLED]: TaskRevisitToggledProperties;
-  [ANALYTICS_EVENTS.TASK_REVISIT_LIST_FILTER_CHANGED]: TaskRevisitListFilterChangedProperties;
+  // Task mark-as-unread + sidebar filter events
+  [ANALYTICS_EVENTS.TASK_MARKED_AS_UNREAD]: TaskMarkedAsUnreadProperties;
+  [ANALYTICS_EVENTS.TASK_UNREAD_LIST_FILTER_CHANGED]: TaskUnreadListFilterChangedProperties;
 };

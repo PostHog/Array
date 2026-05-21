@@ -24,7 +24,6 @@ export const SHORTCUTS = {
   FIND_IN_CONVERSATION: "mod+f",
   BLUR: "escape",
   SUBMIT_BLUR: "mod+enter",
-  TOGGLE_REVISIT: "mod+shift+m",
 } as const;
 
 export type ShortcutCategory = "general" | "navigation" | "panels" | "editor";
@@ -158,13 +157,6 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     id: "find-in-conversation",
     keys: SHORTCUTS.FIND_IN_CONVERSATION,
     description: "Find in conversation",
-    category: "panels",
-    context: "Task detail",
-  },
-  {
-    id: "toggle-revisit",
-    keys: SHORTCUTS.TOGGLE_REVISIT,
-    description: "Toggle revisit task",
     category: "panels",
     context: "Task detail",
   },
