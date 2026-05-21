@@ -13,8 +13,7 @@ import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { McpServersView } from "@features/mcp-servers/components/McpServersView";
 import { FolderSettingsView } from "@features/settings/components/FolderSettingsView";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
-import { SetupView } from "@features/setup/components/SetupView";
+import { useSetupDiscovery } from "@features/setup/hooks/useSetupDiscovery";
 import { MainSidebar } from "@features/sidebar/components/MainSidebar";
 import { useSidebarData } from "@features/sidebar/hooks/useSidebarData";
 import { useVisualTaskOrder } from "@features/sidebar/hooks/useVisualTaskOrder";
@@ -23,18 +22,25 @@ import { TaskDetail } from "@features/task-detail/components/TaskDetail";
 import { TaskInput } from "@features/task-detail/components/TaskInput";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { TourOverlay } from "@features/tour/components/TourOverlay";
-import { useTourStore } from "@features/tour/stores/tourStore";
-import { createFirstTaskTour } from "@features/tour/tours/createFirstTaskTour";
+import {
+  useWorkspaces,
+  workspaceApi,
+} from "@features/workspace/hooks/useWorkspace";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { Box, Flex } from "@radix-ui/themes";
-import { BILLING_FLAG } from "@shared/constants";
+import { useTRPC } from "@renderer/trpc/client";
+import { BILLING_FLAG, SYNC_CLOUD_TASKS_FLAG } from "@shared/constants";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
-import { useCallback, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { logger } from "@utils/logger";
+import { useCallback, useEffect, useRef } from "react";
 import { useTaskDeepLink } from "../hooks/useTaskDeepLink";
 import { GlobalEventHandlers } from "./GlobalEventHandlers";
+
+const log = logger.scope("main-layout");
 
 export function MainLayout() {
   const {
@@ -56,7 +62,12 @@ export function MainLayout() {
     close: closeShortcutsSheet,
   } = useShortcutsSheetStore();
   const { data: tasks } = useTasks();
+  const { data: workspaces, isFetched: workspacesFetched } = useWorkspaces();
+  const trpcReact = useTRPC();
+  const queryClient = useQueryClient();
+  const reconcilingTaskIds = useRef<Set<string>>(new Set());
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
 
   // Space switcher data
   const sidebarData = useSidebarData({ activeView: view });
@@ -64,15 +75,11 @@ export function MainLayout() {
   const activeTaskId =
     view.type === "task-detail" && view.data ? view.data.id : null;
 
-  const startTour = useTourStore((s) => s.startTour);
-  const isFirstTaskTourDone = useTourStore((s) =>
-    s.completedTourIds.includes(createFirstTaskTour.id),
-  );
-
   useUsageLimitDetection(billingEnabled);
   useIntegrations();
   useTaskDeepLink();
   useInboxDeepLink();
+  useSetupDiscovery();
 
   useEffect(() => {
     if (tasks) {
@@ -81,18 +88,47 @@ export function MainLayout() {
   }, [tasks, hydrateTask]);
 
   useEffect(() => {
+    if (!syncCloudTasksEnabled) return;
+    if (!tasks || !workspaces || !workspacesFetched) return;
+    const missing = tasks.filter(
+      (t) =>
+        t.latest_run?.environment === "cloud" &&
+        !workspaces[t.id] &&
+        !reconcilingTaskIds.current.has(t.id),
+    );
+    if (missing.length === 0) return;
+    const missingIds = missing.map((t) => t.id);
+    for (const id of missingIds) reconcilingTaskIds.current.add(id);
+    // Single batched IPC instead of one mutation per task — with many cloud
+    // tasks the per-task pattern saturates the main thread at boot.
+    workspaceApi
+      .reconcileCloudWorkspaces(missingIds)
+      .then((result) => {
+        for (const id of missingIds) reconcilingTaskIds.current.delete(id);
+        if (result.created.length > 0) {
+          void queryClient.invalidateQueries(
+            trpcReact.workspace.getAll.pathFilter(),
+          );
+        }
+      })
+      .catch((err) => {
+        for (const id of missingIds) reconcilingTaskIds.current.delete(id);
+        log.warn("Failed to reconcile cloud workspaces", err);
+      });
+  }, [
+    syncCloudTasksEnabled,
+    tasks,
+    workspaces,
+    workspacesFetched,
+    queryClient,
+    trpcReact,
+  ]);
+
+  useEffect(() => {
     if (view.type === "task-detail" && !view.data && !view.taskId) {
       navigateToTaskInput();
     }
   }, [view, navigateToTaskInput]);
-
-  const settingsOpen = useSettingsDialogStore((s) => s.isOpen);
-
-  useEffect(() => {
-    if (isFirstTaskTourDone || settingsOpen) return;
-    const timer = setTimeout(() => startTour(createFirstTaskTour.id), 600);
-    return () => clearTimeout(timer);
-  }, [isFirstTaskTourDone, settingsOpen, startTour]);
 
   const handleToggleCommandMenu = useCallback(() => {
     toggleCommandMenu();
@@ -133,7 +169,6 @@ export function MainLayout() {
           {view.type === "skills" && <SkillsView />}
 
           {view.type === "mcp-servers" && <McpServersView />}
-          {view.type === "setup" && <SetupView />}
         </Box>
       </Flex>
 

@@ -14,14 +14,19 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
+import { Flex, Text } from "@radix-ui/themes";
+import { FIELD_TRIGGER_CLASS } from "@renderer/styles/fieldTrigger";
 import { trpcClient } from "@renderer/trpc";
+import { logger } from "@utils/logger";
 import type { RefObject } from "react";
+
+const log = logger.scope("folder-picker");
 
 interface FolderPickerProps {
   value: string;
   onChange: (path: string) => void;
   placeholder?: string;
-  size?: "1" | "2";
+  variant?: "compact" | "field";
   anchor?: RefObject<HTMLElement | null>;
 }
 
@@ -29,6 +34,7 @@ export function FolderPicker({
   value,
   onChange,
   placeholder = "Select folder...",
+  variant = "compact",
   anchor,
 }: FolderPickerProps) {
   const {
@@ -41,31 +47,67 @@ export function FolderPicker({
 
   const recentFolders = getRecentFolders();
   const displayValue = getFolderDisplayName(value);
+  const isField = variant === "field";
 
-  const handleSelect = async (path: string) => {
+  const handleSelect = (path: string) => {
     onChange(path);
     const folder = getFolderByPath(path);
-    if (folder) {
-      updateLastAccessed(folder.id);
-    }
+    if (folder) updateLastAccessed(folder.id);
   };
 
   const handleOpenFilePicker = async () => {
-    const selectedPath = await trpcClient.os.selectDirectory.query();
-    if (selectedPath) {
+    try {
+      const selectedPath = await trpcClient.os.selectDirectory.query();
+      if (!selectedPath) return;
       await addFolder(selectedPath);
       onChange(selectedPath);
+    } catch (error) {
+      log.error("Failed to open folder picker", { error });
     }
   };
 
-  if (recentFolders.length === 0) {
-    return (
-      <Button variant="outline" size="sm" onClick={handleOpenFilePicker}>
-        <FolderIcon size={14} weight="regular" className="shrink-0" />
-        <span className="max-w-[120px] truncate">
+  const fieldContent = (
+    <>
+      <Flex align="center" gap="2" className="min-w-0 flex-1">
+        <FolderIcon size={16} className="shrink-0 text-(--gray-12)" />
+        <Text
+          className="min-w-0 max-w-full truncate text-left font-medium text-(--gray-12)"
+          title={displayValue || undefined}
+        >
           {displayValue || placeholder}
-        </span>
-        <CaretDown size={10} weight="bold" className="text-muted-foreground" />
+        </Text>
+      </Flex>
+      <CaretDown size={14} className="shrink-0 text-(--gray-9)" />
+    </>
+  );
+
+  const compactContent = (
+    <>
+      <FolderIcon size={14} weight="regular" className="shrink-0" />
+      <span className="max-w-[120px] truncate">
+        {displayValue || placeholder}
+      </span>
+      <CaretDown size={10} weight="bold" className="text-muted-foreground" />
+    </>
+  );
+
+  if (recentFolders.length === 0) {
+    return isField ? (
+      <button
+        type="button"
+        onClick={handleOpenFilePicker}
+        className={FIELD_TRIGGER_CLASS}
+      >
+        {fieldContent}
+      </button>
+    ) : (
+      <Button
+        variant="outline"
+        size="sm"
+        aria-label="Folder"
+        onClick={handleOpenFilePicker}
+      >
+        {compactContent}
       </Button>
     );
   }
@@ -74,42 +116,46 @@ export function FolderPicker({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="outline" size="sm" aria-label="Folder">
-            <FolderIcon size={14} weight="regular" className="shrink-0" />
-            <span className="max-w-[120px] truncate">
-              {displayValue || placeholder}
-            </span>
-            <CaretDown
-              size={10}
-              weight="bold"
-              className="text-muted-foreground"
-            />
-          </Button>
+          isField ? (
+            <button type="button" className={FIELD_TRIGGER_CLASS}>
+              {fieldContent}
+            </button>
+          ) : (
+            <Button variant="outline" size="sm" aria-label="Folder">
+              {compactContent}
+            </Button>
+          )
         }
       />
       <DropdownMenuContent
         anchor={anchor}
         align="start"
         side="bottom"
-        sideOffset={6}
-        className="min-w-[200px]"
+        sideOffset={isField ? 4 : 6}
+        className={
+          isField
+            ? "w-(--anchor-width) min-w-(--anchor-width) max-w-(--anchor-width)"
+            : "min-w-[200px]"
+        }
       >
         <MenuLabel>Recent</MenuLabel>
-
         {recentFolders.map((folder) => (
           <DropdownMenuItem
             key={folder.id}
             onClick={() => handleSelect(folder.path)}
           >
-            <GitBranch size={12} />
-            <span className="whitespace-nowrap">{folder.name}</span>
+            <GitBranch size={12} className="shrink-0" />
+            <span
+              className="min-w-0 flex-1 truncate text-left"
+              title={folder.path}
+            >
+              {folder.name}
+            </span>
           </DropdownMenuItem>
         ))}
-
         <DropdownMenuSeparator />
-
         <DropdownMenuItem onClick={handleOpenFilePicker}>
-          <FolderOpen size={12} />
+          <FolderOpen size={12} className="shrink-0" />
           <span className="whitespace-nowrap">Open folder...</span>
         </DropdownMenuItem>
       </DropdownMenuContent>

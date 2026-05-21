@@ -1,8 +1,13 @@
 import { Badge } from "@components/ui/Badge";
+import { Button } from "@components/ui/Button";
 import {
   useInboxReportArtefacts,
   useInboxReportSignals,
 } from "@features/inbox/hooks/useInboxReports";
+import {
+  getTaskPrUrl,
+  useReportTasks,
+} from "@features/inbox/hooks/useReportTasks";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import { useDetectedCloudRepository } from "@hooks/useDetectedCloudRepository";
 import { useMeQuery } from "@hooks/useMeQuery";
@@ -12,10 +17,20 @@ import {
   CaretRightIcon,
   EyeIcon,
   LinkSimpleIcon,
+  Plus,
+  ThumbsDownIcon,
   WarningIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { Box, Flex, ScrollArea, Text, Tooltip } from "@radix-ui/themes";
+import { Kbd } from "@posthog/quill";
+import {
+  Box,
+  Flex,
+  ScrollArea,
+  Spinner,
+  Text,
+  Tooltip,
+} from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { EXTERNAL_LINKS } from "@renderer/utils/links";
 import { getDeeplinkProtocol } from "@shared/deeplink";
@@ -23,6 +38,7 @@ import type {
   ActionabilityJudgmentArtefact,
   ActionabilityJudgmentContent,
   PriorityJudgmentArtefact,
+  Signal,
   SignalFindingArtefact,
   SignalReport,
   SignalReportTask,
@@ -30,16 +46,27 @@ import type {
   SuggestedReviewersArtefact,
   Task,
 } from "@shared/types";
+import type { InboxReportActionProperties } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useMemo, useState } from "react";
+import { isMac } from "@utils/platform";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
+import { ReportImplementationPrLink } from "../utils/ReportImplementationPrLink";
 import { SignalReportActionabilityBadge } from "../utils/SignalReportActionabilityBadge";
 import { SignalReportPriorityBadge } from "../utils/SignalReportPriorityBadge";
 import { SignalReportStatusBadge } from "../utils/SignalReportStatusBadge";
 import { SignalReportSummaryMarkdown } from "../utils/SignalReportSummaryMarkdown";
 import { ReportTaskLogs } from "./ReportTaskLogs";
 import { SignalCard } from "./SignalCard";
+import type { SignalInteractionAction } from "./signalInteractionContext";
 
 function isSuggestedReviewerRowMe(
   reviewer: SuggestedReviewer,
@@ -86,10 +113,12 @@ function DetailRow({
   label,
   value,
   explanation,
+  onToggleExplanation,
 }: {
   label: string;
   value: ReactNode;
   explanation?: string | null;
+  onToggleExplanation?: (expanded: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasExplanation = !!explanation;
@@ -104,7 +133,13 @@ function DetailRow({
         {hasExplanation && (
           <button
             type="button"
-            onClick={() => setExpanded((v) => !v)}
+            onClick={() => {
+              setExpanded((v) => {
+                const next = !v;
+                onToggleExplanation?.(next);
+                return next;
+              });
+            }}
             className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[13px] text-gray-9 hover:bg-gray-3 hover:text-gray-11"
           >
             {expanded ? (
@@ -133,9 +168,24 @@ function DetailRow({
 interface ReportDetailPaneProps {
   report: SignalReport;
   onClose: () => void;
+  onRequestDismissReport: () => void;
+  suppressDisabledReason: string | null;
+  isDismissMutationPending?: boolean;
+  onReportAction?: (
+    action: Omit<InboxReportActionProperties, "rank" | "list_size">,
+  ) => void;
+  onScroll?: () => void;
 }
 
-export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
+export function ReportDetailPane({
+  report,
+  onClose,
+  onRequestDismissReport,
+  suppressDisabledReason,
+  isDismissMutationPending = false,
+  onReportAction,
+  onScroll,
+}: ReportDetailPaneProps) {
   const { data: me } = useMeQuery();
 
   // ── Report data ─────────────────────────────────────────────────────────
@@ -213,6 +263,16 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
   );
   const effectiveCloudRepository = reportRepository ?? detectedFallbackRepo;
 
+  const { data: reportTasksData } = useReportTasks(report.id, report.status);
+  const implementationTaskFromHook =
+    reportTasksData?.find((t) => t.relationship === "implementation")?.task ??
+    null;
+  const implementationPrFromTask = implementationTaskFromHook
+    ? getTaskPrUrl(implementationTaskFromHook)
+    : null;
+  const headerImplementationPrUrl =
+    implementationPrFromTask ?? report.implementation_pr_url ?? null;
+
   /** True when the report is waiting on user input before implementation can proceed.
    * Covers the `pending_input` status and the `ready + requires_human_input` combination
    * (the actionability badge shows "Needs input" in that case). */
@@ -229,8 +289,67 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
       report.actionability === "immediately_actionable" &&
       report.already_addressed !== true);
 
+  // Centralized helper for detail-pane action analytics — fills boilerplate (surface, is_bulk,
+  // bulk_size) and report-scoped context (title, age) so call sites only pass action-specific extras.
+  const fireDetailAction = useCallback(
+    (
+      actionType: InboxReportActionProperties["action_type"],
+      extra?: Partial<
+        Omit<
+          InboxReportActionProperties,
+          | "report_id"
+          | "report_title"
+          | "report_age_hours"
+          | "action_type"
+          | "surface"
+          | "is_bulk"
+          | "bulk_size"
+          | "rank"
+          | "list_size"
+        >
+      >,
+    ) => {
+      const ageMs = Date.now() - new Date(report.created_at).getTime();
+      const reportAgeHours = Number.isFinite(ageMs)
+        ? Math.max(0, Math.round((ageMs / 3_600_000) * 10) / 10)
+        : 0;
+      onReportAction?.({
+        report_id: report.id,
+        report_title: report.title,
+        report_age_hours: reportAgeHours,
+        action_type: actionType,
+        surface: "detail_pane",
+        is_bulk: false,
+        bulk_size: 1,
+        ...extra,
+      });
+    },
+    [onReportAction, report.id, report.title, report.created_at],
+  );
+
+  // Build the signal-card interaction handler used by both signal lists (signals + session-problem evidence).
+  const makeSignalInteractionHandler = useCallback(
+    (signal: Signal) => (action: SignalInteractionAction) => {
+      const signalContext = {
+        signal_id: signal.signal_id,
+        signal_source_product: signal.source_product,
+        signal_source_type: signal.source_type,
+      };
+      if (action.type === "expand_signal_section") {
+        fireDetailAction(action.type, {
+          ...signalContext,
+          signal_section: action.section,
+        });
+      } else {
+        fireDetailAction(action.type, signalContext);
+      }
+    },
+    [fireDetailAction],
+  );
+
   const handleCreateImplementationTask = useCallback(() => {
     if (!canCreateImplementationPr) return;
+    fireDetailAction("create_pr");
     navigateToTaskInput({
       initialPrompt: `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`,
       initialCloudRepository: effectiveCloudRepository ?? undefined,
@@ -244,7 +363,55 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
     navigateToTaskInput,
     effectiveCloudRepository,
     report,
+    fireDetailAction,
   ]);
+
+  // Bind native scroll listener to the Radix ScrollArea viewport (Radix doesn't forward onScroll).
+  // The viewport's data-report-id attribute is set from report.id so we both (a) track the
+  // current report in the DOM for debugging and (b) give biome's useExhaustiveDependencies
+  // a real reactive use of report.id, ensuring the effect re-binds on every report swap.
+  const scrollAreaRootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!onScroll) return;
+    const root = scrollAreaRootRef.current;
+    if (!root) return;
+    const viewport = root.querySelector<HTMLElement>(
+      "[data-radix-scroll-area-viewport]",
+    );
+    if (!viewport) return;
+    viewport.dataset.reportId = report.id;
+    const handler = () => onScroll();
+    viewport.addEventListener("scroll", handler, { passive: true });
+    return () => {
+      viewport.removeEventListener("scroll", handler);
+      delete viewport.dataset.reportId;
+    };
+  }, [onScroll, report.id]);
+
+  useEffect(() => {
+    if (!canCreateImplementationPr) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (
+        document.querySelector(
+          "[data-radix-popper-content-wrapper], [role='dialog'][data-state='open']",
+        )
+      ) {
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest("input, select, textarea, [contenteditable='true']")
+      ) {
+        return;
+      }
+      e.preventDefault();
+      handleCreateImplementationTask();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [canCreateImplementationPr, handleCreateImplementationTask]);
 
   return (
     <>
@@ -264,7 +431,7 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
             {report.title ?? "Untitled signal"}
           </Text>
         </Flex>
-        <Flex align="center" gap="1" className="shrink-0">
+        <Flex align="center" gap="2" className="shrink-0">
           <Tooltip content="Copy link to this report">
             <button
               type="button"
@@ -273,6 +440,7 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
                   await navigator.clipboard.writeText(
                     `${getDeeplinkProtocol(import.meta.env.DEV)}://inbox/${report.id}`,
                   );
+                  fireDetailAction("copy_link");
                   toast.success("Link copied");
                 } catch {
                   toast.error("Failed to copy link");
@@ -284,6 +452,50 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
               <LinkSimpleIcon size={14} />
             </button>
           </Tooltip>
+          <Button
+            size="1"
+            variant="soft"
+            color="gray"
+            className="text-[12px]"
+            tooltipContent="This report is not useful to me"
+            disabledReason={suppressDisabledReason}
+            disabled={
+              suppressDisabledReason !== null || isDismissMutationPending
+            }
+            onClick={() => onRequestDismissReport()}
+          >
+            {isDismissMutationPending ? (
+              <Spinner size="1" />
+            ) : (
+              <ThumbsDownIcon size={12} />
+            )}
+            Dismiss
+          </Button>
+          {headerImplementationPrUrl ? (
+            <ReportImplementationPrLink
+              prUrl={headerImplementationPrUrl}
+              size="md"
+              onLinkClick={() => fireDetailAction("open_pr")}
+            />
+          ) : canCreateImplementationPr ? (
+            <Tooltip
+              content={
+                <Flex align="center" gap="1">
+                  Create PR <Kbd>{isMac ? "⌘↵" : "Ctrl+↵"}</Kbd>
+                </Flex>
+              }
+            >
+              <Button
+                size="1"
+                variant="solid"
+                className="gap-1 text-[12px]"
+                onClick={handleCreateImplementationTask}
+              >
+                <Plus size={12} />
+                Create PR
+              </Button>
+            </Tooltip>
+          ) : null}
           <button
             type="button"
             onClick={onClose}
@@ -297,6 +509,7 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
 
       {/* ── Scrollable detail area ──────────────────────────────── */}
       <ScrollArea
+        ref={scrollAreaRootRef}
         type="auto"
         scrollbars="vertical"
         className="scroll-area-constrain-width flex-1"
@@ -378,6 +591,10 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
                     <SignalReportPriorityBadge priority={report.priority} />
                   }
                   explanation={priorityExplanation}
+                  onToggleExplanation={(expanded) => {
+                    if (!expanded) return;
+                    fireDetailAction("expand_why", { why_field: "priority" });
+                  }}
                 />
               )}
               {report.actionability && (
@@ -389,6 +606,12 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
                     />
                   }
                   explanation={actionabilityJudgment?.explanation}
+                  onToggleExplanation={(expanded) => {
+                    if (!expanded) return;
+                    fireDetailAction("expand_why", {
+                      why_field: "actionability",
+                    });
+                  }}
                 />
               )}
             </Flex>
@@ -458,6 +681,9 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex items-center gap-0.5 text-[11px] text-gray-9 hover:text-gray-11"
+                        onClick={() =>
+                          fireDetailAction("click_suggested_reviewer")
+                        }
                       >
                         @{reviewer.github_login}
                         <ArrowSquareOutIcon size={10} />
@@ -500,6 +726,7 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
                     key={signal.signal_id}
                     signal={signal}
                     finding={signalFindings.get(signal.signal_id)}
+                    onInteraction={makeSignalInteractionHandler(signal)}
                   />
                 ))}
               </Flex>
@@ -523,6 +750,7 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
                     key={signal.signal_id}
                     signal={signal}
                     finding={signalFindings.get(signal.signal_id)}
+                    onInteraction={makeSignalInteractionHandler(signal)}
                   />
                 ))}
               </Flex>
@@ -536,9 +764,8 @@ export function ReportDetailPane({ report, onClose }: ReportDetailPaneProps) {
         key={report.id}
         reportId={report.id}
         reportStatus={report.status}
-        isAwaitingInput={isAwaitingInput}
-        onCreateImplementationTask={
-          canCreateImplementationPr ? handleCreateImplementationTask : undefined
+        onSectionExpand={(section) =>
+          fireDetailAction("expand_task_section", { task_section: section })
         }
       />
     </>

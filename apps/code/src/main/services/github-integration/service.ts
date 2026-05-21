@@ -61,7 +61,7 @@ export class GitHubIntegrationService extends TypedEventEmitter<GitHubIntegratio
   ): Promise<StartGitHubFlowOutput> {
     try {
       const cloudUrl = getCloudUrlFromRegion(region);
-      const nextPath = `/account-connected/github-login?provider=github&project_id=${projectId}&connect_from=posthog_code`;
+      const nextPath = `/account-connected/github-integration?provider=github&project_id=${projectId}&connect_from=posthog_code`;
       const authorizeUrl = `${cloudUrl}/api/environments/${projectId}/integrations/authorize/?kind=github&next=${encodeURIComponent(nextPath)}`;
 
       this.clearFlowTimeout();

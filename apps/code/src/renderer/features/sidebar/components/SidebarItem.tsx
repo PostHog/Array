@@ -1,4 +1,12 @@
-import { Button, cn } from "@posthog/quill";
+import {
+  Button,
+  cn,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@posthog/quill";
+import { useCallback } from "react";
 import type { SidebarItemAction } from "../types";
 
 const INDENT_SIZE = 8;
@@ -20,6 +28,40 @@ interface SidebarItemProps {
   disabled?: boolean;
 }
 
+function SidebarItemLabel({ label }: { label: React.ReactNode }) {
+  const canTooltip = typeof label === "string" || typeof label === "number";
+
+  const measureRef = useCallback((el: HTMLSpanElement | null) => {
+    if (!el) return;
+    const update = () => {
+      el.style.pointerEvents = el.scrollWidth > el.clientWidth ? "" : "none";
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const span = (
+    <span ref={measureRef} className="min-w-0 flex-1 truncate">
+      {label}
+    </span>
+  );
+
+  if (!canTooltip) return span;
+
+  return (
+    <TooltipProvider delay={600}>
+      <Tooltip>
+        <TooltipTrigger render={span} />
+        <TooltipContent side="top" className="max-w-[900px] break-words">
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 export function SidebarItem({
   depth,
   icon,
@@ -38,14 +80,16 @@ export function SidebarItem({
     <Button
       type="button"
       className={cn(
-        "group focus-visible:-outline-offset-2 flex w-full text-left text-[13px] leading-snug transition-colors focus-visible:outline-2 focus-visible:outline-accent-8",
-        "cursor-default disabled:opacity-100 data-active:bg-fill-selected",
+        "group flex w-full cursor-default text-left text-[13px] leading-snug transition-colors",
+        "focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent-8",
+        "disabled:opacity-100 data-active:bg-fill-selected",
       )}
       data-active={isActive || undefined}
       draggable={draggable}
       onDragStart={onDragStart}
       style={{
         paddingLeft: `${depth * INDENT_SIZE + 8 + (depth > 0 ? 4 : 0)}px`,
+        paddingRight: "8px",
       }}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
@@ -57,18 +101,16 @@ export function SidebarItem({
           {icon}
         </span>
       ) : null}
-      <span className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <span className="flex h-[18px] items-center gap-1">
-          <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-            {label}
-          </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="flex min-h-[18px] items-center gap-1">
+          <SidebarItemLabel label={label} />
           {endContent}
         </span>
-        {subtitle && (
-          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-gray-10 group-data-active:text-gray-11">
+        {subtitle ? (
+          <span className="truncate text-gray-10 group-data-active:text-gray-11">
             {subtitle}
           </span>
-        )}
+        ) : null}
       </span>
     </Button>
   );

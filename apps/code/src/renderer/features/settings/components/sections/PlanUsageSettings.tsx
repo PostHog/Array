@@ -1,7 +1,9 @@
 import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
+import { TokenSpendAnalysisBanner } from "@features/billing/components/TokenSpendAnalysisBanner";
 import { useUsage } from "@features/billing/hooks/useUsage";
 import { useSeatStore } from "@features/billing/stores/seatStore";
+import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useSeat } from "@hooks/useSeat";
 import type { UsageBucket } from "@main/services/llm-gateway/schemas";
 import {
@@ -27,6 +29,8 @@ import { getBillingUrl, getPostHogUrl } from "@utils/urls";
 import { useEffect, useState } from "react";
 
 const log = logger.scope("plan-usage");
+
+const SPEND_ANALYSIS_FLAG = "posthog-code-spend-analysis";
 
 async function openBillingPage(orgId: string | null): Promise<void> {
   if (orgId) {
@@ -75,6 +79,8 @@ export function PlanUsageSettings() {
     ? (getPostHogUrl(redirectUrl, cloudRegion) ?? billingUrl)
     : null;
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
+  const spendAnalysisEnabled =
+    useFeatureFlag(SPEND_ANALYSIS_FLAG) || import.meta.env.DEV;
 
   const isAlpha = orgSeat?.plan_key === PLAN_PRO_ALPHA;
   const {
@@ -164,6 +170,8 @@ export function PlanUsageSettings() {
           </Callout.Text>
         </Callout.Root>
       )}
+
+      {spendAnalysisEnabled && <TokenSpendAnalysisBanner />}
 
       {hasBetterPlanElsewhere && seat?.organization_name && (
         <Callout.Root color="blue" size="1">

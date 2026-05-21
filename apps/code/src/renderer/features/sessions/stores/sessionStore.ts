@@ -99,6 +99,17 @@ export interface AgentSession {
    * against agent capabilities (especially relevant for cloud sandboxes
    * where the agent version can lag behind the desktop). */
   agentVersion?: string;
+  /** Task run id for which the agent is idle.
+   * Set ONLY on `_posthog/turn_complete`, cleared when a
+   * `session/prompt` (or `sendCloudPrompt`) starts a turn. `run_started`
+   * does NOT set it: the initial/resume turn begins right after that
+   * handshake, so treating run_started as idle would drain a queued
+   * follow-up into the boot/resume turn race. Drives transport-drop queue
+   * recovery. Deliberately tracked independently of `isPromptPending`:
+   * `retryCloudTaskWatch()` forcibly clears `isPromptPending` on reconnect,
+   * so it cannot be trusted to mean "no remote turn in flight", using it
+   * for recovery would dispatch a queued follow-up mid-turn. */
+  agentIdleForRunId?: string;
 }
 
 // --- Config Option Helpers ---

@@ -1,8 +1,25 @@
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { trpcClient } from "@renderer/trpc/client";
+import {
+  ANALYTICS_EVENTS,
+  type RepositoryProvider,
+} from "@shared/types/analytics";
+import { track } from "@utils/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ONBOARDING_STEPS, type OnboardingStep } from "../types";
+
+function inferRepositoryProvider(
+  remote: string | undefined,
+): RepositoryProvider {
+  if (!remote) return "local";
+  const host = remote
+    .match(/^(?:[a-z]+:\/\/)?(?:[^@/]+@)?([a-z0-9.-]+)[:/]/i)?.[1]
+    ?.toLowerCase();
+  if (host === "gitlab.com") return "gitlab";
+  if (host === "github.com") return "github";
+  return "none";
+}
 
 export interface DetectedRepo {
   organization: string;
@@ -67,9 +84,23 @@ export function useOnboardingFlow() {
             remote: result.remote ?? undefined,
             branch: result.branch ?? undefined,
           });
+          track(ANALYTICS_EVENTS.ONBOARDING_FOLDER_SELECTED, {
+            has_git_remote: true,
+            repository_provider: inferRepositoryProvider(
+              result.remote ?? undefined,
+            ),
+          });
+        } else {
+          track(ANALYTICS_EVENTS.ONBOARDING_FOLDER_SELECTED, {
+            has_git_remote: false,
+            repository_provider: "local",
+          });
         }
       } catch {
-        // Not a git repo or no remote
+        track(ANALYTICS_EVENTS.ONBOARDING_FOLDER_SELECTED, {
+          has_git_remote: false,
+          repository_provider: "local",
+        });
       } finally {
         setIsDetectingRepo(false);
       }

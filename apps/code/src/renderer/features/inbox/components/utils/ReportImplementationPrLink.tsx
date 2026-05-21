@@ -7,13 +7,10 @@ export type ImplementationPrLinkSize = "sm" | "md";
 
 interface ReportImplementationPrLinkProps {
   prUrl: string;
-  /** `sm`: inbox list row. `md`: implementation task panel bar. */
+  /** `sm`: inbox list row. `md`: report detail header or implementation task bar. */
   size?: ImplementationPrLinkSize;
-  /**
-   * When true, skips the tRPC/GitHub status fetch and renders the badge in the
-   * default open state. Use in list rows to avoid N parallel API calls on mount.
-   */
-  skipStatusFetch?: boolean;
+  /** Optional analytics callback fired when the PR link is clicked. */
+  onLinkClick?: () => void;
 }
 
 function parseGitHubPrReference(prUrl: string): {
@@ -46,22 +43,21 @@ function parseGitHubPrReference(prUrl: string): {
 export function ReportImplementationPrLink({
   prUrl,
   size = "sm",
-  skipStatusFetch = false,
+  onLinkClick,
 }: ReportImplementationPrLinkProps) {
   const {
     meta: { state, merged, isLoading },
-  } = usePrDetails(skipStatusFetch ? null : prUrl);
+  } = usePrDetails(prUrl);
 
   const isSm = size === "sm";
 
-  const colorClass =
-    isLoading || skipStatusFetch
-      ? "bg-green-4 text-green-11 hover:bg-green-5"
-      : merged
-        ? "bg-violet-4 text-violet-11 hover:bg-violet-5"
-        : state === "closed"
-          ? "bg-red-4 text-red-11 hover:bg-red-5"
-          : "bg-green-4 text-green-11 hover:bg-green-5";
+  const colorClass = isLoading
+    ? "bg-gray-4 text-gray-11 hover:bg-gray-5"
+    : merged
+      ? "bg-violet-4 text-violet-11 hover:bg-violet-5"
+      : state === "closed"
+        ? "bg-red-4 text-red-11 hover:bg-red-5"
+        : "bg-green-4 text-green-11 hover:bg-green-5";
 
   const { reference: prReference, prNumber } = parseGitHubPrReference(prUrl);
 
@@ -79,7 +75,10 @@ export function ReportImplementationPrLink({
         href={prUrl}
         target="_blank"
         rel="noreferrer"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onLinkClick?.();
+        }}
         className={cn(
           "inline-flex shrink-0 items-center rounded-full font-medium",
           isSm

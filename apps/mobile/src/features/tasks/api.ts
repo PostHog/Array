@@ -460,6 +460,8 @@ export async function getIntegrations(): Promise<Integration[]> {
   return data.results ?? data ?? [];
 }
 
+const GITHUB_REPOS_PAGE_SIZE = 500;
+
 export async function getGithubRepositories(
   integrationId: number,
 ): Promise<string[]> {
@@ -467,27 +469,44 @@ export async function getGithubRepositories(
   const projectId = getProjectId();
   const headers = getHeaders();
 
-  const response = await fetch(
-    `${baseUrl}/api/environments/${projectId}/integrations/${integrationId}/github_repos/`,
-    { headers },
-  );
+  const allRepos: string[] = [];
+  let offset = 0;
 
-  if (!response.ok) {
-    throw new HttpError(
-      response.status,
-      response.statusText,
-      "Failed to fetch repositories",
+  while (true) {
+    const params = new URLSearchParams({
+      limit: String(GITHUB_REPOS_PAGE_SIZE),
+      offset: String(offset),
+    });
+    const response = await fetch(
+      `${baseUrl}/api/environments/${projectId}/integrations/${integrationId}/github_repos/?${params}`,
+      { headers },
     );
+
+    if (!response.ok) {
+      throw new HttpError(
+        response.status,
+        response.statusText,
+        "Failed to fetch repositories",
+      );
+    }
+
+    const data = await response.json();
+    const repos: Array<string | { full_name?: string; name?: string }> =
+      data.repositories ?? data.results ?? data ?? [];
+
+    const normalized = repos
+      .map((repo) => {
+        if (typeof repo === "string") return repo.toLowerCase();
+        return (repo.full_name ?? repo.name ?? "").toLowerCase();
+      })
+      .filter((name) => name.length > 0);
+
+    allRepos.push(...normalized);
+
+    if (!data.has_more || repos.length === 0) {
+      return allRepos;
+    }
+
+    offset += repos.length;
   }
-
-  const data = await response.json();
-  const repos: Array<string | { full_name?: string; name?: string }> =
-    data.repositories ?? data.results ?? data ?? [];
-
-  return repos
-    .map((repo) => {
-      if (typeof repo === "string") return repo.toLowerCase();
-      return (repo.full_name ?? repo.name ?? "").toLowerCase();
-    })
-    .filter((name) => name.length > 0);
 }

@@ -37,14 +37,20 @@ vi.mock("node:fs/promises", async () => {
   return { ...fs.promises, default: fs.promises };
 });
 
-vi.mock("../../utils/extract-zip.js", () => ({
-  extractZip: mockExtractZip,
+const mockFflateUnzip = vi.hoisted(() => vi.fn());
+vi.mock("fflate", () => ({
+  unzip: mockFflateUnzip,
 }));
 
-const mockFflateUnzipSync = vi.hoisted(() => vi.fn());
-vi.mock("fflate", () => ({
-  unzipSync: mockFflateUnzipSync,
-}));
+vi.mock("../../utils/extract-zip.js", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../utils/extract-zip.js")
+  >("../../utils/extract-zip.js");
+  return {
+    ...actual,
+    extractZip: mockExtractZip,
+  };
+});
 
 vi.mock("node:os", () => ({
   homedir: () => "/mock/home",
@@ -97,7 +103,7 @@ function simulateExtractZip() {
   mockExtractZip.mockImplementation(
     async (zipPath: string, extractDir: string) => {
       if (zipPath.includes("context-mill")) {
-        // Context-mill outer zip: produce omnibus-*.zip files (dummy bytes — unzipSync is mocked)
+        // Inner zip bytes are dummy — fflate.unzip is mocked below.
         vol.mkdirSync(extractDir, { recursive: true });
         vol.writeFileSync(`${extractDir}/omnibus-test-skill.zip`, "dummy");
         vol.writeFileSync(`${extractDir}/manifest.json`, "{}");
@@ -116,12 +122,18 @@ function simulateExtractZip() {
     },
   );
 
-  // Mock fflate unzipSync for inner zip extraction
-  mockFflateUnzipSync.mockImplementation(() => ({
-    "SKILL.md": new TextEncoder().encode(
-      "---\nname: omnibus-test-skill\n---\n# Test Skill",
-    ),
-  }));
+  mockFflateUnzip.mockImplementation(
+    (
+      _data: Uint8Array,
+      cb: (err: Error | null, data: Record<string, Uint8Array>) => void,
+    ) => {
+      cb(null, {
+        "SKILL.md": new TextEncoder().encode(
+          "---\nname: omnibus-test-skill\n---\n# Test Skill",
+        ),
+      });
+    },
+  );
 }
 
 /** Create the bundled plugin directory in memfs */

@@ -5,6 +5,7 @@ import { invalidateGitBranchQueries } from "@features/git-interaction/utils/gitC
 import {
   ArrowClockwise,
   CaretDown,
+  Check,
   GitBranch,
   Plus,
   Spinner,
@@ -19,13 +20,21 @@ import {
   ComboboxList,
   ComboboxListFooter,
   ComboboxTrigger,
+  InputGroupAddon,
+  InputGroupButton,
 } from "@posthog/quill";
 import { useTRPC } from "@renderer/trpc";
 import { toast } from "@renderer/utils/toast";
+import type { GitBusyOperation, GitBusyState } from "@shared/types";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { type RefObject, useEffect, useRef, useState } from "react";
 
 const COMBOBOX_LIMIT = 50;
+
+// Sentinel value for the "Create new branch" action. Rendered as a real
+// ComboboxItem in the list footer so it's reachable by keyboard, not a
+// plain button the combobox's roving focus skips over.
+const CREATE_BRANCH_ACTION = "__create_branch__";
 
 function LoadingRow({ label }: { label: string }) {
   return (
@@ -60,7 +69,20 @@ interface BranchSelectorProps {
   isRefreshing?: boolean;
   taskId?: string;
   anchor?: RefObject<HTMLElement | null>;
+  /**
+   * Local-repo busy state (rebase, merge, cherry-pick, revert in progress).
+   * Used to show a clearer label and prevent checkout attempts that would
+   * fail while the working tree is mid-operation. Only applies in local mode.
+   */
+  busyState?: GitBusyState;
 }
+
+const BUSY_OPERATION_LABEL: Record<GitBusyOperation, string> = {
+  rebase: "Rebasing",
+  merge: "Merging",
+  "cherry-pick": "Cherry-picking",
+  revert: "Reverting",
+};
 
 export function BranchSelector({
   repoPath,
@@ -85,6 +107,7 @@ export function BranchSelector({
   isRefreshing = false,
   taskId,
   anchor,
+  busyState,
 }: BranchSelectorProps) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -107,7 +130,7 @@ export function BranchSelector({
     useQuery(
       trpc.git.getAllBranches.queryOptions(
         { directoryPath: repoPath as string },
-        { enabled: !isCloudMode && !!repoPath && open, staleTime: 10_000 },
+        { enabled: !isCloudMode && !!repoPath, staleTime: 60_000 },
       ),
     );
 
@@ -143,6 +166,15 @@ export function BranchSelector({
 
   const handleBranchChange = (value: string | null) => {
     if (!value) return;
+    if (value === CREATE_BRANCH_ACTION) {
+      setOpen(false);
+      actions.openBranch(
+        taskId
+          ? getSuggestedBranchName(taskId, repoPath ?? undefined)
+          : undefined,
+      );
+      return;
+    }
     if (isSelectionOnly) {
       onBranchSelect?.(value);
     } else if (value !== currentBranch) {
@@ -166,19 +198,49 @@ export function BranchSelector({
     }
   };
 
+  // In local mode, surface in-progress git operations (rebase/merge/etc.) so the
+  // user understands why there's no current branch and why we won't let them
+  // checkout a different one — checkout would fail with a hard-to-read git error.
+  const localBusy = !isSelectionOnly && busyState?.busy === true;
+  const busyOperationLabel =
+    localBusy && busyState?.busy
+      ? BUSY_OPERATION_LABEL[busyState.operation]
+      : null;
+
   const displayText = effectiveLoading
     ? "Loading..."
-    : (displayedBranch ?? "No branch");
+    : busyOperationLabel && !displayedBranch
+      ? busyOperationLabel
+      : (displayedBranch ?? "No branch");
 
   const showSpinner =
     effectiveLoading || (isCloudMode && open && cloudBranchesFetchingMore);
 
-  const isDisabled = !!(disabled || !repoPath || cloudStillLoading);
+  const isDisabled = !!(
+    disabled ||
+    !repoPath ||
+    cloudStillLoading ||
+    localBusy
+  );
+  const disabledReason =
+    localBusy && busyOperationLabel
+      ? `${busyOperationLabel} in progress — finish or abort it to switch branches.`
+      : null;
   const inputValue = isCloudMode ? (cloudSearchQuery ?? "") : searchQuery;
+  const trimmedInputValue = inputValue.trim();
+  const canUseInputBranch =
+    !isDisabled &&
+    trimmedInputValue.length > 0 &&
+    trimmedInputValue !== displayedBranch;
+
+  const handleUseInputBranch = () => {
+    if (!canUseInputBranch) return;
+    handleBranchChange(trimmedInputValue);
+  };
 
   return (
     <Combobox
-      items={branches}
+      items={isCloudMode ? branches : [...branches, CREATE_BRANCH_ACTION]}
       limit={COMBOBOX_LIMIT}
       autoHighlight
       value={displayedBranch}
@@ -195,7 +257,7 @@ export function BranchSelector({
       filter={isCloudMode ? null : undefined}
     >
       <Tooltip
-        content={displayedBranch ?? "Switch branch"}
+        content={disabledReason ?? displayedBranch ?? "Switch branch"}
         side="bottom"
         open={hovered && !open && !effectiveLoading}
       >
@@ -232,36 +294,78 @@ export function BranchSelector({
         sideOffset={6}
         className="min-w-[240px]"
       >
-        <div className="flex min-w-0 items-center gap-1 pe-2">
-          <div className="min-w-0 flex-1">
-            <ComboboxInput
-              placeholder="Search branches..."
-              showTrigger={false}
-            />
-          </div>
-          {onRefresh ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isDisabled || isRefreshing}
-              aria-label="Refresh branches"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onRefresh();
-              }}
-            >
-              <ArrowClockwise
-                size={14}
-                className={isRefreshing ? "animate-spin" : undefined}
-              />
-            </Button>
-          ) : null}
-        </div>
+        {/*
+          ComboboxInput must be a direct child of ComboboxContent so quill's
+          `.quill-combobox__content > [data-slot=combobox-input-group-wrapper]`
+          rule applies the p-1 padding + border-bottom. The action buttons are
+          passed as children — they render inside the input's own InputGroup.
+        */}
+        <ComboboxInput
+          placeholder="Search branches..."
+          showTrigger={false}
+          onKeyDownCapture={(event) => {
+            if (
+              event.key !== "Enter" ||
+              event.nativeEvent.isComposing ||
+              !canUseInputBranch
+            ) {
+              return;
+            }
+
+            // If the combobox already has a highlighted item, let Base UI select it.
+            if (event.currentTarget.getAttribute("aria-activedescendant")) {
+              return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            handleUseInputBranch();
+          }}
+        >
+          <InputGroupAddon align="inline-end">
+            <Tooltip content="Use this branch name" side="bottom">
+              <InputGroupButton
+                variant="outline"
+                size="icon-xs"
+                disabled={!canUseInputBranch}
+                aria-label="Use this branch name"
+                onMouseDown={(event) => {
+                  // Keep focus inside the combobox so the popover doesn't close before click.
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  handleUseInputBranch();
+                }}
+              >
+                <Check size={14} />
+              </InputGroupButton>
+            </Tooltip>
+            {onRefresh ? (
+              <InputGroupButton
+                size="icon-xs"
+                disabled={isDisabled || isRefreshing}
+                aria-label="Refresh branches"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onRefresh();
+                }}
+              >
+                <ArrowClockwise
+                  size={14}
+                  className={isRefreshing ? "animate-spin" : undefined}
+                />
+              </InputGroupButton>
+            ) : null}
+          </InputGroupAddon>
+        </ComboboxInput>
 
         {isCloudMode && cloudBranchesFetchingMore ? (
           <LoadingRow label={`Loading more (${branches.length})…`} />
@@ -273,36 +377,31 @@ export function BranchSelector({
           <ComboboxEmpty>No branches found.</ComboboxEmpty>
         )}
 
-        <ComboboxList className="max-h-[min(14rem,calc(var(--available-height,14rem)-5rem))] pe-2">
-          {(item: string) => (
-            <ComboboxItem
-              key={item}
-              value={item}
-              title={item}
-              className="relative"
-            >
-              {item}
-            </ComboboxItem>
-          )}
+        <ComboboxList className="max-h-[min(14rem,calc(var(--available-height,14rem)-5rem))]">
+          {(item: string) =>
+            item === CREATE_BRANCH_ACTION ? (
+              <ComboboxListFooter key="footer">
+                <ComboboxItem
+                  value={CREATE_BRANCH_ACTION}
+                  title="Create new branch"
+                  className="text-accent-foreground"
+                >
+                  <Plus size={11} weight="bold" />
+                  Create new branch
+                </ComboboxItem>
+              </ComboboxListFooter>
+            ) : (
+              <ComboboxItem
+                key={item}
+                value={item}
+                title={item}
+                className="relative"
+              >
+                {item}
+              </ComboboxItem>
+            )
+          }
         </ComboboxList>
-
-        {!isCloudMode ? (
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 border-t px-2 py-1.5 text-accent-foreground text-xs hover:bg-accent/10"
-            onClick={() => {
-              setOpen(false);
-              actions.openBranch(
-                taskId
-                  ? getSuggestedBranchName(taskId, repoPath ?? undefined)
-                  : undefined,
-              );
-            }}
-          >
-            <Plus size={11} weight="bold" />
-            Create new branch
-          </button>
-        ) : null}
 
         {isCloudMode && cloudBranchesHasMore ? (
           <ComboboxListFooter>

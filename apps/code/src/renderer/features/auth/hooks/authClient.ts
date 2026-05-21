@@ -1,5 +1,6 @@
 import { PostHogAPIClient } from "@renderer/api/posthogClient";
 import { trpcClient } from "@renderer/trpc/client";
+import { NotAuthenticatedError } from "@shared/errors";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
 import { useMemo } from "react";
 import {
@@ -56,7 +57,7 @@ export function useAuthenticatedClient(): PostHogAPIClient {
   const client = useOptionalAuthenticatedClient();
 
   if (!client) {
-    throw new Error("Not authenticated");
+    throw new NotAuthenticatedError();
   }
 
   return client;

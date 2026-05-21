@@ -1,16 +1,21 @@
 import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { fetchAuthState } from "@features/auth/hooks/authQueries";
-import { DISCOVERY_PROMPT } from "@features/setup/prompts";
+import { buildDiscoveryPrompt } from "@features/setup/prompts";
 import { useSetupStore } from "@features/setup/stores/setupStore";
 import {
+  buildTaskDiscoverySchema,
   type DiscoveredTask,
-  TASK_DISCOVERY_JSON_SCHEMA,
 } from "@features/setup/types";
 import { trpcClient } from "@renderer/trpc/client";
+import { EXPERIMENT_SUGGESTIONS_FLAG } from "@shared/constants";
 import { isTerminalStatus, type Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
-import { captureException, track } from "@utils/analytics";
+import {
+  captureException,
+  isFeatureFlagEnabled,
+  track,
+} from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { injectable } from "inversify";
 
@@ -205,7 +210,7 @@ function buildPosthogSetupSuggestion(
       category: "posthog_setup",
       title: "Set up PostHog",
       description:
-        "PostHog isn't installed in this repo yet. Open this as a task to detect your framework, install the SDK, instrument analytics + error tracking + replay, and open a PR with the changes.",
+        "PostHog isn't installed in this repo yet. Run this task to detect your framework, install the SDK, instrument analytics + error tracking + replay, and open a PR with the changes.",
       impact:
         "Without PostHog wired in, you have no visibility into how users interact with the product, no error or session-replay coverage, and no way to gate releases behind feature flags.",
       recommendation:
@@ -235,6 +240,13 @@ export class SetupRunService {
   private enricherSuggestionsRunning = false;
 
   startSetup(directory: string): void {
+    // Defense in depth: never auto-run from a non-idle persisted state.
+    // The hook (useSetupDiscovery) is the primary gate, but a direct call
+    // path could otherwise re-enter the loop that wedged users on boot —
+    // creating fresh cloud tasks and a tree-sitter parse storm against the
+    // user's repo on every launch.
+    const status = useSetupStore.getState().discoveryStatus;
+    if (status !== "idle") return;
     this.injectEnricherSuggestions(directory);
     this.startDiscovery(directory);
   }
@@ -349,10 +361,16 @@ export class SetupRunService {
         return;
       }
 
+      const includeExperiments =
+        isFeatureFlagEnabled(EXPERIMENT_SUGGESTIONS_FLAG) ||
+        import.meta.env.DEV;
+      const discoveryPrompt = buildDiscoveryPrompt({ includeExperiments });
+      const discoverySchema = buildTaskDiscoverySchema({ includeExperiments });
+
       const task = (await client.createTask({
         title: "Discover first tasks",
-        description: DISCOVERY_PROMPT,
-        json_schema: TASK_DISCOVERY_JSON_SCHEMA as Record<string, unknown>,
+        description: discoveryPrompt,
+        json_schema: discoverySchema,
       })) as unknown as Task;
       if (abort.signal.aborted) return;
 
@@ -375,14 +393,14 @@ export class SetupRunService {
         apiHost,
         projectId,
         permissionMode: "bypassPermissions",
-        jsonSchema: TASK_DISCOVERY_JSON_SCHEMA as Record<string, unknown>,
+        jsonSchema: discoverySchema,
       });
       if (abort.signal.aborted) return;
 
       trpcClient.agent.prompt
         .mutate({
           sessionId: taskRun.id,
-          prompt: [{ type: "text", text: DISCOVERY_PROMPT }],
+          prompt: [{ type: "text", text: discoveryPrompt }],
         })
         .catch((err) => {
           log.error("Failed to send discovery prompt", { error: err });

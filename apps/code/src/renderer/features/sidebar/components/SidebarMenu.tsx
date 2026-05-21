@@ -6,9 +6,7 @@ import {
   INBOX_PIPELINE_STATUS_FILTER,
   INBOX_REFETCH_INTERVAL_MS,
 } from "@features/inbox/utils/inboxConstants";
-import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { getSessionService } from "@features/sessions/service/service";
-import { useSetupStore } from "@features/setup/stores/setupStore";
 import {
   archiveTaskImperative,
   useArchiveTask,
@@ -18,8 +16,10 @@ import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
 import { ScrollArea, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
+import type { Schemas } from "@renderer/api/generated";
 import type { Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
 import { useQueryClient } from "@tanstack/react-query";
@@ -34,7 +34,7 @@ import { useSidebarStore } from "../stores/sidebarStore";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
 import { McpServersItem } from "./items/McpServersItem";
-import { SetupItem } from "./items/SetupItem";
+import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
 import { TaskListView } from "./TaskListView";
@@ -48,7 +48,6 @@ function SidebarMenuComponent() {
     navigateToCommandCenter,
     navigateToSkills,
     navigateToMcpServers,
-    navigateToSetup,
   } = useNavigationStore();
 
   // Must mirror useSidebarData's filters so taskMap covers every rendered
@@ -64,17 +63,6 @@ function SidebarMenuComponent() {
     useTaskContextMenu();
   const { archiveTask } = useArchiveTask();
   const { togglePin } = usePinnedTasks();
-
-  const hasCompletedSetup = useOnboardingStore(
-    (state) => state.hasCompletedSetup,
-  );
-  const showSetupItem = useSetupStore((s) => {
-    if (!hasCompletedSetup) return true;
-    if (s.discoveryStatus === "running") return true;
-    if (s.discoveryStatus === "done" && s.discoveredTasks.length > 0)
-      return true;
-    return false;
-  });
 
   const sidebarData = useSidebarData({
     activeView: view,
@@ -143,8 +131,9 @@ function SidebarMenuComponent() {
     navigateToMcpServers();
   };
 
-  const handleSetupClick = () => {
-    navigateToSetup();
+  const openCommandMenu = useCommandMenuStore((s) => s.open);
+  const handleSearchClick = () => {
+    openCommandMenu();
   };
 
   const handleTaskClick = (taskId: string) => {
@@ -282,6 +271,13 @@ function SidebarMenuComponent() {
               : task,
           ),
       );
+      queryClient.setQueriesData<Schemas.TaskSummary[]>(
+        { queryKey: ["tasks", "summaries"] },
+        (old) =>
+          old?.map((task) =>
+            task.id === taskId ? { ...task, title: newTitle } : task,
+          ),
+      );
 
       // Sync to session store so notifications use the updated title
       getSessionService().updateSessionTaskTitle(taskId, newTitle);
@@ -295,6 +291,7 @@ function SidebarMenuComponent() {
         log.error("Failed to rename task", error);
         // Refetch to revert optimistic update on failure
         queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
+        queryClient.invalidateQueries({ queryKey: ["tasks", "summaries"] });
       }
     },
     [setEditingTaskId, updateTask, queryClient, log],
@@ -316,14 +313,9 @@ function SidebarMenuComponent() {
             />
           </Box>
 
-          {showSetupItem && (
-            <Box mb="1" px="1">
-              <SetupItem
-                isActive={sidebarData.isSetupActive}
-                onClick={handleSetupClick}
-              />
-            </Box>
-          )}
+          <Box>
+            <SearchItem onClick={handleSearchClick} />
+          </Box>
 
           <Box>
             <InboxItem

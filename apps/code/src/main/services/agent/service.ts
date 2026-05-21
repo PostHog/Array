@@ -53,6 +53,7 @@ import type { FsService } from "../fs/service";
 import type { McpAppsService } from "../mcp-apps/service";
 import type { PosthogPluginService } from "../posthog-plugin/service";
 import type { ProcessTrackingService } from "../process-tracking/service";
+import { loadSessionEnvOverrides } from "../session-env/loader";
 import type { SleepService } from "../sleep/service";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
 import { discoverExternalPlugins } from "./discover-plugins";
@@ -257,6 +258,19 @@ function getAgentSessionId(session: ManagedSession): string {
     throw new Error(`Session ${session.taskRunId} has no agent session ID`);
   }
   return sessionId;
+}
+
+export function buildAutoApproveOutcome(
+  options: RequestPermissionRequest["options"],
+): RequestPermissionResponse["outcome"] {
+  const allowOption = options.find(
+    (o) => o.kind === "allow_once" || o.kind === "allow_always",
+  );
+  const optionId = allowOption?.optionId ?? options[0]?.optionId;
+  if (!optionId) {
+    return { outcome: "cancelled" };
+  }
+  return { outcome: "selected", optionId };
 }
 
 interface PendingPermission {
@@ -984,6 +998,27 @@ When creating pull requests, add the following footer at the end of the PR descr
   }
 
   /**
+   * Resolve env-var overrides set by the SessionStart-style hooks of the most
+   * recently active agent session for `taskId`.
+   *
+   * Used by git/gh operations triggered from the UI (Commit, Create PR) so
+   * they pick up the same hook env the agent itself sees — most importantly
+   * the SSH_AUTH_SOCK that Secretive's hook re-points at the Secretive agent
+   * for commit signing. Returns an empty object when there is no session for
+   * the task or when no hook output is available.
+   */
+  public async getSessionEnvForTask(
+    taskId: string,
+  ): Promise<Record<string, string>> {
+    const candidates = this.listSessions(taskId)
+      .filter((s) => !!s.config.sessionId)
+      .sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+    const session = candidates[0];
+    if (!session?.config.sessionId) return {};
+    return loadSessionEnvOverrides(session.config.sessionId);
+  }
+
+  /**
    * Get sessions that were interrupted for a specific reason.
    * Optionally filter by repoPath to get only sessions for a specific repo.
    */
@@ -1236,15 +1271,7 @@ For git operations while detached:
               taskRunId,
               toolName,
             });
-            const allowOption = params.options.find(
-              (o) => o.kind === "allow_once" || o.kind === "allow_always",
-            );
-            return {
-              outcome: {
-                outcome: "selected",
-                optionId: allowOption?.optionId ?? params.options[0].optionId,
-              },
-            };
+            return { outcome: buildAutoApproveOutcome(params.options) };
           }
         }
 
@@ -1319,15 +1346,7 @@ For git operations while detached:
           taskRunId,
           toolName,
         });
-        const allowOption = params.options.find(
-          (o) => o.kind === "allow_once" || o.kind === "allow_always",
-        );
-        return {
-          outcome: {
-            outcome: "selected",
-            optionId: allowOption?.optionId ?? params.options[0].optionId,
-          },
-        };
+        return { outcome: buildAutoApproveOutcome(params.options) };
       },
 
       async readTextFile(params) {

@@ -79,10 +79,7 @@ export function ReportCardContent({
           )}
         </Flex>
         {report.implementation_pr_url && (
-          <ReportImplementationPrLink
-            prUrl={report.implementation_pr_url}
-            skipStatusFetch={compact}
-          />
+          <ReportImplementationPrLink prUrl={report.implementation_pr_url} />
         )}
       </Flex>
 

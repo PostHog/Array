@@ -50,7 +50,6 @@ export function WorkspacesSettings() {
             value={localWorktreeLocation}
             onChange={handleWorktreeLocationChange}
             placeholder="~/.posthog-code"
-            size="1"
           />
         </div>
       </SettingRow>

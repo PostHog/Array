@@ -1,3 +1,4 @@
+import { PgAnalyzeIcon } from "@features/inbox/components/utils/PgAnalyzeIcon";
 import {
   type SourceProduct,
   useInboxSignalsFilterStore,
@@ -103,6 +104,7 @@ const SOURCE_PRODUCT_OPTIONS: {
     label: "Conversations",
     icon: <LifebuoyIcon size={14} />,
   },
+  { value: "pganalyze", label: "pganalyze", icon: <PgAnalyzeIcon size={14} /> },
 ];
 
 const ITEM_CLASS_NAME =

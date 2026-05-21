@@ -23,6 +23,9 @@ import { UnifiedModelSelector } from "@features/sessions/components/UnifiedModel
 import { getCurrentModeFromConfigOptions } from "@features/sessions/stores/sessionStore";
 import type { AgentAdapter } from "@features/settings/stores/settingsStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import { useSetupStore } from "@features/setup/stores/setupStore";
+import type { DiscoveredTask } from "@features/setup/types";
+import { buildDiscoveredTaskPrompt } from "@features/setup/utils/buildDiscoveredTaskPrompt";
 import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
 import { useConnectivity } from "@hooks/useConnectivity";
 import {
@@ -43,10 +46,12 @@ import {
 } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
 import { FOCUSABLE_SELECTOR } from "@utils/overlay";
+import { LayoutGroup, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
+import { SuggestedTasksPanel } from "./SuggestedTasksPanel";
 import { type WorkspaceMode, WorkspaceModeSelect } from "./WorkspaceModeSelect";
 
 interface TaskInputProps {
@@ -106,7 +111,6 @@ export function TaskInput({
   const [cloudRepoSearchQuery, setCloudRepoSearchQuery] = useState("");
   const [isCloudRepoPickerOpen, setIsCloudRepoPickerOpen] = useState(false);
   const [cloudBranchSearchQuery, setCloudBranchSearchQuery] = useState("");
-  const [isCloudBranchPickerOpen, setIsCloudBranchPickerOpen] = useState(false);
   const [selectedEnvironment, setSelectedEnvironmentRaw] = useState<
     string | null
   >(null);
@@ -222,7 +226,7 @@ export function TaskInput({
     const lower = selectedRepository.toLowerCase();
     return repositories.includes(lower) ? lower : null;
   }, [selectedRepository, repositories]);
-  const { currentBranch, branchLoading, defaultBranch } =
+  const { currentBranch, branchLoading, defaultBranch, busyState } =
     useGitQueries(selectedDirectory);
 
   const selectedGithubUserIntegrationId = selectedCloudRepository
@@ -244,7 +248,6 @@ export function TaskInput({
     selectedInstallationId,
     selectedCloudRepository,
     cloudBranchSearchQuery,
-    isCloudBranchPickerOpen,
   );
   const cloudBranches = cloudBranchData?.branches;
   const cloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
@@ -324,10 +327,6 @@ export function TaskInput({
     });
   }, [refreshCloudBranches]);
 
-  const handleCloudBranchPickerOpen = useCallback(() => {
-    setIsCloudBranchPickerOpen(true);
-  }, []);
-
   const handleCloudRepoPickerOpenChange = useCallback((open: boolean) => {
     setIsCloudRepoPickerOpen(open);
     if (!open) {
@@ -344,7 +343,6 @@ export function TaskInput({
   }, [loadMoreCloudRepositories]);
 
   const handleCloudBranchPickerClose = useCallback(() => {
-    setIsCloudBranchPickerOpen(false);
     setCloudBranchSearchQuery("");
   }, []);
 
@@ -414,7 +412,6 @@ export function TaskInput({
 
   useEffect(() => {
     setCloudBranchSearchQuery("");
-    setIsCloudBranchPickerOpen(false);
   }, []);
 
   const effectiveRepoPath =
@@ -539,6 +536,15 @@ export function TaskInput({
     editorRef.current?.setContent(text);
     editorRef.current?.focus();
   }, []);
+  const handleSelectSuggestion = useCallback(
+    async (task: DiscoveredTask) => {
+      const ok = await handleSubmit({
+        segments: [{ type: "text", text: buildDiscoveredTaskPrompt(task) }],
+      });
+      if (ok) useSetupStore.getState().removeDiscoveredTask(task.id);
+    },
+    [handleSubmit],
+  );
   const hasPendingDraft = useCallback(
     () => !(editorRef.current?.isEmpty() ?? true),
     [],
@@ -618,215 +624,223 @@ export function TaskInput({
         align="center"
         justify="center"
         height="100%"
-        className="relative px-4"
+        className="relative px-4 pt-[10vh]"
       >
         <DotPatternBackground className="h-[100.333%]" />
-        <Flex
-          direction="column"
-          gap="2"
-          style={{
-            zIndex: 1,
-          }}
-          className="relative w-full max-w-[600px]"
-        >
-          <Flex gap="2" align="center" className="min-w-0">
-            <WorkspaceModeSelect
-              value={workspaceMode}
-              onChange={setWorkspaceMode}
-              selectedCloudEnvironmentId={selectedCloudEnvId}
-              onCloudEnvironmentChange={setSelectedCloudEnvId}
-              cloudAvailable={cloudAvailable}
-              size="1"
-            />
-            {workspaceMode === "worktree" && (
-              <EnvironmentSelector
-                repoPath={effectiveRepoPath ?? null}
-                value={selectedEnvironment}
-                onChange={setSelectedEnvironment}
-                disabled={isCreatingTask}
+        <LayoutGroup>
+          <motion.div
+            layout
+            transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+            style={{
+              zIndex: 1,
+            }}
+            className="relative flex w-full max-w-[600px] flex-col gap-2"
+          >
+            <Flex gap="2" align="center" className="min-w-0">
+              <WorkspaceModeSelect
+                value={workspaceMode}
+                onChange={setWorkspaceMode}
+                selectedCloudEnvironmentId={selectedCloudEnvId}
+                onCloudEnvironmentChange={setSelectedCloudEnvId}
+                cloudAvailable={cloudAvailable}
+                size="1"
               />
-            )}
-            <ButtonGroup
-              ref={buttonGroupRef}
-              data-tour="folder-picker"
-              data-tour-ready={
-                (
-                  workspaceMode === "cloud"
-                    ? selectedRepository
-                    : selectedDirectory
-                )
-                  ? "true"
-                  : undefined
-              }
-            >
-              {workspaceMode === "cloud" ? (
-                <GitHubRepoPicker
-                  value={selectedRepository}
-                  onChange={handleRepositorySelect}
-                  repositories={
-                    isCloudRepoPickerOpen
-                      ? visibleCloudRepositories
-                      : repositories
-                  }
-                  isLoading={
-                    isLoadingRepos ||
-                    (isCloudRepoPickerOpen && cloudRepositoriesLoading)
-                  }
-                  isRefreshing={isRefreshingRepos}
-                  onRefresh={handleRefreshRepositories}
-                  open={isCloudRepoPickerOpen}
-                  onOpenChange={handleCloudRepoPickerOpenChange}
-                  searchQuery={cloudRepoSearchQuery}
-                  onSearchQueryChange={handleCloudRepoSearchChange}
-                  hasMore={cloudRepositoriesHasMore}
-                  onLoadMore={handleLoadMoreCloudRepositories}
-                  placeholder="Select repository..."
-                  size="1"
+              {workspaceMode === "worktree" && (
+                <EnvironmentSelector
+                  repoPath={effectiveRepoPath ?? null}
+                  value={selectedEnvironment}
+                  onChange={setSelectedEnvironment}
                   disabled={isCreatingTask}
-                />
-              ) : (
-                <FolderPicker
-                  value={selectedDirectory}
-                  onChange={setSelectedDirectory}
-                  placeholder="Select repository..."
-                  size="1"
-                  anchor={buttonGroupRef}
                 />
               )}
-              <BranchSelector
-                repoPath={
-                  workspaceMode === "cloud"
-                    ? selectedCloudRepository
-                    : selectedDirectory
+              <ButtonGroup
+                ref={buttonGroupRef}
+                data-tour="folder-picker"
+                data-tour-ready={
+                  (
+                    workspaceMode === "cloud"
+                      ? selectedRepository
+                      : selectedDirectory
+                  )
+                    ? "true"
+                    : undefined
                 }
-                currentBranch={currentBranch}
-                defaultBranch={
-                  workspaceMode === "cloud" ? cloudDefaultBranch : defaultBranch
-                }
-                disabled={
-                  isCreatingTask ||
-                  (workspaceMode === "cloud" && !selectedCloudRepository)
-                }
-                loading={workspaceMode === "cloud" ? false : branchLoading}
-                workspaceMode={workspaceMode}
-                selectedBranch={selectedBranch}
-                onBranchSelect={setSelectedBranch}
-                cloudBranches={cloudBranches}
-                cloudBranchesLoading={cloudBranchesLoading}
-                isRefreshing={cloudBranchesRefreshing}
-                cloudBranchesFetchingMore={cloudBranchesFetchingMore}
-                cloudBranchesHasMore={cloudBranchesHasMore}
-                cloudSearchQuery={cloudBranchSearchQuery}
-                onCloudPickerOpen={handleCloudBranchPickerOpen}
-                onCloudPickerClose={handleCloudBranchPickerClose}
-                onCloudSearchChange={handleCloudBranchSearchChange}
-                onCloudLoadMore={handleLoadMoreCloudBranches}
-                onRefresh={
-                  workspaceMode === "cloud" ? handleRefreshBranches : undefined
-                }
-                anchor={buttonGroupRef}
-              />
-            </ButtonGroup>
-            {cloudRegion === "dev" && (
-              <Flex align="center" gap="1" className="shrink-0">
-                <span
-                  className="inline-block h-2 w-2 rounded-full bg-orange-9"
-                  aria-hidden
-                />
-                <Text color="orange" className="font-medium text-[13px]">
-                  Dev
-                </Text>
-              </Flex>
-            )}
-          </Flex>
-
-          <Flex direction="column" gap="0">
-            <PromptInput
-              ref={editorRef}
-              sessionId={promptSessionId}
-              placeholder={`What do you want to ship? ${hints}`}
-              editorHeight="large"
-              disabled={isCreatingTask}
-              isLoading={isCreatingTask}
-              autoFocus
-              clearOnSubmit={false}
-              submitDisabledExternal={!canSubmit || isCreatingTask || !isOnline}
-              tourTarget="task-input"
-              repoPath={selectedDirectory}
-              modeOption={modeOption}
-              onModeChange={handleModeChange}
-              allowBypassPermissions={allowBypassPermissions}
-              enableCommands
-              enableBashMode={false}
-              modelSelector={
-                <UnifiedModelSelector
-                  modelOption={modelOption}
-                  adapter={adapter ?? "claude"}
-                  onAdapterChange={setAdapter}
-                  disabled={isCreatingTask}
-                  isConnecting={isPreviewLoading}
-                  onModelChange={handleModelChange}
-                />
-              }
-              historyButton={
-                <PromptHistoryDialog
-                  onSelect={handleHistorySelect}
-                  hasPendingDraft={hasPendingDraft}
-                  disabled={isCreatingTask}
-                />
-              }
-              reasoningSelector={
-                !isPreviewLoading && (
-                  <ReasoningLevelSelector
-                    thoughtOption={thoughtOption}
-                    adapter={adapter}
-                    onChange={handleThoughtChange}
+              >
+                {workspaceMode === "cloud" ? (
+                  <GitHubRepoPicker
+                    value={selectedRepository}
+                    onChange={handleRepositorySelect}
+                    repositories={
+                      isCloudRepoPickerOpen
+                        ? visibleCloudRepositories
+                        : repositories
+                    }
+                    isLoading={
+                      isLoadingRepos ||
+                      (isCloudRepoPickerOpen && cloudRepositoriesLoading)
+                    }
+                    isRefreshing={isRefreshingRepos}
+                    onRefresh={handleRefreshRepositories}
+                    open={isCloudRepoPickerOpen}
+                    onOpenChange={handleCloudRepoPickerOpenChange}
+                    searchQuery={cloudRepoSearchQuery}
+                    onSearchQueryChange={handleCloudRepoSearchChange}
+                    hasMore={cloudRepositoriesHasMore}
+                    onLoadMore={handleLoadMoreCloudRepositories}
+                    placeholder="Select repository..."
+                    size="1"
                     disabled={isCreatingTask}
                   />
-                )
-              }
-              getPromptHistory={getPromptHistory}
-              onEmptyChange={handleEditorEmptyChange}
-              onSubmitClick={handleSubmit}
-              onSubmit={() => {
-                if (canSubmit) handleSubmit();
-              }}
-            />
-            {activeReportAssociation && (
-              <div className="-mt-px mx-2 flex select-none items-center justify-between gap-2 rounded-b-md border border-blue-6 border-t-0 bg-blue-2 px-2 py-1 text-[12px] text-blue-11">
-                <span className="flex min-w-0 flex-1 items-center gap-1">
-                  <span className="shrink-0">
-                    This task will be associated with report
+                ) : (
+                  <FolderPicker
+                    value={selectedDirectory}
+                    onChange={setSelectedDirectory}
+                    placeholder="Select repository..."
+                    anchor={buttonGroupRef}
+                  />
+                )}
+                <BranchSelector
+                  repoPath={
+                    workspaceMode === "cloud"
+                      ? selectedCloudRepository
+                      : selectedDirectory
+                  }
+                  currentBranch={currentBranch}
+                  defaultBranch={
+                    workspaceMode === "cloud"
+                      ? cloudDefaultBranch
+                      : defaultBranch
+                  }
+                  disabled={
+                    isCreatingTask ||
+                    (workspaceMode === "cloud" && !selectedCloudRepository)
+                  }
+                  loading={workspaceMode === "cloud" ? false : branchLoading}
+                  workspaceMode={workspaceMode}
+                  selectedBranch={selectedBranch}
+                  onBranchSelect={setSelectedBranch}
+                  busyState={busyState}
+                  cloudBranches={cloudBranches}
+                  cloudBranchesLoading={cloudBranchesLoading}
+                  isRefreshing={cloudBranchesRefreshing}
+                  cloudBranchesFetchingMore={cloudBranchesFetchingMore}
+                  cloudBranchesHasMore={cloudBranchesHasMore}
+                  cloudSearchQuery={cloudBranchSearchQuery}
+                  onCloudPickerClose={handleCloudBranchPickerClose}
+                  onCloudSearchChange={handleCloudBranchSearchChange}
+                  onCloudLoadMore={handleLoadMoreCloudBranches}
+                  onRefresh={
+                    workspaceMode === "cloud"
+                      ? handleRefreshBranches
+                      : undefined
+                  }
+                  anchor={buttonGroupRef}
+                />
+              </ButtonGroup>
+              {cloudRegion === "dev" && (
+                <Flex align="center" gap="1" className="shrink-0">
+                  <span
+                    className="inline-block h-2 w-2 rounded-full bg-orange-9"
+                    aria-hidden
+                  />
+                  <Text color="orange" className="font-medium text-[13px]">
+                    Dev
+                  </Text>
+                </Flex>
+              )}
+            </Flex>
+
+            <Flex direction="column" gap="0">
+              <PromptInput
+                ref={editorRef}
+                sessionId={promptSessionId}
+                placeholder={`What do you want to ship? ${hints}`}
+                editorHeight="large"
+                disabled={isCreatingTask}
+                isLoading={isCreatingTask}
+                autoFocus
+                clearOnSubmit={false}
+                submitDisabledExternal={
+                  !canSubmit || isCreatingTask || !isOnline
+                }
+                tourTarget="task-input"
+                repoPath={selectedDirectory}
+                modeOption={modeOption}
+                onModeChange={handleModeChange}
+                allowBypassPermissions={allowBypassPermissions}
+                enableCommands
+                enableBashMode={false}
+                modelSelector={
+                  <UnifiedModelSelector
+                    modelOption={modelOption}
+                    adapter={adapter ?? "claude"}
+                    onAdapterChange={setAdapter}
+                    disabled={isCreatingTask}
+                    isConnecting={isPreviewLoading}
+                    onModelChange={handleModelChange}
+                  />
+                }
+                historyButton={
+                  <PromptHistoryDialog
+                    onSelect={handleHistorySelect}
+                    hasPendingDraft={hasPendingDraft}
+                    disabled={isCreatingTask}
+                  />
+                }
+                reasoningSelector={
+                  !isPreviewLoading && (
+                    <ReasoningLevelSelector
+                      thoughtOption={thoughtOption}
+                      adapter={adapter}
+                      onChange={handleThoughtChange}
+                      disabled={isCreatingTask}
+                    />
+                  )
+                }
+                getPromptHistory={getPromptHistory}
+                onEmptyChange={handleEditorEmptyChange}
+                onSubmitClick={handleSubmit}
+                onSubmit={() => {
+                  if (canSubmit) handleSubmit();
+                }}
+              />
+              {activeReportAssociation && (
+                <div className="-mt-px mx-2 flex select-none items-center justify-between gap-2 rounded-b-md border border-blue-6 border-t-0 bg-blue-2 px-2 py-1 text-[12px] text-blue-11">
+                  <span className="flex min-w-0 flex-1 items-center gap-1">
+                    <span className="shrink-0">
+                      This task will be associated with report
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleOpenAssociatedReport}
+                      className="min-w-0 truncate text-left font-medium underline underline-offset-2 hover:text-blue-12"
+                    >
+                      {activeReportAssociation.title || "Untitled report"}
+                    </button>
                   </span>
-                  <button
-                    type="button"
-                    onClick={handleOpenAssociatedReport}
-                    className="min-w-0 truncate text-left font-medium underline underline-offset-2 hover:text-blue-12"
-                  >
-                    {activeReportAssociation.title || "Untitled report"}
-                  </button>
-                </span>
-                <Tooltip content="Exit Inbox mode">
-                  <button
-                    type="button"
-                    onClick={handleDismissReportAssociation}
-                    aria-label="Exit Inbox mode"
-                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-blue-10 hover:bg-blue-4 hover:text-blue-12"
-                  >
-                    <X size={12} />
-                  </button>
-                </Tooltip>
-              </div>
-            )}
-            {effectiveWorkspaceMode === "cloud" &&
-              !isLoadingRepos &&
-              !hasGithubIntegration && (
-                <div className="mx-2 mt-2">
-                  <CloudGithubMissingNotice />
+                  <Tooltip content="Exit Inbox mode">
+                    <button
+                      type="button"
+                      onClick={handleDismissReportAssociation}
+                      aria-label="Exit Inbox mode"
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-blue-10 hover:bg-blue-4 hover:text-blue-12"
+                    >
+                      <X size={12} />
+                    </button>
+                  </Tooltip>
                 </div>
               )}
-          </Flex>
-        </Flex>
+              {effectiveWorkspaceMode === "cloud" &&
+                !isLoadingRepos &&
+                !hasGithubIntegration && (
+                  <div className="mx-2 mt-2">
+                    <CloudGithubMissingNotice />
+                  </div>
+                )}
+              <SuggestedTasksPanel onSelect={handleSelectSuggestion} />
+            </Flex>
+          </motion.div>
+        </LayoutGroup>
       </Flex>
 
       <GitBranchDialog

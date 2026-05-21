@@ -48,7 +48,6 @@ export interface SidebarData {
   isCommandCenterActive: boolean;
   isSkillsActive: boolean;
   isMcpServersActive: boolean;
-  isSetupActive: boolean;
   isLoading: boolean;
   activeTaskId: string | null;
   pinnedTasks: TaskData[];
@@ -190,7 +189,6 @@ export function useSidebarData({
   const isCommandCenterActive = activeView.type === "command-center";
   const isSkillsActive = activeView.type === "skills";
   const isMcpServersActive = activeView.type === "mcp-servers";
-  const isSetupActive = activeView.type === "setup";
 
   const activeTaskId =
     activeView.type === "task-detail" && activeView.data
@@ -321,7 +319,6 @@ export function useSidebarData({
     isCommandCenterActive,
     isSkillsActive,
     isMcpServersActive,
-    isSetupActive,
     isLoading,
     activeTaskId,
     pinnedTasks,

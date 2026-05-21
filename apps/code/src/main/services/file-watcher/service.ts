@@ -171,9 +171,11 @@ export class FileWatcherService extends TypedEventEmitter<FileWatcherEvents> {
 
     const totalChanges = pending.files.size + pending.deletes.size;
 
-    // For bulk changes, emit a single event instead of per-file events
+    if (totalChanges > 0) {
+      this.emit(FileWatcherEvent.WorkingTreeChanged, { repoPath });
+    }
+
     if (totalChanges > BULK_THRESHOLD) {
-      this.emit(FileWatcherEvent.GitStateChanged, { repoPath });
       pending.dirs.clear();
       pending.files.clear();
       pending.deletes.clear();
@@ -214,6 +216,11 @@ export class FileWatcherService extends TypedEventEmitter<FileWatcherEvents> {
           (e) =>
             e.path.endsWith("/HEAD") ||
             e.path.endsWith("/index") ||
+            e.path.endsWith("/MERGE_HEAD") ||
+            e.path.endsWith("/CHERRY_PICK_HEAD") ||
+            e.path.endsWith("/REVERT_HEAD") ||
+            e.path.includes("/rebase-merge") ||
+            e.path.includes("/rebase-apply") ||
             e.path.includes("/refs/heads/"),
         );
         if (isRelevant) {

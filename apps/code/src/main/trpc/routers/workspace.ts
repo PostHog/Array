@@ -17,6 +17,8 @@ import {
   getTaskTimestampsOutput,
   getWorkspaceInfoInput,
   getWorkspaceInfoOutput,
+  getWorktreeFileUsageInput,
+  getWorktreeFileUsageOutput,
   getWorktreeSizeInput,
   getWorktreeSizeOutput,
   getWorktreeTasksInput,
@@ -27,6 +29,8 @@ import {
   markActivityInput,
   markUnreadInput,
   markViewedInput,
+  reconcileCloudWorkspacesInput,
+  reconcileCloudWorkspacesOutput,
   taskPrStatusInput,
   taskPrStatusOutput,
   togglePinInput,
@@ -65,6 +69,13 @@ export const workspaceRouter = router({
     .input(createWorkspaceInput)
     .output(createWorkspaceOutput)
     .mutation(({ input }) => getService().createWorkspace(input)),
+
+  reconcileCloudWorkspaces: publicProcedure
+    .input(reconcileCloudWorkspacesInput)
+    .output(reconcileCloudWorkspacesOutput)
+    .mutation(({ input }) =>
+      getService().reconcileCloudWorkspaces(input.taskIds),
+    ),
 
   delete: publicProcedure
     .input(deleteWorkspaceInput)
@@ -107,6 +118,13 @@ export const workspaceRouter = router({
     .input(getWorktreeSizeInput)
     .output(getWorktreeSizeOutput)
     .query(({ input }) => getService().getWorktreeSize(input.worktreePath)),
+
+  getWorktreeFileUsage: publicProcedure
+    .input(getWorktreeFileUsageInput)
+    .output(getWorktreeFileUsageOutput)
+    .query(({ input }) =>
+      getService().getWorktreeFileUsage(input.mainRepoPath),
+    ),
 
   deleteWorktree: publicProcedure
     .input(deleteWorktreeInput)

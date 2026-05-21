@@ -100,7 +100,8 @@ export function SignalSourcesSettings() {
         </Text>
         <Text className="text-(--gray-11) text-[13px]">
           Automatically start tasks assigned to you for reports at or above this
-          priority. Choose &quot;Never&quot; to opt out entirely.
+          priority. These count toward your usage. Choose &quot;Never&quot; to
+          opt out.
         </Text>
         <Select.Root
           value={userPriorityValue}

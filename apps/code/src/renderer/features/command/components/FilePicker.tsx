@@ -1,10 +1,25 @@
 import { FileIcon } from "@components/ui/FileIcon";
+import { CommandKeyHints } from "@features/command/components/CommandKeyHints";
 import { usePanelLayoutStore } from "@features/panels/store/panelLayoutStore";
-import { pathToFileItem, searchFiles, useRepoFiles } from "@hooks/useRepoFiles";
-import { Popover, Text } from "@radix-ui/themes";
+import {
+  type FileItem,
+  pathToFileItem,
+  searchFiles,
+  useRepoFiles,
+} from "@hooks/useRepoFiles";
+import {
+  Autocomplete,
+  AutocompleteCollection,
+  AutocompleteGroup,
+  AutocompleteInput,
+  AutocompleteItem,
+  AutocompleteLabel,
+  AutocompleteList,
+  AutocompleteStatus,
+  Dialog,
+  DialogContent,
+} from "@posthog/quill";
 import { useCallback, useMemo, useState } from "react";
-import { Command } from "./Command";
-import "./FilePicker.css";
 
 interface FilePickerProps {
   open: boolean;
@@ -12,6 +27,12 @@ interface FilePickerProps {
   taskId: string;
   repoPath: string | undefined;
 }
+
+type FileSection = { label?: string; items: FileItem[] };
+
+// Cap the empty-query list to keep render cost bounded without virtualization.
+// Typed queries are already capped upstream by fzf (MENTION_DISPLAY_LIMIT = 20).
+const EMPTY_QUERY_LIMIT = 200;
 
 export function FilePicker({
   open,
@@ -28,84 +49,106 @@ export function FilePicker({
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
       onOpenChange(isOpen);
-      if (!isOpen) {
-        setSearchQuery("");
-      }
+      if (!isOpen) setSearchQuery("");
     },
     [onOpenChange],
   );
 
   const { files: fileItems, fzf } = useRepoFiles(repoPath, open);
 
-  const displayedFiles = useMemo(() => {
-    if (!searchQuery.trim() && recentFiles.length > 0) {
-      return recentFiles.map(pathToFileItem);
+  const sections = useMemo<FileSection[]>(() => {
+    if (searchQuery.trim()) {
+      return [{ items: searchFiles(fzf, fileItems, searchQuery) }];
     }
-    return searchFiles(fzf, fileItems, searchQuery);
+    if (recentFiles.length === 0) {
+      return [{ items: fileItems.slice(0, EMPTY_QUERY_LIMIT) }];
+    }
+    // recentFiles is string[] of paths from panelLayoutStore, ordered most-recent-first.
+    const recentPathSet = new Set(recentFiles);
+    const recentItems = recentFiles.map(pathToFileItem);
+    const rest = fileItems
+      .filter((f) => !recentPathSet.has(f.path))
+      .slice(0, Math.max(0, EMPTY_QUERY_LIMIT - recentItems.length));
+    return [
+      { label: "Recent", items: recentItems },
+      { label: "Other files", items: rest },
+    ];
   }, [fzf, fileItems, searchQuery, recentFiles]);
 
-  const resultsKey = useMemo(
-    () => displayedFiles.map((f) => f.path).join(","),
-    [displayedFiles],
-  );
-
   const handleSelect = useCallback(
-    (filePath: string) => {
-      openFileInSplit(taskId, filePath, false);
+    (path: string) => {
+      openFileInSplit(taskId, path, false);
       handleOpenChange(false);
     },
     [openFileInSplit, taskId, handleOpenChange],
   );
 
   return (
-    <Popover.Root open={open} onOpenChange={handleOpenChange}>
-      <Popover.Trigger>
-        <div
-          style={{
-            left: "50%",
-          }}
-          className="pointer-events-none fixed top-[60px] h-[1px] w-[1px] opacity-0"
-        />
-      </Popover.Trigger>
-      <Popover.Content
-        className="file-picker-popover p-0"
-        maxWidth="640px"
-        side="bottom"
-        align="center"
-        sideOffset={0}
-        onInteractOutside={() => handleOpenChange(false)}
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="w-[720px] max-w-[90vw] gap-0 p-0"
+        showCloseButton={false}
       >
-        <Command.Root shouldFilter={false} label="File picker" key={resultsKey}>
-          <Command.Input
-            placeholder="Search files by name"
-            autoFocus={true}
-            value={searchQuery}
-            onValueChange={setSearchQuery}
+        {/*
+         * `items` accepts `Value[] | { items: Value[] }[]` — we always use the
+         * grouped shape so the same render path covers both the labeled
+         * (Recent / Other files) and unlabeled (search results) cases.
+         */}
+        <Autocomplete<FileItem>
+          inline
+          defaultOpen
+          items={sections}
+          filter={null}
+          value={searchQuery}
+          autoHighlight="always"
+          onValueChange={(val, eventDetails) => {
+            if (eventDetails.reason !== "input-change") return;
+            if (typeof val === "string") setSearchQuery(val);
+          }}
+        >
+          <AutocompleteInput placeholder="Search files…" autoFocus showClear />
+          <AutocompleteStatus
+            emptyContent={
+              <span>
+                No files match <strong>"{searchQuery}"</strong>
+              </span>
+            }
           />
-
-          <Command.List>
-            <Command.Empty>No files found.</Command.Empty>
-
-            {displayedFiles.map((file) => (
-              <Command.Item
-                key={file.path}
-                value={file.path}
-                onSelect={() => handleSelect(file.path)}
+          <AutocompleteList
+            className={`max-h-[60vh] ${sections[0]?.label ? "" : "pt-1"}`}
+          >
+            {(section: FileSection, index: number) => (
+              <AutocompleteGroup
+                key={section.label ?? `group-${index}`}
+                items={section.items}
               >
-                <FileIcon filename={file.name} size={14} />
-                <Text ml="2" className="text-[13px]">
-                  {file.name}
-                </Text>
-                {file.dir && (
-                  <Text color="gray" ml="2" className="text-[13px]">
-                    {file.dir}
-                  </Text>
+                {section.label && (
+                  <AutocompleteLabel>{section.label}</AutocompleteLabel>
                 )}
-              </Command.Item>
-            ))}
-          </Command.List>
-        </Command.Root>
-      </Popover.Content>
-    </Popover.Root>
+                <AutocompleteCollection>
+                  {(file: FileItem) => (
+                    <AutocompleteItem
+                      key={file.path}
+                      value={file.path}
+                      onClick={() => handleSelect(file.path)}
+                      className="block"
+                    >
+                      <FileIcon filename={file.name} size={14} />
+                      {file.name}
+                      {file.dir && (
+                        <span className="text-muted-foreground text-xs">
+                          {file.dir}
+                        </span>
+                      )}
+                    </AutocompleteItem>
+                  )}
+                </AutocompleteCollection>
+              </AutocompleteGroup>
+            )}
+          </AutocompleteList>
+        </Autocomplete>
+        <CommandKeyHints />
+      </DialogContent>
+    </Dialog>
   );
 }

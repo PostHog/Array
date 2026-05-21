@@ -4,10 +4,11 @@ import {
   useAuthStateValue,
   useCurrentUser,
 } from "@features/auth/hooks/authQueries";
+import { getUserInitials } from "@features/auth/utils/userInitials";
 import { useSeat } from "@hooks/useSeat";
 import { SignOut } from "@phosphor-icons/react";
 import { Avatar, Badge, Button, Flex, Spinner, Text } from "@radix-ui/themes";
-import { REGION_LABELS } from "@shared/types/regions";
+import { formatRegionBadge } from "@shared/types/regions";
 
 export function AccountSettings() {
   const isAuthenticated = useAuthStateValue(
@@ -45,10 +46,7 @@ export function AccountSettings() {
     );
   }
 
-  const initials =
-    user.first_name && user.last_name
-      ? `${user.first_name[0]}${user.last_name[0]}`.toUpperCase()
-      : (user.email?.substring(0, 2).toUpperCase() ?? "U");
+  const initials = getUserInitials(user);
 
   return (
     <Flex direction="column">
@@ -66,7 +64,7 @@ export function AccountSettings() {
             </Text>
             {cloudRegion && (
               <Badge size="1" variant="soft">
-                {REGION_LABELS[cloudRegion]}
+                {formatRegionBadge(cloudRegion)}
               </Badge>
             )}
             {seat && (

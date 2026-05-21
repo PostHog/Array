@@ -1,13 +1,5 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import { isAbsolutePath } from "@utils/path";
-
-function pathToFileUri(filePath: string): string {
-  const encoded = filePath
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-  return `file://${encoded}`;
-}
+import { isAbsolutePath, pathToFileUri } from "@utils/path";
 
 export async function buildPromptBlocks(
   textContent: string,

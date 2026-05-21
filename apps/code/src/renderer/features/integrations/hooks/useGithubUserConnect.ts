@@ -6,6 +6,7 @@ import type { PostHogAPIClient } from "@renderer/api/posthogClient";
 import { trpcClient } from "@renderer/trpc/client";
 import { IS_DEV } from "@shared/constants/environment";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { openUrlInBrowser } from "@utils/browser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const POLL_INTERVAL_MS = 3_000;
@@ -91,14 +92,6 @@ export function invalidateGithubQueries(
   void queryClient.invalidateQueries({ queryKey: ["github_login"] });
 }
 
-export async function openUrlInBrowser(url: string): Promise<void> {
-  try {
-    await trpcClient.os.openExternal.mutate({ url });
-  } catch {
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-}
-
 interface StateMachine {
   state: GithubUserConnectState;
   error: GithubUserConnectError | null;
@@ -110,12 +103,17 @@ interface StateMachine {
   scheduleDevPolling: () => void;
 }
 
-function useConnectStateMachine(projectId: number | null): StateMachine {
+function useConnectStateMachine(
+  projectId: number | null,
+  onConnected?: () => void,
+): StateMachine {
   const queryClient = useQueryClient();
   const [state, setState] = useState<GithubUserConnectState>("idle");
   const [error, setError] = useState<GithubUserConnectError | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -152,6 +150,7 @@ function useConnectStateMachine(projectId: number | null): StateMachine {
       setState("idle");
       setError(null);
       invalidate(callbackProjectId ?? projectId);
+      onConnectedRef.current?.();
     },
     onError: (cbError) => {
       stopPolling();
@@ -282,6 +281,7 @@ interface ConnectOptions extends Options {
    *  is `false` get the team-level OAuth flow (Cloud also seeds their
    *  `UserIntegration` in the same round-trip). */
   projectHasTeamIntegration: boolean | null;
+  onConnected?: () => void;
 }
 
 /**
@@ -294,11 +294,12 @@ interface ConnectOptions extends Options {
 export function useGithubConnect({
   projectId,
   projectHasTeamIntegration,
+  onConnected,
 }: ConnectOptions): Result {
   const client = useOptionalAuthenticatedClient();
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const { isAdmin } = useIsOrgAdmin();
-  const machine = useConnectStateMachine(projectId);
+  const machine = useConnectStateMachine(projectId, onConnected);
 
   const shouldUseTeamFlow =
     isAdmin === true &&

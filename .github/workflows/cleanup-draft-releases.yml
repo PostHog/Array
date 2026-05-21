@@ -1,0 +1,32 @@
+name: Cleanup Draft Releases
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: cleanup-draft-releases
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete draft releases older than 24 hours
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -o pipefail
+          CUTOFF=$(date -u -d "24 hours ago" +%Y-%m-%dT%H:%M:%SZ)
+          echo "Cutoff (UTC): $CUTOFF"
+          gh api --paginate "repos/$REPO/releases" \
+            --jq ".[] | select(.draft == true) | select(.created_at < \"$CUTOFF\") | .id" \
+          | while read -r release_id; do
+              [ -z "$release_id" ] && continue
+              echo "Deleting draft release $release_id"
+              gh api -X DELETE "repos/$REPO/releases/$release_id"
+            done

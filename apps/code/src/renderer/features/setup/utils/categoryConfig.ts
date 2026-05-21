@@ -5,6 +5,7 @@ import {
   ChartLine,
   Copy,
   Flag,
+  Flask,
   Funnel,
   Lightning,
   Lock,
@@ -37,6 +38,7 @@ export const CATEGORY_CONFIG: Record<
   event_tracking: { icon: ChartLine, color: "blue", label: "Event tracking" },
   funnel: { icon: Funnel, color: "violet", label: "Funnel" },
   posthog_setup: { icon: Sparkle, color: "violet", label: "PostHog setup" },
+  experiment: { icon: Flask, color: "purple", label: "Experiment" },
 };
 
 // Fallback when a `DiscoveredTask.category` somehow doesn't match the map

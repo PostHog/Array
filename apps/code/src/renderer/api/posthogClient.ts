@@ -1,9 +1,15 @@
+import type { SpendAnalysisResponse } from "@features/billing/types/spend-analysis";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type { PermissionMode } from "@posthog/agent/execution-mode";
+import {
+  DISMISSAL_REASON_OPTIONS,
+  type DismissalReasonOptionValue,
+} from "@shared/dismissalReasons";
 import type {
   ActionabilityJudgmentArtefact,
   AvailableSuggestedReviewer,
   AvailableSuggestedReviewersResponse,
+  DismissalArtefact,
   PriorityJudgmentArtefact,
   SandboxEnvironment,
   SandboxEnvironmentInput,
@@ -13,7 +19,6 @@ import type {
   SignalReportArtefact,
   SignalReportArtefactsResponse,
   SignalReportSignalsResponse,
-  SignalReportStatus,
   SignalReportsQueryParams,
   SignalReportsResponse,
   SignalReportTask,
@@ -92,7 +97,8 @@ export interface SignalSourceConfig {
     | "linear"
     | "zendesk"
     | "conversations"
-    | "error_tracking";
+    | "error_tracking"
+    | "pganalyze";
   source_type:
     | "session_analysis_cluster"
     | "evaluation"
@@ -262,7 +268,12 @@ type AnyArtefact =
   | PriorityJudgmentArtefact
   | ActionabilityJudgmentArtefact
   | SignalFindingArtefact
-  | SuggestedReviewersArtefact;
+  | SuggestedReviewersArtefact
+  | DismissalArtefact;
+
+const DISMISSAL_REASONS = new Set<DismissalReasonOptionValue>(
+  DISMISSAL_REASON_OPTIONS.map((o) => o.value),
+);
 
 const PRIORITY_VALUES = new Set(["P0", "P1", "P2", "P3", "P4"]);
 
@@ -367,6 +378,39 @@ function normalizeSignalFindingArtefact(
   };
 }
 
+function normalizeDismissalArtefact(
+  value: Record<string, unknown>,
+): DismissalArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+
+  const contentValue = isObjectRecord(value.content) ? value.content : null;
+  if (!contentValue) return null;
+
+  const rawReason = optionalString(contentValue.reason);
+  const reason =
+    rawReason && DISMISSAL_REASONS.has(rawReason as DismissalReasonOptionValue)
+      ? (rawReason as DismissalReasonOptionValue)
+      : null;
+
+  if (reason == null) {
+    return null;
+  }
+
+  return {
+    id,
+    type: "dismissal",
+    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    content: {
+      reason,
+      note: optionalString(contentValue.note) ?? "",
+      user_id:
+        typeof contentValue.user_id === "number" ? contentValue.user_id : null,
+      user_uuid: optionalString(contentValue.user_uuid),
+    },
+  };
+}
+
 function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   if (!isObjectRecord(value)) {
     return null;
@@ -381,6 +425,9 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   }
   if (dispatchType === "priority_judgment") {
     return normalizePriorityJudgmentArtefact(value);
+  }
+  if (dispatchType === "dismissal") {
+    return normalizeDismissalArtefact(value);
   }
 
   const id = optionalString(value.id);
@@ -1428,15 +1475,18 @@ export class PostHogAPIClient {
     }
   }
 
-  async getIntegrations() {
+  async getIntegrations(kind?: string) {
     const teamId = await this.getTeamId();
-    return this.getIntegrationsForProject(teamId);
+    return this.getIntegrationsForProject(teamId, kind);
   }
 
-  async getIntegrationsForProject(projectId: number) {
+  async getIntegrationsForProject(projectId: number, kind?: string) {
     const url = new URL(
       `${this.api.baseUrl}/api/environments/${projectId}/integrations/`,
     );
+    if (kind) {
+      url.searchParams.set("kind", kind);
+    }
     const response = await this.api.fetcher.fetch({
       method: "get",
       url,
@@ -2021,12 +2071,21 @@ export class PostHogAPIClient {
 
   async updateSignalReportState(
     reportId: string,
-    input: {
-      state: Extract<SignalReportStatus, "suppressed" | "potential">;
-      snooze_for?: number;
-      reset_weight?: boolean;
-      error?: string;
-    },
+    input:
+      | {
+          state: "potential";
+          snooze_for?: number;
+          reset_weight?: boolean;
+          error?: string;
+        }
+      | {
+          state: "suppressed";
+          /** When omitted, the server suppresses without creating a dismissal artefact. */
+          dismissal_reason?: DismissalReasonOptionValue;
+          dismissal_note?: string;
+          reset_weight?: boolean;
+          error?: string;
+        },
   ): Promise<SignalReport> {
     const teamId = await this.getTeamId();
     const url = new URL(
@@ -2796,5 +2855,36 @@ export class PostHogAPIClient {
     if (!response.ok) return null;
     const blob = await response.blob();
     return URL.createObjectURL(blob);
+  }
+
+  /**
+   * Fetch the requesting user's personal LLM spend analysis. `dateFrom` / `dateTo`
+   * accept absolute dates (`2026-04-23`) or relative strings (`-7d`, `-1m`), and
+   * default to the last 30 days. When `product` is set the tool / model / trace
+   * breakdowns are scoped to that `ai_product` (e.g. `posthog_code`); when omitted
+   * they aggregate across every product.
+   */
+  async getPersonalSpendAnalysis(
+    options: { dateFrom?: string; dateTo?: string; product?: string } = {},
+  ): Promise<SpendAnalysisResponse> {
+    const { dateFrom = "-30d", dateTo, product } = options;
+    const urlPath = `/api/llm_analytics/@me/spend/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    url.searchParams.set("date_from", dateFrom);
+    if (dateTo) {
+      url.searchParams.set("date_to", dateTo);
+    }
+    if (product) {
+      url.searchParams.set("product", product);
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch spend analysis: ${response.status}`);
+    }
+    return (await response.json()) as SpendAnalysisResponse;
   }
 }

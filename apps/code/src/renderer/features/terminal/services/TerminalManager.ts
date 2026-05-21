@@ -5,6 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerm } from "@xterm/xterm";
+import { DEFAULT_TERMINAL_FONT_FAMILY } from "../utils/resolveTerminalFontFamily";
 
 const log = logger.scope("terminal-manager");
 
@@ -140,6 +141,7 @@ class TerminalManagerImpl {
   private instances = new Map<string, TerminalInstance>();
   private listeners = new Map<EventType, Set<Listener<EventType>>>();
   private isDarkMode = true;
+  private fontFamily: string = DEFAULT_TERMINAL_FONT_FAMILY;
 
   has(sessionId: string): boolean {
     return this.instances.has(sessionId);
@@ -161,7 +163,7 @@ class TerminalManagerImpl {
     const term = new XTerm({
       cursorBlink: true,
       fontSize: 12,
-      fontFamily: "monospace",
+      fontFamily: this.fontFamily,
       theme: getTerminalTheme(this.isDarkMode),
       cursorStyle: "block",
       cursorWidth: 8,
@@ -435,6 +437,26 @@ class TerminalManagerImpl {
 
     for (const instance of this.instances.values()) {
       instance.term.options.theme = theme;
+    }
+  }
+
+  setFontFamily(fontFamily: string): void {
+    if (this.fontFamily === fontFamily) {
+      return;
+    }
+
+    this.fontFamily = fontFamily;
+
+    for (const instance of this.instances.values()) {
+      instance.term.options.fontFamily = fontFamily;
+      // Parked terminals live in a 0x0 container, so fit would compute garbage.
+      // attach() refits on reattachment, so skipping here is safe.
+      if (!instance.attachedElement) continue;
+      try {
+        instance.fitAddon.fit();
+      } catch (error) {
+        log.error("Failed to refit after font change:", error);
+      }
     }
   }
 

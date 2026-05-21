@@ -1,3 +1,4 @@
+import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { Box } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { useThemeStore } from "@stores/themeStore";
@@ -6,6 +7,7 @@ import "@xterm/xterm/css/xterm.css";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { useCallback, useEffect, useRef } from "react";
 import { terminalManager } from "../services/TerminalManager";
+import { resolveTerminalFontFamily } from "../utils/resolveTerminalFontFamily";
 
 export interface TerminalProps {
   sessionId: string;
@@ -31,6 +33,10 @@ export function Terminal({
   const trpcReact = useTRPC();
   const terminalRef = useRef<HTMLDivElement>(null);
   const isDarkMode = useThemeStore((state) => state.isDarkMode);
+  const terminalFont = useSettingsStore((s) => s.terminalFont);
+  const terminalCustomFontFamily = useSettingsStore(
+    (s) => s.terminalCustomFontFamily,
+  );
 
   // Create instance (idempotent)
   useEffect(() => {
@@ -51,6 +57,7 @@ export function Terminal({
     if (!terminalRef.current) return;
 
     terminalManager.attach(sessionId, terminalRef.current);
+    terminalManager.focus(sessionId);
 
     return () => {
       terminalManager.detach(sessionId);
@@ -61,6 +68,13 @@ export function Terminal({
   useEffect(() => {
     terminalManager.setTheme(isDarkMode);
   }, [isDarkMode]);
+
+  // Font sync
+  useEffect(() => {
+    terminalManager.setFontFamily(
+      resolveTerminalFontFamily(terminalFont, terminalCustomFontFamily),
+    );
+  }, [terminalFont, terminalCustomFontFamily]);
 
   // Subscribe to shell data events
   useSubscription(
@@ -111,12 +125,13 @@ export function Terminal({
     };
   }, [sessionId, onReady, onExit]);
 
-  const handleClick = useCallback(() => {
+  // mousedown so the xterm textarea is focused before the browser's native focus shift, not after.
+  const handleMouseDown = useCallback(() => {
     terminalManager.focus(sessionId);
   }, [sessionId]);
 
   return (
-    <Box onClick={handleClick} className="relative h-full p-3">
+    <Box onMouseDown={handleMouseDown} className="relative h-full p-3">
       <div ref={terminalRef} className="h-full w-full" />
       <style>
         {`

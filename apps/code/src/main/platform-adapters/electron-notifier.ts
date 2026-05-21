@@ -6,6 +6,13 @@ import type { ElectronMainWindow } from "./electron-main-window";
 
 @injectable()
 export class ElectronNotifier implements INotifier {
+  // Retain shown notifications so V8 doesn't GC the JS wrapper (and its
+  // `click` listener) before the user interacts. Without this, the OS still
+  // shows the notification and macOS will even focus the app on click, but
+  // the JS click handler never fires — so any in-app routing tied to it
+  // (e.g. switching to the task the notification was about) silently breaks.
+  private readonly active = new Set<Notification>();
+
   constructor(
     @inject(MAIN_TOKENS.MainWindow)
     private readonly mainWindow: ElectronMainWindow,
@@ -21,6 +28,11 @@ export class ElectronNotifier implements INotifier {
       body: options.body,
       silent: options.silent,
     });
+    this.active.add(notification);
+    const release = () => this.active.delete(notification);
+    notification.once("close", release);
+    notification.once("click", release);
+    notification.once("failed", release);
     if (options.onClick) {
       notification.on("click", options.onClick);
     }

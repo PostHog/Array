@@ -24,6 +24,13 @@ vi.mock("@pierre/diffs/worker/worker.js?worker&url", () => ({ default: "" }));
 vi.mock("@components/ui/FileIcon", () => ({
   FileIcon: () => <span data-testid="file-icon" />,
 }));
+vi.mock("@renderer/trpc/client", () => ({
+  trpcClient: {},
+  useTRPC: vi.fn(),
+}));
+vi.mock("@features/sessions/service/service", () => ({
+  getSessionService: vi.fn(),
+}));
 
 import { DeferredDiffPlaceholder, DiffFileHeader } from "./ReviewShell";
 
@@ -60,7 +67,7 @@ function renderHeader(path: string) {
       filePath={path}
       linesAdded={10}
       linesRemoved={2}
-      reason="generated"
+      reason="line-limit"
       collapsed={false}
       onToggle={() => {}}
     />,

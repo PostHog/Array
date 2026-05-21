@@ -101,27 +101,55 @@ describe("useChatTitleGenerator", () => {
         title: "Fix login bug",
       });
     });
+    expect(mockSetQueriesData).toHaveBeenCalledWith(
+      { queryKey: ["tasks", "list"] },
+      expect.any(Function),
+    );
+    expect(mockSetQueriesData).toHaveBeenCalledWith(
+      { queryKey: ["tasks", "summaries"] },
+      expect.any(Function),
+    );
   });
 
-  it("allows first generation even when title_manually_set", async () => {
-    mockGetCachedTask.mockReturnValue({
-      id: TASK_ID,
-      title_manually_set: true,
-    });
-    mockGenerateTitle.mockResolvedValue({
-      title: "Auto title",
-      summary: "",
-    });
-    mockPrompts.value = ["some prompt"];
-
-    renderHook(() => useChatTitleGenerator(TASK_ID));
-
-    await waitFor(() => {
-      expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
-        title: "Auto title",
+  it.each([
+    { name: "no summary", summary: "", expectsSummaryUpdate: false },
+    {
+      name: "with summary",
+      summary: "User wants to fix auth",
+      expectsSummaryUpdate: true,
+    },
+  ])(
+    "skips title update when title_manually_set ($name)",
+    async ({ summary, expectsSummaryUpdate }) => {
+      mockGetCachedTask.mockReturnValue({
+        id: TASK_ID,
+        title_manually_set: true,
       });
-    });
-  });
+      mockGenerateTitle.mockResolvedValue({
+        title: "Auto title",
+        summary,
+      });
+      mockPrompts.value = ["fix auth"];
+
+      renderHook(() => useChatTitleGenerator(TASK_ID));
+
+      await waitFor(() => {
+        expect(mockGenerateTitle).toHaveBeenCalled();
+      });
+      expect(mockUpdateTask).not.toHaveBeenCalled();
+
+      if (expectsSummaryUpdate) {
+        await waitFor(() => {
+          expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+            "run-1",
+            { conversationSummary: summary },
+          );
+        });
+      } else {
+        expect(mockSessionStoreSetters.updateSession).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it("calls enrichDescriptionWithFileContent before generating", async () => {
     mockEnrichDescription.mockResolvedValue("enriched content");

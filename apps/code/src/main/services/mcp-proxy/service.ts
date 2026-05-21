@@ -183,10 +183,11 @@ export class McpProxyService {
         const buf = Buffer.from(await response.arrayBuffer());
         const bodyText = buf.toString("utf8");
 
-        if (this.isAuthErrorBody(bodyText)) {
-          log.warn("MCP auth error in body — refreshing token and retrying", {
+        if (this.isAuthErrorBody(bodyText, response.status)) {
+          log.warn("MCP auth failure — refreshing token and retrying", {
             id,
             url,
+            status: response.status,
           });
           await this.authService.refreshAccessToken();
           response = await this.authService.authenticatedFetch(
@@ -235,10 +236,17 @@ export class McpProxyService {
     }
   }
 
-  private isAuthErrorBody(bodyText: string): boolean {
-    return (
+  private isAuthErrorBody(bodyText: string, status: number): boolean {
+    if (
       bodyText.includes('"authentication_failed"') ||
       bodyText.includes('"authentication_error"')
+    ) {
+      return true;
+    }
+    if (status < 400) return false;
+    return (
+      bodyText.includes("Invalid API key") ||
+      bodyText.includes("Authentication failed")
     );
   }
 

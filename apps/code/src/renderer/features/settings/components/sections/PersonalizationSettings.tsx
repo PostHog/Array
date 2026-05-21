@@ -1,11 +1,11 @@
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import { useDebounce } from "@hooks/useDebounce";
 import { Flex, Text, TextArea } from "@radix-ui/themes";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const MAX_INSTRUCTIONS_LENGTH = 2000;
-const DEBOUNCE_MS = 500;
 
 export function PersonalizationSettings() {
   const customInstructions = useSettingsStore((s) => s.customInstructions);
@@ -15,7 +15,7 @@ export function PersonalizationSettings() {
 
   const [localInstructions, setLocalInstructions] =
     useState(customInstructions);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedInstructions = useDebounce(localInstructions, 500);
 
   // Sync local state when store changes externally
   useEffect(() => {
@@ -35,37 +35,13 @@ export function PersonalizationSettings() {
     [setCustomInstructions],
   );
 
-  const handleInstructionsChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const value = e.target.value;
-      setLocalInstructions(value);
-
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-      debounceRef.current = setTimeout(() => {
-        saveInstructions(value);
-      }, DEBOUNCE_MS);
-    },
-    [saveInstructions],
-  );
+  useEffect(() => {
+    saveInstructions(debouncedInstructions);
+  }, [debouncedInstructions, saveInstructions]);
 
   const handleInstructionsBlur = useCallback(() => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    }
     saveInstructions(localInstructions);
   }, [localInstructions, saveInstructions]);
-
-  // Cleanup debounce on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-    };
-  }, []);
 
   return (
     <Flex direction="column" gap="1" py="4">
@@ -77,7 +53,7 @@ export function PersonalizationSettings() {
       </Flex>
       <TextArea
         value={localInstructions}
-        onChange={handleInstructionsChange}
+        onChange={(e) => setLocalInstructions(e.target.value)}
         onBlur={handleInstructionsBlur}
         maxLength={MAX_INSTRUCTIONS_LENGTH}
         placeholder="e.g. Always write tests for new code. Prefer functional patterns."

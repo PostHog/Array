@@ -3,6 +3,9 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createGitClient, type GitClient } from "../client";
 import { GitSaga, type GitSagaInput } from "../git-saga";
+import { type GitBusyState, inspectGitBusyState } from "../queries";
+
+export type { GitBusyState };
 
 const CHECKPOINT_REF_PREFIX = "refs/posthog-code-checkpoint/";
 const CHECKPOINT_VERSION = "v1";
@@ -32,10 +35,6 @@ interface CheckpointMetadata {
   worktreeTree: string | null;
   timestamp: string | null;
 }
-
-export type GitBusyState =
-  | { busy: false }
-  | { busy: true; operation: "rebase" | "merge" | "cherry-pick" | "revert" };
 
 export interface CaptureCheckpointInput extends GitSagaInput {
   checkpointId?: string;
@@ -390,54 +389,7 @@ async function hasUnmergedEntries(git: GitClient): Promise<boolean> {
 }
 
 export async function getGitBusyState(git: GitClient): Promise<GitBusyState> {
-  const toplevel = (await git.raw(["rev-parse", "--show-toplevel"])).trim();
-
-  const resolveGitPath = async (gitPath: string): Promise<string> => {
-    const relative = (
-      await git.raw(["rev-parse", "--git-path", gitPath])
-    ).trim();
-    return path.isAbsolute(relative)
-      ? relative
-      : path.resolve(toplevel, relative);
-  };
-
-  const pathExists = async (gitPath: string): Promise<boolean> => {
-    const resolved = await resolveGitPath(gitPath);
-    try {
-      await fs.access(resolved);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  const dirExists = async (gitPath: string): Promise<boolean> => {
-    const resolved = await resolveGitPath(gitPath);
-    try {
-      const stat = await fs.stat(resolved);
-      return stat.isDirectory();
-    } catch {
-      return false;
-    }
-  };
-
-  if ((await dirExists("rebase-merge")) || (await dirExists("rebase-apply"))) {
-    return { busy: true, operation: "rebase" };
-  }
-
-  if (await pathExists("MERGE_HEAD")) {
-    return { busy: true, operation: "merge" };
-  }
-
-  if (await pathExists("CHERRY_PICK_HEAD")) {
-    return { busy: true, operation: "cherry-pick" };
-  }
-
-  if (await pathExists("REVERT_HEAD")) {
-    return { busy: true, operation: "revert" };
-  }
-
-  return { busy: false };
+  return inspectGitBusyState(git);
 }
 
 const MAX_WORKTREE_FILE_BYTES = 1024 * 1024;

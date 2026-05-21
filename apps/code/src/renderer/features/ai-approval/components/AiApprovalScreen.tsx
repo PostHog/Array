@@ -13,8 +13,11 @@ import {
 import { Button, Callout, Flex, Text } from "@radix-ui/themes";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
 import { trpcClient } from "@renderer/trpc/client";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
+import { track } from "@utils/analytics";
 import { motion } from "framer-motion";
+import { useEffect } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 interface AiApprovalScreenProps {
@@ -26,6 +29,11 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
   const logoutMutation = useLogoutMutation();
   const openSettings = useSettingsDialogStore((s) => s.open);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fire once on mount; later isAdmin changes from query resolution should not re-fire
+  useEffect(() => {
+    track(ANALYTICS_EVENTS.AI_CONSENT_GATE_SHOWN, { is_org_admin: isAdmin });
+  }, []);
 
   useHotkeys(SHORTCUTS.SETTINGS, () => openSettings(), {
     preventDefault: true,
@@ -80,7 +88,7 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
             >
-              <Flex direction="column" gap="5">
+              <Flex direction="column" gap="4">
                 <Flex direction="column" gap="2">
                   <Flex align="center" gap="2">
                     <Robot
@@ -93,11 +101,21 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
                     </Text>
                   </Flex>
                   <Text className="text-(--gray-11) text-sm">
-                    {orgName
-                      ? `The "${orgName}" organization hasn't approved AI data processing yet.`
-                      : "Your organization hasn't approved AI data processing yet."}{" "}
-                    PostHog AI may process identifying user data with external
-                    AI providers. Your data won't be used for training models.
+                    {orgName ? (
+                      <>
+                        Your "<strong>{orgName}</strong>" organization hasn't
+                        approved AI data processing yet.
+                      </>
+                    ) : (
+                      "Your organization hasn't approved AI data processing yet."
+                    )}
+                  </Text>
+                  <Text className="text-(--gray-11) text-sm">
+                    PostHog AI features process identifying user data with
+                    external AI providers.
+                    <br />
+                    Importantly: Your data won't be used for training models by
+                    these providers.
                   </Text>
                 </Flex>
 
@@ -106,10 +124,16 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
                     <WarningCircle />
                   </Callout.Icon>
                   <Callout.Text>
-                    This feature is not HIPAA-compliant and is not intended for
-                    the processing of Protected Health Information ("PHI"). Any
-                    Business Associate Agreement ("BAA") you may have entered
-                    into with PostHog does not apply to this functionality.
+                    <h4 className="mb-1 font-bold">
+                      Legal bits about Protected Health Information
+                    </h4>
+                    PostHog Code isn't <i>yet</i> HIPAA-compliant and is not
+                    intended for processing of Protected Health Information
+                    ("PHI").
+                    <br />
+                    If you've entered into a Business Associate Agreement
+                    ("BAA") with PostHog, it does not currently apply to PostHog
+                    Code features.
                   </Callout.Text>
                 </Callout.Root>
 

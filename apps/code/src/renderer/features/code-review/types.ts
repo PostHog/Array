@@ -15,6 +15,14 @@ export interface CommentMetadata {
   side: AnnotationSide;
 }
 
+export interface DraftCommentMetadata {
+  kind: "draft-comment";
+  draftId: string;
+  startLine: number;
+  endLine: number;
+  side: AnnotationSide;
+}
+
 export interface PrCommentMetadata {
   kind: "pr-comment";
   threadId: number;
@@ -29,6 +37,7 @@ export interface PrCommentMetadata {
 export type AnnotationMetadata =
   | HunkRevertMetadata
   | CommentMetadata
+  | DraftCommentMetadata
   | PrCommentMetadata;
 
 export type DiffOptions = FileDiffOptions<AnnotationMetadata>;
