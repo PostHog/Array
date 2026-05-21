@@ -2,7 +2,11 @@ import { Text } from "@components/text";
 import * as WebBrowser from "expo-web-browser";
 import { Pressable, View } from "react-native";
 import { useAuthStore } from "@/features/auth";
+import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
+import { startGithubUserIntegrationConnect } from "../api";
+
+const log = logger.scope("github-connection-prompt");
 
 interface GitHubConnectionPromptProps {
   onConnected?: () => void;
@@ -17,7 +21,7 @@ export function GitHubConnectionPrompt({
   title = "Connect GitHub to continue",
   description = "You need to connect your GitHub account before using this workflow.",
 }: GitHubConnectionPromptProps) {
-  const { cloudRegion, projectId, getCloudUrlFromRegion } = useAuthStore();
+  const { cloudRegion, projectId } = useAuthStore();
   const themeColors = useThemeColors();
 
   const handleConnectGitHub = async () => {
@@ -25,10 +29,17 @@ export function GitHubConnectionPrompt({
       return;
     }
 
-    const baseUrl = getCloudUrlFromRegion(cloudRegion);
-    const authorizeUrl = `${baseUrl}/api/environments/${projectId}/integrations/authorize/?kind=github`;
+    let installUrl: string;
+    try {
+      const { install_url } = await startGithubUserIntegrationConnect();
+      installUrl = install_url;
+    } catch (error) {
+      log.error("Failed to start GitHub connection", { error });
+      return;
+    }
+
     const result = await WebBrowser.openAuthSessionAsync(
-      authorizeUrl,
+      installUrl,
       "posthog://github/callback",
     );
 

@@ -727,6 +727,51 @@ export async function streamCloudTask(
   });
 }
 
+export interface GithubUserConnectResult {
+  install_url: string;
+  connect_flow?: "oauth_authorize" | "oauth_discover" | "app_install";
+}
+
+/**
+ * Starts the user-level GitHub connection flow, matching the desktop app.
+ *
+ * Hits `POST /api/users/@me/integrations/github/start/` so the backend can pick
+ * the appropriate flow (GitHub App install / oauth authorize / discover) and
+ * return the URL to open. This is the same endpoint desktop uses — the older
+ * `/api/environments/{projectId}/integrations/authorize/?kind=github` URL drops
+ * the `connect_from` marker and forces the team-level authorize flow instead.
+ */
+export async function startGithubUserIntegrationConnect(): Promise<GithubUserConnectResult> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/users/@me/integrations/github/start/`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        team_id: projectId,
+        connect_from: "posthog_code",
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as {
+      detail?: unknown;
+    };
+    const detail =
+      typeof payload.detail === "string"
+        ? payload.detail
+        : "Failed to start GitHub connection";
+    throw new HttpError(response.status, response.statusText, detail);
+  }
+
+  return parseJsonResponse<GithubUserConnectResult>(response);
+}
+
 export async function getIntegrations(): Promise<Integration[]> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
