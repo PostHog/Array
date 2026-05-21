@@ -10,7 +10,7 @@ import type {
   TaskArtifactUploadRequest,
 } from "@renderer/api/posthogClient";
 import { trpcClient } from "@renderer/trpc/client";
-import { getFileName } from "@utils/path";
+import { getFileName, pathToFileUri } from "@utils/path";
 import type { EditorContent } from "../../message-editor/utils/content";
 
 const FILE_URI_PREFIX = "file://";
@@ -63,14 +63,6 @@ interface LoadedCloudAttachment {
   filePath: string;
   bytes: Uint8Array<ArrayBuffer>;
   upload: TaskArtifactUploadRequest;
-}
-
-function pathToFileUri(filePath: string): string {
-  const encoded = filePath
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-  return `file://${encoded}`;
 }
 
 export interface CloudPromptTransport {

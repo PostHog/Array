@@ -129,8 +129,9 @@ describe("cloud-prompt", () => {
   });
 
   it("encodes Windows UNC paths as file URIs", async () => {
+    // Actual UNC path: \\server\share\My Folder\file.txt
     const blocks = await buildCloudPromptBlocks(
-      'read <file path="\\\\\\\\server\\\\share\\\\My Folder\\\\file.txt" />',
+      'read <file path="\\\\server\\share\\My Folder\\file.txt" />',
     );
 
     const uris = resourceLinksFrom(blocks);
@@ -172,8 +173,6 @@ describe("cloud-prompt", () => {
   });
 
   it("does not rely on readAbsoluteFile for txt attachments", async () => {
-    mockFs.readAbsoluteFile.query.mockResolvedValue(null);
-
     const blocks = await buildCloudPromptBlocks(
       'read <file path="/tmp/maybe-missing-on-disk.txt" />',
     );

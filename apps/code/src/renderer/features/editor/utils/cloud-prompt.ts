@@ -128,19 +128,15 @@ export function getAbsoluteAttachmentPaths(
   prompt: string,
   filePaths: string[] = [],
 ): string[] {
+  const normalize = (p: string) => p.replaceAll("\\", "/");
   const folderPaths = collectFolderTagPaths(prompt);
+  const normalizedFolderPaths = new Set(Array.from(folderPaths, normalize));
   const absolutePaths = [
     ...collectAbsoluteFileTagPaths(prompt),
     ...filePaths.filter(isAbsolutePath),
   ];
-  const normalizedFolderPaths = new Set(
-    Array.from(folderPaths, (p) => p.replaceAll("\\", "/")),
-  );
-  const normalizedAbsolutePaths = absolutePaths.map((p) =>
-    p.replaceAll("\\", "/"),
-  );
-  return unique(normalizedAbsolutePaths).filter(
-    (p) => !normalizedFolderPaths.has(p),
+  return unique(absolutePaths).filter(
+    (p) => !normalizedFolderPaths.has(normalize(p)),
   );
 }
 
