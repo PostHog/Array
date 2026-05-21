@@ -14,7 +14,7 @@ import {
 import { ChevronDown } from "lucide-react";
 import { useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { SHORTCUTS } from "../../command/keyboard-shortcuts";
+import { formatHotkeyParts } from "../../command/keyboard-shortcuts";
 import { useExternalAppAction } from "../../external-apps/useExternalAppAction";
 import { useExternalApps } from "../../external-apps/useExternalApps";
 
@@ -141,7 +141,9 @@ export function ExternalAppsOpener({ targetPath }: ExternalAppsOpenerProps) {
               {app.name}
               {app.id === defaultApp?.id && (
                 <DropdownMenuShortcut>
-                  <Kbd>⌘O</Kbd>
+                  {formatHotkeyParts(openInEditorKey).map((part) => (
+                    <Kbd key={part}>{part}</Kbd>
+                  ))}
                 </DropdownMenuShortcut>
               )}
             </DropdownMenuItem>
@@ -151,7 +153,9 @@ export function ExternalAppsOpener({ targetPath }: ExternalAppsOpenerProps) {
             <CopyIcon size={THUMBNAIL_ICON_SIZE} weight="regular" />
             Copy Path
             <DropdownMenuShortcut>
-              <Kbd>⌘⇧C</Kbd>
+              {formatHotkeyParts(copyPathKey).map((part) => (
+                <Kbd key={part}>{part}</Kbd>
+              ))}
             </DropdownMenuShortcut>
           </DropdownMenuItem>
         </DropdownMenuContent>
