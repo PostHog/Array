@@ -4,6 +4,7 @@ import { HighlightedCode } from "@components/HighlightedCode";
 import { List, ListItem } from "@components/List";
 import { parseGithubIssueUrl } from "@features/message-editor/utils/githubIssueUrl";
 import { Blockquote, Checkbox, Code, Kbd, Text } from "@radix-ui/themes";
+import { isPostHogCodeDeeplink } from "@shared/deeplink";
 import { memo, useMemo } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
@@ -22,16 +23,6 @@ interface MarkdownRendererProps {
 // Ensures `---`, `***`, `___` are preceded by a blank line
 function preprocessMarkdown(content: string): string {
   return content.replace(/\n([^\n].*)\n(---+|___+|\*\*\*+)\n/g, "\n$1\n\n$2\n");
-}
-
-function isPostHogCodeDeeplink(href: string | undefined): href is string {
-  if (!href) return false;
-  try {
-    const protocol = new URL(href).protocol;
-    return protocol === "posthog-code:" || protocol === "posthog-code-dev:";
-  } catch {
-    return false;
-  }
 }
 
 function markdownUrlTransform(value: string): string {
