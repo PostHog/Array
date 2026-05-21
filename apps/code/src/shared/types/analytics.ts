@@ -497,6 +497,7 @@ export interface InboxReportActionProperties {
   rank: number;
   list_size: number;
   dismissal_reason?: string;
+  dismissal_note?: string;
   signal_id?: string;
   signal_source_product?: string;
   signal_source_type?: string;
