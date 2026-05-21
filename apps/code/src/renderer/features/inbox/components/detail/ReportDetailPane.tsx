@@ -63,7 +63,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { buildDiscussReportPrompt } from "../../utils/buildDiscussReportPrompt";
+import { useDiscussReport } from "../../hooks/useDiscussReport";
 import { ReportImplementationPrLink } from "../utils/ReportImplementationPrLink";
 import { SignalReportActionabilityBadge } from "../utils/SignalReportActionabilityBadge";
 import { SignalReportPriorityBadge } from "../utils/SignalReportPriorityBadge";
@@ -373,14 +373,15 @@ export function ReportDetailPane({
     fireDetailAction,
   ]);
 
+  const { discussReport, isDiscussing } = useDiscussReport({
+    reportId: report.id,
+    reportTitle: report.title,
+    cloudRepository: effectiveCloudRepository,
+  });
+
   const handleDiscussReport = useCallback(
-    (question?: string) => {
+    async (question?: string) => {
       const trimmedQuestion = question?.trim();
-      const prompt = buildDiscussReportPrompt({
-        reportId: report.id,
-        question: trimmedQuestion,
-        isDevBuild: import.meta.env.DEV,
-      });
       fireDetailAction("discuss", {
         has_question: !!trimmedQuestion,
         question_text: trimmedQuestion
@@ -388,18 +389,9 @@ export function ReportDetailPane({
           : undefined,
       });
       setDiscussQuestionOpen(false);
-      navigateToTaskInput({
-        initialPrompt: prompt,
-        initialCloudRepository: effectiveCloudRepository ?? undefined,
-        reportAssociation: {
-          reportId: report.id,
-          title: report.title ?? "Untitled signal",
-        },
-        initialExecutionMode: "auto",
-        autoSubmit: true,
-      });
+      await discussReport(trimmedQuestion);
     },
-    [navigateToTaskInput, effectiveCloudRepository, report, fireDetailAction],
+    [discussReport, fireDetailAction],
   );
 
   const handleDiscussSubmit = useCallback(
@@ -521,9 +513,14 @@ export function ReportDetailPane({
               variant="soft"
               className="gap-1 rounded-r-none text-[12px]"
               tooltipContent="Open a chat session about this report"
+              disabled={isDiscussing}
               onClick={() => handleDiscussReport()}
             >
-              <ChatCircleIcon size={12} />
+              {isDiscussing ? (
+                <Spinner size="1" />
+              ) : (
+                <ChatCircleIcon size={12} />
+              )}
               Discuss
             </Button>
             <Popover.Root
@@ -536,6 +533,7 @@ export function ReportDetailPane({
                   variant="soft"
                   className="rounded-l-none border-l border-l-(--gray-5) px-1"
                   aria-label="Ask an optional first question"
+                  disabled={isDiscussing}
                 >
                   <CaretDownIcon size={12} />
                 </Button>

@@ -1,7 +1,7 @@
 import { foldersApi } from "@features/folders/hooks/useFolders";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { getTaskDirectory } from "@hooks/useRepositoryDirectory";
-import type { ExecutionMode, Task } from "@shared/types";
+import type { Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { electronStorage } from "@utils/electronStorage";
@@ -32,8 +32,6 @@ interface TaskInputNavigationOptions {
   initialPrompt?: string;
   initialCloudRepository?: string;
   reportAssociation?: TaskInputReportAssociation;
-  initialExecutionMode?: ExecutionMode;
-  autoSubmit?: boolean;
 }
 
 interface ViewState {
@@ -45,8 +43,6 @@ interface ViewState {
   initialPrompt?: string;
   initialCloudRepository?: string;
   reportAssociation?: TaskInputReportAssociation;
-  initialExecutionMode?: ExecutionMode;
-  autoSubmit?: boolean;
 }
 
 interface NavigationStore {
@@ -198,9 +194,7 @@ export const useNavigationStore = create<NavigationStore>()(
           const hasTransientState =
             !!options.initialPrompt ||
             !!options.initialCloudRepository ||
-            !!options.reportAssociation ||
-            !!options.initialExecutionMode ||
-            !!options.autoSubmit;
+            !!options.reportAssociation;
           if (options.reportAssociation || options.initialCloudRepository) {
             set({
               taskInputReportAssociation: options.reportAssociation,
@@ -213,8 +207,6 @@ export const useNavigationStore = create<NavigationStore>()(
             initialPrompt: options.initialPrompt,
             initialCloudRepository: options.initialCloudRepository,
             reportAssociation: options.reportAssociation,
-            initialExecutionMode: options.initialExecutionMode,
-            autoSubmit: options.autoSubmit,
             taskInputRequestId: hasTransientState
               ? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`)
               : undefined,

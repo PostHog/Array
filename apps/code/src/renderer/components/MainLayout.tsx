@@ -151,8 +151,6 @@ export function MainLayout() {
               reportAssociation={
                 view.reportAssociation ?? taskInputReportAssociation
               }
-              initialExecutionMode={view.initialExecutionMode}
-              autoSubmit={view.autoSubmit}
             />
           )}
 
