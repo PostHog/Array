@@ -57,10 +57,16 @@ import {
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
 import type { PostHogAPIConfig } from "../../types";
-import { unreachable, withTimeout } from "../../utils/common";
+import {
+  isCloudRun,
+  resolveGithubToken,
+  unreachable,
+  withTimeout,
+} from "../../utils/common";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
 import { BaseAcpAgent } from "../base-acp-agent";
+import { resolveTaskId } from "../session-meta";
 import { promptToClaude } from "./conversion/acp-to-sdk";
 import {
   handleResultMessage,
@@ -69,6 +75,10 @@ import {
   handleUserAssistantMessage,
 } from "./conversion/sdk-to-acp";
 import type { EnrichedReadCache } from "./hooks";
+import {
+  createSignedCommitMcpServer,
+  SIGNED_COMMIT_MCP_NAME,
+} from "./mcp/signed-commit";
 import {
   fetchMcpToolMetadata,
   getConnectedMcpServerNames,
@@ -1091,7 +1101,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const isResume = !!resume;
 
     const meta = params._meta as NewSessionMeta | undefined;
-    const taskId = meta?.persistence?.taskId;
+    const taskId = resolveTaskId(meta);
+    // Gate signed-commit wiring on cloud-run detection so the desktop (which
+    // signs via CommitSaga) is untouched.
+    const cloudRun = isCloudRun(meta);
     const effort = meta?.claudeCode?.options?.effort as EffortLevel | undefined;
 
     // We want to create a new session id unless it is resume,
@@ -1115,6 +1128,25 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const mcpServers = supportsMcpInjection(earlyModelId)
       ? parseMcpServers(params)
       : {};
+
+    // Cloud runs get the in-process signed-commit tool so the agent can create
+    // GitHub-signed commits without a local key. `git commit` and `git push`
+    // are blocked by the PreToolUse guard (and the sandbox git shim) in this mode.
+    if (cloudRun) {
+      const githubToken = resolveGithubToken();
+      if (githubToken) {
+        mcpServers[SIGNED_COMMIT_MCP_NAME] = createSignedCommitMcpServer({
+          cwd,
+          token: githubToken,
+          taskId,
+        });
+      } else {
+        this.logger.warn(
+          "Cloud run has no GH_TOKEN/GITHUB_TOKEN — skipping signed-commit tool registration",
+        );
+      }
+    }
+
     const systemPrompt = buildSystemPrompt(meta?.systemPrompt);
 
     if (meta?.mcpToolApprovals) {
@@ -1164,6 +1196,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       effort,
       enrichmentDeps: this.enrichment?.deps,
       enrichedReadCache: this.enrichedReadCache,
+      cloudMode: cloudRun,
     });
 
     // Use the same abort controller that buildSessionOptions gave to the query

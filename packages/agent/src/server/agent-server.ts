@@ -25,6 +25,7 @@ import {
   type AgentErrorClassification,
   classifyAgentError,
 } from "../adapters/error-classification";
+import { SIGNED_COMMIT_QUALIFIED_TOOL_NAME } from "../adapters/signed-commit-shared";
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
@@ -949,6 +950,7 @@ export class AgentServer {
       _meta: {
         sessionId: payload.run_id,
         taskRunId: payload.run_id,
+        taskId: payload.task_id,
         systemPrompt: sessionSystemPrompt,
         ...(this.config.model && { model: this.config.model }),
         allowedDomains: this.config.allowedDomains,
@@ -1599,24 +1601,21 @@ export class AgentServer {
   private buildCloudSystemPrompt(prUrl?: string | null): string {
     const taskId = this.config.taskId;
     const shouldAutoCreatePr = this.shouldAutoPublishCloudChanges();
-    const attributionInstructions = `
+    const signedCommitInstructions = `
+## Committing (signed commits required)
+Commits MUST be signed. \`git commit\` and \`git push\` are blocked in this environment.
+To commit: stage your changes with \`git add\`, then call the \`git_signed_commit\` tool (full
+name \`${SIGNED_COMMIT_QUALIFIED_TOOL_NAME}\`) with a \`message\` (and optional \`body\`/\`paths\`).
+It creates a GitHub-signed ("Verified") commit on the branch and keeps your local checkout in
+sync. To start a new branch, pass \`branch\` (prefixed with \`posthog-code/\`) — the tool creates
+it on the remote for you.
+
 ## Attribution
-Do NOT use Claude Code's default attribution (no "Co-Authored-By" trailers, no "Generated with [Claude Code]" lines).
-
-If you create a commit, add the following trailers to the commit message (after a blank line at the end):
+Do NOT add "Co-Authored-By" trailers or "Generated with [Claude Code]" lines to your
+commit messages. The \`git_signed_commit\` tool automatically appends the only trailers
+we want:
   Generated-By: PostHog Code
-  Task-Id: ${taskId}
-
-Example:
-\`\`\`
-git commit -m "$(cat <<'EOF'
-fix: resolve login redirect loop
-
-Generated-By: PostHog Code
-Task-Id: ${taskId}
-EOF
-)"
-\`\`\``;
+  Task-Id: ${taskId}`;
 
     if (prUrl) {
       if (!shouldAutoCreatePr) {
@@ -1630,7 +1629,7 @@ Do the requested work, but stop with local changes ready for review.
 Important:
 - Do NOT create new commits, push to the branch, or update the pull request unless the user explicitly asks.
 - Do NOT create a new branch or a new pull request.
-${attributionInstructions}
+${signedCommitInstructions}
 `;
       }
 
@@ -1641,9 +1640,8 @@ This task already has an open pull request: ${prUrl}
 
 After completing the requested changes:
 1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
-2. Stage and commit all changes with a clear commit message
-3. Push to the existing PR branch
-4. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:
+2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). This commits to the existing PR branch.
+3. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:
    - Reply on the thread with a short note describing what changed (reference the commit SHA when useful) using \`gh api -X POST /repos/{owner}/{repo}/pulls/{n}/comments/{id}/replies -f body='...'\`.
    - Resolve the thread via the \`resolveReviewThread\` GraphQL mutation: \`gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id="<thread-node-id>"\`.
    List unresolved threads first with \`gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<n>){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{body}}}}}}}'\` so you can resolve each one you fixed.
@@ -1651,7 +1649,7 @@ After completing the requested changes:
 Important:
 - Do NOT create a new branch or a new pull request.
 - Do NOT push fixes for review comments without replying to and resolving each related thread.
-${attributionInstructions}
+${signedCommitInstructions}
 `;
     }
 
@@ -1666,7 +1664,7 @@ When the user asks for code changes:
 When the user explicitly asks to clone or work in a GitHub repository:
 - Clone the repository into /tmp/workspace/repos/<owner>/<repo> using \`gh repo clone <owner>/<repo> /tmp/workspace/repos/<owner>/<repo>\`
 - Work from inside that cloned repository for follow-up code changes
-- If the user explicitly asks you to open or update a pull request, create a branch, commit the requested changes, push it, and open a draft pull request from inside the clone. Before opening the PR, check the cloned repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links.
+- If the user explicitly asks you to open or update a pull request, create a branch, stage your changes with \`git add\` and commit them with the \`git_signed_commit\` tool (do NOT use \`git commit\`/\`git push\` — they are blocked), and open a draft pull request from inside the clone. Before opening the PR, check the cloned repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links.
 - Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
 
       return `
@@ -1686,7 +1684,7 @@ ${publishInstructions}
 
 Important:
 - Prefer using MCP tools to answer questions with real data over giving generic advice.
-${attributionInstructions}
+${signedCommitInstructions}
 `;
     }
 
@@ -1698,7 +1696,7 @@ Do the requested work, but stop with local changes ready for review.
 
 Important:
 - Do NOT create a branch, commit, push, or open a pull request unless the user explicitly asks.
-${attributionInstructions}
+${signedCommitInstructions}
 `;
     }
 
@@ -1706,14 +1704,13 @@ ${attributionInstructions}
 # Cloud Task Execution
 
 After completing the requested changes:
-1. Create a new branch prefixed with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`) based on the work done
-2. Stage and commit all changes with a clear commit message
-3. Push the branch to origin
-4. Before opening the PR, prepare the body:
+1. Pick a new branch name prefixed with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`)
+2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with \`branch\` set to that name and a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). The tool creates the branch on the remote and a signed commit on it.
+3. Before opening the PR, prepare the body:
    - Check the repo for a PR template at \`.github/pull_request_template.md\` (also try \`.github/PULL_REQUEST_TEMPLATE.md\`, \`docs/pull_request_template.md\`, and root variants). If one exists, use its exact section headings as the PR body — do NOT fall back to a generic Summary/Test plan format.
    - If no repo-level template exists, check the org's \`.github\` repo via \`gh api /repos/<owner>/.github/contents/.github/pull_request_template.md\` (and other common paths) and use that as a fallback.
    - Search for matching open issues with \`gh issue list --state open --search '<keywords>'\` (derive keywords from the branch name, commits, and changed files; \`gh issue view <n>\` to confirm relevance). For every issue this PR would resolve, include a \`Closes #<n>\` line in the body so GitHub auto-links and auto-closes it on merge. For issues that are related but not fully resolved, use \`Refs #<n>\` instead.
-5. Create a draft pull request using \`gh pr create --draft${this.config.baseBranch ? ` --base ${this.config.baseBranch}` : ""}\` with a descriptive title and the body prepared above. Add the following footer at the end of the PR description:
+4. Create a draft pull request using \`gh pr create --draft${this.config.baseBranch ? ` --base ${this.config.baseBranch}` : ""}\` with a descriptive title and the body prepared above. Add the following footer at the end of the PR description:
 \`\`\`
 ---
 *Created with [PostHog Code](https://posthog.com/code?ref=pr)*
@@ -1721,7 +1718,7 @@ After completing the requested changes:
 
 Important:
 - Always create the PR as a draft. Do not ask for confirmation.
-${attributionInstructions}
+${signedCommitInstructions}
 `;
   }
 

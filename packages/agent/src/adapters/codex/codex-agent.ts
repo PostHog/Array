@@ -38,6 +38,7 @@ import {
   type SetSessionModeRequest,
   type SetSessionModeResponse,
 } from "@agentclientprotocol/sdk";
+import { ghTokenEnv } from "@posthog/git/signed-commit";
 import packageJson from "../../../package.json" with { type: "json" };
 import {
   isMethod,
@@ -56,6 +57,7 @@ import {
   type PermissionMode,
 } from "../../execution-mode";
 import type { PostHogAPIConfig, ProcessSpawnedCallback } from "../../types";
+import { isCloudRun, resolveGithubToken } from "../../utils/common";
 import { Logger } from "../../utils/logger";
 import {
   nodeReadableToWebReadable,
@@ -63,6 +65,8 @@ import {
 } from "../../utils/streams";
 import { BaseAcpAgent, type BaseSession } from "../base-acp-agent";
 import { classifyAgentError } from "../error-classification";
+import { resolveTaskId } from "../session-meta";
+import { SIGNED_COMMIT_MCP_NAME } from "../signed-commit-shared";
 import { createCodexClient } from "./codex-client";
 import { normalizeCodexConfigOptions } from "./models";
 import {
@@ -193,8 +197,7 @@ const STRUCTURED_OUTPUT_INSTRUCTIONS = `\n\nWhen you have completed the task, ca
  * harness/bin.js, etc), `import.meta.dirname` sits at different depths. Walk
  * up until we find the script so each bundle locates the shared dist asset.
  */
-function resolveStructuredOutputMcpScript(): string {
-  const rel = "adapters/codex/structured-output-mcp-server.js";
+function resolveBundledMcpScript(rel: string): string {
   let dir = import.meta.dirname ?? __dirname;
   for (let i = 0; i < 5; i++) {
     const candidate = resolvePath(dir, rel);
@@ -209,7 +212,9 @@ function resolveStructuredOutputMcpScript(): string {
 function buildStructuredOutputMcpServer(
   jsonSchema: Record<string, unknown>,
 ): McpServerStdio {
-  const scriptPath = resolveStructuredOutputMcpScript();
+  const scriptPath = resolveBundledMcpScript(
+    "adapters/codex/structured-output-mcp-server.js",
+  );
   const schemaBase64 = Buffer.from(JSON.stringify(jsonSchema)).toString(
     "base64",
   );
@@ -218,6 +223,36 @@ function buildStructuredOutputMcpServer(
     command: process.execPath,
     args: [scriptPath],
     env: [{ name: "POSTHOG_OUTPUT_SCHEMA", value: schemaBase64 }],
+  };
+}
+
+/**
+ * Builds the stdio MCP server config exposing `git_signed_commit`. Context
+ * (cwd, taskId, token) is passed base64-encoded so the child can call the same
+ * signed-commit core the Claude adapter uses in-process.
+ */
+function buildSignedCommitMcpServer(ctx: {
+  cwd: string;
+  token: string;
+  taskId?: string;
+}): McpServerStdio {
+  const scriptPath = resolveBundledMcpScript(
+    "adapters/codex/signed-commit-mcp-server.js",
+  );
+  const ctxBase64 = Buffer.from(JSON.stringify(ctx)).toString("base64");
+  return {
+    name: SIGNED_COMMIT_MCP_NAME,
+    command: process.execPath,
+    args: [scriptPath],
+    env: [
+      { name: "POSTHOG_SIGNED_COMMIT_CTX", value: ctxBase64 },
+      // Token also on the child env so its own git remote ops (fetch/ls-remote)
+      // authenticate; the var names come from the single shared source.
+      ...Object.entries(ghTokenEnv(ctx.token)).map(([name, value]) => ({
+        name,
+        value,
+      })),
+    ],
   };
 }
 
@@ -338,7 +373,10 @@ export class CodexAcpAgent extends BaseAcpAgent {
     const meta = params._meta as NewSessionMeta | undefined;
     const requestedPermissionMode = toCodexPermissionMode(meta?.permissionMode);
 
-    const injectedParams = this.applyStructuredOutput(params, meta);
+    const injectedParams = this.applySignedCommit(
+      this.applyStructuredOutput(params, meta),
+      meta,
+    );
     const response = await this.codexConnection.newSession(injectedParams);
     response.configOptions = normalizeCodexConfigOptions(
       response.configOptions,
@@ -347,7 +385,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     // Initialize session state
     this.sessionState = createSessionState(response.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
-      taskId: meta?.taskId ?? meta?.persistence?.taskId,
+      taskId: resolveTaskId(meta),
       modeId: response.modes?.currentModeId ?? "auto",
       modelId: response.models?.currentModelId,
       permissionMode: requestedPermissionMode,
@@ -380,7 +418,10 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
   async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
     const meta = params._meta as NewSessionMeta | undefined;
-    const injectedParams = this.applyStructuredOutput(params, meta);
+    const injectedParams = this.applySignedCommit(
+      this.applyStructuredOutput(params, meta),
+      meta,
+    );
     const response = await this.codexConnection.loadSession(injectedParams);
     response.configOptions = normalizeCodexConfigOptions(
       response.configOptions,
@@ -396,7 +437,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     // not, which silently broke task-completion tracking on re-attach.
     this.sessionState = createSessionState(params.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
-      taskId: meta?.taskId ?? meta?.persistence?.taskId,
+      taskId: resolveTaskId(meta),
       modeId: response.modes?.currentModeId ?? "auto",
       permissionMode: currentPermissionMode,
     });
@@ -418,13 +459,16 @@ export class CodexAcpAgent extends BaseAcpAgent {
     params: ResumeSessionRequest,
   ): Promise<ResumeSessionResponse> {
     const meta = params._meta as NewSessionMeta | undefined;
-    const injectedParams = this.applyStructuredOutput(
-      {
-        sessionId: params.sessionId,
-        cwd: params.cwd,
-        mcpServers: params.mcpServers ?? [],
-        _meta: params._meta,
-      },
+    const injectedParams = this.applySignedCommit(
+      this.applyStructuredOutput(
+        {
+          sessionId: params.sessionId,
+          cwd: params.cwd,
+          mcpServers: params.mcpServers ?? [],
+          _meta: params._meta,
+        },
+        meta,
+      ),
       meta,
     );
 
@@ -439,7 +483,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     );
     this.sessionState = createSessionState(params.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
-      taskId: meta?.taskId ?? meta?.persistence?.taskId,
+      taskId: resolveTaskId(meta),
       modeId: loadResponse.modes?.currentModeId ?? "auto",
       permissionMode: currentPermissionMode,
     });
@@ -465,12 +509,15 @@ export class CodexAcpAgent extends BaseAcpAgent {
     params: ForkSessionRequest,
   ): Promise<ForkSessionResponse> {
     const meta = params._meta as NewSessionMeta | undefined;
-    const injectedParams = this.applyStructuredOutput(
-      {
-        cwd: params.cwd,
-        mcpServers: params.mcpServers ?? [],
-        _meta: params._meta,
-      },
+    const injectedParams = this.applySignedCommit(
+      this.applyStructuredOutput(
+        {
+          cwd: params.cwd,
+          mcpServers: params.mcpServers ?? [],
+          _meta: params._meta,
+        },
+        meta,
+      ),
       meta,
     );
 
@@ -483,7 +530,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     const requestedPermissionMode = toCodexPermissionMode(meta?.permissionMode);
     this.sessionState = createSessionState(newResponse.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
-      taskId: meta?.taskId ?? meta?.persistence?.taskId,
+      taskId: resolveTaskId(meta),
       modeId: newResponse.modes?.currentModeId ?? "auto",
       permissionMode: requestedPermissionMode,
     });
@@ -528,6 +575,36 @@ export class CodexAcpAgent extends BaseAcpAgent {
         ...existingMeta,
         systemPrompt: existingSystemPrompt + STRUCTURED_OUTPUT_INSTRUCTIONS,
       },
+    };
+  }
+
+  /**
+   * Cloud runs get the stdio signed-commit MCP server so the agent creates
+   * GitHub-signed commits via `git_signed_commit` instead of `git commit`/
+   * `git push`. Gated on cloud-run detection + an available token + a cwd; the
+   * commit instructions are already in the shared cloud system prompt, so only
+   * the server needs injecting here.
+   */
+  private applySignedCommit<
+    T extends { cwd?: string; mcpServers?: McpServer[]; _meta?: unknown },
+  >(request: T, meta: NewSessionMeta | undefined): T {
+    const taskId = resolveTaskId(meta);
+    const cwd = request.cwd;
+    const token = resolveGithubToken();
+    if (!isCloudRun(meta) || !cwd) {
+      return request;
+    }
+    if (!token) {
+      this.logger.warn(
+        "Cloud run has no GH_TOKEN/GITHUB_TOKEN — skipping signed-commit tool registration",
+      );
+      return request;
+    }
+
+    const mcpServer = buildSignedCommitMcpServer({ cwd, token, taskId });
+    return {
+      ...request,
+      mcpServers: [...(request.mcpServers ?? []), mcpServer],
     };
   }
 

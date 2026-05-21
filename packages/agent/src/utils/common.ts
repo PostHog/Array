@@ -1,3 +1,4 @@
+import { readGithubTokenFromEnv } from "@posthog/git/signed-commit";
 import type { Logger } from "./logger";
 
 /**
@@ -24,6 +25,19 @@ export const IS_ROOT =
   (process.geteuid?.() ?? process.getuid?.()) === 0;
 
 export const ALLOW_BYPASS = !IS_ROOT || !!process.env.IS_SANDBOX;
+
+/**
+ * A cloud sandbox run, as opposed to a local desktop session. Cloud sandboxes
+ * always set IS_SANDBOX and carry a taskRunId; desktop sessions have neither.
+ */
+export function isCloudRun(meta: { taskRunId?: string } | undefined): boolean {
+  return !!process.env.IS_SANDBOX || !!meta?.taskRunId;
+}
+
+/** The GitHub token available to the sandbox, if any. */
+export function resolveGithubToken(): string | undefined {
+  return readGithubTokenFromEnv();
+}
 
 export function unreachable(value: never, logger: Logger): void {
   let valueAsString: string;
