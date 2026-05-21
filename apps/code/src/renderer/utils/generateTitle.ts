@@ -55,19 +55,17 @@ export async function enrichDescriptionWithFileContent(
   description: string,
   filePaths: string[] = [],
 ): Promise<string> {
-  const content = xmlToContent(description);
-  const textOnly = content.segments
-    .filter((seg) => seg.type === "text")
-    .map((seg) => (seg.type === "text" ? seg.text : ""))
-    .join("");
-  const stripped = textOnly
+  const parsed = xmlToContent(description);
+  const stripped = parsed.segments
+    .flatMap((seg) => (seg.type === "text" ? [seg.text] : []))
+    .join("")
     .replace(ATTACHED_FILES_REGEX, "")
     .replace(/^\d+\.\s*$/gm, "")
     .trim();
 
   if (stripped.length > 0) return description;
 
-  const chipFilePaths = content.segments.flatMap((seg) =>
+  const chipFilePaths = parsed.segments.flatMap((seg) =>
     seg.type === "chip" && seg.chip.type === "file" ? [seg.chip.id] : [],
   );
   const paths = filePaths.length > 0 ? filePaths : chipFilePaths;
@@ -80,13 +78,13 @@ export async function enrichDescriptionWithFileContent(
         return `[Attached: ${getFileName(filePath)}]`;
       }
       try {
-        const content = await trpcClient.fs.readAbsoluteFile.query({
+        const fileContent = await trpcClient.fs.readAbsoluteFile.query({
           filePath,
         });
-        if (content) {
-          return content.length > PASTED_TEXT_SNIPPET_LIMIT
-            ? content.slice(0, PASTED_TEXT_SNIPPET_LIMIT)
-            : content;
+        if (fileContent) {
+          return fileContent.length > PASTED_TEXT_SNIPPET_LIMIT
+            ? fileContent.slice(0, PASTED_TEXT_SNIPPET_LIMIT)
+            : fileContent;
         }
         return `[Attached: ${getFileName(filePath)}]`;
       } catch {
