@@ -2779,7 +2779,12 @@ describe("SessionService", () => {
           type: "select",
           category: "thought_level",
           currentValue: "high",
-          options: [],
+          options: [
+            { value: "low", name: "Low" },
+            { value: "medium", name: "Medium" },
+            { value: "high", name: "High" },
+            { value: "max", name: "Max" },
+          ],
         },
       ]);
 
@@ -2793,6 +2798,8 @@ describe("SessionService", () => {
         undefined,
         "claude",
         "claude-sonnet-4-6",
+        undefined,
+        "max",
       );
 
       await vi.waitFor(() => {
@@ -2822,6 +2829,10 @@ describe("SessionService", () => {
           (o) => o.id === "model",
         ) as { currentValue?: string } | undefined;
         expect(modelOpt?.currentValue).toBe("claude-sonnet-4-6");
+        const effortOpt = modelUpdate?.[1].configOptions?.find(
+          (o) => o.id === "effort",
+        ) as { currentValue?: string } | undefined;
+        expect(effortOpt?.currentValue).toBe("max");
       });
     });
 

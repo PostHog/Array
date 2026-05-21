@@ -2534,6 +2534,7 @@ export class SessionService {
     apiHost: string,
     adapter: Adapter,
     initialModel?: string,
+    initialReasoningEffort?: string,
   ): Promise<void> {
     const cacheKey = `${apiHost}::${adapter}`;
     let pending = this.previewConfigOptionsCache.get(cacheKey);
@@ -2566,6 +2567,16 @@ export class SessionService {
           const flat = flattenSelectOptions(opt.options);
           if (flat.some((o) => o.value === initialModel)) {
             return { ...opt, currentValue: initialModel };
+          }
+        }
+        if (
+          opt.category === "thought_level" &&
+          opt.type === "select" &&
+          typeof initialReasoningEffort === "string"
+        ) {
+          const flat = flattenSelectOptions(opt.options);
+          if (flat.some((o) => o.value === initialReasoningEffort)) {
+            return { ...opt, currentValue: initialReasoningEffort };
           }
         }
         return opt;
@@ -2604,6 +2615,7 @@ export class SessionService {
     adapter: Adapter = "claude",
     initialModel?: string,
     taskDescription?: string,
+    initialReasoningEffort?: string,
   ): () => void {
     const taskRunId = runId;
     const existingWatcher = this.cloudTaskWatchers.get(taskId);
@@ -2640,6 +2652,7 @@ export class SessionService {
           apiHost,
           adapter,
           initialModel,
+          initialReasoningEffort,
         );
       }
       return () => {};
@@ -2713,6 +2726,7 @@ export class SessionService {
       apiHost,
       adapter,
       initialModel,
+      initialReasoningEffort,
     );
 
     if (shouldHydrateSession) {
