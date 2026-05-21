@@ -41,6 +41,7 @@ import type {
   ActionabilityJudgmentArtefact,
   ActionabilityJudgmentContent,
   PriorityJudgmentArtefact,
+  Signal,
   SignalFindingArtefact,
   SignalReport,
   SignalReportTask,
@@ -48,6 +49,7 @@ import type {
   SuggestedReviewersArtefact,
   Task,
 } from "@shared/types";
+import type { InboxReportActionProperties } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
 import { isMac } from "@utils/platform";
@@ -57,6 +59,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { toast } from "sonner";
@@ -67,6 +70,7 @@ import { SignalReportStatusBadge } from "../utils/SignalReportStatusBadge";
 import { SignalReportSummaryMarkdown } from "../utils/SignalReportSummaryMarkdown";
 import { ReportTaskLogs } from "./ReportTaskLogs";
 import { SignalCard } from "./SignalCard";
+import type { SignalInteractionAction } from "./signalInteractionContext";
 
 function isSuggestedReviewerRowMe(
   reviewer: SuggestedReviewer,
@@ -113,10 +117,12 @@ function DetailRow({
   label,
   value,
   explanation,
+  onToggleExplanation,
 }: {
   label: string;
   value: ReactNode;
   explanation?: string | null;
+  onToggleExplanation?: (expanded: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasExplanation = !!explanation;
@@ -131,7 +137,13 @@ function DetailRow({
         {hasExplanation && (
           <button
             type="button"
-            onClick={() => setExpanded((v) => !v)}
+            onClick={() => {
+              setExpanded((v) => {
+                const next = !v;
+                onToggleExplanation?.(next);
+                return next;
+              });
+            }}
             className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[13px] text-gray-9 hover:bg-gray-3 hover:text-gray-11"
           >
             {expanded ? (
@@ -163,6 +175,10 @@ interface ReportDetailPaneProps {
   onRequestDismissReport: () => void;
   suppressDisabledReason: string | null;
   isDismissMutationPending?: boolean;
+  onReportAction?: (
+    action: Omit<InboxReportActionProperties, "rank" | "list_size">,
+  ) => void;
+  onScroll?: () => void;
 }
 
 export function ReportDetailPane({
@@ -171,6 +187,8 @@ export function ReportDetailPane({
   onRequestDismissReport,
   suppressDisabledReason,
   isDismissMutationPending = false,
+  onReportAction,
+  onScroll,
 }: ReportDetailPaneProps) {
   const [discussQuestion, setDiscussQuestion] = useState("");
   const [discussQuestionOpen, setDiscussQuestionOpen] = useState(false);
@@ -277,8 +295,67 @@ export function ReportDetailPane({
       report.actionability === "immediately_actionable" &&
       report.already_addressed !== true);
 
+  // Centralized helper for detail-pane action analytics — fills boilerplate (surface, is_bulk,
+  // bulk_size) and report-scoped context (title, age) so call sites only pass action-specific extras.
+  const fireDetailAction = useCallback(
+    (
+      actionType: InboxReportActionProperties["action_type"],
+      extra?: Partial<
+        Omit<
+          InboxReportActionProperties,
+          | "report_id"
+          | "report_title"
+          | "report_age_hours"
+          | "action_type"
+          | "surface"
+          | "is_bulk"
+          | "bulk_size"
+          | "rank"
+          | "list_size"
+        >
+      >,
+    ) => {
+      const ageMs = Date.now() - new Date(report.created_at).getTime();
+      const reportAgeHours = Number.isFinite(ageMs)
+        ? Math.max(0, Math.round((ageMs / 3_600_000) * 10) / 10)
+        : 0;
+      onReportAction?.({
+        report_id: report.id,
+        report_title: report.title,
+        report_age_hours: reportAgeHours,
+        action_type: actionType,
+        surface: "detail_pane",
+        is_bulk: false,
+        bulk_size: 1,
+        ...extra,
+      });
+    },
+    [onReportAction, report.id, report.title, report.created_at],
+  );
+
+  // Build the signal-card interaction handler used by both signal lists (signals + session-problem evidence).
+  const makeSignalInteractionHandler = useCallback(
+    (signal: Signal) => (action: SignalInteractionAction) => {
+      const signalContext = {
+        signal_id: signal.signal_id,
+        signal_source_product: signal.source_product,
+        signal_source_type: signal.source_type,
+      };
+      if (action.type === "expand_signal_section") {
+        fireDetailAction(action.type, {
+          ...signalContext,
+          signal_section: action.section,
+        });
+      } else {
+        fireDetailAction(action.type, signalContext);
+      }
+    },
+    [fireDetailAction],
+  );
+
   const handleCreateImplementationTask = useCallback(() => {
     if (!canCreateImplementationPr) return;
+    fireDetailAction("create_pr");
     navigateToTaskInput({
       initialPrompt: `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`,
       initialCloudRepository: effectiveCloudRepository ?? undefined,
@@ -292,6 +369,7 @@ export function ReportDetailPane({
     navigateToTaskInput,
     effectiveCloudRepository,
     report,
+    fireDetailAction,
   ]);
 
   const handleDiscussReport = useCallback(
@@ -323,6 +401,28 @@ export function ReportDetailPane({
     },
     [discussQuestion, handleDiscussReport],
   );
+
+  // Bind native scroll listener to the Radix ScrollArea viewport (Radix doesn't forward onScroll).
+  // The viewport's data-report-id attribute is set from report.id so we both (a) track the
+  // current report in the DOM for debugging and (b) give biome's useExhaustiveDependencies
+  // a real reactive use of report.id, ensuring the effect re-binds on every report swap.
+  const scrollAreaRootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!onScroll) return;
+    const root = scrollAreaRootRef.current;
+    if (!root) return;
+    const viewport = root.querySelector<HTMLElement>(
+      "[data-radix-scroll-area-viewport]",
+    );
+    if (!viewport) return;
+    viewport.dataset.reportId = report.id;
+    const handler = () => onScroll();
+    viewport.addEventListener("scroll", handler, { passive: true });
+    return () => {
+      viewport.removeEventListener("scroll", handler);
+      delete viewport.dataset.reportId;
+    };
+  }, [onScroll, report.id]);
 
   useEffect(() => {
     if (!canCreateImplementationPr) return;
@@ -376,6 +476,7 @@ export function ReportDetailPane({
                   await navigator.clipboard.writeText(
                     `${getDeeplinkProtocol(import.meta.env.DEV)}://inbox/${report.id}`,
                   );
+                  fireDetailAction("copy_link");
                   toast.success("Link copied");
                 } catch {
                   toast.error("Failed to copy link");
@@ -471,6 +572,7 @@ export function ReportDetailPane({
             <ReportImplementationPrLink
               prUrl={headerImplementationPrUrl}
               size="md"
+              onLinkClick={() => fireDetailAction("open_pr")}
             />
           ) : canCreateImplementationPr ? (
             <Tooltip
@@ -504,6 +606,7 @@ export function ReportDetailPane({
 
       {/* ── Scrollable detail area ──────────────────────────────── */}
       <ScrollArea
+        ref={scrollAreaRootRef}
         type="auto"
         scrollbars="vertical"
         className="scroll-area-constrain-width flex-1"
@@ -585,6 +688,10 @@ export function ReportDetailPane({
                     <SignalReportPriorityBadge priority={report.priority} />
                   }
                   explanation={priorityExplanation}
+                  onToggleExplanation={(expanded) => {
+                    if (!expanded) return;
+                    fireDetailAction("expand_why", { why_field: "priority" });
+                  }}
                 />
               )}
               {report.actionability && (
@@ -596,6 +703,12 @@ export function ReportDetailPane({
                     />
                   }
                   explanation={actionabilityJudgment?.explanation}
+                  onToggleExplanation={(expanded) => {
+                    if (!expanded) return;
+                    fireDetailAction("expand_why", {
+                      why_field: "actionability",
+                    });
+                  }}
                 />
               )}
             </Flex>
@@ -665,6 +778,9 @@ export function ReportDetailPane({
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex items-center gap-0.5 text-[11px] text-gray-9 hover:text-gray-11"
+                        onClick={() =>
+                          fireDetailAction("click_suggested_reviewer")
+                        }
                       >
                         @{reviewer.github_login}
                         <ArrowSquareOutIcon size={10} />
@@ -707,6 +823,7 @@ export function ReportDetailPane({
                     key={signal.signal_id}
                     signal={signal}
                     finding={signalFindings.get(signal.signal_id)}
+                    onInteraction={makeSignalInteractionHandler(signal)}
                   />
                 ))}
               </Flex>
@@ -730,6 +847,7 @@ export function ReportDetailPane({
                     key={signal.signal_id}
                     signal={signal}
                     finding={signalFindings.get(signal.signal_id)}
+                    onInteraction={makeSignalInteractionHandler(signal)}
                   />
                 ))}
               </Flex>
@@ -743,6 +861,9 @@ export function ReportDetailPane({
         key={report.id}
         reportId={report.id}
         reportStatus={report.status}
+        onSectionExpand={(section) =>
+          fireDetailAction("expand_task_section", { task_section: section })
+        }
       />
     </>
   );

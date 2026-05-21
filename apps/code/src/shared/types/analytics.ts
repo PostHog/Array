@@ -405,6 +405,104 @@ export interface SetupTaskDismissedProperties {
   total_discovered: number;
 }
 
+// Inbox events
+export type InboxReportOpenMethod =
+  | "click"
+  | "click_cmd"
+  | "click_shift"
+  | "keyboard"
+  | "deeplink"
+  | "unknown";
+
+export type InboxReportCloseMethod =
+  | "next_report"
+  | "deselected"
+  | "navigated_away"
+  | "unmount";
+
+export type InboxReportActionType =
+  | "dismiss"
+  | "snooze"
+  | "delete"
+  | "reingest"
+  | "create_pr"
+  | "open_pr"
+  | "copy_link"
+  | "expand_signal"
+  | "collapse_signal"
+  | "expand_signal_section"
+  | "view_signal_external"
+  | "expand_why"
+  | "click_suggested_reviewer"
+  | "expand_task_section"
+  | "play_session_recording";
+
+export type InboxReportActionSurface =
+  | "detail_pane"
+  | "toolbar"
+  | "keyboard"
+  | "list_row";
+
+export interface InboxViewedProperties {
+  report_count: number;
+  total_count: number;
+  ready_count: number;
+  has_active_filters: boolean;
+  source_product_filter: string[];
+  status_filter_count: number;
+  is_empty: boolean;
+}
+
+export interface InboxReportOpenedProperties {
+  report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
+  status: string | null;
+  priority: string | null;
+  source_products: string[];
+  rank: number;
+  list_size: number;
+  open_method: InboxReportOpenMethod;
+  previous_report_id: string | null;
+}
+
+export interface InboxReportClosedProperties {
+  report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
+  time_spent_ms: number;
+  scrolled: boolean;
+  close_method: InboxReportCloseMethod;
+}
+
+export interface InboxReportScrolledProperties {
+  report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
+  rank: number;
+  list_size: number;
+  time_since_open_ms: number;
+}
+
+export interface InboxReportActionProperties {
+  report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
+  action_type: InboxReportActionType;
+  surface: InboxReportActionSurface;
+  is_bulk: boolean;
+  bulk_size: number;
+  rank: number;
+  list_size: number;
+  dismissal_reason?: string;
+  signal_id?: string;
+  signal_source_product?: string;
+  signal_source_type?: string;
+  signal_section?: "relevant_code" | "data_queried";
+  why_field?: "priority" | "actionability";
+  task_section?: "research" | "implementation";
+}
+
 // Subscription / billing events
 export interface SubscriptionStartedProperties {
   plan_key: string;
@@ -499,7 +597,6 @@ export const ANALYTICS_EVENTS = {
   ONBOARDING_ABANDONED: "Onboarding abandoned",
   AI_CONSENT_GATE_SHOWN: "Ai consent gate shown",
   AI_CONSENT_APPROVED: "Ai consent approved",
-  INBOX_VIEWED: "Inbox viewed",
 
   // Setup / onboarding events
   SETUP_DISCOVERY_STARTED: "Setup discovery started",
@@ -514,6 +611,11 @@ export const ANALYTICS_EVENTS = {
 
   // Inbox events
   INBOX_INTEREST_REGISTERED: "Inbox interest registered",
+  INBOX_VIEWED: "Inbox viewed",
+  INBOX_REPORT_OPENED: "Inbox report opened",
+  INBOX_REPORT_CLOSED: "Inbox report closed",
+  INBOX_REPORT_ACTION: "Inbox report action",
+  INBOX_REPORT_SCROLLED: "Inbox report scrolled",
 
   // Prompt history events
   PROMPT_HISTORY_OPENED: "Prompt history opened",
@@ -601,7 +703,6 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.ONBOARDING_ABANDONED]: OnboardingAbandonedProperties;
   [ANALYTICS_EVENTS.AI_CONSENT_GATE_SHOWN]: AiConsentGateShownProperties;
   [ANALYTICS_EVENTS.AI_CONSENT_APPROVED]: never;
-  [ANALYTICS_EVENTS.INBOX_VIEWED]: never;
 
   // Setup / onboarding events
   [ANALYTICS_EVENTS.SETUP_DISCOVERY_STARTED]: SetupDiscoveryStartedProperties;
@@ -616,6 +717,11 @@ export type EventPropertyMap = {
 
   // Inbox events
   [ANALYTICS_EVENTS.INBOX_INTEREST_REGISTERED]: never;
+  [ANALYTICS_EVENTS.INBOX_VIEWED]: InboxViewedProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_OPENED]: InboxReportOpenedProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
 
   // Prompt history events
   [ANALYTICS_EVENTS.PROMPT_HISTORY_OPENED]: PromptHistoryOpenedProperties;

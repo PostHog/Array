@@ -13,6 +13,7 @@ import {
   useInboxBulkActions,
 } from "@features/inbox/hooks/useInboxBulkActions";
 import { useInboxDeepLinkListSync } from "@features/inbox/hooks/useInboxDeepLinkListSync";
+import { useInboxEngagementTracker } from "@features/inbox/hooks/useInboxEngagementTracker";
 import {
   useInboxAvailableSuggestedReviewers,
   useInboxReportsInfinite,
@@ -31,6 +32,7 @@ import {
   isReportUpForReview,
 } from "@features/inbox/utils/filterReports";
 import { INBOX_REFETCH_INTERVAL_MS } from "@features/inbox/utils/inboxConstants";
+import { setPendingInboxOpenMethod } from "@features/inbox/utils/pendingInboxOpenMethod";
 import { DiscoveredTaskDetailPane } from "@features/setup/components/DiscoveredTaskDetailPane";
 import { RecommendedSetupTasks } from "@features/setup/components/RecommendedSetupTasks";
 import { useSetupStore } from "@features/setup/stores/setupStore";
@@ -41,8 +43,10 @@ import {
 import { Box, Flex, ScrollArea } from "@radix-ui/themes";
 import { isDismissalReasonSnooze } from "@shared/dismissalReasons";
 import type { SignalReport, SignalReportsQueryParams } from "@shared/types";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
+import { track } from "@utils/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DismissReportDialog,
@@ -237,6 +241,9 @@ export function InboxSignalsTab() {
   const clearSelection = useInboxReportSelectionStore((s) => s.clearSelection);
 
   const [dismissReport, setDismissReport] = useState<SignalReport | null>(null);
+  const [dismissDialogSurface, setDismissDialogSurface] = useState<
+    "toolbar" | "detail_pane"
+  >("detail_pane");
 
   const dismissTargetId = dismissReport?.id ?? null;
   const dismissBulkActions = useInboxBulkActions(allReports, dismissTargetId);
@@ -245,30 +252,83 @@ export function InboxSignalsTab() {
     if (!open) setDismissReport(null);
   }, []);
 
-  const handleDismissConfirm = useCallback(
-    async (result: DismissReportDialogResult) => {
-      if (dismissTargetId == null) return;
-      const ok = isDismissalReasonSnooze(result.reason)
-        ? await dismissBulkActions.snoozeSelected()
-        : await dismissBulkActions.suppressSelected(result);
-      if (ok) {
-        setDismissReport(null);
-      }
-    },
-    [dismissBulkActions, dismissTargetId],
-  );
-
   const { selectedReport } = useInboxDeepLinkListSync({
     reports,
     inboxPollingActive,
   });
 
+  const tracker = useInboxEngagementTracker({
+    currentReportId:
+      selectedReportIds.length === 1 ? selectedReportIds[0] : null,
+    currentReport: selectedReport,
+    reports,
+    isInboxView,
+  });
+
+  const handleDismissConfirm = useCallback(
+    async (result: DismissReportDialogResult) => {
+      if (dismissTargetId == null) return;
+      // Snapshot the visible list + report shape before the mutation — by the time it
+      // resolves the inbox query has been invalidated and the report we just dismissed
+      // is gone, so an after-the-fact lookup would record rank: -1 + a smaller list_size.
+      const preMutationRank = reports.findIndex(
+        (r) => r.id === dismissTargetId,
+      );
+      const preMutationListSize = reports.length;
+      const target = allReports.find((r) => r.id === dismissTargetId);
+      const ageMs = target
+        ? Date.now() - new Date(target.created_at).getTime()
+        : Number.NaN;
+      const reportAgeHours = Number.isFinite(ageMs)
+        ? Math.max(0, Math.round((ageMs / 3_600_000) * 10) / 10)
+        : 0;
+
+      const isSnooze = isDismissalReasonSnooze(result.reason);
+      const ok = isSnooze
+        ? await dismissBulkActions.snoozeSelected()
+        : await dismissBulkActions.suppressSelected(result);
+      if (ok) {
+        tracker.signalAction({
+          report_id: dismissTargetId,
+          report_title: target?.title ?? null,
+          report_age_hours: reportAgeHours,
+          action_type: isSnooze ? "snooze" : "dismiss",
+          surface: dismissDialogSurface,
+          is_bulk: false,
+          bulk_size: 1,
+          rank: preMutationRank,
+          list_size: preMutationListSize,
+          ...(isSnooze ? {} : { dismissal_reason: result.reason }),
+        });
+        setDismissReport(null);
+      }
+    },
+    [
+      dismissBulkActions,
+      dismissTargetId,
+      dismissDialogSurface,
+      tracker,
+      allReports,
+      reports,
+    ],
+  );
+
   const openDismissDialogFromToolbar = useCallback(() => {
     if (selectedReportIds.length !== 1) return;
     const id = selectedReportIds[0];
     const report = allReports.find((r) => r.id === id);
-    if (report) setDismissReport(report);
+    if (report) {
+      setDismissDialogSurface("toolbar");
+      setDismissReport(report);
+    }
   }, [selectedReportIds, allReports]);
+
+  const openDismissDialogFromDetailPane = useCallback(() => {
+    if (selectedReport) {
+      setDismissDialogSurface("detail_pane");
+      setDismissReport(selectedReport);
+    }
+  }, [selectedReport]);
 
   const dismissMutationPending =
     dismissReport != null &&
@@ -294,14 +354,17 @@ export function InboxSignalsTab() {
       // detail pane can swap to the report.
       useSetupStore.getState().selectDiscoveredTask(null);
       if (event.shiftKey) {
+        setPendingInboxOpenMethod("click_shift");
         selectRange(
           reportId,
           reportsRef.current.map((r) => r.id),
         );
       } else if (event.metaKey) {
+        setPendingInboxOpenMethod("click_cmd");
         toggleReportSelection(reportId);
       } else {
         // Plain click — select only this report (no-op if already the sole selection)
+        setPendingInboxOpenMethod("click");
         setSelectedReportIds([reportId]);
       }
     },
@@ -412,6 +475,36 @@ export function InboxSignalsTab() {
   }
   const showTwoPaneLayout = hasMountedTwoPaneRef.current;
 
+  // ── Inbox viewed analytics — fire once per visit when data settles ─────
+  const inboxViewedFiredRef = useRef(false);
+  useEffect(() => {
+    if (!isInboxView) {
+      inboxViewedFiredRef.current = false;
+      return;
+    }
+    if (isLoading) return;
+    if (inboxViewedFiredRef.current) return;
+    inboxViewedFiredRef.current = true;
+    track(ANALYTICS_EVENTS.INBOX_VIEWED, {
+      report_count: reports.length,
+      total_count: totalCount,
+      ready_count: readyCount,
+      has_active_filters: hasActiveFilters,
+      source_product_filter: sourceProductFilter,
+      status_filter_count: statusFilter.length,
+      is_empty: totalCount === 0,
+    });
+  }, [
+    isInboxView,
+    isLoading,
+    reports.length,
+    totalCount,
+    readyCount,
+    hasActiveFilters,
+    sourceProductFilter,
+    statusFilter.length,
+  ]);
+
   // ── Arrow-key navigation between reports ──────────────────────────────
   const leftPaneRef = useRef<HTMLDivElement>(null);
 
@@ -461,6 +554,7 @@ export function InboxSignalsTab() {
         // so reversing direction correctly contracts the selection.
         const anchor =
           useInboxReportSelectionStore.getState().lastClickedId ?? nextId;
+        setPendingInboxOpenMethod("keyboard");
         selectExactRange(
           anchor,
           nextId,
@@ -468,6 +562,7 @@ export function InboxSignalsTab() {
         );
         keyboardCursorIdRef.current = nextId;
       } else {
+        setPendingInboxOpenMethod("keyboard");
         setSelectedReportIds([nextId]);
         keyboardCursorIdRef.current = nextId;
       }
@@ -605,6 +700,7 @@ export function InboxSignalsTab() {
                     onConfigureSources={() => setSourcesDialogOpen(true)}
                     onOpenDismissDialog={openDismissDialogFromToolbar}
                     isDismissMutationPending={dismissMutationPending}
+                    onReportAction={tracker.signalAction}
                   />
                 </Box>
                 <RecommendedSetupTasks
@@ -656,12 +752,14 @@ export function InboxSignalsTab() {
               <ReportDetailPane
                 report={selectedReport}
                 onClose={clearSelection}
-                onRequestDismissReport={() => setDismissReport(selectedReport)}
+                onRequestDismissReport={openDismissDialogFromDetailPane}
                 suppressDisabledReason={inboxBulkSuppressDisabledReason(
                   allReports,
                   [selectedReport.id],
                 )}
                 isDismissMutationPending={dismissMutationPending}
+                onReportAction={tracker.signalAction}
+                onScroll={tracker.signalScroll}
               />
             ) : selectedDiscoveredTask ? (
               <DiscoveredTaskDetailPane
