@@ -14,6 +14,14 @@ const log = logger.scope("analytics");
 
 let isInitialized = false;
 
+type PendingFlagListener = {
+  callback: () => void;
+  unsubscribe: (() => void) | null;
+};
+
+// Subscribers added before initializePostHog runs.
+const pendingFlagListeners = new Set<PendingFlagListener>();
+
 export function initializePostHog() {
   const apiKey = import.meta.env.VITE_POSTHOG_API_KEY;
   const apiHost =
@@ -44,6 +52,11 @@ export function initializePostHog() {
   posthog.register({ team: "posthog-code" });
 
   isInitialized = true;
+
+  for (const listener of pendingFlagListeners) {
+    listener.unsubscribe = posthog.onFeatureFlags(listener.callback);
+  }
+  pendingFlagListeners.clear();
 }
 
 /**
@@ -212,11 +225,19 @@ export function isFeatureFlagEnabled(flagKey: string): boolean {
  * Returns unsubscribe function.
  */
 export function onFeatureFlagsLoaded(callback: () => void): () => void {
-  if (!isInitialized) {
-    return () => {};
+  if (isInitialized) {
+    return posthog.onFeatureFlags(callback);
   }
 
-  return posthog.onFeatureFlags(callback);
+  const listener: PendingFlagListener = { callback, unsubscribe: null };
+  pendingFlagListeners.add(listener);
+  return () => {
+    if (listener.unsubscribe) {
+      listener.unsubscribe();
+    } else {
+      pendingFlagListeners.delete(listener);
+    }
+  };
 }
 
 /**

@@ -13,7 +13,12 @@ import {
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import type { Signal, SignalFindingContent } from "@shared/types";
 import { errorTrackingIssueUrl } from "@utils/posthogLinks";
-import { useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  type SignalInteractionAction,
+  SignalInteractionContext,
+  useSignalInteraction,
+} from "./signalInteractionContext";
 
 const COLLAPSE_THRESHOLD = 300;
 
@@ -273,6 +278,7 @@ function SignalCardHeader({
 
 function CollapsibleBody({ body }: { body: string }) {
   const [expanded, setExpanded] = useState(false);
+  const interaction = useSignalInteraction();
   const isLong = body.length > COLLAPSE_THRESHOLD;
   // Preprocess content to handle escaped backticks and ensure proper markdown parsing
   const processedBody = body
@@ -289,7 +295,15 @@ function CollapsibleBody({ body }: { body: string }) {
       {isLong && (
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => {
+            setExpanded((v) => {
+              const next = !v;
+              interaction?.onInteraction({
+                type: next ? "expand_signal" : "collapse_signal",
+              });
+              return next;
+            });
+          }}
           className="mt-1.5 flex items-center gap-1 rounded px-1 py-0.5 font-medium text-[12px] text-accent-11 hover:bg-accent-3 hover:text-accent-12"
         >
           {expanded ? (
@@ -670,6 +684,8 @@ function SessionRecordingVideo({
 }) {
   const projectId = useAuthStateValue((state) => state.projectId);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const hasFiredPlayRef = useRef(false);
+  const interaction = useSignalInteraction();
   const videoQuery = useAuthenticatedQuery<string | null>(
     ["export-video", projectId, exportedAssetId, sessionId],
     async (client) => {
@@ -709,6 +725,11 @@ function SessionRecordingVideo({
         muted
         preload="metadata"
         className="max-h-[300px] w-full rounded"
+        onPlay={() => {
+          if (hasFiredPlayRef.current) return;
+          hasFiredPlayRef.current = true;
+          interaction?.onInteraction({ type: "play_session_recording" });
+        }}
       />
     </Box>
   );
@@ -782,6 +803,7 @@ function GenericSignalCard({
 
 function CodePathsCollapsible({ paths }: { paths: string[] }) {
   const [expanded, setExpanded] = useState(false);
+  const interaction = useSignalInteraction();
 
   if (paths.length === 0) return null;
 
@@ -789,7 +811,18 @@ function CodePathsCollapsible({ paths }: { paths: string[] }) {
     <Box mt="2" pt="2" className="border-t border-t-(--gray-5)">
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => {
+          setExpanded((v) => {
+            const next = !v;
+            if (next) {
+              interaction?.onInteraction({
+                type: "expand_signal_section",
+                section: "relevant_code",
+              });
+            }
+            return next;
+          });
+        }}
         className="flex items-center gap-1 rounded px-1 py-0.5 font-medium text-[12px] text-gray-10 hover:bg-gray-3 hover:text-gray-12"
       >
         {expanded ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
@@ -820,6 +853,7 @@ function CodePathsCollapsible({ paths }: { paths: string[] }) {
 
 function DataQueriedCollapsible({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
+  const interaction = useSignalInteraction();
 
   if (!text.trim()) return null;
 
@@ -827,7 +861,18 @@ function DataQueriedCollapsible({ text }: { text: string }) {
     <Box mt="2" pt="2" className="border-t border-t-(--gray-5)">
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => {
+          setExpanded((v) => {
+            const next = !v;
+            if (next) {
+              interaction?.onInteraction({
+                type: "expand_signal_section",
+                section: "data_queried",
+              });
+            }
+            return next;
+          });
+        }}
         className="flex items-center gap-1 rounded px-1 py-0.5 font-medium text-[12px] text-gray-10 hover:bg-gray-3 hover:text-gray-12"
       >
         {expanded ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
@@ -850,21 +895,49 @@ function DataQueriedCollapsible({ text }: { text: string }) {
 export function SignalCard({
   signal,
   finding,
+  onInteraction,
 }: {
   signal: Signal;
   finding?: SignalFindingContent;
+  onInteraction?: (action: SignalInteractionAction) => void;
 }) {
   const extra = parseExtra(signal.extra);
   const verified = finding?.verified;
   const codePaths = finding?.relevant_code_paths ?? [];
   const dataQueried = finding?.data_queried ?? "";
 
+  const handleInteraction = useCallback(
+    (action: SignalInteractionAction) => {
+      onInteraction?.(action);
+    },
+    [onInteraction],
+  );
+
+  const ctxValue = useMemo(
+    () => ({ signal, onInteraction: handleInteraction }),
+    [signal, handleInteraction],
+  );
+
+  // Delegated click handler: detect external-link clicks anywhere inside the card.
+  const handleCardClickCapture = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      const anchor = target.closest("a");
+      if (!anchor) return;
+      if (anchor.getAttribute("target") !== "_blank") return;
+      handleInteraction({ type: "view_signal_external" });
+    },
+    [handleInteraction],
+  );
+
+  let content: React.ReactNode;
   if (
     signal.source_product === "session_replay" &&
     signal.source_type === "session_problem" &&
     isSessionProblemExtra(extra)
   ) {
-    return (
+    content = (
       <SessionProblemSignalCard
         signal={signal}
         extra={extra}
@@ -873,12 +946,11 @@ export function SignalCard({
         dataQueried={dataQueried}
       />
     );
-  }
-  if (
+  } else if (
     signal.source_product === "error_tracking" &&
     isErrorTrackingExtra(extra)
   ) {
-    return (
+    content = (
       <ErrorTrackingSignalCard
         signal={signal}
         verified={verified}
@@ -886,9 +958,8 @@ export function SignalCard({
         dataQueried={dataQueried}
       />
     );
-  }
-  if (signal.source_product === "github" && isGithubIssueExtra(extra)) {
-    return (
+  } else if (signal.source_product === "github" && isGithubIssueExtra(extra)) {
+    content = (
       <GitHubIssueSignalCard
         signal={signal}
         extra={extra}
@@ -897,9 +968,11 @@ export function SignalCard({
         dataQueried={dataQueried}
       />
     );
-  }
-  if (signal.source_product === "zendesk" && isZendeskTicketExtra(extra)) {
-    return (
+  } else if (
+    signal.source_product === "zendesk" &&
+    isZendeskTicketExtra(extra)
+  ) {
+    content = (
       <ZendeskTicketSignalCard
         signal={signal}
         extra={extra}
@@ -908,9 +981,11 @@ export function SignalCard({
         dataQueried={dataQueried}
       />
     );
-  }
-  if (signal.source_product === "llm_analytics" && isLlmEvalExtra(extra)) {
-    return (
+  } else if (
+    signal.source_product === "llm_analytics" &&
+    isLlmEvalExtra(extra)
+  ) {
+    content = (
       <LlmEvalSignalCard
         signal={signal}
         extra={extra}
@@ -919,12 +994,19 @@ export function SignalCard({
         dataQueried={dataQueried}
       />
     );
+  } else {
+    content = (
+      <GenericSignalCard
+        signal={signal}
+        verified={verified}
+        codePaths={codePaths}
+      />
+    );
   }
+
   return (
-    <GenericSignalCard
-      signal={signal}
-      verified={verified}
-      codePaths={codePaths}
-    />
+    <SignalInteractionContext.Provider value={ctxValue}>
+      <div onClickCapture={handleCardClickCapture}>{content}</div>
+    </SignalInteractionContext.Provider>
   );
 }

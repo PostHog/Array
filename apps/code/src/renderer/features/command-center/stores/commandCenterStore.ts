@@ -33,6 +33,7 @@ interface CommandCenterStoreActions {
   setActiveTask: (taskId: string | null) => void;
   setActiveCell: (cellIndex: number | null) => void;
   assignTask: (cellIndex: number, taskId: string) => void;
+  autofillCells: (taskIds: string[]) => void;
   removeTask: (cellIndex: number) => void;
   removeTaskById: (taskId: string) => void;
   clearAll: () => void;
@@ -42,6 +43,15 @@ interface CommandCenterStoreActions {
   startCreating: (cellIndex: number) => void;
   stopCreating: (cellIndex: number) => void;
 }
+
+export const COMMAND_CENTER_INITIAL_STATE: CommandCenterStoreState = {
+  layout: "2x2",
+  cells: [null, null, null, null],
+  activeTaskId: null,
+  activeCellIndex: null,
+  zoom: 1,
+  creatingCells: [],
+};
 
 type CommandCenterStore = CommandCenterStoreState & CommandCenterStoreActions;
 
@@ -69,12 +79,7 @@ export function getCellSessionId(cellIndex: number): string {
 export const useCommandCenterStore = create<CommandCenterStore>()(
   persist(
     (set) => ({
-      layout: "2x2",
-      cells: [null, null, null, null],
-      activeTaskId: null,
-      activeCellIndex: null,
-      zoom: 1,
-      creatingCells: [],
+      ...COMMAND_CENTER_INITIAL_STATE,
 
       setLayout: (preset) =>
         set((state) => {
@@ -113,6 +118,20 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
             activeTaskId: taskId,
             creatingCells: state.creatingCells.filter((i) => i !== cellIndex),
           };
+        }),
+
+      autofillCells: (taskIds) =>
+        set((state) => {
+          if (taskIds.length === 0) return state;
+          if (state.cells.every((id) => id != null)) return state;
+          const cells: (string | null)[] = [...state.cells];
+          const queue = [...taskIds];
+          for (let i = 0; i < cells.length && queue.length > 0; i++) {
+            if (cells[i] == null) {
+              cells[i] = queue.shift() as string;
+            }
+          }
+          return { cells };
         }),
 
       removeTask: (cellIndex) =>

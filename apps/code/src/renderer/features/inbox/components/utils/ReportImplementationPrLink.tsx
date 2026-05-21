@@ -9,6 +9,8 @@ interface ReportImplementationPrLinkProps {
   prUrl: string;
   /** `sm`: inbox list row. `md`: report detail header or implementation task bar. */
   size?: ImplementationPrLinkSize;
+  /** Optional analytics callback fired when the PR link is clicked. */
+  onLinkClick?: () => void;
 }
 
 function parseGitHubPrReference(prUrl: string): {
@@ -41,6 +43,7 @@ function parseGitHubPrReference(prUrl: string): {
 export function ReportImplementationPrLink({
   prUrl,
   size = "sm",
+  onLinkClick,
 }: ReportImplementationPrLinkProps) {
   const {
     meta: { state, merged, isLoading },
@@ -72,7 +75,10 @@ export function ReportImplementationPrLink({
         href={prUrl}
         target="_blank"
         rel="noreferrer"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onLinkClick?.();
+        }}
         className={cn(
           "inline-flex shrink-0 items-center rounded-full font-medium",
           isSm

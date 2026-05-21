@@ -1,4 +1,7 @@
-import { execFile } from "node:child_process";
+// Namespace import (not `{ execFile }`) so modules that transitively reach this
+// file stay bundle-safe for the renderer's browser build, where node builtins
+// resolve to vite's `__vite-browser-external` stub (no named exports).
+import * as childProcess from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -98,7 +101,7 @@ function execFileAsync(
   args: string[],
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    execFile(command, args, (error, stdout, stderr) => {
+    childProcess.execFile(command, args, (error, stdout, stderr) => {
       if (error) {
         reject(error);
         return;

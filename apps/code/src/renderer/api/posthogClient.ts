@@ -1,3 +1,4 @@
+import type { SpendAnalysisResponse } from "@features/billing/types/spend-analysis";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type { PermissionMode } from "@posthog/agent/execution-mode";
 import {
@@ -2854,5 +2855,36 @@ export class PostHogAPIClient {
     if (!response.ok) return null;
     const blob = await response.blob();
     return URL.createObjectURL(blob);
+  }
+
+  /**
+   * Fetch the requesting user's personal LLM spend analysis. `dateFrom` / `dateTo`
+   * accept absolute dates (`2026-04-23`) or relative strings (`-7d`, `-1m`), and
+   * default to the last 30 days. When `product` is set the tool / model / trace
+   * breakdowns are scoped to that `ai_product` (e.g. `posthog_code`); when omitted
+   * they aggregate across every product.
+   */
+  async getPersonalSpendAnalysis(
+    options: { dateFrom?: string; dateTo?: string; product?: string } = {},
+  ): Promise<SpendAnalysisResponse> {
+    const { dateFrom = "-30d", dateTo, product } = options;
+    const urlPath = `/api/llm_analytics/@me/spend/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    url.searchParams.set("date_from", dateFrom);
+    if (dateTo) {
+      url.searchParams.set("date_to", dateTo);
+    }
+    if (product) {
+      url.searchParams.set("product", product);
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch spend analysis: ${response.status}`);
+    }
+    return (await response.json()) as SpendAnalysisResponse;
   }
 }

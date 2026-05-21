@@ -131,11 +131,13 @@ interface Bar {
 interface ReportTaskLogsProps {
   reportId: string;
   reportStatus: SignalReportStatus;
+  onSectionExpand?: (section: "research" | "implementation") => void;
 }
 
 export function ReportTaskLogs({
   reportId,
   reportStatus,
+  onSectionExpand,
 }: ReportTaskLogsProps) {
   const { data, isLoading } = useReportTasks(reportId, reportStatus);
   const [expanded, setExpanded] = useState<Relationship | null>(null);
@@ -268,9 +270,16 @@ export function ReportTaskLogs({
               .join(" ");
 
             const toggleExpand = () =>
-              setExpanded((curr) =>
-                curr === relationship ? null : relationship,
-              );
+              setExpanded((curr) => {
+                const next = curr === relationship ? null : relationship;
+                if (
+                  next !== null &&
+                  (next === "research" || next === "implementation")
+                ) {
+                  onSectionExpand?.(next);
+                }
+                return next;
+              });
 
             const rowInner = (
               <>

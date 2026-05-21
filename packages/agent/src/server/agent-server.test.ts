@@ -900,10 +900,8 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain(
         "gh pr checkout https://github.com/org/repo/pull/1",
       );
-      expect(prompt).toContain(
-        "Stage and commit all changes with a clear commit message",
-      );
-      expect(prompt).toContain("Push to the existing PR branch");
+      expect(prompt).toContain("git_signed_commit");
+      expect(prompt).toContain("Committing (signed commits required)");
       expect(prompt).not.toContain("Create a draft pull request");
       // Review-comment thread handling: reply + resolve
       expect(prompt).toContain("review thread");
