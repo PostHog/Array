@@ -16,7 +16,10 @@ import { Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CommandCenterCellData } from "../hooks/useCommandCenterData";
+import type {
+  CellStatus,
+  CommandCenterCellData,
+} from "../hooks/useCommandCenterData";
 import {
   getCellSessionId,
   useCommandCenterStore,
@@ -39,12 +42,20 @@ const environmentConfig: Record<
   cloud: { label: "Cloud", icon: Cloud },
 };
 
-function CellStatusIcon({
+const STATUS_LABEL: Record<CellStatus, string | null> = {
+  running: "Running",
+  waiting: "Waiting",
+  idle: "Idle",
+  completed: "Completed",
+  error: null,
+};
+
+function CellStatusBadge({
   cell,
 }: {
   cell: CommandCenterCellData & { task: Task };
 }) {
-  const { task, session, workspaceMode } = cell;
+  const { task, session, workspaceMode, status } = cell;
   const isCloud = workspaceMode === "cloud";
   const cloudPrUrl = useCloudPrUrl(task.id);
   const { prState, hasDiff } = useTaskPrStatus({
@@ -53,12 +64,15 @@ function CellStatusIcon({
     taskRunEnvironment: task.latest_run?.environment,
   });
 
+  const label = STATUS_LABEL[status];
+  if (label === null) return null;
+
   const taskRunStatus = isCloud
     ? (session?.cloudStatus ?? task.latest_run?.status ?? undefined)
     : undefined;
 
   return (
-    <span className="flex h-5 w-5 items-center justify-center text-gray-11">
+    <span className="inline-flex items-center gap-1 rounded-full bg-gray-3 px-1.5 py-0.5 text-[11px] text-gray-11">
       <TaskIcon
         workspaceMode={workspaceMode ?? undefined}
         isGenerating={session?.isPromptPending}
@@ -67,6 +81,7 @@ function CellStatusIcon({
         prState={prState}
         hasDiff={hasDiff}
       />
+      {label}
     </span>
   );
 }
@@ -205,7 +220,7 @@ function PopulatedCell({
           {cell.task.title}
         </Text>
         <Flex align="center" gap="1" className="shrink-0">
-          <CellStatusIcon cell={cell} />
+          <CellStatusBadge cell={cell} />
           <EnvironmentBadge mode={cell.workspaceMode} />
           {cell.repoName && (
             <span className="rounded bg-gray-3 px-1 py-0.5 text-[9px] text-gray-10">
