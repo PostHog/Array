@@ -28,29 +28,19 @@ describe("commandCenterStore", () => {
         expectedCells: ["t1", "t2", null, null],
       },
       {
+        name: "ignores empty task list",
+        input: [],
+        expectedCells: [null, null, null, null],
+      },
+      {
         name: "caps fill at the number of cells",
         input: ["t1", "t2", "t3", "t4", "t5", "t6"],
         expectedCells: ["t1", "t2", "t3", "t4"],
       },
-    ])(
-      "$name, marks autofilled, leaves activeTaskId null",
-      ({ input, expectedCells }) => {
-        useCommandCenterStore.getState().autofillCells(input);
-        expect(useCommandCenterStore.getState().cells).toEqual(expectedCells);
-        expect(useCommandCenterStore.getState().activeTaskId).toBeNull();
-        expect(useCommandCenterStore.getState().hasAutofilled).toBe(true);
-      },
-    );
-
-    it("ignores empty task list and leaves hasAutofilled false so we can retry later", () => {
-      useCommandCenterStore.getState().autofillCells([]);
-      expect(useCommandCenterStore.getState().cells).toEqual([
-        null,
-        null,
-        null,
-        null,
-      ]);
-      expect(useCommandCenterStore.getState().hasAutofilled).toBe(false);
+    ])("$name and leaves activeTaskId null", ({ input, expectedCells }) => {
+      useCommandCenterStore.getState().autofillCells(input);
+      expect(useCommandCenterStore.getState().cells).toEqual(expectedCells);
+      expect(useCommandCenterStore.getState().activeTaskId).toBeNull();
     });
 
     it("does nothing when any cell is already populated", () => {
@@ -59,21 +49,6 @@ describe("commandCenterStore", () => {
       expect(useCommandCenterStore.getState().cells).toEqual([
         null,
         "existing",
-        null,
-        null,
-      ]);
-      expect(useCommandCenterStore.getState().hasAutofilled).toBe(false);
-    });
-  });
-
-  describe("markAutofilled", () => {
-    it("sets hasAutofilled to true without touching cells", () => {
-      useCommandCenterStore.setState({ cells: ["x", null, null, null] });
-      useCommandCenterStore.getState().markAutofilled();
-      expect(useCommandCenterStore.getState().hasAutofilled).toBe(true);
-      expect(useCommandCenterStore.getState().cells).toEqual([
-        "x",
-        null,
         null,
         null,
       ]);

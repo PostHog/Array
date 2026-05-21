@@ -102,7 +102,6 @@ describe("useAutofillCommandCenter", () => {
       null,
       null,
     ]);
-    expect(useCommandCenterStore.getState().hasAutofilled).toBe(false);
   });
 
   it("does nothing when workspaces are not fetched", () => {
@@ -114,10 +113,9 @@ describe("useAutofillCommandCenter", () => {
       null,
       null,
     ]);
-    expect(useCommandCenterStore.getState().hasAutofilled).toBe(false);
   });
 
-  it("marks autofilled without changing cells when cells are already populated", () => {
+  it("does not change cells when they are already populated", () => {
     useCommandCenterStore.setState({ cells: ["existing", null, null, null] });
     setQueries({
       tasks: [makeTask({ id: "t1" })],
@@ -130,7 +128,6 @@ describe("useAutofillCommandCenter", () => {
       null,
       null,
     ]);
-    expect(useCommandCenterStore.getState().hasAutofilled).toBe(true);
   });
 
   it("fills empty cells with recent tasks that have workspaces", () => {
@@ -148,7 +145,6 @@ describe("useAutofillCommandCenter", () => {
       null,
       null,
     ]);
-    expect(useCommandCenterStore.getState().hasAutofilled).toBe(true);
   });
 
   it("skips archived tasks", () => {
@@ -282,24 +278,8 @@ describe("useAutofillCommandCenter", () => {
     ]);
   });
 
-  it("leaves hasAutofilled false when no candidates are available", () => {
+  it("does not change cells when no candidates are available", () => {
     setQueries({ tasks: [], workspaces: {} });
-    renderHook(() => useAutofillCommandCenter());
-    expect(useCommandCenterStore.getState().cells).toEqual([
-      null,
-      null,
-      null,
-      null,
-    ]);
-    expect(useCommandCenterStore.getState().hasAutofilled).toBe(false);
-  });
-
-  it("does nothing when hasAutofilled is already true", () => {
-    useCommandCenterStore.setState({ hasAutofilled: true });
-    setQueries({
-      tasks: [makeTask({ id: "t1" })],
-      workspaces: { t1: makeWorkspace("t1") },
-    });
     renderHook(() => useAutofillCommandCenter());
     expect(useCommandCenterStore.getState().cells).toEqual([
       null,

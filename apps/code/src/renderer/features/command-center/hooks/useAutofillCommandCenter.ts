@@ -2,11 +2,12 @@ import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import type { Task } from "@shared/types";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useCommandCenterStore } from "../stores/commandCenterStore";
 
 // Window for "still in the current working session". Tasks last touched
-// within this window are eligible to autofill empty cells on first view.
+// within this window are eligible to autofill empty cells when the
+// Command Center mounts.
 const RECENT_WINDOW_MS = 2 * 60 * 60 * 1000;
 
 function getLastActivity(task: Task): number {
@@ -23,19 +24,20 @@ export function useAutofillCommandCenter(): void {
   const archivedTaskIds = useArchivedTaskIds();
 
   const cells = useCommandCenterStore((s) => s.cells);
-  const hasAutofilled = useCommandCenterStore((s) => s.hasAutofilled);
   const autofillCells = useCommandCenterStore((s) => s.autofillCells);
-  const markAutofilled = useCommandCenterStore((s) => s.markAutofilled);
+
+  // Fires at most once per mount so clearing cells in-place doesn't
+  // immediately re-populate them. Navigating away and back remounts the
+  // view and lets autofill run again with the latest recent tasks.
+  const hasRunRef = useRef(false);
 
   useEffect(() => {
-    if (hasAutofilled) return;
+    if (hasRunRef.current) return;
     if (!workspacesFetched || !workspaces) return;
     if (!tasksFetched) return;
 
-    // User already has cells assigned (manual or persisted from a prior session).
-    // Treat them as in control and don't autofill in the future.
     if (!cells.every((id) => id == null)) {
-      markAutofilled();
+      hasRunRef.current = true;
       return;
     }
 
@@ -51,13 +53,11 @@ export function useAutofillCommandCenter(): void {
       .slice(0, cells.length)
       .map((task) => task.id);
 
-    // Leave the flag false when there are no candidates so a future
-    // mount can pick up tasks that become recent later.
     if (candidates.length > 0) {
       autofillCells(candidates);
     }
+    hasRunRef.current = true;
   }, [
-    hasAutofilled,
     cells,
     workspaces,
     workspacesFetched,
@@ -65,6 +65,5 @@ export function useAutofillCommandCenter(): void {
     tasksFetched,
     archivedTaskIds,
     autofillCells,
-    markAutofilled,
   ]);
 }
