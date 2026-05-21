@@ -65,8 +65,12 @@ import {
 } from "../../utils/streams";
 import { BaseAcpAgent, type BaseSession } from "../base-acp-agent";
 import { classifyAgentError } from "../error-classification";
+import {
+  enabledLocalTools,
+  LOCAL_TOOLS_MCP_NAME,
+  type LocalToolCtx,
+} from "../local-tools";
 import { resolveTaskId } from "../session-meta";
-import { SIGNED_COMMIT_MCP_NAME } from "../signed-commit-shared";
 import { createCodexClient } from "./codex-client";
 import { normalizeCodexConfigOptions } from "./models";
 import {
@@ -227,32 +231,37 @@ function buildStructuredOutputMcpServer(
 }
 
 /**
- * Builds the stdio MCP server config exposing `git_signed_commit`. Context
- * (cwd, taskId, token) is passed base64-encoded so the child can call the same
- * signed-commit core the Claude adapter uses in-process.
+ * Builds the stdio MCP server config exposing the enabled local tools. Context
+ * (cwd, taskId, token) and the enabled tool names are passed base64/CSV-encoded
+ * so the child registers the same tools the Claude adapter exposes in-process.
  */
-function buildSignedCommitMcpServer(ctx: {
-  cwd: string;
-  token: string;
-  taskId?: string;
-}): McpServerStdio {
+function buildLocalToolsMcpServer(
+  ctx: LocalToolCtx,
+  enabledNames: string[],
+): McpServerStdio {
   const scriptPath = resolveBundledMcpScript(
-    "adapters/codex/signed-commit-mcp-server.js",
+    "adapters/codex/local-tools-mcp-server.js",
   );
   const ctxBase64 = Buffer.from(JSON.stringify(ctx)).toString("base64");
-  return {
-    name: SIGNED_COMMIT_MCP_NAME,
-    command: process.execPath,
-    args: [scriptPath],
-    env: [
-      { name: "POSTHOG_SIGNED_COMMIT_CTX", value: ctxBase64 },
-      // Token also on the child env so its own git remote ops (fetch/ls-remote)
-      // authenticate; the var names come from the single shared source.
+  const env = [
+    { name: "POSTHOG_LOCAL_TOOLS_CTX", value: ctxBase64 },
+    { name: "POSTHOG_LOCAL_TOOLS_ENABLED", value: enabledNames.join(",") },
+  ];
+  if (ctx.token) {
+    // Token also on the child env so its own git remote ops (fetch/ls-remote)
+    // authenticate; the var names come from the single shared source.
+    env.push(
       ...Object.entries(ghTokenEnv(ctx.token)).map(([name, value]) => ({
         name,
         value,
       })),
-    ],
+    );
+  }
+  return {
+    name: LOCAL_TOOLS_MCP_NAME,
+    command: process.execPath,
+    args: [scriptPath],
+    env,
   };
 }
 
@@ -373,7 +382,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     const meta = params._meta as NewSessionMeta | undefined;
     const requestedPermissionMode = toCodexPermissionMode(meta?.permissionMode);
 
-    const injectedParams = this.applySignedCommit(
+    const injectedParams = this.applyLocalTools(
       this.applyStructuredOutput(params, meta),
       meta,
     );
@@ -418,7 +427,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
   async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
     const meta = params._meta as NewSessionMeta | undefined;
-    const injectedParams = this.applySignedCommit(
+    const injectedParams = this.applyLocalTools(
       this.applyStructuredOutput(params, meta),
       meta,
     );
@@ -459,7 +468,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     params: ResumeSessionRequest,
   ): Promise<ResumeSessionResponse> {
     const meta = params._meta as NewSessionMeta | undefined;
-    const injectedParams = this.applySignedCommit(
+    const injectedParams = this.applyLocalTools(
       this.applyStructuredOutput(
         {
           sessionId: params.sessionId,
@@ -509,7 +518,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     params: ForkSessionRequest,
   ): Promise<ForkSessionResponse> {
     const meta = params._meta as NewSessionMeta | undefined;
-    const injectedParams = this.applySignedCommit(
+    const injectedParams = this.applyLocalTools(
       this.applyStructuredOutput(
         {
           cwd: params.cwd,
@@ -579,29 +588,38 @@ export class CodexAcpAgent extends BaseAcpAgent {
   }
 
   /**
-   * Cloud runs get the stdio signed-commit MCP server so the agent creates
-   * GitHub-signed commits via `git_signed_commit` instead of `git commit`/
-   * `git push`. Gated on cloud-run detection + an available token + a cwd; the
-   * commit instructions are already in the shared cloud system prompt, so only
-   * the server needs injecting here.
+   * Injects the stdio general local-tools MCP server. Tools self-gate via the
+   * registry (e.g. signed-commit is cloud-only and needs a GH token), so the
+   * server is only injected when at least one tool's gate passes. Their
+   * instructions already live in the shared cloud system prompt, so only the
+   * server needs injecting here.
    */
-  private applySignedCommit<
+  private applyLocalTools<
     T extends { cwd?: string; mcpServers?: McpServer[]; _meta?: unknown },
   >(request: T, meta: NewSessionMeta | undefined): T {
-    const taskId = resolveTaskId(meta);
     const cwd = request.cwd;
-    const token = resolveGithubToken();
-    if (!isCloudRun(meta) || !cwd) {
+    if (!cwd) {
       return request;
     }
-    if (!token) {
-      this.logger.warn(
-        "Cloud run has no GH_TOKEN/GITHUB_TOKEN — skipping signed-commit tool registration",
-      );
+    const ctx: LocalToolCtx = {
+      cwd,
+      token: resolveGithubToken(),
+      taskId: resolveTaskId(meta),
+    };
+    const tools = enabledLocalTools(ctx, meta);
+    if (tools.length === 0) {
+      if (isCloudRun(meta)) {
+        this.logger.warn(
+          "Cloud run registered no local tools — missing GH_TOKEN/GITHUB_TOKEN? signed commits unavailable",
+        );
+      }
       return request;
     }
 
-    const mcpServer = buildSignedCommitMcpServer({ cwd, token, taskId });
+    const mcpServer = buildLocalToolsMcpServer(
+      ctx,
+      tools.map((t) => t.name),
+    );
     return {
       ...request,
       mcpServers: [...(request.mcpServers ?? []), mcpServer],

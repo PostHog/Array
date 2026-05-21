@@ -5,17 +5,19 @@ import {
   type SignedCommitResult,
 } from "@posthog/git/signed-commit";
 import { z } from "zod";
+import { qualifiedLocalToolName } from "./local-tools/registry";
 
 /**
- * Shared definitions for the `git_signed_commit` MCP tool, used by both the
- * Claude in-process wrapper and the Codex stdio server so the tool name, schema,
- * description, and result formatting can't drift between adapters. The names
- * also appear in the cloud system prompt and the PreToolUse guard message.
+ * Shared definitions for the `git_signed_commit` tool, used by the local-tools
+ * registry entry (which both adapters expose) so the tool name, schema,
+ * description, and result formatting can't drift. The qualified name also
+ * appears in the cloud system prompt and the PreToolUse guard message.
  */
 
-export const SIGNED_COMMIT_MCP_NAME = "posthog-git";
 export const SIGNED_COMMIT_TOOL_NAME = "git_signed_commit";
-export const SIGNED_COMMIT_QUALIFIED_TOOL_NAME = `mcp__${SIGNED_COMMIT_MCP_NAME}__${SIGNED_COMMIT_TOOL_NAME}`;
+export const SIGNED_COMMIT_QUALIFIED_TOOL_NAME = qualifiedLocalToolName(
+  SIGNED_COMMIT_TOOL_NAME,
+);
 
 export const SIGNED_COMMIT_TOOL_DESCRIPTION =
   "Create a GitHub-signed (Verified) commit on the branch. Stage files with `git add` " +

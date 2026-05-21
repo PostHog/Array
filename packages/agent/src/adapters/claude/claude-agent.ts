@@ -66,6 +66,7 @@ import {
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
 import { BaseAcpAgent } from "../base-acp-agent";
+import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
 import { resolveTaskId } from "../session-meta";
 import { promptToClaude } from "./conversion/acp-to-sdk";
 import {
@@ -75,10 +76,7 @@ import {
   handleUserAssistantMessage,
 } from "./conversion/sdk-to-acp";
 import type { EnrichedReadCache } from "./hooks";
-import {
-  createSignedCommitMcpServer,
-  SIGNED_COMMIT_MCP_NAME,
-} from "./mcp/signed-commit";
+import { createLocalToolsMcpServer } from "./mcp/local-tools";
 import {
   fetchMcpToolMetadata,
   getConnectedMcpServerNames,
@@ -1129,22 +1127,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       ? parseMcpServers(params)
       : {};
 
-    // Cloud runs get the in-process signed-commit tool so the agent can create
-    // GitHub-signed commits without a local key. `git commit` and `git push`
-    // are blocked by the PreToolUse guard (and the sandbox git shim) in this mode.
-    if (cloudRun) {
-      const githubToken = resolveGithubToken();
-      if (githubToken) {
-        mcpServers[SIGNED_COMMIT_MCP_NAME] = createSignedCommitMcpServer({
-          cwd,
-          token: githubToken,
-          taskId,
-        });
-      } else {
-        this.logger.warn(
-          "Cloud run has no GH_TOKEN/GITHUB_TOKEN — skipping signed-commit tool registration",
-        );
-      }
+    // Register the in-process general local-tools MCP server. Tools self-gate
+    // via the registry (e.g. signed-commit is cloud-only and needs a GH token),
+    // so adding a tool needs no change here. In cloud runs `git commit`/`git
+    // push` are blocked by the PreToolUse guard (and the sandbox git shim), so
+    // the agent commits via the signed-commit tool instead.
+    const localToolsServer = createLocalToolsMcpServer(
+      { cwd, token: resolveGithubToken(), taskId },
+      meta,
+    );
+    if (localToolsServer) {
+      mcpServers[LOCAL_TOOLS_MCP_NAME] = localToolsServer;
+    } else if (cloudRun) {
+      this.logger.warn(
+        "Cloud run registered no local tools — missing GH_TOKEN/GITHUB_TOKEN? signed commits unavailable",
+      );
     }
 
     const systemPrompt = buildSystemPrompt(meta?.systemPrompt);
