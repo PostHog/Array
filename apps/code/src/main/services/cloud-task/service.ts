@@ -19,6 +19,7 @@ import { type SseEvent, SseEventParser } from "./sse-parser";
 const log = logger.scope("cloud-task");
 
 const MAX_SSE_RECONNECT_ATTEMPTS = 5;
+const MAX_CUMULATIVE_RECONNECT_ATTEMPTS = 30;
 const SSE_RECONNECT_BASE_DELAY_MS = 2_000;
 const SSE_RECONNECT_MAX_DELAY_MS = 30_000;
 const SSE_HEALTHY_CONNECTION_MS = 60_000;
@@ -91,6 +92,7 @@ interface WatcherState {
   totalEntryCount: number;
   reconnectAttempts: number;
   streamErrorAttempts: number;
+  cumulativeReconnectAttempts: number;
   lastEventId: string | null;
   lastStatus: TaskRunStatus | null;
   lastStage: string | null;
@@ -283,6 +285,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
     watcher.reconnectAttempts = 0;
     watcher.streamErrorAttempts = 0;
+    watcher.cumulativeReconnectAttempts = 0;
     watcher.failed = false;
     watcher.pendingLogEntries = [];
     watcher.bufferedLogBatches = [];
@@ -406,6 +409,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       totalEntryCount: 0,
       reconnectAttempts: 0,
       streamErrorAttempts: 0,
+      cumulativeReconnectAttempts: 0,
       lastEventId: null,
       lastStatus: null,
       lastStage: null,
@@ -1016,12 +1020,27 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       clearTimeout(watcher.reconnectTimeoutId);
     }
 
+    // Every scheduled reconnect burns cumulative budget — clean EOF loops
+    // would otherwise dodge the per-burst counter (`reconnectAttempts`)
+    // by setting countAttempt=false and silently retrying forever.
+    watcher.cumulativeReconnectAttempts += 1;
     const countAttempt = options.countAttempt ?? true;
     if (countAttempt) {
       watcher.reconnectAttempts += 1;
-    } else {
-      watcher.reconnectAttempts = 0;
     }
+
+    if (
+      watcher.cumulativeReconnectAttempts > MAX_CUMULATIVE_RECONNECT_ATTEMPTS
+    ) {
+      this.failWatcher(key, {
+        title: "Cloud run unreachable",
+        message:
+          "Could not maintain a connection to the cloud run after many attempts. Click retry once the issue is resolved.",
+        retryable: true,
+      });
+      return;
+    }
+
     // The watcher fails once either budget is exhausted: transport reconnect
     // failures or backend stream-error frames.
     const attemptCount = Math.max(
