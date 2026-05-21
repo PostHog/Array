@@ -12,6 +12,7 @@ const ENV_KEYS_UNDER_TEST = [
   "LLM_GATEWAY_URL",
   "ANTHROPIC_BASE_URL",
   "OPENAI_BASE_URL",
+  "ANTHROPIC_CUSTOM_HEADERS",
 ] as const;
 
 describe("AgentServer.configureEnvironment", () => {
@@ -113,6 +114,25 @@ describe("AgentServer.configureEnvironment", () => {
 
     expect(process.env.LLM_GATEWAY_URL).toBe(
       "https://gateway.us.posthog.com/posthog_code",
+    );
+  });
+
+  it("forwards task_internal and task_origin_product as ANTHROPIC_CUSTOM_HEADERS", () => {
+    buildServer("background").configureEnvironment({
+      isInternal: true,
+      originProduct: "signal_report",
+    });
+
+    expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toBe(
+      "x-posthog-property-task_origin_product: signal_report\nx-posthog-property-task_internal: true",
+    );
+  });
+
+  it("omits task_origin_product from ANTHROPIC_CUSTOM_HEADERS when not provided", () => {
+    buildServer("background").configureEnvironment({ isInternal: false });
+
+    expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toBe(
+      "x-posthog-property-task_internal: false",
     );
   });
 

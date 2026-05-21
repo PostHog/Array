@@ -1,7 +1,5 @@
 export type GatewayProduct = "posthog_code" | "background_agents" | "signals";
 
-const SIGNAL_REPORT_ORIGIN_PRODUCT = "signal_report";
-
 export function resolveGatewayProduct({
   isInternal,
   originProduct,
@@ -10,11 +8,26 @@ export function resolveGatewayProduct({
   originProduct?: string | null;
 } = {}): GatewayProduct {
   if (isInternal) {
-    return originProduct === SIGNAL_REPORT_ORIGIN_PRODUCT
-      ? "signals"
-      : "background_agents";
+    return originProduct === "signal_report" ? "signals" : "background_agents";
   }
   return "posthog_code";
+}
+
+/**
+ * Build `x-posthog-property-<name>: <value>` header lines that the LLM
+ * gateway lifts onto the `$ai_generation` event it captures for each call
+ * (see `services/llm-gateway/src/llm_gateway/request_context.py`).
+ *
+ * Returns a newline-joined string ready for `ANTHROPIC_CUSTOM_HEADERS`.
+ * `null`/`undefined` property values are dropped.
+ */
+export function buildGatewayPropertyHeaders(
+  properties: Record<string, string | number | boolean | null | undefined>,
+): string {
+  return Object.entries(properties)
+    .filter(([, value]) => value !== null && value !== undefined)
+    .map(([key, value]) => `x-posthog-property-${key}: ${value}`)
+    .join("\n");
 }
 
 function getGatewayBaseUrl(posthogHost: string): string {

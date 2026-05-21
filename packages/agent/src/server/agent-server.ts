@@ -47,7 +47,11 @@ import type {
 } from "../types";
 import { resourceLink } from "../utils/acp-content";
 import { AsyncMutex } from "../utils/async-mutex";
-import { getLlmGatewayUrl, resolveGatewayProduct } from "../utils/gateway";
+import {
+  buildGatewayPropertyHeaders,
+  getLlmGatewayUrl,
+  resolveGatewayProduct,
+} from "../utils/gateway";
 import { Logger } from "../utils/logger";
 import { logAgentshRuntimeInfo } from "./agentsh-runtime";
 import {
@@ -1819,6 +1823,14 @@ ${attributionInstructions}
     const openaiBaseUrl = gatewayUrl.endsWith("/v1")
       ? gatewayUrl
       : `${gatewayUrl}/v1`;
+    // Forward task metadata as `x-posthog-property-*` headers so the gateway
+    // lifts them onto the $ai_generation event. Routes through the Anthropic
+    // SDK's ANTHROPIC_CUSTOM_HEADERS env var; the OpenAI/codex path has no
+    // equivalent today.
+    const customHeaders = buildGatewayPropertyHeaders({
+      task_origin_product: originProduct,
+      task_internal: isInternal,
+    });
 
     Object.assign(process.env, {
       // PostHog
@@ -1831,6 +1843,7 @@ ${attributionInstructions}
       ANTHROPIC_API_KEY: apiKey,
       ANTHROPIC_AUTH_TOKEN: apiKey,
       ANTHROPIC_BASE_URL: gatewayUrl,
+      ANTHROPIC_CUSTOM_HEADERS: customHeaders,
       // OpenAI (for models like GPT-4, o1, etc.)
       OPENAI_API_KEY: apiKey,
       OPENAI_BASE_URL: openaiBaseUrl,
