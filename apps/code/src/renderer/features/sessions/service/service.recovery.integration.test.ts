@@ -10,7 +10,7 @@
  * Only the tRPC network boundary is faked, that boundary is the thing we simulate dropping.
  */
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockTrpcAgent = vi.hoisted(() => ({
   start: { mutate: vi.fn() },
@@ -343,19 +343,22 @@ describe("SessionService cloud queue recovery (real store, e2e)", () => {
     });
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("recovers a stranded queue after an idle resumed run drops to disconnected", async () => {
     const service = getSessionService();
 
     // Subscribe (captures the onUpdate.onData channel) without letting the
     // async hydrate clobber the state we control below.
-    service.watchCloudTask(
-      TASK_ID,
-      RUN_ID,
-      "https://api.anthropic.com",
-      123,
-      undefined,
-      "https://logs.example.com/run",
-    );
+    service.watchCloudTask({
+      taskId: TASK_ID,
+      runId: RUN_ID,
+      apiHost: "https://api.anthropic.com",
+      teamId: 123,
+      logUrl: "https://logs.example.com/run",
+    });
     const onData = latestOnData();
 
     // Start: agent booting, not yet ready (mirrors a snapshot-resume run
@@ -442,14 +445,13 @@ describe("SessionService cloud queue recovery (real store, e2e)", () => {
 
   it("drains a queue stranded on an idle disconnected run via the real retry path (no injected status update)", async () => {
     const service = getSessionService();
-    service.watchCloudTask(
-      TASK_ID,
-      RUN_ID,
-      "https://api.anthropic.com",
-      123,
-      undefined,
-      "https://logs.example.com/run",
-    );
+    service.watchCloudTask({
+      taskId: TASK_ID,
+      runId: RUN_ID,
+      apiHost: "https://api.anthropic.com",
+      teamId: 123,
+      logUrl: "https://logs.example.com/run",
+    });
 
     // An idle, already-bootstrapped run that completed its turn for THIS run
     // (live idle flag set) then dropped to disconnected on an SSE blip. The
@@ -493,14 +495,13 @@ describe("SessionService cloud queue recovery (real store, e2e)", () => {
 
   it("does not drain while the agent is still booting (boot race protected)", async () => {
     const service = getSessionService();
-    service.watchCloudTask(
-      TASK_ID,
-      RUN_ID,
-      "https://api.anthropic.com",
-      123,
-      undefined,
-      "https://logs.example.com/run",
-    );
+    service.watchCloudTask({
+      taskId: TASK_ID,
+      runId: RUN_ID,
+      apiHost: "https://api.anthropic.com",
+      teamId: 123,
+      logUrl: "https://logs.example.com/run",
+    });
     const onData = latestOnData();
 
     // Disconnected, queued message, but the agent has NEVER booted for this
@@ -535,14 +536,13 @@ describe("SessionService cloud queue recovery (real store, e2e)", () => {
 
   it("does not drain on a current-run run_started snapshot until turn_complete (initial/resume turn race)", async () => {
     const service = getSessionService();
-    service.watchCloudTask(
-      TASK_ID,
-      RUN_ID,
-      "https://api.anthropic.com",
-      123,
-      undefined,
-      "https://logs.example.com/run",
-    );
+    service.watchCloudTask({
+      taskId: TASK_ID,
+      runId: RUN_ID,
+      apiHost: "https://api.anthropic.com",
+      teamId: 123,
+      logUrl: "https://logs.example.com/run",
+    });
     const onData = latestOnData();
 
     // Disconnected, queued message. The agent has NOT completed a turn for
@@ -637,14 +637,13 @@ describe("SessionService cloud queue recovery (real store, e2e)", () => {
 
   it("does not dispatch a queued follow-up mid-turn after retryCloudTaskWatch clears isPromptPending", async () => {
     const service = getSessionService();
-    service.watchCloudTask(
-      TASK_ID,
-      RUN_ID,
-      "https://api.anthropic.com",
-      123,
-      undefined,
-      "https://logs.example.com/run",
-    );
+    service.watchCloudTask({
+      taskId: TASK_ID,
+      runId: RUN_ID,
+      apiHost: "https://api.anthropic.com",
+      teamId: 123,
+      logUrl: "https://logs.example.com/run",
+    });
     const onData = latestOnData();
 
     // Agent booted and idle from a prior turn.
@@ -756,14 +755,13 @@ describe("SessionService cloud queue recovery (real store, e2e)", () => {
 
   it("clears the idle marker when sendCloudPrompt starts a turn even if the session/prompt log never arrives", async () => {
     const service = getSessionService();
-    service.watchCloudTask(
-      TASK_ID,
-      RUN_ID,
-      "https://api.anthropic.com",
-      123,
-      undefined,
-      "https://logs.example.com/run",
-    );
+    service.watchCloudTask({
+      taskId: TASK_ID,
+      runId: RUN_ID,
+      apiHost: "https://api.anthropic.com",
+      teamId: 123,
+      logUrl: "https://logs.example.com/run",
+    });
 
     // Agent booted and idle from a prior turn.
     sessionStoreSetters.setSession(
@@ -864,14 +862,13 @@ describe("SessionService cloud queue recovery (real store, e2e)", () => {
 
   it("does not recover from a prior run's turn_complete carried into the resumed session", async () => {
     const service = getSessionService();
-    service.watchCloudTask(
-      TASK_ID,
-      RUN_ID,
-      "https://api.anthropic.com",
-      123,
-      undefined,
-      "https://logs.example.com/run",
-    );
+    service.watchCloudTask({
+      taskId: TASK_ID,
+      runId: RUN_ID,
+      apiHost: "https://api.anthropic.com",
+      teamId: 123,
+      logUrl: "https://logs.example.com/run",
+    });
     const onData = latestOnData();
 
     // resumeCloudRun copies the PREVIOUS run's history into the new run's

@@ -1,7 +1,7 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import type { AgentSession } from "@features/sessions/stores/sessionStore";
 import type { Task } from "@shared/types";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // --- Hoisted Mocks ---
 
@@ -401,6 +401,10 @@ describe("SessionService", () => {
     );
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   describe("singleton management", () => {
     it("returns the same instance on multiple calls", () => {
       const instance1 = getSessionService();
@@ -755,16 +759,14 @@ describe("SessionService", () => {
     it("builds codex cloud mode options using native codex modes", () => {
       const service = getSessionService();
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        undefined,
-        "full-access",
-        "codex",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        initialMode: "full-access",
+        adapter: "codex",
+      });
 
       expect(mockSessionStoreSetters.setSession).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -794,12 +796,12 @@ describe("SessionService", () => {
         }),
       );
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://app.example.com",
-        2,
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://app.example.com",
+        teamId: 2,
+      });
 
       expect(mockSessionStoreSetters.setSession).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -820,12 +822,12 @@ describe("SessionService", () => {
     it("subscribes to cloud updates before starting the watcher", async () => {
       const service = getSessionService();
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+      });
 
       expect(mockTrpcCloudTask.onUpdate.subscribe).toHaveBeenCalledWith(
         { taskId: "task-123", runId: "run-123" },
@@ -856,12 +858,12 @@ describe("SessionService", () => {
         unsubscribe,
       });
 
-      const cleanup = service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-      );
+      const cleanup = service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+      });
       cleanup();
 
       expect(unsubscribe).not.toHaveBeenCalled();
@@ -875,19 +877,19 @@ describe("SessionService", () => {
         unsubscribe,
       });
 
-      const firstCleanup = service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-      );
+      const firstCleanup = service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+      });
       firstCleanup();
-      const secondCleanup = service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-      );
+      const secondCleanup = service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+      });
 
       expect(unsubscribe).not.toHaveBeenCalled();
       expect(mockTrpcCloudTask.watch.mutate).toHaveBeenCalledTimes(1);
@@ -900,19 +902,19 @@ describe("SessionService", () => {
       const service = getSessionService();
       const onStatusChange = vi.fn();
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
         onStatusChange,
-      );
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-      );
+      });
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+      });
 
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as {
@@ -964,14 +966,13 @@ describe("SessionService", () => {
       );
       mockTrpcLogs.writeLocalLogs.mutate.mockResolvedValue(undefined);
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       await vi.waitFor(() => {
         expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
@@ -1014,14 +1015,13 @@ describe("SessionService", () => {
       };
       mockConvertStoredEntriesToEvents.mockReturnValueOnce([inFlightPrompt]);
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       await vi.waitFor(() => {
         expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
@@ -1078,14 +1078,13 @@ describe("SessionService", () => {
         promptResponse,
       ]);
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       await vi.waitFor(() => {
         expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
@@ -1143,14 +1142,13 @@ describe("SessionService", () => {
       };
       mockConvertStoredEntriesToEvents.mockReturnValueOnce([turnCompleteEvent]);
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       await vi.waitFor(() => {
         expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(
@@ -1196,14 +1194,13 @@ describe("SessionService", () => {
         result: { stopReason: "end_turn" },
       });
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as {
@@ -1256,14 +1253,13 @@ describe("SessionService", () => {
         "run-123": sessionWithQueue,
       });
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as {
@@ -1327,14 +1323,13 @@ describe("SessionService", () => {
       };
       mockConvertStoredEntriesToEvents.mockReturnValueOnce([turnCompleteEvent]);
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       await vi.waitFor(() => {
         expect(
@@ -1397,14 +1392,13 @@ describe("SessionService", () => {
       };
       mockConvertStoredEntriesToEvents.mockReturnValueOnce([turnCompleteEvent]);
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       await vi.waitFor(() => {
         expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
@@ -1468,14 +1462,13 @@ describe("SessionService", () => {
         result: { stopReason: "end_turn" },
       });
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as {
@@ -1579,14 +1572,13 @@ describe("SessionService", () => {
         result: { stopReason: "end_turn" },
       });
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as {
@@ -1657,14 +1649,13 @@ describe("SessionService", () => {
         "run-123": disconnectedSession,
       });
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as {
@@ -1733,14 +1724,13 @@ describe("SessionService", () => {
         "run-123": disconnectedSession,
       });
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as {
@@ -1815,14 +1805,13 @@ describe("SessionService", () => {
         "run-123": disconnectedSession,
       });
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as {
@@ -1874,14 +1863,13 @@ describe("SessionService", () => {
         "run-123": disconnectedSession,
       });
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as {
@@ -1935,14 +1923,13 @@ describe("SessionService", () => {
         "run-123": bootingSession,
       });
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as {
@@ -2014,14 +2001,13 @@ describe("SessionService", () => {
         completion,
       ]);
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       await vi.waitFor(() => {
         expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
@@ -2071,12 +2057,12 @@ describe("SessionService", () => {
         Array.from({ length: 14 }, () => storedLine).join("\n"),
       );
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+      });
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as {
         onData: (update: unknown) => void;
@@ -2152,12 +2138,12 @@ describe("SessionService", () => {
         Array.from({ length: 14 }, () => storedLine).join("\n"),
       );
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+      });
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as {
         onData: (update: unknown) => void;
@@ -2249,12 +2235,12 @@ describe("SessionService", () => {
         })),
       );
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+      });
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as {
         onData: (update: unknown) => void;
@@ -2342,14 +2328,13 @@ describe("SessionService", () => {
       };
       mockConvertStoredEntriesToEvents.mockReturnValueOnce([runStartedEvent]);
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       await vi.waitFor(() => {
         expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
@@ -2400,14 +2385,13 @@ describe("SessionService", () => {
       };
       mockConvertStoredEntriesToEvents.mockReturnValueOnce([runStartedEvent]);
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       await vi.waitFor(() => {
         expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
@@ -2454,14 +2438,13 @@ describe("SessionService", () => {
       };
       mockConvertStoredEntriesToEvents.mockReturnValueOnce([runStartedEvent]);
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+      });
 
       // Wait long enough for the hydration callback to run; assert the
       // store was never told to set status: "connected" again.
@@ -2490,18 +2473,15 @@ describe("SessionService", () => {
       mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
       mockTrpcLogs.writeLocalLogs.mutate.mockResolvedValue(undefined);
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-        undefined,
-        "claude",
-        undefined,
-        "build me a thing",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+        adapter: "claude",
+        taskDescription: "build me a thing",
+      });
 
       await vi.waitFor(() => {
         expect(
@@ -2561,18 +2541,15 @@ describe("SessionService", () => {
         lifecycleNotification,
       ]);
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-        undefined,
-        "claude",
-        undefined,
-        "build me a thing",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+        adapter: "claude",
+        taskDescription: "build me a thing",
+      });
 
       await vi.waitFor(() => {
         expect(
@@ -2630,18 +2607,15 @@ describe("SessionService", () => {
       };
       mockConvertStoredEntriesToEvents.mockReturnValueOnce([priorPrompt]);
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-        undefined,
-        "https://logs.example.com/run-123",
-        undefined,
-        "claude",
-        undefined,
-        "hello there",
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        logUrl: "https://logs.example.com/run-123",
+        adapter: "claude",
+        taskDescription: "hello there",
+      });
 
       // Wait for hydration to run.
       await vi.waitFor(() => {
@@ -2673,19 +2647,19 @@ describe("SessionService", () => {
             }),
         );
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+      });
       service.stopCloudTaskWatch("task-123");
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+      });
 
       resolveSecondWatchStart();
       await Promise.resolve();
@@ -2710,12 +2684,12 @@ describe("SessionService", () => {
           }),
       );
 
-      service.watchCloudTask(
-        "task-123",
-        "run-123",
-        "https://api.anthropic.com",
-        123,
-      );
+      service.watchCloudTask({
+        taskId: "task-123",
+        runId: "run-123",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+      });
 
       service.stopCloudTaskWatch("task-123");
       expect(mockTrpcCloudTask.unwatch.mutate).not.toHaveBeenCalled();
@@ -2788,19 +2762,15 @@ describe("SessionService", () => {
         },
       ]);
 
-      service.watchCloudTask(
-        "task-model-123",
-        "run-model-123",
-        "https://api.example.com",
-        7,
-        undefined,
-        undefined,
-        undefined,
-        "claude",
-        "claude-sonnet-4-6",
-        undefined,
-        "max",
-      );
+      service.watchCloudTask({
+        taskId: "task-model-123",
+        runId: "run-model-123",
+        apiHost: "https://api.example.com",
+        teamId: 7,
+        adapter: "claude",
+        initialModel: "claude-sonnet-4-6",
+        initialReasoningEffort: "max",
+      });
 
       await vi.waitFor(() => {
         expect(
@@ -2874,19 +2844,14 @@ describe("SessionService", () => {
         },
       ]);
 
-      service.watchCloudTask(
-        "task-effort-xhigh",
-        "run-effort-xhigh",
-        "https://api.example.com",
-        7,
-        undefined,
-        undefined,
-        undefined,
-        "claude",
-        undefined,
-        undefined,
-        "xhigh",
-      );
+      service.watchCloudTask({
+        taskId: "task-effort-xhigh",
+        runId: "run-effort-xhigh",
+        apiHost: "https://api.example.com",
+        teamId: 7,
+        adapter: "claude",
+        initialReasoningEffort: "xhigh",
+      });
 
       await vi.waitFor(() => {
         const calls = mockSessionStoreSetters.updateSession.mock.calls as Array<
@@ -3589,10 +3554,10 @@ describe("SessionService", () => {
       await service.sendPrompt("task-123", "follow up");
 
       const newRunCall = watchSpy.mock.calls.find(
-        (call) => call[1] === "run-456",
+        ([opts]) => opts.runId === "run-456",
       );
       expect(newRunCall).toBeDefined();
-      expect(newRunCall?.[10]).toBe("max");
+      expect(newRunCall?.[0].initialReasoningEffort).toBe("max");
     });
 
     it("uses newRun.reasoning_effort over prior effort when starting a new cloud run", async () => {
@@ -3670,10 +3635,10 @@ describe("SessionService", () => {
       await service.sendPrompt("task-123", "follow up");
 
       const newRunCall = watchSpy.mock.calls.find(
-        (call) => call[1] === "run-456",
+        ([opts]) => opts.runId === "run-456",
       );
       expect(newRunCall).toBeDefined();
-      expect(newRunCall?.[10]).toBe("max");
+      expect(newRunCall?.[0].initialReasoningEffort).toBe("max");
     });
 
     it("preserves attachment blocks in the optimistic resume event", async () => {

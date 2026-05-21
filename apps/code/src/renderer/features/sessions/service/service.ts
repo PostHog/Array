@@ -224,6 +224,20 @@ export interface ConnectParams {
   reasoningLevel?: string;
 }
 
+export interface WatchCloudTaskOptions {
+  taskId: string;
+  runId: string;
+  apiHost: string;
+  teamId: number;
+  onStatusChange?: () => void;
+  logUrl?: string;
+  initialMode?: string;
+  adapter?: Adapter;
+  initialModel?: string;
+  taskDescription?: string;
+  initialReasoningEffort?: string;
+}
+
 // --- Singleton Service Instance ---
 
 let serviceInstance: SessionService | null = null;
@@ -1766,16 +1780,14 @@ export class SessionService {
       throw new Error("Authentication required for cloud commands");
     }
 
-    this.watchCloudTask(
-      session.taskId,
-      session.taskRunId,
-      cloudCommandAuth.apiHost,
-      cloudCommandAuth.teamId,
-      undefined,
-      session.logUrl,
-      undefined,
-      session.adapter ?? "claude",
-    );
+    this.watchCloudTask({
+      taskId: session.taskId,
+      runId: session.taskRunId,
+      apiHost: cloudCommandAuth.apiHost,
+      teamId: cloudCommandAuth.teamId,
+      logUrl: session.logUrl,
+      adapter: session.adapter ?? "claude",
+    });
 
     const artifactIds = await uploadRunAttachments(
       auth.client,
@@ -2027,19 +2039,17 @@ export class SessionService {
     const initialReasoningEffort =
       newRun.reasoning_effort ??
       (typeof priorEffort === "string" ? priorEffort : undefined);
-    this.watchCloudTask(
-      session.taskId,
-      newRun.id,
-      auth.apiHost,
-      auth.teamId,
-      undefined,
-      newRun.log_url,
+    this.watchCloudTask({
+      taskId: session.taskId,
+      runId: newRun.id,
+      apiHost: auth.apiHost,
+      teamId: auth.teamId,
+      logUrl: newRun.log_url,
       initialMode,
-      newRun.runtime_adapter ?? session.adapter ?? "claude",
+      adapter: newRun.runtime_adapter ?? session.adapter ?? "claude",
       initialModel,
-      undefined,
       initialReasoningEffort,
-    );
+    });
 
     // Invalidate task queries so the UI picks up the new run metadata
     queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -2613,19 +2623,20 @@ export class SessionService {
    * status triggers full teardown from within handleCloudTaskUpdate via
    * stopCloudTaskWatch().
    */
-  watchCloudTask(
-    taskId: string,
-    runId: string,
-    apiHost: string,
-    teamId: number,
-    onStatusChange?: () => void,
-    logUrl?: string,
-    initialMode?: string,
-    adapter: Adapter = "claude",
-    initialModel?: string,
-    taskDescription?: string,
-    initialReasoningEffort?: string,
-  ): () => void {
+  watchCloudTask(options: WatchCloudTaskOptions): () => void {
+    const {
+      taskId,
+      runId,
+      apiHost,
+      teamId,
+      onStatusChange,
+      logUrl,
+      initialMode,
+      adapter = "claude",
+      initialModel,
+      taskDescription,
+      initialReasoningEffort,
+    } = options;
     const taskRunId = runId;
     const existingWatcher = this.cloudTaskWatchers.get(taskId);
 
@@ -2973,7 +2984,12 @@ export class SessionService {
       toast.error(
         err instanceof Error ? err.message : "Handoff to local failed",
       );
-      this.watchCloudTask(taskId, runId, auth.apiHost, auth.projectId);
+      this.watchCloudTask({
+        taskId,
+        runId,
+        apiHost: auth.apiHost,
+        teamId: auth.projectId,
+      });
       sessionStoreSetters.updateSession(runId, {
         handoffInProgress: false,
         status: "disconnected",
@@ -3038,7 +3054,12 @@ export class SessionService {
         processedLineCount: result.logEntryCount ?? 0,
       });
 
-      this.watchCloudTask(taskId, runId, auth.apiHost, auth.projectId);
+      this.watchCloudTask({
+        taskId,
+        runId,
+        apiHost: auth.apiHost,
+        teamId: auth.projectId,
+      });
       await Promise.all([
         queryClient.refetchQueries({ queryKey: ["tasks"] }),
         queryClient.refetchQueries(trpc.workspace.getAll.pathFilter()),
