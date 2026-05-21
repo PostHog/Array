@@ -1,4 +1,6 @@
 import { useDraftStore } from "@features/message-editor/stores/draftStore";
+import { TaskIcon } from "@features/sidebar/components/items/TaskIcon";
+import { useTaskPrStatus } from "@features/sidebar/hooks/useTaskPrStatus";
 import { TaskInput } from "@features/task-detail/components/TaskInput";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
 import {
@@ -20,7 +22,6 @@ import {
 } from "../stores/commandCenterStore";
 import { CommandCenterPRButton } from "./CommandCenterPRButton";
 import { CommandCenterSessionView } from "./CommandCenterSessionView";
-import { StatusBadge } from "./StatusBadge";
 import { TaskSelector } from "./TaskSelector";
 
 interface CommandCenterPanelProps {
@@ -36,6 +37,34 @@ const environmentConfig: Record<
   worktree: { label: "Worktree", icon: GitFork },
   cloud: { label: "Cloud", icon: Cloud },
 };
+
+function CellStatusIcon({
+  cell,
+}: {
+  cell: CommandCenterCellData & { task: Task };
+}) {
+  const { task, session, workspaceMode } = cell;
+  const { prState, hasDiff } = useTaskPrStatus({
+    id: task.id,
+    cloudPrUrl: null,
+    taskRunEnvironment: task.latest_run?.environment,
+  });
+
+  return (
+    <span className="flex h-5 w-5 items-center justify-center text-gray-11">
+      <TaskIcon
+        workspaceMode={workspaceMode ?? undefined}
+        isGenerating={session?.isPromptPending}
+        needsPermission={(session?.pendingPermissions?.size ?? 0) > 0}
+        taskRunStatus={
+          session?.cloudStatus ?? task.latest_run?.status ?? undefined
+        }
+        prState={prState}
+        hasDiff={hasDiff}
+      />
+    </span>
+  );
+}
 
 function EnvironmentBadge({ mode }: { mode: WorkspaceMode | null }) {
   if (!mode) return null;
@@ -171,7 +200,7 @@ function PopulatedCell({
           {cell.task.title}
         </Text>
         <Flex align="center" gap="1" className="shrink-0">
-          <StatusBadge status={cell.status} />
+          <CellStatusIcon cell={cell} />
           <EnvironmentBadge mode={cell.workspaceMode} />
           {cell.repoName && (
             <span className="rounded bg-gray-3 px-1 py-0.5 text-[9px] text-gray-10">
