@@ -134,7 +134,12 @@ export function useSidebarData({
     { showAllUsers, showInternal },
     { enabled: showAllUsers },
   );
-  const { data: slackTasks = [] } = useSlackTasks();
+  // Skip the slack fetch when showAllUsers is on — fullTasks already carries
+  // origin_product through the rawTasks mapping below.
+  const { data: slackTasks = [] } = useSlackTasks({
+    enabled: !showAllUsers,
+    showInternal,
+  });
   const slackTaskIds = useMemo(
     () => new Set(slackTasks.map((t) => t.id)),
     [slackTasks],

@@ -74,13 +74,23 @@ export function useTaskSummaries(
 }
 
 // The /tasks/summaries/ endpoint doesn't include origin_product, so fetch the
-// slack-origin subset separately and intersect by id in the sidebar.
-export function useSlackTasks() {
+// slack-origin subset separately and intersect by id in the sidebar. The
+// `internal` filter mirrors the sidebar's task-visibility scope so staff
+// toggling the internal view still see slack icons on internal tasks.
+export function useSlackTasks(options?: {
+  enabled?: boolean;
+  showInternal?: boolean;
+}) {
+  const internal = options?.showInternal ? true : undefined;
   return useAuthenticatedQuery<Task[]>(
-    taskKeys.list({ originProduct: "slack" }),
+    taskKeys.list({ originProduct: "slack", internal }),
     (client) =>
-      client.getTasks({ originProduct: "slack" }) as unknown as Promise<Task[]>,
+      client.getTasks({
+        originProduct: "slack",
+        internal,
+      }) as unknown as Promise<Task[]>,
     {
+      enabled: options?.enabled ?? true,
       refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
     },
   );
