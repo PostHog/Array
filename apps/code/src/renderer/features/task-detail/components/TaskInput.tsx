@@ -401,12 +401,17 @@ export function TaskInput({
     setLastUsedCloudRepository,
   ]);
 
+  const lastInitializedFolderIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (view.folderId) {
-      const folder = folders.find((f) => f.id === view.folderId);
-      if (folder) {
-        setSelectedDirectory(folder.path);
-      }
+    if (!view.folderId) {
+      lastInitializedFolderIdRef.current = undefined;
+      return;
+    }
+    if (lastInitializedFolderIdRef.current === view.folderId) return;
+    const folder = folders.find((f) => f.id === view.folderId);
+    if (folder) {
+      setSelectedDirectory(folder.path);
+      lastInitializedFolderIdRef.current = view.folderId;
     }
   }, [view.folderId, folders]);
 
