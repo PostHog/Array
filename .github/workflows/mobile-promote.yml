@@ -1,0 +1,110 @@
+name: Mobile Promote
+
+# Promotes the most recent finished EAS build to the stores:
+#   iOS     -> App Store Connect (build becomes available in TestFlight)
+#   Android -> Google Play "internal" testing track
+#
+# Uses `eas submit --latest`, which submits the latest successful build for the
+# selected platform/profile. Run "Mobile Build" with the matching profile first.
+#
+# Required repository secrets:
+#   EXPO_TOKEN                  - Expo access token (submit permissions).
+#   GOOGLE_SERVICE_ACCOUNT_KEY  - JSON contents of the Google Play service
+#                                 account key (Android submit only). The
+#                                 service account needs the "Release to testing
+#                                 tracks" permission in the Play Console.
+#
+# iOS App Store Connect credentials (API key) must be configured on EAS once via
+# `eas credentials` so that `--non-interactive` submits can authenticate.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Platform to promote"
+        type: choice
+        default: all
+        options:
+          - all
+          - ios
+          - android
+      profile:
+        description: "EAS submit profile"
+        type: choice
+        default: production
+        options:
+          - production
+  # Allows "Mobile Build" to chain into this workflow after a successful build.
+  workflow_call:
+    inputs:
+      platform:
+        type: string
+        default: all
+      profile:
+        type: string
+        default: production
+    secrets:
+      EXPO_TOKEN:
+        required: true
+      GOOGLE_SERVICE_ACCOUNT_KEY:
+        required: false
+
+concurrency:
+  group: mobile-promote-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    name: Submit (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ inputs.platform == 'all' && fromJSON('["ios","android"]') || fromJSON(format('["{0}"]', inputs.platform)) }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@4479f9c12e08b76bb8a6ae00a31544a13d3b3d68 # v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: .
+
+      - name: Write Google service account key
+        if: matrix.platform == 'android'
+        run: printf '%s' "$GOOGLE_SERVICE_ACCOUNT_KEY" > google-service-account.json
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+
+      - name: EAS submit
+        run: |
+          eas submit \
+            --non-interactive \
+            --platform ${{ matrix.platform }} \
+            --profile ${{ inputs.profile }} \
+            --latest
+
+      - name: Clean up credentials
+        if: always() && matrix.platform == 'android'
+        run: rm -f google-service-account.json

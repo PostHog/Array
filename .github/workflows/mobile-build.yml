@@ -1,0 +1,86 @@
+name: Mobile Build
+
+# Builds the Expo mobile app (apps/mobile) for iOS and Android on EAS.
+# The two platforms run as parallel matrix jobs, so both builds are queued
+# simultaneously.
+#
+# Required repository secret:
+#   EXPO_TOKEN - an Expo access token with build permissions for the
+#                "posthog" account (https://expo.dev/settings/access-tokens).
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile"
+        type: choice
+        default: production
+        options:
+          - development
+          - preview
+          - production
+      wait:
+        description: "Wait for the EAS build to finish (uncheck to just queue and exit)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: mobile-build-${{ github.ref }}-${{ inputs.profile }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ios, android]
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@4479f9c12e08b76bb8a6ae00a31544a13d3b3d68 # v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: .
+
+      - name: EAS build
+        run: |
+          eas build \
+            --non-interactive \
+            --platform ${{ matrix.platform }} \
+            --profile ${{ inputs.profile }} \
+            ${{ inputs.wait && '--wait' || '--no-wait' }}
+
+  # Auto-promote the freshly built production binaries. Only runs when the build
+  # job waited for completion (otherwise there is no finished build to submit).
+  promote:
+    needs: build
+    if: ${{ inputs.profile == 'production' && inputs.wait }}
+    uses: ./.github/workflows/mobile-promote.yml
+    with:
+      platform: all
+      profile: production
+    secrets: inherit
