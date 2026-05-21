@@ -25,6 +25,10 @@ interface AuthState {
   tokenExpiry: number | null;
   cloudRegion: CloudRegion | null;
   projectId: number | null;
+  // Every team/project the OAuth token can access. The picker chooses among
+  // these; `projectId` is the active one. Derived from the token's
+  // `scoped_teams` and re-derived on refresh/init.
+  scopedTeams: number[];
 
   // Auth status
   isAuthenticated: boolean;
@@ -32,6 +36,7 @@ interface AuthState {
 
   // Methods
   loginWithOAuth: (region: CloudRegion) => Promise<void>;
+  setProjectId: (projectId: number) => void;
   loginWithPersonalApiKey: (params: {
     token: string;
     projectId: number;
@@ -59,6 +64,20 @@ function buildStoredTokens(args: {
   };
 }
 
+/**
+ * Pick the active project after the token's scoped teams are (re)derived.
+ * Keep the user's current selection if it's still in scope; otherwise fall
+ * back to the first scoped team. This is what makes a picked project survive
+ * token refresh and app relaunch instead of snapping back to `scoped_teams[0]`.
+ */
+function resolveActiveProjectId(
+  scopedTeams: number[],
+  current: number | null,
+): number | null {
+  if (current && scopedTeams.includes(current)) return current;
+  return scopedTeams[0] ?? null;
+}
+
 function maybeRegisterPushToken(): void {
   if (!usePreferencesStore.getState().pushNotificationsEnabled) return;
   usePushTokenStore
@@ -78,6 +97,7 @@ export const useAuthStore = create<AuthState>()(
       tokenExpiry: null,
       cloudRegion: null,
       projectId: null,
+      scopedTeams: [],
 
       // Auth status
       isAuthenticated: false,
@@ -85,6 +105,16 @@ export const useAuthStore = create<AuthState>()(
 
       // Helper method to get cloud URL
       getCloudUrlFromRegion,
+
+      setProjectId: (projectId: number) => {
+        const { scopedTeams, projectId: current } = get();
+        // Guard: only switch to a project the token is actually scoped to.
+        if (!scopedTeams.includes(projectId) || projectId === current) return;
+        set({ projectId });
+        // Drop cached data scoped to the previous project so tasks, inbox,
+        // automations, etc. refetch against the newly-selected one.
+        queryClient.clear();
+      },
 
       loginWithOAuth: async (region: CloudRegion) => {
         const result = await performOAuthFlow({
@@ -98,7 +128,8 @@ export const useAuthStore = create<AuthState>()(
 
         const tokenResponse = result.data;
         const expiresAt = Date.now() + tokenResponse.expires_in * 1000;
-        const projectId = tokenResponse.scoped_teams?.[0];
+        const scopedTeams = tokenResponse.scoped_teams ?? [];
+        const projectId = scopedTeams[0];
 
         if (!projectId) {
           throw new Error("No team found in OAuth scopes");
@@ -109,7 +140,7 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: tokenResponse.refresh_token,
           expiresAt,
           cloudRegion: region,
-          scopedTeams: tokenResponse.scoped_teams,
+          scopedTeams,
         });
 
         // Save tokens securely
@@ -121,6 +152,7 @@ export const useAuthStore = create<AuthState>()(
           tokenExpiry: expiresAt,
           cloudRegion: region,
           projectId,
+          scopedTeams,
           isAuthenticated: true,
         });
 
@@ -158,6 +190,7 @@ export const useAuthStore = create<AuthState>()(
           tokenExpiry: null,
           cloudRegion: region,
           projectId,
+          scopedTeams: [projectId],
           isAuthenticated: true,
         });
 
@@ -177,14 +210,15 @@ export const useAuthStore = create<AuthState>()(
         );
 
         const expiresAt = Date.now() + tokenResponse.expires_in * 1000;
-        const projectId = tokenResponse.scoped_teams?.[0] || state.projectId;
+        const scopedTeams = tokenResponse.scoped_teams ?? state.scopedTeams;
+        const projectId = resolveActiveProjectId(scopedTeams, state.projectId);
 
         const storedTokens = buildStoredTokens({
           accessToken: tokenResponse.access_token,
           refreshToken: tokenResponse.refresh_token,
           expiresAt,
           cloudRegion: state.cloudRegion,
-          scopedTeams: tokenResponse.scoped_teams,
+          scopedTeams,
         });
 
         // Save tokens securely
@@ -195,6 +229,7 @@ export const useAuthStore = create<AuthState>()(
           oauthRefreshToken: tokenResponse.refresh_token,
           tokenExpiry: expiresAt,
           projectId,
+          scopedTeams,
         });
 
         get().scheduleTokenRefresh();
@@ -253,6 +288,7 @@ export const useAuthStore = create<AuthState>()(
               tokenExpiry: null,
               cloudRegion: null,
               projectId: null,
+              scopedTeams: [],
               isLoading: false,
               isAuthenticated: false,
             });
@@ -262,12 +298,22 @@ export const useAuthStore = create<AuthState>()(
           const now = Date.now();
           const isExpired = tokens.expiresAt <= now;
 
+          const scopedTeams = tokens.scopedTeams ?? [];
+          // `get().projectId` was rehydrated from persisted storage by the
+          // persist middleware. Keep that selection if it's still in scope so
+          // a user's chosen project survives relaunch.
+          const projectId = resolveActiveProjectId(
+            scopedTeams,
+            get().projectId,
+          );
+
           set({
             oauthAccessToken: tokens.accessToken,
             oauthRefreshToken: tokens.refreshToken,
             tokenExpiry: tokens.expiresAt,
             cloudRegion: tokens.cloudRegion,
-            projectId: tokens.scopedTeams?.[0] || null,
+            projectId,
+            scopedTeams,
           });
 
           if (isExpired) {
@@ -283,6 +329,7 @@ export const useAuthStore = create<AuthState>()(
                 tokenExpiry: null,
                 cloudRegion: null,
                 projectId: null,
+                scopedTeams: [],
                 isLoading: false,
                 isAuthenticated: false,
               });
@@ -321,6 +368,7 @@ export const useAuthStore = create<AuthState>()(
           tokenExpiry: null,
           cloudRegion: null,
           projectId: null,
+          scopedTeams: [],
           isAuthenticated: false,
         });
       },
@@ -331,6 +379,7 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         cloudRegion: state.cloudRegion,
         projectId: state.projectId,
+        scopedTeams: state.scopedTeams,
       }),
     },
   ),

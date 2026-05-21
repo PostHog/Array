@@ -4,7 +4,7 @@ import { ArrowSquareOut, CaretRight, SpeakerHigh } from "phosphor-react-native";
 import { useState } from "react";
 import { Linking, Pressable, ScrollView, Switch, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useAuthStore, useUserQuery } from "@/features/auth";
+import { useAuthStore, useProjectsQuery, useUserQuery } from "@/features/auth";
 import { useDismissedReportsStore } from "@/features/inbox/stores/dismissedReportsStore";
 import { usePushTokenStore } from "@/features/notifications/stores/pushTokenStore";
 import {
@@ -81,9 +81,16 @@ export default function SettingsScreen() {
   const themeColors = useThemeColors();
   const insets = useSafeAreaInsets();
 
-  const { logout, cloudRegion, projectId, getCloudUrlFromRegion } =
-    useAuthStore();
+  const {
+    logout,
+    cloudRegion,
+    projectId,
+    scopedTeams,
+    setProjectId,
+    getCloudUrlFromRegion,
+  } = useAuthStore();
   const { data: userData } = useUserQuery();
+  const { data: projects } = useProjectsQuery();
 
   const pingsEnabled = usePreferencesStore((s) => s.pingsEnabled);
   const setPingsEnabled = usePreferencesStore((s) => s.setPingsEnabled);
@@ -114,6 +121,16 @@ export default function SettingsScreen() {
   const [soundSheetOpen, setSoundSheetOpen] = useState(false);
   const [volumeSheetOpen, setVolumeSheetOpen] = useState(false);
   const [taskModeSheetOpen, setTaskModeSheetOpen] = useState(false);
+  const [projectSheetOpen, setProjectSheetOpen] = useState(false);
+
+  // The selected project's name. Prefer the names fetched for the scoped teams
+  // (matched on the active projectId), falling back to the backend's current
+  // team name, then a bare ID. The picker is only useful with >1 project.
+  const selectedProjectName =
+    projects?.find((p) => p.id === projectId)?.name ||
+    userData?.team?.name ||
+    (projectId != null ? `Project ${projectId}` : "—");
+  const canSwitchProject = scopedTeams.length > 1;
 
   const handleTogglePushNotifications = (enabled: boolean) => {
     setPushNotificationsEnabled(enabled);
@@ -324,18 +341,38 @@ export default function SettingsScreen() {
 
         {/* Project */}
         <SettingsSection title="Project">
-          <SettingsRow
-            label="Display name"
-            showDivider={false}
-            rightSlot={
-              <Text
-                className="max-w-[180px] text-right font-medium text-[14px] text-gray-12"
-                numberOfLines={1}
-              >
-                {userData?.team?.name || "—"}
-              </Text>
-            }
-          />
+          {canSwitchProject ? (
+            <SettingsRow
+              label="Active project"
+              description="Tasks, inbox and automations use this project"
+              onPress={() => setProjectSheetOpen(true)}
+              showDivider={false}
+              rightSlot={
+                <>
+                  <Text
+                    className="max-w-[180px] text-right font-medium text-[14px] text-gray-12"
+                    numberOfLines={1}
+                  >
+                    {selectedProjectName}
+                  </Text>
+                  <CaretRight size={14} color={themeColors.gray[10]} />
+                </>
+              }
+            />
+          ) : (
+            <SettingsRow
+              label="Display name"
+              showDivider={false}
+              rightSlot={
+                <Text
+                  className="max-w-[180px] text-right font-medium text-[14px] text-gray-12"
+                  numberOfLines={1}
+                >
+                  {selectedProjectName}
+                </Text>
+              }
+            />
+          )}
         </SettingsSection>
 
         {/* Profile */}
@@ -467,6 +504,19 @@ export default function SettingsScreen() {
           value: option.value,
           label: option.label,
           description: option.description,
+        }))}
+      />
+
+      <SelectSheet
+        open={projectSheetOpen}
+        title="Active project"
+        value={projectId != null ? String(projectId) : ""}
+        onChange={(value) => setProjectId(Number(value))}
+        onClose={() => setProjectSheetOpen(false)}
+        options={scopedTeams.map((id) => ({
+          value: String(id),
+          label: projects?.find((p) => p.id === id)?.name || `Project ${id}`,
+          description: String(id),
         }))}
       />
     </View>
