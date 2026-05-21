@@ -286,6 +286,22 @@ export interface Integration {
   };
 }
 
+/**
+ * A user-scoped GitHub integration from `/api/users/@me/integrations/`.
+ * `id` is the PostHog `UserIntegration` UUID (used as `github_user_integration`
+ * on task creation); `installation_id` is the numeric GitHub App installation id
+ * (used to fetch repos and as the numeric key in `RepositoryOption`).
+ */
+export interface UserGithubIntegration {
+  id: string;
+  kind: string;
+  installation_id: string;
+  account?: {
+    name?: string;
+    type?: string;
+  };
+}
+
 export interface RepositoryOption {
   integrationId: number;
   integrationLabel: string;
@@ -302,6 +318,9 @@ export interface CreateTaskOptions {
   title?: string;
   repository?: string;
   github_integration?: number;
+  /** User-scoped GitHub integration UUID (UserIntegration pk) for user-authored
+   *  cloud runs. Preferred over `github_integration` for interactive tasks. */
+  github_user_integration?: string;
 }
 
 export interface CreateTaskAutomationOptions {

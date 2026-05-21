@@ -10,8 +10,8 @@ import {
   View,
 } from "react-native";
 import { useThemeColors } from "@/lib/theme";
-import { useIntegrations } from "../hooks/useIntegrations";
 import { useTasks } from "../hooks/useTasks";
+import { useUserIntegrations } from "../hooks/useUserIntegrations";
 import { useArchivedTasksStore } from "../stores/archivedTasksStore";
 import { taskActivityTimestamp, useTaskStore } from "../stores/taskStore";
 import type { Task } from "../types";
@@ -105,7 +105,7 @@ export function TaskList({
     error: integrationsError,
     hasGithubIntegration,
     refetch: refetchIntegrations,
-  } = useIntegrations();
+  } = useUserIntegrations();
   const themeColors = useThemeColors();
   const { archivedTasks, archive, archiveMany, unarchive } =
     useArchivedTasksStore();

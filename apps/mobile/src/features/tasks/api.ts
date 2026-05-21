@@ -16,6 +16,7 @@ import type {
   TaskAutomation,
   TaskRun,
   UpdateTaskAutomationOptions,
+  UserGithubIntegration,
 } from "./types";
 
 const log = logger.scope("tasks-api");
@@ -727,51 +728,6 @@ export async function streamCloudTask(
   });
 }
 
-export interface GithubUserConnectResult {
-  install_url: string;
-  connect_flow?: "oauth_authorize" | "oauth_discover" | "app_install";
-}
-
-/**
- * Starts the user-level GitHub connection flow, matching the desktop app.
- *
- * Hits `POST /api/users/@me/integrations/github/start/` so the backend can pick
- * the appropriate flow (GitHub App install / oauth authorize / discover) and
- * return the URL to open. This is the same endpoint desktop uses — the older
- * `/api/environments/{projectId}/integrations/authorize/?kind=github` URL drops
- * the `connect_from` marker and forces the team-level authorize flow instead.
- */
-export async function startGithubUserIntegrationConnect(): Promise<GithubUserConnectResult> {
-  const baseUrl = getBaseUrl();
-  const projectId = getProjectId();
-  const headers = getHeaders();
-
-  const response = await fetch(
-    `${baseUrl}/api/users/@me/integrations/github/start/`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        team_id: projectId,
-        connect_from: "posthog_code",
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => ({}))) as {
-      detail?: unknown;
-    };
-    const detail =
-      typeof payload.detail === "string"
-        ? payload.detail
-        : "Failed to start GitHub connection";
-    throw new HttpError(response.status, response.statusText, detail);
-  }
-
-  return parseJsonResponse<GithubUserConnectResult>(response);
-}
-
 export async function getIntegrations(): Promise<Integration[]> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
@@ -818,6 +774,122 @@ export async function getGithubRepositories(
     });
     const response = await fetch(
       `${baseUrl}/api/environments/${projectId}/integrations/${integrationId}/github_repos/?${params}`,
+      { headers },
+    );
+
+    if (!response.ok) {
+      throw new HttpError(
+        response.status,
+        response.statusText,
+        "Failed to fetch repositories",
+      );
+    }
+
+    const data = await response.json();
+    const repos: Array<string | { full_name?: string; name?: string }> =
+      data.repositories ?? data.results ?? data ?? [];
+
+    const normalized = repos
+      .map((repo) => {
+        if (typeof repo === "string") return repo.toLowerCase();
+        return (repo.full_name ?? repo.name ?? "").toLowerCase();
+      })
+      .filter((name) => name.length > 0);
+
+    allRepos.push(...normalized);
+
+    if (!data.has_more || repos.length === 0) {
+      return allRepos;
+    }
+
+    offset += repos.length;
+  }
+}
+
+export interface GithubUserConnectResult {
+  install_url: string;
+  connect_flow?: "oauth_authorize" | "oauth_discover" | "app_install";
+}
+
+/**
+ * Starts the user-scoped GitHub connection flow (mirrors desktop). The backend
+ * picks the lightweight OAuth flow when the team already has the GitHub App
+ * installed, otherwise a discover/install flow, and returns the URL to open.
+ *
+ * `connect_from: "posthog_mobile"` tells the backend to redirect the OAuth
+ * callback to `posthog://github/callback` so the in-app browser auto-closes.
+ */
+export async function startGithubUserIntegrationConnect(): Promise<GithubUserConnectResult> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/users/@me/integrations/github/start/`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        team_id: projectId,
+        connect_from: "posthog_mobile",
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as {
+      detail?: unknown;
+    };
+    const detail =
+      typeof payload.detail === "string"
+        ? payload.detail
+        : "Failed to start GitHub connection";
+    throw new HttpError(response.status, response.statusText, detail);
+  }
+
+  return parseJsonResponse<GithubUserConnectResult>(response);
+}
+
+export async function getUserGithubIntegrations(): Promise<
+  UserGithubIntegration[]
+> {
+  const baseUrl = getBaseUrl();
+  const headers = getHeaders();
+
+  const response = await fetch(`${baseUrl}/api/users/@me/integrations/`, {
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch personal GitHub integrations",
+    );
+  }
+
+  const data = await parseJsonResponse<{ results?: UserGithubIntegration[] }>(
+    response,
+  );
+  return (data.results ?? []).filter((i) => i.kind === "github");
+}
+
+export async function getUserGithubRepositories(
+  installationId: string,
+): Promise<string[]> {
+  const baseUrl = getBaseUrl();
+  const headers = getHeaders();
+
+  const allRepos: string[] = [];
+  let offset = 0;
+
+  while (true) {
+    const params = new URLSearchParams({
+      limit: String(GITHUB_REPOS_PAGE_SIZE),
+      offset: String(offset),
+    });
+    const response = await fetch(
+      `${baseUrl}/api/users/@me/integrations/github/${installationId}/repos/?${params}`,
       { headers },
     );
 

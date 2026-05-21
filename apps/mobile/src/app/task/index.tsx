@@ -62,7 +62,7 @@ import {
 import { Pill } from "@/features/tasks/composer/Pill";
 import { RepositoryPickerInline } from "@/features/tasks/composer/RepositoryPickerInline";
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
-import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
+import { useUserIntegrations } from "@/features/tasks/hooks/useUserIntegrations";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type {
   CreateTaskOptions,
@@ -118,7 +118,8 @@ export default function NewTaskScreen() {
     isLoading,
     isRefreshingInBackground,
     refetch,
-  } = useIntegrations();
+    getUserIntegrationId,
+  } = useUserIntegrations();
 
   const containerStyle = useAnimatedStyle(() => {
     const kbHeight = -keyboard.height.value;
@@ -267,7 +268,11 @@ export default function NewTaskScreen() {
         description: descriptionText,
         title: descriptionText.slice(0, 100),
         repository: selection.repository ?? undefined,
-        github_integration: selection.integrationId ?? undefined,
+        // User-scoped integration (matches desktop). `selection.integrationId`
+        // is the GitHub installation id; map it back to the UserIntegration
+        // UUID the API expects. The backend also auto-resolves this from the
+        // repository for user-created tasks, so it's a best-effort hint.
+        github_user_integration: getUserIntegrationId(selection.integrationId),
         ...(signalReport
           ? {
               origin_product: "signal_report",
@@ -316,6 +321,7 @@ export default function NewTaskScreen() {
     router,
     selection,
     signalReport,
+    getUserIntegrationId,
   ]);
 
   const hasContent = !!prompt.trim() || attachments.length > 0;

@@ -259,6 +259,7 @@ export function AutomationForm({
   if (repositoryRequired && hasGithubIntegration === false) {
     return (
       <GitHubConnectionPrompt
+        scope="team"
         onConnected={refetch}
         title="Connect GitHub to create automations"
         description="Automations need repository access before they can run."
