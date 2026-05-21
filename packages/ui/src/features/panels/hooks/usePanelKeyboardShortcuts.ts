@@ -1,3 +1,4 @@
+import { useShortcut } from "../../../primitives/hooks/useShortcut";
 import { useHotkeys } from "react-hotkeys-hook";
 import { SHORTCUTS } from "../../command/keyboard-shortcuts";
 import { usePanelLayoutStore } from "../panelLayoutStore";
@@ -5,6 +6,7 @@ import { getLeafPanel } from "../panelStoreHelpers";
 
 export function usePanelKeyboardShortcuts(taskId: string): void {
   const layout = usePanelLayoutStore((state) => state.getLayout(taskId));
+  const closeTabKey = useShortcut("close-tab");
 
   useHotkeys(
     SHORTCUTS.SWITCH_TAB,
@@ -42,7 +44,7 @@ export function usePanelKeyboardShortcuts(taskId: string): void {
   );
 
   useHotkeys(
-    SHORTCUTS.CLOSE_TAB,
+    closeTabKey,
     (event) => {
       event.preventDefault();
 

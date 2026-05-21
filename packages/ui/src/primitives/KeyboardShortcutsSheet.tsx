@@ -1,48 +1,16 @@
-import { Box, Dialog, Flex, Text } from "@radix-ui/themes";
-import { useMemo, useState } from "react";
+import { Keycap } from "./Keycap";
+import { ShortcutRecorder } from "./ShortcutRecorder";
+import { Box, Button, Dialog, Flex, Text } from "@radix-ui/themes";
+import { useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import {
   CATEGORY_LABELS,
+  type ConfigurableShortcutId,
   formatHotkeyParts,
   getShortcutsByCategory,
   type ShortcutCategory,
 } from "../features/command/keyboard-shortcuts";
-
-function Keycap({ label, size = "md" }: { label: string; size?: "sm" | "md" }) {
-  const [pressed, setPressed] = useState(false);
-  const isSmall = size === "sm";
-  const minW = isSmall ? "22px" : "28px";
-  const h = isSmall ? "22px" : "28px";
-  const fontSize = isSmall ? "11px" : "13px";
-  const shadowSize = isSmall ? "2px" : "3px";
-
-  return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: cosmetic press animation
-    <span
-      role="presentation"
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setPressed(false)}
-      onMouseLeave={() => setPressed(false)}
-      style={{
-        minWidth: minW,
-        height: h,
-        fontSize,
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        lineHeight: 1,
-        borderBottomWidth: pressed ? "1px" : shadowSize,
-        borderBottomColor: "var(--gray-7)",
-        transform: pressed
-          ? `translateY(${isSmall ? "1px" : "2px"})`
-          : "translateY(0)",
-        transition:
-          "transform 80ms ease-out, border-bottom-width 80ms ease-out",
-      }}
-      className="box-border inline-flex cursor-pointer select-none items-center justify-center rounded-[6px] border border-(--gray-5) bg-(--gray-3) px-[6px] py-0 font-medium text-(--gray-11)"
-    >
-      {label}
-    </span>
-  );
-}
+import { useKeybindingsStore } from "../shell/keybindingsStore";
 
 interface KeyboardShortcutsSheetProps {
   open: boolean;
@@ -110,6 +78,13 @@ function ShortcutsHeader() {
 
 export function KeyboardShortcutsList() {
   const shortcutsByCategory = useMemo(() => getShortcutsByCategory(), []);
+  const hasCustomBindings = useKeybindingsStore((s) =>
+    Object.keys(s.customKeybindings).some(
+      (k) =>
+        (s.customKeybindings[k as ConfigurableShortcutId]?.length ?? 0) > 0,
+    ),
+  );
+  const resetAll = useKeybindingsStore((s) => s.resetAll);
 
   const categoryOrder: ShortcutCategory[] = [
     "general",
@@ -149,19 +124,46 @@ export function KeyboardShortcutsList() {
                   align="center"
                   justify="between"
                   px="3"
-                  className="border-b border-b-(--gray-4) pt-[6px] pb-[6px] last:border-b-0 odd:bg-(--gray-2) even:bg-(--gray-1)"
+                  className="group border-b border-b-(--gray-4) pt-[6px] pb-[6px] last:border-b-0 odd:bg-(--gray-2) even:bg-(--gray-1)"
                 >
-                  <Text className="text-sm">{shortcut.description}</Text>
-                  <ShortcutKeys
-                    keys={shortcut.keys}
-                    alternateKeys={shortcut.alternateKeys}
-                  />
+                  <Flex direction="column" gap="0">
+                    <Text className="text-sm">{shortcut.description}</Text>
+                    {shortcut.context && (
+                      <Text color="gray" className="text-[11px]">
+                        {shortcut.context}
+                      </Text>
+                    )}
+                  </Flex>
+                  {shortcut.configurable ? (
+                    <ShortcutRecorder
+                      id={shortcut.id as ConfigurableShortcutId}
+                    />
+                  ) : (
+                    <ShortcutKeys
+                      keys={shortcut.keys}
+                      alternateKeys={shortcut.alternateKeys}
+                    />
+                  )}
                 </Flex>
               ))}
             </Box>
           </Flex>
         );
       })}
+
+      {hasCustomBindings && (
+        <Flex justify="end">
+          <Button
+            variant="soft"
+            color="gray"
+            size="1"
+            onClick={resetAll}
+            className="cursor-pointer"
+          >
+            Reset all shortcuts to defaults
+          </Button>
+        </Flex>
+      )}
     </Flex>
   );
 }

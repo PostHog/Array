@@ -1,3 +1,4 @@
+import { useShortcut } from "../../../primitives/hooks/useShortcut";
 import { CodeIcon, CopyIcon } from "@phosphor-icons/react";
 import {
   Button,
@@ -59,8 +60,11 @@ export function ExternalAppsOpener({ targetPath }: ExternalAppsOpenerProps) {
     await openExternalApp({ type: "copy-path" }, targetPath, displayName);
   }, [openExternalApp, targetPath]);
 
+  const openInEditorKey = useShortcut("open-in-editor");
+  const copyPathKey = useShortcut("copy-path");
+
   useHotkeys(
-    SHORTCUTS.OPEN_IN_EDITOR,
+    openInEditorKey,
     (event) => {
       event.preventDefault();
       handleOpenDefault();
@@ -70,7 +74,7 @@ export function ExternalAppsOpener({ targetPath }: ExternalAppsOpenerProps) {
   );
 
   useHotkeys(
-    SHORTCUTS.COPY_PATH,
+    copyPathKey,
     (event) => {
       event.preventDefault();
       handleCopyPath();

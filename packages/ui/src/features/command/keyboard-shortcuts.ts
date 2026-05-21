@@ -36,6 +36,7 @@ export interface KeyboardShortcut {
   category: ShortcutCategory;
   context?: string;
   alternateKeys?: string;
+  configurable?: boolean;
 }
 
 export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
@@ -45,24 +46,28 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "New task",
     category: "general",
     alternateKeys: "mod+t",
+    configurable: true,
   },
   {
     id: "command-menu",
     keys: SHORTCUTS.COMMAND_MENU,
     description: "Open command menu",
     category: "general",
+    configurable: true,
   },
   {
     id: "settings",
     keys: SHORTCUTS.SETTINGS,
     description: "Open settings",
     category: "general",
+    configurable: true,
   },
   {
     id: "shortcuts",
     keys: SHORTCUTS.SHORTCUTS_SHEET,
     description: "Show keyboard shortcuts",
     category: "general",
+    configurable: true,
   },
   {
     id: "switch-messaging-mode",
@@ -76,6 +81,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     keys: SHORTCUTS.INBOX,
     description: "Open inbox",
     category: "navigation",
+    configurable: true,
   },
   {
     id: "switch-task",
@@ -89,6 +95,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "Previous task",
     category: "navigation",
     alternateKeys: "ctrl+shift+tab",
+    configurable: true,
   },
   {
     id: "next-task",
@@ -96,42 +103,49 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "Next task",
     category: "navigation",
     alternateKeys: "ctrl+tab",
+    configurable: true,
   },
   {
     id: "space-up",
     keys: SHORTCUTS.SPACE_UP,
     description: "Previous space",
     category: "navigation",
+    configurable: true,
   },
   {
     id: "space-down",
     keys: SHORTCUTS.SPACE_DOWN,
     description: "Next space",
     category: "navigation",
+    configurable: true,
   },
   {
     id: "go-back",
     keys: SHORTCUTS.GO_BACK,
     description: "Go back",
     category: "navigation",
+    configurable: true,
   },
   {
     id: "go-forward",
     keys: SHORTCUTS.GO_FORWARD,
     description: "Go forward",
     category: "navigation",
+    configurable: true,
   },
   {
     id: "toggle-left-sidebar",
     keys: SHORTCUTS.TOGGLE_LEFT_SIDEBAR,
     description: "Toggle left sidebar",
     category: "navigation",
+    configurable: true,
   },
   {
     id: "toggle-review-panel",
     keys: SHORTCUTS.TOGGLE_REVIEW_PANEL,
     description: "Toggle review panel",
     category: "navigation",
+    configurable: true,
   },
   {
     id: "switch-tab",
@@ -146,6 +160,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "Close active tab",
     category: "panels",
     context: "Task detail",
+    configurable: true,
   },
   {
     id: "open-in-editor",
@@ -153,6 +168,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "Open in external editor",
     category: "panels",
     context: "Task detail",
+    configurable: true,
   },
   {
     id: "copy-path",
@@ -160,6 +176,15 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "Copy file path",
     category: "panels",
     context: "Task detail",
+    configurable: true,
+  },
+  {
+    id: "toggle-focus",
+    keys: SHORTCUTS.TOGGLE_FOCUS,
+    description: "Toggle focus mode",
+    category: "panels",
+    context: "Task detail (worktree)",
+    configurable: true,
   },
   {
     id: "find-in-conversation",
@@ -224,6 +249,48 @@ export const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
   navigation: "Navigation",
   panels: "Panels & Tabs",
   editor: "Editor",
+};
+
+export const CONFIGURABLE_SHORTCUT_IDS = [
+  "command-menu",
+  "new-task",
+  "settings",
+  "shortcuts",
+  "inbox",
+  "prev-task",
+  "next-task",
+  "space-up",
+  "space-down",
+  "go-back",
+  "go-forward",
+  "toggle-left-sidebar",
+  "toggle-review-panel",
+  "close-tab",
+  "open-in-editor",
+  "copy-path",
+  "toggle-focus",
+] as const;
+
+export type ConfigurableShortcutId = (typeof CONFIGURABLE_SHORTCUT_IDS)[number];
+
+export const DEFAULT_KEYBINDINGS: Record<ConfigurableShortcutId, string> = {
+  "command-menu": SHORTCUTS.COMMAND_MENU,
+  "new-task": SHORTCUTS.NEW_TASK,
+  settings: SHORTCUTS.SETTINGS,
+  shortcuts: SHORTCUTS.SHORTCUTS_SHEET,
+  inbox: SHORTCUTS.INBOX,
+  "prev-task": SHORTCUTS.PREV_TASK,
+  "next-task": SHORTCUTS.NEXT_TASK,
+  "space-up": SHORTCUTS.SPACE_UP,
+  "space-down": SHORTCUTS.SPACE_DOWN,
+  "go-back": SHORTCUTS.GO_BACK,
+  "go-forward": SHORTCUTS.GO_FORWARD,
+  "toggle-left-sidebar": SHORTCUTS.TOGGLE_LEFT_SIDEBAR,
+  "toggle-review-panel": SHORTCUTS.TOGGLE_REVIEW_PANEL,
+  "close-tab": SHORTCUTS.CLOSE_TAB,
+  "open-in-editor": SHORTCUTS.OPEN_IN_EDITOR,
+  "copy-path": SHORTCUTS.COPY_PATH,
+  "toggle-focus": SHORTCUTS.TOGGLE_FOCUS,
 };
 
 export function getShortcutsByCategory(): Record<
