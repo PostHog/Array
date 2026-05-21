@@ -1,5 +1,6 @@
 import { Keycap } from "./Keycap";
 import { ShortcutRecorder } from "./ShortcutRecorder";
+import { useShortcut } from "./hooks/useShortcut";
 import { Box, Button, Dialog, Flex, Text } from "@radix-ui/themes";
 import { useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -55,7 +56,8 @@ export function KeyboardShortcutsSheet({
 }
 
 function ShortcutsHeader() {
-  const triggerParts = formatHotkeyParts("mod+/");
+  const shortcutsKey = useShortcut("shortcuts");
+  const triggerParts = formatHotkeyParts(shortcutsKey);
 
   return (
     <Box mb="4">
