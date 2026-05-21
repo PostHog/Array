@@ -2,43 +2,37 @@ import { describe, expect, it } from "vitest";
 import { buildGatewayPropertyHeaders, resolveGatewayProduct } from "./gateway";
 
 describe("resolveGatewayProduct", () => {
-  it("returns posthog_code for non-internal tasks", () => {
-    expect(resolveGatewayProduct({ isInternal: false })).toBe("posthog_code");
-    expect(resolveGatewayProduct()).toBe("posthog_code");
-  });
-
-  it("returns posthog_code for non-internal tasks even when origin_product is signal_report", () => {
-    expect(
-      resolveGatewayProduct({
-        isInternal: false,
-        originProduct: "signal_report",
-      }),
-    ).toBe("posthog_code");
-  });
-
-  it("returns background_agents for internal tasks without origin_product", () => {
-    expect(resolveGatewayProduct({ isInternal: true })).toBe(
-      "background_agents",
-    );
-  });
-
-  it("returns background_agents for internal tasks with a non-signal origin_product", () => {
-    expect(
-      resolveGatewayProduct({
-        isInternal: true,
-        originProduct: "session_summaries",
-      }),
-    ).toBe("background_agents");
-  });
-
-  it("returns signals for internal tasks with origin_product 'signal_report'", () => {
-    expect(
-      resolveGatewayProduct({
-        isInternal: true,
-        originProduct: "signal_report",
-      }),
-    ).toBe("signals");
-  });
+  it.each([
+    { isInternal: false, originProduct: undefined, expected: "posthog_code" },
+    {
+      isInternal: undefined,
+      originProduct: undefined,
+      expected: "posthog_code",
+    },
+    {
+      isInternal: false,
+      originProduct: "signal_report",
+      expected: "posthog_code",
+    },
+    {
+      isInternal: true,
+      originProduct: undefined,
+      expected: "background_agents",
+    },
+    {
+      isInternal: true,
+      originProduct: "session_summaries",
+      expected: "background_agents",
+    },
+    { isInternal: true, originProduct: "signal_report", expected: "signals" },
+  ] as const)(
+    "isInternal=$isInternal originProduct=$originProduct -> $expected",
+    ({ isInternal, originProduct, expected }) => {
+      expect(resolveGatewayProduct({ isInternal, originProduct })).toBe(
+        expected,
+      );
+    },
+  );
 });
 
 describe("buildGatewayPropertyHeaders", () => {
