@@ -1021,9 +1021,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       clearTimeout(watcher.reconnectTimeoutId);
     }
 
-    // Every scheduled reconnect burns cumulative budget — clean EOF loops
-    // would otherwise dodge the per-burst counter (`reconnectAttempts`)
-    // by setting countAttempt=false and silently retrying forever.
+    // Cumulative counter bounds runaway loops that clean-EOF (countAttempt=false)
+    // and would otherwise dodge `reconnectAttempts`.
     watcher.cumulativeReconnectAttempts += 1;
     const countAttempt = options.countAttempt ?? true;
     if (countAttempt) {
@@ -1132,9 +1131,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
     if (!isTerminalStatus(watcher.lastStatus) && reconnectIfNonTerminal) {
       if (stateChanged) {
-        // Server-side progress observed via polling — the run is alive even
-        // if the SSE stream keeps closing without events. Don't burn the
-        // cumulative budget while progress is happening.
+        // Polled progress proves the run is alive — don't burn cumulative budget.
         watcher.cumulativeReconnectAttempts = 0;
         this.emit(CloudTaskEvent.Update, {
           taskId: watcher.taskId,

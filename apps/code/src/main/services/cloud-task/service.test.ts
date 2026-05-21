@@ -631,9 +631,6 @@ describe("CloudTaskService", () => {
       return Promise.resolve(makeInProgressRun());
     });
 
-    // Every stream closes cleanly with no events. Under the previous
-    // implementation reconnectAttempts was reset to 0 on each clean EOF
-    // and the watcher would loop forever.
     mockStreamFetch.mockImplementation(() =>
       Promise.resolve(createSseResponse("")),
     );
