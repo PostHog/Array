@@ -23,12 +23,18 @@ export const ICON_SIZE = 12;
 // selected row, which turns a `currentColor` icon black on hover. An explicit
 // `fill` is immune, and renders identically in the sidebar.
 
-function CloudStatusIcon({ taskRunStatus }: { taskRunStatus?: TaskRunStatus }) {
+function CloudStatusIcon({
+  taskRunStatus,
+  size,
+}: {
+  taskRunStatus?: TaskRunStatus;
+  size: number;
+}) {
   if (taskRunStatus === "queued" || taskRunStatus === "in_progress") {
     return (
       <Tooltip content="Cloud (running)" side="right">
         <span className="flex items-center justify-center">
-          <CloudIcon size={ICON_SIZE} className="ph-pulse" />
+          <CloudIcon size={size} className="ph-pulse" />
         </span>
       </Tooltip>
     );
@@ -37,7 +43,7 @@ function CloudStatusIcon({ taskRunStatus }: { taskRunStatus?: TaskRunStatus }) {
     return (
       <Tooltip content="Cloud (completed)" side="right">
         <span className="flex items-center justify-center">
-          <CloudIcon size={ICON_SIZE} weight="fill" color="var(--green-11)" />
+          <CloudIcon size={size} weight="fill" color="var(--green-11)" />
         </span>
       </Tooltip>
     );
@@ -48,7 +54,7 @@ function CloudStatusIcon({ taskRunStatus }: { taskRunStatus?: TaskRunStatus }) {
     return (
       <Tooltip content={label} side="right">
         <span className="flex items-center justify-center">
-          <CloudIcon size={ICON_SIZE} weight="fill" color="var(--red-11)" />
+          <CloudIcon size={size} weight="fill" color="var(--red-11)" />
         </span>
       </Tooltip>
     );
@@ -56,7 +62,7 @@ function CloudStatusIcon({ taskRunStatus }: { taskRunStatus?: TaskRunStatus }) {
   return (
     <Tooltip content="Cloud" side="right">
       <span className="flex items-center justify-center">
-        <CloudIcon size={ICON_SIZE} />
+        <CloudIcon size={size} />
       </span>
     </Tooltip>
   );
@@ -65,15 +71,17 @@ function CloudStatusIcon({ taskRunStatus }: { taskRunStatus?: TaskRunStatus }) {
 function PrStatusIcon({
   prState,
   hasDiff,
+  size,
 }: {
   prState?: SidebarPrState;
   hasDiff?: boolean;
+  size: number;
 }) {
   if (prState === "merged") {
     return (
       <Tooltip content="PR merged" side="right">
         <span className="flex items-center justify-center">
-          <GitMerge size={ICON_SIZE} weight="bold" color="var(--purple-11)" />
+          <GitMerge size={size} weight="bold" color="var(--purple-11)" />
         </span>
       </Tooltip>
     );
@@ -82,11 +90,7 @@ function PrStatusIcon({
     return (
       <Tooltip content="PR open" side="right">
         <span className="flex items-center justify-center">
-          <GitPullRequest
-            size={ICON_SIZE}
-            weight="bold"
-            color="var(--green-11)"
-          />
+          <GitPullRequest size={size} weight="bold" color="var(--green-11)" />
         </span>
       </Tooltip>
     );
@@ -95,11 +99,7 @@ function PrStatusIcon({
     return (
       <Tooltip content="Draft PR" side="right">
         <span className="flex items-center justify-center">
-          <GitPullRequest
-            size={ICON_SIZE}
-            weight="bold"
-            color="var(--gray-9)"
-          />
+          <GitPullRequest size={size} weight="bold" color="var(--gray-9)" />
         </span>
       </Tooltip>
     );
@@ -108,11 +108,7 @@ function PrStatusIcon({
     return (
       <Tooltip content="PR closed" side="right">
         <span className="flex items-center justify-center">
-          <GitPullRequest
-            size={ICON_SIZE}
-            weight="bold"
-            color="var(--red-11)"
-          />
+          <GitPullRequest size={size} weight="bold" color="var(--red-11)" />
         </span>
       </Tooltip>
     );
@@ -121,7 +117,7 @@ function PrStatusIcon({
     return (
       <Tooltip content="Has changes" side="right">
         <span className="flex items-center justify-center">
-          <GitBranch size={ICON_SIZE} weight="bold" color="var(--amber-11)" />
+          <GitBranch size={size} weight="bold" color="var(--amber-11)" />
         </span>
       </Tooltip>
     );
@@ -139,6 +135,7 @@ export interface TaskIconProps {
   taskRunStatus?: TaskRunStatus;
   prState?: SidebarPrState;
   hasDiff?: boolean;
+  size?: number;
 }
 
 /**
@@ -156,6 +153,7 @@ export function TaskIcon({
   taskRunStatus,
   prState,
   hasDiff,
+  size = ICON_SIZE,
 }: TaskIconProps) {
   const isCloudTask = workspaceMode === "cloud";
   const isTerminalCloud = isCloudTask && isTerminalStatus(taskRunStatus);
@@ -164,25 +162,25 @@ export function TaskIcon({
     return (
       <Tooltip content="Needs permission" side="right">
         <span className="flex items-center justify-center">
-          <HandPalm size={ICON_SIZE} color="var(--blue-11)" />
+          <HandPalm size={size} color="var(--blue-11)" />
         </span>
       </Tooltip>
     );
   }
   if (isTerminalCloud) {
-    return <CloudStatusIcon taskRunStatus={taskRunStatus} />;
+    return <CloudStatusIcon taskRunStatus={taskRunStatus} size={size} />;
   }
   if (isGenerating) {
-    return <DotsCircleSpinner size={ICON_SIZE} className="text-accent-11" />;
+    return <DotsCircleSpinner size={size} className="text-accent-11" />;
   }
   if (isCloudTask) {
-    return <CloudStatusIcon taskRunStatus={taskRunStatus} />;
+    return <CloudStatusIcon taskRunStatus={taskRunStatus} size={size} />;
   }
   if (isSuspended) {
     return (
       <Tooltip content="Suspended" side="right">
         <span className="flex items-center justify-center">
-          <Pause size={ICON_SIZE} color="var(--gray-9)" />
+          <Pause size={size} color="var(--gray-9)" />
         </span>
       </Tooltip>
     );
@@ -195,10 +193,10 @@ export function TaskIcon({
     );
   }
   if (prState || hasDiff) {
-    return <PrStatusIcon prState={prState} hasDiff={hasDiff} />;
+    return <PrStatusIcon prState={prState} hasDiff={hasDiff} size={size} />;
   }
   if (isPinned) {
-    return <PushPin size={ICON_SIZE} color="var(--accent-11)" />;
+    return <PushPin size={size} color="var(--accent-11)" />;
   }
-  return <ChatCircle size={ICON_SIZE} color="var(--gray-10)" />;
+  return <ChatCircle size={size} color="var(--gray-10)" />;
 }

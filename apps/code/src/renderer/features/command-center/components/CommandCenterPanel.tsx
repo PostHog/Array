@@ -8,6 +8,7 @@ import {
   ArrowsOut,
   Cloud,
   Desktop,
+  Folder,
   GitFork,
   Plus,
   X,
@@ -72,7 +73,7 @@ function CellStatusBadge({
     : undefined;
 
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-gray-3 px-1.5 py-0.5 text-[11px] text-gray-11">
+    <span className="inline-flex items-center gap-0.5 rounded bg-gray-3 px-1 py-0.5 text-[10px] text-gray-11">
       <TaskIcon
         workspaceMode={workspaceMode ?? undefined}
         isGenerating={session?.isPromptPending}
@@ -80,6 +81,7 @@ function CellStatusBadge({
         taskRunStatus={taskRunStatus}
         prState={prState}
         hasDiff={hasDiff}
+        size={10}
       />
       {label}
     </span>
@@ -91,7 +93,7 @@ function EnvironmentBadge({ mode }: { mode: WorkspaceMode | null }) {
   const config = environmentConfig[mode];
   const Icon = config.icon;
   return (
-    <span className="inline-flex items-center gap-0.5 rounded bg-gray-3 px-1 py-0.5 text-[9px] text-gray-10">
+    <span className="inline-flex items-center gap-0.5 rounded bg-gray-3 px-1 py-0.5 text-[10px] text-gray-10">
       <Icon size={10} />
       {config.label}
     </span>
@@ -223,7 +225,8 @@ function PopulatedCell({
           <CellStatusBadge cell={cell} />
           <EnvironmentBadge mode={cell.workspaceMode} />
           {cell.repoName && (
-            <span className="rounded bg-gray-3 px-1 py-0.5 text-[9px] text-gray-10">
+            <span className="inline-flex items-center gap-0.5 rounded bg-gray-3 px-1 py-0.5 text-[10px] text-gray-10">
+              <Folder size={10} />
               {cell.repoName}
             </span>
           )}
