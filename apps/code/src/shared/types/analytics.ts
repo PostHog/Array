@@ -451,6 +451,8 @@ export interface InboxViewedProperties {
   source_product_filter: string[];
   status_filter_count: number;
   is_empty: boolean;
+  /** True when the inbox is scale-gated (GatedDueToScalePane shown, data not loaded). */
+  is_gated_due_to_scale: boolean;
 }
 
 export interface InboxReportOpenedProperties {
