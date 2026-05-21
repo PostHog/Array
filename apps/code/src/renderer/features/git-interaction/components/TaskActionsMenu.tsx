@@ -5,6 +5,7 @@ import {
   GitCommitDialog,
   GitPushDialog,
 } from "@features/git-interaction/components/GitInteractionDialogs";
+import { PRBadgeLink } from "@features/git-interaction/components/PRBadgeLink";
 import { useCloudPrUrl } from "@features/git-interaction/hooks/useCloudPrUrl";
 import {
   type GitMenuAction,
@@ -17,7 +18,6 @@ import { usePrDetails } from "@features/git-interaction/hooks/usePrDetails";
 import {
   getPrActionIcon,
   getPrVisualConfig,
-  parsePrNumber,
 } from "@features/git-interaction/utils/prStatus";
 import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
 import type { PrActionType } from "@main/services/git/schemas";
@@ -247,33 +247,19 @@ function PrBadgeControl({
   onPrSelect,
 }: PrBadgeControlProps) {
   const config = getPrVisualConfig(prState, merged, draft);
-  const prNumber = parsePrNumber(prUrl);
   const lifecycleItems = config.actions;
   const hasDropdown = gitItems.length + lifecycleItems.length > 0;
 
   return (
     <Flex align="center" gap="0">
-      <Button
-        size="1"
-        variant="soft"
-        color={config.color}
-        asChild
-        style={
-          hasDropdown
-            ? { borderTopRightRadius: 0, borderBottomRightRadius: 0 }
-            : undefined
-        }
-      >
-        <a href={prUrl} target="_blank" rel="noopener noreferrer">
-          <Flex align="center" gap="2">
-            {isPrPending ? <Spinner size="1" /> : config.icon}
-            <Text size="1">
-              {config.label}
-              {prNumber && ` #${prNumber}`}
-            </Text>
-          </Flex>
-        </a>
-      </Button>
+      <PRBadgeLink
+        prUrl={prUrl}
+        prState={prState}
+        merged={merged}
+        draft={draft}
+        isPrPending={isPrPending}
+        attachedRight={hasDropdown}
+      />
       {hasDropdown && (
         <DropdownMenu.Root>
           <DropdownMenu.Trigger>
