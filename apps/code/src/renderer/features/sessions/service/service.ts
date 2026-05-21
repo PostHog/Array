@@ -208,12 +208,18 @@ interface CloudLogGapReconcileRequest {
 interface ParsedSessionLogs {
   rawEntries: StoredLogEntry[];
   totalLineCount: number;
+  parseFailureCount: number;
   sessionId?: string;
   adapter?: Adapter;
 }
 
 interface CloudLogGapReconcileState {
   pendingRequest?: CloudLogGapReconcileRequest;
+}
+
+interface CloudLogReconcileDeficiency {
+  expectedCount: number;
+  observedLineCount: number;
 }
 
 export interface ConnectParams {
@@ -303,6 +309,17 @@ export class SessionService {
     }
   >();
   private cloudLogGapReconciles = new Map<string, CloudLogGapReconcileState>();
+  /**
+   * Per-taskRunId record of the last observed reconcile deficiency. Used to
+   * detect the corruption-amplification loop: if a second reconcile produces
+   * the same (expectedCount, observedLineCount) pair as the previous one, S3
+   * isn't catching up — we commit best-effort and advance processedLineCount
+   * past the gap so snapshot deltas stop re-triggering reconcile.
+   */
+  private cloudLogReconcileDeficiency = new Map<
+    string,
+    CloudLogReconcileDeficiency
+  >();
   /** Maps toolCallId → cloud requestId for routing permission responses */
   private cloudPermissionRequestIds = new Map<string, string>();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
@@ -739,6 +756,7 @@ export class SessionService {
     this.unsubscribeFromChannel(taskRunId);
     sessionStoreSetters.removeSession(taskRunId);
     this.cloudRunIdleTracker.delete(taskRunId);
+    this.cloudLogReconcileDeficiency.delete(taskRunId);
     if (session) {
       this.localRepoPaths.delete(session.taskId);
       this.localRecoveryAttempts.delete(session.taskId);
@@ -1118,6 +1136,7 @@ export class SessionService {
     this.localRecoveryAttempts.clear();
     this.cloudPermissionRequestIds.clear();
     this.cloudLogGapReconciles.clear();
+    this.cloudLogReconcileDeficiency.clear();
     this.dispatchingCloudQueues.clear();
     this.scheduledCloudQueueFlushes.clear();
     this.cloudRunIdleTracker.clear();
@@ -3658,6 +3677,7 @@ export class SessionService {
     const rawEntries: StoredLogEntry[] = [];
     let sessionId: string | undefined;
     let adapter: Adapter | undefined;
+    let parseFailureCount = 0;
     const lines = content.trim().split("\n");
 
     for (const line of lines) {
@@ -3679,11 +3699,18 @@ export class SessionService {
           if (params?.adapter) adapter = params.adapter;
         }
       } catch {
+        parseFailureCount += 1;
         log.warn("Failed to parse log entry", { line });
       }
     }
 
-    return { rawEntries, totalLineCount: lines.length, sessionId, adapter };
+    return {
+      rawEntries,
+      totalLineCount: lines.length,
+      parseFailureCount,
+      sessionId,
+      adapter,
+    };
   }
 
   private async fetchSessionLogs(
@@ -3691,7 +3718,11 @@ export class SessionService {
     taskRunId?: string,
     options: { minEntryCount?: number } = {},
   ): Promise<ParsedSessionLogs> {
-    const empty: ParsedSessionLogs = { rawEntries: [], totalLineCount: 0 };
+    const empty: ParsedSessionLogs = {
+      rawEntries: [],
+      totalLineCount: 0,
+      parseFailureCount: 0,
+    };
     if (!logUrl && !taskRunId) return empty;
     let localResult: ParsedSessionLogs | undefined;
 
@@ -3811,11 +3842,10 @@ export class SessionService {
     newEntries,
     logUrl,
   }: CloudLogGapReconcileRequest): Promise<void> {
-    const { rawEntries, totalLineCount } = await this.fetchSessionLogs(
-      logUrl,
-      taskRunId,
-      { minEntryCount: expectedCount },
-    );
+    const { rawEntries, totalLineCount, parseFailureCount } =
+      await this.fetchSessionLogs(logUrl, taskRunId, {
+        minEntryCount: expectedCount,
+      });
     const session = sessionStoreSetters.getSessions()[taskRunId];
     if (!session || session.taskId !== taskId) {
       return;
@@ -3823,6 +3853,7 @@ export class SessionService {
 
     const latestCount = session.processedLineCount ?? 0;
     if (latestCount >= expectedCount) {
+      this.cloudLogReconcileDeficiency.delete(taskRunId);
       return;
     }
 
@@ -3832,6 +3863,7 @@ export class SessionService {
         sessionStoreSetters.clearTailOptimisticItems(taskRunId);
       }
       this.cloudRunIdleTracker.delete(taskRunId);
+      this.cloudLogReconcileDeficiency.delete(taskRunId);
       sessionStoreSetters.updateSession(taskRunId, {
         events,
         isCloud: true,
@@ -3842,16 +3874,51 @@ export class SessionService {
       return;
     }
 
-    // The fetched logs lag behind expectedCount and `newEntries` is the latest
-    // tail slice of the snapshot — appending it here would create duplicates
-    // and gaps in `session.events` (and bump processedLineCount past entries
-    // we don't actually have). Skip; the next snapshot/log update will retry
-    // once the source has caught up.
+    // The fetched logs lag behind expectedCount. If we've seen the exact same
+    // deficiency before (same expectedCount, same observed line count), S3 is
+    // not catching up — committing what we have and advancing processedLineCount
+    // past the gap is the only way to break the reconcile loop. Otherwise the
+    // snapshot delta stays positive forever, firing a fetch + writeLocalLogs
+    // on every SSE snapshot.
+    const previous = this.cloudLogReconcileDeficiency.get(taskRunId);
+    const sameDeficiencyAsBefore =
+      previous?.expectedCount === expectedCount &&
+      previous?.observedLineCount === totalLineCount;
+
+    if (sameDeficiencyAsBefore) {
+      log.warn("Cloud task log gap unrecoverable; committing best-effort", {
+        taskRunId,
+        expectedCount,
+        observedLineCount: totalLineCount,
+        parseFailureCount,
+        fetchedEntries: rawEntries.length,
+      });
+      const events = convertStoredEntriesToEvents(rawEntries);
+      if (hasSessionPromptEvent(events)) {
+        sessionStoreSetters.clearTailOptimisticItems(taskRunId);
+      }
+      this.cloudRunIdleTracker.delete(taskRunId);
+      this.cloudLogReconcileDeficiency.delete(taskRunId);
+      sessionStoreSetters.updateSession(taskRunId, {
+        events,
+        isCloud: true,
+        logUrl: logUrl ?? session.logUrl,
+        processedLineCount: expectedCount,
+      });
+      this.updatePromptStateFromEvents(taskRunId, events);
+      return;
+    }
+
+    this.cloudLogReconcileDeficiency.set(taskRunId, {
+      expectedCount,
+      observedLineCount: totalLineCount,
+    });
     log.warn("Cloud task log count inconsistency", {
       taskRunId,
       currentCount,
       expectedCount,
       fetchedCount: rawEntries.length,
+      parseFailureCount,
       entriesReceived: newEntries.length,
     });
   }
