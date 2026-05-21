@@ -205,5 +205,34 @@ describe("LocalLogsService", () => {
         "utf-8",
       );
     });
+
+    it("skips writeFile when coalesced content matches the last write", async () => {
+      const firstWrite = deferred();
+      mockWriteFile.mockImplementationOnce(() => firstWrite.promise);
+
+      const service = new LocalLogsService();
+      const a = service.writeLocalLogs(RUN_ID, "SAME");
+      const b = service.writeLocalLogs(RUN_ID, "SAME");
+
+      firstWrite.resolve();
+      await Promise.all([a, b]);
+
+      expect(mockWriteFile).toHaveBeenCalledTimes(1);
+    });
+
+    it("only mkdirs once per drain", async () => {
+      const firstWrite = deferred();
+      mockWriteFile.mockImplementationOnce(() => firstWrite.promise);
+
+      const service = new LocalLogsService();
+      const a = service.writeLocalLogs(RUN_ID, "A");
+      const b = service.writeLocalLogs(RUN_ID, "B");
+
+      firstWrite.resolve();
+      await Promise.all([a, b]);
+
+      expect(mockWriteFile).toHaveBeenCalledTimes(2);
+      expect(mockMkdir).toHaveBeenCalledTimes(1);
+    });
   });
 });

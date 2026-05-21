@@ -3,29 +3,28 @@ import os from "node:os";
 import path from "node:path";
 
 import { injectable } from "inversify";
+import { DATA_DIR } from "../../../shared/constants";
 import { logger } from "../../utils/logger";
 
 const log = logger.scope("local-logs");
 
 interface WriteState {
-  inFlight: Promise<void>;
   pending: string | undefined;
+  lastWritten: string | undefined;
+  dirReady: boolean;
 }
 
 /**
  * Owns the per-run NDJSON cache at `~/.posthog-code/sessions/{taskRunId}/logs.ndjson`.
  *
  * `writeLocalLogs` is single-flight per `taskRunId` with latest-wins coalescing:
- * if a write is already in flight when a new one arrives, the new content replaces
- * any queued content rather than spawning a parallel `fs.promises.writeFile`. This
- * prevents a storm of full-file overwrites when the renderer's gap-reconcile loop
- * fires `writeLocalLogs` per SSE snapshot — that storm pegs the main thread on
- * `FileHandle::CloseReq::Resolve` continuations and is what tipped a user's app
- * into an 81-second hang on launch.
+ * if a write is already in flight, the new content replaces any queued content
+ * rather than spawning a parallel `fs.promises.writeFile`. Identical consecutive
+ * payloads are skipped — gap-reconcile re-emits the same NDJSON on every snapshot.
  */
 @injectable()
 export class LocalLogsService {
-  private writes = new Map<string, WriteState>();
+  private writes = new Map<string, { state: WriteState; inFlight: Promise<void> }>();
 
   async readLocalLogs(taskRunId: string): Promise<string | null> {
     const logPath = this.getLocalLogPath(taskRunId);
@@ -43,43 +42,55 @@ export class LocalLogsService {
   writeLocalLogs(taskRunId: string, content: string): Promise<void> {
     const existing = this.writes.get(taskRunId);
     if (existing) {
-      existing.pending = content;
+      existing.state.pending = content;
       return existing.inFlight;
     }
 
-    const entry: WriteState = {
-      inFlight: undefined as unknown as Promise<void>,
+    const state: WriteState = {
       pending: undefined,
+      lastWritten: undefined,
+      dirReady: false,
     };
-
-    entry.inFlight = this.drain(taskRunId, content, entry);
-    this.writes.set(taskRunId, entry);
-    return entry.inFlight;
+    const inFlight = this.drain(taskRunId, content, state);
+    this.writes.set(taskRunId, { state, inFlight });
+    return inFlight;
   }
 
   private async drain(
     taskRunId: string,
     initialContent: string,
-    entry: WriteState,
+    state: WriteState,
   ): Promise<void> {
-    let next: string | undefined = initialContent;
-    while (next !== undefined) {
-      const current = next;
-      next = undefined;
-      await this.doWrite(taskRunId, current);
-      if (entry.pending !== undefined) {
-        next = entry.pending;
-        entry.pending = undefined;
+    try {
+      let next: string | undefined = initialContent;
+      while (next !== undefined) {
+        const current = next;
+        next = undefined;
+        if (current !== state.lastWritten) {
+          await this.doWrite(taskRunId, current, state);
+          state.lastWritten = current;
+        }
+        if (state.pending !== undefined) {
+          next = state.pending;
+          state.pending = undefined;
+        }
       }
+    } finally {
+      this.writes.delete(taskRunId);
     }
-    this.writes.delete(taskRunId);
   }
 
-  private async doWrite(taskRunId: string, content: string): Promise<void> {
+  private async doWrite(
+    taskRunId: string,
+    content: string,
+    state: WriteState,
+  ): Promise<void> {
     const logPath = this.getLocalLogPath(taskRunId);
-    const logDir = path.dirname(logPath);
     try {
-      await fs.promises.mkdir(logDir, { recursive: true });
+      if (!state.dirReady) {
+        await fs.promises.mkdir(path.dirname(logPath), { recursive: true });
+        state.dirReady = true;
+      }
       await fs.promises.writeFile(logPath, content, "utf-8");
     } catch (error) {
       log.warn("Failed to write local logs:", error);
@@ -89,7 +100,7 @@ export class LocalLogsService {
   private getLocalLogPath(taskRunId: string): string {
     return path.join(
       os.homedir(),
-      ".posthog-code",
+      DATA_DIR,
       "sessions",
       taskRunId,
       "logs.ndjson",
