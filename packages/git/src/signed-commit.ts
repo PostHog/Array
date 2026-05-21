@@ -3,7 +3,7 @@
 // which has no named exports. This module never runs in the browser.
 import * as childProcess from "node:child_process";
 import { mapWithConcurrency } from "./concurrency";
-import { execGh } from "./gh";
+import { execGh, execGhWithRetry } from "./gh";
 import { buildPostHogTrailers } from "./trailers";
 import { parseGithubUrl } from "./utils";
 
@@ -21,6 +21,8 @@ import { parseGithubUrl } from "./utils";
 
 const DEFAULT_MAX_PAYLOAD_BYTES = 35 * 1024 * 1024;
 const MAX_GIT_BUFFER = 256 * 1024 * 1024;
+// Per-attempt cap for the GraphQL commit call; retried with backoff on timeout.
+const GH_GRAPHQL_TIMEOUT_MS = 30_000;
 
 export interface SignedCommitCtx {
   /** Working directory of the clone. */
@@ -341,11 +343,17 @@ async function createCommitOnBranch(
     },
   });
 
-  const res = await execGh(["api", "graphql", "--input", "-"], {
-    cwd: ctx.cwd,
-    input: payload,
-    env: ghTokenEnv(ctx.token),
-  });
+  const res = await execGhWithRetry(
+    ["api", "graphql", "--input", "-"],
+    {
+      cwd: ctx.cwd,
+      input: payload,
+      env: ghTokenEnv(ctx.token),
+      // Bound each attempt so a stalled connection can't hang the tool forever.
+      timeoutMs: GH_GRAPHQL_TIMEOUT_MS,
+    },
+    { maxAttempts: 3 },
+  );
   if (res.exitCode !== 0) {
     throw new Error(
       `createCommitOnBranch failed: ${res.stderr || res.error || res.stdout}`,
