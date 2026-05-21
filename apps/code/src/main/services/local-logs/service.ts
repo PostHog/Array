@@ -15,16 +15,15 @@ interface WriteState {
 }
 
 /**
- * Owns the per-run NDJSON cache at `~/.posthog-code/sessions/{taskRunId}/logs.ndjson`.
- *
- * `writeLocalLogs` is single-flight per `taskRunId` with latest-wins coalescing:
- * if a write is already in flight, the new content replaces any queued content
- * rather than spawning a parallel `fs.promises.writeFile`. Identical consecutive
- * payloads are skipped — gap-reconcile re-emits the same NDJSON on every snapshot.
+ * Single-flight per `taskRunId` with latest-wins coalescing. Prevents the
+ * gap-reconcile loop from spawning parallel writeFile of the same NDJSON.
  */
 @injectable()
 export class LocalLogsService {
-  private writes = new Map<string, { state: WriteState; inFlight: Promise<void> }>();
+  private writes = new Map<
+    string,
+    { state: WriteState; inFlight: Promise<void> }
+  >();
 
   async readLocalLogs(taskRunId: string): Promise<string | null> {
     const logPath = this.getLocalLogPath(taskRunId);
