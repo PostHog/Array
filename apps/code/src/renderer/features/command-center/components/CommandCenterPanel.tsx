@@ -18,6 +18,7 @@ import {
   getCellSessionId,
   useCommandCenterStore,
 } from "../stores/commandCenterStore";
+import { CommandCenterPrButton } from "./CommandCenterPrButton";
 import { CommandCenterSessionView } from "./CommandCenterSessionView";
 import { StatusBadge } from "./StatusBadge";
 import { TaskSelector } from "./TaskSelector";
@@ -177,6 +178,10 @@ function PopulatedCell({
               {cell.repoName}
             </span>
           )}
+          <CommandCenterPrButton
+            taskId={cell.task.id}
+            workspaceMode={cell.workspaceMode}
+          />
           <button
             type="button"
             onClick={handleExpand}
