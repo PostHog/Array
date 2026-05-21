@@ -504,6 +504,9 @@ export interface InboxReportActionProperties {
   task_section?: "research" | "implementation";
   // True when the user submitted Discuss with a first question via the popover.
   has_question?: boolean;
+  // The first question text the user typed before hitting Discuss. Truncated to
+  // 500 chars to keep event payloads bounded.
+  question_text?: string;
 }
 
 // Subscription / billing events
