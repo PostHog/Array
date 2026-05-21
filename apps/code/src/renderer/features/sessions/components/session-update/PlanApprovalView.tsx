@@ -35,52 +35,56 @@ export function PlanApprovalView({
   }, [content, toolCall.rawInput]);
 
   const showResult = isComplete || wasCancelled;
-  const showPlanInline = !showResult;
   const canTogglePlan = showResult && !!planText;
+  const planContentId = `plan-content-${toolCall.toolCallId}`;
 
   if (!planText && !showResult) return null;
 
+  const statusContent = isComplete ? (
+    <>
+      <CheckCircle size={14} weight="fill" className="text-green-9" />
+      <Text className="text-[13px] text-green-11">
+        Plan approved — proceeding with implementation
+      </Text>
+    </>
+  ) : wasCancelled ? (
+    <Text className="text-[13px] text-gray-10">(Plan rejected)</Text>
+  ) : null;
+
   return (
     <Box className="my-3">
-      {showPlanInline && planText && (
+      {!showResult && planText && (
         <PlanContent id={toolCall.toolCallId} plan={planText} />
       )}
 
       {showResult && (
         <Box>
-          <Flex
-            align="center"
-            gap="2"
-            className={`px-1 ${canTogglePlan ? "cursor-pointer select-none" : ""}`}
-            onClick={
-              canTogglePlan ? () => setIsPlanExpanded((v) => !v) : undefined
-            }
-          >
-            {canTogglePlan &&
-              (isPlanExpanded ? (
-                <CaretDown size={10} className="text-gray-10" />
+          {canTogglePlan ? (
+            <button
+              type="button"
+              onClick={() => setIsPlanExpanded((v) => !v)}
+              aria-expanded={isPlanExpanded}
+              aria-controls={planContentId}
+              className="flex items-center gap-2 rounded-sm px-1 text-left hover:bg-gray-3"
+            >
+              {isPlanExpanded ? (
+                <CaretDown size={12} className="text-gray-10" />
               ) : (
-                <CaretRight size={10} className="text-gray-10" />
-              ))}
-            {isComplete ? (
-              <>
-                <CheckCircle size={14} weight="fill" className="text-green-9" />
-                <Text className="text-[13px] text-green-11">
-                  Plan approved — proceeding with implementation
-                </Text>
-              </>
-            ) : wasCancelled ? (
-              <Text className="text-[13px] text-gray-10">(Plan rejected)</Text>
-            ) : null}
-            {canTogglePlan && (
-              <Text className="text-[13px] text-gray-9">
+                <CaretRight size={12} className="text-gray-10" />
+              )}
+              {statusContent}
+              <Text className="text-[13px] text-gray-10">
                 · {isPlanExpanded ? "hide plan" : "show plan"}
               </Text>
-            )}
-          </Flex>
+            </button>
+          ) : (
+            <Flex align="center" gap="2" className="px-1">
+              {statusContent}
+            </Flex>
+          )}
 
           {canTogglePlan && isPlanExpanded && (
-            <Box className="mt-2">
+            <Box id={planContentId} className="mt-2">
               <PlanContent id={toolCall.toolCallId} plan={planText} />
             </Box>
           )}
