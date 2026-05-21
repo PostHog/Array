@@ -37,7 +37,8 @@ export interface Task {
     | "eval_clusters"
     | "user_created"
     | "support_queue"
-    | "session_summaries";
+    | "session_summaries"
+    | "signal_report";
   github_integration?: number | null;
   repository: string; // Format: "organization/repository" (e.g., "posthog/posthog-js")
   json_schema?: Record<string, unknown> | null; // JSON schema for task output validation

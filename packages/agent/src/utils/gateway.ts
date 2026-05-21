@@ -1,4 +1,21 @@
-export type GatewayProduct = "posthog_code" | "background_agents";
+export type GatewayProduct = "posthog_code" | "background_agents" | "signals";
+
+const SIGNAL_REPORT_ORIGIN_PRODUCT = "signal_report";
+
+export function resolveGatewayProduct({
+  isInternal,
+  originProduct,
+}: {
+  isInternal?: boolean;
+  originProduct?: string | null;
+} = {}): GatewayProduct {
+  if (isInternal) {
+    return originProduct === SIGNAL_REPORT_ORIGIN_PRODUCT
+      ? "signals"
+      : "background_agents";
+  }
+  return "posthog_code";
+}
 
 function getGatewayBaseUrl(posthogHost: string): string {
   const url = new URL(posthogHost);

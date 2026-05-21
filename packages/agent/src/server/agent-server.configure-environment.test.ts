@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentServer } from "./agent-server";
 
 interface TestableServer {
-  configureEnvironment(args?: { isInternal?: boolean }): void;
+  configureEnvironment(args?: {
+    isInternal?: boolean;
+    originProduct?: string | null;
+  }): void;
 }
 
 const ENV_KEYS_UNDER_TEST = [
@@ -83,6 +86,34 @@ describe("AgentServer.configureEnvironment", () => {
 
     expect(fromBackground).toBe(fromInteractive);
     expect(fromBackground).toBe("https://gateway.us.posthog.com/posthog_code");
+  });
+
+  it("tags as signals when an internal task has origin_product 'signal_report'", () => {
+    buildServer("background").configureEnvironment({
+      isInternal: true,
+      originProduct: "signal_report",
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "https://gateway.us.posthog.com/signals",
+    );
+    expect(process.env.ANTHROPIC_BASE_URL).toBe(
+      "https://gateway.us.posthog.com/signals",
+    );
+    expect(process.env.OPENAI_BASE_URL).toBe(
+      "https://gateway.us.posthog.com/signals/v1",
+    );
+  });
+
+  it("does not tag as signals when origin_product is 'signal_report' but the task is not internal", () => {
+    buildServer("background").configureEnvironment({
+      isInternal: false,
+      originProduct: "signal_report",
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "https://gateway.us.posthog.com/posthog_code",
+    );
   });
 
   it("respects the LLM_GATEWAY_URL override regardless of internal flag", () => {

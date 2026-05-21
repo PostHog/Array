@@ -47,7 +47,7 @@ import type {
 } from "../types";
 import { resourceLink } from "../utils/acp-content";
 import { AsyncMutex } from "../utils/async-mutex";
-import { type GatewayProduct, getLlmGatewayUrl } from "../utils/gateway";
+import { getLlmGatewayUrl, resolveGatewayProduct } from "../utils/gateway";
 import { Logger } from "../utils/logger";
 import { logAgentshRuntimeInfo } from "./agentsh-runtime";
 import {
@@ -844,7 +844,10 @@ export class AgentServer {
       }),
     ]);
 
-    this.configureEnvironment({ isInternal: preTask?.internal === true });
+    this.configureEnvironment({
+      isInternal: preTask?.internal === true,
+      originProduct: preTask?.origin_product,
+    });
 
     const prUrl = getTaskRunStateString(preTaskRun, "slack_notified_pr_url");
 
@@ -1804,13 +1807,13 @@ ${attributionInstructions}
 
   private configureEnvironment({
     isInternal = false,
+    originProduct,
   }: {
     isInternal?: boolean;
+    originProduct?: string | null;
   } = {}): void {
     const { apiKey, apiUrl, projectId } = this.config;
-    const product: GatewayProduct = isInternal
-      ? "background_agents"
-      : "posthog_code";
+    const product = resolveGatewayProduct({ isInternal, originProduct });
     const gatewayUrl =
       process.env.LLM_GATEWAY_URL || getLlmGatewayUrl(apiUrl, product);
     const openaiBaseUrl = gatewayUrl.endsWith("/v1")
