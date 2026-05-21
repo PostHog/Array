@@ -73,15 +73,11 @@ describe("LocalLogsService", () => {
       expect(mockReadFile).toHaveBeenCalledWith(expectedPath, "utf-8");
     });
 
-    it("returns null when the file is missing", async () => {
-      const err = Object.assign(new Error("nope"), { code: "ENOENT" });
+    it.each([
+      ["file is missing", Object.assign(new Error("nope"), { code: "ENOENT" })],
+      ["other read errors", new Error("boom")],
+    ])("returns null when %s", async (_label, err) => {
       mockReadFile.mockRejectedValue(err);
-      const service = new LocalLogsService();
-      await expect(service.readLocalLogs(RUN_ID)).resolves.toBeNull();
-    });
-
-    it("returns null on other read errors", async () => {
-      mockReadFile.mockRejectedValue(new Error("boom"));
       const service = new LocalLogsService();
       await expect(service.readLocalLogs(RUN_ID)).resolves.toBeNull();
     });
