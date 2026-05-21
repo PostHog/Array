@@ -4,7 +4,6 @@ import { HighlightedCode } from "@components/HighlightedCode";
 import { List, ListItem } from "@components/List";
 import { parseGithubIssueUrl } from "@features/message-editor/utils/githubIssueUrl";
 import { Blockquote, Checkbox, Code, Kbd, Text } from "@radix-ui/themes";
-import { trpcClient } from "@renderer/trpc/client";
 import { memo, useMemo } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
@@ -115,7 +114,11 @@ export const baseComponents: Components = {
         onClick={(event) => {
           if (!isDeeplink || !href) return;
           event.preventDefault();
-          void trpcClient.os.openExternal.mutate({ url: href });
+          // Lazy-load the tRPC client so tests that render markdown don't need
+          // an electronTRPC global at module init time.
+          void import("@renderer/trpc/client").then(({ trpcClient }) =>
+            trpcClient.os.openExternal.mutate({ url: href }),
+          );
         }}
         target="_blank"
         rel="noopener noreferrer"

@@ -379,6 +379,7 @@ export function ReportDetailPane({
       const prompt = trimmedQuestion
         ? `Discuss PostHog inbox report ${report.id} ([inbox item](${reportLink})). Use the inbox MCP tools to fetch the report, then answer this first: ${trimmedQuestion}`
         : `Discuss PostHog inbox report ${report.id} ([inbox item](${reportLink})). Use the inbox MCP tools to fetch the report, then give me a brief readout and ask what I want to dig into.`;
+      fireDetailAction("discuss", { has_question: !!trimmedQuestion });
       setDiscussQuestionOpen(false);
       navigateToTaskInput({
         initialPrompt: prompt,
@@ -391,7 +392,7 @@ export function ReportDetailPane({
         autoSubmit: true,
       });
     },
-    [navigateToTaskInput, effectiveCloudRepository, report],
+    [navigateToTaskInput, effectiveCloudRepository, report, fireDetailAction],
   );
 
   const handleDiscussSubmit = useCallback(
