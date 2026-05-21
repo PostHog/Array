@@ -309,13 +309,7 @@ export class SessionService {
     }
   >();
   private cloudLogGapReconciles = new Map<string, CloudLogGapReconcileState>();
-  /**
-   * Per-taskRunId record of the last observed reconcile deficiency. Used to
-   * detect the corruption-amplification loop: if a second reconcile produces
-   * the same (expectedCount, observedLineCount) pair as the previous one, S3
-   * isn't catching up — we commit best-effort and advance processedLineCount
-   * past the gap so snapshot deltas stop re-triggering reconcile.
-   */
+  /** Last observed reconcile deficit per taskRunId — see reconcileCloudLogGapOnce. */
   private cloudLogReconcileDeficiency = new Map<
     string,
     CloudLogReconcileDeficiency
@@ -3875,15 +3869,8 @@ export class SessionService {
       return;
     }
 
-    // The fetched logs lag behind expectedCount. Two situations break the
-    // reconcile loop early by committing best-effort and advancing
-    // processedLineCount past the gap:
-    //   1. `parseFailureCount > 0` — proven corruption: lines exist but
-    //      don't parse. S3 will never make them parseable. Break on first
-    //      observation.
-    //   2. Same deficiency twice in a row (same expectedCount, same
-    //      observedLineCount) — S3 isn't catching up. Break on second.
-    // Otherwise this is plausibly transient lag — record and wait.
+    // Break the reconcile loop on proven corruption (parseFailureCount > 0)
+    // or on a stable repeat of the same deficit. Otherwise wait — likely lag.
     const previous = this.cloudLogReconcileDeficiency.get(taskRunId);
     const sameDeficiencyAsBefore =
       previous?.expectedCount === expectedCount &&

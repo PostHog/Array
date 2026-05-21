@@ -2536,9 +2536,6 @@ describe("SessionService", () => {
         timestamp: "2024-01-01T00:00:00Z",
         notification: { method: "session/update" },
       });
-      // Mix of valid and malformed JSON — totalLineCount=10, but two lines
-      // fail JSON.parse so parseFailureCount=2. Even on first observation
-      // we should commit best-effort to break the loop.
       const corruptedContent = [
         ...Array.from({ length: 8 }, () => validLine),
         "}}not-json{{",
@@ -2603,7 +2600,6 @@ describe("SessionService", () => {
         timestamp: "2024-01-01T00:00:00Z",
         notification: { method: "session/update" },
       });
-      // 8 parseable lines while the server claims 14 — stable corruption.
       mockTrpcLogs.readLocalLogs.query.mockResolvedValue(
         Array.from({ length: 8 }, () => storedLine).join("\n"),
       );
