@@ -37,8 +37,10 @@ const COMBOBOX_LIMIT = 50;
 const CREATE_BRANCH_ACTION = "__create_branch__";
 
 // Sentinel for the "Use '<input>' as branch name" action in cloud mode.
-// Surfaced as the first list item so it's keyboard-reachable and
-// auto-highlighted while the (slow) remote search is still running.
+// Positioned first when the list is empty so it's auto-highlighted while the
+// (slow) remote search is still running; pushed into the footer once branches
+// have loaded so auto-highlight lands on a real branch (typed names that match
+// a server-returned prefix would otherwise be shadowed by the literal input).
 const USE_INPUT_BRANCH_ACTION = "__use_input_branch__";
 
 function LoadingRow({ label }: { label: string }) {
@@ -243,10 +245,18 @@ export function BranchSelector({
     handleBranchChange(trimmedInputValue);
   };
 
+  const useInputBranchPosition: "leading" | "trailing" | null =
+    showUseInputBranchAction
+      ? branches.length === 0
+        ? "leading"
+        : "trailing"
+      : null;
   const comboboxItems = isCloudMode
-    ? showUseInputBranchAction
+    ? useInputBranchPosition === "leading"
       ? [USE_INPUT_BRANCH_ACTION, ...branches]
-      : branches
+      : useInputBranchPosition === "trailing"
+        ? [...branches, USE_INPUT_BRANCH_ACTION]
+        : branches
     : [...branches, CREATE_BRANCH_ACTION];
 
   return (
@@ -405,7 +415,7 @@ export function BranchSelector({
               );
             }
             if (item === USE_INPUT_BRANCH_ACTION) {
-              return (
+              const useInputItem = (
                 <ComboboxItem
                   key={USE_INPUT_BRANCH_ACTION}
                   value={USE_INPUT_BRANCH_ACTION}
@@ -416,6 +426,14 @@ export function BranchSelector({
                   Use "{trimmedInputValue}" as branch name
                 </ComboboxItem>
               );
+              if (useInputBranchPosition === "trailing") {
+                return (
+                  <ComboboxListFooter key="use-input-footer">
+                    {useInputItem}
+                  </ComboboxListFooter>
+                );
+              }
+              return useInputItem;
             }
             return (
               <ComboboxItem
