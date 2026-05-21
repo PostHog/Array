@@ -1,9 +1,14 @@
 import { useOAuthFlow } from "@features/auth/hooks/useOAuthFlow";
 import { Callout, Flex, Spinner } from "@radix-ui/themes";
 import posthogIcon from "@renderer/assets/images/posthog-icon.svg";
+import type { CloudRegion } from "@shared/types/regions";
 import { RegionSelect } from "./RegionSelect";
 
-export function OAuthControls() {
+interface OAuthControlsProps {
+  onAuthInitiated?: (region: CloudRegion) => void;
+}
+
+export function OAuthControls({ onAuthInitiated }: OAuthControlsProps = {}) {
   const {
     region,
     handleAuth,
@@ -12,6 +17,15 @@ export function OAuthControls() {
     isPending,
     errorMessage,
   } = useOAuthFlow();
+
+  const handleClick = () => {
+    if (isPending) {
+      void handleCancel();
+      return;
+    }
+    onAuthInitiated?.(region);
+    handleAuth();
+  };
 
   return (
     <Flex direction="column" gap="3" className="w-full">
@@ -35,7 +49,7 @@ export function OAuthControls() {
 
       <button
         type="button"
-        onClick={isPending ? handleCancel : handleAuth}
+        onClick={handleClick}
         disabled={false}
         className="flex h-[44px] w-full cursor-pointer items-center justify-center gap-[8px] rounded-[6px] font-medium text-[15px]"
         style={{

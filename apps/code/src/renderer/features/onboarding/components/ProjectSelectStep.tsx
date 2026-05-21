@@ -17,7 +17,6 @@ import {
   ArrowLeft,
   ArrowRight,
   CaretDown,
-  Check,
   CheckCircle,
 } from "@phosphor-icons/react";
 import {
@@ -31,8 +30,14 @@ import {
 } from "@posthog/quill";
 import { Button, Flex, Spinner, Text } from "@radix-ui/themes";
 import happyHog from "@renderer/assets/images/hedgehogs/happy-hog.png";
+import {
+  FIELD_CONTENT_CLASS,
+  FIELD_TRIGGER_CLASS,
+} from "@renderer/styles/fieldTrigger";
 import { BILLING_FLAG } from "@shared/constants";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -51,12 +56,6 @@ interface ProjectSelectStepProps {
   onNext: () => void;
   onBack: () => void;
 }
-
-const TRIGGER_CLASS =
-  "box-border flex w-full cursor-pointer appearance-none items-center justify-between gap-3 rounded-[10px] border border-(--gray-a3) bg-(--color-panel-solid) px-[14px] py-[10px] font-[inherit] text-sm shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)]";
-
-const CONTENT_CLASS =
-  "w-(--anchor-width) max-w-(--anchor-width) min-w-(--anchor-width) p-0";
 
 export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
   const authFetched = useAuthStateFetched();
@@ -182,6 +181,11 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                         hogSrc={happyHog}
                         hogMessage="I don't bite. Just need to know who I'm working with."
                         subtitle="Connect your account to get started."
+                        onAuthInitiated={(region) =>
+                          track(ANALYTICS_EVENTS.ONBOARDING_SIGN_IN_INITIATED, {
+                            region,
+                          })
+                        }
                       />
                     </motion.div>
                   ) : null}
@@ -227,9 +231,9 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                           <button
                             ref={orgAnchorRef}
                             type="button"
-                            className={TRIGGER_CLASS}
+                            className={FIELD_TRIGGER_CLASS}
                           >
-                            <Text className="min-w-0 flex-1 truncate text-left font-medium text-(--gray-12) text-sm">
+                            <Text className="min-w-0 flex-1 truncate text-left font-medium text-(--gray-12)">
                               {currentOrg?.name ?? "Select organization..."}
                             </Text>
                             <CaretDown
@@ -244,7 +248,7 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                         side="bottom"
                         align="start"
                         sideOffset={4}
-                        className={CONTENT_CLASS}
+                        className={FIELD_CONTENT_CLASS}
                       >
                         <ComboboxInput
                           placeholder="Search organizations..."
@@ -258,19 +262,7 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                               value={org}
                               title={org.name}
                             >
-                              <Flex
-                                align="center"
-                                justify="between"
-                                width="100%"
-                              >
-                                <Text className="text-sm">{org.name}</Text>
-                                {org.id === currentOrg?.id && (
-                                  <Check
-                                    size={14}
-                                    className="text-(--accent-11)"
-                                  />
-                                )}
-                              </Flex>
+                              <Text>{org.name}</Text>
                             </ComboboxItem>
                           )}
                         </ComboboxList>
@@ -312,7 +304,7 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                           <button
                             ref={projectAnchorRef}
                             type="button"
-                            className={TRIGGER_CLASS}
+                            className={FIELD_TRIGGER_CLASS}
                           >
                             <Flex
                               direction="column"
@@ -320,7 +312,7 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                               align="start"
                               className="min-w-0 flex-1 text-left"
                             >
-                              <Text className="min-w-0 max-w-full truncate font-medium text-(--gray-12) text-sm">
+                              <Text className="min-w-0 max-w-full truncate font-medium text-(--gray-12)">
                                 {currentProject?.name ?? "Select a project..."}
                               </Text>
                               {currentProject && !hasMultipleOrgs && (
@@ -341,7 +333,7 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                         side="bottom"
                         align="start"
                         sideOffset={4}
-                        className={CONTENT_CLASS}
+                        className={FIELD_CONTENT_CLASS}
                       >
                         <ComboboxInput
                           placeholder="Search projects..."
@@ -355,19 +347,7 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                               value={project}
                               title={project.name}
                             >
-                              <Flex
-                                align="center"
-                                justify="between"
-                                width="100%"
-                              >
-                                <Text className="text-sm">{project.name}</Text>
-                                {project.id === currentProjectId && (
-                                  <Check
-                                    size={14}
-                                    className="text-(--accent-11)"
-                                  />
-                                )}
-                              </Flex>
+                              <Text>{project.name}</Text>
                             </ComboboxItem>
                           )}
                         </ComboboxList>
@@ -414,7 +394,13 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
           {isAuthenticated && !isLoading && (
             <Button
               size="3"
-              onClick={onNext}
+              onClick={() => {
+                track(ANALYTICS_EVENTS.ONBOARDING_PROJECT_SELECTED, {
+                  had_multiple_orgs: hasMultipleOrgs,
+                  had_multiple_projects: sortedProjects.length > 1,
+                });
+                onNext();
+              }}
               disabled={currentProjectId == null}
             >
               Continue

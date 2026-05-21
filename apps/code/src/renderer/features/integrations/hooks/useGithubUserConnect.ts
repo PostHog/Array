@@ -103,12 +103,17 @@ interface StateMachine {
   scheduleDevPolling: () => void;
 }
 
-function useConnectStateMachine(projectId: number | null): StateMachine {
+function useConnectStateMachine(
+  projectId: number | null,
+  onConnected?: () => void,
+): StateMachine {
   const queryClient = useQueryClient();
   const [state, setState] = useState<GithubUserConnectState>("idle");
   const [error, setError] = useState<GithubUserConnectError | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -145,6 +150,7 @@ function useConnectStateMachine(projectId: number | null): StateMachine {
       setState("idle");
       setError(null);
       invalidate(callbackProjectId ?? projectId);
+      onConnectedRef.current?.();
     },
     onError: (cbError) => {
       stopPolling();
@@ -275,6 +281,7 @@ interface ConnectOptions extends Options {
    *  is `false` get the team-level OAuth flow (Cloud also seeds their
    *  `UserIntegration` in the same round-trip). */
   projectHasTeamIntegration: boolean | null;
+  onConnected?: () => void;
 }
 
 /**
@@ -287,11 +294,12 @@ interface ConnectOptions extends Options {
 export function useGithubConnect({
   projectId,
   projectHasTeamIntegration,
+  onConnected,
 }: ConnectOptions): Result {
   const client = useOptionalAuthenticatedClient();
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const { isAdmin } = useIsOrgAdmin();
-  const machine = useConnectStateMachine(projectId);
+  const machine = useConnectStateMachine(projectId, onConnected);
 
   const shouldUseTeamFlow =
     isAdmin === true &&

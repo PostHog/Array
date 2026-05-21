@@ -4,6 +4,7 @@ import type { TaskData } from "./useSidebarData";
 import { useTaskPrStatus } from "./useTaskPrStatus";
 
 let queryData: unknown;
+let lastQueryOptions: { enabled?: boolean } | undefined;
 
 vi.mock("@renderer/trpc/client", () => ({
   useTRPC: () => ({
@@ -11,7 +12,7 @@ vi.mock("@renderer/trpc/client", () => ({
       getTaskPrStatus: {
         queryOptions: (
           input: { taskId: string; cloudPrUrl: string | null },
-          opts: { staleTime: number },
+          opts: { staleTime: number; enabled?: boolean },
         ) => ({
           queryKey: ["workspace.getTaskPrStatus", input],
           queryFn: () => undefined,
@@ -23,7 +24,10 @@ vi.mock("@renderer/trpc/client", () => ({
 }));
 
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: queryData }),
+  useQuery: (opts: { enabled?: boolean }) => {
+    lastQueryOptions = opts;
+    return { data: queryData };
+  },
 }));
 
 function makeTask(overrides: Partial<TaskData> = {}): TaskData {
@@ -50,6 +54,7 @@ function makeTask(overrides: Partial<TaskData> = {}): TaskData {
 describe("useTaskPrStatus", () => {
   beforeEach(() => {
     queryData = undefined;
+    lastQueryOptions = undefined;
   });
 
   it("returns empty status when no data is available", () => {
@@ -79,5 +84,35 @@ describe("useTaskPrStatus", () => {
     queryData = { prState: "merged", hasDiff: true };
     const { result } = renderHook(() => useTaskPrStatus(makeTask()));
     expect(result.current).toEqual({ prState: "merged", hasDiff: true });
+  });
+
+  it("disables the query for cloud tasks without a cloudPrUrl", () => {
+    renderHook(() =>
+      useTaskPrStatus(
+        makeTask({ taskRunEnvironment: "cloud", cloudPrUrl: null }),
+      ),
+    );
+    expect(lastQueryOptions?.enabled).toBe(false);
+  });
+
+  it("runs the query for cloud tasks that have a cloudPrUrl", () => {
+    renderHook(() =>
+      useTaskPrStatus(
+        makeTask({
+          taskRunEnvironment: "cloud",
+          cloudPrUrl: "https://github.com/x/y/pull/1",
+        }),
+      ),
+    );
+    expect(lastQueryOptions?.enabled).toBe(true);
+  });
+
+  it("runs the query for local tasks", () => {
+    renderHook(() =>
+      useTaskPrStatus(
+        makeTask({ taskRunEnvironment: "local", cloudPrUrl: null }),
+      ),
+    );
+    expect(lastQueryOptions?.enabled).toBe(true);
   });
 });

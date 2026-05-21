@@ -1,8 +1,13 @@
-import { Command } from "@features/command/components/Command";
 import { Check } from "@phosphor-icons/react";
-import { Flex, Popover, Text } from "@radix-ui/themes";
+import {
+  Autocomplete,
+  AutocompleteInput,
+  AutocompleteItem,
+  AutocompleteList,
+  AutocompleteStatus,
+} from "@posthog/quill";
+import { Popover, Text } from "@radix-ui/themes";
 import { useState } from "react";
-import "./ProjectSelect.css";
 
 interface ProjectSelectProps {
   projectId: number;
@@ -13,6 +18,8 @@ interface ProjectSelectProps {
   size?: "1" | "2";
 }
 
+type ProjectInfo = { id: number; name: string };
+
 export function ProjectSelect({
   projectId,
   projectName,
@@ -22,12 +29,23 @@ export function ProjectSelect({
   size = "2",
 }: ProjectSelectProps) {
   const [open, setOpen] = useState(false);
-  const currentProject = projects.find((p) => p.id === projectId);
-  const defaultValue = currentProject
-    ? `${currentProject.name} ${currentProject.id}`
-    : undefined;
-  const [highlightedValue, setHighlightedValue] = useState(defaultValue);
+  const [query, setQuery] = useState("");
   const sizeClass = size === "1" ? "text-[13px]" : "text-sm";
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) setQuery("");
+  };
+
+  const handleSelect = (id: string | null) => {
+    if (id === null) return;
+    const next = Number(id);
+    if (Number.isNaN(next)) return;
+    onProjectChange(next);
+    // Route through handleOpenChange so setQuery("") fires — calling
+    // setOpen(false) directly bypasses Popover's onOpenChange.
+    handleOpenChange(false);
+  };
 
   if (projects.length <= 1) {
     return (
@@ -43,15 +61,7 @@ export function ProjectSelect({
         {projectName}
         {" · "}
       </span>
-      <Popover.Root
-        open={open}
-        onOpenChange={(nextOpen) => {
-          setOpen(nextOpen);
-          if (nextOpen) {
-            setHighlightedValue(defaultValue);
-          }
-        }}
-      >
+      <Popover.Root open={open} onOpenChange={handleOpenChange}>
         <Popover.Trigger>
           <button
             type="button"
@@ -68,39 +78,58 @@ export function ProjectSelect({
           </button>
         </Popover.Trigger>
         <Popover.Content
-          className="project-select-popover p-0"
+          className="w-[320px] gap-0 border border-(--gray-6) bg-(--color-panel-solid) p-0 shadow-6"
           side="bottom"
           align="start"
           sideOffset={8}
         >
-          <Command.Root
-            shouldFilter={true}
-            label="Project picker"
-            value={highlightedValue}
-            onValueChange={setHighlightedValue}
+          <Autocomplete<ProjectInfo>
+            inline
+            defaultOpen
+            items={projects}
+            value={query}
+            autoHighlight="always"
+            onValueChange={(val, eventDetails) => {
+              if (eventDetails.reason !== "input-change") return;
+              if (typeof val === "string") setQuery(val);
+            }}
+            filter={(project, q) => {
+              if (!q) return true;
+              return project.name.toLowerCase().includes(q.toLowerCase());
+            }}
           >
-            <Command.Input placeholder="Search projects..." autoFocus={true} />
-            <Command.List>
-              <Command.Empty>No projects found.</Command.Empty>
-              {projects.map((project) => (
-                <Command.Item
+            <AutocompleteInput
+              placeholder="Search projects…"
+              autoFocus
+              showClear
+            />
+            <AutocompleteStatus
+              emptyContent={
+                query ? (
+                  <span>
+                    No projects match <strong>"{query}"</strong>
+                  </span>
+                ) : (
+                  <span>No projects available</span>
+                )
+              }
+            />
+            <AutocompleteList className="max-h-[240px] pt-1">
+              {(project: ProjectInfo) => (
+                <AutocompleteItem
                   key={project.id}
-                  value={`${project.name} ${project.id}`}
-                  onSelect={() => {
-                    onProjectChange(project.id);
-                    setOpen(false);
-                  }}
+                  value={String(project.id)}
+                  onClick={() => handleSelect(String(project.id))}
+                  className="flex items-center justify-between gap-3"
                 >
-                  <Flex align="center" justify="between" width="100%">
-                    <Text className="text-sm">{project.name}</Text>
-                    {project.id === projectId && (
-                      <Check size={14} className="text-accent-11" />
-                    )}
-                  </Flex>
-                </Command.Item>
-              ))}
-            </Command.List>
-          </Command.Root>
+                  <span className="text-sm">{project.name}</span>
+                  {project.id === projectId && (
+                    <Check size={14} className="text-accent-11" />
+                  )}
+                </AutocompleteItem>
+              )}
+            </AutocompleteList>
+          </Autocomplete>
         </Popover.Content>
       </Popover.Root>
     </Text>

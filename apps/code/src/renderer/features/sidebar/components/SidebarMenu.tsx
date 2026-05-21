@@ -6,9 +6,7 @@ import {
   INBOX_PIPELINE_STATUS_FILTER,
   INBOX_REFETCH_INTERVAL_MS,
 } from "@features/inbox/utils/inboxConstants";
-import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { getSessionService } from "@features/sessions/service/service";
-import { useSetupStore } from "@features/setup/stores/setupStore";
 import {
   archiveTaskImperative,
   useArchiveTask,
@@ -35,7 +33,6 @@ import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
 import { McpServersItem } from "./items/McpServersItem";
 import { SearchItem } from "./items/SearchItem";
-import { SetupItem } from "./items/SetupItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
 import { TaskListView } from "./TaskListView";
@@ -49,7 +46,6 @@ function SidebarMenuComponent() {
     navigateToCommandCenter,
     navigateToSkills,
     navigateToMcpServers,
-    navigateToSetup,
   } = useNavigationStore();
 
   // Must mirror useSidebarData's filters so taskMap covers every rendered
@@ -65,17 +61,6 @@ function SidebarMenuComponent() {
     useTaskContextMenu();
   const { archiveTask } = useArchiveTask();
   const { togglePin } = usePinnedTasks();
-
-  const hasCompletedSetup = useOnboardingStore(
-    (state) => state.hasCompletedSetup,
-  );
-  const showSetupItem = useSetupStore((s) => {
-    if (!hasCompletedSetup) return true;
-    if (s.discoveryStatus === "running") return true;
-    if (s.discoveryStatus === "done" && s.discoveredTasks.length > 0)
-      return true;
-    return false;
-  });
 
   const sidebarData = useSidebarData({
     activeView: view,
@@ -141,10 +126,6 @@ function SidebarMenuComponent() {
 
   const handleMcpServersClick = () => {
     navigateToMcpServers();
-  };
-
-  const handleSetupClick = () => {
-    navigateToSetup();
   };
 
   const openCommandMenu = useCommandMenuStore((s) => s.open);
@@ -322,15 +303,6 @@ function SidebarMenuComponent() {
               variant="primary"
             />
           </Box>
-
-          {showSetupItem && (
-            <Box mb="1" px="1">
-              <SetupItem
-                isActive={sidebarData.isSetupActive}
-                onClick={handleSetupClick}
-              />
-            </Box>
-          )}
 
           <Box>
             <SearchItem onClick={handleSearchClick} />

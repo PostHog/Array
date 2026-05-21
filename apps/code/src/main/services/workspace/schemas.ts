@@ -55,6 +55,14 @@ export const createWorkspaceInput = z
     },
   );
 
+export const reconcileCloudWorkspacesInput = z.object({
+  taskIds: z.array(z.string()),
+});
+
+export const reconcileCloudWorkspacesOutput = z.object({
+  created: z.array(z.string()),
+});
+
 export const deleteWorkspaceInput = z.object({
   taskId: z.string(),
   mainRepoPath: z.string(),
@@ -264,6 +272,12 @@ export type WorkspaceInfo = z.infer<typeof workspaceInfoSchema>;
 export type Workspace = z.infer<typeof workspaceSchema>;
 
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceInput>;
+export type ReconcileCloudWorkspacesInput = z.infer<
+  typeof reconcileCloudWorkspacesInput
+>;
+export type ReconcileCloudWorkspacesOutput = z.infer<
+  typeof reconcileCloudWorkspacesOutput
+>;
 export type DeleteWorkspaceInput = z.infer<typeof deleteWorkspaceInput>;
 export type VerifyWorkspaceInput = z.infer<typeof verifyWorkspaceInput>;
 export type GetWorkspaceInfoInput = z.infer<typeof getWorkspaceInfoInput>;

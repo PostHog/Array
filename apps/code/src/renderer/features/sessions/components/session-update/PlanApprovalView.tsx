@@ -1,7 +1,7 @@
 import { PlanContent } from "@components/permissions/PlanContent";
-import { CheckCircle } from "@phosphor-icons/react";
+import { CaretDown, CaretRight, CheckCircle } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { type ToolViewProps, useToolCallStatus } from "./toolCallUtils";
 
 export function PlanApprovalView({
@@ -15,6 +15,7 @@ export function PlanApprovalView({
     turnCancelled,
     turnComplete,
   );
+  const [isPlanExpanded, setIsPlanExpanded] = useState(false);
 
   const planText = useMemo(() => {
     const rawPlan = (toolCall.rawInput as { plan?: string } | undefined)?.plan;
@@ -33,30 +34,61 @@ export function PlanApprovalView({
     return null;
   }, [content, toolCall.rawInput]);
 
-  const showPlanContent = !isComplete && !wasCancelled;
   const showResult = isComplete || wasCancelled;
+  const canTogglePlan = showResult && !!planText;
+  const planContentId = `plan-content-${toolCall.toolCallId}`;
 
   if (!planText && !showResult) return null;
 
+  const statusContent = isComplete ? (
+    <>
+      <CheckCircle size={14} weight="fill" className="text-green-9" />
+      <Text className="text-[13px] text-green-11">
+        Plan approved — proceeding with implementation
+      </Text>
+    </>
+  ) : wasCancelled ? (
+    <Text className="text-[13px] text-gray-10">(Plan rejected)</Text>
+  ) : null;
+
   return (
     <Box className="my-3">
-      {showPlanContent && planText && (
+      {!showResult && planText && (
         <PlanContent id={toolCall.toolCallId} plan={planText} />
       )}
 
       {showResult && (
-        <Flex align="center" gap="2" className="px-1">
-          {isComplete ? (
-            <>
-              <CheckCircle size={14} weight="fill" className="text-green-9" />
-              <Text className="text-[13px] text-green-11">
-                Plan approved — proceeding with implementation
+        <Box>
+          {canTogglePlan ? (
+            <button
+              type="button"
+              onClick={() => setIsPlanExpanded((v) => !v)}
+              aria-expanded={isPlanExpanded}
+              aria-controls={planContentId}
+              className="flex items-center gap-2 rounded-sm px-1 text-left hover:bg-gray-3"
+            >
+              {isPlanExpanded ? (
+                <CaretDown size={12} className="text-gray-10" />
+              ) : (
+                <CaretRight size={12} className="text-gray-10" />
+              )}
+              {statusContent}
+              <Text className="text-[13px] text-gray-10">
+                · {isPlanExpanded ? "hide plan" : "show plan"}
               </Text>
-            </>
-          ) : wasCancelled ? (
-            <Text className="text-[13px] text-gray-10">(Plan rejected)</Text>
-          ) : null}
-        </Flex>
+            </button>
+          ) : (
+            <Flex align="center" gap="2" className="px-1">
+              {statusContent}
+            </Flex>
+          )}
+
+          {canTogglePlan && isPlanExpanded && (
+            <Box id={planContentId} className="mt-2">
+              <PlanContent id={toolCall.toolCallId} plan={planText} />
+            </Box>
+          )}
+        </Box>
       )}
     </Box>
   );

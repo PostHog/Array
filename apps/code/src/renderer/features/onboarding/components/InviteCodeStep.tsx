@@ -3,6 +3,8 @@ import { useAuthUiStateStore } from "@features/auth/stores/authUiStateStore";
 import { ArrowLeft, ArrowRight } from "@phosphor-icons/react";
 import { Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import happyHog from "@renderer/assets/images/hedgehogs/happy-hog.png";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import { track } from "@utils/analytics";
 import { motion } from "framer-motion";
 import { OnboardingHogTip } from "./OnboardingHogTip";
 import { StepActions } from "./StepActions";
@@ -24,8 +26,17 @@ export function InviteCodeStep({ onNext, onBack }: InviteCodeStepProps) {
     if (!code.trim()) return;
     redeemMutation.mutate(code.trim(), {
       onSuccess: () => {
+        track(ANALYTICS_EVENTS.ONBOARDING_INVITE_CODE_SUBMITTED, {
+          success: true,
+        });
         resetInviteCode();
         onNext();
+      },
+      onError: (err) => {
+        track(ANALYTICS_EVENTS.ONBOARDING_INVITE_CODE_SUBMITTED, {
+          success: false,
+          error_type: err instanceof Error ? err.message : "unknown",
+        });
       },
     });
   };

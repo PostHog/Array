@@ -8,6 +8,7 @@ export type SettingsCategory =
   | "environments"
   | "cloud-environments"
   | "personalization"
+  | "terminal"
   | "claude-code"
   | "shortcuts"
   | "github"
@@ -57,7 +58,7 @@ export const useSettingsDialogStore = create<SettingsDialogStore>()(
       const isAction = typeof contextOrAction === "string";
       set({
         isOpen: true,
-        activeCategory: category ?? "general",
+        activeCategory: category ?? get().activeCategory,
         context: isAction ? {} : (contextOrAction ?? {}),
         initialAction: isAction ? contextOrAction : null,
         formMode: false,

@@ -27,6 +27,8 @@ import {
   listGitWorktreesOutput,
   markActivityInput,
   markViewedInput,
+  reconcileCloudWorkspacesInput,
+  reconcileCloudWorkspacesOutput,
   taskPrStatusInput,
   taskPrStatusOutput,
   togglePinInput,
@@ -65,6 +67,13 @@ export const workspaceRouter = router({
     .input(createWorkspaceInput)
     .output(createWorkspaceOutput)
     .mutation(({ input }) => getService().createWorkspace(input)),
+
+  reconcileCloudWorkspaces: publicProcedure
+    .input(reconcileCloudWorkspacesInput)
+    .output(reconcileCloudWorkspacesOutput)
+    .mutation(({ input }) =>
+      getService().reconcileCloudWorkspaces(input.taskIds),
+    ),
 
   delete: publicProcedure
     .input(deleteWorkspaceInput)

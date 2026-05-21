@@ -9,9 +9,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { extractZip } from "@main/utils/extract-zip";
+import { extractZip, unzipAsync } from "@main/utils/extract-zip";
 import { Saga } from "@posthog/shared";
-import { unzipSync } from "fflate";
 
 /**
  * Overlays previously-downloaded skills on top of the runtime plugin dir.
@@ -292,7 +291,7 @@ export class UpdateSkillsSaga extends Saga<
       const strippedName = file.replace(/^omnibus-/, "").replace(/\.zip$/, "");
       const innerZipPath = join(extractDir, file);
       const innerZipData = await readFile(innerZipPath);
-      const innerEntries = unzipSync(new Uint8Array(innerZipData));
+      const innerEntries = await unzipAsync(new Uint8Array(innerZipData));
       const skillDestDir = join(destDir, strippedName);
       await mkdir(skillDestDir, { recursive: true });
 

@@ -13,8 +13,7 @@ import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { McpServersView } from "@features/mcp-servers/components/McpServersView";
 import { FolderSettingsView } from "@features/settings/components/FolderSettingsView";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
-import { SetupView } from "@features/setup/components/SetupView";
+import { useSetupDiscovery } from "@features/setup/hooks/useSetupDiscovery";
 import { MainSidebar } from "@features/sidebar/components/MainSidebar";
 import { useSidebarData } from "@features/sidebar/hooks/useSidebarData";
 import { useVisualTaskOrder } from "@features/sidebar/hooks/useVisualTaskOrder";
@@ -23,8 +22,6 @@ import { TaskDetail } from "@features/task-detail/components/TaskDetail";
 import { TaskInput } from "@features/task-detail/components/TaskInput";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { TourOverlay } from "@features/tour/components/TourOverlay";
-import { useTourStore } from "@features/tour/stores/tourStore";
-import { createFirstTaskTour } from "@features/tour/tours/createFirstTaskTour";
 import {
   useWorkspaces,
   workspaceApi,
@@ -78,15 +75,11 @@ export function MainLayout() {
   const activeTaskId =
     view.type === "task-detail" && view.data ? view.data.id : null;
 
-  const startTour = useTourStore((s) => s.startTour);
-  const isFirstTaskTourDone = useTourStore((s) =>
-    s.completedTourIds.includes(createFirstTaskTour.id),
-  );
-
   useUsageLimitDetection(billingEnabled);
   useIntegrations();
   useTaskDeepLink();
   useInboxDeepLink();
+  useSetupDiscovery();
 
   useEffect(() => {
     if (tasks) {
@@ -104,34 +97,24 @@ export function MainLayout() {
         !reconcilingTaskIds.current.has(t.id),
     );
     if (missing.length === 0) return;
-    for (const t of missing) reconcilingTaskIds.current.add(t.id);
-    void Promise.allSettled(
-      missing.map((t) =>
-        workspaceApi.create({
-          taskId: t.id,
-          mainRepoPath: "",
-          folderId: "",
-          folderPath: "",
-          mode: "cloud",
-        }),
-      ),
-    ).then((results) => {
-      let anySucceeded = false;
-      for (const [i, r] of results.entries()) {
-        const id = missing[i].id;
-        reconcilingTaskIds.current.delete(id);
-        if (r.status === "rejected") {
-          log.warn(`Failed to reconcile workspace for task ${id}`, r.reason);
-        } else {
-          anySucceeded = true;
+    const missingIds = missing.map((t) => t.id);
+    for (const id of missingIds) reconcilingTaskIds.current.add(id);
+    // Single batched IPC instead of one mutation per task — with many cloud
+    // tasks the per-task pattern saturates the main thread at boot.
+    workspaceApi
+      .reconcileCloudWorkspaces(missingIds)
+      .then((result) => {
+        for (const id of missingIds) reconcilingTaskIds.current.delete(id);
+        if (result.created.length > 0) {
+          void queryClient.invalidateQueries(
+            trpcReact.workspace.getAll.pathFilter(),
+          );
         }
-      }
-      if (anySucceeded) {
-        void queryClient.invalidateQueries(
-          trpcReact.workspace.getAll.pathFilter(),
-        );
-      }
-    });
+      })
+      .catch((err) => {
+        for (const id of missingIds) reconcilingTaskIds.current.delete(id);
+        log.warn("Failed to reconcile cloud workspaces", err);
+      });
   }, [
     syncCloudTasksEnabled,
     tasks,
@@ -146,14 +129,6 @@ export function MainLayout() {
       navigateToTaskInput();
     }
   }, [view, navigateToTaskInput]);
-
-  const settingsOpen = useSettingsDialogStore((s) => s.isOpen);
-
-  useEffect(() => {
-    if (isFirstTaskTourDone || settingsOpen) return;
-    const timer = setTimeout(() => startTour(createFirstTaskTour.id), 600);
-    return () => clearTimeout(timer);
-  }, [isFirstTaskTourDone, settingsOpen, startTour]);
 
   const handleToggleCommandMenu = useCallback(() => {
     toggleCommandMenu();
@@ -194,7 +169,6 @@ export function MainLayout() {
           {view.type === "skills" && <SkillsView />}
 
           {view.type === "mcp-servers" && <McpServersView />}
-          {view.type === "setup" && <SetupView />}
         </Box>
       </Flex>
 

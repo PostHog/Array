@@ -13,8 +13,11 @@ import {
 import { Button, Callout, Flex, Text } from "@radix-ui/themes";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
 import { trpcClient } from "@renderer/trpc/client";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
+import { track } from "@utils/analytics";
 import { motion } from "framer-motion";
+import { useEffect } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 interface AiApprovalScreenProps {
@@ -26,6 +29,11 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
   const logoutMutation = useLogoutMutation();
   const openSettings = useSettingsDialogStore((s) => s.open);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fire once on mount; later isAdmin changes from query resolution should not re-fire
+  useEffect(() => {
+    track(ANALYTICS_EVENTS.AI_CONSENT_GATE_SHOWN, { is_org_admin: isAdmin });
+  }, []);
 
   useHotkeys(SHORTCUTS.SETTINGS, () => openSettings(), {
     preventDefault: true,
