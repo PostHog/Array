@@ -644,6 +644,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
         id: chip.id,
         label: chip.label,
         pastedText: false,
+        chipId: chip.chipId,
       });
       draft.saveDraft(editor, attachments);
     },

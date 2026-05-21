@@ -36,6 +36,7 @@ interface AttachmentMenuProps {
   onAddAttachment: (attachment: FileAttachment) => void;
   onAttachFiles?: (files: File[]) => void;
   onInsertChip: (chip: MentionChip) => void;
+  onRemoveChip?: (chipId: string) => void;
   iconSize?: number;
   attachTooltip?: string;
 }
@@ -59,6 +60,7 @@ export function AttachmentMenu({
   onAddAttachment,
   onAttachFiles,
   onInsertChip,
+  onRemoveChip,
   iconSize = 14,
   attachTooltip = "Attach",
 }: AttachmentMenuProps) {
@@ -129,10 +131,17 @@ export function AttachmentMenu({
             toast.error("Failed to attach image");
           }
         } else if (kind === "directory" && taskId) {
+          const chipId = crypto.randomUUID();
+          onInsertChip({
+            type: "folder",
+            id: filePath,
+            label: deriveFileLabel(filePath),
+            chipId,
+          });
           showAddDirectoryDialog({
             taskId,
             path: filePath,
-            onCancel: () => {},
+            onCancel: () => onRemoveChip?.(chipId),
           });
         } else {
           onInsertChip({

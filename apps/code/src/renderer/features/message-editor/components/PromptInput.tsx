@@ -315,6 +315,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
               onAddAttachment={addAttachment}
               onAttachFiles={onAttachFiles}
               onInsertChip={insertChip}
+              onRemoveChip={removeChipById}
             />
             {modeOption && onModeChange && (
               <ModeSelector

@@ -14,6 +14,7 @@ export interface MentionChip {
   id: string;
   label: string;
   pastedText?: boolean;
+  chipId?: string;
 }
 
 export interface FileAttachment {
