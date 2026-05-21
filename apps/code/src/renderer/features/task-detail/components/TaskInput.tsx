@@ -48,6 +48,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FOCUSABLE_SELECTOR } from "@utils/overlay";
 import { LayoutGroup, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useInitialDirectoryFromFolderId } from "../hooks/useInitialDirectoryFromFolderId";
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
@@ -401,19 +402,7 @@ export function TaskInput({
     setLastUsedCloudRepository,
   ]);
 
-  const lastInitializedFolderIdRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (!view.folderId) {
-      lastInitializedFolderIdRef.current = undefined;
-      return;
-    }
-    if (lastInitializedFolderIdRef.current === view.folderId) return;
-    const folder = folders.find((f) => f.id === view.folderId);
-    if (folder) {
-      setSelectedDirectory(folder.path);
-      lastInitializedFolderIdRef.current = view.folderId;
-    }
-  }, [view.folderId, folders]);
+  useInitialDirectoryFromFolderId(view.folderId, folders, setSelectedDirectory);
 
   useEffect(() => {
     setCloudBranchSearchQuery("");
