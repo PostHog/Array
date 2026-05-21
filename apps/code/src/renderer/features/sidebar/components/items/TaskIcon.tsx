@@ -14,6 +14,7 @@ import {
   PushPin,
   SlackLogo,
 } from "@phosphor-icons/react";
+import { trpcClient } from "@renderer/trpc/client";
 import { isTerminalStatus, type TaskRunStatus } from "@shared/types";
 
 export const ICON_SIZE = 12;
@@ -38,52 +39,132 @@ function getOriginProductMeta(
   return originProduct ? ORIGIN_PRODUCT_META[originProduct] : undefined;
 }
 
+// Clickable icon wrapper used when an origin-product thread URL is present.
+// SidebarItem renders the row as a `<button>`, so a real `<a>` here would be
+// invalid HTML — match the role="button" pattern used by TaskHoverToolbar and
+// stop propagation so the task isn't selected when the user opens the thread.
+function IconLink({
+  url,
+  ariaLabel,
+  children,
+}: {
+  url: string;
+  ariaLabel: string;
+  children: React.ReactNode;
+}) {
+  const open = () => {
+    void trpcClient.os.openExternal.mutate({ url });
+  };
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: nested clickable inside SidebarItem button
+    <span
+      role="link"
+      tabIndex={0}
+      aria-label={ariaLabel}
+      className="flex cursor-pointer items-center justify-center rounded transition-opacity hover:opacity-70"
+      onClick={(e) => {
+        e.stopPropagation();
+        open();
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          open();
+        }
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function IconWrapper({
+  link,
+  ariaLabel,
+  children,
+}: {
+  link?: string;
+  ariaLabel?: string;
+  children: React.ReactNode;
+}) {
+  if (link && ariaLabel) {
+    return (
+      <IconLink url={link} ariaLabel={ariaLabel}>
+        {children}
+      </IconLink>
+    );
+  }
+  return <span className="flex items-center justify-center">{children}</span>;
+}
+
 function CloudStatusIcon({
   taskRunStatus,
   originProduct,
+  threadUrl,
 }: {
   taskRunStatus?: TaskRunStatus;
   originProduct?: string;
+  threadUrl?: string;
 }) {
   const meta = getOriginProductMeta(originProduct);
   const Icon = meta?.Icon ?? CloudIcon;
   const sourceLabel = meta?.label ?? "Cloud";
+  const link = meta && threadUrl ? threadUrl : undefined;
+  const ariaLabel = link ? `Open ${sourceLabel} thread` : undefined;
   if (taskRunStatus === "queued" || taskRunStatus === "in_progress") {
     return (
-      <Tooltip content={`${sourceLabel} (running)`} side="right">
-        <span className="flex items-center justify-center">
+      <Tooltip
+        content={
+          link ? `Open ${sourceLabel} thread` : `${sourceLabel} (running)`
+        }
+        side="right"
+      >
+        <IconWrapper link={link} ariaLabel={ariaLabel}>
           <Icon size={ICON_SIZE} className="ph-pulse" />
-        </span>
+        </IconWrapper>
       </Tooltip>
     );
   }
   if (taskRunStatus === "completed") {
     return (
-      <Tooltip content={`${sourceLabel} (completed)`} side="right">
-        <span className="flex items-center justify-center">
+      <Tooltip
+        content={
+          link ? `Open ${sourceLabel} thread` : `${sourceLabel} (completed)`
+        }
+        side="right"
+      >
+        <IconWrapper link={link} ariaLabel={ariaLabel}>
           <Icon size={ICON_SIZE} weight="fill" color="var(--green-11)" />
-        </span>
+        </IconWrapper>
       </Tooltip>
     );
   }
   if (taskRunStatus === "failed" || taskRunStatus === "cancelled") {
-    const label =
+    const statusLabel =
       taskRunStatus === "cancelled"
         ? `${sourceLabel} (cancelled)`
         : `${sourceLabel} (failed)`;
     return (
-      <Tooltip content={label} side="right">
-        <span className="flex items-center justify-center">
+      <Tooltip
+        content={link ? `Open ${sourceLabel} thread` : statusLabel}
+        side="right"
+      >
+        <IconWrapper link={link} ariaLabel={ariaLabel}>
           <Icon size={ICON_SIZE} weight="fill" color="var(--red-11)" />
-        </span>
+        </IconWrapper>
       </Tooltip>
     );
   }
   return (
-    <Tooltip content={sourceLabel} side="right">
-      <span className="flex items-center justify-center">
+    <Tooltip
+      content={link ? `Open ${sourceLabel} thread` : sourceLabel}
+      side="right"
+    >
+      <IconWrapper link={link} ariaLabel={ariaLabel}>
         <Icon size={ICON_SIZE} />
-      </span>
+      </IconWrapper>
     </Tooltip>
   );
 }
@@ -164,6 +245,10 @@ export interface TaskIconProps {
   needsPermission?: boolean;
   taskRunStatus?: TaskRunStatus;
   originProduct?: string;
+  /** Pre-built URL to the originating Slack thread (read from
+   * `task.latest_run.state.slack_thread_url`). When set, the Slack icon
+   * becomes a link that opens the thread in the user's browser. */
+  slackThreadUrl?: string;
   prState?: SidebarPrState;
   hasDiff?: boolean;
 }
@@ -182,6 +267,7 @@ export function TaskIcon({
   needsPermission,
   taskRunStatus,
   originProduct,
+  slackThreadUrl,
   prState,
   hasDiff,
 }: TaskIconProps) {
@@ -203,6 +289,7 @@ export function TaskIcon({
       <CloudStatusIcon
         taskRunStatus={taskRunStatus}
         originProduct={originProduct}
+        threadUrl={slackThreadUrl}
       />
     );
   }
@@ -214,6 +301,7 @@ export function TaskIcon({
       <CloudStatusIcon
         taskRunStatus={taskRunStatus}
         originProduct={originProduct}
+        threadUrl={slackThreadUrl}
       />
     );
   }
@@ -241,11 +329,15 @@ export function TaskIcon({
   }
   if (originProductMeta) {
     const { Icon, label } = originProductMeta;
+    const link = slackThreadUrl;
     return (
-      <Tooltip content={`From ${label}`} side="right">
-        <span className="flex items-center justify-center">
+      <Tooltip
+        content={link ? `Open ${label} thread` : `From ${label}`}
+        side="right"
+      >
+        <IconWrapper link={link} ariaLabel={`Open ${label} thread`}>
           <Icon size={ICON_SIZE} color="var(--gray-10)" />
-        </span>
+        </IconWrapper>
       </Tooltip>
     );
   }

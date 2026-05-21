@@ -38,6 +38,7 @@ export interface TaskData {
   taskRunStatus?: TaskRunStatus;
   taskRunEnvironment?: "local" | "cloud";
   originProduct?: string;
+  slackThreadUrl?: string;
   folderPath: string | null;
   cloudPrUrl: string | null;
   branchName: string | null;
@@ -144,6 +145,17 @@ export function useSidebarData({
     () => new Set(slackTasks.map((t) => t.id)),
     [slackTasks],
   );
+  // task.latest_run.state is Record<string, unknown> — the backend writes the
+  // full thread URL there. /tasks/summaries/ doesn't return state, so for the
+  // summaries path we read the URL out of the full slack-task payload here.
+  const slackThreadUrlByTaskId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of slackTasks) {
+      const url = t.latest_run?.state?.slack_thread_url;
+      if (typeof url === "string") map.set(t.id, url);
+    }
+    return map;
+  }, [slackTasks]);
 
   type SidebarTask = Schemas.TaskSummary & {
     latest_run:
@@ -152,25 +164,31 @@ export function useSidebarData({
         })
       | null;
     origin_product?: string;
+    slack_thread_url?: string;
   };
 
   const rawTasks: SidebarTask[] = useMemo(() => {
     if (!showAllUsers) return summaryTasks;
-    return fullTasks.map((t) => ({
-      id: t.id,
-      title: t.title,
-      repository: t.repository ?? null,
-      created_at: t.created_at,
-      updated_at: t.updated_at,
-      latest_run: t.latest_run
-        ? {
-            status: t.latest_run.status,
-            environment: t.latest_run.environment ?? null,
-            output: t.latest_run.output ?? null,
-          }
-        : null,
-      origin_product: t.origin_product,
-    }));
+    return fullTasks.map((t) => {
+      const slackThreadUrl = t.latest_run?.state?.slack_thread_url;
+      return {
+        id: t.id,
+        title: t.title,
+        repository: t.repository ?? null,
+        created_at: t.created_at,
+        updated_at: t.updated_at,
+        latest_run: t.latest_run
+          ? {
+              status: t.latest_run.status,
+              environment: t.latest_run.environment ?? null,
+              output: t.latest_run.output ?? null,
+            }
+          : null,
+        origin_product: t.origin_product,
+        slack_thread_url:
+          typeof slackThreadUrl === "string" ? slackThreadUrl : undefined,
+      };
+    });
   }, [showAllUsers, summaryTasks, fullTasks]);
 
   const isPrimaryLoading = showAllUsers ? isTasksLoading : isSummariesLoading;
@@ -244,6 +262,8 @@ export function useSidebarData({
       const originProduct =
         task.origin_product ??
         (slackTaskIds.has(task.id) ? "slack" : undefined);
+      const slackThreadUrl =
+        task.slack_thread_url ?? slackThreadUrlByTaskId.get(task.id);
 
       return {
         id: task.id,
@@ -261,6 +281,7 @@ export function useSidebarData({
           session?.cloudStatus ?? task.latest_run?.status ?? undefined,
         taskRunEnvironment: task.latest_run?.environment ?? undefined,
         originProduct,
+        slackThreadUrl,
         folderPath: workspace?.folderPath ?? null,
         cloudPrUrl,
         branchName: workspace?.branchName ?? null,
@@ -275,6 +296,7 @@ export function useSidebarData({
     sessionByTaskId,
     workspaces,
     slackTaskIds,
+    slackThreadUrlByTaskId,
   ]);
 
   const pinnedTasks = useMemo(() => {

@@ -22,6 +22,7 @@ interface TaskItemProps {
   needsPermission?: boolean;
   taskRunStatus?: TaskRunStatus;
   originProduct?: string;
+  slackThreadUrl?: string;
   prState?: SidebarPrState;
   hasDiff?: boolean;
   timestamp?: number;
@@ -115,6 +116,7 @@ export function TaskItem({
   needsPermission = false,
   taskRunStatus,
   originProduct,
+  slackThreadUrl,
   prState,
   hasDiff,
   timestamp,
@@ -137,6 +139,7 @@ export function TaskItem({
       needsPermission={needsPermission}
       taskRunStatus={taskRunStatus}
       originProduct={originProduct}
+      slackThreadUrl={slackThreadUrl}
       prState={prState}
       hasDiff={hasDiff}
     />

@@ -121,6 +121,7 @@ function TaskRow({
       needsPermission={task.needsPermission}
       taskRunStatus={task.taskRunStatus}
       originProduct={task.originProduct}
+      slackThreadUrl={task.slackThreadUrl}
       prState={prState}
       hasDiff={hasDiff}
       timestamp={timestamp}
