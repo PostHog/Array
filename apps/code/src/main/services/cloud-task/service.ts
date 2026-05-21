@@ -764,8 +764,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     // A real data event proves the stream materialized; clear the backend-error
-    // budget too.
+    // and cumulative budgets too.
     watcher.streamErrorAttempts = 0;
+    watcher.cumulativeReconnectAttempts = 0;
 
     if (isTaskRunStateEvent(event.data)) {
       if (this.applyTaskRunState(watcher, event.data)) {
@@ -1131,6 +1132,10 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
     if (!isTerminalStatus(watcher.lastStatus) && reconnectIfNonTerminal) {
       if (stateChanged) {
+        // Server-side progress observed via polling — the run is alive even
+        // if the SSE stream keeps closing without events. Don't burn the
+        // cumulative budget while progress is happening.
+        watcher.cumulativeReconnectAttempts = 0;
         this.emit(CloudTaskEvent.Update, {
           taskId: watcher.taskId,
           runId: watcher.runId,
