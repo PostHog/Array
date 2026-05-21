@@ -1,3 +1,4 @@
+import { useCloudPrUrl } from "@features/git-interaction/hooks/useCloudPrUrl";
 import { useDraftStore } from "@features/message-editor/stores/draftStore";
 import { TaskIcon } from "@features/sidebar/components/items/TaskIcon";
 import { useTaskPrStatus } from "@features/sidebar/hooks/useTaskPrStatus";
@@ -44,11 +45,17 @@ function CellStatusIcon({
   cell: CommandCenterCellData & { task: Task };
 }) {
   const { task, session, workspaceMode } = cell;
+  const isCloud = workspaceMode === "cloud";
+  const cloudPrUrl = useCloudPrUrl(task.id);
   const { prState, hasDiff } = useTaskPrStatus({
     id: task.id,
-    cloudPrUrl: null,
+    cloudPrUrl,
     taskRunEnvironment: task.latest_run?.environment,
   });
+
+  const taskRunStatus = isCloud
+    ? (session?.cloudStatus ?? task.latest_run?.status ?? undefined)
+    : undefined;
 
   return (
     <span className="flex h-5 w-5 items-center justify-center text-gray-11">
@@ -56,9 +63,7 @@ function CellStatusIcon({
         workspaceMode={workspaceMode ?? undefined}
         isGenerating={session?.isPromptPending}
         needsPermission={(session?.pendingPermissions?.size ?? 0) > 0}
-        taskRunStatus={
-          session?.cloudStatus ?? task.latest_run?.status ?? undefined
-        }
+        taskRunStatus={taskRunStatus}
         prState={prState}
         hasDiff={hasDiff}
       />

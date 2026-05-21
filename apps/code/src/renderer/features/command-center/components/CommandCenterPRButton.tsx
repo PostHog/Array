@@ -1,12 +1,7 @@
 import { PRBadgeLink } from "@features/git-interaction/components/PRBadgeLink";
-import { useCloudPrUrl } from "@features/git-interaction/hooks/useCloudPrUrl";
-import { useLinkedBranchPrUrl } from "@features/git-interaction/hooks/useLinkedBranchPrUrl";
 import { usePrDetails } from "@features/git-interaction/hooks/usePrDetails";
-import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
+import { useTaskPrUrl } from "@features/git-interaction/hooks/useTaskPrUrl";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
-import { useTRPC } from "@renderer/trpc";
-import { selectIsFocusedOnWorktree, useFocusStore } from "@stores/focusStore";
-import { useQuery } from "@tanstack/react-query";
 
 interface CommandCenterPRButtonProps {
   taskId: string;
@@ -14,43 +9,16 @@ interface CommandCenterPRButtonProps {
 }
 
 /**
- * PR badge for a task cell in the command center. Same visual and resolution
- * rules as the task page (TaskActionsMenu): cloud `pr_url` for cloud tasks,
- * linked-branch lookup with a local `getPrStatus` fallback for local tasks,
- * gated by `usePrDetails` returning a real PR state.
+ * PR badge for a task cell in the command center. Same resolution rules as
+ * `TaskActionsMenu` via `useTaskPrUrl`, gated by `usePrDetails` returning a
+ * real PR state.
  */
 export function CommandCenterPRButton({
   taskId,
   workspaceMode,
 }: CommandCenterPRButtonProps) {
   const isCloud = workspaceMode === "cloud";
-
-  const workspace = useWorkspace(taskId);
-  const isFocused = useFocusStore(
-    selectIsFocusedOnWorktree(workspace?.worktreePath ?? ""),
-  );
-  const localRepoPath = isFocused
-    ? workspace?.folderPath
-    : (workspace?.worktreePath ?? workspace?.folderPath);
-
-  const trpc = useTRPC();
-  const { data: prStatus } = useQuery(
-    trpc.git.getPrStatus.queryOptions(
-      { directoryPath: localRepoPath as string },
-      {
-        enabled: !isCloud && !!localRepoPath,
-        staleTime: 30_000,
-      },
-    ),
-  );
-
-  const cloudPrUrl = useCloudPrUrl(taskId);
-  const linkedPrUrl = useLinkedBranchPrUrl({
-    linkedBranch: workspace?.linkedBranch ?? null,
-    folderPath: workspace?.folderPath ?? null,
-  });
-  const localPrUrl = prStatus?.prUrl ?? null;
-  const prUrl = isCloud ? cloudPrUrl : (linkedPrUrl ?? localPrUrl);
+  const prUrl = useTaskPrUrl(taskId, isCloud);
 
   const {
     meta: { state, merged, draft },
@@ -59,6 +27,12 @@ export function CommandCenterPRButton({
   if (!prUrl || state === null) return null;
 
   return (
-    <PRBadgeLink prUrl={prUrl} prState={state} merged={merged} draft={draft} />
+    <PRBadgeLink
+      prUrl={prUrl}
+      prState={state}
+      merged={merged}
+      draft={draft}
+      compact
+    />
   );
 }
