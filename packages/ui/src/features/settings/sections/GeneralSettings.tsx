@@ -21,6 +21,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import type { ThemePreference } from "@posthog/ui/shell/themeStore";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import { Button, Flex, Link, Select, Switch, Text } from "@radix-ui/themes";
+import { formatHotkey } from "../../command/keyboard-shortcuts";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect } from "react";
 
@@ -331,7 +332,9 @@ export function GeneralSettings() {
           <Select.Trigger className="min-w-[100px]" />
           <Select.Content>
             <Select.Item value="enter">Enter</Select.Item>
-            <Select.Item value="cmd+enter">⌘ Enter</Select.Item>
+            <Select.Item value="cmd+enter">
+              {formatHotkey("mod+enter")}
+            </Select.Item>
           </Select.Content>
         </Select.Root>
       </SettingRow>

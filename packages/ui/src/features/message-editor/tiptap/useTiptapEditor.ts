@@ -1,3 +1,4 @@
+import { formatHotkey } from "@posthog/ui/features/command/keyboard-shortcuts";
 import {
   contentToXml,
   type FileAttachment,
@@ -478,7 +479,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
           if (clipboardText && clipboardText.length > 200) {
             showPasteHint(
               "Pasted as text",
-              "Use ⌘⇧V to paste as a file attachment instead.",
+              `Use ${formatHotkey("mod+shift+v")} to paste as a file attachment instead.`,
             );
           }
 

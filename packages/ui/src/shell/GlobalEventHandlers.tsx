@@ -28,6 +28,7 @@ import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { logger } from "@posthog/ui/shell/logger";
 import { clearApplicationStorage } from "@posthog/ui/utils/clearStorage";
+import { isMac } from "@posthog/ui/utils/platform";
 import { useShortcut } from "../primitives/hooks/useShortcut";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -199,11 +200,13 @@ export function GlobalEventHandlers({
     [handleToggleFocus],
   );
 
-  // Task switching with mod+1-9
+  // Task switching with mod+1-9. On macOS, Ctrl+1..9 is reserved for
+  // SWITCH_TAB (panel tabs), so ignore plain-Ctrl there; on Windows/Linux,
+  // Ctrl IS mod, so the same event must trigger task switching.
   useHotkeys(
     SHORTCUTS.SWITCH_TASK,
     (event, handler) => {
-      if (event.ctrlKey && !event.metaKey) return;
+      if (isMac && event.ctrlKey && !event.metaKey) return;
 
       const keyPressed = handler.keys?.[0];
       if (!keyPressed) return;
