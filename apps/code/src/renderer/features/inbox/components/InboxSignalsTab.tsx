@@ -493,6 +493,7 @@ export function InboxSignalsTab() {
       source_product_filter: sourceProductFilter,
       status_filter_count: statusFilter.length,
       is_empty: totalCount === 0,
+      is_gated_due_to_scale: false,
     });
   }, [
     isInboxView,

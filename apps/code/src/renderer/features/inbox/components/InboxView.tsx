@@ -3,12 +3,38 @@ import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
 import { EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { Flex, Text } from "@radix-ui/themes";
 import { INBOX_GATED_DUE_TO_SCALE_FLAG } from "@shared/constants";
-import { useMemo } from "react";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import { track } from "@utils/analytics";
+import { useEffect, useMemo, useRef } from "react";
 import { GatedDueToScalePane } from "./InboxEmptyStates";
 import { InboxSignalsTab } from "./InboxSignalsTab";
 
 export function InboxView() {
   const isGatedDueToScale = useFeatureFlag(INBOX_GATED_DUE_TO_SCALE_FLAG);
+
+  // Scale-gated users see GatedDueToScalePane instead of InboxSignalsTab (where
+  // INBOX_VIEWED normally fires), and the inbox data isn't loaded while gated.
+  // Fire the event here, once per gated visit, so these visits are still
+  // measured — flagged so they're distinguishable from a genuinely empty inbox.
+  const gatedViewedFiredRef = useRef(false);
+  useEffect(() => {
+    if (!isGatedDueToScale) {
+      gatedViewedFiredRef.current = false;
+      return;
+    }
+    if (gatedViewedFiredRef.current) return;
+    gatedViewedFiredRef.current = true;
+    track(ANALYTICS_EVENTS.INBOX_VIEWED, {
+      report_count: 0,
+      total_count: 0,
+      ready_count: 0,
+      has_active_filters: false,
+      source_product_filter: [],
+      status_filter_count: 0,
+      is_empty: true,
+      is_gated_due_to_scale: true,
+    });
+  }, [isGatedDueToScale]);
 
   const headerContent = useMemo(
     () => (
