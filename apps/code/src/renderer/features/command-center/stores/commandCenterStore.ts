@@ -26,6 +26,7 @@ interface CommandCenterStoreState {
   activeCellIndex: number | null;
   zoom: number;
   creatingCells: number[];
+  hasAutofilled: boolean;
 }
 
 interface CommandCenterStoreActions {
@@ -34,6 +35,7 @@ interface CommandCenterStoreActions {
   setActiveCell: (cellIndex: number | null) => void;
   assignTask: (cellIndex: number, taskId: string) => void;
   autofillCells: (taskIds: string[]) => void;
+  markAutofilled: () => void;
   removeTask: (cellIndex: number) => void;
   removeTaskById: (taskId: string) => void;
   clearAll: () => void;
@@ -43,6 +45,16 @@ interface CommandCenterStoreActions {
   startCreating: (cellIndex: number) => void;
   stopCreating: (cellIndex: number) => void;
 }
+
+export const COMMAND_CENTER_INITIAL_STATE: CommandCenterStoreState = {
+  layout: "2x2",
+  cells: [null, null, null, null],
+  activeTaskId: null,
+  activeCellIndex: null,
+  zoom: 1,
+  creatingCells: [],
+  hasAutofilled: false,
+};
 
 type CommandCenterStore = CommandCenterStoreState & CommandCenterStoreActions;
 
@@ -70,12 +82,7 @@ export function getCellSessionId(cellIndex: number): string {
 export const useCommandCenterStore = create<CommandCenterStore>()(
   persist(
     (set) => ({
-      layout: "2x2",
-      cells: [null, null, null, null],
-      activeTaskId: null,
-      activeCellIndex: null,
-      zoom: 1,
-      creatingCells: [],
+      ...COMMAND_CENTER_INITIAL_STATE,
 
       setLayout: (preset) =>
         set((state) => {
@@ -125,8 +132,10 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
           for (let i = 0; i < limit; i++) {
             cells[i] = taskIds[i];
           }
-          return { cells };
+          return { cells, hasAutofilled: true };
         }),
+
+      markAutofilled: () => set({ hasAutofilled: true }),
 
       removeTask: (cellIndex) =>
         set((state) => {
@@ -191,6 +200,7 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
         activeCellIndex: state.activeCellIndex,
         zoom: state.zoom,
         creatingCells: state.creatingCells,
+        hasAutofilled: state.hasAutofilled,
       }),
     },
   ),
