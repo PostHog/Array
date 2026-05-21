@@ -13,6 +13,7 @@ import { toast } from "sonner";
 function captureCombo(e: KeyboardEvent): string | null {
   const bare = ["Meta", "Control", "Shift", "Alt"];
   if (bare.includes(e.key)) return null;
+  if (!(e.metaKey || e.ctrlKey || e.altKey)) return null;
 
   const parts: string[] = [];
   if (e.metaKey || e.ctrlKey) parts.push("mod");
