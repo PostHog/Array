@@ -63,6 +63,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import { buildDiscussReportPrompt } from "../../utils/buildDiscussReportPrompt";
 import { ReportImplementationPrLink } from "../utils/ReportImplementationPrLink";
 import { SignalReportActionabilityBadge } from "../utils/SignalReportActionabilityBadge";
 import { SignalReportPriorityBadge } from "../utils/SignalReportPriorityBadge";
@@ -375,10 +376,11 @@ export function ReportDetailPane({
   const handleDiscussReport = useCallback(
     (question?: string) => {
       const trimmedQuestion = question?.trim();
-      const reportLink = `${getDeeplinkProtocol(import.meta.env.DEV)}://inbox/${report.id}`;
-      const prompt = trimmedQuestion
-        ? `Discuss PostHog inbox report ${report.id} ([inbox item](${reportLink})). Use the inbox MCP tools to fetch the report, then answer this first: ${trimmedQuestion}`
-        : `Discuss PostHog inbox report ${report.id} ([inbox item](${reportLink})). Use the inbox MCP tools to fetch the report, then give me a brief readout and ask what I want to dig into.`;
+      const prompt = buildDiscussReportPrompt({
+        reportId: report.id,
+        question: trimmedQuestion,
+        isDevBuild: import.meta.env.DEV,
+      });
       fireDetailAction("discuss", {
         has_question: !!trimmedQuestion,
         question_text: trimmedQuestion
