@@ -72,7 +72,10 @@ export function useEffectiveDiffSource(taskId: string): EffectiveDiffSource {
   const hasLocalChanges = diffStats.filesChanged > 0;
   const branchSourceAvailable = !!linkedBranch && aheadOfDefault > 0;
 
-  const prUrl = useLinkedBranchPrUrl(taskId);
+  const prUrl = useLinkedBranchPrUrl({
+    linkedBranch,
+    folderPath: workspace?.folderPath ?? null,
+  });
   const prSourceAvailable = !!prUrl;
 
   const repoSlug = repoInfo

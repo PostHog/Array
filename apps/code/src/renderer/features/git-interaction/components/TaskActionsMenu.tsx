@@ -96,7 +96,10 @@ export function TaskActionsMenu({ taskId, isCloud }: TaskActionsMenuProps) {
   // primary path closes that gap once the next bash tool call observes the
   // PR URL.
   const cloudPrUrl = useCloudPrUrl(taskId);
-  const linkedPrUrl = useLinkedBranchPrUrl(taskId);
+  const linkedPrUrl = useLinkedBranchPrUrl({
+    linkedBranch: workspace?.linkedBranch ?? null,
+    folderPath: workspace?.folderPath ?? null,
+  });
   const prUrl = isCloud ? cloudPrUrl : (linkedPrUrl ?? gitState.prUrl ?? null);
 
   const {

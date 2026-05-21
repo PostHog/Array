@@ -45,7 +45,10 @@ export function CommandCenterPRButton({
   );
 
   const cloudPrUrl = useCloudPrUrl(taskId);
-  const linkedPrUrl = useLinkedBranchPrUrl(taskId);
+  const linkedPrUrl = useLinkedBranchPrUrl({
+    linkedBranch: workspace?.linkedBranch ?? null,
+    folderPath: workspace?.folderPath ?? null,
+  });
   const localPrUrl = prStatus?.prUrl ?? null;
   const prUrl = isCloud ? cloudPrUrl : (linkedPrUrl ?? localPrUrl);
 
