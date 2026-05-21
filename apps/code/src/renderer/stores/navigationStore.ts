@@ -258,7 +258,6 @@ export const useNavigationStore = create<NavigationStore>()(
 
         navigateToInbox: () => {
           navigate({ type: "inbox" });
-          track(ANALYTICS_EVENTS.INBOX_VIEWED);
         },
 
         navigateToArchived: () => {

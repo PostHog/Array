@@ -120,6 +120,7 @@ function TaskRow({
       isPinned={task.isPinned}
       needsPermission={task.needsPermission}
       taskRunStatus={task.taskRunStatus}
+      originProduct={task.originProduct}
       prState={prState}
       hasDiff={hasDiff}
       timestamp={timestamp}

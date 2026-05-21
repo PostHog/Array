@@ -12,6 +12,7 @@ import {
   HandPalm,
   Pause,
   PushPin,
+  SlackLogo,
 } from "@phosphor-icons/react";
 import { isTerminalStatus, type TaskRunStatus } from "@shared/types";
 
@@ -23,40 +24,50 @@ export const ICON_SIZE = 12;
 // selected row, which turns a `currentColor` icon black on hover. An explicit
 // `fill` is immune, and renders identically in the sidebar.
 
-function CloudStatusIcon({ taskRunStatus }: { taskRunStatus?: TaskRunStatus }) {
+function CloudStatusIcon({
+  taskRunStatus,
+  isFromSlack,
+}: {
+  taskRunStatus?: TaskRunStatus;
+  isFromSlack?: boolean;
+}) {
+  const Icon = isFromSlack ? SlackLogo : CloudIcon;
+  const sourceLabel = isFromSlack ? "Slack" : "Cloud";
   if (taskRunStatus === "queued" || taskRunStatus === "in_progress") {
     return (
-      <Tooltip content="Cloud (running)" side="right">
+      <Tooltip content={`${sourceLabel} (running)`} side="right">
         <span className="flex items-center justify-center">
-          <CloudIcon size={ICON_SIZE} className="ph-pulse" />
+          <Icon size={ICON_SIZE} className="ph-pulse" />
         </span>
       </Tooltip>
     );
   }
   if (taskRunStatus === "completed") {
     return (
-      <Tooltip content="Cloud (completed)" side="right">
+      <Tooltip content={`${sourceLabel} (completed)`} side="right">
         <span className="flex items-center justify-center">
-          <CloudIcon size={ICON_SIZE} weight="fill" color="var(--green-11)" />
+          <Icon size={ICON_SIZE} weight="fill" color="var(--green-11)" />
         </span>
       </Tooltip>
     );
   }
   if (taskRunStatus === "failed" || taskRunStatus === "cancelled") {
     const label =
-      taskRunStatus === "cancelled" ? "Cloud (cancelled)" : "Cloud (failed)";
+      taskRunStatus === "cancelled"
+        ? `${sourceLabel} (cancelled)`
+        : `${sourceLabel} (failed)`;
     return (
       <Tooltip content={label} side="right">
         <span className="flex items-center justify-center">
-          <CloudIcon size={ICON_SIZE} weight="fill" color="var(--red-11)" />
+          <Icon size={ICON_SIZE} weight="fill" color="var(--red-11)" />
         </span>
       </Tooltip>
     );
   }
   return (
-    <Tooltip content="Cloud" side="right">
+    <Tooltip content={sourceLabel} side="right">
       <span className="flex items-center justify-center">
-        <CloudIcon size={ICON_SIZE} />
+        <Icon size={ICON_SIZE} />
       </span>
     </Tooltip>
   );
@@ -137,6 +148,7 @@ export interface TaskIconProps {
   isSuspended?: boolean;
   needsPermission?: boolean;
   taskRunStatus?: TaskRunStatus;
+  originProduct?: string;
   prState?: SidebarPrState;
   hasDiff?: boolean;
 }
@@ -154,11 +166,13 @@ export function TaskIcon({
   isSuspended,
   needsPermission,
   taskRunStatus,
+  originProduct,
   prState,
   hasDiff,
 }: TaskIconProps) {
   const isCloudTask = workspaceMode === "cloud";
   const isTerminalCloud = isCloudTask && isTerminalStatus(taskRunStatus);
+  const isFromSlack = originProduct === "slack";
 
   if (needsPermission) {
     return (
@@ -170,13 +184,23 @@ export function TaskIcon({
     );
   }
   if (isTerminalCloud) {
-    return <CloudStatusIcon taskRunStatus={taskRunStatus} />;
+    return (
+      <CloudStatusIcon
+        taskRunStatus={taskRunStatus}
+        isFromSlack={isFromSlack}
+      />
+    );
   }
   if (isGenerating) {
     return <DotsCircleSpinner size={ICON_SIZE} className="text-accent-11" />;
   }
   if (isCloudTask) {
-    return <CloudStatusIcon taskRunStatus={taskRunStatus} />;
+    return (
+      <CloudStatusIcon
+        taskRunStatus={taskRunStatus}
+        isFromSlack={isFromSlack}
+      />
+    );
   }
   if (isSuspended) {
     return (
@@ -199,6 +223,15 @@ export function TaskIcon({
   }
   if (isPinned) {
     return <PushPin size={ICON_SIZE} color="var(--accent-11)" />;
+  }
+  if (isFromSlack) {
+    return (
+      <Tooltip content="From Slack thread" side="right">
+        <span className="flex items-center justify-center">
+          <SlackLogo size={ICON_SIZE} color="var(--gray-10)" />
+        </span>
+      </Tooltip>
+    );
   }
   return <ChatCircle size={ICON_SIZE} color="var(--gray-10)" />;
 }

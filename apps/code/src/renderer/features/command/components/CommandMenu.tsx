@@ -68,6 +68,7 @@ function TaskCommandIcon({ task }: { task: Task }) {
     <TaskIcon
       workspaceMode={task.latest_run?.environment}
       taskRunStatus={task.latest_run?.status}
+      originProduct={task.origin_product}
       prState={prState}
       hasDiff={hasDiff}
     />

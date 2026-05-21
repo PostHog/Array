@@ -73,6 +73,19 @@ export function useTaskSummaries(
   );
 }
 
+// The /tasks/summaries/ endpoint doesn't include origin_product, so fetch the
+// slack-origin subset separately and intersect by id in the sidebar.
+export function useSlackTasks() {
+  return useAuthenticatedQuery<Task[]>(
+    taskKeys.list({ originProduct: "slack" }),
+    (client) =>
+      client.getTasks({ originProduct: "slack" }) as unknown as Promise<Task[]>,
+    {
+      refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
+    },
+  );
+}
+
 export function useCreateTask() {
   const queryClient = useQueryClient();
 
