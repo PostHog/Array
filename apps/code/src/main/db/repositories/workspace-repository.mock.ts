@@ -83,6 +83,7 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
           lastViewedAt: null,
           lastActivityAt: null,
           linkedBranch: null,
+          additionalDirectories: "[]",
           createdAt: now,
           updatedAt: now,
         };
