@@ -165,6 +165,16 @@ export function ServerDetailView({
     [filteredTools],
   );
 
+  const handleToolApprovalChange = (
+    toolName: string,
+    approval_state: McpApprovalState,
+  ) => {
+    setToolApproval({
+      toolName,
+      approval_state,
+    });
+  };
+
   const removedCount = tools.filter((t) => !!t.removed_at).length;
 
   return (
@@ -435,22 +445,12 @@ export function ServerDetailView({
                   <ToolGroupSection
                     title="Read tools"
                     tools={groupedTools.read}
-                    onToolApprovalChange={(toolName, approval_state) =>
-                      setToolApproval({
-                        toolName,
-                        approval_state,
-                      })
-                    }
+                    onToolApprovalChange={handleToolApprovalChange}
                   />
                   <ToolGroupSection
                     title="Write / delete tools"
                     tools={groupedTools.write_delete}
-                    onToolApprovalChange={(toolName, approval_state) =>
-                      setToolApproval({
-                        toolName,
-                        approval_state,
-                      })
-                    }
+                    onToolApprovalChange={handleToolApprovalChange}
                   />
                 </>
               )}

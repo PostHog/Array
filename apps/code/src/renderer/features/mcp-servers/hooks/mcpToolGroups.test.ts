@@ -22,19 +22,19 @@ function tool(
 }
 
 describe("getMcpToolGroup", () => {
-  it("classifies clear read verbs from tool names", () => {
-    expect(getMcpToolGroup(tool("get_ticket"))).toBe("read");
-    expect(getMcpToolGroup(tool("list_projects"))).toBe("read");
-    expect(getMcpToolGroup(tool("search_docs"))).toBe("read");
-    expect(getMcpToolGroup(tool("lookup_customer"))).toBe("read");
-  });
+  it.each(["get_ticket", "list_projects", "search_docs", "lookup_customer"])(
+    "classifies %s as read",
+    (toolName) => {
+      expect(getMcpToolGroup(tool(toolName))).toBe("read");
+    },
+  );
 
-  it("classifies clear write and delete verbs from tool names", () => {
-    expect(getMcpToolGroup(tool("create_ticket"))).toBe("write_delete");
-    expect(getMcpToolGroup(tool("delete_file"))).toBe("write_delete");
-    expect(getMcpToolGroup(tool("send_message"))).toBe("write_delete");
-    expect(getMcpToolGroup(tool("run_query"))).toBe("write_delete");
-  });
+  it.each(["create_ticket", "delete_file", "send_message", "run_query"])(
+    "classifies %s as write/delete",
+    (toolName) => {
+      expect(getMcpToolGroup(tool(toolName))).toBe("write_delete");
+    },
+  );
 
   it("falls back to display name and description when the tool name is ambiguous", () => {
     expect(
