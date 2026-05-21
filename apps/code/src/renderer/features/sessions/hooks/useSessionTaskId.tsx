@@ -6,7 +6,7 @@ export function SessionTaskIdProvider({
   taskId,
   children,
 }: {
-  taskId: string | null | undefined;
+  taskId: string | undefined;
   children: ReactNode;
 }) {
   return (
