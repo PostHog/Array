@@ -2836,6 +2836,75 @@ describe("SessionService", () => {
       });
     });
 
+    it("leaves the default effort untouched when initialReasoningEffort is not in the option list", async () => {
+      const service = getSessionService();
+
+      const sessionAfterInit = createMockSession({
+        taskRunId: "run-effort-xhigh",
+        taskId: "task-effort-xhigh",
+        isCloud: true,
+        configOptions: [
+          {
+            id: "mode",
+            name: "Approval Preset",
+            type: "select",
+            category: "mode",
+            currentValue: "plan",
+            options: [],
+          },
+        ],
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-effort-xhigh": sessionAfterInit,
+      });
+
+      mockTrpcAgent.getPreviewConfigOptions.query.mockResolvedValueOnce([
+        {
+          id: "effort",
+          name: "Effort",
+          type: "select",
+          category: "thought_level",
+          currentValue: "high",
+          options: [
+            { value: "low", name: "Low" },
+            { value: "medium", name: "Medium" },
+            { value: "high", name: "High" },
+            { value: "max", name: "Max" },
+          ],
+        },
+      ]);
+
+      service.watchCloudTask(
+        "task-effort-xhigh",
+        "run-effort-xhigh",
+        "https://api.example.com",
+        7,
+        undefined,
+        undefined,
+        undefined,
+        "claude",
+        undefined,
+        undefined,
+        "xhigh",
+      );
+
+      await vi.waitFor(() => {
+        const calls = mockSessionStoreSetters.updateSession.mock.calls as Array<
+          [string, { configOptions?: Array<{ id: string }> }]
+        >;
+        const update = calls.find(
+          ([runId, patch]) =>
+            runId === "run-effort-xhigh" &&
+            patch.configOptions?.some((o) => o.id === "effort"),
+        );
+        expect(update).toBeTruthy();
+        const effortOpt = update?.[1].configOptions?.find(
+          (o) => o.id === "effort",
+        ) as { currentValue?: string } | undefined;
+        expect(effortOpt?.currentValue).toBe("high");
+      });
+    });
+
     it("retries an errored cloud watcher in place", async () => {
       const service = getSessionService();
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue({
@@ -3443,6 +3512,168 @@ describe("SessionService", () => {
           resumeFromRunId: "run-123",
         }),
       );
+    });
+
+    it("preserves prior reasoning effort when sendPrompt creates a new cloud run", async () => {
+      const service = getSessionService();
+      const watchSpy = vi
+        .spyOn(service, "watchCloudTask")
+        .mockImplementation(() => () => {});
+
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "completed",
+          cloudBranch: "feature/cloud-run",
+          adapter: "claude",
+          configOptions: [
+            {
+              id: "effort",
+              name: "Effort",
+              type: "select",
+              category: "thought_level",
+              currentValue: "max",
+              options: [],
+            },
+          ],
+        }),
+      );
+      mockGetConfigOptionByCategory.mockImplementation(
+        (
+          configOptions: Array<{ category?: string }> | undefined,
+          category?: string,
+        ) => configOptions?.find((opt) => opt.category === category),
+      );
+      mockAuthenticatedClient.getTaskRun.mockResolvedValue({
+        id: "run-123",
+        task: "task-123",
+        team: 123,
+        branch: "feature/cloud-run",
+        runtime_adapter: "claude",
+        model: "claude-sonnet-4-6",
+        reasoning_effort: null,
+        environment: "cloud",
+        status: "completed",
+        log_url: "https://example.com/logs/run-123",
+        error_message: null,
+        output: {},
+        state: {},
+        created_at: "2026-04-14T00:00:00Z",
+        updated_at: "2026-04-14T00:00:00Z",
+        completed_at: "2026-04-14T00:05:00Z",
+      });
+      mockAuthenticatedClient.getTask.mockResolvedValue(createMockTask());
+      mockAuthenticatedClient.runTaskInCloud.mockResolvedValue(
+        createMockTask({
+          latest_run: {
+            id: "run-456",
+            task: "task-123",
+            team: 123,
+            branch: "feature/cloud-run",
+            runtime_adapter: "claude",
+            model: "claude-sonnet-4-6",
+            reasoning_effort: null,
+            environment: "cloud",
+            status: "queued",
+            log_url: "https://example.com/logs/run-456",
+            error_message: null,
+            output: {},
+            state: {},
+            created_at: "2026-04-14T00:06:00Z",
+            updated_at: "2026-04-14T00:06:00Z",
+            completed_at: null,
+          },
+        }),
+      );
+
+      await service.sendPrompt("task-123", "follow up");
+
+      const newRunCall = watchSpy.mock.calls.find(
+        (call) => call[1] === "run-456",
+      );
+      expect(newRunCall).toBeDefined();
+      expect(newRunCall?.[10]).toBe("max");
+    });
+
+    it("uses newRun.reasoning_effort over prior effort when starting a new cloud run", async () => {
+      const service = getSessionService();
+      const watchSpy = vi
+        .spyOn(service, "watchCloudTask")
+        .mockImplementation(() => () => {});
+
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "completed",
+          cloudBranch: "feature/cloud-run",
+          adapter: "claude",
+          configOptions: [
+            {
+              id: "effort",
+              name: "Effort",
+              type: "select",
+              category: "thought_level",
+              currentValue: "high",
+              options: [],
+            },
+          ],
+        }),
+      );
+      mockGetConfigOptionByCategory.mockImplementation(
+        (
+          configOptions: Array<{ category?: string }> | undefined,
+          category?: string,
+        ) => configOptions?.find((opt) => opt.category === category),
+      );
+      mockAuthenticatedClient.getTaskRun.mockResolvedValue({
+        id: "run-123",
+        task: "task-123",
+        team: 123,
+        branch: "feature/cloud-run",
+        runtime_adapter: "claude",
+        model: "claude-sonnet-4-6",
+        reasoning_effort: "high",
+        environment: "cloud",
+        status: "completed",
+        log_url: "https://example.com/logs/run-123",
+        error_message: null,
+        output: {},
+        state: {},
+        created_at: "2026-04-14T00:00:00Z",
+        updated_at: "2026-04-14T00:00:00Z",
+        completed_at: "2026-04-14T00:05:00Z",
+      });
+      mockAuthenticatedClient.getTask.mockResolvedValue(createMockTask());
+      mockAuthenticatedClient.runTaskInCloud.mockResolvedValue(
+        createMockTask({
+          latest_run: {
+            id: "run-456",
+            task: "task-123",
+            team: 123,
+            branch: "feature/cloud-run",
+            runtime_adapter: "claude",
+            model: "claude-sonnet-4-6",
+            reasoning_effort: "max",
+            environment: "cloud",
+            status: "queued",
+            log_url: "https://example.com/logs/run-456",
+            error_message: null,
+            output: {},
+            state: {},
+            created_at: "2026-04-14T00:06:00Z",
+            updated_at: "2026-04-14T00:06:00Z",
+            completed_at: null,
+          },
+        }),
+      );
+
+      await service.sendPrompt("task-123", "follow up");
+
+      const newRunCall = watchSpy.mock.calls.find(
+        (call) => call[1] === "run-456",
+      );
+      expect(newRunCall).toBeDefined();
+      expect(newRunCall?.[10]).toBe("max");
     });
 
     it("preserves attachment blocks in the optimistic resume event", async () => {

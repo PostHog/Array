@@ -2020,6 +2020,13 @@ export class SessionService {
     )?.currentValue;
     const initialModel =
       newRun.model ?? (typeof priorModel === "string" ? priorModel : undefined);
+    const priorEffort = getConfigOptionByCategory(
+      session.configOptions,
+      "thought_level",
+    )?.currentValue;
+    const initialReasoningEffort =
+      newRun.reasoning_effort ??
+      (typeof priorEffort === "string" ? priorEffort : undefined);
     this.watchCloudTask(
       session.taskId,
       newRun.id,
@@ -2030,6 +2037,8 @@ export class SessionService {
       initialMode,
       newRun.runtime_adapter ?? session.adapter ?? "claude",
       initialModel,
+      undefined,
+      initialReasoningEffort,
     );
 
     // Invalidate task queries so the UI picks up the new run metadata
