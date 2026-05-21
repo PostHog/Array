@@ -5,6 +5,9 @@ interface TestableServer {
   configureEnvironment(args?: {
     isInternal?: boolean;
     originProduct?: string | null;
+    taskId?: string | null;
+    taskRunId?: string | null;
+    taskUserId?: number | null;
   }): void;
 }
 
@@ -117,18 +120,27 @@ describe("AgentServer.configureEnvironment", () => {
     );
   });
 
-  it("forwards task_internal and task_origin_product as ANTHROPIC_CUSTOM_HEADERS", () => {
+  it("forwards task metadata as ANTHROPIC_CUSTOM_HEADERS", () => {
     buildServer("background").configureEnvironment({
       isInternal: true,
       originProduct: "signal_report",
+      taskId: "task-abc",
+      taskRunId: "run-xyz",
+      taskUserId: 42,
     });
 
     expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toBe(
-      "x-posthog-property-task_origin_product: signal_report\nx-posthog-property-task_internal: true",
+      [
+        "x-posthog-property-task_origin_product: signal_report",
+        "x-posthog-property-task_internal: true",
+        "x-posthog-property-task_id: task-abc",
+        "x-posthog-property-task_run_id: run-xyz",
+        "x-posthog-property-task_user_id: 42",
+      ].join("\n"),
     );
   });
 
-  it("omits task_origin_product from ANTHROPIC_CUSTOM_HEADERS when not provided", () => {
+  it("omits optional task metadata from ANTHROPIC_CUSTOM_HEADERS when not provided", () => {
     buildServer("background").configureEnvironment({ isInternal: false });
 
     expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toBe(

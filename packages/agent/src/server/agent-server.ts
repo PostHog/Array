@@ -851,6 +851,9 @@ export class AgentServer {
     this.configureEnvironment({
       isInternal: preTask?.internal === true,
       originProduct: preTask?.origin_product,
+      taskId: payload.task_id,
+      taskRunId: payload.run_id,
+      taskUserId: payload.user_id,
     });
 
     const prUrl = getTaskRunStateString(preTaskRun, "slack_notified_pr_url");
@@ -1812,9 +1815,15 @@ ${attributionInstructions}
   private configureEnvironment({
     isInternal = false,
     originProduct,
+    taskId,
+    taskRunId,
+    taskUserId,
   }: {
     isInternal?: boolean;
     originProduct?: string | null;
+    taskId?: string | null;
+    taskRunId?: string | null;
+    taskUserId?: number | null;
   } = {}): void {
     const { apiKey, apiUrl, projectId } = this.config;
     const product = resolveGatewayProduct({ isInternal, originProduct });
@@ -1830,6 +1839,9 @@ ${attributionInstructions}
     const customHeaders = buildGatewayPropertyHeaders({
       task_origin_product: originProduct,
       task_internal: isInternal,
+      task_id: taskId,
+      task_run_id: taskRunId,
+      task_user_id: taskUserId,
     });
 
     Object.assign(process.env, {
