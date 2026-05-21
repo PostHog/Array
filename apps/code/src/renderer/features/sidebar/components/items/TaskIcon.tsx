@@ -133,6 +133,7 @@ export interface TaskIconProps {
   workspaceMode?: WorkspaceMode;
   isGenerating?: boolean;
   isUnread?: boolean;
+  isExplicitlyUnread?: boolean;
   isPinned?: boolean;
   isSuspended?: boolean;
   needsPermission?: boolean;
@@ -150,6 +151,7 @@ export function TaskIcon({
   workspaceMode,
   isGenerating,
   isUnread,
+  isExplicitlyUnread,
   isPinned,
   isSuspended,
   needsPermission,
@@ -183,6 +185,15 @@ export function TaskIcon({
       <Tooltip content="Suspended" side="right">
         <span className="flex items-center justify-center">
           <Pause size={ICON_SIZE} color="var(--gray-9)" />
+        </span>
+      </Tooltip>
+    );
+  }
+  if (isExplicitlyUnread) {
+    return (
+      <Tooltip content="Marked as unread" side="right">
+        <span className="flex items-center justify-center">
+          <ChatCircle size={ICON_SIZE} weight="fill" color="var(--yellow-10)" />
         </span>
       </Tooltip>
     );

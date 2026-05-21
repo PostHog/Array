@@ -61,6 +61,7 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
           pinnedAt: null,
           lastViewedAt: null,
           lastActivityAt: null,
+          markedUnreadAt: null,
           linkedBranch: null,
           createdAt: now,
           updatedAt: now,

@@ -127,48 +127,12 @@ export function TaskItem({
   onEditSubmit,
   onEditCancel,
 }: TaskItemProps) {
-  const isCloudTask = workspaceMode === "cloud";
-  const isTerminalCloud = isCloudTask && isTerminalStatus(taskRunStatus);
-
-  const icon = needsPermission ? (
-    <Tooltip content="Needs permission" side="right">
-      <span className="flex items-center justify-center">
-        <HandPalm size={ICON_SIZE} className="text-blue-11" />
-      </span>
-    </Tooltip>
-  ) : isTerminalCloud ? (
-    <CloudStatusIcon taskRunStatus={taskRunStatus} />
-  ) : isGenerating ? (
-    <DotsCircleSpinner size={ICON_SIZE} className="text-accent-11" />
-  ) : isCloudTask ? (
-    <CloudStatusIcon taskRunStatus={taskRunStatus} />
-  ) : isSuspended ? (
-    <Tooltip content="Suspended" side="right">
-      <span className="flex items-center justify-center">
-        <Pause size={ICON_SIZE} className="text-gray-9" />
-      </span>
-    </Tooltip>
-  ) : isExplicitlyUnread ? (
-    <Tooltip content="Marked as unread" side="right">
-      <span className="flex items-center justify-center">
-        <ChatCircle size={ICON_SIZE} weight="fill" className="text-yellow-10" />
-      </span>
-    </Tooltip>
-  ) : isUnread ? (
-    <span className="flex items-center justify-center">
-      <Circle size={8} weight="fill" className="text-green-11" />
-    </span>
-  ) : prState || hasDiff ? (
-    <PrStatusIcon prState={prState} hasDiff={hasDiff} />
-  ) : isPinned ? (
-    <PushPin size={ICON_SIZE} className="text-accent-11" />
-  ) : (
-    <ChatCircle size={ICON_SIZE} className="text-gray-10" />
   const icon = (
     <TaskIcon
       workspaceMode={workspaceMode}
       isGenerating={isGenerating}
       isUnread={isUnread}
+      isExplicitlyUnread={isExplicitlyUnread}
       isPinned={isPinned}
       isSuspended={isSuspended}
       needsPermission={needsPermission}
