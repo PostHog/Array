@@ -1131,7 +1131,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
     if (!isTerminalStatus(watcher.lastStatus) && reconnectIfNonTerminal) {
       if (stateChanged) {
-        // Polled progress proves the run is alive — don't burn cumulative budget.
+        // Polled progress proves the run is alive — reset both budgets.
+        watcher.reconnectAttempts = 0;
         watcher.cumulativeReconnectAttempts = 0;
         this.emit(CloudTaskEvent.Update, {
           taskId: watcher.taskId,
