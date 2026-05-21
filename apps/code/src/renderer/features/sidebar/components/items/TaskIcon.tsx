@@ -24,15 +24,30 @@ export const ICON_SIZE = 12;
 // selected row, which turns a `currentColor` icon black on hover. An explicit
 // `fill` is immune, and renders identically in the sidebar.
 
+// Map origin_product values to the icon + label used to brand the task's
+// status icon. Extend this when a new product (e.g. email, support) needs its
+// own indicator.
+type OriginProductMeta = { Icon: typeof SlackLogo; label: string };
+const ORIGIN_PRODUCT_META: Record<string, OriginProductMeta> = {
+  slack: { Icon: SlackLogo, label: "Slack" },
+};
+
+function getOriginProductMeta(
+  originProduct?: string,
+): OriginProductMeta | undefined {
+  return originProduct ? ORIGIN_PRODUCT_META[originProduct] : undefined;
+}
+
 function CloudStatusIcon({
   taskRunStatus,
-  isFromSlack,
+  originProduct,
 }: {
   taskRunStatus?: TaskRunStatus;
-  isFromSlack?: boolean;
+  originProduct?: string;
 }) {
-  const Icon = isFromSlack ? SlackLogo : CloudIcon;
-  const sourceLabel = isFromSlack ? "Slack" : "Cloud";
+  const meta = getOriginProductMeta(originProduct);
+  const Icon = meta?.Icon ?? CloudIcon;
+  const sourceLabel = meta?.label ?? "Cloud";
   if (taskRunStatus === "queued" || taskRunStatus === "in_progress") {
     return (
       <Tooltip content={`${sourceLabel} (running)`} side="right">
@@ -172,7 +187,7 @@ export function TaskIcon({
 }: TaskIconProps) {
   const isCloudTask = workspaceMode === "cloud";
   const isTerminalCloud = isCloudTask && isTerminalStatus(taskRunStatus);
-  const isFromSlack = originProduct === "slack";
+  const originProductMeta = getOriginProductMeta(originProduct);
 
   if (needsPermission) {
     return (
@@ -187,7 +202,7 @@ export function TaskIcon({
     return (
       <CloudStatusIcon
         taskRunStatus={taskRunStatus}
-        isFromSlack={isFromSlack}
+        originProduct={originProduct}
       />
     );
   }
@@ -198,7 +213,7 @@ export function TaskIcon({
     return (
       <CloudStatusIcon
         taskRunStatus={taskRunStatus}
-        isFromSlack={isFromSlack}
+        originProduct={originProduct}
       />
     );
   }
@@ -224,11 +239,12 @@ export function TaskIcon({
   if (isPinned) {
     return <PushPin size={ICON_SIZE} color="var(--accent-11)" />;
   }
-  if (isFromSlack) {
+  if (originProductMeta) {
+    const { Icon, label } = originProductMeta;
     return (
-      <Tooltip content="From Slack thread" side="right">
+      <Tooltip content={`From ${label}`} side="right">
         <span className="flex items-center justify-center">
-          <SlackLogo size={ICON_SIZE} color="var(--gray-10)" />
+          <Icon size={ICON_SIZE} color="var(--gray-10)" />
         </span>
       </Tooltip>
     );
