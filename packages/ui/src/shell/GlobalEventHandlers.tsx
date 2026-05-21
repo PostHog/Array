@@ -28,6 +28,7 @@ import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { logger } from "@posthog/ui/shell/logger";
 import { clearApplicationStorage } from "@posthog/ui/utils/clearStorage";
+import { useShortcut } from "../primitives/hooks/useShortcut";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -153,33 +154,43 @@ export function GlobalEventHandlers({
     preventDefault: true,
   } as const;
 
-  useHotkeys(SHORTCUTS.COMMAND_MENU, onToggleCommandMenu, {
+  const commandMenuKey = useShortcut("command-menu");
+  const newTaskKey = useShortcut("new-task");
+  const settingsKey = useShortcut("settings");
+  const goBackKey = useShortcut("go-back");
+  const goForwardKey = useShortcut("go-forward");
+  const toggleLeftSidebarKey = useShortcut("toggle-left-sidebar");
+  const toggleReviewPanelKey = useShortcut("toggle-review-panel");
+  const shortcutsSheetKey = useShortcut("shortcuts");
+  const inboxKey = useShortcut("inbox");
+  const prevTaskKey = useShortcut("prev-task");
+  const nextTaskKey = useShortcut("next-task");
+  const toggleFocusKey = useShortcut("toggle-focus");
+
+  useHotkeys(commandMenuKey, onToggleCommandMenu, {
     ...globalOptions,
     enabled: !commandMenuOpen,
   });
-  useHotkeys(SHORTCUTS.NEW_TASK, handleFocusTaskMode, globalOptions);
-  useHotkeys(SHORTCUTS.SETTINGS, handleOpenSettings, globalOptions);
-  useHotkeys(SHORTCUTS.GO_BACK, goBack, globalOptions);
-  useHotkeys(SHORTCUTS.GO_FORWARD, goForward, globalOptions);
+  useHotkeys(newTaskKey, handleFocusTaskMode, globalOptions);
+  useHotkeys(settingsKey, handleOpenSettings, globalOptions);
+  useHotkeys(goBackKey, goBack, globalOptions);
+  useHotkeys(goForwardKey, goForward, globalOptions);
+
   const handleToggleReview = useCallback(() => {
     if (!currentTaskId) return;
     const mode = getReviewMode(currentTaskId);
     setReviewMode(currentTaskId, mode === "closed" ? "split" : "closed");
   }, [currentTaskId, getReviewMode, setReviewMode]);
 
-  useHotkeys(SHORTCUTS.TOGGLE_LEFT_SIDEBAR, toggleLeftSidebar, globalOptions);
-  useHotkeys(SHORTCUTS.TOGGLE_REVIEW_PANEL, handleToggleReview, globalOptions);
-  useHotkeys(SHORTCUTS.SHORTCUTS_SHEET, onToggleShortcutsSheet, globalOptions);
-  useHotkeys(SHORTCUTS.INBOX, navigateToInbox, globalOptions);
-  useHotkeys(SHORTCUTS.PREV_TASK, handlePrevTask, globalOptions, [
-    handlePrevTask,
-  ]);
-  useHotkeys(SHORTCUTS.NEXT_TASK, handleNextTask, globalOptions, [
-    handleNextTask,
-  ]);
+  useHotkeys(toggleLeftSidebarKey, toggleLeftSidebar, globalOptions);
+  useHotkeys(toggleReviewPanelKey, handleToggleReview, globalOptions);
+  useHotkeys(shortcutsSheetKey, onToggleShortcutsSheet, globalOptions);
+  useHotkeys(inboxKey, navigateToInbox, globalOptions);
+  useHotkeys(prevTaskKey, handlePrevTask, globalOptions, [handlePrevTask]);
+  useHotkeys(nextTaskKey, handleNextTask, globalOptions, [handleNextTask]);
 
   useHotkeys(
-    SHORTCUTS.TOGGLE_FOCUS,
+    toggleFocusKey,
     handleToggleFocus,
     {
       ...globalOptions,

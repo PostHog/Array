@@ -1,6 +1,6 @@
 import type { TaskData } from "@posthog/core/sidebar/sidebarData.types";
 import type { Task } from "@posthog/shared/domain-types";
-import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
+import { useShortcut } from "../primitives/hooks/useShortcut";
 import { useCallback, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
@@ -88,8 +88,11 @@ export function SpaceSwitcher({
     navigateToSlot(next);
   }, [tasks.length, totalSlots, currentSlot, navigateToSlot]);
 
+  const spaceUpKey = useShortcut("space-up");
+  const spaceDownKey = useShortcut("space-down");
+
   useHotkeys(
-    SHORTCUTS.SPACE_UP,
+    spaceUpKey,
     (e) => {
       if (isInputWithContent()) return;
       e.preventDefault();
@@ -99,7 +102,7 @@ export function SpaceSwitcher({
     [navigatePrev],
   );
   useHotkeys(
-    SHORTCUTS.SPACE_DOWN,
+    spaceDownKey,
     (e) => {
       if (isInputWithContent()) return;
       e.preventDefault();
