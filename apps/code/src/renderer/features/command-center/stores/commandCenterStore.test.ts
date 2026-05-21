@@ -43,13 +43,35 @@ describe("commandCenterStore", () => {
       expect(useCommandCenterStore.getState().activeTaskId).toBeNull();
     });
 
-    it("does nothing when any cell is already populated", () => {
+    it("fills only the empty slots when some cells are already populated", () => {
       useCommandCenterStore.setState({ cells: [null, "existing", null, null] });
+      useCommandCenterStore.getState().autofillCells(["t1", "t2", "t3"]);
+      expect(useCommandCenterStore.getState().cells).toEqual([
+        "t1",
+        "existing",
+        "t2",
+        "t3",
+      ]);
+    });
+
+    it("does nothing when every cell is already populated", () => {
+      useCommandCenterStore.setState({ cells: ["a", "b", "c", "d"] });
       useCommandCenterStore.getState().autofillCells(["t1", "t2"]);
       expect(useCommandCenterStore.getState().cells).toEqual([
+        "a",
+        "b",
+        "c",
+        "d",
+      ]);
+    });
+
+    it("stops filling when task list runs out before empty slots do", () => {
+      useCommandCenterStore.setState({ cells: [null, null, "x", null] });
+      useCommandCenterStore.getState().autofillCells(["t1"]);
+      expect(useCommandCenterStore.getState().cells).toEqual([
+        "t1",
         null,
-        "existing",
-        null,
+        "x",
         null,
       ]);
     });

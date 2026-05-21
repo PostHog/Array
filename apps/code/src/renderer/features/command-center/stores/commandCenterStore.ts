@@ -122,12 +122,14 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
 
       autofillCells: (taskIds) =>
         set((state) => {
-          if (!state.cells.every((id) => id == null)) return state;
           if (taskIds.length === 0) return state;
+          if (state.cells.every((id) => id != null)) return state;
           const cells: (string | null)[] = [...state.cells];
-          const limit = Math.min(cells.length, taskIds.length);
-          for (let i = 0; i < limit; i++) {
-            cells[i] = taskIds[i];
+          const queue = [...taskIds];
+          for (let i = 0; i < cells.length && queue.length > 0; i++) {
+            if (cells[i] == null) {
+              cells[i] = queue.shift() as string;
+            }
           }
           return { cells };
         }),

@@ -36,21 +36,24 @@ export function useAutofillCommandCenter(): void {
     if (!workspacesFetched || !workspaces) return;
     if (!tasksFetched) return;
 
-    if (!cells.every((id) => id == null)) {
+    const emptySlots = cells.filter((id) => id == null).length;
+    if (emptySlots === 0) {
       hasRunRef.current = true;
       return;
     }
 
+    const assignedIds = new Set(cells.filter((id): id is string => id != null));
     const cutoff = Date.now() - RECENT_WINDOW_MS;
     const candidates = tasks
       .filter(
         (task) =>
+          !assignedIds.has(task.id) &&
           !archivedTaskIds.has(task.id) &&
           !!workspaces[task.id] &&
           getLastActivity(task) >= cutoff,
       )
       .sort((a, b) => getLastActivity(b) - getLastActivity(a))
-      .slice(0, cells.length)
+      .slice(0, emptySlots)
       .map((task) => task.id);
 
     if (candidates.length > 0) {

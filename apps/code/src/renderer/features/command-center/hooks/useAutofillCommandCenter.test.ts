@@ -115,16 +115,52 @@ describe("useAutofillCommandCenter", () => {
     ]);
   });
 
-  it("does not change cells when they are already populated", () => {
-    useCommandCenterStore.setState({ cells: ["existing", null, null, null] });
+  it("does not touch cells when every cell is already populated", () => {
+    useCommandCenterStore.setState({ cells: ["a", "b", "c", "d"] });
     setQueries({
       tasks: [makeTask({ id: "t1" })],
       workspaces: { t1: makeWorkspace("t1") },
     });
     renderHook(() => useAutofillCommandCenter());
     expect(useCommandCenterStore.getState().cells).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
+  });
+
+  it("tops up empty slots and leaves populated ones alone", () => {
+    useCommandCenterStore.setState({ cells: ["existing", null, null, null] });
+    setQueries({
+      tasks: [
+        makeTask({ id: "t1", updated_at: new Date(NOW - 100).toISOString() }),
+        makeTask({ id: "t2", updated_at: new Date(NOW - 200).toISOString() }),
+      ],
+      workspaces: { t1: makeWorkspace("t1"), t2: makeWorkspace("t2") },
+    });
+    renderHook(() => useAutofillCommandCenter());
+    expect(useCommandCenterStore.getState().cells).toEqual([
       "existing",
+      "t1",
+      "t2",
       null,
+    ]);
+  });
+
+  it("does not fill a task that is already assigned to another cell", () => {
+    useCommandCenterStore.setState({ cells: ["t1", null, null, null] });
+    setQueries({
+      tasks: [
+        makeTask({ id: "t1", updated_at: new Date(NOW - 100).toISOString() }),
+        makeTask({ id: "t2", updated_at: new Date(NOW - 200).toISOString() }),
+      ],
+      workspaces: { t1: makeWorkspace("t1"), t2: makeWorkspace("t2") },
+    });
+    renderHook(() => useAutofillCommandCenter());
+    expect(useCommandCenterStore.getState().cells).toEqual([
+      "t1",
+      "t2",
       null,
       null,
     ]);
