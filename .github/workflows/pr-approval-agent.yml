@@ -40,13 +40,13 @@ jobs:
                   client-id: ${{ secrets.GH_APP_PR_APPROVAL_AGENT_APP_ID }}
                   private-key: ${{ secrets.GH_APP_PR_APPROVAL_AGENT_PRIVATE_KEY }}
 
-            # Always run the approval script from master — hardcoded so a PR
-            # targeting a non-master branch can't supply a tampered script.
-            - name: Checkout master (blobless, full history)
+            # Always run the approval script from main — hardcoded so a PR
+            # targeting a non-main branch can't supply a tampered script.
+            - name: Checkout main (blobless, full history)
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
               with:
                   token: ${{ steps.app-token.outputs.token }}
-                  ref: master
+                  ref: main
                   filter: blob:none
                   fetch-depth: 0
 
@@ -127,7 +127,7 @@ jobs:
                   path: /tmp/review.json
                   retention-days: 30
 
-    # Defense-in-depth: master ruleset has dismiss_stale_reviews_on_push=false
+    # Defense-in-depth: main ruleset has dismiss_stale_reviews_on_push=false
     # and require_last_push_approval=false, so a stale bot approval could
     # otherwise inherit malicious commits. Two-step gate: decide-delta
     # classifies the new commits since the last bot approval, dismiss only
@@ -157,11 +157,11 @@ jobs:
                   client-id: ${{ secrets.GH_APP_PR_APPROVAL_AGENT_APP_ID }}
                   private-key: ${{ secrets.GH_APP_PR_APPROVAL_AGENT_PRIVATE_KEY }}
 
-            - name: Checkout master (full history)
+            - name: Checkout main (full history)
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
               with:
                   token: ${{ steps.app-token.outputs.token }}
-                  ref: master
+                  ref: main
                   filter: blob:none
                   fetch-depth: 0
 
@@ -212,7 +212,7 @@ jobs:
         #   - decide-delta failed (uv install / checkout / fetch timeout)
         #   - decide-delta was skipped (label removed out-of-band) — mirrors
         #     the pre-PR unconditional dismiss-on-push behavior so a stale
-        #     bot approval can't outlive the label under master ruleset's
+        #     bot approval can't outlive the label under main ruleset's
         #     dismiss_stale_reviews_on_push=false / require_last_push_approval=false
         # Explicit synchronize + draft gates stop spurious dismissal on
         # labeled / ready_for_review events where decide-delta's result is
