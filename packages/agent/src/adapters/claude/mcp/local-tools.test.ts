@@ -29,7 +29,7 @@ describe("createLocalToolsMcpServer", () => {
   it("exposes git_signed_commit over MCP in a cloud run with a token", async () => {
     const server = createLocalToolsMcpServer(
       { cwd: "/repo", token: "ghs_x" },
-      { taskRunId: "run-1", environment: "cloud" },
+      { environment: "cloud" },
     );
     if (!server) {
       throw new Error("expected the local-tools server to be registered");

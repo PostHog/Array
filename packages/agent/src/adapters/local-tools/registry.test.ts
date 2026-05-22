@@ -37,13 +37,13 @@ describe("local-tools registry", () => {
   it.each([
     {
       name: "cloud run with a token",
-      meta: { taskRunId: "run-1", environment: "cloud" as const },
+      meta: { environment: "cloud" as const },
       token: "ghs_x",
       expected: true,
     },
     {
       name: "cloud run without a token",
-      meta: { taskRunId: "run-1", environment: "cloud" as const },
+      meta: { environment: "cloud" as const },
       token: undefined,
       expected: false,
     },
@@ -59,12 +59,6 @@ describe("local-tools registry", () => {
       token: undefined,
       expected: false,
     },
-    {
-      name: "desktop run with taskRunId and token",
-      meta: { taskRunId: "run-1", environment: "local" as const },
-      token: "ghs_x",
-      expected: false,
-    },
   ])(
     "exposes git_signed_commit only in $name when cloud+token",
     ({ meta, token, expected }) => {
@@ -73,4 +67,12 @@ describe("local-tools registry", () => {
       expect(hasSignedCommit).toBe(expected);
     },
   );
+
+  it("does not treat legacy taskRunId-only metadata as cloud", () => {
+    const tools = enabledLocalTools({ cwd: "/repo", token: "ghs_x" }, {
+      taskRunId: "run-1",
+    } as unknown as { environment?: "local" | "cloud" });
+    const hasSignedCommit = tools.some((t) => t.name === "git_signed_commit");
+    expect(hasSignedCommit).toBe(false);
+  });
 });
