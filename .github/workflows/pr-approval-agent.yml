@@ -14,9 +14,9 @@ concurrency:
 
 jobs:
     review:
-        # Write access is required to apply the stamphog label, so no
+        # Write access is required to apply the Stamphog label, so no
         # additional author_association check is needed.
-        # Triggers: explicit `stamphog` label, ready_for_review with the
+        # Triggers: explicit `Stamphog` label, ready_for_review with the
         # label already present, or `synchronize` where decide-delta
         # asked for re-review (or itself failed — fail closed for safety).
         needs: [decide-delta, dismiss]
@@ -24,8 +24,8 @@ jobs:
             always()
             && !github.event.pull_request.draft
             && (
-              github.event.label.name == 'stamphog'
-              || (github.event.action == 'ready_for_review' && contains(github.event.pull_request.labels.*.name, 'stamphog'))
+              github.event.label.name == 'Stamphog'
+              || (github.event.action == 'ready_for_review' && contains(github.event.pull_request.labels.*.name, 'Stamphog'))
               || needs.decide-delta.outputs.run_review == 'true'
               || needs.decide-delta.result == 'failure'
             )
@@ -115,7 +115,7 @@ jobs:
                   # auto-rerun loop until a human re-applies it after
                   # addressing the feedback.
                   if [ "$VERDICT" != "APPROVED" ]; then
-                    gh pr edit "$PR" --remove-label stamphog \
+                    gh pr edit "$PR" --remove-label Stamphog \
                       --repo "$REPO"
                   fi
 
@@ -140,7 +140,7 @@ jobs:
         if: >-
             github.event.action == 'synchronize'
             && !github.event.pull_request.draft
-            && contains(github.event.pull_request.labels.*.name, 'stamphog')
+            && contains(github.event.pull_request.labels.*.name, 'Stamphog')
         runs-on: ubuntu-latest
         timeout-minutes: 5
         outputs:

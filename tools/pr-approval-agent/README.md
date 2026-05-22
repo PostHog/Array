@@ -9,7 +9,7 @@ and the default `--repo` (`PostHog/code`).
 
 ## Usage
 
-Add the `stamphog` label to a non-draft PR.
+Add the `Stamphog` label to a non-draft PR.
 The GitHub Action runs the agent and posts an approval or comment.
 On approval the label stays so it's visible which PRs were stamphog'd.
 On failure the label is removed so it can be re-applied.

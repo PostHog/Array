@@ -162,7 +162,7 @@ class Pipeline:
             "reasoning": (
                 "The `Migration risk` check has not completed for this commit. "
                 "Wait for it to finish (visible in the PR's Checks tab), then "
-                "re-apply the `stamphog` label to retry."
+                "re-apply the `Stamphog` label to retry."
             ),
             "risk": "unknown",
             "issues": [],
