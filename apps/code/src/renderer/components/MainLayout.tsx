@@ -20,6 +20,7 @@ import { useVisualTaskOrder } from "@features/sidebar/hooks/useVisualTaskOrder";
 import { SkillsView } from "@features/skills/components/SkillsView";
 import { TaskDetail } from "@features/task-detail/components/TaskDetail";
 import { TaskInput } from "@features/task-detail/components/TaskInput";
+import { TaskPendingView } from "@features/task-detail/components/TaskPendingView";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { TourOverlay } from "@features/tour/components/TourOverlay";
 import {
@@ -158,6 +159,10 @@ export function MainLayout() {
             <TaskDetail key={view.data.id} task={view.data} />
           )}
 
+          {view.type === "task-pending" && view.pendingTaskKey && (
+            <TaskPendingView pendingTaskKey={view.pendingTaskKey} />
+          )}
+
           {view.type === "folder-settings" && <FolderSettingsView />}
 
           {view.type === "inbox" && <InboxView />}
@@ -176,7 +181,7 @@ export function MainLayout() {
         tasks={visualTaskOrder}
         activeTaskId={activeTaskId}
         allTasks={tasks ?? []}
-        isOnNewTask={view.type === "task-input"}
+        isOnNewTask={view.type === "task-input" || view.type === "task-pending"}
         onNavigateToTask={navigateToTask}
         onNewTask={navigateToTaskInput}
       />
