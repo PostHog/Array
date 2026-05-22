@@ -2,7 +2,11 @@ import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { useProvisioningStore } from "@features/provisioning/stores/provisioningStore";
 import { useSessions } from "@features/sessions/stores/sessionStore";
 import { useSuspendedTaskIds } from "@features/suspension/hooks/useSuspendedTaskIds";
-import { useTaskSummaries, useTasks } from "@features/tasks/hooks/useTasks";
+import {
+  useSlackTasks,
+  useTaskSummaries,
+  useTasks,
+} from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import type { Schemas } from "@renderer/api/generated";
 import type { Task, TaskRunStatus } from "@shared/types";
@@ -33,6 +37,8 @@ export interface TaskData {
   folderId?: string;
   taskRunStatus?: TaskRunStatus;
   taskRunEnvironment?: "local" | "cloud";
+  originProduct?: string;
+  slackThreadUrl?: string;
   folderPath: string | null;
   cloudPrUrl: string | null;
   branchName: string | null;
@@ -129,6 +135,27 @@ export function useSidebarData({
     { showAllUsers, showInternal },
     { enabled: showAllUsers },
   );
+  // Skip the slack fetch when showAllUsers is on — fullTasks already carries
+  // origin_product through the rawTasks mapping below.
+  const { data: slackTasks = [] } = useSlackTasks({
+    enabled: !showAllUsers,
+    showInternal,
+  });
+  const slackTaskIds = useMemo(
+    () => new Set(slackTasks.map((t) => t.id)),
+    [slackTasks],
+  );
+  // task.latest_run.state is Record<string, unknown> — the backend writes the
+  // full thread URL there. /tasks/summaries/ doesn't return state, so for the
+  // summaries path we read the URL out of the full slack-task payload here.
+  const slackThreadUrlByTaskId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of slackTasks) {
+      const url = t.latest_run?.state?.slack_thread_url;
+      if (typeof url === "string") map.set(t.id, url);
+    }
+    return map;
+  }, [slackTasks]);
 
   type SidebarTask = Schemas.TaskSummary & {
     latest_run:
@@ -136,24 +163,32 @@ export function useSidebarData({
           output?: { pr_url?: unknown } | null;
         })
       | null;
+    origin_product?: string;
+    slack_thread_url?: string;
   };
 
   const rawTasks: SidebarTask[] = useMemo(() => {
     if (!showAllUsers) return summaryTasks;
-    return fullTasks.map((t) => ({
-      id: t.id,
-      title: t.title,
-      repository: t.repository ?? null,
-      created_at: t.created_at,
-      updated_at: t.updated_at,
-      latest_run: t.latest_run
-        ? {
-            status: t.latest_run.status,
-            environment: t.latest_run.environment ?? null,
-            output: t.latest_run.output ?? null,
-          }
-        : null,
-    }));
+    return fullTasks.map((t) => {
+      const slackThreadUrl = t.latest_run?.state?.slack_thread_url;
+      return {
+        id: t.id,
+        title: t.title,
+        repository: t.repository ?? null,
+        created_at: t.created_at,
+        updated_at: t.updated_at,
+        latest_run: t.latest_run
+          ? {
+              status: t.latest_run.status,
+              environment: t.latest_run.environment ?? null,
+              output: t.latest_run.output ?? null,
+            }
+          : null,
+        origin_product: t.origin_product,
+        slack_thread_url:
+          typeof slackThreadUrl === "string" ? slackThreadUrl : undefined,
+      };
+    });
   }, [showAllUsers, summaryTasks, fullTasks]);
 
   const isPrimaryLoading = showAllUsers ? isTasksLoading : isSummariesLoading;
@@ -224,6 +259,12 @@ export function useSidebarData({
           ? task.latest_run.output.pr_url
           : ((session?.cloudOutput?.pr_url as string | undefined) ?? null);
 
+      const originProduct =
+        task.origin_product ??
+        (slackTaskIds.has(task.id) ? "slack" : undefined);
+      const slackThreadUrl =
+        task.slack_thread_url ?? slackThreadUrlByTaskId.get(task.id);
+
       return {
         id: task.id,
         title: task.title,
@@ -239,6 +280,8 @@ export function useSidebarData({
         taskRunStatus:
           session?.cloudStatus ?? task.latest_run?.status ?? undefined,
         taskRunEnvironment: task.latest_run?.environment ?? undefined,
+        originProduct,
+        slackThreadUrl,
         folderPath: workspace?.folderPath ?? null,
         cloudPrUrl,
         branchName: workspace?.branchName ?? null,
@@ -252,6 +295,8 @@ export function useSidebarData({
     suspendedTaskIds,
     sessionByTaskId,
     workspaces,
+    slackTaskIds,
+    slackThreadUrlByTaskId,
   ]);
 
   const pinnedTasks = useMemo(() => {

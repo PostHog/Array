@@ -1,3 +1,4 @@
+import { additionalDirectoriesRouter } from "./routers/additional-directories";
 import { agentRouter } from "./routers/agent";
 import { analyticsRouter } from "./routers/analytics";
 import { archiveRouter } from "./routers/archive";
@@ -30,6 +31,7 @@ import { provisioningRouter } from "./routers/provisioning";
 import { secureStoreRouter } from "./routers/secure-store";
 import { shellRouter } from "./routers/shell";
 import { skillsRouter } from "./routers/skills";
+import { slackIntegrationRouter } from "./routers/slack-integration";
 import { sleepRouter } from "./routers/sleep";
 import { suspensionRouter } from "./routers/suspension.js";
 import { uiRouter } from "./routers/ui";
@@ -38,6 +40,7 @@ import { workspaceRouter } from "./routers/workspace";
 import { router } from "./trpc";
 
 export const trpcRouter = router({
+  additionalDirectories: additionalDirectoriesRouter,
   agent: agentRouter,
   analytics: analyticsRouter,
   archive: archiveRouter,
@@ -72,6 +75,7 @@ export const trpcRouter = router({
   secureStore: secureStoreRouter,
   shell: shellRouter,
   skills: skillsRouter,
+  slackIntegration: slackIntegrationRouter,
   ui: uiRouter,
   updates: updatesRouter,
   deepLink: deepLinkRouter,

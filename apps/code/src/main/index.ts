@@ -24,6 +24,7 @@ import {
   trackAppEvent,
 } from "./services/posthog-analytics";
 import type { PosthogPluginService } from "./services/posthog-plugin/service";
+import type { SlackIntegrationService } from "./services/slack-integration/service";
 import type { SuspensionService } from "./services/suspension/service";
 import type { TaskLinkService } from "./services/task-link/service";
 import type { UpdatesService } from "./services/updates/service";
@@ -150,6 +151,7 @@ async function initializeServices(): Promise<void> {
   container.get<TaskLinkService>(MAIN_TOKENS.TaskLinkService);
   container.get<InboxLinkService>(MAIN_TOKENS.InboxLinkService);
   container.get<GitHubIntegrationService>(MAIN_TOKENS.GitHubIntegrationService);
+  container.get<SlackIntegrationService>(MAIN_TOKENS.SlackIntegrationService);
   container.get<ExternalAppsService>(MAIN_TOKENS.ExternalAppsService);
   container.get<PosthogPluginService>(MAIN_TOKENS.PosthogPluginService);
 

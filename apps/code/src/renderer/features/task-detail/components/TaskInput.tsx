@@ -728,6 +728,7 @@ export function TaskInput({
                   cloudSearchQuery={cloudBranchSearchQuery}
                   onCloudPickerClose={handleCloudBranchPickerClose}
                   onCloudSearchChange={handleCloudBranchSearchChange}
+                  onCloudBranchCommit={handleCloudBranchPickerClose}
                   onCloudLoadMore={handleLoadMoreCloudBranches}
                   onRefresh={
                     workspaceMode === "cloud"

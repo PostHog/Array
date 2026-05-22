@@ -64,10 +64,17 @@ function TaskCommandIcon({ task }: { task: Task }) {
     cloudPrUrl: null,
     taskRunEnvironment: task.latest_run?.environment,
   });
+  const stateSlackThreadUrl = (
+    task.latest_run?.state as { slack_thread_url?: unknown } | undefined
+  )?.slack_thread_url;
+  const slackThreadUrl =
+    typeof stateSlackThreadUrl === "string" ? stateSlackThreadUrl : undefined;
   return (
     <TaskIcon
       workspaceMode={task.latest_run?.environment}
       taskRunStatus={task.latest_run?.status}
+      originProduct={task.origin_product}
+      slackThreadUrl={slackThreadUrl}
       prState={prState}
       hasDiff={hasDiff}
     />

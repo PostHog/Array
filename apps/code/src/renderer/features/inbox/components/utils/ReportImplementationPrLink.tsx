@@ -62,9 +62,9 @@ export function ReportImplementationPrLink({
   const { reference: prReference, prNumber } = parseGitHubPrReference(prUrl);
 
   const tooltip = merged
-    ? `Merged — ${prReference}`
+    ? `Merged – ${prReference}`
     : state === "closed"
-      ? `Closed — ${prReference}`
+      ? `Closed – ${prReference}`
       : prReference;
 
   const iconSize = isSm ? 10 : 12;

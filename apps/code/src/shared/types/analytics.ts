@@ -428,6 +428,7 @@ export type InboxReportActionType =
   | "create_pr"
   | "open_pr"
   | "copy_link"
+  | "discuss"
   | "expand_signal"
   | "collapse_signal"
   | "expand_signal_section"
@@ -453,6 +454,18 @@ export interface InboxViewedProperties {
   is_empty: boolean;
   /** True when the inbox is scale-gated (GatedDueToScalePane shown, data not loaded). */
   is_gated_due_to_scale: boolean;
+  /** Breakdown of the visible report_count by priority (P0–P4, or "unknown"). */
+  priority_p0_count: number;
+  priority_p1_count: number;
+  priority_p2_count: number;
+  priority_p3_count: number;
+  priority_p4_count: number;
+  priority_unknown_count: number;
+  /** Breakdown of the visible report_count by actionability. */
+  actionability_immediately_actionable_count: number;
+  actionability_requires_human_input_count: number;
+  actionability_not_actionable_count: number;
+  actionability_unknown_count: number;
 }
 
 export interface InboxReportOpenedProperties {
@@ -461,6 +474,7 @@ export interface InboxReportOpenedProperties {
   report_age_hours: number;
   status: string | null;
   priority: string | null;
+  actionability: string | null;
   source_products: string[];
   rank: number;
   list_size: number;
@@ -472,6 +486,8 @@ export interface InboxReportClosedProperties {
   report_id: string;
   report_title: string | null;
   report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
   time_spent_ms: number;
   scrolled: boolean;
   close_method: InboxReportCloseMethod;
@@ -481,6 +497,8 @@ export interface InboxReportScrolledProperties {
   report_id: string;
   report_title: string | null;
   report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
   rank: number;
   list_size: number;
   time_since_open_ms: number;
@@ -490,6 +508,8 @@ export interface InboxReportActionProperties {
   report_id: string;
   report_title: string | null;
   report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
   action_type: InboxReportActionType;
   surface: InboxReportActionSurface;
   is_bulk: boolean;
@@ -504,6 +524,11 @@ export interface InboxReportActionProperties {
   signal_section?: "relevant_code" | "data_queried";
   why_field?: "priority" | "actionability";
   task_section?: "research" | "implementation";
+  // True when the user submitted Discuss with a first question via the popover.
+  has_question?: boolean;
+  // The first question text the user typed before hitting Discuss. Truncated to
+  // 500 chars to keep event payloads bounded.
+  question_text?: string;
 }
 
 // Subscription / billing events

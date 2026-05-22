@@ -110,6 +110,22 @@ describe("navigationStore", () => {
       expect(getView().taskInputRequestId).toBeTruthy();
     });
 
+    it("mints a fresh taskInputRequestId on each navigation with transient state", () => {
+      getStore().navigateToTaskInput({
+        initialPrompt: "Discuss this",
+        reportAssociation: { reportId: "report-456", title: "Slow checkout" },
+      });
+      const firstRequestId = getView().taskInputRequestId;
+      expect(firstRequestId).toBeTruthy();
+
+      getStore().navigateToInbox();
+      getStore().navigateToTaskInput({
+        initialPrompt: "Discuss this",
+        reportAssociation: { reportId: "report-456", title: "Slow checkout" },
+      });
+      expect(getView().taskInputRequestId).not.toBe(firstRequestId);
+    });
+
     it("clears task input report association", () => {
       getStore().navigateToTaskInput({
         initialPrompt: "Fix this report",

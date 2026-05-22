@@ -1,11 +1,12 @@
 import { getPortalContainer } from "@components/ThemeWrapper";
+import type { Editor } from "@tiptap/core";
 import Mention, { type MentionOptions } from "@tiptap/extension-mention";
 import { ReactRenderer } from "@tiptap/react";
 import type { SuggestionOptions } from "@tiptap/suggestion";
 import type { ReactNode } from "react";
 import tippy, { type Instance as TippyInstance } from "tippy.js";
 import type { SuggestionItem } from "../types";
-import type { ChipType } from "./MentionChipNode";
+import type { ChipType, MentionChipAttrs } from "./MentionChipNode";
 import { SuggestionList, type SuggestionListRef } from "./SuggestionList";
 import { createSuggestionLoader } from "./suggestionLoader";
 
@@ -18,6 +19,15 @@ export interface SuggestionMentionConfig<T extends SuggestionItem> {
   debounceMs?: number;
   items: (query: string) => T[] | Promise<T[]>;
   renderItem?: (item: T) => ReactNode;
+  /**
+   * When true, commit the suggestion as soon as the typed query exactly matches
+   * an item's label and no other item label extends it.
+   */
+  autoCommit?: boolean;
+  /** Override the chip attrs inserted for a given item. */
+  resolveChipAttrs?: (item: T) => Partial<MentionChipAttrs>;
+  /** Fires after the chip is inserted into the document. */
+  onAfterInsert?: (item: T, ctx: { editor: Editor; chipId: string }) => void;
 }
 
 export function createSuggestionMention<T extends SuggestionItem>(
@@ -32,6 +42,9 @@ export function createSuggestionMention<T extends SuggestionItem>(
     debounceMs = 0,
     items: loadItems,
     renderItem,
+    autoCommit = false,
+    resolveChipAttrs,
+    onAfterInsert,
   } = config;
 
   const renderItemUntyped = renderItem
@@ -111,6 +124,23 @@ export function createSuggestionMention<T extends SuggestionItem>(
               getReferenceClientRect: props.clientRect as () => DOMRect,
             });
           }
+
+          if (autoCommit) {
+            // Caveat: if one item label is a strict prefix of another (e.g.
+            // "add" vs "add-dir"), the shorter name becomes uncommittable via
+            // auto-commit and the user has to pick from the list. Avoid
+            // shipping prefix-clashing command names, or rename to disambiguate.
+            const q = props.query.toLowerCase();
+            const exact = props.items.find((i) => i.label.toLowerCase() === q);
+            const hasLongerExtension = props.items.some(
+              (i) =>
+                i.label.toLowerCase().startsWith(q) &&
+                i.label.length > q.length,
+            );
+            if (exact && !hasLongerExtension) {
+              props.command(exact);
+            }
+          }
         },
 
         onKeyDown: (props) => {
@@ -137,23 +167,26 @@ export function createSuggestionMention<T extends SuggestionItem>(
     },
 
     command: ({ editor, range, props }) => {
-      const item = props as SuggestionItem;
+      const item = props as T;
+      const chipId = crypto.randomUUID();
+      const overrides = resolveChipAttrs?.(item) ?? {};
+      const attrs: MentionChipAttrs = {
+        type: overrides.type ?? item.chipType ?? chipType,
+        id: overrides.id ?? item.id,
+        label: overrides.label ?? item.label,
+        pastedText: false,
+        chipId,
+      };
       editor
         .chain()
         .focus()
         .deleteRange(range)
         .insertContent([
-          {
-            type: "mentionChip",
-            attrs: {
-              type: item.chipType ?? chipType,
-              id: item.id,
-              label: item.label,
-            },
-          },
+          { type: "mentionChip", attrs },
           { type: "text", text: " " },
         ])
         .run();
+      onAfterInsert?.(item, { editor, chipId });
     },
   };
 

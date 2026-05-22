@@ -1,7 +1,13 @@
 import { Theme } from "@radix-ui/themes";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { UserMessage } from "./UserMessage";
+
+vi.mock("@renderer/trpc/client", () => ({
+  trpcClient: {
+    os: { openExternal: { mutate: vi.fn() } },
+  },
+}));
 
 describe("UserMessage", () => {
   it("renders attachment chips for cloud prompts", () => {

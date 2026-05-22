@@ -21,6 +21,8 @@ interface TaskItemProps {
   isSuspended?: boolean;
   needsPermission?: boolean;
   taskRunStatus?: TaskRunStatus;
+  originProduct?: string;
+  slackThreadUrl?: string;
   prState?: SidebarPrState;
   hasDiff?: boolean;
   timestamp?: number;
@@ -113,6 +115,8 @@ export function TaskItem({
   isPinned = false,
   needsPermission = false,
   taskRunStatus,
+  originProduct,
+  slackThreadUrl,
   prState,
   hasDiff,
   timestamp,
@@ -134,6 +138,8 @@ export function TaskItem({
       isSuspended={isSuspended}
       needsPermission={needsPermission}
       taskRunStatus={taskRunStatus}
+      originProduct={originProduct}
+      slackThreadUrl={slackThreadUrl}
       prState={prState}
       hasDiff={hasDiff}
     />

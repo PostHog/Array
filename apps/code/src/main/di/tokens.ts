@@ -34,6 +34,9 @@ export const MAIN_TOKENS = Object.freeze({
   WorktreeRepository: Symbol.for("Main.WorktreeRepository"),
   ArchiveRepository: Symbol.for("Main.ArchiveRepository"),
   SuspensionRepository: Symbol.for("Main.SuspensionRepository"),
+  DefaultAdditionalDirectoryRepository: Symbol.for(
+    "Main.DefaultAdditionalDirectoryRepository",
+  ),
 
   // Services
   AgentAuthAdapter: Symbol.for("Main.AgentAuthAdapter"),
@@ -60,6 +63,7 @@ export const MAIN_TOKENS = Object.freeze({
   HandoffService: Symbol.for("Main.HandoffService"),
   GitHubIntegrationService: Symbol.for("Main.GitHubIntegrationService"),
   LinearIntegrationService: Symbol.for("Main.LinearIntegrationService"),
+  SlackIntegrationService: Symbol.for("Main.SlackIntegrationService"),
   DeepLinkService: Symbol.for("Main.DeepLinkService"),
   NotificationService: Symbol.for("Main.NotificationService"),
   McpCallbackService: Symbol.for("Main.McpCallbackService"),

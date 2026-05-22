@@ -47,8 +47,6 @@ export function IssuePicker({
 }: IssuePickerProps) {
   const trpc = useTRPC();
   const [query, setQuery] = useState("");
-  // delay=0 while closed so debouncedQuery snaps back synchronously, otherwise
-  // reopening within 300ms briefly shows cached results from the previous search.
   const debouncedQuery = useDebounce(query, open ? 300 : 0);
 
   useEffect(() => {
@@ -66,7 +64,7 @@ export function IssuePicker({
     ),
   );
 
-  const isLoading = isFetching || query !== debouncedQuery;
+  const isLoading = isFetching || (open && query !== debouncedQuery);
 
   const handleValueChange = (value: Ref | null) => {
     if (!value) return;

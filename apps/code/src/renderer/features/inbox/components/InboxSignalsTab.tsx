@@ -298,6 +298,10 @@ export function InboxSignalsTab() {
           bulk_size: 1,
           rank: preMutationRank,
           list_size: preMutationListSize,
+          // Snapshot priority/actionability from the pre-mutation target —
+          // by the time this fires the report has been removed from `reports`.
+          priority: target?.priority ?? null,
+          actionability: target?.actionability ?? null,
           ...(isSnooze
             ? {}
             : {
@@ -492,6 +496,38 @@ export function InboxSignalsTab() {
     if (isLoading) return;
     if (inboxViewedFiredRef.current) return;
     inboxViewedFiredRef.current = true;
+    const priorityCounts = {
+      P0: 0,
+      P1: 0,
+      P2: 0,
+      P3: 0,
+      P4: 0,
+      unknown: 0,
+    };
+    const actionabilityCounts = {
+      immediately_actionable: 0,
+      requires_human_input: 0,
+      not_actionable: 0,
+      unknown: 0,
+    };
+    for (const r of reports) {
+      const p = r.priority;
+      if (p === "P0" || p === "P1" || p === "P2" || p === "P3" || p === "P4") {
+        priorityCounts[p] += 1;
+      } else {
+        priorityCounts.unknown += 1;
+      }
+      const a = r.actionability;
+      if (
+        a === "immediately_actionable" ||
+        a === "requires_human_input" ||
+        a === "not_actionable"
+      ) {
+        actionabilityCounts[a] += 1;
+      } else {
+        actionabilityCounts.unknown += 1;
+      }
+    }
     track(ANALYTICS_EVENTS.INBOX_VIEWED, {
       report_count: reports.length,
       total_count: totalCount,
@@ -501,11 +537,23 @@ export function InboxSignalsTab() {
       status_filter_count: statusFilter.length,
       is_empty: totalCount === 0,
       is_gated_due_to_scale: false,
+      priority_p0_count: priorityCounts.P0,
+      priority_p1_count: priorityCounts.P1,
+      priority_p2_count: priorityCounts.P2,
+      priority_p3_count: priorityCounts.P3,
+      priority_p4_count: priorityCounts.P4,
+      priority_unknown_count: priorityCounts.unknown,
+      actionability_immediately_actionable_count:
+        actionabilityCounts.immediately_actionable,
+      actionability_requires_human_input_count:
+        actionabilityCounts.requires_human_input,
+      actionability_not_actionable_count: actionabilityCounts.not_actionable,
+      actionability_unknown_count: actionabilityCounts.unknown,
     });
   }, [
     isInboxView,
     isLoading,
-    reports.length,
+    reports,
     totalCount,
     readyCount,
     hasActiveFilters,

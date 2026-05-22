@@ -25,6 +25,8 @@ import type {
   SignalReportTaskRelationship,
   SignalTeamConfig,
   SignalUserAutonomyConfig,
+  SlackChannelsQueryParams,
+  SlackChannelsResponse,
   SuggestedReviewersArtefact,
   Task,
   TaskRun,
@@ -2255,9 +2257,14 @@ export class PostHogAPIClient {
     return (await response.json()) as SignalUserAutonomyConfig;
   }
 
-  async updateSignalUserAutonomyConfig(updates: {
-    autostart_priority: string | null;
-  }): Promise<SignalUserAutonomyConfig> {
+  async updateSignalUserAutonomyConfig(
+    updates: Partial<{
+      autostart_priority: string | null;
+      slack_notification_integration_id: number | null;
+      slack_notification_channel: string | null;
+      slack_notification_min_priority: string | null;
+    }>,
+  ): Promise<SignalUserAutonomyConfig> {
     const url = new URL(`${this.api.baseUrl}/api/users/@me/signal_autonomy/`);
     const path = "/api/users/@me/signal_autonomy/";
 
@@ -2276,6 +2283,41 @@ export class PostHogAPIClient {
       );
     }
     return (await response.json()) as SignalUserAutonomyConfig;
+  }
+
+  async getSlackChannelsForIntegration(
+    integrationId: number,
+    params?: SlackChannelsQueryParams,
+  ): Promise<SlackChannelsResponse> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${teamId}/integrations/${integrationId}/channels/`,
+    );
+    const search = params?.search?.trim();
+    if (search) {
+      url.searchParams.set("search", search);
+    }
+    if (params?.limit != null) {
+      url.searchParams.set("limit", String(params.limit));
+    }
+    if (params?.offset != null) {
+      url.searchParams.set("offset", String(params.offset));
+    }
+    if (params?.channelId) {
+      url.searchParams.set("channel_id", params.channelId);
+    }
+    const path = `/api/environments/${teamId}/integrations/${integrationId}/channels/${url.search}`;
+
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Slack channels: ${response.statusText}`);
+    }
+    return (await response.json()) as SlackChannelsResponse;
   }
 
   async deleteSignalUserAutonomyConfig(): Promise<void> {

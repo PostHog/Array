@@ -1,10 +1,10 @@
 import { fetchAuthState } from "@features/auth/hooks/authQueries";
+import { xmlToContent } from "@features/message-editor/utils/content";
 import { trpcClient } from "@renderer/trpc";
 import { logger } from "@utils/logger";
 
 const log = logger.scope("title-generator");
 
-export const createFileTagRegex = () => /<file\s+path="([^"]+)"\s*\/>/g;
 const ATTACHED_FILES_REGEX = /^\[?Attached files:.*]?$/gm;
 const PASTED_TEXT_SNIPPET_LIMIT = 500;
 
@@ -55,18 +55,20 @@ export async function enrichDescriptionWithFileContent(
   description: string,
   filePaths: string[] = [],
 ): Promise<string> {
-  const stripped = description
-    .replace(createFileTagRegex(), "")
+  const parsed = xmlToContent(description);
+  const stripped = parsed.segments
+    .flatMap((seg) => (seg.type === "text" ? [seg.text] : []))
+    .join("")
     .replace(ATTACHED_FILES_REGEX, "")
     .replace(/^\d+\.\s*$/gm, "")
     .trim();
 
   if (stripped.length > 0) return description;
 
-  const paths =
-    filePaths.length > 0
-      ? filePaths
-      : [...description.matchAll(createFileTagRegex())].map((m) => m[1]);
+  const chipFilePaths = parsed.segments.flatMap((seg) =>
+    seg.type === "chip" && seg.chip.type === "file" ? [seg.chip.id] : [],
+  );
+  const paths = filePaths.length > 0 ? filePaths : chipFilePaths;
 
   if (paths.length === 0) return description;
 
@@ -76,13 +78,13 @@ export async function enrichDescriptionWithFileContent(
         return `[Attached: ${getFileName(filePath)}]`;
       }
       try {
-        const content = await trpcClient.fs.readAbsoluteFile.query({
+        const fileContent = await trpcClient.fs.readAbsoluteFile.query({
           filePath,
         });
-        if (content) {
-          return content.length > PASTED_TEXT_SNIPPET_LIMIT
-            ? content.slice(0, PASTED_TEXT_SNIPPET_LIMIT)
-            : content;
+        if (fileContent) {
+          return fileContent.length > PASTED_TEXT_SNIPPET_LIMIT
+            ? fileContent.slice(0, PASTED_TEXT_SNIPPET_LIMIT)
+            : fileContent;
         }
         return `[Attached: ${getFileName(filePath)}]`;
       } catch {

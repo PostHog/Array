@@ -59,6 +59,7 @@ import {
   normalizeCloudPromptContent,
   promptBlocksToText,
 } from "./cloud-prompt";
+import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
 import {
   handoffLocalGitStateSchema,
@@ -233,6 +234,7 @@ export class AgentServer {
   private session: ActiveSession | null = null;
   private app: Hono;
   private posthogAPI: PostHogAPIClient;
+  private eventStreamSender: TaskRunEventStreamSender | null = null;
   private questionRelayedToSlack = false;
   private detectedPrUrl: string | null = null;
   private lastReportedBranch: string | null = null;
@@ -297,6 +299,17 @@ export class AgentServer {
       getApiKey: () => config.apiKey,
       userAgent: `posthog/cloud.hog.dev; version: ${config.version ?? packageJson.version}`,
     });
+    if (config.eventIngestToken) {
+      this.eventStreamSender = new TaskRunEventStreamSender({
+        apiUrl: config.apiUrl,
+        projectId: config.projectId,
+        taskId: config.taskId,
+        runId: config.runId,
+        token: config.eventIngestToken,
+        logger: this.logger.child("EventIngest"),
+        streamWindowMs: config.eventIngestStreamWindowMs,
+      });
+    }
     this.app = this.createApp();
   }
 
@@ -560,7 +573,9 @@ export class AgentServer {
     this.logger.debug("Stopping agent server...");
 
     if (this.session) {
-      await this.cleanupSession();
+      await this.cleanupSession({ completeEventStream: true });
+    } else {
+      await this.eventStreamSender?.stop();
     }
 
     if (this.server) {
@@ -1798,6 +1813,12 @@ ${signedCommitInstructions}
 
     const status = "failed";
 
+    this.enqueueTaskTerminalEvent(POSTHOG_NOTIFICATIONS.ERROR, {
+      source: "agent_server",
+      stopReason,
+      error: errorMessage ?? "Agent error",
+    });
+
     try {
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
         status,
@@ -1806,7 +1827,26 @@ ${signedCommitInstructions}
       this.logger.debug("Task completion signaled", { status, stopReason });
     } catch (error) {
       this.logger.error("Failed to signal task completion", error);
+    } finally {
+      await this.eventStreamSender?.stop();
     }
+  }
+
+  private enqueueTaskTerminalEvent(
+    method:
+      | typeof POSTHOG_NOTIFICATIONS.TASK_COMPLETE
+      | typeof POSTHOG_NOTIFICATIONS.ERROR,
+    params: Record<string, unknown>,
+  ): void {
+    this.eventStreamSender?.enqueue({
+      type: "notification",
+      timestamp: new Date().toISOString(),
+      notification: {
+        jsonrpc: "2.0",
+        method,
+        params,
+      },
+    });
   }
 
   private configureEnvironment({
@@ -2224,7 +2264,11 @@ ${signedCommitInstructions}
     }
   }
 
-  private async cleanupSession(): Promise<void> {
+  private async cleanupSession({
+    completeEventStream = false,
+  }: {
+    completeEventStream?: boolean;
+  } = {}): Promise<void> {
     if (!this.session) return;
 
     this.logger.debug("Cleaning up session");
@@ -2261,6 +2305,10 @@ ${signedCommitInstructions}
 
     if (this.session.sseController) {
       this.session.sseController.close();
+    }
+
+    if (completeEventStream) {
+      await this.eventStreamSender?.stop();
     }
 
     this.pendingEvents = [];
@@ -2346,9 +2394,13 @@ ${signedCommitInstructions}
   }
 
   private broadcastEvent(event: Record<string, unknown>): void {
+    if (!this.session) return;
+
+    this.eventStreamSender?.enqueue(event);
+
     if (this.session?.sseController) {
       this.sendSseEvent(this.session.sseController, event);
-    } else if (this.session) {
+    } else {
       // Buffer events during initialization (sseController not yet attached)
       this.pendingEvents.push(event);
     }

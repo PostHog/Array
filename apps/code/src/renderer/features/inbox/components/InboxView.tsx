@@ -33,6 +33,16 @@ export function InboxView() {
       status_filter_count: 0,
       is_empty: true,
       is_gated_due_to_scale: true,
+      priority_p0_count: 0,
+      priority_p1_count: 0,
+      priority_p2_count: 0,
+      priority_p3_count: 0,
+      priority_p4_count: 0,
+      priority_unknown_count: 0,
+      actionability_immediately_actionable_count: 0,
+      actionability_requires_human_input_count: 0,
+      actionability_not_actionable_count: 0,
+      actionability_unknown_count: 0,
     });
   }, [isGatedDueToScale]);
 

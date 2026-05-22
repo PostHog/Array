@@ -14,7 +14,6 @@ import { getSessionService } from "@features/sessions/service/service";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
 import { useTaskData } from "@features/task-detail/hooks/useTaskData";
 import { useUpdateTask } from "@features/tasks/hooks/useTasks";
-import { useTaskStore } from "@features/tasks/stores/taskStore";
 import { useWorkspaceEvents } from "@features/workspace/hooks";
 import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
 import { useBlurOnEscape } from "@hooks/useBlurOnEscape";
@@ -39,12 +38,6 @@ interface TaskDetailProps {
 
 export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const taskId = initialTask.id;
-  const selectTask = useTaskStore((s) => s.selectTask);
-
-  useEffect(() => {
-    selectTask(taskId);
-    return () => selectTask(null);
-  }, [taskId, selectTask]);
 
   const { task } = useTaskData({ taskId, initialTask });
 

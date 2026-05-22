@@ -9,6 +9,7 @@ import {
 } from "@features/auth/hooks/authClient";
 import { fetchAuthState } from "@features/auth/hooks/authQueries";
 import { useUsageLimitStore } from "@features/billing/stores/usageLimitStore";
+import { useAddDirectoryDialogStore } from "@features/folder-picker/stores/addDirectoryDialogStore";
 import { useSessionAdapterStore } from "@features/sessions/stores/sessionAdapterStore";
 import {
   getPersistedConfigOptions,
@@ -223,6 +224,29 @@ export interface ConnectParams {
   adapter?: "claude" | "codex";
   model?: string;
   reasoningLevel?: string;
+}
+
+const FOLDER_TAG_REGEX = /<folder\s+path="([^"]+)"\s*\/>/g;
+
+function isAbsoluteFolderPath(p: string): boolean {
+  return p.startsWith("/") || p.startsWith("~") || /^[A-Za-z]:[\\/]/.test(p);
+}
+
+function promptReferencesAbsoluteFolder(
+  prompt: string | ContentBlock[],
+): boolean {
+  const text =
+    typeof prompt === "string"
+      ? prompt
+      : prompt
+          .map((block) =>
+            "text" in block && typeof block.text === "string" ? block.text : "",
+          )
+          .join("");
+  for (const match of text.matchAll(FOLDER_TAG_REGEX)) {
+    if (isAbsoluteFolderPath(match[1])) return true;
+  }
+  return false;
 }
 
 // --- Singleton Service Instance ---
@@ -560,6 +584,8 @@ export class SessionService {
     const resolvedAdapter = adapter ?? storedAdapter;
     const persistedConfigOptions = getPersistedConfigOptions(taskRunId);
 
+    const previous = sessionStoreSetters.getSessions()[taskRunId];
+
     const session = this.createBaseSession(taskRunId, taskId, taskTitle);
     session.events = events;
     if (logUrl) {
@@ -571,6 +597,14 @@ export class SessionService {
     if (resolvedAdapter) {
       session.adapter = resolvedAdapter;
       useSessionAdapterStore.getState().setAdapter(taskRunId, resolvedAdapter);
+    }
+
+    if (previous) {
+      session.optimisticItems = previous.optimisticItems;
+      session.messageQueue = previous.messageQueue;
+      session.isPromptPending = previous.isPromptPending;
+      session.promptStartedAt = previous.promptStartedAt;
+      session.pausedDurationMs = previous.pausedDurationMs;
     }
 
     sessionStoreSetters.setSession(session);
@@ -1454,8 +1488,17 @@ export class SessionService {
       );
     }
 
-    const session = sessionStoreSetters.getSessionByTaskId(taskId);
+    let session = sessionStoreSetters.getSessionByTaskId(taskId);
     if (!session) throw new Error("No active session for task");
+
+    // The /add-dir dialog mutates the per-task additional-directories list and
+    // we re-read it during respawn below. Sending while it's open would race
+    // and respawn with the pre-decision set, so block here.
+    if (useAddDirectoryDialogStore.getState().open) {
+      throw new Error(
+        "Confirm the folder access dialog before sending your message.",
+      );
+    }
 
     if (session.isCloud) {
       return this.sendCloudPrompt(session, prompt);
@@ -1503,7 +1546,39 @@ export class SessionService {
       prompt_length_chars: promptText.length,
     });
 
-    return this.sendLocalPrompt(session, blocks, promptText);
+    // Show the user's message in the chat immediately, before any respawn
+    this.applyOptimisticPrompt(session.taskRunId, blocks, promptText);
+
+    if (promptReferencesAbsoluteFolder(prompt)) {
+      const repoPath = this.localRepoPaths.get(taskId);
+      if (repoPath) {
+        try {
+          await this.reconnectInPlace(taskId, repoPath);
+        } catch (err) {
+          log.error("Respawn failed; aborting prompt send", { taskId, err });
+          sessionStoreSetters.clearOptimisticItems(session.taskRunId);
+          sessionStoreSetters.updateSession(session.taskRunId, {
+            isPromptPending: false,
+            promptStartedAt: null,
+          });
+          toast.error("Couldn't grant the new folder access", {
+            description:
+              "The session needs to restart to pick up the added folder. Try sending again, or remove the folder reference.",
+          });
+          throw err instanceof Error
+            ? err
+            : new Error("Failed to apply additional directories");
+        }
+        const refreshed = sessionStoreSetters.getSessionByTaskId(taskId);
+        if (refreshed) {
+          session = refreshed;
+        }
+      }
+    }
+
+    return this.sendLocalPrompt(session, blocks, promptText, {
+      optimisticApplied: true,
+    });
   }
 
   /**
@@ -1562,12 +1637,12 @@ export class SessionService {
     }
   }
 
-  private async sendLocalPrompt(
-    session: AgentSession,
+  private applyOptimisticPrompt(
+    taskRunId: string,
     blocks: ContentBlock[],
     promptText: string,
-  ): Promise<{ stopReason: string }> {
-    sessionStoreSetters.updateSession(session.taskRunId, {
+  ): void {
+    sessionStoreSetters.updateSession(taskRunId, {
       isPromptPending: true,
       promptStartedAt: Date.now(),
       pausedDurationMs: 0,
@@ -1575,16 +1650,27 @@ export class SessionService {
 
     const skillButtonId = extractSkillButtonId(blocks);
     if (skillButtonId) {
-      sessionStoreSetters.appendOptimisticItem(session.taskRunId, {
+      sessionStoreSetters.appendOptimisticItem(taskRunId, {
         type: "skill_button_action",
         buttonId: skillButtonId,
       });
     } else {
-      sessionStoreSetters.appendOptimisticItem(session.taskRunId, {
+      sessionStoreSetters.appendOptimisticItem(taskRunId, {
         type: "user_message",
         content: promptText,
         timestamp: Date.now(),
       });
+    }
+  }
+
+  private async sendLocalPrompt(
+    session: AgentSession,
+    blocks: ContentBlock[],
+    promptText: string,
+    options: { optimisticApplied?: boolean } = {},
+  ): Promise<{ stopReason: string }> {
+    if (!options.optimisticApplied) {
+      this.applyOptimisticPrompt(session.taskRunId, blocks, promptText);
     }
 
     try {

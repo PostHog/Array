@@ -18,12 +18,19 @@ export interface MentionChipAttrs {
   id: string;
   label: string;
   pastedText: boolean;
+  /** Optional unique handle so callers can later replace or remove this chip. */
+  chipId?: string | null;
 }
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     mentionChip: {
       insertMentionChip: (attrs: MentionChipAttrs) => ReturnType;
+      replaceMentionChipById: (
+        chipId: string,
+        attrs: Partial<MentionChipAttrs>,
+      ) => ReturnType;
+      removeMentionChipById: (chipId: string) => ReturnType;
     };
   }
 }
@@ -41,6 +48,7 @@ export const MentionChipNode = Node.create({
       id: { default: "" },
       label: { default: "" },
       pastedText: { default: false },
+      chipId: { default: null as string | null },
     };
   },
 
@@ -84,6 +92,43 @@ export const MentionChipNode = Node.create({
               { type: "text", text: " " },
             ])
             .run();
+        },
+      replaceMentionChipById:
+        (chipId: string, attrs: Partial<MentionChipAttrs>) =>
+        ({ tr, state, dispatch }) => {
+          let found = false;
+          state.doc.descendants((node, pos) => {
+            if (found) return false;
+            if (node.type.name !== "mentionChip") return;
+            if (node.attrs.chipId !== chipId) return;
+            found = true;
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...attrs });
+            return false;
+          });
+          if (found && dispatch) dispatch(tr);
+          return found;
+        },
+      removeMentionChipById:
+        (chipId: string) =>
+        ({ tr, state, dispatch }) => {
+          let found = false;
+          state.doc.descendants((node, pos) => {
+            if (found) return false;
+            if (node.type.name !== "mentionChip") return;
+            if (node.attrs.chipId !== chipId) return;
+            found = true;
+            const from = pos;
+            const to = pos + node.nodeSize;
+            // Also swallow a trailing single space the suggestion adds.
+            const after = state.doc.textBetween(
+              to,
+              Math.min(to + 1, state.doc.content.size),
+            );
+            tr.delete(from, after === " " ? to + 1 : to);
+            return false;
+          });
+          if (found && dispatch) dispatch(tr);
+          return found;
         },
     };
   },

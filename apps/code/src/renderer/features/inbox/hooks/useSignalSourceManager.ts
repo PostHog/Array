@@ -5,6 +5,10 @@ import type {
   Evaluation,
   SignalSourceConfig,
 } from "@renderer/api/posthogClient";
+import type {
+  SignalReportPriority,
+  SignalUserAutonomyConfig,
+} from "@shared/types";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -479,6 +483,80 @@ export function useSignalSourceManager() {
     [client, queryClient],
   );
 
+  const handleUpdateSlackNotifications = useCallback(
+    async (updates: {
+      integrationId?: number | null;
+      channel?: string | null;
+      minPriority?: string | null;
+    }) => {
+      if (!client) return;
+      // Translate frontend camelCase to the API's snake_case body. Only include
+      // keys the caller passed in, so other settings (e.g. autostart_priority)
+      // are not wiped.
+      const body: Record<string, number | string | null> = {};
+      if ("integrationId" in updates) {
+        body.slack_notification_integration_id = updates.integrationId ?? null;
+      }
+      if ("channel" in updates) {
+        body.slack_notification_channel = updates.channel ?? null;
+      }
+      if ("minPriority" in updates) {
+        body.slack_notification_min_priority = updates.minPriority ?? null;
+      }
+
+      const queryKey = ["signals", "user-autonomy-config"];
+      const previous =
+        queryClient.getQueryData<SignalUserAutonomyConfig | null>(queryKey);
+
+      // Optimistic update: reflect the user's choice in the UI before the
+      // server responds. Build the next snapshot from the previous one so
+      // unrelated fields (autostart_priority, etc.) are preserved.
+      const optimisticNext: SignalUserAutonomyConfig = {
+        ...(previous ??
+          ({ autostart_priority: null } as SignalUserAutonomyConfig)),
+        ...("integrationId" in updates
+          ? { slack_notification_integration_id: updates.integrationId ?? null }
+          : {}),
+        ...("channel" in updates
+          ? { slack_notification_channel: updates.channel ?? null }
+          : {}),
+        ...("minPriority" in updates
+          ? {
+              slack_notification_min_priority:
+                (updates.minPriority as
+                  | SignalReportPriority
+                  | null
+                  | undefined) ?? null,
+            }
+          : {}),
+      };
+      queryClient.setQueryData<SignalUserAutonomyConfig | null>(
+        queryKey,
+        optimisticNext,
+      );
+
+      try {
+        const fresh = await client.updateSignalUserAutonomyConfig(body);
+        queryClient.setQueryData<SignalUserAutonomyConfig | null>(
+          queryKey,
+          fresh,
+        );
+      } catch (error: unknown) {
+        // Roll back to whatever was in the cache before this attempt.
+        queryClient.setQueryData<SignalUserAutonomyConfig | null>(
+          queryKey,
+          previous ?? null,
+        );
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to update Slack notification setting";
+        toast.error(message);
+      }
+    },
+    [client, queryClient],
+  );
+
   return {
     displayValues,
     sourceStates,
@@ -496,5 +574,6 @@ export function useSignalSourceManager() {
     handleUpdateAutostartPriority,
     userAutonomyConfig,
     handleUpdateUserAutonomyPriority,
+    handleUpdateSlackNotifications,
   };
 }

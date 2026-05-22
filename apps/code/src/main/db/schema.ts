@@ -31,6 +31,8 @@ export const workspaces = sqliteTable(
     pinnedAt: text(),
     lastViewedAt: text(),
     lastActivityAt: text(),
+    /** JSON-encoded array of absolute paths the agent can access for this task. */
+    additionalDirectories: text().notNull().default("[]"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -87,6 +89,14 @@ export const authSessions = sqliteTable("auth_sessions", {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+export const defaultAdditionalDirectories = sqliteTable(
+  "default_additional_directories",
+  {
+    path: text().primaryKey(),
+    createdAt: createdAt(),
+  },
+);
 
 export const authPreferences = sqliteTable(
   "auth_preferences",

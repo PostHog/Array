@@ -63,9 +63,14 @@ interface SignalsToolbarProps {
   isDismissMutationPending?: boolean;
   /** Optional analytics callback fired when a bulk action succeeds. */
   onReportAction?: (
-    action: Omit<InboxReportActionProperties, "rank" | "list_size"> & {
+    action: Omit<
+      InboxReportActionProperties,
+      "rank" | "list_size" | "priority" | "actionability"
+    > & {
       rank?: number;
       list_size?: number;
+      priority?: string | null;
+      actionability?: string | null;
     },
   ) => void;
 }
@@ -340,14 +345,36 @@ export function SignalsToolbar({
 
   /**
    * Snapshot of the visible list captured at action-confirm time, so analytics
-   * record rank + list_size as the user saw them — not the post-mutation refetch.
+   * record rank/list_size/priority/actionability as the user saw them — not the
+   * post-mutation refetch (by then the affected reports are gone).
    */
+  type ListSnapshotEntry = {
+    rank: number;
+    title: string | null;
+    createdAt: string | null;
+    priority: string | null;
+    actionability: string | null;
+  };
   type ListSnapshot = {
-    rankById: Map<string, number>;
+    byId: Map<string, ListSnapshotEntry>;
     listSize: number;
   };
   const snapshotList = (): ListSnapshot => ({
-    rankById: new Map(reports.map((r, i) => [r.id, i] as const)),
+    byId: new Map(
+      reports.map(
+        (r, i) =>
+          [
+            r.id,
+            {
+              rank: i,
+              title: r.title,
+              createdAt: r.created_at,
+              priority: r.priority ?? null,
+              actionability: r.actionability ?? null,
+            } satisfies ListSnapshotEntry,
+          ] as const,
+      ),
+    ),
     listSize: reports.length,
   });
 
@@ -358,10 +385,9 @@ export function SignalsToolbar({
   ) => {
     if (!onReportAction) return;
     const isBulk = targetIds.length > 1;
-    const reportById = new Map(reports.map((r) => [r.id, r]));
     for (const reportId of targetIds) {
-      const target = reportById.get(reportId);
-      const createdAt = target?.created_at;
+      const entry = snapshot.byId.get(reportId);
+      const createdAt = entry?.createdAt;
       const ageMs = createdAt
         ? Date.now() - new Date(createdAt).getTime()
         : Number.NaN;
@@ -370,14 +396,16 @@ export function SignalsToolbar({
         : 0;
       onReportAction({
         report_id: reportId,
-        report_title: target?.title ?? null,
+        report_title: entry?.title ?? null,
         report_age_hours: reportAgeHours,
         action_type: actionType,
         surface: "toolbar",
         is_bulk: isBulk,
         bulk_size: targetIds.length,
-        rank: snapshot.rankById.get(reportId) ?? -1,
+        rank: entry?.rank ?? -1,
         list_size: snapshot.listSize,
+        priority: entry?.priority ?? null,
+        actionability: entry?.actionability ?? null,
       });
     }
   };

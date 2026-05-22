@@ -36,6 +36,13 @@ const COMBOBOX_LIMIT = 50;
 // plain button the combobox's roving focus skips over.
 const CREATE_BRANCH_ACTION = "__create_branch__";
 
+// Sentinel for the "Use '<input>' as branch name" action in cloud mode.
+// Positioned first when the list is empty so it's auto-highlighted while the
+// (slow) remote search is still running; pushed into the footer once branches
+// have loaded so auto-highlight lands on a real branch (typed names that match
+// a server-returned prefix would otherwise be shadowed by the literal input).
+const USE_INPUT_BRANCH_ACTION = "__use_input_branch__";
+
 function LoadingRow({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-1 px-2 py-1.5 text-muted-foreground text-xs">
@@ -136,8 +143,6 @@ export function BranchSelector({
 
   const branches = isCloudMode ? (cloudBranches ?? []) : localBranches;
   const effectiveLoading = loading || (isCloudMode && cloudBranchesLoading);
-  const cloudStillLoading =
-    isCloudMode && cloudBranchesLoading && branches.length === 0 && !open;
   const branchListLoading = isCloudMode
     ? !!cloudBranchesLoading
     : localBranchesLoading;
@@ -164,40 +169,6 @@ export function BranchSelector({
     }),
   );
 
-  const handleBranchChange = (value: string | null) => {
-    if (!value) return;
-    if (value === CREATE_BRANCH_ACTION) {
-      setOpen(false);
-      actions.openBranch(
-        taskId
-          ? getSuggestedBranchName(taskId, repoPath ?? undefined)
-          : undefined,
-      );
-      return;
-    }
-    if (isSelectionOnly) {
-      onBranchSelect?.(value);
-    } else if (value !== currentBranch) {
-      checkoutMutation.mutate({
-        directoryPath: repoPath as string,
-        branchName: value,
-      });
-    }
-    if (isCloudMode) {
-      onCloudBranchCommit?.();
-    }
-    setOpen(false);
-  };
-
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next);
-    if (isCloudMode && next) {
-      onCloudPickerOpen?.();
-    } else if (isCloudMode && !next) {
-      onCloudPickerClose?.();
-    }
-  };
-
   // In local mode, surface in-progress git operations (rebase/merge/etc.) so the
   // user understands why there's no current branch and why we won't let them
   // checkout a different one — checkout would fail with a hard-to-read git error.
@@ -216,12 +187,7 @@ export function BranchSelector({
   const showSpinner =
     effectiveLoading || (isCloudMode && open && cloudBranchesFetchingMore);
 
-  const isDisabled = !!(
-    disabled ||
-    !repoPath ||
-    cloudStillLoading ||
-    localBusy
-  );
+  const isDisabled = !!(disabled || !repoPath || localBusy);
   const disabledReason =
     localBusy && busyOperationLabel
       ? `${busyOperationLabel} in progress — finish or abort it to switch branches.`
@@ -232,15 +198,70 @@ export function BranchSelector({
     !isDisabled &&
     trimmedInputValue.length > 0 &&
     trimmedInputValue !== displayedBranch;
+  const showUseInputBranchAction =
+    isCloudMode &&
+    canUseInputBranch &&
+    !branches.some((branch) => branch === trimmedInputValue);
+
+  const handleBranchChange = (value: string | null) => {
+    if (!value) return;
+    if (value === CREATE_BRANCH_ACTION) {
+      setOpen(false);
+      actions.openBranch(
+        taskId
+          ? getSuggestedBranchName(taskId, repoPath ?? undefined)
+          : undefined,
+      );
+      return;
+    }
+    const branchName =
+      value === USE_INPUT_BRANCH_ACTION ? trimmedInputValue : value;
+    if (!branchName) return;
+    if (isSelectionOnly) {
+      onBranchSelect?.(branchName);
+    } else if (branchName !== currentBranch) {
+      checkoutMutation.mutate({
+        directoryPath: repoPath as string,
+        branchName,
+      });
+    }
+    if (isCloudMode) {
+      onCloudBranchCommit?.();
+    }
+    setOpen(false);
+  };
+
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (isCloudMode && next) {
+      onCloudPickerOpen?.();
+    } else if (isCloudMode && !next) {
+      onCloudPickerClose?.();
+    }
+  };
 
   const handleUseInputBranch = () => {
     if (!canUseInputBranch) return;
     handleBranchChange(trimmedInputValue);
   };
 
+  const useInputBranchPosition: "leading" | "trailing" | null =
+    showUseInputBranchAction
+      ? branches.length === 0
+        ? "leading"
+        : "trailing"
+      : null;
+  const comboboxItems = isCloudMode
+    ? useInputBranchPosition === "leading"
+      ? [USE_INPUT_BRANCH_ACTION, ...branches]
+      : useInputBranchPosition === "trailing"
+        ? [...branches, USE_INPUT_BRANCH_ACTION]
+        : branches
+    : [...branches, CREATE_BRANCH_ACTION];
+
   return (
     <Combobox
-      items={isCloudMode ? branches : [...branches, CREATE_BRANCH_ACTION]}
+      items={comboboxItems}
       limit={COMBOBOX_LIMIT}
       autoHighlight
       value={displayedBranch}
@@ -378,19 +399,43 @@ export function BranchSelector({
         )}
 
         <ComboboxList className="max-h-[min(14rem,calc(var(--available-height,14rem)-5rem))]">
-          {(item: string) =>
-            item === CREATE_BRANCH_ACTION ? (
-              <ComboboxListFooter key="footer">
+          {(item: string) => {
+            if (item === CREATE_BRANCH_ACTION) {
+              return (
+                <ComboboxListFooter key="footer">
+                  <ComboboxItem
+                    value={CREATE_BRANCH_ACTION}
+                    title="Create new branch"
+                    className="text-accent-foreground"
+                  >
+                    <Plus size={11} weight="bold" />
+                    Create new branch
+                  </ComboboxItem>
+                </ComboboxListFooter>
+              );
+            }
+            if (item === USE_INPUT_BRANCH_ACTION) {
+              const useInputItem = (
                 <ComboboxItem
-                  value={CREATE_BRANCH_ACTION}
-                  title="Create new branch"
+                  key={USE_INPUT_BRANCH_ACTION}
+                  value={USE_INPUT_BRANCH_ACTION}
+                  title={`Use "${trimmedInputValue}" as branch name`}
                   className="text-accent-foreground"
                 >
                   <Plus size={11} weight="bold" />
-                  Create new branch
+                  Use "{trimmedInputValue}" as branch name
                 </ComboboxItem>
-              </ComboboxListFooter>
-            ) : (
+              );
+              if (useInputBranchPosition === "trailing") {
+                return (
+                  <ComboboxListFooter key="use-input-footer">
+                    {useInputItem}
+                  </ComboboxListFooter>
+                );
+              }
+              return useInputItem;
+            }
+            return (
               <ComboboxItem
                 key={item}
                 value={item}
@@ -399,8 +444,8 @@ export function BranchSelector({
               >
                 {item}
               </ComboboxItem>
-            )
-          }
+            );
+          }}
         </ComboboxList>
 
         {isCloudMode && cloudBranchesHasMore ? (

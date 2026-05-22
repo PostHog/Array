@@ -45,6 +45,8 @@ import type { IStoragePaths } from "@posthog/platform/storage-paths";
 import { isAuthError } from "@shared/errors";
 import type { AcpMessage } from "@shared/types/session-events";
 import { inject, injectable, preDestroy } from "inversify";
+import type { IDefaultAdditionalDirectoryRepository } from "../../db/repositories/default-additional-directory-repository";
+import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { isDevBuild } from "../../utils/env";
 import { logger } from "../../utils/logger";
@@ -215,8 +217,6 @@ interface SessionConfig {
   /** The agent's session ID (for resume - SDK session ID for Claude, Codex's session ID for Codex) */
   sessionId?: string;
   adapter?: "claude" | "codex";
-  /** Additional directories Claude can access beyond cwd (for worktree support) */
-  additionalDirectories?: string[];
   /** Permission mode to use for the session */
   permissionMode?: string;
   /** Custom instructions injected into the system prompt */
@@ -319,6 +319,10 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     private readonly appMeta: IAppMeta,
     @inject(MAIN_TOKENS.StoragePaths)
     private readonly storagePaths: IStoragePaths,
+    @inject(MAIN_TOKENS.DefaultAdditionalDirectoryRepository)
+    private readonly defaultAdditionalDirectoryRepository: IDefaultAdditionalDirectoryRepository,
+    @inject(MAIN_TOKENS.WorkspaceRepository)
+    private readonly workspaceRepository: IWorkspaceRepository,
   ) {
     super();
     this.processTracking = processTracking;
@@ -468,6 +472,7 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     credentials: Credentials,
     taskId: string,
     customInstructions?: string,
+    additionalDirectories?: string[],
   ): {
     append: string;
   } {
@@ -505,7 +510,30 @@ When creating pull requests, add the following footer at the end of the PR descr
       prompt += `\n\nUser custom instructions:\n${customInstructions}`;
     }
 
+    if (additionalDirectories?.length) {
+      const escapeXml = (s: string) =>
+        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const dirs = additionalDirectories
+        .map((d) => `  <directory>${escapeXml(d)}</directory>`)
+        .join("\n");
+      prompt += `\n\nThe user has granted you access to additional directories outside the working directory. You may read and edit files in these paths just like the working directory:\n<additional_directories>\n${dirs}\n</additional_directories>`;
+    }
+
     return { append: prompt };
+  }
+
+  private resolveAdditionalDirectories(taskId: string): string[] {
+    const defaults = this.defaultAdditionalDirectoryRepository.list();
+    const taskScoped =
+      this.workspaceRepository.getAdditionalDirectories(taskId);
+    const seen = new Set<string>();
+    const merged: string[] = [];
+    for (const path of [...defaults, ...taskScoped]) {
+      if (!path || seen.has(path)) continue;
+      seen.add(path);
+      merged.push(path);
+    }
+    return merged;
   }
 
   async startSession(params: StartSessionInput): Promise<SessionResponse> {
@@ -545,7 +573,6 @@ When creating pull requests, add the following footer at the end of the PR descr
       credentials,
       logUrl,
       adapter,
-      additionalDirectories,
       permissionMode,
       customInstructions,
       effort,
@@ -555,6 +582,9 @@ When creating pull requests, add the following footer at the end of the PR descr
 
     // Preview config doesn't need a real repo — use a temp directory
     const repoPath = taskId === "__preview__" ? tmpdir() : rawRepoPath;
+
+    const additionalDirectories =
+      taskId === "__preview__" ? [] : this.resolveAdditionalDirectories(taskId);
 
     if (!isRetry) {
       const existing = this.sessions.get(taskRunId);
@@ -605,6 +635,7 @@ When creating pull requests, add the following footer at the end of the PR descr
         credentials,
         taskId,
         customInstructions,
+        additionalDirectories,
       );
 
       const acpConnection = await agent.run(taskId, taskRunId, {
@@ -614,6 +645,8 @@ When creating pull requests, add the following footer at the end of the PR descr
           adapter === "codex" ? this.getCodexBinaryPath() : undefined,
         model,
         instructions: adapter === "codex" ? systemPrompt.append : undefined,
+        additionalDirectories:
+          adapter === "codex" ? additionalDirectories : undefined,
         onStructuredOutput: jsonSchema
           ? async (output) => {
               const posthogAPI = agent.getPosthogAPI();
@@ -1511,10 +1544,6 @@ For git operations while detached:
       logUrl: "logUrl" in params ? params.logUrl : undefined,
       sessionId: "sessionId" in params ? params.sessionId : undefined,
       adapter: "adapter" in params ? params.adapter : undefined,
-      additionalDirectories:
-        "additionalDirectories" in params
-          ? params.additionalDirectories
-          : undefined,
       permissionMode:
         "permissionMode" in params ? params.permissionMode : undefined,
       customInstructions:
