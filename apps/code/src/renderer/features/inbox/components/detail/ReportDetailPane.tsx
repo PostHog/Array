@@ -36,7 +36,7 @@ import {
 } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { EXTERNAL_LINKS } from "@renderer/utils/links";
-import { getDeeplinkProtocol } from "@shared/deeplink";
+import { buildInboxDeeplink } from "@shared/deeplink";
 import type {
   ActionabilityJudgmentArtefact,
   ActionabilityJudgmentContent,
@@ -477,7 +477,9 @@ export function ReportDetailPane({
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(
-                    `${getDeeplinkProtocol(import.meta.env.DEV)}://inbox/${report.id}`,
+                    buildInboxDeeplink(report.id, report.title, {
+                      isDevBuild: import.meta.env.DEV,
+                    }),
                   );
                   fireDetailAction("copy_link");
                   toast.success("Link copied");
