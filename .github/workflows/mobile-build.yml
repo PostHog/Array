@@ -67,12 +67,16 @@ jobs:
         working-directory: .
 
       - name: EAS build
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          PROFILE: ${{ inputs.profile }}
+          WAIT_FLAG: ${{ inputs.wait && '--wait' || '--no-wait' }}
         run: |
           eas build \
             --non-interactive \
-            --platform ${{ matrix.platform }} \
-            --profile ${{ inputs.profile }} \
-            ${{ inputs.wait && '--wait' || '--no-wait' }}
+            --platform "$PLATFORM" \
+            --profile "$PROFILE" \
+            "$WAIT_FLAG"
 
   # Auto-promote the freshly built production binaries. Only runs when the build
   # job waited for completion (otherwise there is no finished build to submit).

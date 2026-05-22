@@ -98,11 +98,14 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
 
       - name: EAS submit
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          PROFILE: ${{ inputs.profile }}
         run: |
           eas submit \
             --non-interactive \
-            --platform ${{ matrix.platform }} \
-            --profile ${{ inputs.profile }} \
+            --platform "$PLATFORM" \
+            --profile "$PROFILE" \
             --latest
 
       - name: Clean up credentials
