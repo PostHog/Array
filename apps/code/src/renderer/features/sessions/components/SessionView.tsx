@@ -527,7 +527,7 @@ export function SessionView({
               ) : pendingTaskPrompt?.promptText ? (
                 <PendingChatView
                   promptText={pendingTaskPrompt.promptText}
-                  embedded
+                  attachments={pendingTaskPrompt.attachments}
                 />
               ) : (
                 <Flex

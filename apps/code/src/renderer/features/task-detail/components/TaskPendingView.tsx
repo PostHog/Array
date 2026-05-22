@@ -1,5 +1,5 @@
 import { PendingChatView } from "@features/sessions/components/PendingChatView";
-import { Flex } from "@radix-ui/themes";
+import { Box } from "@radix-ui/themes";
 import { usePendingTaskPrompt } from "@stores/pendingTaskPromptStore";
 
 interface TaskPendingViewProps {
@@ -10,8 +10,11 @@ export function TaskPendingView({ pendingTaskKey }: TaskPendingViewProps) {
   const pending = usePendingTaskPrompt(pendingTaskKey);
 
   return (
-    <Flex direction="column" height="100%" className="relative bg-background">
-      <PendingChatView promptText={pending?.promptText ?? ""} />
-    </Flex>
+    <Box className="relative h-full w-full bg-background">
+      <PendingChatView
+        promptText={pending?.promptText ?? ""}
+        attachments={pending?.attachments}
+      />
+    </Box>
   );
 }

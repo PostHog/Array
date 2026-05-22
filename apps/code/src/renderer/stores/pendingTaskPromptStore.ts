@@ -1,9 +1,9 @@
+import type { UserMessageAttachment } from "@features/sessions/components/session-update/UserMessage";
 import { create } from "zustand";
 
 export interface PendingTaskPrompt {
   promptText: string;
-  attachmentLabels: string[];
-  createdAt: number;
+  attachments: UserMessageAttachment[];
 }
 
 interface PendingTaskPromptStore {

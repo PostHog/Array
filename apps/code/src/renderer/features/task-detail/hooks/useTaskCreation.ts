@@ -226,8 +226,10 @@ export function useTaskCreation({
       if (pendingTaskKey) {
         pendingTaskPromptStoreApi.set(pendingTaskKey, {
           promptText: plainPromptText,
-          attachmentLabels: (content.attachments ?? []).map((a) => a.label),
-          createdAt: Date.now(),
+          attachments: (content.attachments ?? []).map((a) => ({
+            id: a.id,
+            label: a.label,
+          })),
         });
         navigateToPendingTask(pendingTaskKey);
         if (!contentOverride) {
