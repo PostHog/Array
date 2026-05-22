@@ -1,5 +1,3 @@
-import { normalizeRepoKey } from "@shared/utils/repo";
-
 export const parseRepository = (
   repository: string,
 ): { organization: string; repoName: string } | null => {
@@ -16,23 +14,4 @@ export function getTaskRepository(task: {
   repository?: string | null;
 }): string | null {
   return task.repository ?? null;
-}
-
-export function normalizeRepositoryLookupKey(repository: string): string {
-  return normalizeRepoKey(repository).toLowerCase();
-}
-
-export function findMatchingRepository(
-  repository: string | null | undefined,
-  repositories: string[],
-): string | null {
-  if (!repository) return null;
-
-  const normalizedRepository = normalizeRepositoryLookupKey(repository);
-  return (
-    repositories.find(
-      (candidate) =>
-        normalizeRepositoryLookupKey(candidate) === normalizedRepository,
-    ) ?? null
-  );
 }
