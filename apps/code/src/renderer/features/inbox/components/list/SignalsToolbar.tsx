@@ -63,9 +63,14 @@ interface SignalsToolbarProps {
   isDismissMutationPending?: boolean;
   /** Optional analytics callback fired when a bulk action succeeds. */
   onReportAction?: (
-    action: Omit<InboxReportActionProperties, "rank" | "list_size"> & {
+    action: Omit<
+      InboxReportActionProperties,
+      "rank" | "list_size" | "priority" | "actionability"
+    > & {
       rank?: number;
       list_size?: number;
+      priority?: string | null;
+      actionability?: string | null;
     },
   ) => void;
 }

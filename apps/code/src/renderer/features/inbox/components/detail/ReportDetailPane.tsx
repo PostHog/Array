@@ -177,7 +177,13 @@ interface ReportDetailPaneProps {
   suppressDisabledReason: string | null;
   isDismissMutationPending?: boolean;
   onReportAction?: (
-    action: Omit<InboxReportActionProperties, "rank" | "list_size">,
+    action: Omit<
+      InboxReportActionProperties,
+      "rank" | "list_size" | "priority" | "actionability"
+    > & {
+      priority?: string | null;
+      actionability?: string | null;
+    },
   ) => void;
   onScroll?: () => void;
 }

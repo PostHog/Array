@@ -12,6 +12,8 @@ interface OpenInfo {
   reportId: string;
   reportTitle: string | null;
   reportCreatedAt: string | null;
+  reportPriority: string | null;
+  reportActionability: string | null;
   openedAt: number;
   rank: number;
   listSize: number;
@@ -32,16 +34,22 @@ export interface InboxEngagementTracker {
   /**
    * Fires INBOX_REPORT_ACTION for the current open or an explicit report id.
    *
-   * `rank` and `list_size` default to the live tracker state. Callers that fire after an
-   * async mutation (bulk dismiss/delete/snooze/reingest, single-report dismiss confirm)
-   * should snapshot the pre-mutation values and pass them through — by the time the
-   * promise resolves the visible list has usually been re-queried without the affected
-   * report.
+   * `rank`, `list_size`, `priority`, and `actionability` default to the live tracker
+   * state (or a lookup in the visible list for non-current reports). Callers that fire
+   * after an async mutation (bulk dismiss/delete/snooze/reingest, single-report dismiss
+   * confirm) should snapshot the pre-mutation values and pass them through — by the
+   * time the promise resolves the visible list has usually been re-queried without the
+   * affected report.
    */
   signalAction(
-    action: Omit<InboxReportActionProperties, "rank" | "list_size"> & {
+    action: Omit<
+      InboxReportActionProperties,
+      "rank" | "list_size" | "priority" | "actionability"
+    > & {
       rank?: number;
       list_size?: number;
+      priority?: string | null;
+      actionability?: string | null;
     },
   ): void;
 }
@@ -74,6 +82,8 @@ export function useInboxEngagementTracker(
       report_id: info.reportId,
       report_title: info.reportTitle,
       report_age_hours: reportAgeHours(info.reportCreatedAt),
+      priority: info.reportPriority,
+      actionability: info.reportActionability,
       time_spent_ms: Date.now() - info.openedAt,
       scrolled: info.hasScrolled,
       close_method: closeMethod,
@@ -103,6 +113,8 @@ export function useInboxEngagementTracker(
         reportId: currentReportId,
         reportTitle: report?.title ?? null,
         reportCreatedAt: report?.created_at ?? null,
+        reportPriority: report?.priority ?? null,
+        reportActionability: report?.actionability ?? null,
         openedAt: Date.now(),
         rank,
         listSize,
@@ -115,7 +127,8 @@ export function useInboxEngagementTracker(
         report_title: info.reportTitle,
         report_age_hours: reportAgeHours(info.reportCreatedAt),
         status: report?.status ?? null,
-        priority: report?.priority ?? null,
+        priority: info.reportPriority,
+        actionability: info.reportActionability,
         source_products: report?.source_products ?? [],
         rank,
         list_size: listSize,
@@ -152,6 +165,8 @@ export function useInboxEngagementTracker(
       report_id: info.reportId,
       report_title: info.reportTitle,
       report_age_hours: reportAgeHours(info.reportCreatedAt),
+      priority: info.reportPriority,
+      actionability: info.reportActionability,
       rank: info.rank,
       list_size: info.listSize,
       time_since_open_ms: Date.now() - info.openedAt,
@@ -160,9 +175,14 @@ export function useInboxEngagementTracker(
 
   const signalAction = useCallback(
     (
-      action: Omit<InboxReportActionProperties, "rank" | "list_size"> & {
+      action: Omit<
+        InboxReportActionProperties,
+        "rank" | "list_size" | "priority" | "actionability"
+      > & {
         rank?: number;
         list_size?: number;
+        priority?: string | null;
+        actionability?: string | null;
       },
     ) => {
       const info = openInfoRef.current;
@@ -170,6 +190,8 @@ export function useInboxEngagementTracker(
       const {
         rank: rankOverride,
         list_size: listSizeOverride,
+        priority: priorityOverride,
+        actionability: actionabilityOverride,
         ...rest
       } = action;
       const rank =
@@ -182,10 +204,30 @@ export function useInboxEngagementTracker(
         listSizeOverride !== undefined
           ? listSizeOverride
           : visibleReports.length;
+      // Look up the report once for priority/actionability fallbacks — prefer
+      // the live tracker open info, fall back to the visible list.
+      const matchedReport =
+        info && info.reportId === action.report_id
+          ? null
+          : (visibleReports.find((r) => r.id === action.report_id) ?? null);
+      const priority =
+        priorityOverride !== undefined
+          ? priorityOverride
+          : info && info.reportId === action.report_id
+            ? info.reportPriority
+            : (matchedReport?.priority ?? null);
+      const actionability =
+        actionabilityOverride !== undefined
+          ? actionabilityOverride
+          : info && info.reportId === action.report_id
+            ? info.reportActionability
+            : (matchedReport?.actionability ?? null);
       track(ANALYTICS_EVENTS.INBOX_REPORT_ACTION, {
         ...rest,
         rank,
         list_size: listSize,
+        priority,
+        actionability,
       });
     },
     [],

@@ -454,6 +454,18 @@ export interface InboxViewedProperties {
   is_empty: boolean;
   /** True when the inbox is scale-gated (GatedDueToScalePane shown, data not loaded). */
   is_gated_due_to_scale: boolean;
+  /** Breakdown of the visible report_count by priority (P0–P4, or "unknown"). */
+  priority_p0_count: number;
+  priority_p1_count: number;
+  priority_p2_count: number;
+  priority_p3_count: number;
+  priority_p4_count: number;
+  priority_unknown_count: number;
+  /** Breakdown of the visible report_count by actionability. */
+  actionability_immediately_actionable_count: number;
+  actionability_requires_human_input_count: number;
+  actionability_not_actionable_count: number;
+  actionability_unknown_count: number;
 }
 
 export interface InboxReportOpenedProperties {
@@ -462,6 +474,7 @@ export interface InboxReportOpenedProperties {
   report_age_hours: number;
   status: string | null;
   priority: string | null;
+  actionability: string | null;
   source_products: string[];
   rank: number;
   list_size: number;
@@ -473,6 +486,8 @@ export interface InboxReportClosedProperties {
   report_id: string;
   report_title: string | null;
   report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
   time_spent_ms: number;
   scrolled: boolean;
   close_method: InboxReportCloseMethod;
@@ -482,6 +497,8 @@ export interface InboxReportScrolledProperties {
   report_id: string;
   report_title: string | null;
   report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
   rank: number;
   list_size: number;
   time_since_open_ms: number;
@@ -491,6 +508,8 @@ export interface InboxReportActionProperties {
   report_id: string;
   report_title: string | null;
   report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
   action_type: InboxReportActionType;
   surface: InboxReportActionSurface;
   is_bulk: boolean;
