@@ -32,6 +32,7 @@ export const MAIN_TOKENS = Object.freeze({
   RepositoryRepository: Symbol.for("Main.RepositoryRepository"),
   WorkspaceRepository: Symbol.for("Main.WorkspaceRepository"),
   WorktreeRepository: Symbol.for("Main.WorktreeRepository"),
+  ForkRelationshipRepository: Symbol.for("Main.ForkRelationshipRepository"),
   ArchiveRepository: Symbol.for("Main.ArchiveRepository"),
   SuspensionRepository: Symbol.for("Main.SuspensionRepository"),
   DefaultAdditionalDirectoryRepository: Symbol.for(
@@ -82,6 +83,7 @@ export const MAIN_TOKENS = Object.freeze({
   EnvironmentService: Symbol.for("Main.EnvironmentService"),
   ProvisioningService: Symbol.for("Main.ProvisioningService"),
   WorkspaceService: Symbol.for("Main.WorkspaceService"),
+  ForkService: Symbol.for("Main.ForkService"),
   EnrichmentService: Symbol.for("Main.EnrichmentService"),
   UsageMonitorService: Symbol.for("Main.UsageMonitorService"),
 });

@@ -65,6 +65,64 @@ export function getSessionJsonlPath(sessionId: string, cwd: string): string {
   return path.join(configDir, "projects", projectKey, `${sessionId}.jsonl`);
 }
 
+/**
+ * Return entries up to and including the full assistant turn that responded to
+ * the Nth user message (0-based), plus any trailing `_posthog/agent_checkpoint`
+ * entry so fork callers can read the git HEAD at that exact point.
+ *
+ * If messageIndex is beyond the last user message, returns all entries.
+ */
+export function filterEntriesUpToMessage(
+  entries: StoredEntry[],
+  messageIndex: number,
+): StoredEntry[] {
+  let userMessageCount = 0;
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const params = entry.notification?.params as Record<string, unknown>;
+
+    if (entry.notification?.method === "session/update" && params?.update) {
+      const update = params.update as { sessionUpdate?: string };
+      const isUserMessage =
+        update.sessionUpdate === "user_message" ||
+        update.sessionUpdate === "user_message_chunk";
+
+      if (isUserMessage) {
+        if (userMessageCount === messageIndex) {
+          // Scan forward through the assistant response that follows this user message.
+          // Stop at the next user message. Include any checkpoint entries.
+          let cutoffIndex = i + 1;
+          for (let j = i + 1; j < entries.length; j++) {
+            const jEntry = entries[j];
+            const jParams = jEntry.notification?.params as Record<
+              string,
+              unknown
+            >;
+            if (
+              jEntry.notification?.method === "session/update" &&
+              jParams?.update
+            ) {
+              const jUpdate = jParams.update as { sessionUpdate?: string };
+              if (
+                jUpdate.sessionUpdate === "user_message" ||
+                jUpdate.sessionUpdate === "user_message_chunk"
+              ) {
+                break;
+              }
+            }
+            cutoffIndex = j + 1;
+          }
+          return entries.slice(0, cutoffIndex);
+        }
+        userMessageCount++;
+      }
+    }
+  }
+
+  return entries;
+}
+
 export function rebuildConversation(
   entries: StoredEntry[],
 ): ConversationTurn[] {

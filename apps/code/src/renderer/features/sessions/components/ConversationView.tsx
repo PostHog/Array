@@ -1,6 +1,7 @@
 import { CHAT_CONTENT_MAX_WIDTH } from "@features/sessions/constants";
 import { useContextUsage } from "@features/sessions/hooks/useContextUsage";
 import { useConversationSearch } from "@features/sessions/hooks/useConversationSearch";
+import { useForkSession } from "@features/sessions/hooks/useForkSession";
 import { SessionTaskIdProvider } from "@features/sessions/hooks/useSessionTaskId";
 import {
   sessionStoreSetters,
@@ -113,6 +114,7 @@ export function ConversationView({
   const optimisticItems = useOptimisticItemsForTask(taskId);
   const session = useSessionForTask(taskId);
   const pausedDurationMs = session?.pausedDurationMs ?? 0;
+  const { fork } = useForkSession({ taskId, task });
 
   const queuedItems = useMemo<Extract<ConversationItem, { type: "queued" }>[]>(
     () =>
@@ -136,6 +138,17 @@ export function ConversationView({
       }),
     [conversationItems, optimisticItems, queuedItems, isCloud],
   );
+
+  const userMessageIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    let count = 0;
+    for (const item of items) {
+      if (item.type === "user_message") {
+        map.set(item.id, count++);
+      }
+    }
+    return map;
+  }, [items]);
 
   // Keep MCP App tool call items mounted so their iframes and bridges
   // survive scrolling out of the virtualized viewport.
@@ -185,7 +198,8 @@ export function ConversationView({
   const renderItem = useCallback(
     (item: ConversationItem) => {
       switch (item.type) {
-        case "user_message":
+        case "user_message": {
+          const messageIndex = userMessageIndexMap.get(item.id) ?? 0;
           return (
             <UserMessage
               content={item.content}
@@ -197,8 +211,10 @@ export function ConversationView({
                   ? slackThreadUrl
                   : undefined
               }
+              onFork={taskId ? () => void fork(messageIndex) : undefined}
             />
           );
+        }
         case "git_action":
           return <GitActionMessage actionType={item.actionType} />;
         case "skill_button_action":
@@ -240,7 +256,15 @@ export function ConversationView({
           );
       }
     },
-    [repoPath, taskId, slackThreadUrl, firstUserMessageId, initialItemIds],
+    [
+      repoPath,
+      taskId,
+      slackThreadUrl,
+      firstUserMessageId,
+      initialItemIds,
+      userMessageIndexMap,
+      fork,
+    ],
   );
 
   const getItemKey = useCallback((item: ConversationItem) => item.id, []);

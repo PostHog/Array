@@ -14,6 +14,7 @@ import { externalAppsRouter } from "./routers/external-apps";
 import { fileWatcherRouter } from "./routers/file-watcher";
 import { focusRouter } from "./routers/focus";
 import { foldersRouter } from "./routers/folders";
+import { forkRouter } from "./routers/fork";
 import { fsRouter } from "./routers/fs";
 import { gitRouter } from "./routers/git";
 import { githubIntegrationRouter } from "./routers/github-integration";
@@ -56,6 +57,7 @@ export const trpcRouter = router({
   externalApps: externalAppsRouter,
   fileWatcher: fileWatcherRouter,
   focus: focusRouter,
+  fork: forkRouter,
   folders: foldersRouter,
   fs: fsRouter,
   git: gitRouter,

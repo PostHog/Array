@@ -98,6 +98,18 @@ export const defaultAdditionalDirectories = sqliteTable(
   },
 );
 
+export const forkRelationships = sqliteTable("fork_relationships", {
+  id: id(),
+  forkedTaskId: text().notNull().unique(),
+  sourceTaskId: text().notNull(),
+  sourceTaskRunId: text().notNull(),
+  /** Title of the source task captured at fork time, shown if parent is later deleted. */
+  sourceTaskTitle: text().notNull(),
+  forkAtMessageIndex: integer().notNull(),
+  forkedAt: text().notNull(),
+  createdAt: createdAt(),
+});
+
 export const authPreferences = sqliteTable(
   "auth_preferences",
   {

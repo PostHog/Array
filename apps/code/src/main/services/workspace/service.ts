@@ -671,6 +671,50 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     };
   }
 
+  async createWorkspaceFromFork(params: {
+    taskId: string;
+    mainRepoPath: string;
+    headSha: string;
+  }): Promise<WorkspaceInfo> {
+    const { taskId, mainRepoPath, headSha } = params;
+
+    const worktreeBasePath = getWorktreeLocation();
+    const worktreeManager = new WorktreeManager({
+      mainRepoPath,
+      worktreeBasePath,
+    });
+
+    const worktree =
+      await worktreeManager.createDetachedWorktreeAtCommit(headSha);
+
+    const repository = this.repositoryRepo.findByPath(mainRepoPath);
+    const repositoryId = repository?.id ?? null;
+
+    const createdWorkspace = this.workspaceRepo.create({
+      taskId,
+      repositoryId,
+      mode: "worktree",
+    });
+
+    this.worktreeRepo.create({
+      workspaceId: createdWorkspace.id,
+      name: worktree.worktreeName,
+      path: worktree.worktreePath,
+    });
+
+    log.info(
+      `Created fork workspace for task ${taskId} at ${worktree.worktreePath} (sha: ${headSha})`,
+    );
+
+    return {
+      taskId,
+      mode: "worktree",
+      worktree,
+      branchName: worktree.branchName || null,
+      linkedBranch: null,
+    };
+  }
+
   async deleteWorkspace(taskId: string, mainRepoPath: string): Promise<void> {
     log.info(`Deleting workspace for task ${taskId}`);
 

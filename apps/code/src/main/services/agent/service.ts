@@ -37,6 +37,7 @@ import {
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
 import { extractCreatedPrUrl } from "@posthog/agent/pr-url-detector";
 import type * as AgentTypes from "@posthog/agent/types";
+import { createGitClient } from "@posthog/git/client";
 import { getCurrentBranch } from "@posthog/git/queries";
 import type { IAppMeta } from "@posthog/platform/app-meta";
 import type { IBundledResources } from "@posthog/platform/bundled-resources";
@@ -942,6 +943,44 @@ When creating pull requests, add the following footer at the end of the PR descr
       if (!this.hasActiveSessions()) {
         this.emit(AgentServiceEvent.SessionsIdle, undefined);
       }
+
+      void this.captureAgentCheckpoint(
+        sessionId,
+        session.taskId,
+        session.repoPath,
+        session.agent,
+      );
+    }
+  }
+
+  private async captureAgentCheckpoint(
+    taskRunId: string,
+    taskId: string,
+    repoPath: string,
+    agent: Agent,
+  ): Promise<void> {
+    if (taskId === "__preview__") return;
+
+    try {
+      const git = createGitClient(repoPath);
+      const headSha = await git.revparse(["HEAD"]);
+
+      const posthogAPI = agent.getPosthogAPI();
+      if (!posthogAPI) return;
+
+      await posthogAPI.appendTaskRunLog(taskId, taskRunId, [
+        {
+          type: "notification",
+          timestamp: new Date().toISOString(),
+          notification: {
+            jsonrpc: "2.0",
+            method: "_posthog/agent_checkpoint",
+            params: { headSha },
+          },
+        },
+      ]);
+    } catch (err) {
+      log.debug("Failed to capture agent checkpoint", { taskRunId, err });
     }
   }
 

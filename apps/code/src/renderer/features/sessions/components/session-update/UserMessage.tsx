@@ -6,6 +6,7 @@ import {
   Check,
   Copy,
   File,
+  GitBranch,
   SlackLogo,
 } from "@phosphor-icons/react";
 import { Box, Flex, IconButton } from "@radix-ui/themes";
@@ -30,6 +31,7 @@ interface UserMessageProps {
   sourceUrl?: string;
   attachments?: UserMessageAttachment[];
   animate?: boolean;
+  onFork?: () => void;
 }
 
 function formatTimestamp(ts: number): string {
@@ -49,6 +51,7 @@ export function UserMessage({
   sourceUrl,
   attachments = [],
   animate = true,
+  onFork,
 }: UserMessageProps) {
   const containsFileMentions = hasFileMentions(content);
   const showAttachmentChips = attachments.length > 0 && !containsFileMentions;
@@ -171,6 +174,18 @@ export function UserMessage({
               {copied ? <Check size={12} /> : <Copy size={12} />}
             </IconButton>
           </Tooltip>
+          {onFork && (
+            <Tooltip content="Fork session from here">
+              <IconButton
+                size="1"
+                variant="ghost"
+                color="gray"
+                onClick={onFork}
+              >
+                <GitBranch size={12} />
+              </IconButton>
+            </Tooltip>
+          )}
         </Box>
       </Box>
     </motion.div>
