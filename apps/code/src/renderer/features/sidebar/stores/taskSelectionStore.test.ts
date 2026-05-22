@@ -136,14 +136,13 @@ describe("taskSelectionStore", () => {
       ]);
     });
 
-    it("selects just the target when there is no anchor", () => {
-      useTaskSelectionStore.getState().selectRange("t3", orderedIds);
-
-      expect(useTaskSelectionStore.getState().selectedTaskIds).toEqual(["t3"]);
-    });
-
-    it("selects just the target when anchor is not in the ordered list", () => {
-      useTaskSelectionStore.setState({ lastClickedId: "t99" });
+    it.each([
+      { case: "no anchor", lastClickedId: null },
+      { case: "anchor not in ordered list", lastClickedId: "t99" },
+    ])("selects just the target when $case", ({ lastClickedId }) => {
+      if (lastClickedId) {
+        useTaskSelectionStore.setState({ lastClickedId });
+      }
 
       useTaskSelectionStore.getState().selectRange("t3", orderedIds);
 
