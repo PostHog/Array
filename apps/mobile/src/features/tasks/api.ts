@@ -410,7 +410,7 @@ export interface RunTaskInCloudOptions {
   model?: string;
   /** Reasoning effort: "low" | "medium" | "high" (model-dependent). */
   reasoningEffort?: string;
-  /** Permission mode: "default" | "acceptEdits" | "plan". */
+  /** Permission mode: "default" | "acceptEdits" | "plan" | "auto". */
   initialPermissionMode?: string;
   /** Source that triggered this run. */
   runSource?: "manual" | "signal_report";

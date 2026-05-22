@@ -1,4 +1,4 @@
-export type ExecutionMode = "default" | "acceptEdits" | "plan";
+export type ExecutionMode = "default" | "acceptEdits" | "plan" | "auto";
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export const EXECUTION_MODES: {
@@ -20,6 +20,11 @@ export const EXECUTION_MODES: {
     value: "acceptEdits",
     label: "Accept Edits",
     description: "Auto-accept file edit operations",
+  },
+  {
+    value: "auto",
+    label: "Auto",
+    description: "Model decides which prompts to approve or deny",
   },
 ];
 

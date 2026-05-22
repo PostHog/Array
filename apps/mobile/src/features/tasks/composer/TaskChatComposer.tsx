@@ -8,6 +8,7 @@ import {
   PencilIcon,
   Robot,
   ShieldCheck,
+  Sparkle,
   Stop,
 } from "phosphor-react-native";
 import {
@@ -81,6 +82,8 @@ function modeIcon(mode: ExecutionMode, color: string, size = 14): ReactNode {
       return <PencilIcon size={size} color={color} />;
     case "acceptEdits":
       return <ShieldCheck size={size} color={color} />;
+    case "auto":
+      return <Sparkle size={size} color={color} weight="fill" />;
   }
 }
 
