@@ -19,7 +19,7 @@ import {
   MenuLabel,
 } from "@posthog/quill";
 import { flattenSelectOptions } from "@renderer/features/sessions/stores/sessionStore";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 interface ModeStyle {
   icon: React.ReactNode;
@@ -80,6 +80,7 @@ export function ModeSelector({
   disabled,
 }: ModeSelectorProps) {
   const [open, setOpen] = useState(false);
+  const pendingValueRef = useRef<string | null>(null);
 
   if (!modeOption || modeOption.type !== "select") return null;
 
@@ -98,7 +99,16 @@ export function ModeSelector({
     allOptions.find((opt) => opt.value === currentValue)?.name ?? currentValue;
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={setOpen}
+      onOpenChangeComplete={(isOpen) => {
+        if (!isOpen && pendingValueRef.current !== null) {
+          onChange(pendingValueRef.current);
+          pendingValueRef.current = null;
+        }
+      }}
+    >
       <DropdownMenuTrigger
         render={
           <Button
@@ -128,7 +138,7 @@ export function ModeSelector({
         <DropdownMenuRadioGroup
           value={currentValue}
           onValueChange={(value) => {
-            onChange(value);
+            pendingValueRef.current = value;
             setOpen(false);
           }}
         >

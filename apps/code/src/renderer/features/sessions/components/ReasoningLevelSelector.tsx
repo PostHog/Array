@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { flattenSelectOptions } from "../stores/sessionStore";
 
 interface ReasoningLevelSelectorProps {
@@ -26,6 +26,7 @@ export function ReasoningLevelSelector({
   disabled,
 }: ReasoningLevelSelectorProps) {
   const [open, setOpen] = useState(false);
+  const pendingValueRef = useRef<string | null>(null);
 
   if (!thoughtOption || thoughtOption.type !== "select") {
     return null;
@@ -39,7 +40,16 @@ export function ReasoningLevelSelector({
   const prefix = adapter === "codex" ? "Reasoning" : "Effort";
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={setOpen}
+      onOpenChangeComplete={(isOpen) => {
+        if (!isOpen && pendingValueRef.current !== null) {
+          onChange?.(pendingValueRef.current);
+          pendingValueRef.current = null;
+        }
+      }}
+    >
       <DropdownMenuTrigger
         render={
           <Button
@@ -69,7 +79,7 @@ export function ReasoningLevelSelector({
         <DropdownMenuRadioGroup
           value={activeLevel}
           onValueChange={(value) => {
-            onChange?.(value);
+            pendingValueRef.current = value;
             setOpen(false);
           }}
         >
