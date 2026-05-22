@@ -298,6 +298,10 @@ export function InboxSignalsTab() {
           bulk_size: 1,
           rank: preMutationRank,
           list_size: preMutationListSize,
+          // Snapshot priority/actionability from the pre-mutation target —
+          // by the time this fires the report has been removed from `reports`.
+          priority: target?.priority ?? null,
+          actionability: target?.actionability ?? null,
           ...(isSnooze
             ? {}
             : {

@@ -194,33 +194,36 @@ export function useInboxEngagementTracker(
         actionability: actionabilityOverride,
         ...rest
       } = action;
+      // Prefer the live open-info snapshot for the current report; otherwise
+      // fall back to a one-shot visible-list lookup. Callers firing after an
+      // async mutation should pass pre-mutation overrides — by then the visible
+      // list has been re-queried without the affected report.
+      const currentInfo =
+        info && info.reportId === action.report_id ? info : null;
+      const matchedReport = currentInfo
+        ? null
+        : (visibleReports.find((r) => r.id === action.report_id) ?? null);
       const rank =
         rankOverride !== undefined
           ? rankOverride
-          : info && info.reportId === action.report_id
-            ? info.rank
+          : currentInfo
+            ? currentInfo.rank
             : visibleReports.findIndex((r) => r.id === action.report_id);
       const listSize =
         listSizeOverride !== undefined
           ? listSizeOverride
           : visibleReports.length;
-      // Look up the report once for priority/actionability fallbacks — prefer
-      // the live tracker open info, fall back to the visible list.
-      const matchedReport =
-        info && info.reportId === action.report_id
-          ? null
-          : (visibleReports.find((r) => r.id === action.report_id) ?? null);
       const priority =
         priorityOverride !== undefined
           ? priorityOverride
-          : info && info.reportId === action.report_id
-            ? info.reportPriority
+          : currentInfo
+            ? currentInfo.reportPriority
             : (matchedReport?.priority ?? null);
       const actionability =
         actionabilityOverride !== undefined
           ? actionabilityOverride
-          : info && info.reportId === action.report_id
-            ? info.reportActionability
+          : currentInfo
+            ? currentInfo.reportActionability
             : (matchedReport?.actionability ?? null);
       track(ANALYTICS_EVENTS.INBOX_REPORT_ACTION, {
         ...rest,
