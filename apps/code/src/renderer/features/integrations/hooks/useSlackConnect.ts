@@ -118,7 +118,7 @@ export function useSlackConnect(): Result {
       });
       setState("error");
     }
-  }, [cloudRegion, projectId, clearLocalTimeout]);
+  }, [cloudRegion, projectId, clearLocalTimeout, queryClient]);
 
   return useMemo(
     () => ({
