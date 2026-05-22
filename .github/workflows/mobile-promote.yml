@@ -7,14 +7,11 @@ name: Mobile Promote
 # Uses `eas submit --latest`, which submits the latest successful build for the
 # selected platform/profile. Run "Mobile Build" with the matching profile first.
 #
-# Required repository secrets:
-#   EXPO_TOKEN                  - Expo access token (submit permissions).
-#   GOOGLE_SERVICE_ACCOUNT_KEY  - JSON contents of the Google Play service
-#                                 account key (Android submit only). The
-#                                 service account needs the "Release to testing
-#                                 tracks" permission in the Play Console.
+# Required repository secret:
+#   EXPO_TOKEN  - Expo access token (submit permissions).
 #
-# iOS App Store Connect credentials (API key) must be configured on EAS once via
+# Store credentials live on EAS, not in this repo: the iOS App Store Connect API
+# key and the Android Google Play service account key are configured once via
 # `eas credentials` so that `--non-interactive` submits can authenticate.
 
 on:
@@ -46,8 +43,6 @@ on:
     secrets:
       EXPO_TOKEN:
         required: true
-      GOOGLE_SERVICE_ACCOUNT_KEY:
-        required: false
 
 concurrency:
   group: mobile-promote-${{ github.ref }}
@@ -91,12 +86,6 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: .
 
-      - name: Write Google service account key
-        if: matrix.platform == 'android'
-        run: printf '%s' "$GOOGLE_SERVICE_ACCOUNT_KEY" > google-service-account.json
-        env:
-          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
-
       - name: EAS submit
         env:
           PLATFORM: ${{ matrix.platform }}
@@ -107,7 +96,3 @@ jobs:
             --platform "$PLATFORM" \
             --profile "$PROFILE" \
             --latest
-
-      - name: Clean up credentials
-        if: always() && matrix.platform == 'android'
-        run: rm -f google-service-account.json

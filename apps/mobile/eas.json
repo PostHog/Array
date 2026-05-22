@@ -28,8 +28,7 @@
     "production": {
       "ios": {},
       "android": {
-        "track": "internal",
-        "serviceAccountKeyPath": "./google-service-account.json"
+        "track": "internal"
       }
     }
   }
