@@ -789,6 +789,7 @@ When creating pull requests, add the following footer at the end of the PR descr
               persistence: { taskId, runId: taskRunId, logUrl },
             }),
             taskRunId,
+            environment: "local",
             sessionId: existingSessionId,
             systemPrompt,
             mcpToolApprovals: toolApprovals,
@@ -814,6 +815,7 @@ When creating pull requests, add the following footer at the end of the PR descr
           mcpServers,
           _meta: {
             taskRunId,
+            environment: "local",
             systemPrompt,
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),

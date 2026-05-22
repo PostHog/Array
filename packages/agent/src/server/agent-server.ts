@@ -976,6 +976,7 @@ export class AgentServer {
         sessionId: payload.run_id,
         taskRunId: payload.run_id,
         taskId: payload.task_id,
+        environment: "cloud",
         systemPrompt: sessionSystemPrompt,
         ...(this.config.model && { model: this.config.model }),
         allowedDomains: this.config.allowedDomains,

@@ -121,6 +121,7 @@ export type SDKMessageFilter = {
 export type NewSessionMeta = {
   taskRunId?: string;
   taskId?: string;
+  environment?: "local" | "cloud";
   disableBuiltInTools?: boolean;
   systemPrompt?: unknown;
   sessionId?: string;

@@ -97,6 +97,7 @@ export {
 interface NewSessionMeta {
   taskRunId?: string;
   taskId?: string;
+  environment?: "local" | "cloud";
   systemPrompt?: string;
   permissionMode?: string;
   model?: string;

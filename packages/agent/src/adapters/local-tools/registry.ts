@@ -20,6 +20,7 @@ export interface LocalToolCtx {
 /** Minimal session-meta shape needed to gate tools (e.g. cloud-only). */
 export interface LocalToolGateMeta {
   taskRunId?: string;
+  environment?: "local" | "cloud";
 }
 
 /**
