@@ -3,7 +3,6 @@ import { router } from "expo-router";
 import { ArrowSquareOut, CaretRight, SpeakerHigh } from "phosphor-react-native";
 import { useState } from "react";
 import { Linking, Pressable, ScrollView, Switch, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore, useProjectsQuery, useUserQuery } from "@/features/auth";
 import { useDismissedReportsStore } from "@/features/inbox/stores/dismissedReportsStore";
 import { usePushTokenStore } from "@/features/notifications/stores/pushTokenStore";
@@ -19,6 +18,7 @@ import { SettingsRow } from "@/features/settings/components/SettingsRow";
 import { SettingsSection } from "@/features/settings/components/SettingsSection";
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
 import { playCompletionSound } from "@/features/tasks/utils/sounds";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
@@ -79,7 +79,7 @@ function taskModeLabel(mode: InitialTaskMode): string {
 
 export default function SettingsScreen() {
   const themeColors = useThemeColors();
-  const insets = useSafeAreaInsets();
+  const { insets, bottom } = useScreenInsets();
 
   const {
     logout,
@@ -170,7 +170,7 @@ export default function SettingsScreen() {
   // padding clears the home indicator and gives breathing room past the last
   // row so it never hides behind it.
   const contentPaddingTop = insets.top + 60;
-  const contentPaddingBottom = insets.bottom + 32;
+  const contentPaddingBottom = bottom("default");
 
   return (
     <View className="flex-1 bg-background">

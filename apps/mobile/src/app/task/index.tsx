@@ -28,8 +28,6 @@ import {
   useReanimatedKeyboardAnimation,
 } from "react-native-keyboard-controller";
 import Animated, { runOnJS, useAnimatedStyle } from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-
 import { useVoiceRecording } from "@/features/chat";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { createTask, runTaskInCloud } from "@/features/tasks/api";
@@ -74,6 +72,7 @@ import {
   isRepositorySelectionComplete,
   toRepositorySelection,
 } from "@/features/tasks/utils/repositorySelection";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { toRgba, useThemeColors } from "@/lib/theme";
 
@@ -110,9 +109,9 @@ export default function NewTaskScreen() {
   }>();
   const router = useRouter();
   const themeColors = useThemeColors();
-  const insets = useSafeAreaInsets();
+  const { insets, bottom } = useScreenInsets();
   const keyboard = useReanimatedKeyboardAnimation();
-  const restingBottom = insets.bottom + 12;
+  const restingBottom = bottom("compact");
   const {
     error,
     hasGithubIntegration,

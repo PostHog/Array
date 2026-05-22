@@ -12,7 +12,6 @@ import {
 } from "react-native";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FloatingBackButton } from "@/components/FloatingBackButton";
 import { getTask, runTaskInCloud } from "@/features/tasks/api";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
@@ -36,6 +35,7 @@ import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type { Task } from "@/features/tasks/types";
 import { getSessionActivityPhase } from "@/features/tasks/utils/sessionActivity";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
@@ -59,7 +59,7 @@ export default function TaskDetailScreen() {
   }>();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const insets = useSafeAreaInsets();
+  const { insets, composerBottom } = useScreenInsets();
   const themeColors = useThemeColors();
   const [task, setTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,9 +123,9 @@ export default function TaskDetailScreen() {
     // height, so the composer sits at the keyboard top — no extra gap needed
     // when open. Closed state keeps a comfortable bottom inset.
     return {
-      marginBottom: height.value < 0 ? 0 : Math.max(insets.bottom, 50),
+      marginBottom: height.value < 0 ? 0 : composerBottom(),
     };
-  }, [insets.bottom]);
+  }, [composerBottom]);
 
   useEffect(() => {
     if (!taskId) return;
