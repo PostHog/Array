@@ -42,16 +42,157 @@ vi.mock("@react-native-async-storage/async-storage", () => {
 
 vi.mock("phosphor-react-native", async () => {
   const { createElement } = await import("react");
-  return new Proxy(
-    {},
-    {
-      get: (_target, name) => {
-        if (name === "__esModule") return true;
-        if (typeof name !== "string") return undefined;
-        return (props: Record<string, unknown>) => createElement(name, props);
-      },
+  const icon = (name: string) => (props: Record<string, unknown>) =>
+    createElement(name, props);
+  return {
+    __esModule: true,
+    Archive: icon("Archive"),
+    ArrowCounterClockwise: icon("ArrowCounterClockwise"),
+    ArrowDown: icon("ArrowDown"),
+    ArrowSquareOut: icon("ArrowSquareOut"),
+    ArrowUp: icon("ArrowUp"),
+    ArrowsClockwise: icon("ArrowsClockwise"),
+    ArrowsIn: icon("ArrowsIn"),
+    ArrowsOut: icon("ArrowsOut"),
+    Brain: icon("Brain"),
+    BrainIcon: icon("BrainIcon"),
+    Bug: icon("Bug"),
+    Camera: icon("Camera"),
+    Cards: icon("Cards"),
+    CaretDown: icon("CaretDown"),
+    CaretLeft: icon("CaretLeft"),
+    CaretRight: icon("CaretRight"),
+    CaretUp: icon("CaretUp"),
+    ChatCircle: icon("ChatCircle"),
+    Check: icon("Check"),
+    CheckCircle: icon("CheckCircle"),
+    CircleDashed: icon("CircleDashed"),
+    CircleIcon: icon("CircleIcon"),
+    CircleNotch: icon("CircleNotch"),
+    Clock: icon("Clock"),
+    CloudArrowDown: icon("CloudArrowDown"),
+    Code: icon("Code"),
+    Copy: icon("Copy"),
+    Eye: icon("Eye"),
+    File: icon("File"),
+    FileText: icon("FileText"),
+    FunnelSimple: icon("FunnelSimple"),
+    GearSix: icon("GearSix"),
+    GitBranch: icon("GitBranch"),
+    GitMerge: icon("GitMerge"),
+    GitPullRequest: icon("GitPullRequest"),
+    GithubLogo: icon("GithubLogo"),
+    Globe: icon("Globe"),
+    Image: icon("Image"),
+    ImageBroken: icon("ImageBroken"),
+    Lightning: icon("Lightning"),
+    LinkSimple: icon("LinkSimple"),
+    List: icon("List"),
+    ListBullets: icon("ListBullets"),
+    ListChecks: icon("ListChecks"),
+    Lock: icon("Lock"),
+    MagnifyingGlass: icon("MagnifyingGlass"),
+    Microphone: icon("Microphone"),
+    MicrophoneIcon: icon("MicrophoneIcon"),
+    PaperclipIcon: icon("PaperclipIcon"),
+    PauseIcon: icon("PauseIcon"),
+    PencilIcon: icon("PencilIcon"),
+    PencilSimple: icon("PencilSimple"),
+    Play: icon("Play"),
+    Plus: icon("Plus"),
+    PuzzlePiece: icon("PuzzlePiece"),
+    Question: icon("Question"),
+    RadioButton: icon("RadioButton"),
+    Robot: icon("Robot"),
+    ShieldCheck: icon("ShieldCheck"),
+    Sparkle: icon("Sparkle"),
+    SpeakerHigh: icon("SpeakerHigh"),
+    Stop: icon("Stop"),
+    StopIcon: icon("StopIcon"),
+    Terminal: icon("Terminal"),
+    ThumbsDown: icon("ThumbsDown"),
+    Trash: icon("Trash"),
+    Tray: icon("Tray"),
+    UsersThree: icon("UsersThree"),
+    Warning: icon("Warning"),
+    WarningCircle: icon("WarningCircle"),
+    WifiSlash: icon("WifiSlash"),
+    Wrench: icon("Wrench"),
+    X: icon("X"),
+    XCircle: icon("XCircle"),
+  };
+});
+
+// nativewind cannot be evaluated under vitest's node environment — it pulls in
+// react-native internals shipped as Flow source, which fail to parse ("Unexpected
+// token 'typeof'") and wedge the module loader. Stub the two APIs the app uses so
+// any module that imports the theme (directly or transitively) loads cleanly.
+vi.mock("nativewind", () => ({
+  useColorScheme: () => ({
+    colorScheme: "light" as const,
+    setColorScheme: vi.fn(),
+    toggleColorScheme: vi.fn(),
+  }),
+  vars: (value: Record<string, string>) => value,
+}));
+
+// react-native-reanimated pulls in native worklet/runtime setup that never
+// resolves under vitest's node environment, hanging the worker indefinitely.
+// Replace it with a lightweight, side-effect-free stand-in so component trees
+// that import it (directly or transitively) can render in tests.
+vi.mock("react-native-reanimated", async () => {
+  const { createElement } = await import("react");
+  const animatedComponent =
+    (name: string) => (props: Record<string, unknown>) =>
+      createElement(name, props, (props?.children as never) ?? null);
+  const passthroughEasing = () => 0;
+  const easingFactory = () => passthroughEasing;
+
+  return {
+    default: {
+      View: animatedComponent("Animated.View"),
+      ScrollView: animatedComponent("Animated.ScrollView"),
+      Text: animatedComponent("Animated.Text"),
+      Image: animatedComponent("Animated.Image"),
+      createAnimatedComponent: (component: unknown) => component,
     },
-  );
+    Easing: {
+      linear: passthroughEasing,
+      ease: passthroughEasing,
+      quad: passthroughEasing,
+      cubic: passthroughEasing,
+      in: easingFactory,
+      out: easingFactory,
+      inOut: easingFactory,
+      bezier: easingFactory,
+    },
+    useSharedValue: <T>(initial: T) => ({ value: initial }),
+    useAnimatedStyle: (factory: () => unknown) => {
+      try {
+        return factory();
+      } catch {
+        return {};
+      }
+    },
+    useDerivedValue: (factory: () => unknown) => ({ value: factory() }),
+    useAnimatedRef: () => ({ current: null }),
+    withTiming: <T>(value: T) => value,
+    withSpring: <T>(value: T) => value,
+    withDelay: <T>(_delay: number, value: T) => value,
+    withRepeat: <T>(value: T) => value,
+    withSequence: <T>(...values: T[]) => values[values.length - 1],
+    cancelAnimation: vi.fn(),
+    runOnJS:
+      <Args extends unknown[]>(fn: (...args: Args) => unknown) =>
+      (...args: Args) =>
+        fn(...args),
+    runOnUI:
+      <Args extends unknown[]>(fn: (...args: Args) => unknown) =>
+      (...args: Args) =>
+        fn(...args),
+    interpolate: () => 0,
+    Extrapolation: { CLAMP: "clamp", EXTEND: "extend", IDENTITY: "identity" },
+  };
 });
 
 vi.mock("react-native-safe-area-context", async () => {
