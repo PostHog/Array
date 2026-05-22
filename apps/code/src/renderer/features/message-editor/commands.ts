@@ -1,7 +1,11 @@
 import type { AvailableCommand } from "@agentclientprotocol/sdk";
+import { useAddDirectoryDialogStore } from "@features/folder-picker/stores/addDirectoryDialogStore";
+import { trpcClient } from "@renderer/trpc/client";
 import { ANALYTICS_EVENTS, type FeedbackType } from "@shared/types/analytics";
+import type { Editor } from "@tiptap/core";
 import { track } from "@utils/analytics";
 import { toast } from "@utils/toast";
+import type { MentionChipAttrs } from "./tiptap/MentionChipNode";
 
 interface CommandContext {
   taskId: string;
@@ -14,14 +18,31 @@ interface CommandContext {
   taskRun: { id?: string; log_url?: string } | null;
 }
 
+export interface CodeCommandInsertContext {
+  editor: Editor;
+  chipId: string;
+  sessionId: string;
+}
+
 interface CodeCommand {
   name: string;
   description: string;
   input?: { hint: string };
-  execute: (
+  /** Optional override for the chip attrs inserted when this command is committed. */
+  placeholderChip?: Partial<MentionChipAttrs>;
+  /** Fires immediately after the chip is inserted into the editor. */
+  onInsert?: (ctx: CodeCommandInsertContext) => void;
+  /** Runs at submission time when the message is sent. Optional. */
+  execute?: (
     args: string | undefined,
     context: CommandContext,
   ) => Promise<void> | void;
+}
+
+function basename(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  return idx >= 0 ? trimmed.slice(idx + 1) || trimmed : trimmed;
 }
 
 function makeFeedbackCommand(
@@ -47,7 +68,37 @@ function makeFeedbackCommand(
   };
 }
 
+const addDirCommand: CodeCommand = {
+  name: "add-dir",
+  description: "Add a folder the agent can access in this task",
+  async onInsert(ctx) {
+    const taskId = ctx.sessionId;
+    try {
+      const path = await trpcClient.os.selectDirectory.query();
+      if (!path) {
+        ctx.editor.commands.removeMentionChipById(ctx.chipId);
+        return;
+      }
+      ctx.editor.commands.replaceMentionChipById(ctx.chipId, {
+        id: path,
+        label: `add-dir - ${basename(path)}`,
+      });
+      useAddDirectoryDialogStore.getState().show({
+        taskId,
+        path,
+        onCancel: () => ctx.editor.commands.removeMentionChipById(ctx.chipId),
+      });
+    } catch (err) {
+      ctx.editor.commands.removeMentionChipById(ctx.chipId);
+      toast.error("Failed to open folder picker", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+};
+
 const commands: CodeCommand[] = [
+  addDirCommand,
   makeFeedbackCommand("good", "good", "Positive"),
   makeFeedbackCommand("bad", "bad", "Negative"),
   makeFeedbackCommand("feedback", "general", "General"),
@@ -61,6 +112,10 @@ export const CODE_COMMANDS: AvailableCommand[] = commands.map((cmd) => ({
 
 const commandMap = new Map(commands.map((cmd) => [cmd.name, cmd]));
 
+export function getCodeCommand(name: string): CodeCommand | undefined {
+  return commandMap.get(name);
+}
+
 export async function tryExecuteCodeCommand(
   text: string,
   context: CommandContext,
@@ -69,7 +124,7 @@ export async function tryExecuteCodeCommand(
   if (!match) return false;
 
   const cmd = commandMap.get(match[1]);
-  if (!cmd) return false;
+  if (!cmd?.execute) return false;
 
   await cmd.execute(match[2], context);
   return true;

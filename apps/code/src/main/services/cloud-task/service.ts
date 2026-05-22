@@ -21,6 +21,7 @@ const log = logger.scope("cloud-task");
 const MAX_SSE_RECONNECT_ATTEMPTS = 5;
 const SSE_RECONNECT_BASE_DELAY_MS = 2_000;
 const SSE_RECONNECT_MAX_DELAY_MS = 30_000;
+const SSE_HEALTHY_CONNECTION_MS = 60_000;
 const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
 const SESSION_LOG_PAGE_LIMIT = 5_000;
@@ -45,6 +46,13 @@ class CloudTaskStreamError extends Error {
   ) {
     super(message);
     this.name = "CloudTaskStreamError";
+  }
+}
+
+class BackendStreamError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BackendStreamError";
   }
 }
 
@@ -82,6 +90,7 @@ interface WatcherState {
   pendingLogEntries: StoredLogEntry[];
   totalEntryCount: number;
   reconnectAttempts: number;
+  streamErrorAttempts: number;
   lastEventId: string | null;
   lastStatus: TaskRunStatus | null;
   lastStage: string | null;
@@ -273,6 +282,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     watcher.reconnectAttempts = 0;
+    watcher.streamErrorAttempts = 0;
     watcher.failed = false;
     watcher.pendingLogEntries = [];
     watcher.bufferedLogBatches = [];
@@ -395,6 +405,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       pendingLogEntries: [],
       totalEntryCount: 0,
       reconnectAttempts: 0,
+      streamErrorAttempts: 0,
       lastEventId: null,
       lastStatus: null,
       lastStage: null,
@@ -606,6 +617,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const parser = new SseEventParser();
     const decoder = new TextDecoder();
 
+    // Tracks whether the response body was opened and how long it stayed open,
+    // so a long-lived connection cut by transport churn isn't penalized as a
+    // failed reconnect attempt (see SSE_HEALTHY_CONNECTION_MS).
+    let connectedAt = 0;
+    let streamWasEstablished = false;
+
     try {
       const response = await this.authService.authenticatedFetch(
         fetch,
@@ -624,6 +641,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       if (!response.body) {
         throw new Error("Stream response did not include a body");
       }
+
+      connectedAt = Date.now();
+      streamWasEstablished = true;
 
       const reader = response.body.getReader();
 
@@ -673,14 +693,32 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
       const errorMessage =
         error instanceof Error ? error.message : "Unknown stream error";
+
+      const isBackendError = error instanceof BackendStreamError;
+      const wasHealthyStream =
+        !isBackendError &&
+        streamWasEstablished &&
+        Date.now() - connectedAt >= SSE_HEALTHY_CONNECTION_MS;
+
+      const watcher = this.watchers.get(key);
+      if (watcher) {
+        if (isBackendError) {
+          watcher.streamErrorAttempts += 1;
+        } else if (wasHealthyStream) {
+          watcher.streamErrorAttempts = 0;
+        }
+      }
+
       log.warn("Cloud task stream error", {
         key,
         error: errorMessage,
+        wasHealthyStream,
+        isBackendError,
       });
       await this.handleStreamCompletion(key, {
         reconnectIfNonTerminal: true,
         reconnectError: error,
-        countReconnectAttempt: true,
+        countReconnectAttempt: !isBackendError && !wasHealthyStream,
       });
     } finally {
       const currentWatcher = this.watchers.get(key);
@@ -702,8 +740,14 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       const message = isSseErrorEvent(event.data)
         ? event.data.error
         : "Unknown stream error";
-      throw new Error(message);
+      throw new BackendStreamError(message);
     }
+
+    // A keepalive or real event proves the transport recovered, so clear the
+    // transport reconnect budget. A keepalive stops here: it does NOT clear the
+    // backend-error budget, since it doesn't prove the stream itself produced
+    // data.
+    watcher.reconnectAttempts = 0;
 
     if (
       event.event === "keepalive" ||
@@ -715,7 +759,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return;
     }
 
-    watcher.reconnectAttempts = 0;
+    // A real data event proves the stream materialized; clear the backend-error
+    // budget too.
+    watcher.streamErrorAttempts = 0;
 
     if (isTaskRunStateEvent(event.data)) {
       if (this.applyTaskRunState(watcher, event.data)) {
@@ -976,7 +1022,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     } else {
       watcher.reconnectAttempts = 0;
     }
-    if (watcher.reconnectAttempts > MAX_SSE_RECONNECT_ATTEMPTS) {
+    // The watcher fails once either budget is exhausted: transport reconnect
+    // failures or backend stream-error frames.
+    const attemptCount = Math.max(
+      watcher.reconnectAttempts,
+      watcher.streamErrorAttempts,
+    );
+    if (attemptCount > MAX_SSE_RECONNECT_ATTEMPTS) {
       const details =
         error instanceof CloudTaskStreamError
           ? error.details
@@ -990,9 +1042,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return;
     }
 
+    const backoffAttempts =
+      error instanceof BackendStreamError
+        ? watcher.streamErrorAttempts
+        : watcher.reconnectAttempts;
     const delay = Math.min(
-      SSE_RECONNECT_BASE_DELAY_MS *
-        2 ** Math.max(watcher.reconnectAttempts - 1, 0),
+      SSE_RECONNECT_BASE_DELAY_MS * 2 ** Math.max(backoffAttempts - 1, 0),
       SSE_RECONNECT_MAX_DELAY_MS,
     );
 
@@ -1048,6 +1103,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
             "Could not fetch the latest cloud run state after the stream ended. Retry to reconnect.",
           retryable: true,
         }),
+        { countAttempt: options.countReconnectAttempt ?? true },
       );
       return;
     }

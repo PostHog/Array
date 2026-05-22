@@ -1,0 +1,47 @@
+import { describe, expect, it } from "vitest";
+import { buildDiscussReportPrompt } from "./buildDiscussReportPrompt";
+
+describe("buildDiscussReportPrompt", () => {
+  it("uses the production deeplink scheme outside dev builds", () => {
+    const prompt = buildDiscussReportPrompt({
+      reportId: "abc123",
+      isDevBuild: false,
+    });
+    expect(prompt).toContain("posthog-code://inbox/abc123");
+  });
+
+  it("uses the dev deeplink scheme in dev builds", () => {
+    const prompt = buildDiscussReportPrompt({
+      reportId: "abc123",
+      isDevBuild: true,
+    });
+    expect(prompt).toContain("posthog-code-dev://inbox/abc123");
+  });
+
+  it("falls back to the open-ended readout when no question is given", () => {
+    const prompt = buildDiscussReportPrompt({
+      reportId: "abc123",
+      isDevBuild: false,
+    });
+    expect(prompt).toContain("give me a brief readout");
+  });
+
+  it("incorporates a trimmed question when provided", () => {
+    const prompt = buildDiscussReportPrompt({
+      reportId: "abc123",
+      question: "  Why is conversion dropping?  ",
+      isDevBuild: false,
+    });
+    expect(prompt).toContain("answer this first: Why is conversion dropping?");
+    expect(prompt).not.toContain("brief readout");
+  });
+
+  it("treats a whitespace-only question as no question", () => {
+    const prompt = buildDiscussReportPrompt({
+      reportId: "abc123",
+      question: "   ",
+      isDevBuild: false,
+    });
+    expect(prompt).toContain("brief readout");
+  });
+});

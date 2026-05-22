@@ -11,6 +11,7 @@ import { Logger } from "../../utils/logger";
 import {
   createPreToolUseHook,
   createReadEnrichmentHook,
+  createSignedCommitGuardHook,
   type EnrichedReadCache,
 } from "./hooks";
 import type {
@@ -309,5 +310,58 @@ describe("createPreToolUseHook", () => {
     expect(result).toMatchObject({
       hookSpecificOutput: { permissionDecision: "ask" },
     });
+  });
+});
+
+describe("createSignedCommitGuardHook", () => {
+  const logger = new Logger();
+
+  function bashInput(command: string): HookInput {
+    return {
+      session_id: "s",
+      transcript_path: "/tmp/t",
+      cwd: "/tmp",
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_use_id: "toolu_1",
+      tool_input: { command },
+    } as HookInput;
+  }
+
+  const guard = createSignedCommitGuardHook(logger);
+  const opts = { signal: new AbortController().signal };
+
+  test.each([
+    "git commit -m x",
+    "git push origin main",
+    "git add . && git commit -m 'y'",
+    "git -C /repo commit",
+    "git --no-pager push",
+  ])("denies %s", async (command) => {
+    const result = await guard(bashInput(command), undefined, opts);
+    expect(result).toMatchObject({
+      hookSpecificOutput: { permissionDecision: "deny" },
+    });
+  });
+
+  test.each([
+    "git status",
+    "git add .",
+    "git fetch origin",
+    "git log --grep=commit",
+    "git stash push",
+    "git ls-remote --heads origin x",
+  ])("allows %s", async (command) => {
+    const result = await guard(bashInput(command), undefined, opts);
+    expect(result).toEqual({ continue: true });
+  });
+
+  test("ignores non-Bash tools", async () => {
+    const result = await guard(
+      { ...bashInput("git commit"), tool_name: "Read" } as HookInput,
+      undefined,
+      opts,
+    );
+    expect(result).toEqual({ continue: true });
   });
 });

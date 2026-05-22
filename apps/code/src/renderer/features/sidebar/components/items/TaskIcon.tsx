@@ -39,26 +39,33 @@ function getOriginProductMeta(
   return originProduct ? ORIGIN_PRODUCT_META[originProduct] : undefined;
 }
 
-// Clickable icon wrapper used when an origin-product thread URL is present.
-// SidebarItem renders the row as a `<button>`, so a real `<a>` here would be
-// invalid HTML — match the role="button" pattern used by TaskHoverToolbar and
-// stop propagation so the task isn't selected when the user opens the thread.
-function IconLink({
-  url,
+// Renders the icon inside a span. When `link` is set the span becomes
+// clickable and opens the originating thread externally. SidebarItem renders
+// the row as a `<button>`, so a real `<a>` here would be invalid HTML — match
+// the inline role="button" pattern used by TaskHoverToolbar.
+//
+// Returned as a plain React element (not a component) so the span is the
+// direct child of Tooltip — Radix's `asChild` Slot needs a host element to
+// attach hover handlers to.
+function renderIconSpan({
+  icon,
+  link,
   ariaLabel,
-  children,
 }: {
-  url: string;
-  ariaLabel: string;
-  children: React.ReactNode;
+  icon: React.ReactNode;
+  link?: string;
+  ariaLabel?: string;
 }) {
+  if (!link) {
+    return <span className="flex items-center justify-center">{icon}</span>;
+  }
   const open = () => {
-    void trpcClient.os.openExternal.mutate({ url });
+    void trpcClient.os.openExternal.mutate({ url: link });
   };
   return (
     // biome-ignore lint/a11y/useSemanticElements: nested clickable inside SidebarItem button
     <span
-      role="link"
+      role="button"
       tabIndex={0}
       aria-label={ariaLabel}
       className="flex cursor-pointer items-center justify-center rounded transition-opacity hover:opacity-70"
@@ -75,44 +82,28 @@ function IconLink({
         }
       }}
     >
-      {children}
+      {icon}
     </span>
   );
-}
-
-function IconWrapper({
-  link,
-  ariaLabel,
-  children,
-}: {
-  link?: string;
-  ariaLabel?: string;
-  children: React.ReactNode;
-}) {
-  if (link && ariaLabel) {
-    return (
-      <IconLink url={link} ariaLabel={ariaLabel}>
-        {children}
-      </IconLink>
-    );
-  }
-  return <span className="flex items-center justify-center">{children}</span>;
 }
 
 function CloudStatusIcon({
   taskRunStatus,
   originProduct,
   threadUrl,
+  size,
 }: {
   taskRunStatus?: TaskRunStatus;
   originProduct?: string;
   threadUrl?: string;
+  size: number;
 }) {
   const meta = getOriginProductMeta(originProduct);
   const Icon = meta?.Icon ?? CloudIcon;
   const sourceLabel = meta?.label ?? "Cloud";
   const link = meta && threadUrl ? threadUrl : undefined;
   const ariaLabel = link ? `Open ${sourceLabel} thread` : undefined;
+
   if (taskRunStatus === "queued" || taskRunStatus === "in_progress") {
     return (
       <Tooltip
@@ -121,9 +112,11 @@ function CloudStatusIcon({
         }
         side="right"
       >
-        <IconWrapper link={link} ariaLabel={ariaLabel}>
-          <Icon size={ICON_SIZE} className="ph-pulse" />
-        </IconWrapper>
+        {renderIconSpan({
+          icon: <Icon size={size} className="ph-pulse" />,
+          link,
+          ariaLabel,
+        })}
       </Tooltip>
     );
   }
@@ -135,9 +128,11 @@ function CloudStatusIcon({
         }
         side="right"
       >
-        <IconWrapper link={link} ariaLabel={ariaLabel}>
-          <Icon size={ICON_SIZE} weight="fill" color="var(--green-11)" />
-        </IconWrapper>
+        {renderIconSpan({
+          icon: <Icon size={size} weight="fill" color="var(--green-11)" />,
+          link,
+          ariaLabel,
+        })}
       </Tooltip>
     );
   }
@@ -151,9 +146,11 @@ function CloudStatusIcon({
         content={link ? `Open ${sourceLabel} thread` : statusLabel}
         side="right"
       >
-        <IconWrapper link={link} ariaLabel={ariaLabel}>
-          <Icon size={ICON_SIZE} weight="fill" color="var(--red-11)" />
-        </IconWrapper>
+        {renderIconSpan({
+          icon: <Icon size={size} weight="fill" color="var(--red-11)" />,
+          link,
+          ariaLabel,
+        })}
       </Tooltip>
     );
   }
@@ -162,9 +159,11 @@ function CloudStatusIcon({
       content={link ? `Open ${sourceLabel} thread` : sourceLabel}
       side="right"
     >
-      <IconWrapper link={link} ariaLabel={ariaLabel}>
-        <Icon size={ICON_SIZE} />
-      </IconWrapper>
+      {renderIconSpan({
+        icon: <Icon size={size} />,
+        link,
+        ariaLabel,
+      })}
     </Tooltip>
   );
 }
@@ -172,15 +171,17 @@ function CloudStatusIcon({
 function PrStatusIcon({
   prState,
   hasDiff,
+  size,
 }: {
   prState?: SidebarPrState;
   hasDiff?: boolean;
+  size: number;
 }) {
   if (prState === "merged") {
     return (
       <Tooltip content="PR merged" side="right">
         <span className="flex items-center justify-center">
-          <GitMerge size={ICON_SIZE} weight="bold" color="var(--purple-11)" />
+          <GitMerge size={size} weight="bold" color="var(--purple-11)" />
         </span>
       </Tooltip>
     );
@@ -189,11 +190,7 @@ function PrStatusIcon({
     return (
       <Tooltip content="PR open" side="right">
         <span className="flex items-center justify-center">
-          <GitPullRequest
-            size={ICON_SIZE}
-            weight="bold"
-            color="var(--green-11)"
-          />
+          <GitPullRequest size={size} weight="bold" color="var(--green-11)" />
         </span>
       </Tooltip>
     );
@@ -202,11 +199,7 @@ function PrStatusIcon({
     return (
       <Tooltip content="Draft PR" side="right">
         <span className="flex items-center justify-center">
-          <GitPullRequest
-            size={ICON_SIZE}
-            weight="bold"
-            color="var(--gray-9)"
-          />
+          <GitPullRequest size={size} weight="bold" color="var(--gray-9)" />
         </span>
       </Tooltip>
     );
@@ -215,11 +208,7 @@ function PrStatusIcon({
     return (
       <Tooltip content="PR closed" side="right">
         <span className="flex items-center justify-center">
-          <GitPullRequest
-            size={ICON_SIZE}
-            weight="bold"
-            color="var(--red-11)"
-          />
+          <GitPullRequest size={size} weight="bold" color="var(--red-11)" />
         </span>
       </Tooltip>
     );
@@ -228,7 +217,7 @@ function PrStatusIcon({
     return (
       <Tooltip content="Has changes" side="right">
         <span className="flex items-center justify-center">
-          <GitBranch size={ICON_SIZE} weight="bold" color="var(--amber-11)" />
+          <GitBranch size={size} weight="bold" color="var(--amber-11)" />
         </span>
       </Tooltip>
     );
@@ -251,6 +240,7 @@ export interface TaskIconProps {
   slackThreadUrl?: string;
   prState?: SidebarPrState;
   hasDiff?: boolean;
+  size?: number;
 }
 
 /**
@@ -270,6 +260,7 @@ export function TaskIcon({
   slackThreadUrl,
   prState,
   hasDiff,
+  size = ICON_SIZE,
 }: TaskIconProps) {
   const isCloudTask = workspaceMode === "cloud";
   const isTerminalCloud = isCloudTask && isTerminalStatus(taskRunStatus);
@@ -279,7 +270,7 @@ export function TaskIcon({
     return (
       <Tooltip content="Needs permission" side="right">
         <span className="flex items-center justify-center">
-          <HandPalm size={ICON_SIZE} color="var(--blue-11)" />
+          <HandPalm size={size} color="var(--blue-11)" />
         </span>
       </Tooltip>
     );
@@ -290,11 +281,12 @@ export function TaskIcon({
         taskRunStatus={taskRunStatus}
         originProduct={originProduct}
         threadUrl={slackThreadUrl}
+        size={size}
       />
     );
   }
   if (isGenerating) {
-    return <DotsCircleSpinner size={ICON_SIZE} className="text-accent-11" />;
+    return <DotsCircleSpinner size={size} className="text-accent-11" />;
   }
   if (isCloudTask) {
     return (
@@ -302,6 +294,7 @@ export function TaskIcon({
         taskRunStatus={taskRunStatus}
         originProduct={originProduct}
         threadUrl={slackThreadUrl}
+        size={size}
       />
     );
   }
@@ -309,7 +302,7 @@ export function TaskIcon({
     return (
       <Tooltip content="Suspended" side="right">
         <span className="flex items-center justify-center">
-          <Pause size={ICON_SIZE} color="var(--gray-9)" />
+          <Pause size={size} color="var(--gray-9)" />
         </span>
       </Tooltip>
     );
@@ -322,10 +315,10 @@ export function TaskIcon({
     );
   }
   if (prState || hasDiff) {
-    return <PrStatusIcon prState={prState} hasDiff={hasDiff} />;
+    return <PrStatusIcon prState={prState} hasDiff={hasDiff} size={size} />;
   }
   if (isPinned) {
-    return <PushPin size={ICON_SIZE} color="var(--accent-11)" />;
+    return <PushPin size={size} color="var(--accent-11)" />;
   }
   if (originProductMeta) {
     const { Icon, label } = originProductMeta;
@@ -335,11 +328,13 @@ export function TaskIcon({
         content={link ? `Open ${label} thread` : `From ${label}`}
         side="right"
       >
-        <IconWrapper link={link} ariaLabel={`Open ${label} thread`}>
-          <Icon size={ICON_SIZE} color="var(--gray-10)" />
-        </IconWrapper>
+        {renderIconSpan({
+          icon: <Icon size={size} color="var(--gray-10)" />,
+          link,
+          ariaLabel: `Open ${label} thread`,
+        })}
       </Tooltip>
     );
   }
-  return <ChatCircle size={ICON_SIZE} color="var(--gray-10)" />;
+  return <ChatCircle size={size} color="var(--gray-10)" />;
 }

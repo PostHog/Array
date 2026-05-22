@@ -1,7 +1,7 @@
 import { FileIcon } from "@components/ui/FileIcon";
 import { usePanelLayoutStore } from "@features/panels";
+import { useSessionTaskId } from "@features/sessions/hooks/useSessionTaskId";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
-import { useTaskStore } from "@features/tasks/stores/taskStore";
 import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
 import { Flex, Text } from "@radix-ui/themes";
 import { trpcClient } from "@renderer/trpc/client";
@@ -32,7 +32,7 @@ function toRelativePath(absolutePath: string, repoPath: string | null): string {
 export const FileMentionChip = memo(function FileMentionChip({
   filePath,
 }: FileMentionChipProps) {
-  const taskId = useTaskStore((s) => s.selectedTaskId);
+  const taskId = useSessionTaskId();
   const repoPath = useCwd(taskId ?? "");
   const workspace = useWorkspace(taskId ?? undefined);
   const openFileInSplit = usePanelLayoutStore((s) => s.openFileInSplit);

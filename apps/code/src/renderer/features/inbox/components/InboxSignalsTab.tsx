@@ -298,7 +298,14 @@ export function InboxSignalsTab() {
           bulk_size: 1,
           rank: preMutationRank,
           list_size: preMutationListSize,
-          ...(isSnooze ? {} : { dismissal_reason: result.reason }),
+          ...(isSnooze
+            ? {}
+            : {
+                dismissal_reason: result.reason,
+                ...(result.note.trim()
+                  ? { dismissal_note: result.note.slice(0, 1000) }
+                  : {}),
+              }),
         });
         setDismissReport(null);
       }
@@ -493,6 +500,7 @@ export function InboxSignalsTab() {
       source_product_filter: sourceProductFilter,
       status_filter_count: statusFilter.length,
       is_empty: totalCount === 0,
+      is_gated_due_to_scale: false,
     });
   }, [
     isInboxView,

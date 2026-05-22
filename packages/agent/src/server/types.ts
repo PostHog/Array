@@ -15,6 +15,8 @@ export interface AgentServerConfig {
   apiKey: string;
   projectId: number;
   jwtPublicKey: string; // RS256 public key for JWT verification
+  eventIngestToken?: string;
+  eventIngestStreamWindowMs?: number;
   mode: AgentMode;
   taskId: string;
   runId: string;

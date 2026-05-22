@@ -88,6 +88,7 @@ export default defineConfig([
       "src/adapters/codex/models.ts",
       "src/adapters/claude/mcp/tool-metadata.ts",
       "src/adapters/codex/structured-output-mcp-server.ts",
+      "src/adapters/codex/local-tools-mcp-server.ts",
       "src/adapters/reasoning-effort.ts",
       "src/execution-mode.ts",
       "src/server/schemas.ts",

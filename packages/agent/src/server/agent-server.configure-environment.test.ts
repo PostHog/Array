@@ -2,13 +2,20 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentServer } from "./agent-server";
 
 interface TestableServer {
-  configureEnvironment(args?: { isInternal?: boolean }): void;
+  configureEnvironment(args?: {
+    isInternal?: boolean;
+    originProduct?: string | null;
+    taskId?: string | null;
+    taskRunId?: string | null;
+    taskUserId?: number | null;
+  }): void;
 }
 
 const ENV_KEYS_UNDER_TEST = [
   "LLM_GATEWAY_URL",
   "ANTHROPIC_BASE_URL",
   "OPENAI_BASE_URL",
+  "ANTHROPIC_CUSTOM_HEADERS",
 ] as const;
 
 describe("AgentServer.configureEnvironment", () => {
@@ -83,6 +90,62 @@ describe("AgentServer.configureEnvironment", () => {
 
     expect(fromBackground).toBe(fromInteractive);
     expect(fromBackground).toBe("https://gateway.us.posthog.com/posthog_code");
+  });
+
+  it("tags as signals when an internal task has origin_product 'signal_report'", () => {
+    buildServer("background").configureEnvironment({
+      isInternal: true,
+      originProduct: "signal_report",
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "https://gateway.us.posthog.com/signals",
+    );
+    expect(process.env.ANTHROPIC_BASE_URL).toBe(
+      "https://gateway.us.posthog.com/signals",
+    );
+    expect(process.env.OPENAI_BASE_URL).toBe(
+      "https://gateway.us.posthog.com/signals/v1",
+    );
+  });
+
+  it("does not tag as signals when origin_product is 'signal_report' but the task is not internal", () => {
+    buildServer("background").configureEnvironment({
+      isInternal: false,
+      originProduct: "signal_report",
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "https://gateway.us.posthog.com/posthog_code",
+    );
+  });
+
+  it("forwards task metadata as ANTHROPIC_CUSTOM_HEADERS", () => {
+    buildServer("background").configureEnvironment({
+      isInternal: true,
+      originProduct: "signal_report",
+      taskId: "task-abc",
+      taskRunId: "run-xyz",
+      taskUserId: 42,
+    });
+
+    expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toBe(
+      [
+        "x-posthog-property-task_origin_product: signal_report",
+        "x-posthog-property-task_internal: true",
+        "x-posthog-property-task_id: task-abc",
+        "x-posthog-property-task_run_id: run-xyz",
+        "x-posthog-property-task_user_id: 42",
+      ].join("\n"),
+    );
+  });
+
+  it("omits optional task metadata from ANTHROPIC_CUSTOM_HEADERS when not provided", () => {
+    buildServer("background").configureEnvironment({ isInternal: false });
+
+    expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toBe(
+      "x-posthog-property-task_internal: false",
+    );
   });
 
   it("respects the LLM_GATEWAY_URL override regardless of internal flag", () => {

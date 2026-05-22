@@ -12,6 +12,7 @@ import {
 } from "@features/auth/hooks/authQueries";
 import { useAuthSession } from "@features/auth/hooks/useAuthSession";
 import { useIsOrgAdmin } from "@features/auth/hooks/useOrgRole";
+import { AddDirectoryDialog } from "@features/folder-picker/components/AddDirectoryDialog";
 import { OnboardingFlow } from "@features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
@@ -303,6 +304,7 @@ function App() {
         onComplete={handleTransitionComplete}
       />
       <ScopeReauthPrompt />
+      <AddDirectoryDialog />
       <Toaster position="bottom-right" />
     </ErrorBoundary>
   );

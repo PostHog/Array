@@ -4,6 +4,7 @@ import { Container } from "inversify";
 import { ArchiveRepository } from "../db/repositories/archive-repository";
 import { AuthPreferenceRepository } from "../db/repositories/auth-preference-repository";
 import { AuthSessionRepository } from "../db/repositories/auth-session-repository";
+import { DefaultAdditionalDirectoryRepository } from "../db/repositories/default-additional-directory-repository";
 import { RepositoryRepository } from "../db/repositories/repository-repository";
 import { SuspensionRepositoryImpl } from "../db/repositories/suspension-repository";
 import { WorkspaceRepository } from "../db/repositories/workspace-repository";
@@ -97,6 +98,9 @@ container.bind(MAIN_TOKENS.WorkspaceRepository).to(WorkspaceRepository);
 container.bind(MAIN_TOKENS.WorktreeRepository).to(WorktreeRepository);
 container.bind(MAIN_TOKENS.ArchiveRepository).to(ArchiveRepository);
 container.bind(MAIN_TOKENS.SuspensionRepository).to(SuspensionRepositoryImpl);
+container
+  .bind(MAIN_TOKENS.DefaultAdditionalDirectoryRepository)
+  .to(DefaultAdditionalDirectoryRepository);
 container.bind(MAIN_TOKENS.AgentAuthAdapter).to(AgentAuthAdapter);
 container.bind(MAIN_TOKENS.AgentService).to(AgentService);
 container.bind(MAIN_TOKENS.AuthService).to(AuthService);

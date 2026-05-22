@@ -15,6 +15,7 @@ import {
   ArrowSquareOutIcon,
   CaretDownIcon,
   CaretRightIcon,
+  ChatCircleIcon,
   EyeIcon,
   LinkSimpleIcon,
   Plus,
@@ -26,9 +27,11 @@ import { Kbd } from "@posthog/quill";
 import {
   Box,
   Flex,
+  Popover,
   ScrollArea,
   Spinner,
   Text,
+  TextField,
   Tooltip,
 } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
@@ -51,6 +54,7 @@ import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
 import { isMac } from "@utils/platform";
 import {
+  type FormEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -59,6 +63,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import { useDiscussReport } from "../../hooks/useDiscussReport";
 import { ReportImplementationPrLink } from "../utils/ReportImplementationPrLink";
 import { SignalReportActionabilityBadge } from "../utils/SignalReportActionabilityBadge";
 import { SignalReportPriorityBadge } from "../utils/SignalReportPriorityBadge";
@@ -186,6 +191,8 @@ export function ReportDetailPane({
   onReportAction,
   onScroll,
 }: ReportDetailPaneProps) {
+  const [discussQuestion, setDiscussQuestion] = useState("");
+  const [discussQuestionOpen, setDiscussQuestionOpen] = useState(false);
   const { data: me } = useMeQuery();
 
   // ── Report data ─────────────────────────────────────────────────────────
@@ -366,6 +373,35 @@ export function ReportDetailPane({
     fireDetailAction,
   ]);
 
+  const { discussReport, isDiscussing } = useDiscussReport({
+    reportId: report.id,
+    reportTitle: report.title,
+    cloudRepository: effectiveCloudRepository,
+  });
+
+  const handleDiscussReport = useCallback(
+    async (question?: string) => {
+      const trimmedQuestion = question?.trim();
+      fireDetailAction("discuss", {
+        has_question: !!trimmedQuestion,
+        question_text: trimmedQuestion
+          ? trimmedQuestion.slice(0, 500)
+          : undefined,
+      });
+      setDiscussQuestionOpen(false);
+      await discussReport(trimmedQuestion);
+    },
+    [discussReport, fireDetailAction],
+  );
+
+  const handleDiscussSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      handleDiscussReport(discussQuestion);
+    },
+    [discussQuestion, handleDiscussReport],
+  );
+
   // Bind native scroll listener to the Radix ScrollArea viewport (Radix doesn't forward onScroll).
   // The viewport's data-report-id attribute is set from report.id so we both (a) track the
   // current report in the DOM for debugging and (b) give biome's useExhaustiveDependencies
@@ -471,6 +507,73 @@ export function ReportDetailPane({
             )}
             Dismiss
           </Button>
+          <Flex align="center" gap="0">
+            <Button
+              size="1"
+              variant="soft"
+              className="gap-1 rounded-r-none text-[12px]"
+              tooltipContent="Open a chat session about this report"
+              disabled={isDiscussing}
+              onClick={() => handleDiscussReport()}
+            >
+              {isDiscussing ? (
+                <Spinner size="1" />
+              ) : (
+                <ChatCircleIcon size={12} />
+              )}
+              Discuss
+            </Button>
+            <Popover.Root
+              open={discussQuestionOpen}
+              onOpenChange={setDiscussQuestionOpen}
+            >
+              <Popover.Trigger>
+                <Button
+                  size="1"
+                  variant="soft"
+                  className="rounded-l-none border-l border-l-(--gray-5) px-1"
+                  aria-label="Ask an optional first question"
+                  disabled={isDiscussing}
+                >
+                  <CaretDownIcon size={12} />
+                </Button>
+              </Popover.Trigger>
+              <Popover.Content
+                align="end"
+                className="w-[320px] border border-(--gray-6) bg-(--color-panel-solid) p-3 shadow-6"
+                side="bottom"
+                sideOffset={6}
+              >
+                <form
+                  className="flex flex-col gap-2"
+                  onSubmit={handleDiscussSubmit}
+                >
+                  <TextField.Root
+                    aria-label="Optional first question for Discuss"
+                    autoFocus
+                    placeholder="Ask about this report..."
+                    size="2"
+                    value={discussQuestion}
+                    onChange={(event) => setDiscussQuestion(event.target.value)}
+                  />
+                  <Flex justify="end" gap="2">
+                    <Button
+                      color="gray"
+                      size="1"
+                      type="button"
+                      variant="soft"
+                      onClick={() => setDiscussQuestionOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button size="1" type="submit" variant="soft">
+                      Discuss
+                    </Button>
+                  </Flex>
+                </form>
+              </Popover.Content>
+            </Popover.Root>
+          </Flex>
           {headerImplementationPrUrl ? (
             <ReportImplementationPrLink
               prUrl={headerImplementationPrUrl}

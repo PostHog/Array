@@ -1,3 +1,4 @@
+import { useAddDirectoryDialogStore } from "@features/folder-picker/stores/addDirectoryDialogStore";
 import {
   File,
   FolderSimple,
@@ -31,9 +32,11 @@ import { IssuePicker } from "./IssuePicker";
 interface AttachmentMenuProps {
   disabled?: boolean;
   repoPath?: string | null;
+  taskId?: string | null;
   onAddAttachment: (attachment: FileAttachment) => void;
   onAttachFiles?: (files: File[]) => void;
   onInsertChip: (chip: MentionChip) => void;
+  onRemoveChip?: (chipId: string) => void;
   iconSize?: number;
   attachTooltip?: string;
 }
@@ -53,9 +56,11 @@ function getIssueDisabledReason(
 export function AttachmentMenu({
   disabled = false,
   repoPath,
+  taskId,
   onAddAttachment,
   onAttachFiles,
   onInsertChip,
+  onRemoveChip,
   iconSize = 14,
   attachTooltip = "Attach",
 }: AttachmentMenuProps) {
@@ -63,6 +68,7 @@ export function AttachmentMenu({
   const [issuePickerOpen, setIssuePickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const paperclipRef = useRef<HTMLButtonElement>(null);
+  const showAddDirectoryDialog = useAddDirectoryDialogStore((s) => s.show);
 
   const trpc = useTRPC();
   const { data: ghStatus } = useQuery(
@@ -124,6 +130,19 @@ export function AttachmentMenu({
           } catch {
             toast.error("Failed to attach image");
           }
+        } else if (kind === "directory" && taskId) {
+          const chipId = crypto.randomUUID();
+          onInsertChip({
+            type: "folder",
+            id: filePath,
+            label: deriveFileLabel(filePath),
+            chipId,
+          });
+          showAddDirectoryDialog({
+            taskId,
+            path: filePath,
+            onCancel: () => onRemoveChip?.(chipId),
+          });
         } else {
           onInsertChip({
             type: kind === "directory" ? "folder" : "file",

@@ -1,3 +1,4 @@
+import { additionalDirectoriesRouter } from "./routers/additional-directories";
 import { agentRouter } from "./routers/agent";
 import { analyticsRouter } from "./routers/analytics";
 import { archiveRouter } from "./routers/archive";
@@ -38,6 +39,7 @@ import { workspaceRouter } from "./routers/workspace";
 import { router } from "./trpc";
 
 export const trpcRouter = router({
+  additionalDirectories: additionalDirectoriesRouter,
   agent: agentRouter,
   analytics: analyticsRouter,
   archive: archiveRouter,

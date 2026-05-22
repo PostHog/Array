@@ -120,6 +120,7 @@ export type SDKMessageFilter = {
 
 export type NewSessionMeta = {
   taskRunId?: string;
+  taskId?: string;
   disableBuiltInTools?: boolean;
   systemPrompt?: unknown;
   sessionId?: string;

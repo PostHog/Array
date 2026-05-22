@@ -42,7 +42,6 @@ export const TASK_STATUS_ORDER: string[] = [
 ];
 
 export interface TaskState {
-  selectedTaskId: string | null;
   selectedIndex: number | null;
   hoveredIndex: number | null;
   contextMenuIndex: number | null;
@@ -58,7 +57,6 @@ export interface TaskState {
   isFilterDropdownOpen: boolean;
   editingFilterBadgeKey: string | null;
 
-  selectTask: (taskId: string | null) => void;
   setSelectedIndex: (index: number | null) => void;
   setHoveredIndex: (index: number | null) => void;
   setContextMenuIndex: (index: number | null) => void;

@@ -428,6 +428,7 @@ export type InboxReportActionType =
   | "create_pr"
   | "open_pr"
   | "copy_link"
+  | "discuss"
   | "expand_signal"
   | "collapse_signal"
   | "expand_signal_section"
@@ -451,6 +452,8 @@ export interface InboxViewedProperties {
   source_product_filter: string[];
   status_filter_count: number;
   is_empty: boolean;
+  /** True when the inbox is scale-gated (GatedDueToScalePane shown, data not loaded). */
+  is_gated_due_to_scale: boolean;
 }
 
 export interface InboxReportOpenedProperties {
@@ -495,12 +498,18 @@ export interface InboxReportActionProperties {
   rank: number;
   list_size: number;
   dismissal_reason?: string;
+  dismissal_note?: string;
   signal_id?: string;
   signal_source_product?: string;
   signal_source_type?: string;
   signal_section?: "relevant_code" | "data_queried";
   why_field?: "priority" | "actionability";
   task_section?: "research" | "implementation";
+  // True when the user submitted Discuss with a first question via the popover.
+  has_question?: boolean;
+  // The first question text the user typed before hitting Discuss. Truncated to
+  // 500 chars to keep event payloads bounded.
+  question_text?: string;
 }
 
 // Subscription / billing events

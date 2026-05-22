@@ -4,9 +4,11 @@ import { HighlightedCode } from "@components/HighlightedCode";
 import { List, ListItem } from "@components/List";
 import { parseGithubIssueUrl } from "@features/message-editor/utils/githubIssueUrl";
 import { Blockquote, Checkbox, Code, Kbd, Text } from "@radix-ui/themes";
+import { trpcClient } from "@renderer/trpc/client";
+import { isPostHogCodeDeeplink } from "@shared/deeplink";
 import { memo, useMemo } from "react";
 import type { Components } from "react-markdown";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { PluggableList } from "unified";
 import { GithubRefChip } from "./GithubRefChip";
@@ -22,6 +24,11 @@ interface MarkdownRendererProps {
 // Ensures `---`, `***`, `___` are preceded by a blank line
 function preprocessMarkdown(content: string): string {
   return content.replace(/\n([^\n].*)\n(---+|___+|\*\*\*+)\n/g, "\n$1\n\n$2\n");
+}
+
+function markdownUrlTransform(value: string): string {
+  if (isPostHogCodeDeeplink(value)) return value;
+  return defaultUrlTransform(value);
 }
 
 const HeadingText = ({ children }: { children: React.ReactNode }) => (
@@ -92,9 +99,15 @@ export const baseComponents: Components = {
         </GithubRefChip>
       );
     }
+    const isDeeplink = isPostHogCodeDeeplink(href);
     return (
       <a
         href={href}
+        onClick={(event) => {
+          if (!isDeeplink || !href) return;
+          event.preventDefault();
+          void trpcClient.os.openExternal.mutate({ url: href });
+        }}
         target="_blank"
         rel="noopener noreferrer"
         className="markdown-link inline-flex items-center gap-[2px]"
@@ -189,6 +202,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
       remarkPlugins={plugins}
       rehypePlugins={rehypePlugins}
       components={components}
+      urlTransform={markdownUrlTransform}
     >
       {processedContent}
     </ReactMarkdown>

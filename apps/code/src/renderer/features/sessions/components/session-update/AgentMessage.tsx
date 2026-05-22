@@ -3,8 +3,8 @@ import { Tooltip } from "@components/ui/Tooltip";
 import { usePendingScrollStore } from "@features/code-editor/stores/pendingScrollStore";
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
 import { usePanelLayoutStore } from "@features/panels";
+import { useSessionTaskId } from "@features/sessions/hooks/useSessionTaskId";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
-import { useTaskStore } from "@features/tasks/stores/taskStore";
 import type { FileItem } from "@hooks/useRepoFiles";
 import { useRepoFiles } from "@hooks/useRepoFiles";
 import { Check, Copy } from "@phosphor-icons/react";
@@ -46,7 +46,7 @@ function InlineFileLink({
   const { filePath: rawPath, lineSuffix } = parseFilePath(text);
   const filePath = resolvedPath ?? rawPath;
   const filename = rawPath.split("/").pop() ?? rawPath;
-  const taskId = useTaskStore((s) => s.selectedTaskId);
+  const taskId = useSessionTaskId();
   const repoPath = useCwd(taskId ?? "");
   const openFileInSplit = usePanelLayoutStore((s) => s.openFileInSplit);
   const requestScroll = usePendingScrollStore((s) => s.requestScroll);
@@ -86,7 +86,7 @@ function InlineFileLink({
 
 function BareFileLink({ text }: { text: string }) {
   const { filePath: bareFilename } = parseFilePath(text);
-  const taskId = useTaskStore((s) => s.selectedTaskId);
+  const taskId = useSessionTaskId();
   const repoPath = useCwd(taskId ?? "");
   const { files } = useRepoFiles(repoPath ?? undefined);
   const resolved = useMemo(
