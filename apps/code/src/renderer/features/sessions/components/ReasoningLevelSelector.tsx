@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
+import { useState } from "react";
 import { flattenSelectOptions } from "../stores/sessionStore";
 
 interface ReasoningLevelSelectorProps {
@@ -24,6 +25,8 @@ export function ReasoningLevelSelector({
   onChange,
   disabled,
 }: ReasoningLevelSelectorProps) {
+  const [open, setOpen] = useState(false);
+
   if (!thoughtOption || thoughtOption.type !== "select") {
     return null;
   }
@@ -36,7 +39,7 @@ export function ReasoningLevelSelector({
   const prefix = adapter === "codex" ? "Reasoning" : "Effort";
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
         render={
           <Button
@@ -65,7 +68,10 @@ export function ReasoningLevelSelector({
         <MenuLabel>{adapter === "codex" ? "Reasoning" : "Effort"}</MenuLabel>
         <DropdownMenuRadioGroup
           value={activeLevel}
-          onValueChange={(value) => onChange?.(value)}
+          onValueChange={(value) => {
+            onChange?.(value);
+            setOpen(false);
+          }}
         >
           {options.map((level) => (
             <DropdownMenuRadioItem key={level.value} value={level.value}>

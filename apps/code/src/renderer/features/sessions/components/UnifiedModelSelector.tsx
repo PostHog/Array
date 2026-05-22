@@ -21,7 +21,7 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
-import { Fragment, useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { flattenSelectOptions } from "../stores/sessionStore";
 
 const ADAPTER_ICONS: Record<AgentAdapter, React.ReactNode> = {
@@ -55,6 +55,7 @@ export function UnifiedModelSelector({
   disabled,
   isConnecting,
 }: UnifiedModelSelectorProps) {
+  const [open, setOpen] = useState(false);
   const selectOption = modelOption?.type === "select" ? modelOption : undefined;
   const options = selectOption
     ? flattenSelectOptions(selectOption.options)
@@ -83,7 +84,7 @@ export function UnifiedModelSelector({
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
         render={
           <Button
@@ -114,7 +115,10 @@ export function UnifiedModelSelector({
         <MenuLabel>{ADAPTER_LABELS[adapter]}</MenuLabel>
         <DropdownMenuRadioGroup
           value={currentValue ?? ""}
-          onValueChange={(value) => onModelChange?.(value)}
+          onValueChange={(value) => {
+            onModelChange?.(value);
+            setOpen(false);
+          }}
         >
           {groupedOptions.length > 0
             ? groupedOptions.map((group, index) => (
