@@ -34,7 +34,7 @@ describe("createLocalToolsMcpServer", () => {
     if (!server) {
       throw new Error("expected the local-tools server to be registered");
     }
-    expect(server.name).toBe("posthog-local");
+    expect(server.name).toBe("posthog-code-tools");
 
     const [clientTransport, serverTransport] =
       InMemoryTransport.createLinkedPair();

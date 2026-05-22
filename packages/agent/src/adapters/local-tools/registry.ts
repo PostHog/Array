@@ -5,9 +5,9 @@ import type { z } from "zod";
  * for both adapters: the Claude in-process SDK server and the Codex stdio
  * server. Adding a tool means adding one entry to `LOCAL_TOOLS` (see
  * `./index.ts`) — no per-tool server file or adapter wiring. The name appears
- * in tool ids as `mcp__posthog-local__<tool>`.
+ * in tool ids as `mcp__posthog-code-tools__<tool>`.
  */
-export const LOCAL_TOOLS_MCP_NAME = "posthog-local";
+export const LOCAL_TOOLS_MCP_NAME = "posthog-code-tools";
 
 /** Runtime context handed to every local tool's handler and gate. */
 export interface LocalToolCtx {
