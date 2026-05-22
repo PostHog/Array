@@ -96,29 +96,23 @@ describe("taskSelectionStore", () => {
   describe("selectRange", () => {
     const orderedIds = ["t1", "t2", "t3", "t4", "t5"];
 
-    it("selects a forward range from anchor to target", () => {
-      useTaskSelectionStore.setState({ lastClickedId: "t2" });
+    it.each([
+      { direction: "forward", anchor: "t2", target: "t4" },
+      { direction: "backward", anchor: "t4", target: "t2" },
+    ])(
+      "selects a $direction range from anchor to target",
+      ({ anchor, target }) => {
+        useTaskSelectionStore.setState({ lastClickedId: anchor });
 
-      useTaskSelectionStore.getState().selectRange("t4", orderedIds);
+        useTaskSelectionStore.getState().selectRange(target, orderedIds);
 
-      expect(useTaskSelectionStore.getState().selectedTaskIds).toEqual([
-        "t2",
-        "t3",
-        "t4",
-      ]);
-    });
-
-    it("selects a backward range from anchor to target", () => {
-      useTaskSelectionStore.setState({ lastClickedId: "t4" });
-
-      useTaskSelectionStore.getState().selectRange("t2", orderedIds);
-
-      expect(useTaskSelectionStore.getState().selectedTaskIds).toEqual([
-        "t2",
-        "t3",
-        "t4",
-      ]);
-    });
+        expect(useTaskSelectionStore.getState().selectedTaskIds).toEqual([
+          "t2",
+          "t3",
+          "t4",
+        ]);
+      },
+    );
 
     it("merges range with existing selection", () => {
       useTaskSelectionStore.setState({

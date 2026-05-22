@@ -11,7 +11,7 @@ export const taskContextMenuInput = z.object({
 });
 
 export const bulkTaskContextMenuInput = z.object({
-  taskCount: z.number().int().positive(),
+  taskCount: z.number().int().min(2),
 });
 
 export const archivedTaskContextMenuInput = z.object({
