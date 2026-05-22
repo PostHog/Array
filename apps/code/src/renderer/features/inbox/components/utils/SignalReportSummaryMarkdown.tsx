@@ -1,4 +1,5 @@
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
+import { formatSignalReportSummaryMarkdown } from "@features/inbox/utils/formatSignalReportSummaryMarkdown";
 import { Box } from "@radix-ui/themes";
 
 interface SignalReportSummaryMarkdownProps {
@@ -23,7 +24,9 @@ export function SignalReportSummaryMarkdown({
   variant,
   pending,
 }: SignalReportSummaryMarkdownProps) {
-  const raw = content?.trim() ? content : fallback;
+  const raw = formatSignalReportSummaryMarkdown(
+    content?.trim() ? content : fallback,
+  );
 
   /** List rows: only the first line (before first newline); CSS still caps visual lines. */
   const listMarkdown = raw.split(/\r?\n/)[0] ?? "";
