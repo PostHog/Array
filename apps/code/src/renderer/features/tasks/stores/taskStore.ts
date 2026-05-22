@@ -23,7 +23,6 @@ function toggleOperator(
 export const useTaskStore = create<TaskState>()(
   persist(
     (set) => ({
-      selectedTaskId: null,
       selectedIndex: null,
       hoveredIndex: null,
       contextMenuIndex: null,
@@ -39,7 +38,6 @@ export const useTaskStore = create<TaskState>()(
       isFilterDropdownOpen: false,
       editingFilterBadgeKey: null,
 
-      selectTask: (taskId) => set({ selectedTaskId: taskId }),
       setSelectedIndex: (index) => set({ selectedIndex: index }),
       setHoveredIndex: (index) => set({ hoveredIndex: index }),
       setContextMenuIndex: (index) => set({ contextMenuIndex: index }),

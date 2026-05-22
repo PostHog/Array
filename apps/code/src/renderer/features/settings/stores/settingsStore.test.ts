@@ -82,3 +82,58 @@ describe("feature settingsStore cloud selections", () => {
     expect(useSettingsStore.getState().allowBypassPermissions).toBe(true);
   });
 });
+
+describe("feature settingsStore terminal font", () => {
+  beforeEach(() => {
+    getItem.mockReset();
+    setItem.mockReset();
+    removeItem.mockReset();
+    getItem.mockResolvedValue(null);
+    setItem.mockResolvedValue(undefined);
+    removeItem.mockResolvedValue(undefined);
+
+    useSettingsStore.setState({
+      terminalFont: "berkeley-mono",
+      terminalCustomFontFamily: "",
+    });
+  });
+
+  it("defaults to berkeley-mono with no custom override", () => {
+    expect(useSettingsStore.getState().terminalFont).toBe("berkeley-mono");
+    expect(useSettingsStore.getState().terminalCustomFontFamily).toBe("");
+  });
+
+  it("persists terminal font selection and custom family", async () => {
+    useSettingsStore.getState().setTerminalFont("custom");
+    useSettingsStore.getState().setTerminalCustomFontFamily("Fira Code");
+
+    await vi.waitFor(() => {
+      expect(setItem).toHaveBeenCalled();
+    });
+
+    const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
+    const persisted = JSON.parse(lastCall[0].value);
+
+    expect(persisted.state.terminalFont).toBe("custom");
+    expect(persisted.state.terminalCustomFontFamily).toBe("Fira Code");
+  });
+
+  it("rehydrates terminal font selection and custom family", async () => {
+    getItem.mockResolvedValue(
+      JSON.stringify({
+        state: {
+          terminalFont: "jetbrains-mono",
+          terminalCustomFontFamily: "Cascadia Code",
+        },
+        version: 0,
+      }),
+    );
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState().terminalFont).toBe("jetbrains-mono");
+    expect(useSettingsStore.getState().terminalCustomFontFamily).toBe(
+      "Cascadia Code",
+    );
+  });
+});

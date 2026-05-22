@@ -3,6 +3,7 @@ import {
   Check,
   GitMerge,
   GitPullRequest,
+  type Icon,
   PencilSimple,
   X,
 } from "@phosphor-icons/react";
@@ -14,7 +15,7 @@ export interface PrAction {
 
 export interface PrVisualConfig {
   color: "gray" | "green" | "red" | "purple";
-  icon: React.ReactNode;
+  Icon: Icon;
   label: string;
   actions: PrAction[];
 }
@@ -27,7 +28,7 @@ export function getPrVisualConfig(
   if (merged) {
     return {
       color: "purple",
-      icon: <GitMerge size={12} weight="bold" />,
+      Icon: GitMerge,
       label: "Merged",
       actions: [],
     };
@@ -35,7 +36,7 @@ export function getPrVisualConfig(
   if (state === "closed") {
     return {
       color: "red",
-      icon: <GitPullRequest size={12} weight="bold" />,
+      Icon: GitPullRequest,
       label: "Closed",
       actions: [{ id: "reopen", label: "Reopen PR" }],
     };
@@ -43,7 +44,7 @@ export function getPrVisualConfig(
   if (draft) {
     return {
       color: "gray",
-      icon: <GitPullRequest size={12} weight="bold" />,
+      Icon: GitPullRequest,
       label: "Draft",
       actions: [
         { id: "ready", label: "Ready for review" },
@@ -53,7 +54,7 @@ export function getPrVisualConfig(
   }
   return {
     color: "green",
-    icon: <GitPullRequest size={12} weight="bold" />,
+    Icon: GitPullRequest,
     label: "Open",
     actions: [
       { id: "draft", label: "Convert to draft" },

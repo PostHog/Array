@@ -67,7 +67,7 @@ function renderHeader(path: string) {
       filePath={path}
       linesAdded={10}
       linesRemoved={2}
-      reason="generated"
+      reason="line-limit"
       collapsed={false}
       onToggle={() => {}}
     />,

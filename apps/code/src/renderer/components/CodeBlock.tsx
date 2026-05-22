@@ -53,10 +53,7 @@ export function CodeBlock({ children, size = "1" }: CodeBlockProps) {
         variant="ghost"
         color="gray"
         onClick={handleCopy}
-        style={{
-          transition: "opacity 0.15s",
-        }}
-        className="group-hover:!opacity-100 [&]:hover:!opacity-100 absolute top-1 right-1 cursor-pointer opacity-0"
+        className="absolute top-1 right-1 cursor-pointer"
         aria-label="Copy code"
       >
         {copied ? <Check size={14} /> : <Copy size={14} />}

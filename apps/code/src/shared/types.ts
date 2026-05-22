@@ -218,6 +218,12 @@ export type GitFileStatus =
   | "renamed"
   | "untracked";
 
+export type GitBusyOperation = "rebase" | "merge" | "cherry-pick" | "revert";
+
+export type GitBusyState =
+  | { busy: false }
+  | { busy: true; operation: GitBusyOperation };
+
 export interface ChangedFile {
   path: string;
   status: GitFileStatus;

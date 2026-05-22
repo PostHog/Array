@@ -5,6 +5,7 @@ import {
   useIntegrationSelectors,
   useIntegrationStore,
 } from "@features/integrations/stores/integrationStore";
+import { useDebounce } from "@hooks/useDebounce";
 import type { UserGitHubIntegration } from "@renderer/api/posthogClient";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import {
@@ -16,6 +17,12 @@ import {
 } from "react";
 import { useAuthenticatedInfiniteQuery } from "./useAuthenticatedInfiniteQuery";
 import { useAuthenticatedQuery } from "./useAuthenticatedQuery";
+
+// Branch search hits a slow remote endpoint (GitHub via PostHog proxy). Debounce
+// keystrokes so we fire at most one request per typing burst. Empty searches
+// skip the debounce so closing the picker (which resets search to "") clears
+// stale results immediately.
+const BRANCH_SEARCH_DEBOUNCE_MS = 300;
 
 const integrationKeys = {
   all: ["integrations"] as const,
@@ -71,7 +78,7 @@ export function useIntegrations() {
 
   const query = useAuthenticatedQuery(
     integrationKeys.list(),
-    (client) => client.getIntegrations() as Promise<Integration[]>,
+    (client) => client.getIntegrations("github") as Promise<Integration[]>,
   );
 
   useEffect(() => {
@@ -366,11 +373,15 @@ export function useGithubBranches(
   search?: string,
   enabled: boolean = true,
 ) {
-  const deferredSearch = useDeferredValue(search?.trim() ?? "");
+  const trimmedSearch = search?.trim() ?? "";
+  const debouncedSearch = useDebounce(
+    trimmedSearch,
+    trimmedSearch ? BRANCH_SEARCH_DEBOUNCE_MS : 0,
+  );
   const queryEnabled = enabled && !!integrationId && !!repo;
 
   const query = useAuthenticatedInfiniteQuery<GithubBranchesPage, number>(
-    integrationKeys.branches(integrationId, repo, deferredSearch),
+    integrationKeys.branches(integrationId, repo, debouncedSearch),
     async (client, offset) => {
       if (!integrationId || !repo) {
         return { branches: [], defaultBranch: null, hasMore: false };
@@ -382,7 +393,7 @@ export function useGithubBranches(
         repo,
         offset,
         pageSize,
-        deferredSearch,
+        debouncedSearch,
       );
     },
     {
@@ -392,6 +403,7 @@ export function useGithubBranches(
         if (!lastPage.hasMore) return undefined;
         return allPages.reduce((n, p) => n + p.branches.length, 0);
       },
+      staleTime: 5 * 60 * 1000,
     },
   );
 
@@ -434,11 +446,15 @@ export function useUserGithubBranches(
   search?: string,
   enabled: boolean = true,
 ) {
-  const deferredSearch = useDeferredValue(search?.trim() ?? "");
+  const trimmedSearch = search?.trim() ?? "";
+  const debouncedSearch = useDebounce(
+    trimmedSearch,
+    trimmedSearch ? BRANCH_SEARCH_DEBOUNCE_MS : 0,
+  );
   const queryEnabled = enabled && !!installationId && !!repo;
 
   const query = useAuthenticatedInfiniteQuery<GithubBranchesPage, number>(
-    userGithubIntegrationKeys.branches(installationId, repo, deferredSearch),
+    userGithubIntegrationKeys.branches(installationId, repo, debouncedSearch),
     async (client, offset) => {
       if (!installationId || !repo) {
         return { branches: [], defaultBranch: null, hasMore: false };
@@ -450,7 +466,7 @@ export function useUserGithubBranches(
         repo,
         offset,
         pageSize,
-        deferredSearch,
+        debouncedSearch,
       );
     },
     {
@@ -460,6 +476,7 @@ export function useUserGithubBranches(
         if (!lastPage.hasMore) return undefined;
         return allPages.reduce((n, p) => n + p.branches.length, 0);
       },
+      staleTime: 5 * 60 * 1000,
     },
   );
 

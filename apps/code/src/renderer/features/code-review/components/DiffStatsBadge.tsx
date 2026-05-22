@@ -6,29 +6,16 @@ import {
   formatHotkey,
   SHORTCUTS,
 } from "@renderer/constants/keyboard-shortcuts";
-import { useReviewNavigationStore } from "@renderer/features/code-review/stores/reviewNavigationStore";
 import type { Task } from "@shared/types";
-import { useTaskDiffStats } from "../hooks/useTaskDiffStats";
+import { useDiffStatsToggle } from "../hooks/useDiffStatsToggle";
 
 interface DiffStatsBadgeProps {
   task: Task;
 }
 
 export function DiffStatsBadge({ task }: DiffStatsBadgeProps) {
-  const taskId = task.id;
-  const { filesChanged, linesAdded, linesRemoved } = useTaskDiffStats(task);
-
-  const reviewMode = useReviewNavigationStore(
-    (s) => s.reviewModes[taskId] ?? "closed",
-  );
-  const setReviewMode = useReviewNavigationStore((s) => s.setReviewMode);
-
-  const hasChanges = filesChanged > 0;
-  const isOpen = reviewMode !== "closed";
-
-  const handleClick = () => {
-    setReviewMode(taskId, isOpen ? "closed" : "split");
-  };
+  const { linesAdded, linesRemoved, hasChanges, isOpen, toggle } =
+    useDiffStatsToggle(task, "split");
 
   return (
     <Tooltip
@@ -37,7 +24,7 @@ export function DiffStatsBadge({ task }: DiffStatsBadgeProps) {
       side="bottom"
     >
       <Button
-        onClick={handleClick}
+        onClick={toggle}
         variant="outline"
         size="sm"
         className={`no-drag font-mono text-(--gray-11) text-[11px] transition-colors duration-100 hover:bg-(--gray-a3) ${isOpen ? "bg-(--gray-a3)" : "bg-transparent"}`}

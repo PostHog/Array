@@ -6,6 +6,7 @@ import { useMeQuery } from "@hooks/useMeQuery";
 import {
   FunnelSimple as FunnelSimpleIcon,
   GitBranch,
+  MagnifyingGlass,
 } from "@phosphor-icons/react";
 import {
   Button,
@@ -21,6 +22,7 @@ import { Flex, Text } from "@radix-ui/themes";
 import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
 import { useWorkspace } from "@renderer/features/workspace/hooks/useWorkspace";
 import { normalizeRepoKey } from "@shared/utils/repo";
+import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { getRelativeDateGroup } from "@utils/time";
 import { motion } from "framer-motion";
@@ -129,6 +131,20 @@ function TaskRow({
       onEditSubmit={onEditSubmit}
       onEditCancel={onEditCancel}
     />
+  );
+}
+
+function TaskSearchButton() {
+  const openCommandMenu = useCommandMenuStore((state) => state.open);
+  return (
+    <Button
+      type="button"
+      aria-label="Search tasks"
+      size="icon-sm"
+      onClick={() => openCommandMenu()}
+    >
+      <MagnifyingGlass size={14} />
+    </Button>
   );
 }
 
@@ -320,7 +336,15 @@ export function TaskListView({
         </>
       )}
 
-      <SectionLabel label="Tasks" endContent={<TaskFilterMenu />} />
+      <SectionLabel
+        label="Tasks"
+        endContent={
+          <span className="flex items-center">
+            <TaskSearchButton />
+            <TaskFilterMenu />
+          </span>
+        }
+      />
 
       {pinnedTasks.length === 0 &&
       flatTasks.length === 0 &&

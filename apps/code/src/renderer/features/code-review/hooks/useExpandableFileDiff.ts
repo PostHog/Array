@@ -2,37 +2,69 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import { useTRPC } from "@renderer/trpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { REVIEW_FILE_CACHE_TIME_MS } from "../constants";
 import {
   buildExpandedFileDiff,
   canExpandFileDiff,
 } from "../utils/fileDiffExpansion";
+import { useReadRepoFileBounded } from "./useReadRepoFileBounded";
+
+export interface ExpandableFileDiffResult {
+  fileDiff: FileDiffMetadata;
+  tooLarge: boolean;
+  pending: boolean;
+}
 
 export function useExpandableFileDiff(
   patchFileDiff: FileDiffMetadata,
   repoPath: string | undefined,
   skip: boolean,
-): FileDiffMetadata {
+  inView = true,
+): ExpandableFileDiffResult {
   const trpc = useTRPC();
   const filePath = patchFileDiff.name ?? patchFileDiff.prevName ?? "";
   const prevPath = patchFileDiff.prevName ?? filePath;
-  const enabled = canExpandFileDiff(patchFileDiff, repoPath, skip);
+  const canExpand = canExpandFileDiff(patchFileDiff, repoPath, skip);
+  const enabled = canExpand && inView;
 
   const { data: headContent } = useQuery(
     trpc.git.getFileAtHead.queryOptions(
       { directoryPath: repoPath ?? "", filePath: prevPath },
-      { enabled, staleTime: 30_000 },
+      {
+        enabled,
+        staleTime: 30_000,
+        gcTime: REVIEW_FILE_CACHE_TIME_MS,
+      },
     ),
   );
 
-  const { data: workingContent } = useQuery(
-    trpc.fs.readRepoFile.queryOptions(
-      { repoPath: repoPath ?? "", filePath },
-      { enabled, staleTime: 30_000 },
-    ),
+  const { data: workingResult } = useReadRepoFileBounded(
+    repoPath ?? "",
+    filePath,
+    enabled,
   );
 
   return useMemo(() => {
-    if (!enabled) return patchFileDiff;
-    return buildExpandedFileDiff(patchFileDiff, headContent, workingContent);
-  }, [enabled, patchFileDiff, headContent, workingContent]);
+    if (!canExpand) {
+      return { fileDiff: patchFileDiff, tooLarge: false, pending: false };
+    }
+    if (!workingResult || headContent === undefined) {
+      return { fileDiff: patchFileDiff, tooLarge: false, pending: true };
+    }
+    if (workingResult.kind === "too-large") {
+      return { fileDiff: patchFileDiff, tooLarge: true, pending: false };
+    }
+    if (workingResult.kind === "missing") {
+      return { fileDiff: patchFileDiff, tooLarge: false, pending: false };
+    }
+    return {
+      fileDiff: buildExpandedFileDiff(
+        patchFileDiff,
+        headContent,
+        workingResult.content,
+      ),
+      tooLarge: false,
+      pending: false,
+    };
+  }, [canExpand, patchFileDiff, headContent, workingResult]);
 }

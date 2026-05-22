@@ -17,6 +17,7 @@ import {
   createPostToolUseHook,
   createPreToolUseHook,
   createReadEnrichmentHook,
+  createSignedCommitGuardHook,
   createSubagentRewriteHook,
   type EnrichedReadCache,
   type OnModeChange,
@@ -55,6 +56,8 @@ export interface BuildOptionsParams {
   effort?: EffortLevel;
   enrichmentDeps?: FileEnrichmentDeps;
   enrichedReadCache?: EnrichedReadCache;
+  /** Cloud task session — enables the signed-commit guard. */
+  cloudMode?: boolean;
 }
 
 export function buildSystemPrompt(
@@ -129,6 +132,7 @@ function buildHooks(
   enrichmentDeps: FileEnrichmentDeps | undefined,
   enrichedReadCache: EnrichedReadCache | undefined,
   registeredAgents: ReadonlySet<string>,
+  cloudMode: boolean,
 ): Options["hooks"] {
   const postToolUseHooks = [createPostToolUseHook({ onModeChange })];
   if (enrichmentDeps && enrichedReadCache) {
@@ -137,21 +141,21 @@ function buildHooks(
     );
   }
 
+  const preToolUseHooks = [
+    createPreToolUseHook(settingsManager, logger),
+    createSubagentRewriteHook(logger, registeredAgents),
+  ];
+  if (cloudMode) {
+    preToolUseHooks.push(createSignedCommitGuardHook(logger));
+  }
+
   return {
     ...userHooks,
     PostToolUse: [
       ...(userHooks?.PostToolUse || []),
       { hooks: postToolUseHooks },
     ],
-    PreToolUse: [
-      ...(userHooks?.PreToolUse || []),
-      {
-        hooks: [
-          createPreToolUseHook(settingsManager, logger),
-          createSubagentRewriteHook(logger, registeredAgents),
-        ],
-      },
-    ],
+    PreToolUse: [...(userHooks?.PreToolUse || []), { hooks: preToolUseHooks }],
   };
 }
 
@@ -352,6 +356,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.enrichmentDeps,
       params.enrichedReadCache,
       registeredAgentNames,
+      params.cloudMode ?? false,
     ),
     outputFormat: params.outputFormat,
     abortController: getAbortController(

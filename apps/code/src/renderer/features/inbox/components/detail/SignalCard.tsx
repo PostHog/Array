@@ -1,3 +1,4 @@
+import { RelativeTimestamp } from "@components/ui/RelativeTimestamp";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
 import { SOURCE_PRODUCT_META } from "@features/inbox/components/utils/source-product-icons";
@@ -7,12 +8,17 @@ import {
   CaretDownIcon,
   CaretRightIcon,
   CheckCircleIcon,
-  QuestionIcon,
   TagIcon,
 } from "@phosphor-icons/react";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import type { Signal, SignalFindingContent } from "@shared/types";
-import { useRef, useState } from "react";
+import { errorTrackingIssueUrl } from "@utils/posthogLinks";
+import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  type SignalInteractionAction,
+  SignalInteractionContext,
+  useSignalInteraction,
+} from "./signalInteractionContext";
 
 const COLLAPSE_THRESHOLD = 300;
 
@@ -65,6 +71,9 @@ function signalCardSourceLine(signal: {
   if (source_product === "linear" && source_type === "issue") {
     return "Linear · Issue";
   }
+  if (source_product === "pganalyze" && source_type === "issue") {
+    return "pganalyze · Issue";
+  }
 
   const productLabel = source_product.replace(/_/g, " ");
   const typeLabel = source_type.replace(/_/g, " ");
@@ -111,6 +120,8 @@ interface SessionProblemExtra {
   session_duration?: number;
   session_active_seconds?: number;
   exported_asset_id?: number;
+  moment_preview_url?: string;
+  moment_preview_asset_id?: number;
 }
 
 interface ErrorTrackingExtra {
@@ -220,23 +231,16 @@ function isErrorTrackingExtra(
 
 // ── Shared components ────────────────────────────────────────────────────────
 
-function VerificationBadge({ verified }: { verified: boolean }) {
+function VerificationBadge() {
   return (
     <Flex
       align="center"
       gap="1"
-      className="shrink-0 text-[11px]"
-      title={
-        verified ? "Verified by code or data evidence" : "Could not be verified"
-      }
-      style={{ color: verified ? "var(--green-9)" : "var(--gray-9)" }}
+      className="shrink-0 text-(--green-9) text-[11px]"
+      title="Verified by code or data evidence"
     >
-      {verified ? (
-        <CheckCircleIcon size={12} weight="fill" />
-      ) : (
-        <QuestionIcon size={12} weight="bold" />
-      )}
-      <span>{verified ? "Verified" : "Unverified"}</span>
+      <CheckCircleIcon size={12} weight="fill" />
+      <span>Verified</span>
     </Flex>
   );
 }
@@ -266,21 +270,15 @@ function SignalCardHeader({
         {signalCardSourceLine(signal)}
       </Text>
       <span className="flex-1" />
-      {verified !== undefined && <VerificationBadge verified={verified} />}
-      <Badge
-        variant="soft"
-        color="gray"
-        size="1"
-        className="shrink-0 text-[11px]"
-      >
-        Weight: {signal.weight.toFixed(1)}
-      </Badge>
+      <RelativeTimestamp timestamp={signal.timestamp} />
+      {verified === true && <VerificationBadge />}
     </Flex>
   );
 }
 
 function CollapsibleBody({ body }: { body: string }) {
   const [expanded, setExpanded] = useState(false);
+  const interaction = useSignalInteraction();
   const isLong = body.length > COLLAPSE_THRESHOLD;
   // Preprocess content to handle escaped backticks and ensure proper markdown parsing
   const processedBody = body
@@ -297,7 +295,15 @@ function CollapsibleBody({ body }: { body: string }) {
       {isLong && (
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => {
+            setExpanded((v) => {
+              const next = !v;
+              interaction?.onInteraction({
+                type: next ? "expand_signal" : "collapse_signal",
+              });
+              return next;
+            });
+          }}
           className="mt-1.5 flex items-center gap-1 rounded px-1 py-0.5 font-medium text-[12px] text-accent-11 hover:bg-accent-3 hover:text-accent-12"
         >
           {expanded ? (
@@ -542,7 +548,17 @@ function SessionProblemSignalCard({
       )}
       <CollapsibleBody body={signal.content} />
 
-      {extra.session_id && (
+      {/* Moment preview GIF — quick visual of the problematic period */}
+      {extra.moment_preview_url && (
+        <MomentPreview
+          url={extra.moment_preview_url}
+          alt={`Session moment: ${extra.segment_title ?? "problem"}`}
+          startTime={extra.start_time}
+          endTime={extra.end_time}
+        />
+      )}
+
+      {extra.session_id && !extra.moment_preview_url && (
         <SessionRecordingVideo
           exportedAssetId={extra.exported_asset_id}
           sessionId={extra.session_id}
@@ -605,6 +621,60 @@ function SessionProblemSignalCard({
   );
 }
 
+function MomentPreview({
+  url,
+  alt,
+  startTime,
+  endTime,
+}: {
+  url: string;
+  alt: string;
+  startTime?: string;
+  endTime?: string;
+}) {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+
+  if (error) return null;
+
+  return (
+    <Box className="relative mt-2 overflow-hidden rounded-md border border-gray-5 bg-gray-2">
+      {!loaded && (
+        <Flex align="center" justify="center" className="absolute inset-0 z-10">
+          <Text
+            size="1"
+            className="text-[11px]"
+            style={{ color: "var(--gray-9)" }}
+          >
+            Loading preview…
+          </Text>
+        </Flex>
+      )}
+      <img
+        src={url}
+        alt={alt}
+        className="w-full rounded-md object-contain"
+        style={{
+          maxHeight: 200,
+          opacity: loaded ? 1 : 0,
+          transition: "opacity 150ms ease-in",
+        }}
+        onLoad={() => setLoaded(true)}
+        onError={() => setError(true)}
+      />
+      {startTime && endTime && (
+        <Flex
+          align="center"
+          gap="1"
+          className="absolute bottom-1.5 left-1.5 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-white"
+        >
+          {startTime} – {endTime}
+        </Flex>
+      )}
+    </Box>
+  );
+}
+
 function SessionRecordingVideo({
   exportedAssetId,
   sessionId,
@@ -614,6 +684,8 @@ function SessionRecordingVideo({
 }) {
   const projectId = useAuthStateValue((state) => state.projectId);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const hasFiredPlayRef = useRef(false);
+  const interaction = useSignalInteraction();
   const videoQuery = useAuthenticatedQuery<string | null>(
     ["export-video", projectId, exportedAssetId, sessionId],
     async (client) => {
@@ -653,6 +725,11 @@ function SessionRecordingVideo({
         muted
         preload="metadata"
         className="max-h-[300px] w-full rounded"
+        onPlay={() => {
+          if (hasFiredPlayRef.current) return;
+          hasFiredPlayRef.current = true;
+          interaction?.onInteraction({ type: "play_session_recording" });
+        }}
       />
     </Box>
   );
@@ -669,10 +746,34 @@ function ErrorTrackingSignalCard({
   codePaths?: string[];
   dataQueried?: string;
 }) {
+  const projectId = useAuthStateValue((s) => s.projectId);
+  const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+  const issueUrl = signal.source_id
+    ? errorTrackingIssueUrl(signal.source_id, { projectId, cloudRegion })
+    : null;
+
   return (
     <Box className="min-w-0 overflow-hidden rounded-lg border border-gray-6 bg-gray-1 p-3">
       <SignalCardHeader signal={signal} verified={verified} />
       <CollapsibleBody body={signal.content} />
+      {issueUrl && (
+        <Flex
+          align="center"
+          justify="end"
+          mt="2"
+          className="text-(--gray-10) text-[11px]"
+        >
+          <a
+            href={issueUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] text-gray-10 hover:text-gray-12"
+          >
+            View issue
+            <ArrowSquareOutIcon size={12} />
+          </a>
+        </Flex>
+      )}
       <CodePathsCollapsible paths={codePaths ?? []} />
       <DataQueriedCollapsible text={dataQueried ?? ""} />
     </Box>
@@ -694,9 +795,6 @@ function GenericSignalCard({
     <Box className="min-w-0 overflow-hidden rounded-lg border border-gray-6 bg-gray-1 p-3">
       <SignalCardHeader signal={signal} verified={verified} />
       <CollapsibleBody body={signal.content} />
-      <Text className="mt-2 block text-(--gray-10) text-[11px]">
-        {new Date(signal.timestamp).toLocaleString()}
-      </Text>
       <CodePathsCollapsible paths={codePaths ?? []} />
       <DataQueriedCollapsible text={dataQueried ?? ""} />
     </Box>
@@ -705,6 +803,7 @@ function GenericSignalCard({
 
 function CodePathsCollapsible({ paths }: { paths: string[] }) {
   const [expanded, setExpanded] = useState(false);
+  const interaction = useSignalInteraction();
 
   if (paths.length === 0) return null;
 
@@ -712,7 +811,18 @@ function CodePathsCollapsible({ paths }: { paths: string[] }) {
     <Box mt="2" pt="2" className="border-t border-t-(--gray-5)">
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => {
+          setExpanded((v) => {
+            const next = !v;
+            if (next) {
+              interaction?.onInteraction({
+                type: "expand_signal_section",
+                section: "relevant_code",
+              });
+            }
+            return next;
+          });
+        }}
         className="flex items-center gap-1 rounded px-1 py-0.5 font-medium text-[12px] text-gray-10 hover:bg-gray-3 hover:text-gray-12"
       >
         {expanded ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
@@ -743,6 +853,7 @@ function CodePathsCollapsible({ paths }: { paths: string[] }) {
 
 function DataQueriedCollapsible({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
+  const interaction = useSignalInteraction();
 
   if (!text.trim()) return null;
 
@@ -750,7 +861,18 @@ function DataQueriedCollapsible({ text }: { text: string }) {
     <Box mt="2" pt="2" className="border-t border-t-(--gray-5)">
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => {
+          setExpanded((v) => {
+            const next = !v;
+            if (next) {
+              interaction?.onInteraction({
+                type: "expand_signal_section",
+                section: "data_queried",
+              });
+            }
+            return next;
+          });
+        }}
         className="flex items-center gap-1 rounded px-1 py-0.5 font-medium text-[12px] text-gray-10 hover:bg-gray-3 hover:text-gray-12"
       >
         {expanded ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
@@ -773,21 +895,49 @@ function DataQueriedCollapsible({ text }: { text: string }) {
 export function SignalCard({
   signal,
   finding,
+  onInteraction,
 }: {
   signal: Signal;
   finding?: SignalFindingContent;
+  onInteraction?: (action: SignalInteractionAction) => void;
 }) {
   const extra = parseExtra(signal.extra);
   const verified = finding?.verified;
   const codePaths = finding?.relevant_code_paths ?? [];
   const dataQueried = finding?.data_queried ?? "";
 
+  const handleInteraction = useCallback(
+    (action: SignalInteractionAction) => {
+      onInteraction?.(action);
+    },
+    [onInteraction],
+  );
+
+  const ctxValue = useMemo(
+    () => ({ signal, onInteraction: handleInteraction }),
+    [signal, handleInteraction],
+  );
+
+  // Delegated click handler: detect external-link clicks anywhere inside the card.
+  const handleCardClickCapture = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      const anchor = target.closest("a");
+      if (!anchor) return;
+      if (anchor.getAttribute("target") !== "_blank") return;
+      handleInteraction({ type: "view_signal_external" });
+    },
+    [handleInteraction],
+  );
+
+  let content: React.ReactNode;
   if (
     signal.source_product === "session_replay" &&
     signal.source_type === "session_problem" &&
     isSessionProblemExtra(extra)
   ) {
-    return (
+    content = (
       <SessionProblemSignalCard
         signal={signal}
         extra={extra}
@@ -796,12 +946,11 @@ export function SignalCard({
         dataQueried={dataQueried}
       />
     );
-  }
-  if (
+  } else if (
     signal.source_product === "error_tracking" &&
     isErrorTrackingExtra(extra)
   ) {
-    return (
+    content = (
       <ErrorTrackingSignalCard
         signal={signal}
         verified={verified}
@@ -809,9 +958,8 @@ export function SignalCard({
         dataQueried={dataQueried}
       />
     );
-  }
-  if (signal.source_product === "github" && isGithubIssueExtra(extra)) {
-    return (
+  } else if (signal.source_product === "github" && isGithubIssueExtra(extra)) {
+    content = (
       <GitHubIssueSignalCard
         signal={signal}
         extra={extra}
@@ -820,9 +968,11 @@ export function SignalCard({
         dataQueried={dataQueried}
       />
     );
-  }
-  if (signal.source_product === "zendesk" && isZendeskTicketExtra(extra)) {
-    return (
+  } else if (
+    signal.source_product === "zendesk" &&
+    isZendeskTicketExtra(extra)
+  ) {
+    content = (
       <ZendeskTicketSignalCard
         signal={signal}
         extra={extra}
@@ -831,9 +981,11 @@ export function SignalCard({
         dataQueried={dataQueried}
       />
     );
-  }
-  if (signal.source_product === "llm_analytics" && isLlmEvalExtra(extra)) {
-    return (
+  } else if (
+    signal.source_product === "llm_analytics" &&
+    isLlmEvalExtra(extra)
+  ) {
+    content = (
       <LlmEvalSignalCard
         signal={signal}
         extra={extra}
@@ -842,12 +994,19 @@ export function SignalCard({
         dataQueried={dataQueried}
       />
     );
+  } else {
+    content = (
+      <GenericSignalCard
+        signal={signal}
+        verified={verified}
+        codePaths={codePaths}
+      />
+    );
   }
+
   return (
-    <GenericSignalCard
-      signal={signal}
-      verified={verified}
-      codePaths={codePaths}
-    />
+    <SignalInteractionContext.Provider value={ctxValue}>
+      <div onClickCapture={handleCardClickCapture}>{content}</div>
+    </SignalInteractionContext.Provider>
   );
 }

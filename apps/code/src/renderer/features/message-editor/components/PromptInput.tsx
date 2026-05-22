@@ -55,7 +55,7 @@ export interface PromptInputProps {
   onFocus?: () => void;
   onBlur?: () => void;
   // manual submit override (for flows like new-task that submit outside the editor hook)
-  onSubmitClick?: () => void;
+  onSubmitClick?: () => unknown;
   submitTooltipOverride?: string;
   editorHeight?: "default" | "large";
   tourTarget?: string;

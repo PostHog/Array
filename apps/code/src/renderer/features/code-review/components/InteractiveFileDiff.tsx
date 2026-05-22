@@ -5,9 +5,11 @@ import {
   parseDiffFromFile,
 } from "@pierre/diffs";
 import { FileDiff, MultiFileDiff } from "@pierre/diffs/react";
+import { useInView } from "@renderer/hooks/useInView";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { DIFF_METRICS, REVIEW_PREFETCH_ROOT_MARGIN } from "../constants";
 import {
   type CommentEditSeed,
   useCommentState,
@@ -111,6 +113,20 @@ function HunkRevertButton({
   );
 }
 
+function ExpansionPlaceholder({
+  patchFileDiff,
+  renderCustomHeader,
+}: {
+  patchFileDiff: PatchDiffProps["fileDiff"];
+  renderCustomHeader?: PatchDiffProps["renderCustomHeader"];
+}) {
+  return (
+    <div className="overflow-hidden rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2)">
+      {renderCustomHeader?.(patchFileDiff)}
+    </div>
+  );
+}
+
 function isPatchDiff(props: InteractiveFileDiffProps): props is PatchDiffProps {
   return "fileDiff" in props && props.fileDiff != null;
 }
@@ -163,11 +179,15 @@ function PatchDiffView({
 }: PatchDiffProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const initialFileDiff = useExpandableFileDiff(
-    patchFileDiff,
-    repoPath,
-    skipExpansion,
-  );
+  const [containerRef, inView] = useInView<HTMLDivElement>({
+    rootMargin: REVIEW_PREFETCH_ROOT_MARGIN,
+    once: true,
+  });
+  const {
+    fileDiff: initialFileDiff,
+    tooLarge,
+    pending,
+  } = useExpandableFileDiff(patchFileDiff, repoPath, skipExpansion, inView);
   const [fileDiff, setFileDiff] = useState(initialFileDiff);
   const [revertingHunks, setRevertingHunks] = useState<Set<number>>(
     () => new Set(),
@@ -323,14 +343,30 @@ function PatchDiffView({
   );
 
   return (
-    <FileDiff
-      fileDiff={fileDiff}
-      options={mergedOptions}
-      lineAnnotations={annotations}
-      selectedLines={selectedRange}
-      renderAnnotation={renderAnnotation}
-      renderCustomHeader={renderCustomHeader}
-    />
+    <div ref={containerRef}>
+      {pending ? (
+        <ExpansionPlaceholder
+          patchFileDiff={patchFileDiff}
+          renderCustomHeader={renderCustomHeader}
+        />
+      ) : (
+        <FileDiff
+          fileDiff={fileDiff}
+          options={mergedOptions}
+          lineAnnotations={annotations}
+          selectedLines={selectedRange}
+          renderAnnotation={renderAnnotation}
+          renderCustomHeader={renderCustomHeader}
+          metrics={DIFF_METRICS}
+        />
+      )}
+      {tooLarge && (
+        <div className="border-(--gray-5) border-t bg-(--gray-2) px-3 py-1.5 text-(--gray-10) text-[12px]">
+          File exceeds the 5,000-line review limit — surrounding context is
+          hidden.
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -407,6 +443,7 @@ function FilesDiffView({
       selectedLines={selectedRange}
       renderAnnotation={renderAnnotation}
       renderCustomHeader={renderCustomHeader}
+      metrics={DIFF_METRICS}
     />
   );
 }

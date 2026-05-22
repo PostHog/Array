@@ -10,6 +10,7 @@ import { ApplyPatchSaga } from "@posthog/git/sagas/patch";
 import ignore, { type Ignore } from "ignore";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
+import { subscribeWithTimeout } from "../../utils/async";
 import { logger } from "../../utils/logger";
 import type { WatcherRegistryService } from "../watcher-registry/service";
 
@@ -100,12 +101,15 @@ export class FocusSyncService {
     }
 
     const watcherIgnore = ALWAYS_IGNORE.map((p) => `**/${p}/**`);
+    const mainWatcherId = `focus-sync:main:${mainRepoPath}`;
+    const worktreeWatcherId = `focus-sync:worktree:${worktreePath}`;
 
+    let mainRegistered = false;
     try {
       const mainSubPromise = watcher.subscribe(
         mainRepoPath,
         (err, events) => {
-          if (this.watcherRegistry.isShutdown) return;
+          if (!mainRegistered || this.watcherRegistry.isShutdown) return;
           if (err) {
             log.error("Main repo watcher error:", err);
             return;
@@ -115,28 +119,32 @@ export class FocusSyncService {
         { ignore: watcherIgnore },
       );
 
-      const mainSubResult = await Promise.race([
-        mainSubPromise.then((sub) => ({ sub, timeout: false })),
-        new Promise<{ sub: null; timeout: true }>((resolve) =>
-          setTimeout(() => resolve({ sub: null, timeout: true }), 5000),
-        ),
-      ]);
+      const mainSubResult = await subscribeWithTimeout(
+        mainSubPromise,
+        5000,
+        mainWatcherId,
+      );
 
-      if (mainSubResult.timeout) {
+      if (mainSubResult.result === "timeout") {
         log.warn("Main repo watcher subscription timed out");
-      } else if (mainSubResult.sub) {
-        this.mainWatcherId = `focus-sync:main:${mainRepoPath}`;
-        this.watcherRegistry.register(this.mainWatcherId, mainSubResult.sub);
+      } else {
+        mainRegistered = true;
+        this.mainWatcherId = mainWatcherId;
+        this.watcherRegistry.register(
+          this.mainWatcherId,
+          mainSubResult.subscription,
+        );
       }
     } catch (error) {
       log.error("Failed to subscribe to main repo watcher:", error);
     }
 
+    let worktreeRegistered = false;
     try {
       const worktreeSubPromise = watcher.subscribe(
         worktreePath,
         (err, events) => {
-          if (this.watcherRegistry.isShutdown) return;
+          if (!worktreeRegistered || this.watcherRegistry.isShutdown) return;
           if (err) {
             log.error("Worktree watcher error:", err);
             return;
@@ -146,20 +154,20 @@ export class FocusSyncService {
         { ignore: watcherIgnore },
       );
 
-      const worktreeSubResult = await Promise.race([
-        worktreeSubPromise.then((sub) => ({ sub, timeout: false })),
-        new Promise<{ sub: null; timeout: true }>((resolve) =>
-          setTimeout(() => resolve({ sub: null, timeout: true }), 5000),
-        ),
-      ]);
+      const worktreeSubResult = await subscribeWithTimeout(
+        worktreeSubPromise,
+        5000,
+        worktreeWatcherId,
+      );
 
-      if (worktreeSubResult.timeout) {
+      if (worktreeSubResult.result === "timeout") {
         log.warn("Worktree watcher subscription timed out");
-      } else if (worktreeSubResult.sub) {
-        this.worktreeWatcherId = `focus-sync:worktree:${worktreePath}`;
+      } else {
+        worktreeRegistered = true;
+        this.worktreeWatcherId = worktreeWatcherId;
         this.watcherRegistry.register(
           this.worktreeWatcherId,
-          worktreeSubResult.sub,
+          worktreeSubResult.subscription,
         );
       }
     } catch (error) {

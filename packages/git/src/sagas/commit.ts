@@ -1,10 +1,5 @@
 import { GitSaga, type GitSagaInput } from "../git-saga";
-
-function buildPostHogTrailers(taskId?: string): string[] {
-  const trailers = ["Generated-By: PostHog Code"];
-  if (taskId) trailers.push(`Task-Id: ${taskId}`);
-  return trailers;
-}
+import { buildPostHogTrailers } from "../trailers";
 
 export interface CommitInput extends GitSagaInput {
   message: string;

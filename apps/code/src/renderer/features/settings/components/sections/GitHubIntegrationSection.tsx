@@ -11,6 +11,26 @@ import {
   InfoIcon,
 } from "@phosphor-icons/react";
 import { Box, Button, Flex, Spinner, Text, Tooltip } from "@radix-ui/themes";
+import { useMemo } from "react";
+
+/**
+ * Past this count, the tooltip would become an unreadable wall of `owner/name`
+ * rows, so we collapse to owner-level summaries instead.
+ */
+const REPO_LIST_TOOLTIP_THRESHOLD = 10;
+
+function summarizeReposByOwner(
+  repositories: readonly string[],
+): { owner: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const repo of repositories) {
+    const owner = repo.includes("/") ? (repo.split("/", 1)[0] ?? repo) : repo;
+    counts.set(owner, (counts.get(owner) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([owner, count]) => ({ owner, count }))
+    .sort((a, b) => b.count - a.count || a.owner.localeCompare(b.owner));
+}
 
 export function GitHubIntegrationSection({
   hasGithubIntegration,
@@ -18,6 +38,13 @@ export function GitHubIntegrationSection({
   hasGithubIntegration: boolean;
 }) {
   const { repositories, isLoadingRepos } = useRepositoryIntegration();
+  const ownerSummary = useMemo(
+    () =>
+      repositories.length > REPO_LIST_TOOLTIP_THRESHOLD
+        ? summarizeReposByOwner(repositories)
+        : null,
+    [repositories],
+  );
   const projectId = useAuthStateValue((state) => state.projectId);
   const {
     error: connectError,
@@ -51,13 +78,27 @@ export function GitHubIntegrationSection({
           repositories.length > 0 ? (
             <Tooltip
               content={
-                <Flex direction="column" gap="1">
-                  {repositories.map((repo) => (
-                    <Text key={repo} className="text-[13px]">
-                      {repo}
+                ownerSummary ? (
+                  <Flex direction="column" gap="1">
+                    <Text className="text-(--gray-10) text-[13px]">
+                      {repositories.length} repos across {ownerSummary.length}{" "}
+                      {ownerSummary.length === 1 ? "owner" : "owners"}
                     </Text>
-                  ))}
-                </Flex>
+                    {ownerSummary.map(({ owner, count }) => (
+                      <Text key={owner} className="text-[13px]">
+                        {owner} ({count})
+                      </Text>
+                    ))}
+                  </Flex>
+                ) : (
+                  <Flex direction="column" gap="1">
+                    {repositories.map((repo) => (
+                      <Text key={repo} className="text-[13px]">
+                        {repo}
+                      </Text>
+                    ))}
+                  </Flex>
+                )
               }
               side="bottom"
             >

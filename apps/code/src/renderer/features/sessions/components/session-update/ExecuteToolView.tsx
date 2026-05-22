@@ -7,6 +7,7 @@ import {
   ExpandedContentBox,
   getContentText,
   StatusIndicators,
+  stripCodeFences,
   ToolTitle,
   type ToolViewProps,
   truncateText,
@@ -40,7 +41,10 @@ export function ExecuteToolView({
   const description =
     executeInput?.description ?? (command ? undefined : title);
 
-  const output = (getContentText(content) ?? "").replace(ANSI_REGEX, "");
+  const output = stripCodeFences(getContentText(content) ?? "").replace(
+    ANSI_REGEX,
+    "",
+  );
   const hasOutput = output.trim().length > 0;
   const isExpandable = hasOutput;
 
@@ -51,11 +55,12 @@ export function ExecuteToolView({
   };
 
   return (
-    <Box
-      className={`group py-0.5 ${isExpandable ? "cursor-pointer" : ""}`}
-      onClick={handleClick}
-    >
-      <Flex gap="2" className="min-w-0">
+    <Box className="py-0.5">
+      <Flex
+        gap="2"
+        className={`group min-w-0 ${isExpandable ? "cursor-pointer" : ""}`}
+        onClick={handleClick}
+      >
         <Box className="shrink-0 pt-px">
           <ExpandableIcon
             icon={Terminal}

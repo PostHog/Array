@@ -19,7 +19,7 @@ const DEST_DIR = join(__dirname, "..", "resources", "codex-acp");
 const BINARIES = [
   {
     name: "codex-acp",
-    version: "0.12.0",
+    version: "0.14.0",
     getUrl: (version, target) => {
       const ext = target.includes("windows") ? "zip" : "tar.gz";
       return `https://github.com/zed-industries/codex-acp/releases/download/v${version}/codex-acp-${version}-${target}.${ext}`;

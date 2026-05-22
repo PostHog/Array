@@ -5,14 +5,13 @@ import { CodeMirrorEditor } from "@features/code-editor/components/CodeMirrorEdi
 import { EnrichmentPopover } from "@features/code-editor/components/EnrichmentPopover";
 import { useCloudFileContent } from "@features/code-editor/hooks/useCloudFileContent";
 import { useFileEnrichment } from "@features/code-editor/hooks/useFileEnrichment";
-import { useMarkdownViewerStore } from "@features/code-editor/stores/markdownViewerStore";
 import { isMarkdownFile } from "@features/code-editor/utils/markdownUtils";
 import { getRelativePath } from "@features/code-editor/utils/pathUtils";
 import { usePanelLayoutStore } from "@features/panels";
 import { useFileTreeStore } from "@features/right-sidebar/stores/fileTreeStore";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
 import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
-import { Check, Code, Copy, Eye } from "@phosphor-icons/react";
+import { Check, Copy } from "@phosphor-icons/react";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { getImageMimeType, isImageFile } from "@shared/constants/image";
@@ -76,10 +75,6 @@ export function CodeEditorPanel({
   const filePath = getRelativePath(absolutePath, repoPath);
   const isImage = isImageFile(absolutePath);
   const isMarkdown = isMarkdownFile(absolutePath);
-  const preferRendered = useMarkdownViewerStore((s) => s.preferRendered);
-  const togglePreferRendered = useMarkdownViewerStore(
-    (s) => s.togglePreferRendered,
-  );
   const openFileInSplit = usePanelLayoutStore((s) => s.openFileInSplit);
   const expandToFile = useFileTreeStore((s) => s.expandToFile);
   const [copied, setCopied] = useState(false);
@@ -272,36 +267,17 @@ export function CodeEditorPanel({
                 {copied ? <Check size={14} /> : <Copy size={14} />}
               </IconButton>
             </Tooltip>
-            <Tooltip content={preferRendered ? "View source" : "View rendered"}>
-              <IconButton
-                size="1"
-                variant="ghost"
-                color="gray"
-                className="cursor-pointer"
-                onClick={togglePreferRendered}
-              >
-                {preferRendered ? <Code size={14} /> : <Eye size={14} />}
-              </IconButton>
-            </Tooltip>
           </Flex>
         </Flex>
         <Box className="flex-1 overflow-auto">
-          {preferRendered ? (
-            <Box className="plan-markdown max-w-[750px]" p="5">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={markdownComponents}
-              >
-                {fileContent}
-              </ReactMarkdown>
-            </Box>
-          ) : (
-            <CodeMirrorEditor
-              content={fileContent}
-              filePath={absolutePath}
-              readOnly
-            />
-          )}
+          <Box className="plan-markdown max-w-[750px]" p="5">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={markdownComponents}
+            >
+              {fileContent}
+            </ReactMarkdown>
+          </Box>
         </Box>
       </Flex>
     );

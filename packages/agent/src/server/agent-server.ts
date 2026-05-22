@@ -24,7 +24,8 @@ import {
 import {
   type AgentErrorClassification,
   classifyAgentError,
-} from "../adapters/claude/conversion/sdk-to-acp";
+} from "../adapters/error-classification";
+import { SIGNED_COMMIT_QUALIFIED_TOOL_NAME } from "../adapters/signed-commit-shared";
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
@@ -47,13 +48,18 @@ import type {
 } from "../types";
 import { resourceLink } from "../utils/acp-content";
 import { AsyncMutex } from "../utils/async-mutex";
-import { type GatewayProduct, getLlmGatewayUrl } from "../utils/gateway";
+import {
+  buildGatewayPropertyHeaders,
+  getLlmGatewayUrl,
+  resolveGatewayProduct,
+} from "../utils/gateway";
 import { Logger } from "../utils/logger";
 import { logAgentshRuntimeInfo } from "./agentsh-runtime";
 import {
   normalizeCloudPromptContent,
   promptBlocksToText,
 } from "./cloud-prompt";
+import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
 import {
   handoffLocalGitStateSchema,
@@ -65,8 +71,19 @@ import type { AgentServerConfig } from "./types";
 const agentErrorClassificationSchema = z.enum([
   "upstream_stream_terminated",
   "upstream_connection_error",
+  "upstream_provider_failure",
   "agent_error",
 ]) satisfies z.ZodType<AgentErrorClassification>;
+
+export const UPSTREAM_PROVIDER_FAILURE_MESSAGE =
+  "The upstream AI provider failed to process the request. Please retry the task in a few minutes.";
+
+const upstreamProviderFailureClassifications =
+  new Set<AgentErrorClassification>([
+    "upstream_stream_terminated",
+    "upstream_connection_error",
+    "upstream_provider_failure",
+  ]);
 
 const errorWithClassificationSchema = z.object({
   data: z.object({ classification: agentErrorClassificationSchema }),
@@ -217,6 +234,7 @@ export class AgentServer {
   private session: ActiveSession | null = null;
   private app: Hono;
   private posthogAPI: PostHogAPIClient;
+  private eventStreamSender: TaskRunEventStreamSender | null = null;
   private questionRelayedToSlack = false;
   private detectedPrUrl: string | null = null;
   private lastReportedBranch: string | null = null;
@@ -281,6 +299,17 @@ export class AgentServer {
       getApiKey: () => config.apiKey,
       userAgent: `posthog/cloud.hog.dev; version: ${config.version ?? packageJson.version}`,
     });
+    if (config.eventIngestToken) {
+      this.eventStreamSender = new TaskRunEventStreamSender({
+        apiUrl: config.apiUrl,
+        projectId: config.projectId,
+        taskId: config.taskId,
+        runId: config.runId,
+        token: config.eventIngestToken,
+        logger: this.logger.child("EventIngest"),
+        streamWindowMs: config.eventIngestStreamWindowMs,
+      });
+    }
     this.app = this.createApp();
   }
 
@@ -544,7 +573,9 @@ export class AgentServer {
     this.logger.debug("Stopping agent server...");
 
     if (this.session) {
-      await this.cleanupSession();
+      await this.cleanupSession({ completeEventStream: true });
+    } else {
+      await this.eventStreamSender?.stop();
     }
 
     if (this.server) {
@@ -833,7 +864,13 @@ export class AgentServer {
       }),
     ]);
 
-    this.configureEnvironment({ isInternal: preTask?.internal === true });
+    this.configureEnvironment({
+      isInternal: preTask?.internal === true,
+      originProduct: preTask?.origin_product,
+      taskId: payload.task_id,
+      taskRunId: payload.run_id,
+      taskUserId: payload.user_id,
+    });
 
     const prUrl = getTaskRunStateString(preTaskRun, "slack_notified_pr_url");
 
@@ -938,6 +975,7 @@ export class AgentServer {
       _meta: {
         sessionId: payload.run_id,
         taskRunId: payload.run_id,
+        taskId: payload.task_id,
         systemPrompt: sessionSystemPrompt,
         ...(this.config.model && { model: this.config.model }),
         allowedDomains: this.config.allowedDomains,
@@ -1051,12 +1089,11 @@ export class AgentServer {
     error: unknown,
   ): Promise<void> {
     const { classification, message } = this.extractErrorClassification(error);
-    const errorMessage =
-      classification === "upstream_stream_terminated"
-        ? "Upstream LLM stream terminated"
-        : classification === "upstream_connection_error"
-          ? "Upstream LLM connection error"
-          : message || "Agent error";
+    const errorMessage = upstreamProviderFailureClassifications.has(
+      classification,
+    )
+      ? UPSTREAM_PROVIDER_FAILURE_MESSAGE
+      : message || "Agent error";
     this.logger.error(`send_${phase}_task_message_failed`, {
       classification,
       message,
@@ -1589,24 +1626,21 @@ export class AgentServer {
   private buildCloudSystemPrompt(prUrl?: string | null): string {
     const taskId = this.config.taskId;
     const shouldAutoCreatePr = this.shouldAutoPublishCloudChanges();
-    const attributionInstructions = `
+    const signedCommitInstructions = `
+## Committing (signed commits required)
+Commits MUST be signed. \`git commit\` and \`git push\` are blocked in this environment.
+To commit: stage your changes with \`git add\`, then call the \`git_signed_commit\` tool (full
+name \`${SIGNED_COMMIT_QUALIFIED_TOOL_NAME}\`) with a \`message\` (and optional \`body\`/\`paths\`).
+It creates a GitHub-signed ("Verified") commit on the branch and keeps your local checkout in
+sync. To start a new branch, pass \`branch\` (prefixed with \`posthog-code/\`) — the tool creates
+it on the remote for you.
+
 ## Attribution
-Do NOT use Claude Code's default attribution (no "Co-Authored-By" trailers, no "Generated with [Claude Code]" lines).
-
-If you create a commit, add the following trailers to the commit message (after a blank line at the end):
+Do NOT add "Co-Authored-By" trailers or "Generated with [Claude Code]" lines to your
+commit messages. The \`git_signed_commit\` tool automatically appends the only trailers
+we want:
   Generated-By: PostHog Code
-  Task-Id: ${taskId}
-
-Example:
-\`\`\`
-git commit -m "$(cat <<'EOF'
-fix: resolve login redirect loop
-
-Generated-By: PostHog Code
-Task-Id: ${taskId}
-EOF
-)"
-\`\`\``;
+  Task-Id: ${taskId}`;
 
     if (prUrl) {
       if (!shouldAutoCreatePr) {
@@ -1620,7 +1654,7 @@ Do the requested work, but stop with local changes ready for review.
 Important:
 - Do NOT create new commits, push to the branch, or update the pull request unless the user explicitly asks.
 - Do NOT create a new branch or a new pull request.
-${attributionInstructions}
+${signedCommitInstructions}
 `;
       }
 
@@ -1631,12 +1665,16 @@ This task already has an open pull request: ${prUrl}
 
 After completing the requested changes:
 1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
-2. Stage and commit all changes with a clear commit message
-3. Push to the existing PR branch
+2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). This commits to the existing PR branch.
+3. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:
+   - Reply on the thread with a short note describing what changed (reference the commit SHA when useful) using \`gh api -X POST /repos/{owner}/{repo}/pulls/{n}/comments/{id}/replies -f body='...'\`.
+   - Resolve the thread via the \`resolveReviewThread\` GraphQL mutation: \`gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id="<thread-node-id>"\`.
+   List unresolved threads first with \`gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<n>){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{body}}}}}}}'\` so you can resolve each one you fixed.
 
 Important:
 - Do NOT create a new branch or a new pull request.
-${attributionInstructions}
+- Do NOT push fixes for review comments without replying to and resolving each related thread.
+${signedCommitInstructions}
 `;
     }
 
@@ -1651,7 +1689,7 @@ When the user asks for code changes:
 When the user explicitly asks to clone or work in a GitHub repository:
 - Clone the repository into /tmp/workspace/repos/<owner>/<repo> using \`gh repo clone <owner>/<repo> /tmp/workspace/repos/<owner>/<repo>\`
 - Work from inside that cloned repository for follow-up code changes
-- If the user explicitly asks you to open or update a pull request, create a branch, commit the requested changes, push it, and open a draft pull request from inside the clone
+- If the user explicitly asks you to open or update a pull request, create a branch, stage your changes with \`git add\` and commit them with the \`git_signed_commit\` tool (do NOT use \`git commit\`/\`git push\` — they are blocked), and open a draft pull request from inside the clone. Before opening the PR, check the cloned repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links.
 - Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
 
       return `
@@ -1671,7 +1709,7 @@ ${publishInstructions}
 
 Important:
 - Prefer using MCP tools to answer questions with real data over giving generic advice.
-${attributionInstructions}
+${signedCommitInstructions}
 `;
     }
 
@@ -1683,7 +1721,7 @@ Do the requested work, but stop with local changes ready for review.
 
 Important:
 - Do NOT create a branch, commit, push, or open a pull request unless the user explicitly asks.
-${attributionInstructions}
+${signedCommitInstructions}
 `;
     }
 
@@ -1691,10 +1729,13 @@ ${attributionInstructions}
 # Cloud Task Execution
 
 After completing the requested changes:
-1. Create a new branch prefixed with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`) based on the work done
-2. Stage and commit all changes with a clear commit message
-3. Push the branch to origin
-4. Create a draft pull request using \`gh pr create --draft${this.config.baseBranch ? ` --base ${this.config.baseBranch}` : ""}\` with a descriptive title and body. Add the following footer at the end of the PR description:
+1. Pick a new branch name prefixed with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`)
+2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with \`branch\` set to that name and a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). The tool creates the branch on the remote and a signed commit on it.
+3. Before opening the PR, prepare the body:
+   - Check the repo for a PR template at \`.github/pull_request_template.md\` (also try \`.github/PULL_REQUEST_TEMPLATE.md\`, \`docs/pull_request_template.md\`, and root variants). If one exists, use its exact section headings as the PR body — do NOT fall back to a generic Summary/Test plan format.
+   - If no repo-level template exists, check the org's \`.github\` repo via \`gh api /repos/<owner>/.github/contents/.github/pull_request_template.md\` (and other common paths) and use that as a fallback.
+   - Search for matching open issues with \`gh issue list --state open --search '<keywords>'\` (derive keywords from the branch name, commits, and changed files; \`gh issue view <n>\` to confirm relevance). For every issue this PR would resolve, include a \`Closes #<n>\` line in the body so GitHub auto-links and auto-closes it on merge. For issues that are related but not fully resolved, use \`Refs #<n>\` instead.
+4. Create a draft pull request using \`gh pr create --draft${this.config.baseBranch ? ` --base ${this.config.baseBranch}` : ""}\` with a descriptive title and the body prepared above. Add the following footer at the end of the PR description:
 \`\`\`
 ---
 *Created with [PostHog Code](https://posthog.com/code?ref=pr)*
@@ -1702,7 +1743,7 @@ After completing the requested changes:
 
 Important:
 - Always create the PR as a draft. Do not ask for confirmation.
-${attributionInstructions}
+${signedCommitInstructions}
 `;
   }
 
@@ -1772,6 +1813,12 @@ ${attributionInstructions}
 
     const status = "failed";
 
+    this.enqueueTaskTerminalEvent(POSTHOG_NOTIFICATIONS.ERROR, {
+      source: "agent_server",
+      stopReason,
+      error: errorMessage ?? "Agent error",
+    });
+
     try {
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
         status,
@@ -1780,23 +1827,59 @@ ${attributionInstructions}
       this.logger.debug("Task completion signaled", { status, stopReason });
     } catch (error) {
       this.logger.error("Failed to signal task completion", error);
+    } finally {
+      await this.eventStreamSender?.stop();
     }
+  }
+
+  private enqueueTaskTerminalEvent(
+    method:
+      | typeof POSTHOG_NOTIFICATIONS.TASK_COMPLETE
+      | typeof POSTHOG_NOTIFICATIONS.ERROR,
+    params: Record<string, unknown>,
+  ): void {
+    this.eventStreamSender?.enqueue({
+      type: "notification",
+      timestamp: new Date().toISOString(),
+      notification: {
+        jsonrpc: "2.0",
+        method,
+        params,
+      },
+    });
   }
 
   private configureEnvironment({
     isInternal = false,
+    originProduct,
+    taskId,
+    taskRunId,
+    taskUserId,
   }: {
     isInternal?: boolean;
+    originProduct?: string | null;
+    taskId?: string | null;
+    taskRunId?: string | null;
+    taskUserId?: number | null;
   } = {}): void {
     const { apiKey, apiUrl, projectId } = this.config;
-    const product: GatewayProduct = isInternal
-      ? "background_agents"
-      : "posthog_code";
+    const product = resolveGatewayProduct({ isInternal, originProduct });
     const gatewayUrl =
       process.env.LLM_GATEWAY_URL || getLlmGatewayUrl(apiUrl, product);
     const openaiBaseUrl = gatewayUrl.endsWith("/v1")
       ? gatewayUrl
       : `${gatewayUrl}/v1`;
+    // Forward task metadata as `x-posthog-property-*` headers so the gateway
+    // lifts them onto the $ai_generation event. Routes through the Anthropic
+    // SDK's ANTHROPIC_CUSTOM_HEADERS env var; the OpenAI/codex path has no
+    // equivalent today.
+    const customHeaders = buildGatewayPropertyHeaders({
+      task_origin_product: originProduct,
+      task_internal: isInternal,
+      task_id: taskId,
+      task_run_id: taskRunId,
+      task_user_id: taskUserId,
+    });
 
     Object.assign(process.env, {
       // PostHog
@@ -1809,6 +1892,7 @@ ${attributionInstructions}
       ANTHROPIC_API_KEY: apiKey,
       ANTHROPIC_AUTH_TOKEN: apiKey,
       ANTHROPIC_BASE_URL: gatewayUrl,
+      ANTHROPIC_CUSTOM_HEADERS: customHeaders,
       // OpenAI (for models like GPT-4, o1, etc.)
       OPENAI_API_KEY: apiKey,
       OPENAI_BASE_URL: openaiBaseUrl,
@@ -2180,7 +2264,11 @@ ${attributionInstructions}
     }
   }
 
-  private async cleanupSession(): Promise<void> {
+  private async cleanupSession({
+    completeEventStream = false,
+  }: {
+    completeEventStream?: boolean;
+  } = {}): Promise<void> {
     if (!this.session) return;
 
     this.logger.debug("Cleaning up session");
@@ -2217,6 +2305,10 @@ ${attributionInstructions}
 
     if (this.session.sseController) {
       this.session.sseController.close();
+    }
+
+    if (completeEventStream) {
+      await this.eventStreamSender?.stop();
     }
 
     this.pendingEvents = [];
@@ -2302,9 +2394,13 @@ ${attributionInstructions}
   }
 
   private broadcastEvent(event: Record<string, unknown>): void {
+    if (!this.session) return;
+
+    this.eventStreamSender?.enqueue(event);
+
     if (this.session?.sseController) {
       this.sendSseEvent(this.session.sseController, event);
-    } else if (this.session) {
+    } else {
       // Buffer events during initialization (sseController not yet attached)
       this.pendingEvents.push(event);
     }

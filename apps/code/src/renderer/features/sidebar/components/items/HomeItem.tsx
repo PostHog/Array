@@ -1,12 +1,9 @@
-import { Badge } from "@components/ui/Badge";
 import { Tooltip } from "@components/ui/Tooltip";
 import { EnvelopeSimple, Plus } from "@phosphor-icons/react";
-import type { ButtonProps } from "@posthog/quill";
-import {
-  formatHotkey,
-  SHORTCUTS,
-} from "@renderer/constants/keyboard-shortcuts";
+import { Badge, type ButtonProps } from "@posthog/quill";
+import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
 import { SidebarItem } from "../SidebarItem";
+import { SidebarKbdHint } from "./SidebarKbdHint";
 
 interface NewTaskItemProps {
   isActive: boolean;
@@ -22,6 +19,7 @@ export function NewTaskItem({ isActive, onClick }: NewTaskItemProps) {
       label="New task"
       isActive={isActive}
       onClick={onClick}
+      endContent={<SidebarKbdHint keys={SHORTCUTS.NEW_TASK} />}
     />
   );
 }
@@ -45,7 +43,6 @@ export function InboxItem({ isActive, onClick, signalCount }: InboxItemProps) {
           ? `${signalCount} actionable report${signalCount === 1 ? "" : "s"} assigned to you`
           : "No actionable reports assigned to you yet"
       }
-      shortcut={formatHotkey(SHORTCUTS.INBOX)}
       side="right"
     >
       <div>
@@ -72,7 +69,12 @@ export function InboxItem({ isActive, onClick, signalCount }: InboxItemProps) {
           }
           isActive={isActive}
           onClick={onClick}
-          endContent={<Badge color="amber">Alpha</Badge>}
+          endContent={
+            <>
+              <Badge variant="warning">Alpha</Badge>
+              <SidebarKbdHint keys={SHORTCUTS.INBOX} />
+            </>
+          }
         />
       </div>
     </Tooltip>

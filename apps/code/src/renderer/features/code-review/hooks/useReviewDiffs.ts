@@ -6,13 +6,16 @@ import { parsePatchFiles } from "@pierre/diffs";
 import { useTRPC } from "@renderer/trpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
+import { contentHash } from "../utils/contentHash";
 
 export function useReviewDiffs(
   repoPath: string | undefined,
   isActive: boolean,
 ) {
   const trpc = useTRPC();
-  const { changedFiles, changesLoading } = useGitQueries(repoPath);
+  const { changedFiles, changesLoading } = useGitQueries(repoPath, {
+    enabled: isActive,
+  });
   const hideWhitespace = useDiffViewerStore((s) => s.hideWhitespaceChanges);
 
   const hasStagedFiles = useMemo(
@@ -28,8 +31,9 @@ export function useReviewDiffs(
     trpc.git.getDiffCached.queryOptions(
       { directoryPath: repoPath as string, ignoreWhitespace: hideWhitespace },
       {
-        enabled: isActive && !!repoPath && hasStagedFiles,
+        enabled: isActive && !!repoPath,
         staleTime: 30_000,
+        gcTime: 0,
         refetchOnMount: "always",
       },
     ),
@@ -45,18 +49,21 @@ export function useReviewDiffs(
       {
         enabled: isActive && !!repoPath,
         staleTime: 30_000,
+        gcTime: 0,
         refetchOnMount: "always",
       },
     ),
   );
 
-  const diffLoading =
-    diffUnstagedLoading || (hasStagedFiles && diffCachedLoading);
+  const diffLoading = diffUnstagedLoading || diffCachedLoading;
 
   const stagedParsedFiles = useMemo(
     () =>
       rawDiffCached
-        ? parsePatchFiles(rawDiffCached).flatMap((p) => p.files)
+        ? parsePatchFiles(
+            rawDiffCached,
+            `staged:${contentHash(rawDiffCached)}`,
+          ).flatMap((p) => p.files)
         : [],
     [rawDiffCached],
   );
@@ -64,13 +71,16 @@ export function useReviewDiffs(
   const unstagedParsedFiles = useMemo(
     () =>
       rawDiffUnstaged
-        ? parsePatchFiles(rawDiffUnstaged).flatMap((p) => p.files)
+        ? parsePatchFiles(
+            rawDiffUnstaged,
+            `unstaged:${contentHash(rawDiffUnstaged)}`,
+          ).flatMap((p) => p.files)
         : [],
     [rawDiffUnstaged],
   );
 
   const untrackedFiles = useMemo(
-    () => changedFiles.filter((f) => f.status === "untracked"),
+    () => changedFiles.filter((f) => f.status === "untracked").slice(0, 1000),
     [changedFiles],
   );
 
@@ -95,8 +105,8 @@ export function useReviewDiffs(
   const refetch = useCallback(() => {
     if (repoPath) invalidateGitWorkingTreeQueries(repoPath);
     refetchDiffUnstaged();
-    if (hasStagedFiles) refetchDiffCached();
-  }, [repoPath, hasStagedFiles, refetchDiffCached, refetchDiffUnstaged]);
+    refetchDiffCached();
+  }, [repoPath, refetchDiffCached, refetchDiffUnstaged]);
 
   return {
     changedFiles,

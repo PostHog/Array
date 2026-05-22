@@ -6,6 +6,7 @@ import {
 import { reportKeys } from "@features/inbox/hooks/useInboxReports";
 import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
 import { useInboxSignalsFilterStore } from "@features/inbox/stores/inboxSignalsFilterStore";
+import { setPendingInboxOpenMethod } from "@features/inbox/utils/pendingInboxOpenMethod";
 import { trpcClient, useTRPC } from "@renderer/trpc";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useQueryClient } from "@tanstack/react-query";
@@ -69,6 +70,7 @@ export function useInboxDeepLink() {
 
         resetFilters();
         navigateToInbox();
+        setPendingInboxOpenMethod("deeplink");
         setSelectedReportIds([report.id]);
         log.info(`Successfully opened report from deep link: ${report.id}`);
       } catch (error) {

@@ -9,6 +9,7 @@ import {
   VideoIcon,
 } from "@phosphor-icons/react";
 import type { ComponentType } from "react";
+import { PgAnalyzeIcon } from "./PgAnalyzeIcon";
 
 /**
  * Shared source product metadata used across inbox components.
@@ -52,5 +53,10 @@ export const SOURCE_PRODUCT_META: Record<
     Icon: LifebuoyIcon,
     color: "var(--cyan-9)",
     label: "Conversations",
+  },
+  pganalyze: {
+    Icon: PgAnalyzeIcon,
+    color: "var(--gray-12)",
+    label: "pganalyze",
   },
 };

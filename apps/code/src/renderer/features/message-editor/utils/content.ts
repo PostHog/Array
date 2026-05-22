@@ -169,6 +169,10 @@ export function xmlToContent(xml: string): EditorContent {
   return { segments };
 }
 
+export function xmlToPlainText(xml: string): string {
+  return contentToPlainText(xmlToContent(xml));
+}
+
 export function isContentEmpty(
   content: EditorContent | null | string,
 ): boolean {

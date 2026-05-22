@@ -1,10 +1,14 @@
+import { useCloudPrUrl } from "@features/git-interaction/hooks/useCloudPrUrl";
 import { useDraftStore } from "@features/message-editor/stores/draftStore";
+import { TaskIcon } from "@features/sidebar/components/items/TaskIcon";
+import { useTaskPrStatus } from "@features/sidebar/hooks/useTaskPrStatus";
 import { TaskInput } from "@features/task-detail/components/TaskInput";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
 import {
   ArrowsOut,
   Cloud,
   Desktop,
+  Folder,
   GitFork,
   Plus,
   X,
@@ -13,13 +17,16 @@ import { Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CommandCenterCellData } from "../hooks/useCommandCenterData";
+import type {
+  CellStatus,
+  CommandCenterCellData,
+} from "../hooks/useCommandCenterData";
 import {
   getCellSessionId,
   useCommandCenterStore,
 } from "../stores/commandCenterStore";
+import { CommandCenterPRButton } from "./CommandCenterPRButton";
 import { CommandCenterSessionView } from "./CommandCenterSessionView";
-import { StatusBadge } from "./StatusBadge";
 import { TaskSelector } from "./TaskSelector";
 
 interface CommandCenterPanelProps {
@@ -36,12 +43,57 @@ const environmentConfig: Record<
   cloud: { label: "Cloud", icon: Cloud },
 };
 
+const STATUS_LABEL: Record<CellStatus, string | null> = {
+  running: "Running",
+  waiting: "Waiting",
+  idle: "Idle",
+  completed: "Completed",
+  error: null,
+};
+
+function CellStatusBadge({
+  cell,
+}: {
+  cell: CommandCenterCellData & { task: Task };
+}) {
+  const { task, session, workspaceMode, status } = cell;
+  const isCloud = workspaceMode === "cloud";
+  const cloudPrUrl = useCloudPrUrl(task.id);
+  const { prState, hasDiff } = useTaskPrStatus({
+    id: task.id,
+    cloudPrUrl,
+    taskRunEnvironment: task.latest_run?.environment,
+  });
+
+  const label = STATUS_LABEL[status];
+  if (label === null) return null;
+
+  const taskRunStatus = isCloud
+    ? (session?.cloudStatus ?? task.latest_run?.status ?? undefined)
+    : undefined;
+
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded bg-gray-3 px-1 py-0.5 text-[10px] text-gray-11">
+      <TaskIcon
+        workspaceMode={workspaceMode ?? undefined}
+        isGenerating={session?.isPromptPending}
+        needsPermission={(session?.pendingPermissions?.size ?? 0) > 0}
+        taskRunStatus={taskRunStatus}
+        prState={prState}
+        hasDiff={hasDiff}
+        size={10}
+      />
+      {label}
+    </span>
+  );
+}
+
 function EnvironmentBadge({ mode }: { mode: WorkspaceMode | null }) {
   if (!mode) return null;
   const config = environmentConfig[mode];
   const Icon = config.icon;
   return (
-    <span className="inline-flex items-center gap-0.5 rounded bg-gray-3 px-1 py-0.5 text-[9px] text-gray-10">
+    <span className="inline-flex items-center gap-0.5 rounded bg-gray-3 px-1 py-0.5 text-[10px] text-gray-10">
       <Icon size={10} />
       {config.label}
     </span>
@@ -170,13 +222,18 @@ function PopulatedCell({
           {cell.task.title}
         </Text>
         <Flex align="center" gap="1" className="shrink-0">
-          <StatusBadge status={cell.status} />
+          <CellStatusBadge cell={cell} />
           <EnvironmentBadge mode={cell.workspaceMode} />
           {cell.repoName && (
-            <span className="rounded bg-gray-3 px-1 py-0.5 text-[9px] text-gray-10">
+            <span className="inline-flex items-center gap-0.5 rounded bg-gray-3 px-1 py-0.5 text-[10px] text-gray-10">
+              <Folder size={10} />
               {cell.repoName}
             </span>
           )}
+          <CommandCenterPRButton
+            taskId={cell.task.id}
+            workspaceMode={cell.workspaceMode}
+          />
           <button
             type="button"
             onClick={handleExpand}

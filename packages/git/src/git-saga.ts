@@ -5,6 +5,12 @@ import { getGitOperationManager } from "./operation-manager";
 export interface GitSagaInput {
   baseDir: string;
   signal?: AbortSignal;
+  /**
+   * Extra env vars merged on top of the clean env when spawning the git
+   * subprocess. Used to pass through SessionStart-hook env so UI-triggered
+   * commits see the same `SSH_AUTH_SOCK` (etc.) the agent does.
+   */
+  env?: Record<string, string>;
 }
 
 export abstract class GitSaga<
@@ -29,7 +35,7 @@ export abstract class GitSaga<
         this._git = git;
         return this.executeGitOperations(input);
       },
-      { signal: input.signal },
+      { signal: input.signal, env: input.env },
     );
   }
 

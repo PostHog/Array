@@ -43,6 +43,13 @@ export interface ExecuteOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   waitForExternalLock?: boolean;
+  /**
+   * Extra env vars merged on top of `getCleanEnv()` for the spawned git
+   * subprocess. Used to pass through SessionStart-hook env (e.g.
+   * `SSH_AUTH_SOCK` re-pointed at Secretive) so commit signing works for
+   * UI-triggered commits.
+   */
+  env?: Record<string, string>;
 }
 
 class GitOperationManagerImpl {
@@ -87,18 +94,20 @@ class GitOperationManagerImpl {
     options?: ExecuteOptions,
   ): Promise<T> {
     const state = this.getRepoState(repoPath);
+    const env = {
+      ...getCleanEnv(),
+      GIT_OPTIONAL_LOCKS: "0",
+      ...options?.env,
+    };
 
     if (options?.signal) {
       const scopedGit = createGitClient(repoPath, {
         abortSignal: options.signal,
       });
-      return operation(
-        scopedGit.env({ ...getCleanEnv(), GIT_OPTIONAL_LOCKS: "0" }),
-      );
+      return operation(scopedGit.env(env));
     }
 
-    const git = state.client.env({ ...getCleanEnv(), GIT_OPTIONAL_LOCKS: "0" });
-    return operation(git);
+    return operation(state.client.env(env));
   }
 
   async executeWrite<T>(
@@ -118,16 +127,18 @@ class GitOperationManagerImpl {
       }
     }
 
+    const env = { ...getCleanEnv(), ...options?.env };
+
     await state.lock.acquireWrite();
     try {
       if (options?.signal) {
         const scopedGit = createGitClient(repoPath, {
           abortSignal: options.signal,
         });
-        return await operation(scopedGit.env(getCleanEnv()));
+        return await operation(scopedGit.env(env));
       }
 
-      return await operation(state.client.env(getCleanEnv()));
+      return await operation(state.client.env(env));
     } catch (error) {
       if (options?.signal?.aborted) {
         await removeLock(repoPath).catch(() => {});

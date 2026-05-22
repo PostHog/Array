@@ -1,5 +1,6 @@
+import { useDebounce } from "@hooks/useDebounce";
 import { defaultFilter } from "cmdk";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const DEFAULT_LIMIT = 50;
 const MIN_FUZZY_SCORE = 0.1;
@@ -33,25 +34,17 @@ export function useComboboxFilter<T>(
   options?: UseComboboxFilterOptions,
   getValue?: (item: T) => string,
 ): UseComboboxFilterResult<T> {
-  const [search, setSearch] = useState("");
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const limit = options?.limit ?? DEFAULT_LIMIT;
   const pinned = options?.pinned;
   const open = options?.open;
-
-  const debouncedSetSearch = useCallback((value: string) => {
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => setSearch(value), DEBOUNCE_MS);
-  }, []);
+  const [inputValue, setInputValue] = useState("");
+  // delay=0 while closed so the next open starts on fresh empty-query results,
+  // not a flash of the previous filtered set.
+  const search = useDebounce(inputValue, open ? DEBOUNCE_MS : 0);
 
   useEffect(() => {
-    if (!open) {
-      clearTimeout(debounceRef.current);
-      setSearch("");
-    }
+    if (!open) setInputValue("");
   }, [open]);
-
-  useEffect(() => () => clearTimeout(debounceRef.current), []);
 
   const resolve = useCallback(
     (item: T): string => (getValue ? getValue(item) : String(item)),
@@ -105,7 +98,7 @@ export function useComboboxFilter<T>(
 
   return {
     filtered,
-    onSearchChange: debouncedSetSearch,
+    onSearchChange: setInputValue,
     hasMore: totalMatches > filtered.length,
     moreCount: Math.max(0, totalMatches - filtered.length),
   };

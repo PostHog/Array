@@ -49,6 +49,25 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
       taskIndex.set(workspace.taskId, workspace.id);
       return { ...workspace };
     },
+    createCloudMany: (taskIds: string[]) => {
+      const now = new Date().toISOString();
+      for (const taskId of taskIds) {
+        const workspace: Workspace = {
+          id: crypto.randomUUID(),
+          taskId,
+          repositoryId: null,
+          mode: "cloud",
+          pinnedAt: null,
+          lastViewedAt: null,
+          lastActivityAt: null,
+          linkedBranch: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        workspaces.set(workspace.id, workspace);
+        taskIndex.set(workspace.taskId, workspace.id);
+      }
+    },
     deleteByTaskId: (taskId: string) => {
       const id = taskIndex.get(taskId);
       if (id) {

@@ -1,4 +1,4 @@
-import { useDebouncedValue } from "@hooks/useDebouncedValue";
+import { useDebounce } from "@hooks/useDebounce";
 import {
   Combobox,
   ComboboxContent,
@@ -47,8 +47,7 @@ export function IssuePicker({
 }: IssuePickerProps) {
   const trpc = useTRPC();
   const [query, setQuery] = useState("");
-  const { debounced: debouncedQuery, isPending: queryDebouncing } =
-    useDebouncedValue(query, 300);
+  const debouncedQuery = useDebounce(query, open ? 300 : 0);
 
   useEffect(() => {
     if (!open) setQuery("");
@@ -65,7 +64,7 @@ export function IssuePicker({
     ),
   );
 
-  const isLoading = isFetching || queryDebouncing;
+  const isLoading = isFetching || (open && query !== debouncedQuery);
 
   const handleValueChange = (value: Ref | null) => {
     if (!value) return;

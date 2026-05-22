@@ -30,6 +30,7 @@ import {
   Tooltip,
 } from "@radix-ui/themes";
 import type { SignalReport } from "@shared/types";
+import type { InboxReportActionProperties } from "@shared/types/analytics";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { FilterSortMenu } from "./FilterSortMenu";
@@ -60,6 +61,13 @@ interface SignalsToolbarProps {
   onOpenDismissDialog?: () => void;
   /** True while the single-report dismiss dialog has a mutation in flight for this toolbar. */
   isDismissMutationPending?: boolean;
+  /** Optional analytics callback fired when a bulk action succeeds. */
+  onReportAction?: (
+    action: Omit<InboxReportActionProperties, "rank" | "list_size"> & {
+      rank?: number;
+      list_size?: number;
+    },
+  ) => void;
 }
 
 function formatPauseRemaining(pausedUntil: string): string {
@@ -253,6 +261,7 @@ export function SignalsToolbar({
   onConfigureSources,
   onOpenDismissDialog,
   isDismissMutationPending = false,
+  onReportAction,
 }: SignalsToolbarProps) {
   const searchQuery = useInboxSignalsFilterStore((s) => s.searchQuery);
   const setSearchQuery = useInboxSignalsFilterStore((s) => s.setSearchQuery);
@@ -329,24 +338,86 @@ export function SignalsToolbar({
       ? "Permanently delete these reports and their signals?"
       : "Permanently delete this report and its signals?";
 
+  /**
+   * Snapshot of the visible list captured at action-confirm time, so analytics
+   * record rank + list_size as the user saw them — not the post-mutation refetch.
+   */
+  type ListSnapshot = {
+    rankById: Map<string, number>;
+    listSize: number;
+  };
+  const snapshotList = (): ListSnapshot => ({
+    rankById: new Map(reports.map((r, i) => [r.id, i] as const)),
+    listSize: reports.length,
+  });
+
+  const fireBulkAction = (
+    actionType: InboxReportActionProperties["action_type"],
+    targetIds: string[],
+    snapshot: ListSnapshot,
+  ) => {
+    if (!onReportAction) return;
+    const isBulk = targetIds.length > 1;
+    const reportById = new Map(reports.map((r) => [r.id, r]));
+    for (const reportId of targetIds) {
+      const target = reportById.get(reportId);
+      const createdAt = target?.created_at;
+      const ageMs = createdAt
+        ? Date.now() - new Date(createdAt).getTime()
+        : Number.NaN;
+      const reportAgeHours = Number.isFinite(ageMs)
+        ? Math.max(0, Math.round((ageMs / 3_600_000) * 10) / 10)
+        : 0;
+      onReportAction({
+        report_id: reportId,
+        report_title: target?.title ?? null,
+        report_age_hours: reportAgeHours,
+        action_type: actionType,
+        surface: "toolbar",
+        is_bulk: isBulk,
+        bulk_size: targetIds.length,
+        rank: snapshot.rankById.get(reportId) ?? -1,
+        list_size: snapshot.listSize,
+      });
+    }
+  };
+
   const handleConfirmDelete = async () => {
+    const targetIds = [...effectiveBulkIds];
+    const snapshot = snapshotList();
     const ok = await deleteSelected();
     if (ok) {
+      fireBulkAction("delete", targetIds, snapshot);
       setShowDeleteConfirm(false);
     }
   };
 
   const handleConfirmSnooze = async () => {
+    const targetIds = [...effectiveBulkIds];
+    const snapshot = snapshotList();
     const ok = await snoozeSelected();
     if (ok) {
+      fireBulkAction("snooze", targetIds, snapshot);
       setShowSnoozeConfirm(false);
     }
   };
 
   const handleConfirmBulkSuppress = async () => {
+    const targetIds = [...effectiveBulkIds];
+    const snapshot = snapshotList();
     const ok = await suppressSelected();
     if (ok) {
+      fireBulkAction("dismiss", targetIds, snapshot);
       setShowBulkSuppressConfirm(false);
+    }
+  };
+
+  const handleReingest = async () => {
+    const targetIds = [...effectiveBulkIds];
+    const snapshot = snapshotList();
+    const ok = await reingestSelected();
+    if (ok) {
+      fireBulkAction("reingest", targetIds, snapshot);
     }
   };
 
@@ -501,7 +572,7 @@ export function SignalsToolbar({
                   loading={isReingesting}
                   icon={<ArrowClockwiseIcon size={14} />}
                   label="Reingest"
-                  onSelect={() => void reingestSelected()}
+                  onSelect={() => void handleReingest()}
                 />
                 <BulkOverflowMenuItem
                   menuPrimary={deleteMenuPrimary}

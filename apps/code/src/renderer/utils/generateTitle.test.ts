@@ -135,6 +135,32 @@ describe("enrichDescriptionWithFileContent", () => {
     ]);
     expect(result).toBe("[Attached: image.jpg]\n\ntext content");
   });
+
+  it("returns description unchanged for folder-only input", async () => {
+    const description = '<folder path="src/components" />';
+    const result = await enrichDescriptionWithFileContent(description);
+    expect(result).toBe(description);
+    expect(mockReadAbsoluteFile).not.toHaveBeenCalled();
+  });
+
+  it("reads file and drops folder for mixed file+folder input", async () => {
+    mockReadAbsoluteFile.mockResolvedValue("file body");
+    const description =
+      '<file path="/tmp/a.ts" /><folder path="src/components" />';
+    const result = await enrichDescriptionWithFileContent(description);
+    expect(result).toBe("file body");
+    expect(mockReadAbsoluteFile).toHaveBeenCalledTimes(1);
+    expect(mockReadAbsoluteFile).toHaveBeenCalledWith({
+      filePath: "/tmp/a.ts",
+    });
+  });
+
+  it("treats non-chip XML-like text as real content", async () => {
+    const description = "<div>hello world</div>";
+    const result = await enrichDescriptionWithFileContent(description);
+    expect(result).toBe(description);
+    expect(mockReadAbsoluteFile).not.toHaveBeenCalled();
+  });
 });
 
 describe("generateTitleAndSummary", () => {

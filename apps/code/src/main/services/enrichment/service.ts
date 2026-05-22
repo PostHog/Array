@@ -84,9 +84,15 @@ const STALE_FLAG_SUGGESTION_CAP = 4;
 const STALE_FLAG_REFERENCES_PER_FLAG = 5;
 const STALE_LOOKBACK_DAYS = 30;
 
-// Yields to the event loop between batches; without this, parse-heavy scans
-// freeze IPC / UI on the main process.
-const SCAN_BATCH_SIZE = 32;
+// Tree-sitter parse() is synchronous and runs on the main process event
+// loop. To keep IPC responsive we (1) yield after every file (not every
+// batch), (2) skip files past a size threshold — they're almost always
+// minified bundles or generated code where parsing buys nothing, and
+// (3) cap total parsed files so a monorepo (e.g. PostHog itself) doesn't
+// stall boot for tens of seconds. When the cap trips we fall back to
+// manifest-only install detection rather than failing outright.
+const MAX_FILE_BYTES = 256 * 1024;
+const MAX_FILES_TO_PARSE = 500;
 
 interface ParsedRepoEntry {
   langId: string;
@@ -100,21 +106,6 @@ interface ParsedRepoCacheEntry {
 
 function yieldToEventLoop(): Promise<void> {
   return new Promise<void>((resolve) => setImmediate(resolve));
-}
-
-async function processInBatches<T, R>(
-  items: T[],
-  batchSize: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const out: R[] = [];
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
-    const batchResults = await Promise.all(batch.map(fn));
-    for (const r of batchResults) out.push(r);
-    await yieldToEventLoop();
-  }
-  return out;
 }
 
 function shouldSkipPath(relPath: string): boolean {
@@ -352,23 +343,40 @@ export class EnrichmentService {
       const langId = langIdMap[ext];
       if (!langId || !enricher.isSupported(langId)) continue;
       toParse.push({ relPath, langId });
+      if (toParse.length >= MAX_FILES_TO_PARSE) {
+        log.info("Capping repo parse to keep main process responsive", {
+          repoPath,
+          totalCandidates: posthogFiles.length,
+          parseLimit: MAX_FILES_TO_PARSE,
+        });
+        break;
+      }
     }
 
     const files = new Map<string, ParsedRepoEntry>();
-    await processInBatches(toParse, SCAN_BATCH_SIZE, async (candidate) => {
+    // Serial with a yield after every file. Tree-sitter parse() is sync CPU
+    // on the event loop; batching with Promise.all stacked all parses in one
+    // synchronous burst between yields, which froze IPC. Per-file yields cap
+    // each blocking window at one file's parse cost.
+    for (const candidate of toParse) {
+      const absPath = path.join(repoPath, candidate.relPath);
       let content: string;
       try {
-        content = await fs.readFile(
-          path.join(repoPath, candidate.relPath),
-          "utf-8",
-        );
+        const stat = await fs.stat(absPath);
+        if (stat.size > MAX_FILE_BYTES) {
+          files.set(candidate.relPath, {
+            langId: candidate.langId,
+            result: null,
+          });
+          continue;
+        }
+        content = await fs.readFile(absPath, "utf-8");
       } catch {
-        return null;
+        continue;
       }
       try {
         const result = await enricher.parse(content, candidate.langId);
         files.set(candidate.relPath, { langId: candidate.langId, result });
-        return null;
       } catch (err) {
         log.debug("enricher.parse threw during repo scan, skipping file", {
           file: candidate.relPath,
@@ -378,9 +386,9 @@ export class EnrichmentService {
           langId: candidate.langId,
           result: null,
         });
-        return null;
       }
-    });
+      await yieldToEventLoop();
+    }
 
     const entry: ParsedRepoCacheEntry = { files, manifestHit };
     this.repoScanCache.set(repoPath, entry);

@@ -75,18 +75,10 @@ export function ReportListRow({
     onClick({ metaKey: e.metaKey, shiftKey: e.shiftKey });
   };
 
-  const rowBgClass = isSelected
-    ? report.is_suggested_reviewer
-      ? "bg-amber-3"
-      : "bg-gray-3"
-    : report.is_suggested_reviewer
-      ? "bg-amber-2"
-      : "";
+  const rowBgClass = isSelected ? "bg-gray-3" : "";
 
   const hoverOverlayClass =
-    isSelected && report.is_suggested_reviewer
-      ? "before:bg-amber-12 before:opacity-0 hover:before:opacity-[0.07]"
-      : "before:bg-gray-12 before:opacity-0 hover:before:opacity-[0.07]";
+    "before:bg-gray-12 before:opacity-0 hover:before:opacity-[0.07]";
 
   return (
     <motion.div

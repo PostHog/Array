@@ -126,7 +126,7 @@
     "@opentelemetry/semantic-conventions": "^1.39.0",
     "@parcel/watcher": "^2.5.6",
     "@phosphor-icons/react": "^2.1.10",
-    "@pierre/diffs": "^1.1.7",
+    "@pierre/diffs": "^1.1.21",
     "@posthog/agent": "workspace:*",
     "@posthog/electron-trpc": "workspace:*",
     "@posthog/enricher": "workspace:*",

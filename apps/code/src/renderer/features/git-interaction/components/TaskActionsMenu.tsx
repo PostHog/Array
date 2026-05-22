@@ -5,21 +5,20 @@ import {
   GitCommitDialog,
   GitPushDialog,
 } from "@features/git-interaction/components/GitInteractionDialogs";
-import { useCloudPrUrl } from "@features/git-interaction/hooks/useCloudPrUrl";
+import { PRBadgeLink } from "@features/git-interaction/components/PRBadgeLink";
 import {
   type GitMenuAction,
   type GitMenuActionId,
   useGitInteraction,
 } from "@features/git-interaction/hooks/useGitInteraction";
-import { useLinkedBranchPrUrl } from "@features/git-interaction/hooks/useLinkedBranchPrUrl";
 import { usePrActions } from "@features/git-interaction/hooks/usePrActions";
 import { usePrDetails } from "@features/git-interaction/hooks/usePrDetails";
+import { useTaskPrUrl } from "@features/git-interaction/hooks/useTaskPrUrl";
 import {
   getPrActionIcon,
   getPrVisualConfig,
-  parsePrNumber,
 } from "@features/git-interaction/utils/prStatus";
-import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
+import { useLocalRepoPath } from "@features/workspace/hooks/useLocalRepoPath";
 import type { PrActionType } from "@main/services/git/schemas";
 import {
   ArrowsClockwise,
@@ -40,7 +39,6 @@ import {
 } from "@posthog/quill";
 import { ChevronDownIcon } from "@radix-ui/react-icons";
 import { Button, DropdownMenu, Flex, Spinner, Text } from "@radix-ui/themes";
-import { selectIsFocusedOnWorktree, useFocusStore } from "@stores/focusStore";
 import { ChevronDown } from "lucide-react";
 
 interface TaskActionsMenuProps {
@@ -72,32 +70,14 @@ const NO_WORK_SLOTS = new Set<GitMenuActionId>([
  */
 export function TaskActionsMenu({ taskId, isCloud }: TaskActionsMenuProps) {
   // Git state (skipped for cloud — useGitInteraction handles undefined repo).
-  const workspace = useWorkspace(taskId);
-  const isFocused = useFocusStore(
-    selectIsFocusedOnWorktree(workspace?.worktreePath ?? ""),
-  );
-  const localRepoPath = isFocused
-    ? workspace?.folderPath
-    : (workspace?.worktreePath ?? workspace?.folderPath);
+  const localRepoPath = useLocalRepoPath(taskId);
   const {
     state: gitState,
     modals,
     actions: gitActions,
   } = useGitInteraction(taskId, isCloud ? undefined : localRepoPath);
 
-  // PR URL resolution — pick the right source based on task kind.
-  // For local tasks, prefer the linked-branch lookup. The agent-side
-  // AgentFileActivity emit is the primary path for keeping `linkedBranch` in
-  // sync with PRs created via bash (see AgentService.detectAndAttachPrUrl);
-  // until that link lands we fall back to whatever `getPrStatus` found on
-  // `localRepoPath`'s current branch. Coverage is partial — when the user is
-  // focused on the worktree, `localRepoPath` is the main repo and
-  // `gitState.prUrl` won't see the worktree's feature-branch PR — but the
-  // primary path closes that gap once the next bash tool call observes the
-  // PR URL.
-  const cloudPrUrl = useCloudPrUrl(taskId);
-  const linkedPrUrl = useLinkedBranchPrUrl(taskId);
-  const prUrl = isCloud ? cloudPrUrl : (linkedPrUrl ?? gitState.prUrl ?? null);
+  const prUrl = useTaskPrUrl(taskId, isCloud);
 
   const {
     meta: { state: prState, merged, draft },
@@ -247,33 +227,19 @@ function PrBadgeControl({
   onPrSelect,
 }: PrBadgeControlProps) {
   const config = getPrVisualConfig(prState, merged, draft);
-  const prNumber = parsePrNumber(prUrl);
   const lifecycleItems = config.actions;
   const hasDropdown = gitItems.length + lifecycleItems.length > 0;
 
   return (
     <Flex align="center" gap="0">
-      <Button
-        size="1"
-        variant="soft"
-        color={config.color}
-        asChild
-        style={
-          hasDropdown
-            ? { borderTopRightRadius: 0, borderBottomRightRadius: 0 }
-            : undefined
-        }
-      >
-        <a href={prUrl} target="_blank" rel="noopener noreferrer">
-          <Flex align="center" gap="2">
-            {isPrPending ? <Spinner size="1" /> : config.icon}
-            <Text size="1">
-              {config.label}
-              {prNumber && ` #${prNumber}`}
-            </Text>
-          </Flex>
-        </a>
-      </Button>
+      <PRBadgeLink
+        prUrl={prUrl}
+        prState={prState}
+        merged={merged}
+        draft={draft}
+        isPrPending={isPrPending}
+        attachedRight={hasDropdown}
+      />
       {hasDropdown && (
         <DropdownMenu.Root>
           <DropdownMenu.Trigger>

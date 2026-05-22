@@ -139,7 +139,6 @@ export function WorkspaceSetupPrompt({
               value={selectedPath}
               onChange={handleFolderSelect}
               placeholder="Select folder..."
-              size="2"
             />
           </Box>
         </>

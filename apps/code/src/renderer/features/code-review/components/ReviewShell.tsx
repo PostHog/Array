@@ -19,11 +19,16 @@ import {
   useRef,
   useState,
 } from "react";
+import { VList, type VListHandle } from "virtua";
+import {
+  REVIEW_LIST_BUFFER_PX,
+  REVIEW_LIST_ESTIMATED_ITEM_SIZE,
+} from "../constants";
 import type { ResolvedDiffSource } from "../utils/resolveDiffSource";
 import { PendingReviewBar } from "./PendingReviewBar";
 import { ReviewToolbar } from "./ReviewToolbar";
 
-function splitFilePath(fullPath: string): {
+export function splitFilePath(fullPath: string): {
   dirPath: string;
   fileName: string;
 } {
@@ -47,63 +52,24 @@ export function sumHunkStats(hunks: FileDiffMetadata["hunks"]): {
   return { additions, deletions };
 }
 
+export function buildItemIndex(
+  items: { scrollKey?: string }[],
+): Map<string, number> {
+  const index = new Map<string, number>();
+  for (let i = 0; i < items.length; i++) {
+    const key = items[i].scrollKey;
+    if (key) index.set(key, i);
+  }
+  return index;
+}
+
 function workerFactory(): Worker {
   return new Worker(WorkerUrl, { type: "module" });
 }
 
 const STICKY_HEADER_CSS = `[data-diffs-header] { position: sticky; top: 0; z-index: 1; background: var(--gray-2); }`;
 
-const LARGE_DIFF_LINE_THRESHOLD = 500;
-
-const AUTO_COLLAPSE_PATTERNS = [
-  /package-lock\.json$/,
-  /pnpm-lock\.yaml$/,
-  /yarn\.lock$/,
-  /bun\.lockb?$/,
-  /Cargo\.lock$/,
-  /poetry\.lock$/,
-  /Pipfile\.lock$/,
-  /composer\.lock$/,
-  /Gemfile\.lock$/,
-  /flake\.lock$/,
-  /deno\.lock$/,
-  /[.-]min\.(js|css)$/,
-  /\.map$/,
-  /(^|\/)dist\//,
-  /(^|\/)vendor\//,
-  /(^|\/)node_modules\//,
-  /(^|\/)__generated__\//,
-  /\.generated\./,
-  /\.designer\.(cs|vb)$/,
-  /\.snap$/,
-  /\.pbxproj$/,
-];
-
-export type DeferredReason = "deleted" | "large" | "generated" | "unavailable";
-
-export function computeAutoDeferred(
-  files: {
-    path: string;
-    status?: string;
-    linesAdded?: number;
-    linesRemoved?: number;
-  }[],
-): Map<string, DeferredReason> {
-  const map = new Map<string, DeferredReason>();
-  for (const file of files) {
-    if (file.status === "deleted") {
-      map.set(file.path, "deleted");
-      continue;
-    }
-    const totalLines = (file.linesAdded ?? 0) + (file.linesRemoved ?? 0);
-    if (totalLines > LARGE_DIFF_LINE_THRESHOLD) {
-      map.set(file.path, "large");
-    } else if (AUTO_COLLAPSE_PATTERNS.some((p) => p.test(file.path))) {
-      map.set(file.path, "generated");
-    }
-  }
-  return map;
-}
+export type DeferredReason = "line-limit" | "unavailable";
 
 function useDiffOptions() {
   const viewMode = useDiffViewerStore((s) => s.viewMode);
@@ -137,36 +103,15 @@ export function useReviewState(
     [changedFiles],
   );
 
-  const autoDeferred = useMemo(
-    () => computeAutoDeferred(changedFiles),
-    [changedFiles],
-  );
-
-  const collapseState = useCollapseState(allPaths, autoDeferred);
+  const collapseState = useCollapseState(allPaths);
 
   return { diffOptions, linesAdded, linesRemoved, ...collapseState };
 }
 
-function useCollapseState(
-  filePaths: string[],
-  deferredPaths: Map<string, DeferredReason>,
-) {
-  const [revealedFiles, setRevealedFiles] = useState<Set<string>>(
-    () => new Set(),
-  );
+function useCollapseState(filePaths: string[]) {
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(
     () => new Set(),
   );
-
-  const [lastDeferred, setLastDeferred] = useState(deferredPaths);
-  if (deferredPaths !== lastDeferred) {
-    setLastDeferred(deferredPaths);
-    setRevealedFiles(new Set());
-  }
-
-  const revealFile = useCallback((filePath: string) => {
-    setRevealedFiles((prev) => new Set(prev).add(filePath));
-  }, []);
 
   const toggleFile = useCallback((filePath: string) => {
     setCollapsedFiles((prev) => {
@@ -193,22 +138,12 @@ function useCollapseState(
     [filePaths],
   );
 
-  const getDeferredReason = useCallback(
-    (path: string): DeferredReason | null => {
-      if (revealedFiles.has(path)) return null;
-      return deferredPaths.get(path) ?? null;
-    },
-    [deferredPaths, revealedFiles],
-  );
-
   return {
     collapsedFiles,
     toggleFile,
     uncollapseFile,
     expandAll,
     collapseAll,
-    revealFile,
-    getDeferredReason,
   };
 }
 
@@ -292,7 +227,8 @@ export interface ReviewShellProps {
   linesRemoved: number;
   isLoading: boolean;
   isEmpty: boolean;
-  children: ReactNode;
+  items: ReviewListItem[];
+  itemIndexByFilePath: Map<string, number>;
   onUncollapseFile?: (filePath: string) => void;
   allExpanded: boolean;
   onExpandAll: () => void;
@@ -304,6 +240,12 @@ export interface ReviewShellProps {
   defaultBranch?: string | null;
 }
 
+export interface ReviewListItem {
+  key: string;
+  scrollKey?: string;
+  node: ReactNode;
+}
+
 export function ReviewShell({
   task,
   fileCount,
@@ -311,7 +253,8 @@ export function ReviewShell({
   linesRemoved,
   isLoading,
   isEmpty,
-  children,
+  items,
+  itemIndexByFilePath,
   onUncollapseFile,
   allExpanded,
   onExpandAll,
@@ -323,7 +266,7 @@ export function ReviewShell({
   defaultBranch,
 }: ReviewShellProps) {
   const taskId = task.id;
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<VListHandle | null>(null);
 
   const reviewMode = useReviewNavigationStore(
     (s) => s.reviewModes[taskId] ?? "closed",
@@ -350,73 +293,74 @@ export function ReviewShell({
 
   useEffect(() => {
     if (!scrollRequest) return;
-
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const target = container.querySelector(
-      `[data-file-path="${CSS.escape(scrollRequest)}"]`,
-    );
-    if (!target) return;
+    const targetIndex = itemIndexByFilePath.get(scrollRequest);
+    if (targetIndex === undefined) return;
 
     onUncollapseFile?.(scrollRequest);
-
-    target.scrollIntoView({ block: "start" });
-    setActiveFilePath(taskId, scrollRequest);
-    clearScrollRequest(taskId);
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToIndex(targetIndex, { align: "start" });
+      setActiveFilePath(taskId, scrollRequest);
+      clearScrollRequest(taskId);
+    });
   }, [
-    scrollRequest,
     clearScrollRequest,
+    itemIndexByFilePath,
+    onUncollapseFile,
+    scrollRequest,
     setActiveFilePath,
     taskId,
-    onUncollapseFile,
   ]);
 
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
+  const lastActiveRef = useRef<string | null>(null);
+  const handleScroll = useCallback(
+    (offset: number) => {
+      const handle = listRef.current;
+      if (!handle) return;
+      const index = handle.findItemIndex(offset);
+      const item = items[index];
+      const scrollKey = item?.scrollKey;
+      if (!scrollKey || scrollKey === lastActiveRef.current) return;
+      lastActiveRef.current = scrollKey;
+      setActiveFilePath(taskId, scrollKey);
+    },
+    [items, setActiveFilePath, taskId],
+  );
 
-    const fileDivs =
-      container.querySelectorAll<HTMLElement>("[data-file-path]");
-    if (fileDivs.length === 0) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        let topEntry: IntersectionObserverEntry | null = null;
-        for (const entry of entries) {
-          if (
-            entry.isIntersecting &&
-            (!topEntry ||
-              entry.boundingClientRect.top < topEntry.boundingClientRect.top)
-          ) {
-            topEntry = entry;
-          }
-        }
-        if (topEntry) {
-          const path =
-            (topEntry.target as HTMLElement).dataset.filePath ?? null;
-          const current =
-            useReviewNavigationStore.getState().activeFilePaths[taskId] ?? null;
-          if (path !== current) {
-            setActiveFilePath(taskId, path);
-          }
-        }
-      },
-      { root: container, rootMargin: "0px 0px -80% 0px", threshold: 0 },
-    );
-
-    for (const div of fileDivs) {
-      observer.observe(div);
-    }
-
-    return () => observer.disconnect();
-  }, [taskId, setActiveFilePath]);
+  const renderItem = useCallback(
+    (item: ReviewListItem) => (
+      <div
+        key={item.key}
+        data-scroll-key={item.scrollKey}
+        className="pb-2 last:pb-0"
+      >
+        {item.node}
+      </div>
+    ),
+    [],
+  );
 
   return (
     <WorkerPoolContextProvider
       poolOptions={{ workerFactory }}
       highlighterOptions={{
         theme: { dark: "github-dark", light: "github-light" },
+        langs: [
+          "typescript",
+          "tsx",
+          "javascript",
+          "jsx",
+          "json",
+          "css",
+          "html",
+          "markdown",
+          "python",
+          "ruby",
+          "go",
+          "rust",
+          "shell",
+          "yaml",
+          "sql",
+        ],
       }}
     >
       <Flex direction="column" height="100%" id="review-shell">
@@ -436,25 +380,30 @@ export function ReviewShell({
         />
         <Flex className="min-h-0 flex-1">
           <Flex direction="column" className="min-w-0 flex-1">
-            <div
-              ref={scrollContainerRef}
-              className="scrollbar-overlay-y min-h-0 flex-1 space-y-2 overflow-auto"
-              id="review-shell-diff-container"
-            >
-              {isLoading ? (
-                <Flex align="center" justify="center" height="100%">
-                  <Spinner size="2" />
-                </Flex>
-              ) : isEmpty ? (
-                <Flex align="center" justify="center" height="100%">
-                  <Text color="gray" className="text-sm">
-                    No file changes to review
-                  </Text>
-                </Flex>
-              ) : (
-                children
-              )}
-            </div>
+            {isLoading ? (
+              <Flex align="center" justify="center" className="min-h-0 flex-1">
+                <Spinner size="2" />
+              </Flex>
+            ) : isEmpty ? (
+              <Flex align="center" justify="center" className="min-h-0 flex-1">
+                <Text color="gray" className="text-sm">
+                  No file changes to review
+                </Text>
+              </Flex>
+            ) : (
+              <VList
+                ref={listRef}
+                bufferSize={REVIEW_LIST_BUFFER_PX}
+                itemSize={REVIEW_LIST_ESTIMATED_ITEM_SIZE}
+                className="pierre-scroll-root scrollbar-overlay-y min-h-0 flex-1 overflow-auto bg-(--gray-2)"
+                shift={false}
+                style={{ scrollbarGutter: "stable" }}
+                onScroll={handleScroll}
+                data={items}
+              >
+                {renderItem}
+              </VList>
+            )}
             <PendingReviewBar taskId={taskId} />
           </Flex>
 
@@ -465,7 +414,7 @@ export function ReviewShell({
   );
 }
 
-function FileHeaderRow({
+export function FileHeaderRow({
   dirPath,
   fileName,
   additions,
@@ -564,17 +513,10 @@ export function DiffFileHeader({
   );
 }
 
-function getDeferredMessage(
-  reason: DeferredReason,
-  totalLines: number,
-): string {
+function getDeferredMessage(reason: DeferredReason): string {
   switch (reason) {
-    case "deleted":
-      return `Deleted file not rendered — ${totalLines} lines removed.`;
-    case "generated":
-      return `Generated file not rendered — ${totalLines} lines changed.`;
-    case "large":
-      return `Large diff not rendered — ${totalLines} lines changed.`;
+    case "line-limit":
+      return "File exceeds the 5,000-line review limit.";
     case "unavailable":
       return "Unable to load diff.";
   }
@@ -613,7 +555,7 @@ export function DeferredDiffPlaceholder({
       />
       {!collapsed && (
         <div className="w-full border-b border-b-(--gray-5) bg-(--gray-2) p-[16px] text-center text-(--gray-9) text-xs">
-          {getDeferredMessage(reason, linesAdded + linesRemoved)}
+          {getDeferredMessage(reason)}
           {onShow ? (
             <>
               {" "}

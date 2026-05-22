@@ -14,12 +14,13 @@ import { trpcClient } from "@renderer/trpc";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-type DataSourceType = "github" | "linear" | "zendesk";
+type DataSourceType = "github" | "linear" | "zendesk" | "pganalyze";
 
 const REQUIRED_SCHEMAS: Record<DataSourceType, string[]> = {
   github: ["issues"],
   linear: ["issues"],
   zendesk: ["tickets"],
+  pganalyze: ["issues", "servers"],
 };
 
 /** PostHog DWH: full table replication (non-incremental); API enum value `full_refresh`. */
@@ -51,6 +52,8 @@ export function DataSourceSetup({
       return <LinearSetup onComplete={onComplete} onCancel={onCancel} />;
     case "zendesk":
       return <ZendeskSetup onComplete={onComplete} onCancel={onCancel} />;
+    case "pganalyze":
+      return <PgAnalyzeSetup onComplete={onComplete} onCancel={onCancel} />;
   }
 }
 
@@ -430,6 +433,75 @@ function ZendeskSetup({ onComplete, onCancel }: SetupFormProps) {
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+        />
+
+        <Flex gap="2" justify="end">
+          <Button size="2" variant="soft" onClick={onCancel} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            size="2"
+            onClick={handleSubmit}
+            disabled={!canSubmit || loading}
+          >
+            {loading ? "Creating..." : "Create source"}
+          </Button>
+        </Flex>
+      </Flex>
+    </SetupFormContainer>
+  );
+}
+
+function PgAnalyzeSetup({ onComplete, onCancel }: SetupFormProps) {
+  const projectId = useAuthStateValue((state) => state.projectId);
+  const client = useAuthenticatedClient();
+  const [apiKey, setApiKey] = useState("");
+  const [organizationSlug, setOrganizationSlug] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = useCallback(async () => {
+    if (!projectId || !client) return;
+    if (!apiKey.trim() || !organizationSlug.trim()) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await client.createExternalDataSource(projectId, {
+        source_type: "PgAnalyze",
+        payload: {
+          api_key: apiKey.trim(),
+          organization_slug: organizationSlug.trim(),
+          schemas: schemasPayload("pganalyze"),
+        },
+      });
+      toast.success("pganalyze data source created");
+      onComplete();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to create data source",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId, client, apiKey, organizationSlug, onComplete]);
+
+  const canSubmit = apiKey.trim() && organizationSlug.trim();
+
+  return (
+    <SetupFormContainer title="Connect pganalyze">
+      <Flex direction="column" gap="3">
+        <TextField.Root
+          placeholder="Organization slug (e.g. my-company)"
+          value={organizationSlug}
+          onChange={(e) => setOrganizationSlug(e.target.value)}
+        />
+        <TextField.Root
+          placeholder="API key"
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
         />
 
         <Flex gap="2" justify="end">
