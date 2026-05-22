@@ -36,7 +36,6 @@ interface WorkspaceModeSelectProps {
   overrideModes?: WorkspaceMode[];
   selectedCloudEnvironmentId?: string | null;
   onCloudEnvironmentChange?: (envId: string | null) => void;
-  cloudAvailable?: boolean;
 }
 
 const LOCAL_MODES: {
@@ -68,7 +67,6 @@ export function WorkspaceModeSelect({
   overrideModes,
   selectedCloudEnvironmentId,
   onCloudEnvironmentChange,
-  cloudAvailable = true,
 }: WorkspaceModeSelectProps) {
   const cloudModeEnabled =
     useFeatureFlag("twig-cloud-mode-toggle") || import.meta.env.DEV;
@@ -82,9 +80,9 @@ export function WorkspaceModeSelect({
     openSettings("cloud-environments", "create");
   }, [openSettings]);
 
-  const showCloud =
-    cloudAvailable &&
-    (overrideModes ? overrideModes.includes("cloud") : cloudModeEnabled);
+  const showCloud = overrideModes
+    ? overrideModes.includes("cloud")
+    : cloudModeEnabled;
 
   const localModes = useMemo(
     () =>

@@ -82,7 +82,6 @@ export function TaskInput({
     trpcReact.folders.getMostRecentlyAccessedRepository.queryOptions(),
   );
   const {
-    lastUsedLocalWorkspaceMode,
     setLastUsedLocalWorkspaceMode,
     lastUsedWorkspaceMode,
     setLastUsedWorkspaceMode,
@@ -186,13 +185,8 @@ export function TaskInput({
     hasGithubIntegration,
   } = useUserRepositoryIntegration();
 
-  // Stay optimistic while the integration list resolves to avoid flicker.
-  const cloudAvailable = isLoadingRepos || hasGithubIntegration;
   const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
     if (initialCloudRepository) return "cloud";
-    if (!cloudAvailable && lastUsedWorkspaceMode === "cloud") {
-      return lastUsedLocalWorkspaceMode;
-    }
     return lastUsedWorkspaceMode || "local";
   });
 
@@ -203,12 +197,6 @@ export function TaskInput({
       setLastUsedLocalWorkspaceMode(mode);
     }
   };
-
-  useEffect(() => {
-    if (workspaceMode === "cloud" && !cloudAvailable) {
-      setWorkspaceModeState(lastUsedLocalWorkspaceMode);
-    }
-  }, [workspaceMode, cloudAvailable, lastUsedLocalWorkspaceMode]);
   const {
     repositories: visibleCloudRepositories,
     isPending: cloudRepositoriesLoading,
@@ -642,7 +630,6 @@ export function TaskInput({
                 onChange={setWorkspaceMode}
                 selectedCloudEnvironmentId={selectedCloudEnvId}
                 onCloudEnvironmentChange={setSelectedCloudEnvId}
-                cloudAvailable={cloudAvailable}
                 size="1"
               />
               {workspaceMode === "worktree" && (
