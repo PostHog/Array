@@ -84,6 +84,15 @@ describe("taskSelectionStore", () => {
     expect(useTaskSelectionStore.getState().selectedTaskIds).toEqual(["t2"]);
   });
 
+  it("pruneSelection preserves array reference when nothing is pruned", () => {
+    useTaskSelectionStore.setState({ selectedTaskIds: ["t1", "t2"] });
+    const before = useTaskSelectionStore.getState().selectedTaskIds;
+
+    useTaskSelectionStore.getState().pruneSelection(["t1", "t2", "t3"]);
+
+    expect(useTaskSelectionStore.getState().selectedTaskIds).toBe(before);
+  });
+
   describe("selectRange", () => {
     const orderedIds = ["t1", "t2", "t3", "t4", "t5"];
 

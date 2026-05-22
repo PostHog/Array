@@ -75,11 +75,15 @@ export const useTaskSelectionStore = create<TaskSelectionStore>()(
 
     pruneSelection: (visibleTaskIds) => {
       const visibleIds = new Set(visibleTaskIds);
-      set((state) => ({
-        selectedTaskIds: state.selectedTaskIds.filter((id) =>
+      set((state) => {
+        const filtered = state.selectedTaskIds.filter((id) =>
           visibleIds.has(id),
-        ),
-      }));
+        );
+        if (filtered.length === state.selectedTaskIds.length) {
+          return state;
+        }
+        return { selectedTaskIds: filtered };
+      });
     },
   }),
 );
