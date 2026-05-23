@@ -1,4 +1,4 @@
-import {
+﻿import {
   eventToCombo,
   formatHotkey,
   tiptapEventToCombo,
@@ -302,23 +302,9 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
             return true;
           }
 
-          if (
-            (event.key === "ArrowUp" || event.key === "ArrowDown") &&
-            // Only navigate prompt history when the input is empty, so arrow
-            // keys (and Shift+Arrow selection) behave normally while editing.
-            !event.shiftKey
-          ) {
-            const historyGetter = getPromptHistoryRef.current;
-            if (!taskId && !historyGetter) return false;
-
-            const currentText = view.state.doc.textContent;
-            const isEmpty = !currentText.trim();
-
-<<<<<<< HEAD:packages/ui/src/features/message-editor/tiptap/useTiptapEditor.ts
-            const history = historyGetter?.() ?? [];
-
-            if (event.key === "ArrowUp" && isEmpty) {
-=======
+          // Resolve prompt-history bindings before the ArrowKey gate so custom
+          // non-arrow bindings (e.g. Ctrl+K) still trigger history navigation.
+          {
             const keybindings = useKeybindingsStore.getState();
             const tiptapCombo = tiptapEventToCombo(event);
             const forcePrev =
@@ -331,56 +317,67 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               splitBindings(keybindings.getKey("prompt-history-next")).includes(
                 tiptapCombo,
               );
-            const history = historyGetter?.() ?? [];
 
             if (
-              event.key === "ArrowUp" &&
-              (forcePrev || isEmpty || isAtStart)
+              forcePrev ||
+              forceNext ||
+              event.key === "ArrowUp" ||
+              event.key === "ArrowDown"
             ) {
->>>>>>> 13027004 (feat: make prompt-history shortcuts configurable; update E2E tests):apps/code/src/renderer/features/message-editor/tiptap/useTiptapEditor.ts
-              if (taskId) {
-                const queuedContent =
-                  sessionStoreSetters.dequeueMessagesAsText(taskId);
-                if (queuedContent !== null && queuedContent !== undefined) {
+              const historyGetter = getPromptHistoryRef.current;
+              if (!taskId && !historyGetter) return false;
+
+              const currentText = view.state.doc.textContent;
+              const isEmpty = !currentText.trim();
+              const { from } = view.state.selection;
+              const isAtStart = from === 1;
+              const isAtEnd = from === view.state.doc.content.size - 1;
+              const history = historyGetter?.() ?? [];
+
+              if (
+                forcePrev ||
+                (event.key === "ArrowUp" && (isEmpty || isAtStart))
+              ) {
+                if (taskId) {
+                  const queuedContent =
+                    sessionStoreSetters.dequeueMessagesAsText(taskId);
+                  if (queuedContent !== null && queuedContent !== undefined) {
+                    event.preventDefault();
+                    view.dispatch(
+                      view.state.tr
+                        .delete(1, view.state.doc.content.size - 1)
+                        .insertText(queuedContent, 1),
+                    );
+                    return true;
+                  }
+                }
+
+                const newText = historyActions.navigateUp(history, currentText);
+                if (newText !== null) {
                   event.preventDefault();
                   view.dispatch(
                     view.state.tr
                       .delete(1, view.state.doc.content.size - 1)
-                      .insertText(queuedContent, 1),
+                      .insertText(newText, 1),
                   );
                   return true;
                 }
               }
 
-              const newText = historyActions.navigateUp(history, currentText);
-              if (newText !== null) {
-                event.preventDefault();
-                view.dispatch(
-                  view.state.tr
-                    .delete(1, view.state.doc.content.size - 1)
-                    .insertText(newText, 1),
-                );
-                return true;
-              }
-            }
-
-<<<<<<< HEAD:packages/ui/src/features/message-editor/tiptap/useTiptapEditor.ts
-            if (event.key === "ArrowDown" && isEmpty) {
-=======
-            if (
-              event.key === "ArrowDown" &&
-              (forceNext || isEmpty || isAtEnd)
-            ) {
->>>>>>> 13027004 (feat: make prompt-history shortcuts configurable; update E2E tests):apps/code/src/renderer/features/message-editor/tiptap/useTiptapEditor.ts
-              const newText = historyActions.navigateDown(history);
-              if (newText !== null) {
-                event.preventDefault();
-                view.dispatch(
-                  view.state.tr
-                    .delete(1, view.state.doc.content.size - 1)
-                    .insertText(newText, 1),
-                );
-                return true;
+              if (
+                forceNext ||
+                (event.key === "ArrowDown" && (isEmpty || isAtEnd))
+              ) {
+                const newText = historyActions.navigateDown(history);
+                if (newText !== null) {
+                  event.preventDefault();
+                  view.dispatch(
+                    view.state.tr
+                      .delete(1, view.state.doc.content.size - 1)
+                      .insertText(newText, 1),
+                  );
+                  return true;
+                }
               }
             }
           }
@@ -616,7 +613,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
     if (enableBashMode && isBashModeText(text)) {
       // Bash mode requires immediate execution, can't be queued.
-      // Intentionally bypasses onBeforeSubmit — bash commands run inline and
+      // Intentionally bypasses onBeforeSubmit â€” bash commands run inline and
       // cannot be deferred the way normal prompts can.
       if (isLoading) {
         toast.error("Cannot run shell commands while agent is generating");

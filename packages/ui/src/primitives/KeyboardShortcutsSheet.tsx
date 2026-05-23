@@ -37,7 +37,6 @@ export function KeyboardShortcutsSheet({
         onEscapeKeyDown={(e) => e.preventDefault()}
         className="!pb-0 flex max-h-[80vh] flex-col overflow-hidden"
       >
-        {/* Header */}
         <Flex align="start" justify="between" className="shrink-0 pb-2">
           <ShortcutsHeader />
           <button
@@ -49,14 +48,12 @@ export function KeyboardShortcutsSheet({
           </button>
         </Flex>
 
-        {/* Scrollable list */}
         <Box className="min-h-0 flex-1 overflow-y-auto pr-[8px]">
           <KeyboardShortcutsList />
           {/* Bottom padding so list content doesn't sit behind the sticky footer */}
           <Box className="h-[56px]" />
         </Box>
 
-        {/* Sticky "Reset all" footer */}
         <ResetAllFooter />
       </Dialog.Content>
     </Dialog.Root>

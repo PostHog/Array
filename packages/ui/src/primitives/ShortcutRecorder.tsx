@@ -16,17 +16,9 @@ import {
 } from "../shell/keybindingsStore";
 import { useCallback, useEffect, useState } from "react";
 
-// ---------------------------------------------------------------------------
-// Key capture
-// ---------------------------------------------------------------------------
-
 function formatComboLabel(combo: string): string {
   return formatHotkeyParts(combo).join("+");
 }
-
-// ---------------------------------------------------------------------------
-// Recording modal
-// ---------------------------------------------------------------------------
 
 interface RecordingModalProps {
   commandLabel: string;
@@ -160,10 +152,6 @@ export function ShortcutRecordingModal({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Binding chip — single keycap group with click + right-click
-// ---------------------------------------------------------------------------
-
 type RecordingMode = { type: "add" } | { type: "edit"; key: string } | null;
 
 interface BindingChipProps {
@@ -250,10 +238,6 @@ function BindingChip({
   );
 }
 
-// ---------------------------------------------------------------------------
-// ShortcutRecorder — main export
-// ---------------------------------------------------------------------------
-
 interface ShortcutRecorderProps {
   id: ConfigurableShortcutId;
   onRecordingChange?: (recording: boolean) => void;
@@ -272,13 +256,10 @@ export function ShortcutRecorder({
 
   const shortcutEntry = KEYBOARD_SHORTCUTS.find((s) => s.id === id);
 
-  // The effective list of individual binding strings to render as chips.
-  // When customised: use custom array. When at default: split the default
-  // string (e.g. "mod+n,mod+t" → ["mod+n","mod+t"]) so each chip is independent.
+  // Defaults are split into individual chips; customs replace them entirely.
+  // canAddMore counts custom bindings only — defaults don't consume the budget.
   const defaultBindings = splitBindings(DEFAULT_KEYBINDINGS[id]);
   const effectiveBindings = hasCustom ? customs : defaultBindings;
-  // canAddMore is based on custom count only — defaults don't consume the budget.
-  // A user can always add a first custom binding even if there are 2 defaults.
   const canAddMore = customs.length < MAX_CUSTOM_BINDINGS;
 
   const startRecording = useCallback(
@@ -322,7 +303,6 @@ export function ShortcutRecorder({
         />
       )}
 
-      {/* Horizontal scroll container — hides overflow without showing a scrollbar */}
       <div className="flex min-w-0 shrink-0 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <Flex gap="1" align="center" className="shrink-0">
           {effectiveBindings.map((key, i) => (
