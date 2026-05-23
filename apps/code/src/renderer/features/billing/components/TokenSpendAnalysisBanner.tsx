@@ -230,6 +230,15 @@ function SectionTable({
   );
 }
 
+/** Escapes pipe characters so they don't break markdown-table cell boundaries.
+ *
+ * Tool / model / product names can contain `|` (e.g. shell pipelines surfaced as part of an
+ * agent_mode string). Unescaped pipes would split the cell mid-row and the receiving agent
+ * would misread row boundaries. */
+function escapeTableCell(value: string): string {
+  return value.replace(/\|/g, "\\|");
+}
+
 /** Renders the spend data as a compact markdown report for the prefilled task prompt.
  *
  * Kept inline rather than reused for display because the in-banner tables already render
@@ -242,7 +251,7 @@ function buildAnalysisPrompt(data: SpendAnalysisResponse): string {
   const productRows = data.by_product.items
     .map(
       (r) =>
-        `| ${r.product ?? "(none)"} | ${r.event_count.toLocaleString()} | ${formatUsd(r.cost_usd)} |`,
+        `| ${escapeTableCell(r.product ?? "(none)")} | ${r.event_count.toLocaleString()} | ${formatUsd(r.cost_usd)} |`,
     )
     .join("\n");
 
@@ -250,14 +259,14 @@ function buildAnalysisPrompt(data: SpendAnalysisResponse): string {
     .slice(0, 10)
     .map(
       (r) =>
-        `| ${r.tool ?? "(no tool)"} | ${r.generation_count.toLocaleString()} | ${formatTokens(r.avg_input_tokens)} | ${formatUsd(r.cost_usd)} |`,
+        `| ${escapeTableCell(r.tool ?? "(no tool)")} | ${r.generation_count.toLocaleString()} | ${formatTokens(r.avg_input_tokens)} | ${formatUsd(r.cost_usd)} |`,
     )
     .join("\n");
 
   const modelRows = data.by_model.items
     .map(
       (r) =>
-        `| ${r.model ?? "(unknown)"} | ${r.generation_count.toLocaleString()} | ${formatTokens(r.input_tokens)} | ${formatTokens(r.output_tokens)} | ${formatUsd(r.cost_usd)} |`,
+        `| ${escapeTableCell(r.model ?? "(unknown)")} | ${r.generation_count.toLocaleString()} | ${formatTokens(r.input_tokens)} | ${formatTokens(r.output_tokens)} | ${formatUsd(r.cost_usd)} |`,
     )
     .join("\n");
 
