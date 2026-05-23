@@ -481,6 +481,33 @@ export class SessionService {
           return;
         }
 
+        // If a pre-seeded local cache exists for this run (e.g. a fork), reconnect
+        // to that run instead of creating a brand-new session.
+        if (latestRun?.id) {
+          try {
+            const localContent = await trpcClient.logs.readLocalLogs.query({
+              taskRunId: latestRun.id,
+            });
+            if (localContent?.trim()) {
+              log.info("Found pre-seeded local cache for run, reconnecting", {
+                taskId,
+                taskRunId: latestRun.id,
+              });
+              await this.reconnectToLocalSession(
+                taskId,
+                latestRun.id,
+                taskTitle,
+                undefined,
+                repoPath,
+                auth,
+              );
+              return;
+            }
+          } catch {
+            // No local cache — fall through to createNewLocalSession
+          }
+        }
+
         await this.createNewLocalSession(
           taskId,
           taskTitle,

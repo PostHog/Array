@@ -132,8 +132,9 @@ export class ForkService {
       model,
     });
 
-    // 7. Write truncated log to local cache so the new run can be resumed instantly
-    await this.writeLocalCache(newTaskRunId, entries);
+    // 7. Write truncated log to local cache so the new run can be resumed instantly.
+    // Include newSessionId so the session service can discover which JSONL file to load.
+    await this.writeLocalCache(newTaskRunId, entries, newSessionId);
 
     log.info("Fork prepared", {
       newTaskId,
@@ -203,6 +204,7 @@ export class ForkService {
   private async writeLocalCache(
     taskRunId: string,
     entries: AgentTypes.StoredEntry[],
+    newSessionId: string,
   ): Promise<void> {
     if (entries.length === 0) return;
 
@@ -215,7 +217,20 @@ export class ForkService {
     const logPath = path.join(sessionDir, "logs.ndjson");
 
     await fs.mkdir(sessionDir, { recursive: true });
-    const lines = `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`;
+
+    // Append a synthetic entry so parseLogContent picks up the fork's session ID,
+    // not the source session's ID that may appear in the copied entries.
+    const metaEntry: AgentTypes.StoredEntry = {
+      type: "notification",
+      timestamp: new Date().toISOString(),
+      notification: {
+        jsonrpc: "2.0",
+        method: "_posthog/fork_session_meta",
+        params: { sdkSessionId: newSessionId },
+      },
+    };
+    const allEntries = [...entries, metaEntry];
+    const lines = `${allEntries.map((e) => JSON.stringify(e)).join("\n")}\n`;
     await fs.writeFile(logPath, lines, "utf-8");
 
     log.info("Wrote fork local cache", { taskRunId, entries: entries.length });

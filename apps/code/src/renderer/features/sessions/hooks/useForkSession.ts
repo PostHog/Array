@@ -94,8 +94,13 @@ export function useForkSession({ taskId, task }: UseForkSessionOptions) {
 
         toast.success("Fork created", { id: toastId });
 
-        // 4. Navigate to the new task
-        navigateToTask(newTask as unknown as Task);
+        // 4. Navigate to the new task — include latest_run so the session service
+        // knows to look for the pre-seeded local cache rather than creating a new run.
+        const forkTask: Task = {
+          ...(newTask as unknown as Task),
+          latest_run: newTaskRun,
+        };
+        navigateToTask(forkTask);
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : "Failed to create fork",
