@@ -4,19 +4,19 @@ import type {
   SpendAnalysisProductRow,
   SpendAnalysisResponse,
   SpendAnalysisToolRow,
-  SpendAnalysisTraceRow,
 } from "@features/billing/types/spend-analysis";
 import {
   ArrowSquareOut,
   ChartLine,
   Lightning,
+  Sparkle,
   WarningCircle,
 } from "@phosphor-icons/react";
 import { Button, Callout, Flex, Spinner, Table, Text } from "@radix-ui/themes";
+import { useNavigationStore } from "@stores/navigationStore";
 
 const DOCS_URL = "https://posthog.com/docs/llm-analytics";
-const SKILL_URL =
-  "https://github.com/PostHog/posthog/blob/master/products/llm_analytics/skills/exploring-llm-costs/SKILL.md";
+const SKILL_NAME = "exploring-llm-costs";
 
 function formatUsd(amount: number): string {
   if (amount === 0) return "$0";
@@ -31,12 +31,6 @@ function formatTokens(n: number): string {
   return n.toString();
 }
 
-function formatTrace(traceId: string | null): string {
-  if (!traceId) return "(no trace id)";
-  if (traceId.length <= 14) return traceId;
-  return `${traceId.slice(0, 8)}…${traceId.slice(-4)}`;
-}
-
 function formatWindow(fromIso: string, toIso: string): string {
   const fromMs = new Date(fromIso).getTime();
   const toMs = new Date(toIso).getTime();
@@ -44,19 +38,10 @@ function formatWindow(fromIso: string, toIso: string): string {
   return `${days} days`;
 }
 
-function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
-
 function generateSuggestions(data: SpendAnalysisResponse): string[] {
   const suggestions: string[] = [];
   const { summary } = data;
   const toolItems = data.by_tool.items;
-  const traceItems = data.top_traces.items;
 
   if (summary.total_cost_usd === 0) {
     return ["No LLM spend in the selected window."];
@@ -88,19 +73,9 @@ function generateSuggestions(data: SpendAnalysisResponse): string[] {
     }
   }
 
-  if (traceItems.length > 0 && codeTotal > 0) {
-    const topTrace = traceItems[0];
-    const share = topTrace.cost_usd / codeTotal;
-    if (share > 0.15) {
-      suggestions.push(
-        `Your top session cost ${formatUsd(topTrace.cost_usd)} — ${Math.round(share * 100)}% of PostHog Code spend in one trace. Long sessions compound context cost.`,
-      );
-    }
-  }
-
   if (suggestions.length === 0) {
     suggestions.push(
-      "Your spend is fairly evenly distributed across tools and sessions — no single hotspot stands out.",
+      "Your spend is fairly evenly distributed across tools — no single hotspot stands out.",
     );
   }
 
@@ -218,30 +193,6 @@ function ModelTable({ rows }: { rows: SpendAnalysisModelRow[] }) {
   );
 }
 
-function TraceTable({ rows }: { rows: SpendAnalysisTraceRow[] }) {
-  if (rows.length === 0) return null;
-  return (
-    <SectionTable
-      title="Top traces"
-      headers={["Trace", "Generations", "Started", "Cost"]}
-      widths={["40%", "20%", "20%", "20%"]}
-    >
-      {rows.map((r) => (
-        <Table.Row key={r.trace_id ?? "(null)"}>
-          <Table.Cell>
-            <Text className="font-mono text-[12px]">
-              {formatTrace(r.trace_id)}
-            </Text>
-          </Table.Cell>
-          <Table.Cell>{r.generation_count.toLocaleString()}</Table.Cell>
-          <Table.Cell>{formatDate(r.started_at)}</Table.Cell>
-          <Table.Cell>{formatUsd(r.cost_usd)}</Table.Cell>
-        </Table.Row>
-      ))}
-    </SectionTable>
-  );
-}
-
 function SectionTable({
   title,
   headers,
@@ -279,9 +230,77 @@ function SectionTable({
   );
 }
 
-function FooterLinks() {
+/** Renders the spend data as a compact markdown report for the prefilled task prompt.
+ *
+ * Kept inline rather than reused for display because the in-banner tables already render
+ * the same data with React. The markdown here exists so the *new* task has the numbers
+ * in its prompt context without a second API round-trip. */
+function buildAnalysisPrompt(data: SpendAnalysisResponse): string {
+  const { summary } = data;
+  const windowDays = formatWindow(summary.date_from, summary.date_to);
+
+  const productRows = data.by_product.items
+    .map(
+      (r) =>
+        `| ${r.product ?? "(none)"} | ${r.event_count.toLocaleString()} | ${formatUsd(r.cost_usd)} |`,
+    )
+    .join("\n");
+
+  const toolRows = data.by_tool.items
+    .slice(0, 10)
+    .map(
+      (r) =>
+        `| ${r.tool ?? "(no tool)"} | ${r.generation_count.toLocaleString()} | ${formatTokens(r.avg_input_tokens)} | ${formatUsd(r.cost_usd)} |`,
+    )
+    .join("\n");
+
+  const modelRows = data.by_model.items
+    .map(
+      (r) =>
+        `| ${r.model ?? "(unknown)"} | ${r.generation_count.toLocaleString()} | ${formatTokens(r.input_tokens)} | ${formatTokens(r.output_tokens)} | ${formatUsd(r.cost_usd)} |`,
+    )
+    .join("\n");
+
+  return `Here is my PostHog Code LLM spend for the last ${windowDays}. Help me understand what's driving the cost and what concrete changes I should make to reduce it.
+
+Before answering, load the \`${SKILL_NAME}\` skill from the PostHog skill store (via \`mcp__posthog__exec\` -> \`llma-skill-get\`) and follow its cost-reduction playbook. Rank advice by impact, focus on actionable changes (not just "the numbers").
+
+## Summary
+- Total spend: ${formatUsd(summary.total_cost_usd)}
+- PostHog Code spend: ${formatUsd(summary.scoped_cost_usd)} (${summary.total_cost_usd > 0 ? Math.round((summary.scoped_cost_usd / summary.total_cost_usd) * 100) : 0}% of total)
+- Generations: ${summary.scoped_event_count.toLocaleString()}
+- Window: ${windowDays}
+
+## By product
+| Product | Events | Cost |
+| --- | --- | --- |
+${productRows || "| (none) | 0 | $0 |"}
+
+## By tool (PostHog Code, top 10)
+| Tool | Generations | Avg input | Cost |
+| --- | --- | --- | --- |
+${toolRows || "| (none) | 0 | 0 | $0 |"}
+
+## By model (PostHog Code)
+| Model | Generations | Input | Output | Cost |
+| --- | --- | --- | --- | --- |
+${modelRows || "| (none) | 0 | 0 | 0 | $0 |"}
+`;
+}
+
+function FooterLinks({ data }: { data: SpendAnalysisResponse }) {
+  const navigateToTaskInput = useNavigationStore(
+    (state) => state.navigateToTaskInput,
+  );
+
+  const handleAnalyseClick = (): void => {
+    navigateToTaskInput({
+      initialPrompt: buildAnalysisPrompt(data),
+    });
+  };
+
   return (
-    <Flex direction="column" gap="1">
+    <Flex direction="column" gap="2">
       <Text className="text-(--gray-11) text-[13px]">
         Use{" "}
         <a
@@ -294,18 +313,15 @@ function FooterLinks() {
         </a>{" "}
         in your own project for the full slice-and-dice experience.
       </Text>
-      <Text className="text-(--gray-11) text-[13px]">
-        Want an agent to run this kind of analysis on demand? Drop the{" "}
-        <a
-          href={SKILL_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="text-(--accent-11) underline"
-        >
-          exploring-llm-costs
-        </a>{" "}
-        skill into your agent.
-      </Text>
+      <Button
+        size="1"
+        variant="soft"
+        onClick={handleAnalyseClick}
+        className="self-start"
+      >
+        <Sparkle size={12} />
+        Ask an agent to analyse this and suggest reductions
+      </Button>
     </Flex>
   );
 }
@@ -346,7 +362,6 @@ export function TokenSpendAnalysisBanner() {
         <ProductTable rows={data.by_product.items} />
         <ToolTable rows={data.by_tool.items} />
         <ModelTable rows={data.by_model.items} />
-        <TraceTable rows={data.top_traces.items} />
         <Flex
           direction="column"
           gap="2"
@@ -363,7 +378,7 @@ export function TokenSpendAnalysisBanner() {
             </Text>
           ))}
         </Flex>
-        <FooterLinks />
+        <FooterLinks data={data} />
       </Flex>
     );
   }
