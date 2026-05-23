@@ -77,6 +77,12 @@ export function filterEntriesUpToMessage(
   messageIndex: number,
 ): StoredEntry[] {
   let userMessageCount = 0;
+  // Track whether the previous session/update was a user message chunk.
+  // The agent sends one user_message_chunk per content block, so a single
+  // logical user message may produce multiple consecutive chunks.  We only
+  // count the *first* chunk in a consecutive run as a new user message to
+  // match the UI's 1-item-per-prompt counting.
+  let inUserMessage = false;
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
@@ -84,40 +90,44 @@ export function filterEntriesUpToMessage(
 
     if (entry.notification?.method === "session/update" && params?.update) {
       const update = params.update as { sessionUpdate?: string };
-      // Only count full user_message events — user_message_chunk entries are
-      // partial streaming chunks that don't produce rendered conversation items
-      // in the UI, so counting them would create a mismatch with the
-      // messageIndex the UI passes when forking.
-      const isUserMessage = update.sessionUpdate === "user_message";
+      const isUserChunk =
+        update.sessionUpdate === "user_message" ||
+        update.sessionUpdate === "user_message_chunk";
 
-      if (isUserMessage) {
-        if (userMessageCount === messageIndex) {
-          // Scan forward through the assistant response that follows this user message.
-          // Stop at the next user message. Include any checkpoint entries.
-          let cutoffIndex = i + 1;
-          for (let j = i + 1; j < entries.length; j++) {
-            const jEntry = entries[j];
-            const jParams = jEntry.notification?.params as Record<
-              string,
-              unknown
-            >;
-            if (
-              jEntry.notification?.method === "session/update" &&
-              jParams?.update
-            ) {
-              const jUpdate = jParams.update as { sessionUpdate?: string };
+      if (isUserChunk) {
+        if (!inUserMessage) {
+          // First chunk of a new logical user message
+          if (userMessageCount === messageIndex) {
+            // Scan forward through the assistant response that follows this user message.
+            // Stop at the next user message. Include any checkpoint entries.
+            let cutoffIndex = i + 1;
+            for (let j = i + 1; j < entries.length; j++) {
+              const jEntry = entries[j];
+              const jParams = jEntry.notification?.params as Record<
+                string,
+                unknown
+              >;
               if (
-                jUpdate.sessionUpdate === "user_message" ||
-                jUpdate.sessionUpdate === "user_message_chunk"
+                jEntry.notification?.method === "session/update" &&
+                jParams?.update
               ) {
-                break;
+                const jUpdate = jParams.update as { sessionUpdate?: string };
+                if (
+                  jUpdate.sessionUpdate === "user_message" ||
+                  jUpdate.sessionUpdate === "user_message_chunk"
+                ) {
+                  break;
+                }
               }
+              cutoffIndex = j + 1;
             }
-            cutoffIndex = j + 1;
+            return entries.slice(0, cutoffIndex);
           }
-          return entries.slice(0, cutoffIndex);
+          userMessageCount++;
+          inUserMessage = true;
         }
-        userMessageCount++;
+      } else {
+        inUserMessage = false;
       }
     }
   }
