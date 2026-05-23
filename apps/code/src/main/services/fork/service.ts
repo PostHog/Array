@@ -109,14 +109,19 @@ export class ForkService {
     });
 
     // 5. Record the lineage so the UI can show "Forked from: [title]"
-    this.forkRepo.create({
-      forkedTaskId: newTaskId,
-      sourceTaskId,
-      sourceTaskRunId,
-      sourceTaskTitle,
-      forkAtMessageIndex,
-      forkedAt: new Date().toISOString(),
-    });
+    // Non-fatal: if the migration hasn't run yet the banner simply won't show.
+    try {
+      this.forkRepo.create({
+        forkedTaskId: newTaskId,
+        sourceTaskId,
+        sourceTaskRunId,
+        sourceTaskTitle,
+        forkAtMessageIndex,
+        forkedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      log.warn("Could not record fork lineage (migration pending?)", { err });
+    }
 
     const newWorktreePath = workspace.worktree?.worktreePath;
     if (!newWorktreePath) {
