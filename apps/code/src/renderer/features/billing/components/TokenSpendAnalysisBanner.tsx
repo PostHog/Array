@@ -320,7 +320,7 @@ function FooterLinks({ data }: { data: SpendAnalysisResponse }) {
         className="self-start"
       >
         <Sparkle size={12} />
-        Ask an agent to analyse this and suggest reductions
+        Open a task to analyse this with an agent
       </Button>
     </Flex>
   );
