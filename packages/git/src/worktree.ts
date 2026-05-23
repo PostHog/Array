@@ -6,8 +6,10 @@ import { getCleanEnv, getGitOperationManager } from "./operation-manager";
 import {
   addToLocalExclude,
   branchExists,
+  fetchRef,
   getDefaultBranch,
   getHeadSha,
+  hasRef,
   listWorktrees as listWorktreesRaw,
 } from "./queries";
 import { clonePath, forceRemove, safeSymlink } from "./utils";
@@ -125,6 +127,16 @@ export class WorktreeManager {
   async createWorktree(options?: {
     baseBranch?: string;
     onOutput?: (data: string) => void;
+    /**
+     * When true, fetch `origin/<baseBranch>` before creating the worktree and
+     * base the new worktree on the remote tip when reachable. This avoids
+     * spawning a worktree off a stale local ref (e.g. when the cloud harness
+     * provisions a clone whose local trunk has fallen behind `origin`).
+     *
+     * Falls back to the local base ref if the fetch fails (offline / no remote
+     * configured / network blip), so existing local-only setups still work.
+     */
+    fetchBeforeCreate?: boolean;
   }): Promise<WorktreeInfo> {
     const manager = getGitOperationManager();
 
@@ -155,9 +167,13 @@ export class WorktreeManager {
       ? worktreePath
       : `./${WORKTREE_FOLDER_NAME}/${worktreeName}/${this.repoName}`;
 
-    options?.onOutput?.(`Creating worktree from ${baseBranch}...\n`);
+    const baseRef = options?.fetchBeforeCreate
+      ? await this.resolveFreshBaseRef(baseBranch, options?.onOutput)
+      : baseBranch;
+
+    options?.onOutput?.(`Creating worktree from ${baseRef}...\n`);
     const output = await manager.executeWrite(this.mainRepoPath, async () => {
-      return this.spawnWorktreeAdd(["--detach", targetPath, baseBranch], {
+      return this.spawnWorktreeAdd(["--detach", targetPath, baseRef], {
         onOutput: options?.onOutput,
       });
     });
@@ -313,6 +329,52 @@ export class WorktreeManager {
       createdAt: new Date().toISOString(),
       output: output.trim() || undefined,
     };
+  }
+
+  /**
+   * Best-effort resolve a fresh base ref for a new worktree.
+   *
+   * Tries to `git fetch origin <baseBranch>` and return `origin/<baseBranch>`
+   * if the remote tip is reachable. Falls back to the local branch name when
+   * the fetch fails or the remote ref isn't present afterwards (offline,
+   * no `origin` remote, ref doesn't exist on the remote, etc.).
+   *
+   * We base off `origin/<branch>` rather than fast-forwarding the local
+   * branch so the user's local checkout is untouched — the worktree gets
+   * the current remote tip without mutating any local refs.
+   */
+  private async resolveFreshBaseRef(
+    baseBranch: string,
+    onOutput?: (data: string) => void,
+  ): Promise<string> {
+    const manager = getGitOperationManager();
+    const remote = "origin";
+    const remoteRef = `${remote}/${baseBranch}`;
+
+    onOutput?.(`Fetching ${remoteRef}...\n`);
+    const fetched = await manager.executeWrite(this.mainRepoPath, (git) =>
+      fetchRef(git, remote, baseBranch),
+    );
+
+    if (!fetched) {
+      onOutput?.(
+        `Fetch failed for ${remoteRef}, falling back to local ${baseBranch}.\n`,
+      );
+      return baseBranch;
+    }
+
+    const remoteRefExists = await manager.executeRead(
+      this.mainRepoPath,
+      (git) => hasRef(git, remoteRef),
+    );
+    if (!remoteRefExists) {
+      onOutput?.(
+        `Remote ref ${remoteRef} not found after fetch, falling back to local ${baseBranch}.\n`,
+      );
+      return baseBranch;
+    }
+
+    return remoteRef;
   }
 
   private spawnWorktreeAdd(
