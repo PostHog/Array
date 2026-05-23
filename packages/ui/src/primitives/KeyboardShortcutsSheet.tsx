@@ -1,5 +1,6 @@
 import { Keycap } from "./Keycap";
 import { ShortcutRecorder } from "./ShortcutRecorder";
+import { Tooltip } from "./Tooltip";
 import { useShortcut } from "./hooks/useShortcut";
 import { Box, Button, Dialog, Flex, Text } from "@radix-ui/themes";
 import { useMemo } from "react";
@@ -34,9 +35,10 @@ export function KeyboardShortcutsSheet({
       <Dialog.Content
         maxWidth="600px"
         onEscapeKeyDown={(e) => e.preventDefault()}
-        className="max-h-[80vh] overflow-hidden"
+        className="!pb-0 flex max-h-[80vh] flex-col overflow-hidden"
       >
-        <Flex align="start" justify="between" className="relative">
+        {/* Header */}
+        <Flex align="start" justify="between" className="shrink-0 pb-2">
           <ShortcutsHeader />
           <button
             type="button"
@@ -47,11 +49,47 @@ export function KeyboardShortcutsSheet({
           </button>
         </Flex>
 
-        <Box className="max-h-[calc(80vh-120px)] overflow-y-auto pr-[8px]">
+        {/* Scrollable list */}
+        <Box className="min-h-0 flex-1 overflow-y-auto pr-[8px]">
           <KeyboardShortcutsList />
+          {/* Bottom padding so list content doesn't sit behind the sticky footer */}
+          <Box className="h-[56px]" />
         </Box>
+
+        {/* Sticky "Reset all" footer */}
+        <ResetAllFooter />
       </Dialog.Content>
     </Dialog.Root>
+  );
+}
+
+function ResetAllFooter() {
+  const hasCustomBindings = useKeybindingsStore((s) =>
+    Object.keys(s.customKeybindings).some(
+      (k) =>
+        (s.customKeybindings[k as ConfigurableShortcutId]?.length ?? 0) > 0,
+    ),
+  );
+  const resetAll = useKeybindingsStore((s) => s.resetAll);
+
+  if (!hasCustomBindings) return null;
+
+  return (
+    <Flex
+      justify="center"
+      align="center"
+      className="shrink-0 border-(--gray-4) border-t py-3"
+    >
+      <Button
+        variant="ghost"
+        color="gray"
+        size="1"
+        onClick={resetAll}
+        className="cursor-pointer"
+      >
+        Reset all shortcuts to defaults
+      </Button>
+    </Flex>
   );
 }
 
@@ -80,13 +118,6 @@ function ShortcutsHeader() {
 
 export function KeyboardShortcutsList() {
   const shortcutsByCategory = useMemo(() => getShortcutsByCategory(), []);
-  const hasCustomBindings = useKeybindingsStore((s) =>
-    Object.keys(s.customKeybindings).some(
-      (k) =>
-        (s.customKeybindings[k as ConfigurableShortcutId]?.length ?? 0) > 0,
-    ),
-  );
-  const resetAll = useKeybindingsStore((s) => s.resetAll);
 
   const categoryOrder: ShortcutCategory[] = [
     "general",
@@ -125,10 +156,11 @@ export function KeyboardShortcutsList() {
                   key={shortcut.id}
                   align="center"
                   justify="between"
+                  gap="3"
                   px="3"
                   className="group border-b border-b-(--gray-4) pt-[6px] pb-[6px] last:border-b-0 odd:bg-(--gray-2) even:bg-(--gray-1)"
                 >
-                  <Flex direction="column" gap="0">
+                  <Flex direction="column" gap="0" className="min-w-0 flex-1">
                     <Text className="text-sm">{shortcut.description}</Text>
                     {shortcut.context && (
                       <Text color="gray" className="text-[11px]">
@@ -136,43 +168,30 @@ export function KeyboardShortcutsList() {
                       </Text>
                     )}
                   </Flex>
-                  {shortcut.configurable ? (
-                    <ShortcutRecorder
-                      id={shortcut.id as ConfigurableShortcutId}
-                    />
-                  ) : (
-                    <ShortcutKeys
-                      keys={shortcut.keys}
-                      alternateKeys={shortcut.alternateKeys}
-                    />
-                  )}
+                  <div className="shrink-0">
+                    {shortcut.configurable ? (
+                      <ShortcutRecorder
+                        id={shortcut.id as ConfigurableShortcutId}
+                      />
+                    ) : (
+                      <ShortcutKeys
+                        keys={shortcut.keys}
+                        alternateKeys={shortcut.alternateKeys}
+                      />
+                    )}
+                  </div>
                 </Flex>
               ))}
             </Box>
           </Flex>
         );
       })}
-
-      {hasCustomBindings && (
-        <Flex justify="end">
-          <Button
-            variant="soft"
-            color="gray"
-            size="1"
-            onClick={resetAll}
-            className="cursor-pointer"
-          >
-            Reset all shortcuts to defaults
-          </Button>
-        </Flex>
-      )}
     </Flex>
   );
 }
 
 function SingleShortcutKeys({ keys }: { keys: string }) {
   const parts = formatHotkeyParts(keys);
-
   return (
     <Flex gap="1" align="center">
       {parts.map((part) => (
@@ -189,11 +208,7 @@ function ShortcutKeys({
   keys: string;
   alternateKeys?: string;
 }) {
-  if (!alternateKeys) {
-    return <SingleShortcutKeys keys={keys} />;
-  }
-
-  return (
+  const inner = alternateKeys ? (
     <Flex gap="1" align="center">
       <SingleShortcutKeys keys={keys} />
       <Text color="gray" className="text-[13px]">
@@ -201,5 +216,19 @@ function ShortcutKeys({
       </Text>
       <SingleShortcutKeys keys={alternateKeys} />
     </Flex>
+  ) : (
+    <SingleShortcutKeys keys={keys} />
+  );
+
+  return (
+    <Tooltip
+      content="This shortcut cannot be customized"
+      side="left"
+      delayDuration={400}
+    >
+      <div className="cursor-default rounded-(--radius-1) p-[2px] transition-colors hover:bg-(--gray-4)">
+        {inner}
+      </div>
+    </Tooltip>
   );
 }

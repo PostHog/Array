@@ -22,6 +22,7 @@ export const SHORTCUTS = {
   SPACE_UP: "mod+up",
   SPACE_DOWN: "mod+down",
   FIND_IN_CONVERSATION: "mod+f",
+  FILE_PICKER: "mod+p",
   BLUR: "escape",
   SUBMIT_BLUR: "mod+enter",
   SWITCH_MESSAGING_MODE: "mod+s",
@@ -194,11 +195,20 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     context: "Task detail",
   },
   {
+    id: "file-picker",
+    keys: SHORTCUTS.FILE_PICKER,
+    description: "Open file picker",
+    category: "panels",
+    context: "Task detail",
+    configurable: true,
+  },
+  {
     id: "paste-as-file",
     keys: SHORTCUTS.PASTE_AS_FILE,
     description: "Paste as file attachment",
     category: "editor",
     context: "Message editor",
+    configurable: true,
   },
   {
     id: "prompt-history-prev",
@@ -206,6 +216,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "Previous prompt (when input is empty)",
     category: "editor",
     context: "Message editor",
+    configurable: true,
   },
   {
     id: "prompt-history-next",
@@ -213,6 +224,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "Next prompt (when input is empty)",
     category: "editor",
     context: "Message editor",
+    configurable: true,
   },
   {
     id: "editor-bold",
@@ -269,6 +281,10 @@ export const CONFIGURABLE_SHORTCUT_IDS = [
   "open-in-editor",
   "copy-path",
   "toggle-focus",
+  "file-picker",
+  "paste-as-file",
+  "prompt-history-prev",
+  "prompt-history-next",
 ] as const;
 
 export type ConfigurableShortcutId = (typeof CONFIGURABLE_SHORTCUT_IDS)[number];
@@ -291,6 +307,10 @@ export const DEFAULT_KEYBINDINGS: Record<ConfigurableShortcutId, string> = {
   "open-in-editor": SHORTCUTS.OPEN_IN_EDITOR,
   "copy-path": SHORTCUTS.COPY_PATH,
   "toggle-focus": SHORTCUTS.TOGGLE_FOCUS,
+  "file-picker": SHORTCUTS.FILE_PICKER,
+  "paste-as-file": SHORTCUTS.PASTE_AS_FILE,
+  "prompt-history-prev": "shift+up",
+  "prompt-history-next": "shift+down",
 };
 
 export function getShortcutsByCategory(): Record<
@@ -307,6 +327,41 @@ export function getShortcutsByCategory(): Record<
     grouped[shortcut.category].push(shortcut);
   }
   return grouped;
+}
+
+/**
+ * Convert a DOM KeyboardEvent to the normalised combo string used by the
+ * keybindings store (e.g. "mod+shift+v"). Returns null for bare modifier presses.
+ */
+export function eventToCombo(e: KeyboardEvent): string | null {
+  const bare = ["Meta", "Control", "Shift", "Alt"];
+  if (bare.includes(e.key)) return null;
+  if (!(e.metaKey || e.ctrlKey || e.altKey)) return null;
+
+  const parts: string[] = [];
+  if (e.metaKey || e.ctrlKey) parts.push("mod");
+  if (e.shiftKey) parts.push("shift");
+  if (e.altKey) parts.push("alt");
+  // Normalize "ArrowUp" → "up", "ArrowDown" → "down", etc. to match stored bindings.
+  parts.push(e.key.toLowerCase().replace(/^arrow/, ""));
+  return parts.join("+");
+}
+
+/**
+ * Like eventToCombo but also accepts shift-only combos (no ctrl/meta/alt required).
+ * Used inside Tiptap's handleKeyDown to match bindings such as "shift+up".
+ */
+export function tiptapEventToCombo(e: KeyboardEvent): string | null {
+  const bare = ["Meta", "Control", "Shift", "Alt"];
+  if (bare.includes(e.key)) return null;
+  if (!(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)) return null;
+
+  const parts: string[] = [];
+  if (e.metaKey || e.ctrlKey) parts.push("mod");
+  if (e.shiftKey) parts.push("shift");
+  if (e.altKey) parts.push("alt");
+  parts.push(e.key.toLowerCase().replace(/^arrow/, ""));
+  return parts.join("+");
 }
 
 function formatKey(key: string): string {

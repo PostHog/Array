@@ -188,43 +188,107 @@ describe("keybindingsStore", () => {
     });
   });
 
+  describe("updateKeybinding", () => {
+    it("replaces only the edited key when there are existing custom bindings", () => {
+      useKeybindingsStore.setState({
+        customKeybindings: { "new-task": ["ctrl+p", "ctrl+q"] },
+      });
+      useKeybindingsStore
+        .getState()
+        .updateKeybinding("new-task", "ctrl+p", "ctrl+x");
+      expect(
+        useKeybindingsStore.getState().customKeybindings["new-task"],
+      ).toEqual(["ctrl+x", "ctrl+q"]);
+    });
+
+    it("when editing a default binding, copies all defaults and replaces only the target", () => {
+      // new-task has 2 defaults: mod+n and mod+t
+      useKeybindingsStore
+        .getState()
+        .updateKeybinding("new-task", "mod+n", "ctrl+x");
+      expect(
+        useKeybindingsStore.getState().customKeybindings["new-task"],
+      ).toEqual(["ctrl+x", "mod+t"]);
+    });
+
+    it("when editing the only default binding, stores just the new key", () => {
+      useKeybindingsStore
+        .getState()
+        .updateKeybinding("command-menu", "mod+k", "ctrl+x");
+      expect(
+        useKeybindingsStore.getState().customKeybindings["command-menu"],
+      ).toEqual(["ctrl+x"]);
+    });
+  });
+
+  describe("addKeybinding — max binding limit", () => {
+    it("does not add a third binding beyond the max of 2", () => {
+      useKeybindingsStore.getState().addKeybinding("command-menu", "ctrl+p");
+      useKeybindingsStore.getState().addKeybinding("command-menu", "ctrl+q");
+      useKeybindingsStore.getState().addKeybinding("command-menu", "ctrl+r");
+      expect(
+        useKeybindingsStore.getState().customKeybindings["command-menu"],
+      ).toEqual(["ctrl+p", "ctrl+q"]);
+    });
+  });
+
   describe("findConflict", () => {
     beforeEach(() => {
       useKeybindingsStore.setState({ customKeybindings: {} });
     });
 
-    it("returns null when no conflict exists", () => {
-      expect(findConflict("ctrl+z", "command-menu")).toBeNull();
+    it("returns no conflict when key is unused", () => {
+      const result = findConflict("ctrl+z", "command-menu");
+      expect(result.description).toBeNull();
     });
 
-    it("detects a conflict with a default binding on another shortcut", () => {
-      // mod+b is the default for toggle-left-sidebar
-      expect(findConflict("mod+b", "command-menu")).toBe("toggle-left-sidebar");
+    it("detects a conflict with a configurable default binding", () => {
+      // mod+b is the default for toggle-left-sidebar (configurable)
+      const result = findConflict("mod+b", "command-menu");
+      expect(result.id).toBe("toggle-left-sidebar");
+      expect(result.isFixed).toBe(false);
     });
 
     it("does not flag the excluded shortcut's own default as a conflict", () => {
-      // mod+k is command-menu's own default — should not conflict with itself
-      expect(findConflict("mod+k", "command-menu")).toBeNull();
+      // mod+k is command-menu's own default
+      const result = findConflict("mod+k", "command-menu");
+      expect(result.description).toBeNull();
     });
 
     it("detects a conflict within comma-separated default alternates", () => {
       // prev-task default includes "ctrl+shift+tab" as an alternate
-      expect(findConflict("ctrl+shift+tab", "command-menu")).toBe("prev-task");
+      const result = findConflict("ctrl+shift+tab", "command-menu");
+      expect(result.id).toBe("prev-task");
     });
 
     it("detects a conflict with a custom binding on another shortcut", () => {
       useKeybindingsStore.setState({
         customKeybindings: { settings: ["ctrl+alt+s"] },
       });
-      expect(findConflict("ctrl+alt+s", "command-menu")).toBe("settings");
+      const result = findConflict("ctrl+alt+s", "command-menu");
+      expect(result.id).toBe("settings");
     });
 
     it("does not conflict with custom binding on the excluded shortcut itself", () => {
       useKeybindingsStore.setState({
         customKeybindings: { "command-menu": ["ctrl+p"] },
       });
-      // ctrl+p is a custom binding on command-menu — assigning it to command-menu again is fine
-      expect(findConflict("ctrl+p", "command-menu")).toBeNull();
+      const result = findConflict("ctrl+p", "command-menu");
+      expect(result.description).toBeNull();
+    });
+
+    it("detects mod+, conflict correctly despite comma in the key", () => {
+      // settings default is mod+, — the comma is part of the key, not a separator
+      const result = findConflict("mod+,", "command-menu");
+      expect(result.id).toBe("settings");
+    });
+
+    it("detects conflicts with non-configurable shortcuts", () => {
+      // editor-underline (mod+u) is non-configurable (Tiptap internal) and
+      // not used by any configurable shortcut
+      const result = findConflict("mod+u", "command-menu");
+      expect(result.isFixed).toBe(true);
+      expect(result.description).toBeTruthy();
     });
   });
 });

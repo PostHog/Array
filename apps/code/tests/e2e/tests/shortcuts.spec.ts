@@ -4,13 +4,11 @@ import { expect, test } from "../fixtures/electron";
 const isMac = process.platform === "darwin";
 const modKey = isMac ? "Meta" : "Control";
 
-// Opens the shortcuts sheet via keyboard shortcut.
 async function openShortcutsSheet(window: Page) {
   await window.keyboard.press(`${modKey}+Slash`);
   await window.getByText("Keyboard Combos").waitFor({ timeout: 5000 });
 }
 
-// Returns true when the main layout is rendered (requires authenticated state).
 async function isMainLayout(window: Page): Promise<boolean> {
   await window.locator("#root > *").waitFor({ timeout: 30000 });
   await window
@@ -24,7 +22,6 @@ async function isMainLayout(window: Page): Promise<boolean> {
     .catch(() => false);
 }
 
-// Clears all custom bindings via the Reset all button if it's visible.
 async function resetAllIfNeeded(window: Page) {
   try {
     await openShortcutsSheet(window);
@@ -33,6 +30,32 @@ async function resetAllIfNeeded(window: Page) {
     if (visible) await resetBtn.click();
     await window.keyboard.press("Escape");
   } catch {}
+}
+
+// Returns the chip button(s) for a named shortcut.
+// Each individual binding renders as a separate button with this title pattern.
+function getChips(window: Page, commandLabel: string) {
+  return window.locator(
+    `button[title='Click to edit binding for "${commandLabel}"']`,
+  );
+}
+
+// Opens the recording modal via right-click → "Add another binding".
+async function openAddRecording(window: Page, commandLabel: string) {
+  await getChips(window, commandLabel).first().click({ button: "right" });
+  await window.getByRole("menuitem", { name: "Add another binding" }).click();
+  await window
+    .getByText(`Add new binding for "${commandLabel}"`)
+    .waitFor({ timeout: 3000 });
+}
+
+// Records a combo and confirms with Enter. Assumes the recording modal is already open.
+async function recordAndConfirm(window: Page, combo: string) {
+  await window.keyboard.press(combo);
+  await window
+    .getByText("Press Enter to confirm, Escape to cancel")
+    .waitFor({ timeout: 2000 });
+  await window.keyboard.press("Enter");
 }
 
 test.describe("Configurable Keyboard Shortcuts", () => {
@@ -61,39 +84,40 @@ test.describe("Configurable Keyboard Shortcuts", () => {
     }
   });
 
-  // ─── Hover controls ───────────────────────────────────────────────────────
+  // ─── Configurable vs non-configurable ─────────────────────────────────────
 
-  test("hovering a configurable row reveals the add (+) button", async ({
+  test("configurable rows expose clickable chip buttons", async ({
     window,
   }) => {
     await openShortcutsSheet(window);
 
-    await window.getByText("Open command menu").hover();
-    await expect(window.getByTitle("Add binding").first()).toBeVisible();
+    // "Open command menu" is configurable
+    await expect(getChips(window, "Open command menu").first()).toBeVisible();
   });
 
-  test("non-configurable rows do not show an add (+) button", async ({
-    window,
-  }) => {
+  test("non-configurable rows show a tooltip on hover", async ({ window }) => {
     await openShortcutsSheet(window);
 
     // "Switch to task 1-9" is intentionally non-configurable
+    // The keycap wrapper has a Tooltip with this text; hover to reveal it
     await window.getByText("Switch to task 1-9").hover();
-    const addBtns = window.getByTitle("Add binding");
-    expect(await addBtns.count()).toBe(0);
+    await expect(
+      window.getByText("This shortcut cannot be customized"),
+    ).toBeVisible({ timeout: 2000 });
   });
 
-  // ─── Recording ────────────────────────────────────────────────────────────
+  // ─── Recording modal ──────────────────────────────────────────────────────
 
-  test("clicking + enters recording mode", async ({ window }) => {
+  test("clicking a chip opens the recording modal in edit mode", async ({
+    window,
+  }) => {
     await openShortcutsSheet(window);
 
-    await window.getByText("Open inbox").hover();
-    await window.getByTitle("Add binding").click();
-
-    await expect(
-      window.locator('input[aria-label="Press new shortcut"]'),
-    ).toBeVisible();
+    await getChips(window, "Open inbox").first().click();
+    await expect(window.getByText('Edit binding for "Open inbox"')).toBeVisible(
+      { timeout: 3000 },
+    );
+    await expect(window.getByText("Press a key combination...")).toBeVisible();
   });
 
   test("pressing Escape cancels recording without closing the sheet", async ({
@@ -101,151 +125,292 @@ test.describe("Configurable Keyboard Shortcuts", () => {
   }) => {
     await openShortcutsSheet(window);
 
-    await window.getByText("Open inbox").hover();
-    await window.getByTitle("Add binding").click();
-
-    const input = window.locator('input[aria-label="Press new shortcut"]');
-    await expect(input).toBeVisible();
+    await getChips(window, "Open inbox").first().click();
+    await window
+      .getByText('Edit binding for "Open inbox"')
+      .waitFor({ timeout: 3000 });
 
     await window.keyboard.press("Escape");
 
-    // Input should close…
-    await expect(input).not.toBeVisible();
-    // …but the sheet should stay open
+    // Modal closes, sheet stays open
+    await expect(
+      window.getByText('Edit binding for "Open inbox"'),
+    ).not.toBeVisible();
     await expect(window.getByText("Keyboard Combos")).toBeVisible();
   });
 
-  test("bare letter key is rejected in recording mode", async ({ window }) => {
+  test("clicking the backdrop closes recording without saving", async ({
+    window,
+  }) => {
     await openShortcutsSheet(window);
 
-    await window.getByText("Open inbox").hover();
-    await window.getByTitle("Add binding").click();
+    await getChips(window, "Open inbox").first().click();
+    await window
+      .getByText('Edit binding for "Open inbox"')
+      .waitFor({ timeout: 3000 });
 
-    const input = window.locator('input[aria-label="Press new shortcut"]');
-    await expect(input).toBeVisible();
+    // Click the blurred backdrop — the outer fixed overlay has a backdrop-filter style
+    await window
+      .locator('[style*="backdrop-filter"]')
+      .click({ position: { x: 10, y: 10 } });
 
-    // Press a bare letter with no modifier — should be ignored
+    await expect(
+      window.getByText('Edit binding for "Open inbox"'),
+    ).not.toBeVisible({ timeout: 2000 });
+    await expect(window.getByText("Keyboard Combos")).toBeVisible();
+  });
+
+  test("bare letter key is ignored in recording mode", async ({ window }) => {
+    await openShortcutsSheet(window);
+
+    await getChips(window, "Open inbox").first().click();
+    await window
+      .getByText('Edit binding for "Open inbox"')
+      .waitFor({ timeout: 3000 });
+
     await window.keyboard.press("k");
 
-    // Input should still be in recording mode (not closed)
-    await expect(input).toBeVisible();
+    // No combo captured — placeholder still shown, modal still open
+    await expect(window.getByText("Press a key combination...")).toBeVisible();
+    await expect(
+      window.getByText('Edit binding for "Open inbox"'),
+    ).toBeVisible();
+  });
+
+  test("Enter without a captured combo does not close the modal", async ({
+    window,
+  }) => {
+    await openShortcutsSheet(window);
+
+    await getChips(window, "Open inbox").first().click();
+    await window
+      .getByText('Edit binding for "Open inbox"')
+      .waitFor({ timeout: 3000 });
+
+    await window.keyboard.press("Enter");
+
+    // Modal should still be open
+    await expect(
+      window.getByText('Edit binding for "Open inbox"'),
+    ).toBeVisible();
   });
 
   // ─── Saving a binding ─────────────────────────────────────────────────────
 
-  test("recording a valid combo saves it and shows keycap + remove button", async ({
+  test("recording and pressing Enter saves the binding", async ({ window }) => {
+    await openShortcutsSheet(window);
+
+    await openAddRecording(window, "Open inbox");
+
+    await window.keyboard.press("ControlOrMeta+Shift+Z");
+    await window
+      .getByText("Press Enter to confirm, Escape to cancel")
+      .waitFor({ timeout: 2000 });
+    await window.keyboard.press("Enter");
+
+    // Modal closes
+    await expect(
+      window.getByText('Add new binding for "Open inbox"'),
+    ).not.toBeVisible({ timeout: 3000 });
+
+    // The chip for the shortcut should still be visible (now showing the new binding)
+    await expect(getChips(window, "Open inbox").first()).toBeVisible();
+  });
+
+  test("right-click context menu offers Edit and Add another binding", async ({
     window,
   }) => {
     await openShortcutsSheet(window);
 
-    await window.getByText("Open inbox").hover();
-    await window.getByTitle("Add binding").click();
+    await getChips(window, "Open inbox").first().click({ button: "right" });
 
-    // Use ControlOrMeta+Shift+Z — not in the default shortcut set
-    await window.keyboard.press("ControlOrMeta+Shift+Z");
-
-    // Recording input should close
     await expect(
-      window.locator('input[aria-label="Press new shortcut"]'),
-    ).not.toBeVisible({ timeout: 3000 });
-
-    // Remove and reset buttons should now be visible on hover
-    await window.getByText("Open inbox").hover();
-    await expect(window.getByTitle("Remove binding").first()).toBeVisible();
-    await expect(window.getByTitle("Reset to default").first()).toBeVisible();
+      window.getByRole("menuitem", { name: "Edit binding" }),
+    ).toBeVisible({ timeout: 2000 });
+    await expect(
+      window.getByRole("menuitem", { name: "Add another binding" }),
+    ).toBeVisible();
   });
 
-  test("can add a second binding to the same shortcut", async ({ window }) => {
+  test("can add a second binding via Add another binding", async ({
+    window,
+  }) => {
     await openShortcutsSheet(window);
 
-    // Add first binding
-    await window.getByText("Open inbox").hover();
-    await window.getByTitle("Add binding").click();
-    await window.keyboard.press("ControlOrMeta+Shift+Z");
-    await window
-      .locator('input[aria-label="Press new shortcut"]')
-      .waitFor({ state: "hidden" });
+    // Add first custom binding
+    await openAddRecording(window, "Open inbox");
+    await recordAndConfirm(window, "ControlOrMeta+Shift+Z");
 
-    // Add second binding
-    await window.getByText("Open inbox").hover();
-    await window.getByTitle("Add binding").click();
-    await window.keyboard.press("ControlOrMeta+Shift+X");
+    // Add second custom binding
+    await getChips(window, "Open inbox").first().click({ button: "right" });
+    await window.getByRole("menuitem", { name: "Add another binding" }).click();
     await window
-      .locator('input[aria-label="Press new shortcut"]')
-      .waitFor({ state: "hidden" });
+      .getByText('Add new binding for "Open inbox"')
+      .waitFor({ timeout: 3000 });
+    await recordAndConfirm(window, "ControlOrMeta+Shift+X");
 
-    // Both remove buttons should be visible (one per binding)
-    await window.getByText("Open inbox").hover();
-    const removeBtns = window.getByTitle("Remove binding");
-    expect(await removeBtns.count()).toBe(2);
+    // Two chips should now exist for this shortcut
+    await expect(getChips(window, "Open inbox")).toHaveCount(2, {
+      timeout: 3000,
+    });
+  });
+
+  test("Add another binding option is absent at the 2-binding limit", async ({
+    window,
+  }) => {
+    await openShortcutsSheet(window);
+
+    // Fill both custom binding slots
+    await openAddRecording(window, "Open inbox");
+    await recordAndConfirm(window, "ControlOrMeta+Shift+Z");
+
+    await getChips(window, "Open inbox").first().click({ button: "right" });
+    await window.getByRole("menuitem", { name: "Add another binding" }).click();
+    await recordAndConfirm(window, "ControlOrMeta+Shift+X");
+
+    // Right-click again — "Add another binding" should be gone
+    await getChips(window, "Open inbox").first().click({ button: "right" });
+    await expect(
+      window.getByRole("menuitem", { name: "Add another binding" }),
+    ).not.toBeVisible({ timeout: 1000 });
   });
 
   // ─── Conflict detection ───────────────────────────────────────────────────
 
-  test("assigning an already-used combo shows a conflict toast", async ({
+  test("pressing an already-used combo shows amber conflict message", async ({
     window,
   }) => {
     await openShortcutsSheet(window);
 
-    await window.getByText("Open command menu").hover();
-    await window.getByTitle("Add binding").click();
+    await openAddRecording(window, "Open command menu");
 
     // mod+b is the default for "Toggle left sidebar"
     await window.keyboard.press(`${modKey}+b`);
 
     await expect(
-      window.getByText('Already used by "Toggle left sidebar"'),
-    ).toBeVisible({ timeout: 5000 });
+      window.getByText(/Conflicts with "Toggle left sidebar"/),
+    ).toBeVisible({ timeout: 3000 });
+  });
 
-    // Recording should be cancelled — no remove button
-    await window.getByText("Open command menu").hover();
-    await expect(window.getByTitle("Remove binding")).not.toBeVisible();
+  test("Enter is blocked while a conflict is shown", async ({ window }) => {
+    await openShortcutsSheet(window);
+
+    await openAddRecording(window, "Open command menu");
+
+    await window.keyboard.press(`${modKey}+b`);
+    await window
+      .getByText(/Conflicts with "Toggle left sidebar"/)
+      .waitFor({ timeout: 2000 });
+
+    // Enter should NOT dismiss the modal while conflict is active
+    await window.keyboard.press("Enter");
+    await expect(
+      window.getByText(/Conflicts with "Toggle left sidebar"/),
+    ).toBeVisible();
+  });
+
+  test("resolving a conflict allows the binding to be saved", async ({
+    window,
+  }) => {
+    await openShortcutsSheet(window);
+
+    await openAddRecording(window, "Open command menu");
+
+    // First press a conflicting key, then a safe one
+    await window.keyboard.press(`${modKey}+b`);
+    await window.getByText(/Conflicts with/).waitFor({ timeout: 2000 });
+
+    await window.keyboard.press("ControlOrMeta+Shift+Z");
+    await window
+      .getByText("Press Enter to confirm, Escape to cancel")
+      .waitFor({ timeout: 2000 });
+    await window.keyboard.press("Enter");
+
+    await expect(
+      window.getByText('Add new binding for "Open command menu"'),
+    ).not.toBeVisible({ timeout: 3000 });
   });
 
   // ─── Removing a binding ───────────────────────────────────────────────────
 
-  test("clicking × removes a custom binding", async ({ window }) => {
+  test("right-click Remove binding removes a custom binding", async ({
+    window,
+  }) => {
     await openShortcutsSheet(window);
 
-    // Add a binding
-    await window.getByText("Open inbox").hover();
-    await window.getByTitle("Add binding").click();
-    await window.keyboard.press("ControlOrMeta+Shift+Z");
-    await window
-      .locator('input[aria-label="Press new shortcut"]')
-      .waitFor({ state: "hidden" });
+    await openAddRecording(window, "Open inbox");
+    await recordAndConfirm(window, "ControlOrMeta+Shift+Z");
 
-    // Remove it
-    await window.getByText("Open inbox").hover();
-    await window.getByTitle("Remove binding").click();
+    // Add a second so we can remove one without hitting the single-binding guard
+    await getChips(window, "Open inbox").first().click({ button: "right" });
+    await window.getByRole("menuitem", { name: "Add another binding" }).click();
+    await recordAndConfirm(window, "ControlOrMeta+Shift+X");
 
-    // Remove and reset buttons should now be gone
-    await window.getByText("Open inbox").hover();
-    await expect(window.getByTitle("Remove binding")).not.toBeVisible();
-    await expect(window.getByTitle("Reset to default")).not.toBeVisible();
+    await expect(getChips(window, "Open inbox")).toHaveCount(2, {
+      timeout: 3000,
+    });
+
+    await getChips(window, "Open inbox").first().click({ button: "right" });
+    await window.getByRole("menuitem", { name: "Remove binding" }).click();
+
+    await expect(getChips(window, "Open inbox")).toHaveCount(1, {
+      timeout: 3000,
+    });
+  });
+
+  test("Remove binding is disabled and shows a tooltip when it is the only binding", async ({
+    window,
+  }) => {
+    await openShortcutsSheet(window);
+
+    // "Open inbox" has one default binding — Remove should be disabled
+    await getChips(window, "Open inbox").first().click({ button: "right" });
+
+    const removeItem = window.getByRole("menuitem", { name: "Remove binding" });
+    // Radix disables items via aria-disabled or data-disabled
+    const isDisabled =
+      (await removeItem.getAttribute("aria-disabled")) === "true" ||
+      (await removeItem.getAttribute("data-disabled")) !== null;
+    expect(isDisabled).toBe(true);
   });
 
   // ─── Per-shortcut reset ───────────────────────────────────────────────────
 
-  test("↩ resets an individual shortcut to its default", async ({ window }) => {
+  test("Reset to default is disabled when already at default", async ({
+    window,
+  }) => {
     await openShortcutsSheet(window);
 
-    // Add a binding
-    await window.getByText("Open inbox").hover();
-    await window.getByTitle("Add binding").click();
-    await window.keyboard.press("ControlOrMeta+Shift+Z");
-    await window
-      .locator('input[aria-label="Press new shortcut"]')
-      .waitFor({ state: "hidden" });
+    await getChips(window, "Open inbox").first().click({ button: "right" });
 
-    // Reset this shortcut
-    await window.getByText("Open inbox").hover();
-    await window.getByTitle("Reset to default").click();
+    const resetItem = window.getByRole("menuitem", {
+      name: "Reset to default",
+    });
+    const isDisabled =
+      (await resetItem.getAttribute("aria-disabled")) === "true" ||
+      (await resetItem.getAttribute("data-disabled")) !== null;
+    expect(isDisabled).toBe(true);
+  });
 
-    // Should revert — no custom controls visible
-    await window.getByText("Open inbox").hover();
-    await expect(window.getByTitle("Reset to default")).not.toBeVisible();
-    await expect(window.getByTitle("Remove binding")).not.toBeVisible();
+  test("Reset to default reverts a customised shortcut", async ({ window }) => {
+    await openShortcutsSheet(window);
+
+    await openAddRecording(window, "Open inbox");
+    await recordAndConfirm(window, "ControlOrMeta+Shift+Z");
+
+    // Reset
+    await getChips(window, "Open inbox").first().click({ button: "right" });
+    await window.getByRole("menuitem", { name: "Reset to default" }).click();
+
+    // Now Reset to default should be disabled again (back at default)
+    await getChips(window, "Open inbox").first().click({ button: "right" });
+    const resetItem = window.getByRole("menuitem", {
+      name: "Reset to default",
+    });
+    const isDisabled =
+      (await resetItem.getAttribute("aria-disabled")) === "true" ||
+      (await resetItem.getAttribute("data-disabled")) !== null;
+    expect(isDisabled).toBe(true);
   });
 
   // ─── Reset all ────────────────────────────────────────────────────────────
@@ -265,14 +430,9 @@ test.describe("Configurable Keyboard Shortcuts", () => {
   }) => {
     await openShortcutsSheet(window);
 
-    await window.getByText("Open inbox").hover();
-    await window.getByTitle("Add binding").click();
-    await window.keyboard.press("ControlOrMeta+Shift+Z");
-    await window
-      .locator('input[aria-label="Press new shortcut"]')
-      .waitFor({ state: "hidden" });
+    await openAddRecording(window, "Open inbox");
+    await recordAndConfirm(window, "ControlOrMeta+Shift+Z");
 
-    // Scroll to bottom to find the button
     const resetAllBtn = window.getByText("Reset all shortcuts to defaults");
     await resetAllBtn.scrollIntoViewIfNeeded();
     await expect(resetAllBtn).toBeVisible();
@@ -281,31 +441,16 @@ test.describe("Configurable Keyboard Shortcuts", () => {
   test("clicking Reset all clears all custom bindings", async ({ window }) => {
     await openShortcutsSheet(window);
 
-    // Add bindings to two different shortcuts
-    await window.getByText("Open inbox").hover();
-    await window.getByTitle("Add binding").click();
-    await window.keyboard.press("ControlOrMeta+Shift+Z");
-    await window
-      .locator('input[aria-label="Press new shortcut"]')
-      .waitFor({ state: "hidden" });
+    await openAddRecording(window, "Open inbox");
+    await recordAndConfirm(window, "ControlOrMeta+Shift+Z");
 
-    await window.getByText("Open command menu").hover();
-    await window.getByTitle("Add binding").click();
-    await window.keyboard.press("ControlOrMeta+Shift+X");
-    await window
-      .locator('input[aria-label="Press new shortcut"]')
-      .waitFor({ state: "hidden" });
+    await openAddRecording(window, "Open command menu");
+    await recordAndConfirm(window, "ControlOrMeta+Shift+X");
 
-    // Click Reset all
     const resetAllBtn = window.getByText("Reset all shortcuts to defaults");
     await resetAllBtn.scrollIntoViewIfNeeded();
     await resetAllBtn.click();
 
-    // Button should disappear
-    await expect(resetAllBtn).not.toBeVisible();
-
-    // Neither row should have custom controls any more
-    await window.getByText("Open inbox").hover();
-    await expect(window.getByTitle("Remove binding")).not.toBeVisible();
+    await expect(resetAllBtn).not.toBeVisible({ timeout: 3000 });
   });
 });

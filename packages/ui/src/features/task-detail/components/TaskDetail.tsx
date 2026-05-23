@@ -1,4 +1,5 @@
 import type { Task } from "@posthog/shared/domain-types";
+import { useShortcut } from "../../../primitives/hooks/useShortcut";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys, useHotkeysContext } from "react-hotkeys-hook";
@@ -74,6 +75,7 @@ export function TaskDetail({
       : effectiveRepoPath;
 
   const [filePickerOpen, setFilePickerOpen] = useState(false);
+  const filePickerKey = useShortcut("file-picker");
 
   const { enableScope, disableScope } = useHotkeysContext();
 
@@ -84,7 +86,7 @@ export function TaskDetail({
     };
   }, [enableScope, disableScope]);
 
-  useHotkeys("mod+p", () => setFilePickerOpen(true), {
+  useHotkeys(filePickerKey, () => setFilePickerOpen(true), {
     enableOnContentEditable: true,
     enableOnFormTags: true,
     preventDefault: true,
