@@ -39,7 +39,6 @@ export function resolveKey(
  * A valid separator comma is one NOT immediately preceded by "+".
  */
 export function splitBindings(keyStr: string): string[] {
-  // Split on commas that are not preceded by "+"
   return keyStr
     .split(/(?<!\+),/)
     .map((k) => k.trim())
@@ -59,7 +58,6 @@ export function findConflict(
 ): ConflictResult {
   const state = useKeybindingsStore.getState();
 
-  // Check configurable shortcuts first (with custom overrides applied)
   for (const id of CONFIGURABLE_SHORTCUT_IDS) {
     if (id === excludeId) continue;
     const keyStr = state.getKey(id);
@@ -70,7 +68,6 @@ export function findConflict(
     }
   }
 
-  // Check non-configurable shortcuts against their static default keys
   for (const shortcut of KEYBOARD_SHORTCUTS) {
     if (
       CONFIGURABLE_SHORTCUT_IDS.includes(shortcut.id as ConfigurableShortcutId)
@@ -116,8 +113,11 @@ export const useKeybindingsStore = create<KeybindingsState>()(
             ? existing
             : splitBindings(DEFAULT_KEYBINDINGS[id]);
         const updated = base.map((k) => (k === oldKey ? newKey : k));
+        // Deduplicate — conflict detection excludes the edited shortcut's own bindings,
+        // so editing one binding to match another on the same shortcut can slip through.
+        const deduped = [...new Set(updated)];
         set({
-          customKeybindings: { ...get().customKeybindings, [id]: updated },
+          customKeybindings: { ...get().customKeybindings, [id]: deduped },
         });
       },
 
