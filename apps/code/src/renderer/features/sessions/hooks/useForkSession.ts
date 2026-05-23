@@ -4,6 +4,7 @@ import {
   useAuthStateValue,
 } from "@features/auth/hooks/authQueries";
 import { useSessionForTask } from "@features/sessions/hooks/useSession";
+import { setPersistedConfigOptions } from "@features/sessions/stores/sessionConfigStore";
 import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
 import { useTRPC } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
@@ -92,9 +93,15 @@ export function useForkSession({ taskId, task }: UseForkSessionOptions) {
           model,
         });
 
+        // 4. Pre-persist the source task's config options (model, reasoning level,
+        // mode, etc.) for the new task run so they carry over when the fork connects.
+        if (session.configOptions?.length) {
+          setPersistedConfigOptions(newTaskRun.id, session.configOptions);
+        }
+
         toast.success("Fork created", { id: toastId });
 
-        // 4. Navigate to the new task — include latest_run so the session service
+        // 5. Navigate to the new task — include latest_run so the session service
         // knows to look for the pre-seeded local cache rather than creating a new run.
         const forkTask: Task = {
           ...(newTask as unknown as Task),

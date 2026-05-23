@@ -74,18 +74,29 @@ export class ForkService {
       newTaskId,
     });
 
-    const posthogConfig = this.agentAuthAdapter.createPosthogConfig({
-      apiHost,
-      projectId,
-    });
-    const posthogAPI = new PostHogAPIClient(posthogConfig);
+    // 1. Fetch the full conversation log for the source run.
+    // Prefer the local cache — it contains the complete conversation for forked
+    // tasks (pre-seeded entries + new messages), whereas the S3 log only has
+    // messages sent after the fork was created.
+    let allEntries = await this.readLocalCache(sourceTaskRunId);
 
-    // 1. Fetch the full S3 log for the source run
-    const sourceTaskRun = await posthogAPI.getTaskRun(
-      sourceTaskId,
+    if (allEntries.length === 0) {
+      const posthogConfig = this.agentAuthAdapter.createPosthogConfig({
+        apiHost,
+        projectId,
+      });
+      const posthogAPI = new PostHogAPIClient(posthogConfig);
+      const sourceTaskRun = await posthogAPI.getTaskRun(
+        sourceTaskId,
+        sourceTaskRunId,
+      );
+      allEntries = await posthogAPI.fetchTaskRunLogs(sourceTaskRun);
+    }
+
+    log.info("Fetched source entries", {
       sourceTaskRunId,
-    );
-    const allEntries = await posthogAPI.fetchTaskRunLogs(sourceTaskRun);
+      entryCount: allEntries.length,
+    });
 
     // 2. Slice entries up to and including the response to message N
     const entries = filterEntriesUpToMessage(allEntries, forkAtMessageIndex);
@@ -151,6 +162,35 @@ export class ForkService {
     });
 
     return { newWorktreePath, newSessionId };
+  }
+
+  /** Read the local cache for a task run. Returns parsed entries, or [] if missing. */
+  private async readLocalCache(
+    taskRunId: string,
+  ): Promise<AgentTypes.StoredEntry[]> {
+    const logPath = path.join(
+      homedir(),
+      ".posthog-code",
+      "sessions",
+      taskRunId,
+      "logs.ndjson",
+    );
+    try {
+      const content = await fs.readFile(logPath, "utf-8");
+      const entries: AgentTypes.StoredEntry[] = [];
+      for (const line of content.split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          entries.push(JSON.parse(line) as AgentTypes.StoredEntry);
+        } catch {
+          // skip malformed lines
+        }
+      }
+      log.info("Read local cache", { taskRunId, entries: entries.length });
+      return entries;
+    } catch {
+      return [];
+    }
   }
 
   /** Extract the HEAD SHA from the last `_posthog/agent_checkpoint` entry. */

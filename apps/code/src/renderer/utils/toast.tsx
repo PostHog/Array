@@ -87,14 +87,17 @@ function ToastComponent(props: ToastProps) {
 
 export const toast = {
   loading: (title: ReactNode, description?: string) => {
-    return sonnerToast.custom((id) => (
-      <ToastComponent
-        id={id}
-        type="loading"
-        title={title}
-        description={description}
-      />
-    ));
+    return sonnerToast.custom(
+      (id) => (
+        <ToastComponent
+          id={id}
+          type="loading"
+          title={title}
+          description={description}
+        />
+      ),
+      { duration: Infinity },
+    );
   },
 
   success: (

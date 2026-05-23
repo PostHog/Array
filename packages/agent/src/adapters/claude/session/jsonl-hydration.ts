@@ -84,9 +84,11 @@ export function filterEntriesUpToMessage(
 
     if (entry.notification?.method === "session/update" && params?.update) {
       const update = params.update as { sessionUpdate?: string };
-      const isUserMessage =
-        update.sessionUpdate === "user_message" ||
-        update.sessionUpdate === "user_message_chunk";
+      // Only count full user_message events — user_message_chunk entries are
+      // partial streaming chunks that don't produce rendered conversation items
+      // in the UI, so counting them would create a mismatch with the
+      // messageIndex the UI passes when forking.
+      const isUserMessage = update.sessionUpdate === "user_message";
 
       if (isUserMessage) {
         if (userMessageCount === messageIndex) {
