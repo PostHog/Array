@@ -1,4 +1,12 @@
-import { formatHotkey } from "@posthog/ui/features/command/keyboard-shortcuts";
+import {
+  eventToCombo,
+  formatHotkey,
+  tiptapEventToCombo,
+} from "@posthog/ui/features/command/keyboard-shortcuts";
+import {
+  splitBindings,
+  useKeybindingsStore,
+} from "@posthog/ui/shell/keybindingsStore";
 import {
   contentToXml,
   type FileAttachment,
@@ -259,11 +267,12 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
           },
         },
         handleKeyDown: (view, event) => {
-          if (
-            event.key === "v" &&
-            (event.metaKey || event.ctrlKey) &&
-            event.shiftKey
-          ) {
+          const eventCombo = eventToCombo(event);
+          const pasteAsFileKey = useKeybindingsStore
+            .getState()
+            .getKey("paste-as-file");
+          const pasteAsFileBindings = splitBindings(pasteAsFileKey);
+          if (eventCombo && pasteAsFileBindings.includes(eventCombo)) {
             event.preventDefault();
             (async () => {
               try {
@@ -305,9 +314,30 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
             const currentText = view.state.doc.textContent;
             const isEmpty = !currentText.trim();
 
+<<<<<<< HEAD:packages/ui/src/features/message-editor/tiptap/useTiptapEditor.ts
             const history = historyGetter?.() ?? [];
 
             if (event.key === "ArrowUp" && isEmpty) {
+=======
+            const keybindings = useKeybindingsStore.getState();
+            const tiptapCombo = tiptapEventToCombo(event);
+            const forcePrev =
+              tiptapCombo !== null &&
+              splitBindings(keybindings.getKey("prompt-history-prev")).includes(
+                tiptapCombo,
+              );
+            const forceNext =
+              tiptapCombo !== null &&
+              splitBindings(keybindings.getKey("prompt-history-next")).includes(
+                tiptapCombo,
+              );
+            const history = historyGetter?.() ?? [];
+
+            if (
+              event.key === "ArrowUp" &&
+              (forcePrev || isEmpty || isAtStart)
+            ) {
+>>>>>>> 13027004 (feat: make prompt-history shortcuts configurable; update E2E tests):apps/code/src/renderer/features/message-editor/tiptap/useTiptapEditor.ts
               if (taskId) {
                 const queuedContent =
                   sessionStoreSetters.dequeueMessagesAsText(taskId);
@@ -334,7 +364,14 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               }
             }
 
+<<<<<<< HEAD:packages/ui/src/features/message-editor/tiptap/useTiptapEditor.ts
             if (event.key === "ArrowDown" && isEmpty) {
+=======
+            if (
+              event.key === "ArrowDown" &&
+              (forceNext || isEmpty || isAtEnd)
+            ) {
+>>>>>>> 13027004 (feat: make prompt-history shortcuts configurable; update E2E tests):apps/code/src/renderer/features/message-editor/tiptap/useTiptapEditor.ts
               const newText = historyActions.navigateDown(history);
               if (newText !== null) {
                 event.preventDefault();
@@ -479,7 +516,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
           if (clipboardText && clipboardText.length > 200) {
             showPasteHint(
               "Pasted as text",
-              `Use ${formatHotkey("mod+shift+v")} to paste as a file attachment instead.`,
+              `Use ${formatHotkey(useKeybindingsStore.getState().getKey("paste-as-file"))} to paste as a file attachment instead.`,
             );
           }
 
