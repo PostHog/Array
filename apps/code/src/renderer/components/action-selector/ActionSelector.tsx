@@ -216,7 +216,7 @@ export function ActionSelector({
       style={{
         outline: "none",
       }}
-      className="rounded-(--radius-3) border border-(--gray-6) bg-(--gray-1)"
+      className="max-h-[50vh] overflow-y-auto rounded-(--radius-3) border border-(--gray-6) bg-(--gray-1)"
     >
       <Flex direction="column" gap="2">
         {hasSteps && steps && (

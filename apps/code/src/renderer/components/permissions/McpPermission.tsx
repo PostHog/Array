@@ -6,7 +6,7 @@ import {
   isPostHogExecTool,
 } from "@features/posthog-mcp/utils/posthog-exec-display";
 import { formatInput } from "@features/sessions/components/session-update/toolCallUtils";
-import { Box, Code } from "@radix-ui/themes";
+import { Code } from "@radix-ui/themes";
 import { DefaultPermission } from "./DefaultPermission";
 import { type BasePermissionProps, toSelectorOptions } from "./types";
 
@@ -54,14 +54,12 @@ export function McpPermission({
       }
       pendingAction={
         fullInput ? (
-          <Box className="max-h-[30vh] overflow-auto">
-            <Code
-              variant="ghost"
-              className="whitespace-pre-wrap break-all text-[13px]"
-            >
-              {fullInput}
-            </Code>
-          </Box>
+          <Code
+            variant="ghost"
+            className="whitespace-pre-wrap break-all text-[13px]"
+          >
+            {fullInput}
+          </Code>
         ) : undefined
       }
       question="Do you want to proceed?"
