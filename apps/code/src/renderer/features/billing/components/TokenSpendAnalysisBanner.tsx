@@ -5,6 +5,7 @@ import type {
   SpendAnalysisResponse,
   SpendAnalysisToolRow,
 } from "@features/billing/types/spend-analysis";
+import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import {
   ArrowSquareOut,
   ChartLine,
@@ -320,8 +321,13 @@ function FooterLinks({ data }: { data: SpendAnalysisResponse }) {
   const navigateToTaskInput = useNavigationStore(
     (state) => state.navigateToTaskInput,
   );
+  const closeSettings = useSettingsDialogStore((state) => state.close);
 
   const handleAnalyseClick = (): void => {
+    // This banner lives inside the Settings dialog (modal). `navigateToTaskInput`
+    // changes the underlying view but the dialog stays mounted on top, so the user
+    // doesn't see the prefilled task input. Close the dialog first.
+    closeSettings();
     navigateToTaskInput({
       initialPrompt: buildAnalysisPrompt(data),
     });
