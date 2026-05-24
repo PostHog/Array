@@ -14,6 +14,17 @@ describe("escapeTableCell", () => {
   });
 
   it.each([
+    // Backslash must be escaped BEFORE the pipe; otherwise `foo\|bar` becomes
+    // `foo\\|bar` which a markdown parser reads as "literal backslash, literal pipe",
+    // defeating the pipe escape entirely.
+    ["foo\\bar", "foo\\\\bar"],
+    ["foo\\|bar", "foo\\\\\\|bar"],
+    ["\\\\", "\\\\\\\\"],
+  ])("escapes backslashes before pipes: %j -> %j", (input, expected) => {
+    expect(escapeTableCell(input)).toBe(expected);
+  });
+
+  it.each([
     ["line one\nline two", "line one line two"],
     ["a\rb", "a b"],
     ["a\r\nb", "a  b"],

@@ -11,6 +11,10 @@ import { formatTokens, formatUsd, formatWindow } from "./spendAnalysisFormat";
  * treat tool / model / product names as untrusted (an event property captured by an SDK
  * could carry attacker-influenced content in multi-tenant projects).
  *
+ * - Backslash (`\`) MUST be escaped first; otherwise an input like `foo\|bar` becomes
+ *   `foo\\|bar` after the pipe escape, which a markdown parser reads as "literal
+ *   backslash, literal pipe" -- defeating the pipe escape we just applied. CodeQL's
+ *   incomplete-string-escaping rule catches this exact mistake.
  * - Pipe (`|`) is the only character that actually splits a markdown-table cell mid-row.
  * - Carriage return / line feed end the row and let following text look like a fresh
  *   paragraph or header (`\n\n## SYSTEM OVERRIDE` is the canonical injection shape).
@@ -20,7 +24,10 @@ import { formatTokens, formatUsd, formatWindow } from "./spendAnalysisFormat";
  * Replacing newlines/backticks with spaces (rather than escaping) keeps the cell readable
  * to a human reviewer while neutralising the structural attack. */
 export function escapeTableCell(value: string): string {
-  return value.replace(/\|/g, "\\|").replace(/[\r\n`]/g, " ");
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/[\r\n`]/g, " ");
 }
 
 /** The cost-reduction playbook embedded in every analysis task. Kept as a module constant
