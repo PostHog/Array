@@ -26,6 +26,8 @@ export interface DraftCommentMetadata {
 export interface PrCommentMetadata {
   kind: "pr-comment";
   threadId: number;
+  nodeId: string;
+  isResolved: boolean;
   comments: PrReviewComment[];
   isOutdated: boolean;
   isFileLevel: boolean;

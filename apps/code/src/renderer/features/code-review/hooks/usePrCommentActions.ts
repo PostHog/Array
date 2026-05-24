@@ -33,5 +33,35 @@ export function usePrCommentActions(prUrl: string | null) {
     [prUrl, queryClient, trpc],
   );
 
-  return { reply };
+  const resolve = useCallback(
+    async (threadNodeId: string, resolved: boolean): Promise<boolean> => {
+      if (!prUrl) return false;
+      const mutation = resolved
+        ? trpcClient.git.resolveReviewThread
+        : trpcClient.git.unresolveReviewThread;
+      try {
+        const result = await mutation.mutate({ prUrl, threadNodeId });
+        if (!result.success) {
+          toast.error(
+            resolved
+              ? "Failed to resolve thread"
+              : "Failed to unresolve thread",
+          );
+          return false;
+        }
+        await queryClient.invalidateQueries(
+          trpc.git.getPrReviewComments.queryFilter({ prUrl }),
+        );
+        return true;
+      } catch {
+        toast.error(
+          resolved ? "Failed to resolve thread" : "Failed to unresolve thread",
+        );
+        return false;
+      }
+    },
+    [prUrl, queryClient, trpc],
+  );
+
+  return { reply, resolve };
 }
