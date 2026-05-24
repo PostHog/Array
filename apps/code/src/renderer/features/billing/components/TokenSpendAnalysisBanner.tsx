@@ -371,7 +371,7 @@ export function TokenSpendAnalysisBanner() {
             Analyse your token usage with PostHog LLM analytics
           </Text>
           <Text className="text-(--gray-11) text-[13px]">
-            See where your spend goes — by tool, by model, by trace — over the
+            See where your spend goes — by product, tool, and model — over the
             last 30 days, and get tips on where to optimise.
           </Text>
           <Button
