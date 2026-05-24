@@ -230,13 +230,26 @@ function SectionTable({
   );
 }
 
-/** Escapes pipe characters so they don't break markdown-table cell boundaries.
+/** Sanitises a value for safe inclusion in a markdown-table cell whose contents are then
+ * fed to an LLM as a prompt.
  *
- * Tool / model / product names can contain `|` (e.g. shell pipelines surfaced as part of an
- * agent_mode string). Unescaped pipes would split the cell mid-row and the receiving agent
- * would misread row boundaries. */
+ * The spend data flows: event property -> backend aggregation -> this component -> markdown
+ * table cell -> new task initialPrompt -> agent first turn. The receiving agent has full
+ * tool access (Bash, Edit, Write, MCP), so any markdown structure that "escapes" the table
+ * row -- newlines, fence markers, top-level headers -- can be read as a fresh instruction
+ * block by the agent. We treat tool / model / product names as untrusted (an event property
+ * captured by an SDK could carry attacker-influenced content in multi-tenant projects).
+ *
+ * - Pipe (`|`) is the only character that actually splits a markdown-table cell mid-row.
+ * - Carriage return / line feed end the row and let following text look like a fresh
+ *   paragraph or header (`\n\n## SYSTEM OVERRIDE` is the canonical injection shape).
+ * - Backticks let an attacker open a fenced code block that swallows everything until
+ *   the next backtick run.
+ *
+ * Replacing newlines/backticks with spaces (rather than escaping) keeps the cell readable
+ * to a human reviewer while neutralising the structural attack. */
 function escapeTableCell(value: string): string {
-  return value.replace(/\|/g, "\\|");
+  return value.replace(/\|/g, "\\|").replace(/[\r\n`]/g, " ");
 }
 
 /** Renders the spend data as a compact markdown report for the prefilled task prompt.
