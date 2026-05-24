@@ -16,7 +16,6 @@ import { Button, Callout, Flex, Spinner, Table, Text } from "@radix-ui/themes";
 import { useNavigationStore } from "@stores/navigationStore";
 
 const DOCS_URL = "https://posthog.com/docs/llm-analytics";
-const SKILL_NAME = "exploring-llm-costs";
 
 function formatUsd(amount: number): string {
   if (amount === 0) return "$0";
@@ -272,28 +271,48 @@ function buildAnalysisPrompt(data: SpendAnalysisResponse): string {
 
   return `Here is my PostHog Code LLM spend for the last ${windowDays}. Help me understand what's driving the cost and what concrete changes I should make to reduce it.
 
-Before answering, load the \`${SKILL_NAME}\` skill from the PostHog skill store (via \`mcp__posthog__exec\` -> \`llma-skill-get\`) and follow its cost-reduction playbook. Rank advice by impact, focus on actionable changes (not just "the numbers").
+Work only from the tables below — do **not** try to query PostHog LLM analytics or any external data source. The numbers here are everything you have. Rank advice by impact, lead with the biggest lever, and keep each suggestion concrete and actionable.
 
-## Summary
+## My spend
+
+### Summary
 - Total spend: ${formatUsd(summary.total_cost_usd)}
 - PostHog Code spend: ${formatUsd(summary.scoped_cost_usd)} (${summary.total_cost_usd > 0 ? Math.round((summary.scoped_cost_usd / summary.total_cost_usd) * 100) : 0}% of total)
 - Generations: ${summary.scoped_event_count.toLocaleString()}
 - Window: ${windowDays}
 
-## By product
+### By product
 | Product | Events | Cost |
 | --- | --- | --- |
 ${productRows || "| (none) | 0 | $0 |"}
 
-## By tool (PostHog Code, top 10)
+### By tool (PostHog Code, top 10)
 | Tool | Generations | Avg input | Cost |
 | --- | --- | --- | --- |
 ${toolRows || "| (none) | 0 | 0 | $0 |"}
 
-## By model (PostHog Code)
+### By model (PostHog Code)
 | Model | Generations | Input | Output | Cost |
 | --- | --- | --- | --- | --- |
 ${modelRows || "| (none) | 0 | 0 | 0 | $0 |"}
+
+## What to look at
+
+Use this playbook to interpret the numbers above. Apply the levers in order of impact; not every lever applies to every user.
+
+1. **Input tokens are the bill, not the tool calls themselves.** "Avg input" per tool is the context size dragged along on every call. A tool like Bash being expensive almost never means Bash is expensive — it means there were many Bash calls each carrying a fat context. The biggest lever is conversation length, not which tool gets called: \`/compact\` aggressively at logical checkpoints, start fresh sessions for unrelated tasks, avoid backtracking ("actually try X instead") because that re-runs all the prior context plus the alternative.
+
+2. **Model choice.** Look at the "By model" table. If most generations are on the most expensive model (e.g. Opus tier), switching the default to a mid-tier model (e.g. Sonnet) and only escalating for genuinely hard reasoning is often the single biggest dollar saver. The cheapest tier (Haiku) is essentially free per call for routine "run the test" / "git status" / "grep this" work.
+
+3. **Subagent hygiene.** The Agent tool typically has a high avg input because subagents inherit a brief plus tool definitions. They're worth their cost when they protect the main conversation from a long exploration; they're not worth it for "read one file" or "grep one pattern" — use the direct tool.
+
+4. **(no tool) share.** The "(no tool)" row in the By tool table is the model replying with pure text — no action. Some of that is unavoidable (answering a question), some is the model thinking out loud or asking clarifying questions when it could just act. If this share is >10% of PostHog Code spend, more directive prompts ("Just do X" instead of "What do you think about X?") cut a round-trip per task.
+
+5. **MCP registry overhead.** MCP tool calls (anything prefixed \`mcp__\`) ship the full registry of available MCP tools on every call. Tools with high avg input often signal a bloated registry. Prune unused MCP servers from \`.mcp.json\` to shrink the per-call overhead.
+
+## Output
+
+Give me a ranked list of recommendations. For each: what to do, the data point from the tables that motivates it, and a rough sense of the savings opportunity (a percentage of current spend if you can estimate it).
 `;
 }
 
