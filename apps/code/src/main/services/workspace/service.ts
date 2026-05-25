@@ -34,6 +34,11 @@ import type { ProcessTrackingService } from "../process-tracking/service";
 import type { ProvisioningService } from "../provisioning/service";
 import { getWorktreeLocation } from "../settingsStore";
 import type { SuspensionService } from "../suspension/service.js";
+import {
+  applyWorktreeIdentity,
+  computeNoreplyIdentity,
+  fetchGitHubUserInfo,
+} from "./githubIdentity";
 import type {
   BranchChangedPayload,
   CreateWorkspaceInput,
@@ -648,6 +653,12 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
           );
         }
       }
+
+      // Pre-configure the worktree with the user's GitHub noreply identity
+      // when they have email privacy enabled, so the first `git push` doesn't
+      // get rejected with GH007. Best-effort: any failure (gh not installed,
+      // not authenticated, public email, etc.) leaves the worktree untouched.
+      await this.preconfigureNoreplyIdentity(worktree.worktreePath);
     } catch (error) {
       log.error(`Failed to create worktree for task ${taskId}:`, error);
       throw new Error(`Failed to create worktree: ${String(error)}`);
@@ -1234,5 +1245,26 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     message: string,
   ): void {
     this.emit(WorkspaceServiceEvent.Warning, { taskId, title, message });
+  }
+
+  private async preconfigureNoreplyIdentity(
+    worktreePath: string,
+  ): Promise<void> {
+    try {
+      const user = await fetchGitHubUserInfo();
+      if (!user) return;
+      const identity = computeNoreplyIdentity(user);
+      if (!identity) return;
+      await applyWorktreeIdentity(worktreePath, identity);
+      log.info("Pre-configured worktree with GitHub noreply identity", {
+        worktreePath,
+        email: identity.email,
+      });
+    } catch (error) {
+      log.debug("Failed to pre-configure worktree noreply identity", {
+        worktreePath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
