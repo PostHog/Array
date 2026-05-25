@@ -52,6 +52,14 @@ export type ClaudeImageMimeType =
   | "image/gif"
   | "image/webp";
 
+export const CLAUDE_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+]);
+
 const DATA_URL_PATTERN =
   /^data:([a-zA-Z]+\/[a-zA-Z0-9.+-]+)(?:;[a-zA-Z0-9-]+=[^;,]+)*;base64,([A-Za-z0-9+/=\s]+)$/;
 
@@ -75,6 +83,11 @@ export function isImageFile(filename: string): boolean {
 export function isRasterImageFile(filename: string): boolean {
   const ext = extensionOf(filename);
   return ext.length > 0 && RASTER_IMAGE_EXTENSIONS.has(ext);
+}
+
+export function isClaudeImageFile(filename: string): boolean {
+  const ext = extensionOf(filename);
+  return ext.length > 0 && CLAUDE_IMAGE_EXTENSIONS.has(ext);
 }
 
 export function isGifFile(filename: string): boolean {

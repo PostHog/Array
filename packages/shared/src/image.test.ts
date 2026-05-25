@@ -3,6 +3,7 @@ import {
   buildImageDataUrl,
   getImageMimeType,
   isAllowedImageMimeType,
+  isClaudeImageFile,
   isGifFile,
   isImageFile,
   isRasterImageFile,
@@ -198,6 +199,30 @@ describe("isRasterImageFile", () => {
   it("returns false for non-images", () => {
     expect(isRasterImageFile("foo.txt")).toBe(false);
     expect(isRasterImageFile("foo")).toBe(false);
+  });
+});
+
+describe("isClaudeImageFile", () => {
+  it.each([["foo.png"], ["foo.JPG"], ["foo.jpeg"], ["foo.gif"], ["foo.webp"]])(
+    "returns true for Claude-supported %s",
+    (filename) => {
+      expect(isClaudeImageFile(filename)).toBe(true);
+    },
+  );
+
+  it.each([
+    ["foo.bmp"],
+    ["foo.ico"],
+    ["foo.tiff"],
+    ["foo.svg"],
+    ["foo.heic"],
+    ["foo.heif"],
+    ["foo.avif"],
+    ["foo.txt"],
+    ["foo"],
+    [""],
+  ])("returns false for unsupported %s", (filename) => {
+    expect(isClaudeImageFile(filename)).toBe(false);
   });
 });
 

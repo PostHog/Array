@@ -1,4 +1,13 @@
 export {
+  ARCHIVE_EXTENSIONS,
+  AUDIO_VIDEO_EXTENSIONS,
+  BINARY_EXTENSIONS,
+  DOCUMENT_BINARY_EXTENSIONS,
+  EXECUTABLE_EXTENSIONS,
+  FONT_EXTENSIONS,
+  isBinaryFile,
+} from "./binary";
+export {
   CLOUD_PROMPT_PREFIX,
   deserializeCloudPrompt,
   promptBlocksToText,
@@ -7,10 +16,12 @@ export {
 export {
   ALLOWED_IMAGE_MIME_TYPES,
   buildImageDataUrl,
+  CLAUDE_IMAGE_EXTENSIONS,
   type ClaudeImageMimeType,
   getImageMimeType,
   IMAGE_MIME_TYPES,
   isAllowedImageMimeType,
+  isClaudeImageFile,
   isGifFile,
   isImageFile,
   isRasterImageFile,
