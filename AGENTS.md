@@ -4,7 +4,7 @@ This is the single source of truth for how PostHog Code is built. Architecture r
 
 ## Architecture rules (read this first)
 
-Read this section before writing or modifying code. These rules are load-bearing. The goal is a renderer that is strictly UI so the same app shape works on web and mobile, and a main process that owns every byte of business logic. PRs land fast from many contributors and many agents; these rules are what keep the foundation from rotting.
+Read this section before writing or modifying code. These rules are load-bearing. The goal is a renderer that is strictly UI so the same app shape works on web and mobile, and a main process that owns every byte of business logic but stays host-agnostic so it can later run in a cloud sandbox or a workspace server, not just in Electron. PRs land fast from many contributors and many agents; these rules are what keep the foundation from rotting.
 
 **The principle: three layers, each with one job.**
 
@@ -24,7 +24,7 @@ Read this section before writing or modifying code. These rules are load-bearing
 - **R4** Components use `useQuery` and `useMutation`, not imperative `trpcClient` calls. Custom hooks wrap a single query or a store selector. Hooks that orchestrate multiple queries to derive a result become one tRPC procedure.
 - **R5** Cross-feature coordination happens in main. Main emits an event; each affected store reacts via its feature's subscription registrar. Stores never reach into other stores.
 - **R6** Every tRPC procedure has Zod `input` and (where it returns data) Zod `output`. Types are inferred from schemas, never declared separately.
-- **R7** Persistence and platform APIs are main. The renderer persists pure UI prefs via `electronStorage`. Domain data persists in the SQLite DB via a `Repository`.
+- **R7** Persistence and platform APIs are main, but main services never import from `electron` directly. Host capabilities (clipboard, dialog, secure storage, file system, shell, notifier, updater) flow through `@posthog/platform` interfaces with per-host adapters in `apps/code/src/main/platform-adapters/`. The renderer persists pure UI prefs via `electronStorage`. Domain data persists in the SQLite DB via a `Repository`.
 - **R8** No `container.get(...)` inside service methods. Constructor injection only. A circular dep means the boundary is wrong; split or invert via events.
 - **R9** Subscriptions are wired once per feature in `apps/code/src/renderer/features/<feature>/subscriptions.ts`, started at app boot. Components do not start subscriptions ad hoc.
 - **R10** tRPC routers are one-liners. No inline business logic. No reaching past the service to a repository. No router without a backing service.
@@ -60,6 +60,7 @@ These shapes exist in the codebase today. Do not copy them. Do not extend them.
 - **`container.get(X)` inside a service method to dodge a circular dep.** `WorkspaceService` does this with `FileWatcherService`. Split or event-ize instead.
 - **Renderer services that fetch domain data or coordinate tRPC.** The 3,796-line `sessions/service/service.ts` is the canonical example. Move it to main.
 - **Platform adapters with business logic.** Adapters wrap and translate. Decisions live in services that depend on the adapter via an interface.
+- **Importing from `electron` in service code.** Services depend on `@posthog/platform` interfaces, not on `app`, `BrowserWindow`, `clipboard`, `dialog`, `shell`, `safeStorage` etc. Otherwise the service can never run in a cloud sandbox or workspace-server context.
 
 When in doubt, push logic toward main. The renderer is being thinned out, not thickened. Imagine a web or mobile build of this app reusing the same renderer code: every business decision living in a store or component is a thing that won't port.
 
