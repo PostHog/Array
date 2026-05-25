@@ -60,19 +60,15 @@ export function PlanUsageSettings() {
         await switchOrgMutation.mutateAsync(orgId);
       } catch (err) {
         log.warn("Failed to switch org before opening billing", err);
+        return;
       }
     }
-    const url = getBillingUrl();
-    if (url) window.open(url, "_blank");
+    if (billingUrl) window.open(billingUrl, "_blank");
   }
 
   async function switchToBillingOrg(orgId: string): Promise<void> {
-    try {
-      await switchOrgMutation.mutateAsync(orgId);
-      await fetchSeat({ autoProvision: true });
-    } catch (err) {
-      log.warn("Failed to switch to billing org", err);
-    }
+    await switchOrgMutation.mutateAsync(orgId);
+    await fetchSeat({ autoProvision: true });
   }
   const redirectFullUrl = redirectUrl
     ? (getPostHogUrl(redirectUrl, cloudRegion) ?? billingUrl)
@@ -193,21 +189,27 @@ export function PlanUsageSettings() {
                 this page reflects your current organization.
               </Text>
               {billingOrgId && (
-                <Button
-                  size="1"
-                  variant="outline"
-                  disabled={switchOrgMutation.isPending}
-                  onClick={() => {
-                    void switchToBillingOrg(billingOrgId);
-                  }}
-                  className="self-start"
-                >
-                  {switchOrgMutation.isPending ? (
-                    <Spinner size="1" />
-                  ) : (
-                    `Switch to ${seat.organization_name}`
+                <Flex direction="column" gap="1" className="self-start">
+                  <Button
+                    size="1"
+                    variant="outline"
+                    disabled={switchOrgMutation.isPending}
+                    onClick={() => {
+                      void switchToBillingOrg(billingOrgId);
+                    }}
+                  >
+                    {switchOrgMutation.isPending ? (
+                      <Spinner size="1" />
+                    ) : (
+                      `Switch to ${seat.organization_name ?? "Pro org"}`
+                    )}
+                  </Button>
+                  {switchOrgMutation.isError && (
+                    <Text className="text-(--red-11) text-[12px]">
+                      Switching failed. Try again or switch from the sidebar.
+                    </Text>
                   )}
-                </Button>
+                </Flex>
               )}
             </Flex>
           </Callout.Text>
