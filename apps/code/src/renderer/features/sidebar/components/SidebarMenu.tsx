@@ -15,7 +15,7 @@ import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useAppView } from "@hooks/useAppView";
 import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
-import { ScrollArea, Separator } from "@posthog/quill";
+import { MenuLabel, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
 import {
   navigateToCommandCenter,
@@ -43,7 +43,7 @@ import { McpServersItem } from "./items/McpServersItem";
 import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
-import { TaskListView } from "./TaskListView";
+import { TaskFilterMenu, TaskListView, TaskSearchButton } from "./TaskListView";
 
 const log = logger.scope("sidebar-menu");
 
@@ -416,37 +416,48 @@ function SidebarMenuComponent() {
 
       <Separator className="mx-2 my-2 shrink-0" />
 
-      <Box className="min-h-0 flex-1">
-        <ScrollArea className="h-full overflow-y-auto overflow-x-hidden">
-          <Flex direction="column" gap="1px" px="2" pb="2">
-            {sidebarData.isLoading ? (
-              <SidebarItem
-                depth={0}
-                icon={<DotsCircleSpinner size={12} className="text-gray-10" />}
-                label="Loading tasks..."
-                disabled
-              />
-            ) : (
-              <TaskListView
-                pinnedTasks={sidebarData.pinnedTasks}
-                flatTasks={sidebarData.flatTasks}
-                groupedTasks={sidebarData.groupedTasks}
-                activeTaskId={sidebarData.activeTaskId}
-                editingTaskId={editingTaskId}
-                selectedTaskIds={effectiveBulkIds}
-                onTaskClick={handleTaskClick}
-                onTaskDoubleClick={handleTaskDoubleClick}
-                onTaskContextMenu={handleTaskContextMenu}
-                onTaskArchive={handleTaskArchive}
-                onTaskTogglePin={togglePin}
-                onTaskEditSubmit={handleTaskEditSubmit}
-                onTaskEditCancel={handleTaskEditCancel}
-                hasMore={sidebarData.hasMore}
-              />
-            )}
-          </Flex>
-        </ScrollArea>
-      </Box>
+      <div className="shrink-0 px-2">
+        <MenuLabel
+          className="flex items-center justify-between pt-0 pr-0 pb-[2px]"
+          htmlFor="null"
+        >
+          Tasks
+          <span className="flex items-center">
+            <TaskSearchButton />
+            <TaskFilterMenu />
+          </span>
+        </MenuLabel>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <Flex direction="column" gap="1px" px="2" pb="2">
+          {sidebarData.isLoading ? (
+            <SidebarItem
+              depth={0}
+              icon={<DotsCircleSpinner size={12} className="text-gray-10" />}
+              label="Loading tasks..."
+              disabled
+            />
+          ) : (
+            <TaskListView
+              pinnedTasks={sidebarData.pinnedTasks}
+              flatTasks={sidebarData.flatTasks}
+              groupedTasks={sidebarData.groupedTasks}
+              activeTaskId={sidebarData.activeTaskId}
+              editingTaskId={editingTaskId}
+              selectedTaskIds={effectiveBulkIds}
+              onTaskClick={handleTaskClick}
+              onTaskDoubleClick={handleTaskDoubleClick}
+              onTaskContextMenu={handleTaskContextMenu}
+              onTaskArchive={handleTaskArchive}
+              onTaskTogglePin={togglePin}
+              onTaskEditSubmit={handleTaskEditSubmit}
+              onTaskEditCancel={handleTaskEditCancel}
+              hasMore={sidebarData.hasMore}
+            />
+          )}
+        </Flex>
+      </div>
     </Box>
   );
 }

@@ -148,7 +148,7 @@ function TaskRow({
   );
 }
 
-function TaskSearchButton() {
+export function TaskSearchButton() {
   const openCommandMenu = useCommandMenuStore((state) => state.open);
   return (
     <Button
@@ -162,7 +162,7 @@ function TaskSearchButton() {
   );
 }
 
-function TaskFilterMenu() {
+export function TaskFilterMenu() {
   const organizeMode = useSidebarStore((state) => state.organizeMode);
   const sortMode = useSidebarStore((state) => state.sortMode);
   const showAllUsers = useSidebarStore((state) => state.showAllUsers);
@@ -356,18 +356,6 @@ export function TaskListView({
           ))}
         </>
       )}
-
-      <div className="sticky top-0 z-10 bg-(--color-background) pt-2 pb-1">
-        <SectionLabel
-          label="Tasks"
-          endContent={
-            <span className="flex items-center">
-              <TaskSearchButton />
-              <TaskFilterMenu />
-            </span>
-          }
-        />
-      </div>
 
       {pinnedTasks.length === 0 &&
       flatTasks.length === 0 &&
