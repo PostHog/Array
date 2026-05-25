@@ -127,6 +127,16 @@ const SCENARIOS: Scenario[] = [
     draftCommands: [{ name: "my-skill", description: "User skill" }],
     expectContains: ["my-skill"],
   },
+  {
+    name: "agent reporting an empty list suppresses the draft-store fallback",
+    contextTaskId: TASK_ID,
+    draftCommands: [
+      { name: "fallback-only", description: "Should not appear" },
+    ],
+    sessionCommands: [],
+    expectContains: ["good", "bad", "feedback"],
+    expectNotContains: ["fallback-only"],
+  },
 ];
 
 describe("getCommandSuggestions", () => {

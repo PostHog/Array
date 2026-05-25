@@ -155,10 +155,12 @@ export function convertStoredEntriesToEvents(
 /**
  * Extract available commands from session events.
  * Scans backwards to find the most recent available_commands_update.
+ * Returns `null` if the agent has not emitted one yet — callers can use this
+ * to distinguish "not yet received" from "received an empty list".
  */
 export function extractAvailableCommandsFromEvents(
   events: AcpMessage[],
-): AvailableCommand[] {
+): AvailableCommand[] | null {
   for (let i = events.length - 1; i >= 0; i--) {
     const msg = events[i].message;
     if (
@@ -174,7 +176,7 @@ export function extractAvailableCommandsFromEvents(
       }
     }
   }
-  return [];
+  return null;
 }
 
 /**
