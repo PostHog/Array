@@ -34,23 +34,6 @@ export const useSessionForTask = (
  * Returns `null` when the agent hasn't sent an `available_commands_update` yet,
  * so callers can distinguish that from an explicit empty list.
  */
-export const useAvailableCommandsForTask = (
-  taskId: string | undefined,
-): AvailableCommand[] | null => {
-  return useSessionStore((s) => {
-    if (!taskId) return null;
-    const taskRunId = s.taskIdIndex[taskId];
-    if (!taskRunId) return null;
-    const session = s.sessions[taskRunId];
-    if (!session?.events) return null;
-    return extractAvailableCommandsFromEvents(session.events);
-  }, shallow);
-};
-
-/**
- * Returns `null` when the agent hasn't sent an `available_commands_update` yet,
- * so callers can distinguish that from an explicit empty list.
- */
 export function getAvailableCommandsForTask(
   taskId: string | undefined,
 ): AvailableCommand[] | null {
