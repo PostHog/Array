@@ -1855,23 +1855,21 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
 
         const cachedPrUrl = cached.prUrl ?? null;
         const cachedPrState = (cached.prState ?? null) as SidebarPrState;
-        if (
-          cachedPrUrl === fresh.prUrl &&
-          cachedPrState === fresh.prState &&
-          !fresh.hasDiff
-        ) {
-          // Touch fetchedAt without emitting if nothing meaningful changed.
-          this.workspaceRepo.updatePrCache(taskId, {
-            prUrl: fresh.prUrl,
-            prState: fresh.prState,
-          });
-          return;
-        }
 
         this.workspaceRepo.updatePrCache(taskId, {
           prUrl: fresh.prUrl,
           prState: fresh.prState,
         });
+
+        // Emit only when PR identity or state actually changed. `hasDiff` is
+        // not persisted (and is recomputed inline on each `getTaskPrStatus`
+        // call), so it must not feed into the emit decision — otherwise a
+        // worktree with uncommitted changes but no PR would emit on every
+        // revalidation cycle.
+        if (cachedPrUrl === fresh.prUrl && cachedPrState === fresh.prState) {
+          return;
+        }
+
         // String literal (rather than `WorkspaceServiceEvent.TaskPrInfoChanged`)
         // avoids a circular import: workspace/service eagerly loads the DI
         // container, which in turn re-enters this module.
@@ -1879,7 +1877,6 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
           taskId,
           prUrl: fresh.prUrl,
           prState: fresh.prState,
-          hasDiff: fresh.hasDiff,
         });
       })
       .catch((err) => {

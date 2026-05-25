@@ -116,7 +116,6 @@ export const taskPrInfoChangedPayload = z.object({
   taskId: z.string(),
   prUrl: z.string().nullable(),
   prState: z.enum(["merged", "open", "draft", "closed"]).nullable(),
-  hasDiff: z.boolean(),
 });
 
 export const linkBranchInput = z.object({

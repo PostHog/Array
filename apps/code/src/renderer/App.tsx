@@ -129,10 +129,11 @@ function App() {
 
   useSubscription(
     trpcReact.workspace.onTaskPrInfoChanged.subscriptionOptions(undefined, {
-      onData: ({ taskId, prState, hasDiff }) => {
-        // Push the fresh PR info into every matching getTaskPrStatus query
-        // (one per cloudPrUrl variant) so the renderer re-renders without
-        // waiting for the next staleTime-driven refetch.
+      onData: ({ taskId, prUrl, prState }) => {
+        // Push the fresh PR state into every matching getTaskPrStatus query
+        // (one per cloudPrUrl variant). hasDiff isn't carried by the event —
+        // it's recomputed inline by the next refetch — so we preserve any
+        // existing value rather than overwriting it.
         queryClient.setQueriesData<{
           prState: typeof prState;
           hasDiff: boolean;
@@ -147,7 +148,15 @@ function App() {
               return params?.input?.taskId === taskId;
             },
           },
-          () => ({ prState, hasDiff }),
+          (prev) => (prev ? { ...prev, prState } : { prState, hasDiff: false }),
+        );
+
+        // Keep the cached PR URL warm so `useTaskPrUrl`'s "Open PR" fast-path
+        // sees the new URL immediately instead of waiting for `getCachedPrUrl`
+        // to go stale.
+        queryClient.setQueryData(
+          trpcReact.workspace.getCachedPrUrl.queryKey({ taskId }),
+          { prUrl },
         );
       },
     }),
