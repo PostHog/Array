@@ -1128,6 +1128,7 @@ export class SessionService {
   private updatePromptStateFromEvents(
     taskRunId: string,
     events: AcpMessage[],
+    isLive = false,
   ): void {
     for (const acpMsg of events) {
       const msg = acpMsg.message;
@@ -1179,6 +1180,19 @@ export class SessionService {
             promptStartedAt: null,
             currentPromptId: null,
           });
+          // Mirror local sessions, where `notifyPromptComplete` fires when
+          // the JSON-RPC response carries `stopReason: "end_turn"`. Gate on
+          // `isLive` so hydration/gap-fill replays of historical logs don't
+          // re-fire notifications for turns that completed in past app runs,
+          // and skip when the queue still has messages — those will start a
+          // new turn, matching the local `!hasQueuedMessages` check.
+          if (isLive && session.messageQueue.length === 0) {
+            notifyPromptComplete(
+              session.taskTitle,
+              "end_turn",
+              session.taskId,
+            );
+          }
         }
       }
       // Lifecycle handshake from the agent — flip status to "connected"
@@ -1264,7 +1278,7 @@ export class SessionService {
     } else {
       sessionStoreSetters.appendEvents(taskRunId, [acpMsg]);
     }
-    this.updatePromptStateFromEvents(taskRunId, [acpMsg]);
+    this.updatePromptStateFromEvents(taskRunId, [acpMsg], true);
 
     const msg = acpMsg.message;
 
@@ -3511,7 +3525,7 @@ export class SessionService {
           sessionStoreSetters.clearTailOptimisticItems(taskRunId);
         }
         sessionStoreSetters.appendEvents(taskRunId, newEvents, expectedCount);
-        this.updatePromptStateFromEvents(taskRunId, newEvents);
+        this.updatePromptStateFromEvents(taskRunId, newEvents, true);
       } else {
         this.reconcileCloudLogGap({
           taskId: update.taskId,
