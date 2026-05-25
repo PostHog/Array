@@ -6,6 +6,7 @@ const mockRefreshAccessToken = vi.hoisted(() => ({ mutate: vi.fn() }));
 const mockLogin = vi.hoisted(() => ({ mutate: vi.fn() }));
 const mockSignup = vi.hoisted(() => ({ mutate: vi.fn() }));
 const mockSelectProject = vi.hoisted(() => ({ mutate: vi.fn() }));
+const mockSwitchOrg = vi.hoisted(() => ({ mutate: vi.fn() }));
 const mockRedeemInviteCode = vi.hoisted(() => ({ mutate: vi.fn() }));
 const mockLogout = vi.hoisted(() => ({ mutate: vi.fn() }));
 const mockGetCurrentUser = vi.fn();
@@ -19,6 +20,7 @@ vi.mock("@renderer/trpc/client", () => ({
       login: mockLogin,
       signup: mockSignup,
       selectProject: mockSelectProject,
+      switchOrg: mockSwitchOrg,
       redeemInviteCode: mockRedeemInviteCode,
       logout: mockLogout,
     },

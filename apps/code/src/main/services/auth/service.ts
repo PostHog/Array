@@ -242,9 +242,14 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       throw new Error("Invalid project selection");
     }
 
+    const newOrgId =
+      findOrgForProject(session.orgProjectsMap, projectId) ??
+      session.currentOrgId;
+
     this.session = {
       ...session,
       currentProjectId: projectId,
+      currentOrgId: newOrgId,
     };
 
     this.persistProjectPreference(this.session);
@@ -254,7 +259,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       selectedProjectId: projectId,
     });
 
-    this.updateState({ currentProjectId: projectId });
+    this.updateState({ currentProjectId: projectId, currentOrgId: newOrgId });
     return this.getState();
   }
   async switchOrg(orgId: string): Promise<AuthState> {

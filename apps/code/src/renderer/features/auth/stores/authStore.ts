@@ -154,6 +154,7 @@ async function syncAuthState(): Promise<void> {
   const authSyncKey = JSON.stringify({
     status: authState.status,
     cloudRegion: authState.cloudRegion,
+    currentOrgId: authState.currentOrgId,
     currentProjectId: authState.currentProjectId,
   });
 
@@ -258,6 +259,7 @@ export const useAuthStore = create<AuthStoreState>((set) => ({
     sessionResetCallback?.();
     await trpcClient.auth.switchOrg.mutate({ orgId });
     await syncAuthState();
+    useNavigationStore.getState().navigateToTaskInput();
   },
 
   logout: async () => {
