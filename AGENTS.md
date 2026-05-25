@@ -28,6 +28,8 @@ Read this section before writing or modifying code. These rules are load-bearing
 - **R8** No `container.get(...)` inside service methods. Constructor injection only. A circular dep means the boundary is wrong; split or invert via events.
 - **R9** Subscriptions are wired once per feature in `apps/code/src/renderer/features/<feature>/subscriptions.ts`, started at app boot. Components do not start subscriptions ad hoc.
 - **R10** tRPC routers are one-liners. No inline business logic. No reaching past the service to a repository. No router without a backing service.
+- **R11** Templates use `@posthog/quill` for everything on the rendering layer that's available. Reach for raw primitives or one-off components only when Quill has no equivalent.
+- **R12** Routing is TanStack Router. New screens register routes with TanStack Router; do not introduce a second router or hand-rolled routing logic.
 
 ### Decision tree
 
