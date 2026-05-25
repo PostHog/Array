@@ -1,6 +1,5 @@
 import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
-import { createCommandGhostText } from "./CommandGhostText";
 import { createCommandMention } from "./CommandMention";
 import { createFileMention } from "./FileMention";
 import { createIssueMention } from "./IssueMention";
@@ -51,7 +50,6 @@ export function getEditorExtensions(options: EditorExtensionsOptions) {
 
   if (commands) {
     extensions.push(createCommandMention({ sessionId }));
-    extensions.push(createCommandGhostText(sessionId));
   }
 
   return extensions;

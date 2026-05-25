@@ -19,11 +19,6 @@ export interface SuggestionMentionConfig<T extends SuggestionItem> {
   debounceMs?: number;
   items: (query: string) => T[] | Promise<T[]>;
   renderItem?: (item: T) => ReactNode;
-  /**
-   * When true, commit the suggestion as soon as the typed query exactly matches
-   * an item's label and no other item label extends it.
-   */
-  autoCommit?: boolean;
   /** Override the chip attrs inserted for a given item. */
   resolveChipAttrs?: (item: T) => Partial<MentionChipAttrs>;
   /** Fires after the chip is inserted into the document. */
@@ -42,7 +37,6 @@ export function createSuggestionMention<T extends SuggestionItem>(
     debounceMs = 0,
     items: loadItems,
     renderItem,
-    autoCommit = false,
     resolveChipAttrs,
     onAfterInsert,
   } = config;
@@ -123,23 +117,6 @@ export function createSuggestionMention<T extends SuggestionItem>(
             popup.setProps({
               getReferenceClientRect: props.clientRect as () => DOMRect,
             });
-          }
-
-          if (autoCommit) {
-            // Caveat: if one item label is a strict prefix of another (e.g.
-            // "add" vs "add-dir"), the shorter name becomes uncommittable via
-            // auto-commit and the user has to pick from the list. Avoid
-            // shipping prefix-clashing command names, or rename to disambiguate.
-            const q = props.query.toLowerCase();
-            const exact = props.items.find((i) => i.label.toLowerCase() === q);
-            const hasLongerExtension = props.items.some(
-              (i) =>
-                i.label.toLowerCase().startsWith(q) &&
-                i.label.length > q.length,
-            );
-            if (exact && !hasLongerExtension) {
-              props.command(exact);
-            }
           }
         },
 
