@@ -696,7 +696,7 @@ export class PostHogAPIClient {
   async approveAiDataProcessing(): Promise<void> {
     const urlPath = `/api/organizations/@current/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
+    await this.api.fetcher.fetch({
       method: "patch",
       url,
       path: urlPath,
@@ -704,11 +704,6 @@ export class PostHogAPIClient {
         body: JSON.stringify({ is_ai_data_processing_approved: true }),
       },
     });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to approve AI data processing: ${response.statusText}`,
-      );
-    }
   }
 
   async getProject(projectId: number) {

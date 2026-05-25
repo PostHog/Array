@@ -1,11 +1,7 @@
 import { FullScreenLayout } from "@components/FullScreenLayout";
 import { useAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useLogoutMutation } from "@features/auth/hooks/authMutations";
-import {
-  authKeys,
-  getAuthIdentity,
-  useAuthStateValue,
-} from "@features/auth/hooks/authQueries";
+import { authKeys } from "@features/auth/hooks/authQueries";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import { GearSix, Robot, SignOut, WarningCircle } from "@phosphor-icons/react";
@@ -28,8 +24,6 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
   const logoutMutation = useLogoutMutation();
   const openSettings = useSettingsDialogStore((s) => s.open);
   const client = useAuthenticatedClient();
-  const authState = useAuthStateValue((s) => s);
-  const authIdentity = getAuthIdentity(authState);
 
   const approveMutation = useMutation({
     mutationFn: async () => {
@@ -37,7 +31,7 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: authKeys.currentUser(authIdentity),
+        queryKey: authKeys.currentUsers(),
       });
     },
   });

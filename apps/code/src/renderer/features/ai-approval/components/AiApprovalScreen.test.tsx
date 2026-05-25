@@ -17,13 +17,7 @@ vi.mock("@features/auth/hooks/authMutations", () => ({
 }));
 
 vi.mock("@features/auth/hooks/authQueries", () => ({
-  authKeys: { currentUser: (id: string | null) => ["auth", "user", id] },
-  getAuthIdentity: () => "us:42",
-  useAuthStateValue: () => ({
-    status: "authenticated",
-    cloudRegion: "us",
-    projectId: 42,
-  }),
+  authKeys: { currentUsers: () => ["auth", "current-user"] },
 }));
 
 vi.mock("@features/settings/components/SettingsDialog", () => ({
@@ -39,7 +33,7 @@ vi.mock("@features/settings/stores/settingsDialogStore", () => ({
 vi.mock("@utils/analytics", () => ({ track: vi.fn() }));
 
 vi.mock("@renderer/trpc/client", () => ({
-  trpcClient: { os: { openExternal: { mutate: vi.fn() } } },
+  trpcClient: {},
 }));
 
 vi.mock("@utils/queryClient", async () => {
