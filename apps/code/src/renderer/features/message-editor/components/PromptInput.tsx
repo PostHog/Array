@@ -4,6 +4,7 @@ import { ArrowUp, Stop } from "@phosphor-icons/react";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@posthog/quill";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { cycleModeOption } from "@renderer/features/sessions/stores/sessionStore";
+import { trpcClient } from "@renderer/trpc/client";
 import { EditorContent } from "@tiptap/react";
 import { hasOpenOverlay } from "@utils/overlay";
 import clsx from "clsx";
@@ -181,6 +182,31 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       focus();
       clearFocusRequest(sessionId);
     }, [focusRequested, focus, clearFocusRequest, sessionId, isReady]);
+
+    // Populate the draft-store skills list as a fallback for the / command
+    // popup. The agent emits an `available_commands_update` shortly after a
+    // session starts, but typing `/` before that arrives would otherwise show
+    // only the built-in /good /bad /feedback commands.
+    useEffect(() => {
+      if (!enableCommands) return;
+      let cancelled = false;
+      trpcClient.skills.list
+        .query()
+        .then((skills) => {
+          if (cancelled) return;
+          useDraftStore.getState().actions.setCommands(
+            sessionId,
+            skills.map((s) => ({ name: s.name, description: s.description })),
+          );
+        })
+        .catch(() => {
+          // Best-effort fallback — agent-supplied commands remain authoritative.
+        });
+      return () => {
+        cancelled = true;
+        useDraftStore.getState().actions.clearCommands(sessionId);
+      };
+    }, [sessionId, enableCommands]);
 
     useHotkeys(
       "escape",

@@ -159,9 +159,14 @@ export function getCommandSuggestions(
 ): CommandSuggestionItem[] {
   const store = useDraftStore.getState();
   const taskId = store.contexts[sessionId]?.taskId;
-  const agentCommands = taskId
-    ? getAvailableCommandsForTask(taskId)
-    : (store.commands[sessionId] ?? []);
+  // Agent commands (from `available_commands_update`) are the source of truth
+  // once a session has reported them, but they arrive async after session
+  // startup — fall back to the trpc-fetched skills list so users don't see only
+  // the built-in /good /bad /feedback commands during that window.
+  const sessionCommands = taskId ? getAvailableCommandsForTask(taskId) : [];
+  const draftCommands = store.commands[sessionId] ?? [];
+  const agentCommands =
+    sessionCommands.length > 0 ? sessionCommands : draftCommands;
   const merged = [...CODE_COMMANDS, ...agentCommands];
   const commands = [...new Map(merged.map((cmd) => [cmd.name, cmd])).values()];
   const filtered = searchCommands(commands, query);

@@ -40,7 +40,7 @@ import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useAuthStore } from "@renderer/features/auth/stores/authStore";
 import { useDraftStore } from "@renderer/features/message-editor/stores/draftStore";
 import { navigateToInbox } from "@renderer/navigationBridge";
-import { trpcClient, useTRPC } from "@renderer/trpc/client";
+import { useTRPC } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
 import { useActiveRepoStore } from "@stores/activeRepoStore";
 import { useQuery } from "@tanstack/react-query";
@@ -529,22 +529,6 @@ export function TaskInput({
 
   const { isOnline } = useConnectivity();
   const promptSessionId = sessionId;
-
-  // Populate command list for @ file mentions + / skills on mount
-  useEffect(() => {
-    let cancelled = false;
-    trpcClient.skills.list.query().then((skills) => {
-      if (cancelled) return;
-      useDraftStore.getState().actions.setCommands(
-        promptSessionId,
-        skills.map((s) => ({ name: s.name, description: s.description })),
-      );
-    });
-    return () => {
-      cancelled = true;
-      useDraftStore.getState().actions.clearCommands(promptSessionId);
-    };
-  }, [promptSessionId]);
 
   const hasHistory = useTaskInputHistoryStore((s) => s.entries.length > 0);
   const getPromptHistory = useCallback(
