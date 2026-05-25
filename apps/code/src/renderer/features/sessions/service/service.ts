@@ -1128,7 +1128,7 @@ export class SessionService {
   private updatePromptStateFromEvents(
     taskRunId: string,
     events: AcpMessage[],
-    isLive = false,
+    { isLive = false }: { isLive?: boolean } = {},
   ): void {
     for (const acpMsg of events) {
       const msg = acpMsg.message;
@@ -1180,14 +1180,8 @@ export class SessionService {
             promptStartedAt: null,
             currentPromptId: null,
           });
-          // Mirror the local `stopReason: "end_turn"` path: notify on turn
-          // completion and bump task activity for sidebar ordering / unread
-          // badges. Gate on `isLive` so hydration/gap-fill replays of
-          // historical logs don't re-fire notifications or stamp activity
-          // for turns that completed in past app runs. Skip the notification
-          // (but not the activity bump, matching local) when the queue still
-          // has messages — those will start a new turn.
           if (isLive) {
+            // Queued messages will start a new turn — suppress the "done" notification in that case.
             if (session.messageQueue.length === 0) {
               notifyPromptComplete(
                 session.taskTitle,
@@ -1282,7 +1276,7 @@ export class SessionService {
     } else {
       sessionStoreSetters.appendEvents(taskRunId, [acpMsg]);
     }
-    this.updatePromptStateFromEvents(taskRunId, [acpMsg], true);
+    this.updatePromptStateFromEvents(taskRunId, [acpMsg], { isLive: true });
 
     const msg = acpMsg.message;
 
@@ -3529,7 +3523,9 @@ export class SessionService {
           sessionStoreSetters.clearTailOptimisticItems(taskRunId);
         }
         sessionStoreSetters.appendEvents(taskRunId, newEvents, expectedCount);
-        this.updatePromptStateFromEvents(taskRunId, newEvents, true);
+        this.updatePromptStateFromEvents(taskRunId, newEvents, {
+          isLive: true,
+        });
       } else {
         this.reconcileCloudLogGap({
           taskId: update.taskId,
