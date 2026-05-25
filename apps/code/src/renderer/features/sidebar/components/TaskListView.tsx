@@ -357,15 +357,17 @@ export function TaskListView({
         </>
       )}
 
-      <SectionLabel
-        label="Tasks"
-        endContent={
-          <span className="flex items-center">
-            <TaskSearchButton />
-            <TaskFilterMenu />
-          </span>
-        }
-      />
+      <div className="sticky top-0 z-10 bg-(--color-background) pt-2 pb-1">
+        <SectionLabel
+          label="Tasks"
+          endContent={
+            <span className="flex items-center">
+              <TaskSearchButton />
+              <TaskFilterMenu />
+            </span>
+          }
+        />
+      </div>
 
       {pinnedTasks.length === 0 &&
       flatTasks.length === 0 &&

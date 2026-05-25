@@ -364,80 +364,89 @@ function SidebarMenuComponent() {
   }, [setEditingTaskId]);
 
   return (
-    <Box height="100%" position="relative" id="side-bar-menu">
-      <ScrollArea className="h-full overflow-y-auto overflow-x-hidden">
-        <Flex direction="column" py="2" px="2" gap="1px">
-          <Box mb="2">
-            <NewTaskItem
-              isActive={sidebarData.isHomeActive}
-              onClick={handleNewTaskClick}
-              variant="primary"
-            />
-          </Box>
+    <Box
+      height="100%"
+      position="relative"
+      id="side-bar-menu"
+      className="flex min-h-0 flex-col"
+    >
+      <Flex direction="column" className="shrink-0 px-2 py-2" gap="1px">
+        <Box mb="2">
+          <NewTaskItem
+            isActive={sidebarData.isHomeActive}
+            onClick={handleNewTaskClick}
+            variant="primary"
+          />
+        </Box>
 
-          <Box>
-            <SearchItem onClick={handleSearchClick} />
-          </Box>
+        <Box>
+          <SearchItem onClick={handleSearchClick} />
+        </Box>
 
-          <Box>
-            <InboxItem
-              isActive={sidebarData.isInboxActive}
-              onClick={handleInboxClick}
-              signalCount={inboxSignalCount}
-            />
-          </Box>
+        <Box>
+          <InboxItem
+            isActive={sidebarData.isInboxActive}
+            onClick={handleInboxClick}
+            signalCount={inboxSignalCount}
+          />
+        </Box>
 
-          <Box>
-            <SkillsItem
-              isActive={sidebarData.isSkillsActive}
-              onClick={handleSkillsClick}
-            />
-          </Box>
+        <Box>
+          <SkillsItem
+            isActive={sidebarData.isSkillsActive}
+            onClick={handleSkillsClick}
+          />
+        </Box>
 
-          <Box>
-            <McpServersItem
-              isActive={sidebarData.isMcpServersActive}
-              onClick={handleMcpServersClick}
-            />
-          </Box>
+        <Box>
+          <McpServersItem
+            isActive={sidebarData.isMcpServersActive}
+            onClick={handleMcpServersClick}
+          />
+        </Box>
 
-          <Box mb="2">
-            <CommandCenterItem
-              isActive={sidebarData.isCommandCenterActive}
-              onClick={handleCommandCenterClick}
-              activeCount={commandCenterActiveCount}
-            />
-          </Box>
+        <Box mb="2">
+          <CommandCenterItem
+            isActive={sidebarData.isCommandCenterActive}
+            onClick={handleCommandCenterClick}
+            activeCount={commandCenterActiveCount}
+          />
+        </Box>
+      </Flex>
 
-          <Separator className="mx-2 my-2" />
+      <Separator className="mx-2 my-2 shrink-0" />
 
-          {sidebarData.isLoading ? (
-            <SidebarItem
-              depth={0}
-              icon={<DotsCircleSpinner size={12} className="text-gray-10" />}
-              label="Loading tasks..."
-              disabled
-            />
-          ) : (
-            <TaskListView
-              pinnedTasks={sidebarData.pinnedTasks}
-              flatTasks={sidebarData.flatTasks}
-              groupedTasks={sidebarData.groupedTasks}
-              activeTaskId={sidebarData.activeTaskId}
-              editingTaskId={editingTaskId}
-              selectedTaskIds={effectiveBulkIds}
-              onTaskClick={handleTaskClick}
-              onTaskDoubleClick={handleTaskDoubleClick}
-              onTaskContextMenu={handleTaskContextMenu}
-              onTaskArchive={handleTaskArchive}
-              onTaskTogglePin={togglePin}
-              onTaskEditSubmit={handleTaskEditSubmit}
-              onTaskEditCancel={handleTaskEditCancel}
-              hasMore={sidebarData.hasMore}
-            />
-          )}
-        </Flex>
-      </ScrollArea>
+      <Box className="min-h-0 flex-1">
+        <ScrollArea className="h-full overflow-y-auto overflow-x-hidden">
+          <Flex direction="column" gap="1px" px="2" pb="2">
+            {sidebarData.isLoading ? (
+              <SidebarItem
+                depth={0}
+                icon={<DotsCircleSpinner size={12} className="text-gray-10" />}
+                label="Loading tasks..."
+                disabled
+              />
+            ) : (
+              <TaskListView
+                pinnedTasks={sidebarData.pinnedTasks}
+                flatTasks={sidebarData.flatTasks}
+                groupedTasks={sidebarData.groupedTasks}
+                activeTaskId={sidebarData.activeTaskId}
+                editingTaskId={editingTaskId}
+                selectedTaskIds={effectiveBulkIds}
+                onTaskClick={handleTaskClick}
+                onTaskDoubleClick={handleTaskDoubleClick}
+                onTaskContextMenu={handleTaskContextMenu}
+                onTaskArchive={handleTaskArchive}
+                onTaskTogglePin={togglePin}
+                onTaskEditSubmit={handleTaskEditSubmit}
+                onTaskEditCancel={handleTaskEditCancel}
+                hasMore={sidebarData.hasMore}
+              />
+            )}
+          </Flex>
+        </ScrollArea>
+      </Box>
     </Box>
   );
 }
