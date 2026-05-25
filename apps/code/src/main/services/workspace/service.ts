@@ -590,9 +590,6 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         worktree = await worktreeManager.createWorktree({
           baseBranch: defaultBranch,
           onOutput,
-          // Fetch the remote tip first so the worktree isn't started from a
-          // stale local trunk — common when the harness provisions a clone
-          // whose local default branch hasn't been refreshed.
           fetchBeforeCreate: true,
         });
         log.info(

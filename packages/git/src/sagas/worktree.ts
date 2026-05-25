@@ -15,11 +15,7 @@ export interface CreateWorktreeInput extends GitSagaInput {
   worktreePath: string;
   branchName: string;
   baseBranch?: string;
-  /**
-   * When true, fetch `origin/<baseBranch>` before creating the worktree and
-   * base the new branch on the remote tip when reachable. Falls back to the
-   * local base ref if the fetch fails.
-   */
+  /** Base the worktree on `origin/<baseBranch>` after fetching; falls back to the local ref if the fetch fails. */
   fetchBeforeCreate?: boolean;
 }
 
@@ -52,10 +48,7 @@ export class CreateWorktreeSaga extends GitSaga<
       return getDefaultBranch(baseDir, { abortSignal: signal });
     });
 
-    // Best-effort fetch the remote tip before creating the worktree so the
-    // new branch starts from `origin/<base>` rather than a stale local ref.
-    // Uses `this.git` directly (rather than the `fetch` query helper) to
-    // avoid re-entering the per-repo write lock the saga already holds.
+    // Use `this.git` directly to avoid re-entering the write lock the saga already holds.
     const baseRef = fetchBeforeCreate
       ? await this.readOnlyStep("resolve-fresh-base-ref", async () => {
           const remote = "origin";
