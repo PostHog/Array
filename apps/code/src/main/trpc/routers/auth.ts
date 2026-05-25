@@ -7,6 +7,7 @@ import {
   loginOutput,
   redeemInviteCodeInput,
   selectProjectInput,
+  switchOrgInput,
   validAccessTokenOutput,
 } from "../../services/auth/schemas";
 import type { AuthService } from "../../services/auth/service";
@@ -55,6 +56,11 @@ export const authRouter = router({
     .input(selectProjectInput)
     .output(authStateSchema)
     .mutation(async ({ input }) => getService().selectProject(input.projectId)),
+
+  switchOrg: publicProcedure
+    .input(switchOrgInput)
+    .output(authStateSchema)
+    .mutation(async ({ input }) => getService().switchOrg(input.orgId)),
 
   redeemInviteCode: publicProcedure
     .input(redeemInviteCodeInput)

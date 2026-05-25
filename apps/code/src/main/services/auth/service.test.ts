@@ -34,7 +34,6 @@ function mockTokenResponse(
   overrides: {
     accessToken?: string;
     refreshToken?: string;
-    scopedTeams?: number[];
     scopedOrgs?: string[];
   } = {},
 ) {
@@ -46,7 +45,6 @@ function mockTokenResponse(
       expires_in: 3600,
       token_type: "Bearer",
       scope: "",
-      scoped_teams: overrides.scopedTeams ?? [42],
       scoped_organizations: overrides.scopedOrgs ?? ["org-1"],
     },
   };
@@ -98,7 +96,22 @@ describe("AuthService", () => {
     return (call as unknown as [() => void])[0];
   }
 
-  const stubAuthFetch = (accountKey = "user-1") => {
+  const stubAuthFetch = (
+    options: {
+      accountKey?: string;
+      currentOrgId?: string;
+      orgs?: Record<
+        string,
+        { name: string; projects: { id: number; name: string }[] }
+      >;
+    } = {},
+  ) => {
+    const accountKey = options.accountKey ?? "user-1";
+    const currentOrgId = options.currentOrgId ?? "org-1";
+    const orgs = options.orgs ?? {
+      "org-1": { name: "Org 1", projects: [{ id: 42, name: "Project 42" }] },
+    };
+
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | Request) => {
@@ -107,7 +120,33 @@ describe("AuthService", () => {
         if (url.includes("/api/users/@me/")) {
           return {
             ok: true,
-            json: vi.fn().mockResolvedValue({ uuid: accountKey }),
+            json: vi.fn().mockResolvedValue({
+              uuid: accountKey,
+              organization: { id: currentOrgId },
+            }),
+          } as unknown as Response;
+        }
+
+        const orgProjectsMatch = url.match(
+          /\/api\/organizations\/([^/]+)\/projects\/$/,
+        );
+        if (orgProjectsMatch) {
+          const orgId = orgProjectsMatch[1];
+          const projects = orgs[orgId]?.projects ?? [];
+          return {
+            ok: true,
+            json: vi.fn().mockResolvedValue({ results: projects }),
+          } as unknown as Response;
+        }
+
+        const orgMatch = url.match(/\/api\/organizations\/([^/]+)\/$/);
+        if (orgMatch) {
+          const orgId = orgMatch[1];
+          return {
+            ok: true,
+            json: vi
+              .fn()
+              .mockResolvedValue({ name: orgs[orgId]?.name ?? "Unknown" }),
           } as unknown as Response;
         }
 
@@ -147,9 +186,9 @@ describe("AuthService", () => {
       status: "anonymous",
       bootstrapComplete: true,
       cloudRegion: null,
-      projectId: null,
-      availableProjectIds: [],
-      availableOrgIds: [],
+      orgProjectsMap: {},
+      currentOrgId: null,
+      currentProjectId: null,
       hasCodeAccess: null,
       needsScopeReauth: false,
     });
@@ -168,9 +207,9 @@ describe("AuthService", () => {
       status: "anonymous",
       bootstrapComplete: true,
       cloudRegion: "us",
-      projectId: 123,
-      availableProjectIds: [],
-      availableOrgIds: [],
+      orgProjectsMap: {},
+      currentOrgId: null,
+      currentProjectId: 123,
       hasCodeAccess: null,
       needsScopeReauth: true,
     });
@@ -182,10 +221,19 @@ describe("AuthService", () => {
       mockTokenResponse({
         accessToken: "new-access-token",
         refreshToken: "rotated-refresh-token",
-        scopedTeams: [42, 84],
       }),
     );
-    stubAuthFetch();
+    stubAuthFetch({
+      orgs: {
+        "org-1": {
+          name: "Org 1",
+          projects: [
+            { id: 42, name: "Project 42" },
+            { id: 84, name: "Project 84" },
+          ],
+        },
+      },
+    });
 
     await service.initialize();
 
@@ -193,9 +241,17 @@ describe("AuthService", () => {
       status: "authenticated",
       bootstrapComplete: true,
       cloudRegion: "us",
-      projectId: 42,
-      availableProjectIds: [42, 84],
-      availableOrgIds: ["org-1"],
+      orgProjectsMap: {
+        "org-1": {
+          orgName: "Org 1",
+          projects: [
+            { id: 42, name: "Project 42" },
+            { id: 84, name: "Project 84" },
+          ],
+        },
+      },
+      currentOrgId: "org-1",
+      currentProjectId: 42,
       hasCodeAccess: true,
       needsScopeReauth: false,
     });
@@ -234,29 +290,35 @@ describe("AuthService", () => {
   });
 
   it("preserves the selected project across logout and re-login for the same account", async () => {
+    const orgs = {
+      "org-1": {
+        name: "Org 1",
+        projects: [
+          { id: 42, name: "Project 42" },
+          { id: 84, name: "Project 84" },
+        ],
+      },
+    };
     vi.mocked(oauthService.startFlow)
       .mockResolvedValueOnce(
         mockTokenResponse({
           accessToken: "initial-access-token",
           refreshToken: "initial-refresh-token",
-          scopedTeams: [42, 84],
         }),
       )
       .mockResolvedValueOnce(
         mockTokenResponse({
           accessToken: "second-access-token",
           refreshToken: "second-refresh-token",
-          scopedTeams: [42, 84],
         }),
       );
     vi.mocked(oauthService.refreshToken).mockResolvedValue(
       mockTokenResponse({
         accessToken: "refreshed-access-token",
         refreshToken: "refreshed-refresh-token",
-        scopedTeams: [42, 84],
       }),
     );
-    stubAuthFetch();
+    stubAuthFetch({ orgs });
 
     await service.login("us");
     await service.selectProject(84);
@@ -265,7 +327,7 @@ describe("AuthService", () => {
     expect(service.getState()).toMatchObject({
       status: "anonymous",
       cloudRegion: "us",
-      projectId: 84,
+      currentProjectId: 84,
     });
 
     await service.login("us");
@@ -273,35 +335,49 @@ describe("AuthService", () => {
     expect(service.getState()).toMatchObject({
       status: "authenticated",
       cloudRegion: "us",
-      projectId: 84,
-      availableProjectIds: [42, 84],
+      currentProjectId: 84,
+      orgProjectsMap: {
+        "org-1": {
+          orgName: "Org 1",
+          projects: [
+            { id: 42, name: "Project 42" },
+            { id: 84, name: "Project 84" },
+          ],
+        },
+      },
     });
   });
 
   it("restores the selected project after app restart while logged out", async () => {
+    const orgs = {
+      "org-1": {
+        name: "Org 1",
+        projects: [
+          { id: 42, name: "Project 42" },
+          { id: 84, name: "Project 84" },
+        ],
+      },
+    };
     vi.mocked(oauthService.startFlow)
       .mockResolvedValueOnce(
         mockTokenResponse({
           accessToken: "initial-access-token",
           refreshToken: "initial-refresh-token",
-          scopedTeams: [42, 84],
         }),
       )
       .mockResolvedValueOnce(
         mockTokenResponse({
           accessToken: "second-access-token",
           refreshToken: "second-refresh-token",
-          scopedTeams: [42, 84],
         }),
       );
     vi.mocked(oauthService.refreshToken).mockResolvedValue(
       mockTokenResponse({
         accessToken: "refreshed-access-token",
         refreshToken: "refreshed-refresh-token",
-        scopedTeams: [42, 84],
       }),
     );
-    stubAuthFetch();
+    stubAuthFetch({ orgs });
 
     await service.login("us");
     await service.selectProject(84);
@@ -320,8 +396,16 @@ describe("AuthService", () => {
     expect(service.getState()).toMatchObject({
       status: "authenticated",
       cloudRegion: "us",
-      projectId: 84,
-      availableProjectIds: [42, 84],
+      currentProjectId: 84,
+      orgProjectsMap: {
+        "org-1": {
+          orgName: "Org 1",
+          projects: [
+            { id: 42, name: "Project 42" },
+            { id: 84, name: "Project 84" },
+          ],
+        },
+      },
     });
   });
 
@@ -464,7 +548,7 @@ describe("AuthService", () => {
       expect(service.getState()).toMatchObject({
         status: "anonymous",
         cloudRegion: "us",
-        projectId: 42,
+        currentProjectId: 42,
       });
       expect(oauthService.refreshToken).toHaveBeenCalledTimes(1);
       expect(repository.getCurrent()).toBeNull();

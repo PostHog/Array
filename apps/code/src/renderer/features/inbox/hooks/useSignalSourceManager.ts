@@ -105,7 +105,7 @@ function computeValues(
 }
 
 export function useSignalSourceManager() {
-  const projectId = useAuthStateValue((state) => state.projectId);
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const client = useAuthenticatedClient();
   const queryClient = useQueryClient();

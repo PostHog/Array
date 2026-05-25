@@ -248,7 +248,7 @@ export function EnrichmentPopover() {
   const entry = useEnrichmentPopoverStore((s) => s.entry);
   const anchorRect = useEnrichmentPopoverStore((s) => s.anchorRect);
   const close = useEnrichmentPopoverStore((s) => s.close);
-  const projectId = useAuthStateValue((s) => s.projectId);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const ref = useRef<HTMLDivElement | null>(null);
 

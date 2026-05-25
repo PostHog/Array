@@ -24,7 +24,6 @@ export const oAuthTokenResponse = z.object({
   token_type: z.string(),
   scope: z.string().optional().default(""),
   refresh_token: z.string(),
-  scoped_teams: z.array(z.number()).optional(),
   scoped_organizations: z.array(z.string()).optional(),
 });
 export type OAuthTokenResponse = z.infer<typeof oAuthTokenResponse>;

@@ -104,6 +104,7 @@ export const authPreferences = sqliteTable(
     accountKey: text().notNull(),
     cloudRegion: text({ enum: ["us", "eu", "dev"] }).notNull(),
     lastSelectedProjectId: integer(),
+    lastSelectedOrgId: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -111,6 +112,25 @@ export const authPreferences = sqliteTable(
     index("auth_preferences_account_region_idx").on(
       t.accountKey,
       t.cloudRegion,
+    ),
+  ],
+);
+
+export const authOrgProjectPreferences = sqliteTable(
+  "auth_org_project_preferences",
+  {
+    accountKey: text().notNull(),
+    cloudRegion: text({ enum: ["us", "eu", "dev"] }).notNull(),
+    orgId: text().notNull(),
+    lastSelectedProjectId: integer().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("auth_org_project_account_region_org_idx").on(
+      t.accountKey,
+      t.cloudRegion,
+      t.orgId,
     ),
   ],
 );

@@ -26,7 +26,7 @@ export function GitHubConnectionBanner() {
     useUserRepositoryIntegration();
   const { hasGithubIntegration: hasTeamGithubIntegration } =
     useRepositoryIntegration();
-  const projectId = useAuthStateValue((s) => s.projectId);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
 
   const {

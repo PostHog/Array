@@ -62,8 +62,8 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
   const isAuthenticated =
     useAuthStateValue((state) => state.status) === "authenticated";
   const selectProjectMutation = useSelectProjectMutation();
-  const currentProjectId = useAuthStateValue((state) => state.projectId);
-  const { projects, currentProject, currentUser, isLoading } = useProjects();
+  const currentProjectId = useAuthStateValue((state) => state.currentProjectId);
+  const { projects, currentProject } = useProjects();
   const [projectOpen, setProjectOpen] = useState(false);
   const [orgOpen, setOrgOpen] = useState(false);
   const [isSwitchingOrg, setIsSwitchingOrg] = useState(false);
@@ -72,7 +72,11 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
 
   const client = useOptionalAuthenticatedClient();
   const queryClient = useQueryClient();
-  const { data: fullUser } = useCurrentUser({ client });
+  const { data: fullUser, isLoading: isUserLoading } = useCurrentUser({
+    client,
+  });
+  const currentUser = fullUser;
+  const isLoading = isUserLoading;
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
 
   const organizations = useMemo<Org[]>(() => {

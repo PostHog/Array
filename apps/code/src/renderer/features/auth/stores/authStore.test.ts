@@ -85,16 +85,23 @@ vi.mock("@stores/navigationStore", () => ({
 }));
 
 import { resetUser, setUserGroups } from "@utils/analytics";
-import { queryClient } from "@utils/queryClient";
 import { resetAuthStoreModuleStateForTest, useAuthStore } from "./authStore";
 
 const authenticatedState = {
   status: "authenticated" as const,
   bootstrapComplete: true,
   cloudRegion: "us" as const,
-  projectId: 1,
-  availableProjectIds: [1, 2],
-  availableOrgIds: ["org-1"],
+  orgProjectsMap: {
+    "org-1": {
+      orgName: "Org 1",
+      projects: [
+        { id: 1, name: "Project 1" },
+        { id: 2, name: "Project 2" },
+      ],
+    },
+  },
+  currentOrgId: "org-1",
+  currentProjectId: 1,
   hasCodeAccess: true,
   needsScopeReauth: false,
 };
@@ -120,9 +127,9 @@ describe("authStore", () => {
       status: "anonymous",
       bootstrapComplete: true,
       cloudRegion: null,
-      projectId: null,
-      availableProjectIds: [],
-      availableOrgIds: [],
+      orgProjectsMap: {},
+      currentOrgId: null,
+      currentProjectId: null,
       hasCodeAccess: null,
       needsScopeReauth: false,
     });
@@ -131,9 +138,9 @@ describe("authStore", () => {
       staleCloudRegion: null,
       isAuthenticated: false,
       client: null,
-      projectId: null,
-      availableProjectIds: [],
-      availableOrgIds: [],
+      orgProjectsMap: {},
+      currentOrgId: null,
+      currentProjectId: null,
       needsProjectSelection: false,
       needsScopeReauth: false,
       hasCodeAccess: null,
@@ -146,7 +153,7 @@ describe("authStore", () => {
     await useAuthStore.getState().checkCodeAccess();
 
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
-    expect(useAuthStore.getState().projectId).toBe(1);
+    expect(useAuthStore.getState().currentProjectId).toBe(1);
   });
 
   it("logs in through the main auth service", async () => {
@@ -177,9 +184,9 @@ describe("authStore", () => {
         status: "anonymous",
         bootstrapComplete: true,
         cloudRegion: null,
-        projectId: null,
-        availableProjectIds: [],
-        availableOrgIds: [],
+        orgProjectsMap: {},
+        currentOrgId: null,
+        currentProjectId: null,
         hasCodeAccess: null,
         needsScopeReauth: false,
       });
@@ -188,10 +195,6 @@ describe("authStore", () => {
     await useAuthStore.getState().checkCodeAccess();
 
     expect(resetUser).toHaveBeenCalledTimes(1);
-    expect(queryClient.removeQueries).toHaveBeenCalledWith({
-      queryKey: ["currentUser"],
-      exact: true,
-    });
   });
 
   it("clears auth state immediately on logout before the auth service responds", async () => {
@@ -211,7 +214,7 @@ describe("authStore", () => {
 
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(useAuthStore.getState().client).toBeNull();
-    expect(useAuthStore.getState().projectId).toBeNull();
+    expect(useAuthStore.getState().currentProjectId).toBeNull();
     expect(useAuthStore.getState().needsScopeReauth).toBe(false);
 
     resolveLogout();

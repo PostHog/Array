@@ -15,9 +15,9 @@ export const ANONYMOUS_AUTH_STATE: AuthState = {
   status: "anonymous",
   bootstrapComplete: false,
   cloudRegion: null,
-  projectId: null,
-  availableProjectIds: [],
-  availableOrgIds: [],
+  orgProjectsMap: {},
+  currentOrgId: null,
+  currentProjectId: null,
   hasCodeAccess: null,
   needsScopeReauth: false,
 };
@@ -58,7 +58,7 @@ export function getAuthIdentity(authState: AuthState): string | null {
     return null;
   }
 
-  return `${authState.cloudRegion}:${authState.projectId ?? "none"}`;
+  return `${authState.cloudRegion}:${authState.currentProjectId ?? "none"}`;
 }
 
 export function useAuthState() {

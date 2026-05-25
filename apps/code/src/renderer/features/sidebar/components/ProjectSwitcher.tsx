@@ -1,8 +1,12 @@
+import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient";
 import {
   useLogoutMutation,
   useSelectProjectMutation,
 } from "@features/auth/hooks/authMutations";
-import { useAuthStateValue } from "@features/auth/hooks/authQueries";
+import {
+  useAuthStateValue,
+  useCurrentUser,
+} from "@features/auth/hooks/authQueries";
 import { CommandKeyHints } from "@features/command/components/CommandKeyHints";
 import { useProjects } from "@features/projects/hooks/useProjects";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
@@ -61,10 +65,11 @@ export function ProjectSwitcher() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
+  const client = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({ client });
   const selectProjectMutation = useSelectProjectMutation();
   const logoutMutation = useLogoutMutation();
-  const { groupedProjects, currentProject, currentProjectId, currentUser } =
-    useProjects();
+  const { groupedProjects, currentProject, currentProjectId } = useProjects();
 
   const handleProjectSelect = (projectId: number) => {
     if (projectId !== currentProjectId) {

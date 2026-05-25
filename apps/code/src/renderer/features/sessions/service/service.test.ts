@@ -146,9 +146,14 @@ const mockAuth = vi.hoisted(() => ({
     status: "authenticated",
     bootstrapComplete: true,
     cloudRegion: "us",
-    projectId: 123,
-    availableProjectIds: [123],
-    availableOrgIds: [],
+    orgProjectsMap: {
+      "org-1": {
+        orgName: "Org 1",
+        projects: [{ id: 123, name: "Project 123" }],
+      },
+    },
+    currentOrgId: "org-1",
+    currentProjectId: 123,
     hasCodeAccess: true,
     needsScopeReauth: false,
   })),
@@ -360,9 +365,14 @@ describe("SessionService", () => {
       status: "authenticated",
       bootstrapComplete: true,
       cloudRegion: "us",
-      projectId: 123,
-      availableProjectIds: [123],
-      availableOrgIds: [],
+      orgProjectsMap: {
+        "org-1": {
+          orgName: "Org 1",
+          projects: [{ id: 123, name: "Project 123" }],
+        },
+      },
+      currentOrgId: "org-1",
+      currentProjectId: 123,
       hasCodeAccess: true,
       needsScopeReauth: false,
     });
@@ -489,9 +499,14 @@ describe("SessionService", () => {
         status: "authenticated",
         bootstrapComplete: true,
         cloudRegion: "us",
-        projectId: 123,
-        availableProjectIds: [123],
-        availableOrgIds: [],
+        orgProjectsMap: {
+          "org-1": {
+            orgName: "Org 1",
+            projects: [{ id: 123, name: "Project 123" }],
+          },
+        },
+        currentOrgId: "org-1",
+        currentProjectId: 123,
         hasCodeAccess: true,
         needsScopeReauth: false,
       });
@@ -549,9 +564,9 @@ describe("SessionService", () => {
         status: "anonymous",
         bootstrapComplete: true,
         cloudRegion: null,
-        projectId: null,
-        availableProjectIds: [],
-        availableOrgIds: [],
+        orgProjectsMap: {},
+        currentOrgId: null,
+        currentProjectId: null,
         hasCodeAccess: null,
         needsScopeReauth: false,
       });
@@ -3304,9 +3319,14 @@ describe("SessionService", () => {
         status: "authenticated",
         bootstrapComplete: true,
         cloudRegion: "us",
-        projectId: 123,
-        availableProjectIds: [123],
-        availableOrgIds: [],
+        orgProjectsMap: {
+          "org-1": {
+            orgName: "Org 1",
+            projects: [{ id: 123, name: "Project 123" }],
+          },
+        },
+        currentOrgId: "org-1",
+        currentProjectId: 123,
         hasCodeAccess: true,
         needsScopeReauth: false,
       });

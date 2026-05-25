@@ -69,7 +69,7 @@ export function useSessionConnection({
     if (!isCloud || !task.latest_run?.id) return;
     if (cloudAuthState.status !== "authenticated") return;
     if (!cloudAuthState.bootstrapComplete) return;
-    if (!cloudAuthState.projectId || !cloudAuthState.cloudRegion) return;
+    if (!cloudAuthState.currentProjectId || !cloudAuthState.cloudRegion) return;
 
     const runId = task.latest_run.id;
     const initialMode =
@@ -83,7 +83,7 @@ export function useSessionConnection({
       task.id,
       runId,
       getCloudUrlFromRegion(cloudAuthState.cloudRegion),
-      cloudAuthState.projectId,
+      cloudAuthState.currentProjectId,
       () => {
         queryClient.invalidateQueries({ queryKey: ["tasks"] });
       },
@@ -97,7 +97,7 @@ export function useSessionConnection({
   }, [
     cloudAuthState.bootstrapComplete,
     cloudAuthState.cloudRegion,
-    cloudAuthState.projectId,
+    cloudAuthState.currentProjectId,
     cloudAuthState.status,
     isCloud,
     queryClient,

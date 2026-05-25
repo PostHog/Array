@@ -1,3 +1,4 @@
+import { authKeys, getAuthIdentity } from "@features/auth/hooks/authQueries";
 import { useSeatStore } from "@features/billing/stores/seatStore";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import { PostHogAPIClient } from "@renderer/api/posthogClient";
@@ -15,6 +16,11 @@ import {
 import { logger } from "@utils/logger";
 import { queryClient } from "@utils/queryClient";
 import { create } from "zustand";
+
+type OrgProjects = {
+  orgName: string;
+  projects: { id: number; name: string }[];
+};
 
 const log = logger.scope("auth-store");
 
@@ -39,9 +45,9 @@ interface AuthStoreState {
   staleCloudRegion: CloudRegion | null;
   isAuthenticated: boolean;
   client: PostHogAPIClient | null;
-  projectId: number | null;
-  availableProjectIds: number[];
-  availableOrgIds: string[];
+  orgProjectsMap: Record<string, OrgProjects>;
+  currentOrgId: string | null;
+  currentProjectId: number | null;
   needsProjectSelection: boolean;
   needsScopeReauth: boolean;
   hasCodeAccess: boolean | null;
@@ -51,7 +57,12 @@ interface AuthStoreState {
   loginWithOAuth: (region: CloudRegion) => Promise<void>;
   signupWithOAuth: (region: CloudRegion) => Promise<void>;
   selectProject: (projectId: number) => Promise<void>;
+  switchOrg: (orgId: string) => Promise<void>;
   logout: () => Promise<void>;
+}
+
+function flattenProjectIds(map: Record<string, OrgProjects>): number[] {
+  return Object.values(map).flatMap((org) => org.projects.map((p) => p.id));
 }
 
 async function getValidAccessToken(): Promise<string> {
@@ -88,10 +99,7 @@ function clearAuthenticatedRendererState(options?: {
 
   if (options?.clearAllQueries) {
     queryClient.clear();
-    return;
   }
-
-  queryClient.removeQueries({ queryKey: ["currentUser"], exact: true });
 }
 
 async function syncAuthState(): Promise<void> {
@@ -101,14 +109,16 @@ async function syncAuthState(): Promise<void> {
 
   useAuthStore.setState((state) => {
     const regionChanged = authState.cloudRegion !== state.cloudRegion;
-    const projectChanged = authState.projectId !== state.projectId;
+    const projectChanged =
+      authState.currentProjectId !== state.currentProjectId;
     const client =
       isAuthenticated && authState.cloudRegion
         ? regionChanged || projectChanged || !state.client
-          ? createClient(authState.cloudRegion, authState.projectId)
+          ? createClient(authState.cloudRegion, authState.currentProjectId)
           : state.client
         : null;
 
+    const projectIds = flattenProjectIds(authState.orgProjectsMap);
     return {
       ...state,
       isAuthenticated,
@@ -117,13 +127,13 @@ async function syncAuthState(): Promise<void> {
         ? null
         : (authState.cloudRegion ?? state.staleCloudRegion),
       client,
-      projectId: authState.projectId,
-      availableProjectIds: authState.availableProjectIds,
-      availableOrgIds: authState.availableOrgIds,
+      orgProjectsMap: authState.orgProjectsMap,
+      currentOrgId: authState.currentOrgId,
+      currentProjectId: authState.currentProjectId,
       needsProjectSelection:
         isAuthenticated &&
-        authState.availableProjectIds.length > 1 &&
-        authState.projectId === null,
+        projectIds.length > 1 &&
+        authState.currentProjectId === null,
       needsScopeReauth: authState.needsScopeReauth,
       hasCodeAccess: authState.hasCodeAccess,
     };
@@ -144,7 +154,7 @@ async function syncAuthState(): Promise<void> {
   const authSyncKey = JSON.stringify({
     status: authState.status,
     cloudRegion: authState.cloudRegion,
-    projectId: authState.projectId,
+    currentProjectId: authState.currentProjectId,
   });
 
   if (authSyncKey === lastCompletedAuthSyncKey) {
@@ -160,13 +170,14 @@ async function syncAuthState(): Promise<void> {
   inFlightAuthSync = (async () => {
     try {
       const user = await client.getCurrentUser();
-      queryClient.setQueryData(["currentUser"], user);
+      const authIdentity = getAuthIdentity(authState);
+      queryClient.setQueryData(authKeys.currentUser(authIdentity), user);
 
       const distinctId = user.distinct_id || user.email;
       identifyUser(distinctId, {
         email: user.email,
         uuid: user.uuid,
-        project_id: authState.projectId?.toString() ?? "",
+        project_id: authState.currentProjectId?.toString() ?? "",
         region: authState.cloudRegion ?? "",
       });
 
@@ -177,7 +188,7 @@ async function syncAuthState(): Promise<void> {
         properties: {
           email: user.email,
           uuid: user.uuid,
-          project_id: authState.projectId?.toString() ?? "",
+          project_id: authState.currentProjectId?.toString() ?? "",
           region: authState.cloudRegion ?? "",
         },
       });
@@ -202,9 +213,9 @@ export const useAuthStore = create<AuthStoreState>((set) => ({
 
   isAuthenticated: false,
   client: null,
-  projectId: null,
-  availableProjectIds: [],
-  availableOrgIds: [],
+  orgProjectsMap: {},
+  currentOrgId: null,
+  currentProjectId: null,
   needsProjectSelection: false,
   needsScopeReauth: false,
   hasCodeAccess: null,
@@ -222,7 +233,7 @@ export const useAuthStore = create<AuthStoreState>((set) => ({
     const result = await trpcClient.auth.login.mutate({ region });
     await syncAuthState();
     track(ANALYTICS_EVENTS.USER_LOGGED_IN, {
-      project_id: result.state.projectId?.toString() ?? "",
+      project_id: result.state.currentProjectId?.toString() ?? "",
       region,
     });
   },
@@ -231,7 +242,7 @@ export const useAuthStore = create<AuthStoreState>((set) => ({
     const result = await trpcClient.auth.signup.mutate({ region });
     await syncAuthState();
     track(ANALYTICS_EVENTS.USER_LOGGED_IN, {
-      project_id: result.state.projectId?.toString() ?? "",
+      project_id: result.state.currentProjectId?.toString() ?? "",
       region,
     });
   },
@@ -241,6 +252,12 @@ export const useAuthStore = create<AuthStoreState>((set) => ({
     await trpcClient.auth.selectProject.mutate({ projectId });
     await syncAuthState();
     useNavigationStore.getState().navigateToTaskInput();
+  },
+
+  switchOrg: async (orgId: string) => {
+    sessionResetCallback?.();
+    await trpcClient.auth.switchOrg.mutate({ orgId });
+    await syncAuthState();
   },
 
   logout: async () => {
@@ -255,9 +272,9 @@ export const useAuthStore = create<AuthStoreState>((set) => ({
       staleCloudRegion: state.cloudRegion ?? null,
       isAuthenticated: false,
       client: null,
-      projectId: null,
-      availableProjectIds: [],
-      availableOrgIds: [],
+      orgProjectsMap: {},
+      currentOrgId: null,
+      currentProjectId: null,
       needsProjectSelection: false,
       needsScopeReauth: false,
       hasCodeAccess: null,
