@@ -1180,18 +1180,22 @@ export class SessionService {
             promptStartedAt: null,
             currentPromptId: null,
           });
-          // Mirror local sessions, where `notifyPromptComplete` fires when
-          // the JSON-RPC response carries `stopReason: "end_turn"`. Gate on
-          // `isLive` so hydration/gap-fill replays of historical logs don't
-          // re-fire notifications for turns that completed in past app runs,
-          // and skip when the queue still has messages — those will start a
-          // new turn, matching the local `!hasQueuedMessages` check.
-          if (isLive && session.messageQueue.length === 0) {
-            notifyPromptComplete(
-              session.taskTitle,
-              "end_turn",
-              session.taskId,
-            );
+          // Mirror the local `stopReason: "end_turn"` path: notify on turn
+          // completion and bump task activity for sidebar ordering / unread
+          // badges. Gate on `isLive` so hydration/gap-fill replays of
+          // historical logs don't re-fire notifications or stamp activity
+          // for turns that completed in past app runs. Skip the notification
+          // (but not the activity bump, matching local) when the queue still
+          // has messages — those will start a new turn.
+          if (isLive) {
+            if (session.messageQueue.length === 0) {
+              notifyPromptComplete(
+                session.taskTitle,
+                "end_turn",
+                session.taskId,
+              );
+            }
+            taskViewedApi.markActivity(session.taskId);
           }
         }
       }
