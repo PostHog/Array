@@ -65,30 +65,19 @@ describe("WorktreeManager.createWorktree fetchBeforeCreate", () => {
     }
   });
 
-  it("without fetchBeforeCreate, worktree is based on the stale local ref", async () => {
+  it.each([
+    {
+      name: "without fetchBeforeCreate, worktree is based on the stale local ref",
+      fetchBeforeCreate: false,
+      expectRemoteTip: false,
+    },
+    {
+      name: "with fetchBeforeCreate, worktree starts at the remote tip",
+      fetchBeforeCreate: true,
+      expectRemoteTip: true,
+    },
+  ])("$name", async ({ fetchBeforeCreate, expectRemoteTip }) => {
     // Advance the remote: push a new commit from a separate clone.
-    const otherDir = await initLocalClone(remoteDir);
-    await commit(otherDir, "remote-new.txt", "remote-new\n");
-    const otherGit = createGitClient(otherDir);
-    await otherGit.push(["origin", "main"]);
-    const remoteTip = await shaOfBranch(otherDir, "main");
-    await rm(otherDir, { recursive: true, force: true });
-
-    const localTipBefore = await shaOfBranch(localDir, "main");
-    expect(localTipBefore).not.toBe(remoteTip);
-
-    const manager = new WorktreeManager({
-      mainRepoPath: localDir,
-      worktreeBasePath: worktreeBaseDir,
-    });
-    const info = await manager.createWorktree({ baseBranch: "main" });
-
-    const worktreeHead = await shaOfBranch(info.worktreePath, "HEAD");
-    expect(worktreeHead).toBe(localTipBefore);
-    expect(worktreeHead).not.toBe(remoteTip);
-  });
-
-  it("with fetchBeforeCreate, worktree starts at the remote tip", async () => {
     const otherDir = await initLocalClone(remoteDir);
     await commit(otherDir, "remote-new.txt", "remote-new\n");
     const otherGit = createGitClient(otherDir);
@@ -105,13 +94,18 @@ describe("WorktreeManager.createWorktree fetchBeforeCreate", () => {
     });
     const info = await manager.createWorktree({
       baseBranch: "main",
-      fetchBeforeCreate: true,
+      fetchBeforeCreate,
     });
 
     const worktreeHead = await shaOfBranch(info.worktreePath, "HEAD");
-    expect(worktreeHead).toBe(remoteTip);
+    if (expectRemoteTip) {
+      expect(worktreeHead).toBe(remoteTip);
+    } else {
+      expect(worktreeHead).toBe(localTipBefore);
+      expect(worktreeHead).not.toBe(remoteTip);
+    }
 
-    // Local `main` should NOT be mutated — only `origin/main` advances.
+    // Local `main` should never be mutated — only `origin/main` advances on fetch.
     const localMainAfter = await shaOfBranch(localDir, "main");
     expect(localMainAfter).toBe(localTipBefore);
   });
