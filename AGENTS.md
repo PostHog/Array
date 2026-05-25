@@ -4,7 +4,7 @@ This is the single source of truth for how PostHog Code is built. Architecture r
 
 ## Architecture rules (read this first)
 
-Read this section before writing or modifying code. These rules are load-bearing. They are what keeps business logic out of the renderer and lets the app stay portable to other clients.
+Read this section before writing or modifying code. These rules are load-bearing. The goal is a renderer that is strictly UI so the same app shape works on web and mobile, and a main process that owns every byte of business logic. PRs land fast from many contributors and many agents; these rules are what keep the foundation from rotting.
 
 **The principle: three layers, each with one job.**
 
@@ -19,7 +19,7 @@ Read this section before writing or modifying code. These rules are load-bearing
 ### Rules in one screen
 
 - **R1** Main services own business logic. `@injectable()`, singleton, exposed via a tRPC router with Zod schemas in the service's `schemas.ts`. No imports from `apps/code/src/renderer/*`.
-- **R2** Zustand stores are thin: UI state, subscription caches or queues. Actions do at most one `trpcClient` call plus one state update. No module-level `let` promises, no cross-store reach-ins, no business clients, no query-cache surgery, no system-event analytics.
+- **R2** Zustand stores are thin: UI state, subscription caches or queues. Actions do at most one `trpcClient` call plus one state update. No multi-step flows (OAuth dances, token refresh, server sync, retry loops), no module-level `let` promises, no cross-store reach-ins, no business clients, no query-cache surgery, no system-event analytics.
 - **R3** Renderer services are a narrow escape hatch. They live in `apps/code/src/renderer/services/`, are `@injectable()`, and never fetch data or coordinate cross-store reactions to system events.
 - **R4** Components use `useQuery` and `useMutation`, not imperative `trpcClient` calls. Custom hooks wrap a single query or a store selector. Hooks that orchestrate multiple queries to derive a result become one tRPC procedure.
 - **R5** Cross-feature coordination happens in main. Main emits an event; each affected store reacts via its feature's subscription registrar. Stores never reach into other stores.
@@ -47,7 +47,7 @@ Apply on every new file or meaningful change.
 
 These shapes exist in the codebase today. Do not copy them. Do not extend them.
 
-- **Module-level dedup state in stores.** `let inFlightAuthSync: Promise | null` and friends. Dedup belongs in the service.
+- **Multi-step flows in stores.** Whole auth flows (OAuth dance, token refresh, server-sync), retry loops, polling, anything with `let inFlightAuthSync: Promise | null` style dedup. All of it belongs in a main service. The store just reflects the service's state.
 - **Cross-store reach-ins in actions.** `useOtherStore.getState().something()` inside a store action. Main emits an event; each store reacts in its registrar.
 - **Business clients held in stores.** `client: createClient(region, projectId)` in a store. Construct in main, store holds a serializable id.
 - **Stores owning subscriptions.** `let globalSubscription = trpcClient.X.subscribe(...)` at store module scope. Use a feature subscription registrar.
@@ -61,7 +61,7 @@ These shapes exist in the codebase today. Do not copy them. Do not extend them.
 - **Renderer services that fetch domain data or coordinate tRPC.** The 3,796-line `sessions/service/service.ts` is the canonical example. Move it to main.
 - **Platform adapters with business logic.** Adapters wrap and translate. Decisions live in services that depend on the adapter via an interface.
 
-When in doubt, push logic toward main. The renderer is being thinned out, not thickened.
+When in doubt, push logic toward main. The renderer is being thinned out, not thickened. Imagine a web or mobile build of this app reusing the same renderer code: every business decision living in a store or component is a thing that won't port.
 
 ### Store / service boundary
 
