@@ -112,6 +112,13 @@ export const linkedBranchChangedPayload = z.object({
   branchName: z.string().nullable(),
 });
 
+export const taskPrInfoChangedPayload = z.object({
+  taskId: z.string(),
+  prUrl: z.string().nullable(),
+  prState: z.enum(["merged", "open", "draft", "closed"]).nullable(),
+  hasDiff: z.boolean(),
+});
+
 export const linkBranchInput = z.object({
   taskId: z.string(),
   branchName: z.string(),
@@ -252,6 +259,14 @@ export const taskPrStatusInput = z.object({
   cloudPrUrl: z.string().nullable(),
 });
 
+export const cachedPrUrlInput = z.object({
+  taskId: z.string(),
+});
+
+export const cachedPrUrlOutput = z.object({
+  prUrl: z.string().nullable(),
+});
+
 export const sidebarPrStateSchema = z
   .enum(["merged", "open", "draft", "closed"])
   .nullable();
@@ -264,6 +279,8 @@ export const taskPrStatusOutput = z.object({
 export type TaskPrStatusInput = z.infer<typeof taskPrStatusInput>;
 export type SidebarPrState = z.infer<typeof sidebarPrStateSchema>;
 export type TaskPrStatus = z.infer<typeof taskPrStatusOutput>;
+export type CachedPrUrlInput = z.infer<typeof cachedPrUrlInput>;
+export type CachedPrUrlOutput = z.infer<typeof cachedPrUrlOutput>;
 
 // Type exports
 export type WorkspaceMode = z.infer<typeof workspaceModeSchema>;
@@ -291,6 +308,7 @@ export type BranchChangedPayload = z.infer<typeof branchChangedPayload>;
 export type LinkedBranchChangedPayload = z.infer<
   typeof linkedBranchChangedPayload
 >;
+export type TaskPrInfoChangedPayload = z.infer<typeof taskPrInfoChangedPayload>;
 export type LinkBranchInput = z.infer<typeof linkBranchInput>;
 export type UnlinkBranchInput = z.infer<typeof unlinkBranchInput>;
 export type LocalBackgroundedPayload = z.infer<typeof localBackgroundedPayload>;

@@ -39,6 +39,7 @@ import type {
   CreateWorkspaceInput,
   LinkedBranchChangedPayload,
   ReconcileCloudWorkspacesOutput,
+  TaskPrInfoChangedPayload,
   Workspace,
   WorkspaceErrorPayload,
   WorkspaceInfo,
@@ -128,6 +129,7 @@ export const WorkspaceServiceEvent = {
   Promoted: "promoted",
   BranchChanged: "branchChanged",
   LinkedBranchChanged: "linkedBranchChanged",
+  TaskPrInfoChanged: "taskPrInfoChanged",
 } as const;
 
 export interface WorkspaceServiceEvents {
@@ -136,6 +138,7 @@ export interface WorkspaceServiceEvents {
   [WorkspaceServiceEvent.Promoted]: WorkspacePromotedPayload;
   [WorkspaceServiceEvent.BranchChanged]: BranchChangedPayload;
   [WorkspaceServiceEvent.LinkedBranchChanged]: LinkedBranchChangedPayload;
+  [WorkspaceServiceEvent.TaskPrInfoChanged]: TaskPrInfoChangedPayload;
 }
 
 @injectable()

@@ -128,6 +128,32 @@ function App() {
   );
 
   useSubscription(
+    trpcReact.workspace.onTaskPrInfoChanged.subscriptionOptions(undefined, {
+      onData: ({ taskId, prState, hasDiff }) => {
+        // Push the fresh PR info into every matching getTaskPrStatus query
+        // (one per cloudPrUrl variant) so the renderer re-renders without
+        // waiting for the next staleTime-driven refetch.
+        queryClient.setQueriesData<{
+          prState: typeof prState;
+          hasDiff: boolean;
+        }>(
+          {
+            ...trpcReact.workspace.getTaskPrStatus.pathFilter(),
+            predicate: (query) => {
+              const [, params] = query.queryKey as [
+                unknown,
+                { input?: { taskId?: string } } | undefined,
+              ];
+              return params?.input?.taskId === taskId;
+            },
+          },
+          () => ({ prState, hasDiff }),
+        );
+      },
+    }),
+  );
+
+  useSubscription(
     trpcReact.focus.onBranchRenamed.subscriptionOptions(undefined, {
       onData: ({ worktreePath, newBranch }) => {
         useFocusStore.getState().updateSessionBranch(worktreePath, newBranch);
