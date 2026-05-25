@@ -24,12 +24,11 @@ export function SignalReportSummaryMarkdown({
   variant,
   pending,
 }: SignalReportSummaryMarkdownProps) {
-  const raw = formatSignalReportSummaryMarkdown(
-    content?.trim() ? content : fallback,
-  );
+  const rawContent = content?.trim() ? content : fallback;
+  const raw = formatSignalReportSummaryMarkdown(rawContent);
 
   /** List rows: only the first line (before first newline); CSS still caps visual lines. */
-  const listMarkdown = raw.split(/\r?\n/)[0] ?? "";
+  const listMarkdown = rawContent.split(/\r?\n/)[0] ?? "";
 
   const italicStyle = pending ? { fontStyle: "italic" as const } : undefined;
 
