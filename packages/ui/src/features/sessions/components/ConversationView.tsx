@@ -1,3 +1,4 @@
+import { useShortcut } from "../../../primitives/hooks/useShortcut";
 import { ArrowDown, XCircle } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import { useService } from "@posthog/di/react";
@@ -18,9 +19,11 @@ import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
-import type {
-  ThreadGrouping,
-  ThreadRow,
+import { MessageJumpPicker } from "./MessageJumpPicker";
+import {
+  buildThreadGroups,
+  type ThreadGrouping,
+  type ThreadRow,
 } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
 import type { CollapseMode } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
 import { createIncrementalThreadGrouper } from "@posthog/ui/features/sessions/components/new-thread/incrementalThreadGrouping";
@@ -59,6 +62,7 @@ import {
 } from "@posthog/ui/shell/diffWorkerHost";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 
 const DIFFS_HIGHLIGHTER_OPTIONS = {
   theme: { dark: "github-dark" as const, light: "github-light" as const },
@@ -173,6 +177,17 @@ export function ConversationView({
     [conversationItems, optimisticItems, isCloud],
   );
 
+  const userMessages = useMemo(() => {
+    const result: Array<{ id: string; index: number }> = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type === "user_message") {
+        result.push({ id: item.id, index: i });
+      }
+    }
+    return result;
+  }, [items]);
+
   // Fold each completed turn's tool-call work into a collapsible chip, and emit
   // the keepMounted indices (standalone MCP-app rows, whose iframes must survive
   // scrolling) + the item→row map in the same pass.
@@ -219,6 +234,77 @@ export function ConversationView({
     listRef: searchListRef,
   });
 
+  const [jumpPickerOpen, setJumpPickerOpen] = useState(false);
+  const [keyboardFocusedMessageId, setKeyboardFocusedMessageId] = useState<
+    string | null
+  >(null);
+  const messageJumpKey = useShortcut("message-jump");
+  const previousMessageKey = useShortcut("message-prev");
+  const nextMessageKey = useShortcut("message-next");
+  useHotkeys(messageJumpKey, () => setJumpPickerOpen(true), {
+    enableOnFormTags: true,
+    enableOnContentEditable: true,
+    preventDefault: true,
+  });
+
+  const handleNavigateMessage = useCallback(
+    (direction: -1 | 1) => {
+      if (userMessages.length === 0) return;
+
+      const currentIndex = keyboardFocusedMessageId
+        ? userMessages.findIndex(
+            (message) => message.id === keyboardFocusedMessageId,
+          )
+        : -1;
+
+      const nextIndex =
+        currentIndex === -1
+          ? direction > 0
+            ? 0
+            : userMessages.length - 1
+          : Math.max(
+              0,
+              Math.min(userMessages.length - 1, currentIndex + direction),
+            );
+
+      const nextMessage = userMessages[nextIndex];
+      if (!nextMessage) return;
+
+      setKeyboardFocusedMessageId(nextMessage.id);
+      listRef.current?.scrollToIndex(nextMessage.index);
+    },
+    [keyboardFocusedMessageId, userMessages],
+  );
+
+  useHotkeys(previousMessageKey, () => handleNavigateMessage(-1), {
+    enableOnFormTags: true,
+    enableOnContentEditable: true,
+    preventDefault: true,
+  });
+
+  useHotkeys(nextMessageKey, () => handleNavigateMessage(1), {
+    enableOnFormTags: true,
+    enableOnContentEditable: true,
+    preventDefault: true,
+  });
+
+  useEffect(() => {
+    if (
+      keyboardFocusedMessageId &&
+      !userMessages.some((message) => message.id === keyboardFocusedMessageId)
+    ) {
+      setKeyboardFocusedMessageId(null);
+    }
+  }, [keyboardFocusedMessageId, userMessages]);
+
+  const clearKeyboardFocus = useCallback(() => {
+    setKeyboardFocusedMessageId(null);
+  }, []);
+
+  const handleJumpToIndex = useCallback((index: number) => {
+    listRef.current?.scrollToIndex(index);
+  }, []);
+
   const handleScrollStateChange = useCallback((isAtBottom: boolean) => {
     isAtBottomRef.current = isAtBottom;
     setShowScrollButton(!isAtBottom);
@@ -253,6 +339,7 @@ export function ConversationView({
               timestamp={item.timestamp}
               animate={!initialItemIds.has(item.id)}
               taskId={taskId}
+              keyboardFocused={item.id === keyboardFocusedMessageId}
               sourceUrl={
                 slackThreadUrl && item.id === firstUserMessageId
                   ? slackThreadUrl
@@ -286,7 +373,7 @@ export function ConversationView({
           return <UserShellExecuteView item={item} />;
       }
     },
-    [repoPath, taskId, slackThreadUrl, firstUserMessageId, initialItemIds],
+    [repoPath, taskId, slackThreadUrl, firstUserMessageId, initialItemIds, keyboardFocusedMessageId],
   );
 
   const getRowKey = useCallback((row: ThreadRow) => row.id, []);
@@ -358,7 +445,11 @@ export function ConversationView({
       poolOptions={diffsPoolOptions}
       highlighterOptions={DIFFS_HIGHLIGHTER_OPTIONS}
     >
-      <div ref={containerRef} className="group/thread relative flex-1">
+      <div
+        ref={containerRef}
+        className="group/thread relative flex-1"
+        onPointerDownCapture={clearKeyboardFocus}
+      >
         <div
           id="fullscreen-portal"
           className="pointer-events-none absolute inset-0 z-20"
@@ -375,6 +466,13 @@ export function ConversationView({
             onClose={search.close}
           />
         )}
+
+        <MessageJumpPicker
+          open={jumpPickerOpen}
+          onOpenChange={setJumpPickerOpen}
+          items={items}
+          onJumpToIndex={handleJumpToIndex}
+        />
 
         <SessionTaskIdProvider taskId={taskId}>
           <VirtualizedList<ThreadRow>
