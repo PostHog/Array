@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   buildImageDataUrl,
+  getImageMimeType,
   isAllowedImageMimeType,
+  isGifFile,
+  isImageFile,
+  isRasterImageFile,
   parseImageDataUrl,
-} from "./imageDataUrl";
+} from "./image";
 
 const TINY_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
@@ -126,6 +130,8 @@ describe("isAllowedImageMimeType", () => {
 
   it.each([
     ["image/svg+xml"],
+    ["image/heic"],
+    ["image/heif"],
     ["text/html"],
     ["application/javascript"],
     ["text/plain"],
@@ -139,5 +145,93 @@ describe("buildImageDataUrl", () => {
     expect(buildImageDataUrl("image/png", "abc")).toBe(
       "data:image/png;base64,abc",
     );
+  });
+});
+
+describe("isImageFile", () => {
+  it.each([
+    ["foo.png"],
+    ["foo.PNG"],
+    ["path/to/foo.jpg"],
+    ["foo.jpeg"],
+    ["foo.gif"],
+    ["foo.webp"],
+    ["foo.bmp"],
+    ["foo.ico"],
+    ["foo.tiff"],
+    ["foo.tif"],
+    ["foo.svg"],
+    ["foo.heic"],
+    ["foo.heif"],
+    ["foo.avif"],
+  ])("returns true for %s", (filename) => {
+    expect(isImageFile(filename)).toBe(true);
+  });
+
+  it.each([["foo.txt"], ["foo.md"], ["foo"], ["foo.ts"], ["foo.pdf"], [""]])(
+    "returns false for %s",
+    (filename) => {
+      expect(isImageFile(filename)).toBe(false);
+    },
+  );
+});
+
+describe("isRasterImageFile", () => {
+  it.each([
+    ["foo.png"],
+    ["foo.jpg"],
+    ["foo.gif"],
+    ["foo.webp"],
+    ["foo.bmp"],
+    ["foo.avif"],
+  ])("returns true for raster %s", (filename) => {
+    expect(isRasterImageFile(filename)).toBe(true);
+  });
+
+  it.each([["foo.svg"], ["foo.heic"], ["foo.heif"]])(
+    "returns false for non-raster %s",
+    (filename) => {
+      expect(isRasterImageFile(filename)).toBe(false);
+    },
+  );
+
+  it("returns false for non-images", () => {
+    expect(isRasterImageFile("foo.txt")).toBe(false);
+    expect(isRasterImageFile("foo")).toBe(false);
+  });
+});
+
+describe("isGifFile", () => {
+  it("returns true for .gif", () => {
+    expect(isGifFile("foo.gif")).toBe(true);
+    expect(isGifFile("foo.GIF")).toBe(true);
+  });
+
+  it("returns false for non-gif images", () => {
+    expect(isGifFile("foo.png")).toBe(false);
+  });
+});
+
+describe("getImageMimeType", () => {
+  it.each([
+    ["foo.png", "image/png"],
+    ["foo.jpg", "image/jpeg"],
+    ["foo.JPEG", "image/jpeg"],
+    ["foo.gif", "image/gif"],
+    ["foo.webp", "image/webp"],
+    ["foo.svg", "image/svg+xml"],
+    ["foo.heic", "image/heic"],
+    ["foo.heif", "image/heif"],
+    ["foo.avif", "image/avif"],
+    ["foo.ico", "image/x-icon"],
+    ["foo.tiff", "image/tiff"],
+    ["foo.tif", "image/tiff"],
+  ])("maps %s to %s", (filename, expected) => {
+    expect(getImageMimeType(filename)).toBe(expected);
+  });
+
+  it("falls back to application/octet-stream for unknown extensions", () => {
+    expect(getImageMimeType("foo.unknown")).toBe("application/octet-stream");
+    expect(getImageMimeType("foo")).toBe("application/octet-stream");
   });
 });

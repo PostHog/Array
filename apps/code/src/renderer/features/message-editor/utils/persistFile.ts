@@ -1,6 +1,6 @@
+import { getImageMimeType, isImageFile } from "@posthog/shared";
 import { trpcClient } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
-import { getImageMimeType, isImageFile } from "@shared/constants/image";
 import { getFilePath } from "@utils/getFilePath";
 import type { FileAttachment } from "./content";
 

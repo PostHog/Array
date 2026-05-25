@@ -5,7 +5,7 @@ import type { IAppMeta } from "@posthog/platform/app-meta";
 import type { DialogSeverity, IDialog } from "@posthog/platform/dialog";
 import type { IImageProcessor } from "@posthog/platform/image-processor";
 import type { IUrlLauncher } from "@posthog/platform/url-launcher";
-import { IMAGE_MIME_TYPES } from "@shared/constants/image";
+import { IMAGE_MIME_TYPES } from "@posthog/shared";
 import { z } from "zod";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";

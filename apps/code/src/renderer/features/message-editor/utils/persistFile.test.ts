@@ -25,10 +25,9 @@ vi.mock("@renderer/trpc/client", () => ({
   },
 }));
 
-vi.mock("@shared/constants/image", async () => {
-  const actual = await vi.importActual<
-    typeof import("@shared/constants/image")
-  >("@shared/constants/image");
+vi.mock("@posthog/shared", async () => {
+  const actual =
+    await vi.importActual<typeof import("@posthog/shared")>("@posthog/shared");
   return { ...actual, getImageMimeType: () => "image/png" };
 });
 

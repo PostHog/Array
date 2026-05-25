@@ -1,7 +1,11 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import { CLOUD_PROMPT_PREFIX, serializeCloudPrompt } from "@posthog/shared";
+import {
+  CLOUD_PROMPT_PREFIX,
+  getImageMimeType,
+  isImageFile,
+  serializeCloudPrompt,
+} from "@posthog/shared";
 import { trpcClient } from "@renderer/trpc/client";
-import { getImageMimeType, isImageFile } from "@shared/constants/image";
 import {
   getFileExtension,
   getFileName,

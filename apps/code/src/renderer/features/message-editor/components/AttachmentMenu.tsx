@@ -12,9 +12,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@posthog/quill";
+import { isImageFile } from "@posthog/shared";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
-import { isImageFile } from "@shared/constants/image";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import {

@@ -1,7 +1,7 @@
 import { File, X } from "@phosphor-icons/react";
+import { isGifFile, isImageFile } from "@posthog/shared";
 import { Dialog, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc/client";
-import { isGifFile, isImageFile } from "@shared/constants/image";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import type { FileAttachment } from "../utils/content";

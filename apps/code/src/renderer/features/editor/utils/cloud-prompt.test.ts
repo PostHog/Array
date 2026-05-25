@@ -7,10 +7,9 @@ const mockFs = vi.hoisted(() => ({
   readFileAsBase64: { query: vi.fn() },
 }));
 
-vi.mock("@shared/constants/image", async () => {
-  const actual = await vi.importActual<
-    typeof import("@shared/constants/image")
-  >("@shared/constants/image");
+vi.mock("@posthog/shared", async () => {
+  const actual =
+    await vi.importActual<typeof import("@posthog/shared")>("@posthog/shared");
   return {
     ...actual,
     getImageMimeType: (name: string) => {

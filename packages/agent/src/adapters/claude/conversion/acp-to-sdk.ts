@@ -3,23 +3,9 @@ import { fileURLToPath } from "node:url";
 import type { PromptRequest } from "@agentclientprotocol/sdk";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
-
-type ImageMimeType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+import { type ClaudeImageMimeType, isImageFile } from "@posthog/shared";
 
 const PDF_EXTENSIONS = new Set(["pdf"]);
-
-const COMMON_IMAGE_EXTENSIONS = new Set([
-  "png",
-  "jpg",
-  "jpeg",
-  "gif",
-  "webp",
-  "bmp",
-  "svg",
-  "heic",
-  "tif",
-  "tiff",
-]);
 
 const VIDEO_EXTENSIONS = new Set([
   "mp4",
@@ -53,7 +39,7 @@ export function readToolGuidanceForPath(filePath: string): string {
   if (PDF_EXTENSIONS.has(ext)) {
     return 'Optional `pages` string (e.g. "1-5") per Read call instead of loading the entire PDF.';
   }
-  if (COMMON_IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext)) {
+  if (isImageFile(filePath) || VIDEO_EXTENSIONS.has(ext)) {
     return "Binary file — use Read with `file_path`; prefer bounded reads where supported.";
   }
   return "Large text — use multiple Read calls with optional `offset` and `limit`.";
@@ -136,7 +122,7 @@ function processPromptChunk(
           source: {
             type: "base64",
             data: chunk.data,
-            media_type: chunk.mimeType as ImageMimeType,
+            media_type: chunk.mimeType as ClaudeImageMimeType,
           },
         });
       } else if (chunk.uri?.startsWith("http")) {

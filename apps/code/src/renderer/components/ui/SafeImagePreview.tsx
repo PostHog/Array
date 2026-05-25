@@ -1,9 +1,9 @@
-import { Flex, Text } from "@radix-ui/themes";
 import {
   buildImageDataUrl,
   isAllowedImageMimeType,
   MAX_IMAGE_BASE64_LENGTH,
-} from "@shared/utils/imageDataUrl";
+} from "@posthog/shared";
+import { Flex, Text } from "@radix-ui/themes";
 import { useState } from "react";
 
 interface SafeImagePreviewProps {
