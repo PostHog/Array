@@ -48,8 +48,7 @@ function App() {
   const [showTransition, setShowTransition] = useState(false);
   const wasInMainApp = useRef(isAuthenticated && hasCompletedOnboarding);
 
-  // Initialize PostHog analytics and attach the app version as a super
-  // property so every event is sliceable by PostHog Code version.
+  // Initialize PostHog analytics and register the app version super property.
   useEffect(() => {
     initializePostHog();
     trpcClient.os.getAppVersion

@@ -14,14 +14,10 @@ const log = logger.scope("analytics");
 
 let isInitialized = false;
 
-// The app version fetched from the main process at startup. Cached so it can be
-// re-applied after `posthog.reset()` (logout), which clears all super
-// properties — see registerPersistentSuperProperties / resetUser.
+// Cached so it can be re-applied after posthog.reset() clears super properties.
 let registeredAppVersion: string | null = null;
 
-// Super properties that must ride along on every event for the lifetime of the
-// app, including across logout/login cycles. `posthog.reset()` wipes all super
-// properties, so these are re-registered after each reset.
+// posthog.reset() wipes super properties, so these are re-registered after each reset.
 function registerPersistentSuperProperties() {
   posthog.register({
     team: "posthog-code",
@@ -119,15 +115,8 @@ export function startSessionRecording() {
   }, 1000);
 }
 
-/**
- * Register the PostHog Code version as a super property so it is attached to
- * every subsequently captured event. This lets us slice analytics by app
- * version — e.g. to spot users stuck on old versions or failing auto-updates.
- * The version is fetched from the main process at startup (see App.tsx).
- */
+// Register the app version as a super property so it rides along on every event.
 export function registerAppVersion(appVersion: string) {
-  // Cache regardless of init state so it survives a later reset and gets
-  // re-applied by registerPersistentSuperProperties.
   registeredAppVersion = appVersion;
 
   if (!isInitialized) {
@@ -182,8 +171,7 @@ export function resetUser() {
 
   posthog.reset();
 
-  // reset() clears all super properties; re-apply the ones that must persist
-  // across logout/login cycles (team + app_version).
+  // reset() clears super properties; re-apply the persistent ones.
   registerPersistentSuperProperties();
 }
 
