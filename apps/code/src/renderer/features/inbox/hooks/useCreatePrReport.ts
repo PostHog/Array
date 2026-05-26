@@ -4,7 +4,6 @@ import { useCreateTask } from "@features/tasks/hooks/useTasks";
 import { useUserRepositoryIntegration } from "@hooks/useIntegrations";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
-import { trpcClient } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
@@ -18,6 +17,7 @@ import type {
   TaskService,
 } from "../../task-detail/service/service";
 import { buildCreatePrReportPrompt } from "../utils/buildCreatePrReportPrompt";
+import { resolveDefaultModel } from "../utils/resolveDefaultModel";
 
 const log = logger.scope("create-pr-report");
 
@@ -32,30 +32,6 @@ interface UseCreatePrReportReturn {
   createPrReport: () => Promise<void>;
   /** True while the task is being created. */
   isCreatingPr: boolean;
-}
-
-async function resolveDefaultModel(
-  apiHost: string,
-  adapter: "claude" | "codex",
-): Promise<string | undefined> {
-  try {
-    const options = await trpcClient.agent.getPreviewConfigOptions.query({
-      apiHost,
-      adapter,
-    });
-    const modelOption = options.find(
-      (o) => o.id === "model" || o.category === "model",
-    );
-    if (modelOption?.type === "select" && modelOption.currentValue) {
-      return modelOption.currentValue;
-    }
-  } catch (error) {
-    log.warn("Failed to resolve default model for Create PR", {
-      error,
-      adapter,
-    });
-  }
-  return undefined;
 }
 
 /**

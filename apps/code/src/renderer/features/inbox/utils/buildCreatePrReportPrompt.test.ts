@@ -2,21 +2,19 @@ import { describe, expect, it } from "vitest";
 import { buildCreatePrReportPrompt } from "./buildCreatePrReportPrompt";
 
 describe("buildCreatePrReportPrompt", () => {
-  it("uses the production deeplink scheme outside dev builds", () => {
-    const prompt = buildCreatePrReportPrompt({
-      reportId: "abc123",
-      isDevBuild: false,
-    });
-    expect(prompt).toContain("posthog-code://inbox/abc123");
-  });
-
-  it("uses the dev deeplink scheme in dev builds", () => {
-    const prompt = buildCreatePrReportPrompt({
-      reportId: "abc123",
-      isDevBuild: true,
-    });
-    expect(prompt).toContain("posthog-code-dev://inbox/abc123");
-  });
+  it.each([
+    { isDevBuild: false, expectedScheme: "posthog-code" },
+    { isDevBuild: true, expectedScheme: "posthog-code-dev" },
+  ])(
+    "uses the $expectedScheme deeplink scheme when isDevBuild=$isDevBuild",
+    ({ isDevBuild, expectedScheme }) => {
+      const prompt = buildCreatePrReportPrompt({
+        reportId: "abc123",
+        isDevBuild,
+      });
+      expect(prompt).toContain(`${expectedScheme}://inbox/abc123`);
+    },
+  );
 
   it("references the inbox MCP tools so the agent fetches the detail itself", () => {
     const prompt = buildCreatePrReportPrompt({
