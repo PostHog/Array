@@ -51,6 +51,11 @@ export function initializePostHog() {
   });
 
   posthog.register({ team: "posthog-code" });
+  // Super-properties persist across app restarts via local storage. Clear
+  // any task-scoped properties from the previous session so events fired
+  // before navigation re-applies the current task's context are not
+  // mislabelled with stale values.
+  posthog.unregister("signal_report_id");
 
   isInitialized = true;
 

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mockPosthog = {
   init: vi.fn(),
   register: vi.fn(),
+  unregister: vi.fn(),
   onFeatureFlags: vi.fn(),
   isFeatureEnabled: vi.fn(),
   startSessionRecording: vi.fn(),
