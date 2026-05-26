@@ -730,22 +730,11 @@ export function InboxSignalsTab() {
     <>
       {showInboxOnboarding ? (
         /* ── Inline setup pane for users with no sources configured ──
-           No "Configure sources" toolbar shortcut nor search bar — the pane
-           below is the configuration UI and there's nothing to search yet. */
-        <Flex direction="column" className="h-full">
-          <SignalsToolbar
-            totalCount={0}
-            filteredCount={0}
-            isSearchActive={false}
-            pipelinePausedUntil={signalProcessingState?.paused_until}
-            searchDisabledReason={searchDisabledReason}
-            hideFilters
-            hideSearch
-          />
-          <ScrollArea className="min-h-0 flex-1">
-            <InboxSetupPane />
-          </ScrollArea>
-        </Flex>
+           The toolbar (report counter, search, bulk actions) is suppressed
+           entirely — none of it is meaningful before any source is configured. */
+        <ScrollArea className="h-full">
+          <InboxSetupPane />
+        </ScrollArea>
       ) : showTwoPaneLayout ? (
         <Flex ref={containerRef} height="100%" className="min-h-0">
           {/* ── Left pane: report list ───────────────────────────────── */}

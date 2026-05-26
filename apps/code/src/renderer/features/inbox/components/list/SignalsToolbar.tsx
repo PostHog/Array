@@ -47,7 +47,6 @@ interface SignalsToolbarProps {
   pipelinePausedUntil?: string | null;
   searchDisabledReason?: string | null;
   hideFilters?: boolean;
-  hideSearch?: boolean;
   reports?: SignalReport[];
   /** Pre-computed effective bulk selection (store ids or virtual open-report fallback). */
   effectiveBulkIds?: string[];
@@ -267,7 +266,6 @@ export function SignalsToolbar({
   pipelinePausedUntil,
   searchDisabledReason,
   hideFilters,
-  hideSearch,
   reports = [],
   effectiveBulkIds = [],
   onToggleSelectAll,
@@ -535,35 +533,33 @@ export function SignalsToolbar({
             : null}
         </Flex>
 
-        {!hideSearch && (
-          <Flex align="center" gap="2">
-            <Tooltip
-              content={searchDisabledReason}
-              hidden={!searchDisabledReason}
-            >
-              <Box className="min-w-0 flex-1 select-text">
-                <TextField.Root
-                  size="1"
-                  placeholder="Search reports..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="text-[12px]"
-                  disabled={!!searchDisabledReason}
-                >
-                  <TextField.Slot>
-                    <MagnifyingGlass size={12} />
-                  </TextField.Slot>
-                </TextField.Root>
-              </Box>
-            </Tooltip>
-            {!hideFilters && (
-              <Flex align="center" gap="1" className="shrink-0">
-                <SuggestedReviewerFilterMenu />
-                <FilterSortMenu />
-              </Flex>
-            )}
-          </Flex>
-        )}
+        <Flex align="center" gap="2">
+          <Tooltip
+            content={searchDisabledReason}
+            hidden={!searchDisabledReason}
+          >
+            <Box className="min-w-0 flex-1 select-text">
+              <TextField.Root
+                size="1"
+                placeholder="Search reports..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="text-[12px]"
+                disabled={!!searchDisabledReason}
+              >
+                <TextField.Slot>
+                  <MagnifyingGlass size={12} />
+                </TextField.Slot>
+              </TextField.Root>
+            </Box>
+          </Tooltip>
+          {!hideFilters && (
+            <Flex align="center" gap="1" className="shrink-0">
+              <SuggestedReviewerFilterMenu />
+              <FilterSortMenu />
+            </Flex>
+          )}
+        </Flex>
 
         <Flex gap="2" align="center" justify="between" wrap="wrap-reverse">
           <Tooltip
