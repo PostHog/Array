@@ -149,6 +149,7 @@ describe("AuthService", () => {
 
   beforeEach(() => {
     preferenceRepository._preferences = [];
+    preferenceRepository._orgProjectPreferences = [];
     repository.clearCurrent();
     vi.clearAllMocks();
     connectivityEmitter.removeAllListeners();
@@ -569,6 +570,118 @@ describe("AuthService", () => {
 
       expect(service.getState().status).toBe("anonymous");
       expect(oauthService.refreshToken).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe("switchOrg", () => {
+    const twoOrgs = {
+      "org-1": {
+        name: "Org 1",
+        projects: [{ id: 11, name: "Project 11" }],
+      },
+      "org-2": {
+        name: "Org 2",
+        projects: [
+          { id: 22, name: "Project 22" },
+          { id: 33, name: "Project 33" },
+        ],
+      },
+    };
+
+    function arrangeTwoOrgs() {
+      vi.mocked(oauthService.startFlow).mockResolvedValue(
+        mockTokenResponse({ scopedOrgs: ["org-1", "org-2"] }),
+      );
+      vi.mocked(oauthService.refreshToken).mockResolvedValue(
+        mockTokenResponse({ scopedOrgs: ["org-1", "org-2"] }),
+      );
+      stubAuthFetch({ orgs: twoOrgs });
+    }
+
+    it("switches the active organization and refreshes its projects", async () => {
+      arrangeTwoOrgs();
+
+      await service.login("us");
+      expect(service.getState().currentOrgId).toBe("org-1");
+
+      const state = await service.switchOrg("org-2");
+
+      expect(state.currentOrgId).toBe("org-2");
+      expect(state.currentProjectId).toBe(22);
+      expect(state.orgProjectsMap["org-2"].projects).toEqual([
+        { id: 22, name: "Project 22" },
+        { id: 33, name: "Project 33" },
+      ]);
+    });
+
+    it("throws when the target organization is not in the scoped map", async () => {
+      arrangeTwoOrgs();
+      await service.login("us");
+
+      await expect(service.switchOrg("org-unknown")).rejects.toThrow(
+        /Invalid organization/i,
+      );
+    });
+
+    it("restores the last selected project for the org when available", async () => {
+      arrangeTwoOrgs();
+
+      await service.login("us");
+      await service.switchOrg("org-2");
+      await service.selectProject(33);
+      await service.switchOrg("org-1");
+
+      const state = await service.switchOrg("org-2");
+      expect(state.currentProjectId).toBe(33);
+    });
+
+    it("persists the new selected project so it survives restart", async () => {
+      arrangeTwoOrgs();
+
+      await service.login("us");
+      await service.switchOrg("org-2");
+
+      expect(repository.getCurrent()?.selectedProjectId).toBe(22);
+    });
+  });
+
+  describe("selectProject cross-org", () => {
+    it("PATCHes the user org and updates state when the chosen project lives in a different org", async () => {
+      const orgs = {
+        "org-1": {
+          name: "Org 1",
+          projects: [{ id: 1, name: "P1" }],
+        },
+        "org-2": {
+          name: "Org 2",
+          projects: [{ id: 2, name: "P2" }],
+        },
+      };
+      vi.mocked(oauthService.startFlow).mockResolvedValue(
+        mockTokenResponse({ scopedOrgs: ["org-1", "org-2"] }),
+      );
+      vi.mocked(oauthService.refreshToken).mockResolvedValue(
+        mockTokenResponse({ scopedOrgs: ["org-1", "org-2"] }),
+      );
+      stubAuthFetch({ orgs });
+
+      const fetchSpy = vi.spyOn(global, "fetch");
+
+      await service.login("us");
+      const state = await service.selectProject(2);
+
+      expect(state.currentOrgId).toBe("org-2");
+      expect(state.currentProjectId).toBe(2);
+
+      const patchCalls = fetchSpy.mock.calls.filter(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH",
+      );
+      expect(patchCalls.length).toBeGreaterThan(0);
+      const [patchUrl, patchInit] = patchCalls[0];
+      expect(String(patchUrl)).toMatch(/\/api\/users\/@me\//);
+      expect(String((patchInit as RequestInit).body)).toContain(
+        '"set_current_organization":"org-2"',
+      );
     });
   });
 

@@ -13,6 +13,29 @@ export type OrgProjects = z.infer<typeof orgProjectsSchema>;
 export const orgProjectsMapSchema = z.record(z.string(), orgProjectsSchema);
 export type OrgProjectsMap = z.infer<typeof orgProjectsMapSchema>;
 
+export function flattenProjectIds(map: OrgProjectsMap): number[] {
+  return Object.values(map).flatMap((org) => org.projects.map((p) => p.id));
+}
+
+export function findOrgForProject(
+  map: OrgProjectsMap,
+  projectId: number,
+  preferredOrgId: string | null,
+): string | null {
+  if (
+    preferredOrgId &&
+    map[preferredOrgId]?.projects.some((p) => p.id === projectId)
+  ) {
+    return preferredOrgId;
+  }
+  for (const [orgId, org] of Object.entries(map)) {
+    if (org.projects.some((p) => p.id === projectId)) {
+      return orgId;
+    }
+  }
+  return null;
+}
+
 export const authStateSchema = z.object({
   status: authStatusSchema,
   bootstrapComplete: z.boolean(),

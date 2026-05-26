@@ -1,6 +1,10 @@
 import { authKeys, getAuthIdentity } from "@features/auth/hooks/authQueries";
 import { useSeatStore } from "@features/billing/stores/seatStore";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import {
+  flattenProjectIds,
+  type OrgProjectsMap,
+} from "@main/services/auth/schemas";
 import { PostHogAPIClient } from "@renderer/api/posthogClient";
 import { trpcClient } from "@renderer/trpc/client";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
@@ -16,11 +20,6 @@ import {
 import { logger } from "@utils/logger";
 import { queryClient } from "@utils/queryClient";
 import { create } from "zustand";
-
-type OrgProjects = {
-  orgName: string;
-  projects: { id: number; name: string }[];
-};
 
 const log = logger.scope("auth-store");
 
@@ -45,7 +44,7 @@ interface AuthStoreState {
   staleCloudRegion: CloudRegion | null;
   isAuthenticated: boolean;
   client: PostHogAPIClient | null;
-  orgProjectsMap: Record<string, OrgProjects>;
+  orgProjectsMap: OrgProjectsMap;
   currentOrgId: string | null;
   currentProjectId: number | null;
   needsProjectSelection: boolean;
@@ -59,10 +58,6 @@ interface AuthStoreState {
   selectProject: (projectId: number) => Promise<void>;
   switchOrg: (orgId: string) => Promise<void>;
   logout: () => Promise<void>;
-}
-
-function flattenProjectIds(map: Record<string, OrgProjects>): number[] {
-  return Object.values(map).flatMap((org) => org.projects.map((p) => p.id));
 }
 
 async function getValidAccessToken(): Promise<string> {

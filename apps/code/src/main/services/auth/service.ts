@@ -25,6 +25,8 @@ import {
   type AuthServiceEvents,
   type AuthState,
   type AuthTokenResponse,
+  findOrgForProject,
+  flattenProjectIds,
   type OrgProjects,
   type OrgProjectsMap,
   type ValidAccessTokenOutput,
@@ -48,29 +50,6 @@ interface InMemorySession {
   currentProjectId: number | null;
 }
 
-function flattenProjectIds(map: OrgProjectsMap): number[] {
-  return Object.values(map).flatMap((org) => org.projects.map((p) => p.id));
-}
-
-function findOrgForProject(
-  map: OrgProjectsMap,
-  projectId: number,
-  preferredOrgId: string | null,
-): string | null {
-  if (
-    preferredOrgId &&
-    map[preferredOrgId]?.projects.some((p) => p.id === projectId)
-  ) {
-    return preferredOrgId;
-  }
-  for (const [orgId, org] of Object.entries(map)) {
-    if (org.projects.some((p) => p.id === projectId)) {
-      return orgId;
-    }
-  }
-  return null;
-}
-
 interface StoredSessionInput {
   refreshToken: string;
   cloudRegion: CloudRegion;
@@ -80,6 +59,37 @@ interface StoredSessionInput {
 interface TokenResponseOptions {
   cloudRegion: CloudRegion;
   selectedProjectId: number | null;
+}
+
+function pickInitialProjectId(args: {
+  orgProjectsMap: OrgProjectsMap;
+  currentOrgId: string | null;
+  lastSelectedOrgId: string | null;
+  preferredProjectId: number | null;
+}): number | null {
+  const {
+    orgProjectsMap,
+    currentOrgId,
+    lastSelectedOrgId,
+    preferredProjectId,
+  } = args;
+
+  const allProjectIds = flattenProjectIds(orgProjectsMap);
+  if (preferredProjectId && allProjectIds.includes(preferredProjectId)) {
+    return preferredProjectId;
+  }
+
+  const fromCurrentOrg = currentOrgId
+    ? orgProjectsMap[currentOrgId]?.projects[0]?.id
+    : undefined;
+  if (fromCurrentOrg !== undefined) return fromCurrentOrg;
+
+  const fromLastOrg = lastSelectedOrgId
+    ? orgProjectsMap[lastSelectedOrgId]?.projects[0]?.id
+    : undefined;
+  if (fromLastOrg !== undefined) return fromLastOrg;
+
+  return allProjectIds[0] ?? null;
 }
 
 @injectable()
@@ -256,24 +266,16 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
         session.currentOrgId,
       ) ?? session.currentOrgId;
 
-    if (newOrgId && newOrgId !== session.currentOrgId) {
-      await this.patchCurrentOrganization(newOrgId);
-    }
+    const orgProjectsMap =
+      newOrgId && newOrgId !== session.currentOrgId
+        ? await this.applyOrgChange(session, newOrgId)
+        : session.orgProjectsMap;
 
-    this.session = {
-      ...session,
-      currentProjectId: projectId,
+    this.commitSessionState(session, {
+      orgProjectsMap,
       currentOrgId: newOrgId,
-    };
-
-    this.persistProjectPreference(this.session);
-    this.persistSession({
-      refreshToken: this.session.refreshToken,
-      cloudRegion: this.session.cloudRegion,
-      selectedProjectId: projectId,
+      currentProjectId: projectId,
     });
-
-    this.updateState({ currentProjectId: projectId, currentOrgId: newOrgId });
     return this.getState();
   }
   async switchOrg(orgId: string): Promise<AuthState> {
@@ -285,23 +287,47 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       throw new Error("Invalid organization");
     }
 
-    await this.patchCurrentOrganization(orgId);
+    const orgProjectsMap = await this.applyOrgChange(session, orgId);
+    const currentProjectId = this.pickProjectForOrg(
+      session,
+      orgProjectsMap,
+      orgId,
+    );
 
+    this.commitSessionState(session, {
+      orgProjectsMap,
+      currentOrgId: orgId,
+      currentProjectId,
+    });
+    return this.getState();
+  }
+  private async applyOrgChange(
+    session: InMemorySession,
+    orgId: string,
+  ): Promise<OrgProjectsMap> {
+    await this.patchCurrentOrganization(orgId);
     const refreshedProjects = await this.fetchOrgProjects(
       session.accessToken,
       session.cloudRegion,
       orgId,
     );
-    const orgProjectsMap: OrgProjectsMap = refreshedProjects
-      ? {
-          ...session.orgProjectsMap,
-          [orgId]: {
-            orgName: session.orgProjectsMap[orgId]?.orgName ?? "(unknown)",
-            projects: refreshedProjects,
-          },
-        }
-      : session.orgProjectsMap;
-
+    if (!refreshedProjects) {
+      return session.orgProjectsMap;
+    }
+    return {
+      ...session.orgProjectsMap,
+      [orgId]: {
+        orgName: session.orgProjectsMap[orgId]?.orgName ?? "(unknown)",
+        projects: refreshedProjects,
+      },
+    };
+  }
+  private pickProjectForOrg(
+    session: InMemorySession,
+    orgProjectsMap: OrgProjectsMap,
+    orgId: string,
+  ): number | null {
+    const orgProjects = orgProjectsMap[orgId]?.projects ?? [];
     const preferredProjectId = session.accountKey
       ? (this.authPreferenceRepository.getOrgProject(
           session.accountKey,
@@ -309,32 +335,41 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
           orgId,
         )?.lastSelectedProjectId ?? null)
       : null;
-    const orgProjects = orgProjectsMap[orgId]?.projects ?? [];
-    const currentProjectId =
-      preferredProjectId && orgProjects.some((p) => p.id === preferredProjectId)
-        ? preferredProjectId
-        : (orgProjects[0]?.id ?? null);
-
+    if (
+      preferredProjectId &&
+      orgProjects.some((p) => p.id === preferredProjectId)
+    ) {
+      return preferredProjectId;
+    }
+    return orgProjects[0]?.id ?? null;
+  }
+  private commitSessionState(
+    prevSession: InMemorySession,
+    next: {
+      orgProjectsMap: OrgProjectsMap;
+      currentOrgId: string | null;
+      currentProjectId: number | null;
+    },
+  ): void {
     this.session = {
-      ...session,
-      orgProjectsMap,
-      currentOrgId: orgId,
-      currentProjectId,
+      ...prevSession,
+      orgProjectsMap: next.orgProjectsMap,
+      currentOrgId: next.currentOrgId,
+      currentProjectId: next.currentProjectId,
     };
 
     this.persistProjectPreference(this.session);
     this.persistSession({
       refreshToken: this.session.refreshToken,
       cloudRegion: this.session.cloudRegion,
-      selectedProjectId: currentProjectId,
+      selectedProjectId: next.currentProjectId,
     });
 
     this.updateState({
-      orgProjectsMap,
-      currentOrgId: orgId,
-      currentProjectId,
+      orgProjectsMap: next.orgProjectsMap,
+      currentOrgId: next.currentOrgId,
+      currentProjectId: next.currentProjectId,
     });
-    return this.getState();
   }
   private async patchCurrentOrganization(orgId: string): Promise<void> {
     const { apiHost } = await this.getValidAccessToken();
@@ -525,27 +560,16 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       options.cloudRegion,
       scopedOrgIds,
     );
-    const allProjectIds = flattenProjectIds(orgProjectsMap);
     const lastPrefs = accountKey
       ? this.authPreferenceRepository.get(accountKey, options.cloudRegion)
       : null;
-    const preferredProjectId =
-      options.selectedProjectId ?? lastPrefs?.lastSelectedProjectId ?? null;
-    const projectsInCurrentOrg = currentOrgId
-      ? (orgProjectsMap[currentOrgId]?.projects ?? [])
-      : [];
-    const projectsInLastOrg =
-      lastPrefs?.lastSelectedOrgId &&
-      orgProjectsMap[lastPrefs.lastSelectedOrgId]
-        ? orgProjectsMap[lastPrefs.lastSelectedOrgId].projects
-        : [];
-    const currentProjectId =
-      preferredProjectId && allProjectIds.includes(preferredProjectId)
-        ? preferredProjectId
-        : (projectsInCurrentOrg[0]?.id ??
-          projectsInLastOrg[0]?.id ??
-          allProjectIds[0] ??
-          null);
+    const currentProjectId = pickInitialProjectId({
+      orgProjectsMap,
+      currentOrgId,
+      preferredProjectId:
+        options.selectedProjectId ?? lastPrefs?.lastSelectedProjectId ?? null,
+      lastSelectedOrgId: lastPrefs?.lastSelectedOrgId ?? null,
+    });
 
     const session: InMemorySession = {
       accountKey,
@@ -597,9 +621,12 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   ): Promise<OrgProjects | null> {
     const apiHost = getCloudUrlFromRegion(cloudRegion);
     try {
-      const res = await fetch(`${apiHost}/api/organizations/${orgId}/`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const res = await this.executeAuthenticatedFetch(
+        fetch,
+        `${apiHost}/api/organizations/${orgId}/`,
+        {},
+        accessToken,
+      );
       if (!res.ok) return null;
       const raw = (await res.json().catch(() => null)) as {
         name?: unknown;
@@ -718,13 +745,11 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     cloudRegion: "us" | "eu" | "dev",
   ): Promise<{ accountKey: string | null; currentOrgId: string | null }> {
     try {
-      const response = await fetch(
+      const response = await this.executeAuthenticatedFetch(
+        fetch,
         `${getCloudUrlFromRegion(cloudRegion)}/api/users/@me/`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        },
+        {},
+        accessToken,
       );
 
       if (!response.ok) {

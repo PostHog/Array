@@ -693,33 +693,6 @@ export class PostHogAPIClient {
     });
   }
 
-  async listOrgProjects(
-    orgId: string,
-  ): Promise<{ id: number; name: string }[]> {
-    const urlPath = `/api/organizations/${encodeURIComponent(orgId)}/projects/`;
-    const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to list organization projects: ${response.statusText}`,
-      );
-    }
-    const raw = (await response.json()) as unknown;
-    const list = Array.isArray(raw)
-      ? raw
-      : Array.isArray((raw as { results?: unknown } | null)?.results)
-        ? ((raw as { results: unknown[] }).results as unknown[])
-        : [];
-    return list
-      .map((p) => p as { id?: unknown; name?: unknown })
-      .filter((p) => typeof p.id === "number" && typeof p.name === "string")
-      .map((p) => ({ id: p.id as number, name: p.name as string }));
-  }
-
   async approveAiDataProcessing(): Promise<void> {
     const urlPath = `/api/organizations/@current/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);

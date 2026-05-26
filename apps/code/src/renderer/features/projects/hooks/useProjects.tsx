@@ -1,5 +1,6 @@
 import { useSelectProjectMutation } from "@features/auth/hooks/authMutations";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
+import type { OrgProjectsMap } from "@main/services/auth/schemas";
 import { logger } from "@utils/logger";
 import { useEffect, useMemo } from "react";
 
@@ -16,11 +17,6 @@ export interface GroupedProjects {
   orgName: string;
   projects: ProjectInfo[];
 }
-
-type OrgProjectsMap = Record<
-  string,
-  { orgName: string; projects: { id: number; name: string }[] }
->;
 
 export function groupProjectsByOrg(map: OrgProjectsMap): GroupedProjects[] {
   return Object.entries(map).map(([orgId, org]) => ({
@@ -59,27 +55,26 @@ export function useProjects() {
 
   useEffect(() => {
     if (isSelectingProject) return;
-    if (projects.length > 0 && !currentProject) {
-      const currentOrgProjects = currentOrgId
-        ? (orgProjectsMap[currentOrgId]?.projects ?? [])
-        : [];
-      const preferredId = currentOrgProjects[0]?.id ?? projects[0]?.id;
-      if (preferredId == null) return;
-      log.info("Auto-selecting project", {
-        projectId: preferredId,
-        reason:
-          currentProjectId == null
-            ? "no project selected"
-            : "current project not found in list",
-      });
-      selectProject(preferredId);
-    }
+    if (projects.length === 0 || currentProject) return;
+    const currentOrgProjects = currentOrgId
+      ? (orgProjectsMap[currentOrgId]?.projects ?? [])
+      : [];
+    const preferredId = currentOrgProjects[0]?.id;
+    if (preferredId == null) return;
+    log.info("Auto-selecting project in current org", {
+      projectId: preferredId,
+      reason:
+        currentProjectId == null
+          ? "no project selected"
+          : "current project not found in list",
+    });
+    selectProject(preferredId);
   }, [
     currentProject,
     currentProjectId,
     currentOrgId,
     orgProjectsMap,
-    projects,
+    projects.length,
     selectProject,
     isSelectingProject,
   ]);
