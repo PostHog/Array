@@ -102,6 +102,20 @@ export function startSessionRecording() {
   }, 1000);
 }
 
+/**
+ * Register the PostHog Code version as a super property so it is attached to
+ * every subsequently captured event. This lets us slice analytics by app
+ * version — e.g. to spot users stuck on old versions or failing auto-updates.
+ * The version is fetched from the main process at startup (see App.tsx).
+ */
+export function registerAppVersion(appVersion: string) {
+  if (!isInitialized) {
+    return;
+  }
+
+  posthog.register({ app_version: appVersion });
+}
+
 export function identifyUser(
   userId: string,
   properties?: UserIdentifyProperties,

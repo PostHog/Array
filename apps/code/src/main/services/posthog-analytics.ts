@@ -1,4 +1,5 @@
 import { PostHog } from "posthog-node";
+import { getAppVersion } from "../utils/env";
 
 let posthogClient: PostHog | null = null;
 let currentUserId: string | null = null;
@@ -46,6 +47,7 @@ export function trackAppEvent(
     event: eventName,
     properties: {
       team: "posthog-code",
+      app_version: getAppVersion(),
       ...properties,
       $process_person_profile: !!currentUserId,
     },
@@ -94,6 +96,7 @@ export function captureException(
   const distinctId = currentUserId || "anonymous-app-event";
   posthogClient.captureException(error, distinctId, {
     team: "posthog-code",
+    app_version: getAppVersion(),
     ...additionalProperties,
   });
 }

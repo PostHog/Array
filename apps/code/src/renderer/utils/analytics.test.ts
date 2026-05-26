@@ -91,6 +91,25 @@ describe("onFeatureFlagsLoaded", () => {
   });
 });
 
+describe("registerAppVersion", () => {
+  it("registers app_version as a super property after init", async () => {
+    const { initializePostHog, registerAppVersion } = await loadAnalytics();
+
+    initializePostHog();
+    registerAppVersion("1.2.3");
+
+    expect(mockPosthog.register).toHaveBeenCalledWith({ app_version: "1.2.3" });
+  });
+
+  it("does nothing before init", async () => {
+    const { registerAppVersion } = await loadAnalytics();
+
+    registerAppVersion("1.2.3");
+
+    expect(mockPosthog.register).not.toHaveBeenCalled();
+  });
+});
+
 describe("initializePostHog", () => {
   it("is idempotent across repeat calls", async () => {
     const { initializePostHog } = await loadAnalytics();
