@@ -380,6 +380,40 @@ export function toolInfoFromToolUse(
         content: [],
       };
 
+    case "TaskCreate": {
+      const subject =
+        typeof input?.subject === "string" ? input.subject : undefined;
+      return {
+        title: subject ? `Create task: ${subject}` : "Create task",
+        kind: "think",
+        content: [],
+      };
+    }
+
+    case "TaskUpdate": {
+      const subject =
+        typeof input?.subject === "string" ? input.subject : undefined;
+      return {
+        title: subject ? `Update task: ${subject}` : "Update task",
+        kind: "think",
+        content: [],
+      };
+    }
+
+    case "TaskList":
+      return {
+        title: "List tasks",
+        kind: "think",
+        content: [],
+      };
+
+    case "TaskGet":
+      return {
+        title: "Get task",
+        kind: "think",
+        content: [],
+      };
+
     case "ExitPlanMode":
       return {
         title: "Ready to code?",

@@ -84,6 +84,7 @@ import {
   handleSystemMessage,
   handleUserAssistantMessage,
 } from "./conversion/sdk-to-acp";
+import type { TaskState } from "./conversion/task-state";
 import type { EnrichedReadCache } from "./hooks";
 import { createLocalToolsMcpServer } from "./mcp/local-tools";
 import {
@@ -179,6 +180,51 @@ function shouldEmitRawMessage(
   );
 }
 
+/**
+ * Restrict gateway model options to the user's `availableModels` allowlist
+ * from settings.json. Display info and capability flags are copied from the
+ * closest gateway match so the UI still renders sensible names. The Default
+ * option (gateway's first entry, also `currentModelId` fallback) is always
+ * preserved per the Claude Code docs.
+ */
+function applyAvailableModelsAllowlist(
+  modelOptions: {
+    currentModelId: string;
+    options: SessionConfigSelectOption[];
+  },
+  allowlist: string[],
+): { currentModelId: string; options: SessionConfigSelectOption[] } {
+  const filtered: SessionConfigSelectOption[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of allowlist) {
+    const trimmed = entry.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+
+    const match = modelOptions.options.find((o) => o.value === trimmed);
+    if (match) {
+      filtered.push(match);
+    } else {
+      filtered.push({
+        value: trimmed,
+        name: trimmed,
+        description: "Custom model",
+      });
+    }
+    seen.add(trimmed);
+  }
+
+  if (filtered.length === 0) return modelOptions;
+
+  const currentModelId = filtered.some(
+    (o) => o.value === modelOptions.currentModelId,
+  )
+    ? modelOptions.currentModelId
+    : filtered[0].value;
+
+  return { currentModelId, options: filtered };
+}
+
 export interface ClaudeAcpAgentOptions {
   onProcessSpawned?: (info: ProcessSpawnedInfo) => void;
   onProcessExited?: (pid: number) => void;
@@ -237,6 +283,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         },
         loadSession: true,
         sessionCapabilities: {
+          additionalDirectories: {},
           list: {},
           fork: {},
           resume: {},
@@ -269,11 +316,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       throw RequestError.authRequired();
     }
 
-    const response = await this.createSession(params, {
-      // Revisit these meta values once we support resume
-      resume: (params._meta as NewSessionMeta | undefined)?.claudeCode?.options
-        ?.resume as string | undefined,
-    });
+    const response = await this.createSession(
+      {
+        cwd: params.cwd,
+        mcpServers: params.mcpServers ?? [],
+        additionalDirectories: params.additionalDirectories,
+        _meta: params._meta,
+      },
+      {
+        // Revisit these meta values once we support resume
+        resume: (params._meta as NewSessionMeta | undefined)?.claudeCode
+          ?.options?.resume as string | undefined,
+      },
+    );
 
     return response;
   }
@@ -285,13 +340,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       {
         cwd: params.cwd,
         mcpServers: params.mcpServers ?? [],
+        additionalDirectories: params.additionalDirectories,
         _meta: params._meta,
       },
       { resume: params.sessionId, forkSession: true },
     );
   }
 
-  async unstable_resumeSession(
+  async resumeSession(
     params: ResumeSessionRequest,
   ): Promise<ResumeSessionResponse> {
     // Reuse existing session if it matches
@@ -302,6 +358,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       {
         cwd: params.cwd,
         mcpServers: params.mcpServers ?? [],
+        additionalDirectories: params.additionalDirectories,
         _meta: params._meta,
       },
       {
@@ -321,6 +378,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       {
         cwd: params.cwd,
         mcpServers: params.mcpServers ?? [],
+        additionalDirectories: params.additionalDirectories,
         _meta: params._meta,
       },
       { resume: params.sessionId, skipBackgroundFetches: true },
@@ -564,7 +622,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 },
               });
 
-              return { stopReason: "end_turn" };
+              return {
+                stopReason: this.session.cancelled ? "cancelled" : "end_turn",
+              };
             }
             await handleSystemMessage(message, context);
             break;
@@ -838,6 +898,36 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
       throw new Error("Session did not end in result");
     } catch (error) {
+      // A failed turn typically leaves a trailing `session_state_changed: idle`
+      // (and possibly more) in the query iterator. If we don't drain it here,
+      // the next prompt's first `query.next()` consumes that stale idle and
+      // short-circuits to end_turn with zero usage.
+      try {
+        await this.session.query.interrupt();
+        const MAX_DRAIN = 100;
+        for (let i = 0; i < MAX_DRAIN; i++) {
+          const { value: m, done } = await this.session.query.next();
+          if (done || !m) break;
+          if (
+            m.type === "system" &&
+            m.subtype === "session_state_changed" &&
+            (m as Record<string, unknown>).state === "idle"
+          ) {
+            break;
+          }
+          if (i === MAX_DRAIN - 1) {
+            this.logger.error(
+              `Session ${params.sessionId}: drained ${MAX_DRAIN} messages after error without observing idle`,
+            );
+          }
+        }
+      } catch (drainErr) {
+        this.logger.error(
+          `Session ${params.sessionId}: failed to drain query after prompt error`,
+          { error: drainErr },
+        );
+      }
+
       if (error instanceof RequestError || !(error instanceof Error)) {
         throw error;
       }
@@ -1166,6 +1256,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     params: {
       cwd: string;
       mcpServers: NewSessionRequest["mcpServers"];
+      additionalDirectories?: NewSessionRequest["additionalDirectories"];
       _meta?: unknown;
     },
     creationOpts: {
@@ -1250,6 +1341,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         ? (meta.permissionMode as CodeExecutionMode)
         : "default";
 
+    const taskState: TaskState = new Map();
     const options = buildSessionOptions({
       cwd,
       mcpServers,
@@ -1263,7 +1355,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       forkSession,
       additionalDirectories: [
         ...(meta?.claudeCode?.options?.additionalDirectories ?? []),
-        ...(meta?.additionalRoots ?? []),
+        // Prefer the official ACP `additionalDirectories` field. Fall back
+        // to the legacy `_meta.additionalRoots` extension for clients that
+        // haven't been updated yet.
+        ...(params.additionalDirectories ?? meta?.additionalRoots ?? []),
       ],
       disableBuiltInTools: meta?.disableBuiltInTools,
       outputFormat,
@@ -1275,6 +1370,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       enrichmentDeps: this.enrichment?.deps,
       enrichedReadCache: this.enrichedReadCache,
       cloudMode: cloudRun,
+      taskState,
     });
 
     // Use the same abort controller that buildSessionOptions gave to the query
@@ -1307,6 +1403,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         systemPrompt: estimateSystemPrompt(systemPrompt),
         rules: estimateRulesTokens(readClaudeMdQuietly(cwd, this.logger)),
       },
+      taskState,
 
       // Custom properties
       cwd,
@@ -1359,7 +1456,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       ? withTimeout(q.initializationResult(), SESSION_VALIDATION_TIMEOUT_MS)
       : undefined;
 
-    const [modelOptions] = await Promise.all([
+    const [rawModelOptions] = await Promise.all([
       this.getModelConfigOptions(
         settingsManager.getSettings().model || meta?.model || undefined,
       ),
@@ -1373,6 +1470,16 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           ]
         : []),
     ]);
+
+    // Restrict the model list to the user's `availableModels` allowlist
+    // from settings.json so config UI and downstream resolution stay
+    // consistent with what the user configured. The Default option is
+    // always preserved per the Claude Code docs.
+    const settingsAvailableModels =
+      settingsManager.getSettings().availableModels;
+    const modelOptions = Array.isArray(settingsAvailableModels)
+      ? applyAvailableModelsAllowlist(rawModelOptions, settingsAvailableModels)
+      : rawModelOptions;
 
     if (initPromise) {
       try {

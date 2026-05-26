@@ -21,9 +21,7 @@ const mockClientSideConnection = vi.hoisted(() =>
     this.initialize = vi.fn().mockResolvedValue({});
     this.newSession = mockNewSession;
     this.loadSession = vi.fn().mockResolvedValue({ configOptions: [] });
-    this.unstable_resumeSession = vi
-      .fn()
-      .mockResolvedValue({ configOptions: [] });
+    this.resumeSession = vi.fn().mockResolvedValue({ configOptions: [] });
   }),
 );
 

@@ -13,12 +13,14 @@ import type {
 import type { FileEnrichmentDeps } from "../../../enrichment/file-enricher";
 import { IS_ROOT } from "../../../utils/common";
 import type { Logger } from "../../../utils/logger";
+import type { TaskState } from "../conversion/task-state";
 import {
   createPostToolUseHook,
   createPreToolUseHook,
   createReadEnrichmentHook,
   createSignedCommitGuardHook,
   createSubagentRewriteHook,
+  createTaskHook,
   type EnrichedReadCache,
   type OnModeChange,
 } from "../hooks";
@@ -58,6 +60,8 @@ export interface BuildOptionsParams {
   enrichedReadCache?: EnrichedReadCache;
   /** Cloud task session — enables the signed-commit guard. */
   cloudMode?: boolean;
+  /** Per-session task state populated by createTaskHook from SDK Task* events. */
+  taskState: TaskState;
 }
 
 export function buildSystemPrompt(
@@ -119,6 +123,11 @@ function buildEnvironment(): Record<string, string> {
     ENABLE_TOOL_SEARCH: "auto:0",
     // Enable idle state as end-of-turn signal (required for SDK 0.2.114+)
     CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
+    // SDK 0.3.142 made MCP servers connect in the background by default. The
+    // agent may start its first turn before our MCP servers are ready, which
+    // breaks workflows that call MCP tools on turn 1. Restore blocking connect
+    // so the SDK waits for MCP connect (up to ~5s) before turn 1.
+    MCP_CONNECTION_NONBLOCKING: "0",
     // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
     ANTHROPIC_CUSTOM_HEADERS: customHeaders,
   };
@@ -133,6 +142,7 @@ function buildHooks(
   enrichedReadCache: EnrichedReadCache | undefined,
   registeredAgents: ReadonlySet<string>,
   cloudMode: boolean,
+  taskState: TaskState,
 ): Options["hooks"] {
   const postToolUseHooks = [createPostToolUseHook({ onModeChange })];
   if (enrichmentDeps && enrichedReadCache) {
@@ -149,6 +159,8 @@ function buildHooks(
     preToolUseHooks.push(createSignedCommitGuardHook(logger));
   }
 
+  const taskHook = createTaskHook(taskState);
+
   return {
     ...userHooks,
     PostToolUse: [
@@ -156,6 +168,8 @@ function buildHooks(
       { hooks: postToolUseHooks },
     ],
     PreToolUse: [...(userHooks?.PreToolUse || []), { hooks: preToolUseHooks }],
+    TaskCreated: [...(userHooks?.TaskCreated || []), { hooks: [taskHook] }],
+    TaskCompleted: [...(userHooks?.TaskCompleted || []), { hooks: [taskHook] }],
   };
 }
 
@@ -195,7 +209,10 @@ Rules:
     "WebFetch",
     "WebSearch",
     "NotebookRead",
-    "TodoWrite",
+    "TaskCreate",
+    "TaskUpdate",
+    "TaskGet",
+    "TaskList",
   ],
 };
 
@@ -357,6 +374,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.enrichedReadCache,
       registeredAgentNames,
       params.cloudMode ?? false,
+      params.taskState,
     ),
     outputFormat: params.outputFormat,
     abortController: getAbortController(

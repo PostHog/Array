@@ -105,6 +105,8 @@ export function createMockQuery(
     getContextUsage: vi.fn().mockResolvedValue({}),
     reloadPlugins: vi.fn().mockResolvedValue(undefined),
     seedReadState: vi.fn().mockResolvedValue(undefined),
+    readFile: vi.fn().mockResolvedValue(""),
+    backgroundTasks: vi.fn().mockResolvedValue([]),
     [Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
     _abortController: abortController,
     _mockHelpers: {

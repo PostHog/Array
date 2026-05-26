@@ -56,13 +56,20 @@ export function parseMcpServers(
 
   for (const server of params.mcpServers) {
     if ("type" in server) {
-      mcpServers[server.name] = {
-        type: server.type,
-        url: server.url,
-        headers: server.headers
-          ? Object.fromEntries(server.headers.map((e) => [e.name, e.value]))
-          : undefined,
-      };
+      if (server.type === "http" || server.type === "sse") {
+        mcpServers[server.name] = {
+          type: server.type,
+          url: server.url,
+          headers: server.headers
+            ? Object.fromEntries(
+                server.headers.map((e: { name: string; value: string }) => [
+                  e.name,
+                  e.value,
+                ]),
+              )
+            : undefined,
+        };
+      }
     } else {
       mcpServers[server.name] = {
         type: "stdio",

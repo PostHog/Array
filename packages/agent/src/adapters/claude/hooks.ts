@@ -6,6 +6,7 @@ import {
 import type { Logger } from "../../utils/logger";
 import { SIGNED_COMMIT_QUALIFIED_TOOL_NAME } from "../signed-commit-shared";
 import { stripCatLineNumbers } from "./conversion/sdk-to-acp";
+import type { TaskState } from "./conversion/task-state";
 import {
   extractPostHogSubTool,
   isPostHogDestructiveSubTool,
@@ -128,6 +129,42 @@ export const registerHookCallback = (
     onPostToolUseHook,
   };
 };
+
+/**
+ * Pre-populate the per-session task list from SDK TaskCreated/TaskCompleted
+ * hook events. These fire before the matching tool_result chunk arrives, so
+ * by the time TaskUpdate runs (which only carries taskId + status) the entry
+ * already exists with a real subject — no placeholder with empty content.
+ *
+ * Plan-update emission happens in the tool_result handler, which mirrors the
+ * old TodoWrite suppress-tool-call + emit-plan flow.
+ */
+export const createTaskHook =
+  (taskState: TaskState): HookCallback =>
+  async (input: HookInput): Promise<{ continue: boolean }> => {
+    const taskId =
+      "task_id" in input && typeof input.task_id === "string"
+        ? input.task_id
+        : undefined;
+    if (!taskId) return { continue: true };
+
+    if (input.hook_event_name === "TaskCreated") {
+      if (!input.task_subject) return { continue: true };
+      if (taskState.has(taskId)) return { continue: true };
+      taskState.set(taskId, {
+        subject: input.task_subject,
+        status: "pending",
+        description: input.task_description,
+      });
+    } else if (input.hook_event_name === "TaskCompleted") {
+      const existing = taskState.get(taskId);
+      if (!existing || existing.status === "completed") {
+        return { continue: true };
+      }
+      taskState.set(taskId, { ...existing, status: "completed" });
+    }
+    return { continue: true };
+  };
 
 export type OnModeChange = (mode: CodeExecutionMode) => Promise<void>;
 

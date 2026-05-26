@@ -11,6 +11,7 @@ import type {
 import type { Pushable } from "../../utils/streams";
 import type { BaseSession } from "../base-acp-agent";
 import type { ContextBreakdownBaseline } from "./context-breakdown";
+import type { TaskState } from "./conversion/task-state";
 import type { McpToolApprovals } from "./mcp/tool-metadata";
 import type { SettingsManager } from "./session/settings";
 import type { CodeExecutionMode } from "./tools";
@@ -75,6 +76,13 @@ export type Session = BaseSession & {
    * "command is genuinely unknown" when the session goes idle without an echo.
    */
   knownSlashCommands?: Set<string>;
+  /**
+   * Per-session task list accumulated from Task* tool calls.
+   * SDK >=0.3.142 replaced TodoWrite (snapshot) with TaskCreate/TaskUpdate
+   * (incremental, keyed by task id). Map iteration preserves insertion order
+   * which we use for plan entry ordering.
+   */
+  taskState: TaskState;
 };
 
 export type ToolUseCache = {

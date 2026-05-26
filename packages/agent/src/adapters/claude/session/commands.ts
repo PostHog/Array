@@ -2,6 +2,7 @@ import type { AvailableCommand } from "@agentclientprotocol/sdk";
 import type { SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 
 const UNSUPPORTED_COMMANDS = [
+  "clear",
   "context",
   "cost",
   "keybindings-help",

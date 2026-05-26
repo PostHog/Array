@@ -107,6 +107,31 @@ interface ModelOption {
   description?: string;
 }
 
+// Captures a model family version such as `4-6` or `4.7` so we can keep
+// `claude-opus-4-6` from being copied onto the SDK's `opus` alias when that
+// alias currently resolves to a different family version (e.g. Opus 4.7).
+const MODEL_FAMILY_VERSION_PATTERN = /\b(\d+)[-.](\d+)\b/;
+
+function extractModelFamilyVersion(s: string | undefined): string | null {
+  if (!s) return null;
+  const match = s.match(MODEL_FAMILY_VERSION_PATTERN);
+  return match ? `${match[1]}.${match[2]}` : null;
+}
+
+function modelVersionsCompatible(
+  preference: string,
+  candidate: ModelOption,
+): boolean {
+  const preferred = extractModelFamilyVersion(preference);
+  if (!preferred) return true;
+  const candidateVersion =
+    extractModelFamilyVersion(candidate.value) ??
+    extractModelFamilyVersion(candidate.name) ??
+    extractModelFamilyVersion(candidate.description);
+  if (!candidateVersion) return true;
+  return preferred === candidateVersion;
+}
+
 function scoreModelMatch(
   model: ModelOption,
   tokens: string[],
@@ -142,6 +167,7 @@ export function resolveModelPreference(
 
   // Substring match
   const includesMatch = options.find((o) => {
+    if (!modelVersionsCompatible(trimmed, o)) return false;
     const value = o.value.toLowerCase();
     const display = (o.name ?? "").toLowerCase();
     return (
@@ -157,6 +183,7 @@ export function resolveModelPreference(
   let bestMatch: ModelOption | null = null;
   let bestScore = 0;
   for (const model of options) {
+    if (!modelVersionsCompatible(trimmed, model)) continue;
     const score = scoreModelMatch(model, tokens, contextHint);
     if (0 < score && (!bestMatch || bestScore < score)) {
       bestMatch = model;

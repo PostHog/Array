@@ -466,7 +466,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
     // Carry taskRunId/taskId across load so prompt() still emits cloud
     // notifications (TURN_COMPLETE, USAGE_UPDATE) after a reload. newSession
-    // and unstable_resumeSession both do this; loadSession historically did
+    // and resumeSession both do this; loadSession historically did
     // not, which silently broke task-completion tracking on re-attach.
     resetSessionState(this.sessionState, params.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
@@ -489,7 +489,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     return response;
   }
 
-  async unstable_resumeSession(
+  async resumeSession(
     params: ResumeSessionRequest,
   ): Promise<ResumeSessionResponse> {
     const meta = params._meta as NewSessionMeta | undefined;

@@ -85,8 +85,14 @@ export function buildPermissionOptions(
     return permissionOptions("Yes, allow all sub-tasks");
   }
 
-  if (toolName === "TodoWrite") {
-    return permissionOptions("Yes, allow all todo updates");
+  if (
+    toolName === "TodoWrite" ||
+    toolName === "TaskCreate" ||
+    toolName === "TaskUpdate" ||
+    toolName === "TaskGet" ||
+    toolName === "TaskList"
+  ) {
+    return permissionOptions("Yes, allow all task updates");
   }
 
   return permissionOptions("Yes, always allow");

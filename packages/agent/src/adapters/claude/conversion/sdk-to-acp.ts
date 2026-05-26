@@ -31,6 +31,13 @@ import type {
   ToolUseStreamCache,
 } from "../types";
 import {
+  applyTaskCreate,
+  applyTaskUpdate,
+  parseTaskCreateOutput,
+  type TaskState,
+  taskStateToPlanEntries,
+} from "./task-state";
+import {
   type ClaudePlanEntry,
   planEntries,
   toolInfoFromToolUse,
@@ -67,6 +74,8 @@ type ChunkHandlerContext = {
   cwd?: string;
   /** Raw MCP tool result from SDKUserMessage.tool_use_result (contains content, structuredContent, _meta) */
   mcpToolUseResult?: Record<string, unknown>;
+  /** Per-session task list (populated by createTaskHook + tool_result handler) */
+  taskState?: TaskState;
 };
 
 export interface MessageHandlerContext {
@@ -179,13 +188,24 @@ function handleToolUseChunk(
     return null;
   }
 
+  // Suppress Task* tool_calls — plan updates are emitted from the matching
+  // tool_result handler instead, after taskState has been mutated.
+  if (
+    chunk.name === "TaskCreate" ||
+    chunk.name === "TaskUpdate" ||
+    chunk.name === "TaskList" ||
+    chunk.name === "TaskGet"
+  ) {
+    return null;
+  }
+
   if (!alreadyCached && ctx.registerHooks !== false) {
     registerHookCallback(chunk.id, {
       onPostToolUseHook: async (toolUseId, _toolInput, toolResponse) => {
         const toolUse = ctx.toolUseCache[toolUseId];
         if (toolUse) {
           const editUpdate =
-            toolUse.name === "Edit"
+            toolUse.name === "Edit" || toolUse.name === "Write"
               ? toolUpdateFromEditToolResponse(toolResponse)
               : null;
 
@@ -338,6 +358,36 @@ function handleToolResultChunk(
     return [];
   }
 
+  if (
+    toolUse.name === "TaskCreate" ||
+    toolUse.name === "TaskUpdate" ||
+    toolUse.name === "TaskList" ||
+    toolUse.name === "TaskGet"
+  ) {
+    if (chunk.is_error || !ctx.taskState) return [];
+    if (toolUse.name === "TaskCreate") {
+      applyTaskCreate(
+        ctx.taskState,
+        toolUse.input as Parameters<typeof applyTaskCreate>[1],
+        parseTaskCreateOutput(chunk.content),
+      );
+    } else if (toolUse.name === "TaskUpdate") {
+      applyTaskUpdate(
+        ctx.taskState,
+        toolUse.input as Parameters<typeof applyTaskUpdate>[1],
+      );
+    }
+    if (toolUse.name === "TaskCreate" || toolUse.name === "TaskUpdate") {
+      return [
+        {
+          sessionUpdate: "plan",
+          entries: taskStateToPlanEntries(ctx.taskState),
+        },
+      ];
+    }
+    return [];
+  }
+
   if (!chunk.is_error) {
     updateFileContentCache(toolUse, chunk, ctx);
   }
@@ -486,6 +536,7 @@ function toAcpNotifications(
   cwd?: string,
   mcpToolUseResult?: Record<string, unknown>,
   enrichedReadCache?: EnrichedReadCache,
+  taskState?: TaskState,
 ): SessionNotification[] {
   if (typeof content === "string") {
     const update: SessionUpdate = {
@@ -514,6 +565,7 @@ function toAcpNotifications(
     supportsTerminalOutput,
     cwd,
     mcpToolUseResult,
+    taskState,
   };
   const output: SessionNotification[] = [];
 
@@ -539,6 +591,7 @@ function streamEventToAcpNotifications(
   supportsTerminalOutput?: boolean,
   cwd?: string,
   enrichedReadCache?: EnrichedReadCache,
+  taskState?: TaskState,
 ): SessionNotification[] {
   const event = message.event;
   switch (event.type) {
@@ -564,6 +617,7 @@ function streamEventToAcpNotifications(
         cwd,
         undefined,
         enrichedReadCache,
+        taskState,
       );
     }
     case "content_block_delta": {
@@ -589,11 +643,17 @@ function streamEventToAcpNotifications(
         cwd,
         undefined,
         enrichedReadCache,
+        taskState,
       );
     }
     case "content_block_stop":
       toolUseStreamCache.delete(event.index);
       return [];
+    // `ping` is a Messages-API keep-alive event that the SDK's
+    // `BetaRawMessageStreamEvent` union doesn't include even though the
+    // wire format emits it; the `as never` cast lets us no-op it here
+    // instead of falling through to `unreachable`.
+    case "ping" as never:
     case "message_start":
     case "message_delta":
     case "message_stop":
@@ -675,6 +735,49 @@ export async function handleSystemMessage(
         status: message.status,
         summary: message.summary,
         outputFile: message.output_file,
+      });
+      break;
+    }
+    case "memory_recall": {
+      const isSynthesis = message.mode === "synthesize";
+      const locations = isSynthesis
+        ? []
+        : message.memories.map((m) => ({ path: m.path }));
+      const content = isSynthesis
+        ? message.memories
+            .filter(
+              (
+                m,
+              ): m is (typeof message.memories)[number] & {
+                content: string;
+              } => typeof m.content === "string",
+            )
+            .map((m) => ({
+              type: "content" as const,
+              content: { type: "text" as const, text: m.content },
+            }))
+        : [];
+      const count = message.memories.length;
+      const title = isSynthesis
+        ? "Recalled synthesized memory"
+        : `Recalled ${count} ${count === 1 ? "memory" : "memories"}`;
+      await client.sessionUpdate({
+        sessionId: message.session_id,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: message.uuid,
+          title,
+          kind: "read",
+          status: "completed",
+          ...(locations.length > 0 && { locations }),
+          ...(content.length > 0 && { content }),
+          _meta: {
+            claudeCode: {
+              toolName: "memory_recall",
+              toolResponse: { mode: message.mode },
+            },
+          } satisfies ToolUpdateMeta,
+        },
       });
       break;
     }
@@ -819,6 +922,7 @@ export async function handleStreamEvent(
     context.supportsTerminalOutput,
     context.session.cwd,
     context.enrichedReadCache,
+    context.session.taskState,
   )) {
     await client.sessionUpdate(notification);
     context.session.notificationHistory.push(notification);
@@ -835,6 +939,29 @@ function hasLocalCommandStderr(content: AnthropicMessageContent): boolean {
   return (
     typeof content === "string" && content.includes("<local-command-stderr>")
   );
+}
+
+// The Claude SDK persists local slash command invocations (e.g. `/model`) and
+// their output as user messages wrapping the payload in these XML-like markers
+// that the CLI uses for its own display. The live prompt loop must strip them
+// so they don't leak into the UI, while preserving any real prose mixed in
+// alongside.
+const LOCAL_COMMAND_TAG_PATTERN =
+  /<(command-name|command-message|command-args|local-command-stdout|local-command-stderr)>[\s\S]*?<\/\1>/g;
+
+function stripMarkerTags(text: string): string {
+  return text.replace(LOCAL_COMMAND_TAG_PATTERN, "");
+}
+
+/**
+ * Returns the string with local-command marker tags removed, or `null` if
+ * nothing renderable remains. Used to surface custom slash commands and
+ * skill expansions whose bodies arrive wrapped in marker tags, while
+ * still no-op'ing for pure-marker payloads like /compact.
+ */
+function stripLocalCommandMetadata(content: string): string | null {
+  const stripped = stripMarkerTags(content);
+  return stripped.trim() === "" ? null : stripped;
 }
 
 function isLoginRequiredMessage(message: AnthropicMessageWithContent): boolean {
@@ -906,6 +1033,36 @@ export async function handleUserAssistantMessage(
     if (isLoginRequiredMessage(message)) {
       return { shouldStop: true, error: RequestError.authRequired() };
     }
+
+    // Strip local-command marker tags and render whatever real prose remains
+    // so that custom slash commands and skill expansions (whose bodies arrive
+    // wrapped in <command-*> / <local-command-stdout> markers) reach the UI.
+    // Pure-marker payloads (e.g. /compact) still no-op via the `null` branch.
+    const rawContent = message.message.content;
+    if (typeof rawContent === "string") {
+      const stripped = stripLocalCommandMetadata(rawContent);
+      if (stripped !== null) {
+        for (const notification of toAcpNotifications(
+          stripped,
+          message.message.role,
+          sessionId,
+          toolUseCache,
+          fileContentCache,
+          client,
+          logger,
+          undefined,
+          context.registerHooks,
+          context.supportsTerminalOutput,
+          session.cwd,
+          undefined,
+          context.enrichedReadCache,
+          session.taskState,
+        )) {
+          await client.sessionUpdate(notification);
+          session.notificationHistory.push(notification);
+        }
+      }
+    }
     return {};
   }
 
@@ -943,6 +1100,7 @@ export async function handleUserAssistantMessage(
     session.cwd,
     mcpToolUseResult,
     context.enrichedReadCache,
+    session.taskState,
   )) {
     await client.sessionUpdate(notification);
     session.notificationHistory.push(notification);

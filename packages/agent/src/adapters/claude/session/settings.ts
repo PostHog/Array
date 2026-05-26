@@ -196,6 +196,7 @@ export interface ClaudeCodeSettings {
   permissions?: PermissionSettings;
   env?: Record<string, string>;
   model?: string;
+  availableModels?: string[];
   posthogApprovedExecTools?: string[];
 }
 
@@ -324,6 +325,16 @@ export class SettingsManager {
       }
       if (settings.model) {
         merged.model = settings.model;
+      }
+      if (settings.availableModels !== undefined) {
+        // Per Claude Code docs: "When `availableModels` is set at multiple
+        // levels, such as user settings and project settings, arrays are
+        // merged and deduplicated."
+        const combined = [
+          ...(merged.availableModels ?? []),
+          ...settings.availableModels,
+        ];
+        merged.availableModels = Array.from(new Set(combined));
       }
       if (settings.posthogApprovedExecTools) {
         for (const tool of settings.posthogApprovedExecTools) {
