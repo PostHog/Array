@@ -208,12 +208,18 @@ interface CloudLogGapReconcileRequest {
 interface ParsedSessionLogs {
   rawEntries: StoredLogEntry[];
   totalLineCount: number;
+  parseFailureCount: number;
   sessionId?: string;
   adapter?: Adapter;
 }
 
 interface CloudLogGapReconcileState {
   pendingRequest?: CloudLogGapReconcileRequest;
+}
+
+interface CloudLogReconcileDeficiency {
+  expectedCount: number;
+  observedLineCount: number;
 }
 
 export interface ConnectParams {
@@ -303,6 +309,11 @@ export class SessionService {
     }
   >();
   private cloudLogGapReconciles = new Map<string, CloudLogGapReconcileState>();
+  /** Last observed reconcile deficit per taskRunId — see reconcileCloudLogGapOnce. */
+  private cloudLogReconcileDeficiency = new Map<
+    string,
+    CloudLogReconcileDeficiency
+  >();
   /** Maps toolCallId → cloud requestId for routing permission responses */
   private cloudPermissionRequestIds = new Map<string, string>();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
@@ -739,6 +750,7 @@ export class SessionService {
     this.unsubscribeFromChannel(taskRunId);
     sessionStoreSetters.removeSession(taskRunId);
     this.cloudRunIdleTracker.delete(taskRunId);
+    this.cloudLogReconcileDeficiency.delete(taskRunId);
     if (session) {
       this.localRepoPaths.delete(session.taskId);
       this.localRecoveryAttempts.delete(session.taskId);
@@ -1118,6 +1130,7 @@ export class SessionService {
     this.localRecoveryAttempts.clear();
     this.cloudPermissionRequestIds.clear();
     this.cloudLogGapReconciles.clear();
+    this.cloudLogReconcileDeficiency.clear();
     this.dispatchingCloudQueues.clear();
     this.scheduledCloudQueueFlushes.clear();
     this.cloudRunIdleTracker.clear();
@@ -1128,6 +1141,7 @@ export class SessionService {
   private updatePromptStateFromEvents(
     taskRunId: string,
     events: AcpMessage[],
+    { isLive = false }: { isLive?: boolean } = {},
   ): void {
     for (const acpMsg of events) {
       const msg = acpMsg.message;
@@ -1179,6 +1193,17 @@ export class SessionService {
             promptStartedAt: null,
             currentPromptId: null,
           });
+          if (isLive) {
+            // Queued messages will start a new turn — suppress the "done" notification in that case.
+            if (session.messageQueue.length === 0) {
+              notifyPromptComplete(
+                session.taskTitle,
+                "end_turn",
+                session.taskId,
+              );
+            }
+            taskViewedApi.markActivity(session.taskId);
+          }
         }
       }
       // Lifecycle handshake from the agent — flip status to "connected"
@@ -1264,7 +1289,7 @@ export class SessionService {
     } else {
       sessionStoreSetters.appendEvents(taskRunId, [acpMsg]);
     }
-    this.updatePromptStateFromEvents(taskRunId, [acpMsg]);
+    this.updatePromptStateFromEvents(taskRunId, [acpMsg], { isLive: true });
 
     const msg = acpMsg.message;
 
@@ -2998,6 +3023,7 @@ export class SessionService {
 
     watcher.subscription.unsubscribe();
     this.cloudTaskWatchers.delete(taskId);
+    this.cloudLogReconcileDeficiency.delete(watcher.runId);
   }
 
   async preflightToLocal(taskId: string, repoPath: string) {
@@ -3511,7 +3537,9 @@ export class SessionService {
           sessionStoreSetters.clearTailOptimisticItems(taskRunId);
         }
         sessionStoreSetters.appendEvents(taskRunId, newEvents, expectedCount);
-        this.updatePromptStateFromEvents(taskRunId, newEvents);
+        this.updatePromptStateFromEvents(taskRunId, newEvents, {
+          isLive: true,
+        });
       } else {
         this.reconcileCloudLogGap({
           taskId: update.taskId,
@@ -3658,6 +3686,7 @@ export class SessionService {
     const rawEntries: StoredLogEntry[] = [];
     let sessionId: string | undefined;
     let adapter: Adapter | undefined;
+    let parseFailureCount = 0;
     const lines = content.trim().split("\n");
 
     for (const line of lines) {
@@ -3679,11 +3708,18 @@ export class SessionService {
           if (params?.adapter) adapter = params.adapter;
         }
       } catch {
+        parseFailureCount += 1;
         log.warn("Failed to parse log entry", { line });
       }
     }
 
-    return { rawEntries, totalLineCount: lines.length, sessionId, adapter };
+    return {
+      rawEntries,
+      totalLineCount: lines.length,
+      parseFailureCount,
+      sessionId,
+      adapter,
+    };
   }
 
   private async fetchSessionLogs(
@@ -3691,7 +3727,11 @@ export class SessionService {
     taskRunId?: string,
     options: { minEntryCount?: number } = {},
   ): Promise<ParsedSessionLogs> {
-    const empty: ParsedSessionLogs = { rawEntries: [], totalLineCount: 0 };
+    const empty: ParsedSessionLogs = {
+      rawEntries: [],
+      totalLineCount: 0,
+      parseFailureCount: 0,
+    };
     if (!logUrl && !taskRunId) return empty;
     let localResult: ParsedSessionLogs | undefined;
 
@@ -3811,11 +3851,10 @@ export class SessionService {
     newEntries,
     logUrl,
   }: CloudLogGapReconcileRequest): Promise<void> {
-    const { rawEntries, totalLineCount } = await this.fetchSessionLogs(
-      logUrl,
-      taskRunId,
-      { minEntryCount: expectedCount },
-    );
+    const { rawEntries, totalLineCount, parseFailureCount } =
+      await this.fetchSessionLogs(logUrl, taskRunId, {
+        minEntryCount: expectedCount,
+      });
     const session = sessionStoreSetters.getSessions()[taskRunId];
     if (!session || session.taskId !== taskId) {
       return;
@@ -3823,6 +3862,7 @@ export class SessionService {
 
     const latestCount = session.processedLineCount ?? 0;
     if (latestCount >= expectedCount) {
+      this.cloudLogReconcileDeficiency.delete(taskRunId);
       return;
     }
 
@@ -3832,6 +3872,7 @@ export class SessionService {
         sessionStoreSetters.clearTailOptimisticItems(taskRunId);
       }
       this.cloudRunIdleTracker.delete(taskRunId);
+      this.cloudLogReconcileDeficiency.delete(taskRunId);
       sessionStoreSetters.updateSession(taskRunId, {
         events,
         isCloud: true,
@@ -3842,16 +3883,48 @@ export class SessionService {
       return;
     }
 
-    // The fetched logs lag behind expectedCount and `newEntries` is the latest
-    // tail slice of the snapshot — appending it here would create duplicates
-    // and gaps in `session.events` (and bump processedLineCount past entries
-    // we don't actually have). Skip; the next snapshot/log update will retry
-    // once the source has caught up.
+    // Break the reconcile loop on proven corruption (parseFailureCount > 0)
+    // or on a stable repeat of the same deficit. Otherwise wait — likely lag.
+    const previous = this.cloudLogReconcileDeficiency.get(taskRunId);
+    const sameDeficiencyAsBefore =
+      previous?.expectedCount === expectedCount &&
+      previous?.observedLineCount === totalLineCount;
+
+    if (parseFailureCount > 0 || sameDeficiencyAsBefore) {
+      log.warn("Cloud task log gap unrecoverable; committing best-effort", {
+        taskRunId,
+        expectedCount,
+        observedLineCount: totalLineCount,
+        parseFailureCount,
+        fetchedEntries: rawEntries.length,
+        reason: parseFailureCount > 0 ? "parse-failure" : "stable-deficit",
+      });
+      const events = convertStoredEntriesToEvents(rawEntries);
+      if (hasSessionPromptEvent(events)) {
+        sessionStoreSetters.clearTailOptimisticItems(taskRunId);
+      }
+      this.cloudRunIdleTracker.delete(taskRunId);
+      this.cloudLogReconcileDeficiency.delete(taskRunId);
+      sessionStoreSetters.updateSession(taskRunId, {
+        events,
+        isCloud: true,
+        logUrl: logUrl ?? session.logUrl,
+        processedLineCount: expectedCount,
+      });
+      this.updatePromptStateFromEvents(taskRunId, events);
+      return;
+    }
+
+    this.cloudLogReconcileDeficiency.set(taskRunId, {
+      expectedCount,
+      observedLineCount: totalLineCount,
+    });
     log.warn("Cloud task log count inconsistency", {
       taskRunId,
       currentCount,
       expectedCount,
       fetchedCount: rawEntries.length,
+      parseFailureCount,
       entriesReceived: newEntries.length,
     });
   }

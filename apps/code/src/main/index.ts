@@ -15,6 +15,7 @@ import type { AuthService } from "./services/auth/service";
 import type { ExternalAppsService } from "./services/external-apps/service";
 import type { GitHubIntegrationService } from "./services/github-integration/service";
 import type { InboxLinkService } from "./services/inbox-link/service";
+import type { NewTaskLinkService } from "./services/new-task-link/service";
 import type { NotificationService } from "./services/notification/service";
 import type { OAuthService } from "./services/oauth/service";
 import {
@@ -150,6 +151,7 @@ async function initializeServices(): Promise<void> {
   container.get<UpdatesService>(MAIN_TOKENS.UpdatesService);
   container.get<TaskLinkService>(MAIN_TOKENS.TaskLinkService);
   container.get<InboxLinkService>(MAIN_TOKENS.InboxLinkService);
+  container.get<NewTaskLinkService>(MAIN_TOKENS.NewTaskLinkService);
   container.get<GitHubIntegrationService>(MAIN_TOKENS.GitHubIntegrationService);
   container.get<SlackIntegrationService>(MAIN_TOKENS.SlackIntegrationService);
   container.get<ExternalAppsService>(MAIN_TOKENS.ExternalAppsService);

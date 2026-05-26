@@ -3,6 +3,7 @@ import { buildCloudTaskDescription } from "@features/editor/utils/cloud-prompt";
 import { useTaskInputHistoryStore } from "@features/message-editor/stores/taskInputHistoryStore";
 import type { EditorHandle } from "@features/message-editor/types";
 import {
+  contentToPlainText,
   contentToXml,
   type EditorContent,
   extractFilePaths,
@@ -20,6 +21,7 @@ import { toast } from "@renderer/utils/toast";
 import type { ExecutionMode, Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
+import { pendingTaskPromptStoreApi } from "@stores/pendingTaskPromptStore";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback, useState } from "react";
@@ -187,8 +189,12 @@ export function useTaskCreation({
   onTaskCreated,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
-  const { clearTaskInputReportAssociation, navigateToTask } =
-    useNavigationStore();
+  const {
+    clearTaskInputReportAssociation,
+    navigateToTask,
+    navigateToPendingTask,
+    navigateToTaskInput,
+  } = useNavigationStore();
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
   );
@@ -210,11 +216,30 @@ export function useTaskCreation({
 
       setIsCreatingTask(true);
 
-      try {
-        const content = contentOverride ?? editor.getContent();
+      const content = contentOverride ?? editor.getContent();
+      const plainPromptText = contentToPlainText(content).trim();
+      const shouldShowPendingView = !onTaskCreated && !!plainPromptText;
+      const pendingTaskKey = shouldShowPendingView
+        ? (globalThis.crypto?.randomUUID?.() ?? `pending-${Date.now()}`)
+        : null;
 
+      if (pendingTaskKey) {
+        pendingTaskPromptStoreApi.set(pendingTaskKey, {
+          promptText: plainPromptText,
+          attachments: (content.attachments ?? []).map((a) => ({
+            id: a.id,
+            label: a.label,
+          })),
+        });
+        navigateToPendingTask(pendingTaskKey);
         if (!contentOverride) {
-          const plainText = editor.getText()?.trim();
+          editor.clear();
+        }
+      }
+
+      try {
+        if (!contentOverride) {
+          const plainText = editor.getText()?.trim() ?? plainPromptText;
           if (plainText) {
             useTaskInputHistoryStore.getState().addPrompt(plainText);
           }
@@ -246,13 +271,16 @@ export function useTaskCreation({
           if (signalReportId) {
             clearTaskInputReportAssociation();
           }
+          if (pendingTaskKey) {
+            pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
+          }
           if (onTaskCreated) {
             onTaskCreated(output.task);
           } else {
             navigateToTask(output.task);
           }
           useTourStore.getState().completeTour(createFirstTaskTour.id);
-          if (!contentOverride) {
+          if (!pendingTaskKey && !contentOverride) {
             editor.clear();
           }
         });
@@ -268,6 +296,10 @@ export function useTaskCreation({
             failedStep: result.failedStep,
             error: result.error,
           });
+          if (pendingTaskKey) {
+            pendingTaskPromptStoreApi.clear(pendingTaskKey);
+            navigateToTaskInput({ initialPrompt: plainPromptText });
+          }
         }
         return result.success;
       } catch (error) {
@@ -275,6 +307,10 @@ export function useTaskCreation({
           error instanceof Error ? error.message : "Unknown error";
         toast.error("Failed to create task", { description });
         log.error("Unexpected error during task creation", { error });
+        if (pendingTaskKey) {
+          pendingTaskPromptStoreApi.clear(pendingTaskKey);
+          navigateToTaskInput({ initialPrompt: plainPromptText });
+        }
         return false;
       } finally {
         setIsCreatingTask(false);
@@ -300,6 +336,8 @@ export function useTaskCreation({
       clearTaskInputReportAssociation,
       invalidateTasks,
       navigateToTask,
+      navigateToPendingTask,
+      navigateToTaskInput,
       onTaskCreated,
     ],
   );

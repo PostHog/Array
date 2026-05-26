@@ -590,6 +590,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         worktree = await worktreeManager.createWorktree({
           baseBranch: defaultBranch,
           onOutput,
+          fetchBeforeCreate: true,
         });
         log.info(
           `Created detached worktree from trunk: ${worktree.worktreeName} at ${worktree.worktreePath}`,

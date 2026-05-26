@@ -286,7 +286,8 @@ export function TaskListView({
     (state) => state.navigateToTaskInput,
   );
   const isOnTaskInput = useNavigationStore(
-    (state) => state.view.type === "task-input",
+    (state) =>
+      state.view.type === "task-input" || state.view.type === "task-pending",
   );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset pagination when filters change

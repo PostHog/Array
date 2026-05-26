@@ -163,21 +163,41 @@ export function WorkspaceModeSelect({
           ))}
         </DropdownMenuGroup>
 
-        {showCloud && (
+        {showCloud && environments.length === 0 && (
+          <DropdownMenuItem
+            onClick={() => {
+              onChange("cloud");
+              onCloudEnvironmentChange?.(null);
+            }}
+            render={
+              <ItemMenuItem size="xs" className="w-full">
+                <ItemMedia variant="icon" className="mt-2 ml-2">
+                  <span>{CLOUD_ICON}</span>
+                </ItemMedia>
+                <ItemContent variant="menuItem">
+                  <ItemTitle>Cloud</ItemTitle>
+                  <ItemDescription className="whitespace-nowrap leading-none">
+                    Run in a cloud sandbox
+                  </ItemDescription>
+                </ItemContent>
+              </ItemMenuItem>
+            }
+          />
+        )}
+
+        {showCloud && environments.length > 0 && (
           <>
             <DropdownMenuSeparator />
             <div className="flex items-center justify-between px-2 py-1">
               <MenuLabel className="p-0">Cloud environments</MenuLabel>
-              {environments.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleAddEnvironment}
-                  aria-label="Add cloud environment"
-                  className="flex cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent p-0.5 text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground"
-                >
-                  <Plus size={12} />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleAddEnvironment}
+                aria-label="Add cloud environment"
+                className="flex cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent p-0.5 text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground"
+              >
+                <Plus size={12} />
+              </button>
             </div>
 
             <DropdownMenuGroup>

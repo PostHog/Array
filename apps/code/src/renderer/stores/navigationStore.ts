@@ -14,6 +14,7 @@ const log = logger.scope("navigation-store");
 
 type ViewType =
   | "task-detail"
+  | "task-pending"
   | "task-input"
   | "folder-settings"
   | "inbox"
@@ -27,10 +28,12 @@ export interface TaskInputReportAssociation {
   title: string;
 }
 
-interface TaskInputNavigationOptions {
+export interface TaskInputNavigationOptions {
   folderId?: string;
   initialPrompt?: string;
   initialCloudRepository?: string;
+  initialModel?: string;
+  initialMode?: string;
   reportAssociation?: TaskInputReportAssociation;
 }
 
@@ -42,7 +45,10 @@ interface ViewState {
   taskInputRequestId?: string;
   initialPrompt?: string;
   initialCloudRepository?: string;
+  initialModel?: string;
+  initialMode?: string;
   reportAssociation?: TaskInputReportAssociation;
+  pendingTaskKey?: string;
 }
 
 interface NavigationStore {
@@ -52,6 +58,7 @@ interface NavigationStore {
   taskInputReportAssociation?: TaskInputReportAssociation;
   taskInputCloudRepository?: string;
   navigateToTask: (task: Task) => void;
+  navigateToPendingTask: (pendingTaskKey: string) => void;
   navigateToTaskInput: (
     folderIdOrOptions?: string | TaskInputNavigationOptions,
   ) => void;
@@ -73,6 +80,9 @@ const isSameView = (view1: ViewState, view2: ViewState): boolean => {
   if (view1.type !== view2.type) return false;
   if (view1.type === "task-detail" && view2.type === "task-detail") {
     return view1.data?.id === view2.data?.id;
+  }
+  if (view1.type === "task-pending" && view2.type === "task-pending") {
+    return view1.pendingTaskKey === view2.pendingTaskKey;
   }
   if (view1.type === "task-input" && view2.type === "task-input") {
     return (
@@ -109,7 +119,14 @@ export const useNavigationStore = create<NavigationStore>()(
         if (isSameView(view, newView)) {
           return;
         }
-        const newHistory = [...history.slice(0, historyIndex + 1), newView];
+        // Replace transient task-pending entries instead of stacking them in
+        // history — going back to a pending view after the real task lands
+        // would render an empty placeholder.
+        const baseHistory =
+          view.type === "task-pending"
+            ? history.slice(0, historyIndex)
+            : history.slice(0, historyIndex + 1);
+        const newHistory = [...baseHistory, newView];
         set({
           view: newView,
           history: newHistory,
@@ -186,6 +203,10 @@ export const useNavigationStore = create<NavigationStore>()(
           }
         },
 
+        navigateToPendingTask: (pendingTaskKey: string) => {
+          navigate({ type: "task-pending", pendingTaskKey });
+        },
+
         navigateToTaskInput: (folderIdOrOptions) => {
           const options =
             typeof folderIdOrOptions === "string"
@@ -194,6 +215,8 @@ export const useNavigationStore = create<NavigationStore>()(
           const hasTransientState =
             !!options.initialPrompt ||
             !!options.initialCloudRepository ||
+            !!options.initialModel ||
+            !!options.initialMode ||
             !!options.reportAssociation;
           if (options.reportAssociation || options.initialCloudRepository) {
             set({
@@ -206,6 +229,8 @@ export const useNavigationStore = create<NavigationStore>()(
             folderId: options.folderId,
             initialPrompt: options.initialPrompt,
             initialCloudRepository: options.initialCloudRepository,
+            initialModel: options.initialModel,
+            initialMode: options.initialMode,
             reportAssociation: options.reportAssociation,
             taskInputRequestId: hasTransientState
               ? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`)
@@ -326,11 +351,14 @@ export const useNavigationStore = create<NavigationStore>()(
       name: "navigation-storage",
       storage: electronStorage,
       partialize: (state) => ({
-        view: {
-          type: state.view.type,
-          taskId: state.view.taskId,
-          folderId: state.view.folderId,
-        },
+        view:
+          state.view.type === "task-pending"
+            ? { type: "task-input" as const }
+            : {
+                type: state.view.type,
+                taskId: state.view.taskId,
+                folderId: state.view.folderId,
+              },
       }),
     },
   ),

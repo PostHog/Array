@@ -6,6 +6,7 @@ import { trpcClient } from "@renderer/trpc/client";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flattenConfigValues } from "../utils/configOptions";
 
 const log = logger.scope("preview-config");
 
@@ -24,14 +25,6 @@ function getOptionByCategory(
 ): SessionConfigOption | undefined {
   return options.find(
     (opt) => opt.category === category || opt.id === category,
-  );
-}
-
-function flattenValues(
-  options: Array<{ value?: string; options?: Array<{ value: string }> }>,
-): string[] {
-  return options.flatMap((o) =>
-    o.options ? o.options.map((go) => go.value) : o.value ? [o.value] : [],
   );
 }
 
@@ -119,15 +112,9 @@ export function usePreviewConfig(
         // available modes.
         const modeOpt = options.find((o) => o.id === "mode");
         const serverDefault = modeOpt?.currentValue;
-        const availableValues: string[] =
-          modeOpt?.type === "select"
-            ? flattenValues(
-                modeOpt.options as Array<{
-                  value?: string;
-                  options?: Array<{ value: string }>;
-                }>,
-              )
-            : [];
+        const availableValues: string[] = modeOpt
+          ? flattenConfigValues(modeOpt)
+          : [];
 
         let initialMode: string;
         if (
@@ -155,12 +142,7 @@ export function usePreviewConfig(
           if (opt.category !== "thought_level" || opt.type !== "select") {
             return opt;
           }
-          const validValues = flattenValues(
-            opt.options as Array<{
-              value?: string;
-              options?: Array<{ value: string }>;
-            }>,
-          );
+          const validValues = flattenConfigValues(opt);
           if (defaultReasoningEffort === "last_used") {
             if (
               lastUsedReasoningEffort &&

@@ -65,6 +65,7 @@ export interface SidebarData {
 interface ViewState {
   type:
     | "task-detail"
+    | "task-pending"
     | "task-input"
     | "settings"
     | "folder-settings"
@@ -217,7 +218,8 @@ export function useSidebarData({
   const sortMode = useSidebarStore((state) => state.sortMode);
   const folderOrder = useSidebarStore((state) => state.folderOrder);
 
-  const isHomeActive = activeView.type === "task-input";
+  const isHomeActive =
+    activeView.type === "task-input" || activeView.type === "task-pending";
   const isInboxActive = activeView.type === "inbox";
   const isCommandCenterActive = activeView.type === "command-center";
   const isSkillsActive = activeView.type === "skills";
