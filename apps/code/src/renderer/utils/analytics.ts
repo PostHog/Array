@@ -4,6 +4,7 @@ import posthog from "posthog-js/dist/module.full.no-external";
 // posthog-recorder (vs lazy-recorder) ensures recording is ready immediately
 import "posthog-js/dist/posthog-recorder";
 import type { PermissionRequest } from "@renderer/features/sessions/utils/parseSessionLogs";
+import type { Task } from "@shared/types";
 import type {
   EventPropertyMap,
   UserIdentifyProperties,
@@ -146,6 +147,26 @@ export function resetUser() {
   }
 
   posthog.reset();
+}
+
+/**
+ * Attach (or clear) task-scoped super-properties so every subsequent event
+ * carries the context of the currently active task. Pass `null` when no task
+ * is active (e.g. when navigating to a non-task view) to clear the context.
+ *
+ * Currently used to tag every event fired while the user is inside a task
+ * launched from an inbox report via the Discuss button.
+ */
+export function setActiveTaskAnalyticsContext(task: Task | null) {
+  if (!isInitialized) {
+    return;
+  }
+
+  if (task?.signal_report) {
+    posthog.register({ signal_report_id: task.signal_report });
+  } else {
+    posthog.unregister("signal_report_id");
+  }
 }
 
 export function track<K extends keyof EventPropertyMap>(

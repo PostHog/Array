@@ -149,6 +149,7 @@ async function trackTaskCreated(
           : undefined,
       cloud_pr_authorship_mode:
         workspaceMode === "cloud" ? input.cloudPrAuthorshipMode : undefined,
+      signal_report_id: input.signalReportId,
       uses_worktree_link: usesWorktreeLink,
       uses_worktree_include: usesWorktreeInclude,
       adapter: input.adapter,

@@ -61,6 +61,7 @@ export interface TaskCreateProperties {
   has_sandbox_environment?: boolean;
   cloud_run_source?: "manual" | "signal_report";
   cloud_pr_authorship_mode?: "user" | "bot";
+  signal_report_id?: string;
   /** Worktree mode: repo has a non-empty .worktreelink file */
   uses_worktree_link?: boolean;
   /** Worktree mode: repo has a non-empty .worktreeinclude file */

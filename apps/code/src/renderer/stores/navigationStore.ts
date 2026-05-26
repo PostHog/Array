@@ -3,7 +3,7 @@ import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { getTaskDirectory } from "@hooks/useRepositoryDirectory";
 import type { Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { track } from "@utils/analytics";
+import { setActiveTaskAnalyticsContext, track } from "@utils/analytics";
 import { electronStorage } from "@utils/electronStorage";
 import { logger } from "@utils/logger";
 import { getTaskRepository } from "@utils/repository";
@@ -132,6 +132,9 @@ export const useNavigationStore = create<NavigationStore>()(
           history: newHistory,
           historyIndex: newHistory.length - 1,
         });
+        setActiveTaskAnalyticsContext(
+          newView.type === "task-detail" ? (newView.data ?? null) : null,
+        );
       };
 
       return {
@@ -306,10 +309,14 @@ export const useNavigationStore = create<NavigationStore>()(
           const { history, historyIndex } = get();
           if (historyIndex > 0) {
             const newIndex = historyIndex - 1;
+            const newView = history[newIndex];
             set({
-              view: history[newIndex],
+              view: newView,
               historyIndex: newIndex,
             });
+            setActiveTaskAnalyticsContext(
+              newView.type === "task-detail" ? (newView.data ?? null) : null,
+            );
           }
         },
 
@@ -317,10 +324,14 @@ export const useNavigationStore = create<NavigationStore>()(
           const { history, historyIndex } = get();
           if (historyIndex < history.length - 1) {
             const newIndex = historyIndex + 1;
+            const newView = history[newIndex];
             set({
-              view: history[newIndex],
+              view: newView,
               historyIndex: newIndex,
             });
+            setActiveTaskAnalyticsContext(
+              newView.type === "task-detail" ? (newView.data ?? null) : null,
+            );
           }
         },
 
