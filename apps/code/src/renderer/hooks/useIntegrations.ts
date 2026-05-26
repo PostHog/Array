@@ -78,7 +78,7 @@ export function useIntegrations() {
 
   const query = useAuthenticatedQuery(
     integrationKeys.list(),
-    (client) => client.getIntegrations("github") as Promise<Integration[]>,
+    (client) => client.getIntegrations() as Promise<Integration[]>,
   );
 
   useEffect(() => {
