@@ -61,6 +61,18 @@ describe("posthog-analytics", () => {
     );
   });
 
+  it("does not let caller-supplied app_version override the system value", () => {
+    trackAppEvent("app_quit", { app_version: "spoofed" });
+
+    expect(mockCapture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        properties: expect.objectContaining({
+          app_version: "0.0.0-test",
+        }),
+      }),
+    );
+  });
+
   it("includes the app version on captured exceptions", () => {
     captureException(new Error("boom"));
 
@@ -69,6 +81,18 @@ describe("posthog-analytics", () => {
       expect.any(String),
       expect.objectContaining({
         team: "posthog-code",
+        app_version: "0.0.0-test",
+      }),
+    );
+  });
+
+  it("does not let additionalProperties override app_version on exceptions", () => {
+    captureException(new Error("boom"), { app_version: "spoofed" });
+
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.any(String),
+      expect.objectContaining({
         app_version: "0.0.0-test",
       }),
     );

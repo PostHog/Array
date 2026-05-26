@@ -108,6 +108,22 @@ describe("registerAppVersion", () => {
 
     expect(mockPosthog.register).not.toHaveBeenCalled();
   });
+
+  it("re-registers app_version after resetUser clears super properties", async () => {
+    const { initializePostHog, registerAppVersion, resetUser } =
+      await loadAnalytics();
+
+    initializePostHog();
+    registerAppVersion("1.2.3");
+
+    resetUser();
+
+    expect(mockPosthog.reset).toHaveBeenCalledTimes(1);
+    expect(mockPosthog.register).toHaveBeenLastCalledWith({
+      team: "posthog-code",
+      app_version: "1.2.3",
+    });
+  });
 });
 
 describe("initializePostHog", () => {

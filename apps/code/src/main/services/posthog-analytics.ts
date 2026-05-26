@@ -47,8 +47,8 @@ export function trackAppEvent(
     event: eventName,
     properties: {
       team: "posthog-code",
-      app_version: getAppVersion(),
       ...properties,
+      app_version: getAppVersion(),
       $process_person_profile: !!currentUserId,
     },
   });
@@ -96,7 +96,7 @@ export function captureException(
   const distinctId = currentUserId || "anonymous-app-event";
   posthogClient.captureException(error, distinctId, {
     team: "posthog-code",
-    app_version: getAppVersion(),
     ...additionalProperties,
+    app_version: getAppVersion(),
   });
 }
