@@ -36,13 +36,6 @@ vi.mock("@renderer/trpc/client", () => ({
   trpcClient: {},
 }));
 
-vi.mock("@utils/queryClient", async () => {
-  const { QueryClient: TestQueryClient } = await import(
-    "@tanstack/react-query"
-  );
-  return { queryClient: new TestQueryClient() };
-});
-
 import { AiApprovalScreen } from "./AiApprovalScreen";
 
 function renderInTheme(isAdmin: boolean) {

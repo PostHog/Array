@@ -743,6 +743,7 @@ export const ANALYTICS_EVENTS = {
   ONBOARDING_ABANDONED: "Onboarding abandoned",
   AI_CONSENT_GATE_SHOWN: "Ai consent gate shown",
   AI_CONSENT_APPROVED: "Ai consent approved",
+  AI_CONSENT_GRANTED_INAPP: "Ai consent granted in-app",
 
   // Setup / onboarding events
   SETUP_DISCOVERY_STARTED: "Setup discovery started",
@@ -864,6 +865,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.ONBOARDING_ABANDONED]: OnboardingAbandonedProperties;
   [ANALYTICS_EVENTS.AI_CONSENT_GATE_SHOWN]: AiConsentGateShownProperties;
   [ANALYTICS_EVENTS.AI_CONSENT_APPROVED]: never;
+  [ANALYTICS_EVENTS.AI_CONSENT_GRANTED_INAPP]: never;
 
   // Setup / onboarding events
   [ANALYTICS_EVENTS.SETUP_DISCOVERY_STARTED]: SetupDiscoveryStartedProperties;

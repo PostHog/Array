@@ -8,9 +8,8 @@ import { GearSix, Robot, SignOut, WarningCircle } from "@phosphor-icons/react";
 import { Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
-import { queryClient } from "@utils/queryClient";
 import { motion } from "framer-motion";
 import { useEffect } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -24,12 +23,14 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
   const logoutMutation = useLogoutMutation();
   const openSettings = useSettingsDialogStore((s) => s.open);
   const client = useAuthenticatedClient();
+  const queryClient = useQueryClient();
 
   const approveMutation = useMutation({
     mutationFn: async () => {
       await client.approveAiDataProcessing();
     },
     onSuccess: async () => {
+      track(ANALYTICS_EVENTS.AI_CONSENT_GRANTED_INAPP);
       await queryClient.invalidateQueries({
         queryKey: authKeys.currentUsers(),
       });
