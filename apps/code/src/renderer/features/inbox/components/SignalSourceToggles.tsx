@@ -11,15 +11,8 @@ import {
   TicketIcon,
   VideoIcon,
 } from "@phosphor-icons/react";
-import {
-  Box,
-  Button,
-  Flex,
-  Spinner,
-  Switch,
-  Text,
-  Tooltip,
-} from "@radix-ui/themes";
+import { Button } from "@posthog/quill";
+import { Box, Flex, Spinner, Switch, Text, Tooltip } from "@radix-ui/themes";
 import type { SignalSourceConfig } from "@renderer/api/posthogClient";
 import { memo, useCallback } from "react";
 
@@ -140,7 +133,9 @@ const SignalSourceToggleCard = memo(function SignalSourceToggleCard({
           <Spinner size="2" />
         ) : requiresSetup ? (
           <Button
-            size="1"
+            type="button"
+            variant="primary"
+            size="sm"
             onClick={(e) => {
               e.stopPropagation();
               onSetup?.();
@@ -215,7 +210,9 @@ export const EvaluationsSection = memo(function EvaluationsSection({
           </Flex>
         </Flex>
         <Button
-          size="1"
+          type="button"
+          variant="primary"
+          size="sm"
           onClick={(e) => {
             e.stopPropagation();
             window.open(evaluationsUrl, "_blank", "noopener");

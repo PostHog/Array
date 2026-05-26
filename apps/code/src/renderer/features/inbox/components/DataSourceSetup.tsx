@@ -9,7 +9,8 @@ import {
   useGithubRepositories,
   useRepositoryIntegration,
 } from "@hooks/useIntegrations";
-import { Box, Button, Flex, Text, TextField } from "@radix-ui/themes";
+import { Button } from "@posthog/quill";
+import { Box, Flex, Text, TextField } from "@radix-ui/themes";
 import { trpcClient } from "@renderer/trpc";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -185,11 +186,18 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
             {statusMessage}
           </Text>
           <Flex gap="2" justify="end">
-            <Button size="2" variant="soft" onClick={onCancel}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onCancel}
+            >
               Cancel
             </Button>
             <Button
-              size="2"
+              type="button"
+              variant="primary"
+              size="sm"
               onClick={() => void handleConnectGitHub()}
               disabled={connecting}
             >
@@ -228,11 +236,19 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
         />
 
         <Flex gap="2" justify="end">
-          <Button size="2" variant="soft" onClick={onCancel} disabled={loading}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onCancel}
+            disabled={loading}
+          >
             Cancel
           </Button>
           <Button
-            size="2"
+            type="button"
+            variant="primary"
+            size="sm"
             onClick={handleSubmit}
             disabled={!repo || !selectedIntegrationId || loading}
           >
@@ -345,8 +361,9 @@ function LinearSetup({ onComplete }: SetupFormProps) {
     <SetupFormContainer title="Connect Linear">
       <Flex direction="column" gap="3">
         <Button
-          size="2"
-          variant="soft"
+          type="button"
+          variant="primary"
+          size="sm"
           onClick={handleOAuthConnect}
           disabled={loading || oauthConnected}
         >
@@ -363,7 +380,9 @@ function LinearSetup({ onComplete }: SetupFormProps) {
 
         <Flex gap="2" justify="end">
           <Button
-            size="2"
+            type="button"
+            variant="primary"
+            size="sm"
             onClick={handleSubmit}
             disabled={!oauthConnected || loading}
           >
@@ -436,11 +455,19 @@ function ZendeskSetup({ onComplete, onCancel }: SetupFormProps) {
         />
 
         <Flex gap="2" justify="end">
-          <Button size="2" variant="soft" onClick={onCancel} disabled={loading}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onCancel}
+            disabled={loading}
+          >
             Cancel
           </Button>
           <Button
-            size="2"
+            type="button"
+            variant="primary"
+            size="sm"
             onClick={handleSubmit}
             disabled={!canSubmit || loading}
           >
@@ -505,11 +532,19 @@ function PgAnalyzeSetup({ onComplete, onCancel }: SetupFormProps) {
         />
 
         <Flex gap="2" justify="end">
-          <Button size="2" variant="soft" onClick={onCancel} disabled={loading}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onCancel}
+            disabled={loading}
+          >
             Cancel
           </Button>
           <Button
-            size="2"
+            type="button"
+            variant="primary"
+            size="sm"
             onClick={handleSubmit}
             disabled={!canSubmit || loading}
           >

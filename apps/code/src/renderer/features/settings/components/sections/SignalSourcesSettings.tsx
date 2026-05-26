@@ -22,7 +22,7 @@ const PRIORITY_OPTIONS: { value: SignalReportPriority; label: string }[] = [
 const NEVER_VALUE = "__never__";
 
 const USER_PRIORITY_OPTIONS: { value: string; label: string }[] = [
-  { value: NEVER_VALUE, label: "Never — opt out of auto-assigned tasks" },
+  { value: NEVER_VALUE, label: "Never – opt out of auto-assigned tasks" },
   ...PRIORITY_OPTIONS,
 ];
 
@@ -56,9 +56,10 @@ export function SignalSourcesSettings({
 
   return (
     <Flex direction="column" gap="4">
-      <Text className="text-(--gray-11) text-[13px]">
-        Automatically analyze your product data and surface actionable insights.
-        Choose which sources to enable for this project.
+      <Text className="text-(--gray-11) text-sm">
+        Connect GitHub and pick which sources to monitor. PostHog Code will
+        analyze activity around the clock and surface ready-to-merge fixes and
+        improvements.
       </Text>
 
       <GitHubIntegrationSection
