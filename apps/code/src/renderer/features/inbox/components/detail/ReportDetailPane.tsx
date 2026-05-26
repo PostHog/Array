@@ -50,7 +50,6 @@ import type {
   Task,
 } from "@shared/types";
 import type { InboxReportActionProperties } from "@shared/types/analytics";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
 import { isMac } from "@utils/platform";
 import {
@@ -63,6 +62,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import { useCreatePrReport } from "../../hooks/useCreatePrReport";
 import { useDiscussReport } from "../../hooks/useDiscussReport";
 import { ReportImplementationPrLink } from "../utils/ReportImplementationPrLink";
 import { SignalReportActionabilityBadge } from "../utils/SignalReportActionabilityBadge";
@@ -265,7 +265,6 @@ export function ReportDetailPane({
   );
 
   // ── Task creation ───────────────────────────────────────────────────────
-  const { navigateToTaskInput } = useNavigationStore();
   const { data: reportRepository } = useReportRepository(report.id);
   const trpcReact = useTRPC();
   const { data: mostRecentRepo } = useQuery(
@@ -360,22 +359,20 @@ export function ReportDetailPane({
     [fireDetailAction],
   );
 
-  const handleCreateImplementationTask = useCallback(() => {
-    if (!canCreateImplementationPr) return;
+  const { createPrReport, isCreatingPr } = useCreatePrReport({
+    reportId: report.id,
+    reportTitle: report.title,
+    cloudRepository: effectiveCloudRepository,
+  });
+
+  const handleCreateImplementationTask = useCallback(async () => {
+    if (!canCreateImplementationPr || isCreatingPr) return;
     fireDetailAction("create_pr");
-    navigateToTaskInput({
-      initialPrompt: `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`,
-      initialCloudRepository: effectiveCloudRepository ?? undefined,
-      reportAssociation: {
-        reportId: report.id,
-        title: report.title ?? "Untitled signal",
-      },
-    });
+    await createPrReport();
   }, [
     canCreateImplementationPr,
-    navigateToTaskInput,
-    effectiveCloudRepository,
-    report,
+    isCreatingPr,
+    createPrReport,
     fireDetailAction,
   ]);
 
@@ -614,9 +611,10 @@ export function ReportDetailPane({
                 size="1"
                 variant="solid"
                 className="gap-1 text-[12px]"
+                disabled={isCreatingPr}
                 onClick={handleCreateImplementationTask}
               >
-                <Plus size={12} />
+                {isCreatingPr ? <Spinner size="1" /> : <Plus size={12} />}
                 Create PR
               </Button>
             </Tooltip>
