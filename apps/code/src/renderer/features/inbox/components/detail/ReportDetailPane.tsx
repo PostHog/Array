@@ -575,7 +575,7 @@ export function ReportDetailPane({
                   />
                   <Flex justify="between" align="center" gap="2">
                     <Text size="1" color="gray">
-                      <Kbd>⌘</Kbd> <Kbd>↵</Kbd> to send
+                      <Kbd>{isMac ? "⌘↵" : "Ctrl+↵"}</Kbd> to send
                     </Text>
                     <Flex gap="2">
                       <Button
