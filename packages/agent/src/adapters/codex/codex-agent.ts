@@ -64,6 +64,12 @@ import {
   nodeWritableToWebWritable,
 } from "../../utils/streams";
 import { BaseAcpAgent, type BaseSession } from "../base-acp-agent";
+import {
+  buildBreakdown,
+  type ContextBreakdownBaseline,
+  emptyBaseline,
+  estimateTokens,
+} from "../claude/context-breakdown";
 import { classifyAgentError } from "../error-classification";
 import {
   enabledLocalTools,
@@ -76,6 +82,7 @@ import { normalizeCodexConfigOptions } from "./models";
 import {
   type CodexSessionState,
   createSessionState,
+  resetSessionState,
   resetUsage,
 } from "./session-state";
 import { CodexSettingsManager } from "./settings";
@@ -159,6 +166,19 @@ function classifyPromptError(error: unknown): unknown {
     { classification, result: message },
     message,
   );
+}
+
+// codex-rs/protocol/src/protocol.rs BASELINE_TOKENS — the always-resident
+// floor (MCP schemas, skills, preset prompt) we can't attribute per-source.
+const CODEX_BASELINE_TOKENS = 12000;
+
+function buildCodexBaseline(
+  meta: NewSessionMeta | undefined,
+): ContextBreakdownBaseline {
+  const baseline = emptyBaseline();
+  baseline.systemPrompt =
+    CODEX_BASELINE_TOKENS + estimateTokens(meta?.systemPrompt);
+  return baseline;
 }
 
 const CODEX_NATIVE_MODE: Record<CodeExecutionMode, CodexNativeMode> = {
@@ -392,8 +412,10 @@ export class CodexAcpAgent extends BaseAcpAgent {
       response.configOptions,
     );
 
-    // Initialize session state
-    this.sessionState = createSessionState(response.sessionId, params.cwd, {
+    // Initialize session state. Mutate in place — codex-client closure-
+    // captured this object in the constructor and writes contextUsed/
+    // accumulatedUsage to it on every upstream usage_update.
+    resetSessionState(this.sessionState, response.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
       taskId: resolveTaskId(meta),
       modeId: response.modes?.currentModeId ?? "auto",
@@ -402,6 +424,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     });
     this.sessionId = response.sessionId;
     this.sessionState.configOptions = response.configOptions ?? [];
+    this.sessionState.contextBreakdownBaseline = buildCodexBaseline(meta);
 
     await this.applyInitialPermissionMode(
       response.sessionId,
@@ -445,7 +468,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     // notifications (TURN_COMPLETE, USAGE_UPDATE) after a reload. newSession
     // and unstable_resumeSession both do this; loadSession historically did
     // not, which silently broke task-completion tracking on re-attach.
-    this.sessionState = createSessionState(params.sessionId, params.cwd, {
+    resetSessionState(this.sessionState, params.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
       taskId: resolveTaskId(meta),
       modeId: response.modes?.currentModeId ?? "auto",
@@ -453,6 +476,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     });
     this.sessionId = params.sessionId;
     this.sessionState.configOptions = response.configOptions ?? [];
+    this.sessionState.contextBreakdownBaseline = buildCodexBaseline(meta);
 
     if (meta?.taskRunId) {
       await this.client.extNotification(POSTHOG_NOTIFICATIONS.SDK_SESSION, {
@@ -491,7 +515,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       loadResponse.modes?.currentModeId,
       meta?.permissionMode,
     );
-    this.sessionState = createSessionState(params.sessionId, params.cwd, {
+    resetSessionState(this.sessionState, params.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
       taskId: resolveTaskId(meta),
       modeId: loadResponse.modes?.currentModeId ?? "auto",
@@ -499,6 +523,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     });
     this.sessionId = params.sessionId;
     this.sessionState.configOptions = loadResponse.configOptions ?? [];
+    this.sessionState.contextBreakdownBaseline = buildCodexBaseline(meta);
 
     if (meta?.taskRunId) {
       await this.client.extNotification(POSTHOG_NOTIFICATIONS.SDK_SESSION, {
@@ -538,7 +563,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     );
 
     const requestedPermissionMode = toCodexPermissionMode(meta?.permissionMode);
-    this.sessionState = createSessionState(newResponse.sessionId, params.cwd, {
+    resetSessionState(this.sessionState, newResponse.sessionId, params.cwd, {
       taskRunId: meta?.taskRunId,
       taskId: resolveTaskId(meta),
       modeId: newResponse.modes?.currentModeId ?? "auto",
@@ -546,6 +571,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
     });
     this.sessionId = newResponse.sessionId;
     this.sessionState.configOptions = newResponse.configOptions ?? [];
+    this.sessionState.contextBreakdownBaseline = buildCodexBaseline(meta);
 
     await this.applyInitialPermissionMode(
       newResponse.sessionId,
@@ -728,6 +754,21 @@ export class CodexAcpAgent extends BaseAcpAgent {
           cost: null,
         });
       }
+    }
+
+    // Emit the per-source breakdown so the renderer's ContextBreakdownPopover
+    // has data to show. This fires regardless of `taskRunId` (local sessions
+    // need it too) and regardless of `response.usage` (codex-acp doesn't
+    // populate it — context size comes from upstream usage_update events,
+    // tracked on sessionState.contextUsed).
+    if (this.sessionState.contextUsed !== undefined) {
+      await this.client.extNotification(POSTHOG_NOTIFICATIONS.USAGE_UPDATE, {
+        sessionId: params.sessionId,
+        breakdown: buildBreakdown(
+          this.sessionState.contextBreakdownBaseline ?? emptyBaseline(),
+          this.sessionState.contextUsed,
+        ),
+      });
     }
 
     return response;

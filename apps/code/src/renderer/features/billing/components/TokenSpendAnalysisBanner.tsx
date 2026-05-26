@@ -4,59 +4,32 @@ import type {
   SpendAnalysisProductRow,
   SpendAnalysisResponse,
   SpendAnalysisToolRow,
-  SpendAnalysisTraceRow,
 } from "@features/billing/types/spend-analysis";
+import {
+  formatTokens,
+  formatUsd,
+  formatWindow,
+} from "@features/billing/utils/spendAnalysisFormat";
+import { buildAnalysisPrompt } from "@features/billing/utils/spendAnalysisPrompt";
+import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import {
   ArrowSquareOut,
   ChartLine,
   Lightning,
+  Sparkle,
   WarningCircle,
 } from "@phosphor-icons/react";
 import { Button, Callout, Flex, Spinner, Table, Text } from "@radix-ui/themes";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import { useNavigationStore } from "@stores/navigationStore";
+import { track } from "@utils/analytics";
 
 const DOCS_URL = "https://posthog.com/docs/llm-analytics";
-const SKILL_URL =
-  "https://github.com/PostHog/posthog/blob/master/products/llm_analytics/skills/exploring-llm-costs/SKILL.md";
-
-function formatUsd(amount: number): string {
-  if (amount === 0) return "$0";
-  if (amount < 0.01) return "<$0.01";
-  if (amount < 100) return `$${amount.toFixed(2)}`;
-  return `$${Math.round(amount).toLocaleString()}`;
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
-  return n.toString();
-}
-
-function formatTrace(traceId: string | null): string {
-  if (!traceId) return "(no trace id)";
-  if (traceId.length <= 14) return traceId;
-  return `${traceId.slice(0, 8)}…${traceId.slice(-4)}`;
-}
-
-function formatWindow(fromIso: string, toIso: string): string {
-  const fromMs = new Date(fromIso).getTime();
-  const toMs = new Date(toIso).getTime();
-  const days = Math.max(1, Math.round((toMs - fromMs) / (1000 * 60 * 60 * 24)));
-  return `${days} days`;
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
 
 function generateSuggestions(data: SpendAnalysisResponse): string[] {
   const suggestions: string[] = [];
   const { summary } = data;
   const toolItems = data.by_tool.items;
-  const traceItems = data.top_traces.items;
 
   if (summary.total_cost_usd === 0) {
     return ["No LLM spend in the selected window."];
@@ -88,19 +61,9 @@ function generateSuggestions(data: SpendAnalysisResponse): string[] {
     }
   }
 
-  if (traceItems.length > 0 && codeTotal > 0) {
-    const topTrace = traceItems[0];
-    const share = topTrace.cost_usd / codeTotal;
-    if (share > 0.15) {
-      suggestions.push(
-        `Your top session cost ${formatUsd(topTrace.cost_usd)} — ${Math.round(share * 100)}% of PostHog Code spend in one trace. Long sessions compound context cost.`,
-      );
-    }
-  }
-
   if (suggestions.length === 0) {
     suggestions.push(
-      "Your spend is fairly evenly distributed across tools and sessions — no single hotspot stands out.",
+      "Your spend is fairly evenly distributed across tools — no single hotspot stands out.",
     );
   }
 
@@ -218,30 +181,6 @@ function ModelTable({ rows }: { rows: SpendAnalysisModelRow[] }) {
   );
 }
 
-function TraceTable({ rows }: { rows: SpendAnalysisTraceRow[] }) {
-  if (rows.length === 0) return null;
-  return (
-    <SectionTable
-      title="Top traces"
-      headers={["Trace", "Generations", "Started", "Cost"]}
-      widths={["40%", "20%", "20%", "20%"]}
-    >
-      {rows.map((r) => (
-        <Table.Row key={r.trace_id ?? "(null)"}>
-          <Table.Cell>
-            <Text className="font-mono text-[12px]">
-              {formatTrace(r.trace_id)}
-            </Text>
-          </Table.Cell>
-          <Table.Cell>{r.generation_count.toLocaleString()}</Table.Cell>
-          <Table.Cell>{formatDate(r.started_at)}</Table.Cell>
-          <Table.Cell>{formatUsd(r.cost_usd)}</Table.Cell>
-        </Table.Row>
-      ))}
-    </SectionTable>
-  );
-}
-
 function SectionTable({
   title,
   headers,
@@ -279,9 +218,39 @@ function SectionTable({
   );
 }
 
-function FooterLinks() {
+function FooterLinks({ data }: { data: SpendAnalysisResponse }) {
+  const navigateToTaskInput = useNavigationStore(
+    (state) => state.navigateToTaskInput,
+  );
+  const closeSettings = useSettingsDialogStore((state) => state.close);
+
+  const handleAnalyseClick = (): void => {
+    track(ANALYTICS_EVENTS.SPEND_ANALYSIS_TASK_OPENED, {
+      total_cost_usd: data.summary.total_cost_usd,
+      scoped_cost_usd: data.summary.scoped_cost_usd,
+      scoped_event_count: data.summary.scoped_event_count,
+      window_days: Math.max(
+        1,
+        Math.round(
+          (new Date(data.summary.date_to).getTime() -
+            new Date(data.summary.date_from).getTime()) /
+            (1000 * 60 * 60 * 24),
+        ),
+      ),
+      tool_row_count: Math.min(data.by_tool.items.length, 10),
+      model_row_count: data.by_model.items.length,
+    });
+    // This banner lives inside the Settings dialog (modal). `navigateToTaskInput`
+    // changes the underlying view but the dialog stays mounted on top, so the user
+    // doesn't see the prefilled task input. Close the dialog first.
+    closeSettings();
+    navigateToTaskInput({
+      initialPrompt: buildAnalysisPrompt(data),
+    });
+  };
+
   return (
-    <Flex direction="column" gap="1">
+    <Flex direction="column" gap="2">
       <Text className="text-(--gray-11) text-[13px]">
         Use{" "}
         <a
@@ -294,18 +263,15 @@ function FooterLinks() {
         </a>{" "}
         in your own project for the full slice-and-dice experience.
       </Text>
-      <Text className="text-(--gray-11) text-[13px]">
-        Want an agent to run this kind of analysis on demand? Drop the{" "}
-        <a
-          href={SKILL_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="text-(--accent-11) underline"
-        >
-          exploring-llm-costs
-        </a>{" "}
-        skill into your agent.
-      </Text>
+      <Button
+        size="1"
+        variant="soft"
+        onClick={handleAnalyseClick}
+        className="self-start"
+      >
+        <Sparkle size={12} />
+        Open a task to analyse this with an agent
+      </Button>
     </Flex>
   );
 }
@@ -346,7 +312,6 @@ export function TokenSpendAnalysisBanner() {
         <ProductTable rows={data.by_product.items} />
         <ToolTable rows={data.by_tool.items} />
         <ModelTable rows={data.by_model.items} />
-        <TraceTable rows={data.top_traces.items} />
         <Flex
           direction="column"
           gap="2"
@@ -363,7 +328,7 @@ export function TokenSpendAnalysisBanner() {
             </Text>
           ))}
         </Flex>
-        <FooterLinks />
+        <FooterLinks data={data} />
       </Flex>
     );
   }
@@ -406,7 +371,7 @@ export function TokenSpendAnalysisBanner() {
             Analyse your token usage with PostHog LLM analytics
           </Text>
           <Text className="text-(--gray-11) text-[13px]">
-            See where your spend goes — by tool, by model, by trace — over the
+            See where your spend goes — by product, tool, and model — over the
             last 30 days, and get tips on where to optimise.
           </Text>
           <Button

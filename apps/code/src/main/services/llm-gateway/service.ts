@@ -175,9 +175,18 @@ export class LlmGatewayService {
 
     log.debug("Fetching usage from gateway", { url: usageUrl });
 
-    const response = await this.authService.authenticatedFetch(fetch, usageUrl);
+    let response: Response;
+    try {
+      response = await this.authService.authenticatedFetch(fetch, usageUrl);
+    } catch (err) {
+      log.warn("Usage fetch network error", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
 
     if (!response.ok) {
+      log.warn("Usage fetch failed", { status: response.status });
       throw new LlmGatewayError(
         `Failed to fetch usage: HTTP ${response.status}`,
         "usage_error",

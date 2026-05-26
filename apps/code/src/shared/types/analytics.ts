@@ -535,6 +535,21 @@ export interface InboxReportScrolledProperties {
   time_since_open_ms: number;
 }
 
+export interface SpendAnalysisTaskOpenedProperties {
+  /** Total LLM spend in USD across all products for the analysed window. */
+  total_cost_usd: number;
+  /** PostHog Code spend in USD for the analysed window (subset of total). */
+  scoped_cost_usd: number;
+  /** Number of `$ai_generation` events in the analysed window. */
+  scoped_event_count: number;
+  /** Length of the analysed window in days. */
+  window_days: number;
+  /** Number of tool rows the receiving agent will see (capped at 10 in the prompt). */
+  tool_row_count: number;
+  /** Number of model rows the receiving agent will see. */
+  model_row_count: number;
+}
+
 export interface InboxReportActionProperties {
   report_id: string;
   report_title: string | null;
@@ -682,6 +697,9 @@ export const ANALYTICS_EVENTS = {
   INBOX_REPORT_ACTION: "Inbox report action",
   INBOX_REPORT_SCROLLED: "Inbox report scrolled",
 
+  // Spend analysis events
+  SPEND_ANALYSIS_TASK_OPENED: "Spend analysis task opened",
+
   // Prompt history events
   PROMPT_HISTORY_OPENED: "Prompt history opened",
   PROMPT_HISTORY_SELECTED: "Prompt history selected",
@@ -793,6 +811,9 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
+
+  // Spend analysis events
+  [ANALYTICS_EVENTS.SPEND_ANALYSIS_TASK_OPENED]: SpendAnalysisTaskOpenedProperties;
 
   // Prompt history events
   [ANALYTICS_EVENTS.PROMPT_HISTORY_OPENED]: PromptHistoryOpenedProperties;

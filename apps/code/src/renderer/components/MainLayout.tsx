@@ -5,7 +5,6 @@ import { SpaceSwitcher } from "@components/SpaceSwitcher";
 
 import { ArchivedTasksView } from "@features/archive/components/ArchivedTasksView";
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
-import { useUsageLimitDetection } from "@features/billing/hooks/useUsageLimitDetection";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
 import { InboxView } from "@features/inbox/components/InboxView";
@@ -77,7 +76,6 @@ export function MainLayout() {
   const activeTaskId =
     view.type === "task-detail" && view.data ? view.data.id : null;
 
-  useUsageLimitDetection(billingEnabled);
   useIntegrations();
   useTaskDeepLink();
   useInboxDeepLink();
