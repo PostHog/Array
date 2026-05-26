@@ -691,7 +691,9 @@ export function InboxSignalsTab() {
   return (
     <>
       {showInboxOnboarding ? (
-        /* ── Inline setup pane for users with no sources configured ── */
+        /* ── Inline setup pane for users with no sources configured ──
+           No "Configure sources" toolbar shortcut — the pane below is the
+           configuration UI, so a duplicate button would be confusing. */
         <Flex direction="column" className="h-full">
           <SignalsToolbar
             totalCount={0}
@@ -700,7 +702,6 @@ export function InboxSignalsTab() {
             pipelinePausedUntil={signalProcessingState?.paused_until}
             searchDisabledReason={searchDisabledReason}
             hideFilters
-            onConfigureSources={() => setSourcesDialogOpen(true)}
           />
           <ScrollArea className="min-h-0 flex-1">
             <InboxSetupPane />
