@@ -4,8 +4,8 @@ import {
   SelectReportPane,
   SkeletonBackdrop,
   WarmingUpPane,
-  WelcomePane,
 } from "@features/inbox/components/InboxEmptyStates";
+import { InboxSetupPane } from "@features/inbox/components/InboxSetupPane";
 import { InboxSourcesDialog } from "@features/inbox/components/InboxSourcesDialog";
 import {
   inboxBulkSnoozeDisabledReason,
@@ -830,8 +830,24 @@ export function InboxSignalsTab() {
             )}
           </Flex>
         </Flex>
+      ) : !hasSignalSources || !hasGithubIntegration ? (
+        /* ── Inline setup pane for users still configuring sources / GitHub ── */
+        <Flex direction="column" className="h-full">
+          <SignalsToolbar
+            totalCount={0}
+            filteredCount={0}
+            isSearchActive={false}
+            pipelinePausedUntil={signalProcessingState?.paused_until}
+            searchDisabledReason={searchDisabledReason}
+            hideFilters
+            onConfigureSources={() => setSourcesDialogOpen(true)}
+          />
+          <ScrollArea className="min-h-0 flex-1">
+            <InboxSetupPane />
+          </ScrollArea>
+        </Flex>
       ) : (
-        /* ── Full-width empty state with skeleton backdrop ──────── */
+        /* ── Full-width warming-up state with skeleton backdrop ──────── */
         <Box className="relative h-full">
           <Flex direction="column">
             <SignalsToolbar
@@ -853,14 +869,10 @@ export function InboxSignalsTab() {
             className="pointer-events-none absolute inset-0 flex items-center justify-center"
           >
             <Box className="pointer-events-auto">
-              {!hasSignalSources || !hasGithubIntegration ? (
-                <WelcomePane onEnableInbox={() => setSourcesDialogOpen(true)} />
-              ) : (
-                <WarmingUpPane
-                  onConfigureSources={() => setSourcesDialogOpen(true)}
-                  enabledProducts={enabledProducts}
-                />
-              )}
+              <WarmingUpPane
+                onConfigureSources={() => setSourcesDialogOpen(true)}
+                enabledProducts={enabledProducts}
+              />
             </Box>
           </Box>
         </Box>
