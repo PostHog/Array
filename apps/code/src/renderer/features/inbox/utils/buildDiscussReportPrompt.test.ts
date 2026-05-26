@@ -44,4 +44,18 @@ describe("buildDiscussReportPrompt", () => {
     });
     expect(prompt).toContain("brief readout");
   });
+
+  it("tells the agent to say so rather than guess if the report can't be fetched", () => {
+    const withQuestion = buildDiscussReportPrompt({
+      reportId: "abc123",
+      question: "Why is conversion dropping?",
+      isDevBuild: false,
+    });
+    const withoutQuestion = buildDiscussReportPrompt({
+      reportId: "abc123",
+      isDevBuild: false,
+    });
+    expect(withQuestion).toMatch(/can't fetch the report/i);
+    expect(withoutQuestion).toMatch(/can't fetch the report/i);
+  });
 });

@@ -31,4 +31,13 @@ describe("buildCreatePrReportPrompt", () => {
     });
     expect(prompt).toMatch(/open a PR/i);
   });
+
+  it("tells the agent to stop rather than guess if the report can't be fetched", () => {
+    const prompt = buildCreatePrReportPrompt({
+      reportId: "abc123",
+      isDevBuild: false,
+    });
+    expect(prompt).toMatch(/can't fetch the report/i);
+    expect(prompt).toMatch(/instead of guessing/i);
+  });
 });
