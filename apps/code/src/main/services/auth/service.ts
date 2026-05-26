@@ -565,31 +565,14 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     cloudRegion: CloudRegion,
     orgIds: string[],
   ): Promise<OrgProjectsMap> {
-    const apiHost = getCloudUrlFromRegion(cloudRegion);
     const entries = await Promise.all(
       orgIds.map(async (orgId): Promise<[string, OrgProjects]> => {
-        try {
-          const [orgRes, projects] = await Promise.all([
-            fetch(`${apiHost}/api/organizations/${orgId}/`, {
-              headers: { Authorization: `Bearer ${accessToken}` },
-            }),
-            this.fetchOrgProjects(accessToken, cloudRegion, orgId),
-          ]);
-
-          const orgData = orgRes.ok
-            ? ((await orgRes.json().catch(() => ({}))) as { name?: unknown })
-            : null;
-
-          const orgName =
-            typeof orgData?.name === "string" && orgData.name.length > 0
-              ? orgData.name
-              : "(unknown)";
-
-          return [orgId, { orgName, projects: projects ?? [] }];
-        } catch (error) {
-          log.warn("Failed to fetch org projects", { orgId, error });
-          return [orgId, { orgName: "(unknown)", projects: [] }];
-        }
+        const result = await this.fetchOrgWithProjects(
+          accessToken,
+          cloudRegion,
+          orgId,
+        );
+        return [orgId, result ?? { orgName: "(unknown)", projects: [] }];
       }),
     );
 
@@ -600,27 +583,40 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     cloudRegion: CloudRegion,
     orgId: string,
   ): Promise<{ id: number; name: string }[] | null> {
+    const result = await this.fetchOrgWithProjects(
+      accessToken,
+      cloudRegion,
+      orgId,
+    );
+    return result?.projects ?? null;
+  }
+  private async fetchOrgWithProjects(
+    accessToken: string,
+    cloudRegion: CloudRegion,
+    orgId: string,
+  ): Promise<OrgProjects | null> {
     const apiHost = getCloudUrlFromRegion(cloudRegion);
     try {
-      const res = await fetch(
-        `${apiHost}/api/organizations/${orgId}/projects/`,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        },
-      );
+      const res = await fetch(`${apiHost}/api/organizations/${orgId}/`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
       if (!res.ok) return null;
-      const raw = (await res.json().catch(() => null)) as unknown;
-      const array = Array.isArray(raw)
-        ? raw
-        : Array.isArray((raw as { results?: unknown } | null)?.results)
-          ? ((raw as { results: unknown[] }).results as unknown[])
-          : [];
-      return array
-        .map((p) => p as { id?: unknown; name?: unknown })
-        .filter((p) => typeof p.id === "number" && typeof p.name === "string")
-        .map((p) => ({ id: p.id as number, name: p.name as string }));
+      const raw = (await res.json().catch(() => null)) as {
+        name?: unknown;
+        teams?: unknown;
+      } | null;
+      const orgName =
+        typeof raw?.name === "string" && raw.name.length > 0
+          ? raw.name
+          : "(unknown)";
+      const teams = Array.isArray(raw?.teams) ? raw.teams : [];
+      const projects = teams
+        .map((t) => t as { id?: unknown; name?: unknown })
+        .filter((t) => typeof t.id === "number" && typeof t.name === "string")
+        .map((t) => ({ id: t.id as number, name: t.name as string }));
+      return { orgName, projects };
     } catch (error) {
-      log.warn("Failed to refresh org projects", { orgId, error });
+      log.warn("Failed to fetch org with projects", { orgId, error });
       return null;
     }
   }

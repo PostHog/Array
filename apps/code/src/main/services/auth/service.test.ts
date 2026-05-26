@@ -127,26 +127,15 @@ describe("AuthService", () => {
           } as unknown as Response;
         }
 
-        const orgProjectsMatch = url.match(
-          /\/api\/organizations\/([^/]+)\/projects\/$/,
-        );
-        if (orgProjectsMatch) {
-          const orgId = orgProjectsMatch[1];
-          const projects = orgs[orgId]?.projects ?? [];
-          return {
-            ok: true,
-            json: vi.fn().mockResolvedValue({ results: projects }),
-          } as unknown as Response;
-        }
-
         const orgMatch = url.match(/\/api\/organizations\/([^/]+)\/$/);
         if (orgMatch) {
           const orgId = orgMatch[1];
           return {
             ok: true,
-            json: vi
-              .fn()
-              .mockResolvedValue({ name: orgs[orgId]?.name ?? "Unknown" }),
+            json: vi.fn().mockResolvedValue({
+              name: orgs[orgId]?.name ?? "Unknown",
+              teams: orgs[orgId]?.projects ?? [],
+            }),
           } as unknown as Response;
         }
 
