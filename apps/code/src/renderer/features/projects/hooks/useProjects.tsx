@@ -36,6 +36,7 @@ export function groupProjectsByOrg(map: OrgProjectsMap): GroupedProjects[] {
 
 export function useProjects() {
   const orgProjectsMap = useAuthStateValue((state) => state.orgProjectsMap);
+  const currentOrgId = useAuthStateValue((state) => state.currentOrgId);
   const currentProjectId = useAuthStateValue((state) => state.currentProjectId);
 
   const projects = useMemo<ProjectInfo[]>(() => {
@@ -59,19 +60,25 @@ export function useProjects() {
   useEffect(() => {
     if (isSelectingProject) return;
     if (projects.length > 0 && !currentProject) {
-      const preferred = projects[0];
+      const currentOrgProjects = currentOrgId
+        ? (orgProjectsMap[currentOrgId]?.projects ?? [])
+        : [];
+      const preferredId = currentOrgProjects[0]?.id ?? projects[0]?.id;
+      if (preferredId == null) return;
       log.info("Auto-selecting project", {
-        projectId: preferred.id,
+        projectId: preferredId,
         reason:
           currentProjectId == null
             ? "no project selected"
             : "current project not found in list",
       });
-      selectProject(preferred.id);
+      selectProject(preferredId);
     }
   }, [
     currentProject,
     currentProjectId,
+    currentOrgId,
+    orgProjectsMap,
     projects,
     selectProject,
     isSelectingProject,
