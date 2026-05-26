@@ -59,9 +59,10 @@ export function SignalSourcesSettings({
 
   return (
     <Flex direction="column" gap="4">
-      <Text className="text-(--gray-11) text-[13px]">
-        Automatically analyze your product data and surface actionable insights.
-        Choose which sources to enable for this project.
+      <Text className="text-(--gray-11) text-sm">
+        Connect GitHub and pick which sources to monitor. PostHog Code will
+        analyze activity around the clock and surface ready-to-merge fixes and
+        improvements.
       </Text>
 
       <GitHubIntegrationSection hasGithubIntegration={hasGithubIntegration} />

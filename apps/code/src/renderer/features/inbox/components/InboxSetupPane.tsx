@@ -9,7 +9,7 @@ export function InboxSetupPane() {
     <Flex align="center" justify="center" height="100%" width="100%" px="6">
       <Flex
         direction="column"
-        gap="5"
+        gap="2"
         className="w-full max-w-[720px] py-[24px]"
       >
         <motion.div
@@ -17,16 +17,9 @@ export function InboxSetupPane() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <Flex direction="column" gap="3">
-            <Text className="font-bold text-(--gray-12) text-2xl">
-              Set up your Signals Inbox
-            </Text>
-            <Text className="text-(--gray-11) text-base leading-relaxed">
-              Connect GitHub and pick which sources to monitor. PostHog Code
-              will analyze activity around the clock and surface ready-to-run
-              fixes — with autonomous PRs at the priority threshold you choose.
-            </Text>
-          </Flex>
+          <Text className="font-bold text-(--gray-12) text-2xl">
+            Set up self-driving for your product
+          </Text>
         </motion.div>
 
         <motion.div

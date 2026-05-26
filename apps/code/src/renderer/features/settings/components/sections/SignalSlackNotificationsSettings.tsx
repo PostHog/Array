@@ -181,6 +181,7 @@ export function SignalSlackNotificationsSettings({
           onClick={() => {
             void slackConnect.connect();
           }}
+          className="w-fit"
         >
           {slackConnect.isConnecting
             ? "Waiting for Slack…"
