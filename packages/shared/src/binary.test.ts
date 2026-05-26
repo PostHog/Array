@@ -20,7 +20,6 @@ describe("isBinaryFile", () => {
     ["foo.avif"],
     ["foo.heic"],
     ["foo.heif"],
-    ["foo.svg"],
     ["foo.mp3"],
     ["foo.mp4"],
     ["foo.mov"],
@@ -60,19 +59,26 @@ describe("isBinaryFile", () => {
     [""],
     ["README"],
     [".gitignore"],
+    ["foo.svg"],
+    ["path/to/icon.svg"],
   ])("returns false for %s", (filename) => {
     expect(isBinaryFile(filename)).toBe(false);
   });
 
-  it("includes every extension from the source-of-truth sets", () => {
-    for (const ext of [
-      ...Object.keys(IMAGE_MIME_TYPES),
+  it("excludes SVG so title generation reads it as text", () => {
+    expect(BINARY_EXTENSIONS.has("svg")).toBe(false);
+  });
+
+  it("includes every binary extension from the source-of-truth sets", () => {
+    const expected = [
+      ...Object.keys(IMAGE_MIME_TYPES).filter((ext) => ext !== "svg"),
       ...AUDIO_VIDEO_EXTENSIONS,
       ...ARCHIVE_EXTENSIONS,
       ...EXECUTABLE_EXTENSIONS,
       ...FONT_EXTENSIONS,
       ...DOCUMENT_BINARY_EXTENSIONS,
-    ]) {
+    ];
+    for (const ext of expected) {
       expect(BINARY_EXTENSIONS.has(ext)).toBe(true);
     }
   });

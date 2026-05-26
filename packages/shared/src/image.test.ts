@@ -4,6 +4,7 @@ import {
   getImageMimeType,
   isAllowedImageMimeType,
   isClaudeImageFile,
+  isClaudeImageMimeType,
   isGifFile,
   isImageFile,
   isRasterImageFile,
@@ -209,6 +210,36 @@ describe("isRasterImageFile", () => {
   it("returns false for dotfiles with no real extension", () => {
     expect(isRasterImageFile(".gitignore")).toBe(false);
   });
+
+  it("returns false for hidden files in a directory", () => {
+    expect(isRasterImageFile("/path/.heic")).toBe(false);
+    expect(isRasterImageFile("C:\\path\\.png")).toBe(false);
+  });
+
+  it("strips URI query and fragment before parsing extension", () => {
+    expect(isRasterImageFile("ph://asset/IMG.png?width=1024")).toBe(true);
+    expect(isRasterImageFile("file://photo.jpg#preview")).toBe(true);
+  });
+});
+
+describe("isClaudeImageMimeType", () => {
+  it.each([["image/jpeg"], ["image/png"], ["IMAGE/GIF"], ["image/webp"]])(
+    "accepts %s",
+    (mimeType) => {
+      expect(isClaudeImageMimeType(mimeType)).toBe(true);
+    },
+  );
+
+  it.each([
+    ["image/svg+xml"],
+    ["image/heic"],
+    ["image/bmp"],
+    ["image/avif"],
+    ["application/octet-stream"],
+    ["text/plain"],
+  ])("rejects %s", (mimeType) => {
+    expect(isClaudeImageMimeType(mimeType)).toBe(false);
+  });
 });
 
 describe("isClaudeImageFile", () => {
@@ -267,5 +298,14 @@ describe("getImageMimeType", () => {
   it("falls back to application/octet-stream for unknown extensions", () => {
     expect(getImageMimeType("foo.unknown")).toBe("application/octet-stream");
     expect(getImageMimeType("foo")).toBe("application/octet-stream");
+  });
+
+  it("strips URI query and fragment from picker-style URIs", () => {
+    expect(getImageMimeType("ph://asset/IMG.png?width=1024")).toBe("image/png");
+    expect(getImageMimeType("https://cdn/img.webp#thumb")).toBe("image/webp");
+  });
+
+  it("ignores extensions on hidden basenames", () => {
+    expect(getImageMimeType("/path/.heic")).toBe("application/octet-stream");
   });
 });

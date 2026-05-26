@@ -52,6 +52,13 @@ export type ClaudeImageMimeType =
   | "image/gif"
   | "image/webp";
 
+const CLAUDE_IMAGE_MIME_TYPES: ReadonlySet<string> = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+
 export const CLAUDE_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
   "png",
   "jpg",
@@ -59,6 +66,12 @@ export const CLAUDE_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
   "gif",
   "webp",
 ]);
+
+export function isClaudeImageMimeType(
+  mimeType: string,
+): mimeType is ClaudeImageMimeType {
+  return CLAUDE_IMAGE_MIME_TYPES.has(mimeType.toLowerCase());
+}
 
 const DATA_URL_PATTERN =
   /^data:([a-zA-Z]+\/[a-zA-Z0-9.+-]+)(?:;[a-zA-Z0-9-]+=[^;,]+)*;base64,([A-Za-z0-9+/=\s]+)$/;
@@ -72,8 +85,11 @@ export interface ParsedImageDataUrl {
 }
 
 export function extensionOf(filename: string): string {
-  const dot = filename.lastIndexOf(".");
-  return dot > 0 ? filename.slice(dot + 1).toLowerCase() : "";
+  const slash = Math.max(filename.lastIndexOf("/"), filename.lastIndexOf("\\"));
+  const basename = slash >= 0 ? filename.slice(slash + 1) : filename;
+  const cleanBasename = basename.split(/[?#]/)[0];
+  const dot = cleanBasename.lastIndexOf(".");
+  return dot > 0 ? cleanBasename.slice(dot + 1).toLowerCase() : "";
 }
 
 export function isImageFile(filename: string): boolean {

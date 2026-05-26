@@ -47,8 +47,10 @@ export const FONT_EXTENSIONS: ReadonlySet<string> = new Set([
 
 export const DOCUMENT_BINARY_EXTENSIONS: ReadonlySet<string> = new Set(["pdf"]);
 
+// SVG is excluded — it is XML text and consumers like title generation read
+// it as text rather than treating it as opaque bytes.
 export const BINARY_EXTENSIONS: ReadonlySet<string> = new Set([
-  ...Object.keys(IMAGE_MIME_TYPES),
+  ...Object.keys(IMAGE_MIME_TYPES).filter((ext) => ext !== "svg"),
   ...AUDIO_VIDEO_EXTENSIONS,
   ...ARCHIVE_EXTENSIONS,
   ...EXECUTABLE_EXTENSIONS,

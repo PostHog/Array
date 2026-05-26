@@ -22,6 +22,7 @@ export {
   IMAGE_MIME_TYPES,
   isAllowedImageMimeType,
   isClaudeImageFile,
+  isClaudeImageMimeType,
   isGifFile,
   isImageFile,
   isRasterImageFile,

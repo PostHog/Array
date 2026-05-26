@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { PromptRequest } from "@agentclientprotocol/sdk";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
-import { type ClaudeImageMimeType, isImageFile } from "@posthog/shared";
+import { isClaudeImageMimeType, isImageFile } from "@posthog/shared";
 
 const PDF_EXTENSIONS = new Set(["pdf"]);
 
@@ -119,14 +119,22 @@ function processPromptChunk(
 
     case "image":
       if (chunk.data) {
-        content.push({
-          type: "image",
-          source: {
-            type: "base64",
-            data: chunk.data,
-            media_type: chunk.mimeType as ClaudeImageMimeType,
-          },
-        });
+        if (isClaudeImageMimeType(chunk.mimeType)) {
+          content.push({
+            type: "image",
+            source: {
+              type: "base64",
+              data: chunk.data,
+              media_type: chunk.mimeType,
+            },
+          });
+        } else {
+          content.push(
+            sdkText(
+              `[Unsupported image MIME type: ${chunk.mimeType}. Supported: image/jpeg, image/png, image/gif, image/webp.]`,
+            ),
+          );
+        }
       } else if (chunk.uri?.startsWith("http")) {
         content.push({
           type: "image",
