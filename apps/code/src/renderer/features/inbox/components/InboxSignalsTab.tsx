@@ -701,11 +701,11 @@ export function InboxSignalsTab() {
   return (
     <>
       {showInboxOnboarding ? (
-        /* ── Inline setup pane for users with no sources configured ──
-           The toolbar (report counter, search, bulk actions) is suppressed
-           entirely — none of it is meaningful before any source is configured.
-           Sticky within the visit: stays until the user clicks "Proceed to
-           Inbox" inside the pane or navigates away. */
+        // Inline setup pane for users with no sources configured.
+        // The toolbar (report counter, search, bulk actions) is suppressed
+        // entirely — none of it is meaningful before any source is configured.
+        // Sticky within the visit: stays until the user clicks "Proceed to
+        // Inbox" inside the pane or navigates away.
         <ScrollArea className="h-full">
           <InboxSetupPane
             hasSignalSources={hasSignalSources}
@@ -857,7 +857,7 @@ export function InboxSignalsTab() {
           </Flex>
         </Flex>
       ) : (
-        /* ── Full-width warming-up state with skeleton backdrop ──────── */
+        // Full-width warming-up state with skeleton backdrop
         <Box className="relative h-full">
           <Flex direction="column">
             <SignalsToolbar
