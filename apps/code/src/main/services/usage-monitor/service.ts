@@ -111,7 +111,14 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
       this.coalesceTimeoutId = null;
     }
     try {
-      const usage = await this.fetchUsageQuietly();
+      let usage: UsageOutput | null = null;
+      try {
+        usage = await this.llmGateway.fetchUsage();
+      } catch (err) {
+        log.debug("Usage fetch skipped", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       if (usage) {
         const changed = !isSameUsage(this.latestUsage, usage);
         this.latestUsage = usage;
@@ -126,17 +133,6 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
     }
   }
 
-  private async fetchUsageQuietly(): Promise<UsageOutput | null> {
-    try {
-      return await this.llmGateway.fetchUsage();
-    } catch (err) {
-      log.debug("Usage fetch skipped", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    }
-  }
-
   private scheduleBackstop(): void {
     this.backstopTimeoutId = setTimeout(async () => {
       this.backstopTimeoutId = null;
@@ -148,14 +144,15 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
   private processUsage(usage: UsageOutput): void {
     const userId = usage.user_id.toString();
     const product = usage.product;
-    // Plan-key isn't on UsageOutput; the only signal we have client-side is
-    // whether limits are at the Pro tier — but fetchUsage doesn't return that
-    // either. Best-effort: assume Pro if billing_period_end is present
-    // (free users never have it).
-    const isPro = !!usage.billing_period_end;
-
-    this.maybeEmit(usage, "burst", usage.burst, userId, product, isPro);
-    this.maybeEmit(usage, "sustained", usage.sustained, userId, product, isPro);
+    this.maybeEmit(usage, "burst", usage.burst, userId, product, usage.is_pro);
+    this.maybeEmit(
+      usage,
+      "sustained",
+      usage.sustained,
+      userId,
+      product,
+      usage.is_pro,
+    );
   }
 
   private maybeEmit(
@@ -188,9 +185,9 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
       bucket,
       threshold,
       usedPercent: status.used_percent,
-      resetAt: status.reset_at ?? null,
-      resetsInSeconds: status.resets_in_seconds,
+      resetAt: status.reset_at,
       isPro,
+      userIsActive: this.agentService.hasActiveSessions(),
     });
   }
 
@@ -247,14 +244,8 @@ function sustainedFreeAnchor(status: UsageBucket): string | null {
 }
 
 function resetMillis(status: UsageBucket): number | null {
-  if (status.reset_at) {
-    const parsed = Date.parse(status.reset_at);
-    if (!Number.isNaN(parsed)) return parsed;
-  }
-  if (status.resets_in_seconds > 0) {
-    return Date.now() + status.resets_in_seconds * 1000;
-  }
-  return null;
+  const parsed = Date.parse(status.reset_at);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function makeKey(
@@ -280,7 +271,6 @@ function isSameUsage(a: UsageOutput | null, b: UsageOutput): boolean {
 function isSameBucket(a: UsageBucket, b: UsageBucket): boolean {
   return (
     a.used_percent === b.used_percent &&
-    a.resets_in_seconds === b.resets_in_seconds &&
     a.reset_at === b.reset_at &&
     a.exceeded === b.exceeded
   );

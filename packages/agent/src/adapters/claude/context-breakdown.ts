@@ -22,7 +22,7 @@ export type ContextBreakdown = Record<ContextCategory, number>;
 // uses the preset — otherwise it'd show up as Conversation and skew the chart.
 const CLAUDE_PRESET_ESTIMATE_TOKENS = 4000;
 
-const CHARS_PER_TOKEN = 3.5;
+const CHARS_PER_TOKEN = 4;
 
 export function estimateTokens(text: string | undefined | null): number {
   if (!text) return 0;

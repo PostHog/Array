@@ -12,7 +12,7 @@ import {
 } from "@features/auth/hooks/authQueries";
 import { useAuthSession } from "@features/auth/hooks/useAuthSession";
 import { useIsOrgAdmin } from "@features/auth/hooks/useOrgRole";
-import { initializeUsageThresholdToast } from "@features/billing/usageThresholdToast";
+import { registerBillingSubscriptions } from "@features/billing/subscriptions";
 import { AddDirectoryDialog } from "@features/folder-picker/components/AddDirectoryDialog";
 import { OnboardingFlow } from "@features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
@@ -64,10 +64,9 @@ function App() {
     };
   }, []);
 
-  // Initialize usage threshold notifications (50/75/90/100%)
   useEffect(() => {
     if (!isAuthenticated) return;
-    return initializeUsageThresholdToast();
+    return registerBillingSubscriptions();
   }, [isAuthenticated]);
 
   // Initialize update store

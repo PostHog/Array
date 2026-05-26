@@ -80,6 +80,12 @@ function SegmentedBar({
   if (total <= 0) {
     return <div className="h-1.5 w-full rounded-full bg-(--gray-4)" />;
   }
+
+  const segmentSum = CONTEXT_CATEGORIES.reduce(
+    (acc, cat) => acc + Math.max(0, breakdown[cat.key]),
+    0,
+  );
+  const denominator = Math.max(total, segmentSum);
   return (
     <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-(--gray-4)">
       {CONTEXT_CATEGORIES.map((cat) => {
@@ -89,7 +95,7 @@ function SegmentedBar({
           <div
             key={cat.key}
             style={{
-              width: `${(value / total) * 100}%`,
+              width: `${(value / denominator) * 100}%`,
               backgroundColor: cat.color || fallback,
             }}
           />

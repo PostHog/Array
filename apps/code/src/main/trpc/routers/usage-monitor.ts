@@ -23,10 +23,7 @@ function subscribe<K extends keyof UsageMonitorEvents>(event: K) {
 
 export const usageMonitorRouter = router({
   onThresholdCrossed: subscribe(UsageMonitorEvent.ThresholdCrossed),
-  // Stream of full usage snapshots — replaces the renderer's 30s poll.
   onUsageUpdated: subscribe(UsageMonitorEvent.UsageUpdated),
-  // Cached snapshot for the renderer to bootstrap before the first event
-  // arrives. Null until the first poll completes.
   getLatest: publicProcedure
     .output(usageSnapshotOutput)
     .query(() => getService().getLatest()),

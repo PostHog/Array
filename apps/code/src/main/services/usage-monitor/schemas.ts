@@ -14,9 +14,9 @@ export const thresholdCrossedEvent = z.object({
     z.literal(100),
   ]),
   usedPercent: z.number(),
-  resetAt: z.string().datetime().nullable(),
-  resetsInSeconds: z.number(),
+  resetAt: z.string().datetime(),
   isPro: z.boolean(),
+  userIsActive: z.boolean(),
 });
 
 export type ThresholdCrossedEvent = z.infer<typeof thresholdCrossedEvent>;

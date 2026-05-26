@@ -14,15 +14,16 @@ function makeUsage(
     user_id: 1,
     sustained: {
       used_percent: 50,
-      resets_in_seconds: 3600,
+      reset_at: "2026-05-01T13:00:00.000Z",
       exceeded: overrides.sustained ?? false,
     },
     burst: {
       used_percent: 30,
-      resets_in_seconds: 600,
+      reset_at: "2026-05-01T12:10:00.000Z",
       exceeded: overrides.burst ?? false,
     },
     is_rate_limited: overrides.isRateLimited ?? false,
+    is_pro: false,
   };
 }
 
@@ -54,33 +55,45 @@ describe("isUsageExceeded", () => {
 
 describe("formatResetTime", () => {
   const NOW = Date.parse("2026-05-01T12:00:00.000Z");
+  const isoAt = (msFromNow: number) => new Date(NOW + msFromNow).toISOString();
 
-  it("returns minutes-only under 1h", () => {
-    expect(formatResetTime(undefined, 30 * 60, NOW)).toBe("Resets in 30m");
-  });
-
-  it("returns hours + minutes under 24h", () => {
-    expect(formatResetTime(undefined, 4 * 3600 + 30 * 60, NOW)).toBe(
-      "Resets in 4h 30m",
-    );
-  });
-
-  it("returns hours only when minutes round to 0", () => {
-    expect(formatResetTime(undefined, 4 * 3600, NOW)).toBe("Resets in 4h");
-  });
-
-  it("returns localized date when over 24h away", () => {
-    const result = formatResetTime(undefined, 30 * 86400, NOW);
-    expect(result).toMatch(/^Resets [A-Za-z]+ \d+ at /);
-  });
-
-  it("prefers reset_at over the fallback seconds", () => {
-    const iso = new Date(NOW + 4 * 3600 * 1000).toISOString();
-    expect(formatResetTime(iso, 99999, NOW)).toBe("Resets in 4h");
-  });
-
-  it("treats an already-past reset_at as shortly", () => {
-    const iso = new Date(NOW - 60_000).toISOString();
-    expect(formatResetTime(iso, 0, NOW)).toBe("Resets shortly");
+  it.each([
+    {
+      name: "returns minutes-only under 1h",
+      resetAt: isoAt(30 * 60 * 1000),
+      expected: "Resets in 30m" as string | RegExp,
+    },
+    {
+      name: "returns hours + minutes under 24h",
+      resetAt: isoAt((4 * 3600 + 30 * 60) * 1000),
+      expected: "Resets in 4h 30m",
+    },
+    {
+      name: "returns hours only when minutes round to 0",
+      resetAt: isoAt(4 * 3600 * 1000),
+      expected: "Resets in 4h",
+    },
+    {
+      name: "returns localized date when over 24h away",
+      resetAt: isoAt(30 * 86400 * 1000),
+      expected: /^Resets [A-Za-z]+ \d+ at /,
+    },
+    {
+      name: "treats an already-past reset_at as shortly",
+      resetAt: isoAt(-60_000),
+      expected: "Resets shortly",
+    },
+    {
+      name: "treats an unparseable reset_at as shortly",
+      resetAt: "not-a-date",
+      expected: "Resets shortly",
+    },
+  ])("$name", ({ resetAt, expected }) => {
+    const result = formatResetTime(resetAt, NOW);
+    if (expected instanceof RegExp) {
+      expect(result).toMatch(expected);
+    } else {
+      expect(result).toBe(expected);
+    }
   });
 });

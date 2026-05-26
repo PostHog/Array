@@ -203,8 +203,6 @@ export const AgentServiceEvent = {
   SessionsIdle: "sessions-idle",
   SessionIdleKilled: "session-idle-killed",
   AgentFileActivity: "agent-file-activity",
-  // Fires once per completed turn for both adapters. Consumed by
-  // UsageMonitorService to refresh billing usage without polling.
   LlmActivity: "llm-activity",
 } as const;
 

@@ -59,10 +59,7 @@ export interface AnthropicErrorResponse {
 
 export const usageBucketSchema = z.object({
   used_percent: z.number(),
-  resets_in_seconds: z.number(),
-  // Absolute UTC reset timestamp from gateway A1; preferred over the
-  // rolling resets_in_seconds, which drifts between polls.
-  reset_at: z.string().datetime().optional(),
+  reset_at: z.string().datetime(),
   exceeded: z.boolean(),
 });
 
@@ -72,6 +69,7 @@ export const usageOutput = z.object({
   sustained: usageBucketSchema,
   burst: usageBucketSchema,
   is_rate_limited: z.boolean(),
+  is_pro: z.boolean(),
   billing_period_end: z.string().datetime().nullable().optional(),
 });
 

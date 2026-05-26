@@ -15,7 +15,7 @@ export function useUsage({ enabled = true }: { enabled?: boolean } = {}) {
     ...trpc.usageMonitor.getLatest.queryOptions(),
     enabled,
   });
-  const refreshMutation = useMutation(
+  const { mutateAsync: refreshUsage } = useMutation(
     trpc.usageMonitor.refresh.mutationOptions(),
   );
 
@@ -29,12 +29,12 @@ export function useUsage({ enabled = true }: { enabled?: boolean } = {}) {
   );
 
   const refetch = useCallback(async () => {
-    const fresh = await refreshMutation.mutateAsync();
+    const fresh = await refreshUsage();
     if (fresh) {
       queryClient.setQueryData(trpc.usageMonitor.getLatest.queryKey(), fresh);
     }
     return fresh;
-  }, [refreshMutation, queryClient, trpc.usageMonitor.getLatest]);
+  }, [refreshUsage, queryClient, trpc.usageMonitor.getLatest]);
 
   return {
     usage: query.data ?? null,

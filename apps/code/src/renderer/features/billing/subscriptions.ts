@@ -1,36 +1,25 @@
 import { useUsageLimitStore } from "@features/billing/stores/usageLimitStore";
 import { formatResetTime } from "@features/billing/utils";
-import { useSessionStore } from "@features/sessions/stores/sessionStore";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
 
-const log = logger.scope("usage-threshold-toast");
+const log = logger.scope("billing-subscriptions");
 
 const openPlanUsage = () => {
   useSettingsDialogStore.getState().open("plan-usage");
 };
 
-function hasActiveSession(): boolean {
-  const sessions = useSessionStore.getState().sessions;
-  return Object.values(sessions).some(
-    (s) => s.status === "connected" && s.isPromptPending,
-  );
-}
-
-export function initializeUsageThresholdToast() {
+export function registerBillingSubscriptions() {
   const subscription = trpcClient.usageMonitor.onThresholdCrossed.subscribe(
     undefined,
     {
       onData: (event) => {
-        const resetLabel = formatResetTime(
-          event.resetAt ?? undefined,
-          event.resetsInSeconds,
-        );
+        const resetLabel = formatResetTime(event.resetAt);
 
         if (event.threshold === 100) {
-          if (hasActiveSession()) {
+          if (event.userIsActive) {
             useUsageLimitStore.getState().show();
             return;
           }

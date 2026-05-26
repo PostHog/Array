@@ -33,10 +33,7 @@ export function SidebarUsageBar() {
       ? usage.sustained
       : usage.burst;
   const usagePercent = Math.min(Math.round(dominant.used_percent), 100);
-  const resetLabel = formatResetTime(
-    dominant.reset_at,
-    dominant.resets_in_seconds,
-  );
+  const resetLabel = formatResetTime(dominant.reset_at);
 
   return (
     <div className="shrink-0 border-gray-6 border-t px-3 py-3">

@@ -29,10 +29,12 @@ import type { AgentService } from "../agent/service";
 import type { LlmGatewayService } from "../llm-gateway/service";
 import { UsageMonitorService } from "./service";
 
-function makeAgentService() {
-  return new TypedEventEmitter<{
+function makeAgentService(opts?: { hasActiveSessions?: boolean }) {
+  const emitter = new TypedEventEmitter<{
     [AgentServiceEvent.LlmActivity]: undefined;
-  }>() as unknown as AgentService;
+  }>() as unknown as AgentService & { hasActiveSessions: () => boolean };
+  emitter.hasActiveSessions = () => opts?.hasActiveSessions ?? false;
+  return emitter;
 }
 
 function makeUsage(overrides?: {
@@ -41,24 +43,24 @@ function makeUsage(overrides?: {
   billingPeriodEnd?: string | null;
   burstResetAt?: string;
   sustainedResetAt?: string;
+  isPro?: boolean;
 }): UsageOutput {
   return {
     product: "posthog_code",
     user_id: 42,
     is_rate_limited: false,
+    is_pro: overrides?.isPro ?? false,
     billing_period_end:
       overrides?.billingPeriodEnd === undefined
         ? null
         : overrides.billingPeriodEnd,
     burst: {
       used_percent: overrides?.burstPercent ?? 0,
-      resets_in_seconds: 3600,
       reset_at: overrides?.burstResetAt ?? "2026-05-25T16:00:00.000Z",
       exceeded: false,
     },
     sustained: {
       used_percent: overrides?.sustainedPercent ?? 0,
-      resets_in_seconds: 86400,
       reset_at: overrides?.sustainedResetAt ?? "2026-06-01T00:00:00.000Z",
       exceeded: false,
     },
@@ -160,11 +162,12 @@ describe("UsageMonitorService", () => {
     ]);
   });
 
-  it("marks events with isPro when billing_period_end is set", async () => {
+  it("marks events with isPro from the gateway", async () => {
     const events: { isPro: boolean }[] = [];
     const gateway = mockGateway(
       makeUsage({
         sustainedPercent: 60,
+        isPro: true,
         billingPeriodEnd: "2026-06-01T00:00:00.000Z",
       }),
     );
@@ -175,6 +178,21 @@ describe("UsageMonitorService", () => {
 
     await service.fetchOnce();
     expect(events[0]?.isPro).toBe(true);
+  });
+
+  it("marks events with userIsActive from the agent service", async () => {
+    const events: { userIsActive: boolean }[] = [];
+    const gateway = mockGateway(makeUsage({ burstPercent: 78 }));
+    service = new UsageMonitorService(
+      gateway,
+      makeAgentService({ hasActiveSessions: true }),
+    );
+    service.on(UsageMonitorEvent.ThresholdCrossed, (e) =>
+      events.push(e as { userIsActive: boolean }),
+    );
+
+    await service.fetchOnce();
+    expect(events[0]?.userIsActive).toBe(true);
   });
 
   it("silently skips polls when the gateway throws", async () => {

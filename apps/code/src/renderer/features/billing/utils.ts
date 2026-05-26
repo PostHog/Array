@@ -7,13 +7,11 @@ export function isUsageExceeded(usage: UsageOutput): boolean {
 }
 
 export function formatResetTime(
-  resetAtIso: string | undefined,
-  fallbackSeconds: number,
+  resetAtIso: string,
   now: number = Date.now(),
 ): string {
-  const ms = resetAtIso
-    ? Math.max(0, Date.parse(resetAtIso) - now)
-    : Math.max(0, fallbackSeconds * 1000);
+  const parsed = Date.parse(resetAtIso);
+  const ms = Number.isNaN(parsed) ? 0 : Math.max(0, parsed - now);
 
   const totalMinutes = Math.ceil(ms / 60_000);
   if (totalMinutes <= 0) return "Resets shortly";

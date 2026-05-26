@@ -18,8 +18,8 @@ describe("estimateTokens", () => {
   });
 
   it("scales roughly with input length", () => {
-    expect(estimateTokens("a".repeat(35))).toBe(10);
-    expect(estimateTokens("a".repeat(350))).toBe(100);
+    expect(estimateTokens("a".repeat(40))).toBe(10);
+    expect(estimateTokens("a".repeat(400))).toBe(100);
   });
 });
 
@@ -43,14 +43,14 @@ describe("estimateSystemPrompt", () => {
   });
 
   it("adds the append portion on top of the preset", () => {
-    const append = "a".repeat(350);
+    const append = "a".repeat(400);
     const result = estimateSystemPrompt({ type: "preset", append });
     const presetOnly = estimateSystemPrompt({ type: "preset" });
     expect(result - presetOnly).toBe(100);
   });
 
   it("counts a raw string verbatim with no preset overhead", () => {
-    expect(estimateSystemPrompt("a".repeat(350))).toBe(100);
+    expect(estimateSystemPrompt("a".repeat(400))).toBe(100);
   });
 
   it("treats undefined as the bare preset", () => {
@@ -99,7 +99,7 @@ describe("estimateRulesTokens", () => {
   });
 
   it("counts the rules content", () => {
-    expect(estimateRulesTokens("a".repeat(350))).toBe(100);
+    expect(estimateRulesTokens("a".repeat(400))).toBe(100);
   });
 });
 
