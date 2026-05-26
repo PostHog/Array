@@ -181,9 +181,14 @@ describe("isRasterImageFile", () => {
   it.each([
     ["foo.png"],
     ["foo.jpg"],
+    ["foo.jpeg"],
+    ["foo.JPEG"],
     ["foo.gif"],
     ["foo.webp"],
     ["foo.bmp"],
+    ["foo.ico"],
+    ["foo.tiff"],
+    ["foo.tif"],
     ["foo.avif"],
   ])("returns true for raster %s", (filename) => {
     expect(isRasterImageFile(filename)).toBe(true);
@@ -199,6 +204,10 @@ describe("isRasterImageFile", () => {
   it("returns false for non-images", () => {
     expect(isRasterImageFile("foo.txt")).toBe(false);
     expect(isRasterImageFile("foo")).toBe(false);
+  });
+
+  it("returns false for dotfiles with no real extension", () => {
+    expect(isRasterImageFile(".gitignore")).toBe(false);
   });
 });
 

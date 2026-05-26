@@ -1,4 +1,4 @@
-import { IMAGE_MIME_TYPES } from "./image";
+import { extensionOf, IMAGE_MIME_TYPES } from "./image";
 
 export const AUDIO_VIDEO_EXTENSIONS: ReadonlySet<string> = new Set([
   "mp3",
@@ -55,10 +55,6 @@ export const BINARY_EXTENSIONS: ReadonlySet<string> = new Set([
   ...FONT_EXTENSIONS,
   ...DOCUMENT_BINARY_EXTENSIONS,
 ]);
-
-function extensionOf(filename: string): string {
-  return filename.split(".").pop()?.toLowerCase() ?? "";
-}
 
 export function isBinaryFile(filename: string): boolean {
   const ext = extensionOf(filename);

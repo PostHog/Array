@@ -71,8 +71,9 @@ export interface ParsedImageDataUrl {
   base64: string;
 }
 
-function extensionOf(filename: string): string {
-  return filename.split(".").pop()?.toLowerCase() ?? "";
+export function extensionOf(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  return dot > 0 ? filename.slice(dot + 1).toLowerCase() : "";
 }
 
 export function isImageFile(filename: string): boolean {

@@ -1,5 +1,5 @@
 import { File, X } from "@phosphor-icons/react";
-import { isGifFile, isImageFile } from "@posthog/shared";
+import { isGifFile, isRasterImageFile } from "@posthog/shared";
 import { Dialog, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc/client";
 import { useQuery } from "@tanstack/react-query";
@@ -151,7 +151,7 @@ export function AttachmentsBar({ attachments, onRemove }: AttachmentsBarProps) {
   return (
     <Flex gap="1" align="center" className="flex-wrap pb-1.5">
       {attachments.map((att) =>
-        isImageFile(att.label) ? (
+        isRasterImageFile(att.label) ? (
           <ImageThumbnail
             key={att.id}
             attachment={att}

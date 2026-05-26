@@ -3,16 +3,12 @@ import { xmlToContent } from "@features/message-editor/utils/content";
 import { isBinaryFile } from "@posthog/shared";
 import { trpcClient } from "@renderer/trpc";
 import { logger } from "@utils/logger";
+import { getFileName } from "@utils/path";
 
 const log = logger.scope("title-generator");
 
 const ATTACHED_FILES_REGEX = /^\[?Attached files:.*]?$/gm;
 const PASTED_TEXT_SNIPPET_LIMIT = 500;
-
-function getFileName(filePath: string): string {
-  const slash = filePath.lastIndexOf("/");
-  return slash >= 0 ? filePath.slice(slash + 1) : filePath;
-}
 
 export async function enrichDescriptionWithFileContent(
   description: string,

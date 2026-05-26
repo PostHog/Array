@@ -7,6 +7,8 @@ import { type ClaudeImageMimeType, isImageFile } from "@posthog/shared";
 
 const PDF_EXTENSIONS = new Set(["pdf"]);
 
+// Video-only on purpose: audio formats get the default "large text" hint.
+// Do not replace with AUDIO_VIDEO_EXTENSIONS from @posthog/shared.
 const VIDEO_EXTENSIONS = new Set([
   "mp4",
   "mov",

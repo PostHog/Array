@@ -1,4 +1,4 @@
-import { getImageMimeType, isImageFile } from "@posthog/shared";
+import { getImageMimeType, isRasterImageFile } from "@posthog/shared";
 import { trpcClient } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
 import { getFilePath } from "@utils/getFilePath";
@@ -74,7 +74,7 @@ export async function resolveDroppedFile(
   const filePath = getFilePath(file);
   if (!filePath) return null;
 
-  if (isImageFile(file.name)) {
+  if (isRasterImageFile(file.name)) {
     try {
       return await persistImageFilePath(filePath);
     } catch {

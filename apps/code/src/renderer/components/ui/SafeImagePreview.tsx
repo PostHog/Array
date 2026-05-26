@@ -12,6 +12,7 @@ interface SafeImagePreviewProps {
   mimeType: string;
   alt?: string;
   className?: string;
+  style?: React.CSSProperties;
   /** Rendered when the image fails to decode or has a disallowed mime type. */
   fallback?: React.ReactNode;
 }
@@ -33,6 +34,7 @@ export function SafeImagePreview({
   mimeType,
   alt,
   className,
+  style,
   fallback,
 }: SafeImagePreviewProps) {
   const [hasError, setHasError] = useState(false);
@@ -57,6 +59,7 @@ export function SafeImagePreview({
       src={buildImageDataUrl(mimeType, base64)}
       alt={alt ?? "image preview"}
       className={className ?? "max-h-full max-w-full object-contain"}
+      style={style}
       onError={() => setHasError(true)}
     />
   );

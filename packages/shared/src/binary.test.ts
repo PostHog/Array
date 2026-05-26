@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { BINARY_EXTENSIONS, isBinaryFile } from "./binary";
+import {
+  ARCHIVE_EXTENSIONS,
+  AUDIO_VIDEO_EXTENSIONS,
+  BINARY_EXTENSIONS,
+  DOCUMENT_BINARY_EXTENSIONS,
+  EXECUTABLE_EXTENSIONS,
+  FONT_EXTENSIONS,
+  isBinaryFile,
+} from "./binary";
+import { IMAGE_MIME_TYPES } from "./image";
 
 describe("isBinaryFile", () => {
   it.each([
@@ -10,20 +19,34 @@ describe("isBinaryFile", () => {
     ["foo.tiff"],
     ["foo.avif"],
     ["foo.heic"],
+    ["foo.heif"],
     ["foo.svg"],
     ["foo.mp3"],
     ["foo.mp4"],
     ["foo.mov"],
+    ["foo.flac"],
+    ["foo.ogg"],
+    ["foo.m4a"],
+    ["foo.aac"],
+    ["foo.mpg"],
+    ["foo.mpeg"],
     ["foo.pdf"],
     ["foo.zip"],
     ["foo.tar.gz"],
+    ["foo.tgz"],
+    ["foo.bz2"],
+    ["foo.xz"],
     ["foo.7z"],
     ["foo.exe"],
     ["foo.dll"],
     ["foo.dylib"],
     ["foo.wasm"],
+    ["foo.bin"],
+    ["foo.o"],
     ["foo.ttf"],
+    ["foo.otf"],
     ["foo.woff2"],
+    ["foo.eot"],
   ])("returns true for %s", (filename) => {
     expect(isBinaryFile(filename)).toBe(true);
   });
@@ -36,25 +59,19 @@ describe("isBinaryFile", () => {
     ["foo"],
     [""],
     ["README"],
+    [".gitignore"],
   ])("returns false for %s", (filename) => {
     expect(isBinaryFile(filename)).toBe(false);
   });
 
-  it("includes every canonical image extension", () => {
+  it("includes every extension from the source-of-truth sets", () => {
     for (const ext of [
-      "png",
-      "jpg",
-      "jpeg",
-      "gif",
-      "webp",
-      "bmp",
-      "ico",
-      "tiff",
-      "tif",
-      "svg",
-      "heic",
-      "heif",
-      "avif",
+      ...Object.keys(IMAGE_MIME_TYPES),
+      ...AUDIO_VIDEO_EXTENSIONS,
+      ...ARCHIVE_EXTENSIONS,
+      ...EXECUTABLE_EXTENSIONS,
+      ...FONT_EXTENSIONS,
+      ...DOCUMENT_BINARY_EXTENSIONS,
     ]) {
       expect(BINARY_EXTENSIONS.has(ext)).toBe(true);
     }

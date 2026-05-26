@@ -3,7 +3,7 @@ import {
   CLOUD_PROMPT_PREFIX,
   getImageMimeType,
   isClaudeImageFile,
-  isImageFile,
+  isRasterImageFile,
   serializeCloudPrompt,
 } from "@posthog/shared";
 import { trpcClient } from "@renderer/trpc/client";
@@ -182,7 +182,7 @@ async function buildAttachmentBlock(filePath: string): Promise<ContentBlock> {
     };
   }
 
-  if (isImageFile(fileName)) {
+  if (isRasterImageFile(fileName)) {
     throw new Error(
       `Cloud image attachments currently support PNG, JPG, GIF, and WebP. Unsupported image: ${fileName}`,
     );
