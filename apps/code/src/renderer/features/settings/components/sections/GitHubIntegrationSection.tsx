@@ -10,7 +10,8 @@ import {
   GitBranchIcon,
   InfoIcon,
 } from "@phosphor-icons/react";
-import { Box, Button, Flex, Spinner, Text, Tooltip } from "@radix-ui/themes";
+import { Button } from "@posthog/quill";
+import { Box, Flex, Spinner, Text, Tooltip } from "@radix-ui/themes";
 import { useMemo } from "react";
 
 /**
@@ -131,23 +132,29 @@ export function GitHubIntegrationSection({
       </Flex>
       {connecting ? (
         <Spinner size="2" />
-      ) : hasGithubIntegration ? (
+      ) : (
         <Flex align="center" gap="2">
-          <CheckCircleIcon
-            size={16}
-            weight="fill"
-            className="text-(--green-9)"
-          />
-          <Button size="1" variant="soft" onClick={() => void handleConnect()}>
-            Update in GitHub
+          {hasGithubIntegration ? (
+            <CheckCircleIcon
+              size={16}
+              weight="fill"
+              className="text-(--green-9)"
+            />
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void handleConnect()}
+          >
+            {hasGithubIntegration
+              ? "Update in GitHub"
+              : hasConnectError || timedOut
+                ? "Try again"
+                : "Connect GitHub"}
             <ArrowSquareOutIcon size={12} />
           </Button>
         </Flex>
-      ) : (
-        <Button size="1" onClick={() => void handleConnect()}>
-          {hasConnectError || timedOut ? "Try again" : "Connect GitHub"}
-          <ArrowSquareOutIcon size={12} />
-        </Button>
       )}
     </Flex>
   );
