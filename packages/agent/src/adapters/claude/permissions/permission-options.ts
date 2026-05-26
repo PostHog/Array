@@ -86,7 +86,6 @@ export function buildPermissionOptions(
   }
 
   if (
-    toolName === "TodoWrite" ||
     toolName === "TaskCreate" ||
     toolName === "TaskUpdate" ||
     toolName === "TaskGet" ||

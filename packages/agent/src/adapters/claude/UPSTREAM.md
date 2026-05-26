@@ -76,8 +76,10 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
   Map insertion order (preserves upstream ordering semantics).
 - **MCP_CONNECTION_NONBLOCKING=0** (SDK 0.3.142): SDK changed MCP servers to background-connect by default;
   set env to restore blocking-connect behavior so MCP tools are available on first prompt.
-- **ACP SDK 0.22 breaking changes**: Renamed `unstable_resumeSession` -> `resumeSession`; new "acp" entry in
-  `McpServerConfig` union (filtered out in `session/mcp-config.ts`).
+- **ACP SDK 0.22 breaking changes**: Renamed `unstable_resumeSession` -> `resumeSession`; new
+  `McpSdkServerConfig` variant (`type: "sdk"`) in the `McpServerConfig` union. Our
+  `parseMcpServers` only accepts `http`/`sse`/stdio entries, so `sdk` falls through and is
+  implicitly dropped (no explicit filter needed).
 - **Skills option** (SDK 0.2.133): `'Skill'` in `allowedTools` deprecated; replaced with `skills` option.
 - **Memory recall tool calls** (#703, a0bfb98): Emit a `tool_call` for SDK `memory_recall` events so the
   UI shows what memories were surfaced; addresses phantom MEMORY.md read attempts.
@@ -118,7 +120,7 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 
 ## Next Sync
 
-1. Check upstream changelog since v0.30.0
+1. Check upstream changelog since v0.37.0
 2. Diff upstream source against PostHog Code using the file mapping above
 3. Port in phases: bug fixes first, then features
 4. After each phase: `pnpm --filter agent typecheck && pnpm --filter agent build && pnpm lint`

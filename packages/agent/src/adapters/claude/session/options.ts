@@ -62,6 +62,9 @@ export interface BuildOptionsParams {
   cloudMode?: boolean;
   /** Per-session task state populated by createTaskHook from SDK Task* events. */
   taskState: TaskState;
+  /** Called after createTaskHook mutates taskState so callers can emit a plan
+   * sessionUpdate to the client. */
+  onTaskStateChange?: () => Promise<void>;
 }
 
 export function buildSystemPrompt(
@@ -143,6 +146,7 @@ function buildHooks(
   registeredAgents: ReadonlySet<string>,
   cloudMode: boolean,
   taskState: TaskState,
+  onTaskStateChange: (() => Promise<void>) | undefined,
 ): Options["hooks"] {
   const postToolUseHooks = [createPostToolUseHook({ onModeChange })];
   if (enrichmentDeps && enrichedReadCache) {
@@ -159,7 +163,7 @@ function buildHooks(
     preToolUseHooks.push(createSignedCommitGuardHook(logger));
   }
 
-  const taskHook = createTaskHook(taskState);
+  const taskHook = createTaskHook(taskState, onTaskStateChange);
 
   return {
     ...userHooks,
@@ -375,6 +379,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       registeredAgentNames,
       params.cloudMode ?? false,
       params.taskState,
+      params.onTaskStateChange,
     ),
     outputFormat: params.outputFormat,
     abortController: getAbortController(

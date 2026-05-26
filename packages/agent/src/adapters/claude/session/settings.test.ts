@@ -207,3 +207,82 @@ describe("resolveMainRepoPath", () => {
     }
   });
 });
+
+describe("availableModels merge", () => {
+  let tmpRoot: string;
+  let cwd: string;
+  let configDir: string;
+  let originalConfigDir: string | undefined;
+
+  beforeEach(async () => {
+    tmpRoot = await fs.promises.realpath(
+      await fs.promises.mkdtemp(path.join(os.tmpdir(), "available-models-")),
+    );
+    cwd = path.join(tmpRoot, "repo");
+    configDir = path.join(tmpRoot, "user");
+    await fs.promises.mkdir(cwd, { recursive: true });
+    await fs.promises.mkdir(configDir, { recursive: true });
+    runGit(cwd, ["init", "-b", "main"]);
+    runGit(cwd, ["config", "user.email", "test@example.com"]);
+    runGit(cwd, ["config", "user.name", "test"]);
+    runGit(cwd, ["commit", "--allow-empty", "-m", "init"]);
+
+    originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = configDir;
+  });
+
+  afterEach(async () => {
+    if (originalConfigDir === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR;
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = originalConfigDir;
+    }
+    await fs.promises.rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  async function writeUserSettings(settings: object): Promise<void> {
+    await fs.promises.writeFile(
+      path.join(configDir, "settings.json"),
+      JSON.stringify(settings),
+    );
+  }
+
+  async function writeProjectSettings(settings: object): Promise<void> {
+    const projectDir = path.join(cwd, ".claude");
+    await fs.promises.mkdir(projectDir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(projectDir, "settings.json"),
+      JSON.stringify(settings),
+    );
+  }
+
+  it("merges and dedupes availableModels across user and project layers", async () => {
+    await writeUserSettings({ availableModels: ["model-a", "model-b"] });
+    await writeProjectSettings({ availableModels: ["model-b", "model-c"] });
+
+    const manager = new SettingsManager(cwd);
+    await manager.initialize();
+
+    expect(manager.getSettings().availableModels).toEqual([
+      "model-a",
+      "model-b",
+      "model-c",
+    ]);
+  });
+
+  it("passes through a single layer unchanged", async () => {
+    await writeProjectSettings({ availableModels: ["only-one"] });
+
+    const manager = new SettingsManager(cwd);
+    await manager.initialize();
+
+    expect(manager.getSettings().availableModels).toEqual(["only-one"]);
+  });
+
+  it("leaves availableModels undefined when no layer defines it", async () => {
+    const manager = new SettingsManager(cwd);
+    await manager.initialize();
+
+    expect(manager.getSettings().availableModels).toBeUndefined();
+  });
+});

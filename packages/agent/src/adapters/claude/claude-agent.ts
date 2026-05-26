@@ -84,7 +84,10 @@ import {
   handleSystemMessage,
   handleUserAssistantMessage,
 } from "./conversion/sdk-to-acp";
-import type { TaskState } from "./conversion/task-state";
+import {
+  type TaskState,
+  taskStateToPlanEntries,
+} from "./conversion/task-state";
 import type { EnrichedReadCache } from "./hooks";
 import { createLocalToolsMcpServer } from "./mcp/local-tools";
 import {
@@ -205,11 +208,10 @@ function applyAvailableModelsAllowlist(
     if (match) {
       filtered.push(match);
     } else {
-      filtered.push({
-        value: trimmed,
-        name: trimmed,
-        description: "Custom model",
-      });
+      // Allowlist entry isn't in the gateway list (custom or preview model).
+      // Pass it through so setModel can still try it — the UI just shows the
+      // raw ID rather than a friendly name.
+      filtered.push({ value: trimmed, name: trimmed });
     }
     seen.add(trimmed);
   }
@@ -479,6 +481,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     this.session.promptRunning = true;
     let handedOff = false;
+    let errored = false;
     let lastAssistantTotalUsage: number | null = null;
     let lastStreamUsage = {
       input_tokens: 0,
@@ -898,6 +901,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
       throw new Error("Session did not end in result");
     } catch (error) {
+      errored = true;
       // A failed turn typically leaves a trailing `session_state_changed: idle`
       // (and possibly more) in the query iterator. If we don't drain it here,
       // the next prompt's first `query.next()` consumes that stale idle and
@@ -958,10 +962,25 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.toolUseStreamCache.clear();
       if (!handedOff) {
         this.session.promptRunning = false;
-        // Resolve all remaining pending prompts so no callers get stuck.
-        for (const [key, pending] of this.session.pendingMessages) {
-          pending.resolve(true);
-          this.session.pendingMessages.delete(key);
+        if (errored) {
+          // The query stream was just drained — handing pending prompts off
+          // onto it would let them race with the recovery. Cancel them so
+          // each waiting prompt() returns stopReason "cancelled" and the
+          // client can decide whether to retry.
+          for (const pending of this.session.pendingMessages.values()) {
+            pending.resolve(true);
+          }
+          this.session.pendingMessages.clear();
+        } else if (this.session.pendingMessages.size > 0) {
+          // Clean exit with queued prompts: hand off the lowest-order one
+          // so it can proceed. The rest stay queued for their own turn.
+          const next = [...this.session.pendingMessages.entries()].sort(
+            (a, b) => a[1].order - b[1].order,
+          )[0];
+          if (next) {
+            next[1].resolve(false);
+            this.session.pendingMessages.delete(next[0]);
+          }
         }
       }
     }
@@ -1371,6 +1390,15 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       enrichedReadCache: this.enrichedReadCache,
       cloudMode: cloudRun,
       taskState,
+      onTaskStateChange: async () => {
+        await this.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "plan",
+            entries: taskStateToPlanEntries(taskState),
+          },
+        });
+      },
     });
 
     // Use the same abort controller that buildSessionOptions gave to the query

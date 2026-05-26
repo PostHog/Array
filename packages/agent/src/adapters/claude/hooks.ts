@@ -140,7 +140,7 @@ export const registerHookCallback = (
  * old TodoWrite suppress-tool-call + emit-plan flow.
  */
 export const createTaskHook =
-  (taskState: TaskState): HookCallback =>
+  (taskState: TaskState, onChange?: () => Promise<void>): HookCallback =>
   async (input: HookInput): Promise<{ continue: boolean }> => {
     const taskId =
       "task_id" in input && typeof input.task_id === "string"
@@ -148,21 +148,27 @@ export const createTaskHook =
         : undefined;
     if (!taskId) return { continue: true };
 
+    let mutated = false;
     if (input.hook_event_name === "TaskCreated") {
       if (!input.task_subject) return { continue: true };
+      // Guard against the SDK firing TaskCreated twice for the same id —
+      // re-entry would clobber any TaskUpdate that landed in between.
       if (taskState.has(taskId)) return { continue: true };
       taskState.set(taskId, {
         subject: input.task_subject,
         status: "pending",
         description: input.task_description,
       });
+      mutated = true;
     } else if (input.hook_event_name === "TaskCompleted") {
       const existing = taskState.get(taskId);
       if (!existing || existing.status === "completed") {
         return { continue: true };
       }
       taskState.set(taskId, { ...existing, status: "completed" });
+      mutated = true;
     }
+    if (mutated && onChange) await onChange();
     return { continue: true };
   };
 
@@ -194,10 +200,8 @@ export const createPostToolUseHook =
             input.tool_input,
             input.tool_response,
           );
-          delete toolUseCallbacks[toolUseID];
-        } else {
-          delete toolUseCallbacks[toolUseID];
         }
+        delete toolUseCallbacks[toolUseID];
       }
     }
     return { continue: true };

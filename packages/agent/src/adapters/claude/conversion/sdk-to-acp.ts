@@ -12,6 +12,10 @@ import type {
   SDKResultMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  TaskCreateInput,
+  TaskUpdateInput,
+} from "@anthropic-ai/claude-agent-sdk/sdk-tools.js";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import type {
   BetaContentBlock,
@@ -38,8 +42,6 @@ import {
   taskStateToPlanEntries,
 } from "./task-state";
 import {
-  type ClaudePlanEntry,
-  planEntries,
   toolInfoFromToolUse,
   toolUpdateFromEditToolResponse,
   toolUpdateFromToolResult,
@@ -176,17 +178,6 @@ function handleToolUseChunk(
 ): SessionUpdate | null {
   const alreadyCached = chunk.id in ctx.toolUseCache;
   ctx.toolUseCache[chunk.id] = chunk;
-
-  if (chunk.name === "TodoWrite") {
-    const input = chunk.input as { todos?: unknown[] };
-    if (Array.isArray(input.todos)) {
-      return {
-        sessionUpdate: "plan",
-        entries: planEntries(chunk.input as { todos: ClaudePlanEntry[] }),
-      };
-    }
-    return null;
-  }
 
   // Suppress Task* tool_calls — plan updates are emitted from the matching
   // tool_result handler instead, after taskState has been mutated.
@@ -354,10 +345,6 @@ function handleToolResultChunk(
     return [];
   }
 
-  if (toolUse.name === "TodoWrite") {
-    return [];
-  }
-
   if (
     toolUse.name === "TaskCreate" ||
     toolUse.name === "TaskUpdate" ||
@@ -368,13 +355,13 @@ function handleToolResultChunk(
     if (toolUse.name === "TaskCreate") {
       applyTaskCreate(
         ctx.taskState,
-        toolUse.input as Parameters<typeof applyTaskCreate>[1],
+        toolUse.input as TaskCreateInput | undefined,
         parseTaskCreateOutput(chunk.content),
       );
     } else if (toolUse.name === "TaskUpdate") {
       applyTaskUpdate(
         ctx.taskState,
-        toolUse.input as Parameters<typeof applyTaskUpdate>[1],
+        toolUse.input as TaskUpdateInput | undefined,
       );
     }
     if (toolUse.name === "TaskCreate" || toolUse.name === "TaskUpdate") {

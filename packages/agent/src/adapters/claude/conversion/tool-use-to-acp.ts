@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
-  PlanEntry,
   ToolCall,
   ToolCallContent,
   ToolCallLocation,
@@ -370,15 +369,6 @@ export function toolInfoFromToolUse(
         content: [],
       };
     }
-
-    case "TodoWrite":
-      return {
-        title: Array.isArray(input?.todos)
-          ? `Update TODOs: ${input.todos.map((todo: { content?: string }) => todo.content).join(", ")}`
-          : "Update TODOs",
-        kind: "think",
-        content: [],
-      };
 
     case "TaskCreate": {
       const subject =
@@ -807,20 +797,6 @@ function toAcpContentUpdate(
     }
   }
   return {};
-}
-
-export type ClaudePlanEntry = {
-  content: string;
-  status: "pending" | "in_progress" | "completed";
-  activeForm: string;
-};
-
-export function planEntries(input: { todos: ClaudePlanEntry[] }): PlanEntry[] {
-  return input.todos.map((input) => ({
-    content: input.content,
-    status: input.status,
-    priority: "medium",
-  }));
 }
 
 /**
