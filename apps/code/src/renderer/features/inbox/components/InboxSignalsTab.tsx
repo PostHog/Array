@@ -42,8 +42,7 @@ import {
   useIntegrations,
   useRepositoryIntegration,
 } from "@hooks/useIntegrations";
-import { ArrowRightIcon } from "@phosphor-icons/react";
-import { Box, Button, Flex, ScrollArea } from "@radix-ui/themes";
+import { Box, Flex, ScrollArea } from "@radix-ui/themes";
 import { isDismissalReasonSnooze } from "@shared/dismissalReasons";
 import type { SignalReport, SignalReportsQueryParams } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
@@ -706,22 +705,13 @@ export function InboxSignalsTab() {
            The toolbar (report counter, search, bulk actions) is suppressed
            entirely — none of it is meaningful before any source is configured.
            Sticky within the visit: stays until the user clicks "Proceed to
-           Inbox" or navigates away. */
-        <Box className="relative h-full">
-          <ScrollArea className="h-full">
-            <InboxSetupPane />
-          </ScrollArea>
-          <Box className="absolute right-4 bottom-4">
-            <Button
-              size="2"
-              variant="soft"
-              onClick={() => setUserExitedOnboarding(true)}
-            >
-              Proceed to Inbox
-              <ArrowRightIcon size={14} />
-            </Button>
-          </Box>
-        </Box>
+           Inbox" inside the pane or navigates away. */
+        <ScrollArea className="h-full">
+          <InboxSetupPane
+            hasSignalSources={hasSignalSources}
+            onProceedToInbox={() => setUserExitedOnboarding(true)}
+          />
+        </ScrollArea>
       ) : showTwoPaneLayout ? (
         <Flex ref={containerRef} height="100%" className="min-h-0">
           {/* ── Left pane: report list ───────────────────────────────── */}
