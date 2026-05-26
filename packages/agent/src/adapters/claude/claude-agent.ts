@@ -127,9 +127,8 @@ const SESSION_VALIDATION_TIMEOUT_MS = 30_000;
 const MAX_TITLE_LENGTH = 256;
 const LOCAL_ONLY_COMMANDS = new Set(["/context", "/heapdump", "/extra-usage"]);
 
-/** Read CLAUDE.md from the project root so the context breakdown can size the
- *  Rules category. Best-effort: silent on a missing file, logs otherwise so
- *  permission errors aren't lost. */
+// Best-effort: silent on ENOENT, logs other errors so permission failures
+// aren't masked.
 function readClaudeMdQuietly(cwd: string, logger: Logger): string | undefined {
   try {
     return fs.readFileSync(path.join(cwd, "CLAUDE.md"), "utf-8");
@@ -582,12 +581,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               });
             }
 
-            // Use the latest outermost-model snapshot, not `message.usage`.
-            // The SDK's result usage is cumulative across every round of the
-            // agentic loop (each tool-use iteration re-counts the prompt), so
-            // it overstates the resident context several-fold. `lastStreamUsage`
-            // tracks the most recent `message_start`/`message_delta` for the
-            // outermost model, which is what's actually sitting in the window.
+            // `result.usage` is cumulative across the agentic loop; the
+            // outermost-model stream snapshot is what's actually resident.
             const breakdownInputTokens =
               lastStreamUsage.input_tokens +
               lastStreamUsage.cache_read_input_tokens +

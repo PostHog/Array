@@ -1,10 +1,5 @@
-/**
- * Per-source context-window token breakdown for the renderer's
- * `ContextBreakdownPopover`. Anthropic doesn't break down `input_tokens` by
- * source, so we tokenize the pieces we control client-side using a cheap
- * character-ratio estimator (~3.5 chars/token). Numbers are indicative, not
- * invoice-grade — used only for relative-share UX.
- */
+// Anthropic doesn't break `input_tokens` down by source; we estimate the bits
+// we control via a chars-per-token heuristic. Indicative, not invoice-grade.
 
 export type ContextCategory =
   | "systemPrompt"
@@ -17,9 +12,8 @@ export type ContextCategory =
 
 export type ContextBreakdown = Record<ContextCategory, number>;
 
-// Rough estimate of Claude's bundled `claude_code` preset system prompt. The
-// preset content is opaque to us so we add this constant when the systemPrompt
-// uses the preset — otherwise it'd show up as Conversation and skew the chart.
+// The `claude_code` preset prompt is opaque to us; without this constant its
+// tokens would bleed into the Conversation bucket and skew the chart.
 const CLAUDE_PRESET_ESTIMATE_TOKENS = 4000;
 
 const CHARS_PER_TOKEN = 4;
@@ -43,7 +37,6 @@ interface SlashCommandLike {
   input?: { hint?: string } | null;
 }
 
-/** Tokens for the slash-command list the SDK injects into the system prompt. */
 export function estimateSkillsTokens(commands: SlashCommandLike[]): number {
   if (!commands.length) return 0;
   return estimateJsonTokens(
@@ -60,9 +53,8 @@ interface McpToolLike {
   description?: string;
 }
 
-/** Tokens for the connected MCP tools' name + description. The SDK doesn't
- *  inject their full input schemas into the prompt by default (it relies on
- *  tool search), so this is a conservative estimate of what's resident. */
+// The SDK relies on tool search rather than inlining full MCP schemas in the
+// prompt, so name + description is a conservative estimate of what's resident.
 export function estimateMcpTokens(tools: McpToolLike[]): number {
   if (!tools.length) return 0;
   return estimateJsonTokens(
@@ -70,7 +62,6 @@ export function estimateMcpTokens(tools: McpToolLike[]): number {
   );
 }
 
-/** Tokens for the rules content appended to the system prompt (CLAUDE.md). */
 export function estimateRulesTokens(rules: string | undefined): number {
   return estimateTokens(rules);
 }
@@ -95,10 +86,6 @@ export function emptyBaseline(): ContextBreakdownBaseline {
   };
 }
 
-/**
- * Estimate tokens for whatever shape `Options["systemPrompt"]` ended up being:
- * a raw string, a `{ type: "preset", append }` object, or undefined.
- */
 export function estimateSystemPrompt(systemPrompt: unknown): number {
   if (!systemPrompt) return CLAUDE_PRESET_ESTIMATE_TOKENS;
   if (typeof systemPrompt === "string") return estimateTokens(systemPrompt);
@@ -114,11 +101,8 @@ export function estimateSystemPrompt(systemPrompt: unknown): number {
   return 0;
 }
 
-/**
- * Derive the per-source breakdown from a stable baseline + the current turn's
- * input-token total. The conversation bucket is whatever is left after the
- * stable pieces are subtracted; it's floored at 0 to absorb estimation drift.
- */
+// Conversation is floored at 0 so estimation drift in the stable categories
+// can't surface a negative bucket.
 export function buildBreakdown(
   baseline: ContextBreakdownBaseline,
   currentInputTokens: number,

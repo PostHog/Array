@@ -1,8 +1,3 @@
-/**
- * Session state tracking for Codex proxy agent.
- * Tracks usage accumulation, model/mode state, and config options.
- */
-
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import type { PermissionMode } from "../../execution-mode";
 import type { ContextBreakdownBaseline } from "../claude/context-breakdown";
@@ -58,16 +53,9 @@ export function createSessionState(
   };
 }
 
-/**
- * Reset an existing session-state object in place. Used when codex-agent
- * needs to recycle the same object reference across session lifecycle calls
- * (newSession/loadSession/resumeSession/forkSession) — the codex-client
- * closure-captures the original reference in createCodexClient(), so
- * reassigning `agent.sessionState` would orphan it and silently break
- * contextUsed/contextSize/accumulatedUsage propagation. Resets all fields
- * createSessionState() would set; callers reassign optional extras
- * (configOptions, contextBreakdownBaseline) right after.
- */
+// codex-client closure-captures the original sessionState reference, so we
+// must mutate in place across newSession/loadSession/resumeSession/forkSession
+// — reassigning would orphan it and silently break usage propagation.
 export function resetSessionState(
   state: CodexSessionState,
   sessionId: string,

@@ -135,7 +135,6 @@ describe("UsageMonitorService", () => {
     expect(events).toHaveLength(1);
     service.stop();
 
-    // Simulate relaunch
     service = new UsageMonitorService(gateway, makeAgentService());
     service.on(UsageMonitorEvent.ThresholdCrossed, (e) => events.push(e));
     await service.fetchOnce();
@@ -224,11 +223,9 @@ describe("UsageMonitorService", () => {
     expect(updates).toHaveLength(1);
     expect(service.getLatest()?.burst.used_percent).toBe(20);
 
-    // Identical snapshot — no re-emit.
     await service.fetchOnce();
     expect(updates).toHaveLength(1);
 
-    // Genuine change — re-emits.
     await service.fetchOnce();
     expect(updates).toHaveLength(2);
     expect(updates[1].burst.used_percent).toBe(35);
@@ -261,24 +258,19 @@ describe("UsageMonitorService", () => {
     const agent = makeAgentService();
     service = new UsageMonitorService(gateway, agent);
     service.init();
-    // Drain bootstrap (a microtask, not a timer).
     await vi.advanceTimersByTimeAsync(0);
     expect(gateway.fetchUsage).toHaveBeenCalledTimes(1);
 
-    // Burst of 4 parallel agents finishing within the coalesce window.
     agent.emit(AgentServiceEvent.LlmActivity, undefined);
     agent.emit(AgentServiceEvent.LlmActivity, undefined);
     agent.emit(AgentServiceEvent.LlmActivity, undefined);
     agent.emit(AgentServiceEvent.LlmActivity, undefined);
-    // Nothing fires immediately — the coalesce window holds.
     await vi.advanceTimersByTimeAsync(0);
     expect(gateway.fetchUsage).toHaveBeenCalledTimes(1);
 
-    // Advance past the coalesce window — exactly one trailing fetch fires.
     await vi.advanceTimersByTimeAsync(5_000);
     expect(gateway.fetchUsage).toHaveBeenCalledTimes(2);
 
-    // A long gap, then a single event — fires once after the window.
     await vi.advanceTimersByTimeAsync(60_000);
     agent.emit(AgentServiceEvent.LlmActivity, undefined);
     await vi.advanceTimersByTimeAsync(5_000);

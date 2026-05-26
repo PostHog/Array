@@ -3,11 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { useCallback } from "react";
 
-/**
- * Subscribe to usage snapshots pushed by the main-process `UsageMonitorService`.
- * The service is the single source of truth — it pushes fresh snapshots after
- * every agent turn (via the LlmActivity event) plus a 30-minute backstop.
- */
 export function useUsage({ enabled = true }: { enabled?: boolean } = {}) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();

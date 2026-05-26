@@ -16,12 +16,9 @@ import { usageMonitorStore } from "./store";
 
 const log = logger.scope("usage-monitor");
 
-// Coalesce bursts (e.g. 4 parallel agents finishing turns) into one trailing
-// fetch per window.
 const COALESCE_INTERVAL_MS = 5_000;
-
-// Safety net for billing-period rollovers while the app sits idle and no
-// LlmActivity events fire.
+// Catches reset-window rollovers and out-of-band plan changes while the app
+// sits idle and no LlmActivity events fire.
 const BACKSTOP_INTERVAL_MS = 30 * 60_000;
 
 type BucketName = "burst" | "sustained";
@@ -32,8 +29,6 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
   private coalesceTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private lastFetchStartedAt = 0;
   private isFetching = false;
-  // Snapshot of the most recent thresholdsSeen map so we hit electron-store
-  // only when we actually persist a new threshold.
   private thresholdsSeen: Record<string, string>;
   private latestUsage: UsageOutput | null = null;
 
@@ -49,22 +44,16 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
     this.thresholdsSeen = { ...usageMonitorStore.get("thresholdsSeen", {}) };
   }
 
-  /** Last successful usage snapshot; null until the first fetch succeeds. */
   getLatest(): UsageOutput | null {
     return this.latestUsage;
   }
 
-  /** Trigger an immediate refresh, returning the resulting snapshot. */
   async refreshNow(): Promise<UsageOutput | null> {
     return this.fetchOnce();
   }
 
-  /**
-   * Request a refresh in response to agent activity (turn-complete events).
-   * Coalesces bursts so N parallel agents finishing in quick succession
-   * produce at most two fetches (leading + trailing) per `COALESCE_INTERVAL_MS`
-   * window. Safe to call from many call sites with no rate-limit awareness.
-   */
+  // Coalesces N parallel agents finishing turns into at most two fetches
+  // (leading + trailing) per `COALESCE_INTERVAL_MS` window.
   requestRefresh(): void {
     if (this.coalesceTimeoutId) return;
     const now = Date.now();
@@ -82,7 +71,6 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
   init(): void {
     this.pruneStaleEntries();
     this.agentService.on(AgentServiceEvent.LlmActivity, this.onLlmActivity);
-    // Bootstrap so the UI doesn't show null until the first agent turn.
     void this.fetchOnce();
     this.scheduleBackstop();
   }
@@ -104,8 +92,6 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
     if (this.isFetching) return null;
     this.isFetching = true;
     this.lastFetchStartedAt = Date.now();
-    // Any pending coalesced fetch is satisfied by this one — drop it so the
-    // backstop and refreshNow() paths don't trigger a redundant follow-up.
     if (this.coalesceTimeoutId) {
       clearTimeout(this.coalesceTimeoutId);
       this.coalesceTimeoutId = null;
@@ -191,9 +177,8 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
     });
   }
 
-  // Burst anchor rounds reset_at to the hour so transient TTL jitter doesn't
-  // make every poll look like a new window. Sustained anchor is the billing
-  // period end (Pro) or the reset_at ISO date (free).
+  // Rounded anchor so transient TTL jitter doesn't make every poll look like
+  // a fresh window.
   private anchorFor(
     bucket: BucketName,
     status: UsageBucket,

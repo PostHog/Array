@@ -168,16 +168,8 @@ function classifyPromptError(error: unknown): unknown {
   );
 }
 
-/**
- * Codex inlines every MCP tool schema, every skill, and a sizable preset
- * system prompt — none of which are visible to us without querying the MCP
- * servers ourselves. We can only attribute the bits we control (our injected
- * `meta.systemPrompt`) plus a constant for codex-core's BASELINE_TOKENS
- * (`codex-rs/protocol/src/protocol.rs`, the always-resident floor). Everything
- * else flows into the `conversation` bucket. The breakdown is indicative
- * rather than itemised on Codex; for full attribution we'd need to query
- * connected MCP servers' tool lists at session start.
- */
+// codex-rs/protocol/src/protocol.rs BASELINE_TOKENS — the always-resident
+// floor (MCP schemas, skills, preset prompt) we can't attribute per-source.
 const CODEX_BASELINE_TOKENS = 12000;
 
 function buildCodexBaseline(

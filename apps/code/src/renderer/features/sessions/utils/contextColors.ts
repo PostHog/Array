@@ -6,9 +6,6 @@ export interface CategoryStyle {
   color: string;
 }
 
-// Ordered like the design spec: System prompt, Tools, Rules, Skills, MCP,
-// Subagents, Conversation. Colors reuse Radix scales so they read in both
-// light/dark modes.
 export const CONTEXT_CATEGORIES: readonly CategoryStyle[] = [
   { key: "systemPrompt", label: "System prompt", color: "var(--gray-9)" },
   { key: "tools", label: "Tools", color: "var(--violet-9)" },

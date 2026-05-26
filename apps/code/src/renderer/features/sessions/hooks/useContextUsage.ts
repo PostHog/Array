@@ -1,10 +1,8 @@
 import type { AcpMessage } from "@shared/types/session-events";
 import { useMemo } from "react";
 
-// Shape mirrors `ContextBreakdown` emitted by the agent in
-// `_posthog/usage_update` (see packages/agent/src/adapters/claude/context-breakdown.ts).
-// Kept local to avoid a renderer dependency on the agent package; if the shape
-// drifts, lift it into @posthog/shared.
+// Duplicated rather than imported from `packages/agent` to keep the renderer
+// off that dep; lift into `@posthog/shared` if the shape drifts.
 export interface ContextBreakdown {
   systemPrompt: number;
   tools: number;

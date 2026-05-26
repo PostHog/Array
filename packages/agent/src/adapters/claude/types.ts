@@ -66,9 +66,7 @@ export type Session = BaseSession & {
   pendingMessages: Map<string, PendingMessage>;
   nextPendingOrder: number;
   emitRawSDKMessages: boolean | SDKMessageFilter[];
-  /** Per-source token estimates for stable pieces (system prompt, tools, etc.)
-   *  used by the renderer's context-breakdown popover. Refreshed at session
-   *  init and on MCP/skill changes. */
+  /** Refreshed at session init and on MCP/skill changes. */
   contextBreakdownBaseline?: ContextBreakdownBaseline;
 };
 
