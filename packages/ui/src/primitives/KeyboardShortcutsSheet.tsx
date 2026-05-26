@@ -107,20 +107,6 @@ function ShortcutsSearchBar({
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       const inComboMode = comboSearch !== null;
 
-      if (e.key === "Escape") {
-        if (comboSearch) {
-          e.preventDefault();
-          onComboChange(null);
-          return;
-        }
-        if (searchText) {
-          e.preventDefault();
-          onTextChange("");
-          return;
-        }
-        return;
-      }
-
       // Backspace in combo mode clears the combo search.
       if (e.key === "Backspace" && inComboMode) {
         e.preventDefault();
@@ -143,7 +129,7 @@ function ShortcutsSearchBar({
         onTextChange(e.key);
       }
     },
-    [comboSearch, searchText, onComboChange, onTextChange],
+    [comboSearch, onComboChange, onTextChange],
   );
 
   const handleKeyUp = useCallback(
@@ -236,9 +222,8 @@ export function KeyboardShortcutsSheet({
     [onOpenChange],
   );
 
-  // Escape closes the modal only when the search bar has nothing to clear.
   useHotkeys("escape", () => handleOpenChange(false), {
-    enabled: open && !searchText && !comboSearch,
+    enabled: open,
     enableOnContentEditable: true,
     enableOnFormTags: true,
     preventDefault: true,
