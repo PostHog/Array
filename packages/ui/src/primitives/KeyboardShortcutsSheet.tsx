@@ -105,6 +105,8 @@ function ShortcutsSearchBar({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
+      const inComboMode = comboSearch !== null;
+
       if (e.key === "Escape") {
         if (comboSearch) {
           e.preventDefault();
@@ -119,11 +121,26 @@ function ShortcutsSearchBar({
         return;
       }
 
+      // Backspace in combo mode clears the combo search.
+      if (e.key === "Backspace" && inComboMode) {
+        e.preventDefault();
+        onComboChange(null);
+        return;
+      }
+
       const result = eventToSearchCombo(e.nativeEvent);
       if (result) {
         e.preventDefault();
         if (!result.isPartial) onTextChange("");
         onComboChange(result);
+        return;
+      }
+
+      // Typing a regular character in combo mode exits combo mode and starts text search.
+      if (inComboMode && e.key.length === 1) {
+        e.preventDefault();
+        onComboChange(null);
+        onTextChange(e.key);
       }
     },
     [comboSearch, searchText, onComboChange, onTextChange],
@@ -166,7 +183,7 @@ function ShortcutsSearchBar({
         }}
         onKeyDown={handleKeyDown}
         onKeyUp={handleKeyUp}
-        placeholder="Search by name or press a key combo…"
+        placeholder={isComboMode ? "" : "Search by name or press a key combo…"}
         type="text"
         value={isComboMode ? "" : searchText}
       />
@@ -234,14 +251,14 @@ export function KeyboardShortcutsSheet({
         onEscapeKeyDown={(e) => e.preventDefault()}
         className="!pb-0 flex max-h-[80vh] flex-col overflow-hidden"
       >
-        <Flex align="start" justify="between" className="shrink-0 pb-2">
+        <Flex align="start" justify="between" className="shrink-0 pb-1">
           <ShortcutsHeader />
           <button
             type="button"
             onClick={() => handleOpenChange(false)}
             className="shrink-0 cursor-pointer [all:unset]"
           >
-            <Keycap label="Esc" size="sm" />
+            <Keycap label="Esc" />
           </button>
         </Flex>
 
@@ -303,7 +320,7 @@ function ShortcutsHeader() {
   const triggerParts = formatHotkeyParts(shortcutsKey);
 
   return (
-    <Box mb="4">
+    <Box mb="2">
       <Flex align="center" gap="3" mb="1">
         <Dialog.Title mb="0" className="text-2xl leading-[1.2]">
           Keyboard Combos
