@@ -475,11 +475,15 @@ export function InboxSignalsTab() {
     sourceProductFilter.length > 0 ||
     suggestedReviewerFilter.length > 0 ||
     statusFilter.length < 5;
+  // Onboarding wins over two-pane even if the user has suggested setup tasks —
+  // discovered tasks alone shouldn't push a source-less user past the inline setup.
+  const showInboxOnboarding = !hasReports && !hasSignalSources;
   const shouldShowTwoPane =
-    hasReports ||
-    !!searchQuery.trim() ||
-    hasActiveFilters ||
-    hasDiscoveredTasks;
+    !showInboxOnboarding &&
+    (hasReports ||
+      !!searchQuery.trim() ||
+      hasActiveFilters ||
+      hasDiscoveredTasks);
 
   // Sticky: once we enter two-pane mode, stay there even if a refetch
   // momentarily empties the list (e.g. when sort order changes).
@@ -686,7 +690,23 @@ export function InboxSignalsTab() {
 
   return (
     <>
-      {showTwoPaneLayout ? (
+      {showInboxOnboarding ? (
+        /* ── Inline setup pane for users with no sources configured ── */
+        <Flex direction="column" className="h-full">
+          <SignalsToolbar
+            totalCount={0}
+            filteredCount={0}
+            isSearchActive={false}
+            pipelinePausedUntil={signalProcessingState?.paused_until}
+            searchDisabledReason={searchDisabledReason}
+            hideFilters
+            onConfigureSources={() => setSourcesDialogOpen(true)}
+          />
+          <ScrollArea className="min-h-0 flex-1">
+            <InboxSetupPane />
+          </ScrollArea>
+        </Flex>
+      ) : showTwoPaneLayout ? (
         <Flex ref={containerRef} height="100%" className="min-h-0">
           {/* ── Left pane: report list ───────────────────────────────── */}
           <Box
@@ -829,22 +849,6 @@ export function InboxSignalsTab() {
               <SelectReportPane />
             )}
           </Flex>
-        </Flex>
-      ) : !hasSignalSources || !hasGithubIntegration ? (
-        /* ── Inline setup pane for users still configuring sources / GitHub ── */
-        <Flex direction="column" className="h-full">
-          <SignalsToolbar
-            totalCount={0}
-            filteredCount={0}
-            isSearchActive={false}
-            pipelinePausedUntil={signalProcessingState?.paused_until}
-            searchDisabledReason={searchDisabledReason}
-            hideFilters
-            onConfigureSources={() => setSourcesDialogOpen(true)}
-          />
-          <ScrollArea className="min-h-0 flex-1">
-            <InboxSetupPane />
-          </ScrollArea>
         </Flex>
       ) : (
         /* ── Full-width warming-up state with skeleton backdrop ──────── */
