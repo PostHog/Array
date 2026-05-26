@@ -55,12 +55,6 @@ interface SignalsToolbarProps {
   /** Called when the "Configure sources" button is clicked. */
   onConfigureSources?: () => void;
   /**
-   * When true, displays a persistent tooltip on the "Configure sources"
-   * button — used after first onboarding to teach the user where the rest
-   * of the configuration lives. The parent controls dismissal.
-   */
-  configSourcesTooltipOpen?: boolean;
-  /**
    * Opens the dismiss flow: exactly one report selected (snooze or permanent suppress, with a reason).
    * With 2+ reports selected, use the Snooze and Suppress toolbar actions instead.
    */
@@ -270,7 +264,6 @@ export function SignalsToolbar({
   effectiveBulkIds = [],
   onToggleSelectAll,
   onConfigureSources,
-  configSourcesTooltipOpen,
   onOpenDismissDialog,
   isDismissMutationPending = false,
   onReportAction,
@@ -505,32 +498,16 @@ export function SignalsToolbar({
               </Text>
             ) : null}
           </Flex>
-          {onConfigureSources
-            ? (() => {
-                const configureSourcesButton = (
-                  <button
-                    type="button"
-                    onClick={onConfigureSources}
-                    className="flex shrink-0 cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-[12px] text-gray-10 transition-colors hover:text-gray-12"
-                  >
-                    <GearSixIcon size={12} />
-                    <span>Configure sources</span>
-                  </button>
-                );
-                return configSourcesTooltipOpen ? (
-                  <Tooltip
-                    content="All of your Inbox configuration is here"
-                    open
-                    side="bottom"
-                    align="end"
-                  >
-                    {configureSourcesButton}
-                  </Tooltip>
-                ) : (
-                  configureSourcesButton
-                );
-              })()
-            : null}
+          {onConfigureSources ? (
+            <button
+              type="button"
+              onClick={onConfigureSources}
+              className="flex shrink-0 cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-[12px] text-gray-10 transition-colors hover:text-gray-12"
+            >
+              <GearSixIcon size={12} />
+              <span>Configure sources</span>
+            </button>
+          ) : null}
         </Flex>
 
         <Flex align="center" gap="2">
