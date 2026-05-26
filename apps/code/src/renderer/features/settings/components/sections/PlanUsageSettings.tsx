@@ -54,15 +54,15 @@ export function PlanUsageSettings() {
   const switchOrgMutation = useSwitchOrgMutation();
   const billingUrl = getBillingUrl(cloudRegion);
 
-  const [billingSwitch, setBillingSwitch] = useState<{
-    pending: boolean;
-    error: boolean;
-  }>({ pending: false, error: false });
+  async function switchOrgAndRefreshSeat(orgId: string): Promise<void> {
+    await switchOrgMutation.mutateAsync(orgId);
+    await fetchSeat({ autoProvision: true });
+  }
 
   async function openBillingPage(orgId: string | null): Promise<void> {
     if (orgId && orgId !== currentOrgId) {
       try {
-        await switchOrgMutation.mutateAsync(orgId);
+        await switchOrgAndRefreshSeat(orgId);
       } catch (err) {
         log.warn("Failed to switch org before opening billing", err);
         return;
@@ -72,14 +72,10 @@ export function PlanUsageSettings() {
   }
 
   async function switchToBillingOrg(orgId: string): Promise<void> {
-    setBillingSwitch({ pending: true, error: false });
     try {
-      await switchOrgMutation.mutateAsync(orgId);
-      await fetchSeat({ autoProvision: true });
-      setBillingSwitch({ pending: false, error: false });
+      await switchOrgAndRefreshSeat(orgId);
     } catch (err) {
       log.warn("Failed to switch to billing org", err);
-      setBillingSwitch({ pending: false, error: true });
     }
   }
   const redirectFullUrl = redirectUrl
@@ -205,18 +201,18 @@ export function PlanUsageSettings() {
                   <Button
                     size="1"
                     variant="outline"
-                    disabled={billingSwitch.pending}
+                    disabled={switchOrgMutation.isPending}
                     onClick={() => {
                       void switchToBillingOrg(billingOrgId);
                     }}
                   >
-                    {billingSwitch.pending ? (
+                    {switchOrgMutation.isPending ? (
                       <Spinner size="1" />
                     ) : (
                       `Switch to ${seat.organization_name ?? "Pro org"}`
                     )}
                   </Button>
-                  {billingSwitch.error && (
+                  {switchOrgMutation.isError && (
                     <Text className="text-(--red-11) text-[12px]">
                       Switching failed. Try again or switch from the sidebar.
                     </Text>
