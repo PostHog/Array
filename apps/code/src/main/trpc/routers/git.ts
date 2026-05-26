@@ -397,14 +397,7 @@ export const gitRouter = router({
     .input(resolveReviewThreadInput)
     .output(resolveReviewThreadOutput)
     .mutation(({ input }) =>
-      getService().resolveReviewThread(input.threadNodeId, true),
-    ),
-
-  unresolveReviewThread: publicProcedure
-    .input(resolveReviewThreadInput)
-    .output(resolveReviewThreadOutput)
-    .mutation(({ input }) =>
-      getService().resolveReviewThread(input.threadNodeId, false),
+      getService().resolveReviewThread(input.threadNodeId, input.resolved),
     ),
 
   getBranchChangedFiles: publicProcedure

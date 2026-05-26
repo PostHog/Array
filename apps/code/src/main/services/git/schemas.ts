@@ -418,6 +418,7 @@ export const getPrReviewCommentsOutput = z.array(prReviewThreadSchema);
 export const resolveReviewThreadInput = z.object({
   prUrl: z.string(),
   threadNodeId: z.string(),
+  resolved: z.boolean(),
 });
 export const resolveReviewThreadOutput = z.object({
   success: z.boolean(),

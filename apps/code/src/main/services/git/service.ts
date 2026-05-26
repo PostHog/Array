@@ -1297,6 +1297,7 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
           };
         };
       };
+      errors?: Array<{ message: string }>;
     };
 
     const MAX_THREAD_PAGES = 50; // 50 × 100 = 5 000 threads max
@@ -1321,6 +1322,11 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
         }
 
         const data = JSON.parse(result.stdout) as PageResponse;
+        if (data.errors?.length) {
+          throw new Error(
+            `GraphQL error: ${data.errors.map((e) => e.message).join("; ")}`,
+          );
+        }
         const reviewThreads = data.data.repository.pullRequest.reviewThreads;
         allNodes.push(...reviewThreads.nodes);
         if (!reviewThreads.pageInfo.hasNextPage) {
@@ -1404,7 +1410,16 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
           resolveReviewThread?: { thread: { isResolved: boolean } };
           unresolveReviewThread?: { thread: { isResolved: boolean } };
         };
+        errors?: Array<{ message: string }>;
       };
+      if (data.errors?.length) {
+        log.warn("Failed to resolve/unresolve review thread", {
+          threadNodeId,
+          resolved,
+          error: data.errors.map((e) => e.message).join("; "),
+        });
+        return { success: false, isResolved: !resolved };
+      }
       const thread =
         data.data.resolveReviewThread?.thread ??
         data.data.unresolveReviewThread?.thread;

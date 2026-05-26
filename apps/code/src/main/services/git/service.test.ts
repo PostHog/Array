@@ -462,6 +462,20 @@ describe("GitService.getPrReviewComments", () => {
       service.getPrReviewComments("https://github.com/owner/repo/pull/1"),
     ).rejects.toThrow("Failed to fetch PR review threads");
   });
+
+  it("throws with the GraphQL error message when GitHub returns 200 with errors", async () => {
+    mockExecGh.mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        data: null,
+        errors: [{ message: "Resource not accessible by integration" }],
+      }),
+    });
+
+    await expect(
+      service.getPrReviewComments("https://github.com/owner/repo/pull/1"),
+    ).rejects.toThrow("Resource not accessible by integration");
+  });
 });
 
 describe("GitService.resolveReviewThread", () => {

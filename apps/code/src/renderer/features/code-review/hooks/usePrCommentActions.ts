@@ -36,17 +36,17 @@ export function usePrCommentActions(prUrl: string | null) {
   const resolve = useCallback(
     async (threadNodeId: string, resolved: boolean): Promise<boolean> => {
       if (!prUrl) return false;
-      const mutation = resolved
-        ? trpcClient.git.resolveReviewThread
-        : trpcClient.git.unresolveReviewThread;
+      const errorMessage = resolved
+        ? "Failed to resolve thread"
+        : "Failed to unresolve thread";
       try {
-        const result = await mutation.mutate({ prUrl, threadNodeId });
+        const result = await trpcClient.git.resolveReviewThread.mutate({
+          prUrl,
+          threadNodeId,
+          resolved,
+        });
         if (!result.success) {
-          toast.error(
-            resolved
-              ? "Failed to resolve thread"
-              : "Failed to unresolve thread",
-          );
+          toast.error(errorMessage);
           return false;
         }
         await queryClient.invalidateQueries(
@@ -54,9 +54,7 @@ export function usePrCommentActions(prUrl: string | null) {
         );
         return true;
       } catch {
-        toast.error(
-          resolved ? "Failed to resolve thread" : "Failed to unresolve thread",
-        );
+        toast.error(errorMessage);
         return false;
       }
     },

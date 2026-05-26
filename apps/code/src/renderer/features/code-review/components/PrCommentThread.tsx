@@ -135,7 +135,7 @@ function ThreadActionBar({
         }
       >
         <Robot />
-        Fix with agent
+        Fix
       </Button>
 
       <Button
@@ -148,7 +148,7 @@ function ThreadActionBar({
         }
       >
         <Robot />
-        Ask agent
+        Ask
       </Button>
     </Flex>
   );
