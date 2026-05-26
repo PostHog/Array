@@ -54,6 +54,11 @@ export function PlanUsageSettings() {
   const switchOrgMutation = useSwitchOrgMutation();
   const billingUrl = getBillingUrl(cloudRegion);
 
+  const [billingSwitch, setBillingSwitch] = useState<{
+    pending: boolean;
+    error: boolean;
+  }>({ pending: false, error: false });
+
   async function openBillingPage(orgId: string | null): Promise<void> {
     if (orgId && orgId !== currentOrgId) {
       try {
@@ -67,8 +72,15 @@ export function PlanUsageSettings() {
   }
 
   async function switchToBillingOrg(orgId: string): Promise<void> {
-    await switchOrgMutation.mutateAsync(orgId);
-    await fetchSeat({ autoProvision: true });
+    setBillingSwitch({ pending: true, error: false });
+    try {
+      await switchOrgMutation.mutateAsync(orgId);
+      await fetchSeat({ autoProvision: true });
+      setBillingSwitch({ pending: false, error: false });
+    } catch (err) {
+      log.warn("Failed to switch to billing org", err);
+      setBillingSwitch({ pending: false, error: true });
+    }
   }
   const redirectFullUrl = redirectUrl
     ? (getPostHogUrl(redirectUrl, cloudRegion) ?? billingUrl)
@@ -193,18 +205,18 @@ export function PlanUsageSettings() {
                   <Button
                     size="1"
                     variant="outline"
-                    disabled={switchOrgMutation.isPending}
+                    disabled={billingSwitch.pending}
                     onClick={() => {
                       void switchToBillingOrg(billingOrgId);
                     }}
                   >
-                    {switchOrgMutation.isPending ? (
+                    {billingSwitch.pending ? (
                       <Spinner size="1" />
                     ) : (
                       `Switch to ${seat.organization_name ?? "Pro org"}`
                     )}
                   </Button>
-                  {switchOrgMutation.isError && (
+                  {billingSwitch.error && (
                     <Text className="text-(--red-11) text-[12px]">
                       Switching failed. Try again or switch from the sidebar.
                     </Text>
