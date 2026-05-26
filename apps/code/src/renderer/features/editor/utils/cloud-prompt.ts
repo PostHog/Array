@@ -1,7 +1,12 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import { CLOUD_PROMPT_PREFIX, serializeCloudPrompt } from "@posthog/shared";
+import {
+  CLOUD_PROMPT_PREFIX,
+  getImageMimeType,
+  isClaudeImageFile,
+  isRasterImageFile,
+  serializeCloudPrompt,
+} from "@posthog/shared";
 import { trpcClient } from "@renderer/trpc/client";
-import { getImageMimeType, isImageFile } from "@shared/constants/image";
 import {
   getFileExtension,
   getFileName,
@@ -61,18 +66,12 @@ const TEXT_FILENAMES = new Set([
   "README",
   "README.md",
 ]);
-const CLOUD_IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
-
 const MAX_EMBEDDED_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function isTextAttachment(filePath: string): boolean {
   const fileName = getFileName(filePath);
   const ext = getFileExtension(filePath);
   return TEXT_FILENAMES.has(fileName) || TEXT_EXTENSIONS.has(ext);
-}
-
-export function isSupportedCloudImageAttachment(filePath: string): boolean {
-  return CLOUD_IMAGE_EXTENSIONS.has(getFileExtension(filePath));
 }
 
 export function isSupportedCloudTextAttachment(filePath: string): boolean {
@@ -163,7 +162,7 @@ async function buildAttachmentBlock(filePath: string): Promise<ContentBlock> {
   const fileName = getFileName(filePath);
   const uri = pathToFileUri(filePath);
 
-  if (isSupportedCloudImageAttachment(fileName)) {
+  if (isClaudeImageFile(fileName)) {
     const base64 = await trpcClient.fs.readFileAsBase64.query({ filePath });
     if (!base64) {
       throw new Error(`Unable to read attached image ${fileName}`);
@@ -183,7 +182,7 @@ async function buildAttachmentBlock(filePath: string): Promise<ContentBlock> {
     };
   }
 
-  if (isImageFile(fileName)) {
+  if (isRasterImageFile(fileName)) {
     throw new Error(
       `Cloud image attachments currently support PNG, JPG, GIF, and WebP. Unsupported image: ${fileName}`,
     );

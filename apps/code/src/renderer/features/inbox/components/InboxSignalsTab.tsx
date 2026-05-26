@@ -19,6 +19,7 @@ import {
   useInboxReportsInfinite,
   useInboxSignalProcessingState,
 } from "@features/inbox/hooks/useInboxReports";
+import { useSeedSuggestedReviewerFilter } from "@features/inbox/hooks/useSeedSuggestedReviewerFilter";
 import { useSignalSourceConfigs } from "@features/inbox/hooks/useSignalSourceConfigs";
 import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
 import { useInboxSignalsFilterStore } from "@features/inbox/stores/inboxSignalsFilterStore";
@@ -36,6 +37,7 @@ import { setPendingInboxOpenMethod } from "@features/inbox/utils/pendingInboxOpe
 import { DiscoveredTaskDetailPane } from "@features/setup/components/DiscoveredTaskDetailPane";
 import { RecommendedSetupTasks } from "@features/setup/components/RecommendedSetupTasks";
 import { useSetupStore } from "@features/setup/stores/setupStore";
+import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import {
   useIntegrations,
   useRepositoryIntegration,
@@ -72,21 +74,22 @@ export function InboxSignalsTab() {
   const suggestedReviewerFilter = useInboxSignalsFilterStore(
     (s) => s.suggestedReviewerFilter,
   );
-  const seedSuggestedReviewerFilterWithCurrentUser = useInboxSignalsFilterStore(
-    (s) => s.seedSuggestedReviewerFilterWithCurrentUser,
-  );
-
   // ── Current user (seeds reviewer filter on first inbox visit) ───────────
   const authClient = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({
     client: authClient,
     enabled: !!authClient,
   });
-
-  useEffect(() => {
-    if (!currentUser?.uuid) return;
-    seedSuggestedReviewerFilterWithCurrentUser(currentUser.uuid);
-  }, [currentUser?.uuid, seedSuggestedReviewerFilterWithCurrentUser]);
+  // Gates the seed below: backend filters reports by GitHub login, not UUID.
+  const { data: githubLogin } = useAuthenticatedQuery(
+    ["github_login"],
+    (client) => client.getGithubLogin(),
+    { staleTime: 5 * 60 * 1000 },
+  );
+  useSeedSuggestedReviewerFilter({
+    currentUserUuid: currentUser?.uuid,
+    githubLogin,
+  });
 
   // ── GitHub integration ───────────────────────────────────────────────
   const { hasGithubIntegration } = useRepositoryIntegration();

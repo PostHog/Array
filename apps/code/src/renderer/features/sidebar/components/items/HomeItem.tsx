@@ -2,6 +2,8 @@ import { Tooltip } from "@components/ui/Tooltip";
 import { EnvelopeSimple, Plus } from "@phosphor-icons/react";
 import { Badge, type ButtonProps } from "@posthog/quill";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
+import { useDraftStore } from "@renderer/features/message-editor/stores/draftStore";
+import { isContentEmpty } from "@renderer/features/message-editor/utils/content";
 import { SidebarItem } from "../SidebarItem";
 import { SidebarKbdHint } from "./SidebarKbdHint";
 
@@ -12,6 +14,9 @@ interface NewTaskItemProps {
 }
 
 export function NewTaskItem({ isActive, onClick }: NewTaskItemProps) {
+  const hasDraft = useDraftStore(
+    (s) => !isContentEmpty(s.drafts["task-input"]),
+  );
   return (
     <SidebarItem
       depth={0}
@@ -19,7 +24,16 @@ export function NewTaskItem({ isActive, onClick }: NewTaskItemProps) {
       label="New task"
       isActive={isActive}
       onClick={onClick}
-      endContent={<SidebarKbdHint keys={SHORTCUTS.NEW_TASK} />}
+      endContent={
+        <>
+          {hasDraft ? (
+            <Badge variant="default" title="You have unsubmitted changes">
+              Draft
+            </Badge>
+          ) : null}
+          <SidebarKbdHint keys={SHORTCUTS.NEW_TASK} />
+        </>
+      }
     />
   );
 }
