@@ -419,3 +419,52 @@ export function SignalSourceToggles({
     </Flex>
   );
 }
+
+function SignalSourceToggleCardSkeleton() {
+  return (
+    <Box
+      p="3"
+      className="rounded-(--radius-3) border border-(--gray-4) bg-(--color-panel-solid)"
+    >
+      <Flex align="center" justify="between" gap="4">
+        <Flex align="center" gap="3" className="min-w-0 flex-1">
+          <Box className="size-[20px] shrink-0 animate-pulse rounded bg-gray-4" />
+          <Flex direction="column" gap="2" className="min-w-0 flex-1">
+            <Box className="h-[12px] w-[50%] animate-pulse rounded bg-gray-4" />
+            <Box className="h-[11px] w-[80%] animate-pulse rounded bg-gray-3" />
+          </Flex>
+        </Flex>
+        <Box className="h-[18px] w-[32px] shrink-0 animate-pulse rounded-full bg-gray-3" />
+      </Flex>
+    </Box>
+  );
+}
+
+export function SignalSourceTogglesSkeleton() {
+  return (
+    <Flex gap="4">
+      <Flex direction="column" gap="2" className="min-w-0 flex-1">
+        <Text className="font-medium text-(--gray-9) text-[13px]">
+          PostHog data
+        </Text>
+        <Flex direction="column" gap="3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static loading placeholders
+            <SignalSourceToggleCardSkeleton key={index} />
+          ))}
+        </Flex>
+      </Flex>
+      <Flex direction="column" gap="2" className="min-w-0 flex-1">
+        <Text className="font-medium text-(--gray-9) text-[13px]">
+          External connections
+        </Text>
+        <Flex direction="column" gap="3">
+          {Array.from({ length: 4 }).map((_, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static loading placeholders
+            <SignalSourceToggleCardSkeleton key={index} />
+          ))}
+        </Flex>
+      </Flex>
+    </Flex>
+  );
+}

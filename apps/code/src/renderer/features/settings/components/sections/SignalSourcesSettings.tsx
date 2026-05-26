@@ -1,5 +1,8 @@
 import { DataSourceSetup } from "@features/inbox/components/DataSourceSetup";
-import { SignalSourceToggles } from "@features/inbox/components/SignalSourceToggles";
+import {
+  SignalSourceToggles,
+  SignalSourceTogglesSkeleton,
+} from "@features/inbox/components/SignalSourceToggles";
 import { useSignalSourceManager } from "@features/inbox/hooks/useSignalSourceManager";
 import { SettingsOptionSelect } from "@features/settings/components/SettingsOptionSelect";
 import { GitHubIntegrationSection } from "@features/settings/components/sections/GitHubIntegrationSection";
@@ -44,15 +47,8 @@ export function SignalSourcesSettings({
     handleUpdateUserAutonomyPriority,
   } = useSignalSourceManager();
 
-  const { hasGithubIntegration } = useRepositoryIntegration();
-
-  if (isLoading) {
-    return (
-      <Text color="gray" className="text-[13px]">
-        Loading signal source configurations...
-      </Text>
-    );
-  }
+  const { hasGithubIntegration, isLoadingIntegrations } =
+    useRepositoryIntegration();
 
   const userPriorityValue =
     userAutonomyConfig?.autostart_priority ?? NEVER_VALUE;
@@ -64,40 +60,47 @@ export function SignalSourcesSettings({
         Choose which sources to enable for this project.
       </Text>
 
-      <GitHubIntegrationSection hasGithubIntegration={hasGithubIntegration} />
+      <GitHubIntegrationSection
+        hasGithubIntegration={hasGithubIntegration}
+        isLoading={isLoadingIntegrations}
+      />
 
-      <Tooltip
-        content="Connect code access to configure signal sources"
-        hidden={hasGithubIntegration}
-      >
-        <Box>
-          <Box
-            style={
-              !hasGithubIntegration
-                ? { opacity: 0.45, pointerEvents: "none" }
-                : undefined
-            }
-          >
-            {setupSource ? (
-              <DataSourceSetup
-                source={setupSource}
-                onComplete={() => void handleSetupComplete()}
-                onCancel={handleSetupCancel}
-              />
-            ) : (
-              <SignalSourceToggles
-                value={displayValues}
-                onToggle={(source, enabled) =>
-                  void handleToggle(source, enabled)
-                }
-                disabled={!hasGithubIntegration}
-                sourceStates={sourceStates}
-                onSetup={handleSetup}
-              />
-            )}
+      {isLoading ? (
+        <SignalSourceTogglesSkeleton />
+      ) : (
+        <Tooltip
+          content="Connect code access to configure signal sources"
+          hidden={hasGithubIntegration}
+        >
+          <Box>
+            <Box
+              style={
+                !hasGithubIntegration
+                  ? { opacity: 0.45, pointerEvents: "none" }
+                  : undefined
+              }
+            >
+              {setupSource ? (
+                <DataSourceSetup
+                  source={setupSource}
+                  onComplete={() => void handleSetupComplete()}
+                  onCancel={handleSetupCancel}
+                />
+              ) : (
+                <SignalSourceToggles
+                  value={displayValues}
+                  onToggle={(source, enabled) =>
+                    void handleToggle(source, enabled)
+                  }
+                  disabled={!hasGithubIntegration}
+                  sourceStates={sourceStates}
+                  onSetup={handleSetup}
+                />
+              )}
+            </Box>
           </Box>
-        </Box>
-      </Tooltip>
+        </Tooltip>
+      )}
       <Flex
         direction="column"
         gap="2"
@@ -128,6 +131,7 @@ export function SignalSourcesSettings({
       </Flex>
       <SignalSlackNotificationsSettings
         channelComboboxModal={slackNotificationsInModal}
+        isLoading={isLoadingIntegrations}
       />
     </Flex>
   );

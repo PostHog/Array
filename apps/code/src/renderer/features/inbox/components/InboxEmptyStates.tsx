@@ -126,7 +126,7 @@ export function WarmingUpPane({
             color="gray"
             onClick={onConfigureSources}
           >
-            Configure sources
+            Configure inbox
           </Button>
         </Flex>
       </Flex>

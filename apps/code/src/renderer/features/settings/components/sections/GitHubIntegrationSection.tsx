@@ -34,8 +34,10 @@ function summarizeReposByOwner(
 
 export function GitHubIntegrationSection({
   hasGithubIntegration,
+  isLoading = false,
 }: {
   hasGithubIntegration: boolean;
+  isLoading?: boolean;
 }) {
   const { repositories, isLoadingRepos } = useRepositoryIntegration();
   const ownerSummary = useMemo(
@@ -56,6 +58,27 @@ export function GitHubIntegrationSection({
     projectId,
     projectHasTeamIntegration: hasGithubIntegration,
   });
+
+  if (isLoading) {
+    return (
+      <Flex
+        align="center"
+        justify="between"
+        gap="4"
+        pb="4"
+        className="border-(--gray-5) border-b border-dashed"
+      >
+        <Flex align="center" gap="3" className="min-w-0 flex-1">
+          <Box className="size-[20px] shrink-0 animate-pulse rounded bg-gray-4" />
+          <Flex direction="column" gap="2" className="min-w-0 flex-1">
+            <Box className="h-[12px] w-[40%] animate-pulse rounded bg-gray-4" />
+            <Box className="h-[11px] w-[60%] animate-pulse rounded bg-gray-3" />
+          </Flex>
+        </Flex>
+        <Box className="h-[24px] w-[120px] shrink-0 animate-pulse rounded bg-gray-3" />
+      </Flex>
+    );
+  }
 
   return (
     <Flex

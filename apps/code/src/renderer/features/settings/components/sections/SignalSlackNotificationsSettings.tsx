@@ -16,7 +16,7 @@ import {
   ComboboxTrigger,
   Button as QuillButton,
 } from "@posthog/quill";
-import { Button, Callout, Flex, Text } from "@radix-ui/themes";
+import { Box, Button, Callout, Flex, Text } from "@radix-ui/themes";
 import type { SignalReportPriority, SlackChannelOption } from "@shared/types";
 import { useMemo, useRef, useState } from "react";
 
@@ -76,10 +76,12 @@ function getSlackIntegrationLabel(integration: {
 
 interface SignalSlackNotificationsSettingsProps {
   channelComboboxModal?: boolean;
+  isLoading?: boolean;
 }
 
 export function SignalSlackNotificationsSettings({
   channelComboboxModal = false,
+  isLoading = false,
 }: SignalSlackNotificationsSettingsProps) {
   const { slackIntegrations, hasSlackIntegration } = useIntegrationSelectors();
   const { userAutonomyConfig, handleUpdateSlackNotifications } =
@@ -156,6 +158,23 @@ export function SignalSlackNotificationsSettings({
       })),
     [slackIntegrations],
   );
+
+  if (isLoading) {
+    return (
+      <Flex
+        direction="column"
+        gap="2"
+        pt="3"
+        style={{ borderTop: "1px dashed var(--gray-5)" }}
+      >
+        <Flex direction="column" gap="1">
+          <Box className="h-[14px] w-[160px] animate-pulse rounded bg-gray-4" />
+          <Box className="h-[11px] w-[80%] animate-pulse rounded bg-gray-3" />
+        </Flex>
+        <Box className="mt-1 h-[28px] w-[200px] animate-pulse rounded bg-gray-3" />
+      </Flex>
+    );
+  }
 
   if (!hasSlackIntegration) {
     return (
