@@ -165,7 +165,7 @@ export function SignalSlackNotificationsSettings({
         direction="column"
         gap="2"
         pt="3"
-        style={{ borderTop: "1px dashed var(--gray-5)" }}
+        className="border-(--gray-5) border-t border-dashed"
       >
         <Flex direction="column" gap="1">
           <Box className="h-[14px] w-[160px] animate-pulse rounded bg-gray-4" />

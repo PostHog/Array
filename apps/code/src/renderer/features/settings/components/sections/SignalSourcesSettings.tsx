@@ -44,6 +44,7 @@ export function SignalSourcesSettings({
     handleSetupComplete,
     handleSetupCancel,
     userAutonomyConfig,
+    userAutonomyConfigLoading,
     handleUpdateUserAutonomyPriority,
   } = useSignalSourceManager();
 
@@ -117,17 +118,21 @@ export function SignalSourcesSettings({
             &quot;Never&quot; to opt out.
           </Text>
         </Flex>
-        <SettingsOptionSelect
-          value={userPriorityValue}
-          options={USER_PRIORITY_OPTIONS}
-          ariaLabel="PR auto-start threshold"
-          className="min-w-[260px] max-w-[300px]"
-          onValueChange={(value) =>
-            void handleUpdateUserAutonomyPriority(
-              value === NEVER_VALUE ? null : value,
-            )
-          }
-        />
+        {userAutonomyConfigLoading ? (
+          <Box className="h-[32px] w-[260px] animate-pulse rounded bg-gray-3" />
+        ) : (
+          <SettingsOptionSelect
+            value={userPriorityValue}
+            options={USER_PRIORITY_OPTIONS}
+            ariaLabel="PR auto-start threshold"
+            className="min-w-[260px] max-w-[300px]"
+            onValueChange={(value) =>
+              void handleUpdateUserAutonomyPriority(
+                value === NEVER_VALUE ? null : value,
+              )
+            }
+          />
+        )}
       </Flex>
       <SignalSlackNotificationsSettings
         channelComboboxModal={slackNotificationsInModal}
