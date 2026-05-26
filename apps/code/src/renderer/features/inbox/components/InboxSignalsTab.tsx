@@ -42,7 +42,8 @@ import {
   useIntegrations,
   useRepositoryIntegration,
 } from "@hooks/useIntegrations";
-import { Box, Flex, ScrollArea } from "@radix-ui/themes";
+import { ArrowRightIcon } from "@phosphor-icons/react";
+import { Box, Button, Flex, ScrollArea } from "@radix-ui/themes";
 import { isDismissalReasonSnooze } from "@shared/dismissalReasons";
 import type { SignalReport, SignalReportsQueryParams } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
@@ -477,7 +478,17 @@ export function InboxSignalsTab() {
     statusFilter.length < 5;
   // Onboarding wins over two-pane even if the user has suggested setup tasks —
   // discovered tasks alone shouldn't push a source-less user past the inline setup.
-  const showInboxOnboarding = !hasReports && !hasSignalSources;
+  const onboardingShouldShow = !hasReports && !hasSignalSources;
+  // Sticky within an inbox visit: once we've entered onboarding, keep showing
+  // it even after the user toggles a source on, until either they explicitly
+  // click "Proceed to Inbox" or navigate away (unmount resets the ref).
+  const enteredOnboardingRef = useRef(false);
+  if (onboardingShouldShow) {
+    enteredOnboardingRef.current = true;
+  }
+  const [userExitedOnboarding, setUserExitedOnboarding] = useState(false);
+  const showInboxOnboarding =
+    enteredOnboardingRef.current && !userExitedOnboarding;
   const shouldShowTwoPane =
     !showInboxOnboarding &&
     (hasReports ||
@@ -492,17 +503,6 @@ export function InboxSignalsTab() {
     hasMountedTwoPaneRef.current = true;
   }
   const showTwoPaneLayout = hasMountedTwoPaneRef.current;
-
-  // When the user transitions out of the full-page onboarding within a single
-  // inbox visit (i.e. they just enabled their first source), pop the sources
-  // dialog so they can keep configuring with the inbox visible underneath.
-  const wasInOnboardingRef = useRef(showInboxOnboarding);
-  useEffect(() => {
-    if (wasInOnboardingRef.current && !showInboxOnboarding) {
-      setSourcesDialogOpen(true);
-    }
-    wasInOnboardingRef.current = showInboxOnboarding;
-  }, [showInboxOnboarding, setSourcesDialogOpen]);
 
   // ── Inbox viewed analytics — fire once per visit when data settles ─────
   const inboxViewedFiredRef = useRef(false);
@@ -704,10 +704,24 @@ export function InboxSignalsTab() {
       {showInboxOnboarding ? (
         /* ── Inline setup pane for users with no sources configured ──
            The toolbar (report counter, search, bulk actions) is suppressed
-           entirely — none of it is meaningful before any source is configured. */
-        <ScrollArea className="h-full">
-          <InboxSetupPane />
-        </ScrollArea>
+           entirely — none of it is meaningful before any source is configured.
+           Sticky within the visit: stays until the user clicks "Proceed to
+           Inbox" or navigates away. */
+        <Box className="relative h-full">
+          <ScrollArea className="h-full">
+            <InboxSetupPane />
+          </ScrollArea>
+          <Box className="absolute right-4 bottom-4">
+            <Button
+              size="2"
+              variant="soft"
+              onClick={() => setUserExitedOnboarding(true)}
+            >
+              Proceed to Inbox
+              <ArrowRightIcon size={14} />
+            </Button>
+          </Box>
+        </Box>
       ) : showTwoPaneLayout ? (
         <Flex ref={containerRef} height="100%" className="min-h-0">
           {/* ── Left pane: report list ───────────────────────────────── */}
