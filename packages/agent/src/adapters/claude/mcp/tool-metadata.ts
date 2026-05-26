@@ -116,6 +116,12 @@ export function getConnectedMcpServerNames(): string[] {
   return [...names];
 }
 
+/** Snapshot of every tool currently in the metadata cache. Used by the
+ *  context-breakdown estimator to size the MCP category. */
+export function getCachedMcpTools(): McpToolMetadata[] {
+  return [...mcpToolMetadataCache.values()];
+}
+
 export function getMcpToolApprovalState(
   toolName: string,
 ): McpToolApprovalState | undefined {

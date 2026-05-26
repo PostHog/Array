@@ -203,6 +203,9 @@ export const AgentServiceEvent = {
   SessionsIdle: "sessions-idle",
   SessionIdleKilled: "session-idle-killed",
   AgentFileActivity: "agent-file-activity",
+  // Fires once per completed turn for both adapters. Consumed by
+  // UsageMonitorService to refresh billing usage without polling.
+  LlmActivity: "llm-activity",
 } as const;
 
 export interface AgentSessionEventPayload {
@@ -234,6 +237,7 @@ export interface AgentServiceEvents {
   [AgentServiceEvent.SessionsIdle]: undefined;
   [AgentServiceEvent.SessionIdleKilled]: SessionIdleKilledPayload;
   [AgentServiceEvent.AgentFileActivity]: AgentFileActivityPayload;
+  [AgentServiceEvent.LlmActivity]: undefined;
 }
 
 // Permission response input for tRPC

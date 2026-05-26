@@ -68,6 +68,14 @@ import { Pushable } from "../../utils/streams";
 import { BaseAcpAgent } from "../base-acp-agent";
 import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
 import { resolveTaskId } from "../session-meta";
+import {
+  buildBreakdown,
+  emptyBaseline,
+  estimateMcpTokens,
+  estimateRulesTokens,
+  estimateSkillsTokens,
+  estimateSystemPrompt,
+} from "./context-breakdown";
 import { promptToClaude } from "./conversion/acp-to-sdk";
 import {
   handleResultMessage,
@@ -79,6 +87,7 @@ import type { EnrichedReadCache } from "./hooks";
 import { createLocalToolsMcpServer } from "./mcp/local-tools";
 import {
   fetchMcpToolMetadata,
+  getCachedMcpTools,
   getConnectedMcpServerNames,
   setMcpToolApprovalStates,
 } from "./mcp/tool-metadata";
@@ -117,6 +126,23 @@ import type {
 const SESSION_VALIDATION_TIMEOUT_MS = 30_000;
 const MAX_TITLE_LENGTH = 256;
 const LOCAL_ONLY_COMMANDS = new Set(["/context", "/heapdump", "/extra-usage"]);
+
+/** Read CLAUDE.md from the project root so the context breakdown can size the
+ *  Rules category. Best-effort: silent on a missing file, logs otherwise so
+ *  permission errors aren't lost. */
+function readClaudeMdQuietly(cwd: string, logger: Logger): string | undefined {
+  try {
+    return fs.readFileSync(path.join(cwd, "CLAUDE.md"), "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
+      logger.warn("Failed to read CLAUDE.md for context breakdown", {
+        cwd,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return undefined;
+  }
+}
 
 function sanitizeTitle(text: string): string {
   const sanitized = text
@@ -556,6 +582,16 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               });
             }
 
+            // Use the latest outermost-model snapshot, not `message.usage`.
+            // The SDK's result usage is cumulative across every round of the
+            // agentic loop (each tool-use iteration re-counts the prompt), so
+            // it overstates the resident context several-fold. `lastStreamUsage`
+            // tracks the most recent `message_start`/`message_delta` for the
+            // outermost model, which is what's actually sitting in the window.
+            const breakdownInputTokens =
+              lastStreamUsage.input_tokens +
+              lastStreamUsage.cache_read_input_tokens +
+              lastStreamUsage.cache_creation_input_tokens;
             await this.client.extNotification(
               POSTHOG_NOTIFICATIONS.USAGE_UPDATE,
               {
@@ -567,6 +603,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                   cachedWriteTokens: message.usage.cache_creation_input_tokens,
                 },
                 cost: message.total_cost_usd,
+                breakdown: buildBreakdown(
+                  this.session.contextBreakdownBaseline ?? emptyBaseline(),
+                  breakdownInputTokens,
+                ),
               },
             );
 
@@ -1221,6 +1261,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       pendingMessages: new Map(),
       nextPendingOrder: 0,
       emitRawSDKMessages: meta?.claudeCode?.emitRawSDKMessages ?? false,
+      contextBreakdownBaseline: {
+        ...emptyBaseline(),
+        systemPrompt: estimateSystemPrompt(systemPrompt),
+        rules: estimateRulesTokens(readClaudeMdQuietly(cwd, this.logger)),
+      },
 
       // Custom properties
       cwd,
@@ -1547,13 +1592,30 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
   private async sendAvailableCommandsUpdate(): Promise<void> {
     const commands = await this.session.query.supportedCommands();
+    const available = getAvailableSlashCommands(commands);
     await this.client.sessionUpdate({
       sessionId: this.sessionId,
       update: {
         sessionUpdate: "available_commands_update",
-        availableCommands: getAvailableSlashCommands(commands),
+        availableCommands: available,
       },
     });
+    this.updateBreakdownCategory("skills", estimateSkillsTokens(available));
+  }
+
+  /** Update one category of the context-breakdown baseline so the next
+   *  `_posthog/usage_update` carries fresher numbers. No-op when the baseline
+   *  hasn't been initialized yet (e.g. in a unit-test session). */
+  private updateBreakdownCategory(
+    key: keyof NonNullable<Session["contextBreakdownBaseline"]>,
+    tokens: number,
+  ): void {
+    if (!this.session?.contextBreakdownBaseline) return;
+    if (this.session.contextBreakdownBaseline[key] === tokens) return;
+    this.session.contextBreakdownBaseline = {
+      ...this.session.contextBreakdownBaseline,
+      [key]: tokens,
+    };
   }
 
   private async replaySessionHistory(sessionId: string): Promise<void> {
@@ -1610,6 +1672,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         this.sendAvailableCommandsUpdate(),
       ),
       fetchMcpToolMetadata(q, this.logger).then(() => {
+        this.updateBreakdownCategory(
+          "mcp",
+          estimateMcpTokens(getCachedMcpTools()),
+        );
         const serverNames = getConnectedMcpServerNames();
         if (serverNames.length > 0) {
           this.options?.onMcpServersReady?.(serverNames);

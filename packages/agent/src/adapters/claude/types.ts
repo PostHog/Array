@@ -10,6 +10,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Pushable } from "../../utils/streams";
 import type { BaseSession } from "../base-acp-agent";
+import type { ContextBreakdownBaseline } from "./context-breakdown";
 import type { McpToolApprovals } from "./mcp/tool-metadata";
 import type { SettingsManager } from "./session/settings";
 import type { CodeExecutionMode } from "./tools";
@@ -65,6 +66,10 @@ export type Session = BaseSession & {
   pendingMessages: Map<string, PendingMessage>;
   nextPendingOrder: number;
   emitRawSDKMessages: boolean | SDKMessageFilter[];
+  /** Per-source token estimates for stable pieces (system prompt, tools, etc.)
+   *  used by the renderer's context-breakdown popover. Refreshed at session
+   *  init and on MCP/skill changes. */
+  contextBreakdownBaseline?: ContextBreakdownBaseline;
 };
 
 export type ToolUseCache = {

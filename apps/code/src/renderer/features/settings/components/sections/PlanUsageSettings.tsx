@@ -3,6 +3,7 @@ import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { TokenSpendAnalysisBanner } from "@features/billing/components/TokenSpendAnalysisBanner";
 import { useUsage } from "@features/billing/hooks/useUsage";
 import { useSeatStore } from "@features/billing/stores/seatStore";
+import { formatResetTime } from "@features/billing/utils";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useSeat } from "@hooks/useSeat";
 import type { UsageBucket } from "@main/services/llm-gateway/schemas";
@@ -45,17 +46,6 @@ async function openBillingPage(orgId: string | null): Promise<void> {
   }
   const url = getBillingUrl();
   if (url) window.open(url, "_blank");
-}
-
-function formatResetTime(seconds: number): string {
-  if (seconds < 3600) return "less than 1 hour";
-  if (seconds < 86400) {
-    const hours = Math.ceil(seconds / 3600);
-    return hours === 1 ? "1 hour" : `${hours} hours`;
-  }
-  const days = Math.ceil(seconds / 86400);
-  if (days === 1) return "1 day";
-  return `${days} days`;
 }
 
 export function PlanUsageSettings() {
@@ -452,7 +442,7 @@ function UsageMeter({ label, bucket, color }: UsageMeterProps) {
       <Text className="text-(--gray-9) text-[13px]">
         {bucket.exceeded
           ? "Limit exceeded"
-          : `Resets in ${formatResetTime(bucket.resets_in_seconds)}`}
+          : formatResetTime(bucket.reset_at, bucket.resets_in_seconds)}
       </Text>
     </Flex>
   );
