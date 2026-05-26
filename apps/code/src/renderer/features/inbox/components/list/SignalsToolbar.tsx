@@ -47,6 +47,7 @@ interface SignalsToolbarProps {
   pipelinePausedUntil?: string | null;
   searchDisabledReason?: string | null;
   hideFilters?: boolean;
+  hideSearch?: boolean;
   reports?: SignalReport[];
   /** Pre-computed effective bulk selection (store ids or virtual open-report fallback). */
   effectiveBulkIds?: string[];
@@ -54,6 +55,12 @@ interface SignalsToolbarProps {
   onToggleSelectAll?: (checked: boolean) => void;
   /** Called when the "Configure sources" button is clicked. */
   onConfigureSources?: () => void;
+  /**
+   * When true, displays a persistent tooltip on the "Configure sources"
+   * button — used after first onboarding to teach the user where the rest
+   * of the configuration lives. The parent controls dismissal.
+   */
+  configSourcesTooltipOpen?: boolean;
   /**
    * Opens the dismiss flow: exactly one report selected (snooze or permanent suppress, with a reason).
    * With 2+ reports selected, use the Snooze and Suppress toolbar actions instead.
@@ -260,10 +267,12 @@ export function SignalsToolbar({
   pipelinePausedUntil,
   searchDisabledReason,
   hideFilters,
+  hideSearch,
   reports = [],
   effectiveBulkIds = [],
   onToggleSelectAll,
   onConfigureSources,
+  configSourcesTooltipOpen,
   onOpenDismissDialog,
   isDismissMutationPending = false,
   onReportAction,
@@ -498,45 +507,63 @@ export function SignalsToolbar({
               </Text>
             ) : null}
           </Flex>
-          {onConfigureSources ? (
-            <button
-              type="button"
-              onClick={onConfigureSources}
-              className="flex shrink-0 cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-[12px] text-gray-10 transition-colors hover:text-gray-12"
-            >
-              <GearSixIcon size={12} />
-              <span>Configure sources</span>
-            </button>
-          ) : null}
+          {onConfigureSources
+            ? (() => {
+                const configureSourcesButton = (
+                  <button
+                    type="button"
+                    onClick={onConfigureSources}
+                    className="flex shrink-0 cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-[12px] text-gray-10 transition-colors hover:text-gray-12"
+                  >
+                    <GearSixIcon size={12} />
+                    <span>Configure sources</span>
+                  </button>
+                );
+                return configSourcesTooltipOpen ? (
+                  <Tooltip
+                    content="All of your Inbox configuration is here"
+                    open
+                    side="bottom"
+                    align="end"
+                  >
+                    {configureSourcesButton}
+                  </Tooltip>
+                ) : (
+                  configureSourcesButton
+                );
+              })()
+            : null}
         </Flex>
 
-        <Flex align="center" gap="2">
-          <Tooltip
-            content={searchDisabledReason}
-            hidden={!searchDisabledReason}
-          >
-            <Box className="min-w-0 flex-1 select-text">
-              <TextField.Root
-                size="1"
-                placeholder="Search reports..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="text-[12px]"
-                disabled={!!searchDisabledReason}
-              >
-                <TextField.Slot>
-                  <MagnifyingGlass size={12} />
-                </TextField.Slot>
-              </TextField.Root>
-            </Box>
-          </Tooltip>
-          {!hideFilters && (
-            <Flex align="center" gap="1" className="shrink-0">
-              <SuggestedReviewerFilterMenu />
-              <FilterSortMenu />
-            </Flex>
-          )}
-        </Flex>
+        {!hideSearch && (
+          <Flex align="center" gap="2">
+            <Tooltip
+              content={searchDisabledReason}
+              hidden={!searchDisabledReason}
+            >
+              <Box className="min-w-0 flex-1 select-text">
+                <TextField.Root
+                  size="1"
+                  placeholder="Search reports..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="text-[12px]"
+                  disabled={!!searchDisabledReason}
+                >
+                  <TextField.Slot>
+                    <MagnifyingGlass size={12} />
+                  </TextField.Slot>
+                </TextField.Root>
+              </Box>
+            </Tooltip>
+            {!hideFilters && (
+              <Flex align="center" gap="1" className="shrink-0">
+                <SuggestedReviewerFilterMenu />
+                <FilterSortMenu />
+              </Flex>
+            )}
+          </Flex>
+        )}
 
         <Flex gap="2" align="center" justify="between" wrap="wrap-reverse">
           <Tooltip

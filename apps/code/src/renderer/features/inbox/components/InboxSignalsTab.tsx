@@ -21,6 +21,7 @@ import {
 } from "@features/inbox/hooks/useInboxReports";
 import { useSeedSuggestedReviewerFilter } from "@features/inbox/hooks/useSeedSuggestedReviewerFilter";
 import { useSignalSourceConfigs } from "@features/inbox/hooks/useSignalSourceConfigs";
+import { useInboxOnboardingStore } from "@features/inbox/stores/inboxOnboardingStore";
 import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
 import { useInboxSignalsFilterStore } from "@features/inbox/stores/inboxSignalsFilterStore";
 import { useInboxSignalsSidebarStore } from "@features/inbox/stores/inboxSignalsSidebarStore";
@@ -477,7 +478,15 @@ export function InboxSignalsTab() {
     statusFilter.length < 5;
   // Onboarding wins over two-pane even if the user has suggested setup tasks —
   // discovered tasks alone shouldn't push a source-less user past the inline setup.
-  const showInboxOnboarding = !hasReports && !hasSignalSources;
+  const onboardingShouldShow = !hasReports && !hasSignalSources;
+  // Sticky within an inbox visit: once we've entered onboarding, keep showing
+  // it even after the user toggles a source on. The whole visit is the unit;
+  // the ref resets naturally when InboxView unmounts on navigation away.
+  const onboardingStickyRef = useRef(false);
+  if (onboardingShouldShow) {
+    onboardingStickyRef.current = true;
+  }
+  const showInboxOnboarding = onboardingStickyRef.current;
   const shouldShowTwoPane =
     !showInboxOnboarding &&
     (hasReports ||
@@ -492,6 +501,35 @@ export function InboxSignalsTab() {
     hasMountedTwoPaneRef.current = true;
   }
   const showTwoPaneLayout = hasMountedTwoPaneRef.current;
+
+  // ── Onboarding-seen + config-tooltip persistence ───────────────────────
+  const hasSeenOnboarding = useInboxOnboardingStore((s) => s.hasSeenOnboarding);
+  const hasDismissedConfigTooltip = useInboxOnboardingStore(
+    (s) => s.hasDismissedConfigTooltip,
+  );
+  const markOnboardingSeen = useInboxOnboardingStore(
+    (s) => s.markOnboardingSeen,
+  );
+  const dismissConfigTooltip = useInboxOnboardingStore(
+    (s) => s.dismissConfigTooltip,
+  );
+
+  useEffect(() => {
+    if (showInboxOnboarding && !hasSeenOnboarding) {
+      markOnboardingSeen();
+    }
+  }, [showInboxOnboarding, hasSeenOnboarding, markOnboardingSeen]);
+
+  useEffect(() => {
+    if (sourcesDialogOpen && !hasDismissedConfigTooltip) {
+      dismissConfigTooltip();
+    }
+  }, [sourcesDialogOpen, hasDismissedConfigTooltip, dismissConfigTooltip]);
+
+  // Tooltip rides on the Configure sources toolbar button, but only outside
+  // the onboarding view (which doesn't render that button at all).
+  const showConfigSourcesTooltip =
+    hasSeenOnboarding && !hasDismissedConfigTooltip && !showInboxOnboarding;
 
   // ── Inbox viewed analytics — fire once per visit when data settles ─────
   const inboxViewedFiredRef = useRef(false);
@@ -692,8 +730,8 @@ export function InboxSignalsTab() {
     <>
       {showInboxOnboarding ? (
         /* ── Inline setup pane for users with no sources configured ──
-           No "Configure sources" toolbar shortcut — the pane below is the
-           configuration UI, so a duplicate button would be confusing. */
+           No "Configure sources" toolbar shortcut nor search bar — the pane
+           below is the configuration UI and there's nothing to search yet. */
         <Flex direction="column" className="h-full">
           <SignalsToolbar
             totalCount={0}
@@ -702,6 +740,7 @@ export function InboxSignalsTab() {
             pipelinePausedUntil={signalProcessingState?.paused_until}
             searchDisabledReason={searchDisabledReason}
             hideFilters
+            hideSearch
           />
           <ScrollArea className="min-h-0 flex-1">
             <InboxSetupPane />
@@ -778,6 +817,7 @@ export function InboxSignalsTab() {
                     effectiveBulkIds={selectedReportIds}
                     onToggleSelectAll={handleToggleSelectAll}
                     onConfigureSources={() => setSourcesDialogOpen(true)}
+                    configSourcesTooltipOpen={showConfigSourcesTooltip}
                     onOpenDismissDialog={openDismissDialogFromToolbar}
                     isDismissMutationPending={dismissMutationPending}
                     onReportAction={tracker.signalAction}
@@ -863,6 +903,7 @@ export function InboxSignalsTab() {
               searchDisabledReason={searchDisabledReason}
               hideFilters
               onConfigureSources={() => setSourcesDialogOpen(true)}
+              configSourcesTooltipOpen={showConfigSourcesTooltip}
             />
             <SkeletonBackdrop />
           </Flex>

@@ -17,11 +17,11 @@ export function InboxSetupPane() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <Flex direction="column" gap="2">
+          <Flex direction="column" gap="3">
             <Text className="font-bold text-(--gray-12) text-2xl">
               Set up your Signals Inbox
             </Text>
-            <Text className="text-(--gray-11) text-sm">
+            <Text className="text-(--gray-11) text-base leading-relaxed">
               Connect GitHub and pick which sources to monitor. PostHog Code
               will analyze activity around the clock and surface ready-to-run
               fixes — with autonomous PRs at the priority threshold you choose.

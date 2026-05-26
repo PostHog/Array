@@ -31,7 +31,7 @@ import {
   ScrollArea,
   Spinner,
   Text,
-  TextField,
+  TextArea,
   Tooltip,
 } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
@@ -546,7 +546,7 @@ export function ReportDetailPane({
               </Popover.Trigger>
               <Popover.Content
                 align="end"
-                className="w-[320px] border border-(--gray-6) bg-(--color-panel-solid) p-3 shadow-6"
+                className="w-[420px] border border-(--gray-6) bg-(--color-panel-solid) p-3 shadow-6"
                 side="bottom"
                 sideOffset={6}
               >
@@ -554,27 +554,43 @@ export function ReportDetailPane({
                   className="flex flex-col gap-2"
                   onSubmit={handleDiscussSubmit}
                 >
-                  <TextField.Root
+                  <TextArea
                     aria-label="Optional first question for Discuss"
                     autoFocus
                     placeholder="Ask about this report..."
+                    resize="vertical"
+                    rows={5}
                     size="2"
                     value={discussQuestion}
                     onChange={(event) => setDiscussQuestion(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Enter" &&
+                        (event.metaKey || event.ctrlKey)
+                      ) {
+                        event.preventDefault();
+                        handleDiscussReport(discussQuestion);
+                      }
+                    }}
                   />
-                  <Flex justify="end" gap="2">
-                    <Button
-                      color="gray"
-                      size="1"
-                      type="button"
-                      variant="soft"
-                      onClick={() => setDiscussQuestionOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button size="1" type="submit" variant="soft">
-                      Discuss
-                    </Button>
+                  <Flex justify="between" align="center" gap="2">
+                    <Text size="1" color="gray">
+                      <Kbd>{isMac ? "⌘↵" : "Ctrl+↵"}</Kbd> to send
+                    </Text>
+                    <Flex gap="2">
+                      <Button
+                        color="gray"
+                        size="1"
+                        type="button"
+                        variant="soft"
+                        onClick={() => setDiscussQuestionOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button size="1" type="submit" variant="soft">
+                        Discuss
+                      </Button>
+                    </Flex>
                   </Flex>
                 </form>
               </Popover.Content>
