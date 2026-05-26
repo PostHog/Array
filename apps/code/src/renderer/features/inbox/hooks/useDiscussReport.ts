@@ -4,7 +4,6 @@ import { useCreateTask } from "@features/tasks/hooks/useTasks";
 import { useUserRepositoryIntegration } from "@hooks/useIntegrations";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
-import { trpcClient } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
@@ -18,6 +17,7 @@ import type {
   TaskService,
 } from "../../task-detail/service/service";
 import { buildDiscussReportPrompt } from "../utils/buildDiscussReportPrompt";
+import { resolveDefaultModel } from "../utils/resolveDefaultModel";
 
 const log = logger.scope("discuss-report");
 
@@ -32,32 +32,6 @@ interface UseDiscussReportReturn {
   discussReport: (question?: string) => Promise<void>;
   /** True while a Discuss task is being created. */
   isDiscussing: boolean;
-}
-
-/**
- * Resolve the default model for the given adapter via the preview-config
- * tRPC query. Returns the server's `currentValue` for the `model` option, or
- * undefined if the call fails or the option is missing.
- */
-async function resolveDefaultModel(
-  apiHost: string,
-  adapter: "claude" | "codex",
-): Promise<string | undefined> {
-  try {
-    const options = await trpcClient.agent.getPreviewConfigOptions.query({
-      apiHost,
-      adapter,
-    });
-    const modelOption = options.find(
-      (o) => o.id === "model" || o.category === "model",
-    );
-    if (modelOption?.type === "select" && modelOption.currentValue) {
-      return modelOption.currentValue;
-    }
-  } catch (error) {
-    log.warn("Failed to resolve default model for Discuss", { error, adapter });
-  }
-  return undefined;
 }
 
 /**

@@ -1,21 +1,39 @@
 import { useTRPC } from "@renderer/trpc";
-import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
-import { useQuery } from "@tanstack/react-query";
-
-const USAGE_REFETCH_INTERVAL_MS = 30_000;
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSubscription } from "@trpc/tanstack-react-query";
+import { useCallback } from "react";
 
 export function useUsage({ enabled = true }: { enabled?: boolean } = {}) {
   const trpc = useTRPC();
-  const focused = useRendererWindowFocusStore((s) => s.focused);
-  const {
-    data: usage,
-    isLoading,
-    refetch,
-  } = useQuery({
-    ...trpc.llmGateway.usage.queryOptions(),
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    ...trpc.usageMonitor.getLatest.queryOptions(),
     enabled,
-    refetchInterval: focused && enabled ? USAGE_REFETCH_INTERVAL_MS : false,
-    refetchIntervalInBackground: false,
   });
-  return { usage: usage ?? null, isLoading, refetch };
+  const { mutateAsync: refreshUsage } = useMutation(
+    trpc.usageMonitor.refresh.mutationOptions(),
+  );
+
+  useSubscription(
+    trpc.usageMonitor.onUsageUpdated.subscriptionOptions(undefined, {
+      enabled,
+      onData: (data) => {
+        queryClient.setQueryData(trpc.usageMonitor.getLatest.queryKey(), data);
+      },
+    }),
+  );
+
+  const refetch = useCallback(async () => {
+    const fresh = await refreshUsage();
+    if (fresh) {
+      queryClient.setQueryData(trpc.usageMonitor.getLatest.queryKey(), fresh);
+    }
+    return fresh;
+  }, [refreshUsage, queryClient, trpc.usageMonitor.getLatest]);
+
+  return {
+    usage: query.data ?? null,
+    isLoading: query.isLoading,
+    refetch,
+  };
 }
