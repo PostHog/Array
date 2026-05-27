@@ -1481,6 +1481,10 @@ For git operations while detached:
           }
         }
 
+        if (isNotification(method, POSTHOG_NOTIFICATIONS.USAGE_UPDATE)) {
+          this.emit(AgentServiceEvent.LlmActivity, undefined);
+        }
+
         // Extension notifications already flow through the tapped stream
         // (same pattern as sessionUpdate). No need to re-emit here.
       },

@@ -4,8 +4,8 @@ import {
   SelectReportPane,
   SkeletonBackdrop,
   WarmingUpPane,
-  WelcomePane,
 } from "@features/inbox/components/InboxEmptyStates";
+import { InboxSetupPane } from "@features/inbox/components/InboxSetupPane";
 import { InboxSourcesDialog } from "@features/inbox/components/InboxSourcesDialog";
 import {
   inboxBulkSnoozeDisabledReason,
@@ -19,6 +19,7 @@ import {
   useInboxReportsInfinite,
   useInboxSignalProcessingState,
 } from "@features/inbox/hooks/useInboxReports";
+import { useSeedSuggestedReviewerFilter } from "@features/inbox/hooks/useSeedSuggestedReviewerFilter";
 import { useSignalSourceConfigs } from "@features/inbox/hooks/useSignalSourceConfigs";
 import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
 import { useInboxSignalsFilterStore } from "@features/inbox/stores/inboxSignalsFilterStore";
@@ -36,6 +37,7 @@ import { setPendingInboxOpenMethod } from "@features/inbox/utils/pendingInboxOpe
 import { DiscoveredTaskDetailPane } from "@features/setup/components/DiscoveredTaskDetailPane";
 import { RecommendedSetupTasks } from "@features/setup/components/RecommendedSetupTasks";
 import { useSetupStore } from "@features/setup/stores/setupStore";
+import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import {
   useIntegrations,
   useRepositoryIntegration,
@@ -72,21 +74,22 @@ export function InboxSignalsTab() {
   const suggestedReviewerFilter = useInboxSignalsFilterStore(
     (s) => s.suggestedReviewerFilter,
   );
-  const seedSuggestedReviewerFilterWithCurrentUser = useInboxSignalsFilterStore(
-    (s) => s.seedSuggestedReviewerFilterWithCurrentUser,
-  );
-
   // ── Current user (seeds reviewer filter on first inbox visit) ───────────
   const authClient = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({
     client: authClient,
     enabled: !!authClient,
   });
-
-  useEffect(() => {
-    if (!currentUser?.uuid) return;
-    seedSuggestedReviewerFilterWithCurrentUser(currentUser.uuid);
-  }, [currentUser?.uuid, seedSuggestedReviewerFilterWithCurrentUser]);
+  // Gates the seed below: backend filters reports by GitHub login, not UUID.
+  const { data: githubLogin } = useAuthenticatedQuery(
+    ["github_login"],
+    (client) => client.getGithubLogin(),
+    { staleTime: 5 * 60 * 1000 },
+  );
+  useSeedSuggestedReviewerFilter({
+    currentUserUuid: currentUser?.uuid,
+    githubLogin,
+  });
 
   // ── GitHub integration ───────────────────────────────────────────────
   const { hasGithubIntegration } = useRepositoryIntegration();
@@ -472,11 +475,25 @@ export function InboxSignalsTab() {
     sourceProductFilter.length > 0 ||
     suggestedReviewerFilter.length > 0 ||
     statusFilter.length < 5;
+  // Onboarding wins over two-pane even if the user has suggested setup tasks —
+  // discovered tasks alone shouldn't push a source-less user past the inline setup.
+  const onboardingShouldShow = !hasReports && !hasSignalSources;
+  // Sticky within an inbox visit: once we've entered onboarding, keep showing
+  // it even after the user toggles a source on, until either they explicitly
+  // click "Proceed to Inbox" or navigate away (unmount resets the ref).
+  const enteredOnboardingRef = useRef(false);
+  if (onboardingShouldShow) {
+    enteredOnboardingRef.current = true;
+  }
+  const [userExitedOnboarding, setUserExitedOnboarding] = useState(false);
+  const showInboxOnboarding =
+    enteredOnboardingRef.current && !userExitedOnboarding;
   const shouldShowTwoPane =
-    hasReports ||
-    !!searchQuery.trim() ||
-    hasActiveFilters ||
-    hasDiscoveredTasks;
+    !showInboxOnboarding &&
+    (hasReports ||
+      !!searchQuery.trim() ||
+      hasActiveFilters ||
+      hasDiscoveredTasks);
 
   // Sticky: once we enter two-pane mode, stay there even if a refetch
   // momentarily empties the list (e.g. when sort order changes).
@@ -683,7 +700,19 @@ export function InboxSignalsTab() {
 
   return (
     <>
-      {showTwoPaneLayout ? (
+      {showInboxOnboarding ? (
+        // Inline setup pane for users with no sources configured.
+        // The toolbar (report counter, search, bulk actions) is suppressed
+        // entirely — none of it is meaningful before any source is configured.
+        // Sticky within the visit: stays until the user clicks "Proceed to
+        // Inbox" inside the pane or navigates away.
+        <ScrollArea className="h-full">
+          <InboxSetupPane
+            hasSignalSources={hasSignalSources}
+            onProceedToInbox={() => setUserExitedOnboarding(true)}
+          />
+        </ScrollArea>
+      ) : showTwoPaneLayout ? (
         <Flex ref={containerRef} height="100%" className="min-h-0">
           {/* ── Left pane: report list ───────────────────────────────── */}
           <Box
@@ -828,7 +857,7 @@ export function InboxSignalsTab() {
           </Flex>
         </Flex>
       ) : (
-        /* ── Full-width empty state with skeleton backdrop ──────── */
+        // Full-width warming-up state with skeleton backdrop
         <Box className="relative h-full">
           <Flex direction="column">
             <SignalsToolbar
@@ -850,14 +879,10 @@ export function InboxSignalsTab() {
             className="pointer-events-none absolute inset-0 flex items-center justify-center"
           >
             <Box className="pointer-events-auto">
-              {!hasSignalSources || !hasGithubIntegration ? (
-                <WelcomePane onEnableInbox={() => setSourcesDialogOpen(true)} />
-              ) : (
-                <WarmingUpPane
-                  onConfigureSources={() => setSourcesDialogOpen(true)}
-                  enabledProducts={enabledProducts}
-                />
-              )}
+              <WarmingUpPane
+                onConfigureSources={() => setSourcesDialogOpen(true)}
+                enabledProducts={enabledProducts}
+              />
             </Box>
           </Box>
         </Box>

@@ -319,3 +319,221 @@ describe("mapPrState", () => {
     expect(mapPrState("something", false, false)).toBeNull();
   });
 });
+
+describe("GitService.getPrReviewComments", () => {
+  let service: GitService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new GitService(
+      {} as LlmGatewayService,
+      {} as WorkspaceService,
+      { getSessionEnvForTask: async () => ({}) } as unknown as AgentService,
+    );
+  });
+
+  const makeThread = (id: string, commentId: number) => ({
+    id,
+    isResolved: false,
+    isOutdated: false,
+    path: "src/foo.ts",
+    diffSide: "RIGHT",
+    line: 10,
+    originalLine: 10,
+    startLine: null,
+    startDiffSide: null,
+    subjectType: "LINE",
+    comments: {
+      nodes: [
+        {
+          databaseId: commentId,
+          body: "looks good",
+          path: "src/foo.ts",
+          diffHunk: "@@ -1,3 +1,4 @@",
+          replyTo: null,
+          author: {
+            login: "alice",
+            avatarUrl: "https://example.com/alice.png",
+          },
+          createdAt: "2024-01-01T00:00:00Z",
+          updatedAt: "2024-01-01T00:00:00Z",
+        },
+      ],
+    },
+  });
+
+  const makePage = (
+    threads: object[],
+    hasNextPage: boolean,
+    endCursor: string | null,
+  ) => ({
+    exitCode: 0,
+    stdout: JSON.stringify({
+      data: {
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              pageInfo: { hasNextPage, endCursor },
+              nodes: threads,
+            },
+          },
+        },
+      },
+    }),
+  });
+
+  it("returns empty array for non-PR URL", async () => {
+    const result = await service.getPrReviewComments(
+      "https://github.com/owner/repo",
+    );
+    expect(result).toEqual([]);
+    expect(mockExecGh).not.toHaveBeenCalled();
+  });
+
+  it("maps a single-page response to PrReviewThread[]", async () => {
+    mockExecGh.mockResolvedValueOnce(
+      makePage([makeThread("T_1", 101)], false, null),
+    );
+
+    const result = await service.getPrReviewComments(
+      "https://github.com/owner/repo/pull/1",
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      nodeId: "T_1",
+      isResolved: false,
+      rootId: 101,
+      filePath: "src/foo.ts",
+    });
+    expect(result[0].comments[0]).toMatchObject({
+      id: 101,
+      body: "looks good",
+      side: "RIGHT",
+      line: 10,
+      subject_type: "line",
+    });
+  });
+
+  it("fetches all pages when hasNextPage is true", async () => {
+    mockExecGh
+      .mockResolvedValueOnce(
+        makePage([makeThread("T_1", 101)], true, "cursor-abc"),
+      )
+      .mockResolvedValueOnce(makePage([makeThread("T_2", 102)], false, null));
+
+    const result = await service.getPrReviewComments(
+      "https://github.com/owner/repo/pull/1",
+    );
+
+    expect(mockExecGh).toHaveBeenCalledTimes(2);
+    expect(result).toHaveLength(2);
+    expect(result.map((t) => t.nodeId)).toEqual(["T_1", "T_2"]);
+
+    const secondCall = JSON.parse(mockExecGh.mock.calls[1][1].input);
+    expect(secondCall.variables.cursor).toBe("cursor-abc");
+  });
+
+  it("returns partial results when MAX_THREAD_PAGES is exceeded", async () => {
+    let n = 0;
+    mockExecGh.mockImplementation(async () => {
+      n += 1;
+      return makePage([makeThread(`T_${n}`, 100 + n)], true, `cursor-${n}`);
+    });
+
+    const result = await service.getPrReviewComments(
+      "https://github.com/owner/repo/pull/1",
+    );
+
+    expect(mockExecGh).toHaveBeenCalledTimes(50);
+    expect(result).toHaveLength(50);
+    expect(result[0]?.nodeId).toBe("T_1");
+    expect(result[49]?.nodeId).toBe("T_50");
+  });
+
+  it("throws when gh exits with non-zero", async () => {
+    mockExecGh.mockResolvedValueOnce({
+      exitCode: 1,
+      stderr: "auth error",
+      stdout: "",
+    });
+
+    await expect(
+      service.getPrReviewComments("https://github.com/owner/repo/pull/1"),
+    ).rejects.toThrow("Failed to fetch PR review threads");
+  });
+
+  it("throws with the GraphQL error message when GitHub returns 200 with errors", async () => {
+    mockExecGh.mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        data: null,
+        errors: [{ message: "Resource not accessible by integration" }],
+      }),
+    });
+
+    await expect(
+      service.getPrReviewComments("https://github.com/owner/repo/pull/1"),
+    ).rejects.toThrow("Resource not accessible by integration");
+  });
+});
+
+describe("GitService.resolveReviewThread", () => {
+  let service: GitService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new GitService(
+      {} as LlmGatewayService,
+      {} as WorkspaceService,
+      { getSessionEnvForTask: async () => ({}) } as unknown as AgentService,
+    );
+  });
+
+  it("resolves a thread and returns isResolved: true", async () => {
+    mockExecGh.mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        data: {
+          resolveReviewThread: { thread: { id: "T_1", isResolved: true } },
+        },
+      }),
+    });
+
+    const result = await service.resolveReviewThread("T_1", true);
+
+    expect(result).toEqual({ success: true, isResolved: true });
+    const body = JSON.parse(mockExecGh.mock.calls[0][1].input);
+    expect(body.query).toContain("resolveReviewThread");
+    expect(body.variables.threadId).toBe("T_1");
+  });
+
+  it("unresolves a thread and returns isResolved: false", async () => {
+    mockExecGh.mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        data: {
+          unresolveReviewThread: { thread: { id: "T_1", isResolved: false } },
+        },
+      }),
+    });
+
+    const result = await service.resolveReviewThread("T_1", false);
+
+    expect(result).toEqual({ success: true, isResolved: false });
+    const body = JSON.parse(mockExecGh.mock.calls[0][1].input);
+    expect(body.query).toContain("unresolveReviewThread");
+  });
+
+  it("returns success: false when gh exits with non-zero", async () => {
+    mockExecGh.mockResolvedValueOnce({
+      exitCode: 1,
+      stderr: "network error",
+      stdout: "",
+    });
+
+    const result = await service.resolveReviewThread("T_1", true);
+
+    expect(result).toEqual({ success: false, isResolved: false });
+  });
+});

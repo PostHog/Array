@@ -12,11 +12,14 @@ import { useFileTreeStore } from "@features/right-sidebar/stores/fileTreeStore";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
 import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
 import { Check, Copy } from "@phosphor-icons/react";
+import {
+  getImageMimeType,
+  isRasterImageFile,
+  parseImageDataUrl,
+} from "@posthog/shared";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
-import { getImageMimeType, isImageFile } from "@shared/constants/image";
 import type { Task } from "@shared/types";
-import { parseImageDataUrl } from "@shared/utils/imageDataUrl";
 
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
@@ -73,7 +76,7 @@ export function CodeEditorPanel({
   const repoPath = useCwd(taskId);
   const isInsideRepo = !!repoPath && absolutePath.startsWith(repoPath);
   const filePath = getRelativePath(absolutePath, repoPath);
-  const isImage = isImageFile(absolutePath);
+  const isImage = isRasterImageFile(absolutePath);
   const isMarkdown = isMarkdownFile(absolutePath);
   const openFileInSplit = usePanelLayoutStore((s) => s.openFileInSplit);
   const expandToFile = useFileTreeStore((s) => s.expandToFile);

@@ -31,7 +31,7 @@ import {
   ScrollArea,
   Spinner,
   Text,
-  TextField,
+  TextArea,
   Tooltip,
 } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
@@ -50,7 +50,6 @@ import type {
   Task,
 } from "@shared/types";
 import type { InboxReportActionProperties } from "@shared/types/analytics";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
 import { isMac } from "@utils/platform";
 import {
@@ -63,6 +62,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import { useCreatePrReport } from "../../hooks/useCreatePrReport";
 import { useDiscussReport } from "../../hooks/useDiscussReport";
 import { ReportImplementationPrLink } from "../utils/ReportImplementationPrLink";
 import { SignalReportActionabilityBadge } from "../utils/SignalReportActionabilityBadge";
@@ -265,7 +265,6 @@ export function ReportDetailPane({
   );
 
   // ── Task creation ───────────────────────────────────────────────────────
-  const { navigateToTaskInput } = useNavigationStore();
   const { data: reportRepository } = useReportRepository(report.id);
   const trpcReact = useTRPC();
   const { data: mostRecentRepo } = useQuery(
@@ -360,22 +359,20 @@ export function ReportDetailPane({
     [fireDetailAction],
   );
 
-  const handleCreateImplementationTask = useCallback(() => {
-    if (!canCreateImplementationPr) return;
+  const { createPrReport, isCreatingPr } = useCreatePrReport({
+    reportId: report.id,
+    reportTitle: report.title,
+    cloudRepository: effectiveCloudRepository,
+  });
+
+  const handleCreateImplementationTask = useCallback(async () => {
+    if (!canCreateImplementationPr || isCreatingPr) return;
     fireDetailAction("create_pr");
-    navigateToTaskInput({
-      initialPrompt: `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`,
-      initialCloudRepository: effectiveCloudRepository ?? undefined,
-      reportAssociation: {
-        reportId: report.id,
-        title: report.title ?? "Untitled signal",
-      },
-    });
+    await createPrReport();
   }, [
     canCreateImplementationPr,
-    navigateToTaskInput,
-    effectiveCloudRepository,
-    report,
+    isCreatingPr,
+    createPrReport,
     fireDetailAction,
   ]);
 
@@ -518,7 +515,7 @@ export function ReportDetailPane({
               size="1"
               variant="soft"
               className="gap-1 rounded-r-none text-[12px]"
-              tooltipContent="Open a chat session about this report"
+              tooltipContent="Discuss this report in a task with your agent"
               disabled={isDiscussing}
               onClick={() => handleDiscussReport()}
             >
@@ -546,7 +543,7 @@ export function ReportDetailPane({
               </Popover.Trigger>
               <Popover.Content
                 align="end"
-                className="w-[320px] border border-(--gray-6) bg-(--color-panel-solid) p-3 shadow-6"
+                className="w-[420px] border border-(--gray-6) bg-(--color-panel-solid) p-3 shadow-6"
                 side="bottom"
                 sideOffset={6}
               >
@@ -554,27 +551,43 @@ export function ReportDetailPane({
                   className="flex flex-col gap-2"
                   onSubmit={handleDiscussSubmit}
                 >
-                  <TextField.Root
+                  <TextArea
                     aria-label="Optional first question for Discuss"
                     autoFocus
                     placeholder="Ask about this report..."
+                    resize="vertical"
+                    rows={5}
                     size="2"
                     value={discussQuestion}
                     onChange={(event) => setDiscussQuestion(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Enter" &&
+                        (event.metaKey || event.ctrlKey)
+                      ) {
+                        event.preventDefault();
+                        handleDiscussReport(discussQuestion);
+                      }
+                    }}
                   />
-                  <Flex justify="end" gap="2">
-                    <Button
-                      color="gray"
-                      size="1"
-                      type="button"
-                      variant="soft"
-                      onClick={() => setDiscussQuestionOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button size="1" type="submit" variant="soft">
-                      Discuss
-                    </Button>
+                  <Flex justify="between" align="center" gap="2">
+                    <Text size="1" color="gray">
+                      <Kbd>{isMac ? "⌘↵" : "Ctrl+↵"}</Kbd> to send
+                    </Text>
+                    <Flex gap="2">
+                      <Button
+                        color="gray"
+                        size="1"
+                        type="button"
+                        variant="soft"
+                        onClick={() => setDiscussQuestionOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button size="1" type="submit" variant="soft">
+                        Discuss
+                      </Button>
+                    </Flex>
                   </Flex>
                 </form>
               </Popover.Content>
@@ -598,9 +611,10 @@ export function ReportDetailPane({
                 size="1"
                 variant="solid"
                 className="gap-1 text-[12px]"
+                disabled={isCreatingPr}
                 onClick={handleCreateImplementationTask}
               >
-                <Plus size={12} />
+                {isCreatingPr ? <Spinner size="1" /> : <Plus size={12} />}
                 Create PR
               </Button>
             </Tooltip>

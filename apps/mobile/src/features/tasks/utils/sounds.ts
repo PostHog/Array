@@ -11,6 +11,8 @@ const knockAsset = require("../../../../assets/sounds/knock.mp3");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const meepAsset = require("../../../../assets/sounds/meep.mp3");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+const meepSmolAsset = require("../../../../assets/sounds/meep-smol.mp3");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const ringAsset = require("../../../../assets/sounds/ring.mp3");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const shootAsset = require("../../../../assets/sounds/shoot.mp3");
@@ -19,6 +21,7 @@ const slideAsset = require("../../../../assets/sounds/slide.mp3");
 
 const SOUND_ASSETS: Record<CompletionSound, number> = {
   meep: meepAsset,
+  "meep-smol": meepSmolAsset,
   knock: knockAsset,
   ring: ringAsset,
   shoot: shootAsset,

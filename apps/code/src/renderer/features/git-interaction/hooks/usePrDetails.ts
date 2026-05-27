@@ -1,4 +1,4 @@
-import type { PrReviewComment } from "@main/services/git/schemas";
+import type { PrReviewThread } from "@main/services/git/schemas";
 import type { PrCommentThread } from "@renderer/features/code-review/utils/prCommentAnnotations";
 import { useTRPC } from "@renderer/trpc";
 import { useQuery } from "@tanstack/react-query";
@@ -8,30 +8,18 @@ interface UsePrDetailsOptions {
   includeComments?: boolean;
 }
 
-function groupCommentsIntoThreads(
-  comments: PrReviewComment[],
-): Map<number, PrCommentThread> {
-  const threads = new Map<number, PrCommentThread>();
-
-  for (const comment of comments) {
-    const rootId = comment.in_reply_to_id ?? comment.id;
-    const existing = threads.get(rootId);
-    if (existing) {
-      existing.comments.push(comment);
-    } else {
-      threads.set(rootId, {
-        rootId,
-        comments: [comment],
-        filePath: comment.path,
-      });
-    }
+function threadsToMap(threads: PrReviewThread[]): Map<number, PrCommentThread> {
+  const map = new Map<number, PrCommentThread>();
+  for (const thread of threads) {
+    map.set(thread.rootId, {
+      rootId: thread.rootId,
+      nodeId: thread.nodeId,
+      isResolved: thread.isResolved,
+      comments: thread.comments,
+      filePath: thread.filePath,
+    });
   }
-
-  for (const thread of threads.values()) {
-    thread.comments.sort((a, b) => a.created_at.localeCompare(b.created_at));
-  }
-
-  return threads;
+  return map;
 }
 
 export function usePrDetails(
@@ -66,7 +54,7 @@ export function usePrDetails(
   );
 
   const commentThreads = useMemo(
-    () => groupCommentsIntoThreads(commentsQuery.data ?? []),
+    () => threadsToMap(commentsQuery.data ?? []),
     [commentsQuery.data],
   );
 

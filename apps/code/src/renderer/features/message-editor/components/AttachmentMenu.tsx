@@ -12,9 +12,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@posthog/quill";
+import { isRasterImageFile } from "@posthog/shared";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
-import { isImageFile } from "@shared/constants/image";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import {
@@ -123,7 +123,7 @@ export function AttachmentMenu({
     try {
       const results = await trpcClient.os.selectAttachments.query({ mode });
       for (const { path: filePath, kind } of results) {
-        if (kind === "file" && isImageFile(filePath)) {
+        if (kind === "file" && isRasterImageFile(filePath)) {
           try {
             const attachment = await persistImageFilePath(filePath);
             onAddAttachment(attachment);

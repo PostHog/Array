@@ -31,6 +31,7 @@ const THEME_OPTIONS = [
 const SOUND_OPTIONS: ReadonlyArray<{ value: CompletionSound; label: string }> =
   [
     { value: "meep", label: "Meep" },
+    { value: "meep-smol", label: "Meep (smol)" },
     { value: "knock", label: "Knock" },
     { value: "ring", label: "Ring" },
     { value: "shoot", label: "Shoot" },
