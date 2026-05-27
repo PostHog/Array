@@ -9,7 +9,6 @@ import { useSeat } from "@hooks/useSeat";
 import type { UsageBucket } from "@main/services/llm-gateway/schemas";
 import {
   ArrowSquareOut,
-  Check,
   CreditCard,
   Info,
   WarningCircle,
@@ -24,7 +23,6 @@ import {
   Spinner,
   Text,
 } from "@radix-ui/themes";
-import { Tooltip } from "@renderer/components/ui/Tooltip";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { PLAN_PRO_ALPHA } from "@shared/types/seat";
 import { track } from "@utils/analytics";
@@ -194,11 +192,6 @@ export function PlanUsageSettings() {
               name="Free"
               price="$0"
               period="/mo"
-              features={[
-                "$50 of Claude & Codex usage / month",
-                "Local and cloud execution",
-                "All Claude and Codex models",
-              ]}
               isCurrent={!isOrgPro}
             />
             <PlanCard
@@ -206,11 +199,6 @@ export function PlanUsageSettings() {
               price="$200"
               period="/mo"
               badge="20× Free usage"
-              features={[
-                "$1,000 of Claude & Codex usage / month",
-                "Local and cloud execution",
-                "All Claude and Codex models",
-              ]}
               isCurrent={isOrgPro && !isAlpha}
               resetLabel={
                 isOrgPro && !isAlpha && isCanceling && formattedActiveUntil
@@ -368,30 +356,16 @@ export function PlanUsageSettings() {
         <Dialog.Content maxWidth="420px" size="2">
           <Dialog.Title className="text-base">Upgrade to Pro</Dialog.Title>
           <Dialog.Description color="gray" className="text-sm">
+            Pro is for teams using Code as part of their daily development
+            workflow: longer cloud runs, repeated agent iterations, and fewer
+            stops as work scales.{" "}
             {seat?.organization_name ? (
               <Text weight="medium">{seat.organization_name}</Text>
             ) : (
               "Your organization"
             )}{" "}
-            will be charged $200/month. Includes $1,000 of Claude and Codex API
-            usage per month — 20× the Free limit.
+            will be charged $200/month for 20× the Free usage limit.
           </Dialog.Description>
-          <Flex direction="column" gap="2" mt="3">
-            <Flex align="center" gap="2">
-              <Check size={14} weight="bold" className="text-(--accent-9)" />
-              <Text className="text-sm">
-                $1,000 of Claude & Codex usage / month
-              </Text>
-            </Flex>
-            <Flex align="center" gap="2">
-              <Check size={14} weight="bold" className="text-(--accent-9)" />
-              <Text className="text-sm">Local and cloud execution</Text>
-            </Flex>
-            <Flex align="center" gap="2">
-              <Check size={14} weight="bold" className="text-(--accent-9)" />
-              <Text className="text-sm">All Claude and Codex models</Text>
-            </Flex>
-          </Flex>
           <Flex
             align="start"
             gap="2"
@@ -472,7 +446,6 @@ interface PlanCardProps {
   name: string;
   price: string;
   period: string;
-  features: string[];
   isCurrent: boolean;
   resetLabel?: string;
   badge?: string;
@@ -483,7 +456,6 @@ function PlanCard({
   name,
   price,
   period,
-  features,
   isCurrent,
   resetLabel,
   badge,
@@ -501,8 +473,13 @@ function PlanCard({
           : "1px solid var(--gray-5)",
         opacity: isCurrent ? 1 : 0.7,
       }}
-      className="flex-1 rounded-(--radius-3)"
+      className="relative flex-1 rounded-(--radius-3)"
     >
+      {badge && (
+        <Badge variant="soft" radius="full" className="absolute top-4 right-4">
+          {badge}
+        </Badge>
+      )}
       <Flex direction="column" gap="3">
         <Flex direction="column" gap="1">
           <Text
@@ -520,38 +497,10 @@ function PlanCard({
               {price}
               <Text className="text-(--gray-9) text-[13px]">{period}</Text>
             </Text>
-            {badge && (
-              <Badge color="accent" variant="soft" radius="full">
-                {badge}
-              </Badge>
-            )}
           </Flex>
           {resetLabel && (
             <Text className="text-(--gray-9) text-[13px]">{resetLabel}</Text>
           )}
-        </Flex>
-        <Flex direction="column" gap="1">
-          {features.map((feature) => (
-            <Flex key={feature} align="center" gap="2">
-              <Check
-                size={14}
-                weight="bold"
-                className="shrink-0 text-(--accent-9)"
-              />
-              <Text className="text-(--gray-11) text-sm">
-                {feature.endsWith("*") ? (
-                  <>
-                    {feature.slice(0, -1)}
-                    <Tooltip content="Usage is limited to human-level usage. This cannot be used as your API key. If you hit this limit, please contact support.">
-                      <span className="cursor-help">*</span>
-                    </Tooltip>
-                  </>
-                ) : (
-                  feature
-                )}
-              </Text>
-            </Flex>
-          ))}
         </Flex>
       </Flex>
       {action}

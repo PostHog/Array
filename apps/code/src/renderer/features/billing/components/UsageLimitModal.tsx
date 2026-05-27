@@ -42,8 +42,8 @@ export function UsageLimitModal() {
           </Flex>
           <Dialog.Description>
             <Text color="gray" className="text-sm">
-              Free includes $50 of Claude and Codex usage per month. Pro
-              includes $1,000 of usage for $200/month — 20× more than Free.
+              You've hit your Free usage limit. Upgrade to Pro for 20× more
+              usage.
             </Text>
           </Dialog.Description>
           <Flex justify="end" gap="3" mt="2">
