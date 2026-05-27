@@ -20,7 +20,10 @@ export function registerBillingSubscriptions() {
 
         if (event.threshold === 100) {
           if (event.userIsActive) {
-            useUsageLimitStore.getState().show();
+            useUsageLimitStore.getState().show({
+              bucket: event.bucket,
+              resetAt: event.resetAt,
+            });
             return;
           }
           toast.error("Usage limit reached", {
