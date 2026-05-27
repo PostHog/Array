@@ -15,7 +15,13 @@ import {
 import { Flex, Text } from "@radix-ui/themes";
 import { useActiveRepoStore } from "@stores/activeRepoStore";
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { SuggestedTaskCard } from "./SuggestedTaskCard";
 
 const VISIBLE_LIMIT = 3;
@@ -57,6 +63,12 @@ export function SuggestedTasksPanel() {
   const [detailTask, setDetailTask] = useState<DiscoveredTask | null>(null);
   const [pageStart, setPageStart] = useState(0);
   const [pageDirection, setPageDirection] = useState<1 | -1>(1);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset pagination on repo change
+  useEffect(() => {
+    setPageStart(0);
+    setPageDirection(1);
+  }, [selectedDirectory]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableHeight, setAvailableHeight] = useState<number>(() =>
