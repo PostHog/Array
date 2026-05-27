@@ -15,6 +15,7 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import {
+  Badge,
   Button,
   Callout,
   Dialog,
@@ -204,8 +205,9 @@ export function PlanUsageSettings() {
               name="Pro"
               price="$200"
               period="/mo"
+              badge="20× Free"
               features={[
-                "$1,000 of Claude & Codex usage / month (20× Free)",
+                "$1,000 of Claude & Codex usage / month",
                 "Local and cloud execution",
                 "All Claude and Codex models",
               ]}
@@ -473,6 +475,7 @@ interface PlanCardProps {
   features: string[];
   isCurrent: boolean;
   resetLabel?: string;
+  badge?: string;
   action?: React.ReactNode;
 }
 
@@ -483,6 +486,7 @@ function PlanCard({
   features,
   isCurrent,
   resetLabel,
+  badge,
   action,
 }: PlanCardProps) {
   return (
@@ -516,6 +520,11 @@ function PlanCard({
               {price}
               <Text className="text-(--gray-9) text-[13px]">{period}</Text>
             </Text>
+            {badge && (
+              <Badge color="accent" variant="soft" radius="full">
+                {badge}
+              </Badge>
+            )}
           </Flex>
           {resetLabel && (
             <Text className="text-(--gray-9) text-[13px]">{resetLabel}</Text>
