@@ -16,8 +16,10 @@ export function UsageLimitModal() {
   const isOpen = useUsageLimitStore((s) => s.isOpen);
   const bucket = useUsageLimitStore((s) => s.bucket);
   const resetAt = useUsageLimitStore((s) => s.resetAt);
+  const eventIsPro = useUsageLimitStore((s) => s.isPro);
   const hide = useUsageLimitStore((s) => s.hide);
-  const { isPro } = useSeat();
+  const { isPro: seatIsPro } = useSeat();
+  const isPro = eventIsPro ?? seatIsPro;
 
   useEffect(() => {
     if (isOpen) {
@@ -36,7 +38,7 @@ export function UsageLimitModal() {
   };
 
   const handleSupport = () => {
-    trpcClient.os.openExternal.mutate({ url: SUPPORT_MAILTO });
+    void trpcClient.os.openExternal.mutate({ url: SUPPORT_MAILTO });
   };
 
   const isDaily = bucket === "burst";
@@ -59,7 +61,7 @@ export function UsageLimitModal() {
   const description = isPro
     ? `Your Pro plan has ${proCapLabel}.${resetLabel ? ` ${resetLabel}.` : ""}`
     : `You've hit your Free ${
-        isDaily ? "daily" : "usage"
+        isDaily ? "daily" : isMonthly ? "monthly" : "usage"
       } limit. Upgrade to Pro for 20x more usage.`;
 
   return (

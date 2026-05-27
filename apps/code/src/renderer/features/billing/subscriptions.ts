@@ -23,6 +23,7 @@ export function registerBillingSubscriptions() {
             useUsageLimitStore.getState().show({
               bucket: event.bucket,
               resetAt: event.resetAt,
+              isPro: event.isPro,
             });
             return;
           }
