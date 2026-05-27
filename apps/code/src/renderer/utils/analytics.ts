@@ -42,10 +42,6 @@ export function initializePostHog() {
   const uiHost =
     import.meta.env.VITE_POSTHOG_UI_HOST || "https://us.i.posthog.com";
 
-  if (import.meta.env.DEV) {
-    (window as unknown as { posthog: typeof posthog }).posthog = posthog;
-  }
-
   if (!apiKey || isInitialized) {
     return;
   }

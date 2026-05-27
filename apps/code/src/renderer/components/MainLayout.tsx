@@ -67,7 +67,7 @@ export function MainLayout() {
   const trpcReact = useTRPC();
   const queryClient = useQueryClient();
   const reconcilingTaskIds = useRef<Set<string>>(new Set());
-  const billingEnabled = useFeatureFlag(BILLING_FLAG) || import.meta.env.DEV;
+  const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
 
   // Space switcher data
