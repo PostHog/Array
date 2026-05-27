@@ -58,14 +58,44 @@ function fixFilenameCircularRef(): Plugin {
 
 let claudeCliCopied = false;
 
+const CLAUDE_BIN_NAME = process.platform === "win32" ? "claude.exe" : "claude";
+
+// SDK >=0.3.x ships native binaries via platform-specific optional deps; the
+// linux-musl variant is a sibling fallback for glibc-less hosts.
+function nativeBinaryCandidates(rootNodeModules: string): string[] {
+  const { platform, arch } = process;
+  const slugs =
+    platform === "linux"
+      ? [`${platform}-${arch}`, `${platform}-${arch}-musl`]
+      : [`${platform}-${arch}`];
+  return slugs.map((slug) =>
+    join(
+      rootNodeModules,
+      `@anthropic-ai/claude-agent-sdk-${slug}`,
+      CLAUDE_BIN_NAME,
+    ),
+  );
+}
+
+function signClaudeBinary(destPath: string): void {
+  if (process.platform !== "darwin") return;
+  try {
+    execSync(`xattr -cr "${destPath}"`, { stdio: "inherit" });
+    execSync(`codesign --force --sign - "${destPath}"`, { stdio: "inherit" });
+  } catch (err) {
+    console.warn("[copy-claude-executable] Failed to ad-hoc sign binary:", err);
+  }
+}
+
 function copyClaudeExecutable(): Plugin {
   return {
     name: "copy-claude-executable",
     writeBundle() {
       const destDir = join(__dirname, ".vite/build/claude-cli");
+      const destBinary = join(destDir, CLAUDE_BIN_NAME);
 
       // Skip re-copying on subsequent HMR rebuilds
-      if (claudeCliCopied && existsSync(join(destDir, "cli.js"))) {
+      if (claudeCliCopied && existsSync(destBinary)) {
         return;
       }
 
@@ -73,72 +103,41 @@ function copyClaudeExecutable(): Plugin {
         mkdirSync(destDir, { recursive: true });
       }
 
-      const candidates = [
-        {
-          path: join(__dirname, "node_modules/@posthog/agent/dist/claude-cli"),
-          type: "package",
-        },
-        {
-          path: join(
-            __dirname,
-            "../../node_modules/@posthog/agent/dist/claude-cli",
-          ),
-          type: "package",
-        },
-        {
-          path: join(__dirname, "../../packages/agent/dist/claude-cli"),
-          type: "package",
-        },
+      const packageCandidates = [
+        join(
+          __dirname,
+          "node_modules/@posthog/agent/dist/claude-cli",
+          CLAUDE_BIN_NAME,
+        ),
+        join(
+          __dirname,
+          "../../node_modules/@posthog/agent/dist/claude-cli",
+          CLAUDE_BIN_NAME,
+        ),
+        join(
+          __dirname,
+          "../../packages/agent/dist/claude-cli",
+          CLAUDE_BIN_NAME,
+        ),
+        ...nativeBinaryCandidates(join(__dirname, "node_modules")),
+        ...nativeBinaryCandidates(join(__dirname, "../../node_modules")),
       ];
 
-      for (const candidate of candidates) {
-        if (
-          existsSync(join(candidate.path, "cli.js")) &&
-          existsSync(join(candidate.path, "yoga.wasm"))
-        ) {
-          const files = ["cli.js", "package.json", "yoga.wasm"];
-          for (const file of files) {
-            copyFileSync(join(candidate.path, file), join(destDir, file));
-          }
-          const vendorDir = join(candidate.path, "vendor");
-          if (existsSync(vendorDir)) {
-            cpSync(vendorDir, join(destDir, "vendor"), { recursive: true });
-          }
-          claudeCliCopied = true;
-          return;
-        }
-      }
-
-      const rootNodeModules = join(__dirname, "../../node_modules");
-      const sdkDir = join(rootNodeModules, "@anthropic-ai/claude-agent-sdk");
-      const yogaDir = join(rootNodeModules, "yoga-wasm-web/dist");
-
-      if (
-        existsSync(join(sdkDir, "cli.js")) &&
-        existsSync(join(yogaDir, "yoga.wasm"))
-      ) {
-        copyFileSync(join(sdkDir, "cli.js"), join(destDir, "cli.js"));
-        copyFileSync(
-          join(sdkDir, "package.json"),
-          join(destDir, "package.json"),
+      const source = packageCandidates.find((p) => existsSync(p));
+      if (!source) {
+        console.warn(
+          "[copy-claude-executable] FAILED to find native Claude binary. Agent execution may fail.",
         );
-        copyFileSync(join(yogaDir, "yoga.wasm"), join(destDir, "yoga.wasm"));
-        const vendorDir = join(sdkDir, "vendor");
-        if (existsSync(vendorDir)) {
-          cpSync(vendorDir, join(destDir, "vendor"), { recursive: true });
-        }
-        console.log(
-          "Assembled Claude CLI from workspace sources in claude-cli/ subdirectory",
-        );
-        claudeCliCopied = true;
+        console.warn("Checked paths:", packageCandidates.join(", "));
         return;
       }
 
-      console.warn(
-        "[copy-claude-executable] FAILED to find Claude CLI artifacts. Agent execution may fail.",
-      );
-      console.warn("Checked paths:", candidates.map((c) => c.path).join(", "));
-      console.warn("Checked workspace sources:", sdkDir);
+      copyFileSync(source, destBinary);
+      if (process.platform !== "win32") {
+        execSync(`chmod +x "${destBinary}"`);
+      }
+      signClaudeBinary(destBinary);
+      claudeCliCopied = true;
     },
   };
 }

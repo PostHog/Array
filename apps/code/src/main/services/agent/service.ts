@@ -336,7 +336,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   }
 
   private getClaudeCliPath(): string {
-    return this.bundledResources.resolve(".vite/build/claude-cli/cli.js");
+    const binary = process.platform === "win32" ? "claude.exe" : "claude";
+    return this.bundledResources.resolve(`.vite/build/claude-cli/${binary}`);
   }
 
   private getCodexBinaryPath(): string {

@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   copyFileSync,
   cpSync,
   existsSync,
@@ -8,6 +9,29 @@ import {
 import { builtinModules } from "node:module";
 import { resolve } from "node:path";
 import { defineConfig } from "tsup";
+
+// SDK >=0.3.x ships the agent as a platform-specific native binary in
+// `@anthropic-ai/claude-agent-sdk-${platform}-${arch}` instead of a JS cli.js.
+// Resolve the matching package for the current build host and copy `claude`
+// into dist/claude-cli/ so apps can point pathToClaudeCodeExecutable at it.
+function nativeBinarySourcePath(): string | undefined {
+  const { platform, arch } = process;
+  const candidates =
+    platform === "linux"
+      ? [`${platform}-${arch}`, `${platform}-${arch}-musl`]
+      : [`${platform}-${arch}`];
+  const binName = platform === "win32" ? "claude.exe" : "claude";
+
+  for (const slug of candidates) {
+    const candidate = resolve(
+      import.meta.dirname,
+      `../../node_modules/@anthropic-ai/claude-agent-sdk-${slug}`,
+      binName,
+    );
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
 
 function copyAssets() {
   const distDir = resolve(import.meta.dirname, "dist");
@@ -22,32 +46,24 @@ function copyAssets() {
     cpSync(srcTemplatesDir, templatesDir, { recursive: true });
   }
 
-  const claudeSdkPath = resolve(
-    import.meta.dirname,
-    "../../node_modules/@anthropic-ai/claude-agent-sdk",
-  );
-  const cliJsPath = resolve(claudeSdkPath, "cli.js");
-  if (existsSync(cliJsPath)) {
-    copyFileSync(cliJsPath, resolve(claudeCliDir, "cli.js"));
+  const binName = process.platform === "win32" ? "claude.exe" : "claude";
+  const nativeBinary = nativeBinarySourcePath();
+  if (nativeBinary) {
+    const dest = resolve(claudeCliDir, binName);
+    copyFileSync(nativeBinary, dest);
+    if (process.platform !== "win32") {
+      chmodSync(dest, 0o755);
+    }
+  } else {
+    console.warn(
+      `[agent/tsup] No native claude binary found for ${process.platform}-${process.arch}; install @anthropic-ai/claude-agent-sdk optional deps`,
+    );
   }
 
   writeFileSync(
     resolve(claudeCliDir, "package.json"),
     JSON.stringify({ type: "module" }, null, 2),
   );
-
-  const yogaWasmPath = resolve(
-    import.meta.dirname,
-    "../../node_modules/yoga-wasm-web/dist/yoga.wasm",
-  );
-  if (existsSync(yogaWasmPath)) {
-    copyFileSync(yogaWasmPath, resolve(claudeCliDir, "yoga.wasm"));
-  }
-
-  const vendorDir = resolve(claudeSdkPath, "vendor");
-  if (existsSync(vendorDir)) {
-    cpSync(vendorDir, resolve(claudeCliDir, "vendor"), { recursive: true });
-  }
 }
 
 const sharedOptions = {
