@@ -5,6 +5,7 @@ interface TestableServer {
   configureEnvironment(args?: {
     isInternal?: boolean;
     originProduct?: string | null;
+    signalReportId?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
@@ -124,6 +125,7 @@ describe("AgentServer.configureEnvironment", () => {
     buildServer("background").configureEnvironment({
       isInternal: true,
       originProduct: "signal_report",
+      signalReportId: "report-123",
       taskId: "task-abc",
       taskRunId: "run-xyz",
       taskUserId: 42,
@@ -133,10 +135,22 @@ describe("AgentServer.configureEnvironment", () => {
       [
         "x-posthog-property-task_origin_product: signal_report",
         "x-posthog-property-task_internal: true",
+        "x-posthog-property-signal_report_id: report-123",
         "x-posthog-property-task_id: task-abc",
         "x-posthog-property-task_run_id: run-xyz",
         "x-posthog-property-task_user_id: 42",
       ].join("\n"),
+    );
+  });
+
+  it("omits signal_report_id from ANTHROPIC_CUSTOM_HEADERS for non-report tasks", () => {
+    buildServer("background").configureEnvironment({
+      isInternal: false,
+      taskId: "task-abc",
+    });
+
+    expect(process.env.ANTHROPIC_CUSTOM_HEADERS).not.toContain(
+      "signal_report_id",
     );
   });
 
