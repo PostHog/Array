@@ -4,6 +4,8 @@ import { useSettingsDialogStore } from "@features/settings/stores/settingsDialog
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { Circle } from "@phosphor-icons/react";
 import { BILLING_FLAG } from "@shared/constants";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import { track } from "@utils/analytics";
 
 export function SidebarUsageBar() {
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
@@ -12,6 +14,7 @@ export function SidebarUsageBar() {
   if (!billingEnabled) return null;
 
   const handleUpgrade = () => {
+    track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, { surface: "sidebar" });
     useSettingsDialogStore.getState().open("plan-usage");
   };
 
