@@ -8,12 +8,14 @@ const log = logger.scope("onboarding-store");
 interface OnboardingStoreState {
   currentStep: OnboardingStep;
   hasCompletedOnboarding: boolean;
+  hasShippedFirstPr: boolean;
   selectedProjectId: number | null;
 }
 
 interface OnboardingStoreActions {
   setCurrentStep: (step: OnboardingStep) => void;
   completeOnboarding: () => void;
+  markFirstPrShipped: () => void;
   resetOnboarding: () => void;
   resetSelections: () => void;
   selectProjectId: (projectId: number | null) => void;
@@ -24,6 +26,7 @@ type OnboardingStore = OnboardingStoreState & OnboardingStoreActions;
 const initialState: OnboardingStoreState = {
   currentStep: "welcome",
   hasCompletedOnboarding: false,
+  hasShippedFirstPr: false,
   selectedProjectId: null,
 };
 
@@ -37,6 +40,7 @@ export const useOnboardingStore = create<OnboardingStore>()(
         log.info("completeOnboarding");
         set({ hasCompletedOnboarding: true });
       },
+      markFirstPrShipped: () => set({ hasShippedFirstPr: true }),
       resetOnboarding: () => set({ ...initialState }),
       resetSelections: () =>
         set({
@@ -50,6 +54,7 @@ export const useOnboardingStore = create<OnboardingStore>()(
       partialize: (state) => ({
         currentStep: state.currentStep,
         hasCompletedOnboarding: state.hasCompletedOnboarding,
+        hasShippedFirstPr: state.hasShippedFirstPr,
         selectedProjectId: state.selectedProjectId,
       }),
     },

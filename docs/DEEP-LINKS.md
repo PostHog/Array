@@ -10,7 +10,7 @@ PostHog Code registers custom URL schemes so the desktop app can be opened with 
 | Development | `posthog-code-dev://` |
 | Legacy (production only) | `twig://`, `array://` |
 
-All schemes route through the same dispatcher. The host portion of the URL selects the handler (`task`, `inbox`, `new`, `plan`, `issue`, etc.).
+All schemes route through the same dispatcher. The host portion of the URL selects the handler (`task`, `inbox`, `new`, `plan`, `issue`, `callback`, `integration`, `slack-integration`, `mcp-oauth-complete`).
 
 If the app is not running, the OS launches it and the link is queued until the renderer is ready. If the app is minimised, it is restored and focused before the link is handled.
 
@@ -117,16 +117,32 @@ In development the same payload is delivered to `http://localhost:8237/callback`
 
 ### `posthog-code://integration`
 
-OAuth callback for the GitHub App installation flow.
+OAuth callback for the GitHub App installation flow. PostHog Cloud redirects to this URL after the user finishes the GitHub App install in their browser.
 
 | Parameter | Description |
 |---|---|
-| `provider` | Integration provider (e.g. `github`) |
+| `provider` | Integration provider, always `github` for this handler |
 | `project_id` | PostHog project ID |
 | `installation_id` | GitHub App installation ID |
 | `status` | `success` or `error` |
 | `error_code` | Error code on failure |
 | `error_message` | Human-readable error message on failure |
+
+The Slack integration uses its own [`slack-integration`](#posthog-codeslack-integration) handler; do not reuse this one for non-GitHub providers.
+
+### `posthog-code://slack-integration`
+
+OAuth callback for the Slack workspace install flow. PostHog Cloud redirects to this URL after the user authorises the PostHog Slack app and finishes the flow on the AccountConnected page.
+
+| Parameter | Description |
+|---|---|
+| `project_id` | PostHog project ID (numeric) |
+| `integration_id` | PostHog Slack integration row ID (numeric, set on success) |
+| `status` | `success` or `error` (defaults to `success` if absent) |
+| `error_code` | Error code on failure |
+| `error_message` | Human-readable error message on failure |
+
+The flow is started from the renderer by calling the `slackIntegration.startFlow` tRPC mutation, which opens the browser to PostHog Cloud's authorize endpoint. If the deep link is not received within five minutes, a `FlowTimedOut` event is emitted so the UI can surface a timeout state.
 
 ### `posthog-code://mcp-oauth-complete`
 
@@ -150,6 +166,7 @@ In development the same payload is delivered to `http://localhost:8238/mcp-oauth
 | `new`, `plan`, `issue` | [apps/code/src/main/services/new-task-link/service.ts](../apps/code/src/main/services/new-task-link/service.ts) |
 | `callback` | [apps/code/src/main/services/oauth/service.ts](../apps/code/src/main/services/oauth/service.ts) |
 | `integration` | [apps/code/src/main/services/github-integration/service.ts](../apps/code/src/main/services/github-integration/service.ts) |
+| `slack-integration` | [apps/code/src/main/services/slack-integration/service.ts](../apps/code/src/main/services/slack-integration/service.ts) |
 | `mcp-oauth-complete` | [apps/code/src/main/services/mcp-callback/service.ts](../apps/code/src/main/services/mcp-callback/service.ts) |
 | Scheme constants | [apps/code/src/shared/deeplink.ts](../apps/code/src/shared/deeplink.ts) |
 

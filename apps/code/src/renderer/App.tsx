@@ -290,7 +290,7 @@ function App() {
         key="main"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.5, delay: showTransition ? 1.5 : 0 }}
+        transition={{ duration: 0.5, delay: showTransition ? 0.5 : 0 }}
       >
         <MainLayout />
       </motion.div>

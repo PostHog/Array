@@ -12,6 +12,7 @@ import {
 } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
 import { track } from "@utils/analytics";
+import { shipIt } from "@utils/confetti";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { useEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -144,6 +145,7 @@ export function OnboardingFlow() {
       github_connected: githubUserIntegrations.length > 0,
       repo_skipped: repoSkipped,
     });
+    shipIt();
     completeOnboarding();
     navigateToTaskInput();
   };
