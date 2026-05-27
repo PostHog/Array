@@ -133,7 +133,7 @@ export function SettingsDialog() {
   const client = useOptionalAuthenticatedClient();
   const { data: user } = useCurrentUser({ client });
   const { seat, planLabel } = useSeat();
-  const billingEnabled = useFeatureFlag(BILLING_FLAG) || import.meta.env.DEV;
+  const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const logoutMutation = useLogoutMutation();
 
   const sidebarItems = useMemo(

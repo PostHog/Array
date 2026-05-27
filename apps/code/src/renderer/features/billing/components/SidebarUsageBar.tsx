@@ -8,7 +8,7 @@ import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 
 export function SidebarUsageBar() {
-  const billingEnabled = useFeatureFlag(BILLING_FLAG) || import.meta.env.DEV;
+  const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const { usage, isLoading } = useFreeUsage(billingEnabled);
 
   if (!billingEnabled) return null;

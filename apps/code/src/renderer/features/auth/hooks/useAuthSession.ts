@@ -107,7 +107,7 @@ export function useAuthSession() {
   const { data: currentUser } = useCurrentUser({ client });
   const authIdentity = getAuthIdentity(authState);
 
-  const billingEnabled = useFeatureFlag(BILLING_FLAG) || import.meta.env.DEV;
+  const billingEnabled = useFeatureFlag(BILLING_FLAG);
 
   useAuthSubscriptionSync();
   useAuthIdentitySync(authIdentity, authState.cloudRegion);
