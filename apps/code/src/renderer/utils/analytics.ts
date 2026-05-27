@@ -42,6 +42,10 @@ export function initializePostHog() {
   const uiHost =
     import.meta.env.VITE_POSTHOG_UI_HOST || "https://us.i.posthog.com";
 
+  if (import.meta.env.DEV) {
+    (window as unknown as { posthog: typeof posthog }).posthog = posthog;
+  }
+
   if (!apiKey || isInitialized) {
     return;
   }
@@ -70,10 +74,6 @@ export function initializePostHog() {
     listener.unsubscribe = posthog.onFeatureFlags(listener.callback);
   }
   pendingFlagListeners.clear();
-
-  if (import.meta.env.DEV) {
-    (window as unknown as { posthog: typeof posthog }).posthog = posthog;
-  }
 }
 
 /**

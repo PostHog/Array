@@ -73,7 +73,7 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
   const client = useOptionalAuthenticatedClient();
   const queryClient = useQueryClient();
   const { data: fullUser } = useCurrentUser({ client });
-  const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  const billingEnabled = useFeatureFlag(BILLING_FLAG) || import.meta.env.DEV;
 
   const organizations = useMemo<Org[]>(() => {
     if (!fullUser?.organizations) return [];
