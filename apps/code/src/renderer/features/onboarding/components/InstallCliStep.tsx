@@ -24,6 +24,7 @@ import { motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CliCheckPanel, InstalledBadge } from "./CliCheckPanel";
 import { OnboardingHogTip } from "./OnboardingHogTip";
+import { OptionalBadge } from "./OptionalBadge";
 import { StepActions } from "./StepActions";
 
 function CommandLine({ command }: { command: string }) {
@@ -143,12 +144,15 @@ export function InstallCliStep({ onNext, onBack }: InstallCliStepProps) {
                 transition={{ duration: 0.3 }}
               >
                 <Flex direction="column" gap="2">
-                  <Text className="font-bold text-(--gray-12) text-2xl">
-                    Install CLI tools
-                  </Text>
+                  <Flex align="center" gap="2">
+                    <Text className="font-bold text-(--gray-12) text-2xl">
+                      Install CLI tools
+                    </Text>
+                    <OptionalBadge />
+                  </Flex>
                   <Text className="text-(--gray-11) text-sm">
-                    Optional. Agents use these to manage branches and open pull
-                    requests on your behalf.
+                    Agents use these to manage branches and open pull requests
+                    on your behalf.
                   </Text>
                 </Flex>
               </motion.div>

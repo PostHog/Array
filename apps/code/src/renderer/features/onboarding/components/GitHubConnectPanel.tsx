@@ -38,6 +38,7 @@ import { track } from "@utils/analytics";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useProjectsWithIntegrations } from "../hooks/useProjectsWithIntegrations";
+import { OptionalBadge } from "./OptionalBadge";
 
 const PANEL_SHADOW = "0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)";
 
@@ -215,9 +216,7 @@ export function GitHubConnectPanel() {
                   </Flex>
                 )
               ) : (
-                <span className="inline-flex items-center rounded-[6px] bg-(--gray-a3) px-[6px] py-px font-medium text-(--gray-11) text-[11px]">
-                  Optional
-                </span>
+                <OptionalBadge />
               )}
             </Flex>
             {!hasGitIntegration &&

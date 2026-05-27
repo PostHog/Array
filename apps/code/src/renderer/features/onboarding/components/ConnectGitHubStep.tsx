@@ -12,6 +12,7 @@ import type { OnboardingStepCompletedProperties } from "@shared/types/analytics"
 import { motion } from "framer-motion";
 import { GitHubConnectPanel } from "./GitHubConnectPanel";
 import { OnboardingHogTip } from "./OnboardingHogTip";
+import { OptionalBadge } from "./OptionalBadge";
 import { StepActions } from "./StepActions";
 
 type StepContext = Pick<OnboardingStepCompletedProperties, "github_connected">;
@@ -47,12 +48,14 @@ export function ConnectGitHubStep({ onNext, onBack }: ConnectGitHubStepProps) {
                 transition={{ duration: 0.3 }}
               >
                 <Flex direction="column" gap="2">
-                  <Text className="font-bold text-(--gray-12) text-2xl">
-                    Connect GitHub
-                  </Text>
+                  <Flex align="center" gap="2">
+                    <Text className="font-bold text-(--gray-12) text-2xl">
+                      Connect GitHub
+                    </Text>
+                    <OptionalBadge />
+                  </Flex>
                   <Text className="text-(--gray-11) text-sm">
-                    Optional, but it unlocks the parts of PostHog Code that
-                    leave your machine.
+                    Unlocks the parts of PostHog Code that leave your machine.
                   </Text>
                 </Flex>
               </motion.div>
