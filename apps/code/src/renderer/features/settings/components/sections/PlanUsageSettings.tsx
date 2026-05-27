@@ -374,7 +374,7 @@ export function PlanUsageSettings() {
               "Your organization"
             )}{" "}
             will be charged $200/month. Includes $1,000 of Claude and Codex API
-            usage per month — 5× what you pay.
+            usage per month — 20× the Free limit.
           </Dialog.Description>
           <Flex direction="column" gap="2" mt="3">
             <Flex align="center" gap="2">
