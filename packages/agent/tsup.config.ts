@@ -9,28 +9,19 @@ import {
 import { builtinModules } from "node:module";
 import { resolve } from "node:path";
 import { defineConfig } from "tsup";
+// Plain ESM helper, shared with apps/code/vite.main.config.mts.
+import {
+  claudeBinName,
+  nativeBinaryCandidates,
+  targetArch,
+  targetPlatform,
+} from "./build/native-binary.mjs";
 
-// SDK >=0.3.x ships the agent as a platform-specific native binary in
-// `@anthropic-ai/claude-agent-sdk-${platform}-${arch}` instead of a JS cli.js.
-// Resolve the matching package for the current build host and copy `claude`
-// into dist/claude-cli/ so apps can point pathToClaudeCodeExecutable at it.
 function nativeBinarySourcePath(): string | undefined {
-  const { platform, arch } = process;
-  const candidates =
-    platform === "linux"
-      ? [`${platform}-${arch}`, `${platform}-${arch}-musl`]
-      : [`${platform}-${arch}`];
-  const binName = platform === "win32" ? "claude.exe" : "claude";
-
-  for (const slug of candidates) {
-    const candidate = resolve(
-      import.meta.dirname,
-      `../../node_modules/@anthropic-ai/claude-agent-sdk-${slug}`,
-      binName,
-    );
-    if (existsSync(candidate)) return candidate;
-  }
-  return undefined;
+  const candidates = nativeBinaryCandidates(
+    resolve(import.meta.dirname, "../../node_modules"),
+  );
+  return candidates.find((p: string) => existsSync(p));
 }
 
 function copyAssets() {
@@ -46,17 +37,17 @@ function copyAssets() {
     cpSync(srcTemplatesDir, templatesDir, { recursive: true });
   }
 
-  const binName = process.platform === "win32" ? "claude.exe" : "claude";
+  const binName = claudeBinName();
   const nativeBinary = nativeBinarySourcePath();
   if (nativeBinary) {
     const dest = resolve(claudeCliDir, binName);
     copyFileSync(nativeBinary, dest);
-    if (process.platform !== "win32") {
+    if (targetPlatform() !== "win32") {
       chmodSync(dest, 0o755);
     }
   } else {
     console.warn(
-      `[agent/tsup] No native claude binary found for ${process.platform}-${process.arch}; install @anthropic-ai/claude-agent-sdk optional deps`,
+      `[agent/tsup] No native claude binary found for ${targetPlatform()}-${targetArch()}; install @anthropic-ai/claude-agent-sdk optional deps`,
     );
   }
 

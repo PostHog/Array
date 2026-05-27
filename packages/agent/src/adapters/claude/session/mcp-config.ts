@@ -48,6 +48,7 @@ export function loadUserClaudeJsonMcpServers(
 
 export function parseMcpServers(
   params: Pick<NewSessionRequest, "mcpServers">,
+  logger?: Logger,
 ): Record<string, McpServerConfig> {
   const mcpServers: Record<string, McpServerConfig> = {};
   if (!Array.isArray(params.mcpServers)) {
@@ -69,6 +70,14 @@ export function parseMcpServers(
               )
             : undefined,
         };
+      } else {
+        // ACP 0.22 introduced the `sdk` McpServerConfig variant; the SDK
+        // adapter doesn't construct in-process servers, so surface a warning
+        // rather than silently dropping the entry.
+        logger?.warn("parseMcpServers: dropping unsupported MCP server type", {
+          name: server.name,
+          type: (server as { type: string }).type,
+        });
       }
     } else {
       mcpServers[server.name] = {

@@ -1,11 +1,14 @@
 import { execFile, execSync } from "node:child_process";
 import {
+  closeSync,
   copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   statSync,
 } from "node:fs";
 import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
@@ -16,6 +19,13 @@ import { promisify } from "node:util";
 import { unzipSync } from "fflate";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+// @ts-expect-error - plain ESM helper shared with packages/agent/tsup.config.ts
+import {
+  claudeBinName,
+  nativeBinaryCandidates as sdkNativeBinaryCandidates,
+  targetArch,
+  targetPlatform,
+} from "../../packages/agent/build/native-binary.mjs";
 import {
   createForceDevModeDefine,
   createPosthogPlugin,
@@ -58,32 +68,80 @@ function fixFilenameCircularRef(): Plugin {
 
 let claudeCliCopied = false;
 
-const CLAUDE_BIN_NAME = process.platform === "win32" ? "claude.exe" : "claude";
+function verifyBinaryArch(destPath: string): void {
+  // Best-effort: parse the binary's magic bytes and confirm the embedded arch
+  // matches what we believe we're packaging for. `file(1)` is more portable
+  // but adds a subprocess; reading 20 bytes is enough for Mach-O / ELF / PE.
+  let header: Buffer;
+  try {
+    const fd = openSync(destPath, "r");
+    try {
+      header = Buffer.alloc(20);
+      readSync(fd, header, 0, 20, 0);
+    } finally {
+      closeSync(fd);
+    }
+  } catch (err) {
+    console.warn("[copy-claude-executable] Could not inspect binary:", err);
+    return;
+  }
 
-// SDK >=0.3.x ships native binaries via platform-specific optional deps; the
-// linux-musl variant is a sibling fallback for glibc-less hosts.
-function nativeBinaryCandidates(rootNodeModules: string): string[] {
-  const { platform, arch } = process;
-  const slugs =
-    platform === "linux"
-      ? [`${platform}-${arch}`, `${platform}-${arch}-musl`]
-      : [`${platform}-${arch}`];
-  return slugs.map((slug) =>
-    join(
-      rootNodeModules,
-      `@anthropic-ai/claude-agent-sdk-${slug}`,
-      CLAUDE_BIN_NAME,
-    ),
-  );
+  const arch = targetArch();
+  const platform = targetPlatform();
+  const actual = detectBinaryArch(header, platform);
+  if (actual && actual !== arch) {
+    throw new Error(
+      `[copy-claude-executable] Architecture mismatch: copied binary is ${actual} but target is ${arch} (platform=${platform}). ` +
+        `Reinstall @anthropic-ai/claude-agent-sdk optional deps for the target arch, or set npm_config_arch=${arch} before building.`,
+    );
+  }
+}
+
+function detectBinaryArch(
+  header: Buffer,
+  platform: string,
+): "arm64" | "x64" | "ia32" | null {
+  // Mach-O 64-bit LE: magic 0xFEEDFACF, then cputype at offset 4 (LE).
+  if (platform === "darwin" && header.readUInt32LE(0) === 0xfeedfacf) {
+    const cpuType = header.readUInt32LE(4);
+    if (cpuType === 0x0100000c) return "arm64";
+    if (cpuType === 0x01000007) return "x64";
+  }
+  // ELF: \x7FELF, then e_machine at offset 18 (LE).
+  if (
+    platform === "linux" &&
+    header[0] === 0x7f &&
+    header[1] === 0x45 &&
+    header[2] === 0x4c &&
+    header[3] === 0x46
+  ) {
+    const eMachine = header.readUInt16LE(18);
+    if (eMachine === 0x3e) return "x64";
+    if (eMachine === 0xb7) return "arm64";
+    if (eMachine === 0x03) return "ia32";
+  }
+  // PE: MZ at 0, PE header offset at 0x3C — too long to inline; skip.
+  return null;
 }
 
 function signClaudeBinary(destPath: string): void {
-  if (process.platform !== "darwin") return;
+  if (targetPlatform() !== "darwin") return;
+  if (process.platform !== "darwin") {
+    // Can't ad-hoc sign a darwin binary from a non-darwin build host; the
+    // resulting app won't launch on Apple Silicon. Fail loud rather than
+    // shipping an unrunnable bundle.
+    throw new Error(
+      "[copy-claude-executable] Cannot ad-hoc sign darwin binary from non-darwin host. Build on macOS.",
+    );
+  }
   try {
     execSync(`xattr -cr "${destPath}"`, { stdio: "inherit" });
     execSync(`codesign --force --sign - "${destPath}"`, { stdio: "inherit" });
   } catch (err) {
-    console.warn("[copy-claude-executable] Failed to ad-hoc sign binary:", err);
+    console.warn(
+      "[copy-claude-executable] FAILED to ad-hoc sign binary; macOS will reject the bundled app:",
+      err,
+    );
   }
 }
 
@@ -91,8 +149,9 @@ function copyClaudeExecutable(): Plugin {
   return {
     name: "copy-claude-executable",
     writeBundle() {
+      const binName = claudeBinName();
       const destDir = join(__dirname, ".vite/build/claude-cli");
-      const destBinary = join(destDir, CLAUDE_BIN_NAME);
+      const destBinary = join(destDir, binName);
 
       // Skip re-copying on subsequent HMR rebuilds
       if (claudeCliCopied && existsSync(destBinary)) {
@@ -104,38 +163,31 @@ function copyClaudeExecutable(): Plugin {
       }
 
       const packageCandidates = [
-        join(
-          __dirname,
-          "node_modules/@posthog/agent/dist/claude-cli",
-          CLAUDE_BIN_NAME,
-        ),
+        join(__dirname, "node_modules/@posthog/agent/dist/claude-cli", binName),
         join(
           __dirname,
           "../../node_modules/@posthog/agent/dist/claude-cli",
-          CLAUDE_BIN_NAME,
+          binName,
         ),
-        join(
-          __dirname,
-          "../../packages/agent/dist/claude-cli",
-          CLAUDE_BIN_NAME,
-        ),
-        ...nativeBinaryCandidates(join(__dirname, "node_modules")),
-        ...nativeBinaryCandidates(join(__dirname, "../../node_modules")),
+        join(__dirname, "../../packages/agent/dist/claude-cli", binName),
+        ...sdkNativeBinaryCandidates(join(__dirname, "node_modules")),
+        ...sdkNativeBinaryCandidates(join(__dirname, "../../node_modules")),
       ];
 
-      const source = packageCandidates.find((p) => existsSync(p));
+      const source = packageCandidates.find((p: string) => existsSync(p));
       if (!source) {
         console.warn(
-          "[copy-claude-executable] FAILED to find native Claude binary. Agent execution may fail.",
+          `[copy-claude-executable] FAILED to find native Claude binary for ${targetPlatform()}-${targetArch()}. Agent execution may fail.`,
         );
-        console.warn("Checked paths:", packageCandidates.join(", "));
+        console.warn(`Checked paths:\n  ${packageCandidates.join("\n  ")}`);
         return;
       }
 
       copyFileSync(source, destBinary);
-      if (process.platform !== "win32") {
+      if (targetPlatform() !== "win32") {
         execSync(`chmod +x "${destBinary}"`);
       }
+      verifyBinaryArch(destBinary);
       signClaudeBinary(destBinary);
       claudeCliCopied = true;
     },

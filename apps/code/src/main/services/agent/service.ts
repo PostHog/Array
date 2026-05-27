@@ -336,6 +336,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   }
 
   private getClaudeCliPath(): string {
+    // Keep in sync with the destDir in apps/code/vite.main.config.mts
+    // (copyClaudeExecutable plugin).
     const binary = process.platform === "win32" ? "claude.exe" : "claude";
     return this.bundledResources.resolve(`.vite/build/claude-cli/${binary}`);
   }

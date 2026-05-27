@@ -1042,6 +1042,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const mcpServers = parseMcpServers(
       params as Pick<NewSessionRequest, "mcpServers">,
+      this.logger,
     );
     await this.refreshSession(mcpServers);
     return { refreshed: true };
@@ -1315,7 +1316,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const earlyModelId =
       settingsManager.getSettings().model || meta?.model || "";
     const mcpServers = supportsMcpInjection(earlyModelId)
-      ? parseMcpServers(params)
+      ? parseMcpServers(params, this.logger)
       : {};
 
     // Register the in-process general local-tools MCP server. Tools self-gate
