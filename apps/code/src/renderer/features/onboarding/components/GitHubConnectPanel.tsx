@@ -29,10 +29,13 @@ import {
   Text,
 } from "@radix-ui/themes";
 import { trpcClient } from "@renderer/trpc/client";
-import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import {
+  ANALYTICS_EVENTS,
+  type OnboardingGithubConnectFlow,
+} from "@shared/types/analytics";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useProjectsWithIntegrations } from "../hooks/useProjectsWithIntegrations";
 
@@ -86,6 +89,33 @@ export function GitHubConnectPanel() {
     onConnected: () => track(ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECTED),
   });
   const canTakeAction = !isConnecting && !timedOut && !hasConnectError;
+
+  const initiateConnect = (
+    flowType: OnboardingGithubConnectFlow,
+    isRetry = false,
+  ) => {
+    track(ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECT_STARTED, {
+      flow_type: flowType,
+      is_retry: isRetry,
+    });
+    void handleConnectGitHub();
+  };
+
+  const failureFingerprintRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hasConnectError && !timedOut) {
+      failureFingerprintRef.current = null;
+      return;
+    }
+    const fingerprint = timedOut ? "timeout" : (connectError?.code ?? "error");
+    if (failureFingerprintRef.current === fingerprint) return;
+    failureFingerprintRef.current = fingerprint;
+    track(ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECT_FAILED, {
+      reason: timedOut ? "timeout" : "error",
+      error_type: connectError?.code ?? undefined,
+    });
+  }, [hasConnectError, timedOut, connectError]);
+
   const defaultPanelMessage = getPanelMessage({
     hasConnectError,
     connectError,
@@ -304,6 +334,10 @@ export function GitHubConnectPanel() {
                             !isReconnecting
                           }
                           onClick={async () => {
+                            track(
+                              ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECT_STARTED,
+                              { flow_type: "user_new", is_retry: true },
+                            );
                             setReconnectingInstallationId(installationId);
                             try {
                               await disconnectMutation.mutateAsync({
@@ -376,7 +410,7 @@ export function GitHubConnectPanel() {
                   size="1"
                   variant="ghost"
                   color="gray"
-                  onClick={() => void handleConnectGitHub()}
+                  onClick={() => initiateConnect("user_new")}
                   loading={isConnecting}
                 >
                   <Plus size={12} />
@@ -389,7 +423,7 @@ export function GitHubConnectPanel() {
               <Button
                 size="2"
                 variant="solid"
-                onClick={() => void handleConnectGitHub()}
+                onClick={() => initiateConnect("team_existing")}
                 className="self-start"
               >
                 Sign in with GitHub
@@ -400,7 +434,7 @@ export function GitHubConnectPanel() {
                 <Button
                   size="2"
                   variant="solid"
-                  onClick={() => void handleConnectGitHub()}
+                  onClick={() => initiateConnect("team_alternative")}
                 >
                   Connect GitHub on {selectedProject.name}
                   <ArrowSquareOut size={12} />
@@ -420,8 +454,9 @@ export function GitHubConnectPanel() {
                   size="2"
                   variant="solid"
                   onClick={() => {
+                    const isRetry = hasConnectError || timedOut;
                     if (hasConnectError) resetConnect();
-                    void handleConnectGitHub();
+                    initiateConnect("user_new", isRetry);
                   }}
                   loading={isConnecting}
                 >

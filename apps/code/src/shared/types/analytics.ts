@@ -340,6 +340,10 @@ export interface OnboardingStepCompletedProperties {
   step_index: number;
   total_steps: number;
   duration_seconds: number;
+  github_connected?: boolean;
+  git_installed?: boolean;
+  gh_installed?: boolean;
+  gh_authenticated?: boolean;
 }
 
 export interface OnboardingStepSkippedProperties {
@@ -377,6 +381,21 @@ export interface OnboardingCompletedProperties {
   duration_seconds: number;
   github_connected: boolean;
   repo_skipped: boolean;
+}
+
+export type OnboardingGithubConnectFlow =
+  | "team_existing"
+  | "team_alternative"
+  | "user_new";
+
+export interface OnboardingGithubConnectStartedProperties {
+  flow_type: OnboardingGithubConnectFlow;
+  is_retry: boolean;
+}
+
+export interface OnboardingGithubConnectFailedProperties {
+  reason: "timeout" | "error";
+  error_type?: string;
 }
 
 export interface OnboardingAbandonedProperties {
@@ -681,6 +700,8 @@ export const ANALYTICS_EVENTS = {
   ONBOARDING_PROJECT_SELECTED: "Onboarding project selected",
   ONBOARDING_INVITE_CODE_SUBMITTED: "Onboarding invite code submitted",
   ONBOARDING_FOLDER_SELECTED: "Onboarding folder selected",
+  ONBOARDING_GITHUB_CONNECT_STARTED: "Onboarding github connect started",
+  ONBOARDING_GITHUB_CONNECT_FAILED: "Onboarding github connect failed",
   ONBOARDING_GITHUB_CONNECTED: "Onboarding github connected",
   ONBOARDING_CLI_CHECK_COMPLETED: "Onboarding cli check completed",
   ONBOARDING_COMPLETED: "Onboarding completed",
@@ -797,6 +818,8 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.ONBOARDING_PROJECT_SELECTED]: OnboardingProjectSelectedProperties;
   [ANALYTICS_EVENTS.ONBOARDING_INVITE_CODE_SUBMITTED]: OnboardingInviteCodeSubmittedProperties;
   [ANALYTICS_EVENTS.ONBOARDING_FOLDER_SELECTED]: OnboardingFolderSelectedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECT_STARTED]: OnboardingGithubConnectStartedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECT_FAILED]: OnboardingGithubConnectFailedProperties;
   [ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECTED]: never;
   [ANALYTICS_EVENTS.ONBOARDING_CLI_CHECK_COMPLETED]: OnboardingCliCheckCompletedProperties;
   [ANALYTICS_EVENTS.ONBOARDING_COMPLETED]: OnboardingCompletedProperties;

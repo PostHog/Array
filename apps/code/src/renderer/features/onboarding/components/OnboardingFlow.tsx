@@ -6,7 +6,10 @@ import { useUserGithubIntegrations } from "@hooks/useIntegrations";
 import { ArrowRight, SignOut } from "@phosphor-icons/react";
 import { Button, Flex } from "@radix-ui/themes";
 import { IS_DEV } from "@shared/constants/environment";
-import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import {
+  ANALYTICS_EVENTS,
+  type OnboardingStepCompletedProperties,
+} from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
 import { track } from "@utils/analytics";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
@@ -79,7 +82,12 @@ export function OnboardingFlow() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [currentStep]);
 
-  const trackStepCompleted = () => {
+  type StepContext = Omit<
+    OnboardingStepCompletedProperties,
+    "step_id" | "step_index" | "total_steps" | "duration_seconds"
+  >;
+
+  const trackStepCompleted = (context?: StepContext) => {
     track(ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED, {
       step_id: currentStep,
       step_index: currentIndex,
@@ -87,6 +95,7 @@ export function OnboardingFlow() {
       duration_seconds: Math.round(
         (Date.now() - stepEnteredAtRef.current) / 1000,
       ),
+      ...context,
     });
   };
 
@@ -101,8 +110,8 @@ export function OnboardingFlow() {
     stepEnteredAtRef.current = Date.now();
   };
 
-  const handleNext = () => {
-    trackStepCompleted();
+  const handleNext = (context?: StepContext) => {
+    trackStepCompleted(context);
     trackStepViewed(currentIndex + 1);
     next();
   };
@@ -112,7 +121,9 @@ export function OnboardingFlow() {
     back();
   };
 
-  useHotkeys("right", handleNext, { enableOnFormTags: false }, [handleNext]);
+  useHotkeys("right", () => handleNext(), { enableOnFormTags: false }, [
+    handleNext,
+  ]);
   useHotkeys("left", handleBack, { enableOnFormTags: false }, [handleBack]);
 
   const handleComplete = (repoSkipped: boolean) => {

@@ -1,4 +1,5 @@
 import { Tooltip } from "@components/ui/Tooltip";
+import { useUserGithubIntegrations } from "@hooks/useIntegrations";
 import {
   ArrowLeft,
   ArrowRight,
@@ -16,7 +17,10 @@ import {
 import { Button, Flex, IconButton, Text } from "@radix-ui/themes";
 import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
-import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import {
+  ANALYTICS_EVENTS,
+  type OnboardingStepCompletedProperties,
+} from "@shared/types/analytics";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
 import { EXTERNAL_LINKS } from "@utils/links";
@@ -66,8 +70,13 @@ function CommandLine({ command }: { command: string }) {
   );
 }
 
+type StepContext = Pick<
+  OnboardingStepCompletedProperties,
+  "github_connected" | "git_installed" | "gh_installed" | "gh_authenticated"
+>;
+
 interface ConnectGitStepProps {
-  onNext: () => void;
+  onNext: (context?: StepContext) => void;
   onBack: () => void;
 }
 
@@ -110,6 +119,16 @@ export function ConnectGitStep({ onNext, onBack }: ConnectGitStepProps) {
     await queryClient.invalidateQueries(trpc.git.getGhStatus.queryFilter());
     setIsCheckingGh(false);
   }, [queryClient, trpc]);
+
+  const { data: githubUserIntegrations = [] } = useUserGithubIntegrations();
+  const handleContinue = () => {
+    onNext({
+      github_connected: githubUserIntegrations.length > 0,
+      git_installed: gitInstalled,
+      gh_installed: ghInstalled,
+      gh_authenticated: ghAuthenticated,
+    });
+  };
 
   return (
     <Flex align="center" height="100%" px="8">
@@ -336,7 +355,7 @@ export function ConnectGitStep({ onNext, onBack }: ConnectGitStepProps) {
             <ArrowLeft size={16} weight="bold" />
             Back
           </Button>
-          <Button size="3" onClick={onNext}>
+          <Button size="3" onClick={handleContinue}>
             Continue
             <ArrowRight size={16} weight="bold" />
           </Button>
