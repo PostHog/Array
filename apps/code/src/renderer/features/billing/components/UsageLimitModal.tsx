@@ -22,12 +22,14 @@ export function UsageLimitModal() {
         <Flex direction="column" gap="3">
           <Flex align="center" gap="2">
             <WarningCircle size={20} weight="bold" color="var(--red-9)" />
-            <Dialog.Title className="mb-0">Usage limit reached</Dialog.Title>
+            <Dialog.Title className="mb-0">
+              You're out of usage for this month
+            </Dialog.Title>
           </Flex>
           <Dialog.Description>
             <Text color="gray" className="text-sm">
-              You've reached your free plan usage limit. Upgrade to Pro for
-              unlimited usage.
+              Free includes $50 of Claude and Codex usage per month. Pro
+              includes $1,000 of usage for $200/month — 20× more than Free.
             </Text>
           </Dialog.Description>
           <Flex justify="end" gap="3" mt="2">
@@ -35,7 +37,7 @@ export function UsageLimitModal() {
               Not now
             </Button>
             <Button type="button" onClick={handleUpgrade}>
-              View upgrade options
+              See Pro
             </Button>
           </Flex>
         </Flex>

@@ -184,7 +184,7 @@ export function PlanUsageSettings() {
               price="$0"
               period="/mo"
               features={[
-                "Limited usage",
+                "$50 of Claude & Codex usage / month",
                 "Local and cloud execution",
                 "All Claude and Codex models",
               ]}
@@ -195,7 +195,7 @@ export function PlanUsageSettings() {
               price="$200"
               period="/mo"
               features={[
-                "Higher usage limits",
+                "$1,000 of Claude & Codex usage / month (20× Free)",
                 "Local and cloud execution",
                 "All Claude and Codex models",
               ]}
@@ -356,13 +356,15 @@ export function PlanUsageSettings() {
             ) : (
               "Your organization"
             )}{" "}
-            will be charged $200/month using the payment method on file in
-            PostHog.
+            will be charged $200/month. Includes $1,000 of Claude and Codex API
+            usage per month — 5× what you pay.
           </Dialog.Description>
           <Flex direction="column" gap="2" mt="3">
             <Flex align="center" gap="2">
               <Check size={14} weight="bold" className="text-(--accent-9)" />
-              <Text className="text-sm">Higher usage limits</Text>
+              <Text className="text-sm">
+                $1,000 of Claude & Codex usage / month
+              </Text>
             </Flex>
             <Flex align="center" gap="2">
               <Check size={14} weight="bold" className="text-(--accent-9)" />
