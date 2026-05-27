@@ -1,17 +1,13 @@
 import { Tooltip } from "@components/ui/Tooltip";
-import { useUserGithubIntegrations } from "@hooks/useIntegrations";
 import {
   ArrowLeft,
   ArrowRight,
   ArrowSquareOut,
   ArrowsClockwise,
   Check,
-  CheckCircle,
-  Cloud,
   Copy,
   GitBranch,
   GithubLogo,
-  GitPullRequest,
   Warning,
 } from "@phosphor-icons/react";
 import { Button, Flex, IconButton, Text } from "@radix-ui/themes";
@@ -27,7 +23,6 @@ import { EXTERNAL_LINKS } from "@utils/links";
 import { motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CliCheckPanel, InstalledBadge } from "./CliCheckPanel";
-import { GitHubConnectPanel } from "./GitHubConnectPanel";
 import { OnboardingHogTip } from "./OnboardingHogTip";
 import { StepActions } from "./StepActions";
 
@@ -72,15 +67,15 @@ function CommandLine({ command }: { command: string }) {
 
 type StepContext = Pick<
   OnboardingStepCompletedProperties,
-  "github_connected" | "git_installed" | "gh_installed" | "gh_authenticated"
+  "git_installed" | "gh_installed" | "gh_authenticated"
 >;
 
-interface ConnectGitStepProps {
+interface InstallCliStepProps {
   onNext: (context?: StepContext) => void;
   onBack: () => void;
 }
 
-export function ConnectGitStep({ onNext, onBack }: ConnectGitStepProps) {
+export function InstallCliStep({ onNext, onBack }: InstallCliStepProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -120,10 +115,8 @@ export function ConnectGitStep({ onNext, onBack }: ConnectGitStepProps) {
     setIsCheckingGh(false);
   }, [queryClient, trpc]);
 
-  const { data: githubUserIntegrations = [] } = useUserGithubIntegrations();
   const handleContinue = () => {
     onNext({
-      github_connected: githubUserIntegrations.length > 0,
       git_installed: gitInstalled,
       gh_installed: ghInstalled,
       gh_authenticated: ghAuthenticated,
@@ -151,56 +144,19 @@ export function ConnectGitStep({ onNext, onBack }: ConnectGitStepProps) {
               >
                 <Flex direction="column" gap="2">
                   <Text className="font-bold text-(--gray-12) text-2xl">
-                    Connect Git
+                    Install CLI tools
                   </Text>
                   <Text className="text-(--gray-11) text-sm">
-                    Optional, but it unlocks the parts of PostHog Code that
-                    leave your machine.
+                    Optional. Agents use these to manage branches and open pull
+                    requests on your behalf.
                   </Text>
                 </Flex>
               </motion.div>
 
               <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: 0.03 }}
-              >
-                <Flex direction="column" gap="2">
-                  <Flex align="center" gap="2">
-                    <Cloud size={16} className="text-(--gray-11)" />
-                    <Text className="text-(--gray-11) text-sm">
-                      Run tasks in cloud sandboxes instead of your machine.
-                    </Text>
-                  </Flex>
-                  <Flex align="center" gap="2">
-                    <GitPullRequest size={16} className="text-(--gray-11)" />
-                    <Text className="text-(--gray-11) text-sm">
-                      Push branches and open pull requests from agents.
-                    </Text>
-                  </Flex>
-                  <Flex align="center" gap="2">
-                    <CheckCircle size={16} className="text-(--gray-11)" />
-                    <Text className="text-(--gray-11) text-sm">
-                      Review PR comments and reply to threads from inside the
-                      app.
-                    </Text>
-                  </Flex>
-                </Flex>
-              </motion.div>
-
-              <motion.div
-                key="github-panel"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: 0.05 }}
-              >
-                <GitHubConnectPanel />
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: 0.08 }}
               >
                 <CliCheckPanel
                   icon={<GitBranch size={18} className="text-(--gray-12)" />}
@@ -256,7 +212,7 @@ export function ConnectGitStep({ onNext, onBack }: ConnectGitStepProps) {
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: 0.1 }}
+                transition={{ duration: 0.3, delay: 0.08 }}
               >
                 <CliCheckPanel
                   icon={<GithubLogo size={18} className="text-(--gray-12)" />}
@@ -344,7 +300,7 @@ export function ConnectGitStep({ onNext, onBack }: ConnectGitStepProps) {
 
             <OnboardingHogTip
               hogSrc={builderHog}
-              message="You can skip this and still use local tasks. Come back any time to unlock cloud runs."
+              message="No CLI? You can still continue and install these any time."
               delay={0.15}
             />
           </Flex>

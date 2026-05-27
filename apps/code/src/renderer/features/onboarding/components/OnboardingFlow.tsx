@@ -17,7 +17,8 @@ import { useEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 import { useOnboardingFlow } from "../hooks/useOnboardingFlow";
-import { ConnectGitStep } from "./ConnectGitStep";
+import { ConnectGitHubStep } from "./ConnectGitHubStep";
+import { InstallCliStep } from "./InstallCliStep";
 import { InviteCodeStep } from "./InviteCodeStep";
 import { ProjectSelectStep } from "./ProjectSelectStep";
 import { SelectRepoStep } from "./SelectRepoStep";
@@ -246,9 +247,9 @@ export function OnboardingFlow() {
             </motion.div>
           )}
 
-          {currentStep === "connect-git" && (
+          {currentStep === "connect-github" && (
             <motion.div
-              key="connect-git"
+              key="connect-github"
               custom={direction}
               initial="enter"
               animate="center"
@@ -257,7 +258,22 @@ export function OnboardingFlow() {
               transition={{ duration: 0.3 }}
               className="min-h-0 w-full flex-1"
             >
-              <ConnectGitStep onNext={handleNext} onBack={handleBack} />
+              <ConnectGitHubStep onNext={handleNext} onBack={handleBack} />
+            </motion.div>
+          )}
+
+          {currentStep === "install-cli" && (
+            <motion.div
+              key="install-cli"
+              custom={direction}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              variants={stepVariants}
+              transition={{ duration: 0.3 }}
+              className="min-h-0 w-full flex-1"
+            >
+              <InstallCliStep onNext={handleNext} onBack={handleBack} />
             </motion.div>
           )}
 

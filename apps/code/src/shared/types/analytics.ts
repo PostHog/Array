@@ -324,7 +324,8 @@ export type OnboardingStepId =
   | "welcome"
   | "project-select"
   | "invite-code"
-  | "connect-git"
+  | "connect-github"
+  | "install-cli"
   | "select-repo";
 
 type OnboardingSkipReason = "no_repo_selected" | "dev_skip";
