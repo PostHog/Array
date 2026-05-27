@@ -7,7 +7,7 @@ describe("generateHumanReadableName", () => {
     expect(name).toMatch(/^[a-z]+-[a-z]+-\d{2}$/);
   });
 
-  it("produces varied names over multiple calls", () => {
+  it("produces varied names over many calls", () => {
     const names = new Set<string>();
     for (let i = 0; i < 50; i++) {
       names.add(generateHumanReadableName());
@@ -17,16 +17,13 @@ describe("generateHumanReadableName", () => {
     expect(names.size).toBeGreaterThan(20);
   });
 
-  it("uses only filesystem-safe characters", () => {
-    for (let i = 0; i < 25; i++) {
-      const name = generateHumanReadableName();
-      expect(name).toMatch(/^[a-z0-9-]+$/);
-    }
+  const samples = Array.from({ length: 25 }, () => generateHumanReadableName());
+
+  it.each(samples)("uses only filesystem-safe characters: %s", (name) => {
+    expect(name).toMatch(/^[a-z0-9-]+$/);
   });
 
-  it("stays compact (under 32 chars)", () => {
-    for (let i = 0; i < 25; i++) {
-      expect(generateHumanReadableName().length).toBeLessThanOrEqual(32);
-    }
+  it.each(samples)("stays compact (≤32 chars): %s", (name) => {
+    expect(name.length).toBeLessThanOrEqual(32);
   });
 });
