@@ -24,7 +24,9 @@ import {
   Text,
 } from "@radix-ui/themes";
 import { Tooltip } from "@renderer/components/ui/Tooltip";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { PLAN_PRO_ALPHA } from "@shared/types/seat";
+import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { getBillingUrl, getPostHogUrl } from "@utils/urls";
 import { useEffect, useState } from "react";
@@ -85,6 +87,14 @@ export function PlanUsageSettings() {
     void fetchSeat({ autoProvision: true });
     void refetchUsage();
   }, [fetchSeat, refetchUsage]);
+
+  useEffect(() => {
+    if (showUpgradeDialog) {
+      track(ANALYTICS_EVENTS.UPGRADE_PROMPT_SHOWN, {
+        surface: "upgrade_dialog",
+      });
+    }
+  }, [showUpgradeDialog]);
 
   const formattedActiveUntil = activeUntil
     ? activeUntil.toLocaleDateString(undefined, {
@@ -238,7 +248,12 @@ export function PlanUsageSettings() {
                   <Button
                     size="1"
                     variant="solid"
-                    onClick={() => setShowUpgradeDialog(true)}
+                    onClick={() => {
+                      track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, {
+                        surface: "plan_page_card",
+                      });
+                      setShowUpgradeDialog(true);
+                    }}
                     disabled={isLoading}
                     className="self-start"
                   >
@@ -397,6 +412,9 @@ export function PlanUsageSettings() {
             <Button
               size="2"
               onClick={async () => {
+                track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, {
+                  surface: "upgrade_dialog",
+                });
                 setShowUpgradeDialog(false);
                 await upgradeToPro();
               }}
