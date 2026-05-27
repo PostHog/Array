@@ -515,7 +515,7 @@ export function ReportDetailPane({
               size="1"
               variant="soft"
               className="gap-1 rounded-r-none text-[12px]"
-              tooltipContent="Open a chat session about this report"
+              tooltipContent="Discuss this report in a task with your agent"
               disabled={isDiscussing}
               onClick={() => handleDiscussReport()}
             >
