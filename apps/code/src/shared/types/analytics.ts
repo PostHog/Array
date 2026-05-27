@@ -324,10 +324,10 @@ export type OnboardingStepId =
   | "welcome"
   | "project-select"
   | "invite-code"
-  | "github"
-  | "install-cli";
+  | "connect-git"
+  | "select-repo";
 
-type OnboardingSkipReason = "tools_not_installed" | "dev_skip";
+type OnboardingSkipReason = "no_repo_selected" | "dev_skip";
 
 export interface OnboardingStepViewedProperties {
   step_id: OnboardingStepId;
@@ -376,7 +376,7 @@ export interface OnboardingCliCheckCompletedProperties {
 export interface OnboardingCompletedProperties {
   duration_seconds: number;
   github_connected: boolean;
-  cli_skipped: boolean;
+  repo_skipped: boolean;
 }
 
 export interface OnboardingAbandonedProperties {
