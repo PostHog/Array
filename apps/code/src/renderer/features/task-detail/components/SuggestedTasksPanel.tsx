@@ -1,6 +1,7 @@
 import { DiscoveredTaskDetailDialog } from "@features/setup/components/DiscoveredTaskDetailDialog";
 import { SetupScanFeed } from "@features/setup/components/SetupScanFeed";
 import {
+  isTaskForRepo,
   selectRepoDiscovery,
   selectRepoEnricher,
   useSetupStore,
@@ -42,11 +43,21 @@ const pageVariants = {
   exit: (dir: number) => ({ x: -dir * 32, opacity: 0 }),
 };
 
+const fadeMotion = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 },
+  transition: { duration: 0.15 },
+};
+
+const pagerButtonClass =
+  "flex h-5 w-5 cursor-pointer items-center justify-center rounded text-(--gray-11) hover:bg-(--gray-3) hover:text-(--gray-12) disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-(--gray-11)";
+
 export function SuggestedTasksPanel() {
   const selectedDirectory = useActiveRepoStore((s) => s.path);
   const discoveredTasks = useSetupStore((s) =>
     s.discoveredTasks.filter((task) =>
-      selectedDirectory ? task.repoPath === selectedDirectory : !task.repoPath,
+      isTaskForRepo(task, selectedDirectory || null),
     ),
   );
   const discoveryStatus = useSetupStore(
@@ -68,6 +79,7 @@ export function SuggestedTasksPanel() {
   useEffect(() => {
     setPageStart(0);
     setPageDirection(1);
+    setDetailTask(null);
   }, [selectedDirectory]);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -177,16 +189,6 @@ export function SuggestedTasksPanel() {
     setPageDirection(-1);
     setPageStart(Math.max(0, effectivePageStart - visibleCount));
   };
-
-  const fadeMotion = {
-    initial: { opacity: 0 },
-    animate: { opacity: 1 },
-    exit: { opacity: 0 },
-    transition: { duration: 0.15 },
-  };
-
-  const pagerButtonClass =
-    "flex h-5 w-5 cursor-pointer items-center justify-center rounded text-(--gray-11) hover:bg-(--gray-3) hover:text-(--gray-12) disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-(--gray-11)";
 
   return (
     <div ref={containerRef} className="mt-3 flex flex-col gap-2">

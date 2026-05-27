@@ -1,4 +1,5 @@
 import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
+import type { ActivityEntry } from "@features/setup/stores/setupStore";
 import type { Icon } from "@phosphor-icons/react";
 import {
   ArrowsClockwise,
@@ -15,14 +16,6 @@ import {
 } from "@phosphor-icons/react";
 import { Flex, Text } from "@radix-ui/themes";
 import { AnimatePresence, motion } from "framer-motion";
-
-interface ActivityEntry {
-  id: number;
-  toolCallId: string;
-  tool: string;
-  filePath: string | null;
-  title: string;
-}
 
 interface SetupScanFeedProps {
   label: string;

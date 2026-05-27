@@ -2,7 +2,10 @@ import { Badge } from "@components/ui/Badge";
 import { Button } from "@components/ui/Button";
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
 import { useFolders } from "@features/folders/hooks/useFolders";
-import { useSetupStore } from "@features/setup/stores/setupStore";
+import {
+  isTaskForRepo,
+  useSetupStore,
+} from "@features/setup/stores/setupStore";
 import type { DiscoveredTask } from "@features/setup/types";
 import { buildDiscoveredTaskPrompt } from "@features/setup/utils/buildDiscoveredTaskPrompt";
 import {
@@ -60,7 +63,9 @@ function DialogBody({
   const config = CATEGORY_CONFIG[task.category] ?? FALLBACK_CATEGORY_CONFIG;
   const CategoryIcon = config.icon;
 
-  const tasks = useSetupStore((s) => s.discoveredTasks);
+  const tasks = useSetupStore((s) =>
+    s.discoveredTasks.filter((t) => isTaskForRepo(t, task.repoPath ?? null)),
+  );
   const selectedDirectory = useActiveRepoStore((s) => s.path);
   const navigateToTaskInput = useNavigationStore((s) => s.navigateToTaskInput);
   const { folders } = useFolders();

@@ -8,7 +8,7 @@ const log = logger.scope("setup-store");
 type DiscoveryStatus = "idle" | "running" | "done" | "error";
 type EnricherStatus = "idle" | "running" | "done" | "error";
 
-interface ActivityEntry {
+export interface ActivityEntry {
   id: number;
   toolCallId: string;
   tool: string;
@@ -72,12 +72,6 @@ interface SetupStoreActions {
 
 type SetupStore = SetupStoreState & SetupStoreActions;
 
-interface PersistedSetupState {
-  discoveredTasks: DiscoveredTask[];
-  discoveryByRepo: Record<string, RepoDiscoveryState>;
-  enricherByRepo: Record<string, RepoEnricherState>;
-}
-
 const initialState: SetupStoreState = {
   discoveredTasks: [],
   discoveryByRepo: {},
@@ -100,7 +94,10 @@ export function selectRepoEnricher(
   return state.enricherByRepo[repoPath] ?? DEFAULT_ENRICHER;
 }
 
-function isTaskForRepo(task: DiscoveredTask, repoPath: string | null): boolean {
+export function isTaskForRepo(
+  task: DiscoveredTask,
+  repoPath: string | null,
+): boolean {
   if (!repoPath) return !task.repoPath;
   return task.repoPath === repoPath;
 }
@@ -304,7 +301,7 @@ export const useSetupStore = create<SetupStore>()(
     {
       name: "setup-store",
       version: 2,
-      migrate: (persistedState, version): PersistedSetupState => {
+      migrate: (persistedState, version): SetupStoreState => {
         if (version < 2) {
           // v1 stored a single global discoveryStatus, not a per-repo map.
           // We can't recover which repo it belonged to, so for v1 users who
@@ -347,7 +344,7 @@ export const useSetupStore = create<SetupStore>()(
             enricherByRepo: {},
           };
         }
-        return persistedState as PersistedSetupState;
+        return persistedState as SetupStoreState;
       },
       // Persist non-idle discovery status per repo so a known-done repo
       // doesn't trigger another full agent run on reload. Persist "running"
@@ -357,7 +354,7 @@ export const useSetupStore = create<SetupStore>()(
       //
       // Enricher only persists "done" — it's cheap to rerun on error/idle,
       // and we never want to skip an in-flight "running" across boots.
-      partialize: (state): PersistedSetupState => ({
+      partialize: (state): SetupStoreState => ({
         discoveredTasks: state.discoveredTasks,
         discoveryByRepo: Object.fromEntries(
           Object.entries(state.discoveryByRepo)

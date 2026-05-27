@@ -13,12 +13,6 @@ export function useSetupDiscovery() {
   // runs require explicit user retry (see setupStore partialize and #2257).
   // Enricher runs per repo on every selection (gated on per-repo status
   // inside the service).
-  //
-  // We read discoveryEverStarted from the store inside the effect (rather than
-  // subscribing) so the branch decision is captured once per selectedDirectory
-  // change. Subscribing would re-fire the effect when startSetup flips the
-  // first repo's discovery status to "running", calling startEnricherForRepo
-  // a second time for the same repo.
   useEffect(() => {
     if (!selectedDirectory) return;
     const service = get<SetupRunService>(RENDERER_TOKENS.SetupRunService);

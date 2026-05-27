@@ -2,6 +2,7 @@ import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { fetchAuthState } from "@features/auth/hooks/authQueries";
 import { buildDiscoveryPrompt } from "@features/setup/prompts";
 import {
+  type ActivityEntry,
   selectRepoDiscovery,
   selectRepoEnricher,
   useSetupStore,
@@ -24,14 +25,6 @@ import { logger } from "@utils/logger";
 import { injectable } from "inversify";
 
 const log = logger.scope("setup-run-service");
-
-interface ActivityEntry {
-  id: number;
-  toolCallId: string;
-  tool: string;
-  filePath: string | null;
-  title: string;
-}
 
 let activityIdCounter = 0;
 
@@ -240,6 +233,7 @@ function buildPosthogSetupSuggestion(
 
 @injectable()
 export class SetupRunService {
+  private anyDiscoveryEverLaunched = false;
   private discoveryStartingByRepo = new Set<string>();
   private enricherSuggestionsRunningByRepo = new Set<string>();
 
@@ -264,12 +258,14 @@ export class SetupRunService {
 
   startDiscovery(directory: string): void {
     if (!directory) return;
+    if (this.anyDiscoveryEverLaunched) return;
     if (this.discoveryStartingByRepo.has(directory)) return;
     const status = selectRepoDiscovery(
       useSetupStore.getState(),
       directory,
     ).status;
     if (status === "running" || status === "done") return;
+    this.anyDiscoveryEverLaunched = true;
     this.discoveryStartingByRepo.add(directory);
     this.runDiscovery(directory)
       .catch((err) => {
@@ -294,35 +290,38 @@ export class SetupRunService {
     if (enricherStatus === "done" || enricherStatus === "running") return;
     this.enricherSuggestionsRunningByRepo.add(directory);
     useSetupStore.getState().startEnrichment(directory);
+    this.runEnricher(directory).catch((err) => {
+      log.warn("Enricher run failed", { error: err });
+    });
+  }
 
-    void (async () => {
-      try {
-        const installState =
-          await trpcClient.enrichment.detectPosthogInstallState.query({
-            repoPath: directory,
-          });
+  private async runEnricher(directory: string): Promise<void> {
+    try {
+      const installState =
+        await trpcClient.enrichment.detectPosthogInstallState.query({
+          repoPath: directory,
+        });
 
-        if (installState === "initialized") {
-          useSetupStore.getState().addEnricherSuggestionIfMissing({
-            ...buildSdkHealthSuggestion(),
-            repoPath: directory,
-          });
-          await this.injectStaleFlagSuggestions(directory);
-        } else {
-          const suggestion = buildPosthogSetupSuggestion(installState);
-          useSetupStore.getState().addEnricherSuggestionIfMissing({
-            ...suggestion,
-            repoPath: directory,
-          });
-        }
-        useSetupStore.getState().completeEnrichment(directory);
-      } catch (err) {
-        log.warn("Enricher run failed", { error: err });
-        useSetupStore.getState().failEnrichment(directory);
-      } finally {
-        this.enricherSuggestionsRunningByRepo.delete(directory);
+      if (installState === "initialized") {
+        useSetupStore.getState().addEnricherSuggestionIfMissing({
+          ...buildSdkHealthSuggestion(),
+          repoPath: directory,
+        });
+        await this.injectStaleFlagSuggestions(directory);
+      } else {
+        const suggestion = buildPosthogSetupSuggestion(installState);
+        useSetupStore.getState().addEnricherSuggestionIfMissing({
+          ...suggestion,
+          repoPath: directory,
+        });
       }
-    })();
+      useSetupStore.getState().completeEnrichment(directory);
+    } catch (err) {
+      log.warn("Enricher run failed", { error: err });
+      useSetupStore.getState().failEnrichment(directory);
+    } finally {
+      this.enricherSuggestionsRunningByRepo.delete(directory);
+    }
   }
 
   private async injectStaleFlagSuggestions(directory: string): Promise<void> {
@@ -343,14 +342,6 @@ export class SetupRunService {
   }
 
   private async runDiscovery(directory: string): Promise<void> {
-    const status = selectRepoDiscovery(
-      useSetupStore.getState(),
-      directory,
-    ).status;
-    if (status === "done" || status === "running") {
-      return;
-    }
-
     const abort = new AbortController();
     const discoveryStartedAt = Date.now();
 
