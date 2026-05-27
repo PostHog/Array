@@ -656,6 +656,7 @@ export function useRepositoryIntegration() {
     repositories,
     getIntegrationIdForRepo,
     isRepoInIntegration,
+    isLoadingIntegrations: integrationsPending,
     isLoadingRepos: integrationsPending || reposPending,
     isRefreshingRepos,
     refreshRepositories,

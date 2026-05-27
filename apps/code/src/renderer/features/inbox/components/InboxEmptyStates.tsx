@@ -1,77 +1,15 @@
 import { AnimatedEllipsis } from "@features/inbox/components/utils/AnimatedEllipsis";
 import { SOURCE_PRODUCT_META } from "@features/inbox/components/utils/source-product-icons";
-import { ArrowDownIcon, CheckCircleIcon } from "@phosphor-icons/react";
+import { CheckCircleIcon } from "@phosphor-icons/react";
 import { Box, Button, Flex, Text, Tooltip } from "@radix-ui/themes";
 import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
 import explorerHog from "@renderer/assets/images/hedgehogs/explorer-hog.png";
-import graphsHog from "@renderer/assets/images/hedgehogs/graphs-hog.png";
 import mailHog from "@renderer/assets/images/mail-hog.png";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { useState } from "react";
 
 // ── Full-width empty states ─────────────────────────────────────────────────
-
-export function WelcomePane({ onEnableInbox }: { onEnableInbox: () => void }) {
-  return (
-    <Flex
-      direction="column"
-      align="center"
-      justify="center"
-      height="100%"
-      px="5"
-    >
-      <Flex direction="column" align="center" className="max-w-[420px]">
-        <img src={graphsHog} alt="" className="mb-[16px] w-[120px]" />
-
-        <Text
-          align="center"
-          className="font-bold text-(--gray-12) text-lg leading-6.5"
-        >
-          Welcome to your Inbox
-        </Text>
-
-        <Flex
-          direction="column"
-          align="center"
-          gap="3"
-          mt="3"
-          className="max-w-[340px]"
-        >
-          <Text
-            align="center"
-            className="text-(--gray-11) text-[13px] leading-[1.35]"
-          >
-            <Text className="font-medium text-(--gray-12)">
-              Background analysis of your data — while you sleep.
-            </Text>
-            <br />
-            Session recordings watched automatically. Issues, tickets, and evals
-            analyzed around the clock.
-          </Text>
-
-          <ArrowDownIcon size={14} className="text-(--gray-8)" />
-
-          <Text
-            align="center"
-            className="text-(--gray-11) text-[13px] leading-[1.35]"
-          >
-            <Text className="font-medium text-(--gray-12)">
-              Ready-to-run fixes for real user problems.
-            </Text>
-            <br />
-            Each report includes evidence and impact numbers — just execute the
-            prompt in your agent.
-          </Text>
-        </Flex>
-
-        <Button size="2" onClick={onEnableInbox} className="mt-[20px]">
-          Enable Inbox
-        </Button>
-      </Flex>
-    </Flex>
-  );
-}
 
 export function WarmingUpPane({
   onConfigureSources,
@@ -126,7 +64,7 @@ export function WarmingUpPane({
             color="gray"
             onClick={onConfigureSources}
           >
-            Configure sources
+            Configure inbox
           </Button>
         </Flex>
       </Flex>

@@ -112,7 +112,8 @@ export function useSignalSourceManager() {
     useExternalDataSources();
   const { data: evaluations } = useEvaluations();
   const { data: teamConfig } = useSignalTeamConfig();
-  const { data: userAutonomyConfig } = useSignalUserAutonomyConfig();
+  const { data: userAutonomyConfig, isLoading: userAutonomyConfigLoading } =
+    useSignalUserAutonomyConfig();
 
   // Optimistic overrides keyed by source product — only sources actively being
   // toggled get an entry, so unrelated sources never see a prop change.
@@ -573,6 +574,7 @@ export function useSignalSourceManager() {
     teamConfig,
     handleUpdateAutostartPriority,
     userAutonomyConfig,
+    userAutonomyConfigLoading,
     handleUpdateUserAutonomyPriority,
     handleUpdateSlackNotifications,
   };

@@ -4,6 +4,8 @@ import type { AnnotationMetadata } from "../types";
 
 export interface PrCommentThread {
   rootId: number;
+  nodeId: string;
+  isResolved: boolean;
   comments: PrReviewComment[];
   filePath: string;
 }
@@ -31,6 +33,8 @@ function buildAnnotation(
     metadata: {
       kind: "pr-comment",
       threadId: thread.rootId,
+      nodeId: thread.nodeId,
+      isResolved: thread.isResolved,
       comments: thread.comments,
       isOutdated,
       isFileLevel,

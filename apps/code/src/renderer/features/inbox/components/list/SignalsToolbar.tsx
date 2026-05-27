@@ -52,7 +52,7 @@ interface SignalsToolbarProps {
   effectiveBulkIds?: string[];
   /** Called when the select-all checkbox is toggled. Parent owns all state transitions. */
   onToggleSelectAll?: (checked: boolean) => void;
-  /** Called when the "Configure sources" button is clicked. */
+  /** Called when the "Configure inbox" button is clicked. */
   onConfigureSources?: () => void;
   /**
    * Opens the dismiss flow: exactly one report selected (snooze or permanent suppress, with a reason).
@@ -505,7 +505,7 @@ export function SignalsToolbar({
               className="flex shrink-0 cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-[12px] text-gray-10 transition-colors hover:text-gray-12"
             >
               <GearSixIcon size={12} />
-              <span>Configure sources</span>
+              <span>Configure inbox</span>
             </button>
           ) : null}
         </Flex>
