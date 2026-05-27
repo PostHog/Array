@@ -594,27 +594,6 @@ export interface SignalSourceConnectedProperties {
 }
 
 // Subscription / billing events
-
-// Surfaces that render an upgrade pitch with an impression (modal/dialog).
-export type UpgradePromptShownSurface = "usage_limit_modal" | "upgrade_dialog";
-
-// Surfaces from which a user can click a CTA that progresses the upgrade flow.
-// "upgrade_dialog" here covers the final Subscribe button, fired before the
-// API call so the gap to `Subscription started` captures payment failures.
-export type UpgradePromptClickedSurface =
-  | "usage_limit_modal"
-  | "sidebar"
-  | "plan_page_card"
-  | "upgrade_dialog";
-
-export interface UpgradePromptShownProperties {
-  surface: UpgradePromptShownSurface;
-}
-
-export interface UpgradePromptClickedProperties {
-  surface: UpgradePromptClickedSurface;
-}
-
 export interface SubscriptionStartedProperties {
   plan_key: string;
   previous_plan_key?: string;
@@ -743,8 +722,6 @@ export const ANALYTICS_EVENTS = {
   PROMPT_HISTORY_SELECTED: "Prompt history selected",
 
   // Subscription events
-  UPGRADE_PROMPT_SHOWN: "Upgrade prompt shown",
-  UPGRADE_PROMPT_CLICKED: "Upgrade prompt clicked",
   SUBSCRIPTION_STARTED: "Subscription started",
   SUBSCRIPTION_CANCELLED: "Subscription cancelled",
 } as const;
@@ -861,8 +838,6 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.PROMPT_HISTORY_SELECTED]: PromptHistorySelectedProperties;
 
   // Subscription events
-  [ANALYTICS_EVENTS.UPGRADE_PROMPT_SHOWN]: UpgradePromptShownProperties;
-  [ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED]: UpgradePromptClickedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
 };

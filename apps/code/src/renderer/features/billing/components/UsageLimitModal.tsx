@@ -2,26 +2,12 @@ import { useUsageLimitStore } from "@features/billing/stores/usageLimitStore";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import { WarningCircle } from "@phosphor-icons/react";
 import { Button, Dialog, Flex, Text } from "@radix-ui/themes";
-import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { track } from "@utils/analytics";
-import { useEffect } from "react";
 
 export function UsageLimitModal() {
   const isOpen = useUsageLimitStore((s) => s.isOpen);
   const hide = useUsageLimitStore((s) => s.hide);
 
-  useEffect(() => {
-    if (isOpen) {
-      track(ANALYTICS_EVENTS.UPGRADE_PROMPT_SHOWN, {
-        surface: "usage_limit_modal",
-      });
-    }
-  }, [isOpen]);
-
   const handleUpgrade = () => {
-    track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, {
-      surface: "usage_limit_modal",
-    });
     hide();
     useSettingsDialogStore.getState().open("plan-usage");
   };

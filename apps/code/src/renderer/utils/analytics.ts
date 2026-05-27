@@ -70,6 +70,10 @@ export function initializePostHog() {
     listener.unsubscribe = posthog.onFeatureFlags(listener.callback);
   }
   pendingFlagListeners.clear();
+
+  if (import.meta.env.DEV) {
+    (window as unknown as { posthog: typeof posthog }).posthog = posthog;
+  }
 }
 
 /**
