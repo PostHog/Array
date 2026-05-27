@@ -595,12 +595,8 @@ export interface SignalSourceConnectedProperties {
 
 // Subscription / billing events
 
-// Surfaces that render an upgrade pitch with an impression (modal/dialog).
 export type UpgradePromptShownSurface = "usage_limit_modal" | "upgrade_dialog";
 
-// Surfaces from which a user can click a CTA that progresses the upgrade flow.
-// "upgrade_dialog" here covers the final Subscribe button, fired before the
-// API call so the gap to `Subscription started` captures payment failures.
 export type UpgradePromptClickedSurface =
   | "usage_limit_modal"
   | "sidebar"
