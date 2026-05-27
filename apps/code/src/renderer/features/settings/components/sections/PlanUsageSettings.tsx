@@ -205,7 +205,7 @@ export function PlanUsageSettings() {
               name="Pro"
               price="$200"
               period="/mo"
-              badge="20× Free"
+              badge="20× Free usage"
               features={[
                 "$1,000 of Claude & Codex usage / month",
                 "Local and cloud execution",
