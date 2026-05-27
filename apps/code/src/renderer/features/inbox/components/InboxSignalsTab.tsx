@@ -475,19 +475,31 @@ export function InboxSignalsTab() {
     sourceProductFilter.length > 0 ||
     suggestedReviewerFilter.length > 0 ||
     statusFilter.length < 5;
-  // Onboarding wins over two-pane even if the user has suggested setup tasks —
-  // discovered tasks alone shouldn't push a source-less user past the inline setup.
-  const onboardingShouldShow = !hasReports && !hasSignalSources;
-  // Sticky within an inbox visit: once we've entered onboarding, keep showing
-  // it even after the user toggles a source on, until either they explicitly
-  // click "Proceed to Inbox" or navigate away (unmount resets the ref).
-  const enteredOnboardingRef = useRef(false);
-  if (onboardingShouldShow) {
-    enteredOnboardingRef.current = true;
-  }
+
+  // Sticky for the visit: once entered, only "Proceed to Inbox" or unmount exits.
+  // Gated on prerequisites loading so we don't latch users who already have a
+  // configured inbox.
+  const [hasEnteredOnboarding, setHasEnteredOnboarding] = useState(false);
   const [userExitedOnboarding, setUserExitedOnboarding] = useState(false);
-  const showInboxOnboarding =
-    enteredOnboardingRef.current && !userExitedOnboarding;
+  useEffect(() => {
+    if (
+      inboxSourcesPrerequisitesLoaded &&
+      !isLoading &&
+      error == null &&
+      !hasReports &&
+      !hasSignalSources
+    ) {
+      setHasEnteredOnboarding(true);
+    }
+  }, [
+    inboxSourcesPrerequisitesLoaded,
+    isLoading,
+    error,
+    hasReports,
+    hasSignalSources,
+  ]);
+
+  const showInboxOnboarding = hasEnteredOnboarding && !userExitedOnboarding;
   const shouldShowTwoPane =
     !showInboxOnboarding &&
     (hasReports ||
