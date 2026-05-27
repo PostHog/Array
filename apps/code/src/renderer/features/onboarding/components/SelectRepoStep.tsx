@@ -15,6 +15,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useMemo } from "react";
 import type { DetectedRepo } from "../hooks/useOnboardingFlow";
 import { OnboardingHogTip } from "./OnboardingHogTip";
+import { OptionalBadge } from "./OptionalBadge";
 import { PANEL_SHADOW } from "./onboardingStyles";
 import { StepActions } from "./StepActions";
 
@@ -64,9 +65,12 @@ export function SelectRepoStep({
                 transition={{ duration: 0.3 }}
               >
                 <Flex direction="column" gap="2">
-                  <Text className="font-bold text-(--gray-12) text-2xl">
-                    Pick a repo to get started
-                  </Text>
+                  <Flex align="center" gap="2">
+                    <Text className="font-bold text-(--gray-12) text-2xl">
+                      Pick a repo to get started
+                    </Text>
+                    <OptionalBadge />
+                  </Flex>
                   <Text className="text-(--gray-11) text-sm">
                     We'll scan it and suggest some first things to work on. You
                     can also skip this and start from a blank task.
