@@ -20,12 +20,23 @@ import {
 } from "../constants";
 import { useDismissReport } from "../hooks/useInboxReports";
 
+export interface DismissReportResult {
+  reason: DismissalReasonOptionValue;
+  /** Trimmed note text the user provided, if any. Empty/whitespace-only notes become null. */
+  note: string | null;
+}
+
 interface DismissReportSheetProps {
   visible: boolean;
   reportId: string;
   reportTitle: string;
   onClose: () => void;
-  onDismissed: () => void;
+  /**
+   * Fires after the API confirms the dismissal. The result is passed back so
+   * callers can route the reason/note through their own analytics — keeping
+   * this sheet stateless about the surface it was launched from.
+   */
+  onDismissed: (result: DismissReportResult) => void;
 }
 
 export function DismissReportSheet({
@@ -53,10 +64,14 @@ export function DismissReportSheet({
   const handleConfirm = async () => {
     if (!reason || dismiss.isPending) return;
     setError(null);
+    const trimmedNote = note.trim();
     try {
-      await dismiss.mutateAsync({ reason, note: note.trim() || undefined });
+      await dismiss.mutateAsync({
+        reason,
+        note: trimmedNote || undefined,
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onDismissed();
+      onDismissed({ reason, note: trimmedNote || null });
     } catch (err) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setError(

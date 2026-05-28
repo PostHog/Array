@@ -1,5 +1,5 @@
-import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FilterSheet } from "@/features/inbox/components/FilterSheet";
@@ -13,28 +13,86 @@ import {
   decidedIds,
   useDismissedReportsStore,
 } from "@/features/inbox/stores/dismissedReportsStore";
-import { useInboxFilterStore } from "@/features/inbox/stores/inboxFilterStore";
+import {
+  DEFAULT_STATUS_FILTER,
+  useInboxFilterStore,
+} from "@/features/inbox/stores/inboxFilterStore";
 import { useInboxStore } from "@/features/inbox/stores/inboxStore";
 import type { SignalReport } from "@/features/inbox/types";
+import { buildInboxViewedProperties } from "@/features/inbox/utils";
 import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
+import { ANALYTICS_EVENTS, useAnalytics } from "@/lib/analytics";
 
 type InboxViewMode = "list" | "tinder";
 
 export default function InboxScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { reports, isFetching, isLoading, error } = useInboxReports();
+  const { reports, totalCount, isFetching, isLoading, error } =
+    useInboxReports();
   const [filterOpen, setFilterOpen] = useState(false);
   const [reviewerOpen, setReviewerOpen] = useState(false);
   const [viewMode, setViewMode] = useState<InboxViewMode>("list");
   const reviewerFilterCount = useInboxFilterStore(
     (s) => s.suggestedReviewerFilter.length,
   );
+  const sourceProductFilter = useInboxFilterStore((s) => s.sourceProductFilter);
+  const statusFilter = useInboxFilterStore((s) => s.statusFilter);
+  const suggestedReviewerFilter = useInboxFilterStore(
+    (s) => s.suggestedReviewerFilter,
+  );
+
+  const analytics = useAnalytics();
+  // Fire INBOX_VIEWED once per focus when the report list has settled.
+  const viewedFiredRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        viewedFiredRef.current = false;
+      };
+    }, []),
+  );
+  useEffect(() => {
+    if (isLoading) return;
+    if (viewedFiredRef.current) return;
+    viewedFiredRef.current = true;
+    analytics.track(
+      ANALYTICS_EVENTS.INBOX_VIEWED,
+      buildInboxViewedProperties(reports, totalCount, {
+        sourceProductFilter,
+        statusFilter,
+        suggestedReviewerFilter,
+        defaultStatusFilter: DEFAULT_STATUS_FILTER,
+      }),
+    );
+  }, [
+    analytics,
+    isLoading,
+    reports,
+    totalCount,
+    sourceProductFilter,
+    statusFilter,
+    suggestedReviewerFilter,
+  ]);
 
   // ── Tinder mode data ──────────────────────────────────────────────────────
   const decided = useDismissedReportsStore(decidedIds);
   const setCurrentIndex = useInboxStore((s) => s.setCurrentIndex);
+  const setLastVisibleReportIds = useInboxStore(
+    (s) => s.setLastVisibleReportIds,
+  );
   const { repositoryOptions } = useIntegrations();
+
+  // Snapshot the visible-list IDs into the store so the detail screen can
+  // record rank/list_size on OPENED. Only the list view exposes a rank — the
+  // tinder card stack swaps cards in place.
+  useEffect(() => {
+    if (viewMode === "list") {
+      setLastVisibleReportIds(reports.map((r) => r.id));
+    } else {
+      setLastVisibleReportIds([]);
+    }
+  }, [viewMode, reports, setLastVisibleReportIds]);
 
   // Same data as the list view, excluding already-decided reports.
   const tinderReports = useMemo(

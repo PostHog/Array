@@ -12,18 +12,31 @@ import {
   Warning,
 } from "phosphor-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import {
+  ActivityIndicator,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  ScrollView,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { getReportRepository } from "@/features/inbox/api";
-import { DismissReportSheet } from "@/features/inbox/components/DismissReportSheet";
+import {
+  type DismissReportResult,
+  DismissReportSheet,
+} from "@/features/inbox/components/DismissReportSheet";
 import { SignalCard } from "@/features/inbox/components/SignalCard";
 import { SuggestedReviewers } from "@/features/inbox/components/SuggestedReviewers";
+import { DISMISSAL_REASON_OPTIONS } from "@/features/inbox/constants";
+import { useInboxEngagementTracker } from "@/features/inbox/hooks/useInboxEngagementTracker";
 import {
   useInboxReport,
   useInboxReportArtefacts,
   useInboxReportSignals,
 } from "@/features/inbox/hooks/useInboxReports";
+import { useInboxStore } from "@/features/inbox/stores/inboxStore";
 import type {
   ActionabilityJudgmentContent,
   SignalFindingContent,
@@ -32,6 +45,7 @@ import type {
   SuggestedReviewer,
 } from "@/features/inbox/types";
 import { inboxStatusLabel } from "@/features/inbox/utils";
+import { computeReportAgeHours, useAnalytics } from "@/lib/analytics";
 import { useThemeColors } from "@/lib/theme";
 
 const statusColorMap: Record<string, { bg: string; text: string }> = {
@@ -117,6 +131,59 @@ export default function ReportDetailScreen() {
   const artefactsQuery = useInboxReportArtefacts(reportId ?? null);
   const signalsQuery = useInboxReportSignals(reportId ?? null);
 
+  // ── Engagement analytics ────────────────────────────────────────────────
+  const analytics = useAnalytics();
+  const lastVisibleReportIds = useInboxStore((s) => s.lastVisibleReportIds);
+  const previousOpenedReportId = useInboxStore((s) => s.previousOpenedReportId);
+  const setPreviousOpenedReportId = useInboxStore(
+    (s) => s.setPreviousOpenedReportId,
+  );
+  const rank = useMemo(() => {
+    if (!reportId) return -1;
+    const idx = lastVisibleReportIds.indexOf(reportId);
+    return idx;
+  }, [reportId, lastVisibleReportIds]);
+  const listSize = lastVisibleReportIds.length;
+  const tracker = useInboxEngagementTracker({
+    analytics,
+    report: report ?? null,
+    rank,
+    listSize,
+    openMethod: "click",
+    previousReportId: previousOpenedReportId,
+  });
+  // Remember this report as the "previous" once it's been opened so the next
+  // OPENED event can chain to it.
+  useEffect(() => {
+    if (!reportId) return;
+    setPreviousOpenedReportId(reportId);
+  }, [reportId, setPreviousOpenedReportId]);
+
+  const handleScroll = useCallback(
+    (_event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      tracker.signalScroll();
+    },
+    [tracker],
+  );
+
+  const handleToggleSignals = useCallback(() => {
+    setSignalsExpanded((v) => {
+      const next = !v;
+      if (next && report) {
+        tracker.signalAction({
+          report_id: report.id,
+          report_title: report.title ?? null,
+          report_age_hours: computeReportAgeHours(report.created_at),
+          action_type: "expand_signal",
+          surface: "detail_pane",
+          is_bulk: false,
+          bulk_size: 1,
+        });
+      }
+      return next;
+    });
+  }, [report, tracker]);
+
   useEffect(() => {
     if (!reportId) return;
     let cancelled = false;
@@ -176,6 +243,15 @@ export default function ReportDetailScreen() {
   const handleStartTask = useCallback(() => {
     if (!report) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    tracker.signalAction({
+      report_id: report.id,
+      report_title: report.title ?? null,
+      report_age_hours: computeReportAgeHours(report.created_at),
+      action_type: "create_pr",
+      surface: "detail_pane",
+      is_bulk: false,
+      bulk_size: 1,
+    });
     const prompt = `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`;
     router.push({
       pathname: "/task",
@@ -185,12 +261,41 @@ export default function ReportDetailScreen() {
         signalReport: report.id,
       },
     });
-  }, [report, router, reportRepo]);
+  }, [report, router, reportRepo, tracker]);
 
-  const handleDismissed = useCallback(() => {
-    setDismissOpen(false);
-    if (router.canGoBack()) router.back();
-  }, [router]);
+  const handleDismissed = useCallback(
+    (result: DismissReportResult) => {
+      setDismissOpen(false);
+      if (report) {
+        const reasonOption = DISMISSAL_REASON_OPTIONS.find(
+          (o) => o.value === result.reason,
+        );
+        const isSnooze =
+          reasonOption !== undefined &&
+          "snoozesInsteadOfDismiss" in reasonOption &&
+          reasonOption.snoozesInsteadOfDismiss === true;
+        tracker.signalAction({
+          report_id: report.id,
+          report_title: report.title ?? null,
+          report_age_hours: computeReportAgeHours(report.created_at),
+          action_type: isSnooze ? "snooze" : "dismiss",
+          surface: "detail_pane",
+          is_bulk: false,
+          bulk_size: 1,
+          ...(isSnooze
+            ? {}
+            : {
+                dismissal_reason: result.reason,
+                ...(result.note
+                  ? { dismissal_note: result.note.slice(0, 1000) }
+                  : {}),
+              }),
+        });
+      }
+      if (router.canGoBack()) router.back();
+    },
+    [router, report, tracker],
+  );
 
   if (error) {
     return (
@@ -254,6 +359,8 @@ export default function ReportDetailScreen() {
           paddingTop: 16,
           paddingBottom: insets.bottom + 100,
         }}
+        onScroll={handleScroll}
+        scrollEventThrottle={250}
       >
         {/* Badges row */}
         <View className="mb-3 flex-row flex-wrap items-center gap-1.5">
@@ -331,7 +438,7 @@ export default function ReportDetailScreen() {
         {signals.length > 0 && (
           <View className="mb-4">
             <Pressable
-              onPress={() => setSignalsExpanded((v) => !v)}
+              onPress={handleToggleSignals}
               hitSlop={6}
               accessibilityRole="button"
               accessibilityState={{ expanded: signalsExpanded }}
