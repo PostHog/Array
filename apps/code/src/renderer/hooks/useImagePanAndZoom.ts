@@ -45,6 +45,8 @@ export function useImagePanAndZoom(
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<ZoomState>(IDENTITY);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -83,15 +85,13 @@ export function useImagePanAndZoom(
         return;
       }
 
-      setState((prev) => {
-        if (prev.scale <= 1) return prev;
-        event.preventDefault();
-        return {
-          scale: prev.scale,
-          tx: prev.tx - event.deltaX,
-          ty: prev.ty - event.deltaY,
-        };
-      });
+      if (stateRef.current.scale <= 1) return;
+      event.preventDefault();
+      setState((prev) => ({
+        scale: prev.scale,
+        tx: prev.tx - event.deltaX,
+        ty: prev.ty - event.deltaY,
+      }));
     };
 
     el.addEventListener("wheel", handler, { passive: false });
@@ -101,17 +101,19 @@ export function useImagePanAndZoom(
   const onPointerDown = useCallback<PointerEventHandler<HTMLDivElement>>(
     (event) => {
       if (event.button !== 0) return;
-      if (state.scale <= 1) return;
-      event.currentTarget.setPointerCapture(event.pointerId);
+      if (stateRef.current.scale <= 1) return;
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {}
       dragRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
-        startTx: state.tx,
-        startTy: state.ty,
+        startTx: stateRef.current.tx,
+        startTy: stateRef.current.ty,
       };
     },
-    [state.scale, state.tx, state.ty],
+    [],
   );
 
   const onPointerMove = useCallback<PointerEventHandler<HTMLDivElement>>(
@@ -133,9 +135,11 @@ export function useImagePanAndZoom(
     (event) => {
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
+      try {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+      } catch {}
       dragRef.current = null;
     },
     [],
