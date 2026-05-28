@@ -72,6 +72,7 @@ export function SafeImagePreview({
       <img
         src={buildImageDataUrl(mimeType, base64)}
         alt={alt ?? "image preview"}
+        draggable={false}
         className="max-h-full max-w-full object-contain"
         style={{
           transform: zoom.transform,
