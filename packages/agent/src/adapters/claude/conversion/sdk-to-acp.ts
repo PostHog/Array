@@ -58,7 +58,6 @@ interface AnthropicMessageWithContent {
   type: Role;
   message: {
     content: AnthropicMessageContent;
-    role?: Role;
     model?: string;
   };
 }
@@ -497,6 +496,8 @@ function processContentChunk(
     case "container_upload":
     case "compaction":
     case "compaction_delta":
+    case "advisor_tool_result":
+    case "mid_conv_system":
       return [];
 
     default:
@@ -1028,6 +1029,12 @@ export async function handleUserAssistantMessage(
   const { session, sessionId, client, toolUseCache, fileContentCache, logger } =
     context;
 
+  // System-role payloads (e.g. SDK-injected reminders) reach the user/assistant
+  // switch but are never user-visible content; skip rendering them entirely.
+  if (message.message.role === "system") {
+    return {};
+  }
+
   if (shouldSkipUserAssistantMessage(message)) {
     logSpecialMessages(message, logger);
 
@@ -1045,7 +1052,7 @@ export async function handleUserAssistantMessage(
       if (stripped !== null) {
         for (const notification of toAcpNotifications(
           stripped,
-          message.message.role,
+          message.message.role as Role,
           sessionId,
           toolUseCache,
           fileContentCache,
@@ -1089,7 +1096,7 @@ export async function handleUserAssistantMessage(
 
   for (const notification of toAcpNotifications(
     contentToProcess as typeof content,
-    message.message.role,
+    message.message.role as Role,
     sessionId,
     toolUseCache,
     fileContentCache,

@@ -12,6 +12,7 @@ import {
 describe("toSdkModelId", () => {
   it("maps known gateway IDs to SDK aliases", () => {
     expect(toSdkModelId("claude-opus-4-7")).toBe("opus");
+    expect(toSdkModelId("claude-opus-4-8")).toBe("opus");
     expect(toSdkModelId("claude-sonnet-4-6")).toBe("sonnet");
     expect(toSdkModelId("claude-haiku-4-5")).toBe("haiku");
   });
@@ -65,6 +66,7 @@ describe("getEffortOptions", () => {
 
 describe("resolveModelPreference", () => {
   const options = [
+    { value: "claude-opus-4-8", name: "Claude Opus 4.8" },
     { value: "claude-opus-4-7", name: "Claude Opus 4.7" },
     { value: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
@@ -93,7 +95,7 @@ describe("resolveModelPreference", () => {
   });
 
   it("matches by token alias", () => {
-    expect(resolveModelPreference("opus[1m]", options)).toBe("claude-opus-4-7");
+    expect(resolveModelPreference("opus[1m]", options)).toBe("claude-opus-4-8");
   });
 
   it("refuses cross-version alias matches", () => {

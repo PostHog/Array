@@ -5,8 +5,8 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 ## Fork Point
 
 - **Forked**: v0.10.9, commit `5411e0f4`, Dec 2 2025
-- **Last sync**: v0.37.0 + #698, commit `694221a`, May 24 2026
-- **SDK**: `@anthropic-ai/claude-agent-sdk` 0.3.144, `@agentclientprotocol/sdk` 0.22.1, `@anthropic-ai/sdk` 0.96.0
+- **Last sync**: v0.38.0 + #716, commit `61ebda2`, May 28 2026
+- **SDK**: `@anthropic-ai/claude-agent-sdk` 0.3.154, `@agentclientprotocol/sdk` 0.22.1, `@anthropic-ai/sdk` 0.100.0
 
 ## File Mapping
 
@@ -66,6 +66,38 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 - **Raw SDK message relay** (v0.27.0): `emitRawSDKMessages` on `NewSessionMeta` for opt-in diagnostics
 - **Effort level sync** (v0.25.x): `xhigh` level added, `applyFlagSettings` on effort change
 - **Auto permission mode** (v0.25.0): Added to `CODE_EXECUTION_MODES`, available modes, ExitPlanMode options
+
+## Changes Ported in v0.38.0 Sync
+
+- **SDK bumps**: claude-agent-sdk 0.3.144 -> 0.3.154, anthropic SDK 0.96.0 -> 0.100.0 (ACP SDK
+  unchanged at 0.22.1).
+- **Compaction state-flag fix** (#716, a172885): SDK 0.3.154 emits the terminal `status` carrying
+  `compact_result` twice for failed compactions. Added a per-turn `compactionInProgress` flag in
+  `prompt()` so the user sees a single `Compacting completed.` / `Compacting failed: <reason>`
+  chunk. Manual `/compact` outcomes now surface here rather than via `compact_boundary` (which only
+  fires when there's content to compact).
+- **System-role guard on user/assistant handler** (#716, a172885): Added an early return in
+  `handleUserAssistantMessage` for `message.message.role === "system"`, covering both upstream's
+  `<local-command-stdout>` strip branch guard and the broader assistant-handler guard. Avoids
+  rendering SDK-injected system reminders as user-visible chunks.
+- **New no-op content block types** (#716, a172885): Added `advisor_tool_result` and
+  `mid_conv_system` cases to `processContentChunk` so unknown content blocks don't trip the
+  `unreachable` default.
+- **Opus 4.8 model entries** (#718, 98b54a0): Added `claude-opus-4-8` to gateway model maps with
+  1M context, effort and xhigh-effort support. MCP injection auto-included (Haiku exclusion only).
+
+## Skipped in v0.38.0 Sync
+
+- **Remove hide Claude auth flag** (#707, 7ed1daf): Our fork already returns `authMethods: []`
+  unconditionally; no flag to remove.
+- **`thinking_tokens` status case** (#716, a172885): Our `handleSystemMessage` switch on
+  `status === "compacting"` is non-exhaustive (no default `unreachable`), so unknown status values
+  already no-op harmlessly.
+- **Empty CI-retry commit** (#718, 98b54a0): No code change in the commit itself; the model entries
+  it carried are ported above.
+- **`MessageDisplay` hook + `SessionStart` reloadSkills/sessionTitle** (SDK 0.3.152): Available in
+  the bumped SDK but not wired into our fork; upstream doesn't consume them in #716 either. Defer
+  to a focused PR if we want the capability.
 
 ## Changes Ported in v0.37.0 Sync
 

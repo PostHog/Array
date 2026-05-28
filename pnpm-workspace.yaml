@@ -11,6 +11,7 @@ minimumReleaseAge: 10080
 minimumReleaseAgeExclude:
   - '@agentclientprotocol/sdk'
   - '@anthropic-ai/claude-agent-sdk'
+  - '@anthropic-ai/sdk'
   - '@pierre/diffs'
   - '@posthog/quill'
   - '@posthog/quill-tokens'

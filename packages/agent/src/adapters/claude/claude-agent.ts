@@ -487,6 +487,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       cache_read_input_tokens: 0,
       cache_creation_input_tokens: 0,
     };
+    // Tracks whether we're inside a compaction. The SDK emits the terminal
+    // `status` (compact_result success/failed) twice for a single failed
+    // compaction, and the two messages are indistinguishable, so we report the
+    // outcome only while a compaction is in progress, then clear this. A fresh
+    // `compacting` status sets it again, so every distinct compaction (e.g.
+    // repeated auto-compactions in a long turn) is still shown.
+    let compactionInProgress = false;
     if (this.session.lastContextWindowSize == null) {
       this.session.lastContextWindowSize = this.getContextWindowForModel(
         this.session.modelId ?? "",
@@ -561,6 +568,54 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             }
             if (message.subtype === "local_command_output") {
               promptReplayed = true;
+            }
+            if (message.subtype === "status") {
+              // The SDK signals manual `/compact` completion with a status
+              // message carrying `compact_result`, not the `compact_boundary`
+              // message (which only fires when there's content to compact).
+              // Gate the user-facing outcome on `compactionInProgress` to
+              // dedupe the duplicate terminal status the SDK emits for failed
+              // compactions.
+              if (message.status === "compacting") {
+                compactionInProgress = true;
+                // Fall through to handleSystemMessage so the COMPACTING
+                // extNotification still fires.
+              } else if (
+                message.compact_result === "success" &&
+                compactionInProgress
+              ) {
+                compactionInProgress = false;
+                await this.client.sessionUpdate({
+                  sessionId: params.sessionId,
+                  update: {
+                    sessionUpdate: "agent_message_chunk",
+                    content: {
+                      type: "text",
+                      text: "\n\nCompacting completed.",
+                    },
+                  },
+                });
+                break;
+              } else if (
+                message.compact_result === "failed" &&
+                compactionInProgress
+              ) {
+                compactionInProgress = false;
+                const reason = message.compact_error
+                  ? `: ${message.compact_error}`
+                  : ".";
+                await this.client.sessionUpdate({
+                  sessionId: params.sessionId,
+                  update: {
+                    sessionUpdate: "agent_message_chunk",
+                    content: {
+                      type: "text",
+                      text: `\n\nCompacting failed${reason}`,
+                    },
+                  },
+                });
+                break;
+              }
             }
             if (
               message.subtype === "session_state_changed" &&
