@@ -35,7 +35,7 @@ export function DismissReportSheet({
   onClose,
   onDismissed,
 }: DismissReportSheetProps) {
-  const { insets, bottom, contentTop } = useScreenInsets();
+  const { insets, bottom, sheetContentTop } = useScreenInsets();
   const themeColors = useThemeColors();
   const [reason, setReason] = useState<DismissalReasonOptionValue | null>(null);
   const [note, setNote] = useState("");
@@ -83,7 +83,7 @@ export function DismissReportSheet({
       >
         <View
           className="flex-1 bg-background"
-          style={{ paddingTop: contentTop() }}
+          style={{ paddingTop: sheetContentTop() }}
         >
           {/* Header */}
           <View className="flex-row items-center justify-between border-gray-6 border-b px-4 pb-3">

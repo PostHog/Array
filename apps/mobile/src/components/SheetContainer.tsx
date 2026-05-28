@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Modal, Pressable, View } from "react-native";
+import { Modal, Pressable, View, type ViewStyle } from "react-native";
 import {
   type BottomGapVariant,
   useScreenInsets,
@@ -17,10 +17,17 @@ interface SheetContainerProps {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
-  /** Bottom padding gap above the safe-area inset. Defaults to "compact". */
+  /**
+   * Bottom padding gap above the safe-area inset. Defaults to "compact"
+   * because that is the gap both legacy sheets (SelectSheet, AttachmentSheet)
+   * inherited — deliberately not BOTTOM_GAP's own "default" (24). Pass
+   * "default"/"roomy" when a sheet wants more breathing room.
+   */
   bottomGap?: BottomGapVariant;
   /** Extra classes for the sheet panel. */
   className?: string;
+  /** Extra inline styles for the sheet panel (e.g. a measured maxHeight). */
+  style?: ViewStyle;
 }
 
 /**
@@ -37,6 +44,7 @@ export function SheetContainer({
   children,
   bottomGap = "compact",
   className = "",
+  style,
 }: SheetContainerProps) {
   const { bottom } = useScreenInsets();
 
@@ -52,7 +60,11 @@ export function SheetContainer({
         <Pressable
           onPress={() => {}}
           className={`mt-auto rounded-t-2xl border-gray-6 border-t bg-background ${className}`}
-          style={{ paddingBottom: bottom(bottomGap), ...SHEET_SHADOW }}
+          style={{
+            paddingBottom: bottom(bottomGap),
+            ...SHEET_SHADOW,
+            ...style,
+          }}
         >
           {/* Drag handle */}
           <View className="items-center pt-2 pb-1">

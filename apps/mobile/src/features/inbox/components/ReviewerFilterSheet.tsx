@@ -67,7 +67,7 @@ export function ReviewerFilterSheet({
   visible,
   onClose,
 }: ReviewerFilterSheetProps) {
-  const { bottom, contentTop } = useScreenInsets();
+  const { bottom, sheetContentTop } = useScreenInsets();
   const themeColors = useThemeColors();
   const { data: currentUser } = useUserQuery();
   const { data: available, isLoading } = useAvailableSuggestedReviewers();
@@ -98,7 +98,7 @@ export function ReviewerFilterSheet({
     >
       <View
         className="flex-1 bg-background"
-        style={{ paddingTop: contentTop() }}
+        style={{ paddingTop: sheetContentTop() }}
       >
         {/* Header */}
         <View className="flex-row items-center justify-between border-gray-6 border-b px-4 pb-3">

@@ -44,7 +44,7 @@ function OptionRow({ label, selected, onPress }: OptionRowProps) {
 }
 
 export function TaskFilterMenu({ open, onClose }: TaskFilterMenuProps) {
-  const { bottom, contentTop } = useScreenInsets();
+  const { bottom, sheetContentTop } = useScreenInsets();
   const organizeMode = useTaskStore((s) => s.organizeMode);
   const setOrganizeMode = useTaskStore((s) => s.setOrganizeMode);
   const sortMode = useTaskStore((s) => s.sortMode);
@@ -70,7 +70,7 @@ export function TaskFilterMenu({ open, onClose }: TaskFilterMenuProps) {
     >
       <View
         className="flex-1 bg-background"
-        style={{ paddingTop: contentTop() }}
+        style={{ paddingTop: sheetContentTop() }}
       >
         {/* Header */}
         <View className="flex-row items-center justify-between border-gray-6 border-b px-4 pb-3">

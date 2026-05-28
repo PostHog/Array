@@ -94,7 +94,7 @@ function OptionRow({
 }
 
 export function FilterSheet({ visible, onClose }: FilterSheetProps) {
-  const { bottom, contentTop } = useScreenInsets();
+  const { bottom, sheetContentTop } = useScreenInsets();
   const themeColors = useThemeColors();
   const statusDotColors = useStatusDotColors();
 
@@ -120,7 +120,7 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
     >
       <View
         className="flex-1 bg-background"
-        style={{ paddingTop: contentTop() }}
+        style={{ paddingTop: sheetContentTop() }}
       >
         {/* Header */}
         <View className="flex-row items-center justify-between border-gray-6 border-b px-4 pb-3">

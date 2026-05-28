@@ -50,11 +50,24 @@ export function useScreenInsets() {
       /** Bottom padding = device inset + the standard gap for this surface. */
       bottom: (variant: BottomGapVariant = "default") =>
         insets.bottom + BOTTOM_GAP[variant],
-      /** Top padding for page-sheet content (inset + standard top gap). */
-      contentTop: () => insets.top + TOP_GAP,
-      /** Bottom offset for a floating action button. */
+      /**
+       * Top padding for bottom-sheet / filter-menu content (inset + the fixed
+       * sheet top gap). Scoped to sheets on purpose — full screens that need a
+       * measured header height should compute `insets.top + <headerHeight>`
+       * directly rather than reaching for this.
+       */
+      sheetContentTop: () => insets.top + TOP_GAP,
+      /**
+       * Bottom offset for a floating action button. The `+FAB_GAP` is a
+       * frozen domain-specific choice, not a `BOTTOM_GAP` variant — there is
+       * no `fabBottom("roomy")`. Tune `FAB_GAP` if every FAB should move.
+       */
       fabBottom: () => insets.bottom + FAB_GAP,
-      /** Composer bottom margin floor (never smaller than the min). */
+      /**
+       * Chat composer bottom margin floor. The `COMPOSER_MIN_BOTTOM` floor is
+       * a frozen domain-specific choice, not a `BOTTOM_GAP` variant — there is
+       * no `composerBottom("compact")`.
+       */
       composerBottom: () => Math.max(insets.bottom, COMPOSER_MIN_BOTTOM),
     };
   }, [insets]);

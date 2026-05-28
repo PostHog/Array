@@ -60,6 +60,10 @@ export default function TaskDetailScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { insets, composerBottom } = useScreenInsets();
+  // Pre-compute outside the worklet: useAnimatedStyle runs on the UI thread and
+  // can't call the non-worklet getter. Capturing the primitive keeps the worklet
+  // closure stable (matches the pattern in task/index.tsx).
+  const composerBottomValue = composerBottom();
   const themeColors = useThemeColors();
   const [task, setTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,9 +127,9 @@ export default function TaskDetailScreen() {
     // height, so the composer sits at the keyboard top — no extra gap needed
     // when open. Closed state keeps a comfortable bottom inset.
     return {
-      marginBottom: height.value < 0 ? 0 : composerBottom(),
+      marginBottom: height.value < 0 ? 0 : composerBottomValue,
     };
-  }, [composerBottom]);
+  }, [composerBottomValue]);
 
   useEffect(() => {
     if (!taskId) return;
