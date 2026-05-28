@@ -30,6 +30,7 @@ export {
   type ParsedImageDataUrl,
   parseImageDataUrl,
 } from "./image";
+export { buildDiscussReportPrompt } from "./inbox-prompts";
 export {
   Saga,
   type SagaLogger,
