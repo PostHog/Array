@@ -15,6 +15,7 @@ interface UseImagePanAndZoomResult {
   containerRef: RefObject<HTMLDivElement | null>;
   transform: string;
   isZoomed: boolean;
+  isDragging: boolean;
   reset: () => void;
 }
 
@@ -38,6 +39,7 @@ export function useImagePanAndZoom(
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<ZoomState>(IDENTITY);
+  const [isDragging, setIsDragging] = useState(false);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -96,6 +98,7 @@ export function useImagePanAndZoom(
         startTx: stateRef.current.tx,
         startTy: stateRef.current.ty,
       };
+      setIsDragging(true);
     };
 
     const handlePointerMove = (event: PointerEvent) => {
@@ -117,6 +120,7 @@ export function useImagePanAndZoom(
         el.releasePointerCapture(event.pointerId);
       }
       drag = null;
+      setIsDragging(false);
     };
 
     const handleDoubleClick = () => setState(IDENTITY);
@@ -144,6 +148,7 @@ export function useImagePanAndZoom(
     containerRef,
     transform: `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`,
     isZoomed: state.scale > 1,
+    isDragging,
     reset,
   };
 }

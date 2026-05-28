@@ -60,7 +60,14 @@ export function SafeImagePreview({
     <div
       ref={zoom.containerRef}
       className={`flex touch-none select-none items-center justify-center overflow-hidden ${className ?? "max-h-full max-w-full"}`}
-      style={{ ...style, cursor: zoom.isZoomed ? "grab" : style?.cursor }}
+      style={{
+        ...style,
+        cursor: zoom.isDragging
+          ? "grabbing"
+          : zoom.isZoomed
+            ? "grab"
+            : style?.cursor,
+      }}
     >
       <img
         src={buildImageDataUrl(mimeType, base64)}

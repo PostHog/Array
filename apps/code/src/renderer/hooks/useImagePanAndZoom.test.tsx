@@ -276,6 +276,7 @@ describe("useImagePanAndZoom", () => {
     expect(dragging.tx).toBeCloseTo(before.tx + 30);
     expect(dragging.ty).toBeCloseTo(before.ty - 20);
     expect(dragging.scale).toBe(before.scale);
+    expect(harness.current.isDragging).toBe(true);
     act(() => {
       fireEvent.pointerUp(harness.container, { pointerId: 1 });
       fireEvent.pointerMove(harness.container, {
@@ -285,6 +286,7 @@ describe("useImagePanAndZoom", () => {
       });
     });
     expect(parseTransform(harness.current.transform)).toEqual(dragging);
+    expect(harness.current.isDragging).toBe(false);
   });
 
   it("zooms toward the cursor position", () => {
