@@ -66,64 +66,64 @@ describe("authedFetch", () => {
     );
   });
 
-  it("retries once with a freshly fetched token on 401", async () => {
-    setupTokens("old-token", "new-token");
-    mockFetch.mockResolvedValueOnce(err(401)).mockResolvedValueOnce(ok());
-
-    const response = await authedFetch(url);
-
-    expect(response.ok).toBe(true);
-    expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1);
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(mockFetch.mock.calls[0][1].headers.Authorization).toBe(
-      "Bearer old-token",
-    );
-    expect(mockFetch.mock.calls[1][1].headers.Authorization).toBe(
-      "Bearer new-token",
-    );
-  });
-
-  it("does not retry on 403 without authentication_failed body", async () => {
-    setupTokens("token");
-    mockFetch.mockResolvedValueOnce(err(403, { detail: "Permission denied." }));
-
-    const response = await authedFetch(url);
-
-    expect(response.status).toBe(403);
-    expect(mockRefreshAccessToken).not.toHaveBeenCalled();
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("retries with a fresh token on 403 with authentication_failed body", async () => {
-    setupTokens("stale-token", "fresh-token");
-    mockFetch
-      .mockResolvedValueOnce(
+  it.each([
+    {
+      name: "401",
+      failure: () => err(401),
+    },
+    {
+      name: "403 with authentication_failed body",
+      failure: () =>
         err(403, {
           type: "authentication_error",
           code: "authentication_failed",
           detail: "Invalid access token.",
         }),
-      )
-      .mockResolvedValueOnce(ok());
+    },
+  ])(
+    "retries once with a freshly fetched token on $name",
+    async ({ failure }) => {
+      setupTokens("old-token", "new-token");
+      mockFetch.mockResolvedValueOnce(failure()).mockResolvedValueOnce(ok());
 
-    const response = await authedFetch(url);
+      const response = await authedFetch(url);
 
-    expect(response.ok).toBe(true);
-    expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1);
-    expect(mockFetch.mock.calls[1][1].headers.Authorization).toBe(
-      "Bearer fresh-token",
-    );
-  });
+      expect(response.ok).toBe(true);
+      expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch.mock.calls[0][1].headers.Authorization).toBe(
+        "Bearer old-token",
+      );
+      expect(mockFetch.mock.calls[1][1].headers.Authorization).toBe(
+        "Bearer new-token",
+      );
+    },
+  );
 
-  it("does not retry on other 4xx errors", async () => {
-    setupTokens("token");
-    mockFetch.mockResolvedValueOnce(err(400, { detail: "Bad request." }));
+  it.each([
+    {
+      name: "403 without authentication_failed body",
+      response: () => err(403, { detail: "Permission denied." }),
+      expectedStatus: 403,
+    },
+    {
+      name: "400 bad request",
+      response: () => err(400, { detail: "Bad request." }),
+      expectedStatus: 400,
+    },
+  ])(
+    "does not retry on $name",
+    async ({ response: makeResponse, expectedStatus }) => {
+      setupTokens("token");
+      mockFetch.mockResolvedValueOnce(makeResponse());
 
-    const response = await authedFetch(url);
+      const response = await authedFetch(url);
 
-    expect(response.status).toBe(400);
-    expect(mockRefreshAccessToken).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(expectedStatus);
+      expect(mockRefreshAccessToken).not.toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("returns the failed response when the retry still 401s", async () => {
     setupTokens("token-1", "token-2");

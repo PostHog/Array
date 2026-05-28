@@ -1,8 +1,11 @@
-import type { FetchRequestInit } from "expo/build/winter/fetch/fetch.types";
 import { fetch } from "expo/fetch";
 import Constants from "expo-constants";
 import { useAuthStore } from "@/features/auth";
 import { logger } from "@/lib/logger";
+
+// Derive the init shape directly from expo/fetch so we don't import from
+// expo's internal build output (which can move between versions).
+type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
 
 const log = logger.scope("api");
 
@@ -128,7 +131,7 @@ function mergeHeaders(
  */
 export async function authedFetch(
   url: string,
-  init: FetchRequestInit = {},
+  init: FetchInit = {},
 ): Promise<Response> {
   const headers = mergeHeaders(getHeaders(), init.headers);
   let response: Response = await fetch(url, { ...init, headers });
