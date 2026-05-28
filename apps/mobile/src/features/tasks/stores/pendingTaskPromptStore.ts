@@ -13,6 +13,11 @@ import type { SessionNotificationAttachment } from "../types";
 export interface PendingTaskPrompt {
   promptText: string;
   attachments?: SessionNotificationAttachment[];
+  // Submit-time epoch ms. Consumers compare event `ts` against this so the
+  // echo is only deduped against `user_message_chunk`s that arrived *after*
+  // submit — protects against text-identical historical turns (e.g. a user
+  // submitting "Continue" twice in a row) hiding the new optimistic echo.
+  setAt: number;
 }
 
 interface PendingTaskPromptState {

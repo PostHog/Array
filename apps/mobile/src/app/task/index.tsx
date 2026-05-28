@@ -273,6 +273,7 @@ export default function NewTaskScreen() {
     pendingTaskPromptStoreApi.set(pendingKey, {
       promptText: trimmedPrompt,
       attachments: echoAttachments.length > 0 ? echoAttachments : undefined,
+      setAt: Date.now(),
     });
 
     // Tracks where the optimistic echo currently lives so the catch block

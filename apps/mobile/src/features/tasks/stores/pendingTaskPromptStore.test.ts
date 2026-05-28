@@ -12,20 +12,26 @@ describe("pendingTaskPromptStore", () => {
   it("stores prompts keyed by an arbitrary id", () => {
     pendingTaskPromptStoreApi.set("uuid-1", {
       promptText: "Fix the login bug",
+      setAt: 1000,
     });
 
     expect(pendingTaskPromptStoreApi.get("uuid-1")).toEqual({
       promptText: "Fix the login bug",
+      setAt: 1000,
     });
   });
 
   it("moves a prompt from a transient key to the real task id", () => {
-    pendingTaskPromptStoreApi.set("uuid-1", { promptText: "Do the thing" });
+    pendingTaskPromptStoreApi.set("uuid-1", {
+      promptText: "Do the thing",
+      setAt: 1000,
+    });
     pendingTaskPromptStoreApi.move("uuid-1", "task-123");
 
     expect(pendingTaskPromptStoreApi.get("uuid-1")).toBeUndefined();
     expect(pendingTaskPromptStoreApi.get("task-123")).toEqual({
       promptText: "Do the thing",
+      setAt: 1000,
     });
   });
 
@@ -35,7 +41,10 @@ describe("pendingTaskPromptStore", () => {
   });
 
   it("clears prompts", () => {
-    pendingTaskPromptStoreApi.set("task-42", { promptText: "Hi" });
+    pendingTaskPromptStoreApi.set("task-42", {
+      promptText: "Hi",
+      setAt: 1000,
+    });
     pendingTaskPromptStoreApi.clear("task-42");
     expect(pendingTaskPromptStoreApi.get("task-42")).toBeUndefined();
   });
@@ -43,6 +52,7 @@ describe("pendingTaskPromptStore", () => {
   it("preserves attachments through move", () => {
     pendingTaskPromptStoreApi.set("uuid-1", {
       promptText: "Look at this",
+      setAt: 1000,
       attachments: [
         {
           kind: "image",

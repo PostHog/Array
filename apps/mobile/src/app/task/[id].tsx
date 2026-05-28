@@ -102,14 +102,17 @@ export default function TaskDetailScreen() {
 
   // Clear the echo once the canonical user_message_chunk with matching text
   // arrives via SSE — `TaskSessionView` also dedups visually, but clearing
-  // the store frees it for the next submit.
+  // the store frees it for the next submit. Only events with `ts >= setAt`
+  // qualify so a text-identical historical turn (e.g. resubmitting
+  // "Continue") doesn't drop the echo before the real copy lands.
   useEffect(() => {
     if (!taskId || !optimisticPrompt) return;
     const matched = session?.events.some(
       (e) =>
         e.type === "session_update" &&
         e.notification?.update?.sessionUpdate === "user_message_chunk" &&
-        e.notification.update.content?.text === optimisticPrompt.promptText,
+        e.notification.update.content?.text === optimisticPrompt.promptText &&
+        (e.ts ?? 0) >= optimisticPrompt.setAt,
     );
     if (matched) {
       pendingTaskPromptStoreApi.clear(taskId);
@@ -252,6 +255,7 @@ export default function TaskDetailScreen() {
       pendingTaskPromptStoreApi.set(taskId, {
         promptText: text,
         attachments: echoAttachments.length > 0 ? echoAttachments : undefined,
+        setAt: Date.now(),
       });
       try {
         setRetrying(true);
@@ -517,6 +521,7 @@ export default function TaskDetailScreen() {
               ? {
                   text: optimisticPrompt.promptText,
                   attachments: optimisticPrompt.attachments,
+                  setAt: optimisticPrompt.setAt,
                 }
               : undefined
           }

@@ -71,36 +71,62 @@ function findHumanMessages(renderer: ReturnType<typeof create>) {
 }
 
 describe("TaskSessionView", () => {
-  it("renders the optimistic user message when no SSE echo has arrived", () => {
+  function userMessageEvent(text: string, ts: number) {
+    return {
+      type: "session_update" as const,
+      ts,
+      notification: {
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text },
+        },
+      },
+    };
+  }
+
+  const SUBMIT_TS = 1000;
+
+  it.each([
+    {
+      name: "no SSE echo yet → optimistic renders",
+      events: [],
+      expectedCount: 1,
+    },
+    {
+      name: "matching SSE chunk after submit → optimistic suppressed",
+      events: [userMessageEvent("Ship it", SUBMIT_TS + 5)],
+      expectedCount: 1,
+    },
+    {
+      name: "text-identical historical turn → optimistic still renders",
+      // Same text but ts predates submit — a prior "Ship it" message shouldn't
+      // cause the new optimistic echo to be deduped.
+      events: [userMessageEvent("Ship it", SUBMIT_TS - 1000)],
+      expectedCount: 2,
+    },
+    {
+      name: "non-matching SSE text → optimistic still renders",
+      events: [userMessageEvent("Different text", SUBMIT_TS + 5)],
+      expectedCount: 2,
+    },
+  ])("optimistic echo: $name", ({ events, expectedCount }) => {
+    const renderer = renderTaskSessionView({
+      events,
+      optimisticUserMessage: { text: "Ship it", setAt: SUBMIT_TS },
+    });
+
+    expect(findHumanMessages(renderer)).toHaveLength(expectedCount);
+  });
+
+  it("optimistic echo carries the submitted text into the rendered bubble", () => {
     const renderer = renderTaskSessionView({
       events: [],
-      optimisticUserMessage: { text: "Ship it" },
+      optimisticUserMessage: { text: "Ship it", setAt: SUBMIT_TS },
     });
 
     const humans = findHumanMessages(renderer);
     expect(humans).toHaveLength(1);
     expect(humans[0].props.content).toBe("Ship it");
-  });
-
-  it("suppresses the optimistic echo once the real user message lands", () => {
-    const renderer = renderTaskSessionView({
-      events: [
-        {
-          type: "session_update" as const,
-          ts: 1,
-          notification: {
-            update: {
-              sessionUpdate: "user_message_chunk",
-              content: { type: "text", text: "Ship it" },
-            },
-          },
-        },
-      ],
-      optimisticUserMessage: { text: "Ship it" },
-    });
-
-    const humans = findHumanMessages(renderer);
-    expect(humans).toHaveLength(1);
   });
 
   it("keeps question tools pending after the run goes idle", () => {

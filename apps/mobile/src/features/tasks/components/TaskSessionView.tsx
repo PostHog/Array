@@ -44,6 +44,10 @@ interface PermissionResponseArgs {
 interface OptimisticUserMessage {
   text: string;
   attachments?: SessionNotificationAttachment[];
+  // Submit-time epoch ms. Dedup only fires against user messages whose `ts`
+  // is at or after this — protects against a text-identical historical turn
+  // suppressing the new optimistic echo.
+  setAt: number;
 }
 
 interface TaskSessionViewProps {
@@ -850,12 +854,16 @@ export function TaskSessionView({
   prevAgentActive.current = agentActive;
 
   // Append the optimistic user echo (if any) as the newest message, unless a
-  // real `user` message with matching text has already arrived via SSE. The
-  // dedup keeps the transition seamless when the canonical copy lands.
+  // real `user` message with matching text *and a ts at or after submit time*
+  // has already arrived via SSE. Gating on `ts` prevents a text-identical
+  // historical turn from suppressing a freshly-submitted echo.
   const messagesWithOptimistic = useMemo(() => {
     if (!optimisticUserMessage) return messages;
     const alreadyEchoed = messages.some(
-      (m) => m.type === "user" && m.content === optimisticUserMessage.text,
+      (m) =>
+        m.type === "user" &&
+        m.content === optimisticUserMessage.text &&
+        (m.ts ?? 0) >= optimisticUserMessage.setAt,
     );
     if (alreadyEchoed) return messages;
     const optimistic: ParsedMessage = {
