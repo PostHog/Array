@@ -1,12 +1,53 @@
 import { Tooltip } from "@components/ui/Tooltip";
 import type { SidebarPrState } from "@features/sidebar/hooks/useTaskPrStatus";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
-import { Archive, PushPin } from "@phosphor-icons/react";
+import { Archive, GitPullRequest, PushPin } from "@phosphor-icons/react";
 import type { TaskRunStatus } from "@shared/types";
+import { openUrlInBrowser } from "@utils/browser";
 import { formatRelativeTimeShort } from "@utils/time";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SidebarItem } from "../SidebarItem";
 import { TaskIcon } from "./TaskIcon";
+
+function extractPrNumber(url: string): string | null {
+  const match = url.match(
+    /\/(?:pull|pulls|merge_requests|pull-requests)\/(\d+)/,
+  );
+  return match ? match[1] : null;
+}
+
+function PrBadge({ url }: { url: string }) {
+  const number = extractPrNumber(url);
+  const open = () => {
+    void openUrlInBrowser(url);
+  };
+  return (
+    <Tooltip content="Open pull request" side="top">
+      {/* biome-ignore lint/a11y/useSemanticElements: nested clickable inside SidebarItem button */}
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label="Open pull request"
+        className="flex h-[16px] shrink-0 cursor-pointer items-center gap-0.5 rounded bg-gray-3 px-1 text-[10px] text-gray-11 transition-colors hover:bg-gray-4 hover:text-gray-12"
+        onClick={(e) => {
+          e.stopPropagation();
+          open();
+        }}
+        onDoubleClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            open();
+          }
+        }}
+      >
+        <GitPullRequest size={10} weight="bold" />
+        {number ? `#${number}` : "PR"}
+      </span>
+    </Tooltip>
+  );
+}
 
 interface TaskItemProps {
   depth?: number;
@@ -27,6 +68,7 @@ interface TaskItemProps {
   slackThreadUrl?: string;
   prState?: SidebarPrState;
   hasDiff?: boolean;
+  prUrl?: string | null;
   timestamp?: number;
   isEditing?: boolean;
   onClick: (e: React.MouseEvent) => void;
@@ -123,6 +165,7 @@ export function TaskItem({
   slackThreadUrl,
   prState,
   hasDiff,
+  prUrl,
   timestamp,
   isEditing = false,
   onClick,
@@ -149,6 +192,8 @@ export function TaskItem({
     />
   );
 
+  const prBadge = prUrl ? <PrBadge url={prUrl} /> : null;
+
   const timestampNode = timestamp ? (
     <span className="shrink-0 text-[11px] text-gray-11 group-hover:hidden">
       {formatRelativeTimeShort(timestamp)}
@@ -165,8 +210,9 @@ export function TaskItem({
     ) : null;
 
   const endContent =
-    timestampNode || toolbar ? (
+    prBadge || timestampNode || toolbar ? (
       <>
+        {prBadge}
         {timestampNode}
         {toolbar}
       </>
