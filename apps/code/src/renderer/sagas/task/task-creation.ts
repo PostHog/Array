@@ -59,6 +59,7 @@ export interface TaskCreationInput {
   cloudPrAuthorshipMode?: PrAuthorshipMode;
   cloudRunSource?: CloudRunSource;
   signalReportId?: string;
+  additionalDirectories?: string[];
 }
 
 export interface TaskCreationOutput {
@@ -201,6 +202,40 @@ export class TaskCreationSaga extends Saga<
         linkedBranch: null,
         createdAt: new Date().toISOString(),
       };
+    }
+
+    const extraDirectories = input.taskId
+      ? []
+      : (input.additionalDirectories ?? []).filter(
+          (path) => path && path !== repoPath,
+        );
+    if (extraDirectories.length > 0) {
+      await this.step({
+        name: "additional_directories",
+        execute: async () => {
+          await Promise.all(
+            extraDirectories.map((path) =>
+              trpcClient.additionalDirectories.addForTask.mutate({
+                taskId: task.id,
+                path,
+              }),
+            ),
+          );
+          return { taskId: task.id, paths: extraDirectories };
+        },
+        rollback: async ({ taskId, paths }) => {
+          log.info("Rolling back: removing additional directories", { taskId });
+          await Promise.all(
+            paths.map((path) =>
+              trpcClient.additionalDirectories.removeForTask
+                .mutate({ taskId, path })
+                .catch((error) => {
+                  log.warn("Failed to remove additional directory", { error });
+                }),
+            ),
+          );
+        },
+      });
     }
 
     const shouldStartCloudRun = workspaceMode === "cloud" && !task.latest_run;

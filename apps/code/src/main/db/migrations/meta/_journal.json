@@ -64,6 +64,13 @@
       "when": 1779747695688,
       "tag": "0008_stiff_reptil",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1779747695689,
+      "tag": "0009_bake_default_directories",
+      "breakpoints": true
     }
   ]
 }

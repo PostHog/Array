@@ -1,5 +1,6 @@
 import { DotPatternBackground } from "@components/DotPatternBackground";
 import { EnvironmentSelector } from "@features/environments/components/EnvironmentSelector";
+import { AdditionalDirectoriesButton } from "@features/folder-picker/components/AdditionalDirectoriesButton";
 import { FolderPicker } from "@features/folder-picker/components/FolderPicker";
 import { GitHubRepoPicker } from "@features/folder-picker/components/GitHubRepoPicker";
 import { useFolders } from "@features/folders/hooks/useFolders";
@@ -469,7 +470,13 @@ export function TaskInput({
       ? selectedBranch
       : null;
 
-  const { isCreatingTask, canSubmit, handleSubmit } = useTaskCreation({
+  const {
+    isCreatingTask,
+    canSubmit,
+    handleSubmit,
+    additionalDirectories,
+    setAdditionalDirectories,
+  } = useTaskCreation({
     editorRef,
     selectedDirectory,
     selectedRepository: selectedCloudRepository,
@@ -731,6 +738,14 @@ export function TaskInput({
                 anchor={buttonGroupRef}
               />
             </ButtonGroup>
+            {workspaceMode !== "cloud" && (
+              <AdditionalDirectoriesButton
+                values={additionalDirectories}
+                onChange={setAdditionalDirectories}
+                primaryDirectory={selectedDirectory}
+                disabled={isCreatingTask}
+              />
+            )}
             {cloudRegion === "dev" && (
               <Flex align="center" gap="1" className="shrink-0">
                 <span

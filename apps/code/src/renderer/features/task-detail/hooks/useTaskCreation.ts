@@ -16,12 +16,13 @@ import { useConnectivity } from "@hooks/useConnectivity";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
-import { trpcClient } from "@renderer/trpc/client";
+import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
 import type { ExecutionMode, Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
 import { pendingTaskPromptStoreApi } from "@stores/pendingTaskPromptStore";
+import { useQuery } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback, useState } from "react";
@@ -52,6 +53,8 @@ interface UseTaskCreationReturn {
   isCreatingTask: boolean;
   canSubmit: boolean;
   handleSubmit: (contentOverride?: EditorContent) => Promise<boolean>;
+  additionalDirectories: string[];
+  setAdditionalDirectories: (next: string[]) => void;
 }
 
 function prepareTaskInput(
@@ -70,6 +73,7 @@ function prepareTaskInput(
     environmentId?: string | null;
     sandboxEnvironmentId?: string;
     signalReportId?: string;
+    additionalDirectories?: string[];
   },
 ): TaskCreationInput {
   const serializedContent = contentToXml(content).trim();
@@ -107,6 +111,10 @@ function prepareTaskInput(
         ? "signal_report"
         : undefined,
     signalReportId: options.signalReportId,
+    additionalDirectories:
+      options.workspaceMode === "cloud"
+        ? undefined
+        : options.additionalDirectories,
   };
 }
 
@@ -190,6 +198,16 @@ export function useTaskCreation({
   onTaskCreated,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const trpc = useTRPC();
+  const defaultAdditionalDirectoriesQuery = useQuery(
+    trpc.additionalDirectories.listDefaults.queryOptions(),
+  );
+  const defaultAdditionalDirectories =
+    defaultAdditionalDirectoriesQuery.data ?? [];
+  const [additionalDirectoriesOverride, setAdditionalDirectoriesOverride] =
+    useState<string[] | null>(null);
+  const additionalDirectories =
+    additionalDirectoriesOverride ?? defaultAdditionalDirectories;
   const {
     clearTaskInputReportAssociation,
     navigateToTask,
@@ -260,6 +278,7 @@ export function useTaskCreation({
           environmentId,
           sandboxEnvironmentId,
           signalReportId,
+          additionalDirectories,
         });
 
         if (executionMode) {
@@ -287,6 +306,7 @@ export function useTaskCreation({
         });
 
         if (result.success) {
+          setAdditionalDirectoriesOverride(null);
           void trackTaskCreated(input, selectedDirectory);
         }
 
@@ -334,6 +354,7 @@ export function useTaskCreation({
       environmentId,
       sandboxEnvironmentId,
       signalReportId,
+      additionalDirectories,
       clearTaskInputReportAssociation,
       invalidateTasks,
       navigateToTask,
@@ -347,5 +368,7 @@ export function useTaskCreation({
     isCreatingTask,
     canSubmit,
     handleSubmit,
+    additionalDirectories,
+    setAdditionalDirectories: setAdditionalDirectoriesOverride,
   };
 }
