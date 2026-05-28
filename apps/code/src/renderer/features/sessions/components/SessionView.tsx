@@ -598,7 +598,7 @@ export function SessionView({
                     </Flex>
                   </Flex>
                 ) : hideInput ? null : firstPendingPermission ? (
-                  <Box className="max-h-1/2 min-h-0 overflow-y-auto border-gray-4 border-t">
+                  <Box className="min-h-0 overflow-y-auto">
                     <Box
                       className={compact ? "p-1" : "mx-auto px-2 pb-2"}
                       style={
