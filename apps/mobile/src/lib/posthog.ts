@@ -3,7 +3,8 @@ import Constants from "expo-constants";
 import { usePathname, useSegments } from "expo-router";
 import { usePostHog } from "posthog-react-native";
 import { useEffect, useRef } from "react";
-import { useAuthStore, useUserQuery } from "@/features/auth";
+import { useUserQuery } from "@/features/auth/hooks/useUserQuery";
+import { useAuthStore } from "@/features/auth/stores/authStore";
 
 /**
  * PostHog configuration - used by PostHogProvider in _layout.tsx

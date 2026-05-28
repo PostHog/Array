@@ -31,6 +31,18 @@ vi.mock("expo-constants", () => ({
   },
 }));
 
+// posthog.ts imports the auth store and user query for useIdentifyUser. Their
+// real modules transitively pull in native expo modules (expo-secure-store,
+// expo-auth-session) that can't load under the node test environment, so mock
+// them — these app-version tests don't exercise identification.
+vi.mock("@/features/auth/stores/authStore", () => ({
+  useAuthStore: () => false,
+}));
+
+vi.mock("@/features/auth/hooks/useUserQuery", () => ({
+  useUserQuery: () => ({ data: undefined }),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
   expoApplication.nativeApplicationVersion = null;
