@@ -1,6 +1,4 @@
 import {
-  type MouseEventHandler,
-  type PointerEventHandler,
   type RefObject,
   useCallback,
   useEffect,
@@ -18,11 +16,6 @@ interface UseImagePanAndZoomResult {
   transform: string;
   isZoomed: boolean;
   reset: () => void;
-  onPointerDown: PointerEventHandler<HTMLDivElement>;
-  onPointerMove: PointerEventHandler<HTMLDivElement>;
-  onPointerUp: PointerEventHandler<HTMLDivElement>;
-  onPointerCancel: PointerEventHandler<HTMLDivElement>;
-  onDoubleClick: MouseEventHandler<HTMLDivElement>;
 }
 
 interface ZoomState {
@@ -47,27 +40,25 @@ export function useImagePanAndZoom(
   const [state, setState] = useState<ZoomState>(IDENTITY);
   const stateRef = useRef(state);
   stateRef.current = state;
-  const dragRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    startTx: number;
-    startTy: number;
-  } | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    const handler = (event: WheelEvent) => {
-      const isZoomGesture = event.ctrlKey || event.metaKey;
+    let drag: {
+      pointerId: number;
+      startX: number;
+      startY: number;
+      startTx: number;
+      startTy: number;
+    } | null = null;
 
-      if (isZoomGesture) {
+    const handleWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
         const rect = el.getBoundingClientRect();
         const cursorX = event.clientX - (rect.left + rect.width / 2);
         const cursorY = event.clientY - (rect.top + rect.height / 2);
-
         setState((prev) => {
           const nextScale = clamp(
             prev.scale * Math.exp(-event.deltaY * 0.01),
@@ -75,16 +66,16 @@ export function useImagePanAndZoom(
             maxScale,
           );
           if (nextScale === prev.scale) return prev;
+          if (nextScale === 1) return IDENTITY;
           const ratio = nextScale / prev.scale;
-          const nextTx = cursorX - (cursorX - prev.tx) * ratio;
-          const nextTy = cursorY - (cursorY - prev.ty) * ratio;
-          return nextScale === 1
-            ? IDENTITY
-            : { scale: nextScale, tx: nextTx, ty: nextTy };
+          return {
+            scale: nextScale,
+            tx: cursorX - (cursorX - prev.tx) * ratio,
+            ty: cursorY - (cursorY - prev.ty) * ratio,
+          };
         });
         return;
       }
-
       if (stateRef.current.scale <= 1) return;
       event.preventDefault();
       setState((prev) => ({
@@ -94,68 +85,65 @@ export function useImagePanAndZoom(
       }));
     };
 
-    el.addEventListener("wheel", handler, { passive: false });
-    return () => el.removeEventListener("wheel", handler);
-  }, [minScale, maxScale]);
-
-  const onPointerDown = useCallback<PointerEventHandler<HTMLDivElement>>(
-    (event) => {
+    const handlePointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return;
       if (stateRef.current.scale <= 1) return;
-      event.currentTarget.setPointerCapture(event.pointerId);
-      dragRef.current = {
+      el.setPointerCapture(event.pointerId);
+      drag = {
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
         startTx: stateRef.current.tx,
         startTy: stateRef.current.ty,
       };
-    },
-    [],
-  );
+    };
 
-  const onPointerMove = useCallback<PointerEventHandler<HTMLDivElement>>(
-    (event) => {
-      const drag = dragRef.current;
+    const handlePointerMove = (event: PointerEvent) => {
       if (!drag || drag.pointerId !== event.pointerId) return;
       const dx = event.clientX - drag.startX;
       const dy = event.clientY - drag.startY;
+      const startTx = drag.startTx;
+      const startTy = drag.startTy;
       setState((prev) => ({
         scale: prev.scale,
-        tx: drag.startTx + dx,
-        ty: drag.startTy + dy,
+        tx: startTx + dx,
+        ty: startTy + dy,
       }));
-    },
-    [],
-  );
+    };
 
-  const releaseDrag = useCallback<PointerEventHandler<HTMLDivElement>>(
-    (event) => {
-      const drag = dragRef.current;
+    const handlePointerUp = (event: PointerEvent) => {
       if (!drag || drag.pointerId !== event.pointerId) return;
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
+      if (el.hasPointerCapture(event.pointerId)) {
+        el.releasePointerCapture(event.pointerId);
       }
-      dragRef.current = null;
-    },
-    [],
-  );
+      drag = null;
+    };
+
+    const handleDoubleClick = () => setState(IDENTITY);
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    el.addEventListener("pointerdown", handlePointerDown);
+    el.addEventListener("pointermove", handlePointerMove);
+    el.addEventListener("pointerup", handlePointerUp);
+    el.addEventListener("pointercancel", handlePointerUp);
+    el.addEventListener("dblclick", handleDoubleClick);
+
+    return () => {
+      el.removeEventListener("wheel", handleWheel);
+      el.removeEventListener("pointerdown", handlePointerDown);
+      el.removeEventListener("pointermove", handlePointerMove);
+      el.removeEventListener("pointerup", handlePointerUp);
+      el.removeEventListener("pointercancel", handlePointerUp);
+      el.removeEventListener("dblclick", handleDoubleClick);
+    };
+  }, [minScale, maxScale]);
 
   const reset = useCallback(() => setState(IDENTITY), []);
-
-  const onDoubleClick = useCallback<MouseEventHandler<HTMLDivElement>>(() => {
-    setState(IDENTITY);
-  }, []);
 
   return {
     containerRef,
     transform: `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`,
     isZoomed: state.scale > 1,
     reset,
-    onPointerDown,
-    onPointerMove,
-    onPointerUp: releaseDrag,
-    onPointerCancel: releaseDrag,
-    onDoubleClick,
   };
 }

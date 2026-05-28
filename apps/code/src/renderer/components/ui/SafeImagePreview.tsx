@@ -59,13 +59,6 @@ export function SafeImagePreview({
   return (
     <div
       ref={zoom.containerRef}
-      role="img"
-      aria-label={alt ?? "image preview"}
-      onPointerDown={zoom.onPointerDown}
-      onPointerMove={zoom.onPointerMove}
-      onPointerUp={zoom.onPointerUp}
-      onPointerCancel={zoom.onPointerCancel}
-      onDoubleClick={zoom.onDoubleClick}
       className={`flex touch-none select-none items-center justify-center overflow-hidden ${className ?? "max-h-full max-w-full"}`}
       style={{ ...style, cursor: zoom.isZoomed ? "grab" : style?.cursor }}
     >
