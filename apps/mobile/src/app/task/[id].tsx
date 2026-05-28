@@ -13,6 +13,7 @@ import {
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { FloatingBackButton } from "@/components/FloatingBackButton";
+import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { getTask, runTaskInCloud } from "@/features/tasks/api";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
 import { PrDiffStatsBadge } from "@/features/tasks/components/PrDiffStatsBadge";
@@ -307,6 +308,7 @@ export default function TaskDetailScreen() {
       if (!taskId) return;
       setComposerConfig(taskId, { reasoning: value });
       setConfigOption(taskId, "effort", value).catch(() => {});
+      usePreferencesStore.getState().setLastUsedReasoningEffort(value);
     },
     [taskId, setComposerConfig, setConfigOption],
   );

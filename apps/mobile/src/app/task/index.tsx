@@ -180,8 +180,16 @@ export default function NewTaskScreen() {
     return DEFAULT_EXECUTION_MODE;
   });
   const [model, setModel] = useState<string>(DEFAULT_MODEL);
-  const [reasoning, setReasoning] =
-    useState<ReasoningEffort>(DEFAULT_REASONING);
+  const [reasoning, setReasoning] = useState<ReasoningEffort>(() => {
+    const prefs = usePreferencesStore.getState();
+    const isValidReasoning = (v: string): v is ReasoningEffort =>
+      REASONING_LEVELS.some((r) => r.value === v);
+    const desired =
+      prefs.defaultReasoningEffort === "last_used"
+        ? prefs.lastUsedReasoningEffort
+        : prefs.defaultReasoningEffort;
+    return isValidReasoning(desired) ? desired : DEFAULT_REASONING;
+  });
   const [creating, setCreating] = useState(false);
   const [repoSheetOpen, setRepoSheetOpen] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
@@ -681,7 +689,11 @@ export default function NewTaskScreen() {
         open={reasoningSheetOpen}
         title="Reasoning"
         value={reasoning}
-        onChange={(value) => setReasoning(value as ReasoningEffort)}
+        onChange={(value) => {
+          const next = value as ReasoningEffort;
+          setReasoning(next);
+          usePreferencesStore.getState().setLastUsedReasoningEffort(next);
+        }}
         onClose={() => setReasoningSheetOpen(false)}
         options={REASONING_LEVELS.map((reasoningLevel) => ({
           value: reasoningLevel.value,
