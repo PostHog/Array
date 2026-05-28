@@ -56,10 +56,6 @@ export function SafeImagePreview({
     return <>{fallback ?? <DefaultFallback />}</>;
   }
 
-  const containerClassName = `flex touch-none select-none items-center justify-center overflow-hidden ${
-    className ?? "max-h-full max-w-full"
-  }`;
-
   return (
     <div
       ref={zoom.containerRef}
@@ -70,7 +66,7 @@ export function SafeImagePreview({
       onPointerUp={zoom.onPointerUp}
       onPointerCancel={zoom.onPointerCancel}
       onDoubleClick={zoom.onDoubleClick}
-      className={containerClassName}
+      className={`flex touch-none select-none items-center justify-center overflow-hidden ${className ?? "max-h-full max-w-full"}`}
       style={{ ...style, cursor: zoom.isZoomed ? "grab" : style?.cursor }}
     >
       <img
