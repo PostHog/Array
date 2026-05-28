@@ -53,15 +53,18 @@ export function useScreenTracking() {
 
 /**
  * Associates captured events (and session replays) with the signed-in user.
- * Identifies once per user when their profile loads, and resets on logout so
- * the next session starts anonymous and events don't bleed across accounts.
- * Must be used inside PostHogProvider.
+ * Re-identifies whenever the user's identifying properties change (email, name,
+ * staff status, organization) so mid-session updates are forwarded, and resets
+ * on logout so the next session starts anonymous and events don't bleed across
+ * accounts. Must be used inside PostHogProvider.
  */
 export function useIdentifyUser() {
   const posthog = usePostHog();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const { data: user } = useUserQuery();
-  const identifiedUuid = useRef<string | null>(null);
+  // Signature of the last forwarded payload, so we re-identify on real changes
+  // but don't spam identify()/group() on every render with identical data.
+  const lastIdentity = useRef<string | null>(null);
 
   useEffect(() => {
     if (!posthog) return;
@@ -69,19 +72,32 @@ export function useIdentifyUser() {
     if (!isAuthenticated) {
       // Reset only if we previously identified, otherwise we'd churn the
       // anonymous distinct id on every render before sign-in.
-      if (identifiedUuid.current) {
+      if (lastIdentity.current) {
         posthog.reset();
-        identifiedUuid.current = null;
+        lastIdentity.current = null;
       }
       return;
     }
 
-    if (!user || identifiedUuid.current === user.uuid) return;
+    if (!user) return;
+
+    const name = [user.first_name, user.last_name].filter(Boolean).join(" ");
+    const isStaff = Boolean(user.is_staff);
+    const signature = JSON.stringify([
+      user.uuid,
+      user.email,
+      name,
+      isStaff,
+      user.organization?.id ?? null,
+      user.organization?.name ?? null,
+    ]);
+
+    if (lastIdentity.current === signature) return;
 
     posthog.identify(user.uuid, {
       email: user.email,
-      name: [user.first_name, user.last_name].filter(Boolean).join(" "),
-      is_staff: Boolean(user.is_staff),
+      name,
+      is_staff: isStaff,
     });
 
     if (user.organization) {
@@ -90,6 +106,6 @@ export function useIdentifyUser() {
       });
     }
 
-    identifiedUuid.current = user.uuid;
+    lastIdentity.current = signature;
   }, [posthog, isAuthenticated, user]);
 }
