@@ -21,22 +21,25 @@ describe("preferencesStore reasoning effort", () => {
     expect(usePreferencesStore.getState().lastUsedReasoningEffort).toBe("high");
   });
 
-  it("updates defaultReasoningEffort via setter", () => {
-    usePreferencesStore.getState().setDefaultReasoningEffort("max");
-    expect(usePreferencesStore.getState().defaultReasoningEffort).toBe("max");
+  it.each(["low", "medium", "high", "xhigh", "max", "last_used"] as const)(
+    "updates defaultReasoningEffort to %s via setter",
+    (effort) => {
+      usePreferencesStore.getState().setDefaultReasoningEffort(effort);
+      expect(usePreferencesStore.getState().defaultReasoningEffort).toBe(
+        effort,
+      );
+    },
+  );
 
-    usePreferencesStore.getState().setDefaultReasoningEffort("last_used");
-    expect(usePreferencesStore.getState().defaultReasoningEffort).toBe(
-      "last_used",
-    );
-  });
-
-  it("updates lastUsedReasoningEffort via setter", () => {
-    usePreferencesStore.getState().setLastUsedReasoningEffort("xhigh");
-    expect(usePreferencesStore.getState().lastUsedReasoningEffort).toBe(
-      "xhigh",
-    );
-  });
+  it.each(["low", "medium", "high", "xhigh", "max"] as const)(
+    "updates lastUsedReasoningEffort to %s via setter",
+    (effort) => {
+      usePreferencesStore.getState().setLastUsedReasoningEffort(effort);
+      expect(usePreferencesStore.getState().lastUsedReasoningEffort).toBe(
+        effort,
+      );
+    },
+  );
 
   it("keeps lastUsedReasoningEffort independent of defaultReasoningEffort", () => {
     usePreferencesStore.getState().setDefaultReasoningEffort("low");
