@@ -28,7 +28,7 @@ import type { ChangedFile } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
-import { shipIt } from "@utils/confetti";
+import { celebrate } from "@utils/confetti";
 import { logger } from "@utils/logger";
 import { useMemo, useRef } from "react";
 
@@ -282,7 +282,7 @@ export function useGitInteraction(
       const onboarding = useOnboardingStore.getState();
       if (!onboarding.hasShippedFirstPr) {
         onboarding.markFirstPrShipped();
-        shipIt();
+        celebrate();
       }
 
       if (result.state) {
