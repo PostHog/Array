@@ -71,7 +71,7 @@ export function ReadToolView({
               base64={imageContent.base64}
               mimeType={imageContent.mimeType}
               alt={filePath || "Read tool image preview"}
-              className="max-h-96 max-w-full object-contain"
+              className="max-h-96 max-w-full"
             />
           </Box>
         </Box>

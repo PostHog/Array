@@ -45,18 +45,12 @@ function FilePanelImagePreview({
   absolutePath: string;
 }) {
   return (
-    <Flex
-      align="center"
-      justify="center"
-      height="100%"
-      p="4"
-      className="overflow-auto"
-    >
+    <Flex align="center" justify="center" height="100%" p="4">
       <SafeImagePreview
         base64={base64}
         mimeType={mimeType}
         alt={filePath}
-        className="max-h-[100%] max-w-[100%] object-contain"
+        className="max-h-full max-w-full"
         fallback={
           <PanelMessage detail={absolutePath}>
             Failed to render image
