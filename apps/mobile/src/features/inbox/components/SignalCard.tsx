@@ -209,7 +209,7 @@ export function SignalCard({ signal, finding }: SignalCardProps) {
   const externalUrl = issueUrl ?? ticketUrl ?? null;
 
   const timestampMs = signal.timestamp ? Date.parse(signal.timestamp) : NaN;
-  const hasTimestamp = !Number.isNaN(timestampMs);
+  const hasTimestamp = !Number.isNaN(timestampMs) && timestampMs <= Date.now();
 
   return (
     <View className="overflow-hidden rounded-xl border border-gray-6 bg-gray-1 p-3">
