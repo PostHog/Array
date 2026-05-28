@@ -19,8 +19,8 @@ export function AdvancedSettings() {
   return (
     <Flex direction="column">
       <SettingRow
-        label="Reset onboarding"
-        description="Re-run the onboarding tutorial on next app restart"
+        label="Reset onboarding and tours"
+        description="Re-run the onboarding tutorial and product tours on next app restart"
       >
         <Button
           variant="soft"
@@ -29,19 +29,8 @@ export function AdvancedSettings() {
             useSettingsDialogStore.getState().close();
             useOnboardingStore.getState().resetOnboarding();
             useSetupStore.getState().resetSetup();
+            useTourStore.getState().resetTours();
           }}
-        >
-          Reset
-        </Button>
-      </SettingRow>
-      <SettingRow
-        label="Reset product tours"
-        description="Re-run product tours on next app restart"
-      >
-        <Button
-          variant="soft"
-          size="1"
-          onClick={() => useTourStore.getState().resetTours()}
         >
           Reset
         </Button>

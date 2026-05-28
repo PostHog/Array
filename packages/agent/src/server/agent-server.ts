@@ -867,6 +867,7 @@ export class AgentServer {
     this.configureEnvironment({
       isInternal: preTask?.internal === true,
       originProduct: preTask?.origin_product,
+      signalReportId: preTask?.signal_report,
       taskId: payload.task_id,
       taskRunId: payload.run_id,
       taskUserId: payload.user_id,
@@ -976,6 +977,7 @@ export class AgentServer {
         sessionId: payload.run_id,
         taskRunId: payload.run_id,
         taskId: payload.task_id,
+        environment: "cloud",
         systemPrompt: sessionSystemPrompt,
         ...(this.config.model && { model: this.config.model }),
         allowedDomains: this.config.allowedDomains,
@@ -1852,12 +1854,14 @@ ${signedCommitInstructions}
   private configureEnvironment({
     isInternal = false,
     originProduct,
+    signalReportId,
     taskId,
     taskRunId,
     taskUserId,
   }: {
     isInternal?: boolean;
     originProduct?: string | null;
+    signalReportId?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
@@ -1876,6 +1880,7 @@ ${signedCommitInstructions}
     const customHeaders = buildGatewayPropertyHeaders({
       task_origin_product: originProduct,
       task_internal: isInternal,
+      signal_report_id: signalReportId,
       task_id: taskId,
       task_run_id: taskRunId,
       task_user_id: taskUserId,

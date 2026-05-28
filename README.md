@@ -82,14 +82,14 @@ posthog-code/
 | File | Description |
 |------|-------------|
 | [apps/code/README.md](./apps/code/README.md) | Desktop app: building, signing, distribution, and workspace configuration |
-| [apps/code/ARCHITECTURE.md](./apps/code/ARCHITECTURE.md) | Desktop app: dependency injection, tRPC, state management, and events |
 | [apps/mobile/README.md](./apps/mobile/README.md) | Mobile app: Expo setup, EAS builds, and TestFlight deployment |
 | [apps/cli/README.md](./apps/cli/README.md) | CLI: stacked PR management with Jujutsu |
-| [CLAUDE.md](./CLAUDE.md) | Code style, patterns, and testing guidelines |
+| [AGENTS.md](./AGENTS.md) | Architecture rules, code style, patterns, and testing guidelines (read by Claude Code, Codex, Cursor, Aider, etc.) |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | How to contribute to PostHog Code |
 | [docs/LOCAL-DEVELOPMENT.md](./docs/LOCAL-DEVELOPMENT.md) | Connecting PostHog Code to a local PostHog instance |
 | [docs/UPDATES.md](./docs/UPDATES.md) | Release versioning and git tagging |
 | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) | Common issues and fixes |
+| [docs/DEEP-LINKS.md](./docs/DEEP-LINKS.md) | `posthog-code://` deep link schemes and parameters |
 
 ## Contributing
 

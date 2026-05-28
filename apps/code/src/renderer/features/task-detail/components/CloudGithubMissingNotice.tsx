@@ -29,7 +29,7 @@ export function CloudGithubMissingNotice() {
             <Text size="1">
               {hasError
                 ? describeGithubConnectError(error)
-                : "Connecting your personal GitHub is required to run cloud tasks."}
+                : "Connect GitHub to your PostHog account for cloud tasks."}
             </Text>
           </Callout.Text>
         </Flex>

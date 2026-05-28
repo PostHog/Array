@@ -240,6 +240,19 @@ describe("AgentService", () => {
   });
 
   describe("MCP servers", () => {
+    it("marks desktop sessions as local even though they have a taskRunId", async () => {
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "codex",
+      });
+
+      expect(mockNewSession).toHaveBeenCalledTimes(1);
+      expect(mockNewSession.mock.calls[0][0]._meta).toMatchObject({
+        taskRunId: "run-1",
+        environment: "local",
+      });
+    });
+
     it("passes MCP servers to newSession for codex adapter", async () => {
       await service.startSession({
         ...baseSessionParams,

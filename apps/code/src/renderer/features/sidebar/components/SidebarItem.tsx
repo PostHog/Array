@@ -17,10 +17,11 @@ interface SidebarItemProps {
   label: React.ReactNode;
   subtitle?: React.ReactNode;
   isActive?: boolean;
+  isSelected?: boolean;
   isDimmed?: boolean;
   draggable?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
   onDoubleClick?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   action?: SidebarItemAction;
@@ -68,6 +69,7 @@ export function SidebarItem({
   label,
   subtitle,
   isActive,
+  isSelected,
   draggable,
   onDragStart,
   onClick,
@@ -82,9 +84,10 @@ export function SidebarItem({
       className={cn(
         "group flex w-full cursor-default text-left text-[13px] leading-snug transition-colors",
         "focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent-8",
-        "disabled:opacity-100 data-active:bg-fill-selected",
+        "disabled:opacity-100 data-active:bg-fill-selected data-selected:bg-(--gray-3)",
       )}
       data-active={isActive || undefined}
+      data-selected={(isSelected && !isActive) || undefined}
       draggable={draggable}
       onDragStart={onDragStart}
       style={{

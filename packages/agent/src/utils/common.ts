@@ -27,11 +27,16 @@ export const IS_ROOT =
 export const ALLOW_BYPASS = !IS_ROOT || !!process.env.IS_SANDBOX;
 
 /**
- * A cloud sandbox run, as opposed to a local desktop session. Cloud sandboxes
- * always set IS_SANDBOX and carry a taskRunId; desktop sessions have neither.
+ * A cloud sandbox run, as opposed to a local desktop session. `taskRunId` is
+ * used by both desktop and cloud for persistence, so it must not imply cloud.
  */
-export function isCloudRun(meta: { taskRunId?: string } | undefined): boolean {
-  return !!process.env.IS_SANDBOX || !!meta?.taskRunId;
+export function isCloudRun(
+  meta: { environment?: "local" | "cloud" } | undefined,
+): boolean {
+  if (meta?.environment) {
+    return meta.environment === "cloud";
+  }
+  return !!process.env.IS_SANDBOX;
 }
 
 /** The GitHub token available to the sandbox, if any. */

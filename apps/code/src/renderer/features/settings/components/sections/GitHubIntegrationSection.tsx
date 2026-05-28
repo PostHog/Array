@@ -10,7 +10,8 @@ import {
   GitBranchIcon,
   InfoIcon,
 } from "@phosphor-icons/react";
-import { Box, Button, Flex, Spinner, Text, Tooltip } from "@radix-ui/themes";
+import { Button } from "@posthog/quill";
+import { Box, Flex, Spinner, Text, Tooltip } from "@radix-ui/themes";
 import { useMemo } from "react";
 
 /**
@@ -34,8 +35,10 @@ function summarizeReposByOwner(
 
 export function GitHubIntegrationSection({
   hasGithubIntegration,
+  isLoading = false,
 }: {
   hasGithubIntegration: boolean;
+  isLoading?: boolean;
 }) {
   const { repositories, isLoadingRepos } = useRepositoryIntegration();
   const ownerSummary = useMemo(
@@ -56,6 +59,27 @@ export function GitHubIntegrationSection({
     projectId,
     projectHasTeamIntegration: hasGithubIntegration,
   });
+
+  if (isLoading) {
+    return (
+      <Flex
+        align="center"
+        justify="between"
+        gap="4"
+        pb="4"
+        className="border-(--gray-5) border-b border-dashed"
+      >
+        <Flex align="center" gap="3" className="min-w-0 flex-1">
+          <Box className="size-[20px] shrink-0 animate-pulse rounded bg-gray-4" />
+          <Flex direction="column" gap="2" className="min-w-0 flex-1">
+            <Box className="h-[12px] w-[40%] animate-pulse rounded bg-gray-4" />
+            <Box className="h-[11px] w-[60%] animate-pulse rounded bg-gray-3" />
+          </Flex>
+        </Flex>
+        <Box className="h-[24px] w-[120px] shrink-0 animate-pulse rounded bg-gray-3" />
+      </Flex>
+    );
+  }
 
   return (
     <Flex
@@ -131,23 +155,29 @@ export function GitHubIntegrationSection({
       </Flex>
       {connecting ? (
         <Spinner size="2" />
-      ) : hasGithubIntegration ? (
+      ) : (
         <Flex align="center" gap="2">
-          <CheckCircleIcon
-            size={16}
-            weight="fill"
-            className="text-(--green-9)"
-          />
-          <Button size="1" variant="soft" onClick={() => void handleConnect()}>
-            Update in GitHub
+          {hasGithubIntegration ? (
+            <CheckCircleIcon
+              size={16}
+              weight="fill"
+              className="text-(--green-9)"
+            />
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void handleConnect()}
+          >
+            {hasGithubIntegration
+              ? "Update in GitHub"
+              : hasConnectError || timedOut
+                ? "Try again"
+                : "Connect GitHub"}
             <ArrowSquareOutIcon size={12} />
           </Button>
         </Flex>
-      ) : (
-        <Button size="1" onClick={() => void handleConnect()}>
-          {hasConnectError || timedOut ? "Try again" : "Connect GitHub"}
-          <ArrowSquareOutIcon size={12} />
-        </Button>
       )}
     </Flex>
   );

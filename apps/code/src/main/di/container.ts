@@ -49,9 +49,11 @@ import { HandoffService } from "../services/handoff/service";
 import { InboxLinkService } from "../services/inbox-link/service";
 import { LinearIntegrationService } from "../services/linear-integration/service";
 import { LlmGatewayService } from "../services/llm-gateway/service";
+import { LocalLogsService } from "../services/local-logs/service";
 import { McpAppsService } from "../services/mcp-apps/service";
 import { McpCallbackService } from "../services/mcp-callback/service";
 import { McpProxyService } from "../services/mcp-proxy/service";
+import { NewTaskLinkService } from "../services/new-task-link/service";
 import { NotificationService } from "../services/notification/service";
 import { OAuthService } from "../services/oauth/service";
 import { PosthogPluginService } from "../services/posthog-plugin/service";
@@ -65,6 +67,7 @@ import { SuspensionService } from "../services/suspension/service";
 import { TaskLinkService } from "../services/task-link/service";
 import { UIService } from "../services/ui/service";
 import { UpdatesService } from "../services/updates/service";
+import { UsageMonitorService } from "../services/usage-monitor/service";
 import { WatcherRegistryService } from "../services/watcher-registry/service";
 import { WorkspaceService } from "../services/workspace/service";
 import { MAIN_TOKENS } from "./tokens";
@@ -134,6 +137,7 @@ container.bind(MAIN_TOKENS.HandoffService).to(HandoffService);
 container
   .bind(MAIN_TOKENS.LinearIntegrationService)
   .to(LinearIntegrationService);
+container.bind(MAIN_TOKENS.LocalLogsService).to(LocalLogsService);
 container.bind(MAIN_TOKENS.McpCallbackService).to(McpCallbackService);
 container.bind(MAIN_TOKENS.NotificationService).to(NotificationService);
 container.bind(MAIN_TOKENS.OAuthService).to(OAuthService);
@@ -144,8 +148,10 @@ container.bind(MAIN_TOKENS.ShellService).to(ShellService);
 container.bind(MAIN_TOKENS.SlackIntegrationService).to(SlackIntegrationService);
 container.bind(MAIN_TOKENS.UIService).to(UIService);
 container.bind(MAIN_TOKENS.UpdatesService).to(UpdatesService);
+container.bind(MAIN_TOKENS.UsageMonitorService).to(UsageMonitorService);
 container.bind(MAIN_TOKENS.TaskLinkService).to(TaskLinkService);
 container.bind(MAIN_TOKENS.InboxLinkService).to(InboxLinkService);
+container.bind(MAIN_TOKENS.NewTaskLinkService).to(NewTaskLinkService);
 container.bind(MAIN_TOKENS.WatcherRegistryService).to(WatcherRegistryService);
 container.bind(MAIN_TOKENS.WorkspaceService).to(WorkspaceService);
 

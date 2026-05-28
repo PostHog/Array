@@ -120,8 +120,6 @@ interface SessionProblemExtra {
   session_duration?: number;
   session_active_seconds?: number;
   exported_asset_id?: number;
-  moment_preview_url?: string;
-  moment_preview_asset_id?: number;
 }
 
 interface ErrorTrackingExtra {
@@ -548,17 +546,7 @@ function SessionProblemSignalCard({
       )}
       <CollapsibleBody body={signal.content} />
 
-      {/* Moment preview GIF — quick visual of the problematic period */}
-      {extra.moment_preview_url && (
-        <MomentPreview
-          url={extra.moment_preview_url}
-          alt={`Session moment: ${extra.segment_title ?? "problem"}`}
-          startTime={extra.start_time}
-          endTime={extra.end_time}
-        />
-      )}
-
-      {extra.session_id && !extra.moment_preview_url && (
+      {extra.session_id && (
         <SessionRecordingVideo
           exportedAssetId={extra.exported_asset_id}
           sessionId={extra.session_id}
@@ -617,60 +605,6 @@ function SessionProblemSignalCard({
       </Flex>
       <CodePathsCollapsible paths={codePaths ?? []} />
       <DataQueriedCollapsible text={dataQueried ?? ""} />
-    </Box>
-  );
-}
-
-function MomentPreview({
-  url,
-  alt,
-  startTime,
-  endTime,
-}: {
-  url: string;
-  alt: string;
-  startTime?: string;
-  endTime?: string;
-}) {
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState(false);
-
-  if (error) return null;
-
-  return (
-    <Box className="relative mt-2 overflow-hidden rounded-md border border-gray-5 bg-gray-2">
-      {!loaded && (
-        <Flex align="center" justify="center" className="absolute inset-0 z-10">
-          <Text
-            size="1"
-            className="text-[11px]"
-            style={{ color: "var(--gray-9)" }}
-          >
-            Loading preview…
-          </Text>
-        </Flex>
-      )}
-      <img
-        src={url}
-        alt={alt}
-        className="w-full rounded-md object-contain"
-        style={{
-          maxHeight: 200,
-          opacity: loaded ? 1 : 0,
-          transition: "opacity 150ms ease-in",
-        }}
-        onLoad={() => setLoaded(true)}
-        onError={() => setError(true)}
-      />
-      {startTime && endTime && (
-        <Flex
-          align="center"
-          gap="1"
-          className="absolute bottom-1.5 left-1.5 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-white"
-        >
-          {startTime} – {endTime}
-        </Flex>
-      )}
     </Box>
   );
 }

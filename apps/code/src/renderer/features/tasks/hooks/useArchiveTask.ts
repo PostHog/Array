@@ -34,9 +34,20 @@ export async function archiveTaskImperative(
     }
   }
 
+  const terminalStatesSnapshot = Object.fromEntries(
+    Object.entries(useTerminalStore.getState().terminalStates).filter(
+      ([key]) => key === taskId || key.startsWith(`${taskId}-`),
+    ),
+  );
+  const commandCenterState = useCommandCenterStore.getState();
+  const commandCenterIndex = commandCenterState.cells.indexOf(taskId);
+  const wasActiveInCommandCenter = commandCenterState.activeTaskId === taskId;
+
   pinnedTasksApi.unpin(taskId);
   useTerminalStore.getState().clearTerminalStatesForTask(taskId);
   useCommandCenterStore.getState().removeTaskById(taskId);
+
+  await queryClient.cancelQueries(trpc.archive.pathFilter());
 
   queryClient.setQueryData<string[]>(
     trpc.archive.archivedTaskIds.queryKey(),
@@ -87,9 +98,52 @@ export async function archiveTaskImperative(
     if (wasPinned) {
       pinnedTasksApi.togglePin(taskId);
     }
+    if (Object.keys(terminalStatesSnapshot).length > 0) {
+      useTerminalStore.setState((s) => ({
+        terminalStates: { ...s.terminalStates, ...terminalStatesSnapshot },
+      }));
+    }
+    if (commandCenterIndex !== -1) {
+      useCommandCenterStore.setState((s) => {
+        const cells = [...s.cells];
+        cells[commandCenterIndex] = taskId;
+        return wasActiveInCommandCenter
+          ? { cells, activeTaskId: taskId }
+          : { cells };
+      });
+    }
 
     throw error;
   }
+}
+
+export async function archiveTasksImperative(
+  taskIds: string[],
+  queryClient: QueryClient,
+): Promise<{ archived: number; failed: number }> {
+  if (taskIds.length === 0) return { archived: 0, failed: 0 };
+
+  const nav = useNavigationStore.getState();
+  const idSet = new Set(taskIds);
+  if (
+    nav.view.type === "task-detail" &&
+    nav.view.data &&
+    idSet.has(nav.view.data.id)
+  ) {
+    nav.navigateToTaskInput();
+  }
+
+  let archived = 0;
+  let failed = 0;
+  for (const id of taskIds) {
+    try {
+      await archiveTaskImperative(id, queryClient, { skipNavigate: true });
+      archived++;
+    } catch {
+      failed++;
+    }
+  }
+  return { archived, failed };
 }
 
 export function useArchiveTask() {

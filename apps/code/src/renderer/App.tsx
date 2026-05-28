@@ -12,6 +12,7 @@ import {
 } from "@features/auth/hooks/authQueries";
 import { useAuthSession } from "@features/auth/hooks/useAuthSession";
 import { useIsOrgAdmin } from "@features/auth/hooks/useOrgRole";
+import { registerBillingSubscriptions } from "@features/billing/subscriptions";
 import { AddDirectoryDialog } from "@features/folder-picker/components/AddDirectoryDialog";
 import { OnboardingFlow } from "@features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
@@ -26,7 +27,7 @@ import { isNotAuthenticatedError } from "@shared/errors";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
-import { initializePostHog, track } from "@utils/analytics";
+import { initializePostHog, registerAppVersion, track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
 import { AnimatePresence, motion } from "framer-motion";
@@ -48,9 +49,15 @@ function App() {
   const [showTransition, setShowTransition] = useState(false);
   const wasInMainApp = useRef(isAuthenticated && hasCompletedOnboarding);
 
-  // Initialize PostHog analytics
+  // Initialize PostHog analytics and register the app version super property.
   useEffect(() => {
     initializePostHog();
+    trpcClient.os.getAppVersion
+      .query()
+      .then(registerAppVersion)
+      .catch((error) => {
+        log.warn("Failed to register app version super property", { error });
+      });
   }, []);
 
   // Initialize connectivity monitoring
@@ -62,6 +69,11 @@ function App() {
       disposeStore();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    return registerBillingSubscriptions();
+  }, [isAuthenticated]);
 
   // Initialize update store
   useEffect(() => {
@@ -278,7 +290,7 @@ function App() {
         key="main"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.5, delay: showTransition ? 1.5 : 0 }}
+        transition={{ duration: 0.5, delay: showTransition ? 0.5 : 0 }}
       >
         <MainLayout />
       </motion.div>

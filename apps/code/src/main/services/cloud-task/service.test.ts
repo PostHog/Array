@@ -604,6 +604,69 @@ describe("CloudTaskService", () => {
     ).toBe(true);
   });
 
+  it("fails the watcher after exhausting the cumulative reconnect budget on clean-EOF loops", async () => {
+    vi.useFakeTimers();
+
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    const makeInProgressRun = () =>
+      createJsonResponse({
+        id: "run-1",
+        status: "in_progress",
+        stage: null,
+        output: null,
+        error_message: null,
+        branch: "main",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      return Promise.resolve(makeInProgressRun());
+    });
+
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(createSseResponse("")),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+
+    await waitFor(
+      () =>
+        updates.some(
+          (u) =>
+            typeof u === "object" &&
+            u !== null &&
+            (u as { kind?: string }).kind === "error",
+        ),
+      10_000,
+    );
+
+    expect(updates).toContainEqual({
+      taskId: "task-1",
+      runId: "run-1",
+      kind: "error",
+      errorTitle: "Cloud run unreachable",
+      errorMessage:
+        "Could not maintain a connection to the cloud run after many attempts. Click retry once the issue is resolved.",
+      retryable: true,
+    });
+  });
+
   it("emits a retryable cloud error after repeated stream failures", async () => {
     vi.useFakeTimers();
 

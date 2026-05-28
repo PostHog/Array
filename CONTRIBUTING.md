@@ -30,7 +30,7 @@ See [docs/LOCAL-DEVELOPMENT.md](./docs/LOCAL-DEVELOPMENT.md) for connecting to a
 - Resolve merge conflicts before requesting review
 - Keep changes focused -- one logical change per PR
 - Add tests where they meaningfully improve confidence
-- Follow existing patterns and conventions in the areas you touch (see [CLAUDE.md](./CLAUDE.md) for code style details)
+- Follow existing patterns and conventions in the areas you touch (see [AGENTS.md](./AGENTS.md) for architecture rules and code style)
 
 ## What to expect
 

@@ -2,6 +2,7 @@ export type DiscoveredTaskSource = "agent" | "enricher";
 
 export interface DiscoveredTask {
   id: string;
+  repoPath?: string;
   title: string;
   description: string;
   category:

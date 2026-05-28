@@ -74,6 +74,8 @@ import {
   pushOutput,
   replyToPrCommentInput,
   replyToPrCommentOutput,
+  resolveReviewThreadInput,
+  resolveReviewThreadOutput,
   searchGithubRefsInput,
   searchGithubRefsOutput,
   stageFilesInput,
@@ -389,6 +391,13 @@ export const gitRouter = router({
     .output(replyToPrCommentOutput)
     .mutation(({ input }) =>
       getService().replyToPrComment(input.prUrl, input.commentId, input.body),
+    ),
+
+  resolveReviewThread: publicProcedure
+    .input(resolveReviewThreadInput)
+    .output(resolveReviewThreadOutput)
+    .mutation(({ input }) =>
+      getService().resolveReviewThread(input.threadNodeId, input.resolved),
     ),
 
   getBranchChangedFiles: publicProcedure

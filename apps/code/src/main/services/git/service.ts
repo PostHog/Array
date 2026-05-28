@@ -72,11 +72,13 @@ import type {
   PrActionType,
   PrDetailsByUrlOutput,
   PrReviewComment,
+  PrReviewThread,
   PrStatusOutput,
   PublishOutput,
   PullOutput,
   PushOutput,
   ReplyToPrCommentOutput,
+  ResolveReviewThreadOutput,
   SyncOutput,
   UpdatePrByUrlOutput,
 } from "./schemas";
@@ -1216,31 +1218,219 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     }
   }
 
-  public async getPrReviewComments(prUrl: string): Promise<PrReviewComment[]> {
+  public async getPrReviewComments(prUrl: string): Promise<PrReviewThread[]> {
     const pr = parseGithubUrl(prUrl);
     if (pr?.kind !== "pr") return [];
 
     const { owner, repo, number } = pr;
 
-    try {
-      const result = await execGh([
-        "api",
-        `repos/${owner}/${repo}/pulls/${number}/comments`,
-        "--paginate",
-        "--slurp",
-      ]);
+    // Position fields (line, side, etc.) live on the thread, not on individual comments.
+    const query = `
+      query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            reviewThreads(first: 100, after: $cursor) {
+              pageInfo { hasNextPage endCursor }
+              nodes {
+                id
+                isResolved
+                isOutdated
+                path
+                diffSide
+                line
+                originalLine
+                startLine
+                startDiffSide
+                subjectType
+                comments(first: 100) {
+                  nodes {
+                    databaseId
+                    body
+                    path
+                    diffHunk
+                    replyTo { databaseId }
+                    author { login avatarUrl }
+                    createdAt
+                    updatedAt
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
 
-      if (result.exitCode !== 0) {
-        throw new Error(
-          `Failed to fetch PR review comments: ${result.stderr || result.error || "Unknown error"}`,
+    type ThreadNode = {
+      id: string;
+      isResolved: boolean;
+      isOutdated: boolean;
+      path: string;
+      diffSide: "LEFT" | "RIGHT";
+      line: number | null;
+      originalLine: number | null;
+      startLine: number | null;
+      startDiffSide: "LEFT" | "RIGHT" | null;
+      subjectType: "LINE" | "FILE" | null;
+      comments: {
+        nodes: Array<{
+          databaseId: number;
+          body: string;
+          path: string;
+          diffHunk: string;
+          replyTo: { databaseId: number } | null;
+          author: { login: string; avatarUrl: string };
+          createdAt: string;
+          updatedAt: string;
+        }>;
+      };
+    };
+
+    type PageResponse = {
+      data: {
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              pageInfo: { hasNextPage: boolean; endCursor: string | null };
+              nodes: ThreadNode[];
+            };
+          };
+        };
+      };
+      errors?: Array<{ message: string }>;
+    };
+
+    const MAX_THREAD_PAGES = 50; // 50 × 100 = 5 000 threads max
+
+    try {
+      const allNodes: ThreadNode[] = [];
+      let cursor: string | null = null;
+      let completed = false;
+
+      for (let page = 0; page < MAX_THREAD_PAGES; page++) {
+        const result = await execGh(["api", "graphql", "--input", "-"], {
+          input: JSON.stringify({
+            query,
+            variables: { owner, repo, number, cursor },
+          }),
+        });
+
+        if (result.exitCode !== 0) {
+          throw new Error(
+            `Failed to fetch PR review threads: ${result.stderr || result.error || "Unknown error"}`,
+          );
+        }
+
+        const data = JSON.parse(result.stdout) as PageResponse;
+        if (data.errors?.length) {
+          throw new Error(
+            `GraphQL error: ${data.errors.map((e) => e.message).join("; ")}`,
+          );
+        }
+        const reviewThreads = data.data.repository.pullRequest.reviewThreads;
+        allNodes.push(...reviewThreads.nodes);
+        if (!reviewThreads.pageInfo.hasNextPage) {
+          completed = true;
+          break;
+        }
+        cursor = reviewThreads.pageInfo.endCursor;
+      }
+
+      if (!completed) {
+        log.warn(
+          "getPrReviewComments hit MAX_THREAD_PAGES; returning partial results",
+          {
+            prUrl,
+            returned: allNodes.length,
+          },
         );
       }
 
-      const pages = JSON.parse(result.stdout) as PrReviewComment[][];
-      return pages.flat();
+      return allNodes.map((thread) => {
+        const comments: PrReviewComment[] = thread.comments.nodes.map((c) => ({
+          id: c.databaseId,
+          body: c.body,
+          path: c.path,
+          diff_hunk: c.diffHunk,
+          line: thread.line,
+          original_line: thread.originalLine,
+          side: thread.diffSide,
+          start_line: thread.startLine,
+          start_side: thread.startDiffSide,
+          in_reply_to_id: c.replyTo?.databaseId ?? null,
+          user: { login: c.author.login, avatar_url: c.author.avatarUrl },
+          created_at: c.createdAt,
+          updated_at: c.updatedAt,
+          subject_type: thread.subjectType
+            ? (thread.subjectType.toLowerCase() as "line" | "file")
+            : null,
+        }));
+
+        return {
+          nodeId: thread.id,
+          isResolved: thread.isResolved,
+          rootId: comments[0]?.id ?? 0,
+          filePath: thread.path,
+          comments,
+        };
+      });
     } catch (error) {
-      log.warn("Failed to fetch PR review comments", { prUrl, error });
+      log.warn("Failed to fetch PR review threads", { prUrl, error });
       throw error;
+    }
+  }
+
+  public async resolveReviewThread(
+    threadNodeId: string,
+    resolved: boolean,
+  ): Promise<ResolveReviewThreadOutput> {
+    const mutation = resolved
+      ? `mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } } }`
+      : `mutation($threadId: ID!) { unresolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } } }`;
+
+    try {
+      const result = await execGh(["api", "graphql", "--input", "-"], {
+        input: JSON.stringify({
+          query: mutation,
+          variables: { threadId: threadNodeId },
+        }),
+      });
+
+      if (result.exitCode !== 0) {
+        log.warn("Failed to resolve/unresolve review thread", {
+          threadNodeId,
+          resolved,
+          error: result.stderr || result.error,
+        });
+        return { success: false, isResolved: !resolved };
+      }
+
+      const data = JSON.parse(result.stdout) as {
+        data: {
+          resolveReviewThread?: { thread: { isResolved: boolean } };
+          unresolveReviewThread?: { thread: { isResolved: boolean } };
+        };
+        errors?: Array<{ message: string }>;
+      };
+      if (data.errors?.length) {
+        log.warn("Failed to resolve/unresolve review thread", {
+          threadNodeId,
+          resolved,
+          error: data.errors.map((e) => e.message).join("; "),
+        });
+        return { success: false, isResolved: !resolved };
+      }
+      const thread =
+        data.data.resolveReviewThread?.thread ??
+        data.data.unresolveReviewThread?.thread;
+
+      return { success: true, isResolved: thread?.isResolved ?? resolved };
+    } catch (error) {
+      log.warn("Failed to resolve/unresolve review thread", {
+        threadNodeId,
+        error,
+      });
+      return { success: false, isResolved: !resolved };
     }
   }
 

@@ -10,6 +10,10 @@ export const taskContextMenuInput = z.object({
   hasEmptyCommandCenterCell: z.boolean().optional(),
 });
 
+export const bulkTaskContextMenuInput = z.object({
+  taskCount: z.number().int().min(2),
+});
+
 export const archivedTaskContextMenuInput = z.object({
   taskTitle: z.string(),
 });
@@ -45,6 +49,10 @@ const taskAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("external-app"), action: externalAppAction }),
 ]);
 
+const bulkTaskAction = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("archive") }),
+]);
+
 const archivedTaskAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("restore") }),
   z.object({ type: z.literal("delete") }),
@@ -72,6 +80,9 @@ const splitDirection = z.enum(["left", "right", "up", "down"]);
 export const taskContextMenuOutput = z.object({
   action: taskAction.nullable(),
 });
+export const bulkTaskContextMenuOutput = z.object({
+  action: bulkTaskAction.nullable(),
+});
 export const archivedTaskContextMenuOutput = z.object({
   action: archivedTaskAction.nullable(),
 });
@@ -87,6 +98,7 @@ export const splitContextMenuOutput = z.object({
 });
 
 export type TaskContextMenuInput = z.infer<typeof taskContextMenuInput>;
+export type BulkTaskContextMenuInput = z.infer<typeof bulkTaskContextMenuInput>;
 export type ArchivedTaskContextMenuInput = z.infer<
   typeof archivedTaskContextMenuInput
 >;
@@ -96,6 +108,7 @@ export type FileContextMenuInput = z.infer<typeof fileContextMenuInput>;
 
 export type ExternalAppAction = z.infer<typeof externalAppAction>;
 export type TaskAction = z.infer<typeof taskAction>;
+export type BulkTaskAction = z.infer<typeof bulkTaskAction>;
 export type ArchivedTaskAction = z.infer<typeof archivedTaskAction>;
 export type FolderAction = z.infer<typeof folderAction>;
 export type TabAction = z.infer<typeof tabAction>;

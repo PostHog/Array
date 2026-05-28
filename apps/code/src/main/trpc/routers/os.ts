@@ -5,7 +5,11 @@ import type { IAppMeta } from "@posthog/platform/app-meta";
 import type { DialogSeverity, IDialog } from "@posthog/platform/dialog";
 import type { IImageProcessor } from "@posthog/platform/image-processor";
 import type { IUrlLauncher } from "@posthog/platform/url-launcher";
-import { IMAGE_MIME_TYPES } from "@shared/constants/image";
+import {
+  ALLOWED_IMAGE_MIME_TYPES,
+  IMAGE_MIME_TYPES,
+  isRasterImageFile,
+} from "@posthog/shared";
 import { z } from "zod";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
@@ -293,7 +297,8 @@ export const osRouter = router({
         if (stat.size > input.maxSizeBytes) return null;
 
         const ext = path.extname(input.filePath).toLowerCase().slice(1);
-        const mime = IMAGE_MIME_TYPES[ext] ?? "application/octet-stream";
+        const mime = IMAGE_MIME_TYPES[ext];
+        if (!mime || !ALLOWED_IMAGE_MIME_TYPES.has(mime)) return null;
 
         const buffer = await fsPromises.readFile(input.filePath);
         return `data:${mime};base64,${buffer.toString("base64")}`;
@@ -354,7 +359,7 @@ export const osRouter = router({
     .input(z.object({ filePath: z.string().min(1) }))
     .mutation(async ({ input }) => {
       const ext = path.extname(input.filePath).toLowerCase().slice(1);
-      if (!IMAGE_MIME_TYPES[ext]) {
+      if (!isRasterImageFile(input.filePath)) {
         throw new Error(`Unsupported image type: .${ext}`);
       }
 

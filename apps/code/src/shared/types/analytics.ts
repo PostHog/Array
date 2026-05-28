@@ -61,6 +61,7 @@ export interface TaskCreateProperties {
   has_sandbox_environment?: boolean;
   cloud_run_source?: "manual" | "signal_report";
   cloud_pr_authorship_mode?: "user" | "bot";
+  signal_report_id?: string;
   /** Worktree mode: repo has a non-empty .worktreelink file */
   uses_worktree_link?: boolean;
   /** Worktree mode: repo has a non-empty .worktreeinclude file */
@@ -278,6 +279,37 @@ export interface BranchMismatchActionProperties {
   current_branch: string;
 }
 
+// Deep link events
+export interface DeepLinkNewTaskProperties {
+  has_prompt: boolean;
+  has_repo: boolean;
+  mode?: string;
+  model?: string;
+}
+
+export interface DeepLinkPlanProperties {
+  has_repo: boolean;
+  mode?: string;
+  model?: string;
+  plan_length_chars: number;
+}
+
+export interface DeepLinkIssueProperties {
+  owner: string;
+  repo: string;
+  issue_number: number;
+  mode?: string;
+  model?: string;
+}
+
+export interface DeepLinkIssueFailedProperties {
+  owner: string;
+  repo: string;
+  issue_number: number;
+  reason: "not_found" | "fetch_failed";
+  error_message?: string;
+}
+
 // Feedback events
 export interface TaskFeedbackProperties {
   task_id: string;
@@ -293,10 +325,11 @@ export type OnboardingStepId =
   | "welcome"
   | "project-select"
   | "invite-code"
-  | "github"
-  | "install-cli";
+  | "connect-github"
+  | "install-cli"
+  | "select-repo";
 
-type OnboardingSkipReason = "tools_not_installed" | "dev_skip";
+type OnboardingSkipReason = "no_repo_selected" | "dev_skip";
 
 export interface OnboardingStepViewedProperties {
   step_id: OnboardingStepId;
@@ -309,6 +342,10 @@ export interface OnboardingStepCompletedProperties {
   step_index: number;
   total_steps: number;
   duration_seconds: number;
+  github_connected?: boolean;
+  git_installed?: boolean;
+  gh_installed?: boolean;
+  gh_authenticated?: boolean;
 }
 
 export interface OnboardingStepSkippedProperties {
@@ -345,7 +382,22 @@ export interface OnboardingCliCheckCompletedProperties {
 export interface OnboardingCompletedProperties {
   duration_seconds: number;
   github_connected: boolean;
-  cli_skipped: boolean;
+  repo_skipped: boolean;
+}
+
+export type OnboardingGithubConnectFlow =
+  | "team_existing"
+  | "team_alternative"
+  | "user_new";
+
+export interface OnboardingGithubConnectStartedProperties {
+  flow_type: OnboardingGithubConnectFlow;
+  is_retry: boolean;
+}
+
+export interface OnboardingGithubConnectFailedProperties {
+  reason: "timeout" | "error";
+  error_type?: string;
 }
 
 export interface OnboardingAbandonedProperties {
@@ -504,6 +556,21 @@ export interface InboxReportScrolledProperties {
   time_since_open_ms: number;
 }
 
+export interface SpendAnalysisTaskOpenedProperties {
+  /** Total LLM spend in USD across all products for the analysed window. */
+  total_cost_usd: number;
+  /** PostHog Code spend in USD for the analysed window (subset of total). */
+  scoped_cost_usd: number;
+  /** Number of `$ai_generation` events in the analysed window. */
+  scoped_event_count: number;
+  /** Length of the analysed window in days. */
+  window_days: number;
+  /** Number of tool rows the receiving agent will see (capped at 10 in the prompt). */
+  tool_row_count: number;
+  /** Number of model rows the receiving agent will see. */
+  model_row_count: number;
+}
+
 export interface InboxReportActionProperties {
   report_id: string;
   report_title: string | null;
@@ -531,7 +598,40 @@ export interface InboxReportActionProperties {
   question_text?: string;
 }
 
+export interface SignalSourceConnectedProperties {
+  source_product:
+    | "session_replay"
+    | "error_tracking"
+    | "github"
+    | "linear"
+    | "zendesk"
+    | "conversations"
+    | "pganalyze"
+    | "llm_analytics";
+  /** True when this is a brand-new createSignalSourceConfig, false for re-enable of an existing config. */
+  is_first_connection: boolean;
+  /** True when the connection went through the DataSourceSetup wizard (warehouse OAuth path). */
+  via_setup_wizard: boolean;
+}
+
 // Subscription / billing events
+
+export type UpgradePromptShownSurface = "usage_limit_modal" | "upgrade_dialog";
+
+export type UpgradePromptClickedSurface =
+  | "usage_limit_modal"
+  | "sidebar"
+  | "plan_page_card"
+  | "upgrade_dialog";
+
+export interface UpgradePromptShownProperties {
+  surface: UpgradePromptShownSurface;
+}
+
+export interface UpgradePromptClickedProperties {
+  surface: UpgradePromptClickedSurface;
+}
+
 export interface SubscriptionStartedProperties {
   plan_key: string;
   previous_plan_key?: string;
@@ -619,6 +719,8 @@ export const ANALYTICS_EVENTS = {
   ONBOARDING_PROJECT_SELECTED: "Onboarding project selected",
   ONBOARDING_INVITE_CODE_SUBMITTED: "Onboarding invite code submitted",
   ONBOARDING_FOLDER_SELECTED: "Onboarding folder selected",
+  ONBOARDING_GITHUB_CONNECT_STARTED: "Onboarding github connect started",
+  ONBOARDING_GITHUB_CONNECT_FAILED: "Onboarding github connect failed",
   ONBOARDING_GITHUB_CONNECTED: "Onboarding github connected",
   ONBOARDING_CLI_CHECK_COMPLETED: "Onboarding cli check completed",
   ONBOARDING_COMPLETED: "Onboarding completed",
@@ -633,6 +735,12 @@ export const ANALYTICS_EVENTS = {
   SETUP_TASK_SELECTED: "Setup task selected",
   SETUP_TASK_DISMISSED: "Setup task dismissed",
 
+  // Deep link events
+  DEEP_LINK_NEW_TASK: "Deep link new task",
+  DEEP_LINK_PLAN: "Deep link plan",
+  DEEP_LINK_ISSUE: "Deep link issue",
+  DEEP_LINK_ISSUE_FAILED: "Deep link issue failed",
+
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
   AGENT_SESSION_ERROR: "Agent session error",
@@ -644,12 +752,18 @@ export const ANALYTICS_EVENTS = {
   INBOX_REPORT_CLOSED: "Inbox report closed",
   INBOX_REPORT_ACTION: "Inbox report action",
   INBOX_REPORT_SCROLLED: "Inbox report scrolled",
+  SIGNAL_SOURCE_CONNECTED: "Signal source connected",
+
+  // Spend analysis events
+  SPEND_ANALYSIS_TASK_OPENED: "Spend analysis task opened",
 
   // Prompt history events
   PROMPT_HISTORY_OPENED: "Prompt history opened",
   PROMPT_HISTORY_SELECTED: "Prompt history selected",
 
   // Subscription events
+  UPGRADE_PROMPT_SHOWN: "Upgrade prompt shown",
+  UPGRADE_PROMPT_CLICKED: "Upgrade prompt clicked",
   SUBSCRIPTION_STARTED: "Subscription started",
   SUBSCRIPTION_CANCELLED: "Subscription cancelled",
 } as const;
@@ -725,6 +839,8 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.ONBOARDING_PROJECT_SELECTED]: OnboardingProjectSelectedProperties;
   [ANALYTICS_EVENTS.ONBOARDING_INVITE_CODE_SUBMITTED]: OnboardingInviteCodeSubmittedProperties;
   [ANALYTICS_EVENTS.ONBOARDING_FOLDER_SELECTED]: OnboardingFolderSelectedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECT_STARTED]: OnboardingGithubConnectStartedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECT_FAILED]: OnboardingGithubConnectFailedProperties;
   [ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECTED]: never;
   [ANALYTICS_EVENTS.ONBOARDING_CLI_CHECK_COMPLETED]: OnboardingCliCheckCompletedProperties;
   [ANALYTICS_EVENTS.ONBOARDING_COMPLETED]: OnboardingCompletedProperties;
@@ -739,6 +855,12 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SETUP_TASK_SELECTED]: SetupTaskSelectedProperties;
   [ANALYTICS_EVENTS.SETUP_TASK_DISMISSED]: SetupTaskDismissedProperties;
 
+  // Deep link events
+  [ANALYTICS_EVENTS.DEEP_LINK_NEW_TASK]: DeepLinkNewTaskProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_PLAN]: DeepLinkPlanProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_ISSUE]: DeepLinkIssueProperties;
+  [ANALYTICS_EVENTS.DEEP_LINK_ISSUE_FAILED]: DeepLinkIssueFailedProperties;
+
   // Error events
   [ANALYTICS_EVENTS.TASK_CREATION_FAILED]: TaskCreationFailedProperties;
   [ANALYTICS_EVENTS.AGENT_SESSION_ERROR]: AgentSessionErrorProperties;
@@ -750,12 +872,18 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
+  [ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED]: SignalSourceConnectedProperties;
+
+  // Spend analysis events
+  [ANALYTICS_EVENTS.SPEND_ANALYSIS_TASK_OPENED]: SpendAnalysisTaskOpenedProperties;
 
   // Prompt history events
   [ANALYTICS_EVENTS.PROMPT_HISTORY_OPENED]: PromptHistoryOpenedProperties;
   [ANALYTICS_EVENTS.PROMPT_HISTORY_SELECTED]: PromptHistorySelectedProperties;
 
   // Subscription events
+  [ANALYTICS_EVENTS.UPGRADE_PROMPT_SHOWN]: UpgradePromptShownProperties;
+  [ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED]: UpgradePromptClickedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
 };

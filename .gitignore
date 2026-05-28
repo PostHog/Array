@@ -36,7 +36,6 @@ Thumbs.db
 *.car
 
 # AI agents
-AGENTS.md
 MEMORY.md
 .claude-config/
 .agent-trigger
@@ -65,5 +64,6 @@ plugins/posthog/local-skills/
 posthog-sym
 
 .claude/settings.local.json
+CLAUDE.local.md
 
 apps/mobile/ROADMAP.md

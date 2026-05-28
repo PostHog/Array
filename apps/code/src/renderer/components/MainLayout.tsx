@@ -5,7 +5,6 @@ import { SpaceSwitcher } from "@components/SpaceSwitcher";
 
 import { ArchivedTasksView } from "@features/archive/components/ArchivedTasksView";
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
-import { useUsageLimitDetection } from "@features/billing/hooks/useUsageLimitDetection";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
 import { InboxView } from "@features/inbox/components/InboxView";
@@ -20,6 +19,7 @@ import { useVisualTaskOrder } from "@features/sidebar/hooks/useVisualTaskOrder";
 import { SkillsView } from "@features/skills/components/SkillsView";
 import { TaskDetail } from "@features/task-detail/components/TaskDetail";
 import { TaskInput } from "@features/task-detail/components/TaskInput";
+import { TaskPendingView } from "@features/task-detail/components/TaskPendingView";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { TourOverlay } from "@features/tour/components/TourOverlay";
 import {
@@ -37,6 +37,7 @@ import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useRef } from "react";
+import { useNewTaskDeepLink } from "../hooks/useNewTaskDeepLink";
 import { useTaskDeepLink } from "../hooks/useTaskDeepLink";
 import { GlobalEventHandlers } from "./GlobalEventHandlers";
 
@@ -75,11 +76,11 @@ export function MainLayout() {
   const activeTaskId =
     view.type === "task-detail" && view.data ? view.data.id : null;
 
-  useUsageLimitDetection(billingEnabled);
   useIntegrations();
   useTaskDeepLink();
   useInboxDeepLink();
   useSetupDiscovery();
+  useNewTaskDeepLink();
 
   useEffect(() => {
     if (tasks) {
@@ -148,6 +149,8 @@ export function MainLayout() {
               initialCloudRepository={
                 view.initialCloudRepository ?? taskInputCloudRepository
               }
+              initialModel={view.initialModel}
+              initialMode={view.initialMode}
               reportAssociation={
                 view.reportAssociation ?? taskInputReportAssociation
               }
@@ -156,6 +159,10 @@ export function MainLayout() {
 
           {view.type === "task-detail" && view.data && (
             <TaskDetail key={view.data.id} task={view.data} />
+          )}
+
+          {view.type === "task-pending" && view.pendingTaskKey && (
+            <TaskPendingView pendingTaskKey={view.pendingTaskKey} />
           )}
 
           {view.type === "folder-settings" && <FolderSettingsView />}
@@ -176,7 +183,7 @@ export function MainLayout() {
         tasks={visualTaskOrder}
         activeTaskId={activeTaskId}
         allTasks={tasks ?? []}
-        isOnNewTask={view.type === "task-input"}
+        isOnNewTask={view.type === "task-input" || view.type === "task-pending"}
         onNavigateToTask={navigateToTask}
         onNewTask={navigateToTaskInput}
       />

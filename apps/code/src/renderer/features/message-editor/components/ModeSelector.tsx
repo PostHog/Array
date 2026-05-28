@@ -19,6 +19,7 @@ import {
   MenuLabel,
 } from "@posthog/quill";
 import { flattenSelectOptions } from "@renderer/features/sessions/stores/sessionStore";
+import { useRef, useState } from "react";
 
 interface ModeStyle {
   icon: React.ReactNode;
@@ -78,6 +79,9 @@ export function ModeSelector({
   allowBypassPermissions,
   disabled,
 }: ModeSelectorProps) {
+  const [open, setOpen] = useState(false);
+  const pendingValueRef = useRef<string | null>(null);
+
   if (!modeOption || modeOption.type !== "select") return null;
 
   const allOptions = flattenSelectOptions(modeOption.options);
@@ -95,7 +99,16 @@ export function ModeSelector({
     allOptions.find((opt) => opt.value === currentValue)?.name ?? currentValue;
 
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      open={open}
+      onOpenChange={setOpen}
+      onOpenChangeComplete={(isOpen) => {
+        if (!isOpen && pendingValueRef.current !== null) {
+          onChange(pendingValueRef.current);
+          pendingValueRef.current = null;
+        }
+      }}
+    >
       <DropdownMenuTrigger
         render={
           <Button
@@ -122,7 +135,13 @@ export function ModeSelector({
         className={allowBypassPermissions ? "min-w-[220px]" : "min-w-[200px]"}
       >
         <MenuLabel>Mode</MenuLabel>
-        <DropdownMenuRadioGroup value={currentValue} onValueChange={onChange}>
+        <DropdownMenuRadioGroup
+          value={currentValue}
+          onValueChange={(value) => {
+            pendingValueRef.current = value;
+            setOpen(false);
+          }}
+        >
           {options.map((option) => {
             const style = getStyle(option.value);
             return (

@@ -75,20 +75,22 @@ type Listener<T extends EventType> = (payload: EventPayloadMap[T]) => void;
 function getTerminalTheme(isDarkMode: boolean) {
   return isDarkMode
     ? {
-        background: "transparent",
+        background: "#131316",
         foreground: "#e6e6e6",
         cursor: "#f8be2a",
         cursorAccent: "#131316",
         selectionBackground: "rgba(248, 190, 42, 0.25)",
+        selectionInactiveBackground: "rgba(248, 190, 42, 0.12)",
         selectionForeground: "#e6e6e6",
       }
     : {
-        background: "transparent",
-        foreground: "#0d0d0d",
+        background: "#f2f3ee",
+        foreground: "#3a4036",
         cursor: "#f54d00",
         cursorAccent: "#f2f3ee",
-        selectionBackground: "rgba(245, 77, 0, 0.95)",
-        selectionForeground: "#0d0d0d",
+        selectionBackground: "#fbd0b8",
+        selectionInactiveBackground: "#f3e2d6",
+        selectionForeground: "#3a4036",
       };
 }
 

@@ -6,6 +6,7 @@ export type ThemePreference = "light" | "dark" | "system";
 
 export type CompletionSound =
   | "meep"
+  | "meep-smol"
   | "knock"
   | "ring"
   | "shoot"
