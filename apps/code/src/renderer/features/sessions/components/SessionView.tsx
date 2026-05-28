@@ -476,7 +476,7 @@ export function SessionView({
                 />
                 <Box className="border-gray-4 border-t">
                   <Box
-                    className="mx-auto p-2"
+                    className="mx-auto px-2 pb-2"
                     style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
                   >
                     <Flex
@@ -600,7 +600,7 @@ export function SessionView({
                 ) : hideInput ? null : firstPendingPermission ? (
                   <Box className="max-h-1/2 min-h-0 overflow-y-auto border-gray-4 border-t">
                     <Box
-                      className={compact ? "p-1" : "mx-auto p-2"}
+                      className={compact ? "p-1" : "mx-auto px-2 pb-2"}
                       style={
                         compact
                           ? undefined
@@ -616,7 +616,7 @@ export function SessionView({
                     </Box>
                   </Box>
                 ) : (
-                  <Box className="relative border-gray-4 border-t">
+                  <Box className="relative">
                     <Box
                       className={`absolute inset-0 flex min-h-[66px] items-center justify-center gap-2 transition-opacity duration-200 ${
                         isRunning
@@ -637,7 +637,7 @@ export function SessionView({
                       }`}
                     >
                       <Box
-                        className={compact ? "p-1" : "mx-auto p-2"}
+                        className={compact ? "p-1" : "mx-auto px-2 pb-2"}
                         style={
                           compact
                             ? undefined

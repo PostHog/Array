@@ -1,3 +1,4 @@
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   type CSSProperties,
   forwardRef,
@@ -6,9 +7,9 @@ import {
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
 } from "react";
-import { VList, type VListHandle } from "virtua";
 
 interface VirtualizedListProps<T> {
   items: T[];
@@ -28,6 +29,9 @@ export interface VirtualizedListHandle {
 }
 
 const AT_BOTTOM_THRESHOLD = 50;
+const ESTIMATED_ROW_SIZE = 80;
+const OVERSCAN = 6;
+const FOOTER_KEY = "__virtualized_footer__";
 
 function VirtualizedListInner<T>(
   {
@@ -43,106 +47,203 @@ function VirtualizedListInner<T>(
   }: VirtualizedListProps<T>,
   ref: React.ForwardedRef<VirtualizedListHandle>,
 ) {
-  const listRef = useRef<VListHandle>(null);
-  const isAtBottomRef = useRef(true);
+  const parentRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
+  const isAtBottomRef = useRef(true);
+  const settlingRef = useRef(false);
+  const settleRafRef = useRef<number | null>(null);
   const onScrollStateChangeRef = useRef(onScrollStateChange);
   onScrollStateChangeRef.current = onScrollStateChange;
-  const itemCountRef = useRef(items.length);
-  itemCountRef.current = items.length;
+
+  const hasFooter = footer != null;
+  const totalCount = items.length + (hasFooter ? 1 : 0);
+
+  const virtualizer = useVirtualizer({
+    count: totalCount,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ESTIMATED_ROW_SIZE,
+    overscan: OVERSCAN,
+    anchorTo: "end",
+    followOnAppend: true,
+    scrollEndThreshold: AT_BOTTOM_THRESHOLD,
+    getItemKey: (index) => {
+      if (hasFooter && index === items.length) return FOOTER_KEY;
+      const item = items[index];
+      return getItemKey ? getItemKey(item, index) : index;
+    },
+  });
+
+  const settleAtEnd = useCallback(() => {
+    if (settleRafRef.current !== null) {
+      cancelAnimationFrame(settleRafRef.current);
+      settleRafRef.current = null;
+    }
+    settlingRef.current = true;
+    isAtBottomRef.current = true;
+    let attempts = 0;
+    const step = () => {
+      virtualizer.scrollToEnd();
+      if (virtualizer.isAtEnd(AT_BOTTOM_THRESHOLD)) {
+        settlingRef.current = false;
+        settleRafRef.current = null;
+        if (initializedRef.current) {
+          onScrollStateChangeRef.current?.(true);
+        }
+        return;
+      }
+      if (++attempts > 12) {
+        settlingRef.current = false;
+        settleRafRef.current = null;
+        return;
+      }
+      settleRafRef.current = requestAnimationFrame(step);
+    };
+    step();
+  }, [virtualizer]);
 
   useImperativeHandle(
     ref,
     () => ({
-      scrollToBottom: () => {
-        const handle = listRef.current;
-        if (handle) {
-          handle.scrollTo(handle.scrollSize);
-          isAtBottomRef.current = true;
-        }
-      },
+      scrollToBottom: settleAtEnd,
       scrollToIndex: (index: number) => {
-        const handle = listRef.current;
-        if (handle) {
-          isAtBottomRef.current = false;
-          handle.scrollToIndex(index, { align: "center" });
+        if (settleRafRef.current !== null) {
+          cancelAnimationFrame(settleRafRef.current);
+          settleRafRef.current = null;
+          settlingRef.current = false;
         }
+        isAtBottomRef.current = false;
+        virtualizer.scrollToIndex(index, { align: "center" });
       },
     }),
-    [],
+    [virtualizer, settleAtEnd],
   );
 
-  useLayoutEffect(() => {
-    const handle = listRef.current;
-    if (!handle) return;
-
-    if (items.length > 0 && !initializedRef.current) {
-      handle.scrollToIndex(items.length - 1, { align: "end" });
-
-      requestAnimationFrame(() => {
-        initializedRef.current = true;
-      });
-    }
-  }, [items.length]);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-run when items change for streaming scroll
   useEffect(() => {
-    if (isAtBottomRef.current) {
-      const handle = listRef.current;
-      if (handle) {
-        // Use scrollToIndex for reliable positioning after measurements settle
-        const totalChildren = itemCountRef.current + (footer ? 1 : 0);
-        if (totalChildren > 0) {
-          handle.scrollToIndex(totalChildren - 1, { align: "end" });
-        }
+    return () => {
+      if (settleRafRef.current !== null) {
+        cancelAnimationFrame(settleRafRef.current);
       }
-    }
-  }, [items, footer]);
-
-  const handleScroll = useCallback((offset: number) => {
-    const handle = listRef.current;
-    if (!handle) return;
-    const distanceFromBottom = handle.scrollSize - offset - handle.viewportSize;
-    const atBottom = distanceFromBottom < AT_BOTTOM_THRESHOLD;
-    if (isAtBottomRef.current !== atBottom) {
-      isAtBottomRef.current = atBottom;
-    }
-    // Skip reporting during initialization to avoid flashing the
-    // scroll-to-bottom button before measurements settle.
-    if (initializedRef.current) {
-      onScrollStateChangeRef.current?.(atBottom);
-    }
+    };
   }, []);
 
+  useLayoutEffect(() => {
+    if (initializedRef.current || totalCount === 0) return;
+    virtualizer.scrollToEnd();
+    requestAnimationFrame(() => {
+      initializedRef.current = true;
+    });
+  }, [totalCount, virtualizer]);
+
+  // Safety net: streaming tokens grow an existing row in place; neither
+  // followOnAppend (count-based) nor anchorTo='end' (above-viewport-resize)
+  // covers in-place growth of the last row. Re-pin to end when at-bottom.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run on items mutation, including streaming text updates
+  useEffect(() => {
+    if (!initializedRef.current) return;
+    if (!isAtBottomRef.current) return;
+    virtualizer.scrollToEnd();
+  }, [items, virtualizer]);
+
+  const handleScroll = useCallback(() => {
+    const atBottom = virtualizer.isAtEnd(AT_BOTTOM_THRESHOLD);
+    isAtBottomRef.current = atBottom;
+    if (!initializedRef.current) return;
+    // Suppress intermediate "not at bottom" pings while a programmatic
+    // scrollToEnd is still settling after row remeasure.
+    if (settlingRef.current && !atBottom) return;
+    onScrollStateChangeRef.current?.(atBottom);
+  }, [virtualizer]);
+
+  const virtualItems = virtualizer.getVirtualItems();
+
+  const renderedIndices = useMemo(() => {
+    const set = new Set<number>();
+    for (const v of virtualItems) set.add(v.index);
+    return set;
+  }, [virtualItems]);
+
+  const orphanKeepIndices = useMemo(() => {
+    if (!keepMounted || keepMounted.length === 0) return [];
+    return keepMounted.filter(
+      (i) => i >= 0 && i < items.length && !renderedIndices.has(i),
+    );
+  }, [keepMounted, renderedIndices, items.length]);
+
   return (
-    <div className={`flex h-full flex-col ${className}`}>
-      <VList
-        ref={listRef}
-        shift={false}
-        style={{ scrollbarGutter: "stable" }}
+    <div className={`flex h-full flex-col ${className ?? ""}`}>
+      <div
+        ref={parentRef}
         onScroll={handleScroll}
-        keepMounted={keepMounted}
-        className="flex-1"
+        className="scroll-mask-8 flex-1 overflow-auto"
+        style={{ scrollbarGutter: "stable" }}
       >
-        {items.map((item, index) => {
-          const key = getItemKey ? getItemKey(item, index) : index;
-          return (
-            <div
-              key={key}
-              className={itemClassName}
-              style={itemStyle}
-              data-conversation-item-id={key}
-            >
-              {renderItem(item, index)}
-            </div>
-          );
-        })}
-        {footer && (
-          <div className={itemClassName} style={itemStyle}>
-            {footer}
-          </div>
-        )}
-      </VList>
+        <div
+          style={{
+            height: virtualizer.getTotalSize(),
+            position: "relative",
+            width: "100%",
+          }}
+        >
+          {virtualItems.map((virtualItem) => {
+            const isFooter = hasFooter && virtualItem.index === items.length;
+            const item = isFooter ? null : items[virtualItem.index];
+            const itemKey = isFooter
+              ? FOOTER_KEY
+              : getItemKey
+                ? getItemKey(item as T, virtualItem.index)
+                : virtualItem.index;
+            return (
+              <div
+                key={virtualItem.key}
+                ref={virtualizer.measureElement}
+                data-index={virtualItem.index}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualItem.start}px)`,
+                }}
+              >
+                <div
+                  className={itemClassName}
+                  style={itemStyle}
+                  data-conversation-item-id={itemKey}
+                >
+                  {isFooter ? footer : renderItem(item as T, virtualItem.index)}
+                </div>
+              </div>
+            );
+          })}
+          {orphanKeepIndices.map((index) => {
+            const item = items[index];
+            const k = getItemKey ? getItemKey(item, index) : index;
+            return (
+              <div
+                key={`keep-${k}`}
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: "translateY(-99999px)",
+                  pointerEvents: "none",
+                  visibility: "hidden",
+                }}
+              >
+                <div
+                  className={itemClassName}
+                  style={itemStyle}
+                  data-conversation-item-id={k}
+                >
+                  {renderItem(item, index)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
