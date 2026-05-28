@@ -167,22 +167,22 @@ export default function ReportDetailScreen() {
   );
 
   const handleToggleSignals = useCallback(() => {
-    setSignalsExpanded((v) => {
-      const next = !v;
-      if (next && report) {
-        tracker.signalAction({
-          report_id: report.id,
-          report_title: report.title ?? null,
-          report_age_hours: computeReportAgeHours(report.created_at),
-          action_type: "expand_signal",
-          surface: "detail_pane",
-          is_bulk: false,
-          bulk_size: 1,
-        });
-      }
-      return next;
-    });
-  }, [report, tracker]);
+    // Fire analytics outside the state updater — Strict Mode double-invokes
+    // updaters in development, which would double-fire the event.
+    const next = !signalsExpanded;
+    if (next && report) {
+      tracker.signalAction({
+        report_id: report.id,
+        report_title: report.title ?? null,
+        report_age_hours: computeReportAgeHours(report.created_at),
+        action_type: "expand_signal",
+        surface: "detail_pane",
+        is_bulk: false,
+        bulk_size: 1,
+      });
+    }
+    setSignalsExpanded(next);
+  }, [report, tracker, signalsExpanded]);
 
   useEffect(() => {
     if (!reportId) return;

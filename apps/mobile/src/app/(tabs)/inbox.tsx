@@ -43,19 +43,23 @@ export default function InboxScreen() {
   );
 
   const analytics = useAnalytics();
-  // Fire INBOX_VIEWED once per focus when the report list has settled.
-  const viewedFiredRef = useRef(false);
+  // Fire INBOX_VIEWED once per focus when the report list has settled. We
+  // bump a focus counter on every focus so the useEffect re-runs even when
+  // the data is already cached (no loading/filter/list change to trigger it
+  // on its own), then guard against double-fires within the same focus via
+  // a ref keyed on the focus-version we last fired for.
+  const [focusVersion, setFocusVersion] = useState(0);
   useFocusEffect(
     useCallback(() => {
-      return () => {
-        viewedFiredRef.current = false;
-      };
+      setFocusVersion((v) => v + 1);
     }, []),
   );
+  const viewedFiredForFocusRef = useRef<number | null>(null);
   useEffect(() => {
+    if (focusVersion === 0) return;
     if (isLoading) return;
-    if (viewedFiredRef.current) return;
-    viewedFiredRef.current = true;
+    if (viewedFiredForFocusRef.current === focusVersion) return;
+    viewedFiredForFocusRef.current = focusVersion;
     analytics.track(
       ANALYTICS_EVENTS.INBOX_VIEWED,
       buildInboxViewedProperties(reports, totalCount, {
@@ -67,6 +71,7 @@ export default function InboxScreen() {
     );
   }, [
     analytics,
+    focusVersion,
     isLoading,
     reports,
     totalCount,
