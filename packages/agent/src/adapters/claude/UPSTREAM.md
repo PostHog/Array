@@ -53,6 +53,7 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 | Auth methods | `claude-ai-login` + `console-login` | Returns empty `authMethods` | Auth handled externally |
 | Session fingerprinting | Implicit teardown on cwd/mcp change | Explicit `refreshSession()` | Caller-initiated is more predictable |
 | Shutdown on ACP close | Process exits | No standalone process | Agent is embedded in server |
+| Unsupported slash commands | Loops silently on early idle | Emits "Unsupported slash command" chunk, gated on `initializationResult().commands` so plugin/skill commands (e.g. `/skills-store`) whose echoes use a fresh uuid are not false-flagged | The SDK consumes some slash commands without producing output (e.g. `/plugin` in non-interactive mode); without this we hang. The known-commands gate avoids racing plugin/skill loads where idle can arrive before the transformed user-message echo. |
 
 ## Changes Ported in v0.30.0 Sync
 

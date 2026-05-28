@@ -68,6 +68,13 @@ export type Session = BaseSession & {
   emitRawSDKMessages: boolean | SDKMessageFilter[];
   /** Refreshed at session init and on MCP/skill changes. */
   contextBreakdownBaseline?: ContextBreakdownBaseline;
+  /**
+   * Slash command names (without leading slash) the SDK recognizes for this
+   * session — built-ins plus plugin/skill commands. Captured from the SDK's
+   * init response. Used to distinguish "command produced no output" from
+   * "command is genuinely unknown" when the session goes idle without an echo.
+   */
+  knownSlashCommands?: Set<string>;
 };
 
 export type ToolUseCache = {

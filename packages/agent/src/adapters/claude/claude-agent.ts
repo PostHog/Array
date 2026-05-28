@@ -43,6 +43,7 @@ import {
   type Query,
   query,
   type SDKUserMessage,
+  type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
 import { v7 as uuidv7 } from "uuid";
 import packageJson from "../../../package.json" with { type: "json" };
@@ -141,6 +142,17 @@ function readClaudeMdQuietly(cwd: string, logger: Logger): string | undefined {
     }
     return undefined;
   }
+}
+
+function collectKnownSlashCommands(
+  commands: SlashCommand[] | undefined,
+): Set<string> {
+  const names = new Set<string>();
+  if (!commands) return names;
+  for (const cmd of commands) {
+    if (cmd.name) names.add(cmd.name);
+  }
+  return names;
 }
 
 function sanitizeTitle(text: string): string {
@@ -500,7 +512,17 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 // and produced no output (e.g. /plugin in a non-interactive
                 // context). Without this branch we would loop forever waiting
                 // for an echo that never comes; surface a clear error instead.
-                if (commandMatch) {
+                //
+                // Only fire for commands the SDK does NOT recognize. Plugin
+                // and skill commands (e.g. /skills-store) produce a fresh
+                // user-message echo with a new uuid that our replay check
+                // can't match, so an early idle here is a race, not a real
+                // "unsupported" — fall through and let the loop continue.
+                const cmdName = commandMatch?.[1].slice(1);
+                const known =
+                  cmdName !== undefined &&
+                  this.session.knownSlashCommands?.has(cmdName) === true;
+                if (commandMatch && !known) {
                   const cmd = commandMatch[1];
                   this.logger.warn(
                     "Slash command produced no output; treating as unsupported",
@@ -520,6 +542,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 }
                 this.logger.debug("Skipping idle state before prompt replay", {
                   sessionId: params.sessionId,
+                  command: commandMatch?.[1],
+                  known,
                 });
                 break;
               }
@@ -1305,6 +1329,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             `Session ${forkSession ? "fork" : "resumption"} timed out for sessionId=${sessionId}`,
           );
         }
+        session.knownSlashCommands = collectKnownSlashCommands(
+          result.value.commands,
+        );
       } catch (err) {
         settingsManager.dispose();
         if (
@@ -1356,6 +1383,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             `Session initialization timed out for sessionId=${sessionId}`,
           );
         }
+        session.knownSlashCommands = collectKnownSlashCommands(
+          initResult.value.commands,
+        );
       } catch (err) {
         settingsManager.dispose();
         this.logger.error("Session initialization failed", {
