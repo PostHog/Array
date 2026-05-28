@@ -12,12 +12,18 @@ concurrency:
 jobs:
   publish-macos:
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
     permissions:
       id-token: write
       contents: write
     env:
       NODE_OPTIONS: "--max-old-space-size=8192"
       NODE_ENV: production
+      npm_config_arch: ${{ matrix.arch }}
+      npm_config_platform: darwin
       VITE_POSTHOG_API_KEY: ${{ secrets.VITE_POSTHOG_API_KEY }}
       VITE_POSTHOG_API_HOST: ${{ secrets.VITE_POSTHOG_API_HOST }}
       POSTHOG_SOURCEMAP_API_KEY: ${{ secrets.POSTHOG_SOURCEMAP_API_KEY }}
@@ -128,7 +134,7 @@ jobs:
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: pnpm --filter code run publish
+        run: pnpm --filter code run publish -- --arch=${{ matrix.arch }}
 
   publish-windows:
     runs-on: windows-latest

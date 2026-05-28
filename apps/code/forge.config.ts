@@ -225,8 +225,16 @@ const config: ForgeConfig = {
     prePackage: async () => {
       if (process.platform !== "darwin") return;
 
-      // Build native modules for DMG maker on Node.js 22
+      // Build native modules for DMG maker on Node.js 22. These run on the
+      // build host (DMG creation is host-side), so we force npm to target the
+      // host arch even when the rest of the build is cross-targeting (e.g.
+      // building darwin-x64 on an arm64 runner).
       const modules = ["macos-alias", "fs-xattr"];
+      const hostBuildEnv = {
+        ...process.env,
+        npm_config_arch: process.arch,
+        npm_config_platform: process.platform,
+      };
 
       for (const mod of modules) {
         const candidates = [
@@ -237,7 +245,11 @@ const config: ForgeConfig = {
 
         if (modulePath) {
           console.log(`Building native module: ${mod} (${modulePath})`);
-          execSync("npm install", { cwd: modulePath, stdio: "inherit" });
+          execSync("npm install", {
+            cwd: modulePath,
+            stdio: "inherit",
+            env: hostBuildEnv,
+          });
         }
       }
     },
@@ -245,18 +257,26 @@ const config: ForgeConfig = {
       electronChild = child;
     },
     packageAfterCopy: async (_forgeConfig, buildPath) => {
+      // Resolve the target arch (cross-builds set npm_config_arch); fall back
+      // to the host so non-cross builds keep their existing behavior.
+      const targetArch = process.env.npm_config_arch ?? process.arch;
+
       copyNativeDependency("node-pty", buildPath);
       copyNativeDependency("node-addon-api", buildPath);
       copyNativeDependency("@parcel/watcher", buildPath);
 
       // Platform-specific native dependencies
       if (process.platform === "darwin") {
-        copyNativeDependency("@parcel/watcher-darwin-arm64", buildPath);
+        const watcherPkg =
+          targetArch === "x64"
+            ? "@parcel/watcher-darwin-x64"
+            : "@parcel/watcher-darwin-arm64";
+        copyNativeDependency(watcherPkg, buildPath);
         copyNativeDependency("file-icon", buildPath);
         copyNativeDependency("p-map", buildPath);
       } else if (process.platform === "win32") {
         const watcherPkg =
-          process.arch === "arm64"
+          targetArch === "arm64"
             ? "@parcel/watcher-win32-arm64"
             : "@parcel/watcher-win32-x64";
         copyNativeDependency(watcherPkg, buildPath);

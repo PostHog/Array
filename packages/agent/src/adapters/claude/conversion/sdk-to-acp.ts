@@ -727,6 +727,9 @@ export async function handleSystemMessage(
     }
     case "memory_recall": {
       const isSynthesis = message.mode === "synthesize";
+      // Skip empty recalls — they're the dominant source of UI clutter on
+      // memory-heavy turns and carry no signal (no paths, no content).
+      if (!isSynthesis && message.memories.length === 0) break;
       const locations = isSynthesis
         ? []
         : message.memories.map((m) => ({ path: m.path }));
@@ -928,6 +931,18 @@ function hasLocalCommandStderr(content: AnthropicMessageContent): boolean {
   );
 }
 
+// SDK-persisted slash command invocations always lead with `<command-name>`.
+// Requiring that anchor keeps user-typed prompts that happen to contain a
+// literal `<local-command-stdout>` tag from being scrubbed on session reload.
+function isSdkLocalCommandMessage(content: AnthropicMessageContent): boolean {
+  return (
+    typeof content === "string" &&
+    content.includes("<command-name>") &&
+    (content.includes("<local-command-stdout>") ||
+      content.includes("<local-command-stderr>"))
+  );
+}
+
 // The Claude SDK persists local slash command invocations (e.g. `/model`) and
 // their output as user messages wrapping the payload in these XML-like markers
 // that the CLI uses for its own display. The live prompt loop must strip them
@@ -977,8 +992,7 @@ function shouldSkipUserAssistantMessage(
   message: AnthropicMessageWithContent,
 ): boolean {
   return (
-    hasLocalCommandStdout(message.message.content) ||
-    hasLocalCommandStderr(message.message.content) ||
+    isSdkLocalCommandMessage(message.message.content) ||
     isLoginRequiredMessage(message)
   );
 }

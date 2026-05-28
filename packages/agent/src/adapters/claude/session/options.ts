@@ -118,6 +118,13 @@ function buildEnvironment(): Record<string, string> {
     ? `${existingCustomHeaders}\n${bedrockFallbackHeader}`
     : bedrockFallbackHeader;
 
+  // SDK 0.3.142 made MCP servers connect in the background by default. That
+  // default is what we want: a slow or unreachable user MCP server (PostHog
+  // MCP, custom stdio servers) would otherwise stall turn 1 by up to ~5s per
+  // server. We honor an explicit override from the caller's environment for
+  // sessions that genuinely need MCP tools available on turn 1.
+  const mcpNonblocking = process.env.MCP_CONNECTION_NONBLOCKING;
+
   return {
     ...process.env,
     ELECTRON_RUN_AS_NODE: "1",
@@ -126,11 +133,9 @@ function buildEnvironment(): Record<string, string> {
     ENABLE_TOOL_SEARCH: "auto:0",
     // Enable idle state as end-of-turn signal (required for SDK 0.2.114+)
     CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
-    // SDK 0.3.142 made MCP servers connect in the background by default. The
-    // agent may start its first turn before our MCP servers are ready, which
-    // breaks workflows that call MCP tools on turn 1. Restore blocking connect
-    // so the SDK waits for MCP connect (up to ~5s) before turn 1.
-    MCP_CONNECTION_NONBLOCKING: "0",
+    ...(mcpNonblocking !== undefined && {
+      MCP_CONNECTION_NONBLOCKING: mcpNonblocking,
+    }),
     // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
     ANTHROPIC_CUSTOM_HEADERS: customHeaders,
   };

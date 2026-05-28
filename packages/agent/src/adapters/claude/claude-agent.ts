@@ -85,6 +85,7 @@ import {
   handleUserAssistantMessage,
 } from "./conversion/sdk-to-acp";
 import {
+  rehydrateTaskState,
   type TaskState,
   taskStateToPlanEntries,
 } from "./conversion/task-state";
@@ -185,10 +186,10 @@ function shouldEmitRawMessage(
 
 /**
  * Restrict gateway model options to the user's `availableModels` allowlist
- * from settings.json. Display info and capability flags are copied from the
- * closest gateway match so the UI still renders sensible names. The Default
- * option (gateway's first entry, also `currentModelId` fallback) is always
- * preserved per the Claude Code docs.
+ * from settings.json. Unknown allowlist entries (e.g. retired model IDs like
+ * `claude-opus-4-5` left in stale settings) are dropped: passing them through
+ * would make setModel reject the resolved id and break session init. If every
+ * entry is unknown we fall back to the gateway list as a safety net.
  */
 function applyAvailableModelsAllowlist(
   modelOptions: {
@@ -207,13 +208,8 @@ function applyAvailableModelsAllowlist(
     const match = modelOptions.options.find((o) => o.value === trimmed);
     if (match) {
       filtered.push(match);
-    } else {
-      // Allowlist entry isn't in the gateway list (custom or preview model).
-      // Pass it through so setModel can still try it — the UI just shows the
-      // raw ID rather than a friendly name.
-      filtered.push({ value: trimmed, name: trimmed });
+      seen.add(trimmed);
     }
-    seen.add(trimmed);
   }
 
   if (filtered.length === 0) return modelOptions;
@@ -367,6 +363,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         resume: params.sessionId,
       },
     );
+
+    await this.rehydrateTaskStateFromJsonl(params.sessionId);
 
     return response;
   }
@@ -1799,6 +1797,35 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       ...this.session.contextBreakdownBaseline,
       [key]: tokens,
     };
+  }
+
+  /**
+   * Rebuild the in-memory taskState from JSONL and push a plan update so the
+   * client's plan panel reflects pre-resume tasks. `loadSession` already covers
+   * this via the full `replaySessionHistory` notification stream; resume
+   * deliberately stays quiet (the client keeps its own message history) so we
+   * walk the transcript here for state only.
+   */
+  private async rehydrateTaskStateFromJsonl(sessionId: string): Promise<void> {
+    try {
+      const messages = await getSessionMessages(sessionId, {
+        dir: this.session.cwd,
+      });
+      rehydrateTaskState(messages, this.session.taskState);
+      if (this.session.taskState.size === 0) return;
+      await this.client.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "plan",
+          entries: taskStateToPlanEntries(this.session.taskState),
+        },
+      });
+    } catch (err) {
+      this.logger.warn("Failed to rehydrate task state", {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   private async replaySessionHistory(sessionId: string): Promise<void> {

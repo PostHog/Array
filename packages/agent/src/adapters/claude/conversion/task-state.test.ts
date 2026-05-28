@@ -1,11 +1,33 @@
+import type { SessionMessage } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vitest";
 import {
   applyTaskCreate,
   applyTaskUpdate,
   parseTaskCreateOutput,
+  rehydrateTaskState,
   type TaskState,
   taskStateToPlanEntries,
 } from "./task-state";
+
+function assistantMsg(blocks: unknown[]): SessionMessage {
+  return {
+    type: "assistant",
+    uuid: "u",
+    session_id: "s",
+    parent_tool_use_id: null,
+    message: { role: "assistant", content: blocks },
+  } as SessionMessage;
+}
+
+function userMsg(blocks: unknown[]): SessionMessage {
+  return {
+    type: "user",
+    uuid: "u",
+    session_id: "s",
+    parent_tool_use_id: null,
+    message: { role: "user", content: blocks },
+  } as SessionMessage;
+}
 
 describe("parseTaskCreateOutput", () => {
   it("parses a JSON string with task.id", () => {
@@ -127,6 +149,163 @@ describe("applyTaskUpdate", () => {
   it("is a no-op when input has no taskId", () => {
     const state: TaskState = new Map();
     applyTaskUpdate(state, undefined);
+    expect(state.size).toBe(0);
+  });
+});
+
+describe("rehydrateTaskState", () => {
+  it("rebuilds the map from TaskCreate + TaskUpdate transcripts", () => {
+    const state: TaskState = new Map();
+    rehydrateTaskState(
+      [
+        assistantMsg([
+          {
+            type: "tool_use",
+            id: "u1",
+            name: "TaskCreate",
+            input: { subject: "First", activeForm: "Doing first" },
+          },
+        ]),
+        userMsg([
+          {
+            type: "tool_result",
+            tool_use_id: "u1",
+            content: '{"task":{"id":"t1","subject":"First"}}',
+          },
+        ]),
+        assistantMsg([
+          {
+            type: "tool_use",
+            id: "u2",
+            name: "TaskUpdate",
+            input: { taskId: "t1", status: "in_progress" },
+          },
+        ]),
+        userMsg([
+          {
+            type: "tool_result",
+            tool_use_id: "u2",
+            content: "ok",
+          },
+        ]),
+      ],
+      state,
+    );
+    expect(state.get("t1")).toEqual({
+      subject: "First",
+      status: "in_progress",
+      activeForm: "Doing first",
+      description: undefined,
+    });
+  });
+
+  it("ignores tool_result blocks for non-Task tools", () => {
+    const state: TaskState = new Map();
+    rehydrateTaskState(
+      [
+        assistantMsg([
+          { type: "tool_use", id: "r1", name: "Read", input: { file: "a" } },
+        ]),
+        userMsg([
+          { type: "tool_result", tool_use_id: "r1", content: "file contents" },
+        ]),
+      ],
+      state,
+    );
+    expect(state.size).toBe(0);
+  });
+
+  it("skips errored Task tool results", () => {
+    const state: TaskState = new Map();
+    rehydrateTaskState(
+      [
+        assistantMsg([
+          {
+            type: "tool_use",
+            id: "u1",
+            name: "TaskCreate",
+            input: { subject: "x" },
+          },
+        ]),
+        userMsg([
+          {
+            type: "tool_result",
+            tool_use_id: "u1",
+            content: '{"task":{"id":"t1","subject":"x"}}',
+            is_error: true,
+          },
+        ]),
+      ],
+      state,
+    );
+    expect(state.size).toBe(0);
+  });
+
+  it("honors deletes from TaskUpdate", () => {
+    const state: TaskState = new Map();
+    rehydrateTaskState(
+      [
+        assistantMsg([
+          {
+            type: "tool_use",
+            id: "u1",
+            name: "TaskCreate",
+            input: { subject: "x" },
+          },
+        ]),
+        userMsg([
+          {
+            type: "tool_result",
+            tool_use_id: "u1",
+            content: '{"task":{"id":"t1","subject":"x"}}',
+          },
+        ]),
+        assistantMsg([
+          {
+            type: "tool_use",
+            id: "u2",
+            name: "TaskUpdate",
+            input: { taskId: "t1", status: "deleted" },
+          },
+        ]),
+        userMsg([{ type: "tool_result", tool_use_id: "u2", content: "ok" }]),
+      ],
+      state,
+    );
+    expect(state.has("t1")).toBe(false);
+  });
+
+  it("ignores tool_result without a matching tool_use", () => {
+    const state: TaskState = new Map();
+    rehydrateTaskState(
+      [
+        userMsg([
+          {
+            type: "tool_result",
+            tool_use_id: "orphan",
+            content: '{"task":{"id":"t9","subject":"x"}}',
+          },
+        ]),
+      ],
+      state,
+    );
+    expect(state.size).toBe(0);
+  });
+
+  it("ignores messages with non-array content", () => {
+    const state: TaskState = new Map();
+    rehydrateTaskState(
+      [
+        {
+          type: "user",
+          uuid: "u",
+          session_id: "s",
+          parent_tool_use_id: null,
+          message: { role: "user", content: "plain string" },
+        } as SessionMessage,
+      ],
+      state,
+    );
     expect(state.size).toBe(0);
   });
 });
