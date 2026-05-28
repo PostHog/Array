@@ -102,9 +102,7 @@ export function useImagePanAndZoom(
     (event) => {
       if (event.button !== 0) return;
       if (stateRef.current.scale <= 1) return;
-      try {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } catch {}
+      event.currentTarget.setPointerCapture(event.pointerId);
       dragRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
@@ -135,11 +133,9 @@ export function useImagePanAndZoom(
     (event) => {
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
-      try {
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-          event.currentTarget.releasePointerCapture(event.pointerId);
-        }
-      } catch {}
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
       dragRef.current = null;
     },
     [],
