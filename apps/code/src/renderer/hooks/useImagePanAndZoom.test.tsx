@@ -1,4 +1,5 @@
 import { act, fireEvent, render } from "@testing-library/react";
+import type { MouseEvent, PointerEvent } from "react";
 import { describe, expect, it } from "vitest";
 import { useImagePanAndZoom } from "./useImagePanAndZoom";
 
@@ -15,17 +16,34 @@ function Harness({ onRender, options }: HarnessProps) {
   return (
     <div
       data-testid="container"
-      role="img"
-      aria-label="test container"
       ref={result.containerRef}
-      onPointerDown={result.onPointerDown}
-      onPointerMove={result.onPointerMove}
-      onPointerUp={result.onPointerUp}
-      onPointerCancel={result.onPointerCancel}
-      onDoubleClick={result.onDoubleClick}
       style={{ width: 200, height: 200 }}
     />
   );
+}
+
+interface PointerEventInit {
+  pointerId: number;
+  clientX?: number;
+  clientY?: number;
+  button?: number;
+}
+
+function makePointerEvent(
+  init: PointerEventInit,
+  target: HTMLElement,
+): PointerEvent<HTMLDivElement> {
+  return {
+    pointerId: init.pointerId,
+    clientX: init.clientX ?? 0,
+    clientY: init.clientY ?? 0,
+    button: init.button ?? 0,
+    currentTarget: target,
+  } as unknown as PointerEvent<HTMLDivElement>;
+}
+
+function makeMouseEvent(target: HTMLElement): MouseEvent<HTMLDivElement> {
+  return { currentTarget: target } as unknown as MouseEvent<HTMLDivElement>;
 }
 
 function setupHarness(options?: Parameters<typeof useImagePanAndZoom>[0]) {
@@ -51,7 +69,6 @@ function setupHarness(options?: Parameters<typeof useImagePanAndZoom>[0]) {
       height: 200,
       toJSON: () => ({}),
     }) as DOMRect;
-  // jsdom may not implement pointer capture; stub to keep handlers happy
   container.setPointerCapture = () => {};
   container.releasePointerCapture = () => {};
   container.hasPointerCapture = () => true;
@@ -203,7 +220,7 @@ describe("useImagePanAndZoom", () => {
     });
     expect(harness.current.isZoomed).toBe(true);
     act(() => {
-      fireEvent.doubleClick(harness.container);
+      harness.current.onDoubleClick(makeMouseEvent(harness.container));
     });
     expect(parseTransform(harness.current.transform)).toEqual({
       tx: 0,
@@ -236,18 +253,21 @@ describe("useImagePanAndZoom", () => {
   it("ignores pointer drag when not zoomed", () => {
     const harness = setupHarness();
     act(() => {
-      fireEvent.pointerDown(harness.container, {
-        pointerId: 1,
-        button: 0,
-        clientX: 50,
-        clientY: 50,
-      });
-      fireEvent.pointerMove(harness.container, {
-        pointerId: 1,
-        clientX: 120,
-        clientY: 90,
-      });
-      fireEvent.pointerUp(harness.container, { pointerId: 1 });
+      harness.current.onPointerDown(
+        makePointerEvent(
+          { pointerId: 1, clientX: 50, clientY: 50 },
+          harness.container,
+        ),
+      );
+      harness.current.onPointerMove(
+        makePointerEvent(
+          { pointerId: 1, clientX: 120, clientY: 90 },
+          harness.container,
+        ),
+      );
+      harness.current.onPointerUp(
+        makePointerEvent({ pointerId: 1 }, harness.container),
+      );
     });
     expect(parseTransform(harness.current.transform)).toEqual({
       tx: 0,
@@ -268,29 +288,33 @@ describe("useImagePanAndZoom", () => {
     });
     const before = parseTransform(harness.current.transform);
     act(() => {
-      fireEvent.pointerDown(harness.container, {
-        pointerId: 1,
-        button: 0,
-        clientX: 50,
-        clientY: 50,
-      });
-      fireEvent.pointerMove(harness.container, {
-        pointerId: 1,
-        clientX: 80,
-        clientY: 30,
-      });
+      harness.current.onPointerDown(
+        makePointerEvent(
+          { pointerId: 1, clientX: 50, clientY: 50 },
+          harness.container,
+        ),
+      );
+      harness.current.onPointerMove(
+        makePointerEvent(
+          { pointerId: 1, clientX: 80, clientY: 30 },
+          harness.container,
+        ),
+      );
     });
     const dragging = parseTransform(harness.current.transform);
     expect(dragging.tx).toBeCloseTo(before.tx + 30);
     expect(dragging.ty).toBeCloseTo(before.ty - 20);
     expect(dragging.scale).toBe(before.scale);
     act(() => {
-      fireEvent.pointerUp(harness.container, { pointerId: 1 });
-      fireEvent.pointerMove(harness.container, {
-        pointerId: 1,
-        clientX: 999,
-        clientY: 999,
-      });
+      harness.current.onPointerUp(
+        makePointerEvent({ pointerId: 1 }, harness.container),
+      );
+      harness.current.onPointerMove(
+        makePointerEvent(
+          { pointerId: 1, clientX: 999, clientY: 999 },
+          harness.container,
+        ),
+      );
     });
     expect(parseTransform(harness.current.transform)).toEqual(dragging);
   });
