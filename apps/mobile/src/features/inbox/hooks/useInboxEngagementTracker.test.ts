@@ -192,6 +192,44 @@ describe("useInboxEngagementTracker", () => {
     });
   });
 
+  it("does not re-fire OPENED/CLOSED when rank/listSize/report change while the same report stays open", () => {
+    // Regression for a background-refetch spike: rank, listSize, and the
+    // report shape are inputs to OPENED but only `reportId` should gate the
+    // open/close lifecycle.
+    const track = vi.fn();
+    const report = makeReport();
+    const hook = renderTracker({
+      analytics: { track },
+      report,
+      rank: 2,
+      listSize: 5,
+      openMethod: "click",
+      previousReportId: null,
+    });
+    const openedBefore = track.mock.calls.filter(
+      ([name]) => name === ANALYTICS_EVENTS.INBOX_REPORT_OPENED,
+    ).length;
+    const closedBefore = track.mock.calls.filter(
+      ([name]) => name === ANALYTICS_EVENTS.INBOX_REPORT_CLOSED,
+    ).length;
+    hook.rerender({
+      analytics: { track },
+      report: makeReport({ priority: "P2", actionability: "not_actionable" }),
+      rank: 4,
+      listSize: 6,
+      openMethod: "click",
+      previousReportId: null,
+    });
+    const openedAfter = track.mock.calls.filter(
+      ([name]) => name === ANALYTICS_EVENTS.INBOX_REPORT_OPENED,
+    ).length;
+    const closedAfter = track.mock.calls.filter(
+      ([name]) => name === ANALYTICS_EVENTS.INBOX_REPORT_CLOSED,
+    ).length;
+    expect(openedAfter).toBe(openedBefore);
+    expect(closedAfter).toBe(closedBefore);
+  });
+
   it("signalAction lets explicit overrides win for a different report", () => {
     const track = vi.fn();
     const hook = renderTracker({

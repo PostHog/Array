@@ -60,6 +60,21 @@ export function useInboxEngagementTracker(
   const analyticsRef = useRef(analytics);
   analyticsRef.current = analytics;
 
+  // Snapshot the inputs through refs so the OPENED/CLOSED lifecycle effect
+  // can read them without being a dep — a background list refetch (rank /
+  // listSize / report shape changing while the user is reading) would
+  // otherwise fire spurious CLOSED+OPENED pairs.
+  const reportRef = useRef(report);
+  reportRef.current = report;
+  const rankRef = useRef(rank);
+  rankRef.current = rank;
+  const listSizeRef = useRef(listSize);
+  listSizeRef.current = listSize;
+  const openMethodRef = useRef(openMethod);
+  openMethodRef.current = openMethod;
+  const previousReportIdRef = useRef(previousReportId);
+  previousReportIdRef.current = previousReportId;
+
   const fireClose = useCallback((closeMethod: InboxReportCloseMethod) => {
     const info = openInfoRef.current;
     if (!info) return;
@@ -79,17 +94,19 @@ export function useInboxEngagementTracker(
   const reportId = report?.id ?? null;
 
   useEffect(() => {
-    if (!reportId || !report) return;
+    if (!reportId) return;
+    const snapshotReport = reportRef.current;
+    if (!snapshotReport) return;
 
     const info: OpenInfo = {
       reportId,
-      reportTitle: report.title ?? null,
-      reportCreatedAt: report.created_at ?? null,
-      reportPriority: report.priority ?? null,
-      reportActionability: report.actionability ?? null,
+      reportTitle: snapshotReport.title ?? null,
+      reportCreatedAt: snapshotReport.created_at ?? null,
+      reportPriority: snapshotReport.priority ?? null,
+      reportActionability: snapshotReport.actionability ?? null,
       openedAt: Date.now(),
-      rank,
-      listSize,
+      rank: rankRef.current,
+      listSize: listSizeRef.current,
       hasScrolled: false,
     };
     openInfoRef.current = info;
@@ -98,28 +115,20 @@ export function useInboxEngagementTracker(
       report_id: info.reportId,
       report_title: info.reportTitle,
       report_age_hours: computeReportAgeHours(info.reportCreatedAt),
-      status: report.status ?? null,
+      status: snapshotReport.status ?? null,
       priority: info.reportPriority,
       actionability: info.reportActionability,
-      source_products: report.source_products ?? [],
+      source_products: snapshotReport.source_products ?? [],
       rank: info.rank,
       list_size: info.listSize,
-      open_method: openMethod,
-      previous_report_id: previousReportId,
+      open_method: openMethodRef.current,
+      previous_report_id: previousReportIdRef.current,
     });
 
     return () => {
       fireClose("deselected");
     };
-  }, [
-    reportId,
-    report,
-    rank,
-    listSize,
-    openMethod,
-    previousReportId,
-    fireClose,
-  ]);
+  }, [reportId, fireClose]);
 
   const signalScroll = useCallback(() => {
     const info = openInfoRef.current;
