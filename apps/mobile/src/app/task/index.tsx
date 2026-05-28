@@ -62,6 +62,10 @@ import { Pill } from "@/features/tasks/composer/Pill";
 import { RepositoryPickerInline } from "@/features/tasks/composer/RepositoryPickerInline";
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
 import { useUserIntegrations } from "@/features/tasks/hooks/useUserIntegrations";
+import {
+  generatePendingTaskKey,
+  pendingTaskPromptStoreApi,
+} from "@/features/tasks/stores/pendingTaskPromptStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type {
   CreateTaskOptions,
@@ -255,8 +259,27 @@ export default function NewTaskScreen() {
 
     setCreating(true);
 
+    // Echo the prompt into the chat thread the moment the user taps send.
+    // The key is transient until `createTask` returns the real task id, at
+    // which point we `move` it so the detail screen can pick it up.
+    const pendingKey = generatePendingTaskKey();
+    const trimmedPrompt = prompt.trim();
+    const echoAttachments = attachments.map((a) => ({
+      kind: a.kind,
+      uri: a.uri,
+      fileName: a.fileName,
+      mimeType: a.mimeType,
+    }));
+    pendingTaskPromptStoreApi.set(pendingKey, {
+      promptText: trimmedPrompt,
+      attachments: echoAttachments.length > 0 ? echoAttachments : undefined,
+    });
+
+    // Tracks where the optimistic echo currently lives so the catch block
+    // can clear the correct key regardless of how far the flow got.
+    let currentPendingKey = pendingKey;
+
     try {
-      const trimmedPrompt = prompt.trim();
       // The task description is plain text (it shows up as the task title and
       // in metadata). Attachments only enter the agent prompt via the cloud
       // payload below.
@@ -284,6 +307,9 @@ export default function NewTaskScreen() {
           : {}),
       } as CreateTaskOptions);
 
+      pendingTaskPromptStoreApi.move(pendingKey, task.id);
+      currentPendingKey = task.id;
+
       const pendingUserMessage =
         attachments.length > 0
           ? serializeCloudPrompt(
@@ -310,6 +336,7 @@ export default function NewTaskScreen() {
       router.replace(`/task/${task.id}`);
     } catch (creationError) {
       log.error("Failed to create task", creationError);
+      pendingTaskPromptStoreApi.clear(currentPendingKey);
     } finally {
       setCreating(false);
     }

@@ -41,6 +41,11 @@ interface PermissionResponseArgs {
   displayText: string;
 }
 
+interface OptimisticUserMessage {
+  text: string;
+  attachments?: SessionNotificationAttachment[];
+}
+
 interface TaskSessionViewProps {
   events: SessionEvent[];
   pendingPermissions?: Record<string, CloudPendingPermissionRequest>;
@@ -52,6 +57,11 @@ interface TaskSessionViewProps {
   onOpenTask?: (taskId: string) => void;
   onSendPermissionResponse?: (args: PermissionResponseArgs) => void;
   contentContainerStyle?: object;
+  // Renders a user message at the bottom of the thread before the SSE echo
+  // arrives — for the gap between submit and the live session catching up.
+  // Suppressed automatically once a real user_message_chunk with matching
+  // text appears in `events`.
+  optimisticUserMessage?: OptimisticUserMessage;
 }
 
 interface ToolData {
@@ -792,6 +802,7 @@ export function TaskSessionView({
   onOpenTask,
   onSendPermissionResponse,
   contentContainerStyle,
+  optimisticUserMessage,
 }: TaskSessionViewProps) {
   const processorRef = useRef(createProcessorState());
   const prevEventsRef = useRef(events);
@@ -838,9 +849,30 @@ export function TaskSessionView({
   }
   prevAgentActive.current = agentActive;
 
+  // Append the optimistic user echo (if any) as the newest message, unless a
+  // real `user` message with matching text has already arrived via SSE. The
+  // dedup keeps the transition seamless when the canonical copy lands.
+  const messagesWithOptimistic = useMemo(() => {
+    if (!optimisticUserMessage) return messages;
+    const alreadyEchoed = messages.some(
+      (m) => m.type === "user" && m.content === optimisticUserMessage.text,
+    );
+    if (alreadyEchoed) return messages;
+    const optimistic: ParsedMessage = {
+      id: "optimistic-user",
+      type: "user",
+      content: optimisticUserMessage.text,
+      attachments: optimisticUserMessage.attachments,
+    };
+    return [...messages, optimistic];
+  }, [messages, optimisticUserMessage]);
+
   // Inverted FlatList renders data[0] at the visual bottom.
   // Reverse so newest messages are at index 0 = bottom.
-  const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
+  const reversedMessages = useMemo(
+    () => [...messagesWithOptimistic].reverse(),
+    [messagesWithOptimistic],
+  );
   const themeColors = useThemeColors();
   const flatListRef = useRef<FlatList>(null);
   const hasPendingQuestion = useMemo(

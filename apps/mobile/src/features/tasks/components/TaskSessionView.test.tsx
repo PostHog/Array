@@ -51,7 +51,58 @@ vi.mock("./PlanApprovalCard", () => ({
     createElement("PlanApprovalCard", props),
 }));
 
+function renderTaskSessionView(
+  props: Parameters<typeof TaskSessionView>[0],
+): ReturnType<typeof create> {
+  let renderer!: ReturnType<typeof create>;
+  act(() => {
+    renderer = create(createElement(TaskSessionView, props));
+  });
+  return renderer;
+}
+
+function findHumanMessages(renderer: ReturnType<typeof create>) {
+  // vi.mock'd `HumanMessage` is rendered as the literal string `"HumanMessage"`
+  // (an intrinsic), so node.type is a string at runtime even though the type
+  // says ElementType.
+  return renderer.root.findAll(
+    (node) => (node.type as unknown as string) === "HumanMessage",
+  );
+}
+
 describe("TaskSessionView", () => {
+  it("renders the optimistic user message when no SSE echo has arrived", () => {
+    const renderer = renderTaskSessionView({
+      events: [],
+      optimisticUserMessage: { text: "Ship it" },
+    });
+
+    const humans = findHumanMessages(renderer);
+    expect(humans).toHaveLength(1);
+    expect(humans[0].props.content).toBe("Ship it");
+  });
+
+  it("suppresses the optimistic echo once the real user message lands", () => {
+    const renderer = renderTaskSessionView({
+      events: [
+        {
+          type: "session_update" as const,
+          ts: 1,
+          notification: {
+            update: {
+              sessionUpdate: "user_message_chunk",
+              content: { type: "text", text: "Ship it" },
+            },
+          },
+        },
+      ],
+      optimisticUserMessage: { text: "Ship it" },
+    });
+
+    const humans = findHumanMessages(renderer);
+    expect(humans).toHaveLength(1);
+  });
+
   it("keeps question tools pending after the run goes idle", () => {
     const events = [
       {

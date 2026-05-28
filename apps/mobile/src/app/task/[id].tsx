@@ -31,6 +31,10 @@ import {
 } from "@/features/tasks/composer/options";
 import { TaskChatComposer } from "@/features/tasks/composer/TaskChatComposer";
 import { taskKeys } from "@/features/tasks/hooks/useTasks";
+import {
+  pendingTaskPromptStoreApi,
+  usePendingTaskPrompt,
+} from "@/features/tasks/stores/pendingTaskPromptStore";
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type { Task } from "@/features/tasks/types";
@@ -90,6 +94,27 @@ export default function TaskDetailScreen() {
   }, [taskId, setFocusedTaskId]);
 
   const session = taskId ? getSessionForTask(taskId) : undefined;
+
+  // Optimistic echo set by the new-task screen (or the terminal-resume path
+  // below) so the user's prompt appears in the thread immediately, before
+  // the live session catches up.
+  const optimisticPrompt = usePendingTaskPrompt(taskId);
+
+  // Clear the echo once the canonical user_message_chunk with matching text
+  // arrives via SSE — `TaskSessionView` also dedups visually, but clearing
+  // the store frees it for the next submit.
+  useEffect(() => {
+    if (!taskId || !optimisticPrompt) return;
+    const matched = session?.events.some(
+      (e) =>
+        e.type === "session_update" &&
+        e.notification?.update?.sessionUpdate === "user_message_chunk" &&
+        e.notification.update.content?.text === optimisticPrompt.promptText,
+    );
+    if (matched) {
+      pendingTaskPromptStoreApi.clear(taskId);
+    }
+  }, [taskId, optimisticPrompt, session?.events]);
 
   // Per-task composer pill values. Persisted in taskStore so reopening the
   // task keeps the user's choices; defaults fall back to the same constants
@@ -216,6 +241,18 @@ export default function TaskDetailScreen() {
   const handleSendAfterTerminal = useCallback(
     async (text: string, attachments: PendingAttachment[]) => {
       if (!taskId || !task) return;
+      // Optimistically echo into the chat before tearing down the old session
+      // and waiting for the resume run's SSE stream to come up.
+      const echoAttachments = attachments.map((a) => ({
+        kind: a.kind,
+        uri: a.uri,
+        fileName: a.fileName,
+        mimeType: a.mimeType,
+      }));
+      pendingTaskPromptStoreApi.set(taskId, {
+        promptText: text,
+        attachments: echoAttachments.length > 0 ? echoAttachments : undefined,
+      });
       try {
         setRetrying(true);
         disconnectFromTask(taskId);
@@ -241,6 +278,7 @@ export default function TaskDetailScreen() {
         updateTaskInCache(updatedTask);
       } catch (err) {
         log.error("Failed to send after terminal", err);
+        pendingTaskPromptStoreApi.clear(taskId);
         setRetrying(false);
         Alert.alert(
           "Failed to send",
@@ -388,7 +426,10 @@ export default function TaskDetailScreen() {
     !!session &&
     session.status === "connecting" &&
     session.events.length === 0;
-  const showLoading = loading || isHistoryLoading;
+  // Suppress the full-screen overlay when we have an optimistic prompt to
+  // show — the user just submitted and seeing their own text + a connecting
+  // indicator is friendlier than a blank spinner.
+  const showLoading = (loading || isHistoryLoading) && !optimisticPrompt;
   const showAutomationContext =
     fromAutomation === "1" || task?.origin_product === "automation";
   const automationContextLabel =
@@ -471,6 +512,14 @@ export default function TaskDetailScreen() {
           }
           onOpenTask={handleOpenTask}
           onSendPermissionResponse={handleSendPermissionResponse}
+          optimisticUserMessage={
+            optimisticPrompt
+              ? {
+                  text: optimisticPrompt.promptText,
+                  attachments: optimisticPrompt.attachments,
+                }
+              : undefined
+          }
           contentContainerStyle={{
             paddingTop: 8,
             paddingBottom:
