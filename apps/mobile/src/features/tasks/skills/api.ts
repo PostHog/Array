@@ -1,5 +1,4 @@
-import { fetch } from "expo/fetch";
-import { getBaseUrl, getHeaders, getProjectId } from "@/lib/api";
+import { authedFetch, getBaseUrl, getProjectId } from "@/lib/api";
 import type { SkillStoreListEntry, SkillStoreSkill } from "./types";
 
 function skillStoreBaseUrl(): string {
@@ -23,9 +22,7 @@ async function readJsonOrThrow<T>(
 }
 
 export async function getSkillStoreSkills(): Promise<SkillStoreListEntry[]> {
-  const response = await fetch(`${skillStoreBaseUrl()}/`, {
-    headers: getHeaders(),
-  });
+  const response = await authedFetch(`${skillStoreBaseUrl()}/`);
 
   const data = await readJsonOrThrow<
     SkillStoreListEntry[] | { results?: SkillStoreListEntry[] }
@@ -37,11 +34,8 @@ export async function getSkillStoreSkills(): Promise<SkillStoreListEntry[]> {
 export async function getSkillStoreSkill(
   skillName: string,
 ): Promise<SkillStoreSkill> {
-  const response = await fetch(
+  const response = await authedFetch(
     `${skillStoreBaseUrl()}/name/${encodeURIComponent(skillName)}/`,
-    {
-      headers: getHeaders(),
-    },
   );
 
   return readJsonOrThrow<SkillStoreSkill>(response, "Failed to fetch skill");

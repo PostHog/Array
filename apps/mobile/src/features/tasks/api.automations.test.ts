@@ -10,11 +10,16 @@ vi.mock("expo/fetch", () => ({
 
 vi.mock("@/lib/api", () => ({
   getBaseUrl: () => "https://app.posthog.test",
-  getHeaders: () => ({
-    Authorization: "Bearer token",
-    "Content-Type": "application/json",
-  }),
   getProjectId: () => 42,
+  authedFetch: (url: string, init?: RequestInit) =>
+    mockFetch(url, {
+      ...init,
+      headers: {
+        Authorization: "Bearer token",
+        "Content-Type": "application/json",
+        ...((init?.headers as Record<string, string> | undefined) ?? {}),
+      },
+    }),
 }));
 
 import {
