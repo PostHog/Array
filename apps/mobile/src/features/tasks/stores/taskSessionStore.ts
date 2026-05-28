@@ -152,6 +152,7 @@ interface BatchAnalysis {
   hasTurnEnd: boolean;
   hasAwaitingUserInput: boolean;
   hasTurnCompleted: boolean;
+  hasTurnFailed: boolean;
   hasVisibleAgentOutput: boolean;
   externalUserMessageCount: number;
   agentMessageFinalized: boolean;
@@ -164,6 +165,7 @@ function analyzeEntries(
   let hasTurnEnd = false;
   let hasAwaitingUserInput = false;
   let hasTurnCompleted = false;
+  let hasTurnFailed = false;
   let hasVisibleAgentOutput = false;
   let externalUserMessageCount = 0;
   let agentMessageFinalized = false;
@@ -180,6 +182,9 @@ function analyzeEntries(
         method === "_posthog/task_complete"
       ) {
         hasTurnCompleted = true;
+      }
+      if (method === "_posthog/error") {
+        hasTurnFailed = true;
       }
     }
 
@@ -209,6 +214,7 @@ function analyzeEntries(
     hasTurnEnd,
     hasAwaitingUserInput,
     hasTurnCompleted,
+    hasTurnFailed,
     hasVisibleAgentOutput,
     externalUserMessageCount,
     agentMessageFinalized,
@@ -906,13 +912,16 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         };
       });
 
-      // Live `logs` deltas fire pings for two turn-boundary cases:
+      // Live `logs` deltas fire pings for three turn-boundary cases:
       //   * agent is blocked on the user (_posthog/awaiting_user_input)
       //   * agent finished its turn (_posthog/turn_complete / task_complete)
-      // The terminal-status block below only fires when the whole run goes
-      // terminal without first emitting a turn_complete (e.g. sandbox killed
-      // mid-turn). Normal completion flows now ping here. Snapshots are
-      // historical replay — never ping for those.
+      //   * agent errored out the turn (_posthog/error)
+      // The terminal-status block below can't be relied on for these: the
+      // turn-end log entry arrives first and clears `awaitingPing`, so by
+      // the time status terminal fires its `preState.awaitingPing` is
+      // already false. Status-only termination (sandbox killed without a
+      // turn-end log) still falls through to the status block. Snapshots
+      // are historical replay — never ping for those.
       const shouldPingForAwaitingInput =
         !isSnapshot && wasAwaitingPing && analysis.hasAwaitingUserInput;
       const shouldPingForTurnComplete =
@@ -920,8 +929,16 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         wasAwaitingPing &&
         analysis.hasTurnCompleted &&
         !analysis.hasAwaitingUserInput;
+      const shouldPingForTurnFailed =
+        !isSnapshot &&
+        wasAwaitingPing &&
+        analysis.hasTurnFailed &&
+        !analysis.hasAwaitingUserInput &&
+        !analysis.hasTurnCompleted;
       const shouldPingNow =
-        shouldPingForAwaitingInput || shouldPingForTurnComplete;
+        shouldPingForAwaitingInput ||
+        shouldPingForTurnComplete ||
+        shouldPingForTurnFailed;
       if (shouldPingNow && usePreferencesStore.getState().pingsEnabled) {
         playMeepSound().catch(() => {});
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -935,6 +952,11 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         maybePresentLocalNotification({
           taskRunId,
           kind: "turn_complete",
+        });
+      } else if (shouldPingForTurnFailed) {
+        maybePresentLocalNotification({
+          taskRunId,
+          kind: "task_failed",
         });
       }
     }
