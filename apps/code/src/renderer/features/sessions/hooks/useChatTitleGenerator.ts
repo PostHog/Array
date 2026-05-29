@@ -1,4 +1,6 @@
 import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
+import { useAuthStateValue } from "@features/auth/hooks/authQueries";
+import { xmlToPlainText } from "@features/message-editor/utils/content";
 import { getSessionService } from "@features/sessions/service/service";
 import {
   sessionStoreSetters,
@@ -19,9 +21,20 @@ const log = logger.scope("chat-title-generator");
 
 const REGENERATE_INTERVAL = 7;
 
-export function useChatTitleGenerator(taskId: string): void {
+function isProvisionalTaskTitle(task: Task): boolean {
+  const plainText = xmlToPlainText(task.description).trim();
+  const fallbackTitle = (plainText || "Untitled").slice(0, 255);
+  return !task.title_manually_set && task.title === fallbackTitle;
+}
+
+export function useChatTitleGenerator(task: Task): void {
+  const taskId = task.id;
   const lastGeneratedAtCount = useRef<number | null>(null);
+  const initialDescriptionHandled = useRef(false);
   const isGenerating = useRef(false);
+  const isAuthenticated = useAuthStateValue(
+    (state) => state.status === "authenticated" && !!state.cloudRegion,
+  );
 
   const promptCount = useSessionStore((state) => {
     const taskRunId = state.taskIdIndex[taskId];
@@ -32,41 +45,47 @@ export function useChatTitleGenerator(taskId: string): void {
   });
 
   useEffect(() => {
-    if (promptCount === 0) return;
+    if (!isAuthenticated) return;
     if (isGenerating.current) return;
 
     if (lastGeneratedAtCount.current === null) {
       lastGeneratedAtCount.current = 0;
     }
 
-    const shouldGenerate =
+    const shouldGenerateFromPrompts =
       (promptCount === 1 && lastGeneratedAtCount.current === 0) ||
       (promptCount > 1 &&
         promptCount - lastGeneratedAtCount.current >= REGENERATE_INTERVAL);
 
-    if (!shouldGenerate) return;
+    const shouldGenerateFromTaskDescription =
+      promptCount === 0 &&
+      !initialDescriptionHandled.current &&
+      task.description.trim().length > 0 &&
+      isProvisionalTaskTitle(task);
+
+    if (!shouldGenerateFromPrompts && !shouldGenerateFromTaskDescription) {
+      return;
+    }
 
     isGenerating.current = true;
 
     const state = useSessionStore.getState();
     const taskRunId = state.taskIdIndex[taskId];
-    if (!taskRunId) {
-      isGenerating.current = false;
-      return;
-    }
-    const session = state.sessions[taskRunId];
-    if (!session?.events) {
-      isGenerating.current = false;
-      return;
-    }
+    const session = taskRunId ? state.sessions[taskRunId] : undefined;
+    let rawContent = task.description;
 
-    const allPrompts = extractUserPromptsFromEvents(session.events);
-    const promptsForTitle =
-      promptCount === 1 ? allPrompts : allPrompts.slice(-REGENERATE_INTERVAL);
+    if (shouldGenerateFromPrompts) {
+      if (!session?.events) {
+        isGenerating.current = false;
+        return;
+      }
 
-    const rawContent = promptsForTitle
-      .map((p, i) => `${i + 1}. ${p}`)
-      .join("\n");
+      const allPrompts = extractUserPromptsFromEvents(session.events);
+      const promptsForTitle =
+        promptCount === 1 ? allPrompts : allPrompts.slice(-REGENERATE_INTERVAL);
+
+      rawContent = promptsForTitle.map((p, i) => `${i + 1}. ${p}`).join("\n");
+    }
 
     const run = async () => {
       try {
@@ -104,7 +123,7 @@ export function useChatTitleGenerator(taskId: string): void {
             }
           }
 
-          if (summary) {
+          if (summary && taskRunId) {
             sessionStoreSetters.updateSession(taskRunId, {
               conversationSummary: result.summary,
             });
@@ -118,11 +137,29 @@ export function useChatTitleGenerator(taskId: string): void {
       } catch (error) {
         log.error("Failed to update task title", { taskId, error });
       } finally {
-        lastGeneratedAtCount.current = promptCount;
+        if (shouldGenerateFromPrompts) {
+          lastGeneratedAtCount.current = promptCount;
+        }
+        if (shouldGenerateFromTaskDescription) {
+          initialDescriptionHandled.current = true;
+          lastGeneratedAtCount.current = Math.max(
+            lastGeneratedAtCount.current ?? 0,
+            1,
+          );
+        }
         isGenerating.current = false;
       }
     };
 
     run();
-  }, [promptCount, taskId]);
+  }, [
+    isAuthenticated,
+    promptCount,
+    task.id,
+    task.description,
+    task.title,
+    task.title_manually_set,
+    task,
+    taskId,
+  ]);
 }
