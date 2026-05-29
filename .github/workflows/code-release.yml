@@ -134,11 +134,34 @@ jobs:
       - name: Build native modules
         run: pnpm --filter code run build-native
 
-      - name: Publish with Electron Forge
+      - name: Build release artifacts
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: pnpm --filter code exec electron-forge publish --arch=${{ matrix.arch }} --platform=darwin
+        run: pnpm --filter code exec electron-forge publish --dry-run --arch=${{ matrix.arch }} --platform=darwin
+
+      - name: Install Playwright
+        run: pnpm --filter code exec playwright install --with-deps chromium
+
+      - name: Smoke test packaged app
+        env:
+          CI: true
+          E2E_APP_ARCH: ${{ matrix.arch }}
+        run: pnpm --filter code exec playwright test --config=tests/e2e/playwright.config.ts tests/e2e/tests/smoke.spec.ts
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: release-playwright-report-macos-${{ matrix.arch }}
+          path: apps/code/playwright-report/
+          retention-days: 7
+
+      - name: Publish release artifacts
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: pnpm --filter code exec electron-forge publish --from-dry-run
 
   publish-windows:
     runs-on: windows-latest
