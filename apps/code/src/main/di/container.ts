@@ -5,6 +5,7 @@ import { ArchiveRepository } from "../db/repositories/archive-repository";
 import { AuthPreferenceRepository } from "../db/repositories/auth-preference-repository";
 import { AuthSessionRepository } from "../db/repositories/auth-session-repository";
 import { DefaultAdditionalDirectoryRepository } from "../db/repositories/default-additional-directory-repository";
+import { HomeWorkflowRepository } from "../db/repositories/home-workflow-repository";
 import { RepositoryRepository } from "../db/repositories/repository-repository";
 import { SuspensionRepositoryImpl } from "../db/repositories/suspension-repository";
 import { WorkspaceRepository } from "../db/repositories/workspace-repository";
@@ -69,6 +70,8 @@ import { UIService } from "../services/ui/service";
 import { UpdatesService } from "../services/updates/service";
 import { UsageMonitorService } from "../services/usage-monitor/service";
 import { WatcherRegistryService } from "../services/watcher-registry/service";
+import { LocalWorkflowBackend } from "../services/workflow/backend";
+import { WorkflowService } from "../services/workflow/service";
 import { WorkspaceService } from "../services/workspace/service";
 import { MAIN_TOKENS } from "./tokens";
 
@@ -105,6 +108,7 @@ container.bind(MAIN_TOKENS.SuspensionRepository).to(SuspensionRepositoryImpl);
 container
   .bind(MAIN_TOKENS.DefaultAdditionalDirectoryRepository)
   .to(DefaultAdditionalDirectoryRepository);
+container.bind(MAIN_TOKENS.HomeWorkflowRepository).to(HomeWorkflowRepository);
 container.bind(MAIN_TOKENS.AgentAuthAdapter).to(AgentAuthAdapter);
 container.bind(MAIN_TOKENS.AgentService).to(AgentService);
 container.bind(MAIN_TOKENS.AuthService).to(AuthService);
@@ -153,6 +157,11 @@ container.bind(MAIN_TOKENS.TaskLinkService).to(TaskLinkService);
 container.bind(MAIN_TOKENS.InboxLinkService).to(InboxLinkService);
 container.bind(MAIN_TOKENS.NewTaskLinkService).to(NewTaskLinkService);
 container.bind(MAIN_TOKENS.WatcherRegistryService).to(WatcherRegistryService);
+// Backend choice = the single swap point between POC (local SQLite) and the
+// future PostHog-backed cloud workflow. See docs/workflow-architecture.md
+// and apps/code/src/main/services/workflow/backend.ts for the migration plan.
+container.bind(MAIN_TOKENS.WorkflowBackend).to(LocalWorkflowBackend);
+container.bind(MAIN_TOKENS.WorkflowService).to(WorkflowService);
 container.bind(MAIN_TOKENS.WorkspaceService).to(WorkspaceService);
 
 container.bind(MAIN_TOKENS.SettingsStore).toConstantValue(settingsStore);

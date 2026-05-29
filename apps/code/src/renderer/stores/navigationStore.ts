@@ -17,6 +17,7 @@ type ViewType =
   | "task-pending"
   | "task-input"
   | "folder-settings"
+  | "home"
   | "inbox"
   | "archived"
   | "command-center"
@@ -64,6 +65,7 @@ interface NavigationStore {
   ) => void;
   clearTaskInputReportAssociation: () => void;
   navigateToFolderSettings: (folderId: string) => void;
+  navigateToHome: () => void;
   navigateToInbox: () => void;
   navigateToArchived: () => void;
   navigateToCommandCenter: () => void;
@@ -92,6 +94,9 @@ const isSameView = (view1: ViewState, view2: ViewState): boolean => {
   }
   if (view1.type === "folder-settings" && view2.type === "folder-settings") {
     return view1.folderId === view2.folderId;
+  }
+  if (view1.type === "home" && view2.type === "home") {
+    return true;
   }
   if (view1.type === "inbox" && view2.type === "inbox") {
     return true;
@@ -282,6 +287,10 @@ export const useNavigationStore = create<NavigationStore>()(
 
         navigateToFolderSettings: (folderId: string) => {
           navigate({ type: "folder-settings", folderId });
+        },
+
+        navigateToHome: () => {
+          navigate({ type: "home" });
         },
 
         navigateToInbox: () => {

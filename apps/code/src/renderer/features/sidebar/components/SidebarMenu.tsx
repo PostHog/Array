@@ -32,8 +32,10 @@ import { useTaskViewed } from "../hooks/useTaskViewed";
 import { useSidebarStore } from "../stores/sidebarStore";
 import { useTaskSelectionStore } from "../stores/taskSelectionStore";
 import { CommandCenterItem } from "./items/CommandCenterItem";
-import { InboxItem, NewTaskItem } from "./items/HomeItem";
+import { HomeItem } from "./items/HomeItem";
+import { InboxItem } from "./items/InboxItem";
 import { McpServersItem } from "./items/McpServersItem";
+import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
@@ -44,6 +46,7 @@ function SidebarMenuComponent() {
     view,
     navigateToTask,
     navigateToTaskInput,
+    navigateToHome,
     navigateToInbox,
     navigateToCommandCenter,
     navigateToSkills,
@@ -112,6 +115,10 @@ function SidebarMenuComponent() {
 
   const handleNewTaskClick = () => {
     navigateToTaskInput();
+  };
+
+  const handleHomeClick = () => {
+    navigateToHome();
   };
 
   const handleInboxClick = () => {
@@ -395,6 +402,13 @@ function SidebarMenuComponent() {
               isActive={sidebarData.isHomeActive}
               onClick={handleNewTaskClick}
               variant="primary"
+            />
+          </Box>
+
+          <Box>
+            <HomeItem
+              isActive={sidebarData.isHomeViewActive}
+              onClick={handleHomeClick}
             />
           </Box>
 

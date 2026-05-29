@@ -7,6 +7,7 @@ import { ArchivedTasksView } from "@features/archive/components/ArchivedTasksVie
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
+import { HomeView } from "@features/home/components/HomeView";
 import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { McpServersView } from "@features/mcp-servers/components/McpServersView";
@@ -166,6 +167,8 @@ export function MainLayout() {
           )}
 
           {view.type === "folder-settings" && <FolderSettingsView />}
+
+          {view.type === "home" && <HomeView />}
 
           {view.type === "inbox" && <InboxView />}
 

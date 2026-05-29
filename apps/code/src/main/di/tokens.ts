@@ -37,6 +37,7 @@ export const MAIN_TOKENS = Object.freeze({
   DefaultAdditionalDirectoryRepository: Symbol.for(
     "Main.DefaultAdditionalDirectoryRepository",
   ),
+  HomeWorkflowRepository: Symbol.for("Main.HomeWorkflowRepository"),
 
   // Services
   AgentAuthAdapter: Symbol.for("Main.AgentAuthAdapter"),
@@ -84,4 +85,6 @@ export const MAIN_TOKENS = Object.freeze({
   WorkspaceService: Symbol.for("Main.WorkspaceService"),
   EnrichmentService: Symbol.for("Main.EnrichmentService"),
   UsageMonitorService: Symbol.for("Main.UsageMonitorService"),
+  WorkflowBackend: Symbol.for("Main.WorkflowBackend"),
+  WorkflowService: Symbol.for("Main.WorkflowService"),
 });

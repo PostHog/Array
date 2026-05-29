@@ -14,6 +14,7 @@ import { useAuthSession } from "@features/auth/hooks/useAuthSession";
 import { useIsOrgAdmin } from "@features/auth/hooks/useOrgRole";
 import { registerBillingSubscriptions } from "@features/billing/subscriptions";
 import { AddDirectoryDialog } from "@features/folder-picker/components/AddDirectoryDialog";
+import { registerHomeSubscriptions } from "@features/home/subscriptions";
 import { OnboardingFlow } from "@features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
@@ -73,6 +74,11 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated) return;
     return registerBillingSubscriptions();
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    return registerHomeSubscriptions();
   }, [isAuthenticated]);
 
   // Initialize update store

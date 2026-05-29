@@ -49,6 +49,7 @@ export type TaskGroup = GenericTaskGroup<TaskData>;
 
 export interface SidebarData {
   isHomeActive: boolean;
+  isHomeViewActive: boolean;
   isInboxActive: boolean;
   isCommandCenterActive: boolean;
   isSkillsActive: boolean;
@@ -69,6 +70,7 @@ interface ViewState {
     | "task-input"
     | "settings"
     | "folder-settings"
+    | "home"
     | "inbox"
     | "archived"
     | "command-center"
@@ -220,6 +222,7 @@ export function useSidebarData({
 
   const isHomeActive =
     activeView.type === "task-input" || activeView.type === "task-pending";
+  const isHomeViewActive = activeView.type === "home";
   const isInboxActive = activeView.type === "inbox";
   const isCommandCenterActive = activeView.type === "command-center";
   const isSkillsActive = activeView.type === "skills";
@@ -350,6 +353,7 @@ export function useSidebarData({
 
   return {
     isHomeActive,
+    isHomeViewActive,
     isInboxActive,
     isCommandCenterActive,
     isSkillsActive,
