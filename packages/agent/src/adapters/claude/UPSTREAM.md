@@ -70,8 +70,15 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 ## Changes Ported in v0.39.0 Sync
 
 - **SDK bumps**: claude-agent-sdk 0.3.154 -> 0.3.156, anthropic SDK 0.100.0 -> 0.100.1 (ACP SDK
-  unchanged at 0.22.1). The claude-agent-sdk bump pulls in the Claude Code v2.1.156 fix for Opus
-  4.8 where thinking blocks could be modified, causing API errors mid-turn.
+  unchanged at 0.22.1). v0.3.155 was not published to npm; the fix lives in 0.3.156.
+- **Opus 4.8 thinking-blocks fix** (upstream v2.1.156): The SDK was modifying thinking blocks in a
+  way that produced the legacy `thinking: { type: "enabled", budget_tokens: N }` request shape,
+  which `claude-opus-4-8` rejects with HTTP 400 (`thinking.type.enabled is not supported for this
+  model. Use thinking.type.adaptive and output_config.effort`). 0.3.156 now emits
+  `thinking: { type: "adaptive" }` + `output_config: { effort }` for Opus 4.8 while keeping the
+  legacy shape for Opus 4.7 / Sonnet 4.6 where the API still accepts it. No in-repo code change
+  needed; `options.effort` in `session/options.ts` and `query.applyFlagSettings({ effortLevel })`
+  in `claude-agent.ts` keep their current call sites.
 
 ## Changes Ported in v0.38.0 Sync
 
