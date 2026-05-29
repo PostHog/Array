@@ -137,6 +137,9 @@ describe("UpdatesService", () => {
     mockAppMeta.version = "1.0.0";
     mockUpdater.isSupported.mockReturnValue(true);
     mockUpdater.quitAndInstall.mockImplementation(() => undefined);
+    mockLifecycleService.shutdownWithoutContainer.mockImplementation(() =>
+      Promise.resolve(),
+    );
     mockAppLifecycle.whenReady.mockResolvedValue(undefined);
 
     // Set default platform to darwin (macOS)
@@ -431,21 +434,45 @@ describe("UpdatesService", () => {
       // Verify setQuittingForUpdate is called first
       expect(mockLifecycleService.setQuittingForUpdate).toHaveBeenCalled();
 
-      // Hand off to Electron immediately so shutdown cleanup cannot block install.
-      expect(
-        mockLifecycleService.shutdownWithoutContainer,
-      ).not.toHaveBeenCalled();
+      expect(mockLifecycleService.shutdownWithoutContainer).toHaveBeenCalled();
       expect(mockLifecycleService.shutdown).not.toHaveBeenCalled();
 
       expect(mockUpdater.quitAndInstall).toHaveBeenCalled();
 
-      // Verify order: setQuittingForUpdate -> quitAndInstall
+      // Verify order: setQuittingForUpdate -> shutdownWithoutContainer -> quitAndInstall
       const setQuittingOrder =
         mockLifecycleService.setQuittingForUpdate.mock.invocationCallOrder[0];
+      const cleanupOrder =
+        mockLifecycleService.shutdownWithoutContainer.mock
+          .invocationCallOrder[0];
       const quitAndInstallOrder =
         mockUpdater.quitAndInstall.mock.invocationCallOrder[0];
 
-      expect(setQuittingOrder).toBeLessThan(quitAndInstallOrder);
+      expect(setQuittingOrder).toBeLessThan(cleanupOrder);
+      expect(cleanupOrder).toBeLessThan(quitAndInstallOrder);
+    });
+
+    it("continues to quitAndInstall if partial shutdown times out", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+
+      mockLifecycleService.shutdownWithoutContainer.mockReturnValue(
+        new Promise(() => {}),
+      );
+
+      const resultPromise = service.installUpdate();
+      await vi.advanceTimersByTimeAsync(3000);
+
+      await expect(resultPromise).resolves.toEqual({ installed: true });
+      expect(mockUpdater.quitAndInstall).toHaveBeenCalled();
+      expect(mockLog.warn).toHaveBeenCalledWith(
+        "Partial shutdown timed out before update install",
+        expect.objectContaining({
+          timeoutMs: 3000,
+          downloadedVersion: "v2.0.0",
+        }),
+      );
     });
 
     it("returns false if quitAndInstall throws", async () => {

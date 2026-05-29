@@ -4,6 +4,7 @@ import type { IMainWindow } from "@posthog/platform/main-window";
 import type { IUpdater } from "@posthog/platform/updater";
 import { inject, injectable, postConstruct, preDestroy } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
+import { withTimeout } from "../../utils/async";
 import { isDevBuild } from "../../utils/env";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
@@ -41,6 +42,7 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   private static readonly REPO_NAME = "code";
   private static readonly CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
   private static readonly CHECK_TIMEOUT_MS = 60 * 1000; // 1 minute timeout for checks
+  private static readonly INSTALL_SHUTDOWN_TIMEOUT_MS = 3000;
   private static readonly DISABLE_ENV_FLAG = "ELECTRON_DISABLE_AUTO_UPDATE";
   private static readonly SUPPORTED_PLATFORMS = ["darwin", "win32"];
 
@@ -210,6 +212,16 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
         version: this.downloadedVersion ?? undefined,
       });
       this.lifecycleService.setQuittingForUpdate();
+      const cleanupResult = await withTimeout(
+        this.lifecycleService.shutdownWithoutContainer(),
+        UpdatesService.INSTALL_SHUTDOWN_TIMEOUT_MS,
+      );
+      if (cleanupResult.result === "timeout") {
+        log.warn("Partial shutdown timed out before update install", {
+          timeoutMs: UpdatesService.INSTALL_SHUTDOWN_TIMEOUT_MS,
+          downloadedVersion: this.downloadedVersion,
+        });
+      }
       this.updater.quitAndInstall();
       return { installed: true };
     } catch (error) {
