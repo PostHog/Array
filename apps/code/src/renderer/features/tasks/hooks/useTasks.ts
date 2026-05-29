@@ -18,6 +18,20 @@ const log = logger.scope("tasks");
 
 const TASK_LIST_POLL_INTERVAL_MS = 30_000;
 
+function getTaskTitle(
+  tasks: Task[] | undefined,
+  taskId: string,
+): string | undefined {
+  return tasks?.find((task) => task.id === taskId)?.title;
+}
+
+function getTaskSummaryTitle(
+  summaries: Schemas.TaskSummary[] | undefined,
+  taskId: string,
+): string | undefined {
+  return summaries?.find((summary) => summary.id === taskId)?.title;
+}
+
 export function useTasks(
   filters?: {
     repository?: string;
@@ -211,16 +225,53 @@ export function useRenameTask() {
           updates: { title: newTitle, title_manually_set: true },
         });
       } catch (error) {
+        const shouldRollbackSessionTitle =
+          queryClient.getQueryData<Task>(taskKeys.detail(taskId))?.title ===
+            newTitle ||
+          queryClient
+            .getQueriesData<Task[]>({
+              queryKey: taskKeys.lists(),
+            })
+            .some(([, tasks]) => getTaskTitle(tasks, taskId) === newTitle);
+
         for (const [queryKey, data] of previousListQueries) {
-          queryClient.setQueryData(queryKey, data);
+          queryClient.setQueryData<Task[] | undefined>(queryKey, (current) => {
+            if (!current) {
+              return data;
+            }
+
+            return getTaskTitle(current, taskId) === newTitle ? data : current;
+          });
         }
         for (const [queryKey, data] of previousSummaryQueries) {
-          queryClient.setQueryData(queryKey, data);
+          queryClient.setQueryData<Schemas.TaskSummary[] | undefined>(
+            queryKey,
+            (current) => {
+              if (!current) {
+                return data;
+              }
+
+              return getTaskSummaryTitle(current, taskId) === newTitle
+                ? data
+                : current;
+            },
+          );
         }
         if (previousDetail) {
-          queryClient.setQueryData(taskKeys.detail(taskId), previousDetail);
+          queryClient.setQueryData<Task | undefined>(
+            taskKeys.detail(taskId),
+            (current) => {
+              if (!current) {
+                return previousDetail;
+              }
+
+              return current.title === newTitle ? previousDetail : current;
+            },
+          );
         }
-        getSessionService().updateSessionTaskTitle(taskId, currentTitle);
+        if (shouldRollbackSessionTitle) {
+          getSessionService().updateSessionTaskTitle(taskId, currentTitle);
+        }
         throw error;
       }
     },
