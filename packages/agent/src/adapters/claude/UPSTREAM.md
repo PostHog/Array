@@ -5,8 +5,8 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 ## Fork Point
 
 - **Forked**: v0.10.9, commit `5411e0f4`, Dec 2 2025
-- **Last sync**: v0.38.0 + #716, commit `61ebda2`, May 28 2026
-- **SDK**: `@anthropic-ai/claude-agent-sdk` 0.3.154, `@agentclientprotocol/sdk` 0.22.1, `@anthropic-ai/sdk` 0.100.0
+- **Last sync**: v0.39.0, commit `51a370e`, May 29 2026
+- **SDK**: `@anthropic-ai/claude-agent-sdk` 0.3.156, `@agentclientprotocol/sdk` 0.22.1, `@anthropic-ai/sdk` 0.100.1
 
 ## File Mapping
 
@@ -66,6 +66,12 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 - **Raw SDK message relay** (v0.27.0): `emitRawSDKMessages` on `NewSessionMeta` for opt-in diagnostics
 - **Effort level sync** (v0.25.x): `xhigh` level added, `applyFlagSettings` on effort change
 - **Auto permission mode** (v0.25.0): Added to `CODE_EXECUTION_MODES`, available modes, ExitPlanMode options
+
+## Changes Ported in v0.39.0 Sync
+
+- **SDK bumps**: claude-agent-sdk 0.3.154 -> 0.3.156, anthropic SDK 0.100.0 -> 0.100.1 (ACP SDK
+  unchanged at 0.22.1). The claude-agent-sdk bump pulls in the Claude Code v2.1.156 fix for Opus
+  4.8 where thinking blocks could be modified, causing API errors mid-turn.
 
 ## Changes Ported in v0.38.0 Sync
 
