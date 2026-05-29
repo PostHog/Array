@@ -539,6 +539,8 @@ export interface SignalReportTask {
 export interface SignalTeamConfig {
   id: string;
   default_autostart_priority: SignalReportPriority;
+  /** Team-wide default `channel_id|#channel-name` target for inbox notifications. `null` = no team default. */
+  default_slack_notification_channel?: string | null;
   created_at: string;
   updated_at: string;
 }

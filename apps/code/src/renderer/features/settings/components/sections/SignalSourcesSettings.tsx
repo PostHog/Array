@@ -6,6 +6,7 @@ import {
 import { useSignalSourceManager } from "@features/inbox/hooks/useSignalSourceManager";
 import { SettingsOptionSelect } from "@features/settings/components/SettingsOptionSelect";
 import { GitHubIntegrationSection } from "@features/settings/components/sections/GitHubIntegrationSection";
+import { SignalDefaultChannelSettings } from "@features/settings/components/sections/SignalDefaultChannelSettings";
 import { SignalSlackNotificationsSettings } from "@features/settings/components/sections/SignalSlackNotificationsSettings";
 import { useRepositoryIntegration } from "@hooks/useIntegrations";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
@@ -135,6 +136,10 @@ export function SignalSourcesSettings({
           />
         )}
       </Flex>
+      <SignalDefaultChannelSettings
+        channelComboboxModal={slackNotificationsInModal}
+        isLoading={isLoadingIntegrations}
+      />
       <SignalSlackNotificationsSettings
         channelComboboxModal={slackNotificationsInModal}
         isLoading={isLoadingIntegrations}

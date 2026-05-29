@@ -477,6 +477,27 @@ export function useSignalSourceManager() {
     [client, queryClient],
   );
 
+  const handleUpdateTeamSlackChannel = useCallback(
+    async (channel: string | null) => {
+      if (!client) return;
+      try {
+        await client.updateSignalTeamConfig({
+          default_slack_notification_channel: channel,
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ["signals", "team-config"],
+        });
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to update default notification channel";
+        toast.error(message);
+      }
+    },
+    [client, queryClient],
+  );
+
   const handleUpdateUserAutonomyPriority = useCallback(
     async (priority: string | null) => {
       if (!client) return;
@@ -591,6 +612,7 @@ export function useSignalSourceManager() {
     handleToggleEvaluation,
     teamConfig,
     handleUpdateAutostartPriority,
+    handleUpdateTeamSlackChannel,
     userAutonomyConfig,
     userAutonomyConfigLoading,
     handleUpdateUserAutonomyPriority,
