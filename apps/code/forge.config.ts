@@ -95,20 +95,20 @@ const osxSignConfig =
 function copyNativeDependency(
   dependency: string,
   destinationRoot: string,
-): void {
+): boolean {
   const source = path.resolve("../../node_modules", dependency);
   if (!existsSync(source)) {
     // Fallback to local node_modules
     const localSource = path.resolve("node_modules", dependency);
     if (existsSync(localSource)) {
       copySync(dependency, destinationRoot, localSource);
-      return;
+      return true;
     }
 
     console.warn(
       `[forge] Native dependency "${dependency}" not found, skipping copy`,
     );
-    return;
+    return false;
   }
 
   const nodeModulesDir = path.join(destinationRoot, "node_modules");
@@ -123,6 +123,7 @@ function copyNativeDependency(
       destination,
     )}`,
   );
+  return true;
 }
 
 function copySync(dependency: string, destinationRoot: string, source: string) {
@@ -256,36 +257,50 @@ const config: ForgeConfig = {
     postStart: async (_forgeConfig, child) => {
       electronChild = child;
     },
-    packageAfterCopy: async (_forgeConfig, buildPath) => {
-      // Resolve the target arch (cross-builds set npm_config_arch); fall back
-      // to the host so non-cross builds keep their existing behavior.
-      const targetArch = process.env.npm_config_arch ?? process.arch;
-
+    packageAfterCopy: async (
+      _forgeConfig,
+      buildPath,
+      _electronVersion,
+      platform,
+      targetArch,
+    ) => {
       copyNativeDependency("node-pty", buildPath);
       copyNativeDependency("node-addon-api", buildPath);
       copyNativeDependency("@parcel/watcher", buildPath);
 
       // Platform-specific native dependencies
-      if (process.platform === "darwin") {
+      if (platform === "darwin") {
         const watcherPkg =
           targetArch === "x64"
             ? "@parcel/watcher-darwin-x64"
             : "@parcel/watcher-darwin-arm64";
-        copyNativeDependency(watcherPkg, buildPath);
+        if (!copyNativeDependency(watcherPkg, buildPath)) {
+          throw new Error(
+            `[forge] Missing required native dependency "${watcherPkg}" for darwin-${targetArch}`,
+          );
+        }
         copyNativeDependency("file-icon", buildPath);
         copyNativeDependency("p-map", buildPath);
-      } else if (process.platform === "win32") {
+      } else if (platform === "win32") {
         const watcherPkg =
           targetArch === "arm64"
             ? "@parcel/watcher-win32-arm64"
             : "@parcel/watcher-win32-x64";
-        copyNativeDependency(watcherPkg, buildPath);
-      } else if (process.platform === "linux") {
+        if (!copyNativeDependency(watcherPkg, buildPath)) {
+          throw new Error(
+            `[forge] Missing required native dependency "${watcherPkg}" for win32-${targetArch}`,
+          );
+        }
+      } else if (platform === "linux") {
         const watcherPkg =
           targetArch === "arm64"
             ? "@parcel/watcher-linux-arm64-glibc"
             : "@parcel/watcher-linux-x64-glibc";
-        copyNativeDependency(watcherPkg, buildPath);
+        if (!copyNativeDependency(watcherPkg, buildPath)) {
+          throw new Error(
+            `[forge] Missing required native dependency "${watcherPkg}" for linux-${targetArch}`,
+          );
+        }
       }
 
       // Copy @parcel/watcher's hoisted dependencies
@@ -303,6 +318,16 @@ const config: ForgeConfig = {
       copyNativeDependency("bindings", buildPath);
       copyNativeDependency("file-uri-to-path", buildPath);
       copyNativeDependency("prebuild-install", buildPath);
+    },
+    packageAfterPrune: async (_forgeConfig, buildPath) => {
+      // @parcel/watcher tries @parcel/watcher-{platform}-{arch} first, then
+      // falls back to build/Release/watcher.node. Remove that fallback from
+      // release bundles so a host-compiled binary cannot shadow the required
+      // target-specific optional dependency.
+      rmSync(path.join(buildPath, "node_modules/@parcel/watcher/build"), {
+        recursive: true,
+        force: true,
+      });
     },
   },
   publishers: [

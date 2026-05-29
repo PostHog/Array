@@ -11,11 +11,15 @@ concurrency:
 
 jobs:
   publish-macos:
-    runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
-        arch: [arm64, x64]
+        include:
+          - arch: arm64
+            runner: macos-15-arm64
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
     permissions:
       id-token: write
       contents: write
@@ -134,7 +138,7 @@ jobs:
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: pnpm --filter code run publish -- --arch=${{ matrix.arch }}
+        run: pnpm --filter code exec electron-forge publish --arch=${{ matrix.arch }} --platform=darwin
 
   publish-windows:
     runs-on: windows-latest
