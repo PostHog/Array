@@ -1182,7 +1182,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     // For model options, fall back to alias resolution when exact match fails.
     // This lets callers use human-friendly aliases like "opus" or "sonnet"
-    // instead of full model IDs like "claude-opus-4-6".
+    // instead of full model IDs like "claude-opus-4-8".
     if (!validValue && params.configId === "model") {
       const resolved = resolveModelPreference(params.value, allValues);
       if (resolved) {

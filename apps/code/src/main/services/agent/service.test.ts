@@ -89,9 +89,12 @@ vi.mock("@posthog/agent/posthog-api", () => ({
 }));
 
 vi.mock("@posthog/agent/gateway-models", () => ({
+  DEFAULT_GATEWAY_MODEL: "claude-opus-4-8",
+  DEFAULT_CODEX_MODEL: "gpt-5.5",
   fetchGatewayModels: vi.fn().mockResolvedValue([]),
   formatGatewayModelName: vi.fn(),
   getProviderName: vi.fn(),
+  isBlockedModelId: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("@posthog/agent/adapters/claude/session/jsonl-hydration", () => ({

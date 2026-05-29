@@ -1,13 +1,9 @@
 export const DEFAULT_MODEL = "opus";
 
 const GATEWAY_TO_SDK_MODEL: Record<string, string> = {
-  "claude-opus-4-5": "opus",
-  "claude-opus-4-6": "opus",
   "claude-opus-4-7": "opus",
   "claude-opus-4-8": "opus",
-  "claude-sonnet-4-5": "sonnet",
   "claude-sonnet-4-6": "sonnet",
-  "claude-haiku-4-5": "haiku",
 };
 
 export function toSdkModelId(modelId: string): string {
@@ -15,7 +11,6 @@ export function toSdkModelId(modelId: string): string {
 }
 
 const MODELS_WITH_1M_CONTEXT = new Set([
-  "claude-opus-4-6",
   "claude-opus-4-7",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
@@ -26,15 +21,12 @@ export function supports1MContext(modelId: string): boolean {
 }
 
 const MODELS_WITH_EFFORT = new Set([
-  "claude-opus-4-5",
-  "claude-opus-4-6",
   "claude-opus-4-7",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
 ]);
 
 const MODELS_WITH_XHIGH_EFFORT = new Set([
-  "claude-opus-4-6",
   "claude-opus-4-7",
   "claude-opus-4-8",
 ]);
@@ -78,7 +70,7 @@ export function getEffortOptions(modelId: string): EffortOption[] | null {
 }
 
 // Model alias resolution — lets callers use human-friendly aliases like
-// "opus" or "sonnet" instead of full model IDs like "claude-opus-4-6".
+// "opus" or "sonnet" instead of full model IDs like "claude-opus-4-8".
 
 const MODEL_CONTEXT_HINT_PATTERN = /\[(\d+m)\]$/i;
 
@@ -112,8 +104,8 @@ interface ModelOption {
 }
 
 // Captures a model family version such as `4-6` or `4.7` so we can keep
-// `claude-opus-4-6` from being copied onto the SDK's `opus` alias when that
-// alias currently resolves to a different family version (e.g. Opus 4.7).
+// `claude-opus-4-7` from being copied onto the SDK's `opus` alias when that
+// alias currently resolves to a different family version (e.g. Opus 4.8).
 const MODEL_FAMILY_VERSION_PATTERN = /\b(\d+)[-.](\d+)\b/;
 
 function extractModelFamilyVersion(s: string | undefined): string | null {

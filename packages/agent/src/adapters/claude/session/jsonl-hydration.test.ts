@@ -376,7 +376,7 @@ describe("conversationTurnsToJsonlEntries", () => {
       { type: "text", text: "running" },
     ]);
     expect(conv[0].message.stop_reason).toBeNull();
-    expect(conv[0].message.model).toBe("claude-opus-4-6");
+    expect(conv[0].message.model).toBe("claude-opus-4-8");
     expect(conv[0].message.id).toMatch(/^msg_01[A-Za-z0-9]{24}$/);
 
     expect(conv[1].type).toBe("assistant");
@@ -490,13 +490,13 @@ describe("conversationTurnsToJsonlEntries", () => {
         { role: "user", content: [{ type: "text", text: "hi" }] },
         { role: "assistant", content: [{ type: "text", text: "hello" }] },
       ],
-      { sessionId: "s", cwd: "/", model: "claude-opus-4-6", version: "3.0.0" },
+      { sessionId: "s", cwd: "/", model: "claude-opus-4-7", version: "3.0.0" },
     );
 
     const conv = parseConversationEntries(lines);
     expect(conv[0].version).toBe("3.0.0");
     expect(conv[1].version).toBe("3.0.0");
-    expect(conv[1].message.model).toBe("claude-opus-4-6");
+    expect(conv[1].message.model).toBe("claude-opus-4-7");
   });
 
   it("passes gitBranch, slug and permissionMode from config", () => {
@@ -728,7 +728,7 @@ describe("end-to-end: S3 log entries -> JSONL output", () => {
     // All assistant blocks in same turn share message.id
     expect(msg1.id).toBe(msg2.id);
     expect(msg2.id).toBe(msg3.id);
-    expect(msg3.model).toBe("claude-opus-4-6");
+    expect(msg3.model).toBe("claude-opus-4-8");
     expect(msg3.id).toMatch(/^msg_01[A-Za-z0-9]{24}$/);
 
     // Verify Bash tool_result entry

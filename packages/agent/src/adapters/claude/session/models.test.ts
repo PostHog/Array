@@ -14,30 +14,41 @@ describe("toSdkModelId", () => {
     expect(toSdkModelId("claude-opus-4-7")).toBe("opus");
     expect(toSdkModelId("claude-opus-4-8")).toBe("opus");
     expect(toSdkModelId("claude-sonnet-4-6")).toBe("sonnet");
-    expect(toSdkModelId("claude-haiku-4-5")).toBe("haiku");
   });
 
   it("passes unknown IDs through unchanged", () => {
     expect(toSdkModelId("custom-model")).toBe("custom-model");
   });
+
+  it("passes deprecated gateway IDs through unchanged", () => {
+    expect(toSdkModelId("claude-opus-4-6")).toBe("claude-opus-4-6");
+    expect(toSdkModelId("claude-sonnet-4-5")).toBe("claude-sonnet-4-5");
+    expect(toSdkModelId("claude-haiku-4-5")).toBe("claude-haiku-4-5");
+  });
 });
 
 describe("model capability flags", () => {
   it("flags 1M context support", () => {
+    expect(supports1MContext("claude-opus-4-6")).toBe(false);
     expect(supports1MContext("claude-opus-4-7")).toBe(true);
     expect(supports1MContext("claude-sonnet-4-6")).toBe(true);
     expect(supports1MContext("claude-haiku-4-5")).toBe(false);
   });
 
   it("flags effort support and xhigh-effort support", () => {
-    expect(supportsEffort("claude-opus-4-5")).toBe(true);
+    expect(supportsEffort("claude-opus-4-5")).toBe(false);
+    expect(supportsEffort("claude-opus-4-6")).toBe(false);
     expect(supportsXhighEffort("claude-opus-4-7")).toBe(true);
-    expect(supportsXhighEffort("claude-opus-4-5")).toBe(false);
+    expect(supportsXhighEffort("claude-opus-4-6")).toBe(false);
     expect(supportsEffort("claude-haiku-4-5")).toBe(false);
   });
 
-  it("excludes MCP injection only for Haiku", () => {
+  it("allows MCP injection for supported Claude models", () => {
     expect(supportsMcpInjection("claude-opus-4-7")).toBe(true);
+    expect(supportsMcpInjection("claude-sonnet-4-6")).toBe(true);
+  });
+
+  it("keeps deprecated Haiku sessions excluded from MCP injection", () => {
     expect(supportsMcpInjection("claude-haiku-4-5")).toBe(false);
   });
 });
@@ -45,10 +56,11 @@ describe("model capability flags", () => {
 describe("getEffortOptions", () => {
   it("returns null for models without effort support", () => {
     expect(getEffortOptions("claude-haiku-4-5")).toBeNull();
+    expect(getEffortOptions("claude-opus-4-6")).toBeNull();
   });
 
   it("returns low/medium/high for effort-supporting models", () => {
-    const opts = getEffortOptions("claude-opus-4-5");
+    const opts = getEffortOptions("claude-sonnet-4-6");
     expect(opts?.map((o) => o.value)).toEqual(["low", "medium", "high"]);
   });
 
@@ -68,9 +80,7 @@ describe("resolveModelPreference", () => {
   const options = [
     { value: "claude-opus-4-8", name: "Claude Opus 4.8" },
     { value: "claude-opus-4-7", name: "Claude Opus 4.7" },
-    { value: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
-    { value: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
   ];
 
   it("returns null for empty preference", () => {
@@ -85,8 +95,8 @@ describe("resolveModelPreference", () => {
   });
 
   it("matches case-insensitively on display name", () => {
-    expect(resolveModelPreference("claude haiku 4.5", options)).toBe(
-      "claude-haiku-4-5",
+    expect(resolveModelPreference("claude sonnet 4.6", options)).toBe(
+      "claude-sonnet-4-6",
     );
   });
 
@@ -100,11 +110,11 @@ describe("resolveModelPreference", () => {
 
   it("refuses cross-version alias matches", () => {
     const optionsWithAlias = [
-      { value: "opus", name: "Claude Opus 4.7" },
-      { value: "claude-opus-4-6", name: "Claude Opus 4.6" },
+      { value: "opus", name: "Claude Opus 4.8" },
+      { value: "claude-opus-4-7", name: "Claude Opus 4.7" },
     ];
-    expect(resolveModelPreference("claude-opus-4-6", optionsWithAlias)).toBe(
-      "claude-opus-4-6",
+    expect(resolveModelPreference("claude-opus-4-7", optionsWithAlias)).toBe(
+      "claude-opus-4-7",
     );
   });
 

@@ -244,7 +244,7 @@ export function createInitMessage(sessionId = "test-session"): SDKMessage {
     cwd: "/tmp",
     tools: [],
     mcp_servers: [],
-    model: "claude-sonnet-4-5-20250929",
+    model: "claude-sonnet-4-6",
     permissionMode: "default",
     slash_commands: [],
     output_style: "default",

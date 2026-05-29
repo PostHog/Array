@@ -17,6 +17,7 @@ import {
 } from "react-native-safe-area-context";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { createTask, runTaskInCloud } from "@/features/tasks/api";
+import { DEFAULT_MODEL } from "@/features/tasks/composer/options";
 import type {
   CreateTaskOptions,
   RepositoryOption,
@@ -206,7 +207,7 @@ export function TinderView({
         await runTaskInCloud(task.id, {
           pendingUserMessage: prompt,
           runtimeAdapter: "claude",
-          model: "claude-opus-4-7",
+          model: DEFAULT_MODEL,
           initialPermissionMode: "plan",
           runSource: "signal_report",
           signalReportId: report.id,

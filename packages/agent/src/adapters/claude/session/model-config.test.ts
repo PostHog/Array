@@ -15,7 +15,7 @@ const rawModelOptions = {
 describe("applyAvailableModelsAllowlist", () => {
   it("falls back to the unfiltered gateway list when every allowlisted model is unknown", () => {
     expect(
-      applyAvailableModelsAllowlist(rawModelOptions, ["claude-opus-4-5"]),
+      applyAvailableModelsAllowlist(rawModelOptions, ["claude-unknown-model"]),
     ).toEqual(rawModelOptions);
   });
 

@@ -406,7 +406,7 @@ export interface RunTaskInCloudOptions {
   mode?: "interactive" | "background";
   /** Adapter to use on the cloud runner. Currently only "claude" on mobile. */
   runtimeAdapter?: "claude" | "codex";
-  /** Gateway model ID, e.g. "claude-opus-4-7". */
+  /** Gateway model ID, e.g. "claude-opus-4-8". */
   model?: string;
   /** Reasoning effort: "low" | "medium" | "high" (model-dependent). */
   reasoningEffort?: string;

@@ -183,7 +183,7 @@ function buildHooks(
 }
 
 /**
- * Read-only Haiku-powered exploration agent. Registered under the `ph-explore`
+ * Read-only exploration agent. Registered under the `ph-explore`
  * name rather than `Explore` to work around a Claude Agent SDK bug where
  * `options.agents` cannot shadow built-in agent definitions. The
  * `createSubagentRewriteHook` rewrites `subagent_type: "Explore"` to

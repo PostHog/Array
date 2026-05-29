@@ -1,3 +1,4 @@
+import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import { z } from "zod";
 
 export const llmMessageSchema = z.object({
@@ -11,7 +12,7 @@ export const promptInput = z.object({
   system: z.string().optional(),
   messages: z.array(llmMessageSchema),
   maxTokens: z.number().optional(),
-  model: z.string().default("claude-haiku-4-5"),
+  model: z.string().default(DEFAULT_GATEWAY_MODEL),
 });
 
 export type PromptInput = z.infer<typeof promptInput>;
