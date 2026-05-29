@@ -750,6 +750,22 @@ export class AgentServer {
         const mcpServers = Array.isArray(params.mcpServers)
           ? params.mcpServers
           : [];
+        const refreshedCredentials = Array.isArray(params.refreshedCredentials)
+          ? (params.refreshedCredentials as string[])
+          : [];
+        const authorship =
+          typeof params.authorship === "string" ? params.authorship : "";
+
+        if (refreshedCredentials.length > 0) {
+          const owner = authorship ? ` (${authorship})` : "";
+          this.logger.debug(
+            `Refreshed sandbox credentials${owner}: ${refreshedCredentials.join(", ")}`,
+          );
+        }
+
+        if (mcpServers.length === 0) {
+          return { refreshed: true };
+        }
 
         this.logger.debug("Refresh session requested", {
           serverCount: mcpServers.length,

@@ -58,12 +58,8 @@ import {
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
 import type { PostHogAPIConfig } from "../../types";
-import {
-  isCloudRun,
-  resolveGithubToken,
-  unreachable,
-  withTimeout,
-} from "../../utils/common";
+import { isCloudRun, unreachable, withTimeout } from "../../utils/common";
+import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
 import { BaseAcpAgent } from "../base-acp-agent";
