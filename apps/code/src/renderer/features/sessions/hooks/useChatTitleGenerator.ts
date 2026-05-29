@@ -21,10 +21,32 @@ const log = logger.scope("chat-title-generator");
 
 const REGENERATE_INTERVAL = 7;
 
+function getFallbackTaskTitle(description: string): string {
+  const plainText = xmlToPlainText(description).trim();
+  return (plainText || "Untitled").slice(0, 255);
+}
+
+function isPlaceholderTaskTitle(
+  task: Pick<Task, "title" | "description">,
+): boolean {
+  if (task.title.trim().length === 0) {
+    return true;
+  }
+
+  const fallbackTitle = getFallbackTaskTitle(task.description);
+  return task.title === fallbackTitle;
+}
+
+function isAutoTitleLocked(task: Task | undefined): boolean {
+  if (!task?.title_manually_set) {
+    return false;
+  }
+
+  return !isPlaceholderTaskTitle(task);
+}
+
 function isProvisionalTaskTitle(task: Task): boolean {
-  const plainText = xmlToPlainText(task.description).trim();
-  const fallbackTitle = (plainText || "Untitled").slice(0, 255);
-  return !task.title_manually_set && task.title === fallbackTitle;
+  return isPlaceholderTaskTitle(task);
 }
 
 export function useChatTitleGenerator(task: Task): void {
@@ -93,7 +115,7 @@ export function useChatTitleGenerator(task: Task): void {
         const result = await generateTitleAndSummary(content);
         if (result) {
           const { title, summary } = result;
-          const titleLocked = !!getCachedTask(taskId)?.title_manually_set;
+          const titleLocked = isAutoTitleLocked(getCachedTask(taskId));
 
           if (title && titleLocked) {
             log.debug("Skipping auto-title, user renamed task", { taskId });

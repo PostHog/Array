@@ -142,6 +142,53 @@ describe("useChatTitleGenerator", () => {
     });
   });
 
+  it("generates title when the task has no title yet", async () => {
+    mockGenerateTitle.mockResolvedValue({
+      title: "Fix login bug",
+      summary: "User is fixing a login issue",
+    });
+
+    renderHook(() =>
+      useChatTitleGenerator(
+        createTask({
+          title: "",
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
+        title: "Fix login bug",
+      });
+    });
+  });
+
+  it("does not treat fallback titles as a manual rename", async () => {
+    mockGenerateTitle.mockResolvedValue({
+      title: "Fix login bug",
+      summary: "User is fixing a login issue",
+    });
+    mockGetCachedTask.mockReturnValue(
+      createTask({
+        title_manually_set: true,
+      }),
+    );
+
+    renderHook(() =>
+      useChatTitleGenerator(
+        createTask({
+          title_manually_set: true,
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
+        title: "Fix login bug",
+      });
+    });
+  });
+
   it("generates title on first prompt", async () => {
     mockGenerateTitle.mockResolvedValue({
       title: "Fix login bug",
@@ -182,10 +229,13 @@ describe("useChatTitleGenerator", () => {
   ])(
     "skips title update when title_manually_set ($name)",
     async ({ summary, expectsSummaryUpdate }) => {
-      mockGetCachedTask.mockReturnValue({
-        id: TASK_ID,
-        title_manually_set: true,
-      });
+      mockGetCachedTask.mockReturnValue(
+        createTask({
+          title: "Custom auth title",
+          description: "fix auth",
+          title_manually_set: true,
+        }),
+      );
       mockGenerateTitle.mockResolvedValue({
         title: "Auto title",
         summary,

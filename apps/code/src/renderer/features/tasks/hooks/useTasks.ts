@@ -1,3 +1,4 @@
+import { getSessionService } from "@features/sessions/service/service";
 import { pinnedTasksApi } from "@features/sidebar/hooks/usePinnedTasks";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
@@ -165,6 +166,87 @@ export function useUpdateTask() {
       },
     },
   );
+}
+
+export function useRenameTask() {
+  const queryClient = useQueryClient();
+  const updateTask = useUpdateTask();
+
+  const renameTask = useCallback(
+    async ({
+      taskId,
+      currentTitle,
+      newTitle,
+    }: {
+      taskId: string;
+      currentTitle: string;
+      newTitle: string;
+    }) => {
+      const previousListQueries = queryClient.getQueriesData<Task[]>({
+        queryKey: taskKeys.lists(),
+      });
+      const previousSummaryQueries = queryClient.getQueriesData<
+        Schemas.TaskSummary[]
+      >({
+        queryKey: [...taskKeys.all, "summaries"],
+      });
+      const previousDetail = queryClient.getQueryData<Task>(
+        taskKeys.detail(taskId),
+      );
+
+      queryClient.setQueriesData<Task[]>(
+        { queryKey: taskKeys.lists() },
+        (old) =>
+          old?.map((task) =>
+            task.id === taskId
+              ? { ...task, title: newTitle, title_manually_set: true }
+              : task,
+          ),
+      );
+      queryClient.setQueriesData<Schemas.TaskSummary[]>(
+        { queryKey: [...taskKeys.all, "summaries"] },
+        (old) =>
+          old?.map((task) =>
+            task.id === taskId ? { ...task, title: newTitle } : task,
+          ),
+      );
+
+      if (previousDetail) {
+        queryClient.setQueryData<Task>(taskKeys.detail(taskId), {
+          ...previousDetail,
+          title: newTitle,
+          title_manually_set: true,
+        });
+      }
+
+      getSessionService().updateSessionTaskTitle(taskId, newTitle);
+
+      try {
+        await updateTask.mutateAsync({
+          taskId,
+          updates: { title: newTitle, title_manually_set: true },
+        });
+      } catch (error) {
+        for (const [queryKey, data] of previousListQueries) {
+          queryClient.setQueryData(queryKey, data);
+        }
+        for (const [queryKey, data] of previousSummaryQueries) {
+          queryClient.setQueryData(queryKey, data);
+        }
+        if (previousDetail) {
+          queryClient.setQueryData(taskKeys.detail(taskId), previousDetail);
+        }
+        getSessionService().updateSessionTaskTitle(taskId, currentTitle);
+        throw error;
+      }
+    },
+    [queryClient, updateTask],
+  );
+
+  return {
+    renameTask,
+    isPending: updateTask.isPending,
+  };
 }
 
 interface DeleteTaskOptions {

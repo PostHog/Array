@@ -10,10 +10,9 @@ import {
   parseTabId,
 } from "@features/panels/store/panelStoreHelpers";
 import { MIN_CHAT_WIDTH } from "@features/sessions/constants";
-import { getSessionService } from "@features/sessions/service/service";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
 import { useTaskData } from "@features/task-detail/hooks/useTaskData";
-import { useUpdateTask } from "@features/tasks/hooks/useTasks";
+import { useRenameTask } from "@features/tasks/hooks/useTasks";
 import { useWorkspaceEvents } from "@features/workspace/hooks";
 import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
 import { useBlurOnEscape } from "@hooks/useBlurOnEscape";
@@ -21,7 +20,6 @@ import { useFileWatcher } from "@hooks/useFileWatcher";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
-import { useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys, useHotkeysContext } from "react-hotkeys-hook";
@@ -88,37 +86,23 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   useWorkspaceEvents(taskId);
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const updateTask = useUpdateTask();
-  const queryClient = useQueryClient();
+  const { renameTask } = useRenameTask();
 
   const handleTitleEditSubmit = useCallback(
     async (newTitle: string) => {
       setIsEditingTitle(false);
 
-      queryClient.setQueriesData<Task[]>(
-        { queryKey: ["tasks", "list"] },
-        (old) =>
-          old?.map((t) =>
-            t.id === taskId
-              ? { ...t, title: newTitle, title_manually_set: true }
-              : t,
-          ),
-      );
-
-      getSessionService().updateSessionTaskTitle(taskId, newTitle);
-
       try {
-        await updateTask.mutateAsync({
+        await renameTask({
           taskId,
-          updates: { title: newTitle, title_manually_set: true },
+          currentTitle: task.title,
+          newTitle,
         });
       } catch (error) {
         log.error("Failed to rename task", error);
-        getSessionService().updateSessionTaskTitle(taskId, task.title);
-        queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
       }
     },
-    [taskId, task.title, updateTask, queryClient],
+    [renameTask, task.title, taskId],
   );
 
   const handleTitleEditCancel = useCallback(() => {
