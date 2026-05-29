@@ -108,7 +108,13 @@ function ActionabilityBadge({ value }: { value: string }) {
 }
 
 export default function ReportDetailScreen() {
-  const { id: reportId } = useLocalSearchParams<{ id: string }>();
+  // Catch-all route: `id` arrives as string[] for `/inbox/<uuid>/<slug>` and
+  // we only read the first segment (the UUID). The slug is purely cosmetic;
+  // receivers ignore everything past the UUID, matching the desktop contract
+  // in `apps/code/src/shared/deeplink.ts`. Expo-router can hand us either a
+  // string or string[] depending on the URL shape, so tolerate both.
+  const { id: idParam } = useLocalSearchParams<{ id: string | string[] }>();
+  const reportId = Array.isArray(idParam) ? idParam[0] : idParam;
   const router = useRouter();
   const themeColors = useThemeColors();
   const insets = useSafeAreaInsets();
@@ -455,6 +461,7 @@ export default function ReportDetailScreen() {
       <DiscussReportSheet
         visible={discussOpen}
         reportId={report.id}
+        reportTitle={report.title}
         onClose={() => setDiscussOpen(false)}
         onSubmit={handleDiscussSubmit}
       />
