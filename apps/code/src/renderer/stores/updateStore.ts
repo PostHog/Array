@@ -62,27 +62,26 @@ export function initializeUpdateStore() {
       log.error("Failed to get update enabled status", { error });
     });
 
+  trpcClient.updates.getStatus
+    .query()
+    .then((status) => {
+      applyStatus(status);
+    })
+    .catch((error: unknown) => {
+      log.error("Failed to get update status", { error });
+    });
+
   const statusSub = trpcClient.updates.onStatus.subscribe(undefined, {
     onData: (status) => {
-      if (status.checking && status.downloading) {
-        useUpdateStore.setState({ status: "downloading" });
-      } else if (status.checking) {
-        useUpdateStore.setState({ status: "checking" });
-      } else if (status.upToDate) {
-        const current = useUpdateStore.getState().status;
-        if (current === "checking" || current === "downloading") {
-          useUpdateStore.setState({ status: "idle" });
-        }
+      applyStatus(status);
+
+      if (status.upToDate) {
         if (menuCheckPending) {
           menuCheckPending = false;
           toast.success("You're on the latest version");
         }
       } else if (status.error) {
         log.error("Update check failed", { error: status.error });
-        const current = useUpdateStore.getState().status;
-        if (current === "checking" || current === "downloading") {
-          useUpdateStore.setState({ status: "idle" });
-        }
         if (menuCheckPending) {
           menuCheckPending = false;
           toast.error("Failed to check for updates", {
@@ -147,4 +146,38 @@ export function initializeUpdateStore() {
     readySub.unsubscribe();
     menuCheckSub.unsubscribe();
   };
+}
+
+function applyStatus(status: {
+  checking: boolean;
+  downloading?: boolean;
+  upToDate?: boolean;
+  updateReady?: boolean;
+  version?: string;
+  error?: string;
+}): void {
+  if (status.updateReady) {
+    useUpdateStore.setState({
+      status: "ready",
+      version: status.version ?? null,
+    });
+    return;
+  }
+
+  if (status.checking && status.downloading) {
+    useUpdateStore.setState({ status: "downloading" });
+    return;
+  }
+
+  if (status.checking) {
+    useUpdateStore.setState({ status: "checking" });
+    return;
+  }
+
+  if (status.upToDate || status.error) {
+    const current = useUpdateStore.getState().status;
+    if (current === "checking" || current === "downloading") {
+      useUpdateStore.setState({ status: "idle" });
+    }
+  }
 }

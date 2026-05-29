@@ -8,6 +8,7 @@ const {
   mockAppMeta,
   mockMainWindow,
   mockLifecycleService,
+  mockLog,
   updaterHandlers,
 } = vi.hoisted(() => {
   const updaterHandlers: {
@@ -80,17 +81,18 @@ const {
       shutdownWithoutContainer: vi.fn(() => Promise.resolve()),
       setQuittingForUpdate: vi.fn(),
     },
+    mockLog: {
+      info: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+    },
   };
 });
 
 vi.mock("../../utils/logger.js", () => ({
   logger: {
-    scope: () => ({
-      info: vi.fn(),
-      error: vi.fn(),
-      warn: vi.fn(),
-      debug: vi.fn(),
-    }),
+    scope: () => mockLog,
   },
 }));
 
@@ -134,6 +136,7 @@ describe("UpdatesService", () => {
     mockAppMeta.isProduction = true;
     mockAppMeta.version = "1.0.0";
     mockUpdater.isSupported.mockReturnValue(true);
+    mockUpdater.quitAndInstall.mockImplementation(() => undefined);
     mockAppLifecycle.whenReady.mockResolvedValue(undefined);
 
     // Set default platform to darwin (macOS)
@@ -464,6 +467,26 @@ describe("UpdatesService", () => {
       const result = await resultPromise;
       expect(result).toEqual({ installed: false });
     });
+
+    it("is idempotent when install is already in progress", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+
+      await expect(service.installUpdate()).resolves.toEqual({
+        installed: true,
+      });
+      expect(mockUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+
+      await expect(service.installUpdate()).resolves.toEqual({
+        installed: true,
+      });
+      expect(mockUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+      expect(mockLog.warn).not.toHaveBeenCalledWith(
+        "installUpdate called but no update is ready",
+        expect.anything(),
+      );
+    });
   });
 
   describe("triggerMenuCheck", () => {
@@ -598,6 +621,31 @@ describe("UpdatesService", () => {
 
       // Should not emit status since we weren't checking
       expect(statusHandler).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("status snapshots", () => {
+    it("returns update-ready status for a staged update", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+
+      expect(service.getStatus()).toEqual({
+        checking: false,
+        updateReady: true,
+        version: "v2.0.0",
+      });
+    });
+
+    it("returns downloading status while an update is downloading", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateAvailable?.();
+
+      expect(service.getStatus()).toEqual({
+        checking: true,
+        downloading: true,
+      });
     });
   });
 
@@ -837,6 +885,42 @@ describe("UpdatesService", () => {
 
       // Update should still be ready (state not corrupted)
       expect(service.hasUpdateReady).toBe(true);
+    });
+  });
+
+  describe("transition logging", () => {
+    it("logs state transitions with source and state metadata", () => {
+      service.checkForUpdates("user");
+
+      expect(mockLog.info).toHaveBeenCalledWith(
+        "Update state transition",
+        expect.objectContaining({
+          source: "user",
+          fromState: "idle",
+          toState: "checking",
+          downloadedVersion: null,
+          skippedBecauseUpdateStaged: false,
+        }),
+      );
+    });
+
+    it("logs skipped checks after an update is staged", async () => {
+      await initializeService(service);
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+
+      mockLog.info.mockClear();
+      service.checkForUpdates("periodic");
+
+      expect(mockLog.info).toHaveBeenCalledWith(
+        "Update state transition",
+        expect.objectContaining({
+          source: "periodic",
+          fromState: "ready",
+          toState: "ready",
+          downloadedVersion: "v2.0.0",
+          skippedBecauseUpdateStaged: true,
+        }),
+      );
     });
   });
 
