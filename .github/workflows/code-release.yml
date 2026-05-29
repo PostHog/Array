@@ -141,7 +141,7 @@ jobs:
         run: pnpm --filter code exec electron-forge publish --dry-run --arch=${{ matrix.arch }} --platform=darwin
 
       - name: Install Playwright
-        run: pnpm --filter code exec playwright install --with-deps chromium
+        run: pnpm --filter code exec playwright install
 
       - name: Smoke test packaged app
         env:
