@@ -21,8 +21,10 @@ import { defineConfig, loadEnv, type Plugin } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 // @ts-expect-error - plain ESM helper shared with packages/agent/tsup.config.ts
 import {
+  CLAUDE_CLI_SUPPORT_DIRS,
+  CLAUDE_CLI_SUPPORT_FILES,
   claudeBinName,
-  nativeBinaryCandidates as sdkNativeBinaryCandidates,
+  claudeExecutableCandidates as sdkClaudeExecutableCandidates,
   targetArch,
   targetPlatform,
 } from "../../packages/agent/build/native-binary.mjs";
@@ -145,6 +147,24 @@ function signClaudeBinary(destPath: string): void {
   }
 }
 
+function copyClaudeSupportAssets(sourcePath: string, destDir: string): void {
+  const sourceDir = dirname(sourcePath);
+
+  for (const file of CLAUDE_CLI_SUPPORT_FILES) {
+    const source = join(sourceDir, file);
+    if (existsSync(source)) {
+      copyFileSync(source, join(destDir, file));
+    }
+  }
+
+  for (const dir of CLAUDE_CLI_SUPPORT_DIRS) {
+    const source = join(sourceDir, dir);
+    if (existsSync(source)) {
+      cpSync(source, join(destDir, dir), { recursive: true });
+    }
+  }
+}
+
 function copyClaudeExecutable(): Plugin {
   return {
     name: "copy-claude-executable",
@@ -170,8 +190,8 @@ function copyClaudeExecutable(): Plugin {
           binName,
         ),
         join(__dirname, "../../packages/agent/dist/claude-cli", binName),
-        ...sdkNativeBinaryCandidates(join(__dirname, "node_modules")),
-        ...sdkNativeBinaryCandidates(join(__dirname, "../../node_modules")),
+        ...sdkClaudeExecutableCandidates(join(__dirname, "node_modules")),
+        ...sdkClaudeExecutableCandidates(join(__dirname, "../../node_modules")),
       ];
 
       const source = packageCandidates.find((p: string) => existsSync(p));
@@ -187,6 +207,7 @@ function copyClaudeExecutable(): Plugin {
       if (targetPlatform() !== "win32") {
         execSync(`chmod +x "${destBinary}"`);
       }
+      copyClaudeSupportAssets(source, destDir);
       verifyBinaryArch(destBinary);
       signClaudeBinary(destBinary);
       claudeCliCopied = true;

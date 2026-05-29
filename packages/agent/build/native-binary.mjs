@@ -27,6 +27,15 @@ export function claudeBinName(platform = targetPlatform()) {
   return platform === "win32" ? "claude.exe" : "claude";
 }
 
+export const CLAUDE_CLI_SUPPORT_FILES = [
+  "package.json",
+  "manifest.json",
+  "manifest.zst.json",
+  "yoga.wasm",
+];
+
+export const CLAUDE_CLI_SUPPORT_DIRS = ["vendor"];
+
 /**
  * Detect whether the *current* Node was built against musl libc (not glibc).
  * Only meaningful when targetPlatform() === "linux" and we're running on
@@ -57,4 +66,21 @@ export function nativeBinaryCandidates(rootNodeModules) {
   return slugs.map((slug) =>
     join(rootNodeModules, `@anthropic-ai/claude-agent-sdk-${slug}`, binary),
   );
+}
+
+/**
+ * SDK 0.3.x is in the middle of transitioning from a monolithic `cli.js`
+ * package layout to platform-specific native executables. Keep the legacy
+ * entrypoint as a fallback until the optional native packages are universally
+ * available across our build environments.
+ */
+export function legacyCliCandidates(rootNodeModules) {
+  return [join(rootNodeModules, "@anthropic-ai/claude-agent-sdk", "cli.js")];
+}
+
+export function claudeExecutableCandidates(rootNodeModules) {
+  return [
+    ...nativeBinaryCandidates(rootNodeModules),
+    ...legacyCliCandidates(rootNodeModules),
+  ];
 }

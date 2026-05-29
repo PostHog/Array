@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resolveMainRepoPath } from "./repo-path";
-import { SettingsManager } from "./settings";
+import { mergeAvailableModels, SettingsManager } from "./settings";
 
 function runGit(cwd: string, args: string[]): void {
   execFileSync("git", args, { cwd, stdio: ["ignore", "ignore", "pipe"] });
@@ -284,5 +284,27 @@ describe("availableModels merge", () => {
     await manager.initialize();
 
     expect(manager.getSettings().availableModels).toBeUndefined();
+  });
+});
+
+describe("mergeAvailableModels", () => {
+  it("merges and dedupes non-enterprise layers", () => {
+    expect(
+      mergeAvailableModels(
+        ["model-a", "model-b"],
+        ["model-b", "model-c"],
+        "project",
+      ),
+    ).toEqual(["model-a", "model-b", "model-c"]);
+  });
+
+  it("lets enterprise settings replace lower-precedence allowlists", () => {
+    expect(
+      mergeAvailableModels(
+        ["model-a", "model-b"],
+        ["managed-a", "managed-a"],
+        "enterprise",
+      ),
+    ).toEqual(["managed-a"]);
   });
 });

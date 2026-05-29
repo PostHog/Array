@@ -7,21 +7,41 @@ import {
   writeFileSync,
 } from "node:fs";
 import { builtinModules } from "node:module";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { defineConfig } from "tsup";
 // Plain ESM helper, shared with apps/code/vite.main.config.mts.
 import {
+  CLAUDE_CLI_SUPPORT_DIRS,
+  CLAUDE_CLI_SUPPORT_FILES,
   claudeBinName,
-  nativeBinaryCandidates,
+  claudeExecutableCandidates,
   targetArch,
   targetPlatform,
 } from "./build/native-binary.mjs";
 
 function nativeBinarySourcePath(): string | undefined {
-  const candidates = nativeBinaryCandidates(
+  const candidates = claudeExecutableCandidates(
     resolve(import.meta.dirname, "../../node_modules"),
   );
   return candidates.find((p: string) => existsSync(p));
+}
+
+function copyClaudeSupportAssets(sourcePath: string, destDir: string): void {
+  const sourceDir = dirname(sourcePath);
+
+  for (const file of CLAUDE_CLI_SUPPORT_FILES) {
+    const source = resolve(sourceDir, file);
+    if (existsSync(source)) {
+      copyFileSync(source, resolve(destDir, file));
+    }
+  }
+
+  for (const dir of CLAUDE_CLI_SUPPORT_DIRS) {
+    const source = resolve(sourceDir, dir);
+    if (existsSync(source)) {
+      cpSync(source, resolve(destDir, dir), { recursive: true });
+    }
+  }
 }
 
 function copyAssets() {
@@ -45,9 +65,10 @@ function copyAssets() {
     if (targetPlatform() !== "win32") {
       chmodSync(dest, 0o755);
     }
+    copyClaudeSupportAssets(nativeBinary, claudeCliDir);
   } else {
     console.warn(
-      `[agent/tsup] No native claude binary found for ${targetPlatform()}-${targetArch()}; install @anthropic-ai/claude-agent-sdk optional deps`,
+      `[agent/tsup] No Claude executable found for ${targetPlatform()}-${targetArch()}; install @anthropic-ai/claude-agent-sdk optional deps`,
     );
   }
 

@@ -282,7 +282,7 @@ const config: ForgeConfig = {
         copyNativeDependency(watcherPkg, buildPath);
       } else if (process.platform === "linux") {
         const watcherPkg =
-          process.arch === "arm64"
+          targetArch === "arm64"
             ? "@parcel/watcher-linux-arm64-glibc"
             : "@parcel/watcher-linux-x64-glibc";
         copyNativeDependency(watcherPkg, buildPath);

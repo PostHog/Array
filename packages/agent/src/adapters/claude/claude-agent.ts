@@ -101,6 +101,10 @@ import { canUseTool } from "./permissions/permission-handlers";
 import { getAvailableSlashCommands } from "./session/commands";
 import { parseMcpServers } from "./session/mcp-config";
 import {
+  applyAvailableModelsAllowlist,
+  resolveInitialModelId,
+} from "./session/model-config";
+import {
   DEFAULT_MODEL,
   getEffortOptions,
   resolveModelPreference,
@@ -182,45 +186,6 @@ function shouldEmitRawMessage(
       f.type === message.type &&
       (f.subtype === undefined || f.subtype === message.subtype),
   );
-}
-
-/**
- * Restrict gateway model options to the user's `availableModels` allowlist
- * from settings.json. Unknown allowlist entries (e.g. retired model IDs like
- * `claude-opus-4-5` left in stale settings) are dropped: passing them through
- * would make setModel reject the resolved id and break session init. If every
- * entry is unknown we fall back to the gateway list as a safety net.
- */
-function applyAvailableModelsAllowlist(
-  modelOptions: {
-    currentModelId: string;
-    options: SessionConfigSelectOption[];
-  },
-  allowlist: string[],
-): { currentModelId: string; options: SessionConfigSelectOption[] } {
-  const filtered: SessionConfigSelectOption[] = [];
-  const seen = new Set<string>();
-
-  for (const entry of allowlist) {
-    const trimmed = entry.trim();
-    if (!trimmed || seen.has(trimmed)) continue;
-
-    const match = modelOptions.options.find((o) => o.value === trimmed);
-    if (match) {
-      filtered.push(match);
-      seen.add(trimmed);
-    }
-  }
-
-  if (filtered.length === 0) return modelOptions;
-
-  const currentModelId = filtered.some(
-    (o) => o.value === modelOptions.currentModelId,
-  )
-    ? modelOptions.currentModelId
-    : filtered[0].value;
-
-  return { currentModelId, options: filtered };
 }
 
 export interface ClaudeAcpAgentOptions {
@@ -1587,10 +1552,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
     }
 
-    const settingsModel = settingsManager.getSettings().model;
-    const metaModel = meta?.model;
-    const resolvedModelId =
-      settingsModel || metaModel || modelOptions.currentModelId;
+    const resolvedModelId = resolveInitialModelId(modelOptions, [
+      settingsManager.getSettings().model,
+      meta?.model,
+    ]);
     session.modelId = resolvedModelId;
     session.lastContextWindowSize =
       this.getContextWindowForModel(resolvedModelId);
