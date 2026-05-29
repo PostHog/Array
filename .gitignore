@@ -50,6 +50,7 @@ playwright-report/
 test-results/
 *storybook.log
 .session-store.json
+.playwright-mcp
 
 # Downloaded binaries
 apps/code/resources/codex-acp/

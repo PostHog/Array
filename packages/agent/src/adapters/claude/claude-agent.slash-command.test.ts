@@ -58,6 +58,7 @@ function installFakeSession(
       cachedReadTokens: 0,
       cachedWriteTokens: 0,
     },
+    sessionResources: new Set(),
     configOptions: [],
     promptRunning: false,
     pendingMessages: new Map(),

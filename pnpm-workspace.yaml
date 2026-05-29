@@ -4,28 +4,34 @@ packages:
   - tooling/*
 
 catalog:
-  typescript: ^5.5.0
-  tsup: ^8.5.1
-  "@types/node": ^20.0.0
+  '@hono/node-server': ^1.13.7
+  '@hono/trpc-server': ^0.3.4
+  '@parcel/watcher': ^2.5.6
+  '@phosphor-icons/react': ^2.1.10
+  '@posthog/quill': 0.3.0-beta.1
+  '@radix-ui/themes': ^3.2.1
+  '@tanstack/devtools-vite': ^0.7.0
+  '@tanstack/react-devtools': ^0.10.5
+  '@tanstack/react-query': ^5.90.2
+  '@tanstack/react-router': ^1.95.0
+  '@tanstack/react-router-devtools': ^1.95.0
+  '@tanstack/router-generator': ^1.95.0
+  '@tanstack/router-plugin': ^1.95.0
+  '@trpc/client': ^11.12.0
+  '@trpc/server': ^11.12.0
+  '@trpc/tanstack-react-query': 11.12.0
+  '@types/node': ^20.0.0
+  '@types/react': ^19.1.0
+  '@types/react-dom': ^19.1.0
+  hono: ^4.6.14
+  inversify: ^7.10.6
   react: 19.1.0
   react-dom: 19.1.0
-  "@types/react": ^19.1.0
-  "@types/react-dom": ^19.1.0
-  hono: ^4.6.14
-  "@hono/node-server": ^1.13.7
-  "@hono/trpc-server": ^0.3.4
-  "@trpc/server": ^11.12.0
-  "@trpc/client": ^11.12.0
-  "@trpc/tanstack-react-query": ^11.12.0
-  superjson: ^2.2.2
-  zod: ^3.24.1
-  "@tanstack/react-query": ^5.90.2
-  "@phosphor-icons/react": ^2.1.10
-  "@radix-ui/themes": ^3.2.1
-  "@posthog/quill": 0.3.0-beta.1
-  inversify: ^7.10.6
   reflect-metadata: ^0.2.2
-  "@parcel/watcher": ^2.5.6
+  superjson: ^2.2.2
+  tsup: ^8.5.1
+  typescript: ^5.5.0
+  zod: ^3.24.1
 
 ignoredBuiltDependencies:
   - msw
@@ -48,6 +54,22 @@ minimumReleaseAgeExclude:
   - '@pierre/diffs'
   - '@posthog/quill'
   - '@posthog/quill-tokens'
+  - '@tanstack/devtools-core'
+  - '@tanstack/devtools-vite'
+  - '@tanstack/history'
+  - '@tanstack/react-devtools'
+  - '@tanstack/react-router'
+  - '@tanstack/react-router-devtools'
+  - '@tanstack/react-store'
+  - '@tanstack/react-virtual'
+  - '@tanstack/router-core'
+  - '@tanstack/router-devtools-core'
+  - '@tanstack/router-generator'
+  - '@tanstack/router-plugin'
+  - '@tanstack/router-utils'
+  - '@tanstack/store'
+  - '@tanstack/virtual-core'
+  - '@tanstack/virtual-file-routes'
 
 onlyBuiltDependencies:
   - '@parcel/watcher'

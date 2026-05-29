@@ -166,3 +166,11 @@ export function getAutoSuspendAfterDays(): number {
 export function setAutoSuspendAfterDays(value: number): void {
   settingsStore.set("autoSuspendAfterDays", value);
 }
+
+export function getPreventSleepWhileRunning(): boolean {
+  return settingsStore.get("preventSleepWhileRunning", false);
+}
+
+export function setPreventSleepWhileRunning(value: boolean): void {
+  settingsStore.set("preventSleepWhileRunning", value);
+}

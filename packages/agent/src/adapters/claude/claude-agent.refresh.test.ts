@@ -97,6 +97,7 @@ function installFakeSession(
       cachedReadTokens: 0,
       cachedWriteTokens: 0,
     },
+    sessionResources: new Set(),
     configOptions: [],
     promptRunning: false,
     pendingMessages: new Map(),
@@ -276,6 +277,29 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
     expect(lastQueryCall.options?.abortController).toBe(
       updated.abortController,
     );
+  });
+
+  it("recovers when interrupting the old query throws Operation aborted", async () => {
+    const agent = makeAgent();
+    const { session, oldQuery, endSpy } = installFakeSession(
+      agent,
+      "s-interrupt-throws",
+    );
+    oldQuery.interrupt.mockRejectedValue(new Error("Operation aborted"));
+
+    const result = await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpServers: freshMcpServers,
+    });
+
+    expect(result).toEqual({ refreshed: true });
+    expect(endSpy).toHaveBeenCalledTimes(1);
+    const updated = session as unknown as {
+      query: SdkQueryHandle;
+      abortController: AbortController;
+    };
+    expect(updated.query).toBe(createdQueries[0]);
+    expect(updated.query).not.toBe(oldQuery);
+    expect(updated.abortController.signal.aborted).toBe(false);
   });
 
   it("re-fetches MCP tool metadata for the new query", async () => {

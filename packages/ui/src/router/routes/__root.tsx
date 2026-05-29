@@ -1,0 +1,217 @@
+import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
+import { BILLING_FLAG, SYNC_CLOUD_TASKS_FLAG } from "@posthog/shared";
+import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
+import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
+import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
+import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
+import { useTaskDeepLink } from "@posthog/ui/features/deep-links/useTaskDeepLink";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { useInboxDeepLink } from "@posthog/ui/features/inbox/hooks/useInboxDeepLink";
+import { useIntegrations } from "@posthog/ui/features/integrations/useIntegrations";
+import { useSetupDiscovery } from "@posthog/ui/features/setup/useSetupDiscovery";
+import { MainSidebar } from "@posthog/ui/features/sidebar/components/MainSidebar";
+import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
+import { useVisualTaskOrder } from "@posthog/ui/features/sidebar/useVisualTaskOrder";
+import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { TourOverlay } from "@posthog/ui/features/tour/components/TourOverlay";
+import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
+import { useAppView } from "@posthog/ui/router/useAppView";
+import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
+import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
+import { GlobalEventHandlers } from "@posthog/ui/shell/GlobalEventHandlers";
+import { HeaderRow } from "@posthog/ui/shell/HeaderRow";
+import { HedgehogMode } from "@posthog/ui/shell/HedgehogMode";
+import { logger } from "@posthog/ui/shell/logger";
+import { SpaceSwitcher } from "@posthog/ui/shell/SpaceSwitcher";
+import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
+import { Box, Flex } from "@radix-ui/themes";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  createRootRoute,
+  Outlet,
+  useRouterState,
+} from "@tanstack/react-router";
+import { lazy, Suspense, useEffect, useRef } from "react";
+
+// Dynamic import keeps the devtools chunk out of the prod bundle. Without the
+// gate at the import level, conditional render alone still ships the devtools
+// code to users.
+//
+// We embed the router devtools as a plugin inside the unified TanStack Devtools
+// shell rather than rendering the standalone floating logo. The shell owns a
+// single trigger that can be dragged, dismissed, and hidden-until-hover, and it
+// persists those choices to localStorage — so the panel stays out of the way.
+const TanStackDevtools = import.meta.env.DEV
+  ? lazy(async () => {
+      const [
+        { TanStackDevtools: DevtoolsShell },
+        { TanStackRouterDevtoolsPanel },
+      ] = await Promise.all([
+        import("@tanstack/react-devtools"),
+        import("@tanstack/react-router-devtools"),
+      ]);
+      // Hoisted so the config/plugins keep stable references across the
+      // RootLayout re-renders that fire on every navigation — otherwise the
+      // shell could remount the panel (and flash) on each route change.
+      const config = {
+        position: "bottom-right",
+        hideUntilHover: true,
+      } as const;
+      const plugins = [
+        {
+          name: "TanStack Router",
+          render: <TanStackRouterDevtoolsPanel />,
+        },
+      ];
+      return {
+        default: () => <DevtoolsShell config={config} plugins={plugins} />,
+      };
+    })
+  : () => null;
+
+const log = logger.scope("root-route");
+
+export const Route = createRootRoute({
+  component: RootLayout,
+});
+
+function RootLayout() {
+  const view = useAppView();
+  const {
+    isOpen: commandMenuOpen,
+    setOpen: setCommandMenuOpen,
+    toggle: toggleCommandMenu,
+  } = useCommandMenuStore();
+  const {
+    isOpen: shortcutsSheetOpen,
+    close: closeShortcutsSheet,
+    toggle: toggleShortcutsSheet,
+  } = useShortcutsSheetStore();
+  const { data: tasks } = useTasks();
+  const { data: workspaces, isFetched: workspacesFetched } = useWorkspaces();
+  const trpc = useHostTRPC();
+  const hostClient = useHostTRPCClient();
+  const queryClient = useQueryClient();
+  const reconcilingTaskIds = useRef<Set<string>>(new Set());
+  const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
+
+  const sidebarData = useSidebarData({ activeView: view });
+  const visualTaskOrder = useVisualTaskOrder(sidebarData);
+  const activeTaskId =
+    view.type === "task-detail" && view.taskId ? view.taskId : null;
+
+  useIntegrations();
+  useTaskDeepLink();
+  useInboxDeepLink();
+  useSetupDiscovery();
+  useNewTaskDeepLink();
+
+  // hydrateTask is no longer needed — the URL is the source of truth and the
+  // task cache populates the route automatically.
+
+  useEffect(() => {
+    if (!syncCloudTasksEnabled) return;
+    if (!tasks || !workspaces || !workspacesFetched) return;
+    const missing = tasks.filter(
+      (t) =>
+        t.latest_run?.environment === "cloud" &&
+        !workspaces[t.id] &&
+        !reconcilingTaskIds.current.has(t.id),
+    );
+    if (missing.length === 0) return;
+    const missingIds = missing.map((t) => t.id);
+    for (const id of missingIds) reconcilingTaskIds.current.add(id);
+    // Single batched IPC instead of one mutation per task — with many cloud
+    // tasks the per-task pattern saturates the main thread at boot.
+    hostClient.workspace.reconcileCloudWorkspaces
+      .mutate({ taskIds: missingIds })
+      .then((result) => {
+        for (const id of missingIds) reconcilingTaskIds.current.delete(id);
+        if (result.created.length > 0) {
+          void queryClient.invalidateQueries({
+            queryKey: trpc.workspace.getAll.queryKey(),
+          });
+        }
+      })
+      .catch((err) => {
+        for (const id of missingIds) reconcilingTaskIds.current.delete(id);
+        log.warn("Failed to reconcile cloud workspaces", err);
+      });
+  }, [
+    syncCloudTasksEnabled,
+    tasks,
+    workspaces,
+    workspacesFetched,
+    queryClient,
+    hostClient,
+    trpc,
+  ]);
+
+  // Settings is a full-page route — drop the app chrome (header/sidebar/
+  // space-switcher) so the panel occupies the full window.
+  const isSettingsRoute = useRouterState({
+    select: (s) => s.matches.some((m) => m.routeId.startsWith("/settings")),
+  });
+
+  if (isSettingsRoute) {
+    return (
+      <Flex direction="column" height="100vh">
+        <Outlet />
+        <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+        <KeyboardShortcutsSheet
+          open={shortcutsSheetOpen}
+          onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
+        />
+        <GlobalEventHandlers
+          onToggleCommandMenu={toggleCommandMenu}
+          onToggleShortcutsSheet={toggleShortcutsSheet}
+        />
+        {billingEnabled && <UsageLimitModal />}
+        {import.meta.env.DEV && (
+          <Suspense fallback={null}>
+            <TanStackDevtools />
+          </Suspense>
+        )}
+      </Flex>
+    );
+  }
+
+  return (
+    <Flex direction="column" height="100vh">
+      <HeaderRow />
+      <Flex flexGrow="1" overflow="hidden">
+        <MainSidebar />
+        <Box flexGrow="1" overflow="hidden">
+          <Outlet />
+        </Box>
+      </Flex>
+
+      <SpaceSwitcher
+        tasks={visualTaskOrder}
+        activeTaskId={activeTaskId}
+        allTasks={tasks ?? []}
+        isOnNewTask={view.type === "task-input" || view.type === "task-pending"}
+        onNavigateToTask={openTask}
+        onNewTask={openTaskInput}
+      />
+      <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+      <KeyboardShortcutsSheet
+        open={shortcutsSheetOpen}
+        onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
+      />
+      <GlobalEventHandlers
+        onToggleCommandMenu={toggleCommandMenu}
+        onToggleShortcutsSheet={toggleShortcutsSheet}
+      />
+      <TourOverlay />
+      {billingEnabled && <UsageLimitModal />}
+      <HedgehogMode />
+      {import.meta.env.DEV && (
+        <Suspense fallback={null}>
+          <TanStackDevtools />
+        </Suspense>
+      )}
+    </Flex>
+  );
+}

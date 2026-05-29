@@ -7,18 +7,35 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./analytics-events": {
+      "types": "./dist/analytics-events.d.ts",
+      "import": "./dist/analytics-events.js"
+    },
+    "./domain-types": {
+      "types": "./dist/domain-types.d.ts",
+      "import": "./dist/domain-types.js"
+    },
+    "./mcp-sandbox-proxy": {
+      "types": "./dist/mcp-sandbox-proxy.d.ts",
+      "import": "./dist/mcp-sandbox-proxy.js"
     }
   },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "clean": "node ../../scripts/rimraf.mjs dist .turbo"
+  },
+  "dependencies": {
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "0.19.0",
     "tsup": "^8.5.1",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^4.0.10"
   },
   "files": [
     "dist/**/*",

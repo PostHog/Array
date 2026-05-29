@@ -5,3 +5,5 @@ export interface IFileIcon {
    */
   getAsDataUrl(filePath: string): Promise<string | null>;
 }
+
+export const FILE_ICON_SERVICE = Symbol.for("posthog.platform.fileIcon");

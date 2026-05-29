@@ -364,6 +364,12 @@ async function handleDefaultPermissionFlow(
     suggestions,
   );
 
+  // Tag MCP tool calls so the renderer routes them through McpPermission,
+  // which knows how to show `serverName - toolName (MCP)` plus the unwrapped
+  // PostHog exec body. Without this, the dialog falls back to DefaultPermission
+  // and just shows the bare tool name (e.g. "exec") with no context.
+  const isMcpTool = toolName.startsWith("mcp__");
+
   const response = await client.requestPermission({
     options,
     sessionId,
@@ -374,6 +380,7 @@ async function handleDefaultPermissionFlow(
       content: toolInfo.content,
       locations: toolInfo.locations,
       rawInput: { ...(toolInput as Record<string, unknown>), toolName },
+      ...(isMcpTool ? { _meta: { claudeCode: { toolName } } } : {}),
     },
   });
 

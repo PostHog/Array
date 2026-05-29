@@ -10,6 +10,7 @@ interface TestableServer {
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
+    taskTitle?: string | null;
   }): void;
 }
 
@@ -18,6 +19,7 @@ const ENV_KEYS_UNDER_TEST = [
   "ANTHROPIC_BASE_URL",
   "OPENAI_BASE_URL",
   "ANTHROPIC_CUSTOM_HEADERS",
+  "POSTHOG_PROJECT_ID",
 ] as const;
 
 describe("AgentServer.configureEnvironment", () => {
@@ -75,6 +77,15 @@ describe("AgentServer.configureEnvironment", () => {
     );
   });
 
+  // The Claude session builder reads POSTHOG_PROJECT_ID to emit the
+  // `x-posthog-property-team_id` attribution header (see
+  // adapters/claude/session/options.ts), so the cloud path must export it.
+  it("exports POSTHOG_PROJECT_ID for the team_id attribution header", () => {
+    buildServer("background").configureEnvironment({ isInternal: false });
+
+    expect(process.env.POSTHOG_PROJECT_ID).toBe("1");
+  });
+
   it("tags as posthog_code when isInternal is omitted (getTask failure fallback)", () => {
     buildServer("background").configureEnvironment();
 
@@ -130,6 +141,7 @@ describe("AgentServer.configureEnvironment", () => {
       taskId: "task-abc",
       taskRunId: "run-xyz",
       taskUserId: 42,
+      taskTitle: "Fix the bug",
     });
 
     expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toBe(
@@ -140,7 +152,21 @@ describe("AgentServer.configureEnvironment", () => {
         "x-posthog-property-task_id: task-abc",
         "x-posthog-property-task_run_id: run-xyz",
         "x-posthog-property-task_user_id: 42",
+        "x-posthog-property-task_title: Fix the bug",
       ].join("\n"),
+    );
+  });
+
+  // A signals_scout title is multi-line; it must not inject extra header lines.
+  it("collapses newlines in the task title", () => {
+    buildServer("background").configureEnvironment({
+      isInternal: false,
+      taskId: "task-abc",
+      taskTitle: "[sandbox_prompt:signals_scout:signals-scout-logs]\nLine two",
+    });
+
+    expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toContain(
+      "x-posthog-property-task_title: [sandbox_prompt:signals_scout:signals-scout-logs] Line two",
     );
   });
 

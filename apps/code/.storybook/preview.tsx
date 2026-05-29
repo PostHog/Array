@@ -2,7 +2,7 @@ import "./mocks/electron-trpc";
 import { Theme } from "@radix-ui/themes";
 import "@radix-ui/themes/styles.css";
 import type { Preview } from "@storybook/react-vite";
-import "../src/renderer/styles/globals.css";
+import "../../../packages/ui/src/styles/globals.css";
 
 const preview: Preview = {
   parameters: {

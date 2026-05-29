@@ -11,3 +11,5 @@ export interface INotifier {
   setUnreadIndicator(on: boolean): void;
   requestAttention(): void;
 }
+
+export const NOTIFIER_SERVICE = Symbol.for("posthog.platform.notifier");

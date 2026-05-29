@@ -1,4 +1,3 @@
-import { EventEmitter, on } from "node:events";
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as watcher from "@parcel/watcher";
@@ -16,6 +15,7 @@ import {
   StashPopSaga,
   StashPushSaga,
 } from "@posthog/git/sagas/stash";
+import { TypedEventEmitter } from "@posthog/shared";
 import { injectable } from "inversify";
 import type {
   FocusBranchRenamedEvent,
@@ -34,24 +34,6 @@ type FocusServiceEvents = {
   [FocusServiceEvent.BranchRenamed]: FocusBranchRenamedEvent;
   [FocusServiceEvent.ForeignBranchCheckout]: FocusForeignBranchCheckoutEvent;
 };
-
-class TypedEventEmitter<TEvents> extends EventEmitter {
-  emit<K extends keyof TEvents & string>(
-    event: K,
-    payload: TEvents[K],
-  ): boolean {
-    return super.emit(event, payload);
-  }
-
-  async *toIterable<K extends keyof TEvents & string>(
-    event: K,
-    opts?: { signal?: AbortSignal },
-  ): AsyncIterable<TEvents[K]> {
-    for await (const [payload] of on(this, event, opts)) {
-      yield payload as TEvents[K];
-    }
-  }
-}
 
 @injectable()
 export class FocusService extends TypedEventEmitter<FocusServiceEvents> {

@@ -41,6 +41,7 @@ import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type { Task } from "@/features/tasks/types";
 import { getSessionActivityPhase } from "@/features/tasks/utils/sessionActivity";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
+import { useActiveTaskAnalyticsContext } from "@/lib/analytics";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
@@ -93,6 +94,11 @@ export default function TaskDetailScreen() {
       setFocusedTaskId(null);
     };
   }, [taskId, setFocusedTaskId]);
+
+  // Tag every PostHog event fired while this task is open with the originating
+  // inbox report id, so a discuss-launched run can be filtered down in PostHog.
+  // Cleared when the screen unmounts. Matches the desktop super-property.
+  useActiveTaskAnalyticsContext(task?.signal_report ?? null);
 
   const session = taskId ? getSessionForTask(taskId) : undefined;
 

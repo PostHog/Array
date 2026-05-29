@@ -6,6 +6,9 @@ const {
   mockAppLifecycle,
   mockContainer,
   mockDatabaseService,
+  mockSuspensionService,
+  mockWatcherRegistry,
+  mockProcessTracking,
   mockTrackAppEvent,
   mockShutdownPostHog,
   mockShutdownOtelTransport,
@@ -15,6 +18,21 @@ const {
     close: vi.fn(),
   };
   return {
+    mockSuspensionService: {
+      stopInactivityChecker: vi.fn(),
+    },
+    mockWatcherRegistry: {
+      shutdownAll: vi.fn(() => Promise.resolve()),
+    },
+    mockProcessTracking: {
+      getSnapshot: vi.fn(() =>
+        Promise.resolve({
+          tracked: { shell: [], agent: [], child: [] },
+          discovered: [],
+        }),
+      ),
+      killAll: vi.fn(),
+    },
     mockAppLifecycle: {
       whenReady: vi.fn().mockResolvedValue(undefined),
       quit: vi.fn(),
@@ -49,16 +67,18 @@ vi.mock("../../utils/otel-log-transport.js", () => ({
   shutdownOtelTransport: mockShutdownOtelTransport,
 }));
 
-vi.mock("../posthog-analytics.js", () => ({
-  trackAppEvent: mockTrackAppEvent,
-  shutdownPostHog: mockShutdownPostHog,
+vi.mock("../../platform-adapters/posthog-analytics.js", () => ({
+  posthogNodeAnalytics: {
+    track: mockTrackAppEvent,
+    shutdown: mockShutdownPostHog,
+  },
 }));
 
 vi.mock("../../di/container.js", () => ({
   container: mockContainer,
 }));
 
-vi.mock("../../../shared/types/analytics.js", () => ({
+vi.mock("@posthog/shared/analytics-events", () => ({
   ANALYTICS_EVENTS: {
     APP_QUIT: "app_quit",
   },
@@ -74,6 +94,10 @@ describe("AppLifecycleService", () => {
     process.exit = mockProcessExit;
     service = new AppLifecycleService(
       mockAppLifecycle as unknown as IAppLifecycle,
+      mockDatabaseService as never,
+      mockSuspensionService as never,
+      mockWatcherRegistry as never,
+      mockProcessTracking as never,
     );
   });
 

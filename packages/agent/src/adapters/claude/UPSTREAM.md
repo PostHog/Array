@@ -5,8 +5,8 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 ## Fork Point
 
 - **Forked**: v0.10.9, commit `5411e0f4`, Dec 2 2025
-- **Last sync**: v0.38.0 + #716, commit `61ebda2`, May 28 2026
-- **SDK**: `@anthropic-ai/claude-agent-sdk` 0.3.154, `@agentclientprotocol/sdk` 0.22.1, `@anthropic-ai/sdk` 0.100.0
+- **Last sync**: v0.39.0, commit `51a370e`, May 29 2026
+- **SDK**: `@anthropic-ai/claude-agent-sdk` 0.3.156, `@agentclientprotocol/sdk` 0.22.1, `@anthropic-ai/sdk` 0.100.1
 
 ## File Mapping
 
@@ -66,6 +66,19 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 - **Raw SDK message relay** (v0.27.0): `emitRawSDKMessages` on `NewSessionMeta` for opt-in diagnostics
 - **Effort level sync** (v0.25.x): `xhigh` level added, `applyFlagSettings` on effort change
 - **Auto permission mode** (v0.25.0): Added to `CODE_EXECUTION_MODES`, available modes, ExitPlanMode options
+
+## Changes Ported in v0.39.0 Sync
+
+- **SDK bumps**: claude-agent-sdk 0.3.154 -> 0.3.156, anthropic SDK 0.100.0 -> 0.100.1 (ACP SDK
+  unchanged at 0.22.1). v0.3.155 was not published to npm; the fix lives in 0.3.156.
+- **Opus 4.8 thinking-blocks fix** (upstream v2.1.156): The SDK was modifying thinking blocks in a
+  way that produced the legacy `thinking: { type: "enabled", budget_tokens: N }` request shape,
+  which `claude-opus-4-8` rejects with HTTP 400 (`thinking.type.enabled is not supported for this
+  model. Use thinking.type.adaptive and output_config.effort`). 0.3.156 now emits
+  `thinking: { type: "adaptive" }` + `output_config: { effort }` for Opus 4.8 while keeping the
+  legacy shape for Opus 4.7 / Sonnet 4.6 where the API still accepts it. No in-repo code change
+  needed; `options.effort` in `session/options.ts` and `query.applyFlagSettings({ effortLevel })`
+  in `claude-agent.ts` keep their current call sites.
 
 ## Changes Ported in v0.38.0 Sync
 

@@ -7,6 +7,7 @@ export class ElectronUpdater implements IUpdater {
   public isSupported(): boolean {
     return (
       app.isPackaged &&
+      !process.env.ELECTRON_DISABLE_AUTO_UPDATE &&
       (process.platform === "darwin" || process.platform === "win32")
     );
   }

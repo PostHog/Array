@@ -1,7 +1,7 @@
+import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
 import type { INotifier, NotifyOptions } from "@posthog/platform/notifier";
 import { app, Notification } from "electron";
 import { inject, injectable } from "inversify";
-import { MAIN_TOKENS } from "../di/tokens";
 import type { ElectronMainWindow } from "./electron-main-window";
 
 @injectable()
@@ -14,7 +14,7 @@ export class ElectronNotifier implements INotifier {
   private readonly active = new Set<Notification>();
 
   constructor(
-    @inject(MAIN_TOKENS.MainWindow)
+    @inject(MAIN_WINDOW_SERVICE)
     private readonly mainWindow: ElectronMainWindow,
   ) {}
 

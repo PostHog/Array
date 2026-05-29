@@ -1,0 +1,76 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1772809171049,
+      "tag": "0000_red_jigsaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1773063486685,
+      "tag": "0001_tan_lifeguard",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1773335630838,
+      "tag": "0002_massive_bishop",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1774890000000,
+      "tag": "0003_fair_whiplash",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774891000000,
+      "tag": "0004_auth_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1775755977659,
+      "tag": "0005_youthful_scarlet_spider",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1777639303535,
+      "tag": "0006_youthful_warstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1779747695687,
+      "tag": "0007_futuristic_domino",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1779747695688,
+      "tag": "0008_stiff_reptil",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1779747695689,
+      "tag": "0009_bake_default_directories",
+      "breakpoints": true
+    }
+  ]
+}

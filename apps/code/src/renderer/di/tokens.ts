@@ -6,9 +6,8 @@
  */
 export const RENDERER_TOKENS = Object.freeze({
   // Infrastructure
-  TRPCClient: Symbol.for("Renderer.TRPCClient"),
+  TRPCClient: Symbol.for("posthog.host.renderer.trpc-client"),
 
   // Services
-  TaskService: Symbol.for("Renderer.TaskService"),
-  SetupRunService: Symbol.for("Renderer.SetupRunService"),
+  TaskService: Symbol.for("posthog.host.renderer.task-service"),
 });

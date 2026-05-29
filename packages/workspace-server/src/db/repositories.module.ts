@@ -1,0 +1,34 @@
+import { ContainerModule } from "inversify";
+import {
+  ARCHIVE_REPOSITORY,
+  AUTH_PREFERENCE_REPOSITORY,
+  AUTH_SESSION_REPOSITORY,
+  DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
+  REPOSITORY_REPOSITORY,
+  SUSPENSION_REPOSITORY,
+  WORKSPACE_REPOSITORY,
+  WORKTREE_REPOSITORY,
+} from "./identifiers";
+import { ArchiveRepository } from "./repositories/archive-repository";
+import { AuthPreferenceRepository } from "./repositories/auth-preference-repository";
+import { AuthSessionRepository } from "./repositories/auth-session-repository";
+import { DefaultAdditionalDirectoryRepository } from "./repositories/default-additional-directory-repository";
+import { RepositoryRepository } from "./repositories/repository-repository";
+import { SuspensionRepositoryImpl } from "./repositories/suspension-repository";
+import { WorkspaceRepository } from "./repositories/workspace-repository";
+import { WorktreeRepository } from "./repositories/worktree-repository";
+
+export const repositoriesModule = new ContainerModule(({ bind }) => {
+  bind(REPOSITORY_REPOSITORY).to(RepositoryRepository).inSingletonScope();
+  bind(WORKSPACE_REPOSITORY).to(WorkspaceRepository).inSingletonScope();
+  bind(WORKTREE_REPOSITORY).to(WorktreeRepository).inSingletonScope();
+  bind(ARCHIVE_REPOSITORY).to(ArchiveRepository).inSingletonScope();
+  bind(SUSPENSION_REPOSITORY).to(SuspensionRepositoryImpl).inSingletonScope();
+  bind(AUTH_SESSION_REPOSITORY).to(AuthSessionRepository).inSingletonScope();
+  bind(AUTH_PREFERENCE_REPOSITORY)
+    .to(AuthPreferenceRepository)
+    .inSingletonScope();
+  bind(DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY)
+    .to(DefaultAdditionalDirectoryRepository)
+    .inSingletonScope();
+});

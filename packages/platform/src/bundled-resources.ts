@@ -6,3 +6,7 @@ export interface IBundledResources {
    */
   resolve(relativePath: string): string;
 }
+
+export const BUNDLED_RESOURCES_SERVICE = Symbol.for(
+  "posthog.platform.bundledResources",
+);

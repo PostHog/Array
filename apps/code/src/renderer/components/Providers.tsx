@@ -1,6 +1,12 @@
-import { ThemeWrapper } from "@components/ThemeWrapper";
+import { HostTRPCProvider } from "@posthog/host-router/react";
+import { ThemeWrapper } from "@posthog/ui/primitives/ThemeWrapper";
 import { WorkspaceClientProvider } from "@posthog/workspace-client/provider";
-import { TRPCProvider, trpcClient, useTRPC } from "@renderer/trpc/client";
+import {
+  hostTrpcClient,
+  TRPCProvider,
+  trpcClient,
+  useTRPC,
+} from "@renderer/trpc/client";
 import {
   QueryClientProvider,
   useQuery,
@@ -46,9 +52,14 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({
     <HotkeysProvider>
       <QueryClientProvider client={queryClient}>
         <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
-          <ConnectedWorkspaceProvider>
-            <ThemeWrapper>{children}</ThemeWrapper>
-          </ConnectedWorkspaceProvider>
+          <HostTRPCProvider
+            trpcClient={hostTrpcClient}
+            queryClient={queryClient}
+          >
+            <ConnectedWorkspaceProvider>
+              <ThemeWrapper>{children}</ThemeWrapper>
+            </ConnectedWorkspaceProvider>
+          </HostTRPCProvider>
         </TRPCProvider>
       </QueryClientProvider>
     </HotkeysProvider>

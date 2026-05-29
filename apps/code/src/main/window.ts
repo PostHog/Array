@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createIPCHandler } from "@posthog/electron-trpc/main";
+import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
 import {
   app,
   BrowserWindow,
@@ -10,7 +11,6 @@ import {
   shell,
 } from "electron";
 import { container } from "./di/container";
-import { MAIN_TOKENS } from "./di/tokens";
 import { buildApplicationMenu } from "./menu";
 import type { ElectronMainWindow } from "./platform-adapters/electron-main-window";
 import { trpcRouter } from "./trpc/router";
@@ -70,10 +70,6 @@ export function saveWindowState(window: BrowserWindow): void {
 }
 
 let mainWindow: BrowserWindow | null = null;
-
-export function getMainWindow(): BrowserWindow | null {
-  return mainWindow;
-}
 
 export function focusMainWindow(reason: string): void {
   if (mainWindow) {
@@ -240,12 +236,13 @@ export function createWindow(): void {
   mainWindow.on("close", () => mainWindow && saveWindowState(mainWindow));
 
   container
-    .get<ElectronMainWindow>(MAIN_TOKENS.MainWindow)
+    .get<ElectronMainWindow>(MAIN_WINDOW_SERVICE)
     .setMainWindowGetter(() => mainWindow);
 
   createIPCHandler({
     router: trpcRouter,
     windows: [mainWindow],
+    createContext: async () => ({ container }),
   });
 
   setupExternalLinkHandlers(mainWindow);

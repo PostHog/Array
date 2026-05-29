@@ -5,3 +5,5 @@ export interface IMainWindow {
   restore(): void;
   onFocus(handler: () => void): () => void;
 }
+
+export const MAIN_WINDOW_SERVICE = Symbol.for("posthog.platform.mainWindow");

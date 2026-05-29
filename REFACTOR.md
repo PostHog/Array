@@ -122,10 +122,26 @@ The entrypoint chooses the runtime. Packages own the feature wiring.
 
 ## Agent Harness
 
-This migration will be worked by many agents across many context windows. Treat
-the repo like a handoff between engineers on shifts: every agent must be able to
-arrive cold, understand what is already done, choose one slice, and leave the
-next agent a clean state.
+This migration is worked by many agents running concurrently in the **same
+single working tree** across many context windows. Agents never stop after one
+slice and never hand off: each agent claims a slice, ports it, then immediately
+claims the next, and keeps going until it runs out of context. Treat the repo
+as a shared live workspace that any agent can arrive cold to, understand from
+the coordination files, and continue from.
+
+**Non-negotiable working rules for every agent:**
+
+- **Never stop.** Finishing a slice is not a stopping point. The instant a slice
+  is validated, claim the next highest-priority `todo` and continue. Only stop
+  when out of context.
+- **Never commit.** Do not run `git commit`, `git add` for a commit, or create
+  branches. All work stays as uncommitted edits in the shared working tree. The
+  coordination files below are the synchronization mechanism, not git history.
+- **Never use git worktrees.** Every agent works in the one main working tree.
+  Do not create, switch to, or prefer separate worktrees or branches.
+- **Collaborate, don't isolate.** Other agents are editing the same files at the
+  same time. Conflict risk is never a reason to stop or to avoid a slice. Make
+  your edits, keep the tree typechecking, and keep moving.
 
 Set up three coordination artifacts before broad parallel work starts:
 
@@ -199,34 +215,37 @@ Every agent session starts the same way:
 7. Claim exactly one `todo` slice by setting it to `in_progress` with your
    agent/session id.
 
-### Agent Finish Protocol
+### Per-Slice Wrap-Up (then immediately continue)
 
-Every agent session ends by leaving the repo in a clean handoff state:
+When a slice's code is done, do this and then **claim the next slice without
+stopping** — this is a loop, not the end of a session:
 
 1. Run focused tests/typecheck for the slice.
 2. Run the relevant smoke test as a user would, not just a unit-level substitute.
-3. Update `REFACTOR_SLICES.json`.
+3. Run `pnpm biome format --write .` and `pnpm typecheck` so the shared tree
+   stays green for the other agents working in it.
+4. Update `REFACTOR_SLICES.json`.
    - Set `passes: true` only when acceptance checks actually passed.
    - Use `needs_validation` if code is done but the feature was not exercised.
    - Use `blocked` with a concrete reason if progress cannot continue.
-4. Append a short `REFACTOR_PROGRESS.md` entry: slice id, changed paths,
+5. Append a short `REFACTOR_PROGRESS.md` entry: slice id, changed paths,
    validation run, remaining bridges, and next suggested slice.
-5. Update `MIGRATION.md` for landed architectural movement.
-6. Leave no unrelated edits in files outside the claimed slice.
-7. Before committing, run `pnpm biome format --write .` and `pnpm typecheck`,
-   then stage the result. Biome owns formatting for every file including
-   `REFACTOR_SLICES.json` — commit the formatted version so CI does not bounce
-   it. Never bypass commit hooks with `--no-verify`.
-8. If the harness expects commits, commit the slice with a descriptive message
-   only after the worktree is coherent and validation is recorded.
+6. Update `MIGRATION.md` for landed architectural movement.
+7. **Do not commit.** Leave everything as uncommitted edits in the shared tree.
+8. Re-read `REFACTOR_SLICES.json`, claim the next highest-priority unclaimed
+   `todo`, and start again. Keep going until out of context.
 
 ### Parallel Work Rules
 
-- One agent owns one slice. Do not work a broad foundational refactor unless it
-  is explicitly assigned.
-- Prefer separate git worktrees/branches per agent. Parallel edits to the same
-  package registration files, root DI files, or `REFACTOR_SLICES.json` will
-  conflict; keep those changes small and merge them deliberately.
+- Every agent works in the **one shared working tree**. No git worktrees, no
+  branches, no commits — see the working rules under [Agent Harness](#agent-harness).
+- Claim one slice at a time, but never stop after one. Finish it, then claim the
+  next. Foundational/broad slices are fair game when they are the highest-priority
+  unclaimed work.
+- Parallel edits to the same files (package registration, root DI, the
+  coordination files) are expected. Re-read `REFACTOR_SLICES.json` right before
+  editing it so you build on the current state instead of clobbering another
+  agent's claim. Keep the tree typechecking after your edits.
 - Do not mark the whole migration complete because several slices are passing.
   Completion means every slice in `REFACTOR_SLICES.json` is passing or explicitly
   retired with a reason.
@@ -461,6 +480,38 @@ Electron, or Node host syscalls.
 Core may use Inversify decorators and modules, but it must not import an app
 container. It exports services and modules; hosts load them.
 
+#### Core Purity Gate
+
+`core` is portable business logic. Do not move code into `packages/core` just
+because it is "not UI". If it imports Node, shells out, reads paths from the
+host, watches files, checks `process.platform`, reads `process.env`, or depends
+on a Node-oriented implementation package, it is not pure core yet.
+
+Before marking a core slice `needs_validation` or `passing`, run:
+
+```sh
+pnpm exec biome lint packages/core
+pnpm exec biome check packages/core
+pnpm --filter @posthog/core typecheck
+```
+
+`biome lint packages/core` must have zero `noRestrictedImports` errors. If it
+does not, course-correct the placement before continuing:
+
+| Found in proposed core code | Correct move |
+|---|---|
+| `node:fs`, `node:path`, `node:os`, `node:child_process`, `node:process`, `process.*` | `workspace-server`, or a `platform`/environment contract injected into core |
+| `node:crypto` for ids, hashes, PKCE, random bytes | `platform` crypto/random contract, or keep the flow in a host package until a contract exists |
+| `node:events` for async iterators/event emitters | use a small shared/platform event abstraction, or keep the event-source owner in `workspace-server` |
+| `@posthog/enricher`, git/file scanners, AST scanning tied to repo files | `workspace-server` owns the scan; core may own only the result model and business decision |
+| `process.platform` / `process.arch` update logic | app/platform capability supplies host info; core consumes a typed host-info interface |
+| Node-only test fixtures in `packages/core` | move the test to the host package or provide a fake pure port; do not weaken the lint rule |
+
+If the business algorithm is valuable but currently mixed with host calls, split
+it: put the pure model/decision function in `core`, put host access in
+`workspace-server` or an app adapter, and connect them through an injected
+interface.
+
 ### `packages/workspace-server`
 
 Owns Node-only host syscalls and the tRPC server:
@@ -580,6 +631,9 @@ Work one feature or capability slice at a time.
    duplicated, decide which copy owns truth before moving it.
 4. **Identify host calls.** Git, fs, spawn, pty, Electron, OS APIs, native
    modules, and watchers move to workspace-server or platform adapters.
+   `process.env`, `process.platform`, `node:crypto`, `node:events`, and
+   Node-oriented implementation packages count as host calls unless a pure
+   browser/mobile-compatible abstraction already exists.
 5. **Sort logic.**
    - Host syscall or source smoothing: `workspace-server`.
    - Business orchestration: `core`.
@@ -603,7 +657,10 @@ Work one feature or capability slice at a time.
    delegation shims with `// PORT NOTE:` and a retirement condition.
 12. **Delete old code when the bridge is gone.**
 13. **Update `MIGRATION.md` and `REFACTOR_PROGRESS.md`.**
-14. **Validate.** Typecheck, tests, app launch, and a real feature smoke test.
+14. **Validate.** Typecheck, package purity checks, tests, app launch, and a
+    real feature smoke test. If the slice touched `packages/core`, run
+    `pnpm exec biome lint packages/core` and fix placement until
+    `noRestrictedImports` is clean.
 15. **Update `REFACTOR_SLICES.json`.** Mark `passing` / `passes: true` only when
     validation and acceptance checks are complete.
 
@@ -945,10 +1002,24 @@ For every slice:
 
 - read the slice's acceptance criteria before changing code,
 - run the relevant typecheck,
+- run package boundary lint before any broad formatter pass,
 - run focused tests,
 - start the app when user-visible behavior changed,
 - smoke test the feature,
 - watch logs for one real usage cycle when the change affects background work.
+
+Use these dry-run checks as gates:
+
+```sh
+pnpm exec biome lint packages/core
+pnpm exec biome check packages/core
+pnpm typecheck
+```
+
+If a slice touched another package, run the same lint/check command against that
+package too. Do not mark a slice `passing` while Biome reports restricted import
+violations in a touched package. Use `needs_validation` only for missing runtime
+smoke coverage, not for known layer-boundary violations.
 
 Typecheck and tests are necessary but not sufficient. The app must actually run.
 Do not set `passes: true` in `REFACTOR_SLICES.json` until the acceptance checks

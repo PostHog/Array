@@ -57,7 +57,8 @@ import {
   type PermissionMode,
 } from "../../execution-mode";
 import type { PostHogAPIConfig, ProcessSpawnedCallback } from "../../types";
-import { isCloudRun, resolveGithubToken } from "../../utils/common";
+import { isCloudRun } from "../../utils/common";
+import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import {
   nodeReadableToWebReadable,

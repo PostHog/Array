@@ -1,5 +1,4 @@
 import { execFile, spawn } from "node:child_process";
-import * as crypto from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { getCleanEnv, getGitOperationManager } from "./operation-manager";
@@ -13,6 +12,7 @@ import {
   listWorktrees as listWorktreesRaw,
 } from "./queries";
 import { clonePath, forceRemove, safeSymlink } from "./utils";
+import { generateHumanReadableName } from "./worktree-name";
 
 export interface WorktreeInfo {
   worktreePath: string;
@@ -46,7 +46,7 @@ export class WorktreeManager {
   }
 
   generateWorktreeName(): string {
-    return crypto.randomInt(1000, 10000).toString();
+    return generateHumanReadableName();
   }
 
   private getWorktreeBaseFolderPath(): string {

@@ -1,4 +1,4 @@
-import { getDeeplinkProtocol } from "@shared/deeplink";
+import { getDeeplinkProtocol } from "@posthog/shared";
 import { app } from "electron";
 import { container } from "./di/container";
 import { MAIN_TOKENS } from "./di/tokens";

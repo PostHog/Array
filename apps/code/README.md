@@ -32,65 +32,7 @@ pnpm run make
 pnpm run check:write       # Linting & typecheck
 ```
 
-### Liquid Glass Icon (macOS 26+)
 
-The app supports macOS liquid glass icons for a modern, layered appearance. The icon configuration is in `build/icon.icon/`.
-
-**Compiling the liquid glass icon requires Xcode** (Command Line Tools are not sufficient):
-
-```bash
-# Compile liquid glass icon (requires Xcode)
-bash scripts/compile-glass-icon.sh
-```
-
-If you don't have Xcode installed, the build will automatically fall back to the standard `.icns` icon. To enable liquid glass icons:
-
-1. Install Xcode from the App Store
-2. Run the compile script above, or
-3. Compile `Assets.car` on a machine with Xcode and commit it to the repo
-
-The `generateAssets` hook will automatically attempt to compile the icon during packaging if Xcode is available.
-
-### BerkeleyMono Font (PostHog employees)
-
-PostHog Code uses [Berkeley Mono](https://usgraphics.com/products/berkeley-mono) as its primary font, falling back to JetBrains Mono if the files aren't present. The font is licensed and not committed to the repo — it's downloaded from S3 during CI builds.
-
-To use it locally, go to the PostHog Code app assets S3 bucket in the AWS console, download the `.woff2` files from the `fonts/` folder, and place them in:
-
-```
-apps/code/assets/fonts/BerkeleyMono/
-```
-
-The directory is gitignored, so these files won't be committed.
-
-### Environment Variables
-
-You can set these environment variables instead of entering credentials in the app:
-
-- `POSTHOG_API_KEY` - Your PostHog personal API key
-- `POSTHOG_API_HOST` - PostHog instance URL (defaults to https://us.posthog.com)
-
-## Architecture
-
-- **Electron** - Desktop app framework
-- **React** - UI framework
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Styling
-- **Zustand** - State management - we should probably switch to kea
-- **Vite** - Build tool
-
-## Project Structure
-
-```
-code/
-├── src/
-│   ├── main/           # Electron main process
-│   ├── renderer/       # React app
-│   ├── api/            # API client
-│   └── shared/         # Shared types
-├── dist/               # Build output
-└── release/            # Packaged apps
-```
 
 ## Keyboard Shortcuts
 

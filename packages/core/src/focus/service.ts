@@ -492,8 +492,8 @@ class FocusRestoreSaga extends Saga<
       return null;
     }
 
-    // PORT NOTE: restore explicitly re-saves the validated session so the
-    // workspace-server watcher has the current in-memory session before startWatchingMainRepo.
+    // restore explicitly re-saves the validated session so the workspace-server
+    // watcher has the current in-memory session before startWatchingMainRepo.
     await this.readOnlyStep("save_session", () =>
       this.deps.saveSession(validatedSession),
     );

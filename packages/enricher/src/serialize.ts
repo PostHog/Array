@@ -1,59 +1,19 @@
+import type {
+  SerializedEnrichment,
+  SerializedEvent,
+  SerializedFlag,
+} from "@posthog/shared";
 import type { EnrichedResult } from "./enriched-result.js";
-import type { FlagType, StalenessReason } from "./types.js";
 
-export interface SerializedFlagOccurrence {
-  method: string;
-  line: number;
-  startCol: number;
-  endCol: number;
-}
-
-export interface SerializedFlagVariant {
-  key: string;
-  rolloutPercentage: number;
-}
-
-export interface SerializedFlagExperiment {
-  id: number;
-  name: string;
-  status: "running" | "complete";
-}
-
-export interface SerializedFlag {
-  flagKey: string;
-  flagId: number | null;
-  flagType: FlagType;
-  staleness: StalenessReason | null;
-  rollout: number | null;
-  active: boolean;
-  variants: SerializedFlagVariant[];
-  occurrences: SerializedFlagOccurrence[];
-  experiment: SerializedFlagExperiment | null;
-}
-
-export interface SerializedEventOccurrence {
-  line: number;
-  startCol: number;
-  endCol: number;
-  dynamic: boolean;
-}
-
-export interface SerializedEvent {
-  eventName: string;
-  definitionId: string | null;
-  verified: boolean;
-  description: string | null;
-  tags: string[];
-  lastSeenAt: string | null;
-  volume: number | null;
-  uniqueUsers: number | null;
-  occurrences: SerializedEventOccurrence[];
-}
-
-export interface SerializedEnrichment {
-  flags: SerializedFlag[];
-  events: SerializedEvent[];
-}
+export type {
+  SerializedEnrichment,
+  SerializedEvent,
+  SerializedEventOccurrence,
+  SerializedFlag,
+  SerializedFlagExperiment,
+  SerializedFlagOccurrence,
+  SerializedFlagVariant,
+} from "@posthog/shared";
 
 export function toSerializable(enriched: EnrichedResult): SerializedEnrichment {
   const flags: SerializedFlag[] = enriched.flags.map((f) => ({

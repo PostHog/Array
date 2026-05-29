@@ -3,6 +3,17 @@ import superjson from "superjson";
 import { z } from "zod";
 import { container } from "./di/container";
 import { TOKENS } from "./di/tokens";
+import { connectivityStatusOutput } from "./services/connectivity/schemas";
+import type { ConnectivityService } from "./services/connectivity/service";
+import {
+  createEnvironmentInput,
+  deleteEnvironmentInput,
+  environmentSchema,
+  getEnvironmentInput,
+  listEnvironmentsInput,
+  updateEnvironmentInput,
+} from "./services/environment/schemas";
+import type { EnvironmentService } from "./services/environment/service";
 import {
   checkoutInput,
   findWorktreeInput,
@@ -18,10 +29,113 @@ import {
 } from "./services/focus/schemas";
 import type { FocusService } from "./services/focus/service";
 import type { FocusSyncService } from "./services/focus/sync-service";
-import { listDirectoryInput, listDirectoryOutput } from "./services/fs/schemas";
+import {
+  boundedReadResult,
+  listDirectoryInput,
+  listDirectoryOutput,
+  listRepoFilesInput,
+  listRepoFilesOutput,
+  readAbsoluteFileInput,
+  readRepoFileBoundedInput,
+  readRepoFileInput,
+  readRepoFileOutput,
+  readRepoFilesBoundedInput,
+  readRepoFilesBoundedOutput,
+  readRepoFilesInput,
+  readRepoFilesOutput,
+  writeRepoFileInput,
+} from "./services/fs/schemas";
 import type { FsService } from "./services/fs/service";
-import { diffStatsInput, diffStatsSchema } from "./services/git/schemas";
+import {
+  changedFilesOutput,
+  checkoutBranchInput,
+  checkoutBranchOutput,
+  cleanupAfterCloudHandoffInput,
+  cleanupAfterCloudHandoffOutput,
+  cloneRepositoryInput,
+  cloneRepositoryOutput,
+  commitInput,
+  commitOutput,
+  createBranchInput,
+  createPrViaGhInput,
+  createPrViaGhOutput,
+  detectRepoResultSchema,
+  diffInput,
+  diffStatsInput,
+  diffStatsSchema,
+  directoryPathInput,
+  discardFileChangesInput,
+  discardFileChangesOutput,
+  filePathInput,
+  getBranchChangedFilesInput,
+  getCommitConventionsInput,
+  getCommitConventionsOutput,
+  getCommitsBetweenBranchesInput,
+  getCommitsBetweenBranchesOutput,
+  getDiffAgainstRemoteInput,
+  getGithubIssueInput,
+  getGithubIssueOutput,
+  getGithubPullRequestInput,
+  getGithubPullRequestOutput,
+  getGitSyncStatusInput,
+  getHeadShaOutput,
+  getLocalBranchChangedFilesInput,
+  getPrChangedFilesInput,
+  getPrDetailsByUrlInput,
+  getPrDetailsByUrlOutput,
+  getPrReviewCommentsInput,
+  getPrReviewCommentsOutput,
+  getPrTemplateInput,
+  getPrTemplateOutput,
+  getPrUrlForBranchInput,
+  getPrUrlForBranchOutput,
+  ghAuthTokenOutput,
+  ghStatusOutput,
+  gitBusyStateInput,
+  gitBusyStateSchema,
+  gitCommitInfoNullableOutput,
+  gitRepoInfoNullableOutput,
+  gitStateSnapshotSchema,
+  gitStatusOutput,
+  syncInput as gitSyncInput,
+  syncOutput as gitSyncOutput,
+  gitSyncStatusSchema,
+  openPrInput,
+  openPrOutput,
+  prStatusOutput,
+  publishInput,
+  publishOutput,
+  pullInput,
+  pullOutput,
+  pushInput,
+  pushOutput,
+  readHandoffLocalGitStateInput,
+  readHandoffLocalGitStateOutput,
+  replyToPrCommentInput,
+  replyToPrCommentOutput,
+  resetSoftInput,
+  resolveReviewThreadInput,
+  resolveReviewThreadOutput,
+  searchGithubRefsInput,
+  searchGithubRefsOutput,
+  stageFilesInput,
+  stringArrayOutput,
+  stringNullableOutput,
+  stringOutput,
+  updatePrByUrlInput,
+  updatePrByUrlOutput,
+} from "./services/git/schemas";
 import type { GitService } from "./services/git/service";
+import {
+  countLocalLogEntriesInput,
+  countLocalLogEntriesOutput,
+  deleteLocalLogCacheInput,
+  readLocalLogsInput,
+  readLocalLogsOutput,
+  seedLocalLogsInput,
+  writeLocalLogsInput,
+} from "./services/local-logs/schemas";
+import type { LocalLogsService } from "./services/local-logs/service";
 import {
   resolveGitDirsInput,
   resolveGitDirsOutput,
@@ -39,6 +153,12 @@ const gitService = () => container.get<GitService>(TOKENS.GitService);
 const fsService = () => container.get<FsService>(TOKENS.FsService);
 const watcherService = () =>
   container.get<WatcherService>(TOKENS.WatcherService);
+const localLogsService = () =>
+  container.get<LocalLogsService>(TOKENS.LocalLogsService);
+const connectivityService = () =>
+  container.get<ConnectivityService>(TOKENS.ConnectivityService);
+const environmentService = () =>
+  container.get<EnvironmentService>(TOKENS.EnvironmentService);
 
 export {
   type FocusBranchRenamedEvent,
@@ -175,6 +295,423 @@ export const appRouter = t.router({
       }
     }),
   }),
+  git: t.router({
+    detectRepo: t.procedure
+      .input(directoryPathInput)
+      .output(detectRepoResultSchema)
+      .query(({ input }) => gitService().detectRepo(input.directoryPath)),
+
+    validateRepo: t.procedure
+      .input(directoryPathInput)
+      .output(z.boolean())
+      .query(({ input }) => gitService().validateRepo(input.directoryPath)),
+
+    getRemoteUrl: t.procedure
+      .input(directoryPathInput)
+      .output(stringNullableOutput)
+      .query(({ input }) => gitService().getRemoteUrl(input.directoryPath)),
+
+    getCurrentBranch: t.procedure
+      .input(directoryPathInput)
+      .output(stringNullableOutput)
+      .query(({ input, signal }) =>
+        gitService().getCurrentBranch(input.directoryPath, signal),
+      ),
+
+    getDefaultBranch: t.procedure
+      .input(directoryPathInput)
+      .output(stringOutput)
+      .query(({ input }) => gitService().getDefaultBranch(input.directoryPath)),
+
+    getAllBranches: t.procedure
+      .input(directoryPathInput)
+      .output(stringArrayOutput)
+      .query(({ input, signal }) =>
+        gitService().getAllBranches(input.directoryPath, signal),
+      ),
+
+    getChangedFilesHead: t.procedure
+      .input(directoryPathInput)
+      .output(changedFilesOutput)
+      .query(({ input, signal }) =>
+        gitService().getChangedFilesHead(input.directoryPath, signal),
+      ),
+
+    getFileAtHead: t.procedure
+      .input(filePathInput)
+      .output(stringNullableOutput)
+      .query(({ input, signal }) =>
+        gitService().getFileAtHead(input.directoryPath, input.filePath, signal),
+      ),
+
+    getDiffHead: t.procedure
+      .input(diffInput)
+      .output(stringOutput)
+      .query(({ input, signal }) =>
+        gitService().getDiffHead(
+          input.directoryPath,
+          input.ignoreWhitespace,
+          signal,
+        ),
+      ),
+
+    getDiffCached: t.procedure
+      .input(diffInput)
+      .output(stringOutput)
+      .query(({ input, signal }) =>
+        gitService().getDiffCached(
+          input.directoryPath,
+          input.ignoreWhitespace,
+          signal,
+        ),
+      ),
+
+    getDiffUnstaged: t.procedure
+      .input(diffInput)
+      .output(stringOutput)
+      .query(({ input, signal }) =>
+        gitService().getDiffUnstaged(
+          input.directoryPath,
+          input.ignoreWhitespace,
+          signal,
+        ),
+      ),
+
+    getLatestCommit: t.procedure
+      .input(directoryPathInput)
+      .output(gitCommitInfoNullableOutput)
+      .query(({ input, signal }) =>
+        gitService().getLatestCommit(input.directoryPath, signal),
+      ),
+
+    getGitRepoInfo: t.procedure
+      .input(directoryPathInput)
+      .output(gitRepoInfoNullableOutput)
+      .query(({ input }) => gitService().getGitRepoInfo(input.directoryPath)),
+
+    getGitBusyState: t.procedure
+      .input(gitBusyStateInput)
+      .output(gitBusyStateSchema)
+      .query(({ input, signal }) =>
+        gitService().getGitBusyState(input.directoryPath, signal),
+      ),
+
+    getGitSyncStatus: t.procedure
+      .input(getGitSyncStatusInput)
+      .output(gitSyncStatusSchema)
+      .query(({ input }) =>
+        gitService().getGitSyncStatus(input.directoryPath, input.forceRefresh),
+      ),
+
+    createBranch: t.procedure
+      .input(createBranchInput)
+      .mutation(({ input }) =>
+        gitService().createBranch(input.directoryPath, input.branchName),
+      ),
+
+    checkoutBranch: t.procedure
+      .input(checkoutBranchInput)
+      .output(checkoutBranchOutput)
+      .mutation(({ input }) =>
+        gitService().checkoutBranch(input.directoryPath, input.branchName),
+      ),
+
+    stageFiles: t.procedure
+      .input(stageFilesInput)
+      .output(gitStateSnapshotSchema)
+      .mutation(({ input }) =>
+        gitService().stageFiles(input.directoryPath, input.paths),
+      ),
+
+    unstageFiles: t.procedure
+      .input(stageFilesInput)
+      .output(gitStateSnapshotSchema)
+      .mutation(({ input }) =>
+        gitService().unstageFiles(input.directoryPath, input.paths),
+      ),
+
+    discardFileChanges: t.procedure
+      .input(discardFileChangesInput)
+      .output(discardFileChangesOutput)
+      .mutation(({ input }) =>
+        gitService().discardFileChanges(
+          input.directoryPath,
+          input.filePath,
+          input.fileStatus,
+        ),
+      ),
+
+    push: t.procedure
+      .input(pushInput)
+      .output(pushOutput)
+      .mutation(({ input, signal }) =>
+        gitService().push(
+          input.directoryPath,
+          input.remote,
+          input.branch,
+          input.setUpstream,
+          signal,
+          input.env,
+        ),
+      ),
+
+    commit: t.procedure
+      .input(commitInput)
+      .output(commitOutput)
+      .mutation(({ input }) =>
+        gitService().commit(input.directoryPath, input.message, {
+          paths: input.paths,
+          allowEmpty: input.allowEmpty,
+          stagedOnly: input.stagedOnly,
+          env: input.env,
+        }),
+      ),
+
+    pull: t.procedure
+      .input(pullInput)
+      .output(pullOutput)
+      .mutation(({ input, signal }) =>
+        gitService().pull(
+          input.directoryPath,
+          input.remote,
+          input.branch,
+          signal,
+        ),
+      ),
+
+    publish: t.procedure
+      .input(publishInput)
+      .output(publishOutput)
+      .mutation(({ input, signal }) =>
+        gitService().publish(
+          input.directoryPath,
+          input.remote,
+          signal,
+          input.env,
+        ),
+      ),
+
+    sync: t.procedure
+      .input(gitSyncInput)
+      .output(gitSyncOutput)
+      .mutation(({ input, signal }) =>
+        gitService().sync(input.directoryPath, input.remote, signal),
+      ),
+
+    getGhStatus: t.procedure
+      .output(ghStatusOutput)
+      .query(() => gitService().getGhStatus()),
+
+    getGhAuthToken: t.procedure
+      .output(ghAuthTokenOutput)
+      .query(() => gitService().getGhAuthToken()),
+
+    getPrStatus: t.procedure
+      .input(directoryPathInput)
+      .output(prStatusOutput)
+      .query(({ input }) => gitService().getPrStatus(input.directoryPath)),
+
+    getPrUrlForBranch: t.procedure
+      .input(getPrUrlForBranchInput)
+      .output(getPrUrlForBranchOutput)
+      .query(({ input }) =>
+        gitService().getPrUrlForBranch(input.directoryPath, input.branchName),
+      ),
+
+    openPr: t.procedure
+      .input(openPrInput)
+      .output(openPrOutput)
+      .mutation(({ input }) => gitService().openPr(input.directoryPath)),
+
+    getPrDetailsByUrl: t.procedure
+      .input(getPrDetailsByUrlInput)
+      .output(getPrDetailsByUrlOutput.nullable())
+      .query(({ input }) => gitService().getPrDetailsByUrl(input.prUrl)),
+
+    getPrChangedFiles: t.procedure
+      .input(getPrChangedFilesInput)
+      .output(changedFilesOutput)
+      .query(({ input }) => gitService().getPrChangedFiles(input.prUrl)),
+
+    getBranchChangedFiles: t.procedure
+      .input(getBranchChangedFilesInput)
+      .output(changedFilesOutput)
+      .query(({ input }) =>
+        gitService().getBranchChangedFiles(input.repo, input.branch),
+      ),
+
+    getLocalBranchChangedFiles: t.procedure
+      .input(getLocalBranchChangedFilesInput)
+      .output(changedFilesOutput)
+      .query(({ input }) =>
+        gitService().getLocalBranchChangedFiles(
+          input.directoryPath,
+          input.branch,
+        ),
+      ),
+
+    updatePrByUrl: t.procedure
+      .input(updatePrByUrlInput)
+      .output(updatePrByUrlOutput)
+      .mutation(({ input }) =>
+        gitService().updatePrByUrl(input.prUrl, input.action),
+      ),
+
+    getPrReviewComments: t.procedure
+      .input(getPrReviewCommentsInput)
+      .output(getPrReviewCommentsOutput)
+      .query(({ input }) => gitService().getPrReviewComments(input.prUrl)),
+
+    resolveReviewThread: t.procedure
+      .input(resolveReviewThreadInput)
+      .output(resolveReviewThreadOutput)
+      .mutation(({ input }) =>
+        gitService().resolveReviewThread(input.threadNodeId, input.resolved),
+      ),
+
+    replyToPrComment: t.procedure
+      .input(replyToPrCommentInput)
+      .output(replyToPrCommentOutput)
+      .mutation(({ input }) =>
+        gitService().replyToPrComment(input.prUrl, input.commentId, input.body),
+      ),
+
+    getPrTemplate: t.procedure
+      .input(getPrTemplateInput)
+      .output(getPrTemplateOutput)
+      .query(({ input }) => gitService().getPrTemplate(input.directoryPath)),
+
+    getCommitConventions: t.procedure
+      .input(getCommitConventionsInput)
+      .output(getCommitConventionsOutput)
+      .query(({ input }) =>
+        gitService().getCommitConventions(
+          input.directoryPath,
+          input.sampleSize,
+        ),
+      ),
+
+    searchGithubRefs: t.procedure
+      .input(searchGithubRefsInput)
+      .output(searchGithubRefsOutput)
+      .query(({ input }) =>
+        gitService().searchGithubRefs(
+          input.directoryPath,
+          input.query,
+          input.limit,
+          input.kinds,
+        ),
+      ),
+
+    getGithubIssue: t.procedure
+      .input(getGithubIssueInput)
+      .output(getGithubIssueOutput)
+      .query(({ input }) =>
+        gitService().getGithubIssue(input.owner, input.repo, input.number),
+      ),
+
+    getGithubPullRequest: t.procedure
+      .input(getGithubPullRequestInput)
+      .output(getGithubPullRequestOutput)
+      .query(({ input }) =>
+        gitService().getGithubPullRequest(
+          input.owner,
+          input.repo,
+          input.number,
+        ),
+      ),
+
+    readHandoffLocalGitState: t.procedure
+      .input(readHandoffLocalGitStateInput)
+      .output(readHandoffLocalGitStateOutput)
+      .query(({ input }) =>
+        gitService().readHandoffLocalGitState(input.directoryPath),
+      ),
+
+    cleanupAfterCloudHandoff: t.procedure
+      .input(cleanupAfterCloudHandoffInput)
+      .output(cleanupAfterCloudHandoffOutput)
+      .mutation(({ input }) =>
+        gitService().cleanupAfterCloudHandoff(
+          input.directoryPath,
+          input.branchName,
+        ),
+      ),
+
+    getDiffStats: t.procedure
+      .input(diffStatsInput)
+      .output(diffStatsSchema)
+      .query(({ input }) => gitService().getDiffStats(input.directoryPath)),
+
+    getGitStatus: t.procedure
+      .output(gitStatusOutput)
+      .query(() => gitService().getGitStatus()),
+
+    getHeadSha: t.procedure
+      .input(directoryPathInput)
+      .output(getHeadShaOutput)
+      .query(({ input }) => gitService().getHeadSha(input.directoryPath)),
+
+    getDiffAgainstRemote: t.procedure
+      .input(getDiffAgainstRemoteInput)
+      .output(stringOutput)
+      .query(({ input }) =>
+        gitService().getDiffAgainstRemote(
+          input.directoryPath,
+          input.baseBranch,
+        ),
+      ),
+
+    getCommitsBetweenBranches: t.procedure
+      .input(getCommitsBetweenBranchesInput)
+      .output(getCommitsBetweenBranchesOutput)
+      .query(({ input }) =>
+        gitService().getCommitsBetweenBranches(
+          input.directoryPath,
+          input.baseBranch,
+          input.head,
+          input.limit,
+        ),
+      ),
+
+    resetSoft: t.procedure
+      .input(resetSoftInput)
+      .mutation(({ input }) =>
+        gitService().resetSoft(input.directoryPath, input.sha),
+      ),
+
+    createPrViaGh: t.procedure
+      .input(createPrViaGhInput)
+      .output(createPrViaGhOutput)
+      .mutation(({ input }) =>
+        gitService().createPrViaGh(
+          input.directoryPath,
+          input.title,
+          input.body,
+          input.draft,
+          input.env,
+        ),
+      ),
+
+    cloneRepository: t.procedure
+      .input(cloneRepositoryInput)
+      .output(cloneRepositoryOutput)
+      .mutation(({ input }) =>
+        gitService().cloneRepository(
+          input.repoUrl,
+          input.targetPath,
+          input.cloneId,
+        ),
+      ),
+
+    onCloneProgress: t.procedure.subscription(async function* (opts) {
+      for await (const data of gitService().toIterable("cloneProgress", {
+        signal: opts.signal,
+      })) {
+        yield data;
+      }
+    }),
+  }),
   diffStats: t.router({
     getDiffStats: t.procedure
       .input(diffStatsInput)
@@ -186,6 +723,69 @@ export const appRouter = t.router({
       .input(listDirectoryInput)
       .output(listDirectoryOutput)
       .query(({ input }) => fsService().listDirectory(input.dirPath)),
+
+    listRepoFiles: t.procedure
+      .input(listRepoFilesInput)
+      .output(listRepoFilesOutput)
+      .query(({ input }) =>
+        fsService().listRepoFiles(input.repoPath, input.query, input.limit),
+      ),
+
+    readRepoFile: t.procedure
+      .input(readRepoFileInput)
+      .output(readRepoFileOutput)
+      .query(({ input }) =>
+        fsService().readRepoFile(input.repoPath, input.filePath),
+      ),
+
+    readRepoFiles: t.procedure
+      .input(readRepoFilesInput)
+      .output(readRepoFilesOutput)
+      .query(({ input }) =>
+        fsService().readRepoFiles(input.repoPath, input.filePaths),
+      ),
+
+    readRepoFileBounded: t.procedure
+      .input(readRepoFileBoundedInput)
+      .output(boundedReadResult)
+      .query(({ input }) =>
+        fsService().readRepoFileBounded(
+          input.repoPath,
+          input.filePath,
+          input.maxLines,
+        ),
+      ),
+
+    readRepoFilesBounded: t.procedure
+      .input(readRepoFilesBoundedInput)
+      .output(readRepoFilesBoundedOutput)
+      .query(({ input }) =>
+        fsService().readRepoFilesBounded(
+          input.repoPath,
+          input.filePaths,
+          input.maxLines,
+        ),
+      ),
+
+    readAbsoluteFile: t.procedure
+      .input(readAbsoluteFileInput)
+      .output(readRepoFileOutput)
+      .query(({ input }) => fsService().readAbsoluteFile(input.filePath)),
+
+    readFileAsBase64: t.procedure
+      .input(readAbsoluteFileInput)
+      .output(readRepoFileOutput)
+      .query(({ input }) => fsService().readFileAsBase64(input.filePath)),
+
+    writeRepoFile: t.procedure
+      .input(writeRepoFileInput)
+      .mutation(({ input }) =>
+        fsService().writeRepoFile(
+          input.repoPath,
+          input.filePath,
+          input.content,
+        ),
+      ),
   }),
   watcher: t.router({
     resolveGitDirs: t.procedure
@@ -204,6 +804,91 @@ export const appRouter = t.router({
       .input(watchRepoInput)
       .subscription(({ input, signal }) =>
         watcherService().watchRepo(input.repoPath, signal),
+      ),
+  }),
+  localLogs: t.router({
+    read: t.procedure
+      .input(readLocalLogsInput)
+      .output(readLocalLogsOutput)
+      .query(({ input }) => localLogsService().readLocalLogs(input.taskRunId)),
+
+    write: t.procedure
+      .input(writeLocalLogsInput)
+      .mutation(({ input }) =>
+        localLogsService().writeLocalLogs(input.taskRunId, input.content),
+      ),
+
+    seed: t.procedure
+      .input(seedLocalLogsInput)
+      .mutation(({ input }) =>
+        localLogsService().seedLocalLogs(input.taskRunId, input.content),
+      ),
+
+    count: t.procedure
+      .input(countLocalLogEntriesInput)
+      .output(countLocalLogEntriesOutput)
+      .query(({ input }) =>
+        localLogsService().countLocalLogEntries(input.taskRunId),
+      ),
+
+    delete: t.procedure
+      .input(deleteLocalLogCacheInput)
+      .mutation(({ input }) =>
+        localLogsService().deleteLocalLogCache(input.taskRunId),
+      ),
+  }),
+  connectivity: t.router({
+    getStatus: t.procedure
+      .output(connectivityStatusOutput)
+      .query(() => connectivityService().getStatus()),
+
+    checkNow: t.procedure
+      .output(connectivityStatusOutput)
+      .mutation(() => connectivityService().checkNow()),
+
+    onStatusChange: t.procedure.subscription(async function* (opts) {
+      for await (const status of connectivityService().statusChangeEvents(
+        opts.signal,
+      )) {
+        yield status;
+      }
+    }),
+  }),
+  environment: t.router({
+    list: t.procedure
+      .input(listEnvironmentsInput)
+      .output(environmentSchema.array())
+      .query(({ input }) =>
+        environmentService().listEnvironments(input.repoPath),
+      ),
+
+    get: t.procedure
+      .input(getEnvironmentInput)
+      .output(environmentSchema.nullable())
+      .query(({ input }) =>
+        environmentService().getEnvironment(input.repoPath, input.id),
+      ),
+
+    create: t.procedure
+      .input(createEnvironmentInput)
+      .output(environmentSchema)
+      .mutation(({ input }) => {
+        const { repoPath, ...rest } = input;
+        return environmentService().createEnvironment(rest, repoPath);
+      }),
+
+    update: t.procedure
+      .input(updateEnvironmentInput)
+      .output(environmentSchema)
+      .mutation(({ input }) => {
+        const { repoPath, ...rest } = input;
+        return environmentService().updateEnvironment(rest, repoPath);
+      }),
+
+    delete: t.procedure
+      .input(deleteEnvironmentInput)
+      .mutation(({ input }) =>
+        environmentService().deleteEnvironment(input.repoPath, input.id),
       ),
   }),
 });
