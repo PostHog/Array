@@ -428,24 +428,21 @@ describe("UpdatesService", () => {
       // Verify setQuittingForUpdate is called first
       expect(mockLifecycleService.setQuittingForUpdate).toHaveBeenCalled();
 
-      // Verify shutdownWithoutContainer is called (not full shutdown)
-      expect(mockLifecycleService.shutdownWithoutContainer).toHaveBeenCalled();
+      // Hand off to Electron immediately so shutdown cleanup cannot block install.
+      expect(
+        mockLifecycleService.shutdownWithoutContainer,
+      ).not.toHaveBeenCalled();
       expect(mockLifecycleService.shutdown).not.toHaveBeenCalled();
 
-      // Verify quitAndInstall is called after cleanup
       expect(mockUpdater.quitAndInstall).toHaveBeenCalled();
 
-      // Verify order: setQuittingForUpdate -> shutdownWithoutContainer -> quitAndInstall
+      // Verify order: setQuittingForUpdate -> quitAndInstall
       const setQuittingOrder =
         mockLifecycleService.setQuittingForUpdate.mock.invocationCallOrder[0];
-      const cleanupOrder =
-        mockLifecycleService.shutdownWithoutContainer.mock
-          .invocationCallOrder[0];
       const quitAndInstallOrder =
         mockUpdater.quitAndInstall.mock.invocationCallOrder[0];
 
-      expect(setQuittingOrder).toBeLessThan(cleanupOrder);
-      expect(cleanupOrder).toBeLessThan(quitAndInstallOrder);
+      expect(setQuittingOrder).toBeLessThan(quitAndInstallOrder);
     });
 
     it("returns false if quitAndInstall throws", async () => {
@@ -515,7 +512,7 @@ describe("UpdatesService", () => {
       });
     });
 
-    it("shows update-ready notification instead of up-to-date when update is already downloaded", () => {
+    it("ignores later update events once an update is already downloaded", () => {
       // Simulate update already downloaded
       const downloadedHandler = updaterHandlers.updateDownloaded;
       if (downloadedHandler) {
@@ -527,24 +524,22 @@ describe("UpdatesService", () => {
       service.on(UpdatesEvent.Status, statusHandler);
       service.on(UpdatesEvent.Ready, readyHandler);
 
-      // Start a periodic re-check
-      service.checkForUpdates("periodic");
-      statusHandler.mockClear();
+      mockUpdater.check.mockClear();
 
-      // Server says no new update available
+      // Periodic checks should be suppressed once an update is staged.
+      service.checkForUpdates("periodic");
+      expect(mockUpdater.check).not.toHaveBeenCalled();
+
       const notAvailableHandler = updaterHandlers.noUpdate;
       if (notAvailableHandler) {
         notAvailableHandler();
       }
 
-      // Should emit checking: false (not upToDate)
-      expect(statusHandler).toHaveBeenCalledWith({ checking: false });
+      expect(statusHandler).not.toHaveBeenCalledWith({ checking: false });
       expect(statusHandler).not.toHaveBeenCalledWith(
         expect.objectContaining({ upToDate: true }),
       );
-
-      // Should re-surface the downloaded update notification
-      expect(readyHandler).toHaveBeenCalledWith({ version: "v2.0.0" });
+      expect(readyHandler).not.toHaveBeenCalled();
     });
 
     it("handles update-downloaded event with version info", () => {
@@ -730,8 +725,8 @@ describe("UpdatesService", () => {
     });
   });
 
-  describe("periodic check re-checks when update already downloaded", () => {
-    it("re-checks for newer versions on periodic check when update is ready", async () => {
+  describe("staged update guards", () => {
+    it("does not re-check on periodic checks when update is ready", async () => {
       await initializeService(service);
 
       // Simulate update downloaded
@@ -743,10 +738,10 @@ describe("UpdatesService", () => {
       // Clear the checkForUpdates calls from initialization
       mockUpdater.check.mockClear();
 
-      // Periodic check should re-check without resetting existing update state
+      // Periodic check should not overwrite or refresh the staged update.
       const result = service.checkForUpdates("periodic");
       expect(result).toEqual({ success: true });
-      expect(mockUpdater.check).toHaveBeenCalled();
+      expect(mockUpdater.check).not.toHaveBeenCalled();
       // Update should still be ready (state not reset)
       expect(service.hasUpdateReady).toBe(true);
     });
@@ -771,7 +766,7 @@ describe("UpdatesService", () => {
       expect(readyHandler).toHaveBeenCalledWith({ version: "v2.0.0" });
     });
 
-    it("preserves downloaded update when periodic re-check errors", async () => {
+    it("preserves downloaded update when later updater errors fire", async () => {
       await initializeService(service);
 
       // Simulate update downloaded
@@ -780,10 +775,11 @@ describe("UpdatesService", () => {
         downloadedHandler("v2.0.0");
       }
 
-      // Periodic check proceeds
+      mockUpdater.check.mockClear();
       service.checkForUpdates("periodic");
+      expect(mockUpdater.check).not.toHaveBeenCalled();
 
-      // Simulate error during re-check
+      // Simulate a stale updater error after staging.
       const errorHandler = updaterHandlers.error;
       if (errorHandler) {
         errorHandler(new Error("Network error"));
@@ -793,7 +789,7 @@ describe("UpdatesService", () => {
       expect(service.hasUpdateReady).toBe(true);
     });
 
-    it("does not re-notify when same version is re-downloaded after periodic check", async () => {
+    it("does not re-notify when same version is re-downloaded after staging", async () => {
       await initializeService(service);
 
       const readyHandler = vi.fn();
@@ -806,8 +802,6 @@ describe("UpdatesService", () => {
       }
       expect(readyHandler).toHaveBeenCalledTimes(1);
 
-      // Periodic check resets and re-downloads same version
-      service.checkForUpdates("periodic");
       readyHandler.mockClear();
 
       if (downloadedHandler) {
@@ -818,53 +812,31 @@ describe("UpdatesService", () => {
       expect(readyHandler).not.toHaveBeenCalled();
     });
 
-    it("returns already_checking when periodic check fires during in-flight check", async () => {
+    it("does not overwrite staged version when a later download event arrives", async () => {
       await initializeService(service);
+
+      const readyHandler = vi.fn();
+      service.on(UpdatesEvent.Ready, readyHandler);
 
       // Simulate update downloaded
       const downloadedHandler = updaterHandlers.updateDownloaded;
       if (downloadedHandler) {
         downloadedHandler("v2.0.0");
       }
+      expect(readyHandler).toHaveBeenCalledWith({ version: "v2.0.0" });
 
-      // First periodic check starts (sets checkingForUpdates = true)
-      service.checkForUpdates("periodic");
-
-      // Second periodic check while first is still in-flight
-      const result = service.checkForUpdates("periodic");
-      expect(result).toEqual({
-        success: false,
-        errorMessage: "Already checking for updates",
-        errorCode: "already_checking",
-      });
-
-      // Update should still be ready (state not corrupted)
-      expect(service.hasUpdateReady).toBe(true);
-    });
-
-    it("notifies when a newer version is downloaded after periodic check", async () => {
-      await initializeService(service);
-
-      const readyHandler = vi.fn();
-      service.on(UpdatesEvent.Ready, readyHandler);
-
-      // First download of v2.0.0
-      const downloadedHandler = updaterHandlers.updateDownloaded;
-      if (downloadedHandler) {
-        downloadedHandler("v2.0.0");
-      }
-      expect(readyHandler).toHaveBeenCalledTimes(1);
-
-      // Periodic check resets and downloads newer v3.0.0
-      service.checkForUpdates("periodic");
       readyHandler.mockClear();
 
       if (downloadedHandler) {
         downloadedHandler("v3.0.0");
       }
 
-      // Should notify since different version
-      expect(readyHandler).toHaveBeenCalledWith({ version: "v3.0.0" });
+      // User checks should still surface the originally staged update.
+      service.checkForUpdates("user");
+      expect(readyHandler).toHaveBeenCalledWith({ version: "v2.0.0" });
+
+      // Update should still be ready (state not corrupted)
+      expect(service.hasUpdateReady).toBe(true);
     });
   });
 
