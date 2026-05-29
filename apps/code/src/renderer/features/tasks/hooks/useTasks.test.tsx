@@ -183,6 +183,63 @@ describe("useRenameTask", () => {
     );
   });
 
+  it("skips rollback when a newer rename has advanced the title past ours", async () => {
+    const failure = new Error("network down");
+    mockUpdateTask.mockRejectedValue(failure);
+    const { result, queryClient } = renderRenameHook();
+
+    const listKey = taskKeys.list();
+    const summaryKey = taskKeys.summaries([TASK_ID]);
+    const detailKey = taskKeys.detail(TASK_ID);
+    queryClient.setQueryData<Task[]>(listKey, [createTask()]);
+    queryClient.setQueryData<Schemas.TaskSummary[]>(summaryKey, [
+      createSummary(),
+    ]);
+    queryClient.setQueryData<Task>(detailKey, createTask());
+
+    const renamePromise = result.current.renameTask({
+      taskId: TASK_ID,
+      currentTitle: "Original title",
+      newTitle: "First rename",
+    });
+
+    queryClient.setQueryData<Task[]>(listKey, [
+      createTask({ title: "Second rename", title_manually_set: true }),
+    ]);
+    queryClient.setQueryData<Schemas.TaskSummary[]>(summaryKey, [
+      createSummary({ title: "Second rename" }),
+    ]);
+    queryClient.setQueryData<Task>(
+      detailKey,
+      createTask({ title: "Second rename", title_manually_set: true }),
+    );
+
+    let caught: unknown;
+    await act(async () => {
+      try {
+        await renamePromise;
+      } catch (error) {
+        caught = error;
+      }
+    });
+    expect(caught).toBe(failure);
+
+    expect(queryClient.getQueryData<Task[]>(listKey)?.[0].title).toBe(
+      "Second rename",
+    );
+    expect(
+      queryClient.getQueryData<Schemas.TaskSummary[]>(summaryKey)?.[0].title,
+    ).toBe("Second rename");
+    expect(queryClient.getQueryData<Task>(detailKey)?.title).toBe(
+      "Second rename",
+    );
+
+    expect(mockUpdateSessionTaskTitle).not.toHaveBeenCalledWith(
+      TASK_ID,
+      "Original title",
+    );
+  });
+
   it("does not write to the detail cache when no detail entry exists", async () => {
     mockUpdateTask.mockResolvedValue(undefined);
     const { result, queryClient } = renderRenameHook();

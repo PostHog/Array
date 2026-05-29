@@ -108,7 +108,7 @@ export function useChatTitleGenerator(task: Task): void {
         const result = await generateTitleAndSummary(content);
         if (result) {
           const { title, summary } = result;
-          const titleLocked = isAutoTitleLocked(getCachedTask(taskId));
+          const titleLocked = isAutoTitleLocked(getCachedTask(taskId) ?? task);
 
           if (title && titleLocked) {
             log.debug("Skipping auto-title, user renamed task", { taskId });
@@ -160,10 +160,6 @@ export function useChatTitleGenerator(task: Task): void {
         }
         if (shouldGenerateFromTaskDescription) {
           initialDescriptionHandled.current = true;
-          lastGeneratedAtCount.current = Math.max(
-            lastGeneratedAtCount.current,
-            1,
-          );
         }
         isGenerating.current = false;
       }
