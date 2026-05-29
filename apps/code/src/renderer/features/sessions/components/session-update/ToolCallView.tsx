@@ -74,13 +74,19 @@ export function ToolCallView({
     Wrench;
 
   const filePath = kind === "read" && locations?.[0]?.path;
-  const displayText = filePath
-    ? `Read ${getFilename(filePath)}`
-    : title
-      ? compactHomePath(title)
+  const skillName =
+    agentToolName === "Skill"
+      ? (rawInput as { skill?: string } | undefined)?.skill
       : undefined;
+  const displayText = skillName
+    ? "Reading"
+    : filePath
+      ? `Read ${getFilename(filePath)}`
+      : title
+        ? compactHomePath(title)
+        : undefined;
 
-  const inputPreview = compactInput(rawInput);
+  const inputPreview = skillName ?? compactInput(rawInput);
   const fullInput = formatInput(rawInput);
 
   const output = stripCodeFences(getContentText(content) ?? "");
@@ -115,6 +121,7 @@ export function ToolCallView({
               <span className="font-mono text-accent-11">{inputPreview}</span>
             </ToolTitle>
           )}
+          {skillName && <ToolTitle>skill</ToolTitle>}
           <StatusIndicators isFailed={isFailed} wasCancelled={wasCancelled} />
         </Flex>
       </Flex>
