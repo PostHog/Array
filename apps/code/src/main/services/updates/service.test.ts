@@ -80,6 +80,7 @@ const {
       shutdown: vi.fn(() => Promise.resolve()),
       shutdownWithoutContainer: vi.fn(() => Promise.resolve()),
       setQuittingForUpdate: vi.fn(),
+      clearQuittingForUpdate: vi.fn(),
     },
     mockLog: {
       info: vi.fn(),
@@ -495,6 +496,50 @@ describe("UpdatesService", () => {
       expect(result).toEqual({ installed: false });
     });
 
+    it("clears the quitting-for-update lifecycle flag when install handoff fails", async () => {
+      await initializeService(service);
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+
+      mockUpdater.quitAndInstall.mockImplementation(() => {
+        throw new Error("Failed to install");
+      });
+
+      await service.installUpdate();
+
+      expect(mockLifecycleService.clearQuittingForUpdate).toHaveBeenCalled();
+      const setOrder =
+        mockLifecycleService.setQuittingForUpdate.mock.invocationCallOrder[0];
+      const clearOrder =
+        mockLifecycleService.clearQuittingForUpdate.mock.invocationCallOrder[0];
+      expect(setOrder).toBeLessThan(clearOrder);
+    });
+
+    it("rolls back to a re-installable ready state when install handoff fails", async () => {
+      await initializeService(service);
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+
+      mockUpdater.quitAndInstall.mockImplementation(() => {
+        throw new Error("Failed to install");
+      });
+
+      const statusHandler = vi.fn();
+      service.on(UpdatesEvent.Status, statusHandler);
+
+      const first = await service.installUpdate();
+      expect(first).toEqual({ installed: false });
+      expect(service.hasUpdateReady).toBe(true);
+      expect(statusHandler).toHaveBeenLastCalledWith({
+        checking: false,
+        updateReady: true,
+        installing: false,
+        version: "v2.0.0",
+      });
+
+      mockUpdater.quitAndInstall.mockImplementationOnce(() => undefined);
+      const second = await service.installUpdate();
+      expect(second).toEqual({ installed: true });
+    });
+
     it("is idempotent when install is already in progress", async () => {
       await initializeService(service);
 
@@ -606,6 +651,20 @@ describe("UpdatesService", () => {
       expect(readyHandler).toHaveBeenCalledWith({ version: "v2.0.0" });
     });
 
+    it("emits a complete staged payload when an update is downloaded", () => {
+      const statusHandler = vi.fn();
+      service.on(UpdatesEvent.Status, statusHandler);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+
+      expect(statusHandler).toHaveBeenCalledWith({
+        checking: false,
+        updateReady: true,
+        installing: false,
+        version: "v2.0.0",
+      });
+    });
+
     it("handles error event and emits status with error", () => {
       const statusHandler = vi.fn();
       service.on(UpdatesEvent.Status, statusHandler);
@@ -660,6 +719,27 @@ describe("UpdatesService", () => {
       expect(service.getStatus()).toEqual({
         checking: false,
         updateReady: true,
+        installing: false,
+        version: "v2.0.0",
+      });
+    });
+
+    it("flags installing in the staged status payload while install is in flight", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      mockLifecycleService.shutdownWithoutContainer.mockReturnValue(
+        new Promise(() => {}),
+      );
+
+      void service.installUpdate();
+      // Allow the synchronous part of installUpdate to run.
+      await Promise.resolve();
+
+      expect(service.getStatus()).toEqual({
+        checking: false,
+        updateReady: true,
+        installing: true,
         version: "v2.0.0",
       });
     });
@@ -797,6 +877,20 @@ describe("UpdatesService", () => {
       await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
 
       expect(mockUpdater.check.mock.calls.length).toBe(initialCallCount + 2);
+    });
+
+    it("stops the periodic interval once an update is staged", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+
+      const baselineCallCount = mockUpdater.check.mock.calls.length;
+
+      // The interval would normally fire every hour; with the update staged it
+      // should be cleared so no further wake-ups occur.
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000 * 3);
+
+      expect(mockUpdater.check.mock.calls.length).toBe(baselineCallCount);
     });
   });
 

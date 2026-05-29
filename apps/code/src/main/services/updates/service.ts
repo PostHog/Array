@@ -72,6 +72,10 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   private unsubscribes: Array<() => void> = [];
 
   get hasUpdateReady(): boolean {
+    return this.isUpdateStaged();
+  }
+
+  private isUpdateStaged(): boolean {
     return this.state === "ready" || this.state === "installing";
   }
 
@@ -121,11 +125,7 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     }
 
     if (this.isUpdateStaged()) {
-      return {
-        checking: false,
-        updateReady: true,
-        version: this.downloadedVersion ?? undefined,
-      };
+      return this.stagedStatusPayload();
     }
 
     if (this.state === "error") {
@@ -156,11 +156,7 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       if (source === "user") {
         this.pendingNotification = true;
         this.flushPendingNotification();
-        this.emitStatus({
-          checking: false,
-          updateReady: true,
-          version: this.downloadedVersion ?? undefined,
-        });
+        this.emitStatus(this.stagedStatusPayload());
       }
 
       return { success: true };
@@ -183,10 +179,7 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
 
   async installUpdate(): Promise<InstallUpdateOutput> {
     if (this.state === "installing") {
-      log.info("Update install already in progress", {
-        fromState: this.state,
-        toState: this.state,
-        downloadedVersion: this.downloadedVersion,
+      this.logStateTransition("installing", {
         skippedBecauseUpdateStaged: true,
         reason: "install already in progress",
       });
@@ -206,11 +199,7 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
 
     try {
       this.transitionTo("installing", { reason: "install requested" });
-      this.emitStatus({
-        checking: false,
-        updateReady: true,
-        version: this.downloadedVersion ?? undefined,
-      });
+      this.emitStatus(this.stagedStatusPayload());
       this.lifecycleService.setQuittingForUpdate();
       const cleanupResult = await withTimeout(
         this.lifecycleService.shutdownWithoutContainer(),
@@ -226,10 +215,12 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       return { installed: true };
     } catch (error) {
       log.error("Failed to quit and install update", error);
+      this.lifecycleService.clearQuittingForUpdate();
       this.transitionTo("ready", {
         reason: "install handoff failed",
         error: error instanceof Error ? error.message : String(error),
       });
+      this.emitStatus(this.stagedStatusPayload());
       return { installed: false };
     }
   }
@@ -258,7 +249,7 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
 
     this.unsubscribes.push(
       this.updater.onError((error) => this.handleError(error)),
-      this.updater.onCheckStart(() => this.handleCheckingForUpdate()),
+      this.updater.onCheckStart(() => log.info("Checking for updates...")),
       this.updater.onUpdateAvailable(() => this.handleUpdateAvailable()),
       this.updater.onNoUpdate(() => this.handleNoUpdate()),
       this.updater.onUpdateDownloaded((releaseName) =>
@@ -274,8 +265,13 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     );
   }
 
-  private isUpdateStaged(): boolean {
-    return this.state === "ready" || this.state === "installing";
+  private stagedStatusPayload(): UpdatesStatusPayload {
+    return {
+      checking: false,
+      updateReady: true,
+      installing: this.state === "installing",
+      version: this.downloadedVersion ?? undefined,
+    };
   }
 
   private handleError(error: Error): void {
@@ -304,10 +300,6 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
         error: error.message,
       });
     }
-  }
-
-  private handleCheckingForUpdate(): void {
-    log.info("Checking for updates...");
   }
 
   private handleUpdateAvailable(): void {
@@ -364,7 +356,8 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       reason: "update downloaded",
       incomingVersion: releaseName ?? null,
     });
-    this.emitStatus({ checking: false });
+    this.clearCheckInterval();
+    this.emitStatus(this.stagedStatusPayload());
 
     log.info("Update downloaded, awaiting user confirmation", {
       currentVersion: this.appMeta.version,
@@ -401,15 +394,12 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
 
     this.checkTimeoutId = setTimeout(() => {
       if (this.state === "checking" || this.state === "downloading") {
-        log.warn("Update check timed out after 60 seconds");
-        this.lastError = "Update check timed out. Please try again.";
-        this.transitionTo("error", {
-          error: "Update check timed out. Please try again.",
-        });
-        this.emitStatus({
-          checking: false,
-          error: "Update check timed out. Please try again.",
-        });
+        const timeoutSeconds = UpdatesService.CHECK_TIMEOUT_MS / 1000;
+        const message = "Update check timed out. Please try again.";
+        log.warn(`Update check timed out after ${timeoutSeconds} seconds`);
+        this.lastError = message;
+        this.transitionTo("error", { error: message });
+        this.emitStatus({ checking: false, error: message });
       }
     }, UpdatesService.CHECK_TIMEOUT_MS);
 
@@ -463,13 +453,17 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     }
   }
 
-  @preDestroy()
-  shutdown(): void {
-    this.clearCheckTimeout();
+  private clearCheckInterval(): void {
     if (this.checkIntervalId) {
       clearInterval(this.checkIntervalId);
       this.checkIntervalId = null;
     }
+  }
+
+  @preDestroy()
+  shutdown(): void {
+    this.clearCheckTimeout();
+    this.clearCheckInterval();
     for (const unsub of this.unsubscribes) unsub();
     this.unsubscribes = [];
   }

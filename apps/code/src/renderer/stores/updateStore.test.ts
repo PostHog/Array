@@ -94,6 +94,7 @@ describe("updateStore", () => {
       status: "idle",
       version: null,
       isEnabled: false,
+      menuCheckPending: false,
     });
   });
 
@@ -133,6 +134,92 @@ describe("updateStore", () => {
     });
 
     subscriptions.onStatus?.({ checking: false });
+    dispose();
+  });
+
+  it("hydrates an installing update so the renderer keeps the restart spinner", async () => {
+    getStatusQuery.mockResolvedValue({
+      checking: false,
+      updateReady: true,
+      installing: true,
+      version: "v2.0.0",
+    });
+
+    const dispose = initializeUpdateStore();
+    await flushPromises();
+
+    expect(useUpdateStore.getState()).toMatchObject({
+      status: "installing",
+      version: "v2.0.0",
+    });
+
+    dispose();
+  });
+
+  it("does not reset a ready update when a stale upToDate status arrives", async () => {
+    getStatusQuery.mockResolvedValue({
+      checking: false,
+      updateReady: true,
+      version: "v2.0.0",
+    });
+
+    const dispose = initializeUpdateStore();
+    await flushPromises();
+
+    subscriptions.onStatus?.({ checking: false, upToDate: true });
+
+    expect(useUpdateStore.getState().status).toBe("ready");
+    dispose();
+  });
+
+  it("shows the success toast when a menu check resolves with upToDate", async () => {
+    const dispose = initializeUpdateStore();
+    await flushPromises();
+
+    subscriptions.onCheckFromMenu?.();
+    await flushPromises();
+    expect(useUpdateStore.getState().menuCheckPending).toBe(true);
+
+    subscriptions.onStatus?.({ checking: false, upToDate: true });
+
+    expect(toast.success).toHaveBeenCalledWith("You're on the latest version");
+    expect(useUpdateStore.getState().menuCheckPending).toBe(false);
+    dispose();
+  });
+
+  it("clears the menu-check flag on disabled errors and shows the error toast", async () => {
+    checkMutate.mockResolvedValue({
+      success: false,
+      errorCode: "disabled",
+      errorMessage: "Updates only available in packaged builds",
+    });
+
+    const dispose = initializeUpdateStore();
+    await flushPromises();
+
+    subscriptions.onCheckFromMenu?.();
+    await flushPromises();
+
+    expect(useUpdateStore.getState().menuCheckPending).toBe(false);
+    expect(toast.error).toHaveBeenCalledWith(
+      "Updates only available in packaged builds",
+    );
+    dispose();
+  });
+
+  it("keeps the menu-check flag when an in-flight check is already running", async () => {
+    checkMutate.mockResolvedValue({
+      success: false,
+      errorCode: "already_checking",
+    });
+
+    const dispose = initializeUpdateStore();
+    await flushPromises();
+
+    subscriptions.onCheckFromMenu?.();
+    await flushPromises();
+
+    expect(useUpdateStore.getState().menuCheckPending).toBe(true);
     dispose();
   });
 });

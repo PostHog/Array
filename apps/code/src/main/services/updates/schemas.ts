@@ -18,6 +18,7 @@ export const updatesStatusOutput = z.object({
   downloading: z.boolean().optional(),
   upToDate: z.boolean().optional(),
   updateReady: z.boolean().optional(),
+  installing: z.boolean().optional(),
   version: z.string().optional(),
   error: z.string().optional(),
 });

@@ -40,4 +40,17 @@ describe("updatesRouter", () => {
     await expect(caller.check()).resolves.toEqual({ success: true });
     expect(mockUpdatesService.checkForUpdates).toHaveBeenCalled();
   });
+
+  it("reports whether updates are enabled", async () => {
+    const caller = updatesRouter.createCaller({});
+
+    await expect(caller.isEnabled()).resolves.toEqual({ enabled: true });
+  });
+
+  it("delegates install to the updates service", async () => {
+    const caller = updatesRouter.createCaller({});
+
+    await expect(caller.install()).resolves.toEqual({ installed: true });
+    expect(mockUpdatesService.installUpdate).toHaveBeenCalled();
+  });
 });
