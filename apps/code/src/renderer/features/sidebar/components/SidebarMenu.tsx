@@ -37,6 +37,8 @@ import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
 import { TaskListView } from "./TaskListView";
 
+const log = logger.scope("sidebar-menu");
+
 function SidebarMenuComponent() {
   const {
     view,
@@ -238,9 +240,7 @@ function SidebarMenuComponent() {
           }
         }
       } catch (error) {
-        logger
-          .scope("sidebar-menu")
-          .error("Failed to show bulk context menu", error);
+        log.error("Failed to show bulk context menu", error);
       }
     },
     [queryClient, clearSelection],
@@ -348,7 +348,7 @@ function SidebarMenuComponent() {
           newTitle,
         });
       } catch (error) {
-        logger.scope("sidebar-menu").error("Failed to rename task", error);
+        log.error("Failed to rename task", error);
       }
     },
     [renameTask, setEditingTaskId],

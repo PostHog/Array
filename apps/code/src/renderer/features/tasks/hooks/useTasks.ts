@@ -1,5 +1,6 @@
 import { getSessionService } from "@features/sessions/service/service";
 import { pinnedTasksApi } from "@features/sidebar/hooks/usePinnedTasks";
+import { taskKeys } from "@features/tasks/hooks/taskKeys";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
@@ -16,21 +17,6 @@ import { useCallback } from "react";
 const log = logger.scope("tasks");
 
 const TASK_LIST_POLL_INTERVAL_MS = 30_000;
-
-const taskKeys = {
-  all: ["tasks"] as const,
-  lists: () => [...taskKeys.all, "list"] as const,
-  list: (filters?: {
-    repository?: string;
-    createdBy?: number;
-    originProduct?: string;
-    internal?: boolean;
-  }) => [...taskKeys.lists(), filters] as const,
-  summaries: (ids: string[]) =>
-    [...taskKeys.all, "summaries", [...ids].sort()] as const,
-  details: () => [...taskKeys.all, "detail"] as const,
-  detail: (id: string) => [...taskKeys.details(), id] as const,
-};
 
 export function useTasks(
   filters?: {
@@ -160,9 +146,7 @@ export function useUpdateTask() {
       onSuccess: (_, { taskId }) => {
         queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
         queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
-        queryClient.invalidateQueries({
-          queryKey: [...taskKeys.all, "summaries"],
-        });
+        queryClient.invalidateQueries({ queryKey: taskKeys.allSummaries() });
       },
     },
   );
@@ -188,7 +172,7 @@ export function useRenameTask() {
       const previousSummaryQueries = queryClient.getQueriesData<
         Schemas.TaskSummary[]
       >({
-        queryKey: [...taskKeys.all, "summaries"],
+        queryKey: taskKeys.allSummaries(),
       });
       const previousDetail = queryClient.getQueryData<Task>(
         taskKeys.detail(taskId),
@@ -204,7 +188,7 @@ export function useRenameTask() {
           ),
       );
       queryClient.setQueriesData<Schemas.TaskSummary[]>(
-        { queryKey: [...taskKeys.all, "summaries"] },
+        { queryKey: taskKeys.allSummaries() },
         (old) =>
           old?.map((task) =>
             task.id === taskId ? { ...task, title: newTitle } : task,

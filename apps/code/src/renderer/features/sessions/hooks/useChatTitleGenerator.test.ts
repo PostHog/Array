@@ -11,6 +11,7 @@ const mockGetCachedTask = vi.hoisted(() => vi.fn());
 const mockIsAuthenticated = vi.hoisted(() => ({ value: true }));
 const mockUpdateTask = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const mockSetQueriesData = vi.hoisted(() => vi.fn());
+const mockSetQueryData = vi.hoisted(() => vi.fn());
 const mockUpdateSessionTaskTitle = vi.hoisted(() => vi.fn());
 const mockPrompts = vi.hoisted(() => ({ value: [] as string[] }));
 const mockSessionStoreSetters = vi.hoisted(() => ({
@@ -42,7 +43,10 @@ vi.mock("@features/auth/hooks/authQueries", () => ({
 
 vi.mock("@utils/queryClient", () => ({
   getCachedTask: mockGetCachedTask,
-  queryClient: { setQueriesData: mockSetQueriesData },
+  queryClient: {
+    setQueriesData: mockSetQueriesData,
+    setQueryData: mockSetQueryData,
+  },
 }));
 
 vi.mock("@utils/session", () => ({
@@ -163,7 +167,7 @@ describe("useChatTitleGenerator", () => {
     });
   });
 
-  it("does not treat fallback titles as a manual rename", async () => {
+  it("regenerates title when title_manually_set is true but the title still matches the fallback", async () => {
     mockGenerateTitle.mockResolvedValue({
       title: "Fix login bug",
       summary: "User is fixing a login issue",

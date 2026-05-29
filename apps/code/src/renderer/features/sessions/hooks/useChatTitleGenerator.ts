@@ -6,6 +6,7 @@ import {
   sessionStoreSetters,
   useSessionStore,
 } from "@features/sessions/stores/sessionStore";
+import { taskKeys } from "@features/tasks/hooks/taskKeys";
 import type { Schemas } from "@renderer/api/generated";
 import type { Task } from "@shared/types";
 import {
@@ -45,13 +46,9 @@ function isAutoTitleLocked(task: Task | undefined): boolean {
   return !isPlaceholderTaskTitle(task);
 }
 
-function isProvisionalTaskTitle(task: Task): boolean {
-  return isPlaceholderTaskTitle(task);
-}
-
 export function useChatTitleGenerator(task: Task): void {
   const taskId = task.id;
-  const lastGeneratedAtCount = useRef<number | null>(null);
+  const lastGeneratedAtCount = useRef(0);
   const initialDescriptionHandled = useRef(false);
   const isGenerating = useRef(false);
   const isAuthenticated = useAuthStateValue(
@@ -70,10 +67,6 @@ export function useChatTitleGenerator(task: Task): void {
     if (!isAuthenticated) return;
     if (isGenerating.current) return;
 
-    if (lastGeneratedAtCount.current === null) {
-      lastGeneratedAtCount.current = 0;
-    }
-
     const shouldGenerateFromPrompts =
       (promptCount === 1 && lastGeneratedAtCount.current === 0) ||
       (promptCount > 1 &&
@@ -83,7 +76,7 @@ export function useChatTitleGenerator(task: Task): void {
       promptCount === 0 &&
       !initialDescriptionHandled.current &&
       task.description.trim().length > 0 &&
-      isProvisionalTaskTitle(task);
+      isPlaceholderTaskTitle(task);
 
     if (!shouldGenerateFromPrompts && !shouldGenerateFromTaskDescription) {
       return;
@@ -124,18 +117,21 @@ export function useChatTitleGenerator(task: Task): void {
             if (client) {
               await client.updateTask(taskId, { title });
               queryClient.setQueriesData<Task[]>(
-                { queryKey: ["tasks", "list"] },
+                { queryKey: taskKeys.lists() },
                 (old) =>
                   old?.map((task) =>
                     task.id === taskId ? { ...task, title } : task,
                   ),
               );
               queryClient.setQueriesData<Schemas.TaskSummary[]>(
-                { queryKey: ["tasks", "summaries"] },
+                { queryKey: taskKeys.allSummaries() },
                 (old) =>
                   old?.map((task) =>
                     task.id === taskId ? { ...task, title } : task,
                   ),
+              );
+              queryClient.setQueryData<Task>(taskKeys.detail(taskId), (old) =>
+                old ? { ...old, title } : old,
               );
               getSessionService().updateSessionTaskTitle(taskId, title);
               log.debug("Updated task title from conversation", {
@@ -165,7 +161,7 @@ export function useChatTitleGenerator(task: Task): void {
         if (shouldGenerateFromTaskDescription) {
           initialDescriptionHandled.current = true;
           lastGeneratedAtCount.current = Math.max(
-            lastGeneratedAtCount.current ?? 0,
+            lastGeneratedAtCount.current,
             1,
           );
         }
@@ -174,14 +170,5 @@ export function useChatTitleGenerator(task: Task): void {
     };
 
     run();
-  }, [
-    isAuthenticated,
-    promptCount,
-    task.id,
-    task.description,
-    task.title,
-    task.title_manually_set,
-    task,
-    taskId,
-  ]);
+  }, [isAuthenticated, promptCount, taskId, task]);
 }
