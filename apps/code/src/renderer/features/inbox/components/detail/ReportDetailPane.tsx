@@ -823,8 +823,23 @@ export function ReportDetailPane({
                           {reviewer.relevant_commits.map((commit, i) => (
                             <span key={commit.sha}>
                               {i > 0 && ", "}
-                              {isMe ? (
-                                <>
+                              <Tooltip
+                                content={
+                                  isMe ? (
+                                    <Flex direction="column" gap="1">
+                                      <Text as="div" size="1" weight="bold">
+                                        Why was I assigned?
+                                      </Text>
+                                      <Text as="div" size="1">
+                                        {commit.reason}
+                                      </Text>
+                                    </Flex>
+                                  ) : (
+                                    commit.reason || undefined
+                                  )
+                                }
+                              >
+                                <span className="inline-flex items-center gap-0.5">
                                   <a
                                     href={commit.url}
                                     target="_blank"
@@ -833,37 +848,14 @@ export function ReportDetailPane({
                                   >
                                     {commit.sha.slice(0, 7)}
                                   </a>
-                                  {commit.reason && (
-                                    <Tooltip
-                                      content={
-                                        <Flex direction="column" gap="1">
-                                          <Text as="div" size="1" weight="bold">
-                                            Why was I assigned?
-                                          </Text>
-                                          <Text as="div" size="1">
-                                            {commit.reason}
-                                          </Text>
-                                        </Flex>
-                                      }
-                                    >
-                                      <span className="ml-0.5 inline-flex cursor-help align-middle text-gray-9 hover:text-gray-11">
-                                        <InfoIcon size={11} />
-                                      </span>
-                                    </Tooltip>
+                                  {isMe && commit.reason && (
+                                    <InfoIcon
+                                      size={11}
+                                      className="cursor-help text-gray-9"
+                                    />
                                   )}
-                                </>
-                              ) : (
-                                <Tooltip content={commit.reason || undefined}>
-                                  <a
-                                    href={commit.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="font-mono text-gray-9 hover:text-gray-11"
-                                  >
-                                    {commit.sha.slice(0, 7)}
-                                  </a>
-                                </Tooltip>
-                              )}
+                                </span>
+                              </Tooltip>
                             </span>
                           ))}
                         </span>
