@@ -6,12 +6,14 @@ import {
 } from "./deep-links";
 
 describe("slugifyTitle", () => {
-  it("returns an empty string when the title is missing or blank", () => {
-    expect(slugifyTitle(null)).toBe("");
-    expect(slugifyTitle(undefined)).toBe("");
-    expect(slugifyTitle("")).toBe("");
-    expect(slugifyTitle("   ")).toBe("");
-    expect(slugifyTitle(":::")).toBe("");
+  it.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["empty string", ""],
+    ["whitespace only", "   "],
+    ["unsafe-only characters", ":::"],
+  ])("returns an empty string when the title is %s", (_label, input) => {
+    expect(slugifyTitle(input)).toBe("");
   });
 
   it("emits `--` for runs that mix a colon with other unsafe chars", () => {
@@ -44,16 +46,22 @@ describe("slugifyTitle", () => {
 });
 
 describe("inboxReportShareUrl", () => {
-  it("returns just the UUID when no title is given", () => {
+  it("returns just the UUID when no title argument is passed", () => {
     expect(inboxReportShareUrl("abc-123")).toBe("posthog://inbox/abc-123");
-    expect(inboxReportShareUrl("abc-123", null)).toBe(
-      "posthog://inbox/abc-123",
-    );
-    expect(inboxReportShareUrl("abc-123", undefined)).toBe(
-      "posthog://inbox/abc-123",
-    );
-    expect(inboxReportShareUrl("abc-123", "")).toBe("posthog://inbox/abc-123");
   });
+
+  it.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["empty string", ""],
+  ])(
+    "returns just the UUID when the title is %s",
+    (_label, input: string | null | undefined) => {
+      expect(inboxReportShareUrl("abc-123", input)).toBe(
+        "posthog://inbox/abc-123",
+      );
+    },
+  );
 
   it("appends a slug derived from the title", () => {
     expect(inboxReportShareUrl("abc-123", "Hello World")).toBe(
@@ -61,11 +69,11 @@ describe("inboxReportShareUrl", () => {
     );
   });
 
-  it("omits the slug when the title slugifies to empty", () => {
-    expect(inboxReportShareUrl("abc-123", ":::")).toBe(
-      "posthog://inbox/abc-123",
-    );
-    expect(inboxReportShareUrl("abc-123", "   ")).toBe(
+  it.each([
+    ["unsafe-only characters", ":::"],
+    ["whitespace only", "   "],
+  ])("omits the slug when the title is %s", (_label, input) => {
+    expect(inboxReportShareUrl("abc-123", input)).toBe(
       "posthog://inbox/abc-123",
     );
   });
@@ -122,8 +130,10 @@ describe("externalUrlToAppPath", () => {
     );
   });
 
-  it("ignores URLs from unrelated hosts/schemes", () => {
-    expect(externalUrlToAppPath("https://example.com/inbox/x")).toBe(null);
-    expect(externalUrlToAppPath("not a url")).toBe(null);
+  it.each([
+    ["unrelated https host", "https://example.com/inbox/x"],
+    ["unparseable string", "not a url"],
+  ])("ignores URLs from %s", (_label, input) => {
+    expect(externalUrlToAppPath(input)).toBe(null);
   });
 });
