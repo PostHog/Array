@@ -630,20 +630,20 @@ export function TaskInput({
       className="relative h-full w-full"
     >
       <DropZoneOverlay isVisible={isDraggingFile} />
-      <Flex
-        align="center"
-        justify="center"
-        height="100%"
-        className="relative px-4 pt-[10vh]"
-      >
+      <Flex height="100%" className="relative px-4">
         <DotPatternBackground className="h-[100.333%]" />
         <div
           style={{
-            zIndex: 1,
+            top: "50%",
+            transform: "translate(-50%, -50%)",
           }}
-          className="relative flex w-full max-w-[600px] flex-col gap-2"
+          className="absolute left-1/2 z-[1] flex w-[calc(100%-2rem)] max-w-[600px] flex-col gap-2"
         >
-          <Flex gap="2" align="center" className="min-w-0">
+          <Flex
+            gap="2"
+            align="center"
+            className="absolute bottom-full left-0 mb-2 min-w-0"
+          >
             <WorkspaceModeSelect
               value={workspaceMode}
               onChange={setWorkspaceMode}
@@ -846,8 +846,10 @@ export function TaskInput({
                   <CloudGithubMissingNotice />
                 </div>
               )}
-            <SuggestedTasksPanel />
           </Flex>
+          <div className="absolute top-full right-0 left-0 z-10">
+            <SuggestedTasksPanel />
+          </div>
         </div>
       </Flex>
 

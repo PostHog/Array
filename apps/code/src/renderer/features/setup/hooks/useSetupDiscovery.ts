@@ -5,6 +5,14 @@ import { RENDERER_TOKENS } from "@renderer/di/tokens";
 import { useActiveRepoStore } from "@stores/activeRepoStore";
 import { useEffect } from "react";
 
+const SIMULATE_SUGGESTIONS_STORAGE_KEY = "posthog-code:simulate-suggestions";
+
+function shouldSimulateSuggestions(): boolean {
+  if (!import.meta.env.DEV) return false;
+  if (import.meta.env.VITE_SIMULATE_SUGGESTIONS === "1") return true;
+  return window.localStorage.getItem(SIMULATE_SUGGESTIONS_STORAGE_KEY) === "1";
+}
+
 export function useSetupDiscovery() {
   const selectedDirectory = useActiveRepoStore((s) => s.path);
 
@@ -16,6 +24,11 @@ export function useSetupDiscovery() {
   useEffect(() => {
     if (!selectedDirectory) return;
     const service = get<SetupRunService>(RENDERER_TOKENS.SetupRunService);
+    if (shouldSimulateSuggestions()) {
+      service.startSuggestionSimulation(selectedDirectory);
+      return;
+    }
+
     const discoveryEverStarted = Object.values(
       useSetupStore.getState().discoveryByRepo,
     ).some((d) => d.status !== "idle");
