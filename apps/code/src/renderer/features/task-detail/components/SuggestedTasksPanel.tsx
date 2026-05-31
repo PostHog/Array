@@ -121,7 +121,7 @@ export function SuggestedTasksPanel() {
 
   const hasTasks = discoveredTasks.length > 0;
   const showEnricherFeed = !hasTasks && enricherStatus === "running";
-  const showDiscoveryFeed = !hasTasks && discoveryStatus === "running";
+  const showDiscoveryFeed = discoveryStatus === "running";
 
   if (!hasTasks && !showEnricherFeed && !showDiscoveryFeed) return null;
 

@@ -22,13 +22,17 @@ export function useSetupDiscovery() {
   // Enricher runs per repo on every selection (gated on per-repo status
   // inside the service).
   useEffect(() => {
-    if (!selectedDirectory) return;
+    if (!selectedDirectory) return undefined;
     const service = get<SetupRunService>(RENDERER_TOKENS.SetupRunService);
     if (shouldSimulateSuggestions()) {
-      service.startSuggestionSimulation(selectedDirectory);
-      return;
+      service.startSuggestionSimulation(
+        selectedDirectory,
+        shouldSimulateSuggestions,
+      );
+      return () => service.stopSuggestionSimulation(selectedDirectory);
     }
 
+    service.stopSuggestionSimulation();
     const discoveryEverStarted = Object.values(
       useSetupStore.getState().discoveryByRepo,
     ).some((d) => d.status !== "idle");
@@ -37,5 +41,6 @@ export function useSetupDiscovery() {
     } else {
       service.startSetup(selectedDirectory);
     }
+    return undefined;
   }, [selectedDirectory]);
 }

@@ -38,6 +38,7 @@ const SIMULATED_SUGGESTION_CATEGORIES: DiscoveredTask["category"][] = [
 ];
 
 const SIMULATED_SUGGESTION_INTERVAL_MS = 2500;
+const SIMULATED_SUGGESTION_LIMIT = 12;
 
 function buildSimulatedSuggestion(
   repoPath: string,
@@ -295,7 +296,10 @@ export class SetupRunService {
     this.injectEnricherSuggestions(directory);
   }
 
-  startSuggestionSimulation(directory: string): void {
+  startSuggestionSimulation(
+    directory: string,
+    shouldContinue: () => boolean = () => true,
+  ): void {
     if (!directory) return;
     if (this.simulatedSuggestionsRepo === directory) return;
 
@@ -305,11 +309,16 @@ export class SetupRunService {
 
     this.simulatedSuggestionsRepo = directory;
     this.simulatedSuggestionsCount = 0;
-    useSetupStore
-      .getState()
-      .startDiscovery(directory, "simulated-discovery", "simulated-run");
 
     const addNextSuggestion = () => {
+      if (
+        !shouldContinue() ||
+        this.simulatedSuggestionsCount >= SIMULATED_SUGGESTION_LIMIT
+      ) {
+        this.stopSuggestionSimulation(directory);
+        return;
+      }
+
       useSetupStore
         .getState()
         .addDiscoveredTaskIfMissing(
@@ -323,6 +332,16 @@ export class SetupRunService {
       addNextSuggestion,
       SIMULATED_SUGGESTION_INTERVAL_MS,
     );
+  }
+
+  stopSuggestionSimulation(directory?: string): void {
+    if (directory && this.simulatedSuggestionsRepo !== directory) return;
+    if (this.simulatedSuggestionsTimer !== null) {
+      window.clearInterval(this.simulatedSuggestionsTimer);
+    }
+    this.simulatedSuggestionsTimer = null;
+    this.simulatedSuggestionsRepo = null;
+    this.simulatedSuggestionsCount = 0;
   }
 
   startDiscovery(directory: string): void {
