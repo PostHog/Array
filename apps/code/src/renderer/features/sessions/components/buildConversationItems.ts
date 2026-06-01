@@ -449,6 +449,17 @@ function handleNotification(
     if (params?.checkpointId && b.currentTurn) {
       b.currentTurn.lastCheckpointId = params.checkpointId;
       b.currentTurn.context.lastCheckpointId = params.checkpointId;
+      console.log("[checkpoint] GIT_CHECKPOINT set on turn", {
+        checkpointId: params.checkpointId,
+        turnId: b.currentTurn.id,
+        turnComplete: b.currentTurn.isComplete,
+      });
+    } else {
+      console.warn("[checkpoint] GIT_CHECKPOINT received but could not be applied", {
+        checkpointId: params?.checkpointId,
+        hasCurrentTurn: !!b.currentTurn,
+        currentTurnId: b.currentTurn?.id,
+      });
     }
     return;
   }

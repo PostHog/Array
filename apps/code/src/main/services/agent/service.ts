@@ -1,4 +1,4 @@
-import fs, { mkdirSync, symlinkSync } from "node:fs";
+import fs, { mkdirSync, promises as fsPromises, symlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
@@ -18,7 +18,10 @@ import {
   POSTHOG_NOTIFICATIONS,
 } from "@posthog/agent";
 import type { McpToolApprovals } from "@posthog/agent/adapters/claude/mcp/tool-metadata";
-import { hydrateSessionJsonl } from "@posthog/agent/adapters/claude/session/jsonl-hydration";
+import {
+  getSessionJsonlPath,
+  hydrateSessionJsonl,
+} from "@posthog/agent/adapters/claude/session/jsonl-hydration";
 import { getReasoningEffortOptions } from "@posthog/agent/adapters/reasoning-effort";
 import { Agent } from "@posthog/agent/agent";
 import {
@@ -38,6 +41,7 @@ import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
 import { extractCreatedPrUrl } from "@posthog/agent/pr-url-detector";
 import type * as AgentTypes from "@posthog/agent/types";
 import { getCurrentBranch } from "@posthog/git/queries";
+import { CaptureCheckpointSaga } from "@posthog/git/sagas/checkpoint";
 import type { IAppMeta } from "@posthog/platform/app-meta";
 import type { IBundledResources } from "@posthog/platform/bundled-resources";
 import type { IPowerManager } from "@posthog/platform/power-manager";
@@ -1493,6 +1497,33 @@ For git operations while detached:
           }
         }
 
+        if (isNotification(method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)) {
+          const turnSession = service.sessions.get(taskRunId);
+          if (turnSession?.config.repoPath) {
+            log.debug("TURN_COMPLETE — capturing local checkpoint", {
+              taskRunId,
+              repoPath: turnSession.config.repoPath,
+            });
+            service
+              .captureLocalCheckpoint(
+                taskRunId,
+                turnSession.config.repoPath,
+                turnSession.config.sessionId,
+                emitToRenderer,
+              )
+              .catch((err) => {
+                log.warn("Local checkpoint capture failed", {
+                  taskRunId,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              });
+          } else {
+            log.debug("TURN_COMPLETE — no repoPath, skipping checkpoint", {
+              taskRunId,
+            });
+          }
+        }
+
         if (isNotification(method, POSTHOG_NOTIFICATIONS.USAGE_UPDATE)) {
           this.emit(AgentServiceEvent.LlmActivity, undefined);
         }
@@ -1735,6 +1766,81 @@ For git operations while detached:
           error: err,
         });
       });
+  }
+
+  /**
+   * Capture a local git checkpoint after a turn completes, emit the
+   * `_posthog/git_checkpoint` notification to the renderer, and append it to
+   * the session JSONL so it survives page reload.
+   */
+  private async captureLocalCheckpoint(
+    taskRunId: string,
+    repoPath: string,
+    sessionId: string | undefined,
+    emitToRenderer: (payload: unknown) => void,
+  ): Promise<void> {
+    log.info("Capturing local checkpoint after turn", { taskRunId, repoPath });
+
+    const saga = new CaptureCheckpointSaga();
+    let result: Awaited<ReturnType<typeof saga.execute>>;
+    try {
+      result = await saga.execute({ baseDir: repoPath });
+    } catch (err) {
+      log.warn("CaptureCheckpointSaga failed — no checkpoint for this turn", {
+        taskRunId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+
+    log.info("Local checkpoint captured", {
+      taskRunId,
+      checkpointId: result.checkpointId,
+      commit: result.commit,
+      branch: result.branch,
+    });
+
+    const notification = {
+      jsonrpc: "2.0" as const,
+      method: POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT,
+      params: { checkpointId: result.checkpointId },
+    };
+
+    // Emit to renderer so the restore button activates on the completed turn
+    const acpMessage: AcpMessage = {
+      type: "acp_message",
+      ts: Date.now(),
+      message: notification as AcpMessage["message"],
+    };
+    emitToRenderer(acpMessage);
+
+    log.info("Emitted GIT_CHECKPOINT notification to renderer", {
+      taskRunId,
+      checkpointId: result.checkpointId,
+    });
+
+    // Append to the session JSONL so restore can find the checkpoint on reload
+    if (sessionId) {
+      try {
+        const jsonlPath = getSessionJsonlPath(sessionId, repoPath);
+        const line = `${JSON.stringify({ notification })}\n`;
+        await fsPromises.appendFile(jsonlPath, line, "utf-8");
+        log.info("Checkpoint appended to JSONL", {
+          taskRunId,
+          checkpointId: result.checkpointId,
+          jsonlPath,
+        });
+      } catch (err) {
+        log.warn("Failed to append checkpoint to JSONL (restore may not survive reload)", {
+          taskRunId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    } else {
+      log.warn("No sessionId yet — checkpoint not written to JSONL", {
+        taskRunId,
+      });
+    }
   }
 
   async getGatewayModels(apiHost: string) {
