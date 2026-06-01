@@ -126,6 +126,16 @@ export function getActionableReports(reports: SignalReport[]): SignalReport[] {
   );
 }
 
+export function orderSuggestedReviewers(
+  reviewers: SuggestedReviewer[],
+  meUuid: string | null | undefined,
+): SuggestedReviewer[] {
+  if (!meUuid) return reviewers;
+  const meIndex = reviewers.findIndex((r) => r.user?.uuid === meUuid);
+  if (meIndex <= 0) return reviewers;
+  return [reviewers[meIndex], ...reviewers.filter((_, i) => i !== meIndex)];
+}
+
 export interface ReviewerOption {
   uuid: string;
   name: string;

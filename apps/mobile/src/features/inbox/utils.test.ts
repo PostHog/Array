@@ -10,9 +10,57 @@ import {
   buildPriorityFilterParam,
   buildReviewerOptions,
   formatSignalReportSummaryMarkdown,
+  orderSuggestedReviewers,
   reviewerMatchesAvailable,
   toSuggestedReviewerWriteContent,
 } from "./utils";
+
+function reviewer(login: string, uuid?: string): SuggestedReviewer {
+  return {
+    github_login: login,
+    github_name: login,
+    relevant_commits: [],
+    user: uuid
+      ? {
+          id: 1,
+          uuid,
+          email: `${login}@posthog.com`,
+          first_name: login,
+          last_name: "",
+        }
+      : null,
+  };
+}
+
+describe("orderSuggestedReviewers", () => {
+  it("moves the current user to the front", () => {
+    const reviewers = [
+      reviewer("a", "uuid-a"),
+      reviewer("me", "uuid-me"),
+      reviewer("c", "uuid-c"),
+    ];
+    const ordered = orderSuggestedReviewers(reviewers, "uuid-me");
+    expect(ordered.map((r) => r.github_login)).toEqual(["me", "a", "c"]);
+  });
+
+  it("is a no-op when the current user is already first", () => {
+    const reviewers = [reviewer("me", "uuid-me"), reviewer("a", "uuid-a")];
+    const ordered = orderSuggestedReviewers(reviewers, "uuid-me");
+    expect(ordered).toBe(reviewers);
+  });
+
+  it("is a no-op when the current user is absent", () => {
+    const reviewers = [reviewer("a", "uuid-a"), reviewer("b", "uuid-b")];
+    const ordered = orderSuggestedReviewers(reviewers, "uuid-me");
+    expect(ordered).toBe(reviewers);
+  });
+
+  it("is a no-op when meUuid is missing", () => {
+    const reviewers = [reviewer("a", "uuid-a"), reviewer("me", "uuid-me")];
+    expect(orderSuggestedReviewers(reviewers, null)).toBe(reviewers);
+    expect(orderSuggestedReviewers(reviewers, undefined)).toBe(reviewers);
+  });
+});
 
 function makeReviewer(
   partial: Partial<SuggestedReviewer> = {},
