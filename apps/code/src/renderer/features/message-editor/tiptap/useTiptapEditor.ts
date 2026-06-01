@@ -44,7 +44,10 @@ export interface UseTiptapEditorOptions {
   clearOnSubmit?: boolean;
   getPromptHistory?: () => string[];
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
-  onSubmit?: (text: string) => void;
+  // Returning (or resolving to) `false`, or rejecting, signals the send failed,
+  // so the editor restores the content the user just submitted. Any other value
+  // is treated as success.
+  onSubmit?: (text: string) => unknown;
   onBashCommand?: (command: string) => void;
   onBashModeChange?: (isBashMode: boolean) => void;
   onEmptyChange?: (isEmpty: boolean) => void;
@@ -577,6 +580,18 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
       draft.clearDraft();
     };
 
+    // Put the just-submitted content back when an async send fails (e.g. a
+    // flaky network drops the request). Skipped if the user already started a
+    // new message so we don't clobber it.
+    const restoreOnFailure = () => {
+      if (!clearOnSubmit) return;
+      if (!editor.isEmpty) return;
+      draft.restoreContent(content);
+      if (content.attachments?.length) {
+        setAttachments(content.attachments);
+      }
+    };
+
     if (enableBashMode && text.startsWith("!")) {
       // Bash mode requires immediate execution, can't be queued.
       // Intentionally bypasses onBeforeSubmit — bash commands run inline and
@@ -596,8 +611,14 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
         }
       }
 
-      // Normal prompts can be queued when loading
-      callbackRefs.current.onSubmit?.(serialized);
+      // Normal prompts can be queued when loading. The send may fail
+      // asynchronously; restore the content if it does.
+      const submitResult = callbackRefs.current.onSubmit?.(serialized);
+      Promise.resolve(submitResult)
+        .then((ok) => {
+          if (ok === false) restoreOnFailure();
+        })
+        .catch(() => restoreOnFailure());
     }
 
     doClear();

@@ -222,10 +222,22 @@ export function useDraftSync(
     [],
   );
 
+  // Re-inject previously-submitted content back into the editor, e.g. when a
+  // send fails on a flaky network so the user doesn't have to retype. Reuses
+  // the pendingContent path that already re-hydrates a mounted editor.
+  const restoreContent = useCallback(
+    (content: EditorContent) => {
+      if (isContentEmpty(content)) return;
+      draftActions.setPendingContent(sessionId, content);
+    },
+    [sessionId, draftActions],
+  );
+
   return {
     saveDraft,
     clearDraft,
     getContent,
+    restoreContent,
     restoredAttachments,
   };
 }

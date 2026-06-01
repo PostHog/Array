@@ -53,6 +53,15 @@ export interface AgentSession {
   isPromptPending: boolean;
   isCompacting: boolean;
   promptStartedAt: number | null;
+  /** Set when connectivity dropped while this turn was in flight, so its
+   * eventual completion is treated as possibly-incomplete rather than a clean
+   * finish (the agent may have finalized a truncated response as `end_turn`). */
+  networkDroppedDuringTurn?: boolean;
+  /** Prompt ids of turns abandoned/truncated by a network outage. The
+   * conversation builder labels each "Failed due to network issue" (with a
+   * Retry) regardless of the reason the agent's signal carried. Persists for
+   * the session so the label survives later turns (e.g. a Retry). */
+  connectionLostPromptIds?: number[];
   /** JSON-RPC id of the currently in-flight session/prompt request. Used to
    * correlate late-arriving responses (e.g. from a cancelled prior turn) so
    * they don't clear the pending state of a newer turn. */

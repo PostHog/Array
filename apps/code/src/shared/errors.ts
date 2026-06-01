@@ -13,6 +13,29 @@ export function isNotAuthenticatedError(error: unknown): boolean {
   );
 }
 
+/**
+ * Thrown when a send can't be delivered because the device is offline (after a
+ * bounded grace wait for the connection to return). The renderer treats this
+ * specially: it restores the user's input and shows a connection-failure toast
+ * rather than dropping the message.
+ */
+export class SendConnectivityError extends Error {
+  constructor(
+    message = "No internet connection. Please check your connection and try again.",
+  ) {
+    super(message);
+    this.name = "SendConnectivityError";
+  }
+}
+
+export function isSendConnectivityError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { name?: unknown }).name === "SendConnectivityError"
+  );
+}
+
 const AUTH_ERROR_PATTERNS = [
   "authentication required",
   "failed to authenticate",

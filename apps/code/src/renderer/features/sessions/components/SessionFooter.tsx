@@ -1,4 +1,5 @@
 import type { ContextUsage } from "@features/sessions/hooks/useContextUsage";
+import { useConnectivity } from "@hooks/useConnectivity";
 import { Brain, Pause } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
@@ -18,6 +19,8 @@ interface SessionFooterProps {
   pausedDurationMs?: number;
   isCompacting?: boolean;
   usage?: ContextUsage | null;
+  /** Changes when stream activity arrives; drives the slow-connection hint. */
+  activitySignal?: number;
 }
 
 export function SessionFooter({
@@ -31,7 +34,9 @@ export function SessionFooter({
   pausedDurationMs,
   isCompacting = false,
   usage,
+  activitySignal,
 }: SessionFooterProps) {
+  const { isOnline } = useConnectivity();
   const rightSide = (
     <Flex align="center" gap="3" className="shrink-0">
       {task && <DiffStatsChip task={task} />}
@@ -67,6 +72,8 @@ export function SessionFooter({
             <GeneratingIndicator
               startedAt={promptStartedAt}
               pausedDurationMs={pausedDurationMs}
+              activitySignal={activitySignal}
+              isOnline={isOnline}
             />
             {queuedCount > 0 && (
               <Text color="gray" className="truncate text-[13px]">

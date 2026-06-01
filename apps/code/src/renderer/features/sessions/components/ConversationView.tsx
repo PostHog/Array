@@ -11,7 +11,7 @@ import {
 } from "@features/sessions/stores/sessionStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { SkillButtonActionMessage } from "@features/skill-buttons/components/SkillButtonActionMessage";
-import { ArrowDown, XCircle } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowDown, XCircle } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import WorkerUrl from "@pierre/diffs/worker/worker.js?worker&url";
 import { Box, Button, Flex, Text } from "@radix-ui/themes";
@@ -59,6 +59,8 @@ interface ConversationViewProps {
   task?: Task;
   slackThreadUrl?: string;
   compact?: boolean;
+  /** Resend a prompt — used by the Retry on a network-failed turn. */
+  onRetryPrompt?: (text: string) => void;
 }
 
 export function ConversationView({
@@ -70,6 +72,7 @@ export function ConversationView({
   task,
   slackThreadUrl,
   compact = false,
+  onRetryPrompt,
 }: ConversationViewProps) {
   const listRef = useRef<VirtualizedListHandle>(null);
   const isAtBottomRef = useRef(true);
@@ -77,6 +80,9 @@ export function ConversationView({
   const debugLogsCloudRuns = useSettingsStore((s) => s.debugLogsCloudRuns);
   const showDebugLogs = debugLogsCloudRuns;
   const contextUsage = useContextUsage(events);
+
+  const session = useSessionForTask(taskId);
+  const connectionLostPromptIds = session?.connectionLostPromptIds;
 
   const {
     items: conversationItems,
@@ -86,8 +92,9 @@ export function ConversationView({
     () =>
       buildConversationItems(events, isPromptPending, {
         showDebugLogs,
+        connectionLostPromptIds,
       }),
-    [events, isPromptPending, showDebugLogs],
+    [events, isPromptPending, showDebugLogs, connectionLostPromptIds],
   );
 
   const firstUserMessageIdRef = useRef<string | undefined>(undefined);
@@ -111,7 +118,6 @@ export function ConversationView({
   const pendingPermissionsCount = pendingPermissions.size;
   const queuedMessages = useQueuedMessagesForTask(taskId);
   const optimisticItems = useOptimisticItemsForTask(taskId);
-  const session = useSessionForTask(taskId);
   const pausedDurationMs = session?.pausedDurationMs ?? 0;
 
   const queuedItems = useMemo<Extract<ConversationItem, { type: "queued" }>[]>(
@@ -220,7 +226,16 @@ export function ConversationView({
             />
           ) : null;
         case "turn_cancelled":
-          return <TurnCancelledView interruptReason={item.interruptReason} />;
+          return (
+            <TurnCancelledView
+              interruptReason={item.interruptReason}
+              onRetry={
+                item.promptText && onRetryPrompt
+                  ? () => onRetryPrompt(item.promptText as string)
+                  : undefined
+              }
+            />
+          );
         case "user_shell_execute":
           return <UserShellExecuteView item={item} />;
         case "queued":
@@ -240,7 +255,14 @@ export function ConversationView({
           );
       }
     },
-    [repoPath, taskId, slackThreadUrl, firstUserMessageId, initialItemIds],
+    [
+      repoPath,
+      taskId,
+      slackThreadUrl,
+      firstUserMessageId,
+      initialItemIds,
+      onRetryPrompt,
+    ],
   );
 
   const getItemKey = useCallback((item: ConversationItem) => item.id, []);
@@ -285,6 +307,7 @@ export function ConversationView({
                   task={task}
                   isPromptPending={isPromptPending}
                   promptStartedAt={promptStartedAt}
+                  activitySignal={events.length}
                   lastGenerationDuration={
                     lastTurnInfo?.isComplete
                       ? Math.max(0, lastTurnInfo.durationMs - pausedDurationMs)
@@ -337,21 +360,37 @@ const SessionUpdateRow = memo(function SessionUpdateRow({
 
 const TurnCancelledView = memo(function TurnCancelledView({
   interruptReason,
+  onRetry,
 }: {
   interruptReason?: string;
+  onRetry?: () => void;
 }) {
+  const isNetworkFailure = interruptReason === "connection_lost";
   const message =
     interruptReason === "moving_to_worktree"
       ? "Paused while worktree is focused"
-      : "Interrupted by user";
+      : isNetworkFailure
+        ? "Response may be incomplete. Failed due to network issue"
+        : "Interrupted by user";
 
   return (
     <Box className="border-gray-4 border-l-2 py-0.5 pl-3">
       <Flex align="center" gap="2" className="text-gray-9">
-        <XCircle size={14} />
-        <Text color="gray" className="text-[13px]">
+        <XCircle
+          size={14}
+          className={isNetworkFailure ? "text-amber-11" : ""}
+        />
+        <Text
+          className={`text-[13px] ${isNetworkFailure ? "text-amber-11" : "text-gray-9"}`}
+        >
           {message}
         </Text>
+        {isNetworkFailure && onRetry && (
+          <Button size="1" variant="soft" onClick={onRetry}>
+            <ArrowClockwise size={12} />
+            Retry
+          </Button>
+        )}
       </Flex>
     </Box>
   );

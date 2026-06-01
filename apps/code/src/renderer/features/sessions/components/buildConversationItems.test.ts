@@ -121,6 +121,73 @@ describe("buildConversationItems", () => {
     ]);
   });
 
+  it("carries the prompt text and reason on a network-cancelled turn so it can be retried", () => {
+    const events: AcpMessage[] = [
+      userPromptMsg(1, 5, "summarize the resume"),
+      {
+        type: "acp_message",
+        ts: 2,
+        message: {
+          jsonrpc: "2.0",
+          id: 5,
+          result: {
+            stopReason: "cancelled",
+            _meta: { interruptReason: "connection_lost" },
+          },
+        },
+      },
+    ];
+
+    const result = buildConversationItems(events, null);
+    const cancelled = result.items.find((i) => i.type === "turn_cancelled");
+
+    expect(cancelled).toMatchObject({
+      type: "turn_cancelled",
+      interruptReason: "connection_lost",
+      promptText: "summarize the resume",
+    });
+  });
+
+  it("labels a turn 'connection_lost' by prompt id when the cancelled signal carried no reason", () => {
+    // The turn_complete notification path carries stopReason but no interrupt
+    // reason — the renderer-known connectionLostPromptIds fills it in.
+    const events: AcpMessage[] = [
+      userPromptMsg(1, 9, "summarize the resume"),
+      turnCompleteMsg(2, "cancelled"),
+    ];
+
+    const result = buildConversationItems(events, null, {
+      connectionLostPromptIds: [9],
+    });
+    const cancelled = result.items.find((i) => i.type === "turn_cancelled");
+
+    expect(cancelled).toMatchObject({
+      type: "turn_cancelled",
+      interruptReason: "connection_lost",
+      promptText: "summarize the resume",
+    });
+  });
+
+  it("shows the network-failure footer on an end_turn turn flagged connection-lost", () => {
+    // A turn the agent reported as a clean end_turn, but which the app flagged
+    // as network-affected, still gets the inline footer + Retry.
+    const events: AcpMessage[] = [
+      userPromptMsg(1, 11, "summarize the resume"),
+      promptResponseMsg(2, 11),
+    ];
+
+    const result = buildConversationItems(events, null, {
+      connectionLostPromptIds: [11],
+    });
+    const cancelled = result.items.find((i) => i.type === "turn_cancelled");
+
+    expect(cancelled).toMatchObject({
+      type: "turn_cancelled",
+      interruptReason: "connection_lost",
+      promptText: "summarize the resume",
+    });
+  });
+
   it("marks cloud turns complete from structured turn completion notifications", () => {
     const result = buildConversationItems(
       [userPromptMsg(10, 42, "hello"), turnCompleteMsg(25)],

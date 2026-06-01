@@ -17,6 +17,7 @@ import { AddDirectoryDialog } from "@features/folder-picker/components/AddDirect
 import { OnboardingFlow } from "@features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
+import { initializeConnectivityRecovery } from "@renderer/features/connectivity/connectivityRecovery";
 import { initializeConnectivityToast } from "@renderer/features/connectivity/connectivityToast";
 import { initializeConnectivityStore } from "@renderer/stores/connectivityStore";
 import { useFocusStore } from "@renderer/stores/focusStore";
@@ -64,7 +65,9 @@ function App() {
   useEffect(() => {
     const disposeStore = initializeConnectivityStore();
     const disposeToast = initializeConnectivityToast();
+    const disposeRecovery = initializeConnectivityRecovery();
     return () => {
+      disposeRecovery();
       disposeToast();
       disposeStore();
     };

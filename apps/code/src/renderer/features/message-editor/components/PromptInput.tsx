@@ -46,7 +46,9 @@ export interface PromptInputProps {
   getPromptHistory?: () => string[];
   // callbacks
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
-  onSubmit?: (text: string) => void;
+  // Returning (or resolving to) `false` signals the send failed, so the editor
+  // restores the submitted content instead of dropping it.
+  onSubmit?: (text: string) => unknown;
   onBashCommand?: (command: string) => void;
   onBashModeChange?: (isBashMode: boolean) => void;
   onCancel?: () => void;

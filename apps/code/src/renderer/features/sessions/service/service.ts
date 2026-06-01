@@ -41,6 +41,7 @@ import { getIsOnline } from "@renderer/stores/connectivityStore";
 import { trpc } from "@renderer/trpc";
 import { trpcClient } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
+import { SendConnectivityError } from "@shared/errors";
 import {
   type CloudTaskPermissionRequestUpdate,
   type CloudTaskUpdatePayload,
@@ -97,6 +98,12 @@ const LOCAL_SESSION_RECOVERY_FAILED_MESSAGE =
 const GITHUB_AUTHORIZATION_REQUIRED_CODE = "github_authorization_required";
 const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const AUTO_RETRY_DELAY_MS = 10_000;
+// How often to re-check connectivity while waiting for it to return.
+const SEND_CONNECTIVITY_POLL_MS = 1_000;
+// How long a local turn may stay offline before we stop waiting, cancel it and
+// surface a connection-lost error. The connection returning before this cancels
+// the timer (the turn auto-resumes), so this only fires on a sustained outage.
+const OFFLINE_TURN_GIVEUP_MS = 40_000;
 
 class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
   constructor(
@@ -282,6 +289,11 @@ export function resetSessionService(): void {
 export class SessionService {
   private connectingTasks = new Map<string, Promise<void>>();
   private localRepoPaths = new Map<string, string>();
+  // Per-turn timers that give up on a local turn stuck offline (keyed by taskRunId).
+  private offlineTurnGiveupTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
   private localRecoveryAttempts = new Map<string, Promise<boolean>>();
   /** Re-entrance guard for cloud queue dispatch (per taskId). */
   private dispatchingCloudQueues = new Set<string>();
@@ -1196,11 +1208,7 @@ export class SessionService {
           if (isLive) {
             // Queued messages will start a new turn — suppress the "done" notification in that case.
             if (session.messageQueue.length === 0) {
-              notifyPromptComplete(
-                session.taskTitle,
-                "end_turn",
-                session.taskId,
-              );
+              this.notifyTurnComplete(taskRunId, "end_turn");
             }
             taskViewedApi.markActivity(session.taskId);
           }
@@ -1316,7 +1324,7 @@ export class SessionService {
 
       // Only notify when queue is empty - queued messages will start a new turn
       if (stopReason && !hasQueuedMessages) {
-        notifyPromptComplete(session.taskTitle, stopReason, session.taskId);
+        this.notifyTurnComplete(taskRunId, stopReason, msg.id);
       }
 
       taskViewedApi.markActivity(session.taskId);
@@ -1503,14 +1511,53 @@ export class SessionService {
    * Send a prompt to the agent.
    * Queues if a prompt is already pending.
    */
+  /**
+   * Poll for connectivity up to `timeoutMs`. Returns true as soon as the
+   * connection is back, false if the window elapses while still offline. The
+   * connectivity service re-checks in the background every few seconds, so
+   * polling the cached status is enough.
+   */
+  private async waitForConnectivity(timeoutMs: number): Promise<boolean> {
+    if (getIsOnline()) return true;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, SEND_CONNECTIVITY_POLL_MS),
+      );
+      if (getIsOnline()) return true;
+    }
+    return getIsOnline();
+  }
+
   async sendPrompt(
     taskId: string,
     prompt: string | ContentBlock[],
   ): Promise<{ stopReason: string }> {
     if (!getIsOnline()) {
-      throw new Error(
-        "No internet connection. Please check your connection and try again.",
-      );
+      // Don't fail instantly on a drop. Surface the same "Connection lost —
+      // waiting to reconnect…" indicator (with timer) as a mid-turn drop while
+      // we wait for the connection, then send once it's back. If it's still
+      // down after the give-up window, surface a connectivity error.
+      const offlineSession = sessionStoreSetters.getSessionByTaskId(taskId);
+      if (offlineSession) {
+        sessionStoreSetters.updateSession(offlineSession.taskRunId, {
+          isPromptPending: true,
+          promptStartedAt: Date.now(),
+          pausedDurationMs: 0,
+        });
+      }
+      const recovered = await this.waitForConnectivity(OFFLINE_TURN_GIVEUP_MS);
+      // Clear the transient reconnecting state; the normal flow re-applies
+      // pending when it actually dispatches.
+      if (offlineSession) {
+        sessionStoreSetters.updateSession(offlineSession.taskRunId, {
+          isPromptPending: false,
+          promptStartedAt: null,
+        });
+      }
+      if (!recovered) {
+        throw new SendConnectivityError();
+      }
     }
 
     let session = sessionStoreSetters.getSessionByTaskId(taskId);
@@ -1609,22 +1656,27 @@ export class SessionService {
   /**
    * Send all queued messages as a single prompt.
    * Called internally when a turn completes and there are queued messages.
-   * Queue is cleared atomically before sending - if sending fails, messages are lost
-   * (this is acceptable since the user can re-type; avoiding complex retry logic).
+   * The queue is drained atomically before sending; if the dispatch fails
+   * (e.g. a flaky network), the messages are prepended back onto the queue so
+   * they aren't silently lost and drain naturally on the next attempt.
    */
   private async sendQueuedMessages(
     taskId: string,
   ): Promise<{ stopReason: string }> {
-    const combinedText = sessionStoreSetters.dequeueMessagesAsText(taskId);
-    if (!combinedText) {
+    const messages = sessionStoreSetters.dequeueMessages(taskId);
+    if (messages.length === 0) {
       return { stopReason: "skipped" };
     }
+    const combinedText = messages.map((msg) => msg.content).join("\n\n");
 
     const session = sessionStoreSetters.getSessionByTaskId(taskId);
     if (!session) {
-      log.warn("No session found for queued messages, messages lost", {
+      // No live session to dispatch to — put the messages back so a later
+      // reconnect can drain them rather than dropping the user's input.
+      sessionStoreSetters.prependQueuedMessages(taskId, messages);
+      log.warn("No session found for queued messages, re-enqueued", {
         taskId,
-        lostMessageLength: combinedText.length,
+        requeuedCount: messages.length,
       });
       return { stopReason: "no_session" };
     }
@@ -1652,10 +1704,12 @@ export class SessionService {
     try {
       return await this.sendLocalPrompt(session, blocks, combinedText);
     } catch (error) {
-      // Log that queued messages were lost due to send failure
-      log.error("Failed to send queued messages, messages lost", {
+      // Roll the drain back so the queued messages survive a transient send
+      // failure and retry on the next drain instead of being lost.
+      sessionStoreSetters.prependQueuedMessages(taskId, messages);
+      log.warn("Failed to send queued messages, re-enqueued for retry", {
         taskId,
-        lostMessageLength: combinedText.length,
+        requeuedCount: messages.length,
         error,
       });
       throw error;
@@ -1671,6 +1725,7 @@ export class SessionService {
       isPromptPending: true,
       promptStartedAt: Date.now(),
       pausedDurationMs: 0,
+      networkDroppedDuringTurn: false,
     });
 
     const skillButtonId = extractSkillButtonId(blocks);
@@ -1757,7 +1812,10 @@ export class SessionService {
   /**
    * Cancel the current prompt.
    */
-  async cancelPrompt(taskId: string): Promise<boolean> {
+  async cancelPrompt(
+    taskId: string,
+    reason?: "user_request" | "moving_to_worktree" | "connection_lost",
+  ): Promise<boolean> {
     const session = sessionStoreSetters.getSessionByTaskId(taskId);
     if (!session) return false;
 
@@ -1773,6 +1831,7 @@ export class SessionService {
     try {
       const result = await trpcClient.agent.cancelPrompt.mutate({
         sessionId: session.taskRunId,
+        reason,
       });
 
       const durationSeconds = Math.round(
@@ -1923,6 +1982,7 @@ export class SessionService {
       promptStartedAt: Date.now(),
       pausedDurationMs: 0,
       agentIdleForRunId: undefined,
+      networkDroppedDuringTurn: false,
     });
     this.cloudRunIdleTracker.markBusy(currentSessionBeforeSend);
     sessionStoreSetters.appendOptimisticItem(session.taskRunId, {
@@ -3365,6 +3425,146 @@ export class SessionService {
         });
       });
     }
+  }
+
+  /**
+   * Mark every in-flight turn as having seen a connectivity drop. Called on the
+   * offline edge so that when the turn later reports `end_turn` (the agent SDK
+   * can finalize a network-truncated response as a clean stop), we treat it as
+   * possibly-incomplete instead of notifying the user it finished.
+   */
+  public markInflightTurnsNetworkDropped(): void {
+    const sessions = sessionStoreSetters.getSessions();
+    for (const session of Object.values(sessions)) {
+      if (!session.isPromptPending) continue;
+
+      if (!session.networkDroppedDuringTurn) {
+        sessionStoreSetters.updateSession(session.taskRunId, {
+          networkDroppedDuringTurn: true,
+        });
+      }
+
+      // Local turns can't make progress while the device is offline, so bound
+      // the wait: give up after the cap unless the connection returns first.
+      // Cloud turns keep running server-side and resume via SSE on reconnect,
+      // so we don't force-cancel those.
+      if (
+        !session.isCloud &&
+        !this.offlineTurnGiveupTimers.has(session.taskRunId)
+      ) {
+        const { taskRunId, taskId } = session;
+        const timer = setTimeout(() => {
+          this.failStalledOfflineTurn(taskRunId, taskId);
+        }, OFFLINE_TURN_GIVEUP_MS);
+        this.offlineTurnGiveupTimers.set(taskRunId, timer);
+      }
+    }
+  }
+
+  private clearOfflineTurnGiveupTimer(taskRunId: string): void {
+    const timer = this.offlineTurnGiveupTimers.get(taskRunId);
+    if (timer) {
+      clearTimeout(timer);
+      this.offlineTurnGiveupTimers.delete(taskRunId);
+    }
+  }
+
+  /**
+   * Cancel all pending offline give-up timers — called when connectivity is
+   * restored so in-flight turns resume rather than being cancelled.
+   */
+  public clearOfflineTurnGiveupTimers(): void {
+    for (const timer of this.offlineTurnGiveupTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.offlineTurnGiveupTimers.clear();
+  }
+
+  /**
+   * Stop waiting on a local turn that has been offline past the cap: cancel it
+   * (clearing the pending spinner) and tell the user the response couldn't
+   * finish. No-ops if the connection came back or the turn already ended.
+   */
+  private failStalledOfflineTurn(taskRunId: string, taskId: string): void {
+    this.clearOfflineTurnGiveupTimer(taskRunId);
+    if (getIsOnline()) return;
+    const session = sessionStoreSetters.getSessions()[taskRunId];
+    if (!session?.isPromptPending) return;
+
+    log.warn("Giving up on a turn stalled offline past the cap", {
+      taskRunId,
+      taskId,
+    });
+
+    // Tag this turn's prompt id so the conversation builder labels it "Failed
+    // due to network issue" with a Retry — independent of whatever reason the
+    // agent's cancelled signal ends up carrying. Accumulated so the label
+    // survives later turns (e.g. the Retry itself).
+    if (typeof session.currentPromptId === "number") {
+      sessionStoreSetters.updateSession(taskRunId, {
+        connectionLostPromptIds: [
+          ...(session.connectionLostPromptIds ?? []),
+          session.currentPromptId,
+        ],
+      });
+    }
+
+    // Cancel the hung turn. The inline "Failed due to network issue" label +
+    // Retry button is the feedback; the message isn't pulled into the composer.
+    void this.cancelPrompt(taskId, "connection_lost").catch((error) => {
+      log.warn("Failed to cancel stalled offline turn", { taskId, error });
+    });
+  }
+
+  /**
+   * Fire the turn-complete notification unless the connection dropped during
+   * the turn — in that case the reported completion is suspect (the response
+   * may be truncated), so we flag the turn for the inline "Response may be
+   * incomplete. Failed due to network issue" footer instead of signalling
+   * success.
+   */
+  private notifyTurnComplete(
+    taskRunId: string,
+    stopReason: string,
+    promptId?: number,
+  ): void {
+    // The turn ended, so any offline give-up timer for it is moot.
+    this.clearOfflineTurnGiveupTimer(taskRunId);
+
+    const session = sessionStoreSetters.getSessions()[taskRunId];
+    if (!session) return;
+
+    const droppedDuringTurn = session.networkDroppedDuringTurn === true;
+    if (droppedDuringTurn) {
+      sessionStoreSetters.updateSession(taskRunId, {
+        networkDroppedDuringTurn: false,
+      });
+    }
+
+    // A turn the agent reported as a normal completion (`end_turn`) but which
+    // saw a network drop is suspect — the response may be truncated. Flag its
+    // prompt id so the conversation renders the inline "Response may be
+    // incomplete. Failed due to network issue" footer (with Retry), and don't
+    // signal a clean finish. (Cancelled/errored turns were never notified.)
+    if (
+      stopReason === "end_turn" &&
+      droppedDuringTurn &&
+      typeof promptId === "number"
+    ) {
+      log.warn(
+        "Turn completed after a network drop; flagging as possibly incomplete",
+        { taskRunId, taskId: session.taskId, promptId },
+      );
+      sessionStoreSetters.updateSession(taskRunId, {
+        connectionLostPromptIds: [
+          ...(session.connectionLostPromptIds ?? []),
+          promptId,
+        ],
+      });
+      return;
+    }
+
+    notifyPromptComplete(session.taskTitle, stopReason, session.taskId);
   }
 
   public updateSessionTaskTitle(taskId: string, taskTitle: string): void {

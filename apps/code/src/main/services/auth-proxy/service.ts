@@ -201,9 +201,19 @@ export class AuthProxyService {
       await pump();
     } catch (err) {
       log.error("Proxy forward error", { url, err });
-      if (!res.headersSent) {
-        res.writeHead(502);
+      if (res.headersSent) {
+        // The response already started streaming, so we can't change the
+        // status. Abort the socket instead of ending it cleanly — a clean
+        // `res.end()` looks like a normal end-of-stream to the agent's SDK,
+        // which can then finalize a truncated reply as a successful turn.
+        // Destroying signals an incomplete/errored response so it retries or
+        // fails loudly instead.
+        res.destroy(
+          err instanceof Error ? err : new Error("Proxy stream error"),
+        );
+        return;
       }
+      res.writeHead(502);
       res.end("Proxy error");
     }
   }

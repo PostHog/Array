@@ -57,7 +57,9 @@ interface SessionViewProps {
   isPromptPending?: boolean | null;
   promptStartedAt?: number | null;
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
-  onSendPrompt: (text: string) => void;
+  // Returning (or resolving to) `false` signals the send failed, so the editor
+  // restores the user's input. Any other value is treated as success.
+  onSendPrompt: (text: string) => unknown;
   onBashCommand?: (command: string) => void;
   onCancelPrompt: () => void;
   repoPath?: string | null;
@@ -255,9 +257,9 @@ export function SessionView({
 
   const handleSubmit = useCallback(
     (text: string) => {
-      if (text.trim()) {
-        onSendPrompt(text);
-      }
+      if (!text.trim()) return;
+      // Return the result so the editor can restore input on send failure.
+      return onSendPrompt(text);
     },
     [onSendPrompt],
   );
@@ -473,6 +475,7 @@ export function SessionView({
                   taskId={taskId}
                   task={task}
                   slackThreadUrl={slackThreadUrl}
+                  onRetryPrompt={onSendPrompt}
                 />
                 <Box className="border-gray-4 border-t">
                   <Box
@@ -550,6 +553,7 @@ export function SessionView({
                   task={task}
                   slackThreadUrl={slackThreadUrl}
                   compact={compact}
+                  onRetryPrompt={onSendPrompt}
                 />
 
                 <PlanStatusBar plan={latestPlan} />

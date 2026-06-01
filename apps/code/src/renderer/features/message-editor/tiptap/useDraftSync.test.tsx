@@ -21,6 +21,20 @@ function DraftAttachmentsProbe({ sessionId }: { sessionId: string }) {
   );
 }
 
+function RestoreContentProbe({ sessionId }: { sessionId: string }) {
+  const { restoreContent } = useDraftSync(null, sessionId);
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        restoreContent({ segments: [{ type: "text", text: "lost message" }] })
+      }
+    >
+      restore
+    </button>
+  );
+}
+
 describe("useDraftSync", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -59,5 +73,17 @@ describe("useDraftSync", () => {
 
     rerender(<DraftAttachmentsProbe sessionId="session-2" />);
     expect(screen.getByText("empty")).toBeInTheDocument();
+  });
+
+  it("re-injects content as pending content when restoreContent is called", () => {
+    render(<RestoreContentProbe sessionId="session-1" />);
+
+    act(() => {
+      screen.getByText("restore").click();
+    });
+
+    expect(useDraftStore.getState().pendingContent["session-1"]).toEqual({
+      segments: [{ type: "text", text: "lost message" }],
+    });
   });
 });

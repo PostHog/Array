@@ -2,6 +2,7 @@ import { tryExecuteCodeCommand } from "@features/message-editor/commands";
 import { useDraftStore } from "@features/message-editor/stores/draftStore";
 import { useTaskViewed } from "@features/sidebar/hooks/useTaskViewed";
 import { trpcClient } from "@renderer/trpc/client";
+import { isSendConnectivityError } from "@shared/errors";
 import type { Task } from "@shared/types";
 import { useNavigationStore } from "@stores/navigationStore";
 import { logger } from "@utils/logger";
@@ -36,8 +37,10 @@ export function useSessionCallbacks({
   const sessionRef = useRef(session);
   sessionRef.current = session;
 
+  // Returns false when the send fails so the editor can restore the user's
+  // input instead of silently dropping it.
   const handleSendPrompt = useCallback(
-    async (text: string) => {
+    async (text: string): Promise<boolean> => {
       const currentSession = sessionRef.current;
       const currentEvents = currentSession?.events ?? [];
       const handled = await tryExecuteCodeCommand(text, {
@@ -52,7 +55,7 @@ export function useSessionCallbacks({
           : null,
         taskRun: task.latest_run ?? null,
       });
-      if (handled) return;
+      if (handled) return true;
 
       try {
         markAsViewed(taskId);
@@ -65,11 +68,17 @@ export function useSessionCallbacks({
         if (isViewingTask) {
           markAsViewed(taskId);
         }
+        return true;
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to send message";
-        toast.error(message);
+        // A connectivity failure already restores the message to the composer
+        // (the editor re-injects it on a false result), so no toast is needed.
+        if (!isSendConnectivityError(error)) {
+          const message =
+            error instanceof Error ? error.message : "Failed to send message";
+          toast.error(message);
+        }
         log.error("Failed to send prompt", error);
+        return false;
       }
     },
     [taskId, repoPath, markActivity, markAsViewed, task.latest_run],

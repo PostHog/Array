@@ -150,6 +150,7 @@ export const cancelSessionInput = z.object({
 export const interruptReasonSchema = z.enum([
   "user_request",
   "moving_to_worktree",
+  "connection_lost",
 ]);
 export type InterruptReason = z.infer<typeof interruptReasonSchema>;
 

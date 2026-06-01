@@ -54,7 +54,13 @@ export type ConversationItem =
       actionType: GitActionType;
       turnId: string;
     }
-  | { type: "turn_cancelled"; id: string; interruptReason?: string }
+  | {
+      type: "turn_cancelled";
+      id: string;
+      interruptReason?: string;
+      /** Original prompt text, so a network-failed turn can offer a Retry. */
+      promptText?: string;
+    }
   | UserShellExecute
   | { type: "queued"; id: string; message: QueuedMessage };
 
@@ -87,6 +93,8 @@ interface TurnState {
   isComplete: boolean;
   stopReason?: string;
   interruptReason?: string;
+  /** The user's prompt text for this turn (for a Retry on network failure). */
+  promptText?: string;
   durationMs: number;
   toolCalls: Map<string, ToolCall>;
   context: TurnContext;
@@ -106,6 +114,8 @@ interface ItemBuilder {
    *  event for the same id mutates the same card, regardless of which turn is
    *  currently active. */
   progressCards: Map<string, ProgressCardState>;
+  /** Prompt ids of turns the app flagged as network-failed (renderer-known). */
+  connectionLostPromptIds?: number[];
 }
 
 function createItemBuilder(): ItemBuilder {
@@ -162,6 +172,9 @@ function pushItem(b: ItemBuilder, update: RenderItem) {
 export interface BuildConversationOptions {
   /** Render `debug`-level console logs inline; without this only info/warn/error show up. */
   showDebugLogs?: boolean;
+  /** Prompt ids of turns abandoned/truncated by a network outage; each is
+   * labeled "Failed due to network issue" even if its signal carried no reason. */
+  connectionLostPromptIds?: number[];
 }
 
 export function buildConversationItems(
@@ -170,6 +183,7 @@ export function buildConversationItems(
   options?: BuildConversationOptions,
 ): BuildResult {
   const b = createItemBuilder();
+  b.connectionLostPromptIds = options?.connectionLostPromptIds;
 
   for (const event of events) {
     const msg = event.message;
@@ -259,6 +273,7 @@ function handlePromptRequest(
     context,
     gitAction,
     itemCount: 0,
+    promptText: userContent,
   };
 
   b.pendingPrompts.set(msg.id, b.currentTurn);
@@ -323,6 +338,16 @@ function completePromptTurn(
   const wasCancelled = turn.stopReason === "cancelled";
   turn.context.turnCancelled = wasCancelled;
 
+  // A turn the app flagged as network-affected (cancelled by the offline
+  // give-up, or completed `end_turn` after a drop) gets the inline "Response
+  // may be incomplete. Failed due to network issue" footer with a Retry —
+  // even when the agent's signal carried no interrupt reason.
+  const wasNetworkAffected =
+    b.connectionLostPromptIds?.includes(turn.promptId) ?? false;
+  if (wasNetworkAffected && !turn.interruptReason) {
+    turn.interruptReason = "connection_lost";
+  }
+
   if (turn.gitAction.isGitAction && turn.gitAction.actionType) {
     b.items.push({
       type: "git_action_result",
@@ -332,11 +357,12 @@ function completePromptTurn(
     });
   }
 
-  if (wasCancelled) {
+  if (wasCancelled || wasNetworkAffected) {
     b.items.push({
       type: "turn_cancelled",
       id: `${turn.id}-cancelled`,
       interruptReason: turn.interruptReason,
+      promptText: turn.promptText,
     });
   }
 

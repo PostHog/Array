@@ -1,7 +1,9 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import type { AgentSession } from "@features/sessions/stores/sessionStore";
+import { isSendConnectivityError } from "@shared/errors";
 import type { Task } from "@shared/types";
 import type { AcpMessage } from "@shared/types/session-events";
+import { notifyPromptComplete } from "@utils/notifications";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // --- Hoisted Mocks ---
@@ -255,7 +257,7 @@ vi.mock("@utils/notifications", () => ({
   notifyPromptComplete: vi.fn(),
 }));
 vi.mock("@renderer/utils/toast", () => ({
-  toast: { error: vi.fn(), info: vi.fn() },
+  toast: { error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 vi.mock("@utils/queryClient", () => ({
   queryClient: {
@@ -3340,13 +3342,59 @@ describe("SessionService", () => {
   });
 
   describe("sendPrompt", () => {
-    it("throws when offline", async () => {
-      mockGetIsOnline.mockReturnValue(false);
-      const service = getSessionService();
+    it("throws a connectivity error and does not send if still offline after the grace window", async () => {
+      vi.useFakeTimers();
+      try {
+        mockGetIsOnline.mockReturnValue(false);
+        const service = getSessionService();
 
-      await expect(service.sendPrompt("task-123", "Hello")).rejects.toThrow(
-        "No internet connection",
-      );
+        const promise = service.sendPrompt("task-123", "Hello");
+        const assertion = expect(promise).rejects.toSatisfy(
+          isSendConnectivityError,
+        );
+        // Stays offline past the give-up window.
+        await vi.advanceTimersByTimeAsync(41_000);
+        await assertion;
+
+        expect(mockTrpcAgent.prompt.mutate).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("waits for connectivity and sends once the connection returns", async () => {
+      vi.useFakeTimers();
+      try {
+        // Offline for the guard + first poll, then back online.
+        mockGetIsOnline
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValue(true);
+        mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+          createMockSession(),
+        );
+        mockTrpcAgent.prompt.mutate.mockResolvedValue({
+          stopReason: "end_turn",
+        });
+        const service = getSessionService();
+
+        const promise = service.sendPrompt("task-123", "Hello");
+        await vi.advanceTimersByTimeAsync(3_000);
+        const result = await promise;
+
+        expect(result.stopReason).toBe("end_turn");
+        expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalled();
+        // While offline it shows the reconnecting indicator (pending + timer).
+        expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+          "run-123",
+          expect.objectContaining({
+            isPromptPending: true,
+            promptStartedAt: expect.any(Number),
+          }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("throws when no session exists", async () => {
@@ -4024,9 +4072,9 @@ describe("SessionService", () => {
       mockSessionStoreSetters.setSession.mockImplementation((next) => {
         session = next as AgentSession;
       });
-      mockSessionStoreSetters.dequeueMessagesAsText.mockReturnValue(
-        "follow up",
-      );
+      mockSessionStoreSetters.dequeueMessages.mockReturnValue([
+        { id: "q-1", content: "follow up", queuedAt: 1700000000 },
+      ]);
 
       mockBuildAuthenticatedClient.mockReturnValue({
         ...mockAuthenticatedClient,
@@ -4091,6 +4139,296 @@ describe("SessionService", () => {
           expect.objectContaining({ sessionId: "run-123" }),
         );
       });
+    });
+
+    it("re-enqueues queued local messages when the drain dispatch fails", async () => {
+      const service = getSessionService();
+
+      let session: AgentSession | undefined;
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        () => session,
+      );
+      mockSessionStoreSetters.getSessions.mockImplementation(() =>
+        session ? { "run-123": session } : {},
+      );
+      mockSessionStoreSetters.updateSession.mockImplementation(
+        (_taskRunId, updates) => {
+          if (session) session = { ...session, ...updates };
+        },
+      );
+      mockSessionStoreSetters.setSession.mockImplementation((next) => {
+        session = next as AgentSession;
+      });
+
+      const queuedMessage = {
+        id: "q-1",
+        content: "follow up",
+        queuedAt: 1700000000,
+      };
+      mockSessionStoreSetters.dequeueMessages.mockReturnValue([queuedMessage]);
+
+      mockBuildAuthenticatedClient.mockReturnValue({
+        ...mockAuthenticatedClient,
+        createTaskRun: vi.fn().mockResolvedValue({ id: "run-123" }),
+        appendTaskRunLog: vi.fn(),
+      });
+      mockTrpcAgent.start.mutate.mockResolvedValue({
+        channel: "agent-event:run-123",
+        configOptions: [],
+      });
+      // The drain dispatch fails on a flaky network.
+      mockTrpcAgent.prompt.mutate.mockRejectedValue(
+        new Error("transient network failure"),
+      );
+
+      await service.connectToTask({
+        task: createMockTask(),
+        repoPath: "/repo",
+      });
+
+      const onData = mockTrpcAgent.onSessionEvent.subscribe.mock.calls.at(
+        -1,
+      )?.[1]?.onData as ((payload: unknown) => void) | undefined;
+      expect(onData).toBeDefined();
+
+      session = createMockSession({
+        taskRunId: "run-123",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: false,
+        currentPromptId: 42,
+        isPromptPending: true,
+        messageQueue: [queuedMessage],
+      });
+
+      onData?.({
+        type: "acp_message",
+        ts: 1700000001,
+        message: {
+          jsonrpc: "2.0",
+          method: "_posthog/turn_complete",
+          params: { sessionId: "acp-session", stopReason: "end_turn" },
+        },
+      });
+      onData?.({
+        type: "acp_message",
+        ts: 1700000002,
+        message: { jsonrpc: "2.0", id: 42, result: { stopReason: "end_turn" } },
+      });
+
+      await vi.waitFor(() => {
+        expect(
+          mockSessionStoreSetters.prependQueuedMessages,
+        ).toHaveBeenCalledWith("task-123", [queuedMessage]);
+      });
+    });
+  });
+
+  describe("network-interrupted turn completion", () => {
+    it("flags only in-flight turns as network-dropped", () => {
+      const pending = createMockSession({
+        taskRunId: "run-a",
+        taskId: "task-a",
+        isPromptPending: true,
+      });
+      const idle = createMockSession({
+        taskRunId: "run-b",
+        taskId: "task-b",
+        isPromptPending: false,
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-a": pending,
+        "run-b": idle,
+      });
+      const service = getSessionService();
+
+      service.markInflightTurnsNetworkDropped();
+
+      expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+        "run-a",
+        { networkDroppedDuringTurn: true },
+      );
+      expect(mockSessionStoreSetters.updateSession).not.toHaveBeenCalledWith(
+        "run-b",
+        expect.objectContaining({ networkDroppedDuringTurn: true }),
+      );
+    });
+
+    async function setupLocalTurn(overrides: Partial<AgentSession>) {
+      const service = getSessionService();
+      let session: AgentSession | undefined;
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        () => session,
+      );
+      mockSessionStoreSetters.getSessions.mockImplementation(() =>
+        session ? { "run-123": session } : {},
+      );
+      mockSessionStoreSetters.updateSession.mockImplementation(
+        (_taskRunId, updates) => {
+          if (session) session = { ...session, ...updates };
+        },
+      );
+      mockSessionStoreSetters.setSession.mockImplementation((next) => {
+        session = next as AgentSession;
+      });
+
+      mockBuildAuthenticatedClient.mockReturnValue({
+        ...mockAuthenticatedClient,
+        createTaskRun: vi.fn().mockResolvedValue({ id: "run-123" }),
+        appendTaskRunLog: vi.fn(),
+      });
+      mockTrpcAgent.start.mutate.mockResolvedValue({
+        channel: "agent-event:run-123",
+        configOptions: [],
+      });
+
+      await service.connectToTask({
+        task: createMockTask(),
+        repoPath: "/repo",
+      });
+
+      const onData = mockTrpcAgent.onSessionEvent.subscribe.mock.calls.at(
+        -1,
+      )?.[1]?.onData as ((payload: unknown) => void) | undefined;
+
+      session = createMockSession({
+        taskRunId: "run-123",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: false,
+        currentPromptId: 7,
+        isPromptPending: true,
+        ...overrides,
+      });
+
+      const deliverResult = (stopReason = "end_turn") =>
+        onData?.({
+          type: "acp_message",
+          ts: 1700000002,
+          message: {
+            jsonrpc: "2.0",
+            id: 7,
+            result: { stopReason },
+          },
+        });
+
+      return { deliverResult };
+    }
+
+    it("suppresses the finished notification and flags the turn (no toast) when the network dropped mid-turn", async () => {
+      const { deliverResult } = await setupLocalTurn({
+        networkDroppedDuringTurn: true,
+      });
+
+      deliverResult();
+
+      // No "finished" notification, no toast — the turn is flagged for the
+      // inline "Response may be incomplete. Failed due to network issue" footer.
+      expect(notifyPromptComplete).not.toHaveBeenCalled();
+      expect(toast.warning).not.toHaveBeenCalled();
+      expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+        "run-123",
+        expect.objectContaining({ connectionLostPromptIds: [7] }),
+      );
+    });
+
+    it("does not warn when a network-dropped turn was cancelled by the user", async () => {
+      const { deliverResult } = await setupLocalTurn({
+        networkDroppedDuringTurn: true,
+      });
+
+      deliverResult("cancelled");
+
+      // A user-initiated cancel was never surfaced as a completion, so the
+      // incomplete-warning would just be noise.
+      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notifyPromptComplete).not.toHaveBeenCalledWith(
+        expect.anything(),
+        "end_turn",
+        expect.anything(),
+      );
+    });
+
+    it("notifies normally when the network stayed up through the turn", async () => {
+      const { deliverResult } = await setupLocalTurn({
+        networkDroppedDuringTurn: false,
+      });
+
+      deliverResult();
+
+      expect(notifyPromptComplete).toHaveBeenCalledWith(
+        "Test Task",
+        "end_turn",
+        "task-123",
+      );
+      expect(toast.warning).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("offline turn give-up", () => {
+    function setupOfflinePending(isCloud: boolean) {
+      mockGetIsOnline.mockReturnValue(false);
+      const session = createMockSession({
+        taskRunId: "run-1",
+        taskId: "task-1",
+        isCloud,
+        isPromptPending: true,
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({ "run-1": session });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(session);
+      return getSessionService();
+    }
+
+    it("cancels with a network reason (no toast) when a local turn stays offline past the cap", async () => {
+      vi.useFakeTimers();
+      try {
+        const service = setupOfflinePending(false);
+
+        service.markInflightTurnsNetworkDropped();
+        await vi.advanceTimersByTimeAsync(41_000);
+
+        // Cancel is tagged as a connection loss so the turn renders "Failed due
+        // to network issue" with a Retry button, not "interrupted by user".
+        expect(mockTrpcAgent.cancelPrompt.mutate).toHaveBeenCalledWith({
+          sessionId: "run-1",
+          reason: "connection_lost",
+        });
+        // Feedback is the inline label + Retry button — no toast.
+        expect(toast.warning).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not give up if the connection returns before the cap", async () => {
+      vi.useFakeTimers();
+      try {
+        const service = setupOfflinePending(false);
+
+        service.markInflightTurnsNetworkDropped();
+        mockGetIsOnline.mockReturnValue(true);
+        service.clearOfflineTurnGiveupTimers();
+        await vi.advanceTimersByTimeAsync(41_000);
+
+        expect(mockTrpcAgent.cancelPrompt.mutate).not.toHaveBeenCalled();
+        expect(toast.warning).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not give up on cloud turns (they resume via SSE on reconnect)", async () => {
+      vi.useFakeTimers();
+      try {
+        const service = setupOfflinePending(true);
+
+        service.markInflightTurnsNetworkDropped();
+        await vi.advanceTimersByTimeAsync(41_000);
+
+        expect(toast.warning).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

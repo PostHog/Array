@@ -59,6 +59,7 @@ import { loadSessionEnvOverrides } from "../session-env/loader";
 import type { SleepService } from "../sleep/service";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
 import { discoverExternalPlugins } from "./discover-plugins";
+import { applyInterruptReasonToCancelledResponse } from "./interrupt-reason";
 import {
   AgentServiceEvent,
   type AgentServiceEvents,
@@ -238,6 +239,8 @@ interface ManagedSession {
   channel: string;
   createdAt: number;
   lastActivityAt: number;
+  /** Last time any ACP stream traffic was seen; drives the prompt watchdog. */
+  lastStreamActivityAt: number;
   config: SessionConfig;
   interruptReason?: InterruptReason;
   promptPending: boolean;
@@ -283,6 +286,13 @@ interface PendingPermission {
 @injectable()
 export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   private static readonly IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+  // Backstop for a prompt whose stream stalls (e.g. a flaky network leaves the
+  // turn hanging mid-flight). If no ACP traffic is seen for this long the
+  // prompt is rejected so the renderer surfaces an error and can recover,
+  // instead of `promptPending` wedging the session forever. Generous so it
+  // never trips on a legitimately long, quiet tool run.
+  private static readonly PROMPT_STALL_TIMEOUT_MS = 15 * 60 * 1000;
+  private static readonly PROMPT_STALL_CHECK_MS = 30 * 1000;
 
   private sessions = new Map<string, ManagedSession>();
   private pendingPermissions = new Map<string, PendingPermission>();
@@ -844,6 +854,7 @@ When creating pull requests, add the following footer at the end of the PR descr
         channel,
         createdAt: Date.now(),
         lastActivityAt: Date.now(),
+        lastStreamActivityAt: Date.now(),
         config,
         promptPending: false,
         configOptions,
@@ -919,20 +930,54 @@ When creating pull requests, add the following footer at the end of the PR descr
     }
 
     session.lastActivityAt = Date.now();
+    session.lastStreamActivityAt = Date.now();
     session.promptPending = true;
+    // A fresh turn starts clean — don't carry a prior cancel's reason forward
+    // (it would mislabel a later cancellation of this new turn).
+    session.interruptReason = undefined;
     this.recordActivity(sessionId);
     this.sleepService.acquire(sessionId);
 
+    let watchdog: ReturnType<typeof setInterval> | null = null;
     try {
-      const result = await session.clientSideConnection.prompt({
+      const promptPromise = session.clientSideConnection.prompt({
         sessionId: getAgentSessionId(session),
         prompt: finalPrompt,
       });
+
+      // Race the turn against a stream-stall watchdog. The watchdog resets
+      // whenever ACP traffic updates `lastStreamActivityAt` (see onAcpMessage).
+      const stallPromise = new Promise<never>((_, reject) => {
+        watchdog = setInterval(() => {
+          const idleMs = Date.now() - session.lastStreamActivityAt;
+          if (idleMs < AgentService.PROMPT_STALL_TIMEOUT_MS) return;
+
+          if (watchdog) {
+            clearInterval(watchdog);
+            watchdog = null;
+          }
+          log.warn("Prompt watchdog tripped — stream stalled, cancelling", {
+            sessionId,
+            idleMs,
+          });
+          // Tear down the hung turn so it isn't left dangling.
+          this.cancelPrompt(sessionId).catch(() => {});
+          reject(
+            new Error(
+              "The agent stopped responding (no activity for too long). " +
+                "Check your connection and try again.",
+            ),
+          );
+        }, AgentService.PROMPT_STALL_CHECK_MS);
+      });
+
+      const result = await Promise.race([promptPromise, stallPromise]);
       return {
         stopReason: result.stopReason,
         _meta: result._meta as PromptOutput["_meta"],
       };
     } finally {
+      if (watchdog) clearInterval(watchdog);
       session.promptPending = false;
       session.lastActivityAt = Date.now();
       this.recordActivity(sessionId);
@@ -973,14 +1018,17 @@ When creating pull requests, add the following footer at the end of the PR descr
 
     try {
       this.cancelInFlightMcpToolCalls(session);
-      await session.clientSideConnection.cancel({
-        sessionId: getAgentSessionId(session),
-        _meta: reason ? { interruptReason: reason } : undefined,
-      });
+      // Record the reason before awaiting the cancel so the stream tap can
+      // stamp it onto the agent's cancelled response, even if that response
+      // races ahead of this call returning.
       if (reason) {
         session.interruptReason = reason;
         log.info("Session interrupted", { sessionId, reason });
       }
+      await session.clientSideConnection.cancel({
+        sessionId: getAgentSessionId(session),
+        _meta: reason ? { interruptReason: reason } : undefined,
+      });
       return true;
     } catch (err) {
       log.error("Failed to cancel prompt", { sessionId, err });
@@ -1263,6 +1311,19 @@ For git operations while detached:
     };
 
     const onAcpMessage = (message: unknown) => {
+      // Every ACP message (either direction) is a heartbeat for the prompt
+      // watchdog — seeing traffic means the stream is still progressing.
+      const session = this.sessions.get(taskRunId);
+      if (session) session.lastStreamActivityAt = Date.now();
+
+      // If we cancelled this turn with a specific reason but the agent's
+      // cancelled response didn't echo it (common when the cancel races a
+      // network abort), inject it so the UI labels the turn correctly.
+      applyInterruptReasonToCancelledResponse(
+        message,
+        session?.interruptReason,
+      );
+
       const acpMessage: AcpMessage = {
         type: "acp_message",
         ts: Date.now(),

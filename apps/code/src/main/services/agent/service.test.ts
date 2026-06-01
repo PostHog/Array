@@ -240,6 +240,109 @@ describe("AgentService", () => {
     vi.restoreAllMocks();
   });
 
+  describe("prompt watchdog", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function injectPromptSession(
+      svc: AgentService,
+      taskRunId: string,
+      clientSideConnection: Record<string, unknown>,
+    ) {
+      const sessions = (svc as unknown as { sessions: Map<string, unknown> })
+        .sessions;
+      sessions.set(taskRunId, {
+        taskRunId,
+        taskId: `task-${taskRunId}`,
+        repoPath: "/mock/repo",
+        agent: { cleanup: vi.fn().mockResolvedValue(undefined) },
+        clientSideConnection,
+        channel: `ch-${taskRunId}`,
+        createdAt: Date.now(),
+        lastActivityAt: Date.now(),
+        lastStreamActivityAt: Date.now(),
+        config: { sessionId: "acp-1", adapter: "claude" },
+        promptPending: false,
+        inFlightMcpToolCalls: new Map(),
+        mcpToolApprovals: {},
+        toolInstallations: {},
+      });
+    }
+
+    it("rejects and cancels a prompt whose stream stalls past the watchdog window", async () => {
+      const cancel = vi.fn().mockResolvedValue(undefined);
+      injectPromptSession(service, "run-1", {
+        // Never resolves — simulates a stream that hangs mid-turn.
+        prompt: vi.fn(() => new Promise(() => {})),
+        cancel,
+      });
+
+      const promptPromise = service.prompt("run-1", [
+        { type: "text", text: "hello" },
+      ]);
+      const assertion = expect(promptPromise).rejects.toThrow(
+        /stall|activity|stuck|timed out|unresponsive/i,
+      );
+
+      // No ACP traffic arrives; advance past the watchdog deadline.
+      await vi.advanceTimersByTimeAsync(16 * 60 * 1000);
+      await assertion;
+
+      // The hung turn is torn down rather than left dangling, and the session
+      // is no longer wedged in a pending state.
+      expect(cancel).toHaveBeenCalled();
+      expect(service.getSession("run-1")?.promptPending).toBe(false);
+    });
+
+    it("does not trip the watchdog when the prompt completes promptly", async () => {
+      injectPromptSession(service, "run-1", {
+        prompt: vi.fn().mockResolvedValue({ stopReason: "end_turn" }),
+        cancel: vi.fn(),
+      });
+
+      const result = await service.prompt("run-1", [
+        { type: "text", text: "hello" },
+      ]);
+
+      expect(result.stopReason).toBe("end_turn");
+    });
+
+    it("resets the watchdog when stream activity arrives", async () => {
+      let resolvePrompt: (value: { stopReason: string }) => void = () => {};
+      injectPromptSession(service, "run-1", {
+        prompt: vi.fn(
+          () =>
+            new Promise<{ stopReason: string }>((res) => {
+              resolvePrompt = res;
+            }),
+        ),
+        cancel: vi.fn(),
+      });
+
+      const promptPromise = service.prompt("run-1", [
+        { type: "text", text: "hi" },
+      ]);
+
+      // Activity arrives just before the deadline, resetting the watchdog.
+      await vi.advanceTimersByTimeAsync(14 * 60 * 1000);
+      const session = service.getSession("run-1");
+      if (session) session.lastStreamActivityAt = Date.now();
+
+      // Another long-but-active stretch must not trip thanks to the reset.
+      await vi.advanceTimersByTimeAsync(14 * 60 * 1000);
+      resolvePrompt({ stopReason: "end_turn" });
+
+      await expect(promptPromise).resolves.toEqual(
+        expect.objectContaining({ stopReason: "end_turn" }),
+      );
+    });
+  });
+
   describe("MCP servers", () => {
     it("marks desktop sessions as local even though they have a taskRunId", async () => {
       await service.startSession({
