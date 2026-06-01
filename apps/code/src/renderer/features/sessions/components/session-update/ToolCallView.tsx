@@ -50,6 +50,16 @@ const toolNameIcons: Record<string, Icon> = {
   Skill: Command,
 };
 
+// Tools that render a friendly "<prefix> `<input>` <suffix>" line instead of
+// the raw JSON input preview. `inputKey` is the rawInput field to highlight.
+const toolNameDisplays: Record<
+  string,
+  { prefix: string; suffix: string; inputKey: string }
+> = {
+  Skill: { prefix: "Reading", suffix: "skill", inputKey: "skill" },
+  ToolSearch: { prefix: "Searching", suffix: "tools", inputKey: "query" },
+};
+
 interface ToolCallViewProps extends ToolViewProps {
   agentToolName?: string;
 }
@@ -74,19 +84,27 @@ export function ToolCallView({
     Wrench;
 
   const filePath = kind === "read" && locations?.[0]?.path;
-  const skillName =
-    agentToolName === "Skill"
-      ? (rawInput as { skill?: string } | undefined)?.skill
+  const toolDisplay = agentToolName
+    ? toolNameDisplays[agentToolName]
+    : undefined;
+  const highlightValue =
+    toolDisplay && rawInput && typeof rawInput === "object"
+      ? (rawInput as Record<string, unknown>)[toolDisplay.inputKey]
       : undefined;
-  const displayText = skillName
-    ? "Reading"
+  const specialDisplay =
+    toolDisplay && typeof highlightValue === "string"
+      ? { ...toolDisplay, value: highlightValue }
+      : undefined;
+
+  const displayText = specialDisplay
+    ? specialDisplay.prefix
     : filePath
       ? `Read ${getFilename(filePath)}`
       : title
         ? compactHomePath(title)
         : undefined;
 
-  const inputPreview = skillName ?? compactInput(rawInput);
+  const inputPreview = specialDisplay?.value ?? compactInput(rawInput);
   const fullInput = formatInput(rawInput);
 
   const output = stripCodeFences(getContentText(content) ?? "");
@@ -121,7 +139,7 @@ export function ToolCallView({
               <span className="font-mono text-accent-11">{inputPreview}</span>
             </ToolTitle>
           )}
-          {skillName && <ToolTitle>skill</ToolTitle>}
+          {specialDisplay && <ToolTitle>{specialDisplay.suffix}</ToolTitle>}
           <StatusIndicators isFailed={isFailed} wasCancelled={wasCancelled} />
         </Flex>
       </Flex>
