@@ -1285,6 +1285,11 @@ For git operations while detached:
 
       // Inspect tool call updates for PR URLs and file activity
       this.handleToolCallUpdate(taskRunId, message as AcpMessage["message"]);
+
+      // Capture a local git checkpoint when a turn completes.
+      // Intercepted here (raw stream tap) rather than extNotification because
+      // the ACP SDK does not reliably route _posthog/ notifications to that callback.
+      this.handleTurnCompleteForCheckpoint(taskRunId, message, emitToRenderer);
     };
 
     const tappedReadable = createTappedReadableStream(
@@ -1493,33 +1498,6 @@ For git operations while detached:
               taskRunId: notifTaskRunId,
               sessionId,
               adapter: notifAdapter,
-            });
-          }
-        }
-
-        if (isNotification(method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)) {
-          const turnSession = service.sessions.get(taskRunId);
-          if (turnSession?.config.repoPath) {
-            log.debug("TURN_COMPLETE — capturing local checkpoint", {
-              taskRunId,
-              repoPath: turnSession.config.repoPath,
-            });
-            service
-              .captureLocalCheckpoint(
-                taskRunId,
-                turnSession.config.repoPath,
-                turnSession.config.sessionId,
-                emitToRenderer,
-              )
-              .catch((err) => {
-                log.warn("Local checkpoint capture failed", {
-                  taskRunId,
-                  error: err instanceof Error ? err.message : String(err),
-                });
-              });
-          } else {
-            log.debug("TURN_COMPLETE — no repoPath, skipping checkpoint", {
-              taskRunId,
             });
           }
         }
@@ -1766,6 +1744,40 @@ For git operations while detached:
           error: err,
         });
       });
+  }
+
+  private handleTurnCompleteForCheckpoint(
+    taskRunId: string,
+    message: unknown,
+    emitToRenderer: (payload: unknown) => void,
+  ): void {
+    const msg = message as { method?: string };
+    if (!isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)) return;
+
+    const session = this.sessions.get(taskRunId);
+    if (!session?.config.repoPath) {
+      log.debug("TURN_COMPLETE in stream — no repoPath, skipping checkpoint", {
+        taskRunId,
+      });
+      return;
+    }
+
+    log.info("TURN_COMPLETE in stream — capturing local checkpoint", {
+      taskRunId,
+      repoPath: session.config.repoPath,
+    });
+
+    this.captureLocalCheckpoint(
+      taskRunId,
+      session.config.repoPath,
+      session.config.sessionId,
+      emitToRenderer,
+    ).catch((err) => {
+      log.warn("Local checkpoint capture failed", {
+        taskRunId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
   }
 
   /**
