@@ -93,43 +93,44 @@ describe("buildSessionOptions", () => {
       }
     });
 
-    it("forwards POSTHOG_PROJECT_ID as the team_id attribution header", () => {
-      process.env.POSTHOG_PROJECT_ID = "42";
-
-      const headers = buildSessionOptions(makeParams()).env
-        ?.ANTHROPIC_CUSTOM_HEADERS;
-
-      expect(headers).toBe(
-        [
+    it.each([
+      {
+        name: "omits the team_id header when POSTHOG_PROJECT_ID is unset",
+        projectId: undefined,
+        existingHeaders: undefined,
+        expected: "x-posthog-use-bedrock-fallback: true",
+      },
+      {
+        name: "forwards POSTHOG_PROJECT_ID as the team_id attribution header",
+        projectId: "42",
+        existingHeaders: undefined,
+        expected: [
           "x-posthog-property-team_id: 42",
           "x-posthog-use-bedrock-fallback: true",
         ].join("\n"),
-      );
-    });
-
-    it("preserves pre-existing custom headers ahead of the team_id header", () => {
-      process.env.POSTHOG_PROJECT_ID = "42";
-      process.env.ANTHROPIC_CUSTOM_HEADERS =
-        "x-posthog-property-task_id: task-abc";
-
-      const headers = buildSessionOptions(makeParams()).env
-        ?.ANTHROPIC_CUSTOM_HEADERS;
-
-      expect(headers).toBe(
-        [
+      },
+      {
+        name: "preserves pre-existing custom headers ahead of the team_id header",
+        projectId: "42",
+        existingHeaders: "x-posthog-property-task_id: task-abc",
+        expected: [
           "x-posthog-property-task_id: task-abc",
           "x-posthog-property-team_id: 42",
           "x-posthog-use-bedrock-fallback: true",
         ].join("\n"),
-      );
-    });
+      },
+    ])("$name", ({ projectId, existingHeaders, expected }) => {
+      if (projectId !== undefined) {
+        process.env.POSTHOG_PROJECT_ID = projectId;
+      }
+      if (existingHeaders !== undefined) {
+        process.env.ANTHROPIC_CUSTOM_HEADERS = existingHeaders;
+      }
 
-    it("omits the team_id header when POSTHOG_PROJECT_ID is unset", () => {
       const headers = buildSessionOptions(makeParams()).env
         ?.ANTHROPIC_CUSTOM_HEADERS;
 
-      expect(headers).toBe("x-posthog-use-bedrock-fallback: true");
-      expect(headers).not.toContain("team_id");
+      expect(headers).toBe(expected);
     });
   });
 });
