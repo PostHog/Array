@@ -18,6 +18,7 @@ const ENV_KEYS_UNDER_TEST = [
   "ANTHROPIC_BASE_URL",
   "OPENAI_BASE_URL",
   "ANTHROPIC_CUSTOM_HEADERS",
+  "POSTHOG_PROJECT_ID",
 ] as const;
 
 describe("AgentServer.configureEnvironment", () => {
@@ -73,6 +74,15 @@ describe("AgentServer.configureEnvironment", () => {
     expect(process.env.LLM_GATEWAY_URL).toBe(
       "https://gateway.us.posthog.com/posthog_code",
     );
+  });
+
+  // The Claude session builder reads POSTHOG_PROJECT_ID to emit the
+  // `x-posthog-property-team_id` attribution header (see
+  // adapters/claude/session/options.ts), so the cloud path must export it.
+  it("exports POSTHOG_PROJECT_ID for the team_id attribution header", () => {
+    buildServer("background").configureEnvironment({ isInternal: false });
+
+    expect(process.env.POSTHOG_PROJECT_ID).toBe("1");
   });
 
   it("tags as posthog_code when isInternal is omitted (getTask failure fallback)", () => {
