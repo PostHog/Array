@@ -8,7 +8,7 @@ export function useSessionViewState(taskId: string, task: Task) {
   const session = useSessionForTask(taskId);
   const repoPath = useCwd(taskId) ?? null;
   const workspace = useWorkspace(taskId);
-  const isCloud = useIsCloudTask(taskId);
+  const isCloud = useIsCloudTask(taskId, task);
 
   const cloudStatus = session?.cloudStatus ?? null;
   const isCloudRunNotTerminal =
