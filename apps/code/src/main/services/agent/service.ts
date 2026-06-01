@@ -343,7 +343,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   }
 
   private getCodexBinaryPath(): string {
-    return this.bundledResources.resolve(".vite/build/codex-acp/codex-acp");
+    const binary = process.platform === "win32" ? "codex-acp.exe" : "codex-acp";
+    return this.bundledResources.resolve(`.vite/build/codex-acp/${binary}`);
   }
 
   /**
