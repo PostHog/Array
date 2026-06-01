@@ -1,6 +1,6 @@
 import { CommandKeyHints } from "../../command/CommandKeyHints";
 import type { ConversationItem } from "./buildConversationItems";
-import { ChatText } from "@phosphor-icons/react";
+import { CalendarBlank, ChatText, X } from "@phosphor-icons/react";
 import {
   Autocomplete,
   AutocompleteInput,
@@ -9,7 +9,7 @@ import {
   Dialog,
   DialogContent,
 } from "@posthog/quill";
-import { Flex } from "@radix-ui/themes";
+import { Flex, IconButton, Tooltip } from "@radix-ui/themes";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 interface MessageJumpPickerProps {
@@ -40,6 +40,26 @@ function formatTimestamp(ts: number): string {
   });
 }
 
+function toLocalDateInputValue(ts: number): string {
+  const d = new Date(ts);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function startOfDay(dateStr: string): number {
+  const d = new Date(dateStr);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function endOfDay(dateStr: string): number {
+  const d = new Date(dateStr);
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
 function truncate(text: string, maxLength: number): string {
   const singleLine = text.replace(/\n+/g, " ").trim();
   if (singleLine.length <= maxLength) return singleLine;
@@ -53,10 +73,14 @@ export function MessageJumpPicker({
   onJumpToIndex,
 }: MessageJumpPickerProps) {
   const [query, setQuery] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   useEffect(() => {
     if (!open) {
       setQuery("");
+      setDateFrom("");
+      setDateTo("");
     }
   }, [open]);
 
@@ -77,25 +101,55 @@ export function MessageJumpPicker({
     return result;
   }, [items]);
 
-  const visibleEntries = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return entries;
-    return entries.filter((entry) =>
-      entry.fullText.toLowerCase().includes(normalizedQuery),
-    );
-  }, [entries, query]);
+  const dateFilterActive = dateFrom !== "" || dateTo !== "";
 
-  const allEntries = visibleEntries;
+  const clearDateFilter = useCallback(() => {
+    setDateFrom("");
+    setDateTo("");
+  }, []);
+
+  const visibleEntries = useMemo(() => {
+    let filtered = entries;
+
+    if (dateFrom !== "") {
+      const fromMs = startOfDay(dateFrom);
+      filtered = filtered.filter((e) => e.timestamp >= fromMs);
+    }
+    if (dateTo !== "") {
+      const toMs = endOfDay(dateTo);
+      filtered = filtered.filter((e) => e.timestamp <= toMs);
+    }
+
+    const normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery) {
+      filtered = filtered.filter((entry) =>
+        entry.fullText.toLowerCase().includes(normalizedQuery),
+      );
+    }
+
+    return filtered;
+  }, [entries, query, dateFrom, dateTo]);
+
+  // Derive min/max from actual message timestamps for date picker bounds
+  const { minDate, maxDate } = useMemo(() => {
+    if (entries.length === 0) return { minDate: undefined, maxDate: undefined };
+    const min = Math.min(...entries.map((e) => e.timestamp));
+    const max = Math.max(...entries.map((e) => e.timestamp));
+    return {
+      minDate: toLocalDateInputValue(min),
+      maxDate: toLocalDateInputValue(max),
+    };
+  }, [entries]);
 
   const handleSelect = useCallback(
     (id: string | null) => {
       if (id === null) return;
-      const entry = allEntries.find((e) => e.id === id);
+      const entry = visibleEntries.find((e) => e.id === id);
       if (!entry) return;
       onJumpToIndex(entry.index);
       onOpenChange(false);
     },
-    [allEntries, onJumpToIndex, onOpenChange],
+    [visibleEntries, onJumpToIndex, onOpenChange],
   );
 
   return (
@@ -127,7 +181,54 @@ export function MessageJumpPicker({
               />
             </div>
           </Flex>
-          <AutocompleteList className="max-h-[60vh] pt-1">
+
+          {/* Date filter row */}
+          <Flex
+            align="center"
+            gap="2"
+            className="border-(--gray-4) border-t px-3 py-1.5"
+          >
+            <CalendarBlank
+              size={13}
+              className="shrink-0 text-(--gray-10)"
+              weight="regular"
+            />
+            <span className="text-(--gray-10) text-[12px]">Filter by date</span>
+            <Flex align="center" gap="1" className="ml-1">
+              <input
+                type="date"
+                value={dateFrom}
+                min={minDate}
+                max={dateTo || maxDate}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="h-[22px] rounded-(--radius-1) border border-(--gray-a5) bg-(--gray-a2) px-1.5 text-(--gray-12) text-[12px] tabular-nums outline-none focus:border-(--accent-8) focus:ring-0"
+              />
+              <span className="text-(--gray-10) text-[11px]">–</span>
+              <input
+                type="date"
+                value={dateTo}
+                min={dateFrom || minDate}
+                max={maxDate}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="h-[22px] rounded-(--radius-1) border border-(--gray-a5) bg-(--gray-a2) px-1.5 text-(--gray-12) text-[12px] tabular-nums outline-none focus:border-(--accent-8) focus:ring-0"
+              />
+            </Flex>
+            {dateFilterActive && (
+              <Tooltip content="Clear date filter">
+                <IconButton
+                  size="1"
+                  variant="ghost"
+                  color="gray"
+                  className="ml-auto"
+                  onClick={clearDateFilter}
+                >
+                  <X size={11} weight="bold" />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Flex>
+
+          <AutocompleteList className="max-h-[55vh] pt-1">
             {(entry: JumpEntry) => (
               <AutocompleteItem
                 key={entry.id}
@@ -155,7 +256,13 @@ export function MessageJumpPicker({
           className="border-(--gray-5) border-t px-3 py-2"
         >
           <span className="text-(--gray-11) text-[12px]">
-            {visibleEntries.length} messages
+            {visibleEntries.length}{" "}
+            {visibleEntries.length === 1 ? "message" : "messages"}
+            {dateFilterActive && (
+              <span className="ml-1 text-(--gray-10)">
+                (date filter active)
+              </span>
+            )}
           </span>
           <CommandKeyHints />
         </Flex>
