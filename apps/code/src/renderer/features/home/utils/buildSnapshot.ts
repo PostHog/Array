@@ -1,5 +1,6 @@
 import type { TaskData } from "@features/sidebar/hooks/useSidebarData";
 import type { TaskRunStatus } from "@shared/types";
+import type { PrSnapshot } from "@shared/types/pr-snapshot";
 import type { SituationId } from "@shared/types/workflow";
 import { classify } from "@shared/types/workflow-classify";
 
@@ -14,22 +15,11 @@ export type HomeActiveAgent = {
   cloudPrUrl: string | null;
 };
 
-// Until the GitHub fetcher lands, real data only ever has `pr: null`. Kept
-// on the type because demo fixtures populate it and the detail panel renders
-// the richer view when present.
-export type HomePullRequest = {
-  url: string;
-  number: number;
-  title: string;
-  state: "open" | "draft" | "merged" | "closed";
-  ciStatus: "passing" | "failing" | "pending" | "none";
-  unresolvedThreads: number;
-  reviewDecision: "approved" | "changes_requested" | "review_required" | null;
-  isCurrentUserRequestedReviewer: boolean;
-  isCurrentUserAuthor: boolean;
-  author: string | null;
-  lastUpdatedAt: number;
-};
+// The PR/CI snapshot a workstream is classified against. Populated from the
+// gh-backed PrSnapshotService (null until its first fetch resolves) and by demo
+// fixtures; the production PostHog feed produces the same shape — see
+// docs/workflow-architecture.md.
+export type HomePullRequest = PrSnapshot;
 
 export type HomeWorkstreamTask = {
   id: string;
@@ -92,34 +82,55 @@ function isRunning(status?: TaskRunStatus): boolean {
 // to "In review" / "Working" / "Stale". A session that's actively generating
 // or waiting on the user is always live, so it's exempt from the stale check
 // (its activity timestamp may not tick while it waits).
-function isActivelyRunning(task: TaskData, now: number): boolean {
+function isActivelyRunning(
+  task: TaskData,
+  now: number,
+  hasPr: boolean,
+): boolean {
   if (!isRunning(task.taskRunStatus)) return false;
-  if (task.cloudPrUrl) return false;
+  if (hasPr) return false;
   if (task.isGenerating || task.needsPermission) return true;
   return now - task.lastActivityAt <= RUNNING_STALE_THRESHOLD_MS;
 }
 
-function workstreamKey(task: TaskData): string | null {
+// Grouping key precedence (per docs/home-tab.md §5):
+// PR URL → repo+branch → worktree path. `prUrl` here is the *resolved* URL
+// (cloud run output or a branch lookup), so a PR that only exists on the branch
+// still groups a task under its PR. Tasks with none of these — e.g. an old
+// cloud task with no PR and no local checkout — return null and are skipped, so
+// Home stays a view of actual code work rather than every historical task.
+function workstreamKey(task: TaskData, prUrl: string | null): string | null {
+  if (prUrl) return `pr:${prUrl}`;
   const repo = task.repository?.name ?? null;
   const branch = task.linkedBranch ?? task.branchName ?? null;
-  if (task.cloudPrUrl) return `pr:${task.cloudPrUrl}`;
   if (repo && branch) return `branch:${repo}#${branch}`;
+  if (task.folderPath) return `path:${task.folderPath}`;
   return null;
 }
 
 export function buildSnapshotFromTasks(
   pinned: TaskData[],
   flat: TaskData[],
+  prByTaskId?: ReadonlyMap<string, PrSnapshot>,
 ): HomeSnapshot {
   const allTasks = [...pinned, ...flat];
   const now = Date.now();
+
+  // Effective PR per task: a resolved snapshot (cloud run *or* branch lookup)
+  // wins; fall back to the cloud-run URL so grouping still works before the
+  // snapshot resolves.
+  const prOf = (task: TaskData): PrSnapshot | null =>
+    prByTaskId?.get(task.id) ?? null;
+  const prUrlOf = (task: TaskData): string | null =>
+    prOf(task)?.url ?? task.cloudPrUrl ?? null;
 
   const activeAgents: HomeActiveAgent[] = [];
   const groups = new Map<string, TaskData[]>();
   const taskInStrip = new Set<string>();
 
   for (const task of allTasks) {
-    if (isActivelyRunning(task, now)) {
+    const prUrl = prUrlOf(task);
+    if (isActivelyRunning(task, now, !!prUrl)) {
       activeAgents.push({
         taskId: task.id,
         title: task.title,
@@ -133,7 +144,7 @@ export function buildSnapshotFromTasks(
       taskInStrip.add(task.id);
       continue;
     }
-    const key = workstreamKey(task);
+    const key = workstreamKey(task, prUrl);
     if (!key) continue;
     const bucket = groups.get(key);
     if (bucket) bucket.push(task);
@@ -152,14 +163,26 @@ export function buildSnapshotFromTasks(
 
     if (tasks.every((t) => taskInStrip.has(t.id))) continue;
 
-    const prUrl = tasks.find((t) => t.cloudPrUrl)?.cloudPrUrl ?? null;
+    // First task in the group that resolves to a PR carries the snapshot;
+    // grouped-by-PR tasks all share the same URL anyway.
+    let pr: PrSnapshot | null = null;
+    let prUrl: string | null = null;
+    for (const t of tasks) {
+      const snap = prOf(t);
+      const url = snap?.url ?? t.cloudPrUrl ?? null;
+      if (url) {
+        pr = snap;
+        prUrl = url;
+        break;
+      }
+    }
     const branch = head.linkedBranch ?? head.branchName ?? null;
     const lastActivityAt = head.lastActivityAt;
 
     const situations = Array.from(
       classify({
         hasPrUrl: !!prUrl,
-        pr: null,
+        pr,
         branch,
         lastActivityAt,
         now,
@@ -171,7 +194,7 @@ export function buildSnapshotFromTasks(
       repoName: head.repository?.name ?? null,
       branch,
       prUrl,
-      pr: null,
+      pr,
       tasks: tasks.map((t) => ({
         id: t.id,
         title: t.title,

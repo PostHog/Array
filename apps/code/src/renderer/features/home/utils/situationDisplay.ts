@@ -1,48 +1,92 @@
+import {
+  ArrowUUpLeft,
+  ChatCircleDots,
+  CheckCircle,
+  Clock,
+  Eye,
+  GitCommit,
+  GitMerge,
+  type Icon,
+  XCircle,
+} from "@phosphor-icons/react";
 import { SITUATIONS, type SituationId } from "@shared/types/workflow";
+import { pickPrimarySituation } from "@shared/types/workflow-classify";
 
-// O(1) lookup table for situation metadata, built once at module load.
-// SITUATIONS itself is an array (ordered for the renderer); this is the map.
-export const SITUATION_META: Record<
-  SituationId,
-  { label: string; description: string }
-> = Object.fromEntries(
-  SITUATIONS.map((s) => [s.id, { label: s.label, description: s.description }]),
-) as Record<SituationId, { label: string; description: string }>;
+// Radix color scale names we lean on for the status system. Each maps to the
+// full `--<color>-{1..12}` + `--<color>-a{1..12}` token families.
+export type SituationColor =
+  | "red"
+  | "orange"
+  | "amber"
+  | "green"
+  | "blue"
+  | "purple"
+  | "gray";
 
-export const SITUATION_BADGE: Record<
-  SituationId,
-  "destructive" | "warning" | "success" | "info" | "default"
-> = {
-  done: "default",
-  ready_to_merge: "success",
-  ci_failing: "destructive",
-  changes_requested: "warning",
-  comments_waiting: "warning",
-  in_review: "info",
-  working: "default",
-  stale: "default",
-};
-
-export type WorkstreamSeverity = "critical" | "attention" | null;
-
-// Derived from situations rather than a separate field — `ci_failing` is the
-// only "critical" today; the user-action-requested situations are "attention".
-const CRITICAL: ReadonlySet<SituationId> = new Set(["ci_failing"]);
-const ATTENTION: ReadonlySet<SituationId> = new Set([
-  "changes_requested",
-  "comments_waiting",
-]);
-
-export function situationSeverity(
-  situations: readonly SituationId[],
-): WorkstreamSeverity {
-  if (situations.some((s) => CRITICAL.has(s))) return "critical";
-  if (situations.some((s) => ATTENTION.has(s))) return "attention";
-  return null;
+export interface SituationVisual {
+  label: string;
+  description: string;
+  /** Radix color scale that gives this situation its identity. */
+  color: SituationColor;
+  /** Phosphor glyph rendered in the status badge / chip. */
+  Icon: Icon;
 }
 
-export function severityRingClass(severity: WorkstreamSeverity): string {
-  if (severity === "critical") return "border-l-2 border-l-(--red-9)";
-  if (severity === "attention") return "border-l-2 border-l-(--amber-9)";
-  return "";
+// The colour + glyph each situation reads as. Cool hues (purple/blue) are work
+// in flight; warm hues (red/orange/amber) are "your move"; green is go; gray is
+// dormant. Picked so adjacent board columns stay visually distinct.
+const SITUATION_STYLE: Record<
+  SituationId,
+  { color: SituationColor; Icon: Icon }
+> = {
+  working: { color: "purple", Icon: GitCommit },
+  in_review: { color: "blue", Icon: Eye },
+  ci_failing: { color: "red", Icon: XCircle },
+  changes_requested: { color: "orange", Icon: ArrowUUpLeft },
+  comments_waiting: { color: "amber", Icon: ChatCircleDots },
+  ready_to_merge: { color: "green", Icon: GitMerge },
+  stale: { color: "gray", Icon: Clock },
+  done: { color: "gray", Icon: CheckCircle },
+};
+
+export const SITUATION_VISUAL: Record<SituationId, SituationVisual> =
+  Object.fromEntries(
+    SITUATIONS.map((s) => [
+      s.id,
+      { label: s.label, description: s.description, ...SITUATION_STYLE[s.id] },
+    ]),
+  ) as Record<SituationId, SituationVisual>;
+
+/** CSS-var passthroughs for a colour scale — used in inline `style`. */
+export interface SituationCss {
+  /** Readable text / icon colour, also good on a tinted fill (`--c-11`). */
+  fg: string;
+  /** Saturated solid — dots and accent rails (`--c-9`). */
+  solid: string;
+  /** Soft translucent fill for chips / glyph backgrounds (`--c-a3`). */
+  tint: string;
+  /** Slightly stronger fill for hover / wells (`--c-a4`). */
+  tintStrong: string;
+  /** Hairline border that reads as the colour (`--c-a6`). */
+  border: string;
+  /** Whisper-faint column wash (`--c-a2`). */
+  wash: string;
+}
+
+export function situationCss(color: SituationColor): SituationCss {
+  return {
+    fg: `var(--${color}-11)`,
+    solid: `var(--${color}-9)`,
+    tint: `var(--${color}-a3)`,
+    tintStrong: `var(--${color}-a4)`,
+    border: `var(--${color}-a6)`,
+    wash: `var(--${color}-a2)`,
+  };
+}
+
+/** The single most important situation a workstream is in, if any. */
+export function primarySituationId(
+  situations: readonly SituationId[],
+): SituationId | null {
+  return pickPrimarySituation(situations);
 }

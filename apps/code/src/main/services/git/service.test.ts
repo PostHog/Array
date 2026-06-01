@@ -26,7 +26,14 @@ vi.mock("../../utils/logger.js", () => ({
 import type { AgentService } from "../agent/service";
 import type { LlmGatewayService } from "../llm-gateway/service";
 import type { WorkspaceService } from "../workspace/service";
-import { GitService, mapPrState } from "./service";
+import {
+  GitService,
+  mapCiStatus,
+  mapPrMergeable,
+  mapPrReviewDecision,
+  mapPrSnapshotState,
+  mapPrState,
+} from "./service";
 
 describe("GitService.getPrChangedFiles", () => {
   let service: GitService;
@@ -317,6 +324,83 @@ describe("mapPrState", () => {
   it("returns null for unknown state", () => {
     expect(mapPrState(null, false, false)).toBeNull();
     expect(mapPrState("something", false, false)).toBeNull();
+  });
+});
+
+describe("mapPrSnapshotState", () => {
+  it("maps merged/closed regardless of draft", () => {
+    expect(mapPrSnapshotState("MERGED", false)).toBe("merged");
+    expect(mapPrSnapshotState("CLOSED", true)).toBe("closed");
+  });
+
+  it("maps open PRs, honouring draft", () => {
+    expect(mapPrSnapshotState("OPEN", false)).toBe("open");
+    expect(mapPrSnapshotState("OPEN", true)).toBe("draft");
+    expect(mapPrSnapshotState(undefined, false)).toBe("open");
+  });
+});
+
+describe("mapPrReviewDecision", () => {
+  it("lowercases known decisions", () => {
+    expect(mapPrReviewDecision("APPROVED")).toBe("approved");
+    expect(mapPrReviewDecision("CHANGES_REQUESTED")).toBe("changes_requested");
+    expect(mapPrReviewDecision("REVIEW_REQUIRED")).toBe("review_required");
+  });
+
+  it("returns null for empty/unknown (no review required)", () => {
+    expect(mapPrReviewDecision("")).toBeNull();
+    expect(mapPrReviewDecision(null)).toBeNull();
+    expect(mapPrReviewDecision(undefined)).toBeNull();
+  });
+});
+
+describe("mapPrMergeable", () => {
+  it("maps to a tri-state boolean", () => {
+    expect(mapPrMergeable("MERGEABLE")).toBe(true);
+    expect(mapPrMergeable("CONFLICTING")).toBe(false);
+    expect(mapPrMergeable("UNKNOWN")).toBeNull();
+    expect(mapPrMergeable(undefined)).toBeNull();
+  });
+});
+
+describe("mapCiStatus", () => {
+  it("returns none when there are no checks", () => {
+    expect(mapCiStatus(undefined)).toBe("none");
+    expect(mapCiStatus([])).toBe("none");
+  });
+
+  it("returns passing when every check succeeded", () => {
+    expect(
+      mapCiStatus([
+        { __typename: "CheckRun", status: "COMPLETED", conclusion: "SUCCESS" },
+        { __typename: "CheckRun", status: "COMPLETED", conclusion: "SKIPPED" },
+        { __typename: "StatusContext", state: "SUCCESS" },
+      ]),
+    ).toBe("passing");
+  });
+
+  it("returns failing when any check failed, even alongside pending ones", () => {
+    expect(
+      mapCiStatus([
+        { __typename: "CheckRun", status: "IN_PROGRESS", conclusion: null },
+        { __typename: "CheckRun", status: "COMPLETED", conclusion: "FAILURE" },
+      ]),
+    ).toBe("failing");
+    expect(mapCiStatus([{ __typename: "StatusContext", state: "ERROR" }])).toBe(
+      "failing",
+    );
+  });
+
+  it("returns pending when checks are still running and none failed", () => {
+    expect(
+      mapCiStatus([
+        { __typename: "CheckRun", status: "COMPLETED", conclusion: "SUCCESS" },
+        { __typename: "CheckRun", status: "QUEUED", conclusion: null },
+      ]),
+    ).toBe("pending");
+    expect(
+      mapCiStatus([{ __typename: "StatusContext", state: "PENDING" }]),
+    ).toBe("pending");
   });
 });
 

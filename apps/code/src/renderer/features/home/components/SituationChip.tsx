@@ -1,16 +1,24 @@
-import { Badge } from "@posthog/quill";
 import type { SituationId } from "@shared/types/workflow";
-import { SITUATION_BADGE, SITUATION_META } from "../utils/situationDisplay";
+import { SITUATION_VISUAL, situationCss } from "../utils/situationDisplay";
 
 interface Props {
   sid: SituationId;
+  /** Hide the leading glyph (e.g. when the chip sits next to a status icon). */
+  showIcon?: boolean;
 }
 
-export function SituationChip({ sid }: Props) {
-  const meta = SITUATION_META[sid];
+export function SituationChip({ sid, showIcon = true }: Props) {
+  const v = SITUATION_VISUAL[sid];
+  const c = situationCss(v.color);
+  const Icon = v.Icon;
   return (
-    <Badge variant={SITUATION_BADGE[sid]} title={meta.description}>
-      {meta.label}
-    </Badge>
+    <span
+      className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 font-medium text-[10.5px] leading-none"
+      style={{ color: c.fg, backgroundColor: c.tint }}
+      title={v.description}
+    >
+      {showIcon ? <Icon size={10} weight="fill" /> : null}
+      {v.label}
+    </span>
   );
 }

@@ -87,4 +87,6 @@ export const MAIN_TOKENS = Object.freeze({
   UsageMonitorService: Symbol.for("Main.UsageMonitorService"),
   WorkflowBackend: Symbol.for("Main.WorkflowBackend"),
   WorkflowService: Symbol.for("Main.WorkflowService"),
+  PrSnapshotBackend: Symbol.for("Main.PrSnapshotBackend"),
+  PrSnapshotService: Symbol.for("Main.PrSnapshotService"),
 });

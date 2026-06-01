@@ -1,6 +1,7 @@
 import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
 import {
+  CircleHalf,
   Flask,
   Graph,
   House,
@@ -96,15 +97,10 @@ export function HomeView() {
       null)
     : null;
 
-  const summary = [
-    needsAttention.length > 0
-      ? `${needsAttention.length} need${needsAttention.length === 1 ? "s" : ""} attention`
-      : null,
-    activeAgents.length > 0 ? `${activeAgents.length} running` : null,
-    inProgress.length > 0 ? `${inProgress.length} in progress` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const hasStats =
+    needsAttention.length > 0 ||
+    activeAgents.length > 0 ||
+    inProgress.length > 0;
 
   return (
     <Flex direction="column" className="h-full">
@@ -124,9 +120,33 @@ export function HomeView() {
                 </Badge>
               ) : null}
             </Flex>
-            <Text className="text-(--gray-11) text-[12px]">
-              {summary || "You're caught up"}
-            </Text>
+            {hasStats ? (
+              <Flex align="center" gap="3" className="text-[12px]">
+                {needsAttention.length > 0 ? (
+                  <Stat
+                    color="var(--amber-9)"
+                    label={`${needsAttention.length} need${needsAttention.length === 1 ? "s" : ""} attention`}
+                  />
+                ) : null}
+                {activeAgents.length > 0 ? (
+                  <Stat
+                    color="var(--green-9)"
+                    label={`${activeAgents.length} running`}
+                    pulse
+                  />
+                ) : null}
+                {inProgress.length > 0 ? (
+                  <Stat
+                    color="var(--blue-9)"
+                    label={`${inProgress.length} in progress`}
+                  />
+                ) : null}
+              </Flex>
+            ) : (
+              <Text className="text-(--gray-11) text-[12px]">
+                You're caught up
+              </Text>
+            )}
           </Flex>
           <Flex align="center" gap="2" className="shrink-0">
             <ViewModeToggle value={viewMode} onChange={setViewMode} />
@@ -156,13 +176,13 @@ export function HomeView() {
                   <HomeBoardView snapshot={snapshot} />
                 </Box>
               ) : (
-                <ScrollArea>
+                <ScrollArea scrollbars="vertical">
                   {needsAttention.length > 0 ? (
                     <Section
                       title="Needs attention"
                       icon={
                         <Warning
-                          size={12}
+                          size={13}
                           weight="fill"
                           className="text-(--amber-11)"
                         />
@@ -176,7 +196,17 @@ export function HomeView() {
                   ) : null}
 
                   {inProgress.length > 0 ? (
-                    <Section title="In progress" count={inProgress.length}>
+                    <Section
+                      title="In progress"
+                      icon={
+                        <CircleHalf
+                          size={13}
+                          weight="fill"
+                          className="text-(--blue-11)"
+                        />
+                      }
+                      count={inProgress.length}
+                    >
                       {inProgress.map((ws) => (
                         <HomeWorkstreamRow key={ws.id} workstream={ws} />
                       ))}
@@ -286,19 +316,39 @@ function ViewModeToggle({ value, onChange }: ViewModeToggleProps) {
   );
 }
 
+function Stat({
+  color,
+  label,
+  pulse = false,
+}: {
+  color: string;
+  label: string;
+  pulse?: boolean;
+}) {
+  return (
+    <Flex align="center" gap="1.5">
+      <span
+        className={`inline-block h-2 w-2 rounded-full ${pulse ? "animate-pulse" : ""}`}
+        style={{ backgroundColor: color }}
+      />
+      <Text className="text-(--gray-11) text-[12px]">{label}</Text>
+    </Flex>
+  );
+}
+
 function Section({ title, count, icon, children }: SectionProps) {
   return (
     <Box>
       <Flex
         align="center"
         gap="2"
-        className="border-(--gray-4) border-b bg-(--gray-2) px-5 py-2"
+        className="sticky top-0 z-10 border-(--gray-3) border-b bg-(--color-panel-solid) px-4 py-2"
       >
         {icon}
-        <Text className="font-medium text-(--gray-11) text-[11px] uppercase tracking-wide">
-          {title}
+        <Text className="font-semibold text-[12px] text-gray-12">{title}</Text>
+        <Text className="rounded-full bg-(--gray-a3) px-1.5 py-px font-medium text-(--gray-11) text-[10.5px] tabular-nums">
+          {count}
         </Text>
-        <Text className="text-(--gray-10) text-[11px]">({count})</Text>
       </Flex>
       {children}
     </Box>

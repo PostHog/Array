@@ -18,8 +18,14 @@ export function HomeEmptyState({ hasRunningAgents }: HomeEmptyStateProps) {
       gap="3"
       className="h-full px-5 py-12"
     >
-      <CheckCircle size={36} className="text-(--green-9)" weight="duotone" />
-      <Text className="font-medium text-[15px] text-gray-12">
+      <Flex
+        align="center"
+        justify="center"
+        className="h-14 w-14 rounded-full bg-(--green-a3)"
+      >
+        <CheckCircle size={30} className="text-(--green-11)" weight="fill" />
+      </Flex>
+      <Text className="font-semibold text-[16px] text-gray-12">
         You're caught up
       </Text>
       <Text className="max-w-[360px] text-center text-(--gray-11) text-[13px]">

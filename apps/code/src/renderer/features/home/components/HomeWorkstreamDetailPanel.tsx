@@ -14,7 +14,7 @@ import {
   XCircle,
 } from "@phosphor-icons/react";
 import { Badge, Button } from "@posthog/quill";
-import { Box, DropdownMenu, Flex, ScrollArea, Text } from "@radix-ui/themes";
+import { Box, DropdownMenu, Flex, Text } from "@radix-ui/themes";
 import { useTasks } from "@renderer/features/tasks/hooks/useTasks";
 import type { TaskRunStatus } from "@shared/types";
 import { useNavigationStore } from "@stores/navigationStore";
@@ -60,7 +60,7 @@ export function HomeWorkstreamDetailPanel({ workstream, onClose }: Props) {
   return (
     <Flex
       direction="column"
-      className="h-full min-h-0 bg-(--color-panel-solid)"
+      className="h-full min-h-0 w-full min-w-0 overflow-hidden bg-(--color-panel-solid)"
     >
       {/* Header */}
       <Flex
@@ -71,7 +71,7 @@ export function HomeWorkstreamDetailPanel({ workstream, onClose }: Props) {
       >
         <Flex direction="column" gap="1" className="min-w-0 flex-1">
           <Text
-            className="font-semibold text-[13px] text-gray-12 leading-snug"
+            className="line-clamp-2 break-words font-semibold text-[13px] text-gray-12 leading-snug"
             title={title}
           >
             {title}
@@ -100,8 +100,8 @@ export function HomeWorkstreamDetailPanel({ workstream, onClose }: Props) {
         </Button>
       </Flex>
 
-      <ScrollArea>
-        <Flex direction="column" gap="4" className="px-4 py-4">
+      <div className="scrollbar-overlay-y min-h-0 flex-1 overflow-x-hidden">
+        <Flex direction="column" gap="4" className="min-w-0 px-4 py-4">
           {workstream.situations.length > 0 ? (
             <Section title="Situations">
               <Flex gap="1" wrap="wrap">
@@ -175,7 +175,7 @@ export function HomeWorkstreamDetailPanel({ workstream, onClose }: Props) {
             </Flex>
           </Section>
         </Flex>
-      </ScrollArea>
+      </div>
 
       {/* Footer links */}
       {workstream.prUrl ? (

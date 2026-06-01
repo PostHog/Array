@@ -1,6 +1,8 @@
-import { Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
-import { buildBoardColumns } from "../utils/boardColumns";
+import { ScrollArea } from "@radix-ui/themes";
+import type { SituationId } from "@shared/types/workflow";
+import { buildBoardColumns, type HomeBoardColumn } from "../utils/boardColumns";
 import type { HomeSnapshot } from "../utils/buildSnapshot";
+import { SITUATION_VISUAL, situationCss } from "../utils/situationDisplay";
 import { HomeWorkstreamCard } from "./HomeWorkstreamCard";
 
 interface HomeBoardViewProps {
@@ -15,50 +17,65 @@ export function HomeBoardView({ snapshot }: HomeBoardViewProps) {
 
   return (
     <ScrollArea scrollbars="horizontal">
-      <Flex gap="3" className="h-full min-h-0 p-4">
+      <div className="flex h-full min-h-0 gap-3 p-4">
         {columns.map((column) => (
-          <Flex
-            key={column.id}
-            direction="column"
-            className="min-h-0 w-[300px] shrink-0"
-          >
-            <Box className="mb-2">
-              <Flex align="baseline" justify="between" gap="2">
-                <Text className="font-semibold text-[12px] text-gray-12 uppercase tracking-wide">
-                  {column.title}
-                </Text>
-                <Text className="text-(--gray-10) text-[11px]">
-                  {column.workstreams.length}
-                </Text>
-              </Flex>
-              <Text className="text-(--gray-10) text-[11px]">
-                {column.description}
-              </Text>
-            </Box>
-            <Flex
-              direction="column"
-              gap="2"
-              className="min-h-[120px] rounded-md bg-(--gray-2) p-2"
-            >
-              {column.workstreams.length === 0 ? (
-                <Flex
-                  align="center"
-                  justify="center"
-                  className="h-[100px] rounded-md border border-(--gray-4) border-dashed"
-                >
-                  <Text className="text-(--gray-9) text-[11px]">
-                    Nothing here
-                  </Text>
-                </Flex>
-              ) : (
-                column.workstreams.map((ws) => (
-                  <HomeWorkstreamCard key={ws.id} workstream={ws} />
-                ))
-              )}
-            </Flex>
-          </Flex>
+          <BoardColumn key={column.id} column={column} />
         ))}
-      </Flex>
+      </div>
     </ScrollArea>
+  );
+}
+
+function BoardColumn({ column }: { column: HomeBoardColumn }) {
+  const v = SITUATION_VISUAL[column.id];
+  const c = situationCss(v.color);
+  const Icon = v.Icon;
+  const count = column.workstreams.length;
+
+  return (
+    <div className="flex h-full min-h-0 w-[300px] shrink-0 flex-col">
+      <div className="mb-2 flex items-center gap-2 px-1" title={v.description}>
+        <span style={{ color: c.fg }}>
+          <Icon size={14} weight="bold" />
+        </span>
+        <span className="font-semibold text-[12px] text-gray-12">
+          {v.label}
+        </span>
+        <span
+          className="rounded-full px-1.5 py-px font-semibold text-[10.5px] tabular-nums"
+          style={{ color: c.fg, backgroundColor: c.tint }}
+        >
+          {count}
+        </span>
+      </div>
+
+      <div
+        className="min-h-0 flex-1 rounded-xl border border-(--gray-3)"
+        style={{ backgroundColor: c.wash }}
+      >
+        <ScrollArea scrollbars="vertical">
+          <div className="flex flex-col gap-2 p-2">
+            {count === 0 ? (
+              <EmptyColumn sid={column.id} />
+            ) : (
+              column.workstreams.map((ws) => (
+                <HomeWorkstreamCard key={ws.id} workstream={ws} />
+              ))
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+    </div>
+  );
+}
+
+function EmptyColumn({ sid }: { sid: SituationId }) {
+  const v = SITUATION_VISUAL[sid];
+  const Icon = v.Icon;
+  return (
+    <div className="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-(--gray-a5) border-dashed py-10">
+      <Icon size={18} className="text-(--gray-8)" />
+      <span className="text-(--gray-9) text-[11px]">Nothing here</span>
+    </div>
   );
 }

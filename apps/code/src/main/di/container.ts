@@ -70,6 +70,8 @@ import { UIService } from "../services/ui/service";
 import { UpdatesService } from "../services/updates/service";
 import { UsageMonitorService } from "../services/usage-monitor/service";
 import { WatcherRegistryService } from "../services/watcher-registry/service";
+import { LocalPrSnapshotBackend } from "../services/pr-snapshot/backend";
+import { PrSnapshotService } from "../services/pr-snapshot/service";
 import { LocalWorkflowBackend } from "../services/workflow/backend";
 import { WorkflowService } from "../services/workflow/service";
 import { WorkspaceService } from "../services/workspace/service";
@@ -162,6 +164,11 @@ container.bind(MAIN_TOKENS.WatcherRegistryService).to(WatcherRegistryService);
 // and apps/code/src/main/services/workflow/backend.ts for the migration plan.
 container.bind(MAIN_TOKENS.WorkflowBackend).to(LocalWorkflowBackend);
 container.bind(MAIN_TOKENS.WorkflowService).to(WorkflowService);
+// PR/CI snapshot polling. Same swap-point pattern as the workflow backend:
+// LocalPrSnapshotBackend (gh CLI) today → CloudPrSnapshotBackend when PostHog
+// owns PR polling. See docs/workflow-architecture.md §5–6.
+container.bind(MAIN_TOKENS.PrSnapshotBackend).to(LocalPrSnapshotBackend);
+container.bind(MAIN_TOKENS.PrSnapshotService).to(PrSnapshotService);
 container.bind(MAIN_TOKENS.WorkspaceService).to(WorkspaceService);
 
 container.bind(MAIN_TOKENS.SettingsStore).toConstantValue(settingsStore);

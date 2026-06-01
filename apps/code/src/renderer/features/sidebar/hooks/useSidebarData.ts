@@ -94,6 +94,96 @@ function sortTasks(tasks: TaskData[], sortMode: SortMode): TaskData[] {
   );
 }
 
+// Minimal task shape the mapper reads — satisfied by both TaskSummary (sidebar)
+// and the full Task (home tab), so a single mapping serves both.
+export interface TaskDataInput {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  repository?: string | null;
+  latest_run?: {
+    status?: TaskRunStatus | null;
+    environment?: "local" | "cloud" | null;
+    output?: { pr_url?: unknown } | null;
+  } | null;
+  origin_product?: string;
+  slack_thread_url?: string;
+}
+
+export interface TaskDataContext {
+  session?: {
+    isPromptPending?: boolean;
+    pendingPermissions?: { size: number };
+    cloudStatus?: TaskRunStatus;
+    cloudOutput?: { pr_url?: unknown } | null;
+  };
+  workspace?: {
+    folderPath?: string | null;
+    folderId?: string;
+    branchName?: string | null;
+    linkedBranch?: string | null;
+  };
+  taskTimestamps?: {
+    lastActivityAt?: number | null;
+    lastViewedAt?: number | null;
+  };
+  isPinned: boolean;
+  isSuspended: boolean;
+  isSlackOrigin: boolean;
+  slackThreadUrlFallback?: string;
+}
+
+// Single source of truth for Task → TaskData. Used by the sidebar (over the
+// workspace-scoped summary list) and the home tab (over the full task list).
+export function toTaskData(
+  task: TaskDataInput,
+  ctx: TaskDataContext,
+): TaskData {
+  const { session, workspace, taskTimestamps } = ctx;
+  const apiUpdatedAt = new Date(task.updated_at).getTime();
+  const localActivity = taskTimestamps?.lastActivityAt;
+  const lastActivityAt = localActivity
+    ? Math.max(apiUpdatedAt, localActivity)
+    : apiUpdatedAt;
+  const createdAt = new Date(task.created_at).getTime();
+
+  const taskLastViewedAt = taskTimestamps?.lastViewedAt;
+  const isUnread =
+    taskLastViewedAt != null && lastActivityAt > taskLastViewedAt;
+
+  const cloudPrUrl =
+    typeof task.latest_run?.output?.pr_url === "string"
+      ? task.latest_run.output.pr_url
+      : ((session?.cloudOutput?.pr_url as string | undefined) ?? null);
+
+  const originProduct =
+    task.origin_product ?? (ctx.isSlackOrigin ? "slack" : undefined);
+  const slackThreadUrl = task.slack_thread_url ?? ctx.slackThreadUrlFallback;
+
+  return {
+    id: task.id,
+    title: task.title,
+    createdAt,
+    lastActivityAt,
+    isGenerating: session?.isPromptPending ?? false,
+    isUnread,
+    isPinned: ctx.isPinned,
+    isSuspended: ctx.isSuspended,
+    needsPermission: (session?.pendingPermissions?.size ?? 0) > 0,
+    repository: getRepositoryInfo(task, workspace?.folderPath ?? undefined),
+    folderId: workspace?.folderId || undefined,
+    taskRunStatus: session?.cloudStatus ?? task.latest_run?.status ?? undefined,
+    taskRunEnvironment: task.latest_run?.environment ?? undefined,
+    originProduct,
+    slackThreadUrl,
+    folderPath: workspace?.folderPath ?? null,
+    cloudPrUrl,
+    branchName: workspace?.branchName ?? null,
+    linkedBranch: workspace?.linkedBranch ?? null,
+  };
+}
+
 export function useSidebarData({
   activeView,
 }: UseSidebarDataProps): SidebarData {
@@ -244,55 +334,17 @@ export function useSidebarData({
   }, [sessions]);
 
   const taskData = useMemo(() => {
-    return allTasks.map((task) => {
-      const session = sessionByTaskId.get(task.id);
-      const workspace = workspaces?.[task.id];
-      const apiUpdatedAt = new Date(task.updated_at).getTime();
-      const taskTimestamps = timestamps[task.id];
-      const localActivity = taskTimestamps?.lastActivityAt;
-      const lastActivityAt = localActivity
-        ? Math.max(apiUpdatedAt, localActivity)
-        : apiUpdatedAt;
-      const createdAt = new Date(task.created_at).getTime();
-
-      const taskLastViewedAt = taskTimestamps?.lastViewedAt;
-      const isUnread =
-        taskLastViewedAt != null && lastActivityAt > taskLastViewedAt;
-
-      const cloudPrUrl =
-        typeof task.latest_run?.output?.pr_url === "string"
-          ? task.latest_run.output.pr_url
-          : ((session?.cloudOutput?.pr_url as string | undefined) ?? null);
-
-      const originProduct =
-        task.origin_product ??
-        (slackTaskIds.has(task.id) ? "slack" : undefined);
-      const slackThreadUrl =
-        task.slack_thread_url ?? slackThreadUrlByTaskId.get(task.id);
-
-      return {
-        id: task.id,
-        title: task.title,
-        createdAt,
-        lastActivityAt,
-        isGenerating: session?.isPromptPending ?? false,
-        isUnread,
+    return allTasks.map((task) =>
+      toTaskData(task, {
+        session: sessionByTaskId.get(task.id),
+        workspace: workspaces?.[task.id],
+        taskTimestamps: timestamps[task.id],
         isPinned: pinnedTaskIds.has(task.id),
         isSuspended: suspendedTaskIds.has(task.id),
-        needsPermission: (session?.pendingPermissions?.size ?? 0) > 0,
-        repository: getRepositoryInfo(task, workspace?.folderPath),
-        folderId: workspace?.folderId || undefined,
-        taskRunStatus:
-          session?.cloudStatus ?? task.latest_run?.status ?? undefined,
-        taskRunEnvironment: task.latest_run?.environment ?? undefined,
-        originProduct,
-        slackThreadUrl,
-        folderPath: workspace?.folderPath ?? null,
-        cloudPrUrl,
-        branchName: workspace?.branchName ?? null,
-        linkedBranch: workspace?.linkedBranch ?? null,
-      };
-    });
+        isSlackOrigin: slackTaskIds.has(task.id),
+        slackThreadUrlFallback: slackThreadUrlByTaskId.get(task.id),
+      }),
+    );
   }, [
     allTasks,
     timestamps,

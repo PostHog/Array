@@ -54,8 +54,11 @@ Concern (3) doesn't move — it's a pure TS function in
 │                       LocalWorkflowBackend ───→ SQLite                 │
 │                       (HomeWorkflowRepository)                         │
 │                                                                        │
-│  PR polling: NOT BUILT YET. classify() runs with pr=null in real data; │
-│  fixtures provide rich pr objects for demo mode.                       │
+│  PR polling: BUILT (local). PrSnapshotService ──→ PrSnapshotBackend    │
+│  ──→ LocalPrSnapshotBackend ──→ GitService.getPrFull (gh CLI).         │
+│  Snapshots are cached, polled, and pushed to the renderer via the      │
+│  prSnapshot.onUpdated subscription; classify() now runs with real PR   │
+│  data. (pr=null only until a workstream's first fetch resolves.)       │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -73,6 +76,20 @@ Concern (3) doesn't move — it's a pure TS function in
 | SQLite repo | `apps/code/src/main/db/repositories/home-workflow-repository.ts` | **POC-only.** Deleted with the migration. |
 | Migration `0007_*` (`home_workflow_config` table) | `apps/code/src/main/db/migrations/` | **POC-only.** Drop the table via a follow-up migration once cloud is the source of truth. |
 | tRPC router | `apps/code/src/main/trpc/routers/workflow.ts` | Permanent shape. Same procedures, same Zod schemas — the backend just changes underneath. |
+
+**PR snapshot files (concern 2 — built locally, same swap-point shape):**
+
+| Concern | File | Lifetime |
+|---|---|---|
+| PR snapshot schema (Zod + type) | `apps/code/src/shared/types/pr-snapshot.ts` | Permanent. The wire contract — server serialises the same shape. |
+| `PrSnapshotService` | `apps/code/src/main/services/pr-snapshot/service.ts` | Permanent in shape. Cache + poll + emit; body stays after swap. |
+| `PrSnapshotBackend` interface | `apps/code/src/main/services/pr-snapshot/backend.ts` | Permanent. The swap point. |
+| `LocalPrSnapshotBackend` (gh CLI) | same file | **POC-only.** Deleted post-migration. |
+| `CloudPrSnapshotBackend` | same file | Stub today, the implementation post-migration. |
+| `GitService.getTaskPrSnapshot` / `resolveTaskPrUrl` / `getPrFull` + gh→snapshot mappers | `apps/code/src/main/services/git/service.ts` | **POC-only.** Unused once cloud owns PR polling. |
+| `useHomeTasks` (all-my-tasks source) | `apps/code/src/renderer/features/home/hooks/useHomeTasks.ts` | Permanent in shape; the server will provide the aggregated snapshot later. |
+| tRPC router | `apps/code/src/main/trpc/routers/pr-snapshot.ts` | Permanent shape. `onUpdated` becomes a passthrough to the server feed. |
+| Renderer cache + hook | `stores/prSnapshotStore.ts`, `hooks/usePrSnapshots.ts` | Permanent. Subscription source swaps underneath; renderer unchanged. |
 
 ---
 
@@ -158,12 +175,25 @@ subscription `workflow.onChanged` in this repo becomes a passthrough.
 
 ## 5. The PR polling worker (when we build it)
 
-**POC option** (not built yet, but if needed pre-cloud): A
-`PrSnapshotService` in Electron main, running locally, fetching via the
-`gh` CLI. Owned by the same DI container, exposed via a tRPC
-subscription `pr.onSnapshotUpdated`. The classifier in
-`workflow-classify.ts` already takes an optional `pr` argument so
-plugging in the data is a one-call change in `useHomeSnapshot`.
+**POC option** (BUILT — this is what ships today): A `PrSnapshotService`
+in Electron main, running locally, keyed by **task** (not PR URL) so a PR
+that only exists on a branch is still found. Per task it resolves the PR
+the way the rest of the app does — cloud-run URL → linked-branch lookup
+(`gh pr list --head`) → worktree `getPrStatus` — via
+`GitService.getTaskPrSnapshot` / `resolveTaskPrUrl`, then enriches with
+CI/review state via `getPrFull`. Owned by the same DI container behind a
+`PrSnapshotBackend` interface (`LocalPrSnapshotBackend` now,
+`CloudPrSnapshotBackend` stubbed for the swap). Exposed via tRPC:
+`prSnapshot.getSnapshots` (query over `{ taskId, cloudPrUrl }[]`, also
+registers them for polling), `prSnapshot.refresh` (mutation), and
+`prSnapshot.onUpdated` (subscription). The renderer caches pushes in
+`prSnapshotStore` (keyed by task id) and `useHomeSnapshot` feeds the
+matching snapshot into `buildSnapshotFromTasks` → `classify()`.
+
+Coverage: Home sources **all of the current user's tasks** via
+`useHomeTasks` (the full `useTasks` list, not the sidebar's
+workspace-scoped, paginated slice), so cloud tasks and tasks without a
+local checkout surface too.
 
 **Production**: A Celery beat task in `posthog/` paging through
 `CodeWorkflow` rows, batching the PRs each user is tracking, hitting
@@ -199,9 +229,19 @@ For this Electron app:
    server's realtime event instead of `WorkflowService.emit`. Same
    tRPC contract — renderer doesn't change.
 
-For the PR polling worker, replace the (not-yet-built) local
-`PrSnapshotService` with a passthrough subscription to the server's
-event.
+For the PR polling worker, the local `PrSnapshotService` already exists.
+The swap mirrors the workflow backend:
+
+1. **Implement `CloudPrSnapshotBackend.fetch`** in
+   `apps/code/src/main/services/pr-snapshot/backend.ts` — call the
+   auth'd API, validate with `prSnapshot.safeParse`, return the rows.
+2. **Flip the DI binding** in `apps/code/src/main/di/container.ts` from
+   `LocalPrSnapshotBackend` to `CloudPrSnapshotBackend`. One line.
+3. **Delete the POC-only PR-fetch code:** `LocalPrSnapshotBackend` and
+   `GitService.getPrFull` + its gh→snapshot mappers.
+4. Optionally **rewrite `prSnapshot.onUpdated`** to fan out the server's
+   realtime event instead of the local poll loop's emit. Same tRPC
+   contract — renderer and `prSnapshotStore` don't change.
 
 For the classifier: nothing changes.
 
@@ -211,9 +251,13 @@ For the classifier: nothing changes.
 
 - **No user identity.** Bindings are anonymous, one row per app
   install. Cloud version is per-user.
-- **No real PR polling.** Real data has `pr: null` everywhere — only
-  the demo fixtures populate PR metadata. Situations involving
-  `ci_failing` / `changes_requested` etc. won't fire in real use yet.
+- **Local PR polling, with one gap.** PR/CI snapshots are now fetched
+  locally via the `gh` CLI (`PrSnapshotService`), so `ci_failing`,
+  `changes_requested`, `ready_to_merge`, `in_review`, and `done` all
+  fire on real data. Caveat: `unresolvedThreads` (which drives
+  `comments_waiting`) is only counted for the *current user's own open
+  PRs* — it needs an extra GraphQL call, so we don't pay it elsewhere.
+  The cloud worker will populate it for every PR.
 - **No `auto`-trigger actions.** We dropped the auto trigger
   intentionally — we can't reliably watch for state transitions across
   cloud and local task setups. Once the server-side polling worker

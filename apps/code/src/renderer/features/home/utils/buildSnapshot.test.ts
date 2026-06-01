@@ -1,8 +1,27 @@
 import type { TaskData } from "@features/sidebar/hooks/useSidebarData";
+import type { PrSnapshot } from "@shared/types/pr-snapshot";
 import { describe, expect, it } from "vitest";
 import { buildSnapshotFromTasks } from "./buildSnapshot";
 
 const MINUTE = 60 * 1000;
+
+function makePr(overrides: Partial<PrSnapshot> = {}): PrSnapshot {
+  return {
+    url: "https://github.com/org/repo/pull/7",
+    number: 7,
+    title: "PR",
+    state: "open",
+    ciStatus: "passing",
+    reviewDecision: null,
+    unresolvedThreads: 0,
+    mergeable: null,
+    isCurrentUserRequestedReviewer: false,
+    isCurrentUserAuthor: true,
+    author: "me",
+    lastUpdatedAt: Date.now(),
+    ...overrides,
+  };
+}
 
 function makeTask(overrides: Partial<TaskData> = {}): TaskData {
   return {
@@ -92,5 +111,61 @@ describe("buildSnapshotFromTasks — Running strip", () => {
     );
 
     expect(activeAgents).toHaveLength(1);
+  });
+});
+
+describe("buildSnapshotFromTasks — resolved PR snapshots (branch PRs)", () => {
+  it("surfaces a branch PR with failing CI under Needs attention", () => {
+    const task = makeTask({
+      id: "t-ci",
+      taskRunStatus: "completed",
+      cloudPrUrl: null, // PR lives on the branch, not cloud-run output
+      linkedBranch: "feature",
+    });
+    const prByTaskId = new Map([
+      [task.id, makePr({ ciStatus: "failing", state: "open" })],
+    ]);
+
+    const { needsAttention, inProgress, activeAgents } = buildSnapshotFromTasks(
+      [],
+      [task],
+      prByTaskId,
+    );
+
+    expect(activeAgents).toHaveLength(0);
+    expect(needsAttention).toHaveLength(1);
+    expect(needsAttention[0]?.situations).toContain("ci_failing");
+    expect(needsAttention[0]?.prUrl).toBe("https://github.com/org/repo/pull/7");
+    expect(needsAttention[0]?.pr?.ciStatus).toBe("failing");
+    expect(inProgress).toHaveLength(0);
+  });
+
+  it("groups a task under its resolved PR even without a cloud PR URL", () => {
+    const task = makeTask({
+      id: "t-rev",
+      taskRunStatus: "completed",
+      cloudPrUrl: null,
+    });
+    const prByTaskId = new Map([[task.id, makePr({ state: "open" })]]);
+
+    const { inProgress } = buildSnapshotFromTasks([], [task], prByTaskId);
+
+    expect(inProgress).toHaveLength(1);
+    expect(inProgress[0]?.situations).toContain("in_review");
+  });
+
+  it("drops an in_progress agent with a resolved branch PR out of Running", () => {
+    const task = makeTask({ cloudPrUrl: null, lastActivityAt: Date.now() });
+    const prByTaskId = new Map([[task.id, makePr({ state: "open" })]]);
+
+    const { activeAgents, inProgress } = buildSnapshotFromTasks(
+      [],
+      [task],
+      prByTaskId,
+    );
+
+    expect(activeAgents).toHaveLength(0);
+    expect(inProgress).toHaveLength(1);
+    expect(inProgress[0]?.situations).toContain("in_review");
   });
 });

@@ -1,6 +1,4 @@
 import {
-  ArrowSquareOut,
-  CaretDown,
   ChatCircle,
   GitBranch,
   GitPullRequest,
@@ -8,30 +6,44 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
-import { Box, DropdownMenu, Flex, Text } from "@radix-ui/themes";
-import { useTasks } from "@renderer/features/tasks/hooks/useTasks";
-import { useNavigationStore } from "@stores/navigationStore";
-import { openUrlInBrowser } from "@utils/browser";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import { formatRelativeTimeShort } from "@utils/time";
-import { type BoundAction, useBoundActions } from "../hooks/useBoundActions";
-import { useRunWorkstreamAction } from "../hooks/useRunWorkstreamAction";
+import { useWorkstreamPresentation } from "../hooks/useWorkstreamPresentation";
 import { useHomeUiStore } from "../stores/homeUiStore";
 import type { HomeWorkstream } from "../utils/buildSnapshot";
-import {
-  severityRingClass,
-  situationSeverity,
-} from "../utils/situationDisplay";
 import { SituationChip } from "./SituationChip";
+import {
+  AuthorAvatar,
+  CiIndicator,
+  type MetaItem,
+  MetaList,
+  StatusGlyph,
+  WorkstreamOverflowMenu,
+} from "./WorkstreamBits";
 
 interface HomeWorkstreamRowProps {
   workstream: HomeWorkstream;
 }
 
 export function HomeWorkstreamRow({ workstream }: HomeWorkstreamRowProps) {
-  const { data: tasks = [] } = useTasks();
-  const navigateToTask = useNavigationStore((s) => s.navigateToTask);
-  const boundActions = useBoundActions(workstream);
-  const runAction = useRunWorkstreamAction();
+  const {
+    pr,
+    title,
+    primarySid,
+    accent,
+    author,
+    extraSituations,
+    primaryBound,
+    restBound,
+    primaryIsPr,
+    primaryIsTask,
+    showPrInMenu,
+    showTaskInMenu,
+    hasMenu,
+    runAction,
+    openTask,
+    openPr,
+  } = useWorkstreamPresentation(workstream);
   const setSelectedWorkstreamId = useHomeUiStore(
     (s) => s.setSelectedWorkstreamId,
   );
@@ -39,25 +51,59 @@ export function HomeWorkstreamRow({ workstream }: HomeWorkstreamRowProps) {
     (s) => s.selectedWorkstreamId === workstream.id,
   );
 
-  const headTask = workstream.tasks[0];
-  const title = headTask?.title ?? workstream.branch ?? "Workstream";
-  const taskCount = workstream.tasks.length;
-  const severity = situationSeverity(workstream.situations);
-  const inlineActions = boundActions.slice(0, 2);
-  const overflowActions = boundActions.slice(2);
+  const generating = workstream.tasks.some((t) => t.isGenerating);
+  const awaitingPermission = workstream.tasks.some((t) => t.needsPermission);
 
-  function handleRunAction(action: BoundAction) {
-    runAction(action, workstream);
+  const meta: MetaItem[] = [];
+  if (workstream.repoName) {
+    meta.push({
+      key: "repo",
+      node: <span className="text-(--gray-11)">{workstream.repoName}</span>,
+    });
   }
-
-  function handleOpenTask() {
-    if (!headTask) return;
-    const task = tasks.find((t) => t.id === headTask.id);
-    if (task) navigateToTask(task);
+  if (workstream.branch) {
+    meta.push({
+      key: "branch",
+      node: (
+        <span className="inline-flex min-w-0 items-center gap-1">
+          <GitBranch size={11} className="shrink-0" />
+          <span className="max-w-[200px] truncate" title={workstream.branch}>
+            {workstream.branch}
+          </span>
+        </span>
+      ),
+    });
   }
-
-  function handleOpenPr() {
-    if (workstream.prUrl) void openUrlInBrowser(workstream.prUrl);
+  if (pr) {
+    meta.push({ key: "pr", node: <span>#{pr.number}</span> });
+  }
+  if (pr && pr.ciStatus !== "passing" && pr.ciStatus !== "none") {
+    meta.push({
+      key: "ci",
+      node: <CiIndicator status={pr.ciStatus} showLabel />,
+    });
+  }
+  if (awaitingPermission) {
+    meta.push({
+      key: "perm",
+      node: (
+        <span className="inline-flex items-center gap-1 text-(--amber-11)">
+          <Warning size={11} weight="fill" />
+          Awaiting permission
+        </span>
+      ),
+    });
+  }
+  if (generating) {
+    meta.push({
+      key: "gen",
+      node: (
+        <span className="inline-flex items-center gap-1 text-(--accent-11)">
+          <ChatCircle size={11} />
+          Generating
+        </span>
+      ),
+    });
   }
 
   return (
@@ -72,121 +118,77 @@ export function HomeWorkstreamRow({ workstream }: HomeWorkstreamRowProps) {
       role="button"
       tabIndex={0}
       aria-label={`Open ${title}`}
-      className={`cursor-pointer border-(--gray-4) border-b px-5 py-3 transition-colors hover:bg-(--gray-2) ${
-        isSelected ? "bg-(--accent-3)" : ""
-      } ${severityRingClass(severity)}`}
+      className="group relative flex cursor-pointer items-center gap-3 border-(--gray-3) border-b py-2.5 pr-3 pl-4 transition-colors hover:bg-(--gray-2)"
+      style={isSelected ? { backgroundColor: "var(--accent-a3)" } : undefined}
     >
-      <Flex align="start" justify="between" gap="3">
-        <Flex direction="column" gap="2" className="min-w-0 flex-1">
-          <Flex align="center" gap="2" wrap="wrap" className="min-w-0">
-            <Text
-              className="truncate font-medium text-[13px] text-gray-12"
-              title={title}
-            >
-              {title}
-            </Text>
-            {workstream.situations.map((sid) => (
-              <SituationChip key={sid} sid={sid} />
-            ))}
-            {taskCount > 1 ? (
-              <Text className="shrink-0 text-(--gray-10) text-[11px]">
-                · {taskCount} tasks
-              </Text>
-            ) : null}
-          </Flex>
+      <span
+        aria-hidden
+        className="absolute top-0 bottom-0 left-0 w-[3px]"
+        style={{ backgroundColor: accent.solid }}
+      />
 
-          <Flex
-            align="center"
-            gap="3"
-            wrap="wrap"
-            className="text-(--gray-10) text-[11px]"
+      <StatusGlyph sid={primarySid} size={32} />
+
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="truncate font-medium text-[13px] text-gray-12"
+            title={title}
           >
-            {workstream.repoName ? (
-              <Text title="Repository">{workstream.repoName}</Text>
-            ) : null}
-            {workstream.branch ? (
-              <Flex align="center" gap="1" className="min-w-0">
-                <GitBranch size={10} />
-                <span className="truncate" title={workstream.branch}>
-                  {workstream.branch}
-                </span>
-              </Flex>
-            ) : null}
-            {headTask?.needsPermission ? (
-              <Flex align="center" gap="1" className="text-(--amber-11)">
-                <Warning size={11} weight="fill" />
-                <span>Awaiting permission</span>
-              </Flex>
-            ) : null}
-            {workstream.tasks.some((t) => t.isGenerating) ? (
-              <Flex align="center" gap="1">
-                <ChatCircle size={11} />
-                <span>Generating</span>
-              </Flex>
-            ) : null}
-            <Text>{formatRelativeTimeShort(workstream.lastActivityAt)}</Text>
-          </Flex>
-        </Flex>
-
-        <Flex
-          align="center"
-          gap="2"
-          wrap="wrap"
-          className="shrink-0"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          {inlineActions.map((action, idx) => (
-            <Button
-              key={`${action.situationId}::${action.id}`}
-              variant={idx === 0 ? "primary" : "outline"}
-              size="sm"
-              onClick={() => handleRunAction(action)}
-              title={`${action.situationLabel} → ${action.skillId}`}
-            >
-              <Sparkle size={12} />
-              {action.label}
-            </Button>
+            {title}
+          </span>
+          {extraSituations.map((sid) => (
+            <SituationChip key={sid} sid={sid} />
           ))}
-          {overflowActions.length > 0 ? (
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  title={`${overflowActions.length} more quick action${overflowActions.length === 1 ? "" : "s"}`}
-                >
-                  +{overflowActions.length}
-                  <CaretDown size={10} />
-                </Button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content>
-                {overflowActions.map((action) => (
-                  <DropdownMenu.Item
-                    key={`${action.situationId}::${action.id}`}
-                    onSelect={() => handleRunAction(action)}
-                  >
-                    <Sparkle size={12} />
-                    {action.label}
-                    <Text className="ml-auto pl-3 text-(--gray-10) text-[10px]">
-                      {action.situationLabel}
-                    </Text>
-                  </DropdownMenu.Item>
-                ))}
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
-          ) : null}
-          {workstream.prUrl ? (
-            <Button variant="link-muted" size="sm" onClick={handleOpenPr}>
+        </div>
+        <MetaList items={meta} />
+      </div>
+
+      <Flex
+        align="center"
+        className="shrink-0 gap-2.5 pl-2"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        {author ? <AuthorAvatar login={author} /> : null}
+        <Text className="w-[40px] shrink-0 text-right text-(--gray-9) text-[11px]">
+          {formatRelativeTimeShort(workstream.lastActivityAt)}
+        </Text>
+
+        <div className="flex items-center gap-1">
+          {primaryBound ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => runAction(primaryBound)}
+              title={`${primaryBound.situationLabel} → ${primaryBound.skillId}`}
+            >
+              <Sparkle size={12} weight="fill" />
+              {primaryBound.label}
+            </Button>
+          ) : primaryIsPr ? (
+            <Button variant="outline" size="sm" onClick={openPr}>
               <GitPullRequest size={12} />
-              PR
-              <ArrowSquareOut size={10} />
+              {author ? "Review PR" : "View PR"}
+            </Button>
+          ) : primaryIsTask ? (
+            <Button variant="outline" size="sm" onClick={openTask}>
+              Open task
             </Button>
           ) : null}
-          <Button variant="link-muted" size="sm" onClick={handleOpenTask}>
-            Open task
-          </Button>
-        </Flex>
+
+          {hasMenu ? (
+            <WorkstreamOverflowMenu
+              restBound={restBound}
+              showPrInMenu={showPrInMenu}
+              showTaskInMenu={showTaskInMenu}
+              onRun={runAction}
+              onOpenPr={openPr}
+              onOpenTask={openTask}
+              size="sm"
+            />
+          ) : null}
+        </div>
       </Flex>
     </Box>
   );

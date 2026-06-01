@@ -45,6 +45,7 @@ function pr(
     ciStatus: "passing",
     unresolvedThreads: 0,
     reviewDecision: null,
+    mergeable: null,
     isCurrentUserRequestedReviewer: false,
     isCurrentUserAuthor: true,
     author: "peter",
