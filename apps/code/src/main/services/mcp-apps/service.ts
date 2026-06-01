@@ -3,9 +3,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { IUrlLauncher } from "@posthog/platform/url-launcher";
 import {
+  BUILTIN_POSTHOG_SERVER_NAME,
+  EXEC_TOOL_NAME,
   type McpAppsDiscoveryCompleteEvent,
   McpAppsServiceEvent,
   type McpAppsServiceEvents,
+  type McpAppsToolCallUiDiscoveredEvent,
   type McpAppsToolCancelledEvent,
   type McpAppsToolInputEvent,
   type McpAppsToolResultEvent,
@@ -14,6 +17,8 @@ import {
   type McpToolUiAssociation,
   type McpToolUiMeta,
   type McpUiResource,
+  POSTHOG_EXEC_TOOL_KEY,
+  resolveResultResourceUri,
 } from "@shared/types/mcp-apps";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
@@ -36,6 +41,13 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
   private connections = new Map<string, ServerConnection>();
   private resourceCache = new Map<string, McpUiResource>();
   private toolAssociations = new Map<string, McpToolUiAssociation>();
+  /**
+   * Per-tool-call UI associations for PostHog's built-in `exec` tool, keyed by
+   * `toolCallId`. The `exec` tool can't be discovered via `listTools()` (its UI
+   * `resourceUri` rides on each call's response `_meta`, not its registration),
+   * so associations here are populated lazily in {@link notifyToolResult}.
+   */
+  private execToolCallAssociations = new Map<string, McpToolUiAssociation>();
   private toolDefinitions = new Map<string, Tool>();
   private serverConfigs = new Map<string, McpServerConnectionConfig>();
   private pendingConnections = new Map<string, Promise<ServerConnection>>();
@@ -106,6 +118,16 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
       ]);
 
       for (const tool of toolsList.tools) {
+        // The built-in PostHog `exec` tool carries no registration-time UI
+        // resource (it resolves per call), but we still cache its definition so
+        // the app bridge can surface it when a per-call UI is rendered.
+        if (
+          serverName === BUILTIN_POSTHOG_SERVER_NAME &&
+          tool.name === EXEC_TOOL_NAME
+        ) {
+          this.toolDefinitions.set(POSTHOG_EXEC_TOOL_KEY, tool);
+        }
+
         const uiMeta = (tool as McpToolUiMeta)._meta?.ui;
         if (!uiMeta?.resourceUri) continue;
 
@@ -319,6 +341,47 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     return has;
   }
 
+  /**
+   * Whether a UI app was resolved for a specific tool call. Only the built-in
+   * PostHog `exec` tool populates this (via {@link notifyToolResult}); for
+   * registration-discovered tools use {@link hasUiForTool}.
+   */
+  hasUiForToolCall(toolCallId: string): boolean {
+    const has = this.execToolCallAssociations.has(toolCallId);
+    log.debug("hasUiForToolCall", { toolCallId, result: has });
+    return has;
+  }
+
+  /**
+   * Fetch the UI resource resolved for a specific `exec` tool call. Reuses the
+   * same lazy-fetch + cache path as registration-discovered tools.
+   */
+  async getUiResourceForToolCall(
+    toolCallId: string,
+  ): Promise<McpUiResource | null> {
+    const association = this.execToolCallAssociations.get(toolCallId);
+    if (!association) {
+      log.debug("getUiResourceForToolCall: no association found", {
+        toolCallId,
+      });
+      return null;
+    }
+
+    const cached = this.resourceCache.get(association.resourceUri);
+    if (cached) return cached;
+
+    const pendingFetch = this.pendingFetches.get(association.resourceUri);
+    if (pendingFetch) return pendingFetch;
+
+    const fetchPromise = this.fetchUiResource(association);
+    this.pendingFetches.set(association.resourceUri, fetchPromise);
+    try {
+      return await fetchPromise;
+    } finally {
+      this.pendingFetches.delete(association.resourceUri);
+    }
+  }
+
   getToolDefinition(toolKey: string): Tool | null {
     return this.toolDefinitions.get(toolKey) ?? null;
   }
@@ -383,6 +446,14 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     isError?: boolean,
   ): void {
     log.info("notifyToolResult", { toolKey, toolCallId, isError });
+
+    // PostHog's built-in `exec` tool surfaces UI apps through the per-call
+    // response `_meta` rather than registration-time tool metadata, so resolve
+    // and register the association here before the result is forwarded.
+    if (toolKey === POSTHOG_EXEC_TOOL_KEY && !isError) {
+      this.registerExecToolCallUi(toolCallId, result);
+    }
+
     this.emit(McpAppsServiceEvent.ToolResult, {
       toolKey,
       toolCallId,
@@ -391,8 +462,43 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     } satisfies McpAppsToolResultEvent);
   }
 
+  /**
+   * Parse a `resourceUri` out of an `exec` call's response `_meta` and, when
+   * present, record a per-call association and announce it so the renderer can
+   * mount the UI app for this specific call.
+   */
+  private registerExecToolCallUi(toolCallId: string, result: unknown): void {
+    if (this.execToolCallAssociations.has(toolCallId)) return;
+
+    const resourceUri = resolveResultResourceUri(result);
+    if (!resourceUri) {
+      log.debug("registerExecToolCallUi: no UI resourceUri on result", {
+        toolCallId,
+      });
+      return;
+    }
+
+    this.execToolCallAssociations.set(toolCallId, {
+      toolKey: POSTHOG_EXEC_TOOL_KEY,
+      serverName: BUILTIN_POSTHOG_SERVER_NAME,
+      toolName: EXEC_TOOL_NAME,
+      resourceUri,
+    });
+    log.info("registerExecToolCallUi: resolved per-call UI", {
+      toolCallId,
+      resourceUri,
+    });
+
+    this.emit(McpAppsServiceEvent.ToolCallUiDiscovered, {
+      toolCallId,
+      toolKey: POSTHOG_EXEC_TOOL_KEY,
+      resourceUri,
+    } satisfies McpAppsToolCallUiDiscoveredEvent);
+  }
+
   notifyToolCancelled(toolKey: string, toolCallId: string): void {
     log.info("notifyToolCancelled", { toolKey, toolCallId });
+    this.execToolCallAssociations.delete(toolCallId);
     this.emit(McpAppsServiceEvent.ToolCancelled, {
       toolKey,
       toolCallId,
@@ -415,6 +521,7 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     this.resourceCache.clear();
     this.resourceMetaCache.clear();
     this.toolAssociations.clear();
+    this.execToolCallAssociations.clear();
     this.toolDefinitions.clear();
     this.pendingConnections.clear();
     this.pendingFetches.clear();
@@ -452,10 +559,19 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
         this.toolAssociations.delete(key);
       }
     }
+    for (const [callId, assoc] of this.execToolCallAssociations) {
+      if (assoc.serverName === serverName) {
+        urisToEvict.add(assoc.resourceUri);
+        this.execToolCallAssociations.delete(callId);
+      }
+    }
 
     // Only evict cached resources not referenced by remaining associations
     const stillReferenced = new Set(
-      [...this.toolAssociations.values()].map((a) => a.resourceUri),
+      [
+        ...this.toolAssociations.values(),
+        ...this.execToolCallAssociations.values(),
+      ].map((a) => a.resourceUri),
     );
     for (const uri of urisToEvict) {
       if (!stillReferenced.has(uri)) {
@@ -472,6 +588,7 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     this.resourceCache.clear();
     this.resourceMetaCache.clear();
     this.toolAssociations.clear();
+    this.execToolCallAssociations.clear();
     this.toolDefinitions.clear();
     this.serverConfigs.clear();
     this.pendingConnections.clear();

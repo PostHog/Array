@@ -68,6 +68,47 @@ export interface McpResourceUiMeta {
   };
 }
 
+// --- Built-in PostHog MCP server (single `exec` tool) ---
+//
+// The built-in PostHog MCP server is registered under this name (see
+// `AgentAuthAdapter.buildMcpServers`). Unlike the MCP Apps spec — which binds a
+// tool to its UI app upfront via the tool's registration `_meta.ui.resourceUri`
+// — PostHog surfaces every UI app through a single generic `exec` tool and rides
+// the `resourceUri` on each *tool-call response* `_meta` instead. Discovery via
+// `listTools()` therefore never sees it, so for this server + tool the host has
+// to resolve the UI app per call from the result metadata.
+export const BUILTIN_POSTHOG_SERVER_NAME = "posthog";
+export const EXEC_TOOL_NAME = "exec";
+export const POSTHOG_EXEC_TOOL_KEY = `mcp__${BUILTIN_POSTHOG_SERVER_NAME}__${EXEC_TOOL_NAME}`;
+
+/**
+ * Legacy flat `_meta` key for a UI resource URI on a tool-call response. Mirrors
+ * `RESOURCE_URI_META_KEY` from `@modelcontextprotocol/ext-apps`. The modern form
+ * is the nested `_meta.ui.resourceUri`; servers may emit either (PostHog emits
+ * both). Hardcoded rather than imported so this module stays free of the
+ * ext-apps server entrypoint.
+ */
+export const LEGACY_RESOURCE_URI_META_KEY = "ui/resourceUri";
+
+/**
+ * Resolve a UI resource URI from a tool-call response, preferring the modern
+ * nested `_meta.ui.resourceUri` and falling back to the legacy flat key —
+ * matching the host-side resolution recommended by `@modelcontextprotocol/ext-apps`.
+ * Returns `undefined` when the result carries no UI resource.
+ */
+export function resolveResultResourceUri(result: unknown): string | undefined {
+  if (result == null || typeof result !== "object") return undefined;
+  const meta = (result as { _meta?: Record<string, unknown> })._meta;
+  if (meta == null || typeof meta !== "object") return undefined;
+  const ui = (meta as { ui?: { resourceUri?: unknown } }).ui;
+  const modern = ui?.resourceUri;
+  if (typeof modern === "string" && modern.length > 0) return modern;
+  const legacy = (meta as Record<string, unknown>)[
+    LEGACY_RESOURCE_URI_META_KEY
+  ];
+  return typeof legacy === "string" && legacy.length > 0 ? legacy : undefined;
+}
+
 /** Tool-to-UI associations */
 export const mcpToolUiAssociationSchema = z.object({
   toolKey: z.string(),
@@ -112,6 +153,11 @@ export const mcpAppsSubscriptionInput = z.object({
   toolKey: z.string(),
 });
 
+/** Identifies a single tool *call* — used by the per-call exec UI path. */
+export const toolCallIdInput = z.object({
+  toolCallId: z.string(),
+});
+
 // --- Service event types ---
 
 export interface McpAppsToolInputEvent {
@@ -136,11 +182,23 @@ export interface McpAppsDiscoveryCompleteEvent {
   toolKeys: string[];
 }
 
+/**
+ * Emitted when a UI app is resolved for a single tool *call* (the exec path).
+ * Unlike `DiscoveryComplete`, which fires once after registration-time
+ * discovery, this fires per call as soon as the response `_meta` is parsed.
+ */
+export interface McpAppsToolCallUiDiscoveredEvent {
+  toolCallId: string;
+  toolKey: string;
+  resourceUri: string;
+}
+
 export const McpAppsServiceEvent = {
   ToolInput: "tool-input",
   ToolResult: "tool-result",
   ToolCancelled: "tool-cancelled",
   DiscoveryComplete: "discovery-complete",
+  ToolCallUiDiscovered: "tool-call-ui-discovered",
 } as const;
 
 export interface McpAppsServiceEvents {
@@ -148,6 +206,7 @@ export interface McpAppsServiceEvents {
   [McpAppsServiceEvent.ToolResult]: McpAppsToolResultEvent;
   [McpAppsServiceEvent.ToolCancelled]: McpAppsToolCancelledEvent;
   [McpAppsServiceEvent.DiscoveryComplete]: McpAppsDiscoveryCompleteEvent;
+  [McpAppsServiceEvent.ToolCallUiDiscovered]: McpAppsToolCallUiDiscoveredEvent;
 }
 
 // --- MCP server connection config ---

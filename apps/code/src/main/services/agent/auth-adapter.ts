@@ -99,6 +99,8 @@ export class AgentAuthAdapter {
           value: String(credentials.projectId),
         },
         { name: "x-posthog-mcp-version", value: "2" },
+        // Identify as the PostHog Code UI-apps host.
+        { name: "x-posthog-mcp-consumer", value: "posthog-code" },
       ],
     });
 

@@ -8,11 +8,12 @@ import type {
 import { ArrowsIn, ArrowsOut, Plugs, X } from "@phosphor-icons/react";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc/client";
+import { POSTHOG_EXEC_TOOL_KEY } from "@shared/types/mcp-apps";
 import { useThemeStore } from "@stores/themeStore";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { logger } from "@utils/logger";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type Phase, useAppBridge } from "../hooks/useAppBridge";
 import { toCallToolResult } from "../utils/mcp-app-host-utils";
@@ -40,11 +41,21 @@ export function McpAppHost({
   const [iframeEl, setIframeEl] = useState<HTMLIFrameElement | null>(null);
   const isDarkMode = useThemeStore((s) => s.isDarkMode);
 
+  // PostHog's built-in `exec` tool resolves its UI app per call (from the
+  // response `_meta`) rather than from registration metadata, so it's keyed by
+  // toolCallId instead of the shared `mcp__posthog__exec` tool key.
+  const isExec = mcpToolName === POSTHOG_EXEC_TOOL_KEY;
+
   const { data: uiResource, isLoading: resourceLoading } = useQuery(
-    trpcReact.mcpApps.getUiResource.queryOptions(
-      { toolKey: mcpToolName },
-      { staleTime: Infinity },
-    ),
+    isExec
+      ? trpcReact.mcpApps.getUiResourceForToolCall.queryOptions(
+          { toolCallId: toolCall.toolCallId },
+          { staleTime: Infinity },
+        )
+      : trpcReact.mcpApps.getUiResource.queryOptions(
+          { toolKey: mcpToolName },
+          { staleTime: Infinity },
+        ),
   );
 
   const { data: toolDefinition } = useQuery(
@@ -96,12 +107,35 @@ export function McpAppHost({
     openLink: openLinkMut.mutateAsync,
   });
 
+  // For `exec`, the UI app is discovered *from* the result, so this host mounts
+  // only after the result already arrived (and the live subscription fired).
+  // Send each call's result exactly once, whether it comes from the prop replay
+  // below or a late subscription event.
+  const sentResultForCallRef = useRef<string | null>(null);
+  const sendResultOnce = useCallback(
+    (raw: unknown) => {
+      if (sentResultForCallRef.current === toolCall.toolCallId) return;
+      sentResultForCallRef.current = toolCall.toolCallId;
+      const toolResult = toCallToolResult(raw);
+      log.info("Sending tool result to app", { mcpToolName, toolResult });
+      sendWhenReady((bridge) => bridge.sendToolResult(toolResult));
+    },
+    [toolCall.toolCallId, sendWhenReady, mcpToolName],
+  );
+
   // Forward tool results from subscriptions
   useSubscription(
     trpcReact.mcpApps.onToolResult.subscriptionOptions(
       { toolKey: mcpToolName },
       {
         onData: (event) => {
+          // `exec` shares one tool key across every call, so scope delivery to
+          // this call and dedupe against the prop replay.
+          if (isExec) {
+            if (event.toolCallId !== toolCall.toolCallId) return;
+            sendResultOnce(event.result);
+            return;
+          }
           const toolResult = toCallToolResult(event.result);
           log.info("Sending tool result to app", {
             mcpToolName,
@@ -113,6 +147,15 @@ export function McpAppHost({
       },
     ),
   );
+
+  // `exec` replay: the result is already on the tool call by the time this host
+  // mounts, so push it from the prop (the subscription event is long gone).
+  useEffect(() => {
+    if (!isExec) return;
+    if (toolCall.status !== "completed" && toolCall.status !== "failed") return;
+    if (toolCall.rawOutput == null) return;
+    sendResultOnce(toolCall.rawOutput);
+  }, [isExec, toolCall.status, toolCall.rawOutput, sendResultOnce]);
 
   // Forward tool cancellations from subscriptions
   useSubscription(

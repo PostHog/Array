@@ -8,6 +8,7 @@ import {
   openLinkInput,
   proxyResourceReadInput,
   proxyToolCallInput,
+  toolCallIdInput,
 } from "@shared/types/mcp-apps";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
@@ -26,6 +27,19 @@ export const mcpAppsRouter = router({
   hasUiForTool: publicProcedure
     .input(hasUiForToolInput)
     .query(({ input }) => getService().hasUiForTool(input.toolKey)),
+
+  // Per-call UI lookups for PostHog's built-in `exec` tool, which resolves its
+  // UI app from each call's response `_meta` rather than registration metadata.
+  hasUiForToolCall: publicProcedure
+    .input(toolCallIdInput)
+    .query(({ input }) => getService().hasUiForToolCall(input.toolCallId)),
+
+  getUiResourceForToolCall: publicProcedure
+    .input(toolCallIdInput)
+    .output(mcpUiResourceSchema.nullable())
+    .query(({ input }) =>
+      getService().getUiResourceForToolCall(input.toolCallId),
+    ),
 
   getToolDefinition: publicProcedure
     .input(getToolDefinitionInput)
@@ -101,4 +115,19 @@ export const mcpAppsRouter = router({
       yield event;
     }
   }),
+
+  onToolCallUiDiscovered: publicProcedure
+    .input(toolCallIdInput)
+    .subscription(async function* (opts) {
+      const service = getService();
+      const targetToolCallId = opts.input.toolCallId;
+      for await (const event of service.toIterable(
+        McpAppsServiceEvent.ToolCallUiDiscovered,
+        { signal: opts.signal },
+      )) {
+        if (event.toolCallId === targetToolCallId) {
+          yield event;
+        }
+      }
+    }),
 });
