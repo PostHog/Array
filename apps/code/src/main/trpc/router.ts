@@ -1,6 +1,7 @@
 import { additionalDirectoriesRouter } from "./routers/additional-directories";
 import { agentRouter } from "./routers/agent";
 import { analyticsRouter } from "./routers/analytics";
+import { checkpointRouter } from "./routers/checkpoint";
 import { archiveRouter } from "./routers/archive";
 import { authRouter } from "./routers/auth";
 import { cloudTaskRouter } from "./routers/cloud-task";
@@ -46,6 +47,7 @@ export const trpcRouter = router({
   analytics: analyticsRouter,
   archive: archiveRouter,
   auth: authRouter,
+  checkpoint: checkpointRouter,
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,

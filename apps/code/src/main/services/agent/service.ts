@@ -993,6 +993,14 @@ When creating pull requests, add the following footer at the end of the PR descr
     return this.sessions.get(taskRunId);
   }
 
+  getSessionInfo(
+    taskRunId: string,
+  ): { sessionId: string; repoPath: string } | undefined {
+    const session = this.sessions.get(taskRunId);
+    if (!session?.config.sessionId) return undefined;
+    return { sessionId: session.config.sessionId, repoPath: session.repoPath };
+  }
+
   async setSessionConfigOption(
     sessionId: string,
     configId: string,

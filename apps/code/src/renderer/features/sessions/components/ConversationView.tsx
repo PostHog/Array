@@ -1,6 +1,7 @@
 import { CHAT_CONTENT_MAX_WIDTH } from "@features/sessions/constants";
 import { useContextUsage } from "@features/sessions/hooks/useContextUsage";
 import { useConversationSearch } from "@features/sessions/hooks/useConversationSearch";
+import { useRestoreCheckpoint } from "@features/sessions/hooks/useRestoreCheckpoint";
 import { SessionTaskIdProvider } from "@features/sessions/hooks/useSessionTaskId";
 import {
   sessionStoreSetters,
@@ -11,6 +12,7 @@ import {
 } from "@features/sessions/stores/sessionStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { SkillButtonActionMessage } from "@features/skill-buttons/components/SkillButtonActionMessage";
+import { useShortcut } from "@hooks/useShortcut";
 import { ArrowDown, XCircle } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import WorkerUrl from "@pierre/diffs/worker/worker.js?worker&url";
@@ -18,15 +20,18 @@ import { Box, Button, Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import type { AcpMessage } from "@shared/types/session-events";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import {
   buildConversationItems,
   type ConversationItem,
   type TurnContext,
 } from "./buildConversationItems";
+import { CheckpointTimelineModal } from "./CheckpointTimelineModal";
 import { ConversationSearchBar } from "./ConversationSearchBar";
 import { GitActionMessage } from "./GitActionMessage";
 import { GitActionResult } from "./GitActionResult";
 import { mergeConversationItems } from "./mergeConversationItems";
+import { RestoreCheckpointDialog } from "./RestoreCheckpointDialog";
 import { SessionFooter } from "./SessionFooter";
 import { QueuedMessageView } from "./session-update/QueuedMessageView";
 import {
@@ -74,6 +79,7 @@ export function ConversationView({
   const listRef = useRef<VirtualizedListHandle>(null);
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
   const debugLogsCloudRuns = useSettingsStore((s) => s.debugLogsCloudRuns);
   const showDebugLogs = debugLogsCloudRuns;
   const contextUsage = useContextUsage(events);
@@ -125,6 +131,17 @@ export function ConversationView({
   );
 
   const isCloud = session?.isCloud ?? false;
+
+  const restore = useRestoreCheckpoint({
+    repoPath: repoPath ?? undefined,
+    taskId,
+    taskRunId: session?.taskRunId,
+  });
+
+  const checkpointTimelineKey = useShortcut("checkpoint-timeline");
+  useHotkeys(checkpointTimelineKey, () => setTimelineOpen((o) => !o), {
+    preventDefault: true,
+  });
 
   const items = useMemo<ConversationItem[]>(
     () =>
@@ -209,6 +226,16 @@ export function ConversationView({
               update={item.update}
               turnContext={item.turnContext}
               thoughtComplete={item.thoughtComplete}
+              showRestoreButton={item.turnContext.turnComplete}
+              onRestoreCheckpoint={
+                item.turnContext.turnComplete &&
+                item.turnContext.lastCheckpointId
+                  ? () =>
+                      restore.requestRestore(
+                        item.turnContext.lastCheckpointId as string,
+                      )
+                  : undefined
+              }
             />
           );
         case "git_action_result":
@@ -240,7 +267,14 @@ export function ConversationView({
           );
       }
     },
-    [repoPath, taskId, slackThreadUrl, firstUserMessageId, initialItemIds],
+    [
+      repoPath,
+      taskId,
+      slackThreadUrl,
+      firstUserMessageId,
+      initialItemIds,
+      restore.requestRestore,
+    ],
   );
 
   const getItemKey = useCallback((item: ConversationItem) => item.id, []);
@@ -310,6 +344,18 @@ export function ConversationView({
           </Box>
         )}
       </div>
+      <RestoreCheckpointDialog
+        open={restore.dialogOpen}
+        onOpenChange={restore.setDialogOpen}
+        onConfirm={restore.confirmRestore}
+        isLoading={restore.isRestoring}
+      />
+      <CheckpointTimelineModal
+        open={timelineOpen}
+        onOpenChange={setTimelineOpen}
+        events={events}
+        onRestore={restore.requestRestore}
+      />
     </WorkerPoolContextProvider>
   );
 }
@@ -318,10 +364,14 @@ const SessionUpdateRow = memo(function SessionUpdateRow({
   update,
   turnContext,
   thoughtComplete,
+  showRestoreButton,
+  onRestoreCheckpoint,
 }: {
   update: RenderItem;
   turnContext: TurnContext;
   thoughtComplete?: boolean;
+  showRestoreButton?: boolean;
+  onRestoreCheckpoint?: () => void;
 }) {
   return (
     <SessionUpdateView
@@ -331,6 +381,8 @@ const SessionUpdateRow = memo(function SessionUpdateRow({
       turnCancelled={turnContext.turnCancelled}
       turnComplete={turnContext.turnComplete}
       thoughtComplete={thoughtComplete}
+      showRestoreButton={showRestoreButton}
+      onRestoreCheckpoint={onRestoreCheckpoint}
     />
   );
 });

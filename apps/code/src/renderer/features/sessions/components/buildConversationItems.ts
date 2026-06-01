@@ -28,6 +28,7 @@ export interface TurnContext {
   childItems: Map<string, ConversationItem[]>;
   turnCancelled: boolean;
   turnComplete: boolean;
+  lastCheckpointId: string | null;
 }
 
 export type ConversationItem =
@@ -92,6 +93,7 @@ interface TurnState {
   context: TurnContext;
   gitAction: ReturnType<typeof parseGitActionMessage>;
   itemCount: number;
+  lastCheckpointId: string | null;
 }
 
 interface ItemBuilder {
@@ -248,6 +250,7 @@ function handlePromptRequest(
     childItems,
     turnCancelled: false,
     turnComplete: false,
+    lastCheckpointId: null,
   };
 
   b.currentTurn = {
@@ -259,6 +262,7 @@ function handlePromptRequest(
     context,
     gitAction,
     itemCount: 0,
+    lastCheckpointId: null,
   };
 
   b.pendingPrompts.set(msg.id, b.currentTurn);
@@ -439,6 +443,15 @@ function handleNotification(
     });
     return;
   }
+
+  if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT)) {
+    const params = msg.params as { checkpointId?: string };
+    if (params?.checkpointId && b.currentTurn) {
+      b.currentTurn.lastCheckpointId = params.checkpointId;
+      b.currentTurn.context.lastCheckpointId = params.checkpointId;
+    }
+    return;
+  }
 }
 
 function ensureProgressCardForGroup(
@@ -533,6 +546,7 @@ function ensureImplicitTurn(b: ItemBuilder, ts: number) {
     childItems,
     turnCancelled: false,
     turnComplete: false,
+    lastCheckpointId: null,
   };
 
   b.currentTurn = {
@@ -544,6 +558,7 @@ function ensureImplicitTurn(b: ItemBuilder, ts: number) {
     context,
     gitAction: { isGitAction: false, actionType: null, prompt: "" },
     itemCount: 0,
+    lastCheckpointId: null,
   };
 }
 

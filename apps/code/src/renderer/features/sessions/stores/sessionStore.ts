@@ -5,9 +5,14 @@ import type {
   SessionConfigSelectOption,
   SessionConfigSelectOptions,
 } from "@agentclientprotocol/sdk";
+import { isNotification, POSTHOG_NOTIFICATIONS } from "@posthog/agent";
 import type { ExecutionMode, TaskRunStatus } from "@shared/types";
 import type { SkillButtonId } from "@shared/types/analytics";
-import type { AcpMessage } from "@shared/types/session-events";
+import {
+  type AcpMessage,
+  isJsonRpcNotification,
+  isJsonRpcRequest,
+} from "@shared/types/session-events";
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import type { PermissionRequest } from "../utils/parseSessionLogs";
@@ -496,6 +501,51 @@ export const sessionStoreSetters = {
 
   getSessions: (): Record<string, AgentSession> => {
     return useSessionStore.getState().sessions;
+  },
+
+  truncateEventsToCheckpoint: (
+    taskId: string,
+    checkpointId: string,
+  ): boolean => {
+    const state = useSessionStore.getState();
+    const taskRunId = state.taskIdIndex[taskId];
+    if (!taskRunId) return false;
+    const session = state.sessions[taskRunId];
+    if (!session) return false;
+
+    const events = session.events;
+    let checkpointEventIdx = -1;
+    for (let i = 0; i < events.length; i++) {
+      const msg = events[i].message;
+      if (!isJsonRpcNotification(msg)) continue;
+      if (!isNotification(msg.method, POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT))
+        continue;
+      const params = msg.params as { checkpointId?: string } | undefined;
+      if (params?.checkpointId === checkpointId) {
+        checkpointEventIdx = i;
+        break;
+      }
+    }
+    if (checkpointEventIdx === -1) return false;
+
+    let cutoff = events.length;
+    for (let i = checkpointEventIdx + 1; i < events.length; i++) {
+      const msg = events[i].message;
+      if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
+        cutoff = i;
+        break;
+      }
+    }
+
+    useSessionStore.setState((draft) => {
+      const trid = draft.taskIdIndex[taskId];
+      if (!trid) return;
+      const s = draft.sessions[trid];
+      if (s) {
+        s.events = s.events.slice(0, cutoff);
+      }
+    });
+    return true;
   },
 
   clearAll: () => {
