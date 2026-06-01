@@ -43,22 +43,29 @@ describe("orderSuggestedReviewers", () => {
     expect(ordered.map((r) => r.github_login)).toEqual(["me", "a", "c"]);
   });
 
-  it("is a no-op when the current user is already first", () => {
-    const reviewers = [reviewer("me", "uuid-me"), reviewer("a", "uuid-a")];
-    const ordered = orderSuggestedReviewers(reviewers, "uuid-me");
-    expect(ordered).toBe(reviewers);
-  });
-
-  it("is a no-op when the current user is absent", () => {
-    const reviewers = [reviewer("a", "uuid-a"), reviewer("b", "uuid-b")];
-    const ordered = orderSuggestedReviewers(reviewers, "uuid-me");
-    expect(ordered).toBe(reviewers);
-  });
-
-  it("is a no-op when meUuid is missing", () => {
-    const reviewers = [reviewer("a", "uuid-a"), reviewer("me", "uuid-me")];
-    expect(orderSuggestedReviewers(reviewers, null)).toBe(reviewers);
-    expect(orderSuggestedReviewers(reviewers, undefined)).toBe(reviewers);
+  it.each([
+    {
+      label: "already first",
+      reviewers: [reviewer("me", "uuid-me"), reviewer("a", "uuid-a")],
+      meUuid: "uuid-me" as string | null | undefined,
+    },
+    {
+      label: "absent",
+      reviewers: [reviewer("a", "uuid-a"), reviewer("b", "uuid-b")],
+      meUuid: "uuid-me" as string | null | undefined,
+    },
+    {
+      label: "null meUuid",
+      reviewers: [reviewer("a", "uuid-a"), reviewer("me", "uuid-me")],
+      meUuid: null as string | null | undefined,
+    },
+    {
+      label: "undefined meUuid",
+      reviewers: [reviewer("a", "uuid-a"), reviewer("me", "uuid-me")],
+      meUuid: undefined as string | null | undefined,
+    },
+  ])("is a no-op when $label", ({ reviewers, meUuid }) => {
+    expect(orderSuggestedReviewers(reviewers, meUuid)).toBe(reviewers);
   });
 });
 
