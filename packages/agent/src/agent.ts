@@ -11,6 +11,7 @@ import {
 import { PostHogAPIClient, type TaskRunUpdate } from "./posthog-api";
 import { SessionLogWriter } from "./session-log-writer";
 import type { AgentConfig, TaskExecutionOptions } from "./types";
+import { buildGatewayPropertyHeaders } from "./utils/gateway";
 import { Logger } from "./utils/logger";
 
 export class Agent {
@@ -67,11 +68,54 @@ export class Agent {
       process.env.ANTHROPIC_BASE_URL = gatewayUrl;
       process.env.ANTHROPIC_AUTH_TOKEN = apiKey;
 
+      // Attribute every captured $ai_generation event to this team. The gateway
+      // authenticates with a shared key, so without the `team_id` property the
+      // spend lands on the key owner's team. Forwarded as an
+      // `x-posthog-property-team_id` header that the gateway lifts onto the
+      // event (the Claude session builder appends its own headers to this in
+      // adapters/claude/session/options.ts). Mirrors the cloud path in
+      // server/agent-server.ts and django's get_llm_client(team_id=...).
+      this._applyGatewayPropertyHeaders({
+        team_id: this.posthogAPI.getProjectId(),
+      });
+
       return { gatewayUrl, apiKey };
     } catch (error) {
       this.logger.error("Failed to configure LLM gateway", error);
       throw error;
     }
+  }
+
+  /**
+   * Merge `x-posthog-property-*` header lines into `ANTHROPIC_CUSTOM_HEADERS`,
+   * deduping by header name so re-configuring across sessions doesn't append
+   * the same property twice. Existing non-property lines are preserved.
+   */
+  private _applyGatewayPropertyHeaders(
+    properties: Record<string, string | number | boolean | null | undefined>,
+  ): void {
+    const lines = new Map<string, string>();
+    const existing = process.env.ANTHROPIC_CUSTOM_HEADERS;
+    if (existing) {
+      for (const line of existing.split("\n")) {
+        const name = line.slice(0, line.indexOf(":")).trim();
+        if (name) {
+          lines.set(name, line);
+        }
+      }
+    }
+
+    const additions = buildGatewayPropertyHeaders(properties);
+    if (additions) {
+      for (const line of additions.split("\n")) {
+        const name = line.slice(0, line.indexOf(":")).trim();
+        lines.set(name, line);
+      }
+    }
+
+    process.env.ANTHROPIC_CUSTOM_HEADERS = Array.from(lines.values()).join(
+      "\n",
+    );
   }
 
   async run(

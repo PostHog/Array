@@ -133,6 +133,10 @@ export class PostHogAPIClient {
     return this.config.projectId;
   }
 
+  getProjectId(): number {
+    return this.config.projectId;
+  }
+
   async getApiKey(forceRefresh = false): Promise<string> {
     return this.resolveApiKey(forceRefresh);
   }

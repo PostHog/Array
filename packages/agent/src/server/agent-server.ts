@@ -1893,8 +1893,12 @@ ${signedCommitInstructions}
     // Forward task metadata as `x-posthog-property-*` headers so the gateway
     // lifts them onto the $ai_generation event. Routes through the Anthropic
     // SDK's ANTHROPIC_CUSTOM_HEADERS env var; the OpenAI/codex path has no
-    // equivalent today.
+    // equivalent today. `team_id` attributes every captured generation to the
+    // customer's PostHog team (the gateway authenticates with a shared key, so
+    // without this the spend lands on the key owner's team — see the django
+    // `get_llm_client(team_id=...)` equivalent in posthog/llm/gateway_client.py).
     const customHeaders = buildGatewayPropertyHeaders({
+      team_id: projectId,
       task_origin_product: originProduct,
       task_internal: isInternal,
       signal_report_id: signalReportId,

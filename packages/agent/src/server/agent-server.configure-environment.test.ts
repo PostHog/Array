@@ -134,6 +134,7 @@ describe("AgentServer.configureEnvironment", () => {
 
     expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toBe(
       [
+        "x-posthog-property-team_id: 1",
         "x-posthog-property-task_origin_product: signal_report",
         "x-posthog-property-task_internal: true",
         "x-posthog-property-signal_report_id: report-123",
@@ -141,6 +142,14 @@ describe("AgentServer.configureEnvironment", () => {
         "x-posthog-property-task_run_id: run-xyz",
         "x-posthog-property-task_user_id: 42",
       ].join("\n"),
+    );
+  });
+
+  it("always forwards the team_id as an x-posthog-property header", () => {
+    buildServer("background").configureEnvironment({ isInternal: false });
+
+    expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toContain(
+      "x-posthog-property-team_id: 1",
     );
   });
 
@@ -159,7 +168,10 @@ describe("AgentServer.configureEnvironment", () => {
     buildServer("background").configureEnvironment({ isInternal: false });
 
     expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toBe(
-      "x-posthog-property-task_internal: false",
+      [
+        "x-posthog-property-team_id: 1",
+        "x-posthog-property-task_internal: false",
+      ].join("\n"),
     );
   });
 
