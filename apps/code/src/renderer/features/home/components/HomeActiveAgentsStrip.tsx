@@ -3,7 +3,7 @@ import { Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { useTasks } from "@renderer/features/tasks/hooks/useTasks";
 import { useNavigationStore } from "@stores/navigationStore";
 import { formatRelativeTimeShort } from "@utils/time";
-import type { HomeActiveAgent } from "../hooks/useHomeSnapshot";
+import type { HomeActiveAgent } from "../utils/buildSnapshot";
 
 interface HomeActiveAgentsStripProps {
   agents: HomeActiveAgent[];

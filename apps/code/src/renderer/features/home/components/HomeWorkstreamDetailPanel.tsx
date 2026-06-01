@@ -21,12 +21,12 @@ import { useNavigationStore } from "@stores/navigationStore";
 import { openUrlInBrowser } from "@utils/browser";
 import { formatRelativeTimeShort } from "@utils/time";
 import { type BoundAction, useBoundActions } from "../hooks/useBoundActions";
+import { useRunWorkstreamAction } from "../hooks/useRunWorkstreamAction";
 import type {
   HomePullRequest,
   HomeWorkstream,
   HomeWorkstreamTask,
-} from "../hooks/useHomeSnapshot";
-import { useRunWorkstreamAction } from "../hooks/useRunWorkstreamAction";
+} from "../utils/buildSnapshot";
 import { SituationChip } from "./SituationChip";
 
 interface Props {

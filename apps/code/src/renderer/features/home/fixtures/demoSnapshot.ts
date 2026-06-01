@@ -3,7 +3,7 @@ import type {
   HomePullRequest,
   HomeSnapshot,
   HomeWorkstream,
-} from "../hooks/useHomeSnapshot";
+} from "../utils/buildSnapshot";
 
 function withSituations(
   workstreams: Omit<HomeWorkstream, "situations">[],

@@ -1,8 +1,8 @@
 import { useNavigationStore } from "@stores/navigationStore";
 import { toast } from "@utils/toast";
 import { useCallback } from "react";
+import type { HomeWorkstream } from "../utils/buildSnapshot";
 import type { BoundAction } from "./useBoundActions";
-import type { HomeWorkstream } from "./useHomeSnapshot";
 
 // Routes a bound workflow action into the new-task screen with the prompt
 // prefilled, rather than firing `taskService.createTask` directly: the user

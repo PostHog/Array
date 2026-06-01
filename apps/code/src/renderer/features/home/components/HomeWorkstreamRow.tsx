@@ -14,9 +14,9 @@ import { useNavigationStore } from "@stores/navigationStore";
 import { openUrlInBrowser } from "@utils/browser";
 import { formatRelativeTimeShort } from "@utils/time";
 import { type BoundAction, useBoundActions } from "../hooks/useBoundActions";
-import type { HomeWorkstream } from "../hooks/useHomeSnapshot";
 import { useRunWorkstreamAction } from "../hooks/useRunWorkstreamAction";
 import { useHomeUiStore } from "../stores/homeUiStore";
+import type { HomeWorkstream } from "../utils/buildSnapshot";
 import {
   severityRingClass,
   situationSeverity,

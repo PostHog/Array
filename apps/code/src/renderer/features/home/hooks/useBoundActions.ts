@@ -5,7 +5,7 @@ import {
   type WorkflowAction,
 } from "@shared/types/workflow";
 import { useMemo } from "react";
-import type { HomeWorkstream } from "./useHomeSnapshot";
+import type { HomeWorkstream } from "../utils/buildSnapshot";
 
 export interface BoundAction extends WorkflowAction {
   /** Situation this action came from — used for telemetry + tooltips. */

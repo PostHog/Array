@@ -1,6 +1,6 @@
 import { Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
-import type { HomeSnapshot } from "../hooks/useHomeSnapshot";
 import { buildBoardColumns } from "../utils/boardColumns";
+import type { HomeSnapshot } from "../utils/buildSnapshot";
 import { HomeWorkstreamCard } from "./HomeWorkstreamCard";
 
 interface HomeBoardViewProps {
