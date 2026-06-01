@@ -10,16 +10,6 @@ describe("PostHogAPIClient", () => {
     vi.clearAllMocks();
   });
 
-  it("exposes the configured project id", () => {
-    const client = new PostHogAPIClient({
-      apiUrl: "https://app.posthog.com",
-      getApiKey: vi.fn().mockResolvedValue("token"),
-      projectId: 42,
-    });
-
-    expect(client.getProjectId()).toBe(42);
-  });
-
   it("refreshes once when fetching task run logs gets an auth failure", async () => {
     const getApiKey = vi.fn().mockResolvedValue("stale-token");
     const refreshApiKey = vi.fn().mockResolvedValue("fresh-token");
