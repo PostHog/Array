@@ -335,6 +335,7 @@ describe("GitService.getPrReviewComments", () => {
       {} as LlmGatewayService,
       {} as WorkspaceService,
       { getSessionEnvForTask: async () => ({}) } as unknown as AgentService,
+      stubWorkspaceRepo,
     );
   });
 
@@ -493,6 +494,7 @@ describe("GitService.resolveReviewThread", () => {
       {} as LlmGatewayService,
       {} as WorkspaceService,
       { getSessionEnvForTask: async () => ({}) } as unknown as AgentService,
+      stubWorkspaceRepo,
     );
   });
 
