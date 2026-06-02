@@ -28,43 +28,6 @@ const log = logger.scope("setup-run-service");
 
 let activityIdCounter = 0;
 
-const SIMULATED_SUGGESTION_CATEGORIES: DiscoveredTask["category"][] = [
-  "bug",
-  "performance",
-  "dead_code",
-  "duplication",
-  "event_tracking",
-  "experiment",
-];
-
-const SIMULATED_SUGGESTION_INTERVAL_MS = 2500;
-const SIMULATED_SUGGESTION_LIMIT = 12;
-
-function buildSimulatedSuggestion(
-  repoPath: string,
-  index: number,
-): DiscoveredTask {
-  const category =
-    SIMULATED_SUGGESTION_CATEGORIES[
-      index % SIMULATED_SUGGESTION_CATEGORIES.length
-    ];
-
-  return {
-    id: `simulated-suggestion-${index}`,
-    source: "agent",
-    repoPath,
-    category,
-    title: `Simulated suggestion ${index + 1}`,
-    description:
-      "A generated setup suggestion for exercising empty-state layout stability while new content keeps arriving.",
-    impact:
-      "This is dev-only test data for checking whether the composer and suggestion rows stay anchored during incremental updates.",
-    recommendation:
-      "Use this simulation to hover and click suggestions while the list keeps changing underneath the same UI surface.",
-    prompt: `Investigate simulated suggestion ${index + 1}`,
-  };
-}
-
 function extractPathFromRawInput(
   tool: string,
   rawInput: Record<string, unknown> | undefined,
@@ -273,9 +236,6 @@ export class SetupRunService {
   private anyDiscoveryEverLaunched = false;
   private discoveryStartingByRepo = new Set<string>();
   private enricherSuggestionsRunningByRepo = new Set<string>();
-  private simulatedSuggestionsRepo: string | null = null;
-  private simulatedSuggestionsTimer: number | null = null;
-  private simulatedSuggestionsCount = 0;
 
   startSetup(directory: string): void {
     // Defense in depth: never auto-run from a non-idle persisted state.
@@ -294,54 +254,6 @@ export class SetupRunService {
 
   startEnricherForRepo(directory: string): void {
     this.injectEnricherSuggestions(directory);
-  }
-
-  startSuggestionSimulation(
-    directory: string,
-    shouldContinue: () => boolean = () => true,
-  ): void {
-    if (!directory) return;
-    if (this.simulatedSuggestionsRepo === directory) return;
-
-    if (this.simulatedSuggestionsTimer !== null) {
-      window.clearInterval(this.simulatedSuggestionsTimer);
-    }
-
-    this.simulatedSuggestionsRepo = directory;
-    this.simulatedSuggestionsCount = 0;
-
-    const addNextSuggestion = () => {
-      if (
-        !shouldContinue() ||
-        this.simulatedSuggestionsCount >= SIMULATED_SUGGESTION_LIMIT
-      ) {
-        this.stopSuggestionSimulation(directory);
-        return;
-      }
-
-      useSetupStore
-        .getState()
-        .addDiscoveredTaskIfMissing(
-          buildSimulatedSuggestion(directory, this.simulatedSuggestionsCount),
-        );
-      this.simulatedSuggestionsCount += 1;
-    };
-
-    addNextSuggestion();
-    this.simulatedSuggestionsTimer = window.setInterval(
-      addNextSuggestion,
-      SIMULATED_SUGGESTION_INTERVAL_MS,
-    );
-  }
-
-  stopSuggestionSimulation(directory?: string): void {
-    if (directory && this.simulatedSuggestionsRepo !== directory) return;
-    if (this.simulatedSuggestionsTimer !== null) {
-      window.clearInterval(this.simulatedSuggestionsTimer);
-    }
-    this.simulatedSuggestionsTimer = null;
-    this.simulatedSuggestionsRepo = null;
-    this.simulatedSuggestionsCount = 0;
   }
 
   startDiscovery(directory: string): void {

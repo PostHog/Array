@@ -65,7 +65,6 @@ interface SetupStoreActions {
   completeEnrichment: (repoPath: string) => void;
   failEnrichment: (repoPath: string) => void;
   removeDiscoveredTask: (taskId: string, repoPath: string | null) => void;
-  addDiscoveredTaskIfMissing: (task: DiscoveredTask) => void;
   addEnricherSuggestionIfMissing: (task: DiscoveredTask) => void;
   pushDiscoveryActivity: (repoPath: string, entry: ActivityEntry) => void;
   resetSetup: () => void;
@@ -262,21 +261,6 @@ export const useSetupStore = create<SetupStore>()(
             (t) => !(t.id === taskId && isTaskForRepo(t, repoPath)),
           ),
         }));
-      },
-
-      addDiscoveredTaskIfMissing: (task) => {
-        set((state) => {
-          if (
-            state.discoveredTasks.some(
-              (t) => t.id === task.id && t.repoPath === task.repoPath,
-            )
-          ) {
-            return state;
-          }
-          return {
-            discoveredTasks: [...state.discoveredTasks, task],
-          };
-        });
       },
 
       // Adds an enricher-source suggestion if there isn't already one with
