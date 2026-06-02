@@ -1,4 +1,5 @@
 import { trpcClient } from "@renderer/trpc";
+import { getErrorMessage } from "@shared/errors";
 import { logger } from "@utils/logger";
 import { isMac } from "@utils/platform";
 import { FitAddon } from "@xterm/addon-fit";
@@ -40,6 +41,8 @@ export interface TerminalInstance {
   persistenceKey: string;
   cwd?: string;
   taskId?: string;
+  command?: string;
+  recoveryPromise: Promise<void> | null;
 }
 
 export interface CreateOptions {
@@ -139,6 +142,15 @@ function attachKeyHandlers(term: XTerm) {
   });
 }
 
+function isMissingShellSessionError(
+  error: unknown,
+  sessionId: string,
+): boolean {
+  return getErrorMessage(error).includes(
+    `Shell session ${sessionId} not found`,
+  );
+}
+
 class TerminalManagerImpl {
   private instances = new Map<string, TerminalInstance>();
   private listeners = new Map<EventType, Set<Listener<EventType>>>();
@@ -189,6 +201,8 @@ class TerminalManagerImpl {
       persistenceKey,
       cwd,
       taskId,
+      command,
+      recoveryPromise: null,
     };
 
     if (initialState) {
@@ -200,7 +214,10 @@ class TerminalManagerImpl {
       trpcClient.shell.write
         .mutate({ sessionId, data })
         .catch((error: Error) => {
-          log.error("Failed to write to shell:", error);
+          this.handleMissingSessionError(sessionId, instance, error, {
+            reason: "write",
+            retryData: data,
+          });
         });
       this.scheduleSave(sessionId, instance);
     });
@@ -297,6 +314,66 @@ class TerminalManagerImpl {
     }
   }
 
+  private handleMissingSessionError(
+    sessionId: string,
+    instance: TerminalInstance,
+    error: unknown,
+    options: { reason: "write" | "resize"; retryData?: string },
+  ): void {
+    if (!isMissingShellSessionError(error, sessionId)) {
+      log.error(`Failed to ${options.reason} shell:`, error);
+      return;
+    }
+
+    this.recoverMissingSession(sessionId, instance, options.reason)
+      .then(() => {
+        if (options.retryData === undefined || !instance.isReady) {
+          return;
+        }
+
+        return trpcClient.shell.write
+          .mutate({ sessionId, data: options.retryData })
+          .catch((retryError: Error) => {
+            log.error(
+              "Failed to retry write after shell recovery:",
+              retryError,
+            );
+          });
+      })
+      .catch((recoveryError: Error) => {
+        log.error("Failed to recover missing shell session:", recoveryError);
+      });
+  }
+
+  private recoverMissingSession(
+    sessionId: string,
+    instance: TerminalInstance,
+    reason: "write" | "resize",
+  ): Promise<void> {
+    if (instance.command) {
+      this.handleExit(sessionId);
+      return Promise.resolve();
+    }
+
+    if (instance.recoveryPromise) {
+      return instance.recoveryPromise;
+    }
+
+    log.info("Recovering missing shell session", { sessionId, reason });
+    instance.isReady = false;
+
+    instance.recoveryPromise = this.initializeSession(
+      sessionId,
+      instance,
+      instance.cwd,
+      instance.taskId,
+    ).finally(() => {
+      instance.recoveryPromise = null;
+    });
+
+    return instance.recoveryPromise;
+  }
+
   private scheduleSave(sessionId: string, instance: TerminalInstance): void {
     if (instance.saveTimeout) {
       clearTimeout(instance.saveTimeout);
@@ -348,7 +425,9 @@ class TerminalManagerImpl {
               rows: instance.term.rows,
             })
             .catch((error: Error) => {
-              log.error("Failed to resize shell:", error);
+              this.handleMissingSessionError(sessionId, instance, error, {
+                reason: "resize",
+              });
             });
         }
       }
