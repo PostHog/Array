@@ -136,7 +136,7 @@ export function SettingsPanel({
   const close = onClose ?? closeSettings;
   const setCategory =
     onCategoryChange ??
-    ((cat: SettingsCategory) => nav.navigateToSettings(cat));
+    ((cat: SettingsCategory) => nav.navigateToSettings(cat, { replace: true }));
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
   );

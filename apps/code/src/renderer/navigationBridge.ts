@@ -57,10 +57,17 @@ export function navigateToMcpServers(): void {
   void getRouterOrNull()?.navigate({ to: "/mcp-servers" });
 }
 
-export function navigateToSettings(category: SettingsCategory): void {
+export function navigateToSettings(
+  category: SettingsCategory,
+  options?: { replace?: boolean },
+): void {
   void getRouterOrNull()?.navigate({
     to: "/settings/$category",
     params: { category },
+    // Switching categories within settings should replace, not stack, so a
+    // single history.back() (closeSettings) exits to the app rather than
+    // walking back through every category that was visited.
+    replace: options?.replace,
   });
 }
 
