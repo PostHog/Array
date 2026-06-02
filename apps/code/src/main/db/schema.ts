@@ -37,8 +37,6 @@ export const workspaces = sqliteTable(
     prUrl: text(),
     /** Cached PR state — values match the `SidebarPrState` union (open/merged/closed/draft). */
     prState: text({ enum: ["open", "merged", "closed", "draft"] }),
-    /** When the cached PR fields were last refreshed against GitHub. */
-    prFetchedAt: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

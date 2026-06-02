@@ -236,7 +236,6 @@ export class WorkspaceRepository implements IWorkspaceRepository {
       .set({
         prUrl: update.prUrl,
         prState: update.prState,
-        prFetchedAt: now(),
         updatedAt: now(),
       })
       .where(byTaskId(taskId))

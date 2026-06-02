@@ -66,7 +66,6 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
         additionalDirectories: "[]",
         prUrl: null,
         prState: null,
-        prFetchedAt: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -89,7 +88,6 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
           additionalDirectories: "[]",
           prUrl: null,
           prState: null,
-          prFetchedAt: null,
           createdAt: now,
           updatedAt: now,
         };
@@ -147,7 +145,6 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
         ...w,
         prUrl: update.prUrl,
         prState: update.prState,
-        prFetchedAt: now,
         updatedAt: now,
       });
     },

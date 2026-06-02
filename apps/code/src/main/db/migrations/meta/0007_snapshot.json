@@ -445,13 +445,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "pr_fetched_at": {
-          "name": "pr_fetched_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "text",
