@@ -1815,7 +1815,6 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
     return { prState: null, hasDiff };
   }
 
-  /** Returns the last-known PR URL for a task from the workspaces cache, or null. */
   getCachedPrUrl(taskId: string): { prUrl: string | null } {
     const row = this.workspaceRepo.findByTaskId(taskId);
     return { prUrl: row?.prUrl ?? null };
