@@ -1403,6 +1403,59 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).not.toContain("Push to the existing PR branch");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
+
+    describe("identity instructions", () => {
+      it.each([
+        {
+          label: "no repository, no PR",
+          config: { repositoryPath: undefined },
+        },
+        { label: "repository, no PR", config: {} },
+      ])(
+        "injects PostHog Slack app identity for Slack-origin runs ($label)",
+        ({ config }) => {
+          process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+          const s = createServer(config);
+          const prompt = (
+            s as unknown as TestableServer
+          ).buildCloudSystemPrompt();
+          expect(prompt).toContain("# Identity");
+          expect(prompt).toContain("PostHog Slack app");
+          expect(prompt).toContain("Do NOT refer to yourself as Claude");
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        },
+      );
+
+      it("injects identity for Slack-origin runs with an existing PR", () => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+        const s = createServer();
+        const prompt = (s as unknown as TestableServer).buildCloudSystemPrompt(
+          "https://github.com/org/repo/pull/1",
+        );
+        expect(prompt).toContain("# Identity");
+        expect(prompt).toContain("PostHog Slack app");
+        delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+      });
+
+      it.each([
+        { label: "no origin set", origin: undefined },
+        { label: "signal_report origin", origin: "signal_report" },
+        { label: "posthog_code origin", origin: "posthog_code" },
+      ])("omits identity block for non-Slack runs ($label)", ({ origin }) => {
+        if (origin) {
+          process.env.POSTHOG_CODE_INTERACTION_ORIGIN = origin;
+        } else {
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        }
+        const s = createServer();
+        const prompt = (
+          s as unknown as TestableServer
+        ).buildCloudSystemPrompt();
+        expect(prompt).not.toContain("# Identity");
+        expect(prompt).not.toContain("PostHog Slack app");
+        delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+      });
+    });
   });
 
   describe("buildDetectedPrContext", () => {
