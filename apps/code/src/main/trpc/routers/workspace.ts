@@ -228,10 +228,7 @@ export const workspaceRouter = router({
   getCachedPrUrl: publicProcedure
     .input(cachedPrUrlInput)
     .output(cachedPrUrlOutput)
-    .query(({ input }) => {
-      const row = getWorkspaceRepo().findByTaskId(input.taskId);
-      return { prUrl: row?.prUrl ?? null };
-    }),
+    .query(({ input }) => getGitService().getCachedPrUrl(input.taskId)),
 
   onError: subscribe(WorkspaceServiceEvent.Error),
   onWarning: subscribe(WorkspaceServiceEvent.Warning),
