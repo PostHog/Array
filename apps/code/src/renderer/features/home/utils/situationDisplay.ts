@@ -10,10 +10,9 @@ import {
   XCircle,
 } from "@phosphor-icons/react";
 import { SITUATIONS, type SituationId } from "@shared/types/workflow";
-import { pickPrimarySituation } from "@shared/types/workflow-classify";
 
-// Radix color scale names we lean on for the status system. Each maps to the
-// full `--<color>-{1..12}` + `--<color>-a{1..12}` token families.
+// Radix color scales the status system uses, each mapping to the full
+// `--<color>-{1..12}` + `--<color>-a{1..12}` token families.
 export type SituationColor =
   | "red"
   | "orange"
@@ -32,9 +31,8 @@ export interface SituationVisual {
   Icon: Icon;
 }
 
-// The colour + glyph each situation reads as. Cool hues (purple/blue) are work
-// in flight; warm hues (red/orange/amber) are "your move"; green is go; gray is
-// dormant. Picked so adjacent board columns stay visually distinct.
+// Colour + glyph each situation reads as: cool hues = work in flight, warm =
+// "your move", green = go, gray = dormant. Adjacent board columns stay distinct.
 const SITUATION_STYLE: Record<
   SituationId,
   { color: SituationColor; Icon: Icon }
@@ -82,11 +80,4 @@ export function situationCss(color: SituationColor): SituationCss {
     border: `var(--${color}-a6)`,
     wash: `var(--${color}-a2)`,
   };
-}
-
-/** The single most important situation a workstream is in, if any. */
-export function primarySituationId(
-  situations: readonly SituationId[],
-): SituationId | null {
-  return pickPrimarySituation(situations);
 }

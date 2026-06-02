@@ -4,9 +4,7 @@ import { MAIN_TOKENS } from "../../di/tokens";
 import { homeWorkflowConfig } from "../schema";
 import type { DatabaseService } from "../service";
 
-// Persists the Home workflow row for `LocalWorkflowBackend`. Deletion plan
-// when workflow moves to PostHog: see `docs/workflow-architecture.md`.
-
+// Persists the Home workflow row for `LocalWorkflowBackend`.
 export interface PersistedWorkflowRow {
   id: string;
   version: number;
@@ -35,20 +33,14 @@ export class HomeWorkflowRepository {
   }
 
   upsert(row: PersistedWorkflowRow): void {
-    const existing = this.findById(row.id);
-    if (existing) {
-      this.db
-        .update(homeWorkflowConfig)
-        .set({
-          version: row.version,
-          json: row.json,
-          updatedAt: row.updatedAt,
-        })
-        .where(eq(homeWorkflowConfig.id, row.id))
-        .run();
-      return;
-    }
-    this.db.insert(homeWorkflowConfig).values(row).run();
+    this.db
+      .insert(homeWorkflowConfig)
+      .values(row)
+      .onConflictDoUpdate({
+        target: homeWorkflowConfig.id,
+        set: { version: row.version, json: row.json, updatedAt: row.updatedAt },
+      })
+      .run();
   }
 
   delete(id: string): void {

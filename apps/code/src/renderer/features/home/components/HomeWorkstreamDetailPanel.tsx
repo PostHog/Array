@@ -17,13 +17,13 @@ import { Badge, Button } from "@posthog/quill";
 import { Box, DropdownMenu, Flex, Text } from "@radix-ui/themes";
 import { useTasks } from "@renderer/features/tasks/hooks/useTasks";
 import type { TaskRunStatus } from "@shared/types";
+import type { PrSnapshot } from "@shared/types/pr-snapshot";
 import { useNavigationStore } from "@stores/navigationStore";
 import { openUrlInBrowser } from "@utils/browser";
 import { formatRelativeTimeShort } from "@utils/time";
 import { type BoundAction, useBoundActions } from "../hooks/useBoundActions";
 import { useRunWorkstreamAction } from "../hooks/useRunWorkstreamAction";
 import type {
-  HomePullRequest,
   HomeWorkstream,
   HomeWorkstreamTask,
 } from "../utils/buildSnapshot";
@@ -218,7 +218,7 @@ function Section({ title, subtitle, children }: SectionProps) {
   );
 }
 
-function PrBlock({ pr, onOpen }: { pr: HomePullRequest; onOpen: () => void }) {
+function PrBlock({ pr, onOpen }: { pr: PrSnapshot; onOpen: () => void }) {
   return (
     <Section title="Pull request">
       <Flex
@@ -276,14 +276,14 @@ function PrBlock({ pr, onOpen }: { pr: HomePullRequest; onOpen: () => void }) {
   );
 }
 
-function PrStatePill({ pr }: { pr: HomePullRequest }) {
+function PrStatePill({ pr }: { pr: PrSnapshot }) {
   if (pr.state === "merged") return <Badge variant="info">Merged</Badge>;
   if (pr.state === "draft") return <Badge variant="default">Draft</Badge>;
   if (pr.state === "closed") return <Badge variant="default">Closed</Badge>;
   return <Badge variant="success">Open</Badge>;
 }
 
-function CiBadge({ status }: { status: HomePullRequest["ciStatus"] }) {
+function CiBadge({ status }: { status: PrSnapshot["ciStatus"] }) {
   if (status === "passing") {
     return (
       <Flex align="center" gap="1" className="text-(--green-11) text-[11px]">
@@ -363,9 +363,6 @@ function TaskStatusIcon({
     return (
       <XCircle size={11} weight="fill" className="shrink-0 text-(--red-9)" />
     );
-  }
-  if (status === "cancelled") {
-    return <CircleDashed size={11} className="shrink-0 text-(--gray-10)" />;
   }
   return <CircleDashed size={11} className="shrink-0 text-(--gray-10)" />;
 }

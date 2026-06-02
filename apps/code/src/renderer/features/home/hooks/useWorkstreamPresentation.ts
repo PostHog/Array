@@ -1,10 +1,11 @@
 import { useTasks } from "@renderer/features/tasks/hooks/useTasks";
+import type { PrSnapshot } from "@shared/types/pr-snapshot";
 import type { SituationId } from "@shared/types/workflow";
+import { pickPrimarySituation } from "@shared/types/workflow-classify";
 import { useNavigationStore } from "@stores/navigationStore";
 import { openUrlInBrowser } from "@utils/browser";
-import type { HomePullRequest, HomeWorkstream } from "../utils/buildSnapshot";
+import type { HomeWorkstream } from "../utils/buildSnapshot";
 import {
-  primarySituationId,
   SITUATION_VISUAL,
   type SituationCss,
   situationCss,
@@ -13,8 +14,7 @@ import { type BoundAction, useBoundActions } from "./useBoundActions";
 import { useRunWorkstreamAction } from "./useRunWorkstreamAction";
 
 export interface WorkstreamPresentation {
-  pr: HomePullRequest | null;
-  headTask: HomeWorkstream["tasks"][number] | undefined;
+  pr: PrSnapshot | null;
   title: string;
   primarySid: SituationId;
   accent: SituationCss;
@@ -35,9 +35,8 @@ export interface WorkstreamPresentation {
 }
 
 /**
- * Shared presentation + action derivation for a workstream. The list row and
- * board card differ only in layout — everything about *what* to show and *what*
- * the affordances do lives here so the two renderings can't drift.
+ * Shared presentation + action derivation for a workstream, so the list row and
+ * board card (which differ only in layout) can't drift on what they show or do.
  */
 export function useWorkstreamPresentation(
   workstream: HomeWorkstream,
@@ -51,7 +50,7 @@ export function useWorkstreamPresentation(
   const headTask = workstream.tasks[0];
   const title =
     pr?.title ?? headTask?.title ?? workstream.branch ?? "Workstream";
-  const primarySid = primarySituationId(workstream.situations) ?? "working";
+  const primarySid = pickPrimarySituation(workstream.situations) ?? "working";
   const accent = situationCss(SITUATION_VISUAL[primarySid].color);
   const author = pr?.author && !pr.isCurrentUserAuthor ? pr.author : null;
   const extraSituations = workstream.situations.filter(
@@ -69,7 +68,6 @@ export function useWorkstreamPresentation(
 
   return {
     pr,
-    headTask,
     title,
     primarySid,
     accent,

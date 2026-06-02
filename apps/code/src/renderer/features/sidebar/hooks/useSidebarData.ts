@@ -94,8 +94,7 @@ function sortTasks(tasks: TaskData[], sortMode: SortMode): TaskData[] {
   );
 }
 
-// Minimal task shape the mapper reads — satisfied by both TaskSummary (sidebar)
-// and the full Task (home tab), so a single mapping serves both.
+// Minimal task shape the mapper reads — satisfied by both TaskSummary and the full Task.
 export interface TaskDataInput {
   id: string;
   title: string;
@@ -134,8 +133,7 @@ export interface TaskDataContext {
   slackThreadUrlFallback?: string;
 }
 
-// Single source of truth for Task → TaskData. Used by the sidebar (over the
-// workspace-scoped summary list) and the home tab (over the full task list).
+// Single source of truth for Task → TaskData, shared by the sidebar and home tab.
 export function toTaskData(
   task: TaskDataInput,
   ctx: TaskDataContext,

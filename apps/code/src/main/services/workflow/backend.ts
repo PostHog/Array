@@ -8,16 +8,12 @@ const log = logger.scope("workflow-backend");
 
 /**
  * Single seam between `WorkflowService` and where the workflow config lives.
- * Today: local SQLite ({@link LocalWorkflowBackend}). When PostHog gains
- * cross-device workflow storage, a `CloudWorkflowBackend` replaces this
- * binding — see `docs/workflow-architecture.md` for the migration plan.
+ * Today local SQLite ({@link LocalWorkflowBackend}); a `CloudWorkflowBackend`
+ * replaces the binding for cross-device storage (docs/workflow-architecture.md).
  *
- * Stability contract for any implementation:
- * - `version` is monotonic. `save` is the only caller that bumps it.
- * - `load()` returns `null` for "no config yet" rather than throwing.
- * - Implementations validate against `workflowConfig` and drop bad rows
- *   on read (returning `null` so the service reseeds).
- * - `delete()` is idempotent.
+ * Implementations: `version` is monotonic (only `save` bumps it); `load()`
+ * returns `null` rather than throwing, validates against `workflowConfig`, and
+ * drops bad rows on read so the service reseeds; `delete()` is idempotent.
  */
 export interface WorkflowBackend {
   load(): Promise<WorkflowConfig | null>;
@@ -50,7 +46,7 @@ export class LocalWorkflowBackend implements WorkflowBackend {
     }
 
     // Authoritative `version` + `updatedAt` come from the row, not the JSON
-    // body, so a stale field in the blob can't shadow the monotonic counter.
+    // body, so a stale blob field can't shadow the monotonic counter.
     const parsed = workflowConfig.safeParse({
       ...(typeof raw === "object" && raw !== null ? raw : {}),
       version: row.version,

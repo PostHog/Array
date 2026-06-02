@@ -13,17 +13,14 @@ import type { PrSnapshotBackend } from "./backend";
 
 const log = logger.scope("pr-snapshot");
 
-// How often the tracked tasks are re-polled. The renderer registers the tasks
-// it cares about via getSnapshots; this loop keeps them fresh in the
-// background. The production worker owns this cadence server-side.
+// How often tracked tasks are re-polled to stay fresh. The production worker
+// owns this cadence server-side.
 const POLL_INTERVAL_MS = 3 * 60 * 1000;
 
 /**
- * Owns the PR-snapshot lifecycle: which tasks to watch, their cached CI/review
- * state, the refresh loop, and the `Updated` event the renderer subscribes to.
- * Resolution + acquisition live behind {@link PrSnapshotBackend} so this
- * service is the same code whether snapshots come from the local gh CLI or,
- * later, a PostHog realtime feed (docs/workflow-architecture.md §5).
+ * Owns the PR-snapshot lifecycle: tracked tasks, cached CI/review state, the
+ * refresh loop, and the `Updated` event the renderer subscribes to. Resolution
+ * lives behind {@link PrSnapshotBackend} (docs/workflow-architecture.md §5).
  */
 @injectable()
 export class PrSnapshotService extends TypedEventEmitter<PrSnapshotEvents> {
@@ -50,15 +47,19 @@ export class PrSnapshotService extends TypedEventEmitter<PrSnapshotEvents> {
   }
 
   /**
-   * Returns the current snapshots for the requested tasks, marking them tracked
-   * for future polls. Tasks not yet cached are resolved inline so first paint
-   * has real data; the rest come from cache and stay fresh via the poll loop.
+   * Returns cached snapshots for the requested tasks and marks them tracked.
+   * Uncached tasks resolve in the background and stream in over `Updated`, so the
+   * home tab fills in progressively rather than blocking on the slowest `gh` call.
    */
   async getSnapshots(tasks: TaskPrRef[]): Promise<TaskPrSnapshot[]> {
     for (const ref of tasks) this.tracked.set(ref.taskId, ref);
 
     const missing = tasks.filter((ref) => !this.cache.has(ref.taskId));
-    if (missing.length > 0) await this.runRefresh(missing);
+    if (missing.length > 0) {
+      void this.runRefresh(missing).catch((error) => {
+        log.warn("Inline PR snapshot resolve failed", { error });
+      });
+    }
 
     const out: TaskPrSnapshot[] = [];
     for (const ref of tasks) {
@@ -90,20 +91,17 @@ export class PrSnapshotService extends TypedEventEmitter<PrSnapshotEvents> {
   }
 
   private async runRefresh(refs: TaskPrRef[]): Promise<void> {
-    const fresh = await this.backend.fetch(refs);
-    const changed: TaskPrSnapshot[] = [];
+    // Emit per result as the backend resolves it (not one batch) so the renderer
+    // can reposition each workstream as soon as its PR data lands.
+    await this.backend.fetch(refs, (result) => this.applyResult(result));
+  }
 
-    for (const { taskId, snapshot } of fresh) {
-      const previous = this.cache.get(taskId);
-      if (!previous || hasMaterialChange(previous, snapshot)) {
-        changed.push({ taskId, snapshot });
-      }
-      this.cache.set(taskId, snapshot);
-    }
-
-    if (changed.length > 0) {
-      this.emit(PrSnapshotEvent.Updated, changed);
-      log.info("PR snapshots updated", { count: changed.length });
+  /** Cache one resolved snapshot and emit it if it materially changed. */
+  private applyResult(result: TaskPrSnapshot): void {
+    const previous = this.cache.get(result.taskId);
+    this.cache.set(result.taskId, result.snapshot);
+    if (!previous || hasMaterialChange(previous, result.snapshot)) {
+      this.emit(PrSnapshotEvent.Updated, [result]);
     }
   }
 }

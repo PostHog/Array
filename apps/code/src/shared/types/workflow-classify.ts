@@ -1,12 +1,9 @@
 import type { SituationId } from "@shared/types/workflow";
 
-// Inputs the classifier needs to decide which situations a piece of work
-// is in. All optional / nullable so the same function works whether we
-// have rich GitHub data, just a local git state, or only task metadata.
+// Inputs the classifier reads. All optional/nullable so it works with rich
+// GitHub data, just local git state, or only task metadata.
 export interface ClassifyInput {
-  /** True if any task on the workstream points at a PR URL. */
   hasPrUrl: boolean;
-  /** PR snapshot (when available — null until a GitHub fetcher is wired up). */
   pr: {
     state: "open" | "draft" | "merged" | "closed";
     ciStatus: "passing" | "failing" | "pending" | "none";
@@ -15,17 +12,16 @@ export interface ClassifyInput {
     isCurrentUserAuthor: boolean;
     mergeable?: boolean | null;
   } | null;
-  /** Local git ahead/behind, when we have a worktree to inspect. */
   gitState?: {
     commitsAhead: number;
     commitsBehind?: number;
     dirty?: boolean;
   } | null;
-  /** Branch the workstream is on (used as a working signal when no PR yet). */
+  /** Working signal when there's no PR yet. */
   branch: string | null;
-  /** Epoch ms of the freshest activity across all tasks in the workstream. */
+  /** Epoch ms, freshest across the workstream's tasks. */
   lastActivityAt: number;
-  /** Now — passed in so unit tests can pin time. */
+  /** Passed in so tests can pin time. */
   now: number;
 }
 
@@ -33,10 +29,8 @@ export interface ClassifyInput {
 const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Pure classifier — takes a single workstream's observed state and emits
- * the (possibly multiple) situations it's in. Deliberately defensive: if
- * a signal is missing, the situation that depended on it simply doesn't
- * fire, rather than producing a misleading bucket.
+ * Pure classifier: emits the (possibly several) situations a workstream is in.
+ * Defensive — a missing signal just means its situation doesn't fire.
  */
 export function classify(input: ClassifyInput): Set<SituationId> {
   const out = new Set<SituationId>();
@@ -62,16 +56,14 @@ export function classify(input: ClassifyInput): Set<SituationId> {
     ) {
       out.add("ready_to_merge");
     }
-    // `in_review` is the catch-all for any PR that's open/draft without a
-    // more-specific situation. We still emit it alongside ci_failing etc. so
-    // the list view can surface the workstream under "In review" too — the
-    // board uses primary-situation priority to decide column placement.
+    // Catch-all for an open/draft PR. Emitted alongside ci_failing etc. so the
+    // list view can show it under "In review"; the board uses primary-situation
+    // priority for column placement.
     if (pr.state === "open" || pr.state === "draft") {
       out.add("in_review");
     }
   } else if (hasPrUrl) {
-    // Workstream has a PR URL stamped on a task but we don't have PR data
-    // yet (the GitHub fetcher isn't wired up). Treat it as in review so it
+    // PR URL stamped on a task but no PR data yet — treat as in review so it
     // doesn't fall into `working`.
     out.add("in_review");
   } else if (branch) {
@@ -80,8 +72,7 @@ export function classify(input: ClassifyInput): Set<SituationId> {
     if (ahead === undefined || ahead > 0) out.add("working");
   }
 
-  // `stale` stacks on top of whatever else applies, except `done` (handled
-  // above with an early return).
+  // `stale` stacks on top of anything except `done` (early-returned above).
   if (now - lastActivityAt > STALE_THRESHOLD_MS) {
     out.add("stale");
   }
@@ -89,9 +80,8 @@ export function classify(input: ClassifyInput): Set<SituationId> {
   return out;
 }
 
-// Priority order for picking the *primary* situation when a workstream is in
-// several at once. Used by the board to decide column placement; the list
-// view can show the workstream in every section it qualifies for.
+// Priority for picking the *primary* situation when several apply — drives
+// board column placement.
 export const SITUATION_PRIORITY: SituationId[] = [
   "done",
   "ready_to_merge",

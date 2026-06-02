@@ -48,14 +48,12 @@ export function WorkflowMapArrows() {
         const ca = stationCentre(a);
         const cb = stationCentre(b);
 
-        // Pick start/end points on the *edges* of the station rectangles
-        // along the direction of travel, so the line doesn't run under the
-        // station card.
+        // Start/end on the rectangle edges along the direction of travel, so
+        // the line doesn't run under the station card.
         const start = edgePoint(a, cb);
         const end = edgePoint(b, ca);
 
-        // Slight curve via a quadratic Bézier — control point pulled toward
-        // the midpoint with a small perpendicular offset.
+        // Slight curve via a quadratic Bézier — control point offset perpendicular from the midpoint.
         const mx = (start.x + end.x) / 2;
         const my = (start.y + end.y) / 2;
         const dx = end.x - start.x;

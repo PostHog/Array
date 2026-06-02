@@ -14,11 +14,8 @@ export interface BoundAction extends WorkflowAction {
 }
 
 /**
- * Joins a workstream's classified situations against the persisted workflow's
- * bindings and returns the deduped list of actions the user has bound to any
- * matching situation. Order follows the workstream's situations array (which
- * preserves classifier output order), then the action order within each
- * binding list.
+ * Joins a workstream's situations against the workflow bindings and returns the
+ * deduped actions bound to any matching situation, in situation then binding order.
  */
 export function useBoundActions(workstream: HomeWorkstream): BoundAction[] {
   const { workflow } = useWorkflow();
@@ -31,8 +28,7 @@ export function useBoundActions(workstream: HomeWorkstream): BoundAction[] {
       const actions = bindings?.[sid] ?? [];
       const meta = SITUATIONS.find((s) => s.id === sid);
       for (const action of actions) {
-        // Dedup if the user bound the same action id under multiple
-        // situations — shouldn't happen via the editor but be defensive.
+        // Dedup the same action bound under multiple situations.
         const dedupKey = `${action.skillId}::${action.label}`;
         if (seen.has(dedupKey)) continue;
         seen.add(dedupKey);

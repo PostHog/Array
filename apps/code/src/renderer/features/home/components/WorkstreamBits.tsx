@@ -15,11 +15,7 @@ import { Fragment } from "react";
 import type { BoundAction } from "../hooks/useBoundActions";
 import { SITUATION_VISUAL, situationCss } from "../utils/situationDisplay";
 
-/**
- * The square status anchor that leads every row / card. A tinted rounded tile
- * carrying the primary situation's glyph in its own hue — the single fastest
- * "what state is this in?" read on the page.
- */
+/** The tinted square status tile that leads every row / card, glyphed by primary situation. */
 export function StatusGlyph({
   sid,
   size = 30,
@@ -46,7 +42,6 @@ export function StatusGlyph({
   );
 }
 
-/** Small solid dot in a situation's colour — used in column headers. */
 export function StatusDot({ sid }: { sid: SituationId }) {
   const c = situationCss(SITUATION_VISUAL[sid].color);
   return (
@@ -100,9 +95,8 @@ export function CiIndicator({
 }
 
 /**
- * GitHub avatar for a PR author. Uses the same `github.com/<login>.png` source
- * + `.github-avatar` loading placeholder convention as the inbox. Hides itself
- * if the image can't load. Renders nothing without a login.
+ * GitHub avatar for a PR author. Same `github.com/<login>.png` source +
+ * `.github-avatar` placeholder as the inbox; hides itself if it can't load.
  */
 export function AuthorAvatar({
   login,
@@ -128,9 +122,8 @@ export function AuthorAvatar({
 }
 
 /**
- * The "more actions" overflow shared by the list row and board card: the
- * non-primary bound actions, then (separated) open-PR / open-task fallbacks.
- * Only the trigger/icon sizing differs between the two surfaces.
+ * The "more actions" overflow shared by the row and card: non-primary bound
+ * actions, then the open-PR / open-task fallbacks.
  */
 export function WorkstreamOverflowMenu({
   restBound,

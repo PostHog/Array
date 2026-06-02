@@ -17,10 +17,8 @@ const WORKFLOW_ID = "default";
 const log = logger.scope("workflow");
 
 /**
- * Owns the workflow lifecycle (load → seed default → save → emit
- * `WorkflowChanged`). Storage details live behind {@link WorkflowBackend}
- * so this service is the same code whether persistence is local SQLite
- * or a remote PostHog API — see `docs/workflow-architecture.md`.
+ * Owns the workflow lifecycle (load → seed default → save → emit `Changed`).
+ * Storage lives behind {@link WorkflowBackend} (docs/workflow-architecture.md).
  */
 @injectable()
 export class WorkflowService extends TypedEventEmitter<WorkflowEvents> {

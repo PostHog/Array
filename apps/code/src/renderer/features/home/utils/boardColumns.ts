@@ -9,9 +9,8 @@ export type HomeBoardColumn = {
   workstreams: HomeWorkstream[];
 };
 
-// Columns shown on the board, left → right. We omit `done` from the active
-// view (terminal situations don't need a column — they should fall off) and
-// `stale` (it's a modifier, not a workflow stage; it surfaces as a chip).
+// Board columns, left → right. `done` (terminal) and `stale` (a modifier, shown
+// as a chip) are omitted.
 const BOARD_COLUMN_IDS: SituationId[] = [
   "working",
   "in_review",
@@ -28,8 +27,7 @@ export function columnForWorkstream(
   if (!primary) return null;
   // Push terminal/done situations off the active board.
   if (primary === "done") return null;
-  // `stale` alone (no PR situation) is still useful to surface — bucket it
-  // into `working` since that's where stale-no-PR work belongs visually.
+  // `stale` alone (no PR situation) buckets into `working`.
   if (primary === "stale") return "working";
   return primary;
 }

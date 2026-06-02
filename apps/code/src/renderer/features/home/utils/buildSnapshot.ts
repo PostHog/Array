@@ -15,12 +15,6 @@ export type HomeActiveAgent = {
   cloudPrUrl: string | null;
 };
 
-// The PR/CI snapshot a workstream is classified against. Populated from the
-// gh-backed PrSnapshotService (null until its first fetch resolves) and by demo
-// fixtures; the production PostHog feed produces the same shape — see
-// docs/workflow-architecture.md.
-export type HomePullRequest = PrSnapshot;
-
 export type HomeWorkstreamTask = {
   id: string;
   title: string;
@@ -31,10 +25,16 @@ export type HomeWorkstreamTask = {
 
 export type HomeWorkstream = {
   id: string;
+  /** Bare repo name (e.g. "posthog") — for display only. */
   repoName: string | null;
+  /**
+   * Full "org/repo" slug, lowercased. The key the GitHub integration map and
+   * cloud repo selectors use, so quick actions resolve from this, not `repoName`.
+   */
+  repoFullPath?: string | null;
   branch: string | null;
   prUrl: string | null;
-  pr: HomePullRequest | null;
+  pr: PrSnapshot | null;
   tasks: HomeWorkstreamTask[];
   /** Situations this workstream is in — drives board placement + bound actions. */
   situations: SituationId[];
@@ -52,10 +52,8 @@ const RUNNING_STATUSES: ReadonlySet<TaskRunStatus> = new Set([
   "in_progress",
 ]);
 
-// How long a still-`in_progress` task can go without activity before we stop
-// treating it as actually running. A live run idles for seconds, not half an
-// hour — past this it's a status the server never transitioned to a terminal
-// state, not a live agent.
+// Past this idle gap a still-`in_progress` run is treated as a status the server
+// never closed out, not a live agent.
 const RUNNING_STALE_THRESHOLD_MS = 30 * 60 * 1000;
 
 // Situations that escalate a workstream into the "Needs attention" bucket on
@@ -71,17 +69,10 @@ function isRunning(status?: TaskRunStatus): boolean {
   return !!status && RUNNING_STATUSES.has(status);
 }
 
-// A task only belongs in the "Running" strip if its run status is live *and*
-// it still looks genuinely active. A queued/in_progress status isn't enough on
-// its own:
-//   - Once a PR has been opened the agent has moved past working into review,
-//     even if the cloud run status is still stuck at in_progress.
-//   - A run with no activity for a while is a stale status the server never
-//     transitioned to a terminal state.
-// Both cases fall through to workstream grouping, where classify() routes them
-// to "In review" / "Working" / "Stale". A session that's actively generating
-// or waiting on the user is always live, so it's exempt from the stale check
-// (its activity timestamp may not tick while it waits).
+// "Running" requires a live status AND genuine activity. An open PR means the
+// agent moved past working into review; a long-idle run is a status the server
+// never closed out — both fall through to grouping/classify(). An actively
+// generating or waiting session is always live (its activity timestamp may not tick).
 function isActivelyRunning(
   task: TaskData,
   now: number,
@@ -93,12 +84,9 @@ function isActivelyRunning(
   return now - task.lastActivityAt <= RUNNING_STALE_THRESHOLD_MS;
 }
 
-// Grouping key precedence (per docs/home-tab.md §5):
-// PR URL → repo+branch → worktree path. `prUrl` here is the *resolved* URL
-// (cloud run output or a branch lookup), so a PR that only exists on the branch
-// still groups a task under its PR. Tasks with none of these — e.g. an old
-// cloud task with no PR and no local checkout — return null and are skipped, so
-// Home stays a view of actual code work rather than every historical task.
+// Grouping key precedence (docs/home-tab.md §5): resolved PR URL → repo+branch →
+// worktree path. Tasks with none (e.g. an old cloud task, no PR, no checkout)
+// are skipped, so Home stays a view of actual code work.
 function workstreamKey(task: TaskData, prUrl: string | null): string | null {
   if (prUrl) return `pr:${prUrl}`;
   const repo = task.repository?.name ?? null;
@@ -116,9 +104,8 @@ export function buildSnapshotFromTasks(
   const allTasks = [...pinned, ...flat];
   const now = Date.now();
 
-  // Effective PR per task: a resolved snapshot (cloud run *or* branch lookup)
-  // wins; fall back to the cloud-run URL so grouping still works before the
-  // snapshot resolves.
+  // Effective PR per task: resolved snapshot wins, else the cloud-run URL so
+  // grouping works before the snapshot resolves.
   const prOf = (task: TaskData): PrSnapshot | null =>
     prByTaskId?.get(task.id) ?? null;
   const prUrlOf = (task: TaskData): string | null =>
@@ -163,8 +150,8 @@ export function buildSnapshotFromTasks(
 
     if (tasks.every((t) => taskInStrip.has(t.id))) continue;
 
-    // First task in the group that resolves to a PR carries the snapshot;
-    // grouped-by-PR tasks all share the same URL anyway.
+    // First task that resolves to a PR carries the snapshot; PR-grouped tasks
+    // share the URL anyway.
     let pr: PrSnapshot | null = null;
     let prUrl: string | null = null;
     for (const t of tasks) {
@@ -192,6 +179,7 @@ export function buildSnapshotFromTasks(
     const workstream: HomeWorkstream = {
       id,
       repoName: head.repository?.name ?? null,
+      repoFullPath: head.repository?.fullPath ?? null,
       branch,
       prUrl,
       pr,

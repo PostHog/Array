@@ -1285,9 +1285,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
   /**
    * Rich PR snapshot for the home tab: lifecycle state, CI verdict, review
    * decision, mergeability, and (for the user's own open PRs) the unresolved
-   * review-thread count. This is the local gh implementation of the PR-polling
-   * concern; the production PostHog worker produces the same `PrSnapshot`
-   * shape — see docs/workflow-architecture.md §5.
+   * review-thread count. Local gh implementation of the PR-polling concern; the
+   * production PostHog worker produces the same shape (docs/workflow-architecture.md §5).
    */
   public async getPrFull(prUrl: string): Promise<PrSnapshot | null> {
     const ref = parseGithubUrl(prUrl);

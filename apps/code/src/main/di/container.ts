@@ -58,6 +58,8 @@ import { NewTaskLinkService } from "../services/new-task-link/service";
 import { NotificationService } from "../services/notification/service";
 import { OAuthService } from "../services/oauth/service";
 import { PosthogPluginService } from "../services/posthog-plugin/service";
+import { LocalPrSnapshotBackend } from "../services/pr-snapshot/backend";
+import { PrSnapshotService } from "../services/pr-snapshot/service";
 import { ProcessTrackingService } from "../services/process-tracking/service";
 import { ProvisioningService } from "../services/provisioning/service";
 import { settingsStore } from "../services/settingsStore";
@@ -70,8 +72,6 @@ import { UIService } from "../services/ui/service";
 import { UpdatesService } from "../services/updates/service";
 import { UsageMonitorService } from "../services/usage-monitor/service";
 import { WatcherRegistryService } from "../services/watcher-registry/service";
-import { LocalPrSnapshotBackend } from "../services/pr-snapshot/backend";
-import { PrSnapshotService } from "../services/pr-snapshot/service";
 import { LocalWorkflowBackend } from "../services/workflow/backend";
 import { WorkflowService } from "../services/workflow/service";
 import { WorkspaceService } from "../services/workspace/service";
@@ -159,14 +159,11 @@ container.bind(MAIN_TOKENS.TaskLinkService).to(TaskLinkService);
 container.bind(MAIN_TOKENS.InboxLinkService).to(InboxLinkService);
 container.bind(MAIN_TOKENS.NewTaskLinkService).to(NewTaskLinkService);
 container.bind(MAIN_TOKENS.WatcherRegistryService).to(WatcherRegistryService);
-// Backend choice = the single swap point between POC (local SQLite) and the
-// future PostHog-backed cloud workflow. See docs/workflow-architecture.md
-// and apps/code/src/main/services/workflow/backend.ts for the migration plan.
+// Swap point for the future PostHog-backed workflow (docs/workflow-architecture.md).
 container.bind(MAIN_TOKENS.WorkflowBackend).to(LocalWorkflowBackend);
 container.bind(MAIN_TOKENS.WorkflowService).to(WorkflowService);
-// PR/CI snapshot polling. Same swap-point pattern as the workflow backend:
-// LocalPrSnapshotBackend (gh CLI) today → CloudPrSnapshotBackend when PostHog
-// owns PR polling. See docs/workflow-architecture.md §5–6.
+// Same swap-point pattern: gh CLI today → CloudPrSnapshotBackend when PostHog
+// owns PR polling (docs/workflow-architecture.md §5–6).
 container.bind(MAIN_TOKENS.PrSnapshotBackend).to(LocalPrSnapshotBackend);
 container.bind(MAIN_TOKENS.PrSnapshotService).to(PrSnapshotService);
 container.bind(MAIN_TOKENS.WorkspaceService).to(WorkspaceService);

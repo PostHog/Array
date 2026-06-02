@@ -1,5 +1,8 @@
 import { useSkillsForPicker } from "@features/home/hooks/useSkillsForPicker";
 import { useWorkflowEditorStore } from "@features/home/stores/workflowEditorStore";
+import { UnifiedModelSelector } from "@features/sessions/components/UnifiedModelSelector";
+import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import { usePreviewConfig } from "@features/task-detail/hooks/usePreviewConfig";
 import { ArrowDown, ArrowUp, Trash, X } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Card, Flex, Text, TextArea, TextField } from "@radix-ui/themes";
@@ -8,6 +11,7 @@ import {
   type SituationId,
   type WorkflowAction,
 } from "@shared/types/workflow";
+import { useMemo } from "react";
 import { SITUATION_TONE } from "./workflowMapLayout";
 
 interface Props {
@@ -31,6 +35,18 @@ export function ActionEditorPanel({
   const { skills, isLoading } = useSkillsForPicker();
   const selectedSkill = skills.find((s) => s.name === action.skillId) ?? null;
 
+  const lastUsedAdapter = useSettingsStore((s) => s.lastUsedAdapter);
+  const adapterForModel = action.adapter ?? lastUsedAdapter;
+  const { modelOption, isLoading: modelLoading } =
+    usePreviewConfig(adapterForModel);
+  // Show the action's pinned model in the picker, else the adapter's default.
+  const effectiveModelOption = useMemo(() => {
+    if (!modelOption || modelOption.type !== "select" || !action.model) {
+      return modelOption;
+    }
+    return { ...modelOption, currentValue: action.model };
+  }, [modelOption, action.model]);
+
   const meta = SITUATIONS.find((s) => s.id === situationId);
   const tone = SITUATION_TONE[situationId];
 
@@ -40,8 +56,7 @@ export function ActionEditorPanel({
 
   function handleRemove() {
     removeAction(situationId, action.id);
-    // Fall back to the situation overview so the user keeps context after
-    // deleting the action they were editing.
+    // Fall back to the situation overview so the user keeps context.
     selectSituation(situationId);
   }
 
@@ -113,6 +128,25 @@ export function ActionEditorPanel({
               rows={6}
               onChange={(e) => patch({ prompt: e.target.value })}
             />
+          </Field>
+
+          <Field label="Model">
+            <div className="self-start">
+              <UnifiedModelSelector
+                modelOption={effectiveModelOption}
+                adapter={adapterForModel}
+                onAdapterChange={(a) => patch({ adapter: a, model: undefined })}
+                onModelChange={(m) =>
+                  patch({ model: m, adapter: adapterForModel })
+                }
+                isConnecting={modelLoading}
+              />
+            </div>
+            {action.model ? null : (
+              <Text className="mt-1 text-[10px] text-gray-10">
+                Runs on your default model unless you pick one.
+              </Text>
+            )}
           </Field>
         </Card>
 

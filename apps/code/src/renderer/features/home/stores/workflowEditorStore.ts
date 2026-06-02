@@ -9,10 +9,8 @@ import {
 } from "@shared/types/workflow";
 import { create } from "zustand";
 
-// Uncommitted editor state for the Config view. Persisted workflow lives in
-// the tRPC query cache; this store only holds the in-flight draft, dirty
-// flag, and validation diagnostics.
-
+// Uncommitted editor state for the Config view — the in-flight draft, dirty
+// flag, and diagnostics. The persisted workflow lives in the tRPC query cache.
 export type Selection =
   | { kind: "action"; situationId: SituationId; actionId: string }
   | { kind: "situation"; situationId: SituationId }
@@ -26,7 +24,6 @@ interface WorkflowEditorStore {
   selection: Selection;
 
   beginEdit(persisted: WorkflowConfig): void;
-  discardEdit(persisted: WorkflowConfig): void;
   addAction(situation: SituationId, action: WorkflowAction): void;
   updateAction(
     situation: SituationId,
@@ -50,9 +47,8 @@ function serialize(draft: WorkflowDraft): string {
 }
 
 function toDraft(config: WorkflowConfig): WorkflowDraft {
-  // Normalize bindings to cover every situation key (the schema's `z.record`
-  // technically allows partial maps). Consumers can then read
-  // `bindings[sid]` without optional-chaining.
+  // Normalize bindings to cover every situation key (z.record allows partial
+  // maps) so consumers can read `bindings[sid]` without optional-chaining.
   const bindings = Object.fromEntries(
     SITUATION_IDS.map((sid) => [sid, config.bindings[sid] ?? []]),
   ) as WorkflowBindings;
@@ -83,17 +79,6 @@ export const useWorkflowEditorStore = create<WorkflowEditorStore>(
     selection: null,
 
     beginEdit(persisted) {
-      const draft = toDraft(persisted);
-      set({
-        draft,
-        baselineSerialized: serialize(draft),
-        dirty: false,
-        diagnostics: [],
-        selection: null,
-      });
-    },
-
-    discardEdit(persisted) {
       const draft = toDraft(persisted);
       set({
         draft,

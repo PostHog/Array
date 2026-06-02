@@ -2,9 +2,7 @@ import type { PrSnapshot, TaskPrSnapshot } from "@shared/types/pr-snapshot";
 import { create } from "zustand";
 
 // Subscription-fed cache of PR/CI snapshots, keyed by task id. Pure UI state
-// per R2: the main PrSnapshotService owns resolution and freshness; this store
-// just mirrors what it pushes over `prSnapshot.onUpdated` so components
-// re-render.
+// (R2): mirrors what PrSnapshotService pushes over `prSnapshot.onUpdated`.
 interface PrSnapshotStore {
   byTaskId: Record<string, PrSnapshot>;
   upsertMany: (results: TaskPrSnapshot[]) => void;

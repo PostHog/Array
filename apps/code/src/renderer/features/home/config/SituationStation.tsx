@@ -7,17 +7,12 @@ import {
   type WorkflowAction,
   type WorkflowBindings,
 } from "@shared/types/workflow";
+import { freshActionId } from "./freshActionId";
 import { SITUATION_TONE, STATION_LAYOUT } from "./workflowMapLayout";
 
 interface Props {
   id: SituationId;
   bindings: WorkflowBindings;
-}
-
-function freshActionId(existing: string[]): string {
-  let n = 1;
-  while (existing.includes(`action_${n}`)) n++;
-  return `action_${n}`;
 }
 
 export function SituationStation({ id, bindings }: Props) {

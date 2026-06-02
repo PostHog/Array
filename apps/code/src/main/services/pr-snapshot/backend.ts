@@ -1,23 +1,23 @@
 import { MAIN_TOKENS } from "@main/di/tokens";
 import type { GitService } from "@main/services/git/service";
+import { mapWithConcurrency } from "@posthog/git/concurrency";
 import type { TaskPrRef, TaskPrSnapshot } from "@shared/types/pr-snapshot";
 import { inject, injectable } from "inversify";
 
 /**
- * Single seam between {@link PrSnapshotService} and where PR/CI data comes
- * from. Today: the local gh CLI ({@link LocalPrSnapshotBackend}). When the
- * PostHog backend grows a PR-polling worker, a `CloudPrSnapshotBackend`
- * replaces this binding and the service above is unchanged — see
- * docs/workflow-architecture.md §5–6 for the migration plan.
+ * Single seam between {@link PrSnapshotService} and where PR/CI data comes from.
+ * Today the local gh CLI ({@link LocalPrSnapshotBackend}); a `CloudPrSnapshotBackend`
+ * replaces the binding when PostHog owns PR polling (docs/workflow-architecture.md §5–6).
  *
- * Contract for any implementation:
- * - `fetch` returns a snapshot per task it could resolve a PR for; tasks with
- *   no PR (or a transient failure) are simply omitted, never thrown.
- * - The returned snapshot shape is the canonical `PrSnapshot` regardless of
- *   source; resolution (cloud URL vs branch lookup) is the backend's concern.
+ * Implementations: `fetch` returns one snapshot per resolvable task (omit, never
+ * throw, on no-PR or failure); `onResolved` (optional) fires per task so callers
+ * can stream rather than wait for the slowest.
  */
 export interface PrSnapshotBackend {
-  fetch(tasks: TaskPrRef[]): Promise<TaskPrSnapshot[]>;
+  fetch(
+    tasks: TaskPrRef[],
+    onResolved?: (result: TaskPrSnapshot) => void,
+  ): Promise<TaskPrSnapshot[]>;
 }
 
 // gh is rate-limited and each task is independent network work, so cap how many
@@ -31,29 +31,29 @@ export class LocalPrSnapshotBackend implements PrSnapshotBackend {
     private readonly git: GitService,
   ) {}
 
-  async fetch(tasks: TaskPrRef[]): Promise<TaskPrSnapshot[]> {
-    const queue = [...tasks];
-    const out: TaskPrSnapshot[] = [];
-
-    const worker = async (): Promise<void> => {
-      for (let ref = queue.shift(); ref; ref = queue.shift()) {
+  async fetch(
+    tasks: TaskPrRef[],
+    onResolved?: (result: TaskPrSnapshot) => void,
+  ): Promise<TaskPrSnapshot[]> {
+    const resolved = await mapWithConcurrency(
+      tasks,
+      MAX_CONCURRENCY,
+      async (ref) => {
         const snapshot = await this.git
           .getTaskPrSnapshot(ref.taskId, ref.cloudPrUrl)
           .catch(() => null);
-        if (snapshot) out.push({ taskId: ref.taskId, snapshot });
-      }
-    };
-
-    await Promise.all(
-      Array.from({ length: Math.min(MAX_CONCURRENCY, queue.length) }, worker),
+        if (!snapshot) return null;
+        const result = { taskId: ref.taskId, snapshot };
+        onResolved?.(result);
+        return result;
+      },
     );
-    return out;
+    return resolved.filter((r): r is TaskPrSnapshot => r !== null);
   }
 }
 
 /**
- * Stub for the production path. Implemented when PostHog owns PR polling:
- * call the auth'd API, validate the response with `taskPrSnapshot`, return it.
+ * Production stub: call the auth'd PostHog API and validate with `taskPrSnapshot`.
  * Flipping the DI binding to this is the entire client-side migration.
  */
 @injectable()

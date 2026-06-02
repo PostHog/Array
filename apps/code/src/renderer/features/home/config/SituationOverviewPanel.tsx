@@ -7,17 +7,12 @@ import {
   type SituationId,
   type WorkflowAction,
 } from "@shared/types/workflow";
+import { freshActionId } from "./freshActionId";
 import { SITUATION_TONE } from "./workflowMapLayout";
 
 interface Props {
   situationId: SituationId;
   actions: WorkflowAction[];
-}
-
-function freshActionId(existing: string[]): string {
-  let n = 1;
-  while (existing.includes(`action_${n}`)) n++;
-  return `action_${n}`;
 }
 
 export function SituationOverviewPanel({ situationId, actions }: Props) {

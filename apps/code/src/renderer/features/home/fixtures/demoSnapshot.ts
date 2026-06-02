@@ -1,9 +1,6 @@
+import type { PrSnapshot } from "@shared/types/pr-snapshot";
 import { classify } from "@shared/types/workflow-classify";
-import type {
-  HomePullRequest,
-  HomeSnapshot,
-  HomeWorkstream,
-} from "../utils/buildSnapshot";
+import type { HomeSnapshot, HomeWorkstream } from "../utils/buildSnapshot";
 
 function withSituations(
   workstreams: Omit<HomeWorkstream, "situations">[],
@@ -35,9 +32,7 @@ const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 const now = () => Date.now();
 
-function pr(
-  overrides: Partial<HomePullRequest> & { url: string },
-): HomePullRequest {
+function pr(overrides: Partial<PrSnapshot> & { url: string }): PrSnapshot {
   return {
     number: 0,
     title: "",

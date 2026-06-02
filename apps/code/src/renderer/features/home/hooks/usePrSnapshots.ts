@@ -5,13 +5,10 @@ import { useMemo } from "react";
 import { usePrSnapshotStore } from "../stores/prSnapshotStore";
 
 /**
- * Resolves PR/CI snapshots for the given tasks as a `Map` keyed by task id.
- *
- * The query both registers these tasks for background polling in main and
- * seeds the first paint; the subscription registrar
- * (features/home/subscriptions.ts) keeps the store fresh after that, so store
- * values win over the initial query result. Tasks without a PR are simply
- * absent from the map — the classifier treats that as "no PR data".
+ * Resolves PR/CI snapshots for the given tasks as a `Map` keyed by task id. The
+ * query registers the tasks for background polling and seeds the first paint;
+ * the subscription store (features/home/subscriptions.ts) wins after that. Tasks
+ * without a PR are simply absent from the map.
  */
 export function usePrSnapshots(refs: TaskPrRef[]): Map<string, PrSnapshot> {
   const trpc = useTRPC();

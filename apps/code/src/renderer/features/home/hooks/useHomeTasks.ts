@@ -21,11 +21,9 @@ export interface HomeTasks {
 const byActivity = (a: TaskData, b: TaskData) =>
   b.lastActivityAt - a.lastActivityAt;
 
-// The home tab aggregates ALL of the current user's tasks — not the sidebar's
-// workspace-scoped, paginated slice. It sources the full task list directly
-// (createdBy = me) and reuses the sidebar's Task → TaskData mapping, then lets
-// buildSnapshot group + classify. No history slice, no workspace filter, so
-// cloud tasks and tasks without a local checkout still surface.
+// Home aggregates ALL of the user's tasks, not the sidebar's workspace-scoped
+// slice: it sources the full task list (createdBy = me) and reuses the sidebar's
+// Task → TaskData mapping, so cloud tasks and tasks without a checkout surface.
 export function useHomeTasks(): HomeTasks {
   const showInternal = useSidebarStore((s) => s.showInternal);
   const { data: tasks = [], isLoading } = useTasks({ showInternal });

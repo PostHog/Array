@@ -1,5 +1,6 @@
 import { ScrollArea } from "@radix-ui/themes";
 import type { SituationId } from "@shared/types/workflow";
+import { useMemo } from "react";
 import { buildBoardColumns, type HomeBoardColumn } from "../utils/boardColumns";
 import type { HomeSnapshot } from "../utils/buildSnapshot";
 import { SITUATION_VISUAL, situationCss } from "../utils/situationDisplay";
@@ -10,9 +11,9 @@ interface HomeBoardViewProps {
 }
 
 export function HomeBoardView({ snapshot }: HomeBoardViewProps) {
-  const columns = buildBoardColumns(
-    snapshot.needsAttention,
-    snapshot.inProgress,
+  const columns = useMemo(
+    () => buildBoardColumns(snapshot.needsAttention, snapshot.inProgress),
+    [snapshot.needsAttention, snapshot.inProgress],
   );
 
   return (

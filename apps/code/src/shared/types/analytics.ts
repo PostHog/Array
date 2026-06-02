@@ -7,7 +7,7 @@ import type {
 
 type ExecutionType = "cloud" | "local";
 export type RepositoryProvider = "github" | "gitlab" | "local" | "none";
-type TaskCreatedFrom = "cli" | "command-menu";
+type TaskCreatedFrom = "cli" | "command-menu" | "home-quick-action";
 type RepositorySelectSource = "task-creation" | "task-detail";
 type GitActionType =
   | "push"

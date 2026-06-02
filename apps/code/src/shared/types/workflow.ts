@@ -59,13 +59,16 @@ export const workflowAction = z
     label: z.string().min(1).max(120),
     skillId: z.string().min(1),
     prompt: z.string().min(1).max(8_000),
+    // Quick actions run as cloud tasks, which require a model. Pin a model/adapter
+    // per action; unset falls back to the user's last-used / default.
+    adapter: z.enum(["claude", "codex"]).optional(),
+    model: z.string().min(1).optional(),
   })
   .strict();
 export type WorkflowAction = z.infer<typeof workflowAction>;
 
-// Bindings: situation id → ordered list of actions. Every situation appears
-// as a key with at minimum an empty array, so the renderer can iterate
-// SITUATIONS without checking for nulls.
+// situation id → ordered actions. Every situation is present (at least an empty
+// array) so the renderer can iterate SITUATIONS without null checks.
 export const workflowBindings = z.record(situationId, z.array(workflowAction));
 export type WorkflowBindings = z.infer<typeof workflowBindings>;
 

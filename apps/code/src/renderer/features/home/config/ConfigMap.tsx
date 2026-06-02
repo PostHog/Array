@@ -27,7 +27,6 @@ export function ConfigMap() {
   const diagnostics = useWorkflowEditorStore((s) => s.diagnostics);
   const selection = useWorkflowEditorStore((s) => s.selection);
   const beginEdit = useWorkflowEditorStore((s) => s.beginEdit);
-  const discardEdit = useWorkflowEditorStore((s) => s.discardEdit);
   const setDiagnostics = useWorkflowEditorStore((s) => s.setDiagnostics);
   const clearSelection = useWorkflowEditorStore((s) => s.clearSelection);
 
@@ -183,7 +182,7 @@ export function ConfigMap() {
             <Button
               size="xs"
               variant="link-muted"
-              onClick={() => discardEdit(workflow)}
+              onClick={() => beginEdit(workflow)}
               disabled={!dirty}
             >
               Discard
