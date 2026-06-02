@@ -8,10 +8,12 @@ vi.mock("../../enrichment/file-enricher", () => ({
 }));
 
 import { Logger } from "../../utils/logger";
+import type { TaskState } from "./conversion/task-state";
 import {
   createPreToolUseHook,
   createReadEnrichmentHook,
   createSignedCommitGuardHook,
+  createTaskHook,
   type EnrichedReadCache,
 } from "./hooks";
 import type {
@@ -363,5 +365,165 @@ describe("createSignedCommitGuardHook", () => {
       opts,
     );
     expect(result).toEqual({ continue: true });
+  });
+});
+
+describe("createTaskHook", () => {
+  const baseInput = {
+    session_id: "s",
+    transcript_path: "/tmp/t",
+    cwd: "/tmp",
+  };
+
+  test("ignores hook events without a task_id", async () => {
+    const state: TaskState = new Map();
+    const onChange = vi.fn(async () => {});
+    const hook = createTaskHook(state, onChange);
+    const result = await hook(
+      { ...baseInput, hook_event_name: "PostToolUse" } as HookInput,
+      undefined,
+      { signal: new AbortController().signal },
+    );
+    expect(result).toEqual({ continue: true });
+    expect(state.size).toBe(0);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test("TaskCreated inserts a pending entry and fires onChange", async () => {
+    const state: TaskState = new Map();
+    const onChange = vi.fn(async () => {});
+    const hook = createTaskHook(state, onChange);
+    const result = await hook(
+      {
+        ...baseInput,
+        hook_event_name: "TaskCreated",
+        task_id: "t1",
+        task_subject: "Fix bug",
+        task_description: "details",
+      } as unknown as HookInput,
+      undefined,
+      { signal: new AbortController().signal },
+    );
+    expect(result).toEqual({ continue: true });
+    expect(state.get("t1")).toEqual({
+      subject: "Fix bug",
+      status: "pending",
+      description: "details",
+    });
+    expect(onChange).toHaveBeenCalledOnce();
+  });
+
+  test("TaskCreated is idempotent for an existing task_id", async () => {
+    const state: TaskState = new Map([
+      [
+        "t1",
+        {
+          subject: "Original",
+          status: "in_progress" as const,
+        },
+      ],
+    ]);
+    const onChange = vi.fn(async () => {});
+    const hook = createTaskHook(state, onChange);
+    await hook(
+      {
+        ...baseInput,
+        hook_event_name: "TaskCreated",
+        task_id: "t1",
+        task_subject: "Overwrite attempt",
+      } as unknown as HookInput,
+      undefined,
+      { signal: new AbortController().signal },
+    );
+    expect(state.get("t1")?.subject).toBe("Original");
+    expect(state.get("t1")?.status).toBe("in_progress");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test("TaskCreated without task_subject is a no-op", async () => {
+    const state: TaskState = new Map();
+    const onChange = vi.fn(async () => {});
+    const hook = createTaskHook(state, onChange);
+    await hook(
+      {
+        ...baseInput,
+        hook_event_name: "TaskCreated",
+        task_id: "t1",
+      } as unknown as HookInput,
+      undefined,
+      { signal: new AbortController().signal },
+    );
+    expect(state.size).toBe(0);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test("TaskCompleted flips status and fires onChange", async () => {
+    const state: TaskState = new Map([
+      ["t1", { subject: "Existing", status: "in_progress" as const }],
+    ]);
+    const onChange = vi.fn(async () => {});
+    const hook = createTaskHook(state, onChange);
+    await hook(
+      {
+        ...baseInput,
+        hook_event_name: "TaskCompleted",
+        task_id: "t1",
+      } as unknown as HookInput,
+      undefined,
+      { signal: new AbortController().signal },
+    );
+    expect(state.get("t1")?.status).toBe("completed");
+    expect(onChange).toHaveBeenCalledOnce();
+  });
+
+  test("TaskCompleted is a no-op for unknown task_id", async () => {
+    const state: TaskState = new Map();
+    const onChange = vi.fn(async () => {});
+    const hook = createTaskHook(state, onChange);
+    await hook(
+      {
+        ...baseInput,
+        hook_event_name: "TaskCompleted",
+        task_id: "unknown",
+      } as unknown as HookInput,
+      undefined,
+      { signal: new AbortController().signal },
+    );
+    expect(state.size).toBe(0);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test("TaskCompleted is a no-op for already-completed task", async () => {
+    const state: TaskState = new Map([
+      ["t1", { subject: "Existing", status: "completed" as const }],
+    ]);
+    const onChange = vi.fn(async () => {});
+    const hook = createTaskHook(state, onChange);
+    await hook(
+      {
+        ...baseInput,
+        hook_event_name: "TaskCompleted",
+        task_id: "t1",
+      } as unknown as HookInput,
+      undefined,
+      { signal: new AbortController().signal },
+    );
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test("works without an onChange callback", async () => {
+    const state: TaskState = new Map();
+    const hook = createTaskHook(state);
+    await hook(
+      {
+        ...baseInput,
+        hook_event_name: "TaskCreated",
+        task_id: "t1",
+        task_subject: "Fix bug",
+      } as unknown as HookInput,
+      undefined,
+      { signal: new AbortController().signal },
+    );
+    expect(state.get("t1")?.subject).toBe("Fix bug");
   });
 });

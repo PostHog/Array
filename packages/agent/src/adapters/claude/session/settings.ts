@@ -196,8 +196,11 @@ export interface ClaudeCodeSettings {
   permissions?: PermissionSettings;
   env?: Record<string, string>;
   model?: string;
+  availableModels?: string[];
   posthogApprovedExecTools?: string[];
 }
+
+type SettingsLayer = "user" | "project" | "local" | "enterprise";
 
 export type PermissionDecision = "allow" | "deny" | "ask";
 
@@ -218,6 +221,22 @@ export function getManagedSettingsPath(): string {
     default:
       return "/etc/claude-code/managed-settings.json";
   }
+}
+
+export function mergeAvailableModels(
+  existing: string[] | undefined,
+  incoming: string[] | undefined,
+  layer: SettingsLayer,
+): string[] | undefined {
+  if (incoming === undefined) {
+    return existing;
+  }
+
+  if (layer === "enterprise") {
+    return Array.from(new Set(incoming));
+  }
+
+  return Array.from(new Set([...(existing ?? []), ...incoming]));
 }
 
 export class SettingsManager {
@@ -283,11 +302,14 @@ export class SettingsManager {
   }
 
   private mergeAllSettings(): void {
-    const allSettings = [
-      this.userSettings,
-      this.projectSettings,
-      this.localSettings,
-      this.enterpriseSettings,
+    const allSettings: Array<{
+      layer: SettingsLayer;
+      settings: ClaudeCodeSettings;
+    }> = [
+      { layer: "user", settings: this.userSettings },
+      { layer: "project", settings: this.projectSettings },
+      { layer: "local", settings: this.localSettings },
+      { layer: "enterprise", settings: this.enterpriseSettings },
     ];
 
     const permissions: PermissionSettings = {
@@ -298,7 +320,7 @@ export class SettingsManager {
     const merged: ClaudeCodeSettings = { permissions };
     const posthogApprovedExecTools = new Set<string>();
 
-    for (const settings of allSettings) {
+    for (const { layer, settings } of allSettings) {
       if (settings.permissions) {
         if (settings.permissions.allow) {
           permissions.allow?.push(...settings.permissions.allow);
@@ -325,6 +347,11 @@ export class SettingsManager {
       if (settings.model) {
         merged.model = settings.model;
       }
+      merged.availableModels = mergeAvailableModels(
+        merged.availableModels,
+        settings.availableModels,
+        layer,
+      );
       if (settings.posthogApprovedExecTools) {
         for (const tool of settings.posthogApprovedExecTools) {
           posthogApprovedExecTools.add(tool);

@@ -37,8 +37,8 @@ export interface ModelOption {
 
 export const MODELS: ModelOption[] = [
   {
-    value: "claude-opus-4-7",
-    label: "Claude Opus 4.7",
+    value: "claude-opus-4-8",
+    label: "Claude Opus 4.8",
     description: "Most capable, slower",
     supportsReasoning: true,
   },
@@ -47,12 +47,6 @@ export const MODELS: ModelOption[] = [
     label: "Claude Sonnet 4.6",
     description: "Balanced",
     supportsReasoning: true,
-  },
-  {
-    value: "claude-haiku-4-5",
-    label: "Claude Haiku 4.5",
-    description: "Fastest",
-    supportsReasoning: false,
   },
 ];
 
@@ -68,7 +62,7 @@ export const REASONING_LEVELS: {
 ];
 
 export const DEFAULT_EXECUTION_MODE: ExecutionMode = "plan";
-export const DEFAULT_MODEL = "claude-opus-4-7";
+export const DEFAULT_MODEL = "claude-opus-4-8";
 export const DEFAULT_REASONING: ReasoningEffort = "high";
 
 export function modelLabel(value: string): string {

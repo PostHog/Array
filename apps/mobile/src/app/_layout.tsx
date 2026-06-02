@@ -21,6 +21,8 @@ import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import {
   POSTHOG_API_KEY,
   POSTHOG_OPTIONS,
+  useIdentifyUser,
+  useRegisterAppVersion,
   useScreenTracking,
 } from "@/lib/posthog";
 import { queryClient } from "@/lib/queryClient";
@@ -36,6 +38,8 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   const pathname = usePathname();
 
   useScreenTracking();
+  useIdentifyUser();
+  useRegisterAppVersion();
 
   useEffect(() => {
     initializeAuth();
@@ -104,10 +108,12 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
       />
 
       {/* Inbox report detail - modal presentation, no native header
-          (the in-content title block is the canonical header). Path mirrors
-          the desktop app's `posthog-code://inbox/<reportId>` deep-link shape. */}
+          (the in-content title block is the canonical header). Catch-all
+          segment so the route also tolerates the cosmetic slug suffix on
+          shared links: `posthog://inbox/<reportId>` and
+          `posthog://inbox/<reportId>/<slug>` both resolve here. */}
       <Stack.Screen
-        name="inbox/[id]"
+        name="inbox/[...id]"
         options={{ presentation: "modal", headerShown: false }}
       />
 

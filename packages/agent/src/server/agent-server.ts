@@ -43,6 +43,7 @@ import type {
   GitCheckpointEvent,
   HandoffLocalGitState,
   LogLevel,
+  Task,
   TaskRun,
   TaskRunArtifact,
 } from "../types";
@@ -586,6 +587,44 @@ export class AgentServer {
     this.logger.debug("Agent server stopped");
   }
 
+  /**
+   * Mark the run failed after an unrecoverable crash (uncaught exception /
+   * unhandled rejection). Without this a hard death is silent: the run row
+   * stays non-terminal, the desktop client just sees the stream stop and shows
+   * a generic "Cloud stream disconnected", and the workflow only gives up after
+   * the multi-hour inactivity timeout. Best-effort and self-contained so it can
+   * run from a process-level handler with no session context.
+   */
+  async reportFatalError(error: unknown): Promise<void> {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    this.logger.error("Fatal agent-server error; marking run failed", error);
+
+    try {
+      await this.posthogAPI.updateTaskRun(
+        this.config.taskId,
+        this.config.runId,
+        {
+          status: "failed",
+          error_message: `Agent server crashed: ${errorMessage}`,
+        },
+      );
+    } catch (updateError) {
+      this.logger.error(
+        "Failed to mark run failed after fatal error",
+        updateError,
+      );
+    }
+
+    try {
+      await this.eventStreamSender?.stop();
+    } catch (stopError) {
+      this.logger.error(
+        "Failed to flush event stream after fatal error",
+        stopError,
+      );
+    }
+  }
+
   private authenticateRequest(
     getHeader: (name: string) => string | undefined,
   ): JwtPayload {
@@ -749,6 +788,22 @@ export class AgentServer {
         const mcpServers = Array.isArray(params.mcpServers)
           ? params.mcpServers
           : [];
+        const refreshedCredentials = Array.isArray(params.refreshedCredentials)
+          ? (params.refreshedCredentials as string[])
+          : [];
+        const authorship =
+          typeof params.authorship === "string" ? params.authorship : "";
+
+        if (refreshedCredentials.length > 0) {
+          const owner = authorship ? ` (${authorship})` : "";
+          this.logger.debug(
+            `Refreshed sandbox credentials${owner}: ${refreshedCredentials.join(", ")}`,
+          );
+        }
+
+        if (mcpServers.length === 0) {
+          return { refreshed: true };
+        }
 
         this.logger.debug("Refresh session requested", {
           serverCount: mcpServers.length,
@@ -1860,7 +1915,7 @@ ${signedCommitInstructions}
     taskUserId,
   }: {
     isInternal?: boolean;
-    originProduct?: string | null;
+    originProduct?: Task["origin_product"] | null;
     signalReportId?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
@@ -1876,7 +1931,9 @@ ${signedCommitInstructions}
     // Forward task metadata as `x-posthog-property-*` headers so the gateway
     // lifts them onto the $ai_generation event. Routes through the Anthropic
     // SDK's ANTHROPIC_CUSTOM_HEADERS env var; the OpenAI/codex path has no
-    // equivalent today.
+    // equivalent today. (The `team_id` attribution header is added downstream
+    // in the Claude session builder from POSTHOG_PROJECT_ID — see
+    // adapters/claude/session/options.ts.)
     const customHeaders = buildGatewayPropertyHeaders({
       task_origin_product: originProduct,
       task_internal: isInternal,

@@ -34,7 +34,11 @@ function makeAgent(): { agent: Agent; client: ClientMocks } {
   return { agent, client };
 }
 
-function installFakeSession(agent: Agent, sessionId: string): MockQuery {
+function installFakeSession(
+  agent: Agent,
+  sessionId: string,
+  knownSlashCommands?: Set<string>,
+): MockQuery {
   const query = createMockQuery();
   const input = new Pushable();
   const abortController = new AbortController();
@@ -63,6 +67,7 @@ function installFakeSession(agent: Agent, sessionId: string): MockQuery {
     taskRunId: "run-1",
     lastContextWindowSize: 200_000,
     modelId: "claude-sonnet-4-6",
+    knownSlashCommands,
   };
 
   (agent as unknown as { session: typeof session }).session = session;
@@ -99,6 +104,7 @@ describe("ClaudeAcpAgent.prompt — early idle handling", () => {
       label: "unsupported slash command surfaces error and ends turn",
       sessionId: "s-slash",
       prompt: "/plugin install slack",
+      knownCommands: undefined,
       expectsUnsupportedChunk: true,
       commandInMessage: "/plugin",
     },
@@ -106,6 +112,16 @@ describe("ClaudeAcpAgent.prompt — early idle handling", () => {
       label: "non-slash prompt with early idle is silently skipped",
       sessionId: "s-regular",
       prompt: "hello",
+      knownCommands: undefined,
+      expectsUnsupportedChunk: false,
+      commandInMessage: null,
+    },
+    {
+      label:
+        "known plugin/skill command with early idle is not flagged as unsupported",
+      sessionId: "s-skill",
+      prompt: "/skills-store use my address pr review skill",
+      knownCommands: new Set(["skills-store"]),
       expectsUnsupportedChunk: false,
       commandInMessage: null,
     },
@@ -113,7 +129,11 @@ describe("ClaudeAcpAgent.prompt — early idle handling", () => {
 
   it.each(cases)("$label", async (tc) => {
     const { agent, client } = makeAgent();
-    const query = installFakeSession(agent, tc.sessionId);
+    const query = installFakeSession(
+      agent,
+      tc.sessionId,
+      tc.knownCommands as Set<string> | undefined,
+    );
 
     const promptPromise = agent.prompt({
       sessionId: tc.sessionId,

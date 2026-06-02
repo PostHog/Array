@@ -336,11 +336,15 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   }
 
   private getClaudeCliPath(): string {
-    return this.bundledResources.resolve(".vite/build/claude-cli/cli.js");
+    // Keep in sync with the destDir in apps/code/vite.main.config.mts
+    // (copyClaudeExecutable plugin).
+    const binary = process.platform === "win32" ? "claude.exe" : "claude";
+    return this.bundledResources.resolve(`.vite/build/claude-cli/${binary}`);
   }
 
   private getCodexBinaryPath(): string {
-    return this.bundledResources.resolve(".vite/build/codex-acp/codex-acp");
+    const binary = process.platform === "win32" ? "codex-acp.exe" : "codex-acp";
+    return this.bundledResources.resolve(`.vite/build/codex-acp/${binary}`);
   }
 
   /**
@@ -747,7 +751,7 @@ When creating pull requests, add the following footer at the end of the PR descr
       // Claude-specific: hydrate session JSONL from PostHog before resuming.
       // If hydration finds no conversation to restore, skip the resume and
       // fall through to creating a new session. This avoids a doomed
-      // unstable_resumeSession that would fail with "Resource not found"
+      // resumeSession that would fail with "Resource not found"
       if (isReconnect && config.sessionId) {
         const existingSessionId = config.sessionId;
 
@@ -777,10 +781,10 @@ When creating pull requests, add the following footer at the end of the PR descr
       if (isReconnect && config.sessionId) {
         const existingSessionId = config.sessionId;
 
-        // Both adapters implement unstable_resumeSession:
+        // Both adapters implement resumeSession:
         // - Claude: delegates to SDK's resumeSession with JSONL hydration
         // - Codex: delegates to codex-acp's loadSession internally
-        const resumeResponse = await connection.unstable_resumeSession({
+        const resumeResponse = await connection.resumeSession({
           sessionId: existingSessionId,
           cwd: repoPath,
           mcpServers,

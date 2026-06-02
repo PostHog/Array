@@ -21,21 +21,8 @@ export function getReasoningEffortOptions(
   return CODEX_REASONING_EFFORT_OPTIONS;
 }
 
-const CODEX_ACRONYMS: Record<string, string> = {
-  gpt: "GPT",
-};
-
 export function formatCodexModelName(value: string): string {
-  const normalized = value.replace(/(\d)-(\d)/g, "$1.$2");
-  return normalized
-    .split("-")
-    .map((part) => {
-      const lower = part.toLowerCase();
-      if (CODEX_ACRONYMS[lower]) return CODEX_ACRONYMS[lower];
-      if (/^[0-9.]+$/.test(part)) return part;
-      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
-    })
-    .join("-");
+  return value.toLowerCase();
 }
 
 export function normalizeCodexConfigOptions(

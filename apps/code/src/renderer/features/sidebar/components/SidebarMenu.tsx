@@ -6,17 +6,15 @@ import {
   INBOX_PIPELINE_STATUS_FILTER,
   INBOX_REFETCH_INTERVAL_MS,
 } from "@features/inbox/utils/inboxConstants";
-import { getSessionService } from "@features/sessions/service/service";
 import {
   archiveTasksImperative,
   useArchiveTask,
 } from "@features/tasks/hooks/useArchiveTask";
-import { useTasks, useUpdateTask } from "@features/tasks/hooks/useTasks";
+import { useRenameTask, useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
 import { ScrollArea, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
-import type { Schemas } from "@renderer/api/generated";
 import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
@@ -38,6 +36,8 @@ import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
 import { TaskListView } from "./TaskListView";
+
+const log = logger.scope("sidebar-menu");
 
 function SidebarMenuComponent() {
   const {
@@ -62,6 +62,7 @@ function SidebarMenuComponent() {
   const { showContextMenu, editingTaskId, setEditingTaskId } =
     useTaskContextMenu();
   const { archiveTask } = useArchiveTask();
+  const { renameTask } = useRenameTask();
   const { togglePin } = usePinnedTasks();
 
   const sidebarData = useSidebarData({
@@ -239,9 +240,7 @@ function SidebarMenuComponent() {
           }
         }
       } catch (error) {
-        logger
-          .scope("sidebar-menu")
-          .error("Failed to show bulk context menu", error);
+        log.error("Failed to show bulk context menu", error);
       }
     },
     [queryClient, clearSelection],
@@ -300,8 +299,6 @@ function SidebarMenuComponent() {
     await archiveTask({ taskId });
   };
 
-  const updateTask = useUpdateTask();
-
   const handleArchivePrior = useCallback(
     async (taskId: string) => {
       const allVisible = [...sidebarData.pinnedTasks, ...sidebarData.flatTasks];
@@ -333,8 +330,6 @@ function SidebarMenuComponent() {
     },
     [sidebarData.pinnedTasks, sidebarData.flatTasks, queryClient],
   );
-  const log = logger.scope("sidebar-menu");
-
   const handleTaskDoubleClick = useCallback(
     (taskId: string) => {
       setEditingTaskId(taskId);
@@ -343,43 +338,20 @@ function SidebarMenuComponent() {
   );
 
   const handleTaskEditSubmit = useCallback(
-    async (taskId: string, newTitle: string) => {
+    async (taskId: string, currentTitle: string, newTitle: string) => {
       setEditingTaskId(null);
 
-      // Optimistically update task title in all cached task lists
-      queryClient.setQueriesData<Task[]>(
-        { queryKey: ["tasks", "list"] },
-        (old) =>
-          old?.map((task) =>
-            task.id === taskId
-              ? { ...task, title: newTitle, title_manually_set: true }
-              : task,
-          ),
-      );
-      queryClient.setQueriesData<Schemas.TaskSummary[]>(
-        { queryKey: ["tasks", "summaries"] },
-        (old) =>
-          old?.map((task) =>
-            task.id === taskId ? { ...task, title: newTitle } : task,
-          ),
-      );
-
-      // Sync to session store so notifications use the updated title
-      getSessionService().updateSessionTaskTitle(taskId, newTitle);
-
       try {
-        await updateTask.mutateAsync({
+        await renameTask({
           taskId,
-          updates: { title: newTitle, title_manually_set: true },
+          currentTitle,
+          newTitle,
         });
       } catch (error) {
         log.error("Failed to rename task", error);
-        // Refetch to revert optimistic update on failure
-        queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
-        queryClient.invalidateQueries({ queryKey: ["tasks", "summaries"] });
       }
     },
-    [setEditingTaskId, updateTask, queryClient, log],
+    [renameTask, setEditingTaskId],
   );
 
   const handleTaskEditCancel = useCallback(() => {

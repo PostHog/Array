@@ -8,6 +8,7 @@ import { MakerZIP } from "@electron-forge/maker-zip";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { PublisherGithub } from "@electron-forge/publisher-github";
 import type { ForgeConfig } from "@electron-forge/shared-types";
+import { MakerAppImage } from "@reforged/maker-appimage";
 
 const appleCodesignIdentity = process.env.APPLE_CODESIGN_IDENTITY;
 const appleTeamId = process.env.APPLE_TEAM_ID;
@@ -81,7 +82,7 @@ const osxSignConfig =
   shouldSignMacApp && appleCodesignIdentity
     ? ({
         identity: appleCodesignIdentity,
-        optionsForFile: (_filePath) => {
+        optionsForFile: () => {
           // Entitlements for all binaries/frameworks
           return {
             hardenedRuntime: true,
@@ -94,20 +95,20 @@ const osxSignConfig =
 function copyNativeDependency(
   dependency: string,
   destinationRoot: string,
-): void {
+): boolean {
   const source = path.resolve("../../node_modules", dependency);
   if (!existsSync(source)) {
     // Fallback to local node_modules
     const localSource = path.resolve("node_modules", dependency);
     if (existsSync(localSource)) {
       copySync(dependency, destinationRoot, localSource);
-      return;
+      return true;
     }
 
     console.warn(
       `[forge] Native dependency "${dependency}" not found, skipping copy`,
     );
-    return;
+    return false;
   }
 
   const nodeModulesDir = path.join(destinationRoot, "node_modules");
@@ -122,6 +123,7 @@ function copyNativeDependency(
       destination,
     )}`,
   );
+  return true;
 }
 
 function copySync(dependency: string, destinationRoot: string, source: string) {
@@ -139,6 +141,8 @@ function copySync(dependency: string, destinationRoot: string, source: string) {
   );
 }
 
+const hasAssetsCar = existsSync("build/Assets.car");
+
 const config: ForgeConfig = {
   packagerConfig: {
     asar: {
@@ -151,8 +155,10 @@ const config: ForgeConfig = {
     icon: "./build/app-icon", // Forge adds .icns/.ico/.png based on platform
     appBundleId: "com.posthog.array",
     appCategoryType: "public.app-category.productivity",
-    extraResource: existsSync("build/Assets.car") ? ["build/Assets.car"] : [],
-    extendInfo: existsSync("build/Assets.car")
+    extraResource: hasAssetsCar
+      ? ["build/Assets.car", "build/app-icon.png"]
+      : ["build/app-icon.png"],
+    extendInfo: hasAssetsCar
       ? {
           CFBundleIconName: "Icon",
         }
@@ -193,6 +199,13 @@ const config: ForgeConfig = {
       name: "PostHogCode",
       setupIcon: "./build/app-icon.ico",
     }),
+    new MakerAppImage({
+      options: {
+        icon: "./build/app-icon.png",
+        categories: ["Development"],
+        bin: "PostHog Code",
+      },
+    }),
     new MakerZIP({}, ["darwin", "linux"]),
   ],
   hooks: {
@@ -213,8 +226,16 @@ const config: ForgeConfig = {
     prePackage: async () => {
       if (process.platform !== "darwin") return;
 
-      // Build native modules for DMG maker on Node.js 22
+      // Build native modules for DMG maker on Node.js 22. These run on the
+      // build host (DMG creation is host-side), so we force npm to target the
+      // host arch even when the rest of the build is cross-targeting (e.g.
+      // building darwin-x64 on an arm64 runner).
       const modules = ["macos-alias", "fs-xattr"];
+      const hostBuildEnv = {
+        ...process.env,
+        npm_config_arch: process.arch,
+        npm_config_platform: process.platform,
+      };
 
       for (const mod of modules) {
         const candidates = [
@@ -225,29 +246,61 @@ const config: ForgeConfig = {
 
         if (modulePath) {
           console.log(`Building native module: ${mod} (${modulePath})`);
-          execSync("npm install", { cwd: modulePath, stdio: "inherit" });
+          execSync("npm install", {
+            cwd: modulePath,
+            stdio: "inherit",
+            env: hostBuildEnv,
+          });
         }
       }
     },
     postStart: async (_forgeConfig, child) => {
       electronChild = child;
     },
-    packageAfterCopy: async (_forgeConfig, buildPath) => {
+    packageAfterCopy: async (
+      _forgeConfig,
+      buildPath,
+      _electronVersion,
+      platform,
+      targetArch,
+    ) => {
       copyNativeDependency("node-pty", buildPath);
       copyNativeDependency("node-addon-api", buildPath);
       copyNativeDependency("@parcel/watcher", buildPath);
 
       // Platform-specific native dependencies
-      if (process.platform === "darwin") {
-        copyNativeDependency("@parcel/watcher-darwin-arm64", buildPath);
+      if (platform === "darwin") {
+        const watcherPkg =
+          targetArch === "x64"
+            ? "@parcel/watcher-darwin-x64"
+            : "@parcel/watcher-darwin-arm64";
+        if (!copyNativeDependency(watcherPkg, buildPath)) {
+          throw new Error(
+            `[forge] Missing required native dependency "${watcherPkg}" for darwin-${targetArch}`,
+          );
+        }
         copyNativeDependency("file-icon", buildPath);
         copyNativeDependency("p-map", buildPath);
-      } else if (process.platform === "win32") {
+      } else if (platform === "win32") {
         const watcherPkg =
-          process.arch === "arm64"
+          targetArch === "arm64"
             ? "@parcel/watcher-win32-arm64"
             : "@parcel/watcher-win32-x64";
-        copyNativeDependency(watcherPkg, buildPath);
+        if (!copyNativeDependency(watcherPkg, buildPath)) {
+          throw new Error(
+            `[forge] Missing required native dependency "${watcherPkg}" for win32-${targetArch}`,
+          );
+        }
+      } else if (platform === "linux") {
+        const watcherPkg =
+          targetArch === "arm64"
+            ? "@parcel/watcher-linux-arm64-glibc"
+            : "@parcel/watcher-linux-x64-glibc";
+        if (!copyNativeDependency(watcherPkg, buildPath)) {
+          throw new Error(
+            `[forge] Missing required native dependency "${watcherPkg}" for linux-${targetArch}`,
+          );
+        }
       }
 
       // Copy @parcel/watcher's hoisted dependencies
@@ -265,6 +318,16 @@ const config: ForgeConfig = {
       copyNativeDependency("bindings", buildPath);
       copyNativeDependency("file-uri-to-path", buildPath);
       copyNativeDependency("prebuild-install", buildPath);
+    },
+    packageAfterPrune: async (_forgeConfig, buildPath) => {
+      // @parcel/watcher tries @parcel/watcher-{platform}-{arch} first, then
+      // falls back to build/Release/watcher.node. Remove that fallback from
+      // release bundles so a host-compiled binary cannot shadow the required
+      // target-specific optional dependency.
+      rmSync(path.join(buildPath, "node_modules/@parcel/watcher/build"), {
+        recursive: true,
+        force: true,
+      });
     },
   },
   publishers: [

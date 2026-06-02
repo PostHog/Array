@@ -5,12 +5,14 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   CaretDown,
   CaretRight,
+  ChatCircle,
   Lightning,
   Play,
   Plus,
   ThumbsDown,
   Warning,
 } from "phosphor-react-native";
+import { usePostHog } from "posthog-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -23,6 +25,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { getReportRepository } from "@/features/inbox/api";
+import { DiscussReportSheet } from "@/features/inbox/components/DiscussReportSheet";
 import {
   type DismissReportResult,
   DismissReportSheet,
@@ -119,13 +122,21 @@ function ActionabilityBadge({ value }: { value: string }) {
 }
 
 export default function ReportDetailScreen() {
-  const { id: reportId } = useLocalSearchParams<{ id: string }>();
+  // Catch-all route: `id` arrives as string[] for `/inbox/<uuid>/<slug>` and
+  // we only read the first segment (the UUID). The slug is purely cosmetic;
+  // receivers ignore everything past the UUID, matching the desktop contract
+  // in `apps/code/src/shared/deeplink.ts`. Expo-router can hand us either a
+  // string or string[] depending on the URL shape, so tolerate both.
+  const { id: idParam } = useLocalSearchParams<{ id: string | string[] }>();
+  const reportId = Array.isArray(idParam) ? idParam[0] : idParam;
   const router = useRouter();
   const themeColors = useThemeColors();
   const insets = useSafeAreaInsets();
+  const posthog = usePostHog();
   const { data: report, isLoading, error } = useInboxReport(reportId ?? null);
   const [reportRepo, setReportRepo] = useState<string | null>(null);
   const [dismissOpen, setDismissOpen] = useState(false);
+  const [discussOpen, setDiscussOpen] = useState(false);
   const [signalsExpanded, setSignalsExpanded] = useState(false);
 
   const artefactsQuery = useInboxReportArtefacts(reportId ?? null);
@@ -295,6 +306,34 @@ export default function ReportDetailScreen() {
       if (router.canGoBack()) router.back();
     },
     [router, report, tracker],
+  );
+
+  const handleDiscussSubmit = useCallback(
+    ({ prompt, question }: { prompt: string; question: string }) => {
+      setDiscussOpen(false);
+      if (!report) return;
+      posthog?.capture("Inbox report action", {
+        report_id: report.id,
+        report_title: report.title ?? null,
+        action_type: "discuss",
+        surface: "detail_pane",
+        is_bulk: false,
+        bulk_size: 1,
+        has_question: question.length > 0,
+        ...(question.length > 0
+          ? { question_text: question.slice(0, 500) }
+          : {}),
+      });
+      router.push({
+        pathname: "/task",
+        params: {
+          prompt,
+          ...(reportRepo ? { repo: reportRepo } : {}),
+          signalReport: report.id,
+        },
+      });
+    },
+    [report, router, reportRepo, posthog],
   );
 
   if (error) {
@@ -472,14 +511,14 @@ export default function ReportDetailScreen() {
       </ScrollView>
 
       <View
-        className="absolute inset-x-0 flex-row items-center justify-center gap-3 px-4"
+        className="absolute inset-x-0 flex-row flex-wrap items-center justify-center gap-3 px-4"
         style={{ bottom: insets.bottom + 16 }}
         pointerEvents="box-none"
       >
         <Pressable
           onPress={() => setDismissOpen(true)}
           accessibilityLabel="Dismiss report"
-          className="flex-row items-center gap-2 rounded-full border border-gray-6 bg-background px-5 py-3.5 shadow-lg active:opacity-80"
+          className="flex-row items-center gap-2 rounded-full border border-gray-6 bg-background px-4 py-3.5 shadow-lg active:opacity-80"
         >
           <ThumbsDown size={16} color={themeColors.gray[11]} weight="fill" />
           <Text className="font-semibold text-[15px] text-gray-11">
@@ -487,10 +526,24 @@ export default function ReportDetailScreen() {
           </Text>
         </Pressable>
 
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setDiscussOpen(true);
+          }}
+          accessibilityLabel="Discuss report"
+          className="flex-row items-center gap-2 rounded-full border border-gray-6 bg-background px-4 py-3.5 shadow-lg active:opacity-80"
+        >
+          <ChatCircle size={16} color={themeColors.gray[11]} weight="fill" />
+          <Text className="font-semibold text-[15px] text-gray-11">
+            Discuss
+          </Text>
+        </Pressable>
+
         {canStartTask && (
           <Pressable
             onPress={handleStartTask}
-            className="flex-row items-center gap-2 rounded-full bg-accent-9 px-5 py-3.5 shadow-lg active:opacity-80"
+            className="flex-row items-center gap-2 rounded-full bg-accent-9 px-4 py-3.5 shadow-lg active:opacity-80"
           >
             {isAwaitingInput ? (
               <Plus size={18} color="#ffffff" weight="bold" />
@@ -510,6 +563,14 @@ export default function ReportDetailScreen() {
         reportTitle={report.title?.trim() ? report.title : "Untitled signal"}
         onClose={() => setDismissOpen(false)}
         onDismissed={handleDismissed}
+      />
+
+      <DiscussReportSheet
+        visible={discussOpen}
+        reportId={report.id}
+        reportTitle={report.title}
+        onClose={() => setDiscussOpen(false)}
+        onSubmit={handleDiscussSubmit}
       />
     </>
   );

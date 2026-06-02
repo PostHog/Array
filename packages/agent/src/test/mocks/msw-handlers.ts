@@ -29,14 +29,14 @@ export function createPostHogHandlers(options: PostHogHandlersOptions = {}) {
         object: "list",
         data: [
           {
-            id: "claude-opus-4-7",
+            id: "claude-opus-4-8",
             owned_by: "anthropic",
             context_window: 200000,
             supports_streaming: true,
             supports_vision: true,
           },
           {
-            id: "gpt-5.4",
+            id: "gpt-5.5",
             owned_by: "openai",
             context_window: 200000,
             supports_streaming: true,

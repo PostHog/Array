@@ -43,6 +43,7 @@ import {
   type Query,
   query,
   type SDKUserMessage,
+  type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
 import { v7 as uuidv7 } from "uuid";
 import packageJson from "../../../package.json" with { type: "json" };
@@ -57,12 +58,8 @@ import {
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
 import type { PostHogAPIConfig } from "../../types";
-import {
-  isCloudRun,
-  resolveGithubToken,
-  unreachable,
-  withTimeout,
-} from "../../utils/common";
+import { isCloudRun, unreachable, withTimeout } from "../../utils/common";
+import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
 import { BaseAcpAgent } from "../base-acp-agent";
@@ -83,6 +80,11 @@ import {
   handleSystemMessage,
   handleUserAssistantMessage,
 } from "./conversion/sdk-to-acp";
+import {
+  rehydrateTaskState,
+  type TaskState,
+  taskStateToPlanEntries,
+} from "./conversion/task-state";
 import type { EnrichedReadCache } from "./hooks";
 import { createLocalToolsMcpServer } from "./mcp/local-tools";
 import {
@@ -94,6 +96,10 @@ import {
 import { canUseTool } from "./permissions/permission-handlers";
 import { getAvailableSlashCommands } from "./session/commands";
 import { parseMcpServers } from "./session/mcp-config";
+import {
+  applyAvailableModelsAllowlist,
+  resolveInitialModelId,
+} from "./session/model-config";
 import {
   DEFAULT_MODEL,
   getEffortOptions,
@@ -141,6 +147,17 @@ function readClaudeMdQuietly(cwd: string, logger: Logger): string | undefined {
     }
     return undefined;
   }
+}
+
+function collectKnownSlashCommands(
+  commands: SlashCommand[] | undefined,
+): Set<string> {
+  const names = new Set<string>();
+  if (!commands) return names;
+  for (const cmd of commands) {
+    if (cmd.name) names.add(cmd.name);
+  }
+  return names;
 }
 
 function sanitizeTitle(text: string): string {
@@ -225,6 +242,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         },
         loadSession: true,
         sessionCapabilities: {
+          additionalDirectories: {},
           list: {},
           fork: {},
           resume: {},
@@ -257,11 +275,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       throw RequestError.authRequired();
     }
 
-    const response = await this.createSession(params, {
-      // Revisit these meta values once we support resume
-      resume: (params._meta as NewSessionMeta | undefined)?.claudeCode?.options
-        ?.resume as string | undefined,
-    });
+    const response = await this.createSession(
+      {
+        cwd: params.cwd,
+        mcpServers: params.mcpServers ?? [],
+        additionalDirectories: params.additionalDirectories,
+        _meta: params._meta,
+      },
+      {
+        // Revisit these meta values once we support resume
+        resume: (params._meta as NewSessionMeta | undefined)?.claudeCode
+          ?.options?.resume as string | undefined,
+      },
+    );
 
     return response;
   }
@@ -273,13 +299,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       {
         cwd: params.cwd,
         mcpServers: params.mcpServers ?? [],
+        additionalDirectories: params.additionalDirectories,
         _meta: params._meta,
       },
       { resume: params.sessionId, forkSession: true },
     );
   }
 
-  async unstable_resumeSession(
+  async resumeSession(
     params: ResumeSessionRequest,
   ): Promise<ResumeSessionResponse> {
     // Reuse existing session if it matches
@@ -290,12 +317,15 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       {
         cwd: params.cwd,
         mcpServers: params.mcpServers ?? [],
+        additionalDirectories: params.additionalDirectories,
         _meta: params._meta,
       },
       {
         resume: params.sessionId,
       },
     );
+
+    await this.rehydrateTaskStateFromJsonl(params.sessionId);
 
     return response;
   }
@@ -309,6 +339,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       {
         cwd: params.cwd,
         mcpServers: params.mcpServers ?? [],
+        additionalDirectories: params.additionalDirectories,
         _meta: params._meta,
       },
       { resume: params.sessionId, skipBackgroundFetches: true },
@@ -409,6 +440,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     this.session.promptRunning = true;
     let handedOff = false;
+    let errored = false;
     let lastAssistantTotalUsage: number | null = null;
     let lastStreamUsage = {
       input_tokens: 0,
@@ -416,6 +448,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       cache_read_input_tokens: 0,
       cache_creation_input_tokens: 0,
     };
+    // Tracks whether we're inside a compaction. The SDK emits the terminal
+    // `status` (compact_result success/failed) twice for a single failed
+    // compaction, and the two messages are indistinguishable, so we report the
+    // outcome only while a compaction is in progress, then clear this. A fresh
+    // `compacting` status sets it again, so every distinct compaction (e.g.
+    // repeated auto-compactions in a long turn) is still shown.
+    let compactionInProgress = false;
     if (this.session.lastContextWindowSize == null) {
       this.session.lastContextWindowSize = this.getContextWindowForModel(
         this.session.modelId ?? "",
@@ -491,6 +530,54 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             if (message.subtype === "local_command_output") {
               promptReplayed = true;
             }
+            if (message.subtype === "status") {
+              // The SDK signals manual `/compact` completion with a status
+              // message carrying `compact_result`, not the `compact_boundary`
+              // message (which only fires when there's content to compact).
+              // Gate the user-facing outcome on `compactionInProgress` to
+              // dedupe the duplicate terminal status the SDK emits for failed
+              // compactions.
+              if (message.status === "compacting") {
+                compactionInProgress = true;
+                // Fall through to handleSystemMessage so the COMPACTING
+                // extNotification still fires.
+              } else if (
+                message.compact_result === "success" &&
+                compactionInProgress
+              ) {
+                compactionInProgress = false;
+                await this.client.sessionUpdate({
+                  sessionId: params.sessionId,
+                  update: {
+                    sessionUpdate: "agent_message_chunk",
+                    content: {
+                      type: "text",
+                      text: "\n\nCompacting completed.",
+                    },
+                  },
+                });
+                break;
+              } else if (
+                message.compact_result === "failed" &&
+                compactionInProgress
+              ) {
+                compactionInProgress = false;
+                const reason = message.compact_error
+                  ? `: ${message.compact_error}`
+                  : ".";
+                await this.client.sessionUpdate({
+                  sessionId: params.sessionId,
+                  update: {
+                    sessionUpdate: "agent_message_chunk",
+                    content: {
+                      type: "text",
+                      text: `\n\nCompacting failed${reason}`,
+                    },
+                  },
+                });
+                break;
+              }
+            }
             if (
               message.subtype === "session_state_changed" &&
               (message as Record<string, unknown>).state === "idle"
@@ -500,7 +587,17 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 // and produced no output (e.g. /plugin in a non-interactive
                 // context). Without this branch we would loop forever waiting
                 // for an echo that never comes; surface a clear error instead.
-                if (commandMatch) {
+                //
+                // Only fire for commands the SDK does NOT recognize. Plugin
+                // and skill commands (e.g. /skills-store) produce a fresh
+                // user-message echo with a new uuid that our replay check
+                // can't match, so an early idle here is a race, not a real
+                // "unsupported" — fall through and let the loop continue.
+                const cmdName = commandMatch?.[1].slice(1);
+                const known =
+                  cmdName !== undefined &&
+                  this.session.knownSlashCommands?.has(cmdName) === true;
+                if (commandMatch && !known) {
                   const cmd = commandMatch[1];
                   this.logger.warn(
                     "Slash command produced no output; treating as unsupported",
@@ -520,6 +617,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 }
                 this.logger.debug("Skipping idle state before prompt replay", {
                   sessionId: params.sessionId,
+                  command: commandMatch?.[1],
+                  known,
                 });
                 break;
               }
@@ -540,7 +639,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 },
               });
 
-              return { stopReason: "end_turn" };
+              return {
+                stopReason: this.session.cancelled ? "cancelled" : "end_turn",
+              };
             }
             await handleSystemMessage(message, context);
             break;
@@ -814,6 +915,37 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
       throw new Error("Session did not end in result");
     } catch (error) {
+      errored = true;
+      // A failed turn typically leaves a trailing `session_state_changed: idle`
+      // (and possibly more) in the query iterator. If we don't drain it here,
+      // the next prompt's first `query.next()` consumes that stale idle and
+      // short-circuits to end_turn with zero usage.
+      try {
+        await this.session.query.interrupt();
+        const MAX_DRAIN = 100;
+        for (let i = 0; i < MAX_DRAIN; i++) {
+          const { value: m, done } = await this.session.query.next();
+          if (done || !m) break;
+          if (
+            m.type === "system" &&
+            m.subtype === "session_state_changed" &&
+            (m as Record<string, unknown>).state === "idle"
+          ) {
+            break;
+          }
+          if (i === MAX_DRAIN - 1) {
+            this.logger.error(
+              `Session ${params.sessionId}: drained ${MAX_DRAIN} messages after error without observing idle`,
+            );
+          }
+        }
+      } catch (drainErr) {
+        this.logger.error(
+          `Session ${params.sessionId}: failed to drain query after prompt error`,
+          { error: drainErr },
+        );
+      }
+
       if (error instanceof RequestError || !(error instanceof Error)) {
         throw error;
       }
@@ -844,10 +976,25 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.toolUseStreamCache.clear();
       if (!handedOff) {
         this.session.promptRunning = false;
-        // Resolve all remaining pending prompts so no callers get stuck.
-        for (const [key, pending] of this.session.pendingMessages) {
-          pending.resolve(true);
-          this.session.pendingMessages.delete(key);
+        if (errored) {
+          // The query stream was just drained — handing pending prompts off
+          // onto it would let them race with the recovery. Cancel them so
+          // each waiting prompt() returns stopReason "cancelled" and the
+          // client can decide whether to retry.
+          for (const pending of this.session.pendingMessages.values()) {
+            pending.resolve(true);
+          }
+          this.session.pendingMessages.clear();
+        } else if (this.session.pendingMessages.size > 0) {
+          // Clean exit with queued prompts: hand off the lowest-order one
+          // so it can proceed. The rest stay queued for their own turn.
+          const next = [...this.session.pendingMessages.entries()].sort(
+            (a, b) => a[1].order - b[1].order,
+          )[0];
+          if (next) {
+            next[1].resolve(false);
+            this.session.pendingMessages.delete(next[0]);
+          }
         }
       }
     }
@@ -909,6 +1056,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const mcpServers = parseMcpServers(
       params as Pick<NewSessionRequest, "mcpServers">,
+      this.logger,
     );
     await this.refreshSession(mcpServers);
     return { refreshed: true };
@@ -941,7 +1089,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // We allocate a fresh controller for the new Query below so aborting
     // the old one doesn't poison it.
     prev.abortController.abort();
-    await prev.query.interrupt();
+    try {
+      await prev.query.interrupt();
+    } catch (error) {
+      this.logger.debug("Ignoring interrupt error during session refresh", {
+        sessionId: this.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     prev.input.end();
 
     // Reuse every option from the running session; swap mcpServers, re-root
@@ -1030,7 +1185,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     // For model options, fall back to alias resolution when exact match fails.
     // This lets callers use human-friendly aliases like "opus" or "sonnet"
-    // instead of full model IDs like "claude-opus-4-6".
+    // instead of full model IDs like "claude-opus-4-8".
     if (!validValue && params.configId === "model") {
       const resolved = resolveModelPreference(params.value, allValues);
       if (resolved) {
@@ -1142,6 +1297,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     params: {
       cwd: string;
       mcpServers: NewSessionRequest["mcpServers"];
+      additionalDirectories?: NewSessionRequest["additionalDirectories"];
       _meta?: unknown;
     },
     creationOpts: {
@@ -1181,7 +1337,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const earlyModelId =
       settingsManager.getSettings().model || meta?.model || "";
     const mcpServers = supportsMcpInjection(earlyModelId)
-      ? parseMcpServers(params)
+      ? parseMcpServers(params, this.logger)
       : {};
 
     // Register the in-process general local-tools MCP server. Tools self-gate
@@ -1226,6 +1382,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         ? (meta.permissionMode as CodeExecutionMode)
         : "default";
 
+    const taskState: TaskState = new Map();
     const options = buildSessionOptions({
       cwd,
       mcpServers,
@@ -1239,7 +1396,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       forkSession,
       additionalDirectories: [
         ...(meta?.claudeCode?.options?.additionalDirectories ?? []),
-        ...(meta?.additionalRoots ?? []),
+        // Prefer the official ACP `additionalDirectories` field. Fall back
+        // to the legacy `_meta.additionalRoots` extension for clients that
+        // haven't been updated yet.
+        ...(params.additionalDirectories ?? meta?.additionalRoots ?? []),
       ],
       disableBuiltInTools: meta?.disableBuiltInTools,
       outputFormat,
@@ -1251,6 +1411,16 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       enrichmentDeps: this.enrichment?.deps,
       enrichedReadCache: this.enrichedReadCache,
       cloudMode: cloudRun,
+      taskState,
+      onTaskStateChange: async () => {
+        await this.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "plan",
+            entries: taskStateToPlanEntries(taskState),
+          },
+        });
+      },
     });
 
     // Use the same abort controller that buildSessionOptions gave to the query
@@ -1283,6 +1453,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         systemPrompt: estimateSystemPrompt(systemPrompt),
         rules: estimateRulesTokens(readClaudeMdQuietly(cwd, this.logger)),
       },
+      taskState,
 
       // Custom properties
       cwd,
@@ -1305,6 +1476,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             `Session ${forkSession ? "fork" : "resumption"} timed out for sessionId=${sessionId}`,
           );
         }
+        session.knownSlashCommands = collectKnownSlashCommands(
+          result.value.commands,
+        );
       } catch (err) {
         settingsManager.dispose();
         if (
@@ -1332,7 +1506,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       ? withTimeout(q.initializationResult(), SESSION_VALIDATION_TIMEOUT_MS)
       : undefined;
 
-    const [modelOptions] = await Promise.all([
+    const [rawModelOptions] = await Promise.all([
       this.getModelConfigOptions(
         settingsManager.getSettings().model || meta?.model || undefined,
       ),
@@ -1347,6 +1521,16 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         : []),
     ]);
 
+    // Restrict the model list to the user's `availableModels` allowlist
+    // from settings.json so config UI and downstream resolution stay
+    // consistent with what the user configured. The Default option is
+    // always preserved per the Claude Code docs.
+    const settingsAvailableModels =
+      settingsManager.getSettings().availableModels;
+    const modelOptions = Array.isArray(settingsAvailableModels)
+      ? applyAvailableModelsAllowlist(rawModelOptions, settingsAvailableModels)
+      : rawModelOptions;
+
     if (initPromise) {
       try {
         const initResult = await initPromise;
@@ -1356,6 +1540,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             `Session initialization timed out for sessionId=${sessionId}`,
           );
         }
+        session.knownSlashCommands = collectKnownSlashCommands(
+          initResult.value.commands,
+        );
       } catch (err) {
         settingsManager.dispose();
         this.logger.error("Session initialization failed", {
@@ -1368,10 +1555,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
     }
 
-    const settingsModel = settingsManager.getSettings().model;
-    const metaModel = meta?.model;
-    const resolvedModelId =
-      settingsModel || metaModel || modelOptions.currentModelId;
+    const resolvedModelId = resolveInitialModelId(modelOptions, [
+      settingsManager.getSettings().model,
+      meta?.model,
+    ]);
     session.modelId = resolvedModelId;
     session.lastContextWindowSize =
       this.getContextWindowForModel(resolvedModelId);
@@ -1633,6 +1820,35 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       ...this.session.contextBreakdownBaseline,
       [key]: tokens,
     };
+  }
+
+  /**
+   * Rebuild the in-memory taskState from JSONL and push a plan update so the
+   * client's plan panel reflects pre-resume tasks. `loadSession` already covers
+   * this via the full `replaySessionHistory` notification stream; resume
+   * deliberately stays quiet (the client keeps its own message history) so we
+   * walk the transcript here for state only.
+   */
+  private async rehydrateTaskStateFromJsonl(sessionId: string): Promise<void> {
+    try {
+      const messages = await getSessionMessages(sessionId, {
+        dir: this.session.cwd,
+      });
+      rehydrateTaskState(messages, this.session.taskState);
+      if (this.session.taskState.size === 0) return;
+      await this.client.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "plan",
+          entries: taskStateToPlanEntries(this.session.taskState),
+        },
+      });
+    } catch (err) {
+      this.logger.warn("Failed to rehydrate task state", {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   private async replaySessionHistory(sessionId: string): Promise<void> {

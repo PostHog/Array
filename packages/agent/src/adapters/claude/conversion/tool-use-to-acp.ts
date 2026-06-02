@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
-  PlanEntry,
   ToolCall,
   ToolCallContent,
   ToolCallLocation,
@@ -371,11 +370,36 @@ export function toolInfoFromToolUse(
       };
     }
 
-    case "TodoWrite":
+    case "TaskCreate": {
+      const subject =
+        typeof input?.subject === "string" ? input.subject : undefined;
       return {
-        title: Array.isArray(input?.todos)
-          ? `Update TODOs: ${input.todos.map((todo: { content?: string }) => todo.content).join(", ")}`
-          : "Update TODOs",
+        title: subject ? `Create task: ${subject}` : "Create task",
+        kind: "think",
+        content: [],
+      };
+    }
+
+    case "TaskUpdate": {
+      const subject =
+        typeof input?.subject === "string" ? input.subject : undefined;
+      return {
+        title: subject ? `Update task: ${subject}` : "Update task",
+        kind: "think",
+        content: [],
+      };
+    }
+
+    case "TaskList":
+      return {
+        title: "List tasks",
+        kind: "think",
+        content: [],
+      };
+
+    case "TaskGet":
+      return {
+        title: "Get task",
         kind: "think",
         content: [],
       };
@@ -773,20 +797,6 @@ function toAcpContentUpdate(
     }
   }
   return {};
-}
-
-export type ClaudePlanEntry = {
-  content: string;
-  status: "pending" | "in_progress" | "completed";
-  activeForm: string;
-};
-
-export function planEntries(input: { todos: ClaudePlanEntry[] }): PlanEntry[] {
-  return input.todos.map((input) => ({
-    content: input.content,
-    status: input.status,
-    priority: "medium",
-  }));
 }
 
 /**

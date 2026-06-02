@@ -17,6 +17,7 @@ import {
   CaretRightIcon,
   ChatCircleIcon,
   EyeIcon,
+  InfoIcon,
   LinkSimpleIcon,
   Plus,
   ThumbsDownIcon,
@@ -36,7 +37,7 @@ import {
 } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { EXTERNAL_LINKS } from "@renderer/utils/links";
-import { getDeeplinkProtocol } from "@shared/deeplink";
+import { buildInboxDeeplink } from "@shared/deeplink";
 import type {
   ActionabilityJudgmentArtefact,
   ActionabilityJudgmentContent,
@@ -211,8 +212,12 @@ export function ReportDetailPane({
     const reviewerArtefact = allArtefacts.find(
       (a): a is SuggestedReviewersArtefact => a.type === "suggested_reviewers",
     );
-    return reviewerArtefact?.content ?? [];
-  }, [allArtefacts]);
+    const reviewers = reviewerArtefact?.content ?? [];
+    if (!me?.uuid) return reviewers;
+    const meIndex = reviewers.findIndex((r) => r.user?.uuid === me.uuid);
+    if (meIndex <= 0) return reviewers;
+    return [reviewers[meIndex], ...reviewers.filter((_, i) => i !== meIndex)];
+  }, [allArtefacts, me?.uuid]);
 
   const signalFindings = useMemo(() => {
     const map = new Map<string, SignalFindingArtefact["content"]>();
@@ -477,7 +482,9 @@ export function ReportDetailPane({
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(
-                    `${getDeeplinkProtocol(import.meta.env.DEV)}://inbox/${report.id}`,
+                    buildInboxDeeplink(report.id, report.title, {
+                      isDevBuild: import.meta.env.DEV,
+                    }),
                   );
                   fireDetailAction("copy_link");
                   toast.success("Link copied");
@@ -816,15 +823,38 @@ export function ReportDetailPane({
                           {reviewer.relevant_commits.map((commit, i) => (
                             <span key={commit.sha}>
                               {i > 0 && ", "}
-                              <Tooltip content={commit.reason || undefined}>
-                                <a
-                                  href={commit.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="font-mono text-gray-9 hover:text-gray-11"
-                                >
-                                  {commit.sha.slice(0, 7)}
-                                </a>
+                              <Tooltip
+                                content={
+                                  isMe ? (
+                                    <Flex direction="column" gap="1">
+                                      <Text as="div" size="1" weight="bold">
+                                        Why was I assigned?
+                                      </Text>
+                                      <Text as="div" size="1">
+                                        {commit.reason}
+                                      </Text>
+                                    </Flex>
+                                  ) : (
+                                    commit.reason || undefined
+                                  )
+                                }
+                              >
+                                <span className="inline-flex items-center gap-0.5">
+                                  <a
+                                    href={commit.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="font-mono text-gray-9 hover:text-gray-11"
+                                  >
+                                    {commit.sha.slice(0, 7)}
+                                  </a>
+                                  {isMe && commit.reason && (
+                                    <InfoIcon
+                                      size={11}
+                                      className="cursor-help text-gray-9"
+                                    />
+                                  )}
+                                </span>
                               </Tooltip>
                             </span>
                           ))}

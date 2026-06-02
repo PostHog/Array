@@ -1,5 +1,4 @@
 import { buildPromptBlocks } from "@features/editor/utils/prompt-builder";
-import { xmlToPlainText } from "@features/message-editor/utils/content";
 import { DEFAULT_PANEL_IDS } from "@features/panels/constants/panelConstants";
 import { usePanelLayoutStore } from "@features/panels/store/panelLayoutStore";
 import { useProvisioningStore } from "@features/provisioning/stores/provisioningStore";
@@ -401,9 +400,7 @@ export class TaskCreationSaga extends Saga<
       name: "task_creation",
       execute: async () => {
         const description = input.taskDescription ?? input.content ?? "";
-        const plainText = xmlToPlainText(description).trim();
         const result = await this.deps.posthogClient.createTask({
-          title: (plainText || "Untitled").slice(0, 255),
           description,
           repository: repository ?? undefined,
           github_integration:

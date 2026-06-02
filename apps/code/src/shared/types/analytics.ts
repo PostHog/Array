@@ -229,6 +229,22 @@ export interface AgentSessionErrorProperties {
   error_type: string;
 }
 
+export interface CloudStreamDisconnectedProperties {
+  task_id: string;
+  run_id: string;
+  team_id: number;
+  // The error surfaced to the user (e.g. "Cloud stream disconnected",
+  // "Cloud run unreachable"), so give-up causes can be told apart.
+  error_title: string;
+  retryable: boolean;
+  // Which reconnect budget was exhausted, to separate idle Envoy cuts from
+  // genuine outages: transport reconnects, backend error frames, cumulative.
+  reconnect_attempts: number;
+  stream_error_attempts: number;
+  cumulative_reconnect_attempts: number;
+  was_bootstrapping: boolean;
+}
+
 // Permission events
 export interface PermissionRespondedProperties {
   task_id: string;
@@ -744,6 +760,7 @@ export const ANALYTICS_EVENTS = {
   // Error events
   TASK_CREATION_FAILED: "Task creation failed",
   AGENT_SESSION_ERROR: "Agent session error",
+  CLOUD_STREAM_DISCONNECTED: "Cloud stream disconnected",
 
   // Inbox events
   INBOX_INTEREST_REGISTERED: "Inbox interest registered",
@@ -864,6 +881,7 @@ export type EventPropertyMap = {
   // Error events
   [ANALYTICS_EVENTS.TASK_CREATION_FAILED]: TaskCreationFailedProperties;
   [ANALYTICS_EVENTS.AGENT_SESSION_ERROR]: AgentSessionErrorProperties;
+  [ANALYTICS_EVENTS.CLOUD_STREAM_DISCONNECTED]: CloudStreamDisconnectedProperties;
 
   // Inbox events
   [ANALYTICS_EVENTS.INBOX_INTEREST_REGISTERED]: never;

@@ -764,7 +764,7 @@ export class SessionService {
    * The main process already cleaned up the agent, so we only need to
    * unsubscribe from the channel and mark the session as errored.
    * Preserves events, logUrl, configOptions and adapter so that Retry
-   * can reconnect with full context via unstable_resumeSession.
+   * can reconnect with full context via resumeSession.
    */
   private handleIdleKill(taskRunId: string): void {
     this.unsubscribeFromChannel(taskRunId);
