@@ -26,10 +26,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { getReportRepository } from "@/features/inbox/api";
 import { DiscussReportSheet } from "@/features/inbox/components/DiscussReportSheet";
-import {
-  type DismissReportResult,
-  DismissReportSheet,
-} from "@/features/inbox/components/DismissReportSheet";
+import { DismissReportSheet } from "@/features/inbox/components/DismissReportSheet";
 import { SignalCard } from "@/features/inbox/components/SignalCard";
 import { SuggestedReviewers } from "@/features/inbox/components/SuggestedReviewers";
 import { DISMISSAL_REASON_OPTIONS } from "@/features/inbox/constants";
