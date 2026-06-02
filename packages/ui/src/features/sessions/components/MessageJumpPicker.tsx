@@ -1,6 +1,6 @@
 import { CommandKeyHints } from "../../command/CommandKeyHints";
 import type { ConversationItem } from "./buildConversationItems";
-import { CalendarBlank, ChatText, X } from "@phosphor-icons/react";
+import { ChatText, Check, FunnelSimple, X } from "@phosphor-icons/react";
 import {
   Autocomplete,
   AutocompleteInput,
@@ -8,8 +8,13 @@ import {
   AutocompleteList,
   Dialog,
   DialogContent,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@posthog/quill";
-import { Flex, IconButton, Tooltip } from "@radix-ui/themes";
+import { Flex } from "@radix-ui/themes";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 interface MessageJumpPickerProps {
@@ -27,6 +32,174 @@ interface JumpEntry {
   index: number;
 }
 
+type DatePreset =
+  | "today"
+  | "yesterday"
+  | "last7d"
+  | "last14d"
+  | "thisMonth"
+  | "lastMonth"
+  | "last30d"
+  | "last90d"
+  | "last6mo"
+  | "thisYear"
+  | "lastYear";
+
+interface PresetConfig {
+  label: string;
+  shortLabel: string;
+  footerLabel: string;
+  getRange: () => { from: number; to: number };
+}
+
+const DATE_PRESETS: Record<DatePreset, PresetConfig> = {
+  today: {
+    label: "Today",
+    shortLabel: "Today",
+    footerLabel: "today",
+    getRange: () => {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      return { from: start.getTime(), to: Date.now() };
+    },
+  },
+  yesterday: {
+    label: "Yesterday",
+    shortLabel: "Yest.",
+    footerLabel: "yesterday",
+    getRange: () => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      const start = new Date(d);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(d);
+      end.setHours(23, 59, 59, 999);
+      return { from: start.getTime(), to: end.getTime() };
+    },
+  },
+  last7d: {
+    label: "Last 7 days",
+    shortLabel: "7d",
+    footerLabel: "last 7 days",
+    getRange: () => {
+      const start = new Date();
+      start.setDate(start.getDate() - 7);
+      start.setHours(0, 0, 0, 0);
+      return { from: start.getTime(), to: Date.now() };
+    },
+  },
+  last14d: {
+    label: "Last 14 days",
+    shortLabel: "14d",
+    footerLabel: "last 14 days",
+    getRange: () => {
+      const start = new Date();
+      start.setDate(start.getDate() - 14);
+      start.setHours(0, 0, 0, 0);
+      return { from: start.getTime(), to: Date.now() };
+    },
+  },
+  thisMonth: {
+    label: "This month",
+    shortLabel: "This mo",
+    footerLabel: "this month",
+    getRange: () => {
+      const start = new Date();
+      start.setDate(1);
+      start.setHours(0, 0, 0, 0);
+      return { from: start.getTime(), to: Date.now() };
+    },
+  },
+  lastMonth: {
+    label: "Last month",
+    shortLabel: "Last mo",
+    footerLabel: "last month",
+    getRange: () => {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const end = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        0,
+        23,
+        59,
+        59,
+        999,
+      );
+      return { from: start.getTime(), to: end.getTime() };
+    },
+  },
+  last30d: {
+    label: "Last 30 days",
+    shortLabel: "30d",
+    footerLabel: "last 30 days",
+    getRange: () => {
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+      start.setHours(0, 0, 0, 0);
+      return { from: start.getTime(), to: Date.now() };
+    },
+  },
+  last90d: {
+    label: "Last 90 days",
+    shortLabel: "90d",
+    footerLabel: "last 90 days",
+    getRange: () => {
+      const start = new Date();
+      start.setDate(start.getDate() - 90);
+      start.setHours(0, 0, 0, 0);
+      return { from: start.getTime(), to: Date.now() };
+    },
+  },
+  last6mo: {
+    label: "Last 6 months",
+    shortLabel: "6mo",
+    footerLabel: "last 6 months",
+    getRange: () => {
+      const start = new Date();
+      start.setMonth(start.getMonth() - 6);
+      start.setHours(0, 0, 0, 0);
+      return { from: start.getTime(), to: Date.now() };
+    },
+  },
+  thisYear: {
+    label: "This year",
+    shortLabel: "This yr",
+    footerLabel: "this year",
+    getRange: () => {
+      const start = new Date();
+      start.setMonth(0, 1);
+      start.setHours(0, 0, 0, 0);
+      return { from: start.getTime(), to: Date.now() };
+    },
+  },
+  lastYear: {
+    label: "Last year",
+    shortLabel: "Last yr",
+    footerLabel: "last year",
+    getRange: () => {
+      const year = new Date().getFullYear() - 1;
+      const start = new Date(year, 0, 1);
+      const end = new Date(year, 11, 31, 23, 59, 59, 999);
+      return { from: start.getTime(), to: end.getTime() };
+    },
+  },
+};
+
+const PRESET_ORDER: DatePreset[] = [
+  "today",
+  "yesterday",
+  "last7d",
+  "last14d",
+  "thisMonth",
+  "lastMonth",
+  "last30d",
+  "last90d",
+  "last6mo",
+  "thisYear",
+  "lastYear",
+];
+
 const MAX_LABEL_LENGTH = 120;
 
 function formatTimestamp(ts: number): string {
@@ -40,24 +213,14 @@ function formatTimestamp(ts: number): string {
   });
 }
 
-function toLocalDateInputValue(ts: number): string {
-  const d = new Date(ts);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function startOfDay(dateStr: string): number {
-  const d = new Date(dateStr);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
-function endOfDay(dateStr: string): number {
-  const d = new Date(dateStr);
-  d.setHours(23, 59, 59, 999);
-  return d.getTime();
+function formatDateTimeShort(datetimeStr: string): string {
+  return new Date(datetimeStr).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function truncate(text: string, maxLength: number): string {
@@ -73,14 +236,18 @@ export function MessageJumpPicker({
   onJumpToIndex,
 }: MessageJumpPickerProps) {
   const [query, setQuery] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [activePreset, setActivePreset] = useState<DatePreset | null>(null);
+  const [showCustom, setShowCustom] = useState(false);
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   useEffect(() => {
     if (!open) {
       setQuery("");
-      setDateFrom("");
-      setDateTo("");
+      setActivePreset(null);
+      setShowCustom(false);
+      setCustomFrom("");
+      setCustomTo("");
     }
   }, [open]);
 
@@ -101,23 +268,25 @@ export function MessageJumpPicker({
     return result;
   }, [items]);
 
-  const dateFilterActive = dateFrom !== "" || dateTo !== "";
-
-  const clearDateFilter = useCallback(() => {
-    setDateFrom("");
-    setDateTo("");
-  }, []);
-
   const visibleEntries = useMemo(() => {
     let filtered = entries;
 
-    if (dateFrom !== "") {
-      const fromMs = startOfDay(dateFrom);
-      filtered = filtered.filter((e) => e.timestamp >= fromMs);
-    }
-    if (dateTo !== "") {
-      const toMs = endOfDay(dateTo);
-      filtered = filtered.filter((e) => e.timestamp <= toMs);
+    if (activePreset !== null) {
+      const { from, to } = DATE_PRESETS[activePreset].getRange();
+      filtered = filtered.filter(
+        (e) => e.timestamp >= from && e.timestamp <= to,
+      );
+    } else if (showCustom) {
+      if (customFrom) {
+        filtered = filtered.filter(
+          (e) => e.timestamp >= new Date(customFrom).getTime(),
+        );
+      }
+      if (customTo) {
+        filtered = filtered.filter(
+          (e) => e.timestamp <= new Date(customTo).getTime(),
+        );
+      }
     }
 
     const normalizedQuery = query.trim().toLowerCase();
@@ -128,18 +297,47 @@ export function MessageJumpPicker({
     }
 
     return filtered;
-  }, [entries, query, dateFrom, dateTo]);
+  }, [entries, query, activePreset, showCustom, customFrom, customTo]);
 
-  // Derive min/max from actual message timestamps for date picker bounds
-  const { minDate, maxDate } = useMemo(() => {
-    if (entries.length === 0) return { minDate: undefined, maxDate: undefined };
-    const min = Math.min(...entries.map((e) => e.timestamp));
-    const max = Math.max(...entries.map((e) => e.timestamp));
-    return {
-      minDate: toLocalDateInputValue(min),
-      maxDate: toLocalDateInputValue(max),
-    };
-  }, [entries]);
+  const footerFilterLabel = useMemo((): string | null => {
+    if (activePreset !== null) return DATE_PRESETS[activePreset].footerLabel;
+    if (showCustom) {
+      if (customFrom && customTo) {
+        return `${formatDateTimeShort(customFrom)} – ${formatDateTimeShort(customTo)}`;
+      }
+      if (customFrom) return `after ${formatDateTimeShort(customFrom)}`;
+      if (customTo) return `before ${formatDateTimeShort(customTo)}`;
+    }
+    return null;
+  }, [activePreset, showCustom, customFrom, customTo]);
+
+  const triggerLabel = useMemo((): string => {
+    if (activePreset !== null) return DATE_PRESETS[activePreset].shortLabel;
+    if (showCustom && (customFrom || customTo)) return "Custom";
+    return "Filter";
+  }, [activePreset, showCustom, customFrom, customTo]);
+
+  const filterActive =
+    activePreset !== null ||
+    (showCustom && (customFrom !== "" || customTo !== ""));
+
+  const handlePreset = useCallback((preset: DatePreset) => {
+    setActivePreset((current) => (current === preset ? null : preset));
+    setShowCustom(false);
+    setCustomFrom("");
+    setCustomTo("");
+  }, []);
+
+  const handleCustom = useCallback(() => {
+    setActivePreset(null);
+    setShowCustom(true);
+  }, []);
+
+  const clearCustom = useCallback(() => {
+    setCustomFrom("");
+    setCustomTo("");
+    setShowCustom(false);
+  }, []);
 
   const handleSelect = useCallback(
     (id: string | null) => {
@@ -172,61 +370,93 @@ export function MessageJumpPicker({
             }
           }}
         >
-          <Flex align="center" gap="2" className="px-3 pt-2 pb-1">
-            <div className="flex-1">
+          <Flex align="center" gap="2" className="pt-2 pb-1">
+            <div className="min-w-0 flex-1">
               <AutocompleteInput
                 placeholder="Jump to message…"
                 autoFocus
                 showClear
-              />
+              >
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <button
+                        type="button"
+                        className={`flex cursor-pointer select-none items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors ${
+                          filterActive
+                            ? "text-(--accent-9) hover:text-(--accent-10)"
+                            : "text-(--gray-9) hover:text-(--gray-11)"
+                        }`}
+                      >
+                        <FunnelSimple
+                          size={12}
+                          weight={filterActive ? "fill" : "regular"}
+                        />
+                        <span>{triggerLabel}</span>
+                      </button>
+                    }
+                  />
+                  <DropdownMenuContent
+                    align="end"
+                    side="bottom"
+                    sideOffset={8}
+                    className="w-44"
+                  >
+                    <div className="scrollbar-hide max-h-[152px] overflow-y-auto">
+                      {PRESET_ORDER.map((preset) => (
+                        <DropdownMenuItem
+                          key={preset}
+                          onClick={() => handlePreset(preset)}
+                          className="flex items-center justify-between"
+                        >
+                          <span>{DATE_PRESETS[preset].label}</span>
+                          {activePreset === preset && (
+                            <Check size={12} className="text-(--accent-9)" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleCustom}>
+                      Custom range…
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </AutocompleteInput>
             </div>
           </Flex>
 
-          {/* Date filter row */}
-          <Flex
-            align="center"
-            gap="2"
-            className="border-(--gray-4) border-t px-3 py-1.5"
-          >
-            <CalendarBlank
-              size={13}
-              className="shrink-0 text-(--gray-10)"
-              weight="regular"
-            />
-            <span className="text-(--gray-10) text-[12px]">Filter by date</span>
-            <Flex align="center" gap="1" className="ml-1">
+          {showCustom && (
+            <Flex
+              align="center"
+              gap="2"
+              className="border-(--gray-4) border-t px-3 py-1.5"
+            >
               <input
-                type="date"
-                value={dateFrom}
-                min={minDate}
-                max={dateTo || maxDate}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="h-[22px] rounded-(--radius-1) border border-(--gray-a5) bg-(--gray-a2) px-1.5 text-(--gray-12) text-[12px] tabular-nums outline-none focus:border-(--accent-8) focus:ring-0"
+                type="datetime-local"
+                value={customFrom}
+                max={customTo || undefined}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="h-[22px] min-w-0 flex-1 rounded-(--radius-1) border border-(--gray-a5) bg-(--gray-a2) px-1.5 text-(--gray-12) text-[12px] tabular-nums outline-none focus:border-(--accent-8)"
               />
-              <span className="text-(--gray-10) text-[11px]">–</span>
+              <span className="shrink-0 text-(--gray-10) text-[11px]">–</span>
               <input
-                type="date"
-                value={dateTo}
-                min={dateFrom || minDate}
-                max={maxDate}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="h-[22px] rounded-(--radius-1) border border-(--gray-a5) bg-(--gray-a2) px-1.5 text-(--gray-12) text-[12px] tabular-nums outline-none focus:border-(--accent-8) focus:ring-0"
+                type="datetime-local"
+                value={customTo}
+                min={customFrom || undefined}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="h-[22px] min-w-0 flex-1 rounded-(--radius-1) border border-(--gray-a5) bg-(--gray-a2) px-1.5 text-(--gray-12) text-[12px] tabular-nums outline-none focus:border-(--accent-8)"
               />
+              <button
+                type="button"
+                onClick={clearCustom}
+                className="shrink-0 cursor-pointer text-(--gray-10) transition-colors hover:text-(--gray-12)"
+                aria-label="Clear date filter"
+              >
+                <X size={11} weight="bold" />
+              </button>
             </Flex>
-            {dateFilterActive && (
-              <Tooltip content="Clear date filter">
-                <IconButton
-                  size="1"
-                  variant="ghost"
-                  color="gray"
-                  className="ml-auto"
-                  onClick={clearDateFilter}
-                >
-                  <X size={11} weight="bold" />
-                </IconButton>
-              </Tooltip>
-            )}
-          </Flex>
+          )}
 
           <AutocompleteList className="max-h-[55vh] pt-1">
             {(entry: JumpEntry) => (
@@ -258,9 +488,9 @@ export function MessageJumpPicker({
           <span className="text-(--gray-11) text-[12px]">
             {visibleEntries.length}{" "}
             {visibleEntries.length === 1 ? "message" : "messages"}
-            {dateFilterActive && (
+            {footerFilterLabel !== null && (
               <span className="ml-1 text-(--gray-10)">
-                (date filter active)
+                ({footerFilterLabel})
               </span>
             )}
           </span>
