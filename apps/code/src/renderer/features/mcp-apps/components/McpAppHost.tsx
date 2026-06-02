@@ -8,7 +8,10 @@ import type {
 import { ArrowsIn, ArrowsOut, Plugs, X } from "@phosphor-icons/react";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc/client";
-import { POSTHOG_EXEC_TOOL_KEY } from "@shared/types/mcp-apps";
+import {
+  POSTHOG_EXEC_TOOL_KEY,
+  resolveResultResourceUri,
+} from "@shared/types/mcp-apps";
 import { useThemeStore } from "@stores/themeStore";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
@@ -41,16 +44,21 @@ export function McpAppHost({
   const [iframeEl, setIframeEl] = useState<HTMLIFrameElement | null>(null);
   const isDarkMode = useThemeStore((s) => s.isDarkMode);
 
-  // PostHog's built-in `exec` tool resolves its UI app per call (from the
-  // response `_meta`) rather than from registration metadata, so it's keyed by
-  // toolCallId instead of the shared `mcp__posthog__exec` tool key.
+  // PostHog's built-in `exec` tool resolves its UI app per call from the
+  // response `_meta` (carried on `toolCall.rawOutput`, which is persisted in the
+  // conversation) rather than from registration metadata. We fetch the resource
+  // by its `ui://` URI so it works for both live and rehydrated (post-restart)
+  // calls; registration-discovered tools fetch by their tool key.
   const isExec = mcpToolName === POSTHOG_EXEC_TOOL_KEY;
+  const execResourceUri = isExec
+    ? resolveResultResourceUri(toolCall.rawOutput)
+    : undefined;
 
   const { data: uiResource, isLoading: resourceLoading } = useQuery(
     isExec
-      ? trpcReact.mcpApps.getUiResourceForToolCall.queryOptions(
-          { toolCallId: toolCall.toolCallId },
-          { staleTime: Infinity },
+      ? trpcReact.mcpApps.getUiResourceByUri.queryOptions(
+          { serverName, resourceUri: execResourceUri ?? "" },
+          { staleTime: Infinity, enabled: !!execResourceUri },
         )
       : trpcReact.mcpApps.getUiResource.queryOptions(
           { toolKey: mcpToolName },
@@ -66,13 +74,24 @@ export function McpAppHost({
   );
 
   useEffect(() => {
-    log.debug("McpAppHost render", {
+    log.info("McpAppHost render", {
       mcpToolName,
+      isExec,
+      toolCallId: toolCall.toolCallId,
+      status: toolCall.status,
       resourceLoading,
       hasResource: !!uiResource,
       resourceUri: uiResource?.uri,
     });
-  }, [mcpToolName, resourceLoading, uiResource, uiResource?.uri]);
+  }, [
+    mcpToolName,
+    isExec,
+    toolCall.toolCallId,
+    toolCall.status,
+    resourceLoading,
+    uiResource,
+    uiResource?.uri,
+  ]);
 
   const proxyToolCallMut = useMutation(
     trpcReact.mcpApps.proxyToolCall.mutationOptions(),
@@ -153,9 +172,24 @@ export function McpAppHost({
   useEffect(() => {
     if (!isExec) return;
     if (toolCall.status !== "completed" && toolCall.status !== "failed") return;
-    if (toolCall.rawOutput == null) return;
+    if (toolCall.rawOutput == null) {
+      log.info("exec replay skipped: no rawOutput on toolCall", {
+        toolCallId: toolCall.toolCallId,
+        status: toolCall.status,
+      });
+      return;
+    }
+    log.info("exec replay: sending result from toolCall prop", {
+      toolCallId: toolCall.toolCallId,
+    });
     sendResultOnce(toolCall.rawOutput);
-  }, [isExec, toolCall.status, toolCall.rawOutput, sendResultOnce]);
+  }, [
+    isExec,
+    toolCall.status,
+    toolCall.rawOutput,
+    toolCall.toolCallId,
+    sendResultOnce,
+  ]);
 
   // Forward tool cancellations from subscriptions
   useSubscription(

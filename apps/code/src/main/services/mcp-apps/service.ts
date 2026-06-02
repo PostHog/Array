@@ -5,10 +5,10 @@ import type { IUrlLauncher } from "@posthog/platform/url-launcher";
 import {
   BUILTIN_POSTHOG_SERVER_NAME,
   EXEC_TOOL_NAME,
+  LEGACY_RESOURCE_URI_META_KEY,
   type McpAppsDiscoveryCompleteEvent,
   McpAppsServiceEvent,
   type McpAppsServiceEvents,
-  type McpAppsToolCallUiDiscoveredEvent,
   type McpAppsToolCancelledEvent,
   type McpAppsToolInputEvent,
   type McpAppsToolResultEvent,
@@ -27,6 +27,29 @@ import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 
 const log = logger.scope("mcp-apps-service");
 
+/**
+ * Safe diagnostic snapshot of a tool-call result — surfaces whether/where a UI
+ * `resourceUri` is hiding in `_meta` without dumping large payloads (HTML, rows).
+ */
+function summarizeResult(result: unknown): Record<string, unknown> {
+  if (result == null || typeof result !== "object") {
+    return { resultType: typeof result };
+  }
+  const obj = result as Record<string, unknown>;
+  const meta = obj._meta;
+  const hasMeta = meta != null && typeof meta === "object";
+  const metaObj = hasMeta ? (meta as Record<string, unknown>) : undefined;
+  return {
+    resultType: "object",
+    resultKeys: Object.keys(obj),
+    hasMeta,
+    metaKeys: metaObj ? Object.keys(metaObj) : undefined,
+    metaUi: metaObj?.ui,
+    legacyResourceUri: metaObj?.[LEGACY_RESOURCE_URI_META_KEY],
+    resolvedResourceUri: resolveResultResourceUri(result),
+  };
+}
+
 const UI_MIME_TYPE = "text/html;profile=mcp-app";
 const MAX_HTML_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -41,13 +64,6 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
   private connections = new Map<string, ServerConnection>();
   private resourceCache = new Map<string, McpUiResource>();
   private toolAssociations = new Map<string, McpToolUiAssociation>();
-  /**
-   * Per-tool-call UI associations for PostHog's built-in `exec` tool, keyed by
-   * `toolCallId`. The `exec` tool can't be discovered via `listTools()` (its UI
-   * `resourceUri` rides on each call's response `_meta`, not its registration),
-   * so associations here are populated lazily in {@link notifyToolResult}.
-   */
-  private execToolCallAssociations = new Map<string, McpToolUiAssociation>();
   private toolDefinitions = new Map<string, Tool>();
   private serverConfigs = new Map<string, McpServerConnectionConfig>();
   private pendingConnections = new Map<string, Promise<ServerConnection>>();
@@ -116,6 +132,15 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
           return null;
         }),
       ]);
+
+      log.info("discoverServerUiTools: listed tools", {
+        serverName,
+        toolNames: toolsList.tools.map((t) => t.name),
+        hasExecTool:
+          serverName === BUILTIN_POSTHOG_SERVER_NAME &&
+          toolsList.tools.some((t) => t.name === EXEC_TOOL_NAME),
+        resourceUris: resourcesList?.resources.map((r) => r.uri),
+      });
 
       for (const tool of toolsList.tools) {
         // The built-in PostHog `exec` tool carries no registration-time UI
@@ -206,7 +231,7 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     });
 
     const client = new Client(
-      { name: "Twig", version: "1.0.0" },
+      { name: "posthog-code", version: "1.0.0" },
       {
         capabilities: {
           extensions: {
@@ -229,9 +254,7 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
   }
 
   /**
-   * Get the UI resource for a tool. Fetches lazily on first access:
-   * creates an MCP connection if needed, then reads the resource HTML.
-   * Deduplicates concurrent fetches for the same resource URI.
+   * Fetch the UI resource for a registration-discovered tool, by its tool key.
    */
   async getUiResourceForTool(toolKey: string): Promise<McpUiResource | null> {
     const association = this.toolAssociations.get(toolKey);
@@ -239,147 +262,143 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
       log.debug("getUiResourceForTool: no association found", { toolKey });
       return null;
     }
+    return this.fetchUiResourceByUri(
+      association.serverName,
+      association.resourceUri,
+    );
+  }
 
-    // Return cached resource immediately
-    const cached = this.resourceCache.get(association.resourceUri);
+  /**
+   * Fetch a UI resource directly by its `ui://` URI. Used by the built-in
+   * PostHog `exec` path, where the resource URI is resolved per call from the
+   * tool result's `_meta` (in the renderer) rather than from a registered
+   * tool->UI association. Because the renderer derives it from the persisted
+   * conversation, exec UI apps survive app restarts — unlike the old in-memory
+   * per-call association map.
+   */
+  async getUiResourceByUri(
+    serverName: string,
+    resourceUri: string,
+  ): Promise<McpUiResource | null> {
+    if (!resourceUri.startsWith("ui://")) {
+      log.warn("getUiResourceByUri: rejecting non-ui:// URI", {
+        serverName,
+        resourceUri,
+      });
+      return null;
+    }
+    return this.fetchUiResourceByUri(serverName, resourceUri);
+  }
+
+  /**
+   * Lazily fetch + cache a UI resource's HTML, deduplicating concurrent fetches
+   * for the same URI. Shared by the registration and per-call exec paths.
+   */
+  private async fetchUiResourceByUri(
+    serverName: string,
+    resourceUri: string,
+  ): Promise<McpUiResource | null> {
+    const cached = this.resourceCache.get(resourceUri);
     if (cached) {
-      log.debug("getUiResourceForTool: cache hit", { toolKey });
+      log.debug("fetchUiResourceByUri: cache hit", { serverName, resourceUri });
       return cached;
     }
 
-    // Deduplicate concurrent fetches for the same resource URI
-    const pendingFetch = this.pendingFetches.get(association.resourceUri);
+    const pendingFetch = this.pendingFetches.get(resourceUri);
     if (pendingFetch) {
-      log.debug("getUiResourceForTool: joining pending fetch", {
-        toolKey,
-        uri: association.resourceUri,
+      log.debug("fetchUiResourceByUri: joining pending fetch", {
+        serverName,
+        resourceUri,
       });
       return pendingFetch;
     }
 
-    // Start the fetch for this resource URI
-    log.debug("getUiResourceForTool: starting lazy fetch", {
-      toolKey,
-      serverName: association.serverName,
-      uri: association.resourceUri,
+    log.debug("fetchUiResourceByUri: starting lazy fetch", {
+      serverName,
+      resourceUri,
     });
-    const fetchPromise = this.fetchUiResource(association);
-    this.pendingFetches.set(association.resourceUri, fetchPromise);
-
+    const fetchPromise = this.doFetchUiResource(serverName, resourceUri);
+    this.pendingFetches.set(resourceUri, fetchPromise);
     try {
       return await fetchPromise;
     } finally {
-      this.pendingFetches.delete(association.resourceUri);
+      this.pendingFetches.delete(resourceUri);
     }
   }
 
-  private async fetchUiResource(
-    association: McpToolUiAssociation,
+  private async doFetchUiResource(
+    serverName: string,
+    resourceUri: string,
   ): Promise<McpUiResource | null> {
+    let resourceResult: Awaited<ReturnType<Client["readResource"]>>;
     try {
-      const conn = await this.getOrCreateConnection(association.serverName);
-      const resourceResult = await conn.client.readResource({
-        uri: association.resourceUri,
-      });
-
-      const textContent = resourceResult.contents.find(
-        (c) => "text" in c && c.mimeType === UI_MIME_TYPE,
-      );
-      if (!textContent || !("text" in textContent)) {
-        log.warn("UI resource had no matching text content", {
-          serverName: association.serverName,
-          uri: association.resourceUri,
-          contentsCount: resourceResult.contents.length,
-        });
-        return null;
-      }
-
-      if (textContent.text.length > MAX_HTML_SIZE) {
-        log.warn("UI resource HTML exceeds size limit", {
-          uri: association.resourceUri,
-          size: textContent.text.length,
-          limit: MAX_HTML_SIZE,
-        });
-        return null;
-      }
-
-      // Use metadata cached during discovery
-      const resourceMeta = this.resourceMetaCache.get(association.resourceUri);
-
-      const resource: McpUiResource = {
-        uri: association.resourceUri,
-        name: resourceMeta?.name,
-        mimeType: UI_MIME_TYPE,
-        csp: resourceMeta?._meta?.ui?.csp,
-        permissions: resourceMeta?._meta?.ui?.permissions,
-        html: textContent.text,
-        serverName: association.serverName,
-      };
-
-      this.resourceCache.set(association.resourceUri, resource);
-      log.info("Lazily fetched and cached UI resource", {
-        serverName: association.serverName,
-        uri: association.resourceUri,
-        htmlLength: textContent.text.length,
-        hasCsp: !!resource.csp,
-      });
-
-      return resource;
+      const conn = await this.getOrCreateConnection(serverName);
+      resourceResult = await conn.client.readResource({ uri: resourceUri });
     } catch (err) {
-      log.warn("Failed to lazily fetch UI resource", {
-        serverName: association.serverName,
-        uri: association.resourceUri,
+      // Connection/read failures are transient — most notably "No server config
+      // for: posthog" during the boot race, before a session populates configs.
+      // Rethrow so the caller's query surfaces an error and retries, instead of
+      // caching a permanent `null` for this (shared) resource URI and poisoning
+      // every later call that reuses it.
+      log.warn("Failed to fetch UI resource (transient — will retry)", {
+        serverName,
+        uri: resourceUri,
         error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+
+    const textContent = resourceResult.contents.find(
+      (c) => "text" in c && c.mimeType === UI_MIME_TYPE,
+    );
+    if (!textContent || !("text" in textContent)) {
+      // The server answered but has no usable UI content — a definitive "no UI"
+      // for this URI, so caching `null` is correct.
+      log.warn("UI resource had no matching text content", {
+        serverName,
+        uri: resourceUri,
+        contentsCount: resourceResult.contents.length,
       });
       return null;
     }
+
+    if (textContent.text.length > MAX_HTML_SIZE) {
+      log.warn("UI resource HTML exceeds size limit", {
+        uri: resourceUri,
+        size: textContent.text.length,
+        limit: MAX_HTML_SIZE,
+      });
+      return null;
+    }
+
+    // Use metadata cached during discovery (CSP/permissions), if available.
+    const resourceMeta = this.resourceMetaCache.get(resourceUri);
+
+    const resource: McpUiResource = {
+      uri: resourceUri,
+      name: resourceMeta?.name,
+      mimeType: UI_MIME_TYPE,
+      csp: resourceMeta?._meta?.ui?.csp,
+      permissions: resourceMeta?._meta?.ui?.permissions,
+      html: textContent.text,
+      serverName,
+    };
+
+    this.resourceCache.set(resourceUri, resource);
+    log.info("Lazily fetched and cached UI resource", {
+      serverName,
+      uri: resourceUri,
+      htmlLength: textContent.text.length,
+      hasCsp: !!resource.csp,
+    });
+
+    return resource;
   }
 
   hasUiForTool(toolKey: string): boolean {
     const has = this.toolAssociations.has(toolKey);
     log.debug("hasUiForTool", { toolKey, result: has });
     return has;
-  }
-
-  /**
-   * Whether a UI app was resolved for a specific tool call. Only the built-in
-   * PostHog `exec` tool populates this (via {@link notifyToolResult}); for
-   * registration-discovered tools use {@link hasUiForTool}.
-   */
-  hasUiForToolCall(toolCallId: string): boolean {
-    const has = this.execToolCallAssociations.has(toolCallId);
-    log.debug("hasUiForToolCall", { toolCallId, result: has });
-    return has;
-  }
-
-  /**
-   * Fetch the UI resource resolved for a specific `exec` tool call. Reuses the
-   * same lazy-fetch + cache path as registration-discovered tools.
-   */
-  async getUiResourceForToolCall(
-    toolCallId: string,
-  ): Promise<McpUiResource | null> {
-    const association = this.execToolCallAssociations.get(toolCallId);
-    if (!association) {
-      log.debug("getUiResourceForToolCall: no association found", {
-        toolCallId,
-      });
-      return null;
-    }
-
-    const cached = this.resourceCache.get(association.resourceUri);
-    if (cached) return cached;
-
-    const pendingFetch = this.pendingFetches.get(association.resourceUri);
-    if (pendingFetch) return pendingFetch;
-
-    const fetchPromise = this.fetchUiResource(association);
-    this.pendingFetches.set(association.resourceUri, fetchPromise);
-    try {
-      return await fetchPromise;
-    } finally {
-      this.pendingFetches.delete(association.resourceUri);
-    }
   }
 
   getToolDefinition(toolKey: string): Tool | null {
@@ -445,14 +464,12 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     result: unknown,
     isError?: boolean,
   ): void {
-    log.info("notifyToolResult", { toolKey, toolCallId, isError });
-
-    // PostHog's built-in `exec` tool surfaces UI apps through the per-call
-    // response `_meta` rather than registration-time tool metadata, so resolve
-    // and register the association here before the result is forwarded.
-    if (toolKey === POSTHOG_EXEC_TOOL_KEY && !isError) {
-      this.registerExecToolCallUi(toolCallId, result);
-    }
+    log.info("notifyToolResult", {
+      toolKey,
+      toolCallId,
+      isError,
+      ...summarizeResult(result),
+    });
 
     this.emit(McpAppsServiceEvent.ToolResult, {
       toolKey,
@@ -462,43 +479,8 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     } satisfies McpAppsToolResultEvent);
   }
 
-  /**
-   * Parse a `resourceUri` out of an `exec` call's response `_meta` and, when
-   * present, record a per-call association and announce it so the renderer can
-   * mount the UI app for this specific call.
-   */
-  private registerExecToolCallUi(toolCallId: string, result: unknown): void {
-    if (this.execToolCallAssociations.has(toolCallId)) return;
-
-    const resourceUri = resolveResultResourceUri(result);
-    if (!resourceUri) {
-      log.debug("registerExecToolCallUi: no UI resourceUri on result", {
-        toolCallId,
-      });
-      return;
-    }
-
-    this.execToolCallAssociations.set(toolCallId, {
-      toolKey: POSTHOG_EXEC_TOOL_KEY,
-      serverName: BUILTIN_POSTHOG_SERVER_NAME,
-      toolName: EXEC_TOOL_NAME,
-      resourceUri,
-    });
-    log.info("registerExecToolCallUi: resolved per-call UI", {
-      toolCallId,
-      resourceUri,
-    });
-
-    this.emit(McpAppsServiceEvent.ToolCallUiDiscovered, {
-      toolCallId,
-      toolKey: POSTHOG_EXEC_TOOL_KEY,
-      resourceUri,
-    } satisfies McpAppsToolCallUiDiscoveredEvent);
-  }
-
   notifyToolCancelled(toolKey: string, toolCallId: string): void {
     log.info("notifyToolCancelled", { toolKey, toolCallId });
-    this.execToolCallAssociations.delete(toolCallId);
     this.emit(McpAppsServiceEvent.ToolCancelled, {
       toolKey,
       toolCallId,
@@ -521,7 +503,6 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     this.resourceCache.clear();
     this.resourceMetaCache.clear();
     this.toolAssociations.clear();
-    this.execToolCallAssociations.clear();
     this.toolDefinitions.clear();
     this.pendingConnections.clear();
     this.pendingFetches.clear();
@@ -559,19 +540,10 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
         this.toolAssociations.delete(key);
       }
     }
-    for (const [callId, assoc] of this.execToolCallAssociations) {
-      if (assoc.serverName === serverName) {
-        urisToEvict.add(assoc.resourceUri);
-        this.execToolCallAssociations.delete(callId);
-      }
-    }
 
     // Only evict cached resources not referenced by remaining associations
     const stillReferenced = new Set(
-      [
-        ...this.toolAssociations.values(),
-        ...this.execToolCallAssociations.values(),
-      ].map((a) => a.resourceUri),
+      [...this.toolAssociations.values()].map((a) => a.resourceUri),
     );
     for (const uri of urisToEvict) {
       if (!stillReferenced.has(uri)) {
@@ -588,7 +560,6 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     this.resourceCache.clear();
     this.resourceMetaCache.clear();
     this.toolAssociations.clear();
-    this.execToolCallAssociations.clear();
     this.toolDefinitions.clear();
     this.serverConfigs.clear();
     this.pendingConnections.clear();

@@ -153,9 +153,15 @@ export const mcpAppsSubscriptionInput = z.object({
   toolKey: z.string(),
 });
 
-/** Identifies a single tool *call* — used by the per-call exec UI path. */
-export const toolCallIdInput = z.object({
-  toolCallId: z.string(),
+/**
+ * Fetch a UI resource directly by URI. Used by the built-in PostHog `exec`
+ * path, where the renderer resolves the `ui://` URI from the tool result's
+ * `_meta` (see {@link resolveResultResourceUri}) rather than a registered
+ * tool->UI association.
+ */
+export const getUiResourceByUriInput = z.object({
+  serverName: z.string(),
+  resourceUri: z.string(),
 });
 
 // --- Service event types ---
@@ -182,23 +188,11 @@ export interface McpAppsDiscoveryCompleteEvent {
   toolKeys: string[];
 }
 
-/**
- * Emitted when a UI app is resolved for a single tool *call* (the exec path).
- * Unlike `DiscoveryComplete`, which fires once after registration-time
- * discovery, this fires per call as soon as the response `_meta` is parsed.
- */
-export interface McpAppsToolCallUiDiscoveredEvent {
-  toolCallId: string;
-  toolKey: string;
-  resourceUri: string;
-}
-
 export const McpAppsServiceEvent = {
   ToolInput: "tool-input",
   ToolResult: "tool-result",
   ToolCancelled: "tool-cancelled",
   DiscoveryComplete: "discovery-complete",
-  ToolCallUiDiscovered: "tool-call-ui-discovered",
 } as const;
 
 export interface McpAppsServiceEvents {
@@ -206,7 +200,6 @@ export interface McpAppsServiceEvents {
   [McpAppsServiceEvent.ToolResult]: McpAppsToolResultEvent;
   [McpAppsServiceEvent.ToolCancelled]: McpAppsToolCancelledEvent;
   [McpAppsServiceEvent.DiscoveryComplete]: McpAppsDiscoveryCompleteEvent;
-  [McpAppsServiceEvent.ToolCallUiDiscovered]: McpAppsToolCallUiDiscoveredEvent;
 }
 
 // --- MCP server connection config ---

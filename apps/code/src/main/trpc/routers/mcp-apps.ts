@@ -1,5 +1,6 @@
 import {
   getToolDefinitionInput,
+  getUiResourceByUriInput,
   getUiResourceInput,
   hasUiForToolInput,
   McpAppsServiceEvent,
@@ -8,7 +9,6 @@ import {
   openLinkInput,
   proxyResourceReadInput,
   proxyToolCallInput,
-  toolCallIdInput,
 } from "@shared/types/mcp-apps";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
@@ -28,17 +28,14 @@ export const mcpAppsRouter = router({
     .input(hasUiForToolInput)
     .query(({ input }) => getService().hasUiForTool(input.toolKey)),
 
-  // Per-call UI lookups for PostHog's built-in `exec` tool, which resolves its
-  // UI app from each call's response `_meta` rather than registration metadata.
-  hasUiForToolCall: publicProcedure
-    .input(toolCallIdInput)
-    .query(({ input }) => getService().hasUiForToolCall(input.toolCallId)),
-
-  getUiResourceForToolCall: publicProcedure
-    .input(toolCallIdInput)
+  // Fetch a UI resource by URI. The built-in PostHog `exec` tool resolves its
+  // UI app per call from the result's `_meta` (in the renderer) rather than
+  // registration metadata, so the host fetches the resource by URI directly.
+  getUiResourceByUri: publicProcedure
+    .input(getUiResourceByUriInput)
     .output(mcpUiResourceSchema.nullable())
     .query(({ input }) =>
-      getService().getUiResourceForToolCall(input.toolCallId),
+      getService().getUiResourceByUri(input.serverName, input.resourceUri),
     ),
 
   getToolDefinition: publicProcedure
@@ -115,19 +112,4 @@ export const mcpAppsRouter = router({
       yield event;
     }
   }),
-
-  onToolCallUiDiscovered: publicProcedure
-    .input(toolCallIdInput)
-    .subscription(async function* (opts) {
-      const service = getService();
-      const targetToolCallId = opts.input.toolCallId;
-      for await (const event of service.toIterable(
-        McpAppsServiceEvent.ToolCallUiDiscovered,
-        { signal: opts.signal },
-      )) {
-        if (event.toolCallId === targetToolCallId) {
-          yield event;
-        }
-      }
-    }),
 });

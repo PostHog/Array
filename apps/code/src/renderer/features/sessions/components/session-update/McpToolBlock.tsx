@@ -3,11 +3,17 @@ import { McpToolView } from "@features/mcp-apps/components/McpToolView";
 import { parseMcpToolKey } from "@features/mcp-apps/utils/mcp-app-host-utils";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useTRPC } from "@renderer/trpc/client";
-import { POSTHOG_EXEC_TOOL_KEY } from "@shared/types/mcp-apps";
+import {
+  POSTHOG_EXEC_TOOL_KEY,
+  resolveResultResourceUri,
+} from "@shared/types/mcp-apps";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
+import { logger } from "@utils/logger";
 import { useEffect } from "react";
 import type { ToolViewProps } from "./toolCallUtils";
+
+const log = logger.scope("mcp-tool-block");
 
 interface McpToolBlockProps extends ToolViewProps {
   mcpToolName: string;
@@ -18,42 +24,46 @@ export function McpToolBlock(props: McpToolBlockProps) {
   const { serverName, toolName } = parseMcpToolKey(mcpToolName);
 
   // PostHog's built-in `exec` tool surfaces UI apps through each call's response
-  // `_meta`, so it can't be discovered at registration time like other MCP
-  // tools. For it we gate on a per-call lookup instead of the per-tool one.
+  // `_meta` rather than registration-time tool metadata. The resolved `ui://`
+  // URI lives on `toolCall.rawOutput`, which is persisted in the conversation —
+  // so deriving it from the prop makes exec UI apps survive app restarts.
   const isExec = mcpToolName === POSTHOG_EXEC_TOOL_KEY;
-  const toolCallId = toolCall.toolCallId;
+  const execResourceUri = isExec
+    ? resolveResultResourceUri(toolCall.rawOutput)
+    : undefined;
 
   const mcpAppsDisabled = useSettingsStore((s) => s.mcpAppsDisabledServers);
   const isDisabledForServer = mcpAppsDisabled.includes(serverName);
-  const enabled = !isDisabledForServer;
 
   const trpcReact = useTRPC();
   const queryClient = useQueryClient();
 
-  // Registration-discovered tools: a stable per-tool association.
+  // Registration-discovered tools: a stable per-tool association rebuilt at boot.
   const { data: hasUiByTool } = useQuery(
     trpcReact.mcpApps.hasUiForTool.queryOptions(
       { toolKey: mcpToolName },
-      { staleTime: Infinity, enabled: enabled && !isExec },
+      { staleTime: Infinity, enabled: !isDisabledForServer && !isExec },
     ),
   );
 
-  // `exec` tool: a per-call association resolved once the result arrives.
-  const { data: hasUiByCall } = useQuery(
-    trpcReact.mcpApps.hasUiForToolCall.queryOptions(
-      { toolCallId },
-      { staleTime: Infinity, enabled: enabled && isExec },
-    ),
-  );
+  const hasUi = isExec ? !!execResourceUri : hasUiByTool;
 
-  const hasUi = isExec ? hasUiByCall : hasUiByTool;
-
-  // When MCP Apps discovery completes (possibly after this component mounted),
-  // invalidate the hasUiForTool query so we pick up newly-discovered UIs.
+  // Discovery completing signals that MCP server configs are now populated and
+  // a connection can be opened. Two reasons to react:
+  //  - registration path: a UI may have been newly discovered → refresh the gate.
+  //  - exec path: when viewing a past conversation on app boot, the resource
+  //    fetch can run before any session populates the server config and fail
+  //    with "No server config". Re-fetch once discovery lands so it succeeds.
   useSubscription(
     trpcReact.mcpApps.onDiscoveryComplete.subscriptionOptions(undefined, {
-      enabled: enabled && !isExec,
+      enabled: !isDisabledForServer,
       onData: (_event) => {
+        if (isExec) {
+          void queryClient.invalidateQueries(
+            trpcReact.mcpApps.getUiResourceByUri.pathFilter(),
+          );
+          return;
+        }
         void queryClient.invalidateQueries(
           trpcReact.mcpApps.hasUiForTool.pathFilter(),
         );
@@ -64,38 +74,27 @@ export function McpToolBlock(props: McpToolBlockProps) {
     }),
   );
 
-  // `exec`: a UI app is announced for this specific call once its response
-  // `_meta` is parsed in the main process. Refresh the per-call lookups.
-  useSubscription(
-    trpcReact.mcpApps.onToolCallUiDiscovered.subscriptionOptions(
-      { toolCallId },
-      {
-        enabled: enabled && isExec,
-        onData: (_event) => {
-          void queryClient.invalidateQueries(
-            trpcReact.mcpApps.hasUiForToolCall.pathFilter(),
-          );
-          void queryClient.invalidateQueries(
-            trpcReact.mcpApps.getUiResourceForToolCall.pathFilter(),
-          );
-        },
-      },
-    ),
-  );
-
-  // Fallback for the race where this call completes before the subscription
-  // above is established: once the call settles, re-check the per-call lookup.
-  const status = toolCall.status;
   useEffect(() => {
-    if (!enabled || !isExec) return;
-    if (status !== "completed" && status !== "failed") return;
-    void queryClient.invalidateQueries(
-      trpcReact.mcpApps.hasUiForToolCall.pathFilter(),
-    );
-    void queryClient.invalidateQueries(
-      trpcReact.mcpApps.getUiResourceForToolCall.pathFilter(),
-    );
-  }, [enabled, isExec, status, queryClient, trpcReact]);
+    log.info("render state", {
+      mcpToolName,
+      isExec,
+      toolCallId: toolCall.toolCallId,
+      status: toolCall.status,
+      isDisabledForServer,
+      hasUiByTool,
+      execResourceUri,
+      willRenderApp: !!hasUi && !isDisabledForServer,
+    });
+  }, [
+    mcpToolName,
+    isExec,
+    toolCall.toolCallId,
+    toolCall.status,
+    isDisabledForServer,
+    hasUiByTool,
+    execResourceUri,
+    hasUi,
+  ]);
 
   return (
     <>
