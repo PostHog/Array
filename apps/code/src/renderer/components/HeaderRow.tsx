@@ -11,13 +11,13 @@ import { SidebarTrigger } from "@features/sidebar/components/SidebarTrigger";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
 import { SkillButtonsMenu } from "@features/skill-buttons/components/SkillButtonsMenu";
 import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
+import { useAppView } from "@hooks/useAppView";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { Cloud, Spinner } from "@phosphor-icons/react";
 import { Button as QuillButton } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { useHeaderStore } from "@stores/headerStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { isWindows } from "@utils/platform";
 import { useState } from "react";
 
@@ -108,7 +108,7 @@ const WINDOWS_TITLEBAR_INSET = 140;
 
 export function HeaderRow() {
   const content = useHeaderStore((state) => state.content);
-  const view = useNavigationStore((state) => state.view);
+  const view = useAppView();
 
   const sidebarOpen = useSidebarStore((state) => state.open);
   const sidebarWidth = useSidebarStore((state) => state.width);

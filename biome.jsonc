@@ -119,6 +119,20 @@
       }
     },
     {
+      // TanStack Router generated route tree — uses `as any` and its own
+      // formatting; the file header explicitly says not to lint/format it.
+      "includes": ["apps/code/src/renderer/routeTree.gen.ts"],
+      "linter": {
+        "enabled": false
+      },
+      "formatter": {
+        "enabled": false
+      },
+      "assist": {
+        "enabled": false
+      }
+    },
+    {
       // Disallow console.* in Code and agent source code - use logger instead
       "includes": [
         "apps/code/src/**/*.ts",

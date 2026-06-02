@@ -3,10 +3,11 @@ import { getSessionService } from "@features/sessions/service/service";
 import { pinnedTasksApi } from "@features/sidebar/hooks/usePinnedTasks";
 import { useTerminalStore } from "@features/terminal/stores/terminalStore";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
+import { getAppViewSnapshot } from "@hooks/useAppView";
+import { openTaskInput } from "@hooks/useOpenTask";
 import { trpc, trpcClient } from "@renderer/trpc";
 import type { ArchivedTask } from "@shared/types/archive";
 import { useFocusStore } from "@stores/focusStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
@@ -28,9 +29,9 @@ export async function archiveTaskImperative(
   const wasPinned = pinnedTaskIds.includes(taskId);
 
   if (!options?.skipNavigate) {
-    const nav = useNavigationStore.getState();
-    if (nav.view.type === "task-detail" && nav.view.data?.id === taskId) {
-      nav.navigateToTaskInput();
+    const view = getAppViewSnapshot();
+    if (view.type === "task-detail" && view.taskId === taskId) {
+      openTaskInput();
     }
   }
 
@@ -123,14 +124,10 @@ export async function archiveTasksImperative(
 ): Promise<{ archived: number; failed: number }> {
   if (taskIds.length === 0) return { archived: 0, failed: 0 };
 
-  const nav = useNavigationStore.getState();
+  const view = getAppViewSnapshot();
   const idSet = new Set(taskIds);
-  if (
-    nav.view.type === "task-detail" &&
-    nav.view.data &&
-    idSet.has(nav.view.data.id)
-  ) {
-    nav.navigateToTaskInput();
+  if (view.type === "task-detail" && view.taskId && idSet.has(view.taskId)) {
+    openTaskInput();
   }
 
   let archived = 0;

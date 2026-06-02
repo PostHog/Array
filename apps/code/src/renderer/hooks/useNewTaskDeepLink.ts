@@ -1,11 +1,9 @@
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
+import { useTaskInputPrefillStore } from "@features/task-detail/stores/taskInputPrefillStore";
+import { openTaskInput } from "@hooks/useOpenTask";
 import { trpcClient, useTRPC } from "@renderer/trpc";
 import type { NewTaskLinkPayload } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import {
-  type TaskInputNavigationOptions,
-  useNavigationStore,
-} from "@stores/navigationStore";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
@@ -14,37 +12,26 @@ import { toast } from "sonner";
 
 const log = logger.scope("new-task-deep-link");
 
-type NavigateToTaskInput = (options?: TaskInputNavigationOptions) => void;
-
 export function useNewTaskDeepLink() {
   const trpcReact = useTRPC();
-  const navigateToTaskInput = useNavigationStore(
-    (state) => state.navigateToTaskInput,
-  );
-  const clearTaskInputReportAssociation = useNavigationStore(
-    (state) => state.clearTaskInputReportAssociation,
-  );
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
   );
   const hasFetchedPending = useRef(false);
 
-  const handleAction = useCallback(
-    async (payload: NewTaskLinkPayload) => {
-      log.info(`Handling deep link action: ${payload.action}`);
-      clearTaskInputReportAssociation();
+  const handleAction = useCallback(async (payload: NewTaskLinkPayload) => {
+    log.info(`Handling deep link action: ${payload.action}`);
+    useTaskInputPrefillStore.getState().clearReportAssociation();
 
-      switch (payload.action) {
-        case "new":
-          return handleNew(payload, navigateToTaskInput);
-        case "plan":
-          return handlePlan(payload, navigateToTaskInput);
-        case "issue":
-          return handleIssue(payload, navigateToTaskInput);
-      }
-    },
-    [navigateToTaskInput, clearTaskInputReportAssociation],
-  );
+    switch (payload.action) {
+      case "new":
+        return handleNew(payload);
+      case "plan":
+        return handlePlan(payload);
+      case "issue":
+        return handleIssue(payload);
+    }
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -84,11 +71,8 @@ export function useNewTaskDeepLink() {
   );
 }
 
-function handleNew(
-  payload: Extract<NewTaskLinkPayload, { action: "new" }>,
-  navigateToTaskInput: NavigateToTaskInput,
-) {
-  navigateToTaskInput({
+function handleNew(payload: Extract<NewTaskLinkPayload, { action: "new" }>) {
+  openTaskInput({
     initialPrompt: payload.prompt,
     initialCloudRepository: payload.repo,
     initialModel: payload.model,
@@ -105,11 +89,8 @@ function handleNew(
   log.info("Navigated to task input from new deep link");
 }
 
-function handlePlan(
-  payload: Extract<NewTaskLinkPayload, { action: "plan" }>,
-  navigateToTaskInput: NavigateToTaskInput,
-) {
-  navigateToTaskInput({
+function handlePlan(payload: Extract<NewTaskLinkPayload, { action: "plan" }>) {
+  openTaskInput({
     initialPrompt: payload.plan,
     initialCloudRepository: payload.repo,
     initialModel: payload.model,
@@ -128,7 +109,6 @@ function handlePlan(
 
 async function handleIssue(
   payload: Extract<NewTaskLinkPayload, { action: "issue" }>,
-  navigateToTaskInput: NavigateToTaskInput,
 ) {
   try {
     const issue = await trpcClient.git.getGithubIssue.query({
@@ -161,7 +141,7 @@ async function handleIssue(
 
     const cloudRepo = payload.repo ?? `${payload.owner}/${payload.issueRepo}`;
 
-    navigateToTaskInput({
+    openTaskInput({
       initialPrompt: prompt,
       initialCloudRepository: cloudRepo,
       initialModel: payload.model,

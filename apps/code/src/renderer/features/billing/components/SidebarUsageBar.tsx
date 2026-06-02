@@ -1,6 +1,6 @@
 import { useFreeUsage } from "@features/billing/hooks/useFreeUsage";
 import { formatResetTime, isUsageExceeded } from "@features/billing/utils";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { openSettings } from "@features/settings/hooks/useOpenSettings";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { Circle } from "@phosphor-icons/react";
 import { BILLING_FLAG } from "@shared/constants";
@@ -15,7 +15,7 @@ export function SidebarUsageBar() {
 
   const handleUpgrade = () => {
     track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, { surface: "sidebar" });
-    useSettingsDialogStore.getState().open("plan-usage");
+    openSettings("plan-usage");
   };
 
   if (!usage) {
