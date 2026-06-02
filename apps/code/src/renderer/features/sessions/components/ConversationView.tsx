@@ -310,15 +310,17 @@ export function ConversationView({
         {showScrollButton && (
           <Box className="absolute right-6 bottom-4 z-10">
             <Tooltip>
-              <TooltipTrigger>
-                <Button
-                  size="icon-lg"
-                  variant="outline"
-                  onClick={scrollToBottom}
-                >
-                  <ArrowDown size={14} weight="bold" />
-                </Button>
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-lg"
+                    variant="outline"
+                    onClick={scrollToBottom}
+                  >
+                    <ArrowDown size={14} weight="bold" />
+                  </Button>
+                }
+              />
               <TooltipContent>Scroll to bottom</TooltipContent>
             </Tooltip>
           </Box>
