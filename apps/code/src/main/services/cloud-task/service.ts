@@ -1,10 +1,12 @@
 import type { CloudTaskPermissionRequestUpdate } from "@shared/types";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import type { StoredLogEntry } from "@shared/types/session-events";
 import { inject, injectable, preDestroy } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import type { AuthService } from "../auth/service";
+import { trackAppEvent } from "../posthog-analytics";
 import {
   CloudTaskEvent,
   type CloudTaskEvents,
@@ -978,6 +980,21 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   private failWatcher(key: string, error: CloudTaskConnectionError): void {
     const watcher = this.watchers.get(key);
     if (!watcher) return;
+
+    // Track every terminal give-up so cloud-run stream failures are visible in
+    // PostHog. error_title distinguishes the cause; the budget counts separate an
+    // idle Envoy cut from a genuine outage. Best-effort — never block teardown.
+    trackAppEvent(ANALYTICS_EVENTS.CLOUD_STREAM_DISCONNECTED, {
+      task_id: watcher.taskId,
+      run_id: watcher.runId,
+      team_id: watcher.teamId,
+      error_title: error.title,
+      retryable: error.retryable,
+      reconnect_attempts: watcher.reconnectAttempts,
+      stream_error_attempts: watcher.streamErrorAttempts,
+      cumulative_reconnect_attempts: watcher.cumulativeReconnectAttempts,
+      was_bootstrapping: watcher.isBootstrapping,
+    });
 
     watcher.failed = true;
     watcher.isBootstrapping = false;

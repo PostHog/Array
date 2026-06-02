@@ -187,6 +187,19 @@ program
       process.exit(0);
     });
 
+    // A hard crash would otherwise leave the run non-terminal and the user staring
+    // at a generic "Cloud stream disconnected". Mark the run failed before exiting
+    // so the desktop surfaces a real error instead of a silent stall.
+    const handleFatalError = async (error: unknown) => {
+      try {
+        await server.reportFatalError(error);
+      } finally {
+        process.exit(1);
+      }
+    };
+    process.on("uncaughtException", handleFatalError);
+    process.on("unhandledRejection", handleFatalError);
+
     await server.start();
   });
 
