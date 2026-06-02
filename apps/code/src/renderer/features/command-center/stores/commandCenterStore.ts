@@ -38,7 +38,6 @@ interface CommandCenterStoreActions {
   setActiveCell: (cellIndex: number | null) => void;
   assignTask: (cellIndex: number, taskId: string) => void;
   autofillCells: (taskIds: string[]) => void;
-  markAutofilled: () => void;
   removeTask: (cellIndex: number) => void;
   removeTaskById: (taskId: string) => void;
   clearAll: () => void;
@@ -131,8 +130,12 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
 
       autofillCells: (taskIds) =>
         set((state) => {
+          // Grid is already full — nothing to place, but the one-time
+          // bootstrap is done, so record it and stop autofill from re-running.
+          if (state.cells.every((id) => id != null)) {
+            return { hasAutofilled: true };
+          }
           if (taskIds.length === 0) return state;
-          if (state.cells.every((id) => id != null)) return state;
           const cells: (string | null)[] = [...state.cells];
           const queue = [...taskIds];
           for (let i = 0; i < cells.length && queue.length > 0; i++) {
@@ -142,8 +145,6 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
           }
           return { cells, hasAutofilled: true };
         }),
-
-      markAutofilled: () => set({ hasAutofilled: true }),
 
       removeTask: (cellIndex) =>
         set((state) => {

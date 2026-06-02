@@ -93,8 +93,9 @@ describe("commandCenterStore", () => {
       expect(useCommandCenterStore.getState().hasAutofilled).toBe(true);
     });
 
-    it("markAutofilled sets the flag", () => {
-      useCommandCenterStore.getState().markAutofilled();
+    it("marks the grid as autofilled when it is already full", () => {
+      useCommandCenterStore.setState({ cells: ["a", "b", "c", "d"] });
+      useCommandCenterStore.getState().autofillCells([]);
       expect(useCommandCenterStore.getState().hasAutofilled).toBe(true);
     });
   });

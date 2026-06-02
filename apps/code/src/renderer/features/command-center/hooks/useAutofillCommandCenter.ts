@@ -26,7 +26,6 @@ export function useAutofillCommandCenter(): void {
   const cells = useCommandCenterStore((s) => s.cells);
   const hasAutofilled = useCommandCenterStore((s) => s.hasAutofilled);
   const autofillCells = useCommandCenterStore((s) => s.autofillCells);
-  const markAutofilled = useCommandCenterStore((s) => s.markAutofilled);
 
   useEffect(() => {
     // Autofill is a one-time convenience to bootstrap an empty grid. Once it
@@ -39,11 +38,6 @@ export function useAutofillCommandCenter(): void {
     if (!tasksFetched) return;
 
     const emptySlots = cells.filter((id) => id == null).length;
-    if (emptySlots === 0) {
-      markAutofilled();
-      return;
-    }
-
     const assignedIds = new Set(cells.filter((id): id is string => id != null));
     const cutoff = Date.now() - RECENT_WINDOW_MS;
     const candidates = tasks
@@ -58,10 +52,10 @@ export function useAutofillCommandCenter(): void {
       .slice(0, emptySlots)
       .map((task) => task.id);
 
-    // No eligible tasks yet — leave the flag unset so autofill can still
-    // bootstrap the grid once recent tasks exist.
-    if (candidates.length === 0) return;
-
+    // Hand the candidates to the store, which records the one-time bootstrap
+    // — including when the grid is already full and there is nothing to place.
+    // With no eligible tasks yet on a partial grid the flag stays unset, so
+    // autofill can still bootstrap once recent tasks exist.
     autofillCells(candidates);
   }, [
     cells,
@@ -72,6 +66,5 @@ export function useAutofillCommandCenter(): void {
     tasksFetched,
     archivedTaskIds,
     autofillCells,
-    markAutofilled,
   ]);
 }
