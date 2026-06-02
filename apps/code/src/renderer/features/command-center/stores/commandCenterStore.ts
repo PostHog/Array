@@ -26,9 +26,7 @@ interface CommandCenterStoreState {
   activeCellIndex: number | null;
   zoom: number;
   creatingCells: number[];
-  // True once autofill has bootstrapped the grid (or the user has curated it
-  // by assigning a task). Persisted so autofill never repopulates cells the
-  // user deliberately left empty when the Command Center remounts.
+  // Persisted so autofill bootstraps the grid only once, not on every remount.
   hasAutofilled: boolean;
 }
 
@@ -122,16 +120,14 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
             cells,
             activeTaskId: taskId,
             creatingCells: state.creatingCells.filter((i) => i !== cellIndex),
-            // Manually placing a task counts as curating the grid, so autofill
-            // should never top up the remaining empty cells.
+            // Manually placing a task counts as curating the grid.
             hasAutofilled: true,
           };
         }),
 
       autofillCells: (taskIds) =>
         set((state) => {
-          // Grid is already full — nothing to place, but the one-time
-          // bootstrap is done, so record it and stop autofill from re-running.
+          // Grid already full: nothing to place, but the bootstrap is done.
           if (state.cells.every((id) => id != null)) {
             return { hasAutofilled: true };
           }

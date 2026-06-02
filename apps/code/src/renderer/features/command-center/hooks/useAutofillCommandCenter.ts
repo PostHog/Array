@@ -28,11 +28,8 @@ export function useAutofillCommandCenter(): void {
   const autofillCells = useCommandCenterStore((s) => s.autofillCells);
 
   useEffect(() => {
-    // Autofill is a one-time convenience to bootstrap an empty grid. Once it
-    // has populated the grid (or the user has curated it), the persisted
-    // `hasAutofilled` flag stops it from re-topping-up empty cells every time
-    // the Command Center remounts — opening a task full-screen and coming back
-    // no longer wipes out a deliberately trimmed layout.
+    // One-time bootstrap: the persisted `hasAutofilled` flag stops empty cells
+    // from being re-filled every time the Command Center remounts.
     if (hasAutofilled) return;
     if (!workspacesFetched || !workspaces) return;
     if (!tasksFetched) return;
@@ -52,10 +49,6 @@ export function useAutofillCommandCenter(): void {
       .slice(0, emptySlots)
       .map((task) => task.id);
 
-    // Hand the candidates to the store, which records the one-time bootstrap
-    // — including when the grid is already full and there is nothing to place.
-    // With no eligible tasks yet on a partial grid the flag stays unset, so
-    // autofill can still bootstrap once recent tasks exist.
     autofillCells(candidates);
   }, [
     cells,
