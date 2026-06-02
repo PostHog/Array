@@ -75,5 +75,27 @@ describe("commandCenterStore", () => {
         null,
       ]);
     });
+
+    it("sets hasAutofilled when it populates cells", () => {
+      useCommandCenterStore.getState().autofillCells(["t1"]);
+      expect(useCommandCenterStore.getState().hasAutofilled).toBe(true);
+    });
+
+    it("leaves hasAutofilled unset when there is nothing to fill", () => {
+      useCommandCenterStore.getState().autofillCells([]);
+      expect(useCommandCenterStore.getState().hasAutofilled).toBe(false);
+    });
+  });
+
+  describe("hasAutofilled", () => {
+    it("assigning a task marks the grid as curated", () => {
+      useCommandCenterStore.getState().assignTask(0, "t1");
+      expect(useCommandCenterStore.getState().hasAutofilled).toBe(true);
+    });
+
+    it("markAutofilled sets the flag", () => {
+      useCommandCenterStore.getState().markAutofilled();
+      expect(useCommandCenterStore.getState().hasAutofilled).toBe(true);
+    });
   });
 });

@@ -324,4 +324,41 @@ describe("useAutofillCommandCenter", () => {
       null,
     ]);
   });
+
+  it("leaves hasAutofilled unset when there are no candidates yet", () => {
+    setQueries({ tasks: [], workspaces: {} });
+    renderHook(() => useAutofillCommandCenter());
+    expect(useCommandCenterStore.getState().hasAutofilled).toBe(false);
+  });
+
+  it("does not top up empty cells once the grid has been autofilled", () => {
+    useCommandCenterStore.setState({
+      cells: ["existing", null, null, null],
+      hasAutofilled: true,
+    });
+    setQueries({
+      tasks: [
+        makeTask({ id: "t1", updated_at: new Date(NOW - 100).toISOString() }),
+        makeTask({ id: "t2", updated_at: new Date(NOW - 200).toISOString() }),
+      ],
+      workspaces: { t1: makeWorkspace("t1"), t2: makeWorkspace("t2") },
+    });
+    renderHook(() => useAutofillCommandCenter());
+    expect(useCommandCenterStore.getState().cells).toEqual([
+      "existing",
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("marks autofilled when the grid is already full so removals do not refill", () => {
+    useCommandCenterStore.setState({ cells: ["a", "b", "c", "d"] });
+    setQueries({
+      tasks: [makeTask({ id: "t1" })],
+      workspaces: { t1: makeWorkspace("t1") },
+    });
+    renderHook(() => useAutofillCommandCenter());
+    expect(useCommandCenterStore.getState().hasAutofilled).toBe(true);
+  });
 });

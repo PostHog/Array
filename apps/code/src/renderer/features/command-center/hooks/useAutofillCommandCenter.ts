@@ -2,7 +2,7 @@ import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import type { Task } from "@shared/types";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useCommandCenterStore } from "../stores/commandCenterStore";
 
 // Window for "still in the current working session". Tasks last touched
@@ -24,21 +24,23 @@ export function useAutofillCommandCenter(): void {
   const archivedTaskIds = useArchivedTaskIds();
 
   const cells = useCommandCenterStore((s) => s.cells);
+  const hasAutofilled = useCommandCenterStore((s) => s.hasAutofilled);
   const autofillCells = useCommandCenterStore((s) => s.autofillCells);
-
-  // Fires at most once per mount so clearing cells in-place doesn't
-  // immediately re-populate them. Navigating away and back remounts the
-  // view and lets autofill run again with the latest recent tasks.
-  const hasRunRef = useRef(false);
+  const markAutofilled = useCommandCenterStore((s) => s.markAutofilled);
 
   useEffect(() => {
-    if (hasRunRef.current) return;
+    // Autofill is a one-time convenience to bootstrap an empty grid. Once it
+    // has populated the grid (or the user has curated it), the persisted
+    // `hasAutofilled` flag stops it from re-topping-up empty cells every time
+    // the Command Center remounts — opening a task full-screen and coming back
+    // no longer wipes out a deliberately trimmed layout.
+    if (hasAutofilled) return;
     if (!workspacesFetched || !workspaces) return;
     if (!tasksFetched) return;
 
     const emptySlots = cells.filter((id) => id == null).length;
     if (emptySlots === 0) {
-      hasRunRef.current = true;
+      markAutofilled();
       return;
     }
 
@@ -56,17 +58,20 @@ export function useAutofillCommandCenter(): void {
       .slice(0, emptySlots)
       .map((task) => task.id);
 
-    if (candidates.length > 0) {
-      autofillCells(candidates);
-    }
-    hasRunRef.current = true;
+    // No eligible tasks yet — leave the flag unset so autofill can still
+    // bootstrap the grid once recent tasks exist.
+    if (candidates.length === 0) return;
+
+    autofillCells(candidates);
   }, [
     cells,
+    hasAutofilled,
     workspaces,
     workspacesFetched,
     tasks,
     tasksFetched,
     archivedTaskIds,
     autofillCells,
+    markAutofilled,
   ]);
 }
