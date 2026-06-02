@@ -398,9 +398,15 @@ importers:
       '@electron-forge/cli':
         specifier: ^7.11.1
         version: 7.11.1(encoding@0.1.13)(esbuild@0.25.12)
+      '@electron-forge/maker-deb':
+        specifier: ^7.11.1
+        version: 7.11.2
       '@electron-forge/maker-dmg':
         specifier: ^7.11.1
         version: 7.11.1
+      '@electron-forge/maker-rpm':
+        specifier: ^7.11.1
+        version: 7.11.2
       '@electron-forge/maker-squirrel':
         specifier: ^7.11.1
         version: 7.11.1
@@ -1796,8 +1802,20 @@ packages:
     resolution: {integrity: sha512-yhZrCGoN6bDeiB5DHFaueZ1h84AReElEj+f0hl2Ph4UbZnO0cnLpbx+Bs+XfMLAiA+beC8muB5UDK5ysfuT9BQ==}
     engines: {node: '>= 16.4.0'}
 
+  '@electron-forge/maker-base@7.11.2':
+    resolution: {integrity: sha512-9934zYu9WVdgCYQXvtS+eL1oyLagsY8JlWhZmoK8yWTYftSAydH7jb3seVpfy6n85SYmY/yjcAy2lvOTy5dUwA==}
+    engines: {node: '>= 16.4.0'}
+
+  '@electron-forge/maker-deb@7.11.2':
+    resolution: {integrity: sha512-MYSdCTsqzKNmsmaq7CIFh2kJdBWUZ4njxnVGrIRClzueVITk5Kots3+eQo+e5QQLvXTVn2XTNDc2nYjvtBh+Mw==}
+    engines: {node: '>= 16.4.0'}
+
   '@electron-forge/maker-dmg@7.11.1':
     resolution: {integrity: sha512-7zs5/Ewz1PcOl4N1102stFgBiFGWxU18+UPFUSd/fgf9MErBl4HBWuVNMIHyeJ/56rdfkcmTxTqE+9TBEYrZcg==}
+    engines: {node: '>= 16.4.0'}
+
+  '@electron-forge/maker-rpm@7.11.2':
+    resolution: {integrity: sha512-BEj/DcW6bSpmOyKUa3UsOgT7Hm3ZuP0Wa6OuQEunjxeCWn7yoDTDtjuYA0xRvzk+T4NCyDO3RBGjy6nYNSPU2Q==}
     engines: {node: '>= 16.4.0'}
 
   '@electron-forge/maker-squirrel@7.11.1':
@@ -1828,6 +1846,10 @@ packages:
     resolution: {integrity: sha512-vvBWdAEh53UJlDGUevpaJk1+sqDMQibfrbHR+0IPA4MPyQex7/Uhv3vYH9oGHujBVAChQahjAuJt0fG6IJBLZg==}
     engines: {node: '>= 16.4.0'}
 
+  '@electron-forge/shared-types@7.11.2':
+    resolution: {integrity: sha512-Tcles7y74xy3jN5dEC+Pt1duJYk4c7W2xu98tjWW8RewmfKD2uHkie6I1I3yifPFZXZ/QfTlaFOOoKIQ9ENZjg==}
+    engines: {node: '>= 16.4.0'}
+
   '@electron-forge/template-base@7.11.1':
     resolution: {integrity: sha512-XpTaEf+EfQw+0BlSAtSpZKYIKYvKu4raNzSGHZZoSYHp+HDC7R+MlpFQmSJiGdYQzQ14C+uxO42tVjgM0DMbpw==}
     engines: {node: '>= 16.4.0'}
@@ -1850,6 +1872,10 @@ packages:
 
   '@electron-forge/tracer@7.11.1':
     resolution: {integrity: sha512-tiB6cglVQFcSw9N8GRwVwZUeB9u0DOx2Mj7aFXBUsFLUYQapvVGv51tUSy/UAW5lvmubGscYIILuVko+II3+NA==}
+    engines: {node: '>= 14.17.5'}
+
+  '@electron-forge/tracer@7.11.2':
+    resolution: {integrity: sha512-U8j5Hyj2Zt7I5PciJvPJfmEv69Gb/Da9v+k655z3Jj1cuY0UnToEJ61IhXrzlTYqo+jUKC+fgAjDJ6vltJTS0A==}
     engines: {node: '>= 14.17.5'}
 
   '@electron/asar@3.4.1':
@@ -3173,6 +3199,10 @@ packages:
     engines: {node: '>=18.0.0'}
     peerDependencies:
       '@inquirer/prompts': '>= 3 < 8'
+
+  '@malept/cross-spawn-promise@1.1.1':
+    resolution: {integrity: sha512-RTBGWL5FWQcg9orDOCcp4LvItNzUPcyEU9bwaeJX0rJ1IQxzucC48Y0/sQLp/g6t99IQgAlGIaesJS+gTn7tVQ==}
+    engines: {node: '>= 10'}
 
   '@malept/cross-spawn-promise@2.0.0':
     resolution: {integrity: sha512-1DpKU0Z5ThltBwjNySMC14g0CkbyhCaz9FkhxqNsZI6uAPJXFS8cMXlBKo26FJ8ZuW6S9GCMcR9IO5k2X5/9Fg==}
@@ -5366,6 +5396,9 @@ packages:
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
 
+  '@types/fs-extra@9.0.13':
+    resolution: {integrity: sha512-nEnwB++1u5lVDM2UI4c1+5R+FYaKfaAzS4OococimjVm3nQw3TuzH5UNsocrcTBbhnerblyHj4A49qXbIiZdpA==}
+
   '@types/graceful-fs@4.1.9':
     resolution: {integrity: sha512-olP3sd1qOEe5dXTSaFvQG+02VdRXcdytWLAZsAq1PecU8uqQAhkrnbli7DagjtXKW/Bl7YJbUsa8MPcuc8LHEQ==}
 
@@ -6318,6 +6351,9 @@ packages:
   client-only@0.0.1:
     resolution: {integrity: sha512-IV3Ou0jSMzZrd3pZ48nLkT9DA7Ag1pnPzaiQhpW7c3RbcqqzvzzVu+L8gfqMp/8IM2MQtSiqaCxrrcfu8I8rMA==}
 
+  cliui@7.0.4:
+    resolution: {integrity: sha512-OcRE68cOsVMXp1Yvonl/fzkQOyjLSu/8bhPDfQt0e0/Eb283TKP20Fs2MqoPsr9SwA595rRCA+QMzYc9nBP+JQ==}
+
   cliui@8.0.1:
     resolution: {integrity: sha512-BSeNnyus75C4//NQ9gQt1/csTXyo/8Sb+afLAkzAptFuMsod9HFokGNudZpi/oQV73hnVK+sR+5PVRMd+Dr7YQ==}
     engines: {node: '>=12'}
@@ -6894,9 +6930,25 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
+  electron-installer-common@0.10.4:
+    resolution: {integrity: sha512-8gMNPXfAqUE5CfXg8RL0vXpLE9HAaPkgLXVoHE3BMUzogMWenf4LmwQ27BdCUrEhkjrKl+igs2IHJibclR3z3Q==}
+    engines: {node: '>= 10.0.0'}
+
+  electron-installer-debian@3.2.0:
+    resolution: {integrity: sha512-58ZrlJ1HQY80VucsEIG9tQ//HrTlG6sfofA3nRGr6TmkX661uJyu4cMPPh6kXW+aHdq/7+q25KyQhDrXvRL7jw==}
+    engines: {node: '>= 10.0.0'}
+    os: [darwin, linux]
+    hasBin: true
+
   electron-installer-dmg@5.0.1:
     resolution: {integrity: sha512-qOa1aAQdX57C+vzhDk3549dd/PRlNL4F8y736MTD1a43qptD+PvHY97Bo9gSf+OZ8iUWE7BrYSpk/FgLUe40EA==}
     engines: {node: '>= 16'}
+    hasBin: true
+
+  electron-installer-redhat@3.4.0:
+    resolution: {integrity: sha512-gEISr3U32Sgtj+fjxUAlSDo3wyGGq6OBx7rF5UdpIgbnpUvMN4W5uYb0ThpnAZ42VEJh/3aODQXHbFS4f5J3Iw==}
+    engines: {node: '>= 10.0.0'}
+    os: [darwin, linux]
     hasBin: true
 
   electron-log@5.4.3:
@@ -7699,6 +7751,10 @@ packages:
     resolution: {integrity: sha512-R1fam6D4CyKQGNlvJne4dkNF+PvUUl7TAJInvTGa9fti9qAv95quQz29GXapA4d8Ec266mJJxFVh82M4GIIGDQ==}
     engines: {node: '>= 12'}
 
+  gar@1.0.4:
+    resolution: {integrity: sha512-w4n9cPWyP7aHxKxYHFQMegj7WIAsL/YX/C4Bs5Rr8s1H9M1rNtRWRsw+ovYMkXDQ5S4ZbYHsHAPmevPjPgw44w==}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+
   generate-function@2.3.1:
     resolution: {integrity: sha512-eeB5GfMNeevm/GRYq20ShmsaGcmI81kIX2K9XQx5miC8KdHaC6Jm0qQ8ZNeGOi7wYB8OsdxKs+Y2oVuTFuVwKQ==}
 
@@ -7720,6 +7776,10 @@ packages:
   get-east-asian-width@1.4.0:
     resolution: {integrity: sha512-QZjmEOC+IT1uk6Rx0sX22V6uHWVwbdbxf1faPqJ1QhLdGgsRGCZoyaQBm/piRdJy/D2um6hM1UP7ZEeQ4EkP+Q==}
     engines: {node: '>=18'}
+
+  get-folder-size@2.0.1:
+    resolution: {integrity: sha512-+CEb+GDCM7tkOS2wdMKTn9vU7DgnKUTuDlehkNJKNSovdCOVxs14OfKCk4cvSaR3za4gj+OBdl9opPN9xrJ0zA==}
+    hasBin: true
 
   get-intrinsic@1.3.0:
     resolution: {integrity: sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==}
@@ -11313,6 +11373,9 @@ packages:
   throat@5.0.0:
     resolution: {integrity: sha512-fcwX4mndzpLQKBS1DVYhGAcYaYt7vsHNIvQV+WXMvnow5cgjPphq5CaayLaGsjRdSCKZFNGt7/GYAuXaNOiYCA==}
 
+  tiny-each-async@2.0.3:
+    resolution: {integrity: sha512-5ROII7nElnAirvFn8g7H7MtpfV1daMcyfTGQwsn/x2VtyV+VPiO5CjReCJtWLvoKTDEDmZocf3cNPraiMnBXLA==}
+
   tiny-invariant@1.3.3:
     resolution: {integrity: sha512-+FbBPE1o9QAYvviau/qC5SE3caw21q3xkvWKBtja5vgqOWIHHJ3ioaq1VPfn/Szqctz2bU/oYeKd9/z5BL+PVg==}
 
@@ -11382,9 +11445,16 @@ packages:
     resolution: {integrity: sha512-nqpKFC53CgopKPjT6Wfb6tpIcZXHcI6G37hesvikhx0EmUGPkZrujRyAjgnmp1SHNgpQfKVanZ+KfpANFt2Hxw==}
     hasBin: true
 
+  tmp-promise@3.0.3:
+    resolution: {integrity: sha512-RwM7MoPojPxsOBYnyd2hy0bxtIlVrihNs9pj5SUvY8Zz1sQcQG2tG1hSr8PDxfgEB8RNKDhqbIlroIarSNDNsQ==}
+
   tmp@0.0.33:
     resolution: {integrity: sha512-jRCJlojKnZ3addtTOjdIqoRuPEKBvNXcGYqzO6zWZX8KfKEpnGY5jfggJQ3EjKuu8D4bJRr0y+cYJFmYbImXGw==}
     engines: {node: '>=0.6.0'}
+
+  tmp@0.2.5:
+    resolution: {integrity: sha512-voyz6MApa1rQGUxT3E+BK7/ROe8itEx7vD8/HEvt4xwXucvQ5G5oeEiHkmHZJuBO21RpOf+YYm9MOivj709jow==}
+    engines: {node: '>=14.14'}
 
   tmpl@1.0.5:
     resolution: {integrity: sha512-3f0uOEAQwIqGuWW2MVzYg8fV/QNnc/IpuJNG837rLuczAaLVHslWHZQj4IGiEl5Hs3kkbhwL9Ab7Hrsmuj+Smw==}
@@ -12150,6 +12220,10 @@ packages:
   wonka@6.3.5:
     resolution: {integrity: sha512-SSil+ecw6B4/Dm7Pf2sAshKQ5hWFvfyGlfPbEd6A14dOH6VDjrmbY86u6nZvy9omGwwIPFR8V41+of1EezgoUw==}
 
+  word-wrap@1.2.5:
+    resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
+    engines: {node: '>=0.10.0'}
+
   wrap-ansi@6.2.0:
     resolution: {integrity: sha512-r6lPcBGxZXlIcymEu7InxDMhdW0KDxpLgoFLcguasxCaJ/SOIZwINatK9KY/tf+ZrlywOKU0UDj3ATXUBfxJXA==}
     engines: {node: '>=8'}
@@ -12269,9 +12343,17 @@ packages:
     engines: {node: '>= 14.6'}
     hasBin: true
 
+  yargs-parser@20.2.9:
+    resolution: {integrity: sha512-y11nGElTIV+CT3Zv9t7VKl+Q3hTQoT9a1Qzezhhl6Rp21gJ/IVTW7Z3y9EWXhuUBC2Shnf+DX0antecpAwSP8w==}
+    engines: {node: '>=10'}
+
   yargs-parser@21.1.1:
     resolution: {integrity: sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw==}
     engines: {node: '>=12'}
+
+  yargs@16.2.0:
+    resolution: {integrity: sha512-D1mvvtDG0L5ft/jGWkLpG1+m0eQxOfaBvTNELraWj22wSVUMWxZUvYgJYcKh6jGGIkJFhH4IZPQhR4TKpc8mBw==}
+    engines: {node: '>=10'}
 
   yargs@17.7.2:
     resolution: {integrity: sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w==}
@@ -13542,6 +13624,25 @@ snapshots:
       - bluebird
       - supports-color
 
+  '@electron-forge/maker-base@7.11.2':
+    dependencies:
+      '@electron-forge/shared-types': 7.11.2
+      fs-extra: 10.1.0
+      which: 2.0.2
+    transitivePeerDependencies:
+      - bluebird
+      - supports-color
+
+  '@electron-forge/maker-deb@7.11.2':
+    dependencies:
+      '@electron-forge/maker-base': 7.11.2
+      '@electron-forge/shared-types': 7.11.2
+    optionalDependencies:
+      electron-installer-debian: 3.2.0
+    transitivePeerDependencies:
+      - bluebird
+      - supports-color
+
   '@electron-forge/maker-dmg@7.11.1':
     dependencies:
       '@electron-forge/maker-base': 7.11.1
@@ -13549,6 +13650,16 @@ snapshots:
       fs-extra: 10.1.0
     optionalDependencies:
       electron-installer-dmg: 5.0.1
+    transitivePeerDependencies:
+      - bluebird
+      - supports-color
+
+  '@electron-forge/maker-rpm@7.11.2':
+    dependencies:
+      '@electron-forge/maker-base': 7.11.2
+      '@electron-forge/shared-types': 7.11.2
+    optionalDependencies:
+      electron-installer-redhat: 3.4.0
     transitivePeerDependencies:
       - bluebird
       - supports-color
@@ -13629,6 +13740,16 @@ snapshots:
       - bluebird
       - supports-color
 
+  '@electron-forge/shared-types@7.11.2':
+    dependencies:
+      '@electron-forge/tracer': 7.11.2
+      '@electron/packager': 18.4.4
+      '@electron/rebuild': 3.7.2
+      listr2: 7.0.2
+    transitivePeerDependencies:
+      - bluebird
+      - supports-color
+
   '@electron-forge/template-base@7.11.1':
     dependencies:
       '@electron-forge/core-utils': 7.11.1
@@ -13685,6 +13806,10 @@ snapshots:
       - supports-color
 
   '@electron-forge/tracer@7.11.1':
+    dependencies:
+      chrome-trace-event: 1.0.4
+
+  '@electron-forge/tracer@7.11.2':
     dependencies:
       chrome-trace-event: 1.0.4
 
@@ -15235,6 +15360,11 @@ snapshots:
     dependencies:
       '@inquirer/prompts': 6.0.1
       '@inquirer/type': 1.5.5
+
+  '@malept/cross-spawn-promise@1.1.1':
+    dependencies:
+      cross-spawn: 7.0.6
+    optional: true
 
   '@malept/cross-spawn-promise@2.0.0':
     dependencies:
@@ -17551,6 +17681,11 @@ snapshots:
 
   '@types/estree@1.0.8': {}
 
+  '@types/fs-extra@9.0.13':
+    dependencies:
+      '@types/node': 24.12.0
+    optional: true
+
   '@types/graceful-fs@4.1.9':
     dependencies:
       '@types/node': 24.12.0
@@ -18698,6 +18833,13 @@ snapshots:
 
   client-only@0.0.1: {}
 
+  cliui@7.0.4:
+    dependencies:
+      string-width: 4.2.3
+      strip-ansi: 6.0.1
+      wrap-ansi: 7.0.0
+    optional: true
+
   cliui@8.0.1:
     dependencies:
       string-width: 4.2.3
@@ -19156,6 +19298,37 @@ snapshots:
 
   ee-first@1.1.1: {}
 
+  electron-installer-common@0.10.4:
+    dependencies:
+      '@electron/asar': 3.4.1
+      '@malept/cross-spawn-promise': 1.1.1
+      debug: 4.4.3
+      fs-extra: 9.1.0
+      glob: 7.2.3
+      lodash: 4.17.23
+      parse-author: 2.0.0
+      semver: 7.7.3
+      tmp-promise: 3.0.3
+    optionalDependencies:
+      '@types/fs-extra': 9.0.13
+    transitivePeerDependencies:
+      - supports-color
+    optional: true
+
+  electron-installer-debian@3.2.0:
+    dependencies:
+      '@malept/cross-spawn-promise': 1.1.1
+      debug: 4.4.3
+      electron-installer-common: 0.10.4
+      fs-extra: 9.1.0
+      get-folder-size: 2.0.1
+      lodash: 4.17.23
+      word-wrap: 1.2.5
+      yargs: 16.2.0
+    transitivePeerDependencies:
+      - supports-color
+    optional: true
+
   electron-installer-dmg@5.0.1:
     dependencies:
       '@types/appdmg': 0.5.5
@@ -19163,6 +19336,19 @@ snapshots:
       minimist: 1.2.8
     optionalDependencies:
       appdmg: 0.6.6
+    transitivePeerDependencies:
+      - supports-color
+    optional: true
+
+  electron-installer-redhat@3.4.0:
+    dependencies:
+      '@malept/cross-spawn-promise': 1.1.1
+      debug: 4.4.3
+      electron-installer-common: 0.10.4
+      fs-extra: 9.1.0
+      lodash: 4.17.23
+      word-wrap: 1.2.5
+      yargs: 16.2.0
     transitivePeerDependencies:
       - supports-color
     optional: true
@@ -20148,6 +20334,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  gar@1.0.4:
+    optional: true
+
   generate-function@2.3.1:
     dependencies:
       is-property: 1.0.2
@@ -20165,6 +20354,12 @@ snapshots:
   get-caller-file@2.0.5: {}
 
   get-east-asian-width@1.4.0: {}
+
+  get-folder-size@2.0.1:
+    dependencies:
+      gar: 1.0.4
+      tiny-each-async: 2.0.3
+    optional: true
 
   get-intrinsic@1.3.0:
     dependencies:
@@ -24540,6 +24735,9 @@ snapshots:
 
   throat@5.0.0: {}
 
+  tiny-each-async@2.0.3:
+    optional: true
+
   tiny-invariant@1.3.3: {}
 
   tiny-lru@11.4.7: {}
@@ -24587,9 +24785,17 @@ snapshots:
     dependencies:
       tldts-core: 7.0.22
 
+  tmp-promise@3.0.3:
+    dependencies:
+      tmp: 0.2.5
+    optional: true
+
   tmp@0.0.33:
     dependencies:
       os-tmpdir: 1.0.2
+
+  tmp@0.2.5:
+    optional: true
 
   tmpl@1.0.5: {}
 
@@ -25375,6 +25581,9 @@ snapshots:
 
   wonka@6.3.5: {}
 
+  word-wrap@1.2.5:
+    optional: true
+
   wrap-ansi@6.2.0:
     dependencies:
       ansi-styles: 4.3.0
@@ -25461,7 +25670,21 @@ snapshots:
 
   yaml@2.8.2: {}
 
+  yargs-parser@20.2.9:
+    optional: true
+
   yargs-parser@21.1.1: {}
+
+  yargs@16.2.0:
+    dependencies:
+      cliui: 7.0.4
+      escalade: 3.2.0
+      get-caller-file: 2.0.5
+      require-directory: 2.1.1
+      string-width: 4.2.3
+      y18n: 5.0.8
+      yargs-parser: 20.2.9
+    optional: true
 
   yargs@17.7.2:
     dependencies:
