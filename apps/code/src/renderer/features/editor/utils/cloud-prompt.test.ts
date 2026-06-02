@@ -7,26 +7,6 @@ const mockFs = vi.hoisted(() => ({
   readFileAsBase64: { query: vi.fn() },
 }));
 
-vi.mock("@shared/constants/image", async () => {
-  const actual = await vi.importActual<
-    typeof import("@shared/constants/image")
-  >("@shared/constants/image");
-  return {
-    ...actual,
-    getImageMimeType: (name: string) => {
-      const ext = name.split(".").pop()?.toLowerCase();
-      const map: Record<string, string> = {
-        png: "image/png",
-        jpg: "image/jpeg",
-        jpeg: "image/jpeg",
-        gif: "image/gif",
-        webp: "image/webp",
-      };
-      return map[ext ?? ""] ?? "image/png";
-    },
-  };
-});
-
 vi.mock("@renderer/trpc/client", () => ({
   trpcClient: {
     fs: mockFs,
@@ -170,6 +150,26 @@ describe("cloud-prompt", () => {
     await expect(
       buildCloudPromptBlocks('see <file path="/tmp/photo.bmp" />'),
     ).rejects.toThrow(/Unsupported image/);
+  });
+
+  it("treats SVG attachments as text resource links", async () => {
+    const blocks = await buildCloudPromptBlocks(
+      'see <file path="/tmp/icon.svg" />',
+    );
+    expect(blocks[1]).toMatchObject({
+      type: "resource_link",
+      name: "icon.svg",
+    });
+    expect(mockFs.readFileAsBase64.query).not.toHaveBeenCalled();
+  });
+
+  it("rejects HEIC and HEIF as unsupported attachments (not images)", async () => {
+    await expect(
+      buildCloudPromptBlocks('see <file path="/tmp/photo.heic" />'),
+    ).rejects.toThrow(/Unsupported attachment/);
+    await expect(
+      buildCloudPromptBlocks('see <file path="/tmp/photo.heif" />'),
+    ).rejects.toThrow(/Unsupported attachment/);
   });
 
   it("does not rely on readAbsoluteFile for txt attachments", async () => {

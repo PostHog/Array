@@ -2512,6 +2512,112 @@ describe("SessionService", () => {
       // unbounded growth on long-running cloud runs.
       expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();
     });
+
+    const setupReconcileLoopTest = (logContent: string) => {
+      const service = getSessionService();
+      const existingSession = createMockSession({
+        taskRunId: "run-123",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: true,
+        logUrl: "https://logs.example.com/run-123",
+        processedLineCount: 5,
+        events: [],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        existingSession,
+      );
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": existingSession,
+      });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue(logContent);
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue(logContent);
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+      );
+      const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
+        .calls[0][1] as {
+        onData: (update: unknown) => void;
+      };
+      return { subscribeOptions };
+    };
+
+    const newEntry = {
+      type: "notification",
+      timestamp: "2024-01-01T00:00:01Z",
+      notification: { method: "session/update" },
+    };
+    const validLine = JSON.stringify({
+      type: "notification",
+      timestamp: "2024-01-01T00:00:00Z",
+      notification: { method: "session/update" },
+    });
+
+    it("breaks the reconcile loop on first observation when parse failures are present", async () => {
+      const { subscribeOptions } = setupReconcileLoopTest(
+        [
+          ...Array.from({ length: 8 }, () => validLine),
+          "}}not-json{{",
+          "{broken",
+        ].join("\n"),
+      );
+
+      subscribeOptions.onData({
+        kind: "logs",
+        taskId: "task-123",
+        runId: "run-123",
+        totalEntryCount: 20,
+        newEntries: [newEntry],
+      });
+
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+          "run-123",
+          expect.objectContaining({ processedLineCount: 20 }),
+        );
+      });
+    });
+
+    it("breaks the reconcile loop after a repeated stable deficiency", async () => {
+      const { subscribeOptions } = setupReconcileLoopTest(
+        Array.from({ length: 8 }, () => validLine).join("\n"),
+      );
+
+      subscribeOptions.onData({
+        kind: "logs",
+        taskId: "task-123",
+        runId: "run-123",
+        totalEntryCount: 14,
+        newEntries: [newEntry],
+      });
+      await vi.waitFor(() => {
+        expect(mockTrpcLogs.fetchS3Logs.query).toHaveBeenCalledTimes(1);
+      });
+
+      expect(mockSessionStoreSetters.updateSession).not.toHaveBeenCalledWith(
+        "run-123",
+        expect.objectContaining({ processedLineCount: 14 }),
+      );
+
+      subscribeOptions.onData({
+        kind: "logs",
+        taskId: "task-123",
+        runId: "run-123",
+        totalEntryCount: 14,
+        newEntries: [newEntry],
+      });
+
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+          "run-123",
+          expect.objectContaining({ processedLineCount: 14 }),
+        );
+      });
+    });
+
     it("flips status to connected on _posthog/run_started", async () => {
       const service = getSessionService();
       const hydratedSession = createMockSession({

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mockPosthog = {
   init: vi.fn(),
   register: vi.fn(),
+  unregister: vi.fn(),
   onFeatureFlags: vi.fn(),
   isFeatureEnabled: vi.fn(),
   startSessionRecording: vi.fn(),
@@ -88,6 +89,41 @@ describe("onFeatureFlagsLoaded", () => {
 
     off();
     expect(realUnsub).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("registerAppVersion", () => {
+  it("registers app_version as a super property after init", async () => {
+    const { initializePostHog, registerAppVersion } = await loadAnalytics();
+
+    initializePostHog();
+    registerAppVersion("1.2.3");
+
+    expect(mockPosthog.register).toHaveBeenCalledWith({ app_version: "1.2.3" });
+  });
+
+  it("does nothing before init", async () => {
+    const { registerAppVersion } = await loadAnalytics();
+
+    registerAppVersion("1.2.3");
+
+    expect(mockPosthog.register).not.toHaveBeenCalled();
+  });
+
+  it("re-registers app_version after resetUser clears super properties", async () => {
+    const { initializePostHog, registerAppVersion, resetUser } =
+      await loadAnalytics();
+
+    initializePostHog();
+    registerAppVersion("1.2.3");
+
+    resetUser();
+
+    expect(mockPosthog.reset).toHaveBeenCalledTimes(1);
+    expect(mockPosthog.register).toHaveBeenLastCalledWith({
+      team: "posthog-code",
+      app_version: "1.2.3",
+    });
   });
 });
 

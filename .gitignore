@@ -36,7 +36,6 @@ Thumbs.db
 *.car
 
 # AI agents
-AGENTS.md
 MEMORY.md
 .claude-config/
 .agent-trigger

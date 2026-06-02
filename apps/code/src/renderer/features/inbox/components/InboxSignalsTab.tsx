@@ -4,8 +4,8 @@ import {
   SelectReportPane,
   SkeletonBackdrop,
   WarmingUpPane,
-  WelcomePane,
 } from "@features/inbox/components/InboxEmptyStates";
+import { InboxSetupPane } from "@features/inbox/components/InboxSetupPane";
 import { InboxSourcesDialog } from "@features/inbox/components/InboxSourcesDialog";
 import {
   inboxBulkSnoozeDisabledReason,
@@ -19,6 +19,7 @@ import {
   useInboxReportsInfinite,
   useInboxSignalProcessingState,
 } from "@features/inbox/hooks/useInboxReports";
+import { useSeedSuggestedReviewerFilter } from "@features/inbox/hooks/useSeedSuggestedReviewerFilter";
 import { useSignalSourceConfigs } from "@features/inbox/hooks/useSignalSourceConfigs";
 import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
 import { useInboxSignalsFilterStore } from "@features/inbox/stores/inboxSignalsFilterStore";
@@ -33,9 +34,7 @@ import {
 } from "@features/inbox/utils/filterReports";
 import { INBOX_REFETCH_INTERVAL_MS } from "@features/inbox/utils/inboxConstants";
 import { setPendingInboxOpenMethod } from "@features/inbox/utils/pendingInboxOpenMethod";
-import { DiscoveredTaskDetailPane } from "@features/setup/components/DiscoveredTaskDetailPane";
-import { RecommendedSetupTasks } from "@features/setup/components/RecommendedSetupTasks";
-import { useSetupStore } from "@features/setup/stores/setupStore";
+import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import {
   useIntegrations,
   useRepositoryIntegration,
@@ -72,21 +71,22 @@ export function InboxSignalsTab() {
   const suggestedReviewerFilter = useInboxSignalsFilterStore(
     (s) => s.suggestedReviewerFilter,
   );
-  const seedSuggestedReviewerFilterWithCurrentUser = useInboxSignalsFilterStore(
-    (s) => s.seedSuggestedReviewerFilterWithCurrentUser,
-  );
-
   // ── Current user (seeds reviewer filter on first inbox visit) ───────────
   const authClient = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({
     client: authClient,
     enabled: !!authClient,
   });
-
-  useEffect(() => {
-    if (!currentUser?.uuid) return;
-    seedSuggestedReviewerFilterWithCurrentUser(currentUser.uuid);
-  }, [currentUser?.uuid, seedSuggestedReviewerFilterWithCurrentUser]);
+  // Gates the seed below: backend filters reports by GitHub login, not UUID.
+  const { data: githubLogin } = useAuthenticatedQuery(
+    ["github_login"],
+    (client) => client.getGithubLogin(),
+    { staleTime: 5 * 60 * 1000 },
+  );
+  useSeedSuggestedReviewerFilter({
+    currentUserUuid: currentUser?.uuid,
+    githubLogin,
+  });
 
   // ── GitHub integration ───────────────────────────────────────────────
   const { hasGithubIntegration } = useRepositoryIntegration();
@@ -361,9 +361,6 @@ export function InboxSignalsTab() {
   // ── Click handler: plain / cmd / shift ──────────────────────────────────
   const handleReportClick = useCallback(
     (reportId: string, event: { metaKey: boolean; shiftKey: boolean }) => {
-      // Selecting a real report clears any discovered-task selection so the
-      // detail pane can swap to the report.
-      useSetupStore.getState().selectDiscoveredTask(null);
       if (event.shiftKey) {
         setPendingInboxOpenMethod("click_shift");
         selectRange(
@@ -444,39 +441,40 @@ export function InboxSignalsTab() {
     };
   }, [sidebarIsResizing, setSidebarWidth, setSidebarIsResizing]);
 
-  // ── Discovered-task suggestions (rendered inline at top of list) ───────
-  const discoveredTasks = useSetupStore((s) => s.discoveredTasks);
-  const hasDiscoveredTasks = discoveredTasks.length > 0;
-  const selectedDiscoveredTaskId = useSetupStore(
-    (s) => s.selectedDiscoveredTaskId,
-  );
-  const selectDiscoveredTask = useSetupStore((s) => s.selectDiscoveredTask);
-  const selectedDiscoveredTask =
-    discoveredTasks.find((t) => t.id === selectedDiscoveredTaskId) ?? null;
-
-  const handleSelectDiscoveredTask = useCallback(
-    (taskId: string) => {
-      selectDiscoveredTask(taskId);
-      clearSelection();
-    },
-    [selectDiscoveredTask, clearSelection],
-  );
-
-  const handleCloseDiscoveredTaskPane = useCallback(() => {
-    selectDiscoveredTask(null);
-  }, [selectDiscoveredTask]);
-
   // ── Layout mode (computed early — needed by focus effect below) ────────
   const hasReports = allReports.length > 0;
   const hasActiveFilters =
     sourceProductFilter.length > 0 ||
     suggestedReviewerFilter.length > 0 ||
     statusFilter.length < 5;
+
+  // Sticky for the visit: once entered, only "Proceed to Inbox" or unmount exits.
+  // Gated on prerequisites loading so we don't latch users who already have a
+  // configured inbox.
+  const [hasEnteredOnboarding, setHasEnteredOnboarding] = useState(false);
+  const [userExitedOnboarding, setUserExitedOnboarding] = useState(false);
+  useEffect(() => {
+    if (
+      inboxSourcesPrerequisitesLoaded &&
+      !isLoading &&
+      error == null &&
+      !hasReports &&
+      !hasSignalSources
+    ) {
+      setHasEnteredOnboarding(true);
+    }
+  }, [
+    inboxSourcesPrerequisitesLoaded,
+    isLoading,
+    error,
+    hasReports,
+    hasSignalSources,
+  ]);
+
+  const showInboxOnboarding = hasEnteredOnboarding && !userExitedOnboarding;
   const shouldShowTwoPane =
-    hasReports ||
-    !!searchQuery.trim() ||
-    hasActiveFilters ||
-    hasDiscoveredTasks;
+    !showInboxOnboarding &&
+    (hasReports || !!searchQuery.trim() || hasActiveFilters);
 
   // Sticky: once we enter two-pane mode, stay there even if a refetch
   // momentarily empties the list (e.g. when sort order changes).
@@ -683,7 +681,19 @@ export function InboxSignalsTab() {
 
   return (
     <>
-      {showTwoPaneLayout ? (
+      {showInboxOnboarding ? (
+        // Inline setup pane for users with no sources configured.
+        // The toolbar (report counter, search, bulk actions) is suppressed
+        // entirely — none of it is meaningful before any source is configured.
+        // Sticky within the visit: stays until the user clicks "Proceed to
+        // Inbox" inside the pane or navigates away.
+        <ScrollArea className="h-full">
+          <InboxSetupPane
+            hasSignalSources={hasSignalSources}
+            onProceedToInbox={() => setUserExitedOnboarding(true)}
+          />
+        </ScrollArea>
+      ) : showTwoPaneLayout ? (
         <Flex ref={containerRef} height="100%" className="min-h-0">
           {/* ── Left pane: report list ───────────────────────────────── */}
           <Box
@@ -759,9 +769,6 @@ export function InboxSignalsTab() {
                     onReportAction={tracker.signalAction}
                   />
                 </Box>
-                <RecommendedSetupTasks
-                  onSelectTask={handleSelectDiscoveredTask}
-                />
                 <ReportListPane
                   reports={reports}
                   allReports={allReports}
@@ -817,18 +824,13 @@ export function InboxSignalsTab() {
                 onReportAction={tracker.signalAction}
                 onScroll={tracker.signalScroll}
               />
-            ) : selectedDiscoveredTask ? (
-              <DiscoveredTaskDetailPane
-                task={selectedDiscoveredTask}
-                onClose={handleCloseDiscoveredTaskPane}
-              />
             ) : (
               <SelectReportPane />
             )}
           </Flex>
         </Flex>
       ) : (
-        /* ── Full-width empty state with skeleton backdrop ──────── */
+        // Full-width warming-up state with skeleton backdrop
         <Box className="relative h-full">
           <Flex direction="column">
             <SignalsToolbar
@@ -850,14 +852,10 @@ export function InboxSignalsTab() {
             className="pointer-events-none absolute inset-0 flex items-center justify-center"
           >
             <Box className="pointer-events-auto">
-              {!hasSignalSources || !hasGithubIntegration ? (
-                <WelcomePane onEnableInbox={() => setSourcesDialogOpen(true)} />
-              ) : (
-                <WarmingUpPane
-                  onConfigureSources={() => setSourcesDialogOpen(true)}
-                  enabledProducts={enabledProducts}
-                />
-              )}
+              <WarmingUpPane
+                onConfigureSources={() => setSourcesDialogOpen(true)}
+                enabledProducts={enabledProducts}
+              />
             </Box>
           </Box>
         </Box>

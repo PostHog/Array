@@ -104,7 +104,23 @@ function CloudStatusIcon({
   const link = meta && threadUrl ? threadUrl : undefined;
   const ariaLabel = link ? `Open ${sourceLabel} thread` : undefined;
 
-  if (taskRunStatus === "queued" || taskRunStatus === "in_progress") {
+  if (taskRunStatus === "queued") {
+    return (
+      <Tooltip
+        content={
+          link ? `Open ${sourceLabel} thread` : `${sourceLabel} (queued)`
+        }
+        side="right"
+      >
+        {renderIconSpan({
+          icon: <Icon size={size} className="ph-pulse" />,
+          link,
+          ariaLabel,
+        })}
+      </Tooltip>
+    );
+  }
+  if (taskRunStatus === "in_progress") {
     return (
       <Tooltip
         content={
@@ -113,7 +129,7 @@ function CloudStatusIcon({
         side="right"
       >
         {renderIconSpan({
-          icon: <Icon size={size} className="ph-pulse" />,
+          icon: <Icon size={size} weight="fill" color="var(--accent-11)" />,
           link,
           ariaLabel,
         })}
@@ -288,16 +304,6 @@ export function TaskIcon({
   if (isGenerating) {
     return <DotsCircleSpinner size={size} className="text-accent-11" />;
   }
-  if (isCloudTask) {
-    return (
-      <CloudStatusIcon
-        taskRunStatus={taskRunStatus}
-        originProduct={originProduct}
-        threadUrl={slackThreadUrl}
-        size={size}
-      />
-    );
-  }
   if (isSuspended) {
     return (
       <Tooltip content="Suspended" side="right">
@@ -319,6 +325,16 @@ export function TaskIcon({
   }
   if (isPinned) {
     return <PushPin size={size} color="var(--accent-11)" />;
+  }
+  if (isCloudTask) {
+    return (
+      <CloudStatusIcon
+        taskRunStatus={taskRunStatus}
+        originProduct={originProduct}
+        threadUrl={slackThreadUrl}
+        size={size}
+      />
+    );
   }
   if (originProductMeta) {
     const { Icon, label } = originProductMeta;

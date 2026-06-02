@@ -28,6 +28,7 @@ export type CompletionSound =
   | "danilo"
   | "revi"
   | "meep"
+  | "meep-smol"
   | "bubbles"
   | "drop"
   | "knock"

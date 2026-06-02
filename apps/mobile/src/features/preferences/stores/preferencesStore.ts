@@ -6,6 +6,7 @@ export type ThemePreference = "light" | "dark" | "system";
 
 export type CompletionSound =
   | "meep"
+  | "meep-smol"
   | "knock"
   | "ring"
   | "shoot"
@@ -13,6 +14,14 @@ export type CompletionSound =
   | "drop";
 
 export type InitialTaskMode = "plan" | "last_used";
+
+export type DefaultReasoningEffort =
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "last_used";
 
 interface PreferencesState {
   pingsEnabled: boolean;
@@ -34,6 +43,13 @@ interface PreferencesState {
    *  `defaultInitialTaskMode === "last_used"` can pre-fill it next time. */
   lastNewTaskMode: string;
   setLastNewTaskMode: (mode: string) => void;
+
+  defaultReasoningEffort: DefaultReasoningEffort;
+  setDefaultReasoningEffort: (effort: DefaultReasoningEffort) => void;
+  /** Most recent reasoning effort the user picked. Persisted so
+   *  `defaultReasoningEffort === "last_used"` can pre-fill it next time. */
+  lastUsedReasoningEffort: string;
+  setLastUsedReasoningEffort: (effort: string) => void;
 }
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -61,6 +77,13 @@ export const usePreferencesStore = create<PreferencesState>()(
         set({ defaultInitialTaskMode: mode }),
       lastNewTaskMode: "plan",
       setLastNewTaskMode: (mode) => set({ lastNewTaskMode: mode }),
+
+      defaultReasoningEffort: "last_used",
+      setDefaultReasoningEffort: (effort) =>
+        set({ defaultReasoningEffort: effort }),
+      lastUsedReasoningEffort: "high",
+      setLastUsedReasoningEffort: (effort) =>
+        set({ lastUsedReasoningEffort: effort }),
     }),
     {
       name: "posthog-preferences",
@@ -73,6 +96,8 @@ export const usePreferencesStore = create<PreferencesState>()(
         completionVolume: state.completionVolume,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastNewTaskMode: state.lastNewTaskMode,
+        defaultReasoningEffort: state.defaultReasoningEffort,
+        lastUsedReasoningEffort: state.lastUsedReasoningEffort,
       }),
     },
   ),

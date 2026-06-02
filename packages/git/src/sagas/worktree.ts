@@ -1,7 +1,13 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { GitSaga, type GitSagaInput } from "../git-saga";
-import { addToLocalExclude, branchExists, getDefaultBranch } from "../queries";
+import {
+  addToLocalExclude,
+  branchExists,
+  fetchRef,
+  getDefaultBranch,
+  hasRef,
+} from "../queries";
 import { forceRemove, safeSymlink } from "../utils";
 import { processWorktreeInclude, runPostCheckoutHook } from "../worktree";
 
@@ -9,6 +15,8 @@ export interface CreateWorktreeInput extends GitSagaInput {
   worktreePath: string;
   branchName: string;
   baseBranch?: string;
+  /** Base the worktree on `origin/<baseBranch>` after fetching; falls back to the local ref if the fetch fails. */
+  fetchBeforeCreate?: boolean;
 }
 
 export interface CreateWorktreeOutput {
@@ -26,12 +34,31 @@ export class CreateWorktreeSaga extends GitSaga<
   protected async executeGitOperations(
     input: CreateWorktreeInput,
   ): Promise<CreateWorktreeOutput> {
-    const { baseDir, worktreePath, branchName, baseBranch, signal } = input;
+    const {
+      baseDir,
+      worktreePath,
+      branchName,
+      baseBranch,
+      fetchBeforeCreate,
+      signal,
+    } = input;
 
     const base = await this.readOnlyStep("get-base-branch", async () => {
       if (baseBranch) return baseBranch;
       return getDefaultBranch(baseDir, { abortSignal: signal });
     });
+
+    // Use `this.git` directly to avoid re-entering the write lock the saga already holds.
+    const baseRef = fetchBeforeCreate
+      ? await this.readOnlyStep("resolve-fresh-base-ref", async () => {
+          const remote = "origin";
+          const remoteRef = `${remote}/${base}`;
+          const fetched = await fetchRef(this.git, remote, base);
+          if (!fetched) return base;
+          const exists = await hasRef(this.git, remoteRef);
+          return exists ? remoteRef : base;
+        })
+      : base;
 
     await this.step({
       name: "create-worktree",
@@ -44,7 +71,7 @@ export class CreateWorktreeSaga extends GitSaga<
           "-b",
           branchName,
           worktreePath,
-          base,
+          baseRef,
         ]),
       rollback: async () => {
         try {

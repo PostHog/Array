@@ -5,6 +5,7 @@ import dropUrl from "@renderer/assets/sounds/drop.mp3";
 import guitarUrl from "@renderer/assets/sounds/guitar.mp3";
 import knockUrl from "@renderer/assets/sounds/knock.mp3";
 import meepUrl from "@renderer/assets/sounds/meep.mp3";
+import meepSmolUrl from "@renderer/assets/sounds/meep-smol.mp3";
 import reviUrl from "@renderer/assets/sounds/revi.mp3";
 import ringUrl from "@renderer/assets/sounds/ring.mp3";
 import shootUrl from "@renderer/assets/sounds/shoot.mp3";
@@ -17,6 +18,7 @@ const SOUND_URLS: Record<Exclude<CompletionSound, "none">, string> = {
   danilo: daniloUrl,
   revi: reviUrl,
   meep: meepUrl,
+  "meep-smol": meepSmolUrl,
   bubbles: bubblesUrl,
   drop: dropUrl,
   knock: knockUrl,

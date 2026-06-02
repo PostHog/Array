@@ -91,6 +91,12 @@ describe("AppLifecycleService", () => {
       service.setQuittingForUpdate();
       expect(service.isQuittingForUpdate).toBe(true);
     });
+
+    it("returns false after clearQuittingForUpdate is called", () => {
+      service.setQuittingForUpdate();
+      service.clearQuittingForUpdate();
+      expect(service.isQuittingForUpdate).toBe(false);
+    });
   });
 
   describe("isShuttingDown", () => {

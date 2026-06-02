@@ -1,7 +1,7 @@
 import { Plus } from "phosphor-react-native";
 import { Pressable } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/text";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 
 interface FloatingNewAutomationButtonProps {
@@ -15,7 +15,7 @@ interface FloatingNewAutomationButtonProps {
 export function FloatingNewAutomationButton({
   onPress,
 }: FloatingNewAutomationButtonProps) {
-  const insets = useSafeAreaInsets();
+  const { fabBottom } = useScreenInsets();
   const themeColors = useThemeColors();
 
   return (
@@ -26,7 +26,7 @@ export function FloatingNewAutomationButton({
       accessibilityRole="button"
       className="absolute right-5 z-10 h-14 flex-row items-center justify-center gap-2 rounded-full bg-accent-9 pr-5 pl-4 active:opacity-85"
       style={{
-        bottom: insets.bottom + 20,
+        bottom: fabBottom(),
         shadowColor: "#000",
         shadowOpacity: 0.22,
         shadowRadius: 12,

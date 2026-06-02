@@ -1,6 +1,5 @@
-import { fetch } from "expo/fetch";
 import { HttpError } from "@/features/tasks/api";
-import { getBaseUrl, getHeaders, getProjectId } from "@/lib/api";
+import { authedFetch, getBaseUrl, getProjectId } from "@/lib/api";
 import { logger } from "@/lib/logger";
 import type { DismissalReasonOptionValue } from "./constants";
 
@@ -24,7 +23,6 @@ export async function getSignalReports(
 ): Promise<SignalReportsResponse> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
   const url = new URL(`${baseUrl}/api/projects/${projectId}/signals/reports/`);
 
@@ -47,7 +45,7 @@ export async function getSignalReports(
     url.searchParams.set("suggested_reviewers", params.suggested_reviewers);
   }
 
-  const response = await fetch(url.toString(), { headers });
+  const response = await authedFetch(url.toString());
 
   if (!response.ok) {
     throw new HttpError(
@@ -69,11 +67,9 @@ export async function getSignalReport(
 ): Promise<SignalReport | null> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/`,
-    { headers },
   );
 
   if (response.status === 404 || response.status === 403) {
@@ -94,11 +90,9 @@ export async function getSignalReport(
 export async function getSignalProcessingState(): Promise<SignalProcessingStateResponse> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/signals/processing_state/`,
-    { headers },
   );
 
   if (!response.ok) {
@@ -117,7 +111,6 @@ export async function getAvailableSuggestedReviewers(
 ): Promise<AvailableSuggestedReviewersResponse> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
   const url = new URL(
     `${baseUrl}/api/projects/${projectId}/signals/reports/available_reviewers/`,
@@ -127,7 +120,7 @@ export async function getAvailableSuggestedReviewers(
     url.searchParams.set("query", query.trim());
   }
 
-  const response = await fetch(url.toString(), { headers });
+  const response = await authedFetch(url.toString());
 
   if (!response.ok) {
     throw new HttpError(
@@ -160,11 +153,9 @@ export async function getSignalReportTasks(
 ): Promise<SignalReportTask[]> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/tasks/`,
-    { headers },
   );
 
   if (!response.ok) {
@@ -184,11 +175,9 @@ export async function getSignalReportArtefacts(
 ): Promise<SignalReportArtefactsResponse> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/artefacts/`,
-    { headers },
   );
 
   if (!response.ok) {
@@ -211,11 +200,9 @@ export async function getSignalReportSignals(
 ): Promise<SignalReportSignalsResponse> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/signals/`,
-    { headers },
   );
 
   if (!response.ok) {
@@ -268,13 +255,11 @@ export async function dismissSignalReport(
 ): Promise<SignalReport> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
-  const headers = getHeaders();
 
-  const response = await fetch(
+  const response = await authedFetch(
     `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/state/`,
     {
       method: "POST",
-      headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({
         state: "suppressed",
         dismissal_reason: input.reason,

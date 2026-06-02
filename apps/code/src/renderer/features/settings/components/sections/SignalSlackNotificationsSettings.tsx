@@ -7,6 +7,7 @@ import { SettingsOptionSelect } from "@features/settings/components/SettingsOpti
 import { useDebouncedValue } from "@hooks/useDebouncedValue";
 import { CaretDown, Hash, Lock } from "@phosphor-icons/react";
 import {
+  Button,
   Combobox,
   ComboboxContent,
   ComboboxEmpty,
@@ -14,9 +15,8 @@ import {
   ComboboxItem,
   ComboboxList,
   ComboboxTrigger,
-  Button as QuillButton,
 } from "@posthog/quill";
-import { Button, Callout, Flex, Text } from "@radix-ui/themes";
+import { Box, Callout, Flex, Text } from "@radix-ui/themes";
 import type { SignalReportPriority, SlackChannelOption } from "@shared/types";
 import { useMemo, useRef, useState } from "react";
 
@@ -76,10 +76,12 @@ function getSlackIntegrationLabel(integration: {
 
 interface SignalSlackNotificationsSettingsProps {
   channelComboboxModal?: boolean;
+  isLoading?: boolean;
 }
 
 export function SignalSlackNotificationsSettings({
   channelComboboxModal = false,
+  isLoading = false,
 }: SignalSlackNotificationsSettingsProps) {
   const { slackIntegrations, hasSlackIntegration } = useIntegrationSelectors();
   const { userAutonomyConfig, handleUpdateSlackNotifications } =
@@ -157,6 +159,23 @@ export function SignalSlackNotificationsSettings({
     [slackIntegrations],
   );
 
+  if (isLoading) {
+    return (
+      <Flex
+        direction="column"
+        gap="2"
+        pt="3"
+        className="border-(--gray-5) border-t border-dashed"
+      >
+        <Flex direction="column" gap="1">
+          <Box className="h-[14px] w-[160px] animate-pulse rounded bg-gray-4" />
+          <Box className="h-[11px] w-[80%] animate-pulse rounded bg-gray-3" />
+        </Flex>
+        <Box className="mt-1 h-[28px] w-[200px] animate-pulse rounded bg-gray-3" />
+      </Flex>
+    );
+  }
+
   if (!hasSlackIntegration) {
     return (
       <Flex
@@ -175,12 +194,14 @@ export function SignalSlackNotificationsSettings({
           </Text>
         </Flex>
         <Button
-          size="1"
-          variant="soft"
+          type="button"
+          variant="outline"
+          size="sm"
           disabled={slackConnect.isConnecting}
           onClick={() => {
             void slackConnect.connect();
           }}
+          className="w-fit"
         >
           {slackConnect.isConnecting
             ? "Waiting for Slack…"
@@ -300,10 +321,10 @@ export function SignalSlackNotificationsSettings({
 
   const connectWorkspaceButton = (
     <Button
-      size="1"
-      variant="ghost"
-      color="gray"
-      className="h-6 shrink-0 px-1"
+      type="button"
+      variant="outline"
+      size="sm"
+      className="shrink-0"
       disabled={slackConnect.isConnecting}
       onClick={() => {
         void slackConnect.connect();
@@ -379,7 +400,7 @@ export function SignalSlackNotificationsSettings({
             >
               <ComboboxTrigger
                 render={
-                  <QuillButton
+                  <Button
                     variant="outline"
                     size="sm"
                     disabled={!effectiveIntegrationId}
@@ -399,7 +420,7 @@ export function SignalSlackNotificationsSettings({
                       weight="bold"
                       className="shrink-0 text-muted-foreground"
                     />
-                  </QuillButton>
+                  </Button>
                 }
               />
               {channelComboboxModal ? (

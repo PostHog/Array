@@ -10,7 +10,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FloatingMcpHeader } from "@/features/mcp/components/FloatingMcpHeader";
 import {
   installationToRowProps,
@@ -22,13 +21,14 @@ import type {
   McpRecommendedServer,
   McpServerInstallation,
 } from "@/features/mcp/types";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 
 type Tab = "installed" | "marketplace";
 
 export default function McpServersScreen() {
   const themeColors = useThemeColors();
-  const insets = useSafeAreaInsets();
+  const { insets, bottom } = useScreenInsets();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("installed");
   const [search, setSearch] = useState("");
@@ -149,7 +149,7 @@ export default function McpServersScreen() {
                 tintColor={themeColors.accent[9]}
               />
             }
-            contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+            contentContainerStyle={{ paddingBottom: bottom("default") }}
           />
         ) : (
           <FlatList
@@ -172,7 +172,7 @@ export default function McpServersScreen() {
                 tintColor={themeColors.accent[9]}
               />
             }
-            contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+            contentContainerStyle={{ paddingBottom: bottom("default") }}
           />
         )}
       </View>

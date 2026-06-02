@@ -16,6 +16,179 @@ import type { TaskRun } from "../types";
 import { AgentServer, SSE_KEEPALIVE_INTERVAL_MS } from "./agent-server";
 import { type JwtPayload, SANDBOX_CONNECTION_AUDIENCE } from "./jwt";
 
+const mockedClaudeSdk = vi.hoisted(() => {
+  const createSuccessResult = () => ({
+    type: "result",
+    subtype: "success",
+    duration_ms: 100,
+    duration_api_ms: 50,
+    is_error: false,
+    num_turns: 1,
+    result: "Done",
+    stop_reason: null,
+    total_cost_usd: 0.01,
+    usage: {
+      input_tokens: 100,
+      output_tokens: 50,
+      output_tokens_details: { thinking_tokens: 0 },
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+      cache_creation: {
+        ephemeral_1h_input_tokens: 0,
+        ephemeral_5m_input_tokens: 0,
+      },
+      server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
+      service_tier: "standard",
+      inference_geo: "us",
+      iterations: [],
+      speed: "standard",
+    },
+    modelUsage: {},
+    permission_denials: [],
+    uuid: crypto.randomUUID() as `${string}-${string}-${string}-${string}-${string}`,
+    session_id: "test-session",
+  });
+
+  const query = vi.fn(
+    (params: { prompt?: { push?: (message: unknown) => void } }) => {
+      const queuedMessages: unknown[] = [];
+      let resolveNext: ((value: IteratorResult<unknown, void>) => void) | null =
+        null;
+      let isDone = false;
+
+      const flushQueue = () => {
+        if (!resolveNext) {
+          return;
+        }
+
+        if (queuedMessages.length > 0) {
+          const resolve = resolveNext;
+          resolveNext = null;
+          resolve({
+            value: queuedMessages.shift(),
+            done: false,
+          });
+          return;
+        }
+
+        if (isDone) {
+          const resolve = resolveNext;
+          resolveNext = null;
+          resolve({ value: undefined, done: true });
+        }
+      };
+
+      const enqueue = (message: unknown) => {
+        if (isDone) {
+          return;
+        }
+        queuedMessages.push(message);
+        flushQueue();
+      };
+
+      const prompt = params.prompt;
+      if (prompt && typeof prompt.push === "function") {
+        const originalPush = prompt.push.bind(prompt);
+        prompt.push = (message: unknown) => {
+          originalPush(message);
+
+          if (
+            message &&
+            typeof message === "object" &&
+            "uuid" in message &&
+            typeof message.uuid === "string"
+          ) {
+            enqueue({
+              type: "user",
+              uuid: message.uuid,
+              parent_tool_use_id: null,
+              message: {
+                content: [],
+              },
+            });
+            enqueue(createSuccessResult());
+          }
+        };
+      }
+
+      return {
+        next: vi.fn(() => {
+          if (queuedMessages.length > 0) {
+            return Promise.resolve({
+              value: queuedMessages.shift(),
+              done: false as const,
+            });
+          }
+
+          if (isDone) {
+            return Promise.resolve({
+              value: undefined,
+              done: true as const,
+            });
+          }
+
+          return new Promise<IteratorResult<unknown, void>>((resolve) => {
+            resolveNext = resolve;
+          });
+        }),
+        return: vi.fn(() => {
+          isDone = true;
+          flushQueue();
+          return Promise.resolve({ value: undefined, done: true as const });
+        }),
+        throw: vi.fn((error: Error) => {
+          isDone = true;
+          flushQueue();
+          return Promise.reject(error);
+        }),
+        [Symbol.asyncIterator]() {
+          return this;
+        },
+        interrupt: vi.fn(async () => {
+          isDone = true;
+          flushQueue();
+        }),
+        setPermissionMode: vi.fn().mockResolvedValue(undefined),
+        setModel: vi.fn().mockResolvedValue(undefined),
+        setMaxThinkingTokens: vi.fn().mockResolvedValue(undefined),
+        supportedCommands: vi.fn().mockResolvedValue([]),
+        supportedModels: vi.fn().mockResolvedValue([]),
+        mcpServerStatus: vi.fn().mockResolvedValue([]),
+        accountInfo: vi.fn().mockResolvedValue({}),
+        rewindFiles: vi.fn().mockResolvedValue({ canRewind: false }),
+        setMcpServers: vi
+          .fn()
+          .mockResolvedValue({ added: [], removed: [], errors: {} }),
+        streamInput: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn(),
+        initializationResult: vi.fn().mockResolvedValue({
+          result: "success",
+          commands: [],
+          models: [],
+        }),
+        reconnectMcpServer: vi.fn().mockResolvedValue(undefined),
+        toggleMcpServer: vi.fn().mockResolvedValue(undefined),
+        supportedAgents: vi.fn().mockResolvedValue([]),
+        stopTask: vi.fn().mockResolvedValue(undefined),
+        applyFlagSettings: vi.fn().mockResolvedValue(undefined),
+        getContextUsage: vi.fn().mockResolvedValue({}),
+        reloadPlugins: vi.fn().mockResolvedValue(undefined),
+        seedReadState: vi.fn().mockResolvedValue(undefined),
+        readFile: vi.fn().mockResolvedValue(""),
+        backgroundTasks: vi.fn().mockResolvedValue([]),
+        [Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+      };
+    },
+  );
+
+  return { query };
+});
+
+vi.mock("@anthropic-ai/claude-agent-sdk", async (importOriginal) => ({
+  ...(await importOriginal()),
+  query: mockedClaudeSdk.query,
+}));
+
 interface TestableServer {
   getInitialPromptOverride(run: TaskRun): string | null;
   getClearedPendingUserState(run: TaskRun | null): string[] | null;

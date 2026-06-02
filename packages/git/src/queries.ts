@@ -1023,6 +1023,28 @@ export async function fetch(
   );
 }
 
+export async function hasRef(git: GitLike, ref: string): Promise<boolean> {
+  try {
+    await git.revparse(["--verify", "--quiet", `${ref}^{commit}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchRef(
+  git: GitLike,
+  remote: string,
+  ref: string,
+): Promise<boolean> {
+  try {
+    await git.raw(["fetch", "--quiet", "--no-tags", remote, ref]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function listFiles(
   baseDir: string,
   options?: CreateGitClientOptions,

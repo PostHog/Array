@@ -16,9 +16,12 @@ config.resolver.nodeModulesPaths = [
   path.resolve(monorepoRoot, "node_modules"),
 ];
 
-// Force React to resolve from monorepo root
+// Force React to resolve from monorepo root, and alias workspace packages
+// directly to their TypeScript source so Babel can transpile them (Metro
+// does not consume the ESM `dist/` build cleanly).
 config.resolver.extraNodeModules = {
   react: path.resolve(monorepoRoot, "node_modules/react"),
+  "@posthog/shared": path.resolve(monorepoRoot, "packages/shared/src/index.ts"),
 };
 
 // Apply NativeWind first so its resolver/transformer changes are in place

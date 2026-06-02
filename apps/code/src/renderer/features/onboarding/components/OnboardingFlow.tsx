@@ -6,18 +6,23 @@ import { useUserGithubIntegrations } from "@hooks/useIntegrations";
 import { ArrowRight, SignOut } from "@phosphor-icons/react";
 import { Button, Flex } from "@radix-ui/themes";
 import { IS_DEV } from "@shared/constants/environment";
-import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import {
+  ANALYTICS_EVENTS,
+  type OnboardingStepCompletedProperties,
+} from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
 import { track } from "@utils/analytics";
+import { shipIt } from "@utils/confetti";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { useEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 import { useOnboardingFlow } from "../hooks/useOnboardingFlow";
-import { CliInstallStep } from "./CliInstallStep";
-import { GitIntegrationStep } from "./GitIntegrationStep";
+import { ConnectGitHubStep } from "./ConnectGitHubStep";
+import { InstallCliStep } from "./InstallCliStep";
 import { InviteCodeStep } from "./InviteCodeStep";
 import { ProjectSelectStep } from "./ProjectSelectStep";
+import { SelectRepoStep } from "./SelectRepoStep";
 import { StepIndicator } from "./StepIndicator";
 import { WelcomeScreen } from "./WelcomeScreen";
 
@@ -79,7 +84,12 @@ export function OnboardingFlow() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [currentStep]);
 
-  const trackStepCompleted = () => {
+  type StepContext = Omit<
+    OnboardingStepCompletedProperties,
+    "step_id" | "step_index" | "total_steps" | "duration_seconds"
+  >;
+
+  const trackStepCompleted = (context?: StepContext) => {
     track(ANALYTICS_EVENTS.ONBOARDING_STEP_COMPLETED, {
       step_id: currentStep,
       step_index: currentIndex,
@@ -87,6 +97,7 @@ export function OnboardingFlow() {
       duration_seconds: Math.round(
         (Date.now() - stepEnteredAtRef.current) / 1000,
       ),
+      ...context,
     });
   };
 
@@ -101,8 +112,8 @@ export function OnboardingFlow() {
     stepEnteredAtRef.current = Date.now();
   };
 
-  const handleNext = () => {
-    trackStepCompleted();
+  const handleNext = (context?: StepContext) => {
+    trackStepCompleted(context);
     trackStepViewed(currentIndex + 1);
     next();
   };
@@ -112,15 +123,17 @@ export function OnboardingFlow() {
     back();
   };
 
-  useHotkeys("right", handleNext, { enableOnFormTags: false }, [handleNext]);
+  useHotkeys("right", () => handleNext(), { enableOnFormTags: false }, [
+    handleNext,
+  ]);
   useHotkeys("left", handleBack, { enableOnFormTags: false }, [handleBack]);
 
-  const handleComplete = (cliSkipped: boolean) => {
-    if (cliSkipped) {
+  const handleComplete = (repoSkipped: boolean) => {
+    if (repoSkipped) {
       track(ANALYTICS_EVENTS.ONBOARDING_STEP_SKIPPED, {
         step_id: currentStep,
         step_index: currentIndex,
-        reason: "tools_not_installed",
+        reason: "no_repo_selected",
       });
     } else {
       trackStepCompleted();
@@ -130,8 +143,9 @@ export function OnboardingFlow() {
         (Date.now() - flowStartedAtRef.current) / 1000,
       ),
       github_connected: githubUserIntegrations.length > 0,
-      cli_skipped: cliSkipped,
+      repo_skipped: repoSkipped,
     });
+    shipIt();
     completeOnboarding();
     navigateToTaskInput();
   };
@@ -235,9 +249,9 @@ export function OnboardingFlow() {
             </motion.div>
           )}
 
-          {currentStep === "github" && (
+          {currentStep === "connect-github" && (
             <motion.div
-              key="github"
+              key="connect-github"
               custom={direction}
               initial="enter"
               animate="center"
@@ -246,14 +260,7 @@ export function OnboardingFlow() {
               transition={{ duration: 0.3 }}
               className="min-h-0 w-full flex-1"
             >
-              <GitIntegrationStep
-                onNext={handleNext}
-                onBack={handleBack}
-                selectedDirectory={selectedDirectory}
-                detectedRepo={detectedRepo}
-                isDetectingRepo={isDetectingRepo}
-                onDirectoryChange={handleDirectoryChange}
-              />
+              <ConnectGitHubStep onNext={handleNext} onBack={handleBack} />
             </motion.div>
           )}
 
@@ -268,7 +275,29 @@ export function OnboardingFlow() {
               transition={{ duration: 0.3 }}
               className="min-h-0 w-full flex-1"
             >
-              <CliInstallStep onComplete={handleComplete} onBack={handleBack} />
+              <InstallCliStep onNext={handleNext} onBack={handleBack} />
+            </motion.div>
+          )}
+
+          {currentStep === "select-repo" && (
+            <motion.div
+              key="select-repo"
+              custom={direction}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              variants={stepVariants}
+              transition={{ duration: 0.3 }}
+              className="min-h-0 w-full flex-1"
+            >
+              <SelectRepoStep
+                onComplete={handleComplete}
+                onBack={handleBack}
+                selectedDirectory={selectedDirectory}
+                detectedRepo={detectedRepo}
+                isDetectingRepo={isDetectingRepo}
+                onDirectoryChange={handleDirectoryChange}
+              />
             </motion.div>
           )}
         </AnimatePresence>

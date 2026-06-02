@@ -4,6 +4,7 @@ import posthog from "posthog-js/dist/module.full.no-external";
 // posthog-recorder (vs lazy-recorder) ensures recording is ready immediately
 import "posthog-js/dist/posthog-recorder";
 import type { PermissionRequest } from "@renderer/features/sessions/utils/parseSessionLogs";
+import type { Task } from "@shared/types";
 import type {
   EventPropertyMap,
   UserIdentifyProperties,
@@ -13,6 +14,19 @@ import { logger } from "./logger";
 const log = logger.scope("analytics");
 
 let isInitialized = false;
+
+// Cached so it can be re-applied after posthog.reset() clears super properties.
+let registeredAppVersion: string | null = null;
+
+// posthog.reset() wipes super properties, so these are re-registered after each reset.
+function registerPersistentSuperProperties() {
+  posthog.register({
+    team: "posthog-code",
+    ...(registeredAppVersion !== null
+      ? { app_version: registeredAppVersion }
+      : {}),
+  });
+}
 
 type PendingFlagListener = {
   callback: () => void;
@@ -49,9 +63,12 @@ export function initializePostHog() {
     },
   });
 
-  posthog.register({ team: "posthog-code" });
+  // Clear stale task-scoped super-properties from the previous session.
+  posthog.unregister("signal_report_id");
 
   isInitialized = true;
+
+  registerPersistentSuperProperties();
 
   for (const listener of pendingFlagListeners) {
     listener.unsubscribe = posthog.onFeatureFlags(listener.callback);
@@ -102,6 +119,17 @@ export function startSessionRecording() {
   }, 1000);
 }
 
+// Register the app version as a super property so it rides along on every event.
+export function registerAppVersion(appVersion: string) {
+  registeredAppVersion = appVersion;
+
+  if (!isInitialized) {
+    return;
+  }
+
+  posthog.register({ app_version: appVersion });
+}
+
 export function identifyUser(
   userId: string,
   properties?: UserIdentifyProperties,
@@ -146,6 +174,29 @@ export function resetUser() {
   }
 
   posthog.reset();
+
+  // reset() clears super properties; re-apply the persistent ones.
+  registerPersistentSuperProperties();
+}
+
+/**
+ * Attach (or clear) task-scoped super-properties so every subsequent event
+ * carries the context of the currently active task. Pass `null` when no task
+ * is active (e.g. when navigating to a non-task view) to clear the context.
+ *
+ * Currently used to tag every event fired while the user is inside a task
+ * launched from an inbox report via the Discuss button.
+ */
+export function setActiveTaskAnalyticsContext(task: Task | null) {
+  if (!isInitialized) {
+    return;
+  }
+
+  if (task?.signal_report) {
+    posthog.register({ signal_report_id: task.signal_report });
+  } else {
+    posthog.unregister("signal_report_id");
+  }
 }
 
 export function track<K extends keyof EventPropertyMap>(

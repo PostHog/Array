@@ -400,10 +400,33 @@ export const prReviewCommentSchema = z.object({
 
 export type PrReviewComment = z.infer<typeof prReviewCommentSchema>;
 
+export const prReviewThreadSchema = z.object({
+  nodeId: z.string(),
+  isResolved: z.boolean(),
+  rootId: z.number(),
+  filePath: z.string(),
+  comments: z.array(prReviewCommentSchema),
+});
+export type PrReviewThread = z.infer<typeof prReviewThreadSchema>;
+
 export const getPrReviewCommentsInput = z.object({
   prUrl: z.string(),
 });
-export const getPrReviewCommentsOutput = z.array(prReviewCommentSchema);
+export const getPrReviewCommentsOutput = z.array(prReviewThreadSchema);
+
+// resolveReviewThread schemas
+export const resolveReviewThreadInput = z.object({
+  prUrl: z.string(),
+  threadNodeId: z.string(),
+  resolved: z.boolean(),
+});
+export const resolveReviewThreadOutput = z.object({
+  success: z.boolean(),
+  isResolved: z.boolean(),
+});
+export type ResolveReviewThreadOutput = z.infer<
+  typeof resolveReviewThreadOutput
+>;
 
 // replyToPrComment schemas
 export const replyToPrCommentInput = z.object({

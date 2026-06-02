@@ -14,6 +14,8 @@ export function autoServicesPlugin(servicesDir: string): Plugin {
       (f) =>
         f.endsWith(".ts") &&
         !f.endsWith(".types.ts") &&
+        !f.endsWith(".test.ts") &&
+        !f.endsWith(".spec.ts") &&
         f !== "index.ts" &&
         f !== "types.ts",
     );

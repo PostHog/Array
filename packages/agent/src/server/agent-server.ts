@@ -43,6 +43,7 @@ import type {
   GitCheckpointEvent,
   HandoffLocalGitState,
   LogLevel,
+  Task,
   TaskRun,
   TaskRunArtifact,
 } from "../types";
@@ -749,6 +750,22 @@ export class AgentServer {
         const mcpServers = Array.isArray(params.mcpServers)
           ? params.mcpServers
           : [];
+        const refreshedCredentials = Array.isArray(params.refreshedCredentials)
+          ? (params.refreshedCredentials as string[])
+          : [];
+        const authorship =
+          typeof params.authorship === "string" ? params.authorship : "";
+
+        if (refreshedCredentials.length > 0) {
+          const owner = authorship ? ` (${authorship})` : "";
+          this.logger.debug(
+            `Refreshed sandbox credentials${owner}: ${refreshedCredentials.join(", ")}`,
+          );
+        }
+
+        if (mcpServers.length === 0) {
+          return { refreshed: true };
+        }
 
         this.logger.debug("Refresh session requested", {
           serverCount: mcpServers.length,
@@ -867,6 +884,7 @@ export class AgentServer {
     this.configureEnvironment({
       isInternal: preTask?.internal === true,
       originProduct: preTask?.origin_product,
+      signalReportId: preTask?.signal_report,
       taskId: payload.task_id,
       taskRunId: payload.run_id,
       taskUserId: payload.user_id,
@@ -1853,12 +1871,14 @@ ${signedCommitInstructions}
   private configureEnvironment({
     isInternal = false,
     originProduct,
+    signalReportId,
     taskId,
     taskRunId,
     taskUserId,
   }: {
     isInternal?: boolean;
-    originProduct?: string | null;
+    originProduct?: Task["origin_product"] | null;
+    signalReportId?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
@@ -1877,6 +1897,7 @@ ${signedCommitInstructions}
     const customHeaders = buildGatewayPropertyHeaders({
       task_origin_product: originProduct,
       task_internal: isInternal,
+      signal_report_id: signalReportId,
       task_id: taskId,
       task_run_id: taskRunId,
       task_user_id: taskUserId,

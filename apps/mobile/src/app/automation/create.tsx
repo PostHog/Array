@@ -9,13 +9,13 @@ import {
   ScrollView,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/text";
 import { TaskAutomationValidationError } from "@/features/tasks/api";
 import { AutomationForm } from "@/features/tasks/components/AutomationForm";
 import { useCreateTaskAutomation } from "@/features/tasks/hooks/useAutomations";
 import { useSkillStoreSkill } from "@/features/tasks/skills/hooks";
 import { formatSkillTemplateId } from "@/features/tasks/skills/skillTemplateIds";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 
 // Reserved space below the scrolling form content. Tall enough that the
@@ -35,7 +35,7 @@ export default function CreateAutomationScreen() {
     : skillNameParam;
   const router = useRouter();
   const themeColors = useThemeColors();
-  const insets = useSafeAreaInsets();
+  const { insets, bottom } = useScreenInsets();
   const createAutomation = useCreateTaskAutomation();
   const defaultTimezone = useMemo(
     () => getCalendars()[0]?.timeZone ?? "UTC",
@@ -209,7 +209,7 @@ export default function CreateAutomationScreen() {
         {formMounted && (
           <View
             className="absolute inset-x-0 bottom-0 border-gray-6 border-t bg-background px-4 pt-3"
-            style={{ paddingBottom: insets.bottom + 12 }}
+            style={{ paddingBottom: bottom("compact") }}
           >
             <Pressable
               onPress={handleCreate}

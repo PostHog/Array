@@ -17,6 +17,7 @@ import {
   CaretRightIcon,
   ChatCircleIcon,
   EyeIcon,
+  InfoIcon,
   LinkSimpleIcon,
   Plus,
   ThumbsDownIcon,
@@ -31,12 +32,12 @@ import {
   ScrollArea,
   Spinner,
   Text,
-  TextField,
+  TextArea,
   Tooltip,
 } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { EXTERNAL_LINKS } from "@renderer/utils/links";
-import { getDeeplinkProtocol } from "@shared/deeplink";
+import { buildInboxDeeplink } from "@shared/deeplink";
 import type {
   ActionabilityJudgmentArtefact,
   ActionabilityJudgmentContent,
@@ -50,7 +51,6 @@ import type {
   Task,
 } from "@shared/types";
 import type { InboxReportActionProperties } from "@shared/types/analytics";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
 import { isMac } from "@utils/platform";
 import {
@@ -63,6 +63,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import { useCreatePrReport } from "../../hooks/useCreatePrReport";
 import { useDiscussReport } from "../../hooks/useDiscussReport";
 import { ReportImplementationPrLink } from "../utils/ReportImplementationPrLink";
 import { SignalReportActionabilityBadge } from "../utils/SignalReportActionabilityBadge";
@@ -211,8 +212,12 @@ export function ReportDetailPane({
     const reviewerArtefact = allArtefacts.find(
       (a): a is SuggestedReviewersArtefact => a.type === "suggested_reviewers",
     );
-    return reviewerArtefact?.content ?? [];
-  }, [allArtefacts]);
+    const reviewers = reviewerArtefact?.content ?? [];
+    if (!me?.uuid) return reviewers;
+    const meIndex = reviewers.findIndex((r) => r.user?.uuid === me.uuid);
+    if (meIndex <= 0) return reviewers;
+    return [reviewers[meIndex], ...reviewers.filter((_, i) => i !== meIndex)];
+  }, [allArtefacts, me?.uuid]);
 
   const signalFindings = useMemo(() => {
     const map = new Map<string, SignalFindingArtefact["content"]>();
@@ -265,7 +270,6 @@ export function ReportDetailPane({
   );
 
   // ── Task creation ───────────────────────────────────────────────────────
-  const { navigateToTaskInput } = useNavigationStore();
   const { data: reportRepository } = useReportRepository(report.id);
   const trpcReact = useTRPC();
   const { data: mostRecentRepo } = useQuery(
@@ -360,22 +364,20 @@ export function ReportDetailPane({
     [fireDetailAction],
   );
 
-  const handleCreateImplementationTask = useCallback(() => {
-    if (!canCreateImplementationPr) return;
+  const { createPrReport, isCreatingPr } = useCreatePrReport({
+    reportId: report.id,
+    reportTitle: report.title,
+    cloudRepository: effectiveCloudRepository,
+  });
+
+  const handleCreateImplementationTask = useCallback(async () => {
+    if (!canCreateImplementationPr || isCreatingPr) return;
     fireDetailAction("create_pr");
-    navigateToTaskInput({
-      initialPrompt: `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`,
-      initialCloudRepository: effectiveCloudRepository ?? undefined,
-      reportAssociation: {
-        reportId: report.id,
-        title: report.title ?? "Untitled signal",
-      },
-    });
+    await createPrReport();
   }, [
     canCreateImplementationPr,
-    navigateToTaskInput,
-    effectiveCloudRepository,
-    report,
+    isCreatingPr,
+    createPrReport,
     fireDetailAction,
   ]);
 
@@ -480,7 +482,9 @@ export function ReportDetailPane({
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(
-                    `${getDeeplinkProtocol(import.meta.env.DEV)}://inbox/${report.id}`,
+                    buildInboxDeeplink(report.id, report.title, {
+                      isDevBuild: import.meta.env.DEV,
+                    }),
                   );
                   fireDetailAction("copy_link");
                   toast.success("Link copied");
@@ -518,7 +522,7 @@ export function ReportDetailPane({
               size="1"
               variant="soft"
               className="gap-1 rounded-r-none text-[12px]"
-              tooltipContent="Open a chat session about this report"
+              tooltipContent="Discuss this report in a task with your agent"
               disabled={isDiscussing}
               onClick={() => handleDiscussReport()}
             >
@@ -546,7 +550,7 @@ export function ReportDetailPane({
               </Popover.Trigger>
               <Popover.Content
                 align="end"
-                className="w-[320px] border border-(--gray-6) bg-(--color-panel-solid) p-3 shadow-6"
+                className="w-[420px] border border-(--gray-6) bg-(--color-panel-solid) p-3 shadow-6"
                 side="bottom"
                 sideOffset={6}
               >
@@ -554,27 +558,43 @@ export function ReportDetailPane({
                   className="flex flex-col gap-2"
                   onSubmit={handleDiscussSubmit}
                 >
-                  <TextField.Root
+                  <TextArea
                     aria-label="Optional first question for Discuss"
                     autoFocus
                     placeholder="Ask about this report..."
+                    resize="vertical"
+                    rows={5}
                     size="2"
                     value={discussQuestion}
                     onChange={(event) => setDiscussQuestion(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Enter" &&
+                        (event.metaKey || event.ctrlKey)
+                      ) {
+                        event.preventDefault();
+                        handleDiscussReport(discussQuestion);
+                      }
+                    }}
                   />
-                  <Flex justify="end" gap="2">
-                    <Button
-                      color="gray"
-                      size="1"
-                      type="button"
-                      variant="soft"
-                      onClick={() => setDiscussQuestionOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button size="1" type="submit" variant="soft">
-                      Discuss
-                    </Button>
+                  <Flex justify="between" align="center" gap="2">
+                    <Text size="1" color="gray">
+                      <Kbd>{isMac ? "⌘↵" : "Ctrl+↵"}</Kbd> to send
+                    </Text>
+                    <Flex gap="2">
+                      <Button
+                        color="gray"
+                        size="1"
+                        type="button"
+                        variant="soft"
+                        onClick={() => setDiscussQuestionOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button size="1" type="submit" variant="soft">
+                        Discuss
+                      </Button>
+                    </Flex>
                   </Flex>
                 </form>
               </Popover.Content>
@@ -598,9 +618,10 @@ export function ReportDetailPane({
                 size="1"
                 variant="solid"
                 className="gap-1 text-[12px]"
+                disabled={isCreatingPr}
                 onClick={handleCreateImplementationTask}
               >
-                <Plus size={12} />
+                {isCreatingPr ? <Spinner size="1" /> : <Plus size={12} />}
                 Create PR
               </Button>
             </Tooltip>
@@ -802,15 +823,38 @@ export function ReportDetailPane({
                           {reviewer.relevant_commits.map((commit, i) => (
                             <span key={commit.sha}>
                               {i > 0 && ", "}
-                              <Tooltip content={commit.reason || undefined}>
-                                <a
-                                  href={commit.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="font-mono text-gray-9 hover:text-gray-11"
-                                >
-                                  {commit.sha.slice(0, 7)}
-                                </a>
+                              <Tooltip
+                                content={
+                                  isMe ? (
+                                    <Flex direction="column" gap="1">
+                                      <Text as="div" size="1" weight="bold">
+                                        Why was I assigned?
+                                      </Text>
+                                      <Text as="div" size="1">
+                                        {commit.reason}
+                                      </Text>
+                                    </Flex>
+                                  ) : (
+                                    commit.reason || undefined
+                                  )
+                                }
+                              >
+                                <span className="inline-flex items-center gap-0.5">
+                                  <a
+                                    href={commit.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="font-mono text-gray-9 hover:text-gray-11"
+                                  >
+                                    {commit.sha.slice(0, 7)}
+                                  </a>
+                                  {isMe && commit.reason && (
+                                    <InfoIcon
+                                      size={11}
+                                      className="cursor-help text-gray-9"
+                                    />
+                                  )}
+                                </span>
                               </Tooltip>
                             </span>
                           ))}

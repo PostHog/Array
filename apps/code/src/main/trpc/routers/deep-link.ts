@@ -6,6 +6,11 @@ import {
   type PendingInboxDeepLink,
 } from "../../services/inbox-link/service";
 import {
+  NewTaskLinkEvent,
+  type NewTaskLinkPayload,
+  type NewTaskLinkService,
+} from "../../services/new-task-link/service";
+import {
   type PendingDeepLink,
   TaskLinkEvent,
   type TaskLinkService,
@@ -17,6 +22,9 @@ const getTaskLinkService = () =>
 
 const getInboxLinkService = () =>
   container.get<InboxLinkService>(MAIN_TOKENS.InboxLinkService);
+
+const getNewTaskLinkService = () =>
+  container.get<NewTaskLinkService>(MAIN_TOKENS.NewTaskLinkService);
 
 export const deepLinkRouter = router({
   /**
@@ -64,6 +72,31 @@ export const deepLinkRouter = router({
     (): PendingInboxDeepLink | null => {
       const service = getInboxLinkService();
       return service.consumePendingDeepLink();
+    },
+  ),
+
+  /**
+   * Subscribe to new task deep link events (new, plan, issue).
+   * Emits a discriminated union payload when posthog-code://new/...,
+   * posthog-code://plan/..., or posthog-code://issue/... is opened.
+   */
+  onNewTaskAction: publicProcedure.subscription(async function* (opts) {
+    const service = getNewTaskLinkService();
+    const iterable = service.toIterable(NewTaskLinkEvent.Action, {
+      signal: opts.signal,
+    });
+    for await (const data of iterable) {
+      yield data;
+    }
+  }),
+
+  /**
+   * Get any pending new task deep link that arrived before renderer was ready.
+   */
+  getPendingNewTaskLink: publicProcedure.query(
+    (): NewTaskLinkPayload | null => {
+      const service = getNewTaskLinkService();
+      return service.consumePendingLink();
     },
   ),
 });

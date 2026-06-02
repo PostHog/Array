@@ -1,24 +1,10 @@
-import { Tooltip } from "@components/ui/Tooltip";
 import type { ContextUsage } from "@features/sessions/hooks/useContextUsage";
-import { Flex, Text } from "@radix-ui/themes";
-
-function formatTokensCompact(tokens: number): string {
-  if (tokens >= 1_000_000) {
-    return `${(tokens / 1_000_000).toFixed(1)}M`;
-  }
-  return `${Math.round(tokens / 1000)}K`;
-}
-
-function formatTokensFull(tokens: number): string {
-  return tokens.toLocaleString();
-}
-
-function getUsageColor(percentage: number): string {
-  if (percentage >= 90) return "var(--red-9)";
-  if (percentage >= 75) return "var(--orange-9)";
-  if (percentage >= 50) return "var(--amber-9)";
-  return "var(--green-9)";
-}
+import {
+  formatTokensCompact,
+  getOverallUsageColor,
+} from "@features/sessions/utils/contextColors";
+import { Flex, Popover, Text } from "@radix-ui/themes";
+import { ContextBreakdownPopover } from "./ContextBreakdownPopover";
 
 const CIRCLE_SIZE = 20;
 const STROKE_WIDTH = 2.5;
@@ -34,45 +20,54 @@ export function ContextUsageIndicator({ usage }: ContextUsageIndicatorProps) {
 
   const { used, size, percentage } = usage;
   const strokeDashoffset = CIRCUMFERENCE - (percentage / 100) * CIRCUMFERENCE;
-  const color = getUsageColor(percentage);
+  const color = getOverallUsageColor(percentage);
 
   return (
-    <Tooltip
-      content={`${formatTokensFull(used)} / ${formatTokensFull(size)} tokens (${percentage}%)`}
-      side="top"
-    >
-      <Flex align="center" gap="1" className="cursor-default select-none">
-        <svg
-          width={CIRCLE_SIZE}
-          height={CIRCLE_SIZE}
-          className="-rotate-90 shrink-0"
-          role="img"
+    <Popover.Root>
+      <Popover.Trigger>
+        <button
+          type="button"
+          className="flex cursor-pointer select-none items-center gap-1 bg-transparent"
           aria-label={`Context usage: ${percentage}%`}
         >
-          <circle
-            cx={CIRCLE_SIZE / 2}
-            cy={CIRCLE_SIZE / 2}
-            r={RADIUS}
-            fill="none"
-            stroke="var(--gray-5)"
-            strokeWidth={STROKE_WIDTH}
-          />
-          <circle
-            cx={CIRCLE_SIZE / 2}
-            cy={CIRCLE_SIZE / 2}
-            r={RADIUS}
-            fill="none"
-            stroke={color}
-            strokeWidth={STROKE_WIDTH}
-            strokeDasharray={CIRCUMFERENCE}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-          />
-        </svg>
-        <Text className="text-[13px] text-gray-10 tabular-nums">
-          {formatTokensCompact(used)}/{formatTokensCompact(size)}
-        </Text>
-      </Flex>
-    </Tooltip>
+          <Flex align="center" gap="1">
+            <svg
+              width={CIRCLE_SIZE}
+              height={CIRCLE_SIZE}
+              className="-rotate-90 shrink-0"
+              role="img"
+              aria-hidden="true"
+            >
+              <circle
+                cx={CIRCLE_SIZE / 2}
+                cy={CIRCLE_SIZE / 2}
+                r={RADIUS}
+                fill="none"
+                stroke="var(--gray-5)"
+                strokeWidth={STROKE_WIDTH}
+              />
+              <circle
+                cx={CIRCLE_SIZE / 2}
+                cy={CIRCLE_SIZE / 2}
+                r={RADIUS}
+                fill="none"
+                stroke={color}
+                strokeWidth={STROKE_WIDTH}
+                strokeDasharray={CIRCUMFERENCE}
+                strokeDashoffset={strokeDashoffset}
+                strokeLinecap="round"
+              />
+            </svg>
+            <Text className="text-[13px] text-gray-10 tabular-nums">
+              {formatTokensCompact(used)}/{formatTokensCompact(size)} ·{" "}
+              {percentage}%
+            </Text>
+          </Flex>
+        </button>
+      </Popover.Trigger>
+      <Popover.Content size="2" side="top" align="end" sideOffset={6}>
+        <ContextBreakdownPopover usage={usage} />
+      </Popover.Content>
+    </Popover.Root>
   );
 }

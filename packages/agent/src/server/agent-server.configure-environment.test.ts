@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { Task } from "../types";
 import { AgentServer } from "./agent-server";
 
 interface TestableServer {
   configureEnvironment(args?: {
     isInternal?: boolean;
-    originProduct?: string | null;
+    originProduct?: Task["origin_product"] | null;
+    signalReportId?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
@@ -124,6 +126,7 @@ describe("AgentServer.configureEnvironment", () => {
     buildServer("background").configureEnvironment({
       isInternal: true,
       originProduct: "signal_report",
+      signalReportId: "report-123",
       taskId: "task-abc",
       taskRunId: "run-xyz",
       taskUserId: 42,
@@ -133,10 +136,22 @@ describe("AgentServer.configureEnvironment", () => {
       [
         "x-posthog-property-task_origin_product: signal_report",
         "x-posthog-property-task_internal: true",
+        "x-posthog-property-signal_report_id: report-123",
         "x-posthog-property-task_id: task-abc",
         "x-posthog-property-task_run_id: run-xyz",
         "x-posthog-property-task_user_id: 42",
       ].join("\n"),
+    );
+  });
+
+  it("omits signal_report_id from ANTHROPIC_CUSTOM_HEADERS for non-report tasks", () => {
+    buildServer("background").configureEnvironment({
+      isInternal: false,
+      taskId: "task-abc",
+    });
+
+    expect(process.env.ANTHROPIC_CUSTOM_HEADERS).not.toContain(
+      "signal_report_id",
     );
   });
 
@@ -145,6 +160,43 @@ describe("AgentServer.configureEnvironment", () => {
 
     expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toBe(
       "x-posthog-property-task_internal: false",
+    );
+  });
+
+  it("tags as slack_app when the task was initiated from Slack", () => {
+    buildServer("interactive").configureEnvironment({
+      originProduct: "slack",
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "https://gateway.us.posthog.com/slack_app",
+    );
+    expect(process.env.ANTHROPIC_BASE_URL).toBe(
+      "https://gateway.us.posthog.com/slack_app",
+    );
+    expect(process.env.OPENAI_BASE_URL).toBe(
+      "https://gateway.us.posthog.com/slack_app/v1",
+    );
+  });
+
+  it("prefers slack_app over background_agents when both signals are present", () => {
+    buildServer("interactive").configureEnvironment({
+      isInternal: true,
+      originProduct: "slack",
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "https://gateway.us.posthog.com/slack_app",
+    );
+  });
+
+  it("falls back to posthog_code for non-slack origin products", () => {
+    buildServer("background").configureEnvironment({
+      originProduct: "user_created",
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "https://gateway.us.posthog.com/posthog_code",
     );
   });
 

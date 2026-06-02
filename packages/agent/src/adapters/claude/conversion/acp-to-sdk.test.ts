@@ -95,6 +95,45 @@ describe("promptToClaude", () => {
     expect(JSON.stringify(attachRes)).toContain("KEEP_ATTACH");
   });
 
+  it("forwards base64 image blocks with supported MIME types", () => {
+    const result = promptToClaude({
+      sessionId: "session-1",
+      prompt: [
+        {
+          type: "image",
+          data: "ZmFrZQ==",
+          mimeType: "image/png",
+        } as PromptRequest["prompt"][number],
+      ],
+    });
+
+    expect(result.message.content).toEqual([
+      {
+        type: "image",
+        source: { type: "base64", data: "ZmFrZQ==", media_type: "image/png" },
+      },
+    ]);
+  });
+
+  it("replaces unsupported base64 image MIME types with a text notice", () => {
+    const result = promptToClaude({
+      sessionId: "session-1",
+      prompt: [
+        {
+          type: "image",
+          data: "ZmFrZQ==",
+          mimeType: "image/heic",
+        } as PromptRequest["prompt"][number],
+      ],
+    });
+
+    expect(result.message.content).toHaveLength(1);
+    expect(result.message.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("image/heic"),
+    });
+  });
+
   it("maps file URI-only image blocks to workspace Read prompt text", () => {
     const req: PromptRequest = {
       sessionId: "session-1",

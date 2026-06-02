@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 import {
   DISMISSAL_REASON_OPTIONS,
@@ -35,7 +35,7 @@ export function DismissReportSheet({
   onClose,
   onDismissed,
 }: DismissReportSheetProps) {
-  const insets = useSafeAreaInsets();
+  const { insets, bottom, sheetContentTop } = useScreenInsets();
   const themeColors = useThemeColors();
   const [reason, setReason] = useState<DismissalReasonOptionValue | null>(null);
   const [note, setNote] = useState("");
@@ -83,7 +83,7 @@ export function DismissReportSheet({
       >
         <View
           className="flex-1 bg-background"
-          style={{ paddingTop: insets.top + 8 }}
+          style={{ paddingTop: sheetContentTop() }}
         >
           {/* Header */}
           <View className="flex-row items-center justify-between border-gray-6 border-b px-4 pb-3">
@@ -163,7 +163,7 @@ export function DismissReportSheet({
           {/* Sticky submit */}
           <View
             className="border-gray-6 border-t bg-background px-4 pt-3"
-            style={{ paddingBottom: insets.bottom + 12 }}
+            style={{ paddingBottom: bottom("compact") }}
           >
             <Pressable
               onPress={handleConfirm}

@@ -2,9 +2,11 @@ import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
 import { sendPromptToAgent } from "@features/sessions/utils/sendPromptToAgent";
 import type { PrReviewComment } from "@main/services/git/schemas";
 import {
+  ArrowCounterClockwise,
   CaretDown,
   CaretUp,
   ChatCircle,
+  CheckCircle,
   File,
   Robot,
   WarningCircle,
@@ -39,6 +41,8 @@ interface ThreadActionBarProps {
   endLine: number;
   side: "old" | "new";
   comments: PrReviewComment[];
+  isResolved: boolean;
+  onResolveToggle: () => void;
   showReplyBox: boolean;
   pendingReply: string | null;
   onShowReplyBox: () => void;
@@ -55,6 +59,8 @@ function ThreadActionBar({
   endLine,
   side,
   comments,
+  isResolved,
+  onResolveToggle,
   showReplyBox,
   pendingReply,
   onShowReplyBox,
@@ -103,6 +109,22 @@ function ThreadActionBar({
         </Button>
       )}
 
+      {prUrl && (
+        <Button size="sm" onClick={onResolveToggle}>
+          {isResolved ? (
+            <>
+              <ArrowCounterClockwise />
+              Unresolve
+            </>
+          ) : (
+            <>
+              <CheckCircle />
+              Resolve
+            </>
+          )}
+        </Button>
+      )}
+
       <Button
         size="sm"
         onClick={() =>
@@ -113,7 +135,7 @@ function ThreadActionBar({
         }
       >
         <Robot />
-        Fix with agent
+        Fix
       </Button>
 
       <Button
@@ -126,7 +148,7 @@ function ThreadActionBar({
         }
       >
         <Robot />
-        Ask agent
+        Ask
       </Button>
     </Flex>
   );
@@ -243,6 +265,8 @@ export function PrCommentThread({
 }: PrCommentThreadProps) {
   const {
     threadId,
+    nodeId,
+    isResolved: initialIsResolved,
     comments,
     isOutdated,
     isFileLevel,
@@ -250,10 +274,15 @@ export function PrCommentThread({
     side: annotationSide,
   } = metadata;
   const side = annotationSide === "deletions" ? "old" : "new";
-  const { reply } = usePrCommentActions(prUrl);
+  const { reply, resolve } = usePrCommentActions(prUrl);
   const [showReplyBox, setShowReplyBox] = useState(false);
   const [pendingReply, setPendingReply] = useState<string | null>(null);
+  const [isResolved, setIsResolved] = useState(initialIsResolved);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    setIsResolved(initialIsResolved);
+  }, [initialIsResolved]);
 
   // Clear pending reply once the real comments list includes it
   const lastCommentId = comments[comments.length - 1]?.id;
@@ -301,14 +330,27 @@ export function PrCommentThread({
     [],
   );
 
+  const handleResolveToggle = useCallback(async () => {
+    const next = !isResolved;
+    setIsResolved(next);
+    const success = await resolve(nodeId, next);
+    if (!success) setIsResolved(!next);
+  }, [isResolved, nodeId, resolve]);
+
   return (
     <div className="px-3 py-1.5" style={{ contain: "inline-size" }}>
       <div
         data-pr-comment-thread=""
-        className="overflow-hidden whitespace-normal rounded-md border border-[var(--gray-5)] bg-[var(--gray-2)] px-2.5 py-2 font-sans"
+        className={`overflow-hidden whitespace-normal rounded-md border border-[var(--gray-5)] bg-[var(--gray-2)] px-2.5 py-2 font-sans ${isResolved ? "opacity-60" : ""}`}
       >
-        {(isOutdated || isFileLevel) && (
+        {(isResolved || isOutdated || isFileLevel) && (
           <Flex align="center" gap="1" className="mb-1.5">
+            {isResolved && (
+              <Badge color="green" size="1" variant="soft">
+                <CheckCircle size={12} weight="fill" />
+                Resolved
+              </Badge>
+            )}
             {isFileLevel && (
               <Badge color="gray" size="1" variant="soft">
                 <File size={12} />
@@ -362,6 +404,8 @@ export function PrCommentThread({
           endLine={endLine}
           side={side}
           comments={comments}
+          isResolved={isResolved}
+          onResolveToggle={handleResolveToggle}
           showReplyBox={showReplyBox}
           pendingReply={pendingReply}
           onShowReplyBox={() => setShowReplyBox(true)}

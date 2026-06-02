@@ -3,24 +3,12 @@ import { fileURLToPath } from "node:url";
 import type { PromptRequest } from "@agentclientprotocol/sdk";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
-
-type ImageMimeType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+import { isClaudeImageMimeType, isImageFile } from "@posthog/shared";
 
 const PDF_EXTENSIONS = new Set(["pdf"]);
 
-const COMMON_IMAGE_EXTENSIONS = new Set([
-  "png",
-  "jpg",
-  "jpeg",
-  "gif",
-  "webp",
-  "bmp",
-  "svg",
-  "heic",
-  "tif",
-  "tiff",
-]);
-
+// Video-only on purpose: audio formats get the default "large text" hint.
+// Do not replace with AUDIO_VIDEO_EXTENSIONS from @posthog/shared.
 const VIDEO_EXTENSIONS = new Set([
   "mp4",
   "mov",
@@ -53,7 +41,7 @@ export function readToolGuidanceForPath(filePath: string): string {
   if (PDF_EXTENSIONS.has(ext)) {
     return 'Optional `pages` string (e.g. "1-5") per Read call instead of loading the entire PDF.';
   }
-  if (COMMON_IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext)) {
+  if (isImageFile(filePath) || VIDEO_EXTENSIONS.has(ext)) {
     return "Binary file — use Read with `file_path`; prefer bounded reads where supported.";
   }
   return "Large text — use multiple Read calls with optional `offset` and `limit`.";
@@ -131,14 +119,22 @@ function processPromptChunk(
 
     case "image":
       if (chunk.data) {
-        content.push({
-          type: "image",
-          source: {
-            type: "base64",
-            data: chunk.data,
-            media_type: chunk.mimeType as ImageMimeType,
-          },
-        });
+        if (isClaudeImageMimeType(chunk.mimeType)) {
+          content.push({
+            type: "image",
+            source: {
+              type: "base64",
+              data: chunk.data,
+              media_type: chunk.mimeType,
+            },
+          });
+        } else {
+          content.push(
+            sdkText(
+              `[Unsupported image MIME type: ${chunk.mimeType}. Supported: image/jpeg, image/png, image/gif, image/webp.]`,
+            ),
+          );
+        }
       } else if (chunk.uri?.startsWith("http")) {
         content.push({
           type: "image",

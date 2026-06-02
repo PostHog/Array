@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   copyFileSync,
   cpSync,
   existsSync,
@@ -6,8 +7,42 @@ import {
   writeFileSync,
 } from "node:fs";
 import { builtinModules } from "node:module";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { defineConfig } from "tsup";
+// Plain ESM helper, shared with apps/code/vite.main.config.mts.
+import {
+  CLAUDE_CLI_SUPPORT_DIRS,
+  CLAUDE_CLI_SUPPORT_FILES,
+  claudeBinName,
+  claudeExecutableCandidates,
+  targetArch,
+  targetPlatform,
+} from "./build/native-binary.mjs";
+
+function nativeBinarySourcePath(): string | undefined {
+  const candidates = claudeExecutableCandidates(
+    resolve(import.meta.dirname, "../../node_modules"),
+  );
+  return candidates.find((p: string) => existsSync(p));
+}
+
+function copyClaudeSupportAssets(sourcePath: string, destDir: string): void {
+  const sourceDir = dirname(sourcePath);
+
+  for (const file of CLAUDE_CLI_SUPPORT_FILES) {
+    const source = resolve(sourceDir, file);
+    if (existsSync(source)) {
+      copyFileSync(source, resolve(destDir, file));
+    }
+  }
+
+  for (const dir of CLAUDE_CLI_SUPPORT_DIRS) {
+    const source = resolve(sourceDir, dir);
+    if (existsSync(source)) {
+      cpSync(source, resolve(destDir, dir), { recursive: true });
+    }
+  }
+}
 
 function copyAssets() {
   const distDir = resolve(import.meta.dirname, "dist");
@@ -22,32 +57,25 @@ function copyAssets() {
     cpSync(srcTemplatesDir, templatesDir, { recursive: true });
   }
 
-  const claudeSdkPath = resolve(
-    import.meta.dirname,
-    "../../node_modules/@anthropic-ai/claude-agent-sdk",
-  );
-  const cliJsPath = resolve(claudeSdkPath, "cli.js");
-  if (existsSync(cliJsPath)) {
-    copyFileSync(cliJsPath, resolve(claudeCliDir, "cli.js"));
+  const binName = claudeBinName();
+  const nativeBinary = nativeBinarySourcePath();
+  if (nativeBinary) {
+    const dest = resolve(claudeCliDir, binName);
+    copyFileSync(nativeBinary, dest);
+    if (targetPlatform() !== "win32") {
+      chmodSync(dest, 0o755);
+    }
+    copyClaudeSupportAssets(nativeBinary, claudeCliDir);
+  } else {
+    console.warn(
+      `[agent/tsup] No Claude executable found for ${targetPlatform()}-${targetArch()}; install @anthropic-ai/claude-agent-sdk optional deps`,
+    );
   }
 
   writeFileSync(
     resolve(claudeCliDir, "package.json"),
     JSON.stringify({ type: "module" }, null, 2),
   );
-
-  const yogaWasmPath = resolve(
-    import.meta.dirname,
-    "../../node_modules/yoga-wasm-web/dist/yoga.wasm",
-  );
-  if (existsSync(yogaWasmPath)) {
-    copyFileSync(yogaWasmPath, resolve(claudeCliDir, "yoga.wasm"));
-  }
-
-  const vendorDir = resolve(claudeSdkPath, "vendor");
-  if (existsSync(vendorDir)) {
-    cpSync(vendorDir, resolve(claudeCliDir, "vendor"), { recursive: true });
-  }
 }
 
 const sharedOptions = {

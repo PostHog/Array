@@ -105,6 +105,8 @@ export function createMockQuery(
     getContextUsage: vi.fn().mockResolvedValue({}),
     reloadPlugins: vi.fn().mockResolvedValue(undefined),
     seedReadState: vi.fn().mockResolvedValue(undefined),
+    readFile: vi.fn().mockResolvedValue(""),
+    backgroundTasks: vi.fn().mockResolvedValue([]),
     [Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
     _abortController: abortController,
     _mockHelpers: {
@@ -173,6 +175,7 @@ export function createSuccessResult(
     usage: {
       input_tokens: 100,
       output_tokens: 50,
+      output_tokens_details: { thinking_tokens: 0 },
       cache_read_input_tokens: 0,
       cache_creation_input_tokens: 0,
       cache_creation: {
@@ -209,6 +212,7 @@ export function createErrorResult(
     usage: {
       input_tokens: 100,
       output_tokens: 50,
+      output_tokens_details: { thinking_tokens: 0 },
       cache_read_input_tokens: 0,
       cache_creation_input_tokens: 0,
       cache_creation: {
@@ -240,7 +244,7 @@ export function createInitMessage(sessionId = "test-session"): SDKMessage {
     cwd: "/tmp",
     tools: [],
     mcp_servers: [],
-    model: "claude-sonnet-4-5-20250929",
+    model: "claude-sonnet-4-6",
     permissionMode: "default",
     slash_commands: [],
     output_style: "default",
