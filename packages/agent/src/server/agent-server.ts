@@ -253,6 +253,7 @@ export class AgentServer {
         outcome: { outcome: "selected"; optionId: string };
         _meta?: Record<string, unknown>;
       }) => void;
+      toolCallId?: string;
     }
   >();
 
@@ -2508,6 +2509,7 @@ ${signedCommitInstructions}
     _meta?: Record<string, unknown>;
   }> {
     const requestId = crypto.randomUUID();
+    const toolCallId = params.toolCall?.toolCallId as string | undefined;
 
     this.broadcastEvent({
       type: "permission_request",
@@ -2516,9 +2518,31 @@ ${signedCommitInstructions}
       toolCall: params.toolCall,
     });
 
-    return new Promise((resolve) => {
-      this.pendingPermissions.set(requestId, { resolve });
+    // Persist the request so a client that connects after the live event can
+    // recover the requestId from the log and re-surface the prompt.
+    this.persistPermissionLifecycle(POSTHOG_NOTIFICATIONS.PERMISSION_REQUEST, {
+      requestId,
+      toolCallId,
+      options: params.options,
+      toolCall: params.toolCall,
     });
+
+    return new Promise((resolve) => {
+      this.pendingPermissions.set(requestId, { resolve, toolCallId });
+    });
+  }
+
+  private persistPermissionLifecycle(
+    method: string,
+    params: Record<string, unknown>,
+  ): void {
+    if (!this.session) return;
+    // appendRawLine wraps the line in the {type, timestamp, notification}
+    // envelope, so pass the bare notification (matching broadcastTurnComplete).
+    this.session.logWriter.appendRawLine(
+      this.session.payload.run_id,
+      JSON.stringify({ jsonrpc: "2.0", method, params }),
+    );
   }
 
   private resolvePermission(
@@ -2531,6 +2555,12 @@ ${signedCommitInstructions}
     if (!pending) return false;
 
     this.pendingPermissions.delete(requestId);
+
+    this.persistPermissionLifecycle(POSTHOG_NOTIFICATIONS.PERMISSION_RESOLVED, {
+      requestId,
+      toolCallId: pending.toolCallId,
+      optionId,
+    });
 
     const meta: Record<string, unknown> = {};
     if (customInput) meta.customInput = customInput;
