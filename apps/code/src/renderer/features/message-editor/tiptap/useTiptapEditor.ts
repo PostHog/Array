@@ -19,6 +19,7 @@ import {
   type ParsedGithubIssueUrl,
   parseGithubIssueUrl,
 } from "../utils/githubIssueUrl";
+import { htmlToMarkdown } from "../utils/htmlToMarkdown";
 import {
   persistImageFile,
   persistTextContent,
@@ -451,19 +452,24 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
             return true;
           }
 
+          // Editor is plain-text, so preserve pasted formatting as Markdown.
+          const html = event.clipboardData?.getData("text/html");
+          const markdown = html ? htmlToMarkdown(html, clipboardText) : null;
+          const effectiveText = markdown ?? clipboardText;
+
           // Auto-convert long pasted text into a file attachment
           const autoConvertThreshold =
             useFeatureSettingsStore.getState().autoConvertLongText;
           if (
-            clipboardText &&
+            effectiveText &&
             autoConvertThreshold !== "off" &&
-            clipboardText.length > Number(autoConvertThreshold)
+            effectiveText.length > Number(autoConvertThreshold)
           ) {
             event.preventDefault();
 
             (async () => {
               try {
-                await pasteTextAsFile(view, clipboardText, pasteCountRef);
+                await pasteTextAsFile(view, effectiveText, pasteCountRef);
                 showPasteHint(
                   "Pasted as file attachment",
                   "Click the chip to convert back to text.",
@@ -473,6 +479,13 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               }
             })();
 
+            return true;
+          }
+
+          // Insert inline; ProseMirror would otherwise drop the HTML formatting.
+          if (markdown) {
+            event.preventDefault();
+            view.dispatch(view.state.tr.insertText(markdown, from, to));
             return true;
           }
 
