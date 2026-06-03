@@ -357,6 +357,7 @@ export class AgentServer {
     if (config.eventIngestToken) {
       this.eventStreamSender = new TaskRunEventStreamSender({
         apiUrl: config.apiUrl,
+        eventIngestBaseUrl: config.eventIngestBaseUrl,
         projectId: config.projectId,
         taskId: config.taskId,
         runId: config.runId,

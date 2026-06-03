@@ -17,6 +17,9 @@ export interface AgentServerConfig {
   projectId: number;
   jwtPublicKey: string; // RS256 public key for JWT verification
   eventIngestToken?: string;
+  // Optional base URL for the event-ingest POST only (routes ingest to the agent-proxy);
+  // all other agent API calls keep using apiUrl. Falls back to apiUrl when unset.
+  eventIngestBaseUrl?: string;
   eventIngestStreamWindowMs?: number;
   mode: AgentMode;
   taskId: string;

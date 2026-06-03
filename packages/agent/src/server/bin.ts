@@ -33,6 +33,9 @@ const envSchema = z.object({
     .enum(["low", "medium", "high", "xhigh", "max"])
     .optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN: z.string().min(1).optional(),
+  // Routes the event-ingest POST to the standalone agent-proxy; other API calls keep using
+  // POSTHOG_API_URL. Falls back to POSTHOG_API_URL when unset.
+  POSTHOG_TASK_RUN_EVENT_INGEST_URL: z.url().optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_STREAM_WINDOW_MS: z
     .string()
     .regex(
@@ -162,6 +165,7 @@ program
       port: parseInt(options.port, 10),
       jwtPublicKey: env.JWT_PUBLIC_KEY,
       eventIngestToken: env.POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN,
+      eventIngestBaseUrl: env.POSTHOG_TASK_RUN_EVENT_INGEST_URL,
       eventIngestStreamWindowMs:
         env.POSTHOG_TASK_RUN_EVENT_INGEST_STREAM_WINDOW_MS,
       repositoryPath: options.repositoryPath,

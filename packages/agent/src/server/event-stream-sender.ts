@@ -8,6 +8,9 @@ import {
 
 interface TaskRunEventStreamSenderConfig {
   apiUrl: string;
+  // Base URL for the event-ingest POST only. Lets the deployment route ingest to the
+  // standalone agent-proxy while the rest of the agent's API calls stay on apiUrl.
+  eventIngestBaseUrl?: string;
   projectId: number;
   taskId: string;
   runId: string;
@@ -85,10 +88,22 @@ export class TaskRunEventStreamSender {
   private bufferRevision = 0;
 
   constructor(private readonly config: TaskRunEventStreamSenderConfig) {
-    const apiUrl = config.apiUrl.replace(/\/$/, "");
-    this.ingestUrl = `${apiUrl}/api/projects/${config.projectId}/tasks/${encodeURIComponent(
-      config.taskId,
-    )}/runs/${encodeURIComponent(config.runId)}/event_stream/`;
+    // When routed to the agent-proxy, use its clean run-scoped path; the run-scoped
+    // token carries team and task. Falling back to apiUrl keeps the Django path.
+    const usingProxy = Boolean(config.eventIngestBaseUrl);
+    const ingestBase = (config.eventIngestBaseUrl ?? config.apiUrl).replace(
+      /\/$/,
+      "",
+    );
+    this.ingestUrl = usingProxy
+      ? `${ingestBase}/v1/runs/${encodeURIComponent(config.runId)}/ingest`
+      : `${ingestBase}/api/projects/${config.projectId}/tasks/${encodeURIComponent(
+          config.taskId,
+        )}/runs/${encodeURIComponent(config.runId)}/event_stream/`;
+    config.logger.info("[agent-proxy debug] event ingest target resolved", {
+      ingestUrl: this.ingestUrl,
+      routedToProxy: usingProxy,
+    });
     this.maxBufferedEvents =
       config.maxBufferedEvents ?? DEFAULT_MAX_BUFFERED_EVENTS;
     this.maxStreamEvents = config.maxStreamEvents ?? DEFAULT_MAX_STREAM_EVENTS;
