@@ -10,7 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { Box, Flex, IconButton } from "@radix-ui/themes";
 import { motion } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   hasFileMentions,
   MentionChip,
@@ -43,7 +43,12 @@ function formatTimestamp(ts: number): string {
   });
 }
 
-export function UserMessage({
+// Rendered directly by the conversation's renderItem (no memoized wrapper, unlike
+// agent messages which sit under SessionUpdateRow), so without memo every visible
+// user message re-runs MarkdownRenderer on every parent render — and the
+// virtualizer flushSync-renders on every scroll event. Props are referentially
+// stable for completed turns (incremental parser), so memo skips them on scroll.
+export const UserMessage = memo(function UserMessage({
   content,
   timestamp,
   sourceUrl,
@@ -175,4 +180,4 @@ export function UserMessage({
       </Box>
     </motion.div>
   );
-}
+});
