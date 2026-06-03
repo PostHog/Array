@@ -2,30 +2,29 @@ import { describe, expect, it } from "vitest";
 import { htmlToMarkdown } from "./htmlToMarkdown";
 
 describe("htmlToMarkdown", () => {
-  it("converts headings, emphasis and links", () => {
-    const html =
-      "<h1>Title</h1><p>Some <strong>bold</strong> and <em>italic</em> with a <a href='https://posthog.com'>link</a>.</p>";
-    expect(htmlToMarkdown(html)).toBe(
+  it.each([
+    [
+      "headings, emphasis and links",
+      "<h1>Title</h1><p>Some <strong>bold</strong> and <em>italic</em> with a <a href='https://posthog.com'>link</a>.</p>",
       "# Title\n\nSome **bold** and *italic* with a [link](https://posthog.com).",
-    );
-  });
-
-  it("converts unordered lists", () => {
-    const html = "<ul><li>one</li><li>two</li></ul>";
-    expect(htmlToMarkdown(html)).toBe("-   one\n-   two");
-  });
-
-  it("converts tables via the gfm plugin", () => {
-    const html =
-      "<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>";
-    expect(htmlToMarkdown(html)).toBe(
+    ],
+    [
+      "unordered lists",
+      "<ul><li>one</li><li>two</li></ul>",
+      "-   one\n-   two",
+    ],
+    [
+      "tables via the gfm plugin",
+      "<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>",
       "| a   | b   |\n| --- | --- |\n| 1   | 2   |",
-    );
-  });
-
-  it("converts fenced code blocks", () => {
-    const html = "<pre><code>const x = 1;</code></pre>";
-    expect(htmlToMarkdown(html)).toBe("```\nconst x = 1;\n```");
+    ],
+    [
+      "fenced code blocks",
+      "<pre><code>const x = 1;</code></pre>",
+      "```\nconst x = 1;\n```",
+    ],
+  ])("converts %s", (_, html, expected) => {
+    expect(htmlToMarkdown(html)).toBe(expected);
   });
 
   it("returns null when there is no formatting beyond the plain-text fallback", () => {
