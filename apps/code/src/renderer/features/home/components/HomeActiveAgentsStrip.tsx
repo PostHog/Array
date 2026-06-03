@@ -1,10 +1,10 @@
 import { CircleNotch, GitBranch, Warning } from "@phosphor-icons/react";
 import { Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { useTasks } from "@renderer/features/tasks/hooks/useTasks";
+import type { HomeActiveAgent } from "@shared/types/home-snapshot";
 import { useNavigationStore } from "@stores/navigationStore";
 import { formatRelativeTimeShort } from "@utils/time";
 import { useMemo } from "react";
-import type { HomeActiveAgent } from "../utils/buildSnapshot";
 
 interface HomeActiveAgentsStripProps {
   agents: HomeActiveAgent[];

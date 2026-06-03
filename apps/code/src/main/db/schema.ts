@@ -114,10 +114,3 @@ export const authPreferences = sqliteTable(
     ),
   ],
 );
-
-export const homeWorkflowConfig = sqliteTable("home_workflow_config", {
-  id: text().primaryKey(),
-  version: integer().notNull(),
-  json: text().notNull(),
-  updatedAt: updatedAt(),
-});

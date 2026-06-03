@@ -1,56 +1,22 @@
-import type { TaskPrRef } from "@shared/types/pr-snapshot";
-import { useMemo } from "react";
-import { buildDemoSnapshot, EMPTY_SNAPSHOT } from "../fixtures/demoSnapshot";
-import { useHomeDemoStore } from "../stores/homeDemoStore";
+import { useTRPC } from "@renderer/trpc";
 import {
-  buildSnapshotFromTasks,
+  EMPTY_HOME_SNAPSHOT,
   type HomeSnapshot,
-} from "../utils/buildSnapshot";
-import { useHomeTasks } from "./useHomeTasks";
-import { usePrSnapshots } from "./usePrSnapshots";
+} from "@shared/types/home-snapshot";
+import { useQuery } from "@tanstack/react-query";
 
+// Single-query window into the server-computed Home snapshot. Grouping, PR
+// polling, and classification all run server-side (PostHog's
+// evaluate-code-workstreams worker); the subscription registrar keeps this
+// query fresh (features/home/subscriptions.ts).
 export function useHomeSnapshot(): {
   snapshot: HomeSnapshot;
   isLoading: boolean;
-  isDemo: boolean;
 } {
-  const { pinnedTasks, flatTasks, isLoading } = useHomeTasks();
-  const demoScenario = useHomeDemoStore((s) => s.scenario);
-
-  // Tasks worth resolving a PR for: a cloud PR URL, a branch (which may have a
-  // PR), or a worktree. Skipped in demo mode, which supplies its own fixtures.
-  const prRefs = useMemo<TaskPrRef[]>(() => {
-    if (demoScenario !== "off") return [];
-    const refs: TaskPrRef[] = [];
-    for (const task of [...pinnedTasks, ...flatTasks]) {
-      if (
-        task.cloudPrUrl ||
-        task.linkedBranch ||
-        task.branchName ||
-        task.folderPath
-      ) {
-        refs.push({ taskId: task.id, cloudPrUrl: task.cloudPrUrl });
-      }
-    }
-    return refs;
-  }, [demoScenario, pinnedTasks, flatTasks]);
-
-  const prByTaskId = usePrSnapshots(prRefs);
-
-  const realSnapshot = useMemo(
-    () => buildSnapshotFromTasks(pinnedTasks, flatTasks, prByTaskId),
-    [pinnedTasks, flatTasks, prByTaskId],
-  );
-
-  const snapshot = useMemo(() => {
-    if (demoScenario === "populated") return buildDemoSnapshot();
-    if (demoScenario === "empty") return EMPTY_SNAPSHOT;
-    return realSnapshot;
-  }, [demoScenario, realSnapshot]);
-
+  const trpc = useTRPC();
+  const query = useQuery(trpc.home.getSnapshot.queryOptions());
   return {
-    snapshot,
-    isLoading: demoScenario !== "off" ? false : isLoading,
-    isDemo: demoScenario !== "off",
+    snapshot: query.data ?? EMPTY_HOME_SNAPSHOT,
+    isLoading: query.isLoading,
   };
 }

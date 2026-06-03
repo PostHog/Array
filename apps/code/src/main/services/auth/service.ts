@@ -191,6 +191,27 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
 
     return response;
   }
+
+  /**
+   * Authenticated fetch against a project-scoped PostHog endpoint
+   * (`/api/projects/:projectId/<path>`). Throws if no project is selected.
+   */
+  async authenticatedProjectFetch(
+    path: string,
+    init: RequestInit = {},
+  ): Promise<Response> {
+    const { projectId, cloudRegion } = this.getState();
+    if (projectId == null) {
+      throw new Error("No PostHog project selected");
+    }
+    const apiHost = getCloudUrlFromRegion(cloudRegion ?? "us");
+    return this.authenticatedFetch(
+      fetch,
+      `${apiHost}/api/projects/${projectId}/${path}`,
+      init,
+    );
+  }
+
   async redeemInviteCode(code: string): Promise<AuthState> {
     const { apiHost } = await this.getValidAccessToken();
     const response = await this.authenticatedFetch(

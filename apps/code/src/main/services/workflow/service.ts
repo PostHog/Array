@@ -1,109 +1,84 @@
 import {
   type SaveInput,
   type SaveResult,
+  saveResult,
   type WorkflowConfig,
   WorkflowEvent,
   type WorkflowEvents,
+  workflowConfig,
 } from "@shared/types/workflow";
-import { validateWorkflow } from "@shared/types/workflow-validate";
-import { inject, injectable, postConstruct } from "inversify";
+import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
-import type { WorkflowBackend } from "./backend";
+import type { AuthService } from "../auth/service";
 import { buildDefaultWorkflow } from "./default-workflow";
 
-const WORKFLOW_ID = "default";
 const log = logger.scope("workflow");
 
 /**
- * Owns the workflow lifecycle (load → seed default → save → emit `Changed`).
- * Storage lives behind {@link WorkflowBackend} (docs/workflow-architecture.md).
+ * Reads and writes the user's Home workflow config from PostHog
+ * (`/api/projects/:id/code_workflow/`). The server owns persistence, the
+ * monotonic `version`, optimistic concurrency, validation, and the default
+ * seed; this service is a thin authenticated client that emits
+ * {@link WorkflowEvent.Changed} on save/reset. Offline, `get()` falls back to
+ * the built-in default so the editor still renders.
  */
 @injectable()
 export class WorkflowService extends TypedEventEmitter<WorkflowEvents> {
-  private cached: WorkflowConfig | null = null;
-  private inflightLoad: Promise<WorkflowConfig> | null = null;
-
   constructor(
-    @inject(MAIN_TOKENS.WorkflowBackend)
-    private readonly backend: WorkflowBackend,
+    @inject(MAIN_TOKENS.AuthService)
+    private readonly authService: AuthService,
   ) {
     super();
   }
 
-  @postConstruct()
-  init(): void {
-    void this.get();
-  }
-
   async get(): Promise<WorkflowConfig> {
-    if (this.cached) return this.cached;
-    // Dedup concurrent first-load callers behind one in-flight promise.
-    if (this.inflightLoad) return this.inflightLoad;
-    this.inflightLoad = this.loadOrSeed().finally(() => {
-      this.inflightLoad = null;
-    });
-    return this.inflightLoad;
+    const json = await this.request("GET", "code_workflow/");
+    const parsed = workflowConfig.safeParse(json);
+    if (parsed.success) return parsed.data;
+    // Unexpected response shape — render the default rather than breaking the
+    // Home config surface. (Network/auth failures throw and surface as the
+    // query's error state.)
+    return buildDefaultWorkflow();
   }
 
   async save(input: SaveInput): Promise<SaveResult> {
-    const current = await this.get();
-    if (current.version !== input.expectedVersion) {
-      return { status: "conflict", config: current };
-    }
-    const validation = validateWorkflow(input.config);
-    if (!validation.canSave) {
-      return {
-        status: "invalid",
-        config: current,
-        diagnostics: validation.diagnostics,
-      };
-    }
-    const next: WorkflowConfig = {
-      ...input.config,
-      id: WORKFLOW_ID,
-      version: current.version + 1,
-      updatedAt: new Date().toISOString(),
-    };
-    await this.backend.save(next);
-    this.cached = next;
-    this.emit(WorkflowEvent.Changed, next);
-    log.info("Workflow saved", {
-      version: next.version,
-      actionCount: Object.values(next.bindings).reduce(
-        (sum, list) => sum + list.length,
-        0,
-      ),
+    const json = await this.request("POST", "code_workflow/save/", {
+      config: input.config,
+      expectedVersion: input.expectedVersion,
     });
-    return { status: "saved", config: next };
+    const parsed = saveResult.parse(json);
+    if (parsed.status === "saved") {
+      this.emit(WorkflowEvent.Changed, parsed.config);
+      log.info("Workflow saved", { version: parsed.config.version });
+    }
+    return parsed;
   }
 
   async resetToDefault(): Promise<WorkflowConfig> {
-    const current = await this.get();
-    const fresh = buildDefaultWorkflow();
-    const next: WorkflowConfig = {
-      ...fresh,
-      version: current.version + 1,
-      updatedAt: new Date().toISOString(),
-    };
-    await this.backend.save(next);
-    this.cached = next;
-    this.emit(WorkflowEvent.Changed, next);
-    log.info("Workflow reset to default", { version: next.version });
-    return next;
+    const json = await this.request("POST", "code_workflow/reset/");
+    const config = workflowConfig.parse(json);
+    this.emit(WorkflowEvent.Changed, config);
+    log.info("Workflow reset to default", { version: config.version });
+    return config;
   }
 
-  private async loadOrSeed(): Promise<WorkflowConfig> {
-    const loaded = await this.backend.load();
-    if (loaded) {
-      this.cached = loaded;
-      return loaded;
+  private async request(
+    method: "GET" | "POST",
+    path: string,
+    body?: unknown,
+  ): Promise<unknown> {
+    const init: RequestInit = { method };
+    if (body !== undefined) {
+      init.headers = { "Content-Type": "application/json" };
+      init.body = JSON.stringify(body);
     }
-    const seed = buildDefaultWorkflow();
-    await this.backend.save(seed);
-    this.cached = seed;
-    log.info("Seeded default workflow", { version: seed.version });
-    return seed;
+    const res = await this.authService.authenticatedProjectFetch(path, init);
+    // 409/422 carry a structured SaveResult body the caller validates.
+    if (!res.ok && res.status !== 409 && res.status !== 422) {
+      throw new Error(`Workflow request failed: ${res.status}`);
+    }
+    return res.json();
   }
 }

@@ -2233,47 +2233,4 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
 
     return { prState: null, hasDiff: false };
   }
-
-  /**
-   * Resolve the PR URL for a task across all task kinds — cloud run output, the
-   * linked branch (`gh pr list --head`), or the worktree's current branch —
-   * mirroring {@link getTaskPrStatus}. Returns null when the task has no PR.
-   */
-  async resolveTaskPrUrl(
-    taskId: string,
-    cloudPrUrl: string | null,
-  ): Promise<string | null> {
-    const workspace = await this.workspaceService.getWorkspace(taskId);
-    if (!workspace) return cloudPrUrl ?? null;
-
-    const { mode, worktreePath, folderPath, linkedBranch } = workspace;
-    const repoPath = worktreePath ?? (folderPath || null);
-
-    if (mode === "cloud") return cloudPrUrl ?? null;
-
-    if (linkedBranch && repoPath) {
-      const prUrl = await this.getPrUrlForBranch(repoPath, linkedBranch);
-      if (prUrl) return prUrl;
-    }
-
-    if (worktreePath) {
-      const prStatus = await this.getPrStatus(worktreePath);
-      if (prStatus.prExists && prStatus.prUrl) return prStatus.prUrl;
-    }
-
-    return cloudPrUrl ?? null;
-  }
-
-  /**
-   * Resolve a task's PR (any kind) and return the rich snapshot the home tab
-   * classifies against. Null when the task has no PR.
-   */
-  async getTaskPrSnapshot(
-    taskId: string,
-    cloudPrUrl: string | null,
-  ): Promise<PrSnapshot | null> {
-    const prUrl = await this.resolveTaskPrUrl(taskId, cloudPrUrl);
-    if (!prUrl) return null;
-    return this.getPrFull(prUrl);
-  }
 }

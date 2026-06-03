@@ -5,7 +5,6 @@ import { ArchiveRepository } from "../db/repositories/archive-repository";
 import { AuthPreferenceRepository } from "../db/repositories/auth-preference-repository";
 import { AuthSessionRepository } from "../db/repositories/auth-session-repository";
 import { DefaultAdditionalDirectoryRepository } from "../db/repositories/default-additional-directory-repository";
-import { HomeWorkflowRepository } from "../db/repositories/home-workflow-repository";
 import { RepositoryRepository } from "../db/repositories/repository-repository";
 import { SuspensionRepositoryImpl } from "../db/repositories/suspension-repository";
 import { WorkspaceRepository } from "../db/repositories/workspace-repository";
@@ -47,6 +46,7 @@ import { FsService } from "../services/fs/service";
 import { GitService } from "../services/git/service";
 import { GitHubIntegrationService } from "../services/github-integration/service";
 import { HandoffService } from "../services/handoff/service";
+import { HomeService } from "../services/home/service";
 import { InboxLinkService } from "../services/inbox-link/service";
 import { LinearIntegrationService } from "../services/linear-integration/service";
 import { LlmGatewayService } from "../services/llm-gateway/service";
@@ -58,8 +58,6 @@ import { NewTaskLinkService } from "../services/new-task-link/service";
 import { NotificationService } from "../services/notification/service";
 import { OAuthService } from "../services/oauth/service";
 import { PosthogPluginService } from "../services/posthog-plugin/service";
-import { LocalPrSnapshotBackend } from "../services/pr-snapshot/backend";
-import { PrSnapshotService } from "../services/pr-snapshot/service";
 import { ProcessTrackingService } from "../services/process-tracking/service";
 import { ProvisioningService } from "../services/provisioning/service";
 import { settingsStore } from "../services/settingsStore";
@@ -72,7 +70,6 @@ import { UIService } from "../services/ui/service";
 import { UpdatesService } from "../services/updates/service";
 import { UsageMonitorService } from "../services/usage-monitor/service";
 import { WatcherRegistryService } from "../services/watcher-registry/service";
-import { LocalWorkflowBackend } from "../services/workflow/backend";
 import { WorkflowService } from "../services/workflow/service";
 import { WorkspaceService } from "../services/workspace/service";
 import { MAIN_TOKENS } from "./tokens";
@@ -110,7 +107,6 @@ container.bind(MAIN_TOKENS.SuspensionRepository).to(SuspensionRepositoryImpl);
 container
   .bind(MAIN_TOKENS.DefaultAdditionalDirectoryRepository)
   .to(DefaultAdditionalDirectoryRepository);
-container.bind(MAIN_TOKENS.HomeWorkflowRepository).to(HomeWorkflowRepository);
 container.bind(MAIN_TOKENS.AgentAuthAdapter).to(AgentAuthAdapter);
 container.bind(MAIN_TOKENS.AgentService).to(AgentService);
 container.bind(MAIN_TOKENS.AuthService).to(AuthService);
@@ -159,13 +155,10 @@ container.bind(MAIN_TOKENS.TaskLinkService).to(TaskLinkService);
 container.bind(MAIN_TOKENS.InboxLinkService).to(InboxLinkService);
 container.bind(MAIN_TOKENS.NewTaskLinkService).to(NewTaskLinkService);
 container.bind(MAIN_TOKENS.WatcherRegistryService).to(WatcherRegistryService);
-// Swap point for the future PostHog-backed workflow (docs/workflow-architecture.md).
-container.bind(MAIN_TOKENS.WorkflowBackend).to(LocalWorkflowBackend);
+// Home workflow config + snapshot are owned by PostHog now; these services are
+// thin authenticated clients over the REST API (docs/workflow-architecture.md).
 container.bind(MAIN_TOKENS.WorkflowService).to(WorkflowService);
-// Same swap-point pattern: gh CLI today → CloudPrSnapshotBackend when PostHog
-// owns PR polling (docs/workflow-architecture.md §5–6).
-container.bind(MAIN_TOKENS.PrSnapshotBackend).to(LocalPrSnapshotBackend);
-container.bind(MAIN_TOKENS.PrSnapshotService).to(PrSnapshotService);
+container.bind(MAIN_TOKENS.HomeService).to(HomeService);
 container.bind(MAIN_TOKENS.WorkspaceService).to(WorkspaceService);
 
 container.bind(MAIN_TOKENS.SettingsStore).toConstantValue(settingsStore);

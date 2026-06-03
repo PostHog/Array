@@ -11,6 +11,7 @@ import { useUserRepositoryIntegration } from "@hooks/useIntegrations";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import type { HomeWorkstream } from "@shared/types/home-snapshot";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
 import { useNavigationStore } from "@stores/navigationStore";
 import { pendingTaskPromptStoreApi } from "@stores/pendingTaskPromptStore";
@@ -18,7 +19,6 @@ import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
 import { useCallback, useRef } from "react";
-import type { HomeWorkstream } from "../utils/buildSnapshot";
 import type { BoundAction } from "./useBoundActions";
 
 const log = logger.scope("home-quick-action");

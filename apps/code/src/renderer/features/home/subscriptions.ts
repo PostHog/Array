@@ -1,7 +1,6 @@
 import { trpc, trpcClient } from "@renderer/trpc";
 import { logger } from "@utils/logger";
 import { queryClient } from "@utils/queryClient";
-import { usePrSnapshotStore } from "./stores/prSnapshotStore";
 
 const log = logger.scope("home-subscriptions");
 
@@ -15,20 +14,20 @@ export function registerHomeSubscriptions() {
     },
   });
 
-  const prSnapshotUpdated = trpcClient.prSnapshot.onUpdated.subscribe(
+  const homeSnapshotUpdated = trpcClient.home.onSnapshotUpdated.subscribe(
     undefined,
     {
-      onData: (snapshots) => {
-        usePrSnapshotStore.getState().upsertMany(snapshots);
+      onData: (next) => {
+        queryClient.setQueryData(trpc.home.getSnapshot.queryKey(), next);
       },
       onError: (error) => {
-        log.error("prSnapshot.onUpdated subscription error", { error });
+        log.error("home.onSnapshotUpdated subscription error", { error });
       },
     },
   );
 
   return () => {
     workflowChanged.unsubscribe();
-    prSnapshotUpdated.unsubscribe();
+    homeSnapshotUpdated.unsubscribe();
   };
 }

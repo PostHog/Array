@@ -1,10 +1,10 @@
 import { useTasks } from "@renderer/features/tasks/hooks/useTasks";
+import type { HomeWorkstream } from "@shared/types/home-snapshot";
 import type { PrSnapshot } from "@shared/types/pr-snapshot";
 import type { SituationId } from "@shared/types/workflow";
 import { pickPrimarySituation } from "@shared/types/workflow-classify";
 import { useNavigationStore } from "@stores/navigationStore";
 import { openUrlInBrowser } from "@utils/browser";
-import type { HomeWorkstream } from "../utils/buildSnapshot";
 import {
   SITUATION_VISUAL,
   type SituationCss,

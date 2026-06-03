@@ -17,16 +17,16 @@ import { Badge, Button } from "@posthog/quill";
 import { Box, DropdownMenu, Flex, Text } from "@radix-ui/themes";
 import { useTasks } from "@renderer/features/tasks/hooks/useTasks";
 import type { TaskRunStatus } from "@shared/types";
+import type {
+  HomeWorkstream,
+  HomeWorkstreamTask,
+} from "@shared/types/home-snapshot";
 import type { PrSnapshot } from "@shared/types/pr-snapshot";
 import { useNavigationStore } from "@stores/navigationStore";
 import { openUrlInBrowser } from "@utils/browser";
 import { formatRelativeTimeShort } from "@utils/time";
 import { type BoundAction, useBoundActions } from "../hooks/useBoundActions";
 import { useRunWorkstreamAction } from "../hooks/useRunWorkstreamAction";
-import type {
-  HomeWorkstream,
-  HomeWorkstreamTask,
-} from "../utils/buildSnapshot";
 import { SituationChip } from "./SituationChip";
 
 interface Props {
@@ -324,7 +324,10 @@ function TaskRow({
       onClick={onClick}
       className="flex items-center gap-2 rounded-md border border-(--gray-5) bg-(--gray-1) px-2.5 py-1.5 text-left transition-colors hover:border-(--gray-7) hover:bg-(--gray-2)"
     >
-      <TaskStatusIcon status={task.status} isGenerating={task.isGenerating} />
+      <TaskStatusIcon
+        status={task.status ?? undefined}
+        isGenerating={task.isGenerating}
+      />
       <Text className="min-w-0 flex-1 truncate text-[12px] text-gray-12">
         {task.title}
       </Text>

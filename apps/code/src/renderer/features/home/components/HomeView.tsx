@@ -2,22 +2,17 @@ import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
 import {
   CircleHalf,
-  Flask,
   Graph,
   House,
   Kanban,
   ListBullets,
   Warning,
 } from "@phosphor-icons/react";
-import { Badge, Button } from "@posthog/quill";
+import { Button } from "@posthog/quill";
 import { Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { ConfigMap } from "../config/ConfigMap";
 import { useHomeSnapshot } from "../hooks/useHomeSnapshot";
-import {
-  type HomeDemoScenario,
-  useHomeDemoStore,
-} from "../stores/homeDemoStore";
 import { type HomeViewMode, useHomeUiStore } from "../stores/homeUiStore";
 import { HomeActiveAgentsStrip } from "./HomeActiveAgentsStrip";
 import { HomeBoardView } from "./HomeBoardView";
@@ -27,10 +22,20 @@ import { HomeWorkstreamRow } from "./HomeWorkstreamRow";
 
 const VIEW_CYCLE: HomeViewMode[] = ["list", "board", "config"];
 
+const HEADER_CONTENT = (
+  <Flex align="center" gap="2" className="w-full min-w-0">
+    <House size={12} className="shrink-0 text-gray-10" />
+    <Text
+      className="truncate whitespace-nowrap font-medium text-[13px]"
+      title="Home"
+    >
+      Home
+    </Text>
+  </Flex>
+);
+
 export function HomeView() {
-  const { snapshot, isLoading, isDemo } = useHomeSnapshot();
-  const demoScenario = useHomeDemoStore((s) => s.scenario);
-  const setDemoScenario = useHomeDemoStore((s) => s.setScenario);
+  const { snapshot, isLoading } = useHomeSnapshot();
   const viewMode = useHomeUiStore((s) => s.viewMode);
   const setViewMode = useHomeUiStore((s) => s.setViewMode);
   const selectedWorkstreamId = useHomeUiStore((s) => s.selectedWorkstreamId);
@@ -38,21 +43,7 @@ export function HomeView() {
     (s) => s.setSelectedWorkstreamId,
   );
 
-  const headerContent = useMemo(
-    () => (
-      <Flex align="center" gap="2" className="w-full min-w-0">
-        <House size={12} className="shrink-0 text-gray-10" />
-        <Text
-          className="truncate whitespace-nowrap font-medium text-[13px]"
-          title="Home"
-        >
-          Home
-        </Text>
-      </Flex>
-    ),
-    [],
-  );
-  useSetHeaderContent(headerContent);
+  useSetHeaderContent(HEADER_CONTENT);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -97,11 +88,6 @@ export function HomeView() {
       null)
     : null;
 
-  const hasStats =
-    needsAttention.length > 0 ||
-    activeAgents.length > 0 ||
-    inProgress.length > 0;
-
   return (
     <Flex direction="column" className="h-full">
       <Box className="border-(--gray-4) border-b px-5 py-3">
@@ -111,16 +97,8 @@ export function HomeView() {
               <Text className="font-semibold text-[15px] text-gray-12">
                 Home
               </Text>
-              {isDemo ? (
-                <Badge
-                  variant="info"
-                  title="Showing fixture data — not your real workspaces"
-                >
-                  Demo data
-                </Badge>
-              ) : null}
             </Flex>
-            {hasStats ? (
+            {hasContent ? (
               <Flex align="center" gap="3" className="text-[12px]">
                 {needsAttention.length > 0 ? (
                   <Stat
@@ -150,12 +128,6 @@ export function HomeView() {
           </Flex>
           <Flex align="center" gap="2" className="shrink-0">
             <ViewModeToggle value={viewMode} onChange={setViewMode} />
-            {viewMode !== "config" ? (
-              <DemoScenarioPicker
-                value={demoScenario}
-                onChange={setDemoScenario}
-              />
-            ) : null}
           </Flex>
         </Flex>
       </Box>
@@ -169,7 +141,7 @@ export function HomeView() {
           <HomeActiveAgentsStrip agents={activeAgents} />
           <Flex className="min-h-0 flex-1">
             <Box className="min-w-0 flex-1">
-              {!hasContent && totalRows === 0 ? (
+              {!hasContent ? (
                 <HomeEmptyState hasRunningAgents={activeAgents.length > 0} />
               ) : viewMode === "board" ? (
                 <Box className="h-full min-h-0">
@@ -239,40 +211,6 @@ interface SectionProps {
   count: number;
   icon?: React.ReactNode;
   children: React.ReactNode;
-}
-
-const DEMO_OPTIONS: { value: HomeDemoScenario; label: string }[] = [
-  { value: "off", label: "Real" },
-  { value: "populated", label: "Demo" },
-  { value: "empty", label: "Empty" },
-];
-
-interface DemoScenarioPickerProps {
-  value: HomeDemoScenario;
-  onChange: (next: HomeDemoScenario) => void;
-}
-
-function DemoScenarioPicker({ value, onChange }: DemoScenarioPickerProps) {
-  return (
-    <Flex
-      align="center"
-      gap="1"
-      className="shrink-0 rounded-md border border-(--gray-4) bg-(--gray-2) p-0.5"
-      title="Switch between real data and demo fixtures (prototype only)"
-    >
-      <Flask size={11} className="ml-1 text-(--gray-10)" />
-      {DEMO_OPTIONS.map((opt) => (
-        <Button
-          key={opt.value}
-          size="xs"
-          variant={value === opt.value ? "primary" : "link-muted"}
-          onClick={() => onChange(opt.value)}
-        >
-          {opt.label}
-        </Button>
-      ))}
-    </Flex>
-  );
 }
 
 interface ViewModeToggleProps {

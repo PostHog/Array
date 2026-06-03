@@ -1,11 +1,11 @@
 import { useWorkflow } from "@features/home/hooks/useWorkflow";
+import type { HomeWorkstream } from "@shared/types/home-snapshot";
 import {
   SITUATIONS,
   type SituationId,
   type WorkflowAction,
 } from "@shared/types/workflow";
 import { useMemo } from "react";
-import type { HomeWorkstream } from "../utils/buildSnapshot";
 
 export interface BoundAction extends WorkflowAction {
   /** Situation this action came from — used for telemetry + tooltips. */

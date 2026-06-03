@@ -329,6 +329,14 @@ The user's choice persists across sessions via `homeUiStore.viewMode: "list" | "
 
 ## 8. Architecture
 
+> **Shipped architecture note.** Workstream grouping, PR polling, and situation
+> classification run **server-side in PostHog** (`products/tasks/`, a Temporal
+> worker), not in Electron main. The desktop app is a thin authenticated client:
+> `HomeService` / `WorkflowService` call the PostHog REST API and the renderer
+> reads `home.getSnapshot` / `workflow.get`. See
+> [docs/workflow-architecture.md](./workflow-architecture.md). The original
+> Electron-main design below is kept for historical context.
+
 **Main (`apps/code/src/main/services/home/`)**
 
 - `HomeService` — aggregation, classification, ranking, action dispatch. Reads the active workflow from `WorkflowService` and uses it to assign each workstream a `nodeId`.

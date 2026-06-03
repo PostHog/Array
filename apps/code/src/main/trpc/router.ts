@@ -18,6 +18,7 @@ import { fsRouter } from "./routers/fs";
 import { gitRouter } from "./routers/git";
 import { githubIntegrationRouter } from "./routers/github-integration";
 import { handoffRouter } from "./routers/handoff";
+import { homeRouter } from "./routers/home";
 import { linearIntegrationRouter } from "./routers/linear-integration.js";
 import { llmGatewayRouter } from "./routers/llm-gateway";
 import { logsRouter } from "./routers/logs";
@@ -26,7 +27,6 @@ import { mcpCallbackRouter } from "./routers/mcp-callback";
 import { notificationRouter } from "./routers/notification";
 import { oauthRouter } from "./routers/oauth";
 import { osRouter } from "./routers/os";
-import { prSnapshotRouter } from "./routers/pr-snapshot";
 import { processTrackingRouter } from "./routers/process-tracking";
 import { provisioningRouter } from "./routers/provisioning";
 import { secureStoreRouter } from "./routers/secure-store";
@@ -63,6 +63,7 @@ export const trpcRouter = router({
   git: gitRouter,
   githubIntegration: githubIntegrationRouter,
   handoff: handoffRouter,
+  home: homeRouter,
   linearIntegration: linearIntegrationRouter,
   llmGateway: llmGatewayRouter,
   mcpApps: mcpAppsRouter,
@@ -71,7 +72,6 @@ export const trpcRouter = router({
   oauth: oauthRouter,
   logs: logsRouter,
   os: osRouter,
-  prSnapshot: prSnapshotRouter,
   processTracking: processTrackingRouter,
   provisioning: provisioningRouter,
   sleep: sleepRouter,

@@ -7,10 +7,10 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Box, Flex, Text } from "@radix-ui/themes";
+import type { HomeWorkstream } from "@shared/types/home-snapshot";
 import { formatRelativeTimeShort } from "@utils/time";
 import { useWorkstreamPresentation } from "../hooks/useWorkstreamPresentation";
 import { useHomeUiStore } from "../stores/homeUiStore";
-import type { HomeWorkstream } from "../utils/buildSnapshot";
 import { SituationChip } from "./SituationChip";
 import {
   AuthorAvatar,
