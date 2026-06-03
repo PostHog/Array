@@ -12,7 +12,6 @@ import {
 } from "@features/sessions/stores/sessionStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { SkillButtonActionMessage } from "@features/skill-buttons/components/SkillButtonActionMessage";
-import { useFrameThrottledValue } from "@hooks/useFrameThrottledValue";
 import { ArrowDown, XCircle } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import WorkerUrl from "@pierre/diffs/worker/worker.js?worker&url";
@@ -81,18 +80,18 @@ export function ConversationView({
   const debugLogsCloudRuns = useSettingsStore((s) => s.debugLogsCloudRuns);
   const showDebugLogs = debugLogsCloudRuns;
 
-  // Streaming appends one event per token, so `events` changes far faster than
-  // the screen can paint. Coalesce to one parse per frame; the parse itself is
-  // incremental (completed turns reused by reference) so per-frame cost tracks
-  // the active turn, not the whole thread. Settles on the exact final state.
-  const throttledEvents = useFrameThrottledValue(events);
-  const contextUsage = useContextUsage(throttledEvents);
+  const contextUsage = useContextUsage(events);
 
+  // Streaming appends one event per token. The parse is incremental — each
+  // event is handled once and completed turns are reused by reference — so per
+  // token the work tracks the active turn, not the whole thread. We feed
+  // `events` directly (no frame-throttle) so a sent message's optimistic->real
+  // swap is never delayed past the frame the store commits it.
   const {
     items: conversationItems,
     lastTurnInfo,
     isCompacting,
-  } = useConversationItems(throttledEvents, isPromptPending, {
+  } = useConversationItems(events, isPromptPending, {
     showDebugLogs,
   });
 

@@ -303,6 +303,41 @@ describe("createIncrementalConversationBuilder", () => {
     expect((active.update.content as { text: string }).text).toBe("AB");
   });
 
+  it("preserves a sent user message across idle -> streaming -> complete transitions", () => {
+    const inc = createIncrementalConversationBuilder();
+    const userMessages = (r: BuildResult) =>
+      r.items.filter((i) => i.type === "user_message").map((i) => i.content);
+
+    const turn1 = [
+      userPromptMsg(1, 1, "first"),
+      agentChunk(2, "answer one"),
+      promptResponseMsg(3, 1),
+    ];
+    expect(userMessages(inc.update(turn1, false))).toEqual(["first"]);
+
+    // User sends "second": the prompt echo is appended to events.
+    const withPrompt = [...turn1, userPromptMsg(4, 2, "second")];
+    // Renders that may straddle the pending flip — message must persist through all.
+    expect(userMessages(inc.update(withPrompt, false))).toEqual([
+      "first",
+      "second",
+    ]);
+    expect(userMessages(inc.update(withPrompt, true))).toEqual([
+      "first",
+      "second",
+    ]);
+
+    const withChunk = [...withPrompt, agentChunk(5, "answer two")];
+    expect(userMessages(inc.update(withChunk, true))).toEqual([
+      "first",
+      "second",
+    ]);
+
+    const done = [...withChunk, promptResponseMsg(6, 2)];
+    expect(userMessages(inc.update(done, true))).toEqual(["first", "second"]);
+    expect(userMessages(inc.update(done, false))).toEqual(["first", "second"]);
+  });
+
   it("re-derives the active turn's context each call so live updates surface", () => {
     const inc = createIncrementalConversationBuilder();
     const base = [userPromptMsg(1, 1, "go"), toolCallMsg(2, "t1")];
