@@ -38,7 +38,9 @@ export interface Task {
     | "user_created"
     | "support_queue"
     | "session_summaries"
-    | "signal_report";
+    | "signal_report"
+    | "slack";
+  signal_report?: string | null; // Inbox report UUID when origin_product is "signal_report"
   github_integration?: number | null;
   repository: string; // Format: "organization/repository" (e.g., "posthog/posthog-js")
   json_schema?: Record<string, unknown> | null; // JSON schema for task output validation

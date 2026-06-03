@@ -47,7 +47,7 @@ export function CommandCenterView() {
 
   return (
     <Flex direction="column" height="100%">
-      <CommandCenterToolbar summary={summary} cells={cells} />
+      <CommandCenterToolbar summary={summary} />
       <Box className="min-h-0 flex-1">
         <CommandCenterGrid layout={layout} cells={cells} />
       </Box>

@@ -1,10 +1,12 @@
 import type { CloudTaskPermissionRequestUpdate } from "@shared/types";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import type { StoredLogEntry } from "@shared/types/session-events";
 import { inject, injectable, preDestroy } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import type { AuthService } from "../auth/service";
+import { trackAppEvent } from "../posthog-analytics";
 import {
   CloudTaskEvent,
   type CloudTaskEvents,
@@ -19,6 +21,7 @@ import { type SseEvent, SseEventParser } from "./sse-parser";
 const log = logger.scope("cloud-task");
 
 const MAX_SSE_RECONNECT_ATTEMPTS = 5;
+const MAX_CUMULATIVE_RECONNECT_ATTEMPTS = 30;
 const SSE_RECONNECT_BASE_DELAY_MS = 2_000;
 const SSE_RECONNECT_MAX_DELAY_MS = 30_000;
 const SSE_HEALTHY_CONNECTION_MS = 60_000;
@@ -91,6 +94,7 @@ interface WatcherState {
   totalEntryCount: number;
   reconnectAttempts: number;
   streamErrorAttempts: number;
+  cumulativeReconnectAttempts: number;
   lastEventId: string | null;
   lastStatus: TaskRunStatus | null;
   lastStage: string | null;
@@ -283,6 +287,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
     watcher.reconnectAttempts = 0;
     watcher.streamErrorAttempts = 0;
+    watcher.cumulativeReconnectAttempts = 0;
     watcher.failed = false;
     watcher.pendingLogEntries = [];
     watcher.bufferedLogBatches = [];
@@ -406,6 +411,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       totalEntryCount: 0,
       reconnectAttempts: 0,
       streamErrorAttempts: 0,
+      cumulativeReconnectAttempts: 0,
       lastEventId: null,
       lastStatus: null,
       lastStage: null,
@@ -760,8 +766,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     // A real data event proves the stream materialized; clear the backend-error
-    // budget too.
+    // and cumulative budgets too.
     watcher.streamErrorAttempts = 0;
+    watcher.cumulativeReconnectAttempts = 0;
 
     if (isTaskRunStateEvent(event.data)) {
       if (this.applyTaskRunState(watcher, event.data)) {
@@ -974,6 +981,21 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const watcher = this.watchers.get(key);
     if (!watcher) return;
 
+    // Track every terminal give-up so cloud-run stream failures are visible in
+    // PostHog. error_title distinguishes the cause; the budget counts separate an
+    // idle Envoy cut from a genuine outage. Best-effort — never block teardown.
+    trackAppEvent(ANALYTICS_EVENTS.CLOUD_STREAM_DISCONNECTED, {
+      task_id: watcher.taskId,
+      run_id: watcher.runId,
+      team_id: watcher.teamId,
+      error_title: error.title,
+      retryable: error.retryable,
+      reconnect_attempts: watcher.reconnectAttempts,
+      stream_error_attempts: watcher.streamErrorAttempts,
+      cumulative_reconnect_attempts: watcher.cumulativeReconnectAttempts,
+      was_bootstrapping: watcher.isBootstrapping,
+    });
+
     watcher.failed = true;
     watcher.isBootstrapping = false;
     watcher.pendingLogEntries = [];
@@ -1016,12 +1038,26 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       clearTimeout(watcher.reconnectTimeoutId);
     }
 
+    // Cumulative counter bounds runaway loops that clean-EOF (countAttempt=false)
+    // and would otherwise dodge `reconnectAttempts`.
+    watcher.cumulativeReconnectAttempts += 1;
     const countAttempt = options.countAttempt ?? true;
     if (countAttempt) {
       watcher.reconnectAttempts += 1;
-    } else {
-      watcher.reconnectAttempts = 0;
     }
+
+    if (
+      watcher.cumulativeReconnectAttempts > MAX_CUMULATIVE_RECONNECT_ATTEMPTS
+    ) {
+      this.failWatcher(key, {
+        title: "Cloud run unreachable",
+        message:
+          "Could not maintain a connection to the cloud run after many attempts. Click retry once the issue is resolved.",
+        retryable: true,
+      });
+      return;
+    }
+
     // The watcher fails once either budget is exhausted: transport reconnect
     // failures or backend stream-error frames.
     const attemptCount = Math.max(
@@ -1112,6 +1148,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
     if (!isTerminalStatus(watcher.lastStatus) && reconnectIfNonTerminal) {
       if (stateChanged) {
+        // Polled progress proves the run is alive — reset both budgets.
+        watcher.reconnectAttempts = 0;
+        watcher.cumulativeReconnectAttempts = 0;
         this.emit(CloudTaskEvent.Update, {
           taskId: watcher.taskId,
           runId: watcher.runId,

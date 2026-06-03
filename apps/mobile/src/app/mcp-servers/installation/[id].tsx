@@ -16,7 +16,6 @@ import {
   Switch,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FloatingMcpHeader } from "@/features/mcp/components/FloatingMcpHeader";
 import { ServerIcon } from "@/features/mcp/components/ServerIcon";
 import {
@@ -31,6 +30,7 @@ import { reauthorizeInstallation } from "@/features/mcp/oauth";
 import { getMcpConnectionManager } from "@/features/mcp/service";
 import type { McpApprovalState } from "@/features/mcp/types";
 import { isStdioServer } from "@/features/mcp/types";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
@@ -39,7 +39,7 @@ const log = logger.scope("mcp-installation-detail");
 export default function McpInstallationDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const themeColors = useThemeColors();
-  const insets = useSafeAreaInsets();
+  const { insets, bottom } = useScreenInsets();
 
   const installations = useMcpInstallations();
   const installation = useMemo(
@@ -142,7 +142,7 @@ export default function McpInstallationDetailScreen() {
         className="flex-1"
         contentContainerStyle={{
           paddingTop: insets.top + 60,
-          paddingBottom: insets.bottom + 24,
+          paddingBottom: bottom("default"),
           paddingHorizontal: 16,
         }}
         refreshControl={

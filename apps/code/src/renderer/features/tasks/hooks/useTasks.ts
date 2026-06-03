@@ -1,4 +1,6 @@
+import { getSessionService } from "@features/sessions/service/service";
 import { pinnedTasksApi } from "@features/sidebar/hooks/usePinnedTasks";
+import { taskKeys } from "@features/tasks/hooks/taskKeys";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
@@ -16,20 +18,19 @@ const log = logger.scope("tasks");
 
 const TASK_LIST_POLL_INTERVAL_MS = 30_000;
 
-const taskKeys = {
-  all: ["tasks"] as const,
-  lists: () => [...taskKeys.all, "list"] as const,
-  list: (filters?: {
-    repository?: string;
-    createdBy?: number;
-    originProduct?: string;
-    internal?: boolean;
-  }) => [...taskKeys.lists(), filters] as const,
-  summaries: (ids: string[]) =>
-    [...taskKeys.all, "summaries", [...ids].sort()] as const,
-  details: () => [...taskKeys.all, "detail"] as const,
-  detail: (id: string) => [...taskKeys.details(), id] as const,
-};
+function getTaskTitle(
+  tasks: Task[] | undefined,
+  taskId: string,
+): string | undefined {
+  return tasks?.find((task) => task.id === taskId)?.title;
+}
+
+function getTaskSummaryTitle(
+  summaries: Schemas.TaskSummary[] | undefined,
+  taskId: string,
+): string | undefined {
+  return summaries?.find((summary) => summary.id === taskId)?.title;
+}
 
 export function useTasks(
   filters?: {
@@ -159,12 +160,128 @@ export function useUpdateTask() {
       onSuccess: (_, { taskId }) => {
         queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
         queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
-        queryClient.invalidateQueries({
-          queryKey: [...taskKeys.all, "summaries"],
-        });
+        queryClient.invalidateQueries({ queryKey: taskKeys.allSummaries() });
       },
     },
   );
+}
+
+export function useRenameTask() {
+  const queryClient = useQueryClient();
+  const updateTask = useUpdateTask();
+
+  const renameTask = useCallback(
+    async ({
+      taskId,
+      currentTitle,
+      newTitle,
+    }: {
+      taskId: string;
+      currentTitle: string;
+      newTitle: string;
+    }) => {
+      const previousListQueries = queryClient.getQueriesData<Task[]>({
+        queryKey: taskKeys.lists(),
+      });
+      const previousSummaryQueries = queryClient.getQueriesData<
+        Schemas.TaskSummary[]
+      >({
+        queryKey: taskKeys.allSummaries(),
+      });
+      const previousDetail = queryClient.getQueryData<Task>(
+        taskKeys.detail(taskId),
+      );
+
+      queryClient.setQueriesData<Task[]>(
+        { queryKey: taskKeys.lists() },
+        (old) =>
+          old?.map((task) =>
+            task.id === taskId
+              ? { ...task, title: newTitle, title_manually_set: true }
+              : task,
+          ),
+      );
+      queryClient.setQueriesData<Schemas.TaskSummary[]>(
+        { queryKey: taskKeys.allSummaries() },
+        (old) =>
+          old?.map((task) =>
+            task.id === taskId ? { ...task, title: newTitle } : task,
+          ),
+      );
+
+      if (previousDetail) {
+        queryClient.setQueryData<Task>(taskKeys.detail(taskId), {
+          ...previousDetail,
+          title: newTitle,
+          title_manually_set: true,
+        });
+      }
+
+      getSessionService().updateSessionTaskTitle(taskId, newTitle);
+
+      try {
+        await updateTask.mutateAsync({
+          taskId,
+          updates: { title: newTitle, title_manually_set: true },
+        });
+      } catch (error) {
+        const shouldRollbackSessionTitle =
+          queryClient.getQueryData<Task>(taskKeys.detail(taskId))?.title ===
+            newTitle ||
+          queryClient
+            .getQueriesData<Task[]>({
+              queryKey: taskKeys.lists(),
+            })
+            .some(([, tasks]) => getTaskTitle(tasks, taskId) === newTitle);
+
+        for (const [queryKey, data] of previousListQueries) {
+          queryClient.setQueryData<Task[] | undefined>(queryKey, (current) => {
+            if (!current) {
+              return data;
+            }
+
+            return getTaskTitle(current, taskId) === newTitle ? data : current;
+          });
+        }
+        for (const [queryKey, data] of previousSummaryQueries) {
+          queryClient.setQueryData<Schemas.TaskSummary[] | undefined>(
+            queryKey,
+            (current) => {
+              if (!current) {
+                return data;
+              }
+
+              return getTaskSummaryTitle(current, taskId) === newTitle
+                ? data
+                : current;
+            },
+          );
+        }
+        if (previousDetail) {
+          queryClient.setQueryData<Task | undefined>(
+            taskKeys.detail(taskId),
+            (current) => {
+              if (!current) {
+                return previousDetail;
+              }
+
+              return current.title === newTitle ? previousDetail : current;
+            },
+          );
+        }
+        if (shouldRollbackSessionTitle) {
+          getSessionService().updateSessionTaskTitle(taskId, currentTitle);
+        }
+        throw error;
+      }
+    },
+    [queryClient, updateTask],
+  );
+
+  return {
+    renameTask,
+    isPending: updateTask.isPending,
+  };
 }
 
 interface DeleteTaskOptions {

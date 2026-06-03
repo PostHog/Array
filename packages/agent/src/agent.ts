@@ -3,10 +3,10 @@ import {
   type InProcessAcpConnection,
 } from "./adapters/acp-connection";
 import {
-  BLOCKED_MODELS,
   DEFAULT_CODEX_MODEL,
   DEFAULT_GATEWAY_MODEL,
   fetchModelsList,
+  isBlockedModelId,
 } from "./gateway-models";
 import { PostHogAPIClient, type TaskRunUpdate } from "./posthog-api";
 import { SessionLogWriter } from "./session-log-writer";
@@ -84,7 +84,7 @@ export class Agent {
 
     let allowedModelIds: Set<string> | undefined;
     let sanitizedModel =
-      options.model && !BLOCKED_MODELS.has(options.model)
+      options.model && !isBlockedModelId(options.model)
         ? options.model
         : undefined;
     if (options.adapter === "codex" && gatewayConfig) {
@@ -93,7 +93,7 @@ export class Agent {
       });
       const codexModelIds = models
         .filter((model) => {
-          if (BLOCKED_MODELS.has(model.id)) return false;
+          if (isBlockedModelId(model.id)) return false;
           if (model.owned_by) {
             return model.owned_by === "openai";
           }

@@ -16,7 +16,10 @@ vi.mock("@renderer/trpc/client", () => ({
   },
 }));
 
-vi.mock("@utils/analytics", () => ({ track: vi.fn() }));
+vi.mock("@utils/analytics", () => ({
+  track: vi.fn(),
+  setActiveTaskAnalyticsContext: vi.fn(),
+}));
 vi.mock("@utils/logger", () => ({
   logger: { scope: () => ({ info: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
@@ -198,6 +201,27 @@ describe("navigationStore", () => {
       expect(getView()).toMatchObject({
         type: "inbox",
       });
+    });
+
+    it("navigates to pending task with key", () => {
+      getStore().navigateToPendingTask("pending-key-123");
+      expect(getView()).toMatchObject({
+        type: "task-pending",
+        pendingTaskKey: "pending-key-123",
+      });
+    });
+
+    it("replaces task-pending in history when navigating to real task", async () => {
+      getStore().navigateToTaskInput();
+      getStore().navigateToPendingTask("pending-key-123");
+      const indexBeforeReal = getStore().history.length - 1;
+      expect(getStore().history[indexBeforeReal].type).toBe("task-pending");
+
+      await getStore().navigateToTask(mockTask);
+
+      const finalHistory = getStore().history;
+      expect(finalHistory[finalHistory.length - 1].type).toBe("task-detail");
+      expect(finalHistory.some((v) => v.type === "task-pending")).toBe(false);
     });
   });
 

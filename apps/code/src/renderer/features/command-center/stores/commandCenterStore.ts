@@ -26,6 +26,8 @@ interface CommandCenterStoreState {
   activeCellIndex: number | null;
   zoom: number;
   creatingCells: number[];
+  // Persisted so autofill bootstraps the grid only once, not on every remount.
+  hasAutofilled: boolean;
 }
 
 interface CommandCenterStoreActions {
@@ -51,6 +53,7 @@ export const COMMAND_CENTER_INITIAL_STATE: CommandCenterStoreState = {
   activeCellIndex: null,
   zoom: 1,
   creatingCells: [],
+  hasAutofilled: false,
 };
 
 type CommandCenterStore = CommandCenterStoreState & CommandCenterStoreActions;
@@ -117,13 +120,18 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
             cells,
             activeTaskId: taskId,
             creatingCells: state.creatingCells.filter((i) => i !== cellIndex),
+            // Manually placing a task counts as curating the grid.
+            hasAutofilled: true,
           };
         }),
 
       autofillCells: (taskIds) =>
         set((state) => {
+          // Grid already full: nothing to place, but the bootstrap is done.
+          if (state.cells.every((id) => id != null)) {
+            return { hasAutofilled: true };
+          }
           if (taskIds.length === 0) return state;
-          if (state.cells.every((id) => id != null)) return state;
           const cells: (string | null)[] = [...state.cells];
           const queue = [...taskIds];
           for (let i = 0; i < cells.length && queue.length > 0; i++) {
@@ -131,7 +139,7 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
               cells[i] = queue.shift() as string;
             }
           }
-          return { cells };
+          return { cells, hasAutofilled: true };
         }),
 
       removeTask: (cellIndex) =>
@@ -197,6 +205,7 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
         activeCellIndex: state.activeCellIndex,
         zoom: state.zoom,
         creatingCells: state.creatingCells,
+        hasAutofilled: state.hasAutofilled,
       }),
     },
   ),

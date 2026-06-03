@@ -9,8 +9,10 @@ import type {
   SignalReportPriority,
   SignalUserAutonomyConfig,
 } from "@shared/types";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
 import { useQueryClient } from "@tanstack/react-query";
+import { track } from "@utils/analytics";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useEvaluations } from "./useEvaluations";
@@ -103,7 +105,7 @@ function computeValues(
 }
 
 export function useSignalSourceManager() {
-  const projectId = useAuthStateValue((state) => state.projectId);
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const client = useAuthenticatedClient();
   const queryClient = useQueryClient();
@@ -112,7 +114,8 @@ export function useSignalSourceManager() {
     useExternalDataSources();
   const { data: evaluations } = useEvaluations();
   const { data: teamConfig } = useSignalTeamConfig();
-  const { data: userAutonomyConfig } = useSignalUserAutonomyConfig();
+  const { data: userAutonomyConfig, isLoading: userAutonomyConfigLoading } =
+    useSignalUserAutonomyConfig();
 
   // Optimistic overrides keyed by source product — only sources actively being
   // toggled get an entry, so unrelated sources never see a prop change.
@@ -330,6 +333,9 @@ export function useSignalSourceManager() {
 
       const label = SOURCE_LABELS[product];
 
+      const hadExistingConfig = configs?.some(
+        (c) => c.source_product === product,
+      );
       try {
         if (product === "error_tracking") {
           for (const sourceType of ERROR_TRACKING_SOURCE_TYPES) {
@@ -369,6 +375,14 @@ export function useSignalSourceManager() {
               enabled: true,
             });
           }
+        }
+
+        if (enabled) {
+          track(ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED, {
+            source_product: product,
+            is_first_connection: !hadExistingConfig,
+            via_setup_wizard: false,
+          });
         }
 
         await invalidateAfterToggle();
@@ -415,6 +429,11 @@ export function useSignalSourceManager() {
             enabled: true,
           });
         }
+        track(ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED, {
+          source_product: completedSource,
+          is_first_connection: !existing,
+          via_setup_wizard: true,
+        });
       } catch {
         toast.error(
           "Data source connected, but failed to enable signal source. Try toggling it on.",
@@ -573,6 +592,7 @@ export function useSignalSourceManager() {
     teamConfig,
     handleUpdateAutostartPriority,
     userAutonomyConfig,
+    userAutonomyConfigLoading,
     handleUpdateUserAutonomyPriority,
     handleUpdateSlackNotifications,
   };

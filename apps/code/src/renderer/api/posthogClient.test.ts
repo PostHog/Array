@@ -115,11 +115,11 @@ describe("PostHogAPIClient", () => {
     await expect(
       client.runTaskInCloud("task-123", "feature/legacy-effort", {
         adapter: "claude",
-        model: "claude-opus-4-6",
+        model: "claude-opus-4-8",
         reasoningLevel: "minimal",
       }),
     ).rejects.toThrow(
-      "Reasoning effort 'minimal' is not supported for claude model 'claude-opus-4-6'.",
+      "Reasoning effort 'minimal' is not supported for claude model 'claude-opus-4-8'.",
     );
 
     expect(post).not.toHaveBeenCalled();

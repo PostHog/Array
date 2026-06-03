@@ -1,18 +1,18 @@
 import { Text } from "@components/text";
 import { useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, FlatList, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FileDiff } from "@/features/tasks/components/FileDiff";
 import {
   type ChangedFile,
   usePrChangedFiles,
 } from "@/features/tasks/hooks/usePrChangedFiles";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 
 export default function PrDiffScreen() {
   const { prUrl } = useLocalSearchParams<{ prUrl?: string }>();
   const themeColors = useThemeColors();
-  const insets = useSafeAreaInsets();
+  const { bottom } = useScreenInsets();
 
   const { data: files, isLoading } = usePrChangedFiles(prUrl ?? null);
 
@@ -47,7 +47,7 @@ export default function PrDiffScreen() {
       contentContainerStyle={{
         paddingHorizontal: 12,
         paddingTop: 8,
-        paddingBottom: insets.bottom + 16,
+        paddingBottom: bottom("default"),
       }}
       ListHeaderComponent={
         <View className="mb-2 flex-row items-center justify-between px-1 py-1">

@@ -1,5 +1,8 @@
 import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient";
-import { AUTH_SCOPED_QUERY_META } from "@features/auth/hooks/authQueries";
+import {
+  AUTH_SCOPED_QUERY_META,
+  useAuthStateFetched,
+} from "@features/auth/hooks/authQueries";
 import type { Integration } from "@features/integrations/stores/integrationStore";
 import { useProjects } from "@features/projects/hooks/useProjects";
 import { useQueries } from "@tanstack/react-query";
@@ -14,7 +17,8 @@ export interface ProjectWithIntegrations {
 }
 
 export function useProjectsWithIntegrations() {
-  const { projects, isLoading: projectsLoading } = useProjects();
+  const { projects } = useProjects();
+  const projectsLoading = !useAuthStateFetched();
   const client = useOptionalAuthenticatedClient();
 
   // Fetch integrations for each project in parallel

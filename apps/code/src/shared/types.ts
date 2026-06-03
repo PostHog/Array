@@ -564,3 +564,20 @@ export interface SlackChannelsQueryParams {
   offset?: number;
   channelId?: string;
 }
+
+export interface NewTaskSharedParams {
+  repo?: string;
+  mode?: string;
+  model?: string;
+}
+
+export type NewTaskLinkPayload =
+  | ({ action: "new"; prompt?: string } & NewTaskSharedParams)
+  | ({ action: "plan"; plan: string } & NewTaskSharedParams)
+  | ({
+      action: "issue";
+      url: string;
+      owner: string;
+      issueRepo: string;
+      issueNumber: number;
+    } & NewTaskSharedParams);

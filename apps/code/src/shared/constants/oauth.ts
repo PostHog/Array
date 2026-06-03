@@ -7,7 +7,7 @@ export const POSTHOG_DEV_CLIENT_ID = "DC5uRLVbGI02YQ82grxgnK6Qn12SXWpCqdPb60oZ";
 // Bump OAUTH_SCOPE_VERSION below whenever OAUTH_SCOPES changes to force re-authentication
 export const OAUTH_SCOPES = ["*"];
 
-export const OAUTH_SCOPE_VERSION = 4;
+export const OAUTH_SCOPE_VERSION = 5;
 
 // Token refresh settings
 export const TOKEN_REFRESH_BUFFER_MS = 30 * 60 * 1000; // 30 minutes before expiry

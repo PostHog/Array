@@ -16,6 +16,7 @@ import {
 import { useState } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
+import { formatRelativeTime } from "@/lib/format";
 import { useThemeColors } from "@/lib/theme";
 import type { Signal, SignalFindingContent } from "../types";
 
@@ -207,6 +208,9 @@ export function SignalCard({ signal, finding }: SignalCardProps) {
 
   const externalUrl = issueUrl ?? ticketUrl ?? null;
 
+  const timestampMs = signal.timestamp ? Date.parse(signal.timestamp) : NaN;
+  const hasTimestamp = !Number.isNaN(timestampMs) && timestampMs <= Date.now();
+
   return (
     <View className="overflow-hidden rounded-xl border border-gray-6 bg-gray-1 p-3">
       {/* Header */}
@@ -215,9 +219,18 @@ export function SignalCard({ signal, finding }: SignalCardProps) {
           product={signal.source_product}
           color={themeColors.gray[10]}
         />
-        <Text className="flex-1 font-medium text-[13px] text-gray-10">
+        <Text
+          className="min-w-0 shrink font-medium text-[13px] text-gray-10"
+          numberOfLines={1}
+        >
           {sourceLine(signal)}
         </Text>
+        <View className="flex-1" />
+        {hasTimestamp && (
+          <Text className="shrink-0 text-[11px] text-gray-10">
+            {formatRelativeTime(timestampMs)}
+          </Text>
+        )}
         {verified !== undefined && <VerifiedBadge verified={verified} />}
       </View>
 

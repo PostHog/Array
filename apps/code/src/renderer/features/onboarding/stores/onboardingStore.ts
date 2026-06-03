@@ -8,17 +8,17 @@ const log = logger.scope("onboarding-store");
 interface OnboardingStoreState {
   currentStep: OnboardingStep;
   hasCompletedOnboarding: boolean;
+  hasShippedFirstPr: boolean;
   selectedProjectId: number | null;
-  selectedDirectory: string;
 }
 
 interface OnboardingStoreActions {
   setCurrentStep: (step: OnboardingStep) => void;
   completeOnboarding: () => void;
+  markFirstPrShipped: () => void;
   resetOnboarding: () => void;
   resetSelections: () => void;
   selectProjectId: (projectId: number | null) => void;
-  setSelectedDirectory: (path: string) => void;
 }
 
 type OnboardingStore = OnboardingStoreState & OnboardingStoreActions;
@@ -26,8 +26,8 @@ type OnboardingStore = OnboardingStoreState & OnboardingStoreActions;
 const initialState: OnboardingStoreState = {
   currentStep: "welcome",
   hasCompletedOnboarding: false,
+  hasShippedFirstPr: false,
   selectedProjectId: null,
-  selectedDirectory: "",
 };
 
 export const useOnboardingStore = create<OnboardingStore>()(
@@ -40,6 +40,7 @@ export const useOnboardingStore = create<OnboardingStore>()(
         log.info("completeOnboarding");
         set({ hasCompletedOnboarding: true });
       },
+      markFirstPrShipped: () => set({ hasShippedFirstPr: true }),
       resetOnboarding: () => set({ ...initialState }),
       resetSelections: () =>
         set({
@@ -47,15 +48,14 @@ export const useOnboardingStore = create<OnboardingStore>()(
           selectedProjectId: null,
         }),
       selectProjectId: (selectedProjectId) => set({ selectedProjectId }),
-      setSelectedDirectory: (selectedDirectory) => set({ selectedDirectory }),
     }),
     {
       name: "onboarding-store",
       partialize: (state) => ({
         currentStep: state.currentStep,
         hasCompletedOnboarding: state.hasCompletedOnboarding,
+        hasShippedFirstPr: state.hasShippedFirstPr,
         selectedProjectId: state.selectedProjectId,
-        selectedDirectory: state.selectedDirectory,
       }),
     },
   ),

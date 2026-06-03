@@ -36,6 +36,7 @@ import { sleepRouter } from "./routers/sleep";
 import { suspensionRouter } from "./routers/suspension.js";
 import { uiRouter } from "./routers/ui";
 import { updatesRouter } from "./routers/updates";
+import { usageMonitorRouter } from "./routers/usage-monitor";
 import { workspaceRouter } from "./routers/workspace";
 import { router } from "./trpc";
 
@@ -78,6 +79,7 @@ export const trpcRouter = router({
   slackIntegration: slackIntegrationRouter,
   ui: uiRouter,
   updates: updatesRouter,
+  usageMonitor: usageMonitorRouter,
   deepLink: deepLinkRouter,
   workspace: workspaceRouter,
 });

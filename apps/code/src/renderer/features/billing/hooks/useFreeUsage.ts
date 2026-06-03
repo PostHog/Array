@@ -2,13 +2,19 @@ import { useSeat } from "@hooks/useSeat";
 import type { UsageOutput } from "@main/services/llm-gateway/schemas";
 import { useUsage } from "./useUsage";
 
-export function useFreeUsage(billingEnabled: boolean): UsageOutput | null {
+export interface FreeUsageResult {
+  usage: UsageOutput | null;
+  // True when the user is eligible to see the Free sidebar bar but data
+  // hasn't arrived yet. Distinguishes "show skeleton" from "render nothing".
+  isLoading: boolean;
+}
+
+export function useFreeUsage(billingEnabled: boolean): FreeUsageResult {
   const { seat, isPro } = useSeat();
   const seatLoaded = seat !== null;
-  const { usage } = useUsage({
-    enabled: billingEnabled && seatLoaded && !isPro,
-  });
+  const eligible = billingEnabled && seatLoaded && !isPro;
+  const { usage, isLoading } = useUsage({ enabled: eligible });
 
-  if (!billingEnabled || !seatLoaded || isPro || !usage) return null;
-  return usage;
+  if (!eligible) return { usage: null, isLoading: false };
+  return { usage: usage ?? null, isLoading };
 }

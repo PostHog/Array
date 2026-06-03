@@ -38,6 +38,10 @@ export class AppLifecycleService {
     this._isQuittingForUpdate = true;
   }
 
+  clearQuittingForUpdate(): void {
+    this._isQuittingForUpdate = false;
+  }
+
   /**
    * Immediately kills the process. Used when shutdown is stuck or re-entrant.
    */

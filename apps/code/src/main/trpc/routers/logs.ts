@@ -1,22 +1,14 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
 import { z } from "zod";
+import { container } from "../../di/container";
+import { MAIN_TOKENS } from "../../di/tokens";
+import type { LocalLogsService } from "../../services/local-logs/service";
 import { logger } from "../../utils/logger";
 import { publicProcedure, router } from "../trpc";
 
 const log = logger.scope("logsRouter");
 
-function getLocalLogPath(taskRunId: string): string {
-  return path.join(
-    os.homedir(),
-    ".posthog-code",
-    "sessions",
-    taskRunId,
-    "logs.ndjson",
-  );
-}
+const getLocalLogsService = (): LocalLogsService =>
+  container.get<LocalLogsService>(MAIN_TOKENS.LocalLogsService);
 
 export const logsRouter = router({
   fetchS3Logs: publicProcedure
@@ -47,30 +39,11 @@ export const logsRouter = router({
 
   readLocalLogs: publicProcedure
     .input(z.object({ taskRunId: z.string() }))
-    .query(async ({ input }) => {
-      const logPath = getLocalLogPath(input.taskRunId);
-      try {
-        return await fs.promises.readFile(logPath, "utf-8");
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          return null;
-        }
-        log.warn("Failed to read local logs:", error);
-        return null;
-      }
-    }),
+    .query(({ input }) => getLocalLogsService().readLocalLogs(input.taskRunId)),
 
   writeLocalLogs: publicProcedure
     .input(z.object({ taskRunId: z.string(), content: z.string() }))
-    .mutation(async ({ input }) => {
-      const logPath = getLocalLogPath(input.taskRunId);
-      const logDir = path.dirname(logPath);
-
-      try {
-        await fs.promises.mkdir(logDir, { recursive: true });
-        await fs.promises.writeFile(logPath, input.content, "utf-8");
-      } catch (error) {
-        log.warn("Failed to write local logs:", error);
-      }
-    }),
+    .mutation(({ input }) =>
+      getLocalLogsService().writeLocalLogs(input.taskRunId, input.content),
+    ),
 });

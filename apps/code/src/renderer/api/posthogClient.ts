@@ -581,8 +581,8 @@ export class PostHogAPIClient {
     }
   }
 
-  setTeamId(teamId: number): void {
-    this._teamId = teamId;
+  setTeamId(teamId: number | null | undefined): void {
+    this._teamId = teamId ?? null;
   }
 
   private async getTeamId(): Promise<number> {
@@ -690,6 +690,19 @@ export class PostHogAPIClient {
     await this.api.patch("/api/users/{uuid}/", {
       path: { uuid: "@me" },
       body: { set_current_organization: orgId } as Record<string, unknown>,
+    });
+  }
+
+  async approveAiDataProcessing(): Promise<void> {
+    const urlPath = `/api/organizations/@current/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ is_ai_data_processing_approved: true }),
+      },
     });
   }
 
@@ -1477,18 +1490,15 @@ export class PostHogAPIClient {
     }
   }
 
-  async getIntegrations(kind?: string) {
+  async getIntegrations() {
     const teamId = await this.getTeamId();
-    return this.getIntegrationsForProject(teamId, kind);
+    return this.getIntegrationsForProject(teamId);
   }
 
-  async getIntegrationsForProject(projectId: number, kind?: string) {
+  async getIntegrationsForProject(projectId: number) {
     const url = new URL(
       `${this.api.baseUrl}/api/environments/${projectId}/integrations/`,
     );
-    if (kind) {
-      url.searchParams.set("kind", kind);
-    }
     const response = await this.api.fetcher.fetch({
       method: "get",
       url,

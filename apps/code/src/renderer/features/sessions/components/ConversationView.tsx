@@ -14,7 +14,13 @@ import { SkillButtonActionMessage } from "@features/skill-buttons/components/Ski
 import { ArrowDown, XCircle } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import WorkerUrl from "@pierre/diffs/worker/worker.js?worker&url";
-import { Box, Button, Flex, Text } from "@radix-ui/themes";
+import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@posthog/quill";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import type { AcpMessage } from "@shared/types/session-events";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -250,7 +256,7 @@ export function ConversationView({
       poolOptions={DIFFS_POOL_OPTIONS}
       highlighterOptions={DIFFS_HIGHLIGHTER_OPTIONS}
     >
-      <div ref={containerRef} className="relative flex-1">
+      <div ref={containerRef} className="group/thread relative flex-1">
         <div
           id="fullscreen-portal"
           className="pointer-events-none absolute inset-0 z-20"
@@ -302,11 +308,21 @@ export function ConversationView({
           />
         </SessionTaskIdProvider>
         {showScrollButton && (
-          <Box className="absolute right-4 bottom-4 z-10">
-            <Button size="1" variant="solid" onClick={scrollToBottom}>
-              <ArrowDown size={14} weight="bold" />
-              Scroll to bottom
-            </Button>
+          <Box className="absolute right-6 bottom-4 z-10">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-lg"
+                    variant="outline"
+                    onClick={scrollToBottom}
+                  >
+                    <ArrowDown size={14} weight="bold" />
+                  </Button>
+                }
+              />
+              <TooltipContent>Scroll to bottom</TooltipContent>
+            </Tooltip>
           </Box>
         )}
       </div>

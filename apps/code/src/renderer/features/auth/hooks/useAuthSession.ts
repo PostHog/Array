@@ -68,7 +68,7 @@ function useAuthAnalyticsIdentity(
     identifyUser(distinctId, {
       email: currentUser.email,
       uuid: currentUser.uuid,
-      project_id: authState.projectId?.toString() ?? "",
+      project_id: authState.currentProjectId?.toString() ?? "",
       region: authState.cloudRegion ?? "",
     });
 
@@ -79,11 +79,16 @@ function useAuthAnalyticsIdentity(
       properties: {
         email: currentUser.email,
         uuid: currentUser.uuid,
-        project_id: authState.projectId?.toString() ?? "",
+        project_id: authState.currentProjectId?.toString() ?? "",
         region: authState.cloudRegion ?? "",
       },
     });
-  }, [authIdentity, authState.cloudRegion, authState.projectId, currentUser]);
+  }, [
+    authIdentity,
+    authState.cloudRegion,
+    authState.currentProjectId,
+    currentUser,
+  ]);
 }
 
 function useSeatSync(

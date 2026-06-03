@@ -5,7 +5,7 @@ import type { Evaluation } from "@renderer/api/posthogClient";
 const POLL_INTERVAL_MS = 5_000;
 
 export function useEvaluations() {
-  const projectId = useAuthStore((s) => s.projectId);
+  const projectId = useAuthStore((s) => s.currentProjectId);
   return useAuthenticatedQuery<Evaluation[]>(
     ["evaluations", projectId],
     (client) =>

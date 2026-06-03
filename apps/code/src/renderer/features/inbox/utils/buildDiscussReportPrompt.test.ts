@@ -44,4 +44,36 @@ describe("buildDiscussReportPrompt", () => {
     });
     expect(prompt).toContain("brief readout");
   });
+
+  it("appends a slugified title suffix to the deep link", () => {
+    const prompt = buildDiscussReportPrompt({
+      reportId: "abc123",
+      reportTitle: "fix(inbox): Add foo",
+      isDevBuild: false,
+    });
+    expect(prompt).toContain("posthog-code://inbox/abc123/fix-inbox--Add-foo");
+  });
+
+  it("omits the slug suffix when the title is blank", () => {
+    const prompt = buildDiscussReportPrompt({
+      reportId: "abc123",
+      reportTitle: "   ",
+      isDevBuild: false,
+    });
+    expect(prompt).toContain("posthog-code://inbox/abc123)");
+  });
+
+  it("tells the agent to say so rather than guess if the report can't be fetched", () => {
+    const withQuestion = buildDiscussReportPrompt({
+      reportId: "abc123",
+      question: "Why is conversion dropping?",
+      isDevBuild: false,
+    });
+    const withoutQuestion = buildDiscussReportPrompt({
+      reportId: "abc123",
+      isDevBuild: false,
+    });
+    expect(withQuestion).toMatch(/can't fetch the report/i);
+    expect(withoutQuestion).toMatch(/can't fetch the report/i);
+  });
 });

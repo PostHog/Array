@@ -2,8 +2,8 @@ import { Text } from "@components/text";
 import { Check, FunnelSimple } from "phosphor-react-native";
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUserQuery } from "@/features/auth";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 import {
   type OrganizeMode,
@@ -44,7 +44,7 @@ function OptionRow({ label, selected, onPress }: OptionRowProps) {
 }
 
 export function TaskFilterMenu({ open, onClose }: TaskFilterMenuProps) {
-  const insets = useSafeAreaInsets();
+  const { bottom, sheetContentTop } = useScreenInsets();
   const organizeMode = useTaskStore((s) => s.organizeMode);
   const setOrganizeMode = useTaskStore((s) => s.setOrganizeMode);
   const sortMode = useTaskStore((s) => s.sortMode);
@@ -70,7 +70,7 @@ export function TaskFilterMenu({ open, onClose }: TaskFilterMenuProps) {
     >
       <View
         className="flex-1 bg-background"
-        style={{ paddingTop: insets.top + 8 }}
+        style={{ paddingTop: sheetContentTop() }}
       >
         {/* Header */}
         <View className="flex-row items-center justify-between border-gray-6 border-b px-4 pb-3">
@@ -88,7 +88,7 @@ export function TaskFilterMenu({ open, onClose }: TaskFilterMenuProps) {
           contentContainerStyle={{
             paddingHorizontal: 16,
             paddingTop: 16,
-            paddingBottom: insets.bottom + 40,
+            paddingBottom: bottom("roomy"),
           }}
         >
           {/* Organize */}

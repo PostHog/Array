@@ -203,7 +203,7 @@ export class EnrichmentService {
     const state = this.authService.getState();
     if (
       state.status !== "authenticated" ||
-      !state.projectId ||
+      !state.currentProjectId ||
       !state.cloudRegion
     ) {
       return null;
@@ -213,7 +213,7 @@ export class EnrichmentService {
       return {
         apiKey: auth.accessToken,
         host: auth.apiHost,
-        projectId: state.projectId,
+        projectId: state.currentProjectId,
       };
     } catch (err) {
       log.debug("Failed to resolve access token", {

@@ -9,8 +9,8 @@ import {
   ScrollView,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUserQuery } from "@/features/auth";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 import { useAvailableSuggestedReviewers } from "../hooks/useInboxReports";
 import { useInboxFilterStore } from "../stores/inboxFilterStore";
@@ -67,7 +67,7 @@ export function ReviewerFilterSheet({
   visible,
   onClose,
 }: ReviewerFilterSheetProps) {
-  const insets = useSafeAreaInsets();
+  const { bottom, sheetContentTop } = useScreenInsets();
   const themeColors = useThemeColors();
   const { data: currentUser } = useUserQuery();
   const { data: available, isLoading } = useAvailableSuggestedReviewers();
@@ -98,7 +98,7 @@ export function ReviewerFilterSheet({
     >
       <View
         className="flex-1 bg-background"
-        style={{ paddingTop: insets.top + 8 }}
+        style={{ paddingTop: sheetContentTop() }}
       >
         {/* Header */}
         <View className="flex-row items-center justify-between border-gray-6 border-b px-4 pb-3">
@@ -132,7 +132,7 @@ export function ReviewerFilterSheet({
             contentContainerStyle={{
               paddingHorizontal: 16,
               paddingTop: 12,
-              paddingBottom: insets.bottom + 40,
+              paddingBottom: bottom("roomy"),
             }}
           >
             {options.map((reviewer, index) => {

@@ -12,8 +12,8 @@ import {
 } from "react-native";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FloatingBackButton } from "@/components/FloatingBackButton";
+import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { getTask, runTaskInCloud } from "@/features/tasks/api";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
 import { PrDiffStatsBadge } from "@/features/tasks/components/PrDiffStatsBadge";
@@ -32,10 +32,16 @@ import {
 } from "@/features/tasks/composer/options";
 import { TaskChatComposer } from "@/features/tasks/composer/TaskChatComposer";
 import { taskKeys } from "@/features/tasks/hooks/useTasks";
+import {
+  pendingTaskPromptStoreApi,
+  usePendingTaskPrompt,
+} from "@/features/tasks/stores/pendingTaskPromptStore";
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type { Task } from "@/features/tasks/types";
 import { getSessionActivityPhase } from "@/features/tasks/utils/sessionActivity";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
+import { useActiveTaskAnalyticsContext } from "@/lib/analytics";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
@@ -59,7 +65,11 @@ export default function TaskDetailScreen() {
   }>();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const insets = useSafeAreaInsets();
+  const { insets, composerBottom } = useScreenInsets();
+  // Pre-compute outside the worklet: useAnimatedStyle runs on the UI thread and
+  // can't call the non-worklet getter. Capturing the primitive keeps the worklet
+  // closure stable (matches the pattern in task/index.tsx).
+  const composerBottomValue = composerBottom();
   const themeColors = useThemeColors();
   const [task, setTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
@@ -85,7 +95,36 @@ export default function TaskDetailScreen() {
     };
   }, [taskId, setFocusedTaskId]);
 
+  // Tag every PostHog event fired while this task is open with the originating
+  // inbox report id, so a discuss-launched run can be filtered down in PostHog.
+  // Cleared when the screen unmounts. Matches the desktop super-property.
+  useActiveTaskAnalyticsContext(task?.signal_report ?? null);
+
   const session = taskId ? getSessionForTask(taskId) : undefined;
+
+  // Optimistic echo set by the new-task screen (or the terminal-resume path
+  // below) so the user's prompt appears in the thread immediately, before
+  // the live session catches up.
+  const optimisticPrompt = usePendingTaskPrompt(taskId);
+
+  // Clear the echo once the canonical user_message_chunk with matching text
+  // arrives via SSE — `TaskSessionView` also dedups visually, but clearing
+  // the store frees it for the next submit. Only events with `ts >= setAt`
+  // qualify so a text-identical historical turn (e.g. resubmitting
+  // "Continue") doesn't drop the echo before the real copy lands.
+  useEffect(() => {
+    if (!taskId || !optimisticPrompt) return;
+    const matched = session?.events.some(
+      (e) =>
+        e.type === "session_update" &&
+        e.notification?.update?.sessionUpdate === "user_message_chunk" &&
+        e.notification.update.content?.text === optimisticPrompt.promptText &&
+        (e.ts ?? 0) >= optimisticPrompt.setAt,
+    );
+    if (matched) {
+      pendingTaskPromptStoreApi.clear(taskId);
+    }
+  }, [taskId, optimisticPrompt, session?.events]);
 
   // Per-task composer pill values. Persisted in taskStore so reopening the
   // task keeps the user's choices; defaults fall back to the same constants
@@ -123,9 +162,9 @@ export default function TaskDetailScreen() {
     // height, so the composer sits at the keyboard top — no extra gap needed
     // when open. Closed state keeps a comfortable bottom inset.
     return {
-      marginBottom: height.value < 0 ? 0 : Math.max(insets.bottom, 50),
+      marginBottom: height.value < 0 ? 0 : composerBottomValue,
     };
-  }, [insets.bottom]);
+  }, [composerBottomValue]);
 
   useEffect(() => {
     if (!taskId) return;
@@ -212,6 +251,19 @@ export default function TaskDetailScreen() {
   const handleSendAfterTerminal = useCallback(
     async (text: string, attachments: PendingAttachment[]) => {
       if (!taskId || !task) return;
+      // Optimistically echo into the chat before tearing down the old session
+      // and waiting for the resume run's SSE stream to come up.
+      const echoAttachments = attachments.map((a) => ({
+        kind: a.kind,
+        uri: a.uri,
+        fileName: a.fileName,
+        mimeType: a.mimeType,
+      }));
+      pendingTaskPromptStoreApi.set(taskId, {
+        promptText: text,
+        attachments: echoAttachments.length > 0 ? echoAttachments : undefined,
+        setAt: Date.now(),
+      });
       try {
         setRetrying(true);
         disconnectFromTask(taskId);
@@ -237,6 +289,7 @@ export default function TaskDetailScreen() {
         updateTaskInCache(updatedTask);
       } catch (err) {
         log.error("Failed to send after terminal", err);
+        pendingTaskPromptStoreApi.clear(taskId);
         setRetrying(false);
         Alert.alert(
           "Failed to send",
@@ -303,6 +356,7 @@ export default function TaskDetailScreen() {
       if (!taskId) return;
       setComposerConfig(taskId, { reasoning: value });
       setConfigOption(taskId, "effort", value).catch(() => {});
+      usePreferencesStore.getState().setLastUsedReasoningEffort(value);
     },
     [taskId, setComposerConfig, setConfigOption],
   );
@@ -384,7 +438,10 @@ export default function TaskDetailScreen() {
     !!session &&
     session.status === "connecting" &&
     session.events.length === 0;
-  const showLoading = loading || isHistoryLoading;
+  // Suppress the full-screen overlay when we have an optimistic prompt to
+  // show — the user just submitted and seeing their own text + a connecting
+  // indicator is friendlier than a blank spinner.
+  const showLoading = (loading || isHistoryLoading) && !optimisticPrompt;
   const showAutomationContext =
     fromAutomation === "1" || task?.origin_product === "automation";
   const automationContextLabel =
@@ -467,6 +524,15 @@ export default function TaskDetailScreen() {
           }
           onOpenTask={handleOpenTask}
           onSendPermissionResponse={handleSendPermissionResponse}
+          optimisticUserMessage={
+            optimisticPrompt
+              ? {
+                  text: optimisticPrompt.promptText,
+                  attachments: optimisticPrompt.attachments,
+                  setAt: optimisticPrompt.setAt,
+                }
+              : undefined
+          }
           contentContainerStyle={{
             paddingTop: 8,
             paddingBottom:

@@ -64,6 +64,8 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
         lastActivityAt: null,
         linkedBranch: null,
         additionalDirectories: "[]",
+        prUrl: null,
+        prState: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -84,6 +86,8 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
           lastActivityAt: null,
           linkedBranch: null,
           additionalDirectories: "[]",
+          prUrl: null,
+          prState: null,
           createdAt: now,
           updatedAt: now,
         };
@@ -132,6 +136,17 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
       updateDirectoriesForTask(taskId, (current) =>
         current.includes(path) ? current.filter((p) => p !== path) : null,
       );
+    },
+    updatePrCache: (taskId, update) => {
+      const w = findLiveByTaskId(taskId);
+      if (!w) return;
+      const now = new Date().toISOString();
+      workspaces.set(w.id, {
+        ...w,
+        prUrl: update.prUrl,
+        prState: update.prState,
+        updatedAt: now,
+      });
     },
     deleteAll: () => {
       workspaces.clear();

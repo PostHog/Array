@@ -9,6 +9,7 @@ import {
 
 function getAppPath(): string {
   const outDir = path.join(__dirname, "../../../out");
+  const requestedArch = process.env.E2E_APP_ARCH;
 
   if (process.platform === "darwin") {
     const arm64Path = path.join(
@@ -19,6 +20,16 @@ function getAppPath(): string {
       outDir,
       "PostHog Code-darwin-x64/PostHog Code.app/Contents/MacOS/PostHog Code",
     );
+
+    if (requestedArch === "arm64") {
+      if (existsSync(arm64Path)) return arm64Path;
+      throw new Error(`No darwin-arm64 packaged app found at ${arm64Path}.`);
+    }
+
+    if (requestedArch === "x64") {
+      if (existsSync(x64Path)) return x64Path;
+      throw new Error(`No darwin-x64 packaged app found at ${x64Path}.`);
+    }
 
     if (existsSync(arm64Path)) return arm64Path;
     if (existsSync(x64Path)) return x64Path;

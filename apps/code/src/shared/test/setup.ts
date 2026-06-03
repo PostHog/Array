@@ -81,6 +81,36 @@ globalThis.ResizeObserver = class ResizeObserver {
   disconnect = vi.fn();
 };
 
+if (typeof globalThis.PointerEvent === "undefined") {
+  class JsdomPointerEvent extends MouseEvent {
+    pointerId: number;
+    pointerType: string;
+    width: number;
+    height: number;
+    pressure: number;
+    tangentialPressure: number;
+    tiltX: number;
+    tiltY: number;
+    twist: number;
+    isPrimary: boolean;
+
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init);
+      this.pointerId = init.pointerId ?? 0;
+      this.pointerType = init.pointerType ?? "";
+      this.width = init.width ?? 1;
+      this.height = init.height ?? 1;
+      this.pressure = init.pressure ?? 0;
+      this.tangentialPressure = init.tangentialPressure ?? 0;
+      this.tiltX = init.tiltX ?? 0;
+      this.tiltY = init.tiltY ?? 0;
+      this.twist = init.twist ?? 0;
+      this.isPrimary = init.isPrimary ?? false;
+    }
+  }
+  globalThis.PointerEvent = JsdomPointerEvent as unknown as typeof PointerEvent;
+}
+
 HTMLCanvasElement.prototype.getContext = vi.fn();
 Element.prototype.scrollIntoView = vi.fn();
 

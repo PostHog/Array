@@ -10,7 +10,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FloatingMcpHeader } from "@/features/mcp/components/FloatingMcpHeader";
 import { ServerIcon } from "@/features/mcp/components/ServerIcon";
 import {
@@ -20,6 +19,7 @@ import {
 } from "@/features/mcp/hooks";
 import { installTemplateWithOAuth } from "@/features/mcp/oauth";
 import { isStdioServer } from "@/features/mcp/types";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
@@ -28,7 +28,7 @@ const log = logger.scope("mcp-template-detail");
 export default function McpTemplateDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const themeColors = useThemeColors();
-  const insets = useSafeAreaInsets();
+  const { insets, bottom } = useScreenInsets();
 
   const marketplace = useMcpMarketplace();
   const installations = useMcpInstallations();
@@ -116,7 +116,7 @@ export default function McpTemplateDetailScreen() {
         className="flex-1"
         contentContainerStyle={{
           paddingTop: insets.top + 60,
-          paddingBottom: insets.bottom + 24,
+          paddingBottom: bottom("default"),
           paddingHorizontal: 16,
         }}
       >

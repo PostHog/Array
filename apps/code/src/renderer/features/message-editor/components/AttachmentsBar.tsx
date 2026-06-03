@@ -1,7 +1,12 @@
+import { SafeImagePreview } from "@components/ui/SafeImagePreview";
 import { File, X } from "@phosphor-icons/react";
+import {
+  isGifFile,
+  isRasterImageFile,
+  parseImageDataUrl,
+} from "@posthog/shared";
 import { Dialog, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc/client";
-import { isGifFile, isImageFile } from "@shared/constants/image";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import type { FileAttachment } from "../utils/content";
@@ -48,6 +53,7 @@ function ImageThumbnail({
   );
 
   const isGif = isGifFile(attachment.label);
+  const parsedImage = dataUrl ? parseImageDataUrl(dataUrl) : null;
 
   return (
     <Dialog.Root>
@@ -90,14 +96,12 @@ function ImageThumbnail({
         <Dialog.Title mb="2" className="text-sm">
           {attachment.label}
         </Dialog.Title>
-        {dataUrl ? (
-          <img
-            src={dataUrl}
+        {parsedImage ? (
+          <SafeImagePreview
+            base64={parsedImage.base64}
+            mimeType={parsedImage.mimeType}
             alt={attachment.label}
-            style={{
-              margin: "0 auto",
-            }}
-            className="block max-h-[75vh] max-w-[80vw] object-contain"
+            className="max-h-[75vh] max-w-[80vw]"
           />
         ) : (
           <Text color="gray" className="text-sm">
@@ -151,7 +155,7 @@ export function AttachmentsBar({ attachments, onRemove }: AttachmentsBarProps) {
   return (
     <Flex gap="1" align="center" className="flex-wrap pb-1.5">
       {attachments.map((att) =>
-        isImageFile(att.label) ? (
+        isRasterImageFile(att.label) ? (
           <ImageThumbnail
             key={att.id}
             attachment={att}

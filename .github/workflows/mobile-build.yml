@@ -57,7 +57,7 @@ jobs:
           cache: "pnpm"
 
       - name: Setup EAS
-        uses: expo/expo-github-action@4479f9c12e08b76bb8a6ae00a31544a13d3b3d68 # v8
+        uses: expo/expo-github-action@c7b66a9c327a43a8fa7c0158e7f30d6040d2481e # v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
@@ -81,7 +81,8 @@ jobs:
   # Auto-promote the freshly built production binaries. Only runs when the build
   # job waited for completion (otherwise there is no finished build to submit).
   promote:
-    permissions: {}
+    permissions:
+      contents: read
     needs: build
     if: ${{ inputs.profile == 'production' && inputs.wait }}
     uses: ./.github/workflows/mobile-promote.yml

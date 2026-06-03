@@ -16,8 +16,9 @@ import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { clearApplicationStorage } from "@utils/clearStorage";
+import { shipIt } from "@utils/confetti";
 import { logger } from "@utils/logger";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 interface GlobalEventHandlersProps {
@@ -206,6 +207,40 @@ export function GlobalEventHandlers({
     globalOptions,
     [handleSwitchTask],
   );
+
+  // Konami code confetti
+  const konamiProgressRef = useRef(0);
+  useEffect(() => {
+    const sequence = [
+      "ArrowUp",
+      "ArrowUp",
+      "ArrowDown",
+      "ArrowDown",
+      "ArrowLeft",
+      "ArrowRight",
+      "ArrowLeft",
+      "ArrowRight",
+      "b",
+      "a",
+    ];
+    const handleKey = (event: KeyboardEvent) => {
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      const expected = sequence[konamiProgressRef.current];
+      if (key === expected) {
+        konamiProgressRef.current += 1;
+        if (konamiProgressRef.current === sequence.length) {
+          konamiProgressRef.current = 0;
+          shipIt();
+        }
+      } else {
+        konamiProgressRef.current = key === sequence[0] ? 1 : 0;
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, []);
 
   // Mouse back/forward buttons
   useEffect(() => {

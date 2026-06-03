@@ -9,9 +9,10 @@ import { Box, Button, Flex, Spinner, Text, Tooltip } from "@radix-ui/themes";
 import { formatRelativeTimeLong } from "@renderer/utils/time";
 import { openUrlInBrowser } from "@utils/browser";
 import { getPostHogUrl } from "@utils/urls";
+import { SignalSlackNotificationsSettings } from "./SignalSlackNotificationsSettings";
 
 export function SlackSettings() {
-  const projectId = useAuthStateValue((s) => s.projectId);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const { isLoading } = useIntegrations();
   const { slackIntegrations, hasSlackIntegration } = useIntegrationSelectors();
@@ -77,6 +78,8 @@ export function SlackSettings() {
       </Flex>
 
       <Flex>{manageButtonWithTooltip}</Flex>
+
+      <SignalSlackNotificationsSettings isLoading={isLoading} />
     </Flex>
   );
 }

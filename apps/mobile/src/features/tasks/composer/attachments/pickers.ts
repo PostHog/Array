@@ -1,3 +1,4 @@
+import { getImageMimeType } from "@posthog/shared";
 import { Alert } from "react-native";
 import { logger } from "@/lib/logger";
 import type { PendingAttachment } from "./types";
@@ -10,11 +11,8 @@ function makeId(): string {
 
 function inferImageMime(uri: string, mime?: string | null): string {
   if (mime) return mime;
-  const lower = uri.toLowerCase();
-  if (lower.endsWith(".png")) return "image/png";
-  if (lower.endsWith(".gif")) return "image/gif";
-  if (lower.endsWith(".webp")) return "image/webp";
-  return "image/jpeg";
+  const detected = getImageMimeType(uri);
+  return detected === "application/octet-stream" ? "image/jpeg" : detected;
 }
 
 function deriveFileName(uri: string, fallback: string): string {

@@ -3,7 +3,7 @@ import {
   CATEGORY_CONFIG,
   FALLBACK_CATEGORY_CONFIG,
 } from "@features/setup/utils/categoryConfig";
-import { ArrowSquareOut, X } from "@phosphor-icons/react";
+import { X } from "@phosphor-icons/react";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { motion } from "framer-motion";
 
@@ -12,7 +12,6 @@ export interface SuggestedTaskCardProps {
   index: number;
   onSelect: (task: DiscoveredTask) => void;
   onDismiss: (task: DiscoveredTask) => void;
-  onViewDetails: (task: DiscoveredTask) => void;
 }
 
 export function SuggestedTaskCard({
@@ -20,7 +19,6 @@ export function SuggestedTaskCard({
   index,
   onSelect,
   onDismiss,
-  onViewDetails,
 }: SuggestedTaskCardProps) {
   const config = CATEGORY_CONFIG[task.category] ?? FALLBACK_CATEGORY_CONFIG;
   const TaskIcon = config.icon;
@@ -85,19 +83,6 @@ export function SuggestedTaskCard({
         gap="1"
         className="pointer-events-none absolute top-2 right-2 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
       >
-        <Tooltip content="View details">
-          <button
-            type="button"
-            aria-label="View details"
-            onClick={(e) => {
-              e.stopPropagation();
-              onViewDetails(task);
-            }}
-            className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-(--gray-9) hover:bg-(--gray-a3) hover:text-(--gray-12)"
-          >
-            <ArrowSquareOut size={12} weight="bold" />
-          </button>
-        </Tooltip>
         <Tooltip content="Dismiss">
           <button
             type="button"

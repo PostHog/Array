@@ -38,6 +38,7 @@ import { PullSaga } from "@posthog/git/sagas/pull";
 import { PushSaga } from "@posthog/git/sagas/push";
 import { parseGithubUrl } from "@posthog/git/utils";
 import { inject, injectable } from "inversify";
+import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
@@ -72,11 +73,13 @@ import type {
   PrActionType,
   PrDetailsByUrlOutput,
   PrReviewComment,
+  PrReviewThread,
   PrStatusOutput,
   PublishOutput,
   PullOutput,
   PushOutput,
   ReplyToPrCommentOutput,
+  ResolveReviewThreadOutput,
   SyncOutput,
   UpdatePrByUrlOutput,
 } from "./schemas";
@@ -131,6 +134,7 @@ function toUnifiedDiffPatch(
 @injectable()
 export class GitService extends TypedEventEmitter<GitServiceEvents> {
   private lastFetchTime = new Map<string, number>();
+  private taskPrRevalidations = new Map<string, Promise<void>>();
 
   constructor(
     @inject(MAIN_TOKENS.LlmGatewayService)
@@ -139,6 +143,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     private readonly workspaceService: WorkspaceService,
     @inject(MAIN_TOKENS.AgentService)
     private readonly agentService: AgentService,
+    @inject(MAIN_TOKENS.WorkspaceRepository)
+    private readonly workspaceRepo: IWorkspaceRepository,
   ) {
     super();
   }
@@ -1216,31 +1222,219 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     }
   }
 
-  public async getPrReviewComments(prUrl: string): Promise<PrReviewComment[]> {
+  public async getPrReviewComments(prUrl: string): Promise<PrReviewThread[]> {
     const pr = parseGithubUrl(prUrl);
     if (pr?.kind !== "pr") return [];
 
     const { owner, repo, number } = pr;
 
-    try {
-      const result = await execGh([
-        "api",
-        `repos/${owner}/${repo}/pulls/${number}/comments`,
-        "--paginate",
-        "--slurp",
-      ]);
+    // Position fields (line, side, etc.) live on the thread, not on individual comments.
+    const query = `
+      query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            reviewThreads(first: 100, after: $cursor) {
+              pageInfo { hasNextPage endCursor }
+              nodes {
+                id
+                isResolved
+                isOutdated
+                path
+                diffSide
+                line
+                originalLine
+                startLine
+                startDiffSide
+                subjectType
+                comments(first: 100) {
+                  nodes {
+                    databaseId
+                    body
+                    path
+                    diffHunk
+                    replyTo { databaseId }
+                    author { login avatarUrl }
+                    createdAt
+                    updatedAt
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
 
-      if (result.exitCode !== 0) {
-        throw new Error(
-          `Failed to fetch PR review comments: ${result.stderr || result.error || "Unknown error"}`,
+    type ThreadNode = {
+      id: string;
+      isResolved: boolean;
+      isOutdated: boolean;
+      path: string;
+      diffSide: "LEFT" | "RIGHT";
+      line: number | null;
+      originalLine: number | null;
+      startLine: number | null;
+      startDiffSide: "LEFT" | "RIGHT" | null;
+      subjectType: "LINE" | "FILE" | null;
+      comments: {
+        nodes: Array<{
+          databaseId: number;
+          body: string;
+          path: string;
+          diffHunk: string;
+          replyTo: { databaseId: number } | null;
+          author: { login: string; avatarUrl: string };
+          createdAt: string;
+          updatedAt: string;
+        }>;
+      };
+    };
+
+    type PageResponse = {
+      data: {
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              pageInfo: { hasNextPage: boolean; endCursor: string | null };
+              nodes: ThreadNode[];
+            };
+          };
+        };
+      };
+      errors?: Array<{ message: string }>;
+    };
+
+    const MAX_THREAD_PAGES = 50; // 50 × 100 = 5 000 threads max
+
+    try {
+      const allNodes: ThreadNode[] = [];
+      let cursor: string | null = null;
+      let completed = false;
+
+      for (let page = 0; page < MAX_THREAD_PAGES; page++) {
+        const result = await execGh(["api", "graphql", "--input", "-"], {
+          input: JSON.stringify({
+            query,
+            variables: { owner, repo, number, cursor },
+          }),
+        });
+
+        if (result.exitCode !== 0) {
+          throw new Error(
+            `Failed to fetch PR review threads: ${result.stderr || result.error || "Unknown error"}`,
+          );
+        }
+
+        const data = JSON.parse(result.stdout) as PageResponse;
+        if (data.errors?.length) {
+          throw new Error(
+            `GraphQL error: ${data.errors.map((e) => e.message).join("; ")}`,
+          );
+        }
+        const reviewThreads = data.data.repository.pullRequest.reviewThreads;
+        allNodes.push(...reviewThreads.nodes);
+        if (!reviewThreads.pageInfo.hasNextPage) {
+          completed = true;
+          break;
+        }
+        cursor = reviewThreads.pageInfo.endCursor;
+      }
+
+      if (!completed) {
+        log.warn(
+          "getPrReviewComments hit MAX_THREAD_PAGES; returning partial results",
+          {
+            prUrl,
+            returned: allNodes.length,
+          },
         );
       }
 
-      const pages = JSON.parse(result.stdout) as PrReviewComment[][];
-      return pages.flat();
+      return allNodes.map((thread) => {
+        const comments: PrReviewComment[] = thread.comments.nodes.map((c) => ({
+          id: c.databaseId,
+          body: c.body,
+          path: c.path,
+          diff_hunk: c.diffHunk,
+          line: thread.line,
+          original_line: thread.originalLine,
+          side: thread.diffSide,
+          start_line: thread.startLine,
+          start_side: thread.startDiffSide,
+          in_reply_to_id: c.replyTo?.databaseId ?? null,
+          user: { login: c.author.login, avatar_url: c.author.avatarUrl },
+          created_at: c.createdAt,
+          updated_at: c.updatedAt,
+          subject_type: thread.subjectType
+            ? (thread.subjectType.toLowerCase() as "line" | "file")
+            : null,
+        }));
+
+        return {
+          nodeId: thread.id,
+          isResolved: thread.isResolved,
+          rootId: comments[0]?.id ?? 0,
+          filePath: thread.path,
+          comments,
+        };
+      });
     } catch (error) {
-      log.warn("Failed to fetch PR review comments", { prUrl, error });
+      log.warn("Failed to fetch PR review threads", { prUrl, error });
       throw error;
+    }
+  }
+
+  public async resolveReviewThread(
+    threadNodeId: string,
+    resolved: boolean,
+  ): Promise<ResolveReviewThreadOutput> {
+    const mutation = resolved
+      ? `mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } } }`
+      : `mutation($threadId: ID!) { unresolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } } }`;
+
+    try {
+      const result = await execGh(["api", "graphql", "--input", "-"], {
+        input: JSON.stringify({
+          query: mutation,
+          variables: { threadId: threadNodeId },
+        }),
+      });
+
+      if (result.exitCode !== 0) {
+        log.warn("Failed to resolve/unresolve review thread", {
+          threadNodeId,
+          resolved,
+          error: result.stderr || result.error,
+        });
+        return { success: false, isResolved: !resolved };
+      }
+
+      const data = JSON.parse(result.stdout) as {
+        data: {
+          resolveReviewThread?: { thread: { isResolved: boolean } };
+          unresolveReviewThread?: { thread: { isResolved: boolean } };
+        };
+        errors?: Array<{ message: string }>;
+      };
+      if (data.errors?.length) {
+        log.warn("Failed to resolve/unresolve review thread", {
+          threadNodeId,
+          resolved,
+          error: data.errors.map((e) => e.message).join("; "),
+        });
+        return { success: false, isResolved: !resolved };
+      }
+      const thread =
+        data.data.resolveReviewThread?.thread ??
+        data.data.unresolveReviewThread?.thread;
+
+      return { success: true, isResolved: thread?.isResolved ?? resolved };
+    } catch (error) {
+      log.warn("Failed to resolve/unresolve review thread", {
+        threadNodeId,
+        error,
+      });
+      return { success: false, isResolved: !resolved };
     }
   }
 
@@ -1787,51 +1981,159 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
     }
   }
 
+  /**
+   * Returns cached PR state for the task immediately and kicks off a background
+   * revalidation against `gh`. The fresh result is written back to the DB and,
+   * if the state changed, broadcast via `WorkspaceServiceEvent.TaskPrInfoChanged`
+   * so the renderer can update without re-querying.
+   *
+   * `hasDiff` is computed synchronously for worktrees without a cached PR — it
+   * relies only on local git state, so it stays cheap.
+   */
   async getTaskPrStatus(
     taskId: string,
     cloudPrUrl: string | null,
   ): Promise<{ prState: SidebarPrState; hasDiff: boolean }> {
+    const cached = this.workspaceRepo.findByTaskId(taskId);
+    const cachedPrState = (cached?.prState ?? null) as SidebarPrState;
+
+    void this.revalidateTaskPrStatus(taskId, cloudPrUrl);
+
+    if (cachedPrState) return { prState: cachedPrState, hasDiff: false };
+
+    const hasDiff = await this.computeWorktreeHasDiff(taskId);
+    return { prState: null, hasDiff };
+  }
+
+  getCachedPrUrl(taskId: string): { prUrl: string | null } {
+    const row = this.workspaceRepo.findByTaskId(taskId);
+    return { prUrl: row?.prUrl ?? null };
+  }
+
+  private async computeWorktreeHasDiff(taskId: string): Promise<boolean> {
     const workspace = await this.workspaceService.getWorkspace(taskId);
-    if (!workspace) return { prState: null, hasDiff: false };
+    if (
+      !workspace ||
+      workspace.mode !== "worktree" ||
+      !workspace.worktreePath
+    ) {
+      return false;
+    }
+    if (workspace.linkedBranch) return false;
+    const [diffStats, syncStatus] = await Promise.all([
+      this.getDiffStats(workspace.worktreePath),
+      this.getGitSyncStatus(workspace.worktreePath),
+    ]);
+    return (
+      (diffStats?.filesChanged ?? 0) > 0 ||
+      (syncStatus?.aheadOfDefault ?? 0) > 0
+    );
+  }
+
+  /**
+   * Performs the actual `gh` lookups for a task's PR, writes the result to the
+   * workspaces cache, and emits `TaskPrInfoChanged` when the cached value
+   * changed. Deduplicated per task so concurrent callers share one network
+   * roundtrip.
+   */
+  private async revalidateTaskPrStatus(
+    taskId: string,
+    cloudPrUrl: string | null,
+  ): Promise<void> {
+    const inFlight = this.taskPrRevalidations.get(taskId);
+    if (inFlight) return inFlight;
+
+    const promise = this.computeTaskPrStatus(taskId, cloudPrUrl)
+      .then((fresh) => {
+        const cached = this.workspaceRepo.findByTaskId(taskId);
+        if (!cached) return;
+
+        const cachedPrUrl = cached.prUrl ?? null;
+        const cachedPrState = (cached.prState ?? null) as SidebarPrState;
+
+        this.workspaceRepo.updatePrCache(taskId, {
+          prUrl: fresh.prUrl,
+          prState: fresh.prState,
+        });
+
+        // Emit only when PR identity or state actually changed. `hasDiff` is
+        // not persisted (and is recomputed inline on each `getTaskPrStatus`
+        // call), so it must not feed into the emit decision — otherwise a
+        // worktree with uncommitted changes but no PR would emit on every
+        // revalidation cycle.
+        if (cachedPrUrl === fresh.prUrl && cachedPrState === fresh.prState) {
+          return;
+        }
+
+        // String literal (rather than `WorkspaceServiceEvent.TaskPrInfoChanged`)
+        // avoids a circular import: workspace/service eagerly loads the DI
+        // container, which in turn re-enters this module.
+        this.workspaceService.emit("taskPrInfoChanged", {
+          taskId,
+          prUrl: fresh.prUrl,
+          prState: fresh.prState,
+        });
+      })
+      .catch((err) => {
+        log.warn("Failed to revalidate task PR status", { taskId, err });
+      })
+      .finally(() => {
+        this.taskPrRevalidations.delete(taskId);
+      });
+
+    this.taskPrRevalidations.set(taskId, promise);
+    return promise;
+  }
+
+  private async computeTaskPrStatus(
+    taskId: string,
+    cloudPrUrl: string | null,
+  ): Promise<{
+    prUrl: string | null;
+    prState: SidebarPrState;
+    hasDiff: boolean;
+  }> {
+    const workspace = await this.workspaceService.getWorkspace(taskId);
+    if (!workspace) return { prUrl: null, prState: null, hasDiff: false };
 
     const { mode, worktreePath, folderPath, linkedBranch } = workspace;
     const isCloud = mode === "cloud";
     const repoPath = worktreePath ?? (folderPath || null);
 
-    // Cloud tasks: look up PR details by the cloud run's PR URL
     if (isCloud && cloudPrUrl) {
       const details = await this.getPrDetailsByUrl(cloudPrUrl);
       if (details) {
         return {
+          prUrl: cloudPrUrl,
           prState: mapPrState(details.state, details.merged, details.draft),
           hasDiff: false,
         };
       }
-      return { prState: null, hasDiff: false };
+      return { prUrl: cloudPrUrl, prState: null, hasDiff: false };
     }
 
-    if (isCloud) return { prState: null, hasDiff: false };
+    if (isCloud) return { prUrl: null, prState: null, hasDiff: false };
 
-    // Linked branch: look up PR by branch name
     if (linkedBranch && repoPath) {
       const prUrl = await this.getPrUrlForBranch(repoPath, linkedBranch);
       if (prUrl) {
         const details = await this.getPrDetailsByUrl(prUrl);
         if (details) {
           return {
+            prUrl,
             prState: mapPrState(details.state, details.merged, details.draft),
             hasDiff: false,
           };
         }
       }
-      return { prState: null, hasDiff: false };
+      return { prUrl: null, prState: null, hasDiff: false };
     }
 
-    // Worktree tasks without linked branch: check current branch PR + diff
     if (worktreePath) {
       const prStatus = await this.getPrStatus(worktreePath);
       if (prStatus.prExists && prStatus.prState) {
         return {
+          prUrl: prStatus.prUrl,
           prState: mapPrState(
             prStatus.prState,
             false,
@@ -1850,9 +2152,9 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
         (diffStats?.filesChanged ?? 0) > 0 ||
         (syncStatus?.aheadOfDefault ?? 0) > 0;
 
-      return { prState: null, hasDiff };
+      return { prUrl: null, prState: null, hasDiff };
     }
 
-    return { prState: null, hasDiff: false };
+    return { prUrl: null, prState: null, hasDiff: false };
   }
 }

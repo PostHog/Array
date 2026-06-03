@@ -2,7 +2,7 @@ import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import type { Task } from "@shared/types";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useCommandCenterStore } from "../stores/commandCenterStore";
 
 // Window for "still in the current working session". Tasks last touched
@@ -24,24 +24,17 @@ export function useAutofillCommandCenter(): void {
   const archivedTaskIds = useArchivedTaskIds();
 
   const cells = useCommandCenterStore((s) => s.cells);
+  const hasAutofilled = useCommandCenterStore((s) => s.hasAutofilled);
   const autofillCells = useCommandCenterStore((s) => s.autofillCells);
 
-  // Fires at most once per mount so clearing cells in-place doesn't
-  // immediately re-populate them. Navigating away and back remounts the
-  // view and lets autofill run again with the latest recent tasks.
-  const hasRunRef = useRef(false);
-
   useEffect(() => {
-    if (hasRunRef.current) return;
+    // One-time bootstrap: the persisted `hasAutofilled` flag stops empty cells
+    // from being re-filled every time the Command Center remounts.
+    if (hasAutofilled) return;
     if (!workspacesFetched || !workspaces) return;
     if (!tasksFetched) return;
 
     const emptySlots = cells.filter((id) => id == null).length;
-    if (emptySlots === 0) {
-      hasRunRef.current = true;
-      return;
-    }
-
     const assignedIds = new Set(cells.filter((id): id is string => id != null));
     const cutoff = Date.now() - RECENT_WINDOW_MS;
     const candidates = tasks
@@ -56,12 +49,10 @@ export function useAutofillCommandCenter(): void {
       .slice(0, emptySlots)
       .map((task) => task.id);
 
-    if (candidates.length > 0) {
-      autofillCells(candidates);
-    }
-    hasRunRef.current = true;
+    autofillCells(candidates);
   }, [
     cells,
+    hasAutofilled,
     workspaces,
     workspacesFetched,
     tasks,

@@ -29,6 +29,10 @@ import {
   isJsonRpcNotification,
   isJsonRpcResponse,
 } from "@shared/types/session-events";
+import {
+  pendingTaskPromptStoreApi,
+  usePendingTaskPrompt,
+} from "@stores/pendingTaskPromptStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSessionService } from "../service/service";
 import { flattenSelectOptions } from "../stores/sessionStore";
@@ -40,6 +44,7 @@ import { CloudInitializingView } from "./CloudInitializingView";
 import { ConversationView } from "./ConversationView";
 import { DropZoneOverlay } from "./DropZoneOverlay";
 import { ModelSelector } from "./ModelSelector";
+import { PendingChatView } from "./PendingChatView";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { ReasoningLevelSelector } from "./ReasoningLevelSelector";
 import { RawLogsView } from "./raw-logs/RawLogsView";
@@ -128,6 +133,7 @@ export function SessionView({
 }: SessionViewProps) {
   const showRawLogs = useShowRawLogs();
   const { setShowRawLogs } = useSessionViewActions();
+  const pendingTaskPrompt = usePendingTaskPrompt(taskId);
   const pendingPermissions = usePendingPermissionsForTask(taskId);
   const modeOption = useModeConfigOptionForTask(taskId);
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
@@ -137,6 +143,12 @@ export function SessionView({
   const currentModeId = modeOption?.currentValue;
   const handoffInProgress =
     useSessionForTask(taskId)?.handoffInProgress ?? false;
+
+  useEffect(() => {
+    if (!taskId) return;
+    if (isInitializing) return;
+    pendingTaskPromptStoreApi.clear(taskId);
+  }, [taskId, isInitializing]);
 
   useEffect(() => {
     if (allowBypassPermissions) return;
@@ -464,7 +476,7 @@ export function SessionView({
                 />
                 <Box className="border-gray-4 border-t">
                   <Box
-                    className="mx-auto p-2"
+                    className="mx-auto px-2 pb-3"
                     style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
                   >
                     <Flex
@@ -512,6 +524,11 @@ export function SessionView({
             ) : isInitializing ? (
               isCloud ? (
                 <CloudInitializingView cloudStatus={cloudStatus} />
+              ) : pendingTaskPrompt?.promptText ? (
+                <PendingChatView
+                  promptText={pendingTaskPrompt.promptText}
+                  attachments={pendingTaskPrompt.attachments}
+                />
               ) : (
                 <Flex
                   align="center"
@@ -583,7 +600,7 @@ export function SessionView({
                 ) : hideInput ? null : firstPendingPermission ? (
                   <Box className="border-gray-4 border-t">
                     <Box
-                      className={compact ? "p-1" : "mx-auto p-2"}
+                      className={compact ? "p-1" : "mx-auto px-2 pb-3"}
                       style={
                         compact
                           ? undefined
@@ -599,7 +616,7 @@ export function SessionView({
                     </Box>
                   </Box>
                 ) : (
-                  <Box className="relative border-gray-4 border-t">
+                  <Box className="relative">
                     <Box
                       className={`absolute inset-0 flex min-h-[66px] items-center justify-center gap-2 transition-opacity duration-200 ${
                         isRunning
@@ -620,7 +637,7 @@ export function SessionView({
                       }`}
                     >
                       <Box
-                        className={compact ? "p-1" : "mx-auto p-2"}
+                        className={compact ? "p-1" : "mx-auto px-2 pb-3"}
                         style={
                           compact
                             ? undefined

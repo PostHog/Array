@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 import {
   DISMISSAL_REASON_OPTIONS,
@@ -20,12 +20,23 @@ import {
 } from "../constants";
 import { useDismissReport } from "../hooks/useInboxReports";
 
+export interface DismissReportResult {
+  reason: DismissalReasonOptionValue;
+  /** Trimmed note text the user provided, if any. Empty/whitespace-only notes become null. */
+  note: string | null;
+}
+
 interface DismissReportSheetProps {
   visible: boolean;
   reportId: string;
   reportTitle: string;
   onClose: () => void;
-  onDismissed: () => void;
+  /**
+   * Fires after the API confirms the dismissal. The result is passed back so
+   * callers can route the reason/note through their own analytics — keeping
+   * this sheet stateless about the surface it was launched from.
+   */
+  onDismissed: (result: DismissReportResult) => void;
 }
 
 export function DismissReportSheet({
@@ -35,7 +46,7 @@ export function DismissReportSheet({
   onClose,
   onDismissed,
 }: DismissReportSheetProps) {
-  const insets = useSafeAreaInsets();
+  const { insets, bottom, sheetContentTop } = useScreenInsets();
   const themeColors = useThemeColors();
   const [reason, setReason] = useState<DismissalReasonOptionValue | null>(null);
   const [note, setNote] = useState("");
@@ -53,10 +64,14 @@ export function DismissReportSheet({
   const handleConfirm = async () => {
     if (!reason || dismiss.isPending) return;
     setError(null);
+    const trimmedNote = note.trim();
     try {
-      await dismiss.mutateAsync({ reason, note: note.trim() || undefined });
+      await dismiss.mutateAsync({
+        reason,
+        note: trimmedNote || undefined,
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onDismissed();
+      onDismissed({ reason, note: trimmedNote || null });
     } catch (err) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setError(
@@ -83,7 +98,7 @@ export function DismissReportSheet({
       >
         <View
           className="flex-1 bg-background"
-          style={{ paddingTop: insets.top + 8 }}
+          style={{ paddingTop: sheetContentTop() }}
         >
           {/* Header */}
           <View className="flex-row items-center justify-between border-gray-6 border-b px-4 pb-3">
@@ -163,7 +178,7 @@ export function DismissReportSheet({
           {/* Sticky submit */}
           <View
             className="border-gray-6 border-t bg-background px-4 pt-3"
-            style={{ paddingBottom: insets.bottom + 12 }}
+            style={{ paddingBottom: bottom("compact") }}
           >
             <Pressable
               onPress={handleConfirm}

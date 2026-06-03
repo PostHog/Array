@@ -14,7 +14,7 @@ vi.mock("../../enrichment/file-enricher", () => ({
 }));
 
 import { createCodexClient } from "./codex-client";
-import { createSessionState } from "./session-state";
+import { createSessionState, resetSessionState } from "./session-state";
 
 function makeUpstream(response: ReadTextFileResponse): AgentSideConnection & {
   readTextFile: ReturnType<typeof vi.fn>;
@@ -286,5 +286,53 @@ describe("createCodexClient onStructuredOutput", () => {
     );
 
     expect(upstream.sessionUpdate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("createCodexClient usage_update propagation", () => {
+  const logger = new Logger({ debug: false, prefix: "[test]" });
+
+  function makeUpstream(): AgentSideConnection {
+    return {
+      sessionUpdate: vi.fn(async () => {}),
+      requestPermission: vi.fn(),
+      readTextFile: vi.fn(),
+      writeTextFile: vi.fn(),
+      createTerminal: vi.fn(),
+      terminalOutput: vi.fn(),
+      releaseTerminal: vi.fn(),
+      waitForTerminalExit: vi.fn(),
+      killTerminal: vi.fn(),
+      extMethod: vi.fn(),
+      extNotification: vi.fn(),
+    } as unknown as AgentSideConnection;
+  }
+
+  // Regression: codex-client closure-captures the sessionState reference in
+  // its factory. CodexAcpAgent constructs the client once at startup with the
+  // initial "" sessionId state, then resetSessionState() mutates that same
+  // object on every newSession/loadSession/etc. If the agent ever reassigned
+  // `this.sessionState`, contextUsed writes would land on an orphan and the
+  // breakdown notification would never fire.
+  test("writes contextUsed to the same state object after resetSessionState", async () => {
+    const sessionState = createSessionState("", "/tmp");
+    const upstream = makeUpstream();
+    const client = createCodexClient(upstream, logger, sessionState);
+
+    resetSessionState(sessionState, "real-session", "/tmp/repo", {
+      taskRunId: "run-1",
+    });
+
+    await client.sessionUpdate?.({
+      sessionId: "real-session",
+      update: {
+        sessionUpdate: "usage_update",
+        used: 123_456,
+        size: 200_000,
+      },
+    } as unknown as SessionNotification);
+
+    expect(sessionState.contextUsed).toBe(123_456);
+    expect(sessionState.contextSize).toBe(200_000);
   });
 });

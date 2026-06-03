@@ -39,7 +39,7 @@ function invalidateIntegrationQueries(queryClient: QueryClient): void {
 export function useSlackConnect(): Result {
   const queryClient = useQueryClient();
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
-  const projectId = useAuthStateValue((s) => s.projectId);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
 
   const [state, setState] = useState<SlackConnectState>("idle");
   const [error, setError] = useState<SlackConnectError | null>(null);

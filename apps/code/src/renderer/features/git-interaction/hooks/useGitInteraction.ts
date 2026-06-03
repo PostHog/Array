@@ -21,12 +21,14 @@ import { getSuggestedBranchName } from "@features/git-interaction/utils/getSugge
 import { invalidateGitBranchQueries } from "@features/git-interaction/utils/gitCacheKeys";
 import { partitionByStaged } from "@features/git-interaction/utils/partitionByStaged";
 import { updateGitCacheFromSnapshot } from "@features/git-interaction/utils/updateGitCache";
+import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { useSessionStore } from "@features/sessions/stores/sessionStore";
 import { trpc, trpcClient } from "@renderer/trpc";
 import type { ChangedFile } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
+import { celebrate } from "@utils/confetti";
 import { logger } from "@utils/logger";
 import { useMemo, useRef } from "react";
 
@@ -276,6 +278,12 @@ export function useGitInteraction(
 
       trackGitAction(taskId, "create-pr", true, prStagingContext);
       track(ANALYTICS_EVENTS.PR_CREATED, { task_id: taskId, success: true });
+
+      const onboarding = useOnboardingStore.getState();
+      if (!onboarding.hasShippedFirstPr) {
+        onboarding.markFirstPrShipped();
+        celebrate();
+      }
 
       if (result.state) {
         updateGitCacheFromSnapshot(queryClient, repoPath, result.state);

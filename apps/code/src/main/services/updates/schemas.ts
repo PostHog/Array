@@ -13,6 +13,16 @@ export const checkForUpdatesOutput = z.object({
   errorCode: checkErrorCode.optional(),
 });
 
+export const updatesStatusOutput = z.object({
+  checking: z.boolean(),
+  downloading: z.boolean().optional(),
+  upToDate: z.boolean().optional(),
+  updateReady: z.boolean().optional(),
+  installing: z.boolean().optional(),
+  version: z.string().optional(),
+  error: z.string().optional(),
+});
+
 export const installUpdateOutput = z.object({
   installed: z.boolean(),
 });
@@ -28,14 +38,7 @@ export const UpdatesEvent = {
   CheckFromMenu: "check-from-menu",
 } as const;
 
-export type UpdatesStatusPayload = {
-  checking: boolean;
-  downloading?: boolean;
-  upToDate?: boolean;
-  updateReady?: boolean;
-  version?: string;
-  error?: string;
-};
+export type UpdatesStatusPayload = z.infer<typeof updatesStatusOutput>;
 
 export type UpdateReadyPayload = {
   version: string | null;

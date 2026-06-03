@@ -1,19 +1,20 @@
-import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
+import { useSwitchOrgMutation } from "@features/auth/hooks/authMutations";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { TokenSpendAnalysisBanner } from "@features/billing/components/TokenSpendAnalysisBanner";
 import { useUsage } from "@features/billing/hooks/useUsage";
 import { useSeatStore } from "@features/billing/stores/seatStore";
+import { formatResetTime } from "@features/billing/utils";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useSeat } from "@hooks/useSeat";
 import type { UsageBucket } from "@main/services/llm-gateway/schemas";
 import {
   ArrowSquareOut,
-  Check,
   CreditCard,
   Info,
   WarningCircle,
 } from "@phosphor-icons/react";
 import {
+  Badge,
   Button,
   Callout,
   Dialog,
@@ -22,8 +23,9 @@ import {
   Spinner,
   Text,
 } from "@radix-ui/themes";
-import { Tooltip } from "@renderer/components/ui/Tooltip";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { PLAN_PRO_ALPHA } from "@shared/types/seat";
+import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { getBillingUrl, getPostHogUrl } from "@utils/urls";
 import { useEffect, useState } from "react";
@@ -31,32 +33,6 @@ import { useEffect, useState } from "react";
 const log = logger.scope("plan-usage");
 
 const SPEND_ANALYSIS_FLAG = "posthog-code-spend-analysis";
-
-async function openBillingPage(orgId: string | null): Promise<void> {
-  if (orgId) {
-    try {
-      const client = await getAuthenticatedClient();
-      if (client) {
-        await client.switchOrganization(orgId);
-      }
-    } catch (err) {
-      log.warn("Failed to switch org before opening billing", err);
-    }
-  }
-  const url = getBillingUrl();
-  if (url) window.open(url, "_blank");
-}
-
-function formatResetTime(seconds: number): string {
-  if (seconds < 3600) return "less than 1 hour";
-  if (seconds < 86400) {
-    const hours = Math.ceil(seconds / 3600);
-    return hours === 1 ? "1 hour" : `${hours} hours`;
-  }
-  const days = Math.ceil(seconds / 86400);
-  if (days === 1) return "1 day";
-  return `${days} days`;
-}
 
 export function PlanUsageSettings() {
   const {
@@ -74,7 +50,34 @@ export function PlanUsageSettings() {
   const { fetchSeat, upgradeToPro, cancelSeat, reactivateSeat, clearError } =
     useSeatStore();
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
+  const currentOrgId = useAuthStateValue((state) => state.currentOrgId);
+  const switchOrgMutation = useSwitchOrgMutation();
   const billingUrl = getBillingUrl(cloudRegion);
+
+  async function switchOrgAndRefreshSeat(orgId: string): Promise<void> {
+    await switchOrgMutation.mutateAsync(orgId);
+    await fetchSeat({ autoProvision: true });
+  }
+
+  async function openBillingPage(orgId: string | null): Promise<void> {
+    if (orgId && orgId !== currentOrgId) {
+      try {
+        await switchOrgAndRefreshSeat(orgId);
+      } catch (err) {
+        log.warn("Failed to switch org before opening billing", err);
+        return;
+      }
+    }
+    if (billingUrl) window.open(billingUrl, "_blank");
+  }
+
+  async function switchToBillingOrg(orgId: string): Promise<void> {
+    try {
+      await switchOrgAndRefreshSeat(orgId);
+    } catch (err) {
+      log.warn("Failed to switch to billing org", err);
+    }
+  }
   const redirectFullUrl = redirectUrl
     ? (getPostHogUrl(redirectUrl, cloudRegion) ?? billingUrl)
     : null;
@@ -95,6 +98,14 @@ export function PlanUsageSettings() {
     void fetchSeat({ autoProvision: true });
     void refetchUsage();
   }, [fetchSeat, refetchUsage]);
+
+  useEffect(() => {
+    if (showUpgradeDialog) {
+      track(ANALYTICS_EVENTS.UPGRADE_PROMPT_SHOWN, {
+        surface: "upgrade_dialog",
+      });
+    }
+  }, [showUpgradeDialog]);
 
   const formattedActiveUntil = activeUntil
     ? activeUntil.toLocaleDateString(undefined, {
@@ -178,10 +189,37 @@ export function PlanUsageSettings() {
           <Callout.Icon>
             <Info size={16} />
           </Callout.Icon>
-          <Callout.Text className="text-sm">
-            You have a Pro plan on{" "}
-            <Text weight="medium">{seat.organization_name}</Text>. Usage on this
-            page reflects your current organization.
+          <Callout.Text>
+            <Flex direction="column" gap="2">
+              <Text className="text-sm">
+                You have a Pro plan on{" "}
+                <Text weight="medium">{seat.organization_name}</Text>. Usage on
+                this page reflects your current organization.
+              </Text>
+              {billingOrgId && (
+                <Flex direction="column" gap="1" className="self-start">
+                  <Button
+                    size="1"
+                    variant="outline"
+                    disabled={switchOrgMutation.isPending}
+                    onClick={() => {
+                      void switchToBillingOrg(billingOrgId);
+                    }}
+                  >
+                    {switchOrgMutation.isPending ? (
+                      <Spinner size="1" />
+                    ) : (
+                      `Switch to ${seat.organization_name ?? "Pro org"}`
+                    )}
+                  </Button>
+                  {switchOrgMutation.isError && (
+                    <Text className="text-(--red-11) text-[12px]">
+                      Switching failed. Try again or switch from the sidebar.
+                    </Text>
+                  )}
+                </Flex>
+              )}
+            </Flex>
           </Callout.Text>
         </Callout.Root>
       )}
@@ -193,22 +231,13 @@ export function PlanUsageSettings() {
               name="Free"
               price="$0"
               period="/mo"
-              features={[
-                "Limited usage",
-                "Local and cloud execution",
-                "All Claude and Codex models",
-              ]}
               isCurrent={!isOrgPro}
             />
             <PlanCard
               name="Pro"
               price="$200"
               period="/mo"
-              features={[
-                "Higher usage limits",
-                "Local and cloud execution",
-                "All Claude and Codex models",
-              ]}
+              badge="20× Free usage"
               isCurrent={isOrgPro && !isAlpha}
               resetLabel={
                 isOrgPro && !isAlpha && isCanceling && formattedActiveUntil
@@ -248,7 +277,12 @@ export function PlanUsageSettings() {
                   <Button
                     size="1"
                     variant="solid"
-                    onClick={() => setShowUpgradeDialog(true)}
+                    onClick={() => {
+                      track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, {
+                        surface: "plan_page_card",
+                      });
+                      setShowUpgradeDialog(true);
+                    }}
                     disabled={isLoading}
                     className="self-start"
                   >
@@ -361,28 +395,16 @@ export function PlanUsageSettings() {
         <Dialog.Content maxWidth="420px" size="2">
           <Dialog.Title className="text-base">Upgrade to Pro</Dialog.Title>
           <Dialog.Description color="gray" className="text-sm">
+            Pro is for teams using Code as part of their daily development
+            workflow: longer cloud runs, repeated agent iterations, and fewer
+            stops as work scales.{" "}
             {seat?.organization_name ? (
               <Text weight="medium">{seat.organization_name}</Text>
             ) : (
               "Your organization"
             )}{" "}
-            will be charged $200/month using the payment method on file in
-            PostHog.
+            will be charged $200/month for 20× the Free usage limit.
           </Dialog.Description>
-          <Flex direction="column" gap="2" mt="3">
-            <Flex align="center" gap="2">
-              <Check size={14} weight="bold" className="text-(--accent-9)" />
-              <Text className="text-sm">Higher usage limits</Text>
-            </Flex>
-            <Flex align="center" gap="2">
-              <Check size={14} weight="bold" className="text-(--accent-9)" />
-              <Text className="text-sm">Local and cloud execution</Text>
-            </Flex>
-            <Flex align="center" gap="2">
-              <Check size={14} weight="bold" className="text-(--accent-9)" />
-              <Text className="text-sm">All Claude and Codex models</Text>
-            </Flex>
-          </Flex>
           <Flex
             align="start"
             gap="2"
@@ -405,6 +427,9 @@ export function PlanUsageSettings() {
             <Button
               size="2"
               onClick={async () => {
+                track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, {
+                  surface: "upgrade_dialog",
+                });
                 setShowUpgradeDialog(false);
                 await upgradeToPro();
               }}
@@ -450,9 +475,7 @@ function UsageMeter({ label, bucket, color }: UsageMeterProps) {
         color={color === "red" ? "red" : undefined}
       />
       <Text className="text-(--gray-9) text-[13px]">
-        {bucket.exceeded
-          ? "Limit exceeded"
-          : `Resets in ${formatResetTime(bucket.resets_in_seconds)}`}
+        {bucket.exceeded ? "Limit exceeded" : formatResetTime(bucket.reset_at)}
       </Text>
     </Flex>
   );
@@ -462,9 +485,9 @@ interface PlanCardProps {
   name: string;
   price: string;
   period: string;
-  features: string[];
   isCurrent: boolean;
   resetLabel?: string;
+  badge?: string;
   action?: React.ReactNode;
 }
 
@@ -472,9 +495,9 @@ function PlanCard({
   name,
   price,
   period,
-  features,
   isCurrent,
   resetLabel,
+  badge,
   action,
 }: PlanCardProps) {
   return (
@@ -489,8 +512,13 @@ function PlanCard({
           : "1px solid var(--gray-5)",
         opacity: isCurrent ? 1 : 0.7,
       }}
-      className="flex-1 rounded-(--radius-3)"
+      className="relative flex-1 rounded-(--radius-3)"
     >
+      {badge && (
+        <Badge variant="soft" radius="full" className="absolute top-4 right-4">
+          {badge}
+        </Badge>
+      )}
       <Flex direction="column" gap="3">
         <Flex direction="column" gap="1">
           <Text
@@ -512,29 +540,6 @@ function PlanCard({
           {resetLabel && (
             <Text className="text-(--gray-9) text-[13px]">{resetLabel}</Text>
           )}
-        </Flex>
-        <Flex direction="column" gap="1">
-          {features.map((feature) => (
-            <Flex key={feature} align="center" gap="2">
-              <Check
-                size={14}
-                weight="bold"
-                className="shrink-0 text-(--accent-9)"
-              />
-              <Text className="text-(--gray-11) text-sm">
-                {feature.endsWith("*") ? (
-                  <>
-                    {feature.slice(0, -1)}
-                    <Tooltip content="Usage is limited to human-level usage. This cannot be used as your API key. If you hit this limit, please contact support.">
-                      <span className="cursor-help">*</span>
-                    </Tooltip>
-                  </>
-                ) : (
-                  feature
-                )}
-              </Text>
-            </Flex>
-          ))}
         </Flex>
       </Flex>
       {action}

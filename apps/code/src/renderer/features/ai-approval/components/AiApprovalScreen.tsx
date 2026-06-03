@@ -1,20 +1,14 @@
 import { FullScreenLayout } from "@components/FullScreenLayout";
+import { useAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useLogoutMutation } from "@features/auth/hooks/authMutations";
-import { useAuthStateValue } from "@features/auth/hooks/authQueries";
+import { authKeys } from "@features/auth/hooks/authQueries";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
-import {
-  ArrowSquareOut,
-  GearSix,
-  Robot,
-  SignOut,
-  WarningCircle,
-} from "@phosphor-icons/react";
-import { Button, Callout, Flex, Text } from "@radix-ui/themes";
+import { GearSix, Robot, SignOut, WarningCircle } from "@phosphor-icons/react";
+import { Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
-import { trpcClient } from "@renderer/trpc/client";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { getCloudUrlFromRegion } from "@shared/utils/urls";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
 import { motion } from "framer-motion";
 import { useEffect } from "react";
@@ -28,7 +22,20 @@ interface AiApprovalScreenProps {
 export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
   const logoutMutation = useLogoutMutation();
   const openSettings = useSettingsDialogStore((s) => s.open);
-  const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+  const client = useAuthenticatedClient();
+  const queryClient = useQueryClient();
+
+  const approveMutation = useMutation({
+    mutationFn: async () => {
+      await client.approveAiDataProcessing();
+    },
+    onSuccess: async () => {
+      track(ANALYTICS_EVENTS.AI_CONSENT_GRANTED_INAPP);
+      await queryClient.invalidateQueries({
+        queryKey: authKeys.currentUsers(),
+      });
+    },
+  });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: fire once on mount; later isAdmin changes from query resolution should not re-fire
   useEffect(() => {
@@ -39,15 +46,6 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
     preventDefault: true,
     enableOnFormTags: true,
   });
-
-  const approvalUrl = cloudRegion
-    ? `${getCloudUrlFromRegion(cloudRegion)}/settings/organization-details#organization-ai-consent`
-    : null;
-
-  const openApproval = () => {
-    if (!approvalUrl) return;
-    void trpcClient.os.openExternal.mutate({ url: approvalUrl });
-  };
 
   const footerLeft = (
     <Button
@@ -141,17 +139,27 @@ export function AiApprovalScreen({ orgName, isAdmin }: AiApprovalScreenProps) {
                   <Flex direction="column" gap="2">
                     <Button
                       size="3"
-                      onClick={openApproval}
-                      disabled={!approvalUrl}
+                      onClick={() => approveMutation.mutate()}
+                      disabled={approveMutation.isPending}
                       className="w-full"
                     >
-                      Approve in PostHog
-                      <ArrowSquareOut size={16} />
+                      {approveMutation.isPending ? (
+                        <Spinner size="2" />
+                      ) : (
+                        "Approve AI data processing"
+                      )}
                     </Button>
-                    <Text className="text-(--gray-10) text-[13px]">
-                      Opens PostHog in your browser. Come back here once you've
-                      approved.
-                    </Text>
+                    {approveMutation.isError && (
+                      <Callout.Root color="red" size="1">
+                        <Callout.Icon>
+                          <WarningCircle />
+                        </Callout.Icon>
+                        <Callout.Text>
+                          Could not approve AI data processing. Try again or
+                          contact support.
+                        </Callout.Text>
+                      </Callout.Root>
+                    )}
                   </Flex>
                 ) : (
                   <Text className="text-(--gray-11) text-sm">

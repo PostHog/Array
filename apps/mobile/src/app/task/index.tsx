@@ -28,8 +28,6 @@ import {
   useReanimatedKeyboardAnimation,
 } from "react-native-keyboard-controller";
 import Animated, { runOnJS, useAnimatedStyle } from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-
 import { useVoiceRecording } from "@/features/chat";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { createTask, runTaskInCloud } from "@/features/tasks/api";
@@ -64,6 +62,10 @@ import { Pill } from "@/features/tasks/composer/Pill";
 import { RepositoryPickerInline } from "@/features/tasks/composer/RepositoryPickerInline";
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
 import { useUserIntegrations } from "@/features/tasks/hooks/useUserIntegrations";
+import {
+  generatePendingTaskKey,
+  pendingTaskPromptStoreApi,
+} from "@/features/tasks/stores/pendingTaskPromptStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type {
   CreateTaskOptions,
@@ -74,6 +76,7 @@ import {
   isRepositorySelectionComplete,
   toRepositorySelection,
 } from "@/features/tasks/utils/repositorySelection";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { toRgba, useThemeColors } from "@/lib/theme";
 
@@ -110,9 +113,9 @@ export default function NewTaskScreen() {
   }>();
   const router = useRouter();
   const themeColors = useThemeColors();
-  const insets = useSafeAreaInsets();
+  const { insets, bottom } = useScreenInsets();
   const keyboard = useReanimatedKeyboardAnimation();
-  const restingBottom = insets.bottom + 12;
+  const restingBottom = bottom("compact");
   const {
     error,
     hasGithubIntegration,
@@ -181,8 +184,16 @@ export default function NewTaskScreen() {
     return DEFAULT_EXECUTION_MODE;
   });
   const [model, setModel] = useState<string>(DEFAULT_MODEL);
-  const [reasoning, setReasoning] =
-    useState<ReasoningEffort>(DEFAULT_REASONING);
+  const [reasoning, setReasoning] = useState<ReasoningEffort>(() => {
+    const prefs = usePreferencesStore.getState();
+    const isValidReasoning = (v: string): v is ReasoningEffort =>
+      REASONING_LEVELS.some((r) => r.value === v);
+    const desired =
+      prefs.defaultReasoningEffort === "last_used"
+        ? prefs.lastUsedReasoningEffort
+        : prefs.defaultReasoningEffort;
+    return isValidReasoning(desired) ? desired : DEFAULT_REASONING;
+  });
   const [creating, setCreating] = useState(false);
   const [repoSheetOpen, setRepoSheetOpen] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
@@ -256,8 +267,28 @@ export default function NewTaskScreen() {
 
     setCreating(true);
 
+    // Echo the prompt into the chat thread the moment the user taps send.
+    // The key is transient until `createTask` returns the real task id, at
+    // which point we `move` it so the detail screen can pick it up.
+    const pendingKey = generatePendingTaskKey();
+    const trimmedPrompt = prompt.trim();
+    const echoAttachments = attachments.map((a) => ({
+      kind: a.kind,
+      uri: a.uri,
+      fileName: a.fileName,
+      mimeType: a.mimeType,
+    }));
+    pendingTaskPromptStoreApi.set(pendingKey, {
+      promptText: trimmedPrompt,
+      attachments: echoAttachments.length > 0 ? echoAttachments : undefined,
+      setAt: Date.now(),
+    });
+
+    // Tracks where the optimistic echo currently lives so the catch block
+    // can clear the correct key regardless of how far the flow got.
+    let currentPendingKey = pendingKey;
+
     try {
-      const trimmedPrompt = prompt.trim();
       // The task description is plain text (it shows up as the task title and
       // in metadata). Attachments only enter the agent prompt via the cloud
       // payload below.
@@ -285,6 +316,9 @@ export default function NewTaskScreen() {
           : {}),
       } as CreateTaskOptions);
 
+      pendingTaskPromptStoreApi.move(pendingKey, task.id);
+      currentPendingKey = task.id;
+
       const pendingUserMessage =
         attachments.length > 0
           ? serializeCloudPrompt(
@@ -311,6 +345,7 @@ export default function NewTaskScreen() {
       router.replace(`/task/${task.id}`);
     } catch (creationError) {
       log.error("Failed to create task", creationError);
+      pendingTaskPromptStoreApi.clear(currentPendingKey);
     } finally {
       setCreating(false);
     }
@@ -682,7 +717,11 @@ export default function NewTaskScreen() {
         open={reasoningSheetOpen}
         title="Reasoning"
         value={reasoning}
-        onChange={(value) => setReasoning(value as ReasoningEffort)}
+        onChange={(value) => {
+          const next = value as ReasoningEffort;
+          setReasoning(next);
+          usePreferencesStore.getState().setLastUsedReasoningEffort(next);
+        }}
         onClose={() => setReasoningSheetOpen(false)}
         options={REASONING_LEVELS.map((reasoningLevel) => ({
           value: reasoningLevel.value,
