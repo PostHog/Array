@@ -1,8 +1,9 @@
-import { useTaskInputPrefillStore } from "@features/task-detail/stores/taskInputPrefillStore";
+import {
+  type TaskInputReportAssociation,
+  useTaskInputPrefillStore,
+} from "@features/task-detail/stores/taskInputPrefillStore";
 import { getCurrentMatches } from "@renderer/navigationBridge";
-import type { Task } from "@shared/types";
 import { useRouterState } from "@tanstack/react-router";
-import { getCachedTask } from "@utils/queryClient";
 import { useMemo } from "react";
 
 export type AppViewType =
@@ -17,14 +18,8 @@ export type AppViewType =
   | "mcp-servers"
   | "settings";
 
-export interface TaskInputReportAssociation {
-  reportId: string;
-  title: string;
-}
-
 export interface AppView {
   type: AppViewType;
-  data?: Task;
   taskId?: string;
   folderId?: string;
   pendingTaskKey?: string;
@@ -46,7 +41,9 @@ function deriveFromMatches(matches: Match[]): AppView {
     case "/code/tasks/$taskId": {
       const taskId = last.params.taskId;
       if (!taskId) return { type: "task-input" };
-      return { type: "task-detail", taskId, data: getCachedTask(taskId) };
+      // Intentionally no `data` snapshot: consumers read live task state via
+      // their own query hooks (e.g. useTasks) keyed on `taskId`.
+      return { type: "task-detail", taskId };
     }
     case "/code/tasks/pending/$key":
       return { type: "task-pending", pendingTaskKey: last.params.key };

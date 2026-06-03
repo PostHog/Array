@@ -1,5 +1,7 @@
 import type { SettingsCategory } from "@features/settings/types";
 import { getRouterOrNull } from "@renderer/routerRef";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import { track } from "@utils/analytics";
 
 // This bridge isolates imperative router calls behind a stable API and, by
 // reaching the router through `routerRef` (a leaf module) rather than importing
@@ -47,6 +49,9 @@ export function navigateToArchived(): void {
 
 export function navigateToCommandCenter(): void {
   void getRouterOrNull()?.navigate({ to: "/command-center" });
+  // Parity with the pre-router navigationStore.navigateToCommandCenter action,
+  // which emitted this event; the route component does not track it.
+  track(ANALYTICS_EVENTS.COMMAND_CENTER_VIEWED);
 }
 
 export function navigateToSkills(): void {
