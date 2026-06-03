@@ -22,6 +22,7 @@ import {
   navigateToInbox,
   navigateToMcpServers,
   navigateToSkills,
+  navigateToTaskDetail,
 } from "@renderer/navigationBridge";
 import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
@@ -211,6 +212,11 @@ function SidebarMenuComponent() {
     const task = taskMap.get(taskId);
     if (task) {
       void openTask(task);
+    } else {
+      // Sidebar rows come from the summaries path, which can include tasks the
+      // full-list query (taskMap) doesn't carry. Don't silently bail — navigate
+      // by id; the task-detail route resolves the task from its own query.
+      navigateToTaskDetail(taskId);
     }
   };
 
