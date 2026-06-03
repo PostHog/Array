@@ -3,7 +3,7 @@ import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import type { ExternalDataSource } from "@renderer/api/posthogClient";
 
 export function useExternalDataSources() {
-  const projectId = useAuthStateValue((state) => state.projectId);
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
   return useAuthenticatedQuery<ExternalDataSource[]>(
     ["external-data-sources", projectId],
     (client) =>

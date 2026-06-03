@@ -587,6 +587,44 @@ export class AgentServer {
     this.logger.debug("Agent server stopped");
   }
 
+  /**
+   * Mark the run failed after an unrecoverable crash (uncaught exception /
+   * unhandled rejection). Without this a hard death is silent: the run row
+   * stays non-terminal, the desktop client just sees the stream stop and shows
+   * a generic "Cloud stream disconnected", and the workflow only gives up after
+   * the multi-hour inactivity timeout. Best-effort and self-contained so it can
+   * run from a process-level handler with no session context.
+   */
+  async reportFatalError(error: unknown): Promise<void> {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    this.logger.error("Fatal agent-server error; marking run failed", error);
+
+    try {
+      await this.posthogAPI.updateTaskRun(
+        this.config.taskId,
+        this.config.runId,
+        {
+          status: "failed",
+          error_message: `Agent server crashed: ${errorMessage}`,
+        },
+      );
+    } catch (updateError) {
+      this.logger.error(
+        "Failed to mark run failed after fatal error",
+        updateError,
+      );
+    }
+
+    try {
+      await this.eventStreamSender?.stop();
+    } catch (stopError) {
+      this.logger.error(
+        "Failed to flush event stream after fatal error",
+        stopError,
+      );
+    }
+  }
+
   private authenticateRequest(
     getHeader: (name: string) => string | undefined,
   ): JwtPayload {
@@ -1645,6 +1683,13 @@ export class AgentServer {
   private buildCloudSystemPrompt(prUrl?: string | null): string {
     const taskId = this.config.taskId;
     const shouldAutoCreatePr = this.shouldAutoPublishCloudChanges();
+    const isSlack = this.getCloudInteractionOrigin() === "slack";
+    const identityInstructions = isSlack
+      ? `
+# Identity
+You are the PostHog Slack app, PostHog's agent for helping users with their product data and coding tasks from Slack. When introducing yourself or referring to yourself in messages to the user, identify as "PostHog Slack app". Do NOT refer to yourself as Claude, an Anthropic assistant, or any underlying model name.
+`
+      : "";
     const signedCommitInstructions = `
 ## Committing (signed commits required)
 Commits MUST be signed. \`git commit\` and \`git push\` are blocked in this environment.
@@ -1663,7 +1708,7 @@ we want:
 
     if (prUrl) {
       if (!shouldAutoCreatePr) {
-        return `
+        return `${identityInstructions}
 # Cloud Task Execution
 
 This task already has an open pull request: ${prUrl}
@@ -1677,7 +1722,7 @@ ${signedCommitInstructions}
 `;
       }
 
-      return `
+      return `${identityInstructions}
 # Cloud Task Execution
 
 This task already has an open pull request: ${prUrl}
@@ -1711,7 +1756,7 @@ When the user explicitly asks to clone or work in a GitHub repository:
 - If the user explicitly asks you to open or update a pull request, create a branch, stage your changes with \`git add\` and commit them with the \`git_signed_commit\` tool (do NOT use \`git commit\`/\`git push\` — they are blocked), and open a draft pull request from inside the clone. Before opening the PR, check the cloned repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links.
 - Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
 
-      return `
+      return `${identityInstructions}
 # Cloud Task Execution — No Repository Mode
 
 You are a helpful assistant with access to PostHog via MCP tools. You can help with both code tasks and data/analytics questions.
@@ -1733,7 +1778,7 @@ ${signedCommitInstructions}
     }
 
     if (!shouldAutoCreatePr) {
-      return `
+      return `${identityInstructions}
 # Cloud Task Execution
 
 Do the requested work, but stop with local changes ready for review.
@@ -1744,7 +1789,7 @@ ${signedCommitInstructions}
 `;
     }
 
-    return `
+    return `${identityInstructions}
 # Cloud Task Execution
 
 After completing the requested changes:
@@ -1893,7 +1938,9 @@ ${signedCommitInstructions}
     // Forward task metadata as `x-posthog-property-*` headers so the gateway
     // lifts them onto the $ai_generation event. Routes through the Anthropic
     // SDK's ANTHROPIC_CUSTOM_HEADERS env var; the OpenAI/codex path has no
-    // equivalent today.
+    // equivalent today. (The `team_id` attribution header is added downstream
+    // in the Claude session builder from POSTHOG_PROJECT_ID — see
+    // adapters/claude/session/options.ts.)
     const customHeaders = buildGatewayPropertyHeaders({
       task_origin_product: originProduct,
       task_internal: isInternal,

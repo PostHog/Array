@@ -351,7 +351,7 @@ export class SetupRunService {
       const apiHost = authState.cloudRegion
         ? getCloudUrlFromRegion(authState.cloudRegion)
         : null;
-      const projectId = authState.projectId;
+      const projectId = authState.currentProjectId;
 
       if (!apiHost || !projectId) {
         log.error("Missing auth for discovery", { apiHost, projectId });

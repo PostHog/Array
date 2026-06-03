@@ -58,7 +58,7 @@ function getPanelMessage(opts: {
 
 export function GitHubConnectPanel() {
   const queryClient = useQueryClient();
-  const currentProjectId = useAuthStateValue((state) => state.projectId);
+  const currentProjectId = useAuthStateValue((state) => state.currentProjectId);
   const { projects, projectsWithGithub, isLoading } =
     useProjectsWithIntegrations();
   const manuallySelectedProjectId = useOnboardingStore(

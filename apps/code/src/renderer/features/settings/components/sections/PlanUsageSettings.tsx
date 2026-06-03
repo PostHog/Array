@@ -1,4 +1,4 @@
-import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
+import { useSwitchOrgMutation } from "@features/auth/hooks/authMutations";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { TokenSpendAnalysisBanner } from "@features/billing/components/TokenSpendAnalysisBanner";
 import { useUsage } from "@features/billing/hooks/useUsage";
@@ -34,21 +34,6 @@ const log = logger.scope("plan-usage");
 
 const SPEND_ANALYSIS_FLAG = "posthog-code-spend-analysis";
 
-async function openBillingPage(orgId: string | null): Promise<void> {
-  if (orgId) {
-    try {
-      const client = await getAuthenticatedClient();
-      if (client) {
-        await client.switchOrganization(orgId);
-      }
-    } catch (err) {
-      log.warn("Failed to switch org before opening billing", err);
-    }
-  }
-  const url = getBillingUrl();
-  if (url) window.open(url, "_blank");
-}
-
 export function PlanUsageSettings() {
   const {
     seat,
@@ -65,7 +50,34 @@ export function PlanUsageSettings() {
   const { fetchSeat, upgradeToPro, cancelSeat, reactivateSeat, clearError } =
     useSeatStore();
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
+  const currentOrgId = useAuthStateValue((state) => state.currentOrgId);
+  const switchOrgMutation = useSwitchOrgMutation();
   const billingUrl = getBillingUrl(cloudRegion);
+
+  async function switchOrgAndRefreshSeat(orgId: string): Promise<void> {
+    await switchOrgMutation.mutateAsync(orgId);
+    await fetchSeat({ autoProvision: true });
+  }
+
+  async function openBillingPage(orgId: string | null): Promise<void> {
+    if (orgId && orgId !== currentOrgId) {
+      try {
+        await switchOrgAndRefreshSeat(orgId);
+      } catch (err) {
+        log.warn("Failed to switch org before opening billing", err);
+        return;
+      }
+    }
+    if (billingUrl) window.open(billingUrl, "_blank");
+  }
+
+  async function switchToBillingOrg(orgId: string): Promise<void> {
+    try {
+      await switchOrgAndRefreshSeat(orgId);
+    } catch (err) {
+      log.warn("Failed to switch to billing org", err);
+    }
+  }
   const redirectFullUrl = redirectUrl
     ? (getPostHogUrl(redirectUrl, cloudRegion) ?? billingUrl)
     : null;
@@ -177,10 +189,37 @@ export function PlanUsageSettings() {
           <Callout.Icon>
             <Info size={16} />
           </Callout.Icon>
-          <Callout.Text className="text-sm">
-            You have a Pro plan on{" "}
-            <Text weight="medium">{seat.organization_name}</Text>. Usage on this
-            page reflects your current organization.
+          <Callout.Text>
+            <Flex direction="column" gap="2">
+              <Text className="text-sm">
+                You have a Pro plan on{" "}
+                <Text weight="medium">{seat.organization_name}</Text>. Usage on
+                this page reflects your current organization.
+              </Text>
+              {billingOrgId && (
+                <Flex direction="column" gap="1" className="self-start">
+                  <Button
+                    size="1"
+                    variant="outline"
+                    disabled={switchOrgMutation.isPending}
+                    onClick={() => {
+                      void switchToBillingOrg(billingOrgId);
+                    }}
+                  >
+                    {switchOrgMutation.isPending ? (
+                      <Spinner size="1" />
+                    ) : (
+                      `Switch to ${seat.organization_name ?? "Pro org"}`
+                    )}
+                  </Button>
+                  {switchOrgMutation.isError && (
+                    <Text className="text-(--red-11) text-[12px]">
+                      Switching failed. Try again or switch from the sidebar.
+                    </Text>
+                  )}
+                </Flex>
+              )}
+            </Flex>
           </Callout.Text>
         </Callout.Root>
       )}

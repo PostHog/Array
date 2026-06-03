@@ -89,7 +89,7 @@ export function UserMessage({
       >
         <Box
           ref={contentRef}
-          className="relative overflow-hidden font-medium text-[13px] [&>*:last-child]:mb-0"
+          className="relative overflow-hidden font-medium text-[13px] [&>*:last-child]:mb-0 [&_p]:leading-[1.9]"
           style={
             !isExpanded && isOverflowing
               ? { maxHeight: COLLAPSED_MAX_HEIGHT }

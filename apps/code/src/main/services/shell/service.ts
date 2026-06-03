@@ -23,6 +23,7 @@ declare module "node-pty" {
 
 const log = logger.scope("shell");
 const PTY_ENCODING = "utf8";
+const DESTROYED_EXIT_CODE = 130;
 
 export interface ShellSession {
   pty: pty.IPty;
@@ -314,6 +315,10 @@ export class ShellService extends TypedEventEmitter<ShellEvents> {
       }
       session.pty.destroy();
       this.sessions.delete(sessionId);
+      this.emit(ShellEvent.Exit, {
+        sessionId,
+        exitCode: DESTROYED_EXIT_CODE,
+      });
     }
   }
 

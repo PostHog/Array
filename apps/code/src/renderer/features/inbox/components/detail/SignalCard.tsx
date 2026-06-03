@@ -616,7 +616,7 @@ function SessionRecordingVideo({
   exportedAssetId?: number;
   sessionId: string;
 }) {
-  const projectId = useAuthStateValue((state) => state.projectId);
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hasFiredPlayRef = useRef(false);
   const interaction = useSignalInteraction();
@@ -680,7 +680,7 @@ function ErrorTrackingSignalCard({
   codePaths?: string[];
   dataQueried?: string;
 }) {
-  const projectId = useAuthStateValue((s) => s.projectId);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const issueUrl = signal.source_id
     ? errorTrackingIssueUrl(signal.source_id, { projectId, cloudRegion })

@@ -26,7 +26,7 @@ function useAuthFlowMutation(
       await refreshAuthStateQuery();
       useAuthUiStateStore.getState().clearStaleRegion();
       track(ANALYTICS_EVENTS.USER_LOGGED_IN, {
-        project_id: state.projectId?.toString() ?? "",
+        project_id: state.currentProjectId?.toString() ?? "",
         region,
       });
     },
@@ -55,6 +55,19 @@ export function useSelectProjectMutation() {
       clearAuthScopedQueries();
       await refreshAuthStateQuery();
       useNavigationStore.getState().navigateToTaskInput();
+    },
+  });
+}
+
+export function useSwitchOrgMutation() {
+  return useMutation({
+    mutationFn: async (orgId: string) => {
+      resetSessionService();
+      return await trpcClient.auth.switchOrg.mutate({ orgId });
+    },
+    onSuccess: async () => {
+      clearAuthScopedQueries();
+      await refreshAuthStateQuery();
     },
   });
 }

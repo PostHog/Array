@@ -41,6 +41,14 @@ export const signedCommitToolSchema = {
     .describe(
       "Files to stage before committing; defaults to already-staged files.",
     ),
+  cwd: z
+    .string()
+    .optional()
+    .describe(
+      "Path to the git checkout to commit from; defaults to the session's working directory. " +
+        "Pass this when committing to a clone outside the session cwd (e.g. a sibling repo cloned during the run). " +
+        "Relative paths resolve against the session cwd.",
+    ),
 };
 
 export function formatSignedCommitResult(result: SignedCommitResult): string {

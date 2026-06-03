@@ -23,6 +23,8 @@ minimumReleaseAgeExclude:
   - '@pierre/diffs'
   - '@posthog/quill'
   - '@posthog/quill-tokens'
+  - '@tanstack/react-virtual'
+  - '@tanstack/virtual-core'
 
 onlyBuiltDependencies:
   - '@parcel/watcher'

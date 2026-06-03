@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import { isCloudRun } from "../../../utils/common";
 import { resolveGithubToken } from "../../../utils/github-token";
 import {
@@ -37,9 +38,12 @@ export const signedCommitTool = defineLocalTool({
         isError: true,
       });
     }
-    return runSignedCommitTool(
-      { cwd: ctx.cwd, token, taskId: ctx.taskId },
-      args,
-    );
+    // Resolve an explicit `cwd` arg against the session cwd so the agent can
+    // commit from any clone reachable in the sandbox, not just the one the
+    // session was rooted at. Absolute paths fall through `path.resolve`
+    // unchanged; relative paths join the session cwd.
+    const { cwd: argCwd, ...input } = args;
+    const cwd = argCwd ? path.resolve(ctx.cwd, argCwd) : ctx.cwd;
+    return runSignedCommitTool({ cwd, token, taskId: ctx.taskId }, input);
   },
 });

@@ -187,6 +187,27 @@ program
       process.exit(0);
     });
 
+    // A hard crash would otherwise leave the run non-terminal and the user staring
+    // at a generic "Cloud stream disconnected". Mark the run failed before exiting
+    // so the desktop surfaces a real error instead of a silent stall. The deadline
+    // guarantees we exit even if reportFatalError's network calls hang at crash time
+    // (e.g. API unreachable during a restart), so we never block pod shutdown.
+    const FATAL_ERROR_REPORT_DEADLINE_MS = 5_000;
+    const handleFatalError = async (error: unknown) => {
+      try {
+        await Promise.race([
+          server.reportFatalError(error),
+          new Promise((resolve) =>
+            setTimeout(resolve, FATAL_ERROR_REPORT_DEADLINE_MS).unref(),
+          ),
+        ]);
+      } finally {
+        process.exit(1);
+      }
+    };
+    process.on("uncaughtException", handleFatalError);
+    process.on("unhandledRejection", handleFatalError);
+
     await server.start();
   });
 

@@ -22,11 +22,48 @@ interface TerminalStoreState {
   stopPolling: (key: string) => void;
 }
 
+type PersistedTerminalStoreState = {
+  terminalStates: Record<
+    string,
+    {
+      serializedState: string | null;
+      sessionId: null;
+    }
+  >;
+};
+
 const DEFAULT_TERMINAL_STATE: TerminalState = {
   serializedState: null,
   sessionId: null,
   processName: null,
 };
+
+export function clearPersistedSessionIds(persistedState: unknown) {
+  if (!persistedState || typeof persistedState !== "object") {
+    return persistedState;
+  }
+
+  const state = persistedState as {
+    terminalStates?: Record<string, Partial<TerminalState>>;
+  };
+
+  if (!state.terminalStates || typeof state.terminalStates !== "object") {
+    return persistedState;
+  }
+
+  return {
+    ...state,
+    terminalStates: Object.fromEntries(
+      Object.entries(state.terminalStates).map(([key, value]) => [
+        key,
+        {
+          ...value,
+          sessionId: null,
+        },
+      ]),
+    ),
+  };
+}
 
 export const useTerminalStore = create<TerminalStoreState>()(
   persist(
@@ -132,11 +169,14 @@ export const useTerminalStore = create<TerminalStoreState>()(
     }),
     {
       name: "terminal-store",
-      partialize: (state) => ({
+      version: 1,
+      migrate: (persistedState) =>
+        clearPersistedSessionIds(persistedState) as PersistedTerminalStoreState,
+      partialize: (state): PersistedTerminalStoreState => ({
         terminalStates: Object.fromEntries(
           Object.entries(state.terminalStates).map(([k, v]) => [
             k,
-            { serializedState: v.serializedState, sessionId: v.sessionId },
+            { serializedState: v.serializedState, sessionId: null },
           ]),
         ),
       }),

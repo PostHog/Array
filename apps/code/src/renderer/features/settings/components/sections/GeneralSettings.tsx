@@ -531,7 +531,7 @@ export function GeneralSettings() {
 }
 
 function HedgehogDescription() {
-  const projectId = useAuthStateValue((state) => state.projectId);
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
 
   const customizeUrl = projectId

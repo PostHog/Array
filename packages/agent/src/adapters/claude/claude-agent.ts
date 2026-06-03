@@ -1089,7 +1089,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // We allocate a fresh controller for the new Query below so aborting
     // the old one doesn't poison it.
     prev.abortController.abort();
-    await prev.query.interrupt();
+    try {
+      await prev.query.interrupt();
+    } catch (error) {
+      this.logger.debug("Ignoring interrupt error during session refresh", {
+        sessionId: this.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     prev.input.end();
 
     // Reuse every option from the running session; swap mcpServers, re-root

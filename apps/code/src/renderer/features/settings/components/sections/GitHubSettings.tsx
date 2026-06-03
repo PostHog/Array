@@ -52,7 +52,7 @@ function githubInstallationSettingsUrl(integration: UserGitHubIntegration) {
 }
 
 export function GitHubSettings() {
-  const projectId = useAuthStateValue((s) => s.projectId);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const { data: integrations = [], isLoading } = useUserGithubIntegrations();
   const { reposByInstallationId, failedInstallationIds, isLoadingRepos } =
@@ -149,7 +149,7 @@ function GitHubIntegrationRow({
   isLoadingRepos,
 }: GitHubIntegrationRowProps) {
   const apiClient = useOptionalAuthenticatedClient();
-  const projectId = useAuthStateValue((s) => s.projectId);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
