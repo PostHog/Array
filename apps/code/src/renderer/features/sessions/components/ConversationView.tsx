@@ -11,6 +11,7 @@ import {
 } from "@features/sessions/stores/sessionStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { SkillButtonActionMessage } from "@features/skill-buttons/components/SkillButtonActionMessage";
+import { useFrameThrottledValue } from "@hooks/useFrameThrottledValue";
 import { ArrowDown, XCircle } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import WorkerUrl from "@pierre/diffs/worker/worker.js?worker&url";
@@ -82,7 +83,13 @@ export function ConversationView({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const debugLogsCloudRuns = useSettingsStore((s) => s.debugLogsCloudRuns);
   const showDebugLogs = debugLogsCloudRuns;
-  const contextUsage = useContextUsage(events);
+
+  // Streaming appends one event per token, so `events` changes far faster than
+  // the screen can paint. Coalesce to one rebuild per frame — each rebuild
+  // re-parses the whole history, so capping the rate is what keeps long threads
+  // responsive while streaming. Settles on the exact final state within a frame.
+  const throttledEvents = useFrameThrottledValue(events);
+  const contextUsage = useContextUsage(throttledEvents);
 
   const {
     items: conversationItems,
@@ -90,10 +97,10 @@ export function ConversationView({
     isCompacting,
   } = useMemo(
     () =>
-      buildConversationItems(events, isPromptPending, {
+      buildConversationItems(throttledEvents, isPromptPending, {
         showDebugLogs,
       }),
-    [events, isPromptPending, showDebugLogs],
+    [throttledEvents, isPromptPending, showDebugLogs],
   );
 
   const firstUserMessageIdRef = useRef<string | undefined>(undefined);
