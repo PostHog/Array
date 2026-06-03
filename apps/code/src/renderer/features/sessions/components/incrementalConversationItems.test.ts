@@ -264,14 +264,17 @@ const SCENARIOS: Record<string, AcpMessage[]> = {
   ],
 };
 
+const EQUIVALENCE_CASES = Object.entries(SCENARIOS).flatMap(([name, events]) =>
+  ([true, false, null] as const).map((pending) => ({ name, events, pending })),
+);
+
 describe("createIncrementalConversationBuilder", () => {
-  for (const [name, events] of Object.entries(SCENARIOS)) {
-    for (const pending of [true, false, null] as const) {
-      it(`matches buildConversationItems at every prefix — ${name} (pending=${pending})`, () => {
-        assertEquivalentAcrossPrefixes(events, pending);
-      });
-    }
-  }
+  it.each(EQUIVALENCE_CASES)(
+    "matches buildConversationItems at every prefix — $name (pending=$pending)",
+    ({ events, pending }) => {
+      assertEquivalentAcrossPrefixes(events, pending);
+    },
+  );
 
   it("keeps completed-turn item references stable while the active turn streams", () => {
     const inc = createIncrementalConversationBuilder();
