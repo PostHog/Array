@@ -1,5 +1,6 @@
 import { CHAT_CONTENT_MAX_WIDTH } from "@features/sessions/constants";
 import { useContextUsage } from "@features/sessions/hooks/useContextUsage";
+import { useConversationItems } from "@features/sessions/hooks/useConversationItems";
 import { useConversationSearch } from "@features/sessions/hooks/useConversationSearch";
 import { SessionTaskIdProvider } from "@features/sessions/hooks/useSessionTaskId";
 import {
@@ -25,11 +26,7 @@ import { Box, Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import type { AcpMessage } from "@shared/types/session-events";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  buildConversationItems,
-  type ConversationItem,
-  type TurnContext,
-} from "./buildConversationItems";
+import type { ConversationItem, TurnContext } from "./buildConversationItems";
 import { ConversationSearchBar } from "./ConversationSearchBar";
 import { GitActionMessage } from "./GitActionMessage";
 import { GitActionResult } from "./GitActionResult";
@@ -85,9 +82,9 @@ export function ConversationView({
   const showDebugLogs = debugLogsCloudRuns;
 
   // Streaming appends one event per token, so `events` changes far faster than
-  // the screen can paint. Coalesce to one rebuild per frame — each rebuild
-  // re-parses the whole history, so capping the rate is what keeps long threads
-  // responsive while streaming. Settles on the exact final state within a frame.
+  // the screen can paint. Coalesce to one parse per frame; the parse itself is
+  // incremental (completed turns reused by reference) so per-frame cost tracks
+  // the active turn, not the whole thread. Settles on the exact final state.
   const throttledEvents = useFrameThrottledValue(events);
   const contextUsage = useContextUsage(throttledEvents);
 
@@ -95,13 +92,9 @@ export function ConversationView({
     items: conversationItems,
     lastTurnInfo,
     isCompacting,
-  } = useMemo(
-    () =>
-      buildConversationItems(throttledEvents, isPromptPending, {
-        showDebugLogs,
-      }),
-    [throttledEvents, isPromptPending, showDebugLogs],
-  );
+  } = useConversationItems(throttledEvents, isPromptPending, {
+    showDebugLogs,
+  });
 
   const firstUserMessageIdRef = useRef<string | undefined>(undefined);
   if (firstUserMessageIdRef.current === undefined) {
