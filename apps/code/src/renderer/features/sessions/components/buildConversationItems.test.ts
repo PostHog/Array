@@ -74,6 +74,38 @@ function turnCompleteMsg(ts: number, stopReason = "end_turn"): AcpMessage {
   };
 }
 
+function agentMessageMsg(ts: number, text: string): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text },
+        },
+      },
+    },
+  };
+}
+
+function resourcesUsedMsg(
+  ts: number,
+  products: { id: string; label: string }[],
+): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "_posthog/resources_used",
+      params: { sessionId: "session-1", products },
+    },
+  };
+}
+
 describe("buildConversationItems", () => {
   it("extracts cloud prompt attachments into user messages", () => {
     const uri = makeAttachmentUri("/tmp/hello world.txt");
@@ -419,6 +451,63 @@ describe("buildConversationItems", () => {
 
       const result = buildConversationItems(events, null);
       expect(findProgressGroups(result.items)).toHaveLength(0);
+    });
+  });
+
+  describe("resources_used", () => {
+    it("renders a resources_used item after the turn's final message", () => {
+      const products = [
+        { id: "experiments", label: "Experiments" },
+        { id: "sql", label: "SQL" },
+      ];
+      const events: AcpMessage[] = [
+        userPromptMsg(1, 1, "list my experiments"),
+        agentMessageMsg(2, "Here are your experiments."),
+        resourcesUsedMsg(3, products),
+        promptResponseMsg(4, 1),
+      ];
+
+      const result = buildConversationItems(events, false);
+
+      const idx = result.items.findIndex(
+        (i) =>
+          i.type === "session_update" &&
+          i.update.sessionUpdate === "resources_used",
+      );
+      expect(idx).toBeGreaterThanOrEqual(0);
+
+      // Must land after the agent's final message in the turn.
+      const msgIdx = result.items.findIndex(
+        (i) =>
+          i.type === "session_update" &&
+          i.update.sessionUpdate === "agent_message_chunk",
+      );
+      expect(idx).toBeGreaterThan(msgIdx);
+
+      const item = result.items[idx];
+      if (
+        item.type === "session_update" &&
+        item.update.sessionUpdate === "resources_used"
+      ) {
+        expect(item.update.products).toEqual(products);
+      }
+    });
+
+    it("ignores a resources_used notification with no products", () => {
+      const events: AcpMessage[] = [
+        userPromptMsg(1, 1, "hi"),
+        resourcesUsedMsg(2, []),
+        promptResponseMsg(3, 1),
+      ];
+
+      const result = buildConversationItems(events, false);
+      expect(
+        result.items.some(
+          (i) =>
+            i.type === "session_update" &&
+            i.update.sessionUpdate === "resources_used",
+        ),
+      ).toBe(false);
     });
   });
 });

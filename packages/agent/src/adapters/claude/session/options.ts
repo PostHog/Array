@@ -58,6 +58,8 @@ export interface BuildOptionsParams {
   effort?: EffortLevel;
   enrichmentDeps?: FileEnrichmentDeps;
   enrichedReadCache?: EnrichedReadCache;
+  /** Records PostHog product usage from MCP exec calls (per-turn summary). */
+  onPostHogResourceUsed?: (subTool: string) => void;
   /** Cloud task session — enables the signed-commit guard. */
   cloudMode?: boolean;
   /** Per-session task state populated by createTaskHook from SDK Task* events. */
@@ -160,6 +162,7 @@ function buildEnvironment(): Record<string, string> {
 function buildHooks(
   userHooks: Options["hooks"],
   onModeChange: OnModeChange | undefined,
+  onPostHogResourceUsed: ((subTool: string) => void) | undefined,
   settingsManager: SettingsManager,
   logger: Logger,
   enrichmentDeps: FileEnrichmentDeps | undefined,
@@ -169,7 +172,9 @@ function buildHooks(
   taskState: TaskState,
   onTaskStateChange: (() => Promise<void>) | undefined,
 ): Options["hooks"] {
-  const postToolUseHooks = [createPostToolUseHook({ onModeChange })];
+  const postToolUseHooks = [
+    createPostToolUseHook({ onModeChange, onPostHogResourceUsed }),
+  ];
   if (enrichmentDeps && enrichedReadCache) {
     postToolUseHooks.push(
       createReadEnrichmentHook(enrichmentDeps, enrichedReadCache),
@@ -393,6 +398,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     hooks: buildHooks(
       params.userProvidedOptions?.hooks,
       params.onModeChange,
+      params.onPostHogResourceUsed,
       params.settingsManager,
       params.logger,
       params.enrichmentDeps,

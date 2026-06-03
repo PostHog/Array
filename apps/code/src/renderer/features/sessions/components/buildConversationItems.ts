@@ -9,7 +9,11 @@ import {
   extractSkillButtonId,
   type SkillButtonId,
 } from "@features/skill-buttons/prompts";
-import { isNotification, POSTHOG_NOTIFICATIONS } from "@posthog/agent";
+import {
+  isNotification,
+  POSTHOG_NOTIFICATIONS,
+  type PostHogProductId,
+} from "@posthog/agent";
 import {
   type AcpMessage,
   isJsonRpcNotification,
@@ -377,6 +381,19 @@ function handleNotification(
       ensureImplicitTurn(b, ts);
     }
     processSessionUpdate(b, update);
+    return;
+  }
+
+  if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.RESOURCES_USED)) {
+    const params = msg.params as
+      | { products?: { id: PostHogProductId; label: string }[] }
+      | undefined;
+    if (!params?.products?.length) return;
+    if (!b.currentTurn) ensureImplicitTurn(b, ts);
+    pushItem(b, {
+      sessionUpdate: "resources_used",
+      products: params.products,
+    });
     return;
   }
 

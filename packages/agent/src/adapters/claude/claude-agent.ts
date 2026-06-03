@@ -53,6 +53,10 @@ import {
   POSTHOG_NOTIFICATIONS,
 } from "../../acp-extensions";
 import {
+  classifyPostHogSubTool,
+  POSTHOG_PRODUCTS,
+} from "../../posthog-products";
+import {
   createEnrichment,
   type Enrichment,
   type FileEnrichmentDeps,
@@ -435,6 +439,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       cachedReadTokens: 0,
       cachedWriteTokens: 0,
     };
+    this.session.turnResources.clear();
 
     await this.broadcastUserMessage(params);
 
@@ -639,6 +644,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 },
               });
 
+              await this.emitResourcesUsed(params.sessionId);
+
               return {
                 stopReason: this.session.cancelled ? "cancelled" : "end_turn",
               };
@@ -727,6 +734,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 ),
               },
             );
+
+            await this.emitResourcesUsed(params.sessionId);
 
             const usage: Usage = {
               inputTokens: this.session.accumulatedUsage.inputTokens,
@@ -1405,6 +1414,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       outputFormat,
       settingsManager,
       onModeChange: this.createOnModeChange(),
+      onPostHogResourceUsed: this.createOnPostHogResourceUsed(),
       onProcessSpawned: this.options?.onProcessSpawned,
       onProcessExited: this.options?.onProcessExited,
       effort,
@@ -1442,6 +1452,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         cachedReadTokens: 0,
         cachedWriteTokens: 0,
       },
+      turnResources: new Set(),
       effort,
       configOptions: [],
       promptRunning: false,
@@ -1642,6 +1653,30 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
       await this.updateConfigOption("mode", newMode);
     };
+  }
+
+  /** Records the PostHog product behind an executed MCP exec `call` so the
+   *  current turn can report which products it touched. */
+  private createOnPostHogResourceUsed() {
+    return (subTool: string) => {
+      const product = classifyPostHogSubTool(subTool);
+      if (product) this.session?.turnResources.add(product);
+    };
+  }
+
+  /** Emits the PostHog products used this turn, then clears the accumulator.
+   *  Fires before the prompt response so the notification lands in the turn. */
+  private async emitResourcesUsed(sessionId: string): Promise<void> {
+    if (!this.session || this.session.turnResources.size === 0) return;
+    const products = [...this.session.turnResources].map((id) => ({
+      id,
+      label: POSTHOG_PRODUCTS[id],
+    }));
+    this.session.turnResources.clear();
+    await this.client.extNotification(POSTHOG_NOTIFICATIONS.RESOURCES_USED, {
+      sessionId,
+      products,
+    });
   }
 
   private getExistingSessionState(
