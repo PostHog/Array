@@ -1,13 +1,12 @@
-# Home workflow architecture (production)
+# Home workflow architecture
 
 The Home tab's data layer — workstream grouping, PR polling, situation
 classification, and workflow-config persistence — runs **server-side in
 PostHog**, in the `tasks` product (`products/tasks/` in the posthog repo). The
 Electron app is a thin authenticated client.
 
-This replaced the original local POC (Electron `gh` polling + SQLite workflow
-storage + client-side classification). If you change the wire shapes or the
-classification logic, update both sides and this doc.
+The Electron app and the PostHog `tasks` product share wire shapes and
+classification logic — if you change either, update both sides and this doc.
 
 ---
 

@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-import { execGh, execGhWithRetry } from "@posthog/git/gh";
+import { execGh } from "@posthog/git/gh";
 import {
   getAllBranches,
   getBranchDiffPatchesByPath,
@@ -37,7 +37,6 @@ import { DiscardFileChangesSaga } from "@posthog/git/sagas/discard";
 import { PullSaga } from "@posthog/git/sagas/pull";
 import { PushSaga } from "@posthog/git/sagas/push";
 import { parseGithubUrl } from "@posthog/git/utils";
-import type { PrSnapshot } from "@shared/types/pr-snapshot";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
@@ -114,95 +113,6 @@ export function mapPrState(
   return null;
 }
 
-// gh's PR `state` is OPEN | CLOSED | MERGED; draftness is a separate flag.
-// Collapse both into the PrSnapshot lifecycle the classifier understands.
-export function mapPrSnapshotState(
-  state: string | null | undefined,
-  isDraft: boolean | undefined,
-): PrSnapshot["state"] {
-  switch (state?.toUpperCase()) {
-    case "MERGED":
-      return "merged";
-    case "CLOSED":
-      return "closed";
-    default:
-      return isDraft ? "draft" : "open";
-  }
-}
-
-export function mapPrReviewDecision(
-  decision: string | null | undefined,
-): PrSnapshot["reviewDecision"] {
-  switch (decision?.toUpperCase()) {
-    case "APPROVED":
-      return "approved";
-    case "CHANGES_REQUESTED":
-      return "changes_requested";
-    case "REVIEW_REQUIRED":
-      return "review_required";
-    default:
-      return null;
-  }
-}
-
-export function mapPrMergeable(
-  mergeable: string | null | undefined,
-): boolean | null {
-  switch (mergeable?.toUpperCase()) {
-    case "MERGEABLE":
-      return true;
-    case "CONFLICTING":
-      return false;
-    default:
-      return null;
-  }
-}
-
-type GhCheckRollupEntry = {
-  __typename?: string;
-  // CheckRun
-  status?: string | null;
-  conclusion?: string | null;
-  // StatusContext
-  state?: string | null;
-};
-
-const FAILING_CHECK_CONCLUSIONS = new Set([
-  "FAILURE",
-  "TIMED_OUT",
-  "CANCELLED",
-  "ACTION_REQUIRED",
-  "STARTUP_FAILURE",
-]);
-
-// Aggregate gh's per-check `statusCheckRollup` into a single CI verdict.
-// Precedence is failing > pending > passing: one red check makes the PR red
-// even if others are still running.
-export function mapCiStatus(
-  rollup: GhCheckRollupEntry[] | null | undefined,
-): PrSnapshot["ciStatus"] {
-  if (!rollup || rollup.length === 0) return "none";
-  let pending = false;
-  for (const entry of rollup) {
-    if (entry.__typename === "StatusContext") {
-      const state = entry.state?.toUpperCase();
-      if (state === "FAILURE" || state === "ERROR") return "failing";
-      if (state === "PENDING" || state === "EXPECTED") pending = true;
-      continue;
-    }
-    // CheckRun (the common case for GitHub Actions).
-    const status = entry.status?.toUpperCase();
-    if (status !== "COMPLETED") {
-      pending = true;
-      continue;
-    }
-    const conclusion = entry.conclusion?.toUpperCase() ?? null;
-    if (conclusion && FAILING_CHECK_CONCLUSIONS.has(conclusion))
-      return "failing";
-  }
-  return pending ? "pending" : "passing";
-}
-
 /**
  * Wraps a GitHub API per-file patch (hunk content only) with
  * the `diff --git` / `---` / `+++` header so that unified-diff
@@ -223,9 +133,6 @@ function toUnifiedDiffPatch(
 @injectable()
 export class GitService extends TypedEventEmitter<GitServiceEvents> {
   private lastFetchTime = new Map<string, number>();
-  // Resolved once: the gh-authenticated user, used to decide whether a PR is
-  // "mine". `undefined` = not looked up yet, `null` = lookup failed/unknown.
-  private viewerLogin: string | null | undefined;
 
   constructor(
     @inject(MAIN_TOKENS.LlmGatewayService)
@@ -1272,101 +1179,6 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
       log.warn("Failed to fetch PR details", { prUrl, error });
       return null;
     }
-  }
-
-  private async getViewerLogin(): Promise<string | null> {
-    if (this.viewerLogin !== undefined) return this.viewerLogin;
-    const result = await execGh(["api", "user", "--jq", ".login"]);
-    this.viewerLogin =
-      result.exitCode === 0 ? result.stdout.trim() || null : null;
-    return this.viewerLogin;
-  }
-
-  /**
-   * Rich PR snapshot for the home tab: lifecycle state, CI verdict, review
-   * decision, mergeability, and (for the user's own open PRs) the unresolved
-   * review-thread count. Local gh implementation of the PR-polling concern; the
-   * production PostHog worker produces the same shape (docs/workflow-architecture.md §5).
-   */
-  public async getPrFull(prUrl: string): Promise<PrSnapshot | null> {
-    const ref = parseGithubUrl(prUrl);
-    if (ref?.kind !== "pr") return null;
-
-    const result = await execGhWithRetry(
-      [
-        "pr",
-        "view",
-        prUrl,
-        "--json",
-        "number,title,state,isDraft,mergeable,reviewDecision,statusCheckRollup,author,reviewRequests,updatedAt,url",
-      ],
-      { timeoutMs: 15_000 },
-    );
-
-    if (result.exitCode !== 0) {
-      log.warn("Failed to fetch PR snapshot", {
-        prUrl,
-        error: result.stderr || result.error,
-      });
-      return null;
-    }
-
-    let data: {
-      number?: number;
-      title?: string;
-      state?: string;
-      isDraft?: boolean;
-      mergeable?: string;
-      reviewDecision?: string;
-      statusCheckRollup?: GhCheckRollupEntry[];
-      author?: { login?: string } | null;
-      reviewRequests?: Array<{ login?: string }>;
-      updatedAt?: string;
-      url?: string;
-    };
-    try {
-      data = JSON.parse(result.stdout);
-    } catch (error) {
-      log.warn("PR snapshot JSON is not parseable", { prUrl, error });
-      return null;
-    }
-
-    const viewer = await this.getViewerLogin();
-    const authorLogin = data.author?.login ?? null;
-    const isCurrentUserAuthor = !!viewer && authorLogin === viewer;
-    const isCurrentUserRequestedReviewer =
-      !!viewer && (data.reviewRequests ?? []).some((r) => r.login === viewer);
-    const state = mapPrSnapshotState(data.state, data.isDraft);
-
-    // Unresolved threads only drive the `comments_waiting` situation, which is
-    // scoped to the author's own live PRs — so only pay for the extra GraphQL
-    // call there, and never block the snapshot if it fails.
-    let unresolvedThreads = 0;
-    if (isCurrentUserAuthor && (state === "open" || state === "draft")) {
-      try {
-        const threads = await this.getPrReviewComments(prUrl);
-        unresolvedThreads = threads.filter((t) => !t.isResolved).length;
-      } catch (error) {
-        log.warn("Failed to count unresolved review threads", { prUrl, error });
-      }
-    }
-
-    return {
-      url: data.url ?? prUrl,
-      number: data.number ?? ref.number,
-      title: data.title ?? "",
-      state,
-      ciStatus: mapCiStatus(data.statusCheckRollup),
-      reviewDecision: mapPrReviewDecision(data.reviewDecision),
-      unresolvedThreads,
-      mergeable: mapPrMergeable(data.mergeable),
-      isCurrentUserRequestedReviewer,
-      isCurrentUserAuthor,
-      author: authorLogin,
-      lastUpdatedAt: data.updatedAt
-        ? new Date(data.updatedAt).getTime()
-        : Date.now(),
-    };
   }
 
   public async updatePrByUrl(

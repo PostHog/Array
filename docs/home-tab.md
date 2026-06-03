@@ -298,8 +298,7 @@ The board renders one column per step/queue node in the order above; the list re
 
 Per R1 / R2 / R3: even though the canvas is the most visually expensive surface in the app, no business logic lives in the renderer.
 
-- **`WorkflowService` (main).** Owns the canonical `WorkflowConfig`, validation, version bumps, the built-in default, and the `match`-predicate evaluator used by `HomeService` for classification. Pure functions; no `electron` imports. Emits `WorkflowChanged` events that `HomeService` subscribes to so a config edit immediately reclassifies every workstream and pushes a new snapshot.
-- **`WorkflowRepository` (main).** SQLite table `home_workflow_config(id, version, json, updated_at)`. Single-row per user for v1. Migration ships the default workflow as version 1.
+- **`WorkflowService` (main).** Thin authenticated client over `/code_workflow/*`: reads/writes the canonical `WorkflowConfig`, emits `workflow.onChanged`, and falls back to the built-in default (`workflow/default-workflow.ts`) when offline. Persistence, version bumps, validation, the default seed, and classification all live server-side in PostHog.
 - **tRPC `workflow.*` router (main).** One-liners only: `workflow.get` (query, returns `WorkflowConfig`), `workflow.save` (mutation, `{ config, expectedVersion }` → new version or `ConflictError`), `workflow.resetToDefault` (mutation), `workflow.onChanged` (subscription, `WorkflowConfig` diff stream).
 - **`useWorkflow` (renderer hook).** Single `useQuery` against `workflow.get`, kept fresh by the subscription registrar in `features/home/subscriptions.ts` per R9. No multi-query orchestration in the hook.
 - **`workflowEditorStore` (renderer Zustand, R2-clean).** Holds *only* uncommitted edit state: `viewport: { x, y, zoom }`, `selectedNodeId`, `selectedEdgeId`, `draftConfig` (deep-clone of the persisted config the moment editing starts), `dirty`, `validationErrors` (fed from main on each draft change via `workflow.validateDraft`). The persisted `WorkflowConfig` is *not* in this store — it's the `useQuery` result. Save action is one `useMutation` call; the store's job ends there.
@@ -318,95 +317,67 @@ The user's choice persists across sessions via `homeUiStore.viewMode: "list" | "
 
 ## 7. Data sources
 
-| Source | Data | Mechanism |
-|---|---|---|
-| Tasks (PostHog API) | `Task` + `TaskRun` status, branch, `output.pr_url` | existing `useTasks` poll piped into main; live runs via `CloudTaskService` SSE |
-| Workspaces (SQLite) | `linkedBranch`, `branchName`, `lastActivityAt`, `lastViewedAt`, `pinnedAt` | `WorkspaceService` events (`BranchChanged`, `LinkedBranchChanged`) |
-| Git state | branch, ahead/behind, default-branch diff | `GitService` + `FileWatcherService` `GitStateChanged` |
-| GitHub PR metadata | title, state, draft, mergeable, CI, reviewers, threads, comments | new `gh` helpers (see §9) |
-| GitHub review requests | PRs where current user is requested as reviewer | `gh pr list --search "review-requested:@me"` |
-| Snooze / mute / viewed | per-attention-item persistence | new `home_attention_state` SQLite table |
+The snapshot is assembled **server-side in PostHog** (`products/tasks/`, see
+[docs/workflow-architecture.md](./workflow-architecture.md)) — the Electron app
+reads the finished snapshot over the REST API and renders it; it does not
+aggregate these sources itself.
+
+| Source | Data |
+|---|---|
+| Tasks / task runs | status, branch, PR URL; the live active-agent set |
+| GitHub PR metadata | title, state, draft, mergeable, CI rollup, review decision, unresolved threads, requested reviewers |
+| GitHub review requests | PRs where the current user is a requested reviewer |
+
+Snooze / mute / viewed (`home_attention_state`) is not implemented yet — see
+[docs/workflow-architecture.md](./workflow-architecture.md) §4.
 
 ## 8. Architecture
 
-> **Shipped architecture note.** Workstream grouping, PR polling, and situation
-> classification run **server-side in PostHog** (`products/tasks/`, a Temporal
-> worker), not in Electron main. The desktop app is a thin authenticated client:
-> `HomeService` / `WorkflowService` call the PostHog REST API and the renderer
-> reads `home.getSnapshot` / `workflow.get`. See
-> [docs/workflow-architecture.md](./workflow-architecture.md). The original
-> Electron-main design below is kept for historical context.
+The data layer — workstream grouping, PR polling, and situation classification —
+runs **server-side in PostHog** (`products/tasks/`, a Temporal worker). The
+Electron app is a thin authenticated client. Full server design and wire shapes:
+[docs/workflow-architecture.md](./workflow-architecture.md).
 
-**Main (`apps/code/src/main/services/home/`)**
+**Main (`apps/code/src/main/`)** — thin clients over the REST API, no local
+persistence and no `gh` polling:
 
-- `HomeService` — aggregation, classification, ranking, action dispatch. Reads the active workflow from `WorkflowService` and uses it to assign each workstream a `nodeId`.
-- `HomeRepository` — SQLite persistence for snooze/mute and last-viewed timestamps.
-- `schemas.ts` — Zod for snapshot, attention items, and action requests.
-- Dependencies (constructor injected): `WorkspaceService`, `GitService`, `CloudTaskService`, `AgentService`, `PostHogApiClient`, `HomeRepository`, `WorkflowService`, platform `urlOpener`.
+- `services/home/service.ts` (`HomeService`) — polls `GET /code_home/` and emits `home.onSnapshotUpdated` when the snapshot changes.
+- `services/workflow/service.ts` (`WorkflowService`) — reads/writes the workflow config via `/code_workflow/*`, emits `workflow.onChanged`, and falls back to the built-in default (`workflow/default-workflow.ts`) when offline.
+- `services/auth/service.ts` (`authenticatedProjectFetch`) — the project-scoped authenticated fetch both services share.
+- tRPC routers (`trpc/routers/home.ts`, `trpc/routers/workflow.ts`) — one-liners over the two services: `home.getSnapshot` / `home.refresh` / `home.onSnapshotUpdated`, and `workflow.get` / `workflow.save` / `workflow.resetToDefault` / `workflow.onChanged`.
 
-**Main (`apps/code/src/main/services/workflow/`)**
-
-- `WorkflowService` — owns the canonical `WorkflowConfig`, validates drafts, evaluates `match` predicates, emits `WorkflowChanged`. Host-agnostic (no `electron` imports).
-- `WorkflowRepository` — SQLite `home_workflow_config(id, version, json, updated_at)`. Single-row per user for v1. Default workflow installed by the migration as version 1.
-- `schemas.ts` — Zod for `WorkflowConfig`, `WorkflowNode`, `WorkflowEdge`, `WorkflowMatch`, `AgentBinding`, validation diagnostics.
-- Dependencies (constructor injected): `WorkflowRepository`, skill registry (read-only).
-
-**tRPC routers — one-liners with Zod input/output:**
-
-`apps/code/src/main/trpc/routers/home.ts`:
-
-- `home.getSnapshot(input)` — query.
-- `home.refresh()` — mutation; forces a fresh PR poll.
-- `home.snooze({ attentionId, untilHours? })` — mutation.
-- `home.mute({ attentionId })` — mutation.
-- `home.markViewed({ workstreamId })` — mutation.
-- `home.startAction({ workstreamId, actionId })` — mutation; returns navigation target or new task id.
-- `home.onSnapshotUpdated` — subscription; diff stream.
-
-`apps/code/src/main/trpc/routers/workflow.ts`:
-
-- `workflow.get()` — query; returns active `WorkflowConfig`.
-- `workflow.save({ config, expectedVersion })` — mutation; rejects with `ConflictError` if version drifted.
-- `workflow.validateDraft({ config })` — query; returns diagnostics without persisting (canvas re-runs on edit).
-- `workflow.resetToDefault()` — mutation.
-- `workflow.onChanged` — subscription.
+Wire shapes (Zod, the shared source of truth for the renderer types):
+`shared/types/home-snapshot.ts`, `shared/types/workflow.ts`,
+`shared/types/pr-snapshot.ts`.
 
 **Renderer (`apps/code/src/renderer/features/home/`)**
 
-- `components/HomeView.tsx` — top-level layout, header, view toggle.
-- `components/HomeActiveAgentsStrip.tsx` — shared strip across all three views.
-- `components/HomeWorkstreamRow.tsx` — list view row.
-- `components/HomeWorkstreamCard.tsx` — board view card (denser than row).
-- `components/HomeBoardView.tsx` — kanban column layout, columns derived from workflow.
-- `components/HomeDetailPane.tsx`, `HomeEmptyStates.tsx`.
-- `config/ConfigCanvas.tsx`, `config/NodePalette.tsx`, `config/NodeInspector.tsx`, `config/EdgeInspector.tsx`, `config/ValidationBanner.tsx` — Config view.
-- `utils/boardColumns.ts` — pure projection `(workflow, snapshot) → BoardColumn[]`. No I/O, no React, no predicate evaluation (that's main).
-- `hooks/useHomeSnapshot.ts` — single `useQuery` against `home.getSnapshot`, kept in sync via subscription.
-- `hooks/useWorkflow.ts` — single `useQuery` against `workflow.get`, kept in sync via subscription.
-- `stores/homeUiStore.ts` — Zustand, UI only: `viewMode: "list" | "board" | "config"`, `selectedWorkstreamId`, `expanded.{ inProgress, watching }`, `keyboardCursor`.
-- `stores/workflowEditorStore.ts` — Zustand, UI only: `draftConfig`, `dirty`, `selectedNodeId`, `selectedEdgeId`, `viewport`, `validationErrors`. No persisted state, no tRPC orchestration beyond a single mutation call.
-- `services/workflowCanvasService.ts` — `@injectable()` renderer service: drag-and-drop, snap, hit-testing, edge routing. R3 escape hatch. No data, no tRPC, no cross-store reach-ins.
-- `subscriptions.ts` — start `home.onSnapshotUpdated` *and* `workflow.onChanged` at boot per R9.
+- `components/` — `HomeView`, `HomeActiveAgentsStrip`, `HomeWorkstreamRow`, `HomeWorkstreamCard`, `HomeBoardView`, `HomeWorkstreamDetailPanel`, `HomeEmptyState`.
+- `config/` — the workflow editor (`ConfigMap` and friends).
+- `utils/boardColumns.ts` — pure projection of the snapshot into board columns. No I/O, no React.
+- `hooks/useHomeSnapshot.ts`, `hooks/useWorkflow.ts` — one `useQuery` each, kept fresh by `subscriptions.ts` (registered once at boot per R9).
+- `stores/homeUiStore.ts` — UI state only (view mode, selection). `stores/workflowEditorStore.ts` — the uncommitted editor draft only.
 
-**Column projection belongs to the renderer; predicate evaluation does not.** The `match` evaluator is a main-side concern (it reads workstream internals like `attentions`, PR metadata, staleness windows). The renderer only joins `snapshot.workstreams[].nodeId` to the workflow's ordered node list to render columns. This keeps `WorkflowMatch` private to main and means the renderer never reasons about "is this PR stale?".
+Situation classification is authoritative on the server. The renderer reuses the
+same pure logic (`shared/types/workflow-classify.ts`) only to project the
+snapshot's `situations` into board columns — it never re-derives situations from
+PR state.
 
-**Rules honoured:** R1 (main owns workflow + classification), R2 (editor store is uncommitted UI state only), R3 (canvas service is the documented escape hatch, no data), R4 (one `useQuery` per surface), R5 (main emits `WorkflowChanged`, both Home and Workflow renderer stores react via subscriptions), R6 (Zod everywhere, inferred types), R7 (SQLite via `WorkflowRepository`), R8 (constructor injection), R9 (subscriptions registered once), R10 (router one-liners).
+**Rules honoured:** R1 (main owns the client + orchestration), R2 (stores are UI state + subscription caches only), R4 (one `useQuery` per surface), R5 (main emits `workflow.onChanged`; Home reacts via its subscription registrar), R6 (Zod everywhere, inferred types), R9 (subscriptions registered once at boot), R10 (router one-liners).
 
-## 9. New `gh` helpers
+## 9. PR data
 
-Land in `packages/git/src/gh.ts`, expose via `GitService`:
-
-- `listReviewRequestedPrs(owner?)` — `gh pr list --search "review-requested:@me state:open"`.
-- `getPrFull(prUrl)` — `gh pr view <url> --json number,title,state,isDraft,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision,reviewRequests,reviews,reviewThreads,latestReviews,comments,updatedAt,headRefName,baseRefName,url`.
-- `getPrFullBatch(prUrls)` — concurrency cap 3.
+PR metadata (state, draft, mergeable, CI rollup, review decision, unresolved
+threads, requested reviewers) is fetched **server-side** by the PostHog worker
+via `GitHubIntegration.get_pull_request_snapshot` — the Electron app does not
+poll `gh` for the home tab. The serialised shape is `PrSnapshot`
+(`shared/types/pr-snapshot.ts`).
 
 ## 10. Polling & rate-limit strategy
 
-- Cadence: PR refresh **3 min** focused, **15 min** blurred, **paused** hidden. Add 0–20% jitter.
-- Scope: only PRs touched (either side) in last 30 days, plus pinned, plus review-requested-on-me. Cap at 50 PRs per cycle.
-- On-demand: when a workstream row enters the viewport, fetch its PR within 250ms if cache is >60s old.
-- `gh` errors / rate-limit responses → exponential backoff per host; surface a warning chip in the header.
-- Cloud task SSE already streams in real time — `activeAgents` strip is fed by it, no polling.
+- **Server worker** keeps PR snapshots fresh: a Temporal schedule fans out a per-team evaluation every ~3 min that polls each tracked PR (GitHub GraphQL via the team integration, rate-limit aware) and rebuilds the workstreams.
+- **Client** just pulls the latest snapshot: `HomeService` polls `GET /code_home/` on a fixed cadence and emits `home.onSnapshotUpdated` on change; `home.refresh` triggers an on-demand server evaluation. No `gh` calls, no rate-limit handling in the app.
+- Active agents stream from the existing cloud-task SSE, not from polling.
 
 ## 11. Classification & ranking
 
@@ -462,7 +433,7 @@ This is a blocker for M3, not an open question.
 - **Mute** — hide until the underlying state changes (new commit on the branch, new comment, CI flip, reviewer change). Cleared automatically by `HomeService` when the watermark moves.
 - **markViewed** — updates `lastUserViewedAt`; powers `pr.newCommentsSinceViewed`.
 
-Persistence: `home_attention_state(attentionId, snoozedUntil, mutedAt, mutedAtSha)`.
+Persistence (`home_attention_state`) is server-side and not implemented yet — see [docs/workflow-architecture.md](./workflow-architecture.md) §4.
 
 ## 15. Analytics events
 
@@ -490,29 +461,29 @@ Follow naming conventions in `docs/conventions.md`.
 - `HomeService.getSnapshot` built from existing `useTasks` data + `WorkspaceService` state piped to main.
 - **Active agents strip** wired to existing `CloudTaskService` stream (zero new infra).
 - Kinds that work without new `gh` calls: `stale_no_pr`.
-- **List and board ship together with the built-in default workflow.** No editor yet. The board reads the default `WorkflowConfig` from `WorkflowService.getDefault()` (no SQLite write needed at this stage). Column projection lives in `utils/boardColumns.ts`.
+- **List and board ship together with the built-in default workflow.** No editor yet. The board reads the built-in default `WorkflowConfig` (`workflow/default-workflow.ts`); no server round-trip needed at this stage. Column projection lives in `utils/boardColumns.ts`.
 - Ships visible value immediately and validates the layout.
 
 ### M2 — PR enrichment
 
-- New `gh` helpers (`getPrFull`, batch), polling loop, rate-limit handling.
+- Server-side PR enrichment: the worker polls each tracked PR and serialises a `PrSnapshot`.
 - New kinds: `pr_ci_failed`, `pr_comments`, `pr_ready_to_merge`, `branch_cleanup`.
-- PR row UI; refresh button; rate-limit warning chip.
+- PR row UI; refresh button.
 
 ### M3 — Reviewer flow + code-review skill
 
-- `listReviewRequestedPrs`, `pr_review_requested` kind.
+- `pr_review_requested` kind (PRs where the user is a requested reviewer).
 - **Ship the `code-review` skill in this same milestone.**
 - "Review with agent" action wired through `TaskCreationSaga`.
 
 ### M4 — Inbox-zero controls
 
 - Snooze, mute, `lastUserViewedAt`, keyboard shortcuts (`j`/`k`/`s`/`m`/`Enter`).
-- `home_attention_state` migration.
+- Server-side `home_attention_state` for snooze/mute/viewed.
 
 ### M5 — Config canvas (workflow editor)
 
-- `WorkflowService` + `WorkflowRepository` + migration; persist the default workflow on first run.
+- `WorkflowService` client + server-side workflow config persistence (`code_workflow/*`); the default workflow is seeded server-side on first read.
 - `workflow.*` tRPC router with Zod schemas.
 - Renderer: `ConfigCanvas`, palette, inspectors, validation banner.
 - `workflowEditorStore` + `workflowCanvasService` (R3 escape hatch).
@@ -533,11 +504,11 @@ Follow naming conventions in `docs/conventions.md`.
 
 - [ ] Rename existing `HomeItem.tsx` to free the filename.
 - [ ] Add `home` to `ViewType` + `navigateToHome`.
-- [ ] Scaffold `HomeService`, `HomeRepository`, schemas, router, DI token, root router wiring.
-- [ ] Scaffold `WorkflowService.getDefault()` returning the hardcoded default `WorkflowConfig` (no SQLite yet); `HomeService` reads from it for classification.
-- [ ] SQLite migration: `home_attention_state` + ensure `workspaces.lastViewedAt` covers what we need.
-- [ ] Wire `WorkspaceService` / `CloudTaskService` / `FileWatcherService` events into `HomeService` (subscriptions, not polling).
-- [ ] M2: `gh` helpers + `HomeService.refreshPullRequests` polling loop with rate-limit handling.
+- [ ] Scaffold `HomeService` (REST client), schemas, router, DI token, root router wiring.
+- [ ] Add the built-in default `WorkflowConfig` (`workflow/default-workflow.ts`); `WorkflowService` falls back to it when offline.
+- [ ] Server-side `home_attention_state` for snooze/mute/viewed.
+- [ ] `HomeService` poll loop → `home.onSnapshotUpdated`, kept fresh by the subscription registrar.
+- [ ] M2: server-side PR enrichment; `home.refresh` triggers an on-demand evaluation.
 - [ ] M3: `code-review` skill in `apps/code/skills/code-review/`.
 - [ ] Renderer: `useHomeSnapshot` (query + subscription), `HomeView`, active-agents strip, row + card components, board view, view toggle in header, detail pane, empty states.
 - [ ] `utils/boardColumns.ts` — column projection from `(workflow, snapshot) → BoardColumn[]` + unit tests covering every attention combination.
@@ -549,7 +520,7 @@ Follow naming conventions in `docs/conventions.md`.
 
 **M5 (Config canvas):**
 
-- [ ] `WorkflowService` (validation, predicate evaluator, default workflow, `WorkflowChanged` event) + `WorkflowRepository` + SQLite migration `home_workflow_config`.
+- [ ] `WorkflowService` client (default workflow, `workflow.onChanged` event) + server-side workflow config persistence.
 - [ ] `workflow.*` tRPC router with Zod input/output schemas (`get`, `save`, `validateDraft`, `resetToDefault`, `onChanged`).
 - [ ] `useWorkflow` hook (query + subscription); subscription wired in `features/home/subscriptions.ts`.
 - [ ] `workflowEditorStore` (Zustand, UI-only) + `workflowCanvasService` (R3 escape hatch for drag/snap/hit-test).

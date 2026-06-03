@@ -50,20 +50,6 @@
       "when": 1777639303535,
       "tag": "0006_youthful_warstar",
       "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1779956709103,
-      "tag": "0007_remarkable_lord_tyger",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1780000000000,
-      "tag": "0008_drop_home_workflow_config",
-      "breakpoints": true
     }
   ]
 }
