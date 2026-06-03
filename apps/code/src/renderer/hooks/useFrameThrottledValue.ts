@@ -1,36 +1,40 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 /**
- * Coalesces rapid changes to `value` so dependents recompute at most once per
- * animation frame.
+ * Coalesces rapid changes to `value` so dependents recompute at most ~once per
+ * animation frame, with a leading edge so the first change after a quiet period
+ * is never delayed.
  *
  * During token streaming the upstream events array changes on every chunk;
- * without this each chunk drives a full O(n) conversation rebuild + reconcile,
- * so a long thread does far more rebuilds per second than it can paint. This
- * caps rebuilds to the display rate while always settling on the latest value
- * within one frame of the final change — so the end-of-stream state is exact,
- * never stale.
+ * without coalescing each chunk drives a fresh derive + reconcile, far more
+ * often than the screen can paint. But a purely trailing throttle drops a frame
+ * on structural changes — e.g. a sent user message whose optimistic placeholder
+ * is cleared in the same store update that appends the real event would flicker
+ * out until the trailing flush caught up. So the first change after the window
+ * is idle applies synchronously before paint (leading), while a burst of
+ * changes within an open window collapses into one trailing flush.
  */
 export function useFrameThrottledValue<T>(value: T): T {
   const [throttled, setThrottled] = useState(value);
   const latestRef = useRef(value);
   const rafRef = useRef<number | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     latestRef.current = value;
-    // A frame is already queued; it will read latestRef when it fires, so we
-    // don't schedule a second one. This is what collapses a burst of changes
-    // within the same frame into a single recompute.
+    // A coalescing window is already open; the pending frame flushes the latest.
     if (rafRef.current !== null) return;
+    // Leading edge: apply immediately (pre-paint) and open a window.
+    setThrottled(value);
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = null;
+      // Trailing edge: flush anything that arrived while the window was open.
       setThrottled((prev) =>
         prev === latestRef.current ? prev : latestRef.current,
       );
     });
   }, [value]);
 
-  useEffect(
+  useLayoutEffect(
     () => () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     },

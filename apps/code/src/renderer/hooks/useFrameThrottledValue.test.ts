@@ -33,47 +33,50 @@ describe("useFrameThrottledValue", () => {
     expect(result.current).toBe("initial");
   });
 
-  it("settles on the latest value after a frame", () => {
+  it("applies the first change after an idle window immediately (leading edge)", () => {
     const { result, rerender } = renderHook(
       ({ value }) => useFrameThrottledValue(value),
       { initialProps: { value: "a" } },
     );
+    // Let the mount's window close so the next change hits the leading edge.
+    flushFrame();
 
     rerender({ value: "b" });
-    expect(result.current).toBe("a");
-
-    flushFrame();
+    // No frame needed — leading edge applied it before paint.
     expect(result.current).toBe("b");
   });
 
-  it("coalesces a burst of changes within one frame into a single update", () => {
+  it("coalesces a burst within one open window into a single trailing flush", () => {
     const { result, rerender } = renderHook(
       ({ value }) => useFrameThrottledValue(value),
       { initialProps: { value: 0 } },
     );
+    flushFrame();
 
-    // Many changes before the frame fires — only one rAF should be queued.
-    for (let i = 1; i <= 10; i++) rerender({ value: i });
+    // First change opens the window via the leading edge...
+    rerender({ value: 1 });
+    expect(result.current).toBe(1);
+    // ...the rest collapse into the pending frame.
+    for (let i = 2; i <= 10; i++) rerender({ value: i });
+    expect(result.current).toBe(1);
     expect(queue.length).toBe(1);
-    expect(result.current).toBe(0);
 
     flushFrame();
-    // Lands on the freshest value, skipping every intermediate one.
     expect(result.current).toBe(10);
   });
 
-  it("keeps streaming across multiple frames", () => {
+  it("keeps streaming across multiple windows", () => {
     const { result, rerender } = renderHook(
       ({ value }) => useFrameThrottledValue(value),
       { initialProps: { value: "t0" } },
     );
+    flushFrame();
 
     rerender({ value: "t1" });
-    flushFrame();
     expect(result.current).toBe("t1");
+    flushFrame();
 
     rerender({ value: "t2" });
-    flushFrame();
     expect(result.current).toBe("t2");
   });
 
@@ -94,10 +97,14 @@ describe("useFrameThrottledValue", () => {
       ({ value }) => useFrameThrottledValue(value),
       { initialProps: { value: "a" } },
     );
+    flushFrame();
 
+    // Open a window, then queue a second change into it before unmounting.
     rerender({ value: "b" });
+    rerender({ value: "c" });
     unmount();
     flushFrame();
-    expect(result.current).toBe("a");
+    // The trailing flush to "c" never ran.
+    expect(result.current).toBe("b");
   });
 });
