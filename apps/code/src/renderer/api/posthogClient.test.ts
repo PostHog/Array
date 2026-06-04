@@ -405,21 +405,32 @@ describe("PostHogAPIClient", () => {
       return client;
     }
 
-    it("PUTs the full-replacement content and returns the parsed artefact", async () => {
+    const OCTOCAT_REVIEWER = {
+      github_login: "octocat",
+      github_name: "The Octocat",
+      relevant_commits: [],
+      user: null,
+    };
+
+    it.each([
+      {
+        name: "PUTs the full-replacement content and returns the parsed artefact",
+        input: [{ github_login: "octocat" }, { user_uuid: "uuid-1" }],
+        responseContent: [OCTOCAT_REVIEWER],
+      },
+      {
+        name: "sends an empty content array when clearing reviewers",
+        input: [],
+        responseContent: [],
+      },
+    ])("$name", async ({ input, responseContent }) => {
       const fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
           id: "art-1",
           type: "suggested_reviewers",
           created_at: "2024-01-01T00:00:00Z",
-          content: [
-            {
-              github_login: "octocat",
-              github_name: "The Octocat",
-              relevant_commits: [],
-              user: null,
-            },
-          ],
+          content: responseContent,
         }),
       });
       const client = makeClient(fetch);
@@ -427,54 +438,16 @@ describe("PostHogAPIClient", () => {
       const result = await client.updateSignalReportArtefact(
         "report-1",
         "art-1",
-        [{ github_login: "octocat" }, { user_uuid: "uuid-1" }],
+        input,
       );
 
       expect(result.type).toBe("suggested_reviewers");
-      expect(result.content).toEqual([
-        {
-          github_login: "octocat",
-          github_name: "The Octocat",
-          relevant_commits: [],
-          user: null,
-        },
-      ]);
+      expect(result.content).toEqual(responseContent);
       expect(fetch).toHaveBeenCalledWith(
         expect.objectContaining({
           method: "put",
           path: ARTEFACT_PATH,
-          overrides: {
-            body: JSON.stringify({
-              content: [{ github_login: "octocat" }, { user_uuid: "uuid-1" }],
-            }),
-          },
-        }),
-      );
-    });
-
-    it("sends an empty content array when clearing reviewers", async () => {
-      const fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          id: "art-1",
-          type: "suggested_reviewers",
-          created_at: "2024-01-01T00:00:00Z",
-          content: [],
-        }),
-      });
-      const client = makeClient(fetch);
-
-      const result = await client.updateSignalReportArtefact(
-        "report-1",
-        "art-1",
-        [],
-      );
-
-      expect(result.content).toEqual([]);
-      expect(fetch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          method: "put",
-          overrides: { body: JSON.stringify({ content: [] }) },
+          overrides: { body: JSON.stringify({ content: input }) },
         }),
       );
     });
