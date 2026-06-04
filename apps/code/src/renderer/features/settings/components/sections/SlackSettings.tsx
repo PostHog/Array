@@ -19,7 +19,7 @@ export function SlackSettings() {
 
   const slackSettingsUrl = projectId
     ? getPostHogUrl(
-        `/project/${projectId}/settings/project-integrations#setting=integration-slack`,
+        `/project/${projectId}/settings/project-integrations#integration-slack`,
         cloudRegion,
       )
     : null;
