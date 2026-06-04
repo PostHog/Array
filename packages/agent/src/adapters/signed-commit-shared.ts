@@ -1,8 +1,10 @@
 import {
   createSignedCommit,
+  createSignedRewrite,
   type SignedCommitCtx,
   type SignedCommitInput,
   type SignedCommitResult,
+  type SignedRewriteInput,
 } from "@posthog/git/signed-commit";
 import { z } from "zod";
 import { qualifiedLocalToolName } from "./local-tools/registry";
@@ -51,10 +53,38 @@ export const signedCommitToolSchema = {
     ),
 };
 
-export function formatSignedCommitResult(result: SignedCommitResult): string {
-  const list = result.commits.map((c) => `- ${c.sha} ${c.url}`).join("\n");
-  return `Created ${result.commits.length} signed commit(s) on ${result.branch}:\n${list}`;
-}
+export const SIGNED_REWRITE_TOOL_NAME = "git_signed_rewrite";
+export const SIGNED_REWRITE_QUALIFIED_TOOL_NAME = qualifiedLocalToolName(
+  SIGNED_REWRITE_TOOL_NAME,
+);
+
+export const SIGNED_REWRITE_TOOL_DESCRIPTION =
+  "Force-update a branch with GitHub-signed (Verified) history, the signed-commit equivalent " +
+  "of `git push --force`. First rebase/merge locally with normal `git` (resolving conflicts and " +
+  "finishing with `git rebase --continue`, NOT `git commit`); then call this to republish the " +
+  "branch's commits as Verified and atomically move the remote branch onto them. Use this to " +
+  "update an existing PR after a rebase or conflict fix. Rewrites the current branch by default.";
+
+export const signedRewriteToolSchema = {
+  branch: z
+    .string()
+    .optional()
+    .describe("Branch to rewrite; defaults to the current branch."),
+  onto: z
+    .string()
+    .optional()
+    .describe(
+      "Commit/ref the rewritten history sits on (e.g. origin/master). " +
+        "Defaults to the merge-base of the current branch with the repo's default branch.",
+    ),
+  cwd: z
+    .string()
+    .optional()
+    .describe(
+      "Path to the git checkout to rewrite; defaults to the session's working directory. " +
+        "Relative paths resolve against the session cwd.",
+    ),
+};
 
 export interface SignedCommitToolResult {
   content: { type: "text"; text: string }[];
@@ -64,27 +94,49 @@ export interface SignedCommitToolResult {
   [key: string]: unknown;
 }
 
-/**
- * Runs `git_signed_commit` and formats the MCP result. Shared by the Claude
- * in-process tool and the Codex stdio server so success/error formatting (and
- * the error-message prefix) can't drift between adapters.
- */
-export async function runSignedCommitTool(
+async function runSignedTool<A>(
+  toolName: string,
+  op: (ctx: SignedCommitCtx, args: A) => Promise<SignedCommitResult>,
+  lead: (result: SignedCommitResult) => string,
   ctx: SignedCommitCtx,
-  args: SignedCommitInput,
+  args: A,
 ): Promise<SignedCommitToolResult> {
   try {
-    const result = await createSignedCommit(ctx, args);
-    return {
-      content: [{ type: "text", text: formatSignedCommitResult(result) }],
-    };
+    const result = await op(ctx, args);
+    const list = result.commits.map((c) => `- ${c.sha} ${c.url}`).join("\n");
+    return { content: [{ type: "text", text: `${lead(result)}:\n${list}` }] };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return {
-      content: [
-        { type: "text", text: `${SIGNED_COMMIT_TOOL_NAME} failed: ${message}` },
-      ],
+      content: [{ type: "text", text: `${toolName} failed: ${message}` }],
       isError: true,
     };
   }
+}
+
+export function runSignedCommitTool(
+  ctx: SignedCommitCtx,
+  args: SignedCommitInput,
+): Promise<SignedCommitToolResult> {
+  return runSignedTool(
+    SIGNED_COMMIT_TOOL_NAME,
+    createSignedCommit,
+    (r) => `Created ${r.commits.length} signed commit(s) on ${r.branch}`,
+    ctx,
+    args,
+  );
+}
+
+export function runSignedRewriteTool(
+  ctx: SignedCommitCtx,
+  args: SignedRewriteInput,
+): Promise<SignedCommitToolResult> {
+  return runSignedTool(
+    SIGNED_REWRITE_TOOL_NAME,
+    createSignedRewrite,
+    (r) =>
+      `Force-updated ${r.branch} with ${r.commits.length} signed commit(s)`,
+    ctx,
+    args,
+  );
 }

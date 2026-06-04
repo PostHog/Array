@@ -25,7 +25,10 @@ import {
   type AgentErrorClassification,
   classifyAgentError,
 } from "../adapters/error-classification";
-import { SIGNED_COMMIT_QUALIFIED_TOOL_NAME } from "../adapters/signed-commit-shared";
+import {
+  SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
+  SIGNED_REWRITE_QUALIFIED_TOOL_NAME,
+} from "../adapters/signed-commit-shared";
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
@@ -1699,6 +1702,13 @@ It creates a GitHub-signed ("Verified") commit on the branch and keeps your loca
 sync. To start a new branch, pass \`branch\` (prefixed with \`posthog-code/\`) — the tool creates
 it on the remote for you.
 
+## Rewriting / force-pushing (rebases, conflict fixes)
+\`git push --force\` is also blocked. To update a branch after a local rebase or conflict
+resolution, rebase/merge locally with normal \`git\` (resolve conflicts and finish with
+\`git rebase --continue\`, NOT \`git commit\`), then call the \`git_signed_rewrite\` tool (full
+name \`${SIGNED_REWRITE_QUALIFIED_TOOL_NAME}\`). It republishes the branch's commits as Verified
+and atomically force-updates the remote branch. This is how you fix conflicts on an existing PR.
+
 ## Attribution
 Do NOT add "Co-Authored-By" trailers or "Generated with [Claude Code]" lines to your
 commit messages. The \`git_signed_commit\` tool automatically appends the only trailers
@@ -1730,6 +1740,7 @@ This task already has an open pull request: ${prUrl}
 After completing the requested changes:
 1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). This commits to the existing PR branch.
+   - If the branch has conflicts with its base, fetch and rebase locally (\`git fetch origin <base>\`, \`git rebase origin/<base>\`, resolve, \`git rebase --continue\`), then call the \`git_signed_rewrite\` tool to force-update this same PR branch.
 3. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:
    - Reply on the thread with a short note describing what changed (reference the commit SHA when useful) using \`gh api -X POST /repos/{owner}/{repo}/pulls/{n}/comments/{id}/replies -f body='...'\`.
    - Resolve the thread via the \`resolveReviewThread\` GraphQL mutation: \`gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id="<thread-node-id>"\`.

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { chunkFileChanges, OversizedFileError } from "./signed-commit";
+import {
+  chunkFileChanges,
+  OversizedFileError,
+  splitCommitMessage,
+} from "./signed-commit";
 
 function addition(path: string, sizeBytes: number) {
   // base64 string of roughly `sizeBytes` length stands in for file contents.
@@ -54,5 +58,38 @@ describe("chunkFileChanges", () => {
         1000,
       ),
     ).toThrow(OversizedFileError);
+  });
+});
+
+describe("splitCommitMessage", () => {
+  it.each([
+    {
+      name: "subject only",
+      raw: "fix: handle null",
+      expected: { headline: "fix: handle null", body: "" },
+    },
+    {
+      name: "subject + body, dropping the blank separator line",
+      raw: "feat: add thing\n\nDetails here.\nMore details.",
+      expected: {
+        headline: "feat: add thing",
+        body: "Details here.\nMore details.",
+      },
+    },
+    {
+      name: "preserves existing trailers in the body",
+      raw: "fix: x\n\nGenerated-By: PostHog Code\nTask-Id: abc",
+      expected: {
+        headline: "fix: x",
+        body: "Generated-By: PostHog Code\nTask-Id: abc",
+      },
+    },
+    {
+      name: "trims trailing whitespace",
+      raw: "chore: y\n\nbody\n\n",
+      expected: { headline: "chore: y", body: "body" },
+    },
+  ])("$name", ({ raw, expected }) => {
+    expect(splitCommitMessage(raw)).toEqual(expected);
   });
 });
