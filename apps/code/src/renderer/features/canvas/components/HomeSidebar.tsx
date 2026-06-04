@@ -1,6 +1,7 @@
 import { useWebsiteTasksStore } from "@features/canvas/stores/websiteTasksStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import {
+  Button,
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -43,18 +44,16 @@ function NavButton({
   onClick?: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="default"
+      size="sm"
+      data-selected={active}
       disabled={disabled}
       onClick={onClick}
-      className={`flex w-full items-center truncate rounded-md px-2 py-1.5 text-left text-[13px] transition-colors ${
-        active
-          ? "bg-accent-4 text-accent-12"
-          : "text-gray-11 hover:bg-gray-3 disabled:cursor-default disabled:text-gray-8 disabled:hover:bg-transparent"
-      }`}
+      className="w-full justify-start"
     >
       {label}
-    </button>
+    </Button>
   );
 }
 
