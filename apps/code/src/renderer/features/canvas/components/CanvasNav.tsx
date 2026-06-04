@@ -1,7 +1,8 @@
 import { isHomeSpacePath } from "@features/canvas/spaces";
+import { useInboxSignalCount } from "@features/inbox/hooks/useInboxSignalCount";
 import { CodeIcon, HouseIcon, TrayIcon } from "@phosphor-icons/react";
-import { Button } from "@posthog/quill";
-import { Flex } from "@radix-ui/themes";
+import { Badge, Button } from "@posthog/quill";
+import { Box, Flex } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { isMac } from "@utils/platform";
 
@@ -46,9 +47,14 @@ const NAV_ITEMS: CanvasNavItem[] = [
   },
 ];
 
+function formatBadgeCount(count: number): string {
+  return count > 99 ? "99+" : String(count);
+}
+
 export function CanvasNav() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const inboxCount = useInboxSignalCount();
 
   return (
     <Flex
@@ -62,19 +68,29 @@ export function CanvasNav() {
       {NAV_ITEMS.map((item) => {
         const active = item.isActive(pathname);
         const Icon = item.icon;
+        const badgeCount = item.id === "inbox" ? inboxCount : 0;
         return (
-          <Button
-            key={item.id}
-            className="no-drag"
-            size="icon-lg"
-            variant="default"
-            aria-selected={active}
-            aria-label={item.label}
-            title={item.label}
-            onClick={() => navigate({ to: item.to })}
-          >
-            <Icon size={20} weight="regular" />
-          </Button>
+          <Box key={item.id} position="relative" className="no-drag">
+            <Button
+              size="icon-lg"
+              variant="default"
+              aria-selected={active}
+              aria-label={item.label}
+              title={item.label}
+              onClick={() => navigate({ to: item.to })}
+            >
+              <Icon size={20} weight="regular" />
+            </Button>
+            {badgeCount > 0 && (
+              <Badge
+                variant="destructive"
+                className="-top-1 -right-1 pointer-events-none absolute min-w-4 justify-center rounded-full px-1 tabular-nums"
+                title={`${badgeCount} actionable report${badgeCount === 1 ? "" : "s"}`}
+              >
+                {formatBadgeCount(badgeCount)}
+              </Badge>
+            )}
+          </Box>
         );
       })}
     </Flex>
