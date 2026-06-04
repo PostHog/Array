@@ -10,7 +10,6 @@ import {
 } from "@features/canvas/stores/dashboardEditStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { isNonEmptySpec } from "@json-render/core";
-import type { Spec } from "@json-render/react";
 import {
   CaretDownIcon,
   CaretRightIcon,
@@ -24,11 +23,6 @@ import {
   ComboboxItem,
   ComboboxList,
   ComboboxTrigger,
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogTitle,
-  Input,
 } from "@posthog/quill";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import {
@@ -38,18 +32,14 @@ import {
   useParams,
   useRouterState,
 } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
 }
 
-// Shared text metrics so the name display and its inline input occupy the same
-// box (no layout shift when toggling). 1px border on both; transparent until
-// hover on the display.
-const NAME_TEXT = "h-[22px] px-1 text-[13px] font-medium leading-none";
-
-// The dashboards switcher (view mode): a Quill combobox to switch dashboards.
+// The dashboards breadcrumb crumb: a Quill combobox to switch the active
+// dashboard by name. Selecting navigates to that dashboard's route.
 function DashboardPicker({ dashboardId }: { dashboardId: string }) {
   const navigate = useNavigate();
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -63,6 +53,7 @@ function DashboardPicker({ dashboardId }: { dashboardId: string }) {
     <Combobox
       items={dashboards.map((d) => d.id)}
       value={dashboardId}
+      // No search input — disable filtering so all dashboards always show.
       filter={null}
       onValueChange={(value) =>
         navigate({
@@ -104,97 +95,8 @@ function DashboardPicker({ dashboardId }: { dashboardId: string }) {
   );
 }
 
-// Inline-editable dashboard name (edit mode). Click the name to rename in place;
-// commits on Enter/blur. Reports its editing state up so Save can disable while
-// renaming and re-enable on blur.
-function EditableDashboardName({
-  dashboardId,
-  onRenamingChange,
-}: {
-  dashboardId: string;
-  onRenamingChange: (renaming: boolean) => void;
-}) {
-  const { dashboard } = useDashboard(dashboardId);
-  const { saveDashboard } = useDashboardMutations();
-  const name = dashboard?.name ?? "Dashboard";
-
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(name);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [editing]);
-
-  const start = () => {
-    setValue(name);
-    setEditing(true);
-    onRenamingChange(true);
-  };
-
-  const commit = () => {
-    setEditing(false);
-    onRenamingChange(false);
-    const next = value.trim();
-    if (next && next !== name) {
-      // Rename without touching the spec: persist the saved spec + new name.
-      void saveDashboard(
-        dashboardId,
-        (dashboard?.spec ?? null) as unknown as Spec,
-        next,
-      );
-    }
-  };
-
-  const cancel = () => {
-    setEditing(false);
-    onRenamingChange(false);
-  };
-
-  if (editing) {
-    return (
-      <Input
-        ref={inputRef}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            commit();
-          } else if (e.key === "Escape") {
-            cancel();
-          }
-        }}
-        className={`no-drag ${NAME_TEXT} min-h-0 w-auto rounded text-gray-12`}
-        style={{ width: `${Math.max(value.length, 4)}ch` }}
-      />
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={start}
-      title="Rename dashboard"
-      className={`no-drag inline-flex items-center rounded border border-transparent text-gray-12 hover:border-gray-6 ${NAME_TEXT}`}
-    >
-      {name}
-    </button>
-  );
-}
-
-// Edit toggle + (in edit mode) Save (via name dialog) / Save-as-fork.
-function DashboardControls({
-  dashboardId,
-  renaming,
-}: {
-  dashboardId: string;
-  renaming: boolean;
-}) {
+// Edit toggle + (in edit mode) Save / Save-as-fork for the active dashboard.
+function DashboardControls({ dashboardId }: { dashboardId: string }) {
   const navigate = useNavigate();
   const editing = useIsDashboardEditing(dashboardId);
   const toggle = useDashboardEditStore((s) => s.toggle);
@@ -204,23 +106,14 @@ function DashboardControls({
   const { spec: liveSpec } = useCanvasThread(threadIdFor(dashboardId));
   const { saveDashboard, createDashboard, isSaving } = useDashboardMutations();
 
-  const [saveOpen, setSaveOpen] = useState(false);
-  const [saveName, setSaveName] = useState("");
-
   const savedSpec = dashboard?.spec ?? null;
   const hasSpec = isNonEmptySpec(liveSpec);
   const dirty =
     hasSpec && JSON.stringify(liveSpec) !== JSON.stringify(savedSpec);
 
-  const openSaveDialog = () => {
-    setSaveName(dashboard?.name ?? "Dashboard");
-    setSaveOpen(true);
-  };
-
-  const confirmSave = () => {
-    const name = saveName.trim();
-    void saveDashboard(dashboardId, liveSpec, name || undefined);
-    setSaveOpen(false);
+  const onSave = () => {
+    if (!dirty) return;
+    void saveDashboard(dashboardId, liveSpec);
   };
 
   const onFork = async () => {
@@ -241,8 +134,8 @@ function DashboardControls({
           <Button
             variant="primary"
             size="sm"
-            disabled={!dirty || isSaving || renaming}
-            onClick={openSaveDialog}
+            disabled={!dirty || isSaving}
+            onClick={onSave}
           >
             Save
           </Button>
@@ -266,43 +159,6 @@ function DashboardControls({
         <PencilSimpleIcon size={14} weight={editing ? "fill" : "regular"} />
         Edit
       </Button>
-
-      <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
-        <DialogContent className="w-[400px] max-w-[90vw]">
-          <DialogTitle>Save dashboard</DialogTitle>
-          <Flex direction="column" gap="3" pt="2">
-            <Input
-              autoFocus
-              value={saveName}
-              placeholder="Dashboard name"
-              onChange={(e) => setSaveName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && saveName.trim()) {
-                  e.preventDefault();
-                  confirmSave();
-                }
-              }}
-            />
-            <Flex justify="end" gap="2">
-              <DialogClose
-                render={
-                  <Button variant="outline" size="sm">
-                    Cancel
-                  </Button>
-                }
-              />
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!saveName.trim() || isSaving}
-                onClick={confirmSave}
-              >
-                Save
-              </Button>
-            </Flex>
-          </Flex>
-        </DialogContent>
-      </Dialog>
     </Flex>
   );
 }
@@ -312,24 +168,15 @@ export function WebsiteLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const params = useParams({ strict: false });
   const { data: tasks } = useTasks();
-  const [renaming, setRenaming] = useState(false);
 
   const dashboardId = params.dashboardId;
   const isDashboards =
     pathname.startsWith("/website/dashboards") && dashboardId;
-  const editingDashboard = useIsDashboardEditing(dashboardId ?? "");
   const taskId = params.taskId;
 
   let secondCrumb: React.ReactNode = null;
   if (isDashboards) {
-    secondCrumb = editingDashboard ? (
-      <EditableDashboardName
-        dashboardId={dashboardId}
-        onRenamingChange={setRenaming}
-      />
-    ) : (
-      <DashboardPicker dashboardId={dashboardId} />
-    );
+    secondCrumb = <DashboardPicker dashboardId={dashboardId} />;
   } else if (pathname.startsWith("/website/new")) {
     secondCrumb = <CrumbText>New task</CrumbText>;
   } else if (pathname.startsWith("/website/settings")) {
@@ -358,9 +205,7 @@ export function WebsiteLayout() {
             {secondCrumb}
           </>
         )}
-        {isDashboards && (
-          <DashboardControls dashboardId={dashboardId} renaming={renaming} />
-        )}
+        {isDashboards && <DashboardControls dashboardId={dashboardId} />}
       </Flex>
       <Box flexGrow="1" overflow="hidden">
         <Outlet />
