@@ -145,6 +145,18 @@ function copySync(dependency: string, destinationRoot: string, source: string) {
 
 const hasAssetsCar = existsSync("build/Assets.car");
 
+const sharedLinuxOptions = {
+  name: "posthog-code",
+  productName: "PostHog Code",
+  genericName: "Code Editor",
+  description: "PostHog Code desktop app",
+  bin: "posthog-code",
+  icon: "./build/app-icon.png",
+  categories: ["Development"],
+  homepage: "https://github.com/PostHog/code",
+  mimeType: ["x-scheme-handler/posthog-code"],
+};
+
 const config: ForgeConfig = {
   packagerConfig: {
     asar: {
@@ -210,31 +222,15 @@ const config: ForgeConfig = {
     }),
     new MakerDeb({
       options: {
-        name: "posthog-code",
-        productName: "PostHog Code",
-        genericName: "Code Editor",
-        description: "PostHog Code desktop app",
-        bin: "posthog-code",
-        icon: "./build/app-icon.png",
-        categories: ["Development"],
+        ...sharedLinuxOptions,
         section: "devel",
         maintainer: "PostHog <eng@posthog.com>",
-        homepage: "https://github.com/PostHog/code",
-        mimeType: ["x-scheme-handler/posthog-code"],
       },
     }),
     new MakerRpm({
       options: {
-        name: "posthog-code",
-        productName: "PostHog Code",
-        genericName: "Code Editor",
-        description: "PostHog Code desktop app",
-        bin: "posthog-code",
+        ...sharedLinuxOptions,
         license: "MIT",
-        icon: "./build/app-icon.png",
-        categories: ["Development"],
-        homepage: "https://github.com/PostHog/code",
-        mimeType: ["x-scheme-handler/posthog-code"],
       },
     }),
     new MakerZIP({}, ["darwin", "linux"]),
