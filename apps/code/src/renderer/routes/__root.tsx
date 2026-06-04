@@ -41,16 +41,18 @@ import { lazy, Suspense, useCallback, useEffect, useRef } from "react";
 // shell rather than rendering the standalone floating logo. The shell owns a
 // single trigger that can be dragged, dismissed, and hidden-until-hover, and it
 // persists those choices to localStorage — so the panel stays out of the way.
-const TanStackRouterDevtools = import.meta.env.DEV
+const TanStackDevtools = import.meta.env.DEV
   ? lazy(async () => {
-      const [{ TanStackDevtools }, { TanStackRouterDevtoolsPanel }] =
-        await Promise.all([
-          import("@tanstack/react-devtools"),
-          import("@tanstack/react-router-devtools"),
-        ]);
+      const [
+        { TanStackDevtools: DevtoolsShell },
+        { TanStackRouterDevtoolsPanel },
+      ] = await Promise.all([
+        import("@tanstack/react-devtools"),
+        import("@tanstack/react-router-devtools"),
+      ]);
       return {
         default: () => (
-          <TanStackDevtools
+          <DevtoolsShell
             config={{ position: "bottom-right", hideUntilHover: true }}
             plugins={[
               {
@@ -176,7 +178,7 @@ function RootLayout() {
         {billingEnabled && <UsageLimitModal />}
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
-            <TanStackRouterDevtools />
+            <TanStackDevtools />
           </Suspense>
         )}
       </Flex>
@@ -215,7 +217,7 @@ function RootLayout() {
       <HedgehogMode />
       {import.meta.env.DEV && (
         <Suspense fallback={null}>
-          <TanStackRouterDevtools />
+          <TanStackDevtools />
         </Suspense>
       )}
     </Flex>
