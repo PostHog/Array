@@ -1,6 +1,14 @@
 import { getDashboard, WEBSITE_DASHBOARDS } from "@features/canvas/dashboards";
+import {
+  useDashboardEditStore,
+  useIsDashboardEditing,
+} from "@features/canvas/stores/dashboardEditStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
-import { CaretDownIcon, CaretRightIcon } from "@phosphor-icons/react";
+import {
+  CaretDownIcon,
+  CaretRightIcon,
+  PencilSimpleIcon,
+} from "@phosphor-icons/react";
 import {
   Button,
   Combobox,
@@ -73,6 +81,26 @@ function DashboardPicker({ dashboardId }: { dashboardId?: string }) {
   );
 }
 
+// Toggles the active dashboard's edit mode (gen-UI canvas + chat input).
+function EditButton({ dashboardId }: { dashboardId?: string }) {
+  const id = getDashboard(dashboardId).id;
+  const editing = useIsDashboardEditing(id);
+  const toggle = useDashboardEditStore((s) => s.toggle);
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      data-selected={editing}
+      className="no-drag ml-auto"
+      onClick={() => toggle(id)}
+    >
+      <PencilSimpleIcon size={14} weight={editing ? "fill" : "regular"} />
+      Edit
+    </Button>
+  );
+}
+
 // Breadcrumb topbar + content outlet for the Website space.
 export function WebsiteLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -113,6 +141,7 @@ export function WebsiteLayout() {
             {secondCrumb}
           </>
         )}
+        {isDashboards && <EditButton dashboardId={params.dashboardId} />}
       </Flex>
       <Box flexGrow="1" overflow="hidden">
         <Outlet />

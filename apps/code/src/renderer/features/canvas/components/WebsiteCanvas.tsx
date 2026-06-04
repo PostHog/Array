@@ -1,22 +1,19 @@
 import { ErrorBoundary } from "@components/ErrorBoundary";
 import { CanvasChat } from "@features/canvas/components/CanvasChat";
 import { CanvasRenderer } from "@features/canvas/genui/registry";
-import {
-  CANVAS_WEBSITE_THREAD,
-  useCanvasChatStore,
-} from "@features/canvas/stores/canvasChatStore";
+import { useCanvasThread } from "@features/canvas/stores/canvasChatStore";
 import { registerCanvasSubscription } from "@features/canvas/subscriptions";
 import { isNonEmptySpec } from "@json-render/core";
 import { Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { useEffect } from "react";
 
-// The /website canvas: an agent-built data UI on the left, a chat panel on the
-// right. The canvas spec is streamed from the agent via the chat store.
-export function WebsiteCanvas() {
-  const spec = useCanvasChatStore((s) => s.spec);
-  const isStreaming = useCanvasChatStore((s) => s.isStreaming);
+// Gen-UI canvas: an agent-built data UI on the left, a chat panel on the right.
+// The canvas spec is streamed from the agent via the chat store, keyed by
+// threadId so each surface (e.g. each dashboard) keeps its own session.
+export function WebsiteCanvas({ threadId }: { threadId: string }) {
+  const { spec, isStreaming } = useCanvasThread(threadId);
 
-  useEffect(() => registerCanvasSubscription(CANVAS_WEBSITE_THREAD), []);
+  useEffect(() => registerCanvasSubscription(threadId), [threadId]);
 
   return (
     <Flex height="100%" overflow="hidden">
@@ -56,7 +53,7 @@ export function WebsiteCanvas() {
           </Flex>
         )}
       </ScrollArea>
-      <CanvasChat />
+      <CanvasChat threadId={threadId} />
     </Flex>
   );
 }

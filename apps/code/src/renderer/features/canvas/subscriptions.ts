@@ -22,19 +22,19 @@ export function registerCanvasSubscription(threadId: string): () => void {
         const store = useCanvasChatStore.getState();
         switch (event.type) {
           case "prose":
-            store.appendProse(event.text);
+            store.appendProse(threadId, event.text);
             break;
           case "spec":
-            store.setSpec(event.spec as unknown as Spec);
+            store.setSpec(threadId, event.spec as unknown as Spec);
             break;
           case "tool":
-            store.noteTool(event.toolName, event.status);
+            store.noteTool(threadId, event.toolName, event.status);
             break;
           case "done":
-            store.finish();
+            store.finish(threadId);
             break;
           case "error":
-            store.fail(event.message);
+            store.fail(threadId, event.message);
             break;
           case "started":
             break;
@@ -42,7 +42,7 @@ export function registerCanvasSubscription(threadId: string): () => void {
       },
       onError: (error) => {
         log.error("Canvas subscription error", { error });
-        useCanvasChatStore.getState().fail(String(error));
+        useCanvasChatStore.getState().fail(threadId, String(error));
       },
     },
   );

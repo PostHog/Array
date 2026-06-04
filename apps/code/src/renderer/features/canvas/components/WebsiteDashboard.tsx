@@ -1,10 +1,18 @@
+import { WebsiteCanvas } from "@features/canvas/components/WebsiteCanvas";
 import { getDashboard } from "@features/canvas/dashboards";
+import { useIsDashboardEditing } from "@features/canvas/stores/dashboardEditStore";
 import { TrendDownIcon, TrendUpIcon } from "@phosphor-icons/react";
 import { Box, Flex, Grid, ScrollArea, Text } from "@radix-ui/themes";
 
 // Renders a mock website dashboard (stat tiles) for the active dashboard id.
+// In edit mode, swaps to the gen-UI canvas + chat for that dashboard's thread.
 export function WebsiteDashboard({ dashboardId }: { dashboardId?: string }) {
   const dashboard = getDashboard(dashboardId);
+  const editing = useIsDashboardEditing(dashboard.id);
+
+  if (editing) {
+    return <WebsiteCanvas threadId={`dashboard:${dashboard.id}`} />;
+  }
 
   return (
     <ScrollArea className="h-full bg-gray-1">

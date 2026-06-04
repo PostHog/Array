@@ -1,4 +1,7 @@
-import { useCanvasChatStore } from "@features/canvas/stores/canvasChatStore";
+import {
+  useCanvasChatStore,
+  useCanvasThread,
+} from "@features/canvas/stores/canvasChatStore";
 import { PaperPlaneRightIcon, SpinnerGapIcon } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Box, Flex, ScrollArea, Text, TextArea } from "@radix-ui/themes";
@@ -6,11 +9,8 @@ import { useEffect, useRef, useState } from "react";
 
 // Chat panel hugging the right of the canvas: a thread plus a composer that
 // drives the canvas generation agent.
-export function CanvasChat() {
-  const messages = useCanvasChatStore((s) => s.messages);
-  const isStreaming = useCanvasChatStore((s) => s.isStreaming);
-  const lastTool = useCanvasChatStore((s) => s.lastTool);
-  const error = useCanvasChatStore((s) => s.error);
+export function CanvasChat({ threadId }: { threadId: string }) {
+  const { messages, isStreaming, lastTool, error } = useCanvasThread(threadId);
   const send = useCanvasChatStore((s) => s.send);
 
   const [draft, setDraft] = useState("");
@@ -26,7 +26,7 @@ export function CanvasChat() {
     const text = draft.trim();
     if (!text || isStreaming) return;
     setDraft("");
-    void send(text);
+    void send(threadId, text);
   };
 
   return (
