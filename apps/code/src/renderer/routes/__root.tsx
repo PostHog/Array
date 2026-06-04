@@ -34,14 +34,34 @@ import { logger } from "@utils/logger";
 import { lazy, Suspense, useCallback, useEffect, useRef } from "react";
 
 // Dynamic import keeps the devtools chunk out of the prod bundle. Without the
-// gate at the import level, conditional render alone still ships ~50KB of
-// devtools code to users.
+// gate at the import level, conditional render alone still ships the devtools
+// code to users.
+//
+// We embed the router devtools as a plugin inside the unified TanStack Devtools
+// shell rather than rendering the standalone floating logo. The shell owns a
+// single trigger that can be dragged, dismissed, and hidden-until-hover, and it
+// persists those choices to localStorage — so the panel stays out of the way.
 const TanStackRouterDevtools = import.meta.env.DEV
-  ? lazy(() =>
-      import("@tanstack/react-router-devtools").then((m) => ({
-        default: m.TanStackRouterDevtools,
-      })),
-    )
+  ? lazy(async () => {
+      const [{ TanStackDevtools }, { TanStackRouterDevtoolsPanel }] =
+        await Promise.all([
+          import("@tanstack/react-devtools"),
+          import("@tanstack/react-router-devtools"),
+        ]);
+      return {
+        default: () => (
+          <TanStackDevtools
+            config={{ position: "bottom-right", hideUntilHover: true }}
+            plugins={[
+              {
+                name: "TanStack Router",
+                render: <TanStackRouterDevtoolsPanel />,
+              },
+            ]}
+          />
+        ),
+      };
+    })
   : () => null;
 
 import { GlobalEventHandlers } from "../components/GlobalEventHandlers";
@@ -156,7 +176,7 @@ function RootLayout() {
         {billingEnabled && <UsageLimitModal />}
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
-            <TanStackRouterDevtools position="bottom-right" />
+            <TanStackRouterDevtools />
           </Suspense>
         )}
       </Flex>
@@ -195,7 +215,7 @@ function RootLayout() {
       <HedgehogMode />
       {import.meta.env.DEV && (
         <Suspense fallback={null}>
-          <TanStackRouterDevtools position="bottom-right" />
+          <TanStackRouterDevtools />
         </Suspense>
       )}
     </Flex>
