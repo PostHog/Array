@@ -1,7 +1,11 @@
+import { useChannels } from "@features/canvas/hooks/useChannels";
 import { Flex, Text } from "@radix-ui/themes";
 
-// Placeholder for the Website space settings. Intentionally inert for now.
-export function WebsiteSettings() {
+// Placeholder for a channel's settings. Intentionally inert for now.
+export function WebsiteSettings({ channelId }: { channelId: string }) {
+  const { channels } = useChannels();
+  const name = channels.find((c) => c.id === channelId)?.name ?? "Channel";
+
   return (
     <Flex
       direction="column"
@@ -11,7 +15,7 @@ export function WebsiteSettings() {
       gap="1"
     >
       <Text size="3" weight="bold" className="text-gray-12">
-        Website settings
+        {name} settings
       </Text>
       <Text size="2" className="text-gray-10">
         Nothing to configure yet.

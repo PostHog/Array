@@ -1,29 +1,58 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-interface WebsiteTasksState {
-  /** Task IDs created within the Website space, most-recent first. */
-  taskIds: string[];
-  addTask: (taskId: string) => void;
-  removeTask: (taskId: string) => void;
+interface ChannelTasksState {
+  /** Task IDs created within each channel, keyed by channelId, recent first. */
+  taskIdsByChannel: Record<string, string[]>;
+  addTask: (channelId: string, taskId: string) => void;
+  removeTask: (channelId: string, taskId: string) => void;
+  removeChannel: (channelId: string) => void;
 }
 
-// Tracks which tasks were created from the Website space so they can be listed
-// in the Website sub-nav and reopened at /website/tasks/$taskId. There is no
-// backend "folder" binding yet — membership lives here, persisted locally.
-export const useWebsiteTasksStore = create<WebsiteTasksState>()(
+// Tracks which tasks were created from each channel so they can be listed in
+// the channel's sub-nav and reopened at /website/$channelId/tasks/$taskId.
+// There's no backend task↔channel binding yet — membership lives here, local.
+export const useChannelTasksStore = create<ChannelTasksState>()(
   persist(
     (set) => ({
-      taskIds: [],
-      addTask: (taskId) =>
+      taskIdsByChannel: {},
+      addTask: (channelId, taskId) =>
         set((state) => ({
-          taskIds: [taskId, ...state.taskIds.filter((id) => id !== taskId)],
+          taskIdsByChannel: {
+            ...state.taskIdsByChannel,
+            [channelId]: [
+              taskId,
+              ...(state.taskIdsByChannel[channelId] ?? []).filter(
+                (id) => id !== taskId,
+              ),
+            ],
+          },
         })),
-      removeTask: (taskId) =>
+      removeTask: (channelId, taskId) =>
         set((state) => ({
-          taskIds: state.taskIds.filter((id) => id !== taskId),
+          taskIdsByChannel: {
+            ...state.taskIdsByChannel,
+            [channelId]: (state.taskIdsByChannel[channelId] ?? []).filter(
+              (id) => id !== taskId,
+            ),
+          },
         })),
+      removeChannel: (channelId) =>
+        set((state) => {
+          const next = { ...state.taskIdsByChannel };
+          delete next[channelId];
+          return { taskIdsByChannel: next };
+        }),
     }),
-    { name: "code:website-tasks" },
+    { name: "code:channel-tasks" },
   ),
 );
+
+const EMPTY: string[] = [];
+
+/** Task IDs for a single channel (stable empty ref when none). */
+export function useChannelTaskIds(channelId: string | undefined): string[] {
+  return useChannelTasksStore((s) =>
+    channelId ? (s.taskIdsByChannel[channelId] ?? EMPTY) : EMPTY,
+  );
+}

@@ -1,6 +1,6 @@
-import { WebsiteDashboardsIndex } from "@features/canvas/components/WebsiteDashboardsIndex";
+import { WebsiteChannelsIndex } from "@features/canvas/components/WebsiteChannelsIndex";
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/website/")({
-  component: WebsiteDashboardsIndex,
+  component: WebsiteChannelsIndex,
 });

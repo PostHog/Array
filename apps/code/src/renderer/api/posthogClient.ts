@@ -610,6 +610,79 @@ export class PostHogAPIClient {
     return data;
   }
 
+  // Desktop file system "channels": top-level folder rows (depth 1) on the
+  // project's desktop_file_system surface. These routes aren't in the generated
+  // OpenAPI client, so we use the raw fetcher.
+  async getDesktopFileSystem(): Promise<Schemas.FileSystem[]> {
+    const DESKTOP_FILE_SYSTEM_MAX_PAGES = 50;
+    const teamId = await this.getTeamId();
+    const all: Schemas.FileSystem[] = [];
+    let urlPath: string = `/api/projects/${teamId}/desktop_file_system/`;
+    for (let i = 0; i < DESKTOP_FILE_SYSTEM_MAX_PAGES; i++) {
+      const url = new URL(`${this.api.baseUrl}${urlPath}`);
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: urlPath,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch desktop file system: ${response.statusText}`,
+        );
+      }
+      const page = (await response.json()) as Schemas.PaginatedFileSystemList;
+      all.push(...page.results);
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    log.warn(
+      `getDesktopFileSystem hit MAX_PAGES (${DESKTOP_FILE_SYSTEM_MAX_PAGES}); returning partial results`,
+      { returned: all.length },
+    );
+    return all;
+  }
+
+  // Create a top-level channel (a folder row whose path is a single segment).
+  async createDesktopFileSystemChannel(
+    name: string,
+  ): Promise<Schemas.FileSystem> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ path: name, type: "folder", depth: 1 }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create desktop file system channel: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as Schemas.FileSystem;
+  }
+
+  // Delete a desktop file system entry by id (used to remove top-level channels).
+  async deleteDesktopFileSystem(id: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(id)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Failed to delete desktop file system channel: ${response.statusText}`,
+      );
+    }
+  }
+
   async getGithubLogin(): Promise<string | null> {
     const data = (await this.api.get("/api/users/{uuid}/github_login/", {
       path: { uuid: "@me" },

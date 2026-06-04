@@ -6,6 +6,7 @@ import {
   dashboardIdInput,
   dashboardRecordSchema,
   dashboardSummarySchema,
+  listDashboardsInput,
   updateDashboardInput,
 } from "../../services/dashboards/schemas";
 import type { DashboardsService } from "../../services/dashboards/service";
@@ -16,8 +17,9 @@ const getService = () =>
 
 export const dashboardsRouter = router({
   list: publicProcedure
+    .input(listDashboardsInput)
     .output(z.array(dashboardSummarySchema))
-    .query(() => getService().list()),
+    .query(({ input }) => getService().list(input.channelId)),
   get: publicProcedure
     .input(dashboardIdInput)
     .output(dashboardRecordSchema.nullable())
@@ -33,4 +35,8 @@ export const dashboardsRouter = router({
   delete: publicProcedure
     .input(dashboardIdInput)
     .mutation(({ input }) => getService().delete(input.id)),
+  adoptOrphans: publicProcedure
+    .input(listDashboardsInput)
+    .output(z.number())
+    .mutation(({ input }) => getService().adoptOrphans(input.channelId)),
 });

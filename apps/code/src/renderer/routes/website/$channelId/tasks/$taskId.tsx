@@ -7,8 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { getCachedTask } from "@utils/queryClient";
 
-export const Route = createFileRoute("/website/tasks/$taskId")({
-  component: WebsiteTaskDetailRoute,
+export const Route = createFileRoute("/website/$channelId/tasks/$taskId")({
+  component: ChannelTaskDetailRoute,
   // Cache-only loader (same as /code/tasks/$taskId): never block navigation on
   // the network; the cold-miss fetch lives in the component.
   loader: ({ context, params }): Task | null => {
@@ -21,7 +21,7 @@ export const Route = createFileRoute("/website/tasks/$taskId")({
   },
 });
 
-function WebsiteTaskDetailRoute() {
+function ChannelTaskDetailRoute() {
   const { taskId } = Route.useParams();
   const loaderTask = Route.useLoaderData();
   const { data: tasks } = useTasks();

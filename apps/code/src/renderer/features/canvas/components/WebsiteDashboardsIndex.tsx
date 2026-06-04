@@ -28,11 +28,11 @@ import { useState } from "react";
 // the full layout fits inside the fixed-height preview frame as a thumbnail.
 const PREVIEW_SCALE = 0.4;
 
-// /website index: a grid of dashboard cards, each showing a scaled-down live
-// preview. Clicking a card opens the full dashboard.
-export function WebsiteDashboardsIndex() {
-  const { dashboards, isLoading } = useDashboards();
-  const createAndOpen = useCreateAndOpenDashboard();
+// A channel's dashboards index: a grid of cards, each showing a scaled-down
+// live preview. Clicking a card opens the full dashboard.
+export function WebsiteDashboardsIndex({ channelId }: { channelId: string }) {
+  const { dashboards, isLoading } = useDashboards(channelId);
+  const createAndOpen = useCreateAndOpenDashboard(channelId);
 
   if (isLoading) return null;
 
@@ -80,7 +80,7 @@ export function WebsiteDashboardsIndex() {
         </Flex>
         <Grid columns={{ initial: "1", sm: "2", md: "3" }} gap="4">
           {dashboards.map((d) => (
-            <DashboardCard key={d.id} summary={d} />
+            <DashboardCard key={d.id} channelId={channelId} summary={d} />
           ))}
         </Grid>
       </Box>
@@ -88,15 +88,21 @@ export function WebsiteDashboardsIndex() {
   );
 }
 
-function DashboardCard({ summary }: { summary: DashboardSummary }) {
+function DashboardCard({
+  channelId,
+  summary,
+}: {
+  channelId: string;
+  summary: DashboardSummary;
+}) {
   const { dashboard, isLoading } = useDashboard(summary.id);
   const spec = dashboard?.spec as Spec | null | undefined;
 
   return (
     <Box className="group relative">
       <Link
-        to="/website/dashboards/$dashboardId"
-        params={{ dashboardId: summary.id }}
+        to="/website/$channelId/dashboards/$dashboardId"
+        params={{ channelId, dashboardId: summary.id }}
         className="no-underline"
       >
         <Flex

@@ -1,0 +1,125 @@
+import { useChannelMutations } from "@features/canvas/hooks/useChannels";
+import { HashIcon, XIcon } from "@phosphor-icons/react";
+import { Button } from "@posthog/quill";
+import { Dialog, Flex, IconButton, Text, TextField } from "@radix-ui/themes";
+import { toast } from "@renderer/utils/toast";
+import { useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+
+// Matches Slack's "Create a channel" naming constraint.
+const MAX_CHANNEL_NAME_LENGTH = 80;
+
+interface CreateChannelModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export function CreateChannelModal({
+  open,
+  onOpenChange,
+}: CreateChannelModalProps) {
+  const { createChannel, isCreating } = useChannelMutations();
+  const navigate = useNavigate();
+  const [name, setName] = useState("");
+
+  // Reset the field each time the modal opens so a previous draft never lingers.
+  useEffect(() => {
+    if (open) setName("");
+  }, [open]);
+
+  const trimmed = name.trim();
+  const remaining = MAX_CHANNEL_NAME_LENGTH - name.length;
+
+  const submit = async () => {
+    if (!trimmed || isCreating) return;
+    try {
+      const channel = await createChannel(trimmed);
+      onOpenChange(false);
+      void navigate({
+        to: "/website/$channelId",
+        params: { channelId: channel.id },
+      });
+    } catch (error) {
+      toast.error("Couldn't create channel", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  return (
+    <Dialog.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!isCreating) onOpenChange(next);
+      }}
+    >
+      <Dialog.Content maxWidth="560px">
+        <Flex align="start" justify="between" gap="3">
+          <Dialog.Title>
+            <Text className="font-bold text-lg">Create a channel</Text>
+          </Dialog.Title>
+          <Dialog.Close>
+            <IconButton
+              variant="ghost"
+              color="gray"
+              size="2"
+              aria-label="Close"
+              disabled={isCreating}
+            >
+              <XIcon size={18} />
+            </IconButton>
+          </Dialog.Close>
+        </Flex>
+
+        <Flex direction="column" gap="2" mt="4">
+          <Text
+            as="label"
+            htmlFor="channel-name"
+            className="font-medium text-sm"
+          >
+            Name
+          </Text>
+          <TextField.Root
+            id="channel-name"
+            autoFocus
+            size="3"
+            value={name}
+            placeholder="e.g. mobile"
+            maxLength={MAX_CHANNEL_NAME_LENGTH}
+            disabled={isCreating}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void submit();
+              }
+            }}
+          >
+            <TextField.Slot>
+              <HashIcon size={16} className="text-gray-10" />
+            </TextField.Slot>
+            <TextField.Slot side="right">
+              <Text className="text-gray-9 text-sm tabular-nums">
+                {remaining}
+              </Text>
+            </TextField.Slot>
+          </TextField.Root>
+          <Text className="text-gray-10 text-sm">
+            Each channel gets its own dashboards, tasks, and settings. Use a
+            name that's easy to find.
+          </Text>
+        </Flex>
+
+        <Flex gap="3" mt="5" justify="end">
+          <Button
+            variant="primary"
+            disabled={!trimmed || isCreating}
+            onClick={submit}
+          >
+            Create
+          </Button>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
+  );
+}

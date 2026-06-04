@@ -1,7 +1,9 @@
 import { WebsiteDashboard } from "@features/canvas/components/WebsiteDashboard";
 import { createFileRoute } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/website/dashboards/$dashboardId")({
+export const Route = createFileRoute(
+  "/website/$channelId/dashboards/$dashboardId",
+)({
   component: DashboardRoute,
 });
 

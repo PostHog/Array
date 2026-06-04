@@ -18,15 +18,16 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as WebsiteIndexRouteImport } from './routes/website/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as CodeIndexRouteImport } from './routes/code/index'
-import { Route as WebsiteSettingsRouteImport } from './routes/website/settings'
-import { Route as WebsiteNewRouteImport } from './routes/website/new'
 import { Route as SettingsCategoryRouteImport } from './routes/settings/$category'
 import { Route as FoldersFolderIdRouteImport } from './routes/folders/$folderId'
 import { Route as CodeInboxRouteImport } from './routes/code/inbox'
 import { Route as CodeArchivedRouteImport } from './routes/code/archived'
-import { Route as WebsiteTasksTaskIdRouteImport } from './routes/website/tasks/$taskId'
-import { Route as WebsiteDashboardsDashboardIdRouteImport } from './routes/website/dashboards/$dashboardId'
+import { Route as WebsiteChannelIdIndexRouteImport } from './routes/website/$channelId/index'
+import { Route as WebsiteChannelIdSettingsRouteImport } from './routes/website/$channelId/settings'
+import { Route as WebsiteChannelIdNewRouteImport } from './routes/website/$channelId/new'
 import { Route as CodeTasksTaskIdRouteImport } from './routes/code/tasks/$taskId'
+import { Route as WebsiteChannelIdTasksTaskIdRouteImport } from './routes/website/$channelId/tasks/$taskId'
+import { Route as WebsiteChannelIdDashboardsDashboardIdRouteImport } from './routes/website/$channelId/dashboards/$dashboardId'
 import { Route as CodeTasksPendingKeyRouteImport } from './routes/code/tasks/pending.$key'
 
 const WebsiteRoute = WebsiteRouteImport.update({
@@ -74,16 +75,6 @@ const CodeIndexRoute = CodeIndexRouteImport.update({
   path: '/code/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WebsiteSettingsRoute = WebsiteSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => WebsiteRoute,
-} as any)
-const WebsiteNewRoute = WebsiteNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => WebsiteRoute,
-} as any)
 const SettingsCategoryRoute = SettingsCategoryRouteImport.update({
   id: '/settings/$category',
   path: '/settings/$category',
@@ -104,22 +95,39 @@ const CodeArchivedRoute = CodeArchivedRouteImport.update({
   path: '/code/archived',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WebsiteTasksTaskIdRoute = WebsiteTasksTaskIdRouteImport.update({
-  id: '/tasks/$taskId',
-  path: '/tasks/$taskId',
+const WebsiteChannelIdIndexRoute = WebsiteChannelIdIndexRouteImport.update({
+  id: '/$channelId/',
+  path: '/$channelId/',
   getParentRoute: () => WebsiteRoute,
 } as any)
-const WebsiteDashboardsDashboardIdRoute =
-  WebsiteDashboardsDashboardIdRouteImport.update({
-    id: '/dashboards/$dashboardId',
-    path: '/dashboards/$dashboardId',
+const WebsiteChannelIdSettingsRoute =
+  WebsiteChannelIdSettingsRouteImport.update({
+    id: '/$channelId/settings',
+    path: '/$channelId/settings',
     getParentRoute: () => WebsiteRoute,
   } as any)
+const WebsiteChannelIdNewRoute = WebsiteChannelIdNewRouteImport.update({
+  id: '/$channelId/new',
+  path: '/$channelId/new',
+  getParentRoute: () => WebsiteRoute,
+} as any)
 const CodeTasksTaskIdRoute = CodeTasksTaskIdRouteImport.update({
   id: '/code/tasks/$taskId',
   path: '/code/tasks/$taskId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WebsiteChannelIdTasksTaskIdRoute =
+  WebsiteChannelIdTasksTaskIdRouteImport.update({
+    id: '/$channelId/tasks/$taskId',
+    path: '/$channelId/tasks/$taskId',
+    getParentRoute: () => WebsiteRoute,
+  } as any)
+const WebsiteChannelIdDashboardsDashboardIdRoute =
+  WebsiteChannelIdDashboardsDashboardIdRouteImport.update({
+    id: '/$channelId/dashboards/$dashboardId',
+    path: '/$channelId/dashboards/$dashboardId',
+    getParentRoute: () => WebsiteRoute,
+  } as any)
 const CodeTasksPendingKeyRoute = CodeTasksPendingKeyRouteImport.update({
   id: '/code/tasks/pending/$key',
   path: '/code/tasks/pending/$key',
@@ -137,15 +145,16 @@ export interface FileRoutesByFullPath {
   '/code/inbox': typeof CodeInboxRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
-  '/website/new': typeof WebsiteNewRoute
-  '/website/settings': typeof WebsiteSettingsRoute
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
-  '/website/dashboards/$dashboardId': typeof WebsiteDashboardsDashboardIdRoute
-  '/website/tasks/$taskId': typeof WebsiteTasksTaskIdRoute
+  '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
+  '/website/$channelId/settings': typeof WebsiteChannelIdSettingsRoute
+  '/website/$channelId/': typeof WebsiteChannelIdIndexRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
+  '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
+  '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -157,15 +166,16 @@ export interface FileRoutesByTo {
   '/code/inbox': typeof CodeInboxRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
-  '/website/new': typeof WebsiteNewRoute
-  '/website/settings': typeof WebsiteSettingsRoute
   '/code': typeof CodeIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/website': typeof WebsiteIndexRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
-  '/website/dashboards/$dashboardId': typeof WebsiteDashboardsDashboardIdRoute
-  '/website/tasks/$taskId': typeof WebsiteTasksTaskIdRoute
+  '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
+  '/website/$channelId/settings': typeof WebsiteChannelIdSettingsRoute
+  '/website/$channelId': typeof WebsiteChannelIdIndexRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
+  '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
+  '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -179,15 +189,16 @@ export interface FileRoutesById {
   '/code/inbox': typeof CodeInboxRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
-  '/website/new': typeof WebsiteNewRoute
-  '/website/settings': typeof WebsiteSettingsRoute
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
-  '/website/dashboards/$dashboardId': typeof WebsiteDashboardsDashboardIdRoute
-  '/website/tasks/$taskId': typeof WebsiteTasksTaskIdRoute
+  '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
+  '/website/$channelId/settings': typeof WebsiteChannelIdSettingsRoute
+  '/website/$channelId/': typeof WebsiteChannelIdIndexRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
+  '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
+  '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -202,15 +213,16 @@ export interface FileRouteTypes {
     | '/code/inbox'
     | '/folders/$folderId'
     | '/settings/$category'
-    | '/website/new'
-    | '/website/settings'
     | '/code/'
     | '/settings/'
     | '/website/'
     | '/code/tasks/$taskId'
-    | '/website/dashboards/$dashboardId'
-    | '/website/tasks/$taskId'
+    | '/website/$channelId/new'
+    | '/website/$channelId/settings'
+    | '/website/$channelId/'
     | '/code/tasks/pending/$key'
+    | '/website/$channelId/dashboards/$dashboardId'
+    | '/website/$channelId/tasks/$taskId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -222,15 +234,16 @@ export interface FileRouteTypes {
     | '/code/inbox'
     | '/folders/$folderId'
     | '/settings/$category'
-    | '/website/new'
-    | '/website/settings'
     | '/code'
     | '/settings'
     | '/website'
     | '/code/tasks/$taskId'
-    | '/website/dashboards/$dashboardId'
-    | '/website/tasks/$taskId'
+    | '/website/$channelId/new'
+    | '/website/$channelId/settings'
+    | '/website/$channelId'
     | '/code/tasks/pending/$key'
+    | '/website/$channelId/dashboards/$dashboardId'
+    | '/website/$channelId/tasks/$taskId'
   id:
     | '__root__'
     | '/'
@@ -243,15 +256,16 @@ export interface FileRouteTypes {
     | '/code/inbox'
     | '/folders/$folderId'
     | '/settings/$category'
-    | '/website/new'
-    | '/website/settings'
     | '/code/'
     | '/settings/'
     | '/website/'
     | '/code/tasks/$taskId'
-    | '/website/dashboards/$dashboardId'
-    | '/website/tasks/$taskId'
+    | '/website/$channelId/new'
+    | '/website/$channelId/settings'
+    | '/website/$channelId/'
     | '/code/tasks/pending/$key'
+    | '/website/$channelId/dashboards/$dashboardId'
+    | '/website/$channelId/tasks/$taskId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -336,20 +350,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/website/settings': {
-      id: '/website/settings'
-      path: '/settings'
-      fullPath: '/website/settings'
-      preLoaderRoute: typeof WebsiteSettingsRouteImport
-      parentRoute: typeof WebsiteRoute
-    }
-    '/website/new': {
-      id: '/website/new'
-      path: '/new'
-      fullPath: '/website/new'
-      preLoaderRoute: typeof WebsiteNewRouteImport
-      parentRoute: typeof WebsiteRoute
-    }
     '/settings/$category': {
       id: '/settings/$category'
       path: '/settings/$category'
@@ -378,18 +378,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeArchivedRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/website/tasks/$taskId': {
-      id: '/website/tasks/$taskId'
-      path: '/tasks/$taskId'
-      fullPath: '/website/tasks/$taskId'
-      preLoaderRoute: typeof WebsiteTasksTaskIdRouteImport
+    '/website/$channelId/': {
+      id: '/website/$channelId/'
+      path: '/$channelId'
+      fullPath: '/website/$channelId/'
+      preLoaderRoute: typeof WebsiteChannelIdIndexRouteImport
       parentRoute: typeof WebsiteRoute
     }
-    '/website/dashboards/$dashboardId': {
-      id: '/website/dashboards/$dashboardId'
-      path: '/dashboards/$dashboardId'
-      fullPath: '/website/dashboards/$dashboardId'
-      preLoaderRoute: typeof WebsiteDashboardsDashboardIdRouteImport
+    '/website/$channelId/settings': {
+      id: '/website/$channelId/settings'
+      path: '/$channelId/settings'
+      fullPath: '/website/$channelId/settings'
+      preLoaderRoute: typeof WebsiteChannelIdSettingsRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/$channelId/new': {
+      id: '/website/$channelId/new'
+      path: '/$channelId/new'
+      fullPath: '/website/$channelId/new'
+      preLoaderRoute: typeof WebsiteChannelIdNewRouteImport
       parentRoute: typeof WebsiteRoute
     }
     '/code/tasks/$taskId': {
@@ -398,6 +405,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/code/tasks/$taskId'
       preLoaderRoute: typeof CodeTasksTaskIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/website/$channelId/tasks/$taskId': {
+      id: '/website/$channelId/tasks/$taskId'
+      path: '/$channelId/tasks/$taskId'
+      fullPath: '/website/$channelId/tasks/$taskId'
+      preLoaderRoute: typeof WebsiteChannelIdTasksTaskIdRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/$channelId/dashboards/$dashboardId': {
+      id: '/website/$channelId/dashboards/$dashboardId'
+      path: '/$channelId/dashboards/$dashboardId'
+      fullPath: '/website/$channelId/dashboards/$dashboardId'
+      preLoaderRoute: typeof WebsiteChannelIdDashboardsDashboardIdRouteImport
+      parentRoute: typeof WebsiteRoute
     }
     '/code/tasks/pending/$key': {
       id: '/code/tasks/pending/$key'
@@ -410,19 +431,22 @@ declare module '@tanstack/react-router' {
 }
 
 interface WebsiteRouteChildren {
-  WebsiteNewRoute: typeof WebsiteNewRoute
-  WebsiteSettingsRoute: typeof WebsiteSettingsRoute
   WebsiteIndexRoute: typeof WebsiteIndexRoute
-  WebsiteDashboardsDashboardIdRoute: typeof WebsiteDashboardsDashboardIdRoute
-  WebsiteTasksTaskIdRoute: typeof WebsiteTasksTaskIdRoute
+  WebsiteChannelIdNewRoute: typeof WebsiteChannelIdNewRoute
+  WebsiteChannelIdSettingsRoute: typeof WebsiteChannelIdSettingsRoute
+  WebsiteChannelIdIndexRoute: typeof WebsiteChannelIdIndexRoute
+  WebsiteChannelIdDashboardsDashboardIdRoute: typeof WebsiteChannelIdDashboardsDashboardIdRoute
+  WebsiteChannelIdTasksTaskIdRoute: typeof WebsiteChannelIdTasksTaskIdRoute
 }
 
 const WebsiteRouteChildren: WebsiteRouteChildren = {
-  WebsiteNewRoute: WebsiteNewRoute,
-  WebsiteSettingsRoute: WebsiteSettingsRoute,
   WebsiteIndexRoute: WebsiteIndexRoute,
-  WebsiteDashboardsDashboardIdRoute: WebsiteDashboardsDashboardIdRoute,
-  WebsiteTasksTaskIdRoute: WebsiteTasksTaskIdRoute,
+  WebsiteChannelIdNewRoute: WebsiteChannelIdNewRoute,
+  WebsiteChannelIdSettingsRoute: WebsiteChannelIdSettingsRoute,
+  WebsiteChannelIdIndexRoute: WebsiteChannelIdIndexRoute,
+  WebsiteChannelIdDashboardsDashboardIdRoute:
+    WebsiteChannelIdDashboardsDashboardIdRoute,
+  WebsiteChannelIdTasksTaskIdRoute: WebsiteChannelIdTasksTaskIdRoute,
 }
 
 const WebsiteRouteWithChildren =
