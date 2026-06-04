@@ -175,7 +175,7 @@ function buildHooks(
   onTaskStateChange: (() => Promise<void>) | undefined,
 ): Options["hooks"] {
   const postToolUseHooks = [
-    createPostToolUseHook({ onModeChange, onPostHogResourceUsed, logger }),
+    createPostToolUseHook({ onModeChange, onPostHogResourceUsed }),
   ];
   if (enrichmentDeps && enrichedReadCache) {
     postToolUseHooks.push(

@@ -1653,8 +1653,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     };
   }
 
-  /** Records the PostHog product behind an executed MCP exec `call` so the
-   *  current turn can report which products it touched. */
+  /** Records the PostHog product behind an executed MCP exec `call` and emits
+   *  any newly-seen product so the client's persistent list can update live. */
   private createOnPostHogResourceUsed() {
     return (subTool: string, commandText?: string) => {
       if (!this.session) return;
@@ -1665,12 +1665,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         (p) => !this.session.sessionResources.has(p),
       );
       for (const product of added) this.session.sessionResources.add(product);
-      this.logger.debug("[resources_used] resource used", {
-        subTool,
-        products,
-        added,
-        sessionSize: this.session.sessionResources.size,
-      });
       if (added.length > 0) void this.emitResourcesUsed(added);
     };
   }
@@ -1679,7 +1673,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
    *  can append them to a persistent, de-duplicated list in real time. */
   private async emitResourcesUsed(added: PostHogProductId[]): Promise<void> {
     const products = added.map((id) => ({ id, label: POSTHOG_PRODUCTS[id] }));
-    this.logger.debug("[resources_used] emitting notification", { products });
     await this.client.extNotification(POSTHOG_NOTIFICATIONS.RESOURCES_USED, {
       sessionId: this.sessionId,
       products,
