@@ -41,6 +41,9 @@ function DashboardPicker({ dashboardId }: { dashboardId?: string }) {
     <Combobox
       items={DASHBOARD_IDS}
       value={current.id}
+      // No search input here — disable filtering so every dashboard always
+      // shows (otherwise base-ui filters the list down to the selected one).
+      filter={null}
       onValueChange={(value) =>
         navigate({
           to: "/website/dashboards/$dashboardId",
