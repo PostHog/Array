@@ -2,7 +2,9 @@ import { PointerSensor } from "@dnd-kit/dom";
 import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useFolders } from "@features/folders/hooks/useFolders";
+import { useAppView } from "@hooks/useAppView";
 import { useMeQuery } from "@hooks/useMeQuery";
+import { openTaskInput } from "@hooks/useOpenTask";
 import {
   FunnelSimple as FunnelSimpleIcon,
   GitBranch,
@@ -23,7 +25,6 @@ import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
 import { useWorkspace } from "@renderer/features/workspace/hooks/useWorkspace";
 import { normalizeRepoKey } from "@shared/utils/repo";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { getRelativeDateGroup } from "@utils/time";
 import { motion } from "framer-motion";
 import { Fragment, useCallback, useEffect, useMemo } from "react";
@@ -286,13 +287,9 @@ export function TaskListView({
     (state) => state.resetHistoryVisibleCount,
   );
   const { folders } = useFolders();
-  const navigateToTaskInput = useNavigationStore(
-    (state) => state.navigateToTaskInput,
-  );
-  const isOnTaskInput = useNavigationStore(
-    (state) =>
-      state.view.type === "task-input" || state.view.type === "task-pending",
-  );
+  const view = useAppView();
+  const isOnTaskInput =
+    view.type === "task-input" || view.type === "task-pending";
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset pagination when filters change
   useEffect(() => {
@@ -398,7 +395,7 @@ export function TaskListView({
             <motion.button
               type="button"
               className="mt-1 rounded-md bg-gray-3 px-3 py-1.5 text-[13px] text-gray-12"
-              onClick={() => navigateToTaskInput()}
+              onClick={() => openTaskInput()}
               whileHover={{ scale: 1.05, backgroundColor: "var(--gray-4)" }}
               whileTap={{ scale: 0.97 }}
             >
@@ -443,9 +440,9 @@ export function TaskListView({
                     tooltipContent={folder?.path ?? group.id}
                     onNewTask={() => {
                       if (groupFolderId) {
-                        navigateToTaskInput(groupFolderId);
+                        openTaskInput(groupFolderId);
                       } else {
-                        navigateToTaskInput();
+                        openTaskInput();
                       }
                     }}
                     newTaskTooltip={`Start new task in ${folder?.name ?? group.name}`}

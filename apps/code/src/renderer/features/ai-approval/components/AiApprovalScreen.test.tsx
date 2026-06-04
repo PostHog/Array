@@ -4,9 +4,15 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const approveAiDataProcessing = vi.fn();
-const logoutMutate = vi.fn();
-const openSettings = vi.fn();
+// Hoisted so the spies are initialized before the hoisted vi.mock factories
+// that reference them run.
+const { approveAiDataProcessing, logoutMutate, openSettings } = vi.hoisted(
+  () => ({
+    approveAiDataProcessing: vi.fn(),
+    logoutMutate: vi.fn(),
+    openSettings: vi.fn(),
+  }),
+);
 
 vi.mock("@features/auth/hooks/authClient", () => ({
   useAuthenticatedClient: () => ({ approveAiDataProcessing }),
@@ -22,12 +28,7 @@ vi.mock("@features/auth/hooks/authQueries", () => ({
 
 vi.mock("@features/settings/components/SettingsDialog", () => ({
   SettingsDialog: () => null,
-}));
-
-vi.mock("@features/settings/stores/settingsDialogStore", () => ({
-  useSettingsDialogStore: (
-    selector: (state: { open: typeof openSettings }) => unknown,
-  ) => selector({ open: openSettings }),
+  openSettingsDialog: openSettings,
 }));
 
 vi.mock("@utils/analytics", () => ({ track: vi.fn() }));

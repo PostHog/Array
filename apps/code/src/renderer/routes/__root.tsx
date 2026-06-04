@@ -2,56 +2,89 @@ import { HeaderRow } from "@components/HeaderRow";
 import { HedgehogMode } from "@components/HedgehogMode";
 import { KeyboardShortcutsSheet } from "@components/KeyboardShortcutsSheet";
 import { SpaceSwitcher } from "@components/SpaceSwitcher";
-
-import { ArchivedTasksView } from "@features/archive/components/ArchivedTasksView";
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
 import { CommandMenu } from "@features/command/components/CommandMenu";
-import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
-import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
-import { McpServersView } from "@features/mcp-servers/components/McpServersView";
-import { FolderSettingsView } from "@features/settings/components/FolderSettingsView";
-import { SettingsDialog } from "@features/settings/components/SettingsDialog";
 import { useSetupDiscovery } from "@features/setup/hooks/useSetupDiscovery";
 import { MainSidebar } from "@features/sidebar/components/MainSidebar";
 import { useSidebarData } from "@features/sidebar/hooks/useSidebarData";
 import { useVisualTaskOrder } from "@features/sidebar/hooks/useVisualTaskOrder";
-import { SkillsView } from "@features/skills/components/SkillsView";
-import { TaskDetail } from "@features/task-detail/components/TaskDetail";
-import { TaskInput } from "@features/task-detail/components/TaskInput";
-import { TaskPendingView } from "@features/task-detail/components/TaskPendingView";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { TourOverlay } from "@features/tour/components/TourOverlay";
 import {
   useWorkspaces,
   workspaceApi,
 } from "@features/workspace/hooks/useWorkspace";
+import { useAppView } from "@hooks/useAppView";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
+import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { Box, Flex } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc/client";
 import { BILLING_FLAG, SYNC_CLOUD_TASKS_FLAG } from "@shared/constants";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import {
+  createRootRouteWithContext,
+  Outlet,
+  useRouterState,
+} from "@tanstack/react-router";
 import { logger } from "@utils/logger";
-import { useCallback, useEffect, useRef } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef } from "react";
+
+// Dynamic import keeps the devtools chunk out of the prod bundle. Without the
+// gate at the import level, conditional render alone still ships the devtools
+// code to users.
+//
+// We embed the router devtools as a plugin inside the unified TanStack Devtools
+// shell rather than rendering the standalone floating logo. The shell owns a
+// single trigger that can be dragged, dismissed, and hidden-until-hover, and it
+// persists those choices to localStorage — so the panel stays out of the way.
+const TanStackDevtools = import.meta.env.DEV
+  ? lazy(async () => {
+      const [
+        { TanStackDevtools: DevtoolsShell },
+        { TanStackRouterDevtoolsPanel },
+      ] = await Promise.all([
+        import("@tanstack/react-devtools"),
+        import("@tanstack/react-router-devtools"),
+      ]);
+      // Hoisted so the config/plugins keep stable references across the
+      // RootLayout re-renders that fire on every navigation — otherwise the
+      // shell could remount the panel (and flash) on each route change.
+      const config = {
+        position: "bottom-right",
+        hideUntilHover: true,
+      } as const;
+      const plugins = [
+        {
+          name: "TanStack Router",
+          render: <TanStackRouterDevtoolsPanel />,
+        },
+      ];
+      return {
+        default: () => <DevtoolsShell config={config} plugins={plugins} />,
+      };
+    })
+  : () => null;
+
+import { GlobalEventHandlers } from "../components/GlobalEventHandlers";
 import { useNewTaskDeepLink } from "../hooks/useNewTaskDeepLink";
 import { useTaskDeepLink } from "../hooks/useTaskDeepLink";
-import { GlobalEventHandlers } from "./GlobalEventHandlers";
 
-const log = logger.scope("main-layout");
+const log = logger.scope("root-route");
 
-export function MainLayout() {
-  const {
-    view,
-    hydrateTask,
-    navigateToTaskInput,
-    navigateToTask,
-    taskInputReportAssociation,
-    taskInputCloudRepository,
-  } = useNavigationStore();
+export interface RouterContext {
+  queryClient: QueryClient;
+}
+
+export const Route = createRootRouteWithContext<RouterContext>()({
+  component: RootLayout,
+});
+
+function RootLayout() {
+  const view = useAppView();
   const {
     isOpen: commandMenuOpen,
     setOpen: setCommandMenuOpen,
@@ -70,11 +103,10 @@ export function MainLayout() {
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
 
-  // Space switcher data
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
   const activeTaskId =
-    view.type === "task-detail" && view.data ? view.data.id : null;
+    view.type === "task-detail" && view.taskId ? view.taskId : null;
 
   useIntegrations();
   useTaskDeepLink();
@@ -82,11 +114,8 @@ export function MainLayout() {
   useSetupDiscovery();
   useNewTaskDeepLink();
 
-  useEffect(() => {
-    if (tasks) {
-      hydrateTask(tasks);
-    }
-  }, [tasks, hydrateTask]);
+  // hydrateTask is no longer needed — the URL is the source of truth and the
+  // task cache populates view.data automatically.
 
   useEffect(() => {
     if (!syncCloudTasksEnabled) return;
@@ -100,8 +129,6 @@ export function MainLayout() {
     if (missing.length === 0) return;
     const missingIds = missing.map((t) => t.id);
     for (const id of missingIds) reconcilingTaskIds.current.add(id);
-    // Single batched IPC instead of one mutation per task — with many cloud
-    // tasks the per-task pattern saturates the main thread at boot.
     workspaceApi
       .reconcileCloudWorkspaces(missingIds)
       .then((result) => {
@@ -125,57 +152,49 @@ export function MainLayout() {
     trpcReact,
   ]);
 
-  useEffect(() => {
-    if (view.type === "task-detail" && !view.data && !view.taskId) {
-      navigateToTaskInput();
-    }
-  }, [view, navigateToTaskInput]);
+  // Note: a malformed /code/tasks/$taskId without a valid id is impossible —
+  // TanStack Router only mounts the task-detail route when taskId is in the URL.
 
   const handleToggleCommandMenu = useCallback(() => {
     toggleCommandMenu();
   }, [toggleCommandMenu]);
+
+  // Settings is a full-page route — drop the app chrome (header/sidebar/
+  // space-switcher) so the panel occupies the full window.
+  const isSettingsRoute = useRouterState({
+    select: (s) => s.matches.some((m) => m.routeId.startsWith("/settings")),
+  });
+
+  if (isSettingsRoute) {
+    return (
+      <Flex direction="column" height="100vh">
+        <Outlet />
+        <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+        <KeyboardShortcutsSheet
+          open={shortcutsSheetOpen}
+          onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
+        />
+        <GlobalEventHandlers
+          onToggleCommandMenu={handleToggleCommandMenu}
+          onToggleShortcutsSheet={toggleShortcutsSheet}
+        />
+        {billingEnabled && <UsageLimitModal />}
+        {import.meta.env.DEV && (
+          <Suspense fallback={null}>
+            <TanStackDevtools />
+          </Suspense>
+        )}
+      </Flex>
+    );
+  }
 
   return (
     <Flex direction="column" height="100vh">
       <HeaderRow />
       <Flex flexGrow="1" overflow="hidden">
         <MainSidebar />
-
         <Box flexGrow="1" overflow="hidden">
-          {view.type === "task-input" && (
-            <TaskInput
-              initialPrompt={view.initialPrompt}
-              initialPromptKey={view.taskInputRequestId}
-              initialCloudRepository={
-                view.initialCloudRepository ?? taskInputCloudRepository
-              }
-              initialModel={view.initialModel}
-              initialMode={view.initialMode}
-              reportAssociation={
-                view.reportAssociation ?? taskInputReportAssociation
-              }
-            />
-          )}
-
-          {view.type === "task-detail" && view.data && (
-            <TaskDetail key={view.data.id} task={view.data} />
-          )}
-
-          {view.type === "task-pending" && view.pendingTaskKey && (
-            <TaskPendingView pendingTaskKey={view.pendingTaskKey} />
-          )}
-
-          {view.type === "folder-settings" && <FolderSettingsView />}
-
-          {view.type === "inbox" && <InboxView />}
-
-          {view.type === "archived" && <ArchivedTasksView />}
-
-          {view.type === "command-center" && <CommandCenterView />}
-
-          {view.type === "skills" && <SkillsView />}
-
-          {view.type === "mcp-servers" && <McpServersView />}
+          <Outlet />
         </Box>
       </Flex>
 
@@ -184,8 +203,8 @@ export function MainLayout() {
         activeTaskId={activeTaskId}
         allTasks={tasks ?? []}
         isOnNewTask={view.type === "task-input" || view.type === "task-pending"}
-        onNavigateToTask={navigateToTask}
-        onNewTask={navigateToTaskInput}
+        onNavigateToTask={openTask}
+        onNewTask={openTaskInput}
       />
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
       <KeyboardShortcutsSheet
@@ -196,10 +215,14 @@ export function MainLayout() {
         onToggleCommandMenu={handleToggleCommandMenu}
         onToggleShortcutsSheet={toggleShortcutsSheet}
       />
-      <SettingsDialog />
       <TourOverlay />
       {billingEnabled && <UsageLimitModal />}
       <HedgehogMode />
+      {import.meta.env.DEV && (
+        <Suspense fallback={null}>
+          <TanStackDevtools />
+        </Suspense>
+      )}
     </Flex>
   );
 }

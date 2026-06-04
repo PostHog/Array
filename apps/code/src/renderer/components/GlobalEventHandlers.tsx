@@ -2,18 +2,25 @@ import { useReviewNavigationStore } from "@features/code-review/stores/reviewNav
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { usePanelLayoutStore } from "@features/panels/store/panelLayoutStore";
 import { getSessionService } from "@features/sessions/service/service";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { openSettings } from "@features/settings/hooks/useOpenSettings";
 import { useSidebarData } from "@features/sidebar/hooks/useSidebarData";
 import { useVisualTaskOrder } from "@features/sidebar/hooks/useVisualTaskOrder";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { useFocusWorkspace } from "@features/workspace/hooks/useFocusWorkspace";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
+import { useAppView } from "@hooks/useAppView";
+import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
+import {
+  goBackInHistory,
+  goForwardInHistory,
+  navigateToFolderSettings,
+  navigateToInbox,
+} from "@renderer/navigationBridge";
 import { useTRPC } from "@renderer/trpc";
 import type { Task } from "@shared/types";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { clearApplicationStorage } from "@utils/clearStorage";
 import { shipIt } from "@utils/confetti";
@@ -32,18 +39,10 @@ export function GlobalEventHandlers({
 }: GlobalEventHandlersProps) {
   const trpcReact = useTRPC();
   const commandMenuOpen = useCommandMenuStore((s) => s.isOpen);
-  const openSettingsDialog = useSettingsDialogStore((state) => state.open);
-  const navigateToTaskInput = useNavigationStore(
-    (state) => state.navigateToTaskInput,
-  );
-  const navigateToTask = useNavigationStore((state) => state.navigateToTask);
-  const navigateToInbox = useNavigationStore((state) => state.navigateToInbox);
-  const navigateToFolderSettings = useNavigationStore(
-    (state) => state.navigateToFolderSettings,
-  );
-  const view = useNavigationStore((state) => state.view);
-  const goBack = useNavigationStore((state) => state.goBack);
-  const goForward = useNavigationStore((state) => state.goForward);
+  const openSettingsDialog = openSettings;
+  const view = useAppView();
+  const goBack = goBackInHistory;
+  const goForward = goForwardInHistory;
   const { folders, loadFolders } = useFolders();
   const { data: workspaces = {} } = useWorkspaces();
   const clearAllLayouts = usePanelLayoutStore((state) => state.clearAllLayouts);
@@ -55,7 +54,7 @@ export function GlobalEventHandlers({
     (state) => state.getReviewMode,
   );
 
-  const currentTaskId = view.type === "task-detail" ? view.data?.id : undefined;
+  const currentTaskId = view.type === "task-detail" ? view.taskId : undefined;
   const { workspace: currentWorkspace, handleToggleFocus } = useFocusWorkspace(
     currentTaskId ?? "",
   );
@@ -77,60 +76,51 @@ export function GlobalEventHandlers({
     (index: number) => {
       const taskData = visualTaskOrder[index - 1];
       const task = taskData ? taskById.get(taskData.id) : undefined;
-      if (task) {
-        navigateToTask(task);
-      }
+      if (task) void openTask(task);
     },
-    [visualTaskOrder, taskById, navigateToTask],
+    [visualTaskOrder, taskById],
   );
 
   const handlePrevTask = useCallback(() => {
     if (visualTaskOrder.length === 0) return;
-    if (view.type !== "task-detail" || !view.data) {
+    if (view.type !== "task-detail" || !view.taskId) {
       const lastTaskData = visualTaskOrder[visualTaskOrder.length - 1];
       const task = lastTaskData ? taskById.get(lastTaskData.id) : undefined;
-      if (task) navigateToTask(task);
+      if (task) void openTask(task);
       return;
     }
-    const currentIndex = visualTaskOrder.findIndex(
-      (t) => t.id === view.data?.id,
-    );
+    const currentIndex = visualTaskOrder.findIndex((t) => t.id === view.taskId);
     const prevIndex =
       currentIndex <= 0 ? visualTaskOrder.length - 1 : currentIndex - 1;
     const prevTaskData = visualTaskOrder[prevIndex];
     const task = prevTaskData ? taskById.get(prevTaskData.id) : undefined;
-    if (task) navigateToTask(task);
-  }, [visualTaskOrder, taskById, navigateToTask, view]);
+    if (task) void openTask(task);
+  }, [visualTaskOrder, taskById, view]);
 
   const handleNextTask = useCallback(() => {
     if (visualTaskOrder.length === 0) return;
-    if (view.type !== "task-detail" || !view.data) {
+    if (view.type !== "task-detail" || !view.taskId) {
       const firstTaskData = visualTaskOrder[0];
       const task = firstTaskData ? taskById.get(firstTaskData.id) : undefined;
-      if (task) navigateToTask(task);
+      if (task) void openTask(task);
       return;
     }
-    const currentIndex = visualTaskOrder.findIndex(
-      (t) => t.id === view.data?.id,
-    );
+    const currentIndex = visualTaskOrder.findIndex((t) => t.id === view.taskId);
     const nextIndex =
       currentIndex >= visualTaskOrder.length - 1 ? 0 : currentIndex + 1;
     const nextTaskData = visualTaskOrder[nextIndex];
     const task = nextTaskData ? taskById.get(nextTaskData.id) : undefined;
-    if (task) navigateToTask(task);
-  }, [visualTaskOrder, taskById, navigateToTask, view]);
+    if (task) void openTask(task);
+  }, [visualTaskOrder, taskById, view]);
 
   const handleOpenSettings = useCallback(() => {
     openSettingsDialog();
   }, [openSettingsDialog]);
 
-  const handleFocusTaskMode = useCallback(
-    (data?: unknown) => {
-      if (!data) return;
-      navigateToTaskInput();
-    },
-    [navigateToTaskInput],
-  );
+  const handleFocusTaskMode = useCallback((data?: unknown) => {
+    if (!data) return;
+    openTaskInput();
+  }, []);
 
   const handleResetLayout = useCallback(
     (data?: unknown) => {
@@ -271,16 +261,16 @@ export function GlobalEventHandlers({
 
   // Check if current task's folder became invalid (e.g., moved while app was open)
   useEffect(() => {
-    if (view.type !== "task-detail" || !view.data) return;
+    if (view.type !== "task-detail" || !view.taskId) return;
 
-    const workspace = workspaces[view.data.id];
+    const workspace = workspaces[view.taskId];
     if (!workspace?.folderId) return;
 
     const folder = folders.find((f) => f.id === workspace.folderId);
     if (folder && folder.exists === false) {
       navigateToFolderSettings(folder.id);
     }
-  }, [view, folders, workspaces, navigateToFolderSettings]);
+  }, [view, folders, workspaces]);
 
   useSubscription(
     trpcReact.ui.onOpenSettings.subscriptionOptions(undefined, {

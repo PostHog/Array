@@ -2,12 +2,12 @@ import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useCreateTask } from "@features/tasks/hooks/useTasks";
 import { useUserRepositoryIntegration } from "@hooks/useIntegrations";
+import { openTask } from "@hooks/useOpenTask";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
 import { toast } from "@renderer/utils/toast";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
-import { useNavigationStore } from "@stores/navigationStore";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback, useState } from "react";
@@ -48,7 +48,6 @@ export function useCreatePrReport({
   cloudRepository,
 }: UseCreatePrReportOptions): UseCreatePrReportReturn {
   const [isCreatingPr, setIsCreatingPr] = useState(false);
-  const { navigateToTask } = useNavigationStore();
   const { getUserIntegrationIdForRepo } = useUserRepositoryIntegration();
   const { invalidateTasks } = useCreateTask();
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
@@ -119,7 +118,7 @@ export function useCreatePrReport({
       const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
       const result = await taskService.createTask(input, (output) => {
         invalidateTasks(output.task);
-        navigateToTask(output.task);
+        void openTask(output.task);
       });
 
       if (result.success) {
@@ -167,7 +166,6 @@ export function useCreatePrReport({
     reportTitle,
     getUserIntegrationIdForRepo,
     invalidateTasks,
-    navigateToTask,
   ]);
 
   return { createPrReport, isCreatingPr };

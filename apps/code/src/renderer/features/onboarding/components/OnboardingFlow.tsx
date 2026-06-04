@@ -3,6 +3,7 @@ import { useLogoutMutation } from "@features/auth/hooks/authMutations";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { useUserGithubIntegrations } from "@hooks/useIntegrations";
+import { openTaskInput } from "@hooks/useOpenTask";
 import { ArrowRight, SignOut } from "@phosphor-icons/react";
 import { Button, Flex } from "@radix-ui/themes";
 import { IS_DEV } from "@shared/constants/environment";
@@ -10,7 +11,6 @@ import {
   ANALYTICS_EVENTS,
   type OnboardingStepCompletedProperties,
 } from "@shared/types/analytics";
-import { useNavigationStore } from "@stores/navigationStore";
 import { track } from "@utils/analytics";
 import { shipIt } from "@utils/confetti";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
@@ -49,9 +49,6 @@ export function OnboardingFlow() {
     (state) => state.completeOnboarding,
   );
   const resetOnboarding = useOnboardingStore((state) => state.resetOnboarding);
-  const navigateToTaskInput = useNavigationStore(
-    (state) => state.navigateToTaskInput,
-  );
   const logoutMutation = useLogoutMutation();
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
@@ -147,7 +144,7 @@ export function OnboardingFlow() {
     });
     shipIt();
     completeOnboarding();
-    navigateToTaskInput();
+    openTaskInput();
   };
 
   const handleSkip = () => {
@@ -157,7 +154,7 @@ export function OnboardingFlow() {
       reason: "dev_skip",
     });
     completeOnboarding();
-    navigateToTaskInput();
+    openTaskInput();
   };
 
   const handleLogout = () => {

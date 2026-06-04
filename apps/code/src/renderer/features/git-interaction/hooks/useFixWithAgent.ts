@@ -1,6 +1,6 @@
 import { useSessionForTask } from "@features/sessions/stores/sessionStore";
 import { sendPromptToAgent } from "@features/sessions/utils/sendPromptToAgent";
-import { useNavigationStore } from "@stores/navigationStore";
+import { useAppView } from "@hooks/useAppView";
 import { useCallback } from "react";
 import type { FixWithAgentPrompt } from "../utils/errorPrompts";
 
@@ -16,9 +16,8 @@ export function useFixWithAgent(
   canFixWithAgent: boolean;
   fixWithAgent: (error: string) => Promise<void>;
 } {
-  const taskId = useNavigationStore((s) =>
-    s.view.type === "task-detail" ? s.view.data?.id : undefined,
-  );
+  const view = useAppView();
+  const taskId = view.type === "task-detail" ? view.taskId : undefined;
   const session = useSessionForTask(taskId);
   const isSessionReady = session?.status === "connected";
 

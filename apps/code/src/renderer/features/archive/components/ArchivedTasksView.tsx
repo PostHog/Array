@@ -1,6 +1,7 @@
 import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
 import { Tooltip } from "@components/ui/Tooltip";
 import { useTasks } from "@features/tasks/hooks/useTasks";
+import { openTask } from "@hooks/useOpenTask";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
 import {
@@ -26,7 +27,6 @@ import {
 import { trpcClient, useTRPC } from "@renderer/trpc";
 import type { Task } from "@shared/types";
 import type { ArchivedTask } from "@shared/types/archive";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatRelativeTimeLong } from "@utils/time";
 import { toast } from "@utils/toast";
@@ -524,7 +524,7 @@ export function ArchivedTasksView() {
         action: task
           ? {
               label: "View task",
-              onClick: () => useNavigationStore.getState().navigateToTask(task),
+              onClick: () => void openTask(task),
             }
           : undefined,
       });
@@ -600,7 +600,7 @@ export function ArchivedTasksView() {
         action: task
           ? {
               label: "View task",
-              onClick: () => useNavigationStore.getState().navigateToTask(task),
+              onClick: () => void openTask(task),
             }
           : undefined,
       });

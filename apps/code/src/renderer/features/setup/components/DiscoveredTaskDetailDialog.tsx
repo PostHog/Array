@@ -13,6 +13,7 @@ import {
   FALLBACK_CATEGORY_CONFIG,
 } from "@features/setup/utils/categoryConfig";
 import { useDetectedCloudRepository } from "@hooks/useDetectedCloudRepository";
+import { openTaskInput } from "@hooks/useOpenTask";
 import { PlusIcon, SparkleIcon } from "@phosphor-icons/react";
 import {
   Box,
@@ -24,7 +25,6 @@ import {
 } from "@radix-ui/themes";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useActiveRepoStore } from "@stores/activeRepoStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { track } from "@utils/analytics";
 
 interface DiscoveredTaskDetailDialogProps {
@@ -67,7 +67,6 @@ function DialogBody({
     s.discoveredTasks.filter((t) => isTaskForRepo(t, task.repoPath ?? null)),
   );
   const selectedDirectory = useActiveRepoStore((s) => s.path);
-  const navigateToTaskInput = useNavigationStore((s) => s.navigateToTaskInput);
   const { folders } = useFolders();
   const detectedCloudRepository = useDetectedCloudRepository(selectedDirectory);
 
@@ -86,7 +85,7 @@ function DialogBody({
       .getState()
       .removeDiscoveredTask(task.id, task.repoPath ?? null);
     onClose();
-    navigateToTaskInput({
+    openTaskInput({
       initialPrompt,
       folderId,
       initialCloudRepository: detectedCloudRepository ?? undefined,

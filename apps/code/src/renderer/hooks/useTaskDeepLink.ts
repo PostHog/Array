@@ -1,11 +1,11 @@
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { useTaskViewed } from "@features/sidebar/hooks/useTaskViewed";
 import type { TaskService } from "@features/task-detail/service/service";
+import { openTask as openTaskHelper } from "@hooks/useOpenTask";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
 import { trpcClient, useTRPC } from "@renderer/trpc";
 import type { Task } from "@shared/types";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { logger } from "@utils/logger";
@@ -27,7 +27,6 @@ const taskKeys = {
  */
 export function useTaskDeepLink() {
   const trpcReact = useTRPC();
-  const navigateToTask = useNavigationStore((state) => state.navigateToTask);
   const { markAsViewed } = useTaskViewed();
   const queryClient = useQueryClient();
   const isAuthenticated = useAuthStateValue(
@@ -74,7 +73,7 @@ export function useTaskDeepLink() {
         queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
 
         markAsViewed(taskId);
-        navigateToTask(task);
+        void openTaskHelper(task);
 
         log.info(
           `Successfully opened task from deep link: ${taskId}${taskRunId ? `, run: ${taskRunId}` : ""}`,
@@ -84,7 +83,7 @@ export function useTaskDeepLink() {
         toast.error("Failed to open task");
       }
     },
-    [navigateToTask, markAsViewed, queryClient],
+    [markAsViewed, queryClient],
   );
 
   // Check for pending deep link on mount (for cold start via deep link)

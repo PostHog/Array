@@ -3,6 +3,7 @@ import { useDraftStore } from "@features/message-editor/stores/draftStore";
 import { TaskIcon } from "@features/sidebar/components/items/TaskIcon";
 import { useTaskPrStatus } from "@features/sidebar/hooks/useTaskPrStatus";
 import { TaskInput } from "@features/task-detail/components/TaskInput";
+import { openTask } from "@hooks/useOpenTask";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
 import {
   ArrowsOut,
@@ -15,7 +16,6 @@ import {
 } from "@phosphor-icons/react";
 import { Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   CellStatus,
@@ -195,12 +195,11 @@ function PopulatedCell({
   cell: CommandCenterCellData & { task: Task };
   isActiveSession: boolean;
 }) {
-  const navigateToTask = useNavigationStore((s) => s.navigateToTask);
   const removeTask = useCommandCenterStore((s) => s.removeTask);
 
   const handleExpand = useCallback(() => {
-    navigateToTask(cell.task);
-  }, [navigateToTask, cell.task]);
+    void openTask(cell.task);
+  }, [cell.task]);
 
   const handleRemove = useCallback(() => {
     removeTask(cell.cellIndex);

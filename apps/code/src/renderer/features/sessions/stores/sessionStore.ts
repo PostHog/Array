@@ -50,6 +50,7 @@ export interface AgentSession {
   status: "connecting" | "connected" | "disconnected" | "error";
   errorTitle?: string;
   errorMessage?: string;
+  errorRetryable?: boolean;
   isPromptPending: boolean;
   isCompacting: boolean;
   promptStartedAt: number | null;

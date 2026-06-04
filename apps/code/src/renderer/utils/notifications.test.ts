@@ -1,14 +1,29 @@
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { sendMutate, showDockBadgeMutate, bounceDockMutate, playSound } =
-  vi.hoisted(() => ({
-    sendMutate: vi.fn().mockResolvedValue(undefined),
-    showDockBadgeMutate: vi.fn().mockResolvedValue(undefined),
-    bounceDockMutate: vi.fn().mockResolvedValue(undefined),
-    playSound: vi.fn(),
-  }));
+const {
+  sendMutate,
+  showDockBadgeMutate,
+  bounceDockMutate,
+  playSound,
+  getViewSnapshot,
+} = vi.hoisted(() => ({
+  sendMutate: vi.fn().mockResolvedValue(undefined),
+  showDockBadgeMutate: vi.fn().mockResolvedValue(undefined),
+  bounceDockMutate: vi.fn().mockResolvedValue(undefined),
+  playSound: vi.fn(),
+  getViewSnapshot: vi.fn(
+    () =>
+      ({ type: "task-input" }) as {
+        type: string;
+        taskId?: string;
+      },
+  ),
+}));
+
+vi.mock("@hooks/useAppView", () => ({
+  getAppViewSnapshot: getViewSnapshot,
+}));
 
 vi.mock("@renderer/trpc/client", () => ({
   trpcClient: {
@@ -43,9 +58,11 @@ const OTHER_TASK_ID = "task-999";
 type View = { type: string; data?: { id: string }; taskId?: string };
 
 function setView(view: View) {
-  useNavigationStore.setState({
-    // biome-ignore lint/suspicious/noExplicitAny: test-only narrow cast
-    view: view as any,
+  // The notifications module now reads via getAppViewSnapshot which returns
+  // the view shape directly (no nesting under `view`).
+  getViewSnapshot.mockReturnValue({
+    type: view.type,
+    taskId: view.taskId ?? view.data?.id,
   });
 }
 

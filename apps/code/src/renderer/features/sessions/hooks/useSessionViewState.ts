@@ -67,5 +67,6 @@ export function useSessionViewState(taskId: string, task: Task) {
     errorMessage:
       session?.errorMessage ??
       (isCloud ? session?.cloudErrorMessage : undefined),
+    errorRetryable: session?.errorRetryable,
   };
 }

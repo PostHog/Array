@@ -1,6 +1,7 @@
-import type { SignalReport } from "@shared/types";
+import type { SignalReport, SignalReportPriority } from "@shared/types";
 import { describe, expect, it } from "vitest";
 import {
+  buildPriorityFilterParam,
   buildSignalReportListOrdering,
   buildSuggestedReviewerFilterParam,
   filterReportsBySearch,
@@ -151,5 +152,21 @@ describe("buildSuggestedReviewerFilterParam", () => {
         "",
       ]),
     ).toBe("reviewer-1,reviewer-2");
+  });
+});
+
+describe("buildPriorityFilterParam", () => {
+  it.each([
+    { input: [] as SignalReportPriority[], expected: undefined },
+    {
+      input: ["P0", "P1", "P2"] as SignalReportPriority[],
+      expected: "P0,P1,P2",
+    },
+    {
+      input: ["P0", "P1", "P0", "P2", "P1"] as SignalReportPriority[],
+      expected: "P0,P1,P2",
+    },
+  ])("buildPriorityFilterParam($input) → $expected", ({ input, expected }) => {
+    expect(buildPriorityFilterParam(input)).toBe(expected);
   });
 });

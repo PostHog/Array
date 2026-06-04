@@ -418,6 +418,17 @@ export interface SuggestedReviewer {
   user: SuggestedReviewerUser | null;
 }
 
+/**
+ * A single entry in the PUT body that replaces a `suggested_reviewers` artefact's content.
+ * Reviewers are identified by `github_login`, `user_uuid`, or both — the server canonicalizes
+ * to a lowercase `github_login` (with `user_uuid` winning when both are supplied).
+ */
+export interface SuggestedReviewerWriteEntry {
+  github_login?: string;
+  user_uuid?: string;
+  github_name?: string;
+}
+
 interface MatchedSignalMetadata {
   parent_signal_id: string;
   match_query: string;
@@ -500,6 +511,8 @@ export interface SignalReportsQueryParams {
   source_product?: string;
   /** Comma-separated PostHog user UUIDs — only returns reports with these suggested reviewers. */
   suggested_reviewers?: string;
+  /** Comma-separated `P0`–`P4` priorities — only returns reports with one of these priorities. */
+  priority?: string;
 }
 
 /** Values match `SignalReportTask.Relationship` on the PostHog API. */

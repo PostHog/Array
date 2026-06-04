@@ -1,7 +1,7 @@
 import { Combobox } from "@components/ui/combobox/Combobox";
+import { openTaskInput } from "@hooks/useOpenTask";
 import { Plus } from "@phosphor-icons/react";
 import { Popover } from "@radix-ui/themes";
-import { useNavigationStore } from "@stores/navigationStore";
 import { type ReactNode, useCallback } from "react";
 import { useAvailableTasks } from "../hooks/useAvailableTasks";
 import { useCommandCenterStore } from "../stores/commandCenterStore";
@@ -23,7 +23,6 @@ export function TaskSelector({
 }: TaskSelectorProps) {
   const availableTasks = useAvailableTasks();
   const assignTask = useCommandCenterStore((s) => s.assignTask);
-  const navigateToTaskInput = useNavigationStore((s) => s.navigateToTaskInput);
 
   const handleSelect = useCallback(
     (taskId: string) => {
@@ -38,9 +37,9 @@ export function TaskSelector({
     if (onNewTask) {
       onNewTask();
     } else {
-      navigateToTaskInput();
+      openTaskInput();
     }
-  }, [onOpenChange, onNewTask, navigateToTaskInput]);
+  }, [onOpenChange, onNewTask]);
 
   return (
     <Combobox.Root

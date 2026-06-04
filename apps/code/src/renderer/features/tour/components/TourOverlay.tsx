@@ -1,4 +1,4 @@
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { useIsSettingsOpen } from "@features/settings/hooks/useOpenSettings";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef } from "react";
@@ -133,7 +133,7 @@ export function TourOverlay() {
     };
   }, [step, selector, advance, activeTourId]);
 
-  const settingsOpen = useSettingsDialogStore((s) => s.isOpen);
+  const settingsOpen = useIsSettingsOpen();
   const commandMenuOpen = useCommandMenuStore((s) => s.isOpen);
   const overlayBlocked = settingsOpen || commandMenuOpen;
   const isActive = !!(tour && step && targetRect && !overlayBlocked);

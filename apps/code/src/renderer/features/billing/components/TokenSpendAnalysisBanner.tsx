@@ -11,7 +11,8 @@ import {
   formatWindow,
 } from "@features/billing/utils/spendAnalysisFormat";
 import { buildAnalysisPrompt } from "@features/billing/utils/spendAnalysisPrompt";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { closeSettings } from "@features/settings/hooks/useOpenSettings";
+import { openTaskInput } from "@hooks/useOpenTask";
 import {
   ArrowSquareOut,
   ChartLine,
@@ -21,7 +22,6 @@ import {
 } from "@phosphor-icons/react";
 import { Button, Callout, Flex, Spinner, Table, Text } from "@radix-ui/themes";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { useNavigationStore } from "@stores/navigationStore";
 import { track } from "@utils/analytics";
 
 const DOCS_URL = "https://posthog.com/docs/llm-analytics";
@@ -219,11 +219,6 @@ function SectionTable({
 }
 
 function FooterLinks({ data }: { data: SpendAnalysisResponse }) {
-  const navigateToTaskInput = useNavigationStore(
-    (state) => state.navigateToTaskInput,
-  );
-  const closeSettings = useSettingsDialogStore((state) => state.close);
-
   const handleAnalyseClick = (): void => {
     track(ANALYTICS_EVENTS.SPEND_ANALYSIS_TASK_OPENED, {
       total_cost_usd: data.summary.total_cost_usd,
@@ -244,7 +239,7 @@ function FooterLinks({ data }: { data: SpendAnalysisResponse }) {
     // changes the underlying view but the dialog stays mounted on top, so the user
     // doesn't see the prefilled task input. Close the dialog first.
     closeSettings();
-    navigateToTaskInput({
+    openTaskInput({
       initialPrompt: buildAnalysisPrompt(data),
     });
   };

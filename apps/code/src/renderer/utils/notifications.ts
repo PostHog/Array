@@ -1,6 +1,6 @@
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import { getAppViewSnapshot } from "@hooks/useAppView";
 import { trpcClient } from "@renderer/trpc/client";
-import { useNavigationStore } from "@stores/navigationStore";
 import { logger } from "@utils/logger";
 import { playCompletionSound } from "@utils/sounds";
 
@@ -16,9 +16,8 @@ function truncateTitle(title: string): string {
 function shouldNotifyForTask(taskId?: string): boolean {
   if (!document.hasFocus()) return true;
   if (!taskId) return false;
-  const view = useNavigationStore.getState().view;
-  const viewedTaskId =
-    view.type === "task-detail" ? (view.data?.id ?? view.taskId) : undefined;
+  const view = getAppViewSnapshot();
+  const viewedTaskId = view.type === "task-detail" ? view.taskId : undefined;
   return viewedTaskId !== taskId;
 }
 

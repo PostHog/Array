@@ -19,7 +19,7 @@ export function SlackSettings() {
 
   const slackSettingsUrl = projectId
     ? getPostHogUrl(
-        `/project/${projectId}/settings/environment-posthog-code#integration-posthog-code-slack`,
+        `/project/${projectId}/settings/project-integrations#integration-slack`,
         cloudRegion,
       )
     : null;

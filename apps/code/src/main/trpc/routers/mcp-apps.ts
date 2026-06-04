@@ -1,5 +1,6 @@
 import {
   getToolDefinitionInput,
+  getUiResourceByUriInput,
   getUiResourceInput,
   hasUiForToolInput,
   McpAppsServiceEvent,
@@ -26,6 +27,16 @@ export const mcpAppsRouter = router({
   hasUiForTool: publicProcedure
     .input(hasUiForToolInput)
     .query(({ input }) => getService().hasUiForTool(input.toolKey)),
+
+  // Fetch a UI resource by URI. The built-in PostHog `exec` tool resolves its
+  // UI app per call from the result's `_meta` (in the renderer) rather than
+  // registration metadata, so the host fetches the resource by URI directly.
+  getUiResourceByUri: publicProcedure
+    .input(getUiResourceByUriInput)
+    .output(mcpUiResourceSchema.nullable())
+    .query(({ input }) =>
+      getService().getUiResourceByUri(input.serverName, input.resourceUri),
+    ),
 
   getToolDefinition: publicProcedure
     .input(getToolDefinitionInput)
