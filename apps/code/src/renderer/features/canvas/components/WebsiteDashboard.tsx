@@ -1,72 +1,49 @@
+import { ErrorBoundary } from "@components/ErrorBoundary";
 import { WebsiteCanvas } from "@features/canvas/components/WebsiteCanvas";
-import { getDashboard } from "@features/canvas/dashboards";
+import { CanvasRenderer } from "@features/canvas/genui/registry";
+import { useDashboard } from "@features/canvas/hooks/useDashboards";
 import { useIsDashboardEditing } from "@features/canvas/stores/dashboardEditStore";
-import { TrendDownIcon, TrendUpIcon } from "@phosphor-icons/react";
-import { Box, Flex, Grid, ScrollArea, Text } from "@radix-ui/themes";
+import { isNonEmptySpec } from "@json-render/core";
+import type { Spec } from "@json-render/react";
+import { Flex, ScrollArea, Text } from "@radix-ui/themes";
 
-// Renders a mock website dashboard (stat tiles) for the active dashboard id.
-// In edit mode, swaps to the gen-UI canvas + chat for that dashboard's thread.
-export function WebsiteDashboard({ dashboardId }: { dashboardId?: string }) {
-  const dashboard = getDashboard(dashboardId);
-  const editing = useIsDashboardEditing(dashboard.id);
+// Renders a saved json-render dashboard (read-only). In edit mode, swaps to the
+// gen-UI canvas + chat for this dashboard's thread, where Save persists it.
+export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
+  const editing = useIsDashboardEditing(dashboardId);
+  const { dashboard, isLoading } = useDashboard(dashboardId);
 
   if (editing) {
-    return <WebsiteCanvas threadId={`dashboard:${dashboard.id}`} />;
+    return <WebsiteCanvas threadId={`dashboard:${dashboardId}`} />;
   }
+
+  const spec = dashboard?.spec as Spec | null | undefined;
 
   return (
     <ScrollArea className="h-full bg-gray-1">
-      <Grid
-        columns={{ initial: "1", sm: "2", md: "4" }}
-        gap="3"
-        p="5"
-        width="auto"
-      >
-        {dashboard.tiles.map((tile) => (
-          <Box
-            key={tile.label}
-            className="rounded-lg border border-gray-6 bg-gray-2 p-4"
-          >
-            <Text size="1" className="text-gray-10">
-              {tile.label}
-            </Text>
-            <Text size="7" weight="bold" as="div" className="mt-1 text-gray-12">
-              {tile.value}
-            </Text>
-            {tile.delta && (
-              <Flex
-                align="center"
-                gap="1"
-                mt="1"
-                className={
-                  tile.trend === "down" ? "text-red-11" : "text-green-11"
-                }
-              >
-                {tile.trend === "down" ? (
-                  <TrendDownIcon size={12} />
-                ) : (
-                  <TrendUpIcon size={12} />
-                )}
-                <Text size="1">{tile.delta}</Text>
-              </Flex>
-            )}
-          </Box>
-        ))}
-
-        <Box
-          className="rounded-lg border border-gray-6 border-dashed bg-gray-2 p-4 md:col-span-4"
-          style={{ height: 220 }}
+      {isNonEmptySpec(spec) ? (
+        <ErrorBoundary name="dashboard-renderer" resetKey={spec}>
+          <CanvasRenderer spec={spec} />
+        </ErrorBoundary>
+      ) : (
+        <Flex
+          direction="column"
+          align="center"
+          justify="center"
+          height="100%"
+          gap="1"
+          className="px-6 text-center"
         >
-          <Text size="1" className="text-gray-10">
-            {dashboard.name} · trend
+          <Text size="3" weight="bold" className="text-gray-12">
+            {isLoading ? "Loading…" : "Empty dashboard"}
           </Text>
-          <Flex align="center" justify="center" className="h-full">
-            <Text size="2" className="text-gray-8">
-              Chart placeholder
+          {!isLoading && (
+            <Text size="2" className="text-gray-10">
+              Hit Edit to build this dashboard with the agent, then Save.
             </Text>
-          </Flex>
-        </Box>
-      </Grid>
+          )}
+        </Flex>
+      )}
     </ScrollArea>
   );
 }

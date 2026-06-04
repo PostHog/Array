@@ -7,6 +7,7 @@ import { canvasGenRouter } from "./routers/canvas-gen";
 import { cloudTaskRouter } from "./routers/cloud-task";
 import { connectivityRouter } from "./routers/connectivity";
 import { contextMenuRouter } from "./routers/context-menu";
+import { dashboardsRouter } from "./routers/dashboards";
 import { deepLinkRouter } from "./routers/deep-link";
 import { encryptionRouter } from "./routers/encryption";
 import { enrichmentRouter } from "./routers/enrichment";
@@ -48,6 +49,7 @@ export const trpcRouter = router({
   archive: archiveRouter,
   auth: authRouter,
   canvasGen: canvasGenRouter,
+  dashboards: dashboardsRouter,
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,

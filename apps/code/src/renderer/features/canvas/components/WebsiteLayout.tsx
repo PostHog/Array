@@ -1,12 +1,19 @@
-import { getDashboard, WEBSITE_DASHBOARDS } from "@features/canvas/dashboards";
+import {
+  useDashboard,
+  useDashboardMutations,
+  useDashboards,
+} from "@features/canvas/hooks/useDashboards";
+import { useCanvasThread } from "@features/canvas/stores/canvasChatStore";
 import {
   useDashboardEditStore,
   useIsDashboardEditing,
 } from "@features/canvas/stores/dashboardEditStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
+import { isNonEmptySpec } from "@json-render/core";
 import {
   CaretDownIcon,
   CaretRightIcon,
+  GitForkIcon,
   PencilSimpleIcon,
 } from "@phosphor-icons/react";
 import {
@@ -27,22 +34,26 @@ import {
 } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 
-const DASHBOARD_IDS = WEBSITE_DASHBOARDS.map((d) => d.id);
+function threadIdFor(dashboardId: string): string {
+  return `dashboard:${dashboardId}`;
+}
 
 // The dashboards breadcrumb crumb: a Quill combobox to switch the active
 // dashboard by name. Selecting navigates to that dashboard's route.
-function DashboardPicker({ dashboardId }: { dashboardId?: string }) {
+function DashboardPicker({ dashboardId }: { dashboardId: string }) {
   const navigate = useNavigate();
   const anchorRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const current = getDashboard(dashboardId);
+  const { dashboards } = useDashboards();
+
+  const currentName =
+    dashboards.find((d) => d.id === dashboardId)?.name ?? "Dashboard";
 
   return (
     <Combobox
-      items={DASHBOARD_IDS}
-      value={current.id}
-      // No search input here — disable filtering so every dashboard always
-      // shows (otherwise base-ui filters the list down to the selected one).
+      items={dashboards.map((d) => d.id)}
+      value={dashboardId}
+      // No search input — disable filtering so all dashboards always show.
       filter={null}
       onValueChange={(value) =>
         navigate({
@@ -56,8 +67,8 @@ function DashboardPicker({ dashboardId }: { dashboardId?: string }) {
       <div ref={anchorRef} className="no-drag inline-flex">
         <ComboboxTrigger
           render={
-            <Button variant="outline" size="sm" title={current.name}>
-              <span className="min-w-0 truncate">{current.name}</span>
+            <Button variant="outline" size="sm" title={currentName}>
+              <span className="min-w-0 truncate">{currentName}</span>
               <CaretDownIcon size={10} weight="bold" className="text-gray-9" />
             </Button>
           }
@@ -71,10 +82,10 @@ function DashboardPicker({ dashboardId }: { dashboardId?: string }) {
       >
         <ComboboxList>
           {(id: string) => {
-            const dashboard = getDashboard(id);
+            const name = dashboards.find((d) => d.id === id)?.name ?? id;
             return (
               <ComboboxItem key={id} value={id}>
-                {dashboard.name}
+                {name}
               </ComboboxItem>
             );
           }}
@@ -84,23 +95,71 @@ function DashboardPicker({ dashboardId }: { dashboardId?: string }) {
   );
 }
 
-// Toggles the active dashboard's edit mode (gen-UI canvas + chat input).
-function EditButton({ dashboardId }: { dashboardId?: string }) {
-  const id = getDashboard(dashboardId).id;
-  const editing = useIsDashboardEditing(id);
+// Edit toggle + (in edit mode) Save / Save-as-fork for the active dashboard.
+function DashboardControls({ dashboardId }: { dashboardId: string }) {
+  const navigate = useNavigate();
+  const editing = useIsDashboardEditing(dashboardId);
   const toggle = useDashboardEditStore((s) => s.toggle);
+  const setEditing = useDashboardEditStore((s) => s.setEditing);
+
+  const { dashboard } = useDashboard(dashboardId);
+  const { spec: liveSpec } = useCanvasThread(threadIdFor(dashboardId));
+  const { saveDashboard, createDashboard, isSaving } = useDashboardMutations();
+
+  const savedSpec = dashboard?.spec ?? null;
+  const hasSpec = isNonEmptySpec(liveSpec);
+  const dirty =
+    hasSpec && JSON.stringify(liveSpec) !== JSON.stringify(savedSpec);
+
+  const onSave = () => {
+    if (!dirty) return;
+    void saveDashboard(dashboardId, liveSpec);
+  };
+
+  const onFork = async () => {
+    if (!hasSpec) return;
+    const name = `${dashboard?.name ?? "Dashboard"} (fork)`;
+    const record = await createDashboard(name, liveSpec);
+    setEditing(record.id, true);
+    void navigate({
+      to: "/website/dashboards/$dashboardId",
+      params: { dashboardId: record.id },
+    });
+  };
 
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      data-selected={editing}
-      className="no-drag ml-auto"
-      onClick={() => toggle(id)}
-    >
-      <PencilSimpleIcon size={14} weight={editing ? "fill" : "regular"} />
-      Edit
-    </Button>
+    <Flex align="center" gap="2" className="no-drag ml-auto">
+      {editing && (
+        <>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!dirty || isSaving}
+            onClick={onSave}
+          >
+            Save
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!hasSpec}
+            onClick={onFork}
+          >
+            <GitForkIcon size={14} />
+            Save as fork
+          </Button>
+        </>
+      )}
+      <Button
+        variant="outline"
+        size="sm"
+        data-selected={editing}
+        onClick={() => toggle(dashboardId)}
+      >
+        <PencilSimpleIcon size={14} weight={editing ? "fill" : "regular"} />
+        Edit
+      </Button>
+    </Flex>
   );
 }
 
@@ -110,12 +169,14 @@ export function WebsiteLayout() {
   const params = useParams({ strict: false });
   const { data: tasks } = useTasks();
 
-  const isDashboards = pathname.startsWith("/website/dashboards");
+  const dashboardId = params.dashboardId;
+  const isDashboards =
+    pathname.startsWith("/website/dashboards") && dashboardId;
   const taskId = params.taskId;
 
   let secondCrumb: React.ReactNode = null;
   if (isDashboards) {
-    secondCrumb = <DashboardPicker dashboardId={params.dashboardId} />;
+    secondCrumb = <DashboardPicker dashboardId={dashboardId} />;
   } else if (pathname.startsWith("/website/new")) {
     secondCrumb = <CrumbText>New task</CrumbText>;
   } else if (pathname.startsWith("/website/settings")) {
@@ -144,7 +205,7 @@ export function WebsiteLayout() {
             {secondCrumb}
           </>
         )}
-        {isDashboards && <EditButton dashboardId={params.dashboardId} />}
+        {isDashboards && <DashboardControls dashboardId={dashboardId} />}
       </Flex>
       <Box flexGrow="1" overflow="hidden">
         <Outlet />

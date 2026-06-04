@@ -5,6 +5,7 @@ interface DashboardEditState {
   // + chat input instead of the dashboard tiles.
   editing: Record<string, boolean>;
   toggle: (dashboardId: string) => void;
+  setEditing: (dashboardId: string, value: boolean) => void;
 }
 
 export const useDashboardEditStore = create<DashboardEditState>((set) => ({
@@ -13,6 +14,8 @@ export const useDashboardEditStore = create<DashboardEditState>((set) => ({
     set((s) => ({
       editing: { ...s.editing, [dashboardId]: !s.editing[dashboardId] },
     })),
+  setEditing: (dashboardId, value) =>
+    set((s) => ({ editing: { ...s.editing, [dashboardId]: value } })),
 }));
 
 export function useIsDashboardEditing(dashboardId: string): boolean {

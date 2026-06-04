@@ -1,4 +1,7 @@
-import { WEBSITE_DASHBOARDS } from "@features/canvas/dashboards";
+import {
+  useCreateAndOpenDashboard,
+  useDashboards,
+} from "@features/canvas/hooks/useDashboards";
 import { useWebsiteTasksStore } from "@features/canvas/stores/websiteTasksStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import {
@@ -71,6 +74,8 @@ function WebsiteSection() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const taskIds = useWebsiteTasksStore((s) => s.taskIds);
   const { data: tasks } = useTasks();
+  const { dashboards } = useDashboards();
+  const createDashboard = useCreateAndOpenDashboard();
 
   return (
     <Collapsible variant="folder" defaultOpen>
@@ -79,12 +84,16 @@ function WebsiteSection() {
         <Flex direction="column" gap="1" pt="1" pl="3">
           <NavButton
             label="Dashboards"
-            count={WEBSITE_DASHBOARDS.length}
+            count={dashboards.length}
             active={
               pathname === "/website" ||
               pathname.startsWith("/website/dashboards")
             }
             onClick={() => navigate({ to: "/website" })}
+          />
+          <NavButton
+            label="New dashboard"
+            onClick={() => void createDashboard()}
           />
           <NavButton
             label="New task"
