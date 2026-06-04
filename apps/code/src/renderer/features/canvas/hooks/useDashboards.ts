@@ -29,15 +29,16 @@ export function useDashboards(): {
 export function useDashboard(id: string | undefined): {
   dashboard: DashboardRecord | null | undefined;
   isLoading: boolean;
+  isFetching: boolean;
 } {
   const trpc = useTRPC();
-  const { data, isLoading } = useQuery(
+  const { data, isLoading, isFetching } = useQuery(
     trpc.dashboards.get.queryOptions(
       { id: id ?? "" },
       { enabled: !!id, staleTime: 5_000 },
     ),
   );
-  return { dashboard: data, isLoading };
+  return { dashboard: data, isLoading, isFetching };
 }
 
 /** Save (update) + fork (create) mutations, invalidating the list + record. */

@@ -1,3 +1,4 @@
+import { useDashboard } from "@features/canvas/hooks/useDashboards";
 import { useIsDashboardEditing } from "@features/canvas/stores/dashboardEditStore";
 import { ArrowClockwiseIcon, GearSixIcon } from "@phosphor-icons/react";
 import {
@@ -6,6 +7,7 @@ import {
   ButtonGroupSeparator,
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -38,6 +40,7 @@ export function DashboardRefreshControl({
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const editing = useIsDashboardEditing(dashboardId);
+  const { isFetching } = useDashboard(dashboardId);
 
   const [mode, setMode] = useState<RefreshMode>("static");
   const intervalMs = mode === "static" ? null : POLL_OPTIONS[mode];
@@ -73,7 +76,10 @@ export function DashboardRefreshControl({
   return (
     <ButtonGroup>
       <Button variant="outline" size="sm" onClick={refetch}>
-        <ArrowClockwiseIcon size={14} />
+        <ArrowClockwiseIcon
+          size={14}
+          className={isFetching ? "motion-safe:animate-spin" : undefined}
+        />
         {label}
       </Button>
       <ButtonGroupSeparator />
@@ -95,9 +101,11 @@ export function DashboardRefreshControl({
             onValueChange={(value) => setMode(value as RefreshMode)}
           >
             <DropdownMenuRadioItem value="static">Static</DropdownMenuRadioItem>
-            <DropdownMenuLabel>Polling</DropdownMenuLabel>
-            <DropdownMenuRadioItem value="10s">10s</DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="10min">10min</DropdownMenuRadioItem>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Polling</DropdownMenuLabel>
+              <DropdownMenuRadioItem value="10s">10s</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="10min">10min</DropdownMenuRadioItem>
+            </DropdownMenuGroup>
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
