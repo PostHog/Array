@@ -23,6 +23,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useUserQuery } from "@/features/auth";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { getReportRepository } from "@/features/inbox/api";
 import { DiscussReportSheet } from "@/features/inbox/components/DiscussReportSheet";
@@ -31,7 +32,10 @@ import {
   DismissReportSheet,
 } from "@/features/inbox/components/DismissReportSheet";
 import { SignalCard } from "@/features/inbox/components/SignalCard";
-import { SuggestedReviewers } from "@/features/inbox/components/SuggestedReviewers";
+import {
+  type ReviewerActionExtra,
+  SuggestedReviewers,
+} from "@/features/inbox/components/SuggestedReviewers";
 import { DISMISSAL_REASON_OPTIONS } from "@/features/inbox/constants";
 import { useInboxEngagementTracker } from "@/features/inbox/hooks/useInboxEngagementTracker";
 import {
@@ -45,10 +49,14 @@ import type {
   SignalFindingContent,
   SignalReportPriority,
   SignalReportStatus,
-  SuggestedReviewer,
+  SuggestedReviewersArtefact,
 } from "@/features/inbox/types";
 import { inboxStatusLabel } from "@/features/inbox/utils";
-import { computeReportAgeHours, useAnalytics } from "@/lib/analytics";
+import {
+  computeReportAgeHours,
+  type InboxReportActionType,
+  useAnalytics,
+} from "@/lib/analytics";
 import { useThemeColors } from "@/lib/theme";
 
 const statusColorMap: Record<string, { bg: string; text: string }> = {
@@ -134,6 +142,7 @@ export default function ReportDetailScreen() {
   const insets = useSafeAreaInsets();
   const posthog = usePostHog();
   const { data: report, isLoading, error } = useInboxReport(reportId ?? null);
+  const { data: me } = useUserQuery();
   const [reportRepo, setReportRepo] = useState<string | null>(null);
   const [dismissOpen, setDismissOpen] = useState(false);
   const [discussOpen, setDiscussOpen] = useState(false);
@@ -175,6 +184,23 @@ export default function ReportDetailScreen() {
       tracker.signalScroll();
     },
     [tracker],
+  );
+
+  const fireReviewerAction = useCallback(
+    (action_type: InboxReportActionType, extra?: ReviewerActionExtra) => {
+      if (!report) return;
+      tracker.signalAction({
+        report_id: report.id,
+        report_title: report.title ?? null,
+        report_age_hours: computeReportAgeHours(report.created_at),
+        action_type,
+        surface: "detail_pane",
+        is_bulk: false,
+        bulk_size: 1,
+        ...extra,
+      });
+    },
+    [report, tracker],
   );
 
   const handleToggleSignals = useCallback(() => {
@@ -221,13 +247,13 @@ export default function ReportDetailScreen() {
       return null;
     }, [artefacts]);
 
-  const suggestedReviewers = useMemo((): SuggestedReviewer[] => {
+  const reviewerArtefact = useMemo((): SuggestedReviewersArtefact | null => {
     for (const a of artefacts) {
       if (a.type === "suggested_reviewers") {
-        return (a.content as SuggestedReviewer[]) ?? [];
+        return a as SuggestedReviewersArtefact;
       }
     }
-    return [];
+    return null;
   }, [artefacts]);
 
   const findingsBySignalId = useMemo(() => {
@@ -471,7 +497,14 @@ export default function ReportDetailScreen() {
         )}
 
         {/* Suggested reviewers */}
-        <SuggestedReviewers reviewers={suggestedReviewers} />
+        {reviewerArtefact && (
+          <SuggestedReviewers
+            reportId={report.id}
+            artefact={reviewerArtefact}
+            meUuid={me?.uuid}
+            fireAction={fireReviewerAction}
+          />
+        )}
 
         {/* Signals */}
         {signals.length > 0 && (

@@ -1,8 +1,11 @@
 import type { InboxViewedProperties } from "@/lib/analytics";
 import type {
+  AvailableSuggestedReviewer,
   SignalReport,
   SignalReportOrderingField,
   SignalReportStatus,
+  SuggestedReviewer,
+  SuggestedReviewerWriteEntry,
 } from "./types";
 
 export function inboxStatusLabel(status: SignalReportStatus): string {
@@ -87,6 +90,81 @@ export function getActionableReports(reports: SignalReport[]): SignalReport[] {
       r.actionability === "immediately_actionable" &&
       !r.already_addressed,
   );
+}
+
+export interface ReviewerOption {
+  uuid: string;
+  name: string;
+  email: string;
+  github_login: string;
+  isMe: boolean;
+}
+
+/** Deduplicate the available-reviewers list by uuid and sort "Me" first, then by name. */
+export function buildReviewerOptions(
+  reviewers: AvailableSuggestedReviewer[],
+  currentUserUuid: string | undefined,
+): ReviewerOption[] {
+  const seen = new Set<string>();
+  const options: ReviewerOption[] = [];
+
+  for (const r of reviewers) {
+    if (!r.uuid || seen.has(r.uuid)) continue;
+    seen.add(r.uuid);
+    options.push({
+      uuid: r.uuid,
+      name: r.name?.trim() || "",
+      email: r.email?.trim() || "",
+      github_login: r.github_login?.trim() || "",
+      isMe: r.uuid === currentUserUuid,
+    });
+  }
+
+  options.sort((a, b) => {
+    if (a.isMe && !b.isMe) return -1;
+    if (!a.isMe && b.isMe) return 1;
+    return (a.name || a.email).localeCompare(b.name || b.email);
+  });
+
+  return options;
+}
+
+export function reviewerOptionLabel(r: ReviewerOption): string {
+  const base = r.name || r.email || "Unknown user";
+  return r.isMe ? `${base} (Me)` : base;
+}
+
+/** A reviewer in the artefact matches an org member by user uuid or (case-insensitive) login. */
+export function reviewerMatchesAvailable(
+  reviewer: SuggestedReviewer,
+  available: AvailableSuggestedReviewer,
+): boolean {
+  if (reviewer.user?.uuid && reviewer.user.uuid === available.uuid) {
+    return true;
+  }
+  return (
+    !!reviewer.github_login &&
+    !!available.github_login &&
+    reviewer.github_login.toLowerCase() === available.github_login.toLowerCase()
+  );
+}
+
+/**
+ * Build the full-replacement write payload from a read-shape list. Kept reviewers
+ * are sent by `github_login` so the server preserves their commits/name; an entry
+ * with only a resolved user falls back to `user_uuid`. Entries with neither are
+ * dropped.
+ */
+export function toSuggestedReviewerWriteContent(
+  reviewers: SuggestedReviewer[],
+): SuggestedReviewerWriteEntry[] {
+  return reviewers
+    .map((reviewer): SuggestedReviewerWriteEntry | null => {
+      if (reviewer.github_login) return { github_login: reviewer.github_login };
+      if (reviewer.user?.uuid) return { user_uuid: reviewer.user.uuid };
+      return null;
+    })
+    .filter((entry): entry is SuggestedReviewerWriteEntry => entry !== null);
 }
 
 interface InboxViewedFilterState {

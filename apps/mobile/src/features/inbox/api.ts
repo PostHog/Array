@@ -16,6 +16,7 @@ import type {
   SignalReportsQueryParams,
   SignalReportsResponse,
   SignalReportTask,
+  SuggestedReviewerWriteEntry,
 } from "./types";
 
 export async function getSignalReports(
@@ -193,6 +194,33 @@ export async function getSignalReportArtefacts(
   const data = await response.json();
   const results: ReportArtefact[] = data.results ?? [];
   return { results, count: data.count ?? results.length };
+}
+
+/** Replace the content of a report artefact (full PUT, not a partial update). */
+export async function updateSignalReportArtefact(
+  reportId: string,
+  artefactId: string,
+  content: SuggestedReviewerWriteEntry[],
+): Promise<void> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/signals/reports/${reportId}/artefacts/${artefactId}/`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ content }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      errorText || "Failed to update suggested reviewers",
+    );
+  }
 }
 
 export async function getSignalReportSignals(

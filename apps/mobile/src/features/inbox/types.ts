@@ -129,6 +129,24 @@ export interface SuggestedReviewer {
   user: SuggestedReviewerUser | null;
 }
 
+export interface SuggestedReviewersArtefact {
+  id: string;
+  type: "suggested_reviewers";
+  created_at: string;
+  content: SuggestedReviewer[];
+}
+
+/**
+ * Write shape for replacing the suggested_reviewers artefact. The server
+ * canonicalizes to a lowercase `github_login`, with `user_uuid` winning when
+ * both are supplied.
+ */
+export interface SuggestedReviewerWriteEntry {
+  github_login?: string;
+  user_uuid?: string;
+  github_name?: string;
+}
+
 export type ReportArtefact =
   | {
       id: string;
@@ -148,12 +166,7 @@ export type ReportArtefact =
       created_at: string;
       content: SignalFindingContent;
     }
-  | {
-      id: string;
-      type: "suggested_reviewers";
-      created_at: string;
-      content: SuggestedReviewer[];
-    }
+  | SuggestedReviewersArtefact
   | {
       id: string;
       type: string;

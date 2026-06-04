@@ -43,6 +43,8 @@ export type InboxReportActionType =
   | "view_signal_external"
   | "expand_why"
   | "click_suggested_reviewer"
+  | "add_suggested_reviewer"
+  | "remove_suggested_reviewer"
   | "expand_task_section"
   | "play_session_recording";
 
@@ -131,6 +133,8 @@ export interface InboxReportActionProperties {
   task_section?: "research" | "implementation";
   has_question?: boolean;
   question_text?: string;
+  suggested_reviewer_login?: string;
+  suggested_reviewer_uuid?: string;
 }
 
 export type EventPropertyMap = {
