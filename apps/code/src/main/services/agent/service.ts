@@ -226,6 +226,8 @@ interface SessionConfig {
   model?: string;
   /** JSON Schema for structured task output — when set, the agent gets a create_output tool */
   jsonSchema?: Record<string, unknown> | null;
+  /** When set, replaces the default system prompt (keeps only project scoping) */
+  systemPromptOverride?: string;
 }
 
 interface ManagedSession {
@@ -474,10 +476,20 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     taskId: string,
     customInstructions?: string,
     additionalDirectories?: string[],
+    systemPromptOverride?: string,
   ): {
     append: string;
   } {
-    let prompt = `PostHog context: use project ${credentials.projectId} on ${credentials.apiHost}. When using PostHog MCP tools, operate only on this project.`;
+    const projectContext = `PostHog context: use project ${credentials.projectId} on ${credentials.apiHost}. When using PostHog MCP tools, operate only on this project.`;
+
+    // Override mode: non-coding surfaces (e.g. canvas generation) get only the
+    // project-scoping line plus their own instructions — the attribution / PR /
+    // branch conventions below are irrelevant and would mislead the agent.
+    if (systemPromptOverride) {
+      return { append: `${projectContext}\n\n${systemPromptOverride}` };
+    }
+
+    let prompt = projectContext;
 
     prompt += `
 
@@ -565,6 +577,7 @@ When creating pull requests, add the following footer at the end of the PR descr
       effort,
       model,
       jsonSchema,
+      systemPromptOverride,
     } = config;
 
     // Preview config doesn't need a real repo — use a temp directory
@@ -625,6 +638,7 @@ When creating pull requests, add the following footer at the end of the PR descr
         taskId,
         customInstructions,
         additionalDirectories,
+        systemPromptOverride,
       );
 
       const acpConnection = await agent.run(taskId, taskRunId, {
@@ -1546,6 +1560,10 @@ For git operations while detached:
       effort: "effort" in params ? params.effort : undefined,
       model: "model" in params ? params.model : undefined,
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,
+      systemPromptOverride:
+        "systemPromptOverride" in params
+          ? params.systemPromptOverride
+          : undefined,
     };
   }
 

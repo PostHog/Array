@@ -51,6 +51,12 @@ export const startSessionInput = z.object({
   effort: effortLevelSchema.optional(),
   model: z.string().optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
+  /**
+   * When set, fully replaces the built system prompt (attribution / PR / branch
+   * conventions) with this text, keeping only the PostHog project-scoping line.
+   * Used by non-coding agent surfaces (e.g. the canvas generation agent).
+   */
+  systemPromptOverride: z.string().optional(),
 });
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;
