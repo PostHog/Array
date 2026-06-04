@@ -5,32 +5,27 @@ import { SlackChannelCombobox } from "@features/settings/components/SlackChannel
 import { Box, Flex, Text } from "@radix-ui/themes";
 
 interface SignalDefaultChannelSettingsProps {
+  /** Workspace whose channels are listed — shared with the per-user section. */
+  integrationId: number | null;
   channelComboboxModal?: boolean;
   isLoading?: boolean;
 }
 
 export function SignalDefaultChannelSettings({
+  integrationId,
   channelComboboxModal = false,
   isLoading = false,
 }: SignalDefaultChannelSettingsProps) {
-  const { slackIntegrations, hasSlackIntegration } = useIntegrationSelectors();
+  const { hasSlackIntegration } = useIntegrationSelectors();
   const { teamConfig, handleUpdateTeamSlackChannel } = useSignalSourceManager();
   const { isAdmin } = useIsOrgAdmin();
 
-  // The backend resolves the team's Slack integration dynamically (its first
-  // `slack` install), so we list channels from that same workspace.
-  const teamIntegrationId = slackIntegrations[0]?.id ?? null;
   const channelTarget = teamConfig?.default_slack_notification_channel ?? null;
   const canEdit = isAdmin === true;
 
   if (isLoading) {
     return (
-      <Flex
-        direction="column"
-        gap="2"
-        pt="3"
-        className="border-(--gray-5) border-t border-dashed"
-      >
+      <Flex direction="column" gap="2" pt="2">
         <Flex direction="column" gap="1">
           <Box className="h-[14px] w-[200px] animate-pulse rounded bg-gray-4" />
           <Box className="h-[11px] w-[80%] animate-pulse rounded bg-gray-3" />
@@ -45,40 +40,35 @@ export function SignalDefaultChannelSettings({
   if (!hasSlackIntegration) return null;
 
   return (
-    <Flex
-      direction="column"
-      gap="2"
-      pt="3"
-      style={{ borderTop: "1px dashed var(--gray-5)" }}
-    >
+    <Flex direction="column" gap="2" pt="2">
       <Flex direction="column" gap="1">
         <Text className="font-medium text-(--gray-12) text-sm">
           Default notification channel
         </Text>
         <Text className="text-(--gray-11) text-[13px]">
-          Every new inbox report for the team is posted to this channel, with
-          the suggested reviewers @mentioned. Shared across the whole team.
+          Where every report is posted for the whole team. Reviewers who set
+          their own channel below are notified there instead.
         </Text>
       </Flex>
 
       <Flex direction="column" gap="1" className="min-w-0">
-        <Text className="text-(--gray-11) text-[12px]">Channel</Text>
+        <Text className="text-(--gray-11) text-[12px]">Default Channel</Text>
         <SlackChannelCombobox
-          integrationId={teamIntegrationId}
+          integrationId={integrationId}
           value={channelTarget}
           onChange={(channel) => void handleUpdateTeamSlackChannel(channel)}
           offLabel="No default channel"
           ariaLabel="Default notification channel"
           modal={channelComboboxModal}
-          disabled={!canEdit || !teamIntegrationId}
+          disabled={!canEdit || !integrationId}
         />
       </Flex>
 
-      <Text className="text-(--gray-10) text-[11px]">
-        {isAdmin === false
-          ? "Only organization admins can change the team's default channel."
-          : "PostHog must be in the channel — invite with /invite @PostHog."}
-      </Text>
+      {isAdmin === false ? (
+        <Text className="text-(--gray-10) text-[11px]">
+          Only organization admins can change the team's default channel.
+        </Text>
+      ) : null}
     </Flex>
   );
 }

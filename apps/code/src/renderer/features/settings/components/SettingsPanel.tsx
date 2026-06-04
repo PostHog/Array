@@ -108,7 +108,9 @@ const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
   shortcuts: ShortcutsSettings,
   github: GitHubSettings,
   slack: SlackSettings,
-  signals: SignalSourcesSettings,
+  // Slack notification config lives in the dedicated Slack section; the Signals
+  // section links out to it rather than duplicating the controls.
+  signals: () => <SignalSourcesSettings showSlackNotifications={false} />,
   updates: UpdatesSettings,
   advanced: AdvancedSettings,
 };
@@ -162,6 +164,13 @@ export function SettingsPanel({
   });
 
   const ActiveComponent = CATEGORY_COMPONENTS[activeCategory];
+
+  const activeCategoryIcon = SIDEBAR_ITEMS.find(
+    (item) =>
+      item.id === activeCategory ||
+      (item.id === "environments" && activeCategory === "cloud-environments"),
+  )?.icon;
+
   const initials = getUserInitials(user);
 
   return (
@@ -274,9 +283,14 @@ export function SettingsPanel({
             <Box p="6" mx="auto" className="relative z-[1] max-w-[800px]">
               <Flex direction="column" gap="4">
                 {!formMode && (
-                  <Text className="font-medium text-lg leading-6.5">
-                    {CATEGORY_TITLES[activeCategory]}
-                  </Text>
+                  <Flex align="center" gap="2">
+                    {activeCategoryIcon && (
+                      <span className="text-gray-10">{activeCategoryIcon}</span>
+                    )}
+                    <Text className="font-medium text-lg leading-6.5">
+                      {CATEGORY_TITLES[activeCategory]}
+                    </Text>
+                  </Flex>
                 )}
                 <ActiveComponent />
               </Flex>
