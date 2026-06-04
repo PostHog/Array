@@ -1,6 +1,6 @@
-import { WebsiteCanvas } from "@features/canvas/components/WebsiteCanvas";
+import { WebsiteLayout } from "@features/canvas/components/WebsiteLayout";
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/website")({
-  component: WebsiteCanvas,
+  component: WebsiteLayout,
 });

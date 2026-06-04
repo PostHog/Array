@@ -1,3 +1,5 @@
+import { useWebsiteTasksStore } from "@features/canvas/stores/websiteTasksStore";
+import { useTasks } from "@features/tasks/hooks/useTasks";
 import {
   Collapsible,
   CollapsibleContent,
@@ -6,29 +8,15 @@ import {
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 
-// `to` is a literal union of real canvas routes so navigate() stays type-safe.
-// Items without `to` are placeholders (fake nav) and don't navigate yet. Widen
-// the union as canvas routes are added.
-type HomeNavRoute = "/website";
+// Fake placeholder groups kept below the real Website section for continuity.
+type HomeNavItem = { id: string; label: string };
+type HomeNavGroup = { id: string; label: string; items: HomeNavItem[] };
 
-type HomeNavItem = {
-  id: string;
-  label: string;
-  to?: HomeNavRoute;
-};
-
-type HomeNavGroup = {
-  id: string;
-  label: string;
-  items: HomeNavItem[];
-};
-
-const HOME_NAV: HomeNavGroup[] = [
+const PLACEHOLDER_NAV: HomeNavGroup[] = [
   {
     id: "features",
     label: "Features",
     items: [
-      { id: "website", label: "Website", to: "/website" },
       { id: "app", label: "App" },
       { id: "mobile", label: "Mobile" },
     ],
@@ -43,10 +31,87 @@ const HOME_NAV: HomeNavGroup[] = [
   },
 ];
 
-export function HomeSidebar() {
+function NavButton({
+  label,
+  active,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`flex w-full items-center truncate rounded-md px-2 py-1.5 text-left text-[13px] transition-colors ${
+        active
+          ? "bg-accent-4 text-accent-12"
+          : "text-gray-11 hover:bg-gray-3 disabled:cursor-default disabled:text-gray-8 disabled:hover:bg-transparent"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function WebsiteSection() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const taskIds = useWebsiteTasksStore((s) => s.taskIds);
+  const { data: tasks } = useTasks();
 
+  return (
+    <Collapsible variant="folder" defaultOpen>
+      <CollapsibleTrigger>Website</CollapsibleTrigger>
+      <CollapsibleContent>
+        <Flex direction="column" gap="1" pt="1">
+          <NavButton
+            label="Canvas"
+            active={pathname === "/website"}
+            onClick={() => navigate({ to: "/website" })}
+          />
+          <NavButton
+            label="New task"
+            active={pathname === "/website/new"}
+            onClick={() => navigate({ to: "/website/new" })}
+          />
+          <NavButton
+            label="Settings"
+            active={pathname.startsWith("/website/settings")}
+            onClick={() => navigate({ to: "/website/settings" })}
+          />
+          {taskIds.length > 0 && (
+            <Text size="1" className="px-2 pt-2 text-gray-9">
+              Tasks
+            </Text>
+          )}
+          {taskIds.map((taskId) => {
+            const title = tasks?.find((t) => t.id === taskId)?.title;
+            return (
+              <NavButton
+                key={taskId}
+                label={title || "Untitled task"}
+                active={pathname === `/website/tasks/${taskId}`}
+                onClick={() =>
+                  navigate({
+                    to: "/website/tasks/$taskId",
+                    params: { taskId },
+                  })
+                }
+              />
+            );
+          })}
+        </Flex>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+export function HomeSidebar() {
   return (
     <Box
       className="h-full shrink-0 border-gray-6 border-r bg-gray-1"
@@ -57,29 +122,16 @@ export function HomeSidebar() {
           Home
         </Text>
 
-        {HOME_NAV.map((group) => (
+        <WebsiteSection />
+
+        {PLACEHOLDER_NAV.map((group) => (
           <Collapsible key={group.id} variant="folder" defaultOpen>
             <CollapsibleTrigger>{group.label}</CollapsibleTrigger>
             <CollapsibleContent>
               <Flex direction="column" gap="1" pt="1">
-                {group.items.map((item) => {
-                  const active = item.to != null && pathname === item.to;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      disabled={item.to == null}
-                      onClick={() => item.to && navigate({ to: item.to })}
-                      className={`flex w-full items-center rounded-md px-2 py-1.5 text-left text-[13px] transition-colors ${
-                        active
-                          ? "bg-accent-4 text-accent-12"
-                          : "text-gray-11 hover:bg-gray-3 disabled:cursor-default disabled:text-gray-8 disabled:hover:bg-transparent"
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  );
-                })}
+                {group.items.map((item) => (
+                  <NavButton key={item.id} label={item.label} disabled />
+                ))}
               </Flex>
             </CollapsibleContent>
           </Collapsible>

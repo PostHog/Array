@@ -15,12 +15,16 @@ import { Route as McpServersRouteImport } from './routes/mcp-servers'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as CommandCenterRouteImport } from './routes/command-center'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WebsiteIndexRouteImport } from './routes/website/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as CodeIndexRouteImport } from './routes/code/index'
+import { Route as WebsiteSettingsRouteImport } from './routes/website/settings'
+import { Route as WebsiteNewRouteImport } from './routes/website/new'
 import { Route as SettingsCategoryRouteImport } from './routes/settings/$category'
 import { Route as FoldersFolderIdRouteImport } from './routes/folders/$folderId'
 import { Route as CodeInboxRouteImport } from './routes/code/inbox'
 import { Route as CodeArchivedRouteImport } from './routes/code/archived'
+import { Route as WebsiteTasksTaskIdRouteImport } from './routes/website/tasks/$taskId'
 import { Route as CodeTasksTaskIdRouteImport } from './routes/code/tasks/$taskId'
 import { Route as CodeTasksPendingKeyRouteImport } from './routes/code/tasks/pending.$key'
 
@@ -54,6 +58,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WebsiteIndexRoute = WebsiteIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WebsiteRoute,
+} as any)
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: '/settings/',
   path: '/settings/',
@@ -63,6 +72,16 @@ const CodeIndexRoute = CodeIndexRouteImport.update({
   id: '/code/',
   path: '/code/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const WebsiteSettingsRoute = WebsiteSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => WebsiteRoute,
+} as any)
+const WebsiteNewRoute = WebsiteNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => WebsiteRoute,
 } as any)
 const SettingsCategoryRoute = SettingsCategoryRouteImport.update({
   id: '/settings/$category',
@@ -84,6 +103,11 @@ const CodeArchivedRoute = CodeArchivedRouteImport.update({
   path: '/code/archived',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WebsiteTasksTaskIdRoute = WebsiteTasksTaskIdRouteImport.update({
+  id: '/tasks/$taskId',
+  path: '/tasks/$taskId',
+  getParentRoute: () => WebsiteRoute,
+} as any)
 const CodeTasksTaskIdRoute = CodeTasksTaskIdRouteImport.update({
   id: '/code/tasks/$taskId',
   path: '/code/tasks/$taskId',
@@ -101,14 +125,18 @@ export interface FileRoutesByFullPath {
   '/inbox': typeof InboxRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
-  '/website': typeof WebsiteRoute
+  '/website': typeof WebsiteRouteWithChildren
   '/code/archived': typeof CodeArchivedRoute
   '/code/inbox': typeof CodeInboxRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
+  '/website/new': typeof WebsiteNewRoute
+  '/website/settings': typeof WebsiteSettingsRoute
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/website/': typeof WebsiteIndexRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/website/tasks/$taskId': typeof WebsiteTasksTaskIdRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
 }
 export interface FileRoutesByTo {
@@ -117,14 +145,17 @@ export interface FileRoutesByTo {
   '/inbox': typeof InboxRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
-  '/website': typeof WebsiteRoute
   '/code/archived': typeof CodeArchivedRoute
   '/code/inbox': typeof CodeInboxRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
+  '/website/new': typeof WebsiteNewRoute
+  '/website/settings': typeof WebsiteSettingsRoute
   '/code': typeof CodeIndexRoute
   '/settings': typeof SettingsIndexRoute
+  '/website': typeof WebsiteIndexRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/website/tasks/$taskId': typeof WebsiteTasksTaskIdRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
 }
 export interface FileRoutesById {
@@ -134,14 +165,18 @@ export interface FileRoutesById {
   '/inbox': typeof InboxRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
-  '/website': typeof WebsiteRoute
+  '/website': typeof WebsiteRouteWithChildren
   '/code/archived': typeof CodeArchivedRoute
   '/code/inbox': typeof CodeInboxRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
+  '/website/new': typeof WebsiteNewRoute
+  '/website/settings': typeof WebsiteSettingsRoute
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/website/': typeof WebsiteIndexRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/website/tasks/$taskId': typeof WebsiteTasksTaskIdRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
 }
 export interface FileRouteTypes {
@@ -157,9 +192,13 @@ export interface FileRouteTypes {
     | '/code/inbox'
     | '/folders/$folderId'
     | '/settings/$category'
+    | '/website/new'
+    | '/website/settings'
     | '/code/'
     | '/settings/'
+    | '/website/'
     | '/code/tasks/$taskId'
+    | '/website/tasks/$taskId'
     | '/code/tasks/pending/$key'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -168,14 +207,17 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/mcp-servers'
     | '/skills'
-    | '/website'
     | '/code/archived'
     | '/code/inbox'
     | '/folders/$folderId'
     | '/settings/$category'
+    | '/website/new'
+    | '/website/settings'
     | '/code'
     | '/settings'
+    | '/website'
     | '/code/tasks/$taskId'
+    | '/website/tasks/$taskId'
     | '/code/tasks/pending/$key'
   id:
     | '__root__'
@@ -189,9 +231,13 @@ export interface FileRouteTypes {
     | '/code/inbox'
     | '/folders/$folderId'
     | '/settings/$category'
+    | '/website/new'
+    | '/website/settings'
     | '/code/'
     | '/settings/'
+    | '/website/'
     | '/code/tasks/$taskId'
+    | '/website/tasks/$taskId'
     | '/code/tasks/pending/$key'
   fileRoutesById: FileRoutesById
 }
@@ -201,7 +247,7 @@ export interface RootRouteChildren {
   InboxRoute: typeof InboxRoute
   McpServersRoute: typeof McpServersRoute
   SkillsRoute: typeof SkillsRoute
-  WebsiteRoute: typeof WebsiteRoute
+  WebsiteRoute: typeof WebsiteRouteWithChildren
   CodeArchivedRoute: typeof CodeArchivedRoute
   CodeInboxRoute: typeof CodeInboxRoute
   FoldersFolderIdRoute: typeof FoldersFolderIdRoute
@@ -256,6 +302,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/website/': {
+      id: '/website/'
+      path: '/'
+      fullPath: '/website/'
+      preLoaderRoute: typeof WebsiteIndexRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
     '/settings/': {
       id: '/settings/'
       path: '/settings'
@@ -269,6 +322,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/code/'
       preLoaderRoute: typeof CodeIndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/website/settings': {
+      id: '/website/settings'
+      path: '/settings'
+      fullPath: '/website/settings'
+      preLoaderRoute: typeof WebsiteSettingsRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/new': {
+      id: '/website/new'
+      path: '/new'
+      fullPath: '/website/new'
+      preLoaderRoute: typeof WebsiteNewRouteImport
+      parentRoute: typeof WebsiteRoute
     }
     '/settings/$category': {
       id: '/settings/$category'
@@ -298,6 +365,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeArchivedRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/website/tasks/$taskId': {
+      id: '/website/tasks/$taskId'
+      path: '/tasks/$taskId'
+      fullPath: '/website/tasks/$taskId'
+      preLoaderRoute: typeof WebsiteTasksTaskIdRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
     '/code/tasks/$taskId': {
       id: '/code/tasks/$taskId'
       path: '/code/tasks/$taskId'
@@ -315,13 +389,30 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface WebsiteRouteChildren {
+  WebsiteNewRoute: typeof WebsiteNewRoute
+  WebsiteSettingsRoute: typeof WebsiteSettingsRoute
+  WebsiteIndexRoute: typeof WebsiteIndexRoute
+  WebsiteTasksTaskIdRoute: typeof WebsiteTasksTaskIdRoute
+}
+
+const WebsiteRouteChildren: WebsiteRouteChildren = {
+  WebsiteNewRoute: WebsiteNewRoute,
+  WebsiteSettingsRoute: WebsiteSettingsRoute,
+  WebsiteIndexRoute: WebsiteIndexRoute,
+  WebsiteTasksTaskIdRoute: WebsiteTasksTaskIdRoute,
+}
+
+const WebsiteRouteWithChildren =
+  WebsiteRoute._addFileChildren(WebsiteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CommandCenterRoute: CommandCenterRoute,
   InboxRoute: InboxRoute,
   McpServersRoute: McpServersRoute,
   SkillsRoute: SkillsRoute,
-  WebsiteRoute: WebsiteRoute,
+  WebsiteRoute: WebsiteRouteWithChildren,
   CodeArchivedRoute: CodeArchivedRoute,
   CodeInboxRoute: CodeInboxRoute,
   FoldersFolderIdRoute: FoldersFolderIdRoute,
