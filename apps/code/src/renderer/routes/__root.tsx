@@ -149,6 +149,12 @@ function RootLayout() {
     select: (s) => isHomeSpacePath(s.location.pathname),
   });
 
+  // Inbox is a top-level space: it renders full-screen (rail only, no code
+  // header/sidebar/space-switcher).
+  const isInboxRoute = useRouterState({
+    select: (s) => s.location.pathname === "/inbox",
+  });
+
   if (isSettingsRoute) {
     return (
       <Flex direction="column" height="100vh">
@@ -183,6 +189,10 @@ function RootLayout() {
               <Outlet />
             </Box>
           </Flex>
+        ) : isInboxRoute ? (
+          <Box flexGrow="1" overflow="hidden">
+            <Outlet />
+          </Box>
         ) : (
           <>
             <HeaderRow />

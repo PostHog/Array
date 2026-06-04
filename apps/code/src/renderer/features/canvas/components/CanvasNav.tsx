@@ -1,5 +1,5 @@
 import { isHomeSpacePath } from "@features/canvas/spaces";
-import { CodeIcon, HouseIcon } from "@phosphor-icons/react";
+import { CodeIcon, HouseIcon, TrayIcon } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Flex } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
@@ -11,10 +11,10 @@ import { isMac } from "@utils/platform";
 const MAC_TRAFFIC_LIGHT_INSET = 28;
 
 type CanvasNavItem = {
-  id: "home" | "code";
+  id: "home" | "inbox" | "code";
   label: string;
   icon: typeof HouseIcon;
-  to: "/" | "/code";
+  to: "/" | "/inbox" | "/code";
   isActive: (pathname: string) => boolean;
 };
 
@@ -28,6 +28,13 @@ const NAV_ITEMS: CanvasNavItem[] = [
     icon: HouseIcon,
     to: "/",
     isActive: (pathname) => isHomeSpacePath(pathname),
+  },
+  {
+    id: "inbox",
+    label: "Inbox",
+    icon: TrayIcon,
+    to: "/inbox",
+    isActive: (pathname) => pathname === "/inbox",
   },
   {
     id: "code",
