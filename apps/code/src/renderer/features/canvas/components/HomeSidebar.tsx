@@ -67,7 +67,7 @@ function WebsiteSection() {
     <Collapsible variant="folder" defaultOpen>
       <CollapsibleTrigger>Website</CollapsibleTrigger>
       <CollapsibleContent>
-        <Flex direction="column" gap="1" pt="1">
+        <Flex direction="column" gap="1" pt="1" pl="3">
           <NavButton
             label="Dashboards"
             active={
