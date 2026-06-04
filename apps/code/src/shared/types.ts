@@ -500,6 +500,8 @@ export interface SignalReportsQueryParams {
   source_product?: string;
   /** Comma-separated PostHog user UUIDs — only returns reports with these suggested reviewers. */
   suggested_reviewers?: string;
+  /** Comma-separated `P0`–`P4` priorities — only returns reports with one of these priorities. */
+  priority?: string;
 }
 
 /** Values match `SignalReportTask.Relationship` on the PostHog API. */

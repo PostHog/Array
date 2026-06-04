@@ -1,5 +1,6 @@
 import type {
   SignalReportOrderingField,
+  SignalReportPriority,
   SignalReportStatus,
 } from "@shared/types";
 import { create } from "zustand";
@@ -42,6 +43,8 @@ interface InboxSignalsFilterState {
   suggestedReviewerFilter: string[];
   /** Tracks whether we've seeded the reviewer filter with the current user once. Persisted so the seed only runs on first inbox visit. */
   hasInitializedSuggestedReviewerFilter: boolean;
+  /** Empty array means "all priorities" (no filter). */
+  priorityFilter: SignalReportPriority[];
 }
 
 interface InboxSignalsFilterActions {
@@ -58,6 +61,8 @@ interface InboxSignalsFilterActions {
    * Always flips the initialized flag so we don't override later user choices.
    */
   seedSuggestedReviewerFilterWithCurrentUser: (currentUserUuid: string) => void;
+  togglePriority: (priority: SignalReportPriority) => void;
+  setPriorityFilter: (priorities: SignalReportPriority[]) => void;
   /** Reset all filters when a deep link arrives so the linked report isn't hidden. */
   resetFilters: () => void;
 }
@@ -75,6 +80,7 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
       sourceProductFilter: [],
       suggestedReviewerFilter: [],
       hasInitializedSuggestedReviewerFilter: false,
+      priorityFilter: [],
       setSort: (sortField, sortDirection) => set({ sortField, sortDirection }),
       setSearchQuery: (searchQuery) => set({ searchQuery }),
       setStatusFilter: (statusFilter) => set({ statusFilter }),
@@ -117,12 +123,25 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
                 : state.suggestedReviewerFilter,
           };
         }),
+      togglePriority: (priority) =>
+        set((state) => {
+          const current = state.priorityFilter;
+          const next = current.includes(priority)
+            ? current.filter((p) => p !== priority)
+            : [...current, priority];
+          return { priorityFilter: next };
+        }),
+      setPriorityFilter: (priorities) =>
+        set({
+          priorityFilter: Array.from(new Set(priorities)),
+        }),
       resetFilters: () =>
         set({
           searchQuery: "",
           statusFilter: DEFAULT_STATUS_FILTER,
           sourceProductFilter: [],
           suggestedReviewerFilter: [],
+          priorityFilter: [],
         }),
     }),
     {
@@ -135,6 +154,7 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
         suggestedReviewerFilter: state.suggestedReviewerFilter,
         hasInitializedSuggestedReviewerFilter:
           state.hasInitializedSuggestedReviewerFilter,
+        priorityFilter: state.priorityFilter,
       }),
     },
   ),

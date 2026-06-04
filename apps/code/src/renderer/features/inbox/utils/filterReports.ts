@@ -1,6 +1,7 @@
 import type {
   SignalReport,
   SignalReportOrderingField,
+  SignalReportPriority,
   SignalReportStatus,
 } from "@shared/types";
 
@@ -69,4 +70,13 @@ export function buildSuggestedReviewerFilterParam(
   }
 
   return Array.from(new Set(normalizedIds)).join(",");
+}
+
+export function buildPriorityFilterParam(
+  priorities: SignalReportPriority[],
+): string | undefined {
+  if (priorities.length === 0) {
+    return undefined;
+  }
+  return Array.from(new Set(priorities)).join(",");
 }
