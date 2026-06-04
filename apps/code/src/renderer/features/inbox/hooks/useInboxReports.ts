@@ -19,6 +19,7 @@ import type {
 } from "@shared/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
+import { toast } from "sonner";
 
 const REPORTS_PAGE_SIZE = 100;
 
@@ -260,13 +261,14 @@ export function useUpdateSuggestedReviewers(reportId: string) {
 
         return { previous };
       },
-      onError: (_error, _variables, context) => {
+      onError: (error, _variables, context) => {
         const previous = (
           context as { previous?: SignalReportArtefactsResponse }
         )?.previous;
         if (previous) {
           queryClient.setQueryData(queryKey, previous);
         }
+        toast.error(error.message || "Failed to update suggested reviewers");
       },
       onSettled: () => {
         queryClient.invalidateQueries({ queryKey });

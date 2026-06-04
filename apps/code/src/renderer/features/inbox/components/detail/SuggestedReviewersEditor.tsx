@@ -223,7 +223,7 @@ export function SuggestedReviewersEditor({
               </Flex>
 
               <Box className="max-h-[280px] overflow-y-auto">
-                {isFetching && addableOptions.length === 0 ? (
+                {isFetching && !availableReviewers?.results?.length ? (
                   <Flex align="center" justify="center" py="3">
                     <Spinner size="1" />
                   </Flex>
