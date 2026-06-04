@@ -137,7 +137,14 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
         },
         onPatch: (patch) => {
           state.spec = applySpecStreamPatch(state.spec, patch);
-          if (typeof state.spec.root === "string" && state.spec.root) {
+          // Only emit once the spec is renderable: the root must exist AND its
+          // element must be present. Emitting earlier ships partial/invalid
+          // snapshots that can crash the renderer mid-stream.
+          const root = state.spec.root;
+          const elements = state.spec.elements as
+            | Record<string, unknown>
+            | undefined;
+          if (typeof root === "string" && root && elements?.[root]) {
             this.emitEvent(threadId, { type: "spec", spec: { ...state.spec } });
           }
         },

@@ -5,9 +5,16 @@ import { logger } from "@utils/logger";
 
 const log = logger.scope("canvas-subscriptions");
 
+// Guards against duplicate subscriptions per thread (e.g. React StrictMode
+// double-mounts in dev), which would otherwise stack IPC listeners.
+const active = new Set<string>();
+
 // Streams canvas generation events for a thread into the chat store. Scoped to
 // the canvas surface: started/disposed by the WebsiteCanvas component.
 export function registerCanvasSubscription(threadId: string): () => void {
+  if (active.has(threadId)) return () => {};
+  active.add(threadId);
+
   const subscription = trpcClient.canvasGen.onEvent.subscribe(
     { threadId },
     {
@@ -39,5 +46,8 @@ export function registerCanvasSubscription(threadId: string): () => void {
       },
     },
   );
-  return () => subscription.unsubscribe();
+  return () => {
+    active.delete(threadId);
+    subscription.unsubscribe();
+  };
 }
