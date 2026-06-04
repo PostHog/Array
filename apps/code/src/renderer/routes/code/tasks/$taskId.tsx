@@ -4,7 +4,7 @@ import { useTasks } from "@features/tasks/hooks/useTasks";
 import { taskDetailQuery } from "@features/tasks/queries";
 import type { Task } from "@shared/types";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { getCachedTask } from "@utils/queryClient";
 
 export const Route = createFileRoute("/code/tasks/$taskId")({
@@ -33,13 +33,25 @@ function TaskDetailRoute() {
 
   // Cold deep-link / URL restore: nothing cached. Fetch the single task here so
   // a hang or 404 only affects this view's spinner, never the router.
-  const { data: fetched } = useQuery({
+  const needsFetch = !fromList && !loaderTask;
+  const {
+    data: fetched,
+    isError,
+    isSuccess,
+  } = useQuery({
     ...taskDetailQuery(taskId),
-    enabled: !fromList && !loaderTask,
+    enabled: needsFetch,
   });
 
   // Prefer the live list task (kept fresh by polling + subscriptions).
   const task = fromList ?? loaderTask ?? fetched;
+
+  // Task doesn't exist (deleted, 404, or stale deep link): the cold fetch
+  // settled with an error or empty result. Redirect to the new-task screen
+  // rather than spin forever — matches the old navigationStore.hydrateTask.
+  if (needsFetch && (isError || (isSuccess && !fetched))) {
+    return <Navigate replace to="/code" />;
+  }
 
   if (!task) {
     return <RoutePending />;
