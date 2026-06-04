@@ -4,10 +4,4 @@ export {
   isMcpToolReadOnly,
   type McpToolMetadata,
 } from "./adapters/claude/mcp/tool-metadata";
-export {
-  classifyPostHogExecCall,
-  classifyPostHogSqlQuery,
-  classifyPostHogSubTool,
-  POSTHOG_PRODUCTS,
-  type PostHogProductId,
-} from "./posthog-products";
+export type { PostHogProductId } from "./posthog-products";

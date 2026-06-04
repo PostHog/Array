@@ -58,7 +58,7 @@ export interface BuildOptionsParams {
   effort?: EffortLevel;
   enrichmentDeps?: FileEnrichmentDeps;
   enrichedReadCache?: EnrichedReadCache;
-  /** Records PostHog product usage from MCP exec calls (per-turn summary). */
+  /** Records PostHog product usage from MCP exec calls (deduped, session-wide). */
   onPostHogResourceUsed?: (subTool: string, commandText?: string) => void;
   /** Cloud task session — enables the signed-commit guard. */
   cloudMode?: boolean;
