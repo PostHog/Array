@@ -34,11 +34,12 @@ describe("McpAppsService.getUiResourceByUri", () => {
     ).resolves.toBeNull();
   });
 
-  it("returns null when the server has no connection config", async () => {
+  it("rejects when the server has no connection config", async () => {
     // ui:// passes the guard, but with no configured server the lazy connection
-    // fails and the fetch resolves to null rather than throwing.
+    // fails. The fetch rethrows rather than caching a permanent null, so the
+    // caller's query can surface the error and retry once boot populates configs.
     await expect(
       service.getUiResourceByUri("posthog", "ui://posthog/survey-list.html"),
-    ).resolves.toBeNull();
+    ).rejects.toThrow("No server config for: posthog");
   });
 });

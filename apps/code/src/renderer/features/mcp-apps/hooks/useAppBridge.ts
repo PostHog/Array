@@ -62,7 +62,7 @@ interface UseAppBridgeReturn {
   sendWhenReady: (fn: (bridge: AppBridge) => void) => void;
 }
 
-const HOST_INFO = { name: "Twig", version: "1.0.0" };
+const HOST_INFO = { name: "posthog-code", version: "1.0.0" };
 
 const HOST_CAPABILITIES: McpUiHostCapabilities = {
   openLinks: {},

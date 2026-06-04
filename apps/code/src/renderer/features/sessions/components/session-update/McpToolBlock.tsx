@@ -9,11 +9,7 @@ import {
 } from "@shared/types/mcp-apps";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
-import { logger } from "@utils/logger";
-import { useEffect } from "react";
 import type { ToolViewProps } from "./toolCallUtils";
-
-const log = logger.scope("mcp-tool-block");
 
 interface McpToolBlockProps extends ToolViewProps {
   mcpToolName: string;
@@ -73,28 +69,6 @@ export function McpToolBlock(props: McpToolBlockProps) {
       },
     }),
   );
-
-  useEffect(() => {
-    log.info("render state", {
-      mcpToolName,
-      isExec,
-      toolCallId: toolCall.toolCallId,
-      status: toolCall.status,
-      isDisabledForServer,
-      hasUiByTool,
-      execResourceUri,
-      willRenderApp: !!hasUi && !isDisabledForServer,
-    });
-  }, [
-    mcpToolName,
-    isExec,
-    toolCall.toolCallId,
-    toolCall.status,
-    isDisabledForServer,
-    hasUiByTool,
-    execResourceUri,
-    hasUi,
-  ]);
 
   return (
     <>
