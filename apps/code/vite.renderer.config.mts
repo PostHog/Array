@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
+import { devtools } from "@tanstack/devtools-vite";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
@@ -22,6 +23,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      // Source Inspector: hold Shift+Alt+Ctrl (⌘ on Mac) and click any element
+      // in dev to jump to its source. Dev-only so the data-tsd-source attrs it
+      // injects never ship in a packaged build.
+      mode === "development" && devtools(),
       TanStackRouterVite({
         target: "react",
         autoCodeSplitting: true,
