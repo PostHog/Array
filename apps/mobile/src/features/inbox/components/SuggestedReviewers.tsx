@@ -75,6 +75,7 @@ export function SuggestedReviewers({
   };
 
   const toggleReviewer = (option: AvailableSuggestedReviewer) => {
+    if (isPending) return;
     const existing = reviewers.find((r) => reviewerMatchesAvailable(r, option));
     if (existing) {
       removeReviewer(existing);
@@ -119,9 +120,10 @@ export function SuggestedReviewers({
         <View className="flex-1" />
         <Pressable
           onPress={() => setEditOpen(true)}
+          disabled={isPending}
           accessibilityLabel="Add suggested reviewer"
           hitSlop={6}
-          className="flex-row items-center gap-1 rounded-full border border-gray-6 px-2.5 py-1 active:opacity-70"
+          className="flex-row items-center gap-1 rounded-full border border-gray-6 px-2.5 py-1 active:opacity-70 disabled:opacity-50"
         >
           <Plus size={12} color={themeColors.gray[11]} weight="bold" />
           <Text className="text-[12px] text-gray-11">Add</Text>

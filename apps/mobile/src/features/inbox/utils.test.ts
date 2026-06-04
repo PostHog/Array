@@ -171,51 +171,61 @@ describe("buildInboxViewedProperties", () => {
 });
 
 describe("toSuggestedReviewerWriteContent", () => {
-  it("prefers github_login so the server preserves commits/name", () => {
-    const content = toSuggestedReviewerWriteContent([
-      makeReviewer({
+  it.each([
+    {
+      name: "prefers github_login so the server preserves commits/name",
+      reviewer: makeReviewer({
         github_login: "ada",
         user: { id: 1, uuid: "u1", email: "", first_name: "", last_name: "" },
       }),
-    ]);
-    expect(content).toEqual([{ github_login: "ada" }]);
-  });
-
-  it("falls back to user_uuid when there is no github_login", () => {
-    const content = toSuggestedReviewerWriteContent([
-      makeReviewer({
+      expected: [{ github_login: "ada" }],
+    },
+    {
+      name: "falls back to user_uuid when there is no github_login",
+      reviewer: makeReviewer({
         github_login: "",
         user: { id: 1, uuid: "u1", email: "", first_name: "", last_name: "" },
       }),
-    ]);
-    expect(content).toEqual([{ user_uuid: "u1" }]);
-  });
-
-  it("drops entries with neither a login nor a resolved user", () => {
-    const content = toSuggestedReviewerWriteContent([
-      makeReviewer({ github_login: "", user: null }),
-    ]);
-    expect(content).toEqual([]);
+      expected: [{ user_uuid: "u1" }],
+    },
+    {
+      name: "drops entries with neither a login nor a resolved user",
+      reviewer: makeReviewer({ github_login: "", user: null }),
+      expected: [],
+    },
+  ])("$name", ({ reviewer, expected }) => {
+    expect(toSuggestedReviewerWriteContent([reviewer])).toEqual(expected);
   });
 });
 
 describe("reviewerMatchesAvailable", () => {
-  it("matches on user uuid", () => {
-    const reviewer = makeReviewer({
-      github_login: "",
-      user: { id: 1, uuid: "uuid-1", email: "", first_name: "", last_name: "" },
-    });
-    expect(reviewerMatchesAvailable(reviewer, makeAvailable())).toBe(true);
-  });
-
-  it("matches on case-insensitive github login", () => {
-    const reviewer = makeReviewer({ github_login: "ADA", user: null });
-    expect(reviewerMatchesAvailable(reviewer, makeAvailable())).toBe(true);
-  });
-
-  it("does not match different people", () => {
-    const reviewer = makeReviewer({ github_login: "octocat", user: null });
-    expect(reviewerMatchesAvailable(reviewer, makeAvailable())).toBe(false);
+  it.each([
+    {
+      name: "matches on user uuid",
+      reviewer: makeReviewer({
+        github_login: "",
+        user: {
+          id: 1,
+          uuid: "uuid-1",
+          email: "",
+          first_name: "",
+          last_name: "",
+        },
+      }),
+      expected: true,
+    },
+    {
+      name: "matches on case-insensitive github login",
+      reviewer: makeReviewer({ github_login: "ADA", user: null }),
+      expected: true,
+    },
+    {
+      name: "does not match different people",
+      reviewer: makeReviewer({ github_login: "octocat", user: null }),
+      expected: false,
+    },
+  ])("$name", ({ reviewer, expected }) => {
+    expect(reviewerMatchesAvailable(reviewer, makeAvailable())).toBe(expected);
   });
 });
 
