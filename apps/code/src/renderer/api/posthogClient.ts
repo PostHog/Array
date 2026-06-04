@@ -28,6 +28,7 @@ import type {
   SlackChannelsQueryParams,
   SlackChannelsResponse,
   SuggestedReviewersArtefact,
+  SuggestedReviewerWriteEntry,
   Task,
   TaskRun,
 } from "@shared/types";
@@ -2120,6 +2121,45 @@ export class PostHogAPIClient {
     }
 
     return (await response.json()) as SignalReport;
+  }
+
+  /**
+   * Replace the content of a `suggested_reviewers` artefact (full replacement).
+   * The server canonicalizes each entry to a lowercase `github_login` and preserves
+   * `relevant_commits` / `github_name` for logins that survive the replace.
+   */
+  async updateSignalReportArtefact(
+    reportId: string,
+    artefactId: string,
+    content: SuggestedReviewerWriteEntry[],
+  ): Promise<SuggestedReviewersArtefact> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/signals/reports/${reportId}/artefacts/${artefactId}/`,
+    );
+    const path = `/api/projects/${teamId}/signals/reports/${reportId}/artefacts/${artefactId}/`;
+
+    const response = await this.api.fetcher.fetch({
+      method: "put",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify({ content }),
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "Failed to update suggested reviewers");
+    }
+
+    const parsed = normalizeSignalReportArtefact(await response.json());
+    if (!parsed || parsed.type !== "suggested_reviewers") {
+      throw new Error("Unexpected response updating suggested reviewers");
+    }
+    // `SignalReportArtefact.type` is a plain string, so the guard above can't
+    // statically narrow the union — the runtime check makes this cast safe.
+    return parsed as SuggestedReviewersArtefact;
   }
 
   async deleteSignalReport(reportId: string): Promise<{

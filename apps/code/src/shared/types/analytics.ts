@@ -503,6 +503,8 @@ export type InboxReportActionType =
   | "view_signal_external"
   | "expand_why"
   | "click_suggested_reviewer"
+  | "add_suggested_reviewer"
+  | "remove_suggested_reviewer"
   | "expand_task_section"
   | "play_session_recording";
 
