@@ -1,3 +1,4 @@
+import { isHomeSpacePath } from "@features/canvas/spaces";
 import { CodeIcon, HouseIcon } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Flex } from "@radix-ui/themes";
@@ -26,7 +27,7 @@ const NAV_ITEMS: CanvasNavItem[] = [
     label: "Home",
     icon: HouseIcon,
     to: "/",
-    isActive: (pathname) => pathname === "/",
+    isActive: (pathname) => isHomeSpacePath(pathname),
   },
   {
     id: "code",

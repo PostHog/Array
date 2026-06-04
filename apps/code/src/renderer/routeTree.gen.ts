@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WebsiteRouteImport } from './routes/website'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as McpServersRouteImport } from './routes/mcp-servers'
 import { Route as CommandCenterRouteImport } from './routes/command-center'
@@ -22,6 +23,11 @@ import { Route as CodeArchivedRouteImport } from './routes/code/archived'
 import { Route as CodeTasksTaskIdRouteImport } from './routes/code/tasks/$taskId'
 import { Route as CodeTasksPendingKeyRouteImport } from './routes/code/tasks/pending.$key'
 
+const WebsiteRoute = WebsiteRouteImport.update({
+  id: '/website',
+  path: '/website',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SkillsRoute = SkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
+  '/website': typeof WebsiteRoute
   '/code/archived': typeof CodeArchivedRoute
   '/code/inbox': typeof CodeInboxRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
+  '/website': typeof WebsiteRoute
   '/code/archived': typeof CodeArchivedRoute
   '/code/inbox': typeof CodeInboxRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
@@ -117,6 +125,7 @@ export interface FileRoutesById {
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
+  '/website': typeof WebsiteRoute
   '/code/archived': typeof CodeArchivedRoute
   '/code/inbox': typeof CodeInboxRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
@@ -133,6 +142,7 @@ export interface FileRouteTypes {
     | '/command-center'
     | '/mcp-servers'
     | '/skills'
+    | '/website'
     | '/code/archived'
     | '/code/inbox'
     | '/folders/$folderId'
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/command-center'
     | '/mcp-servers'
     | '/skills'
+    | '/website'
     | '/code/archived'
     | '/code/inbox'
     | '/folders/$folderId'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/command-center'
     | '/mcp-servers'
     | '/skills'
+    | '/website'
     | '/code/archived'
     | '/code/inbox'
     | '/folders/$folderId'
@@ -176,6 +188,7 @@ export interface RootRouteChildren {
   CommandCenterRoute: typeof CommandCenterRoute
   McpServersRoute: typeof McpServersRoute
   SkillsRoute: typeof SkillsRoute
+  WebsiteRoute: typeof WebsiteRoute
   CodeArchivedRoute: typeof CodeArchivedRoute
   CodeInboxRoute: typeof CodeInboxRoute
   FoldersFolderIdRoute: typeof FoldersFolderIdRoute
@@ -188,6 +201,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/website': {
+      id: '/website'
+      path: '/website'
+      fullPath: '/website'
+      preLoaderRoute: typeof WebsiteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/skills': {
       id: '/skills'
       path: '/skills'
@@ -280,6 +300,7 @@ const rootRouteChildren: RootRouteChildren = {
   CommandCenterRoute: CommandCenterRoute,
   McpServersRoute: McpServersRoute,
   SkillsRoute: SkillsRoute,
+  WebsiteRoute: WebsiteRoute,
   CodeArchivedRoute: CodeArchivedRoute,
   CodeInboxRoute: CodeInboxRoute,
   FoldersFolderIdRoute: FoldersFolderIdRoute,

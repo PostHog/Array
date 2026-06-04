@@ -5,6 +5,7 @@ import { SpaceSwitcher } from "@components/SpaceSwitcher";
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
 import { CanvasNav } from "@features/canvas/components/CanvasNav";
 import { HomeSidebar } from "@features/canvas/components/HomeSidebar";
+import { isHomeSpacePath } from "@features/canvas/spaces";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { useSetupDiscovery } from "@features/setup/hooks/useSetupDiscovery";
@@ -142,10 +143,10 @@ function RootLayout() {
     select: (s) => s.matches.some((m) => m.routeId.startsWith("/settings")),
   });
 
-  // Home space (the / route) gets its own sidenav + hello-world scene instead
-  // of the code app chrome (header/sidebar/space-switcher).
+  // Home space routes get their own sidenav + canvas scenes instead of the code
+  // app chrome (header/sidebar/space-switcher).
   const isHomeRoute = useRouterState({
-    select: (s) => s.matches.some((m) => m.routeId === "/"),
+    select: (s) => isHomeSpacePath(s.location.pathname),
   });
 
   if (isSettingsRoute) {
