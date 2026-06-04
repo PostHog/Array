@@ -24,6 +24,9 @@ import { UnifiedModelSelector } from "@features/sessions/components/UnifiedModel
 import { getCurrentModeFromConfigOptions } from "@features/sessions/stores/sessionStore";
 import type { AgentAdapter } from "@features/settings/stores/settingsStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import type { TaskInputReportAssociation } from "@features/task-detail/stores/taskInputPrefillStore";
+import { useTaskInputPrefillStore } from "@features/task-detail/stores/taskInputPrefillStore";
+import { useAppView } from "@hooks/useAppView";
 import { useAutoFocusOnTyping } from "@hooks/useAutoFocusOnTyping";
 import { useConnectivity } from "@hooks/useConnectivity";
 import {
@@ -36,13 +39,10 @@ import { ButtonGroup } from "@posthog/quill";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useAuthStore } from "@renderer/features/auth/stores/authStore";
 import { useDraftStore } from "@renderer/features/message-editor/stores/draftStore";
+import { navigateToInbox } from "@renderer/navigationBridge";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
 import { useActiveRepoStore } from "@stores/activeRepoStore";
-import {
-  type TaskInputReportAssociation,
-  useNavigationStore,
-} from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
 import { FOCUSABLE_SELECTOR } from "@utils/overlay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -77,8 +77,10 @@ export function TaskInput({
 }: TaskInputProps = {}) {
   const { cloudRegion } = useAuthStore();
   const trpcReact = useTRPC();
-  const { view, clearTaskInputReportAssociation, navigateToInbox } =
-    useNavigationStore();
+  const view = useAppView();
+  const clearTaskInputReportAssociation = useTaskInputPrefillStore(
+    (s) => s.clearReportAssociation,
+  );
   const setSelectedReportIds = useInboxReportSelectionStore(
     (s) => s.setSelectedReportIds,
   );
@@ -169,7 +171,7 @@ export function TaskInput({
     if (!activeReportAssociation) return;
     navigateToInbox();
     setSelectedReportIds([activeReportAssociation.reportId]);
-  }, [activeReportAssociation, navigateToInbox, setSelectedReportIds]);
+  }, [activeReportAssociation, setSelectedReportIds]);
 
   useEffect(() => {
     if (!selectedDirectory && mostRecentRepo?.path) {

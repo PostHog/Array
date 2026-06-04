@@ -1,21 +1,32 @@
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { useSettingsPageStore } from "@features/settings/stores/settingsPageStore";
 import { Cloud, HardDrives } from "@phosphor-icons/react";
 import { Flex, SegmentedControl, Text } from "@radix-ui/themes";
+import { navigateToSettings } from "@renderer/navigationBridge";
+import { useRouterState } from "@tanstack/react-router";
 import { CloudEnvironmentsSettings } from "./CloudEnvironmentsSettings";
 import { LocalEnvironmentsSettings } from "./LocalEnvironmentsSettings";
 
 type Segment = "local" | "cloud";
 
 export function EnvironmentsSettings() {
-  const activeCategory = useSettingsDialogStore((s) => s.activeCategory);
-  const setCategory = useSettingsDialogStore((s) => s.setCategory);
-  const formMode = useSettingsDialogStore((s) => s.formMode);
+  const formMode = useSettingsPageStore((s) => s.formMode);
+  // Read category from the URL — falls back to "environments" when the
+  // component is rendered outside a router shell (e.g. AiApprovalScreen).
+  const activeCategory = useRouterState({
+    select: (s) => {
+      const match = s.matches.find((m) => m.routeId === "/settings/$category");
+      const params = match?.params as { category?: string } | undefined;
+      return params?.category ?? "environments";
+    },
+  });
 
   const segment: Segment =
     activeCategory === "cloud-environments" ? "cloud" : "local";
 
   const handleSegmentChange = (value: string) => {
-    setCategory(value === "cloud" ? "cloud-environments" : "environments");
+    navigateToSettings(
+      value === "cloud" ? "cloud-environments" : "environments",
+    );
   };
 
   return (

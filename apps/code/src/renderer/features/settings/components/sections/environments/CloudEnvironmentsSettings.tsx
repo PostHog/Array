@@ -1,5 +1,5 @@
 import { useSandboxEnvironments } from "@features/settings/hooks/useSandboxEnvironments";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { useSettingsPageStore } from "@features/settings/stores/settingsPageStore";
 import { ArrowLeft, PencilSimple, Plus, Trash } from "@phosphor-icons/react";
 import { ChevronDownIcon } from "@radix-ui/react-icons";
 import {
@@ -192,10 +192,10 @@ export function CloudEnvironmentsSettings() {
     updateMutation,
     deleteMutation,
   } = useSandboxEnvironments();
-  const consumeInitialAction = useSettingsDialogStore(
+  const consumeInitialAction = useSettingsPageStore(
     (s) => s.consumeInitialAction,
   );
-  const setFormMode = useSettingsDialogStore((s) => s.setFormMode);
+  const setFormMode = useSettingsPageStore((s) => s.setFormMode);
   const [editingEnv, setEditingEnv] = useState<SandboxEnvironment | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm());

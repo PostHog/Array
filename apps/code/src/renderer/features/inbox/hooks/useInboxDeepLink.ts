@@ -7,8 +7,8 @@ import { reportKeys } from "@features/inbox/hooks/useInboxReports";
 import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
 import { useInboxSignalsFilterStore } from "@features/inbox/stores/inboxSignalsFilterStore";
 import { setPendingInboxOpenMethod } from "@features/inbox/utils/pendingInboxOpenMethod";
+import { navigateToInbox } from "@renderer/navigationBridge";
 import { trpcClient, useTRPC } from "@renderer/trpc";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { logger } from "@utils/logger";
@@ -40,7 +40,6 @@ export function useInboxDeepLink() {
   );
   const pendingDrainedRef = useRef(false);
 
-  const navigateToInbox = useNavigationStore((s) => s.navigateToInbox);
   const setSelectedReportIds = useInboxReportSelectionStore(
     (s) => s.setSelectedReportIds,
   );
@@ -78,7 +77,7 @@ export function useInboxDeepLink() {
         toast.error("Failed to open report");
       }
     },
-    [client, navigateToInbox, queryClient, resetFilters, setSelectedReportIds],
+    [client, queryClient, resetFilters, setSelectedReportIds],
   );
 
   useEffect(() => {

@@ -1,4 +1,6 @@
 import { useFolders } from "@features/folders/hooks/useFolders";
+import { useAppView } from "@hooks/useAppView";
+import { openTaskInput } from "@hooks/useOpenTask";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
 import { ArrowLeft, Warning } from "@phosphor-icons/react";
 import {
@@ -11,7 +13,6 @@ import {
   Heading,
   Text,
 } from "@radix-ui/themes";
-import { useNavigationStore } from "@renderer/stores/navigationStore";
 import { logger } from "@utils/logger";
 import { useState } from "react";
 
@@ -20,7 +21,7 @@ const log = logger.scope("folder-settings");
 export function FolderSettingsView() {
   useSetHeaderContent(null);
 
-  const { view, navigateToTaskInput } = useNavigationStore();
+  const view = useAppView();
   const { folders, removeFolder } = useFolders();
 
   const folderId = view.type === "folder-settings" ? view.folderId : undefined;
@@ -32,7 +33,7 @@ export function FolderSettingsView() {
     if (!folderId) return;
     try {
       await removeFolder(folderId);
-      navigateToTaskInput();
+      openTaskInput();
     } catch (err) {
       log.error("Failed to remove folder:", err);
       setError(err instanceof Error ? err.message : "Failed to remove folder");
@@ -53,7 +54,7 @@ export function FolderSettingsView() {
             <Button
               variant="soft"
               size="2"
-              onClick={() => navigateToTaskInput()}
+              onClick={() => openTaskInput()}
               className="self-start"
             >
               <ArrowLeft size={16} />
@@ -145,7 +146,7 @@ export function FolderSettingsView() {
             <Button
               variant="soft"
               size="2"
-              onClick={() => navigateToTaskInput()}
+              onClick={() => openTaskInput()}
               className="self-start"
             >
               <ArrowLeft size={16} />

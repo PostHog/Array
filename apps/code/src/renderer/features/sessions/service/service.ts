@@ -152,6 +152,42 @@ function hasSessionPromptEvent(events: AcpMessage[]): boolean {
   );
 }
 
+type DerivedPermissionRequest = Pick<
+  CloudTaskPermissionRequestUpdate,
+  "requestId" | "toolCall" | "options"
+>;
+
+export function derivePendingPermissionRequests(
+  entries: StoredLogEntry[],
+): DerivedPermissionRequest[] {
+  const requests = new Map<string, DerivedPermissionRequest>();
+  const resolved = new Set<string>();
+  for (const entry of entries) {
+    const method = entry.notification?.method;
+    if (!method) continue;
+    const params = (entry.notification?.params ?? {}) as {
+      requestId?: string;
+      toolCall?: CloudTaskPermissionRequestUpdate["toolCall"];
+      options?: CloudTaskPermissionRequestUpdate["options"];
+    };
+    if (typeof params.requestId !== "string") continue;
+    if (isNotification(method, POSTHOG_NOTIFICATIONS.PERMISSION_RESOLVED)) {
+      resolved.add(params.requestId);
+    } else if (
+      isNotification(method, POSTHOG_NOTIFICATIONS.PERMISSION_REQUEST) &&
+      typeof params.toolCall?.toolCallId === "string" &&
+      Array.isArray(params.options)
+    ) {
+      requests.set(params.requestId, {
+        requestId: params.requestId,
+        toolCall: params.toolCall,
+        options: params.options,
+      });
+    }
+  }
+  return [...requests.values()].filter((r) => !resolved.has(r.requestId));
+}
+
 function buildCloudDefaultConfigOptions(
   initialMode: string | undefined,
   adapter: Adapter = "claude",
@@ -1463,7 +1499,7 @@ export class SessionService {
 
   private handleCloudPermissionRequest(
     taskRunId: string,
-    update: CloudTaskPermissionRequestUpdate,
+    update: DerivedPermissionRequest,
   ): void {
     log.info("Cloud permission request received", {
       taskRunId,
@@ -1495,6 +1531,15 @@ export class SessionService {
     sessionStoreSetters.setPendingPermissions(taskRunId, newPermissions);
     taskViewedApi.markActivity(session.taskId);
     notifyPermissionRequest(session.taskTitle, session.taskId);
+  }
+
+  private surfacePersistedPendingPermissions(
+    taskRunId: string,
+    entries: StoredLogEntry[],
+  ): void {
+    for (const request of derivePendingPermissionRequests(entries)) {
+      this.handleCloudPermissionRequest(taskRunId, request);
+    }
   }
 
   // --- Prompt Handling ---
@@ -3554,6 +3599,10 @@ export class SessionService {
           logUrl: session?.logUrl,
         });
       }
+    }
+
+    if (update.kind === "snapshot" && !isTerminalStatus(update.status)) {
+      this.surfacePersistedPendingPermissions(taskRunId, update.newEntries);
     }
 
     // NOTE: Don't auto-flush on `!isPromptPending && queue.length > 0` here.

@@ -12,13 +12,21 @@ import {
 } from "@features/tasks/hooks/useArchiveTask";
 import { useRenameTask, useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
+import { useAppView } from "@hooks/useAppView";
+import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
 import { ScrollArea, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
+import {
+  navigateToCommandCenter,
+  navigateToInbox,
+  navigateToMcpServers,
+  navigateToSkills,
+  navigateToTaskDetail,
+} from "@renderer/navigationBridge";
 import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
@@ -40,15 +48,7 @@ import { TaskListView } from "./TaskListView";
 const log = logger.scope("sidebar-menu");
 
 function SidebarMenuComponent() {
-  const {
-    view,
-    navigateToTask,
-    navigateToTaskInput,
-    navigateToInbox,
-    navigateToCommandCenter,
-    navigateToSkills,
-    navigateToMcpServers,
-  } = useNavigationStore();
+  const view = useAppView();
 
   // Must mirror useSidebarData's filters so taskMap covers every rendered
   // task — otherwise handleTaskClick silently bails for tasks not in the map.
@@ -95,7 +95,7 @@ function SidebarMenuComponent() {
 
   useEffect(() => {
     const currentTaskId =
-      view.type === "task-detail" && view.data ? view.data.id : null;
+      view.type === "task-detail" && view.taskId ? view.taskId : null;
 
     if (
       previousTaskIdRef.current &&
@@ -112,7 +112,7 @@ function SidebarMenuComponent() {
   }, [view, markAsViewed]);
 
   const handleNewTaskClick = () => {
-    navigateToTaskInput();
+    openTaskInput();
   };
 
   const handleInboxClick = () => {
@@ -211,7 +211,12 @@ function SidebarMenuComponent() {
     clearSelection();
     const task = taskMap.get(taskId);
     if (task) {
-      navigateToTask(task);
+      void openTask(task);
+    } else {
+      // Sidebar rows come from the summaries path, which can include tasks the
+      // full-list query (taskMap) doesn't carry. Don't silently bail — navigate
+      // by id; the task-detail route resolves the task from its own query.
+      navigateToTaskDetail(taskId);
     }
   };
 

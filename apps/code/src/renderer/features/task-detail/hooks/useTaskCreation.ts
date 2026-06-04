@@ -9,18 +9,20 @@ import {
   extractFilePaths,
 } from "@features/message-editor/utils/content";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import { useTaskInputPrefillStore } from "@features/task-detail/stores/taskInputPrefillStore";
 import { useCreateTask } from "@features/tasks/hooks/useTasks";
 import { useTourStore } from "@features/tour/stores/tourStore";
 import { createFirstTaskTour } from "@features/tour/tours/createFirstTaskTour";
 import { useConnectivity } from "@hooks/useConnectivity";
+import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
+import { navigateToTaskPending } from "@renderer/navigationBridge";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
 import type { ExecutionMode, Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { useNavigationStore } from "@stores/navigationStore";
 import { pendingTaskPromptStoreApi } from "@stores/pendingTaskPromptStore";
 import { useQuery } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
@@ -208,12 +210,9 @@ export function useTaskCreation({
     useState<string[] | null>(null);
   const additionalDirectories =
     additionalDirectoriesOverride ?? defaultAdditionalDirectories;
-  const {
-    clearTaskInputReportAssociation,
-    navigateToTask,
-    navigateToPendingTask,
-    navigateToTaskInput,
-  } = useNavigationStore();
+  const clearTaskInputReportAssociation = useTaskInputPrefillStore(
+    (s) => s.clearReportAssociation,
+  );
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
   );
@@ -250,7 +249,7 @@ export function useTaskCreation({
             label: a.label,
           })),
         });
-        navigateToPendingTask(pendingTaskKey);
+        navigateToTaskPending(pendingTaskKey);
         if (!contentOverride) {
           editor.clear();
         }
@@ -297,7 +296,7 @@ export function useTaskCreation({
           if (onTaskCreated) {
             onTaskCreated(output.task);
           } else {
-            navigateToTask(output.task);
+            void openTask(output.task);
           }
           useTourStore.getState().completeTour(createFirstTaskTour.id);
           if (!pendingTaskKey && !contentOverride) {
@@ -319,7 +318,7 @@ export function useTaskCreation({
           });
           if (pendingTaskKey) {
             pendingTaskPromptStoreApi.clear(pendingTaskKey);
-            navigateToTaskInput({ initialPrompt: plainPromptText });
+            openTaskInput({ initialPrompt: plainPromptText });
           }
         }
         return result.success;
@@ -330,7 +329,7 @@ export function useTaskCreation({
         log.error("Unexpected error during task creation", { error });
         if (pendingTaskKey) {
           pendingTaskPromptStoreApi.clear(pendingTaskKey);
-          navigateToTaskInput({ initialPrompt: plainPromptText });
+          openTaskInput({ initialPrompt: plainPromptText });
         }
         return false;
       } finally {
@@ -357,9 +356,6 @@ export function useTaskCreation({
       additionalDirectories,
       clearTaskInputReportAssociation,
       invalidateTasks,
-      navigateToTask,
-      navigateToPendingTask,
-      navigateToTaskInput,
       onTaskCreated,
     ],
   );

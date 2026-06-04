@@ -35,6 +35,7 @@ import {
 } from "@features/inbox/utils/filterReports";
 import { INBOX_REFETCH_INTERVAL_MS } from "@features/inbox/utils/inboxConstants";
 import { setPendingInboxOpenMethod } from "@features/inbox/utils/pendingInboxOpenMethod";
+import { useAppView } from "@hooks/useAppView";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import {
   useIntegrations,
@@ -44,7 +45,6 @@ import { Box, Flex, ScrollArea } from "@radix-ui/themes";
 import { isDismissalReasonSnooze } from "@shared/dismissalReasons";
 import type { SignalReport, SignalReportsQueryParams } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
 import { track } from "@utils/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -122,7 +122,7 @@ export function InboxSignalsTab() {
 
   // ── Polling control ─────────────────────────────────────────────────────
   const windowFocused = useRendererWindowFocusStore((s) => s.focused);
-  const isInboxView = useNavigationStore((s) => s.view.type === "inbox");
+  const isInboxView = useAppView().type === "inbox";
   const inboxPollingActive = windowFocused && isInboxView;
 
   const inboxSourcesPrerequisitesLoaded =

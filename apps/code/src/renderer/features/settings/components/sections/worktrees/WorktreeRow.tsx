@@ -1,8 +1,8 @@
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { closeSettings } from "@features/settings/hooks/useOpenSettings";
+import { openTask } from "@hooks/useOpenTask";
 import { Trash } from "@phosphor-icons/react";
 import { Button, Flex, Text } from "@radix-ui/themes";
 import { DotsCircleSpinner } from "@renderer/components/DotsCircleSpinner";
-import { useNavigationStore } from "@renderer/stores/navigationStore";
 import type { Task } from "@shared/types";
 import { WorktreeSize } from "./WorktreeSize";
 
@@ -39,16 +39,13 @@ export function WorktreeRow({
   isLast,
   onDelete,
 }: WorktreeRowProps) {
-  const { close } = useSettingsDialogStore();
-  const { navigateToTask } = useNavigationStore();
-
   const linkedTasks = worktree.taskIds
     .map((id) => taskMap.get(id))
     .filter((task): task is Task => task !== undefined);
 
   const handleTaskClick = (task: Task) => {
-    close();
-    navigateToTask(task);
+    closeSettings();
+    void openTask(task);
   };
 
   return (

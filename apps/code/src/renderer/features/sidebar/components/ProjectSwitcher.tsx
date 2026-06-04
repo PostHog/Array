@@ -9,7 +9,7 @@ import {
 } from "@features/auth/hooks/authQueries";
 import { CommandKeyHints } from "@features/command/components/CommandKeyHints";
 import { useProjects } from "@features/projects/hooks/useProjects";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { openSettings } from "@features/settings/hooks/useOpenSettings";
 import {
   ArrowSquareOut,
   Check,
@@ -93,8 +93,6 @@ export function ProjectSwitcher() {
     setPopoverOpen(false);
     setDialogOpen(true);
   };
-
-  const openSettings = useSettingsDialogStore((s) => s.open);
 
   const handleSettings = () => {
     setPopoverOpen(false);

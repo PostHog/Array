@@ -80,10 +80,8 @@ vi.mock("@utils/queryClient", () => ({
   },
 }));
 
-vi.mock("@stores/navigationStore", () => ({
-  useNavigationStore: {
-    getState: () => ({ navigateToTaskInput: vi.fn() }),
-  },
+vi.mock("@hooks/useOpenTask", () => ({
+  openTaskInput: vi.fn(),
 }));
 
 import { resetUser, setUserGroups } from "@utils/analytics";

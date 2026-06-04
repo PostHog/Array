@@ -9,7 +9,7 @@ import {
 } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import type { Schemas } from "@renderer/api/generated";
-import type { Task, TaskRunStatus } from "@shared/types";
+import type { TaskRunStatus } from "@shared/types";
 import { useEffect, useMemo, useRef } from "react";
 import { useSidebarStore } from "../stores/sidebarStore";
 import type { SortMode } from "../types";
@@ -75,7 +75,7 @@ interface ViewState {
     | "skills"
     | "mcp-servers"
     | "setup";
-  data?: Task;
+  taskId?: string;
 }
 
 interface UseSidebarDataProps {
@@ -226,9 +226,7 @@ export function useSidebarData({
   const isMcpServersActive = activeView.type === "mcp-servers";
 
   const activeTaskId =
-    activeView.type === "task-detail" && activeView.data
-      ? activeView.data.id
-      : null;
+    activeView.type === "task-detail" ? (activeView.taskId ?? null) : null;
 
   const sessionByTaskId = useMemo(() => {
     const map = new Map<string, (typeof sessions)[string]>();
