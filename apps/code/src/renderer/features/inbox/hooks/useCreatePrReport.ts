@@ -19,6 +19,7 @@ import {
 } from "../../task-detail/service/service";
 import { buildCreatePrReportPrompt } from "../utils/buildCreatePrReportPrompt";
 import { resolveDefaultModel } from "../utils/resolveDefaultModel";
+import { useSignalTeamConfig } from "./useSignalTeamConfig";
 
 const log = logger.scope("create-pr-report");
 
@@ -52,6 +53,7 @@ export function useCreatePrReport({
   const { getUserIntegrationIdForRepo } = useUserRepositoryIntegration();
   const { invalidateTasks } = useCreateTask();
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
+  const { data: teamConfig } = useSignalTeamConfig();
 
   const createPrReport = useCallback(async () => {
     if (isCreatingPr) return;
@@ -100,6 +102,13 @@ export function useCreatePrReport({
       return;
     }
 
+    const baseBranchOverrides = teamConfig?.autostart_base_branches ?? {};
+    const targetRepo = cloudRepository.toLowerCase();
+    const baseBranch =
+      Object.entries(baseBranchOverrides).find(
+        ([repo]) => repo.toLowerCase() === targetRepo,
+      )?.[1] ?? null;
+
     const input: TaskCreationInput = {
       content: prompt,
       taskDescription: prompt,
@@ -109,6 +118,7 @@ export function useCreatePrReport({
       executionMode: "auto",
       adapter,
       model,
+      branch: baseBranch,
       reasoningLevel: settings.lastUsedReasoningEffort ?? undefined,
       cloudPrAuthorshipMode: "user",
       cloudRunSource: "signal_report",
@@ -129,7 +139,7 @@ export function useCreatePrReport({
           created_from: "command-menu",
           repository_provider: "github",
           workspace_mode: "cloud",
-          has_branch: false,
+          has_branch: baseBranch != null,
           cloud_run_source: "signal_report",
           cloud_pr_authorship_mode: "user",
           signal_report_id: reportId,
@@ -170,6 +180,7 @@ export function useCreatePrReport({
     reportTitle,
     getUserIntegrationIdForRepo,
     invalidateTasks,
+    teamConfig,
   ]);
 
   return { createPrReport, isCreatingPr };

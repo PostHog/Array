@@ -7,6 +7,7 @@ import type {
 } from "@renderer/api/posthogClient";
 import type {
   SignalReportPriority,
+  SignalTeamConfig,
   SignalUserAutonomyConfig,
 } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
@@ -113,7 +114,8 @@ export function useSignalSourceManager() {
   const { data: externalSources, isLoading: sourcesLoading } =
     useExternalDataSources();
   const { data: evaluations } = useEvaluations();
-  const { data: teamConfig } = useSignalTeamConfig();
+  const { data: teamConfig, isLoading: teamConfigLoading } =
+    useSignalTeamConfig();
   const { data: userAutonomyConfig, isLoading: userAutonomyConfigLoading } =
     useSignalUserAutonomyConfig();
 
@@ -523,6 +525,42 @@ export function useSignalSourceManager() {
     [client, queryClient],
   );
 
+  const handleUpdateAutostartBaseBranches = useCallback(
+    async (branches: Record<string, string>) => {
+      if (!client) return;
+
+      const queryKey = ["signals", "team-config"];
+      const previous = queryClient.getQueryData<SignalTeamConfig | null>(
+        queryKey,
+      );
+
+      if (previous) {
+        queryClient.setQueryData<SignalTeamConfig | null>(queryKey, {
+          ...previous,
+          autostart_base_branches: branches,
+        });
+      }
+
+      try {
+        const fresh = await client.updateSignalTeamConfig({
+          autostart_base_branches: branches,
+        });
+        queryClient.setQueryData<SignalTeamConfig | null>(queryKey, fresh);
+      } catch (error: unknown) {
+        queryClient.setQueryData<SignalTeamConfig | null>(
+          queryKey,
+          previous ?? null,
+        );
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to update base branch setting";
+        toast.error(message);
+      }
+    },
+    [client, queryClient],
+  );
+
   const handleUpdateSlackNotifications = useCallback(
     async (updates: {
       integrationId?: number | null;
@@ -611,11 +649,13 @@ export function useSignalSourceManager() {
     evaluationsUrl,
     handleToggleEvaluation,
     teamConfig,
+    teamConfigLoading,
     handleUpdateAutostartPriority,
     handleUpdateTeamSlackChannel,
     userAutonomyConfig,
     userAutonomyConfigLoading,
     handleUpdateUserAutonomyPriority,
+    handleUpdateAutostartBaseBranches,
     handleUpdateSlackNotifications,
   };
 }

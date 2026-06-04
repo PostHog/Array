@@ -5,6 +5,7 @@ import {
 } from "@features/inbox/components/SignalSourceToggles";
 import { useSignalSourceManager } from "@features/inbox/hooks/useSignalSourceManager";
 import { SettingsOptionSelect } from "@features/settings/components/SettingsOptionSelect";
+import { AutostartBaseBranchesSettings } from "@features/settings/components/sections/AutostartBaseBranchesSettings";
 import { GitHubIntegrationSection } from "@features/settings/components/sections/GitHubIntegrationSection";
 import { SlackInboxNotificationsSettings } from "@features/settings/components/sections/SlackInboxNotificationsSettings";
 import { openSettings } from "@features/settings/hooks/useOpenSettings";
@@ -55,6 +56,9 @@ export function SignalSourcesSettings({
     userAutonomyConfig,
     userAutonomyConfigLoading,
     handleUpdateUserAutonomyPriority,
+    teamConfig,
+    teamConfigLoading,
+    handleUpdateAutostartBaseBranches,
   } = useSignalSourceManager();
 
   const { hasGithubIntegration, isLoadingIntegrations } =
@@ -149,6 +153,11 @@ export function SignalSourcesSettings({
           />
         )}
       </Flex>
+      <AutostartBaseBranchesSettings
+        branches={teamConfig?.autostart_base_branches ?? {}}
+        onChange={(next) => void handleUpdateAutostartBaseBranches(next)}
+        isLoading={teamConfigLoading}
+      />
       {showSlackNotifications ? (
         <SlackInboxNotificationsSettings
           channelComboboxModal={slackNotificationsInModal}
