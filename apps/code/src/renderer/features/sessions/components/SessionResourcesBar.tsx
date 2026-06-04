@@ -5,6 +5,7 @@ import {
   BugIcon,
   ChartLineIcon,
   ClipboardTextIcon,
+  CodeIcon,
   DatabaseIcon,
   FileTextIcon,
   FlagIcon,
@@ -16,18 +17,12 @@ import {
   TableIcon,
   VideoIcon,
 } from "@phosphor-icons/react";
-import {
-  isNotification,
-  POSTHOG_NOTIFICATIONS,
-  type PostHogProductId,
-} from "@posthog/agent";
+import type { PostHogProductId } from "@posthog/agent";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
-import {
-  type AcpMessage,
-  isJsonRpcNotification,
-} from "@shared/types/session-events";
+import type { AcpMessage } from "@shared/types/session-events";
 import { openUrlInBrowser } from "@utils/browser";
 import { type ComponentType, useMemo } from "react";
+import { accumulateSessionResources } from "./accumulateSessionResources";
 
 /**
  * Icon per PostHog product. `Record<PostHogProductId, …>` keeps this exhaustive:
@@ -47,6 +42,7 @@ const PRODUCT_ICON: Record<PostHogProductId, ComponentType<IconProps>> = {
   logs: FileTextIcon,
   apm: GaugeIcon,
   sql: TableIcon,
+  code: CodeIcon,
   posthog: SparkleIcon,
 };
 
@@ -69,40 +65,9 @@ const PRODUCT_DOC_URL: Partial<Record<PostHogProductId, string>> = {
   cdp: "https://posthog.com/docs/cdp",
   logs: "https://posthog.com/docs/logs",
   sql: "https://posthog.com/docs/sql",
+  code: "https://posthog.com/code",
   posthog: "https://posthog.com/docs",
 };
-
-interface ResourceProduct {
-  id: PostHogProductId;
-  label: string;
-}
-
-/**
- * Accumulate the de-duplicated, first-seen-ordered list of PostHog products
- * used across the whole session, from its `_posthog/resources_used`
- * notifications. Works for both live streaming and log replay, since both feed
- * the same `events` array. A product used on several turns appears once.
- */
-export function accumulateSessionResources(
-  events: AcpMessage[],
-): ResourceProduct[] {
-  const byId = new Map<PostHogProductId, ResourceProduct>();
-  for (const event of events) {
-    const msg = event.message;
-    if (!isJsonRpcNotification(msg)) continue;
-    if (!isNotification(msg.method, POSTHOG_NOTIFICATIONS.RESOURCES_USED)) {
-      continue;
-    }
-    const products = (
-      msg.params as { products?: ResourceProduct[] } | undefined
-    )?.products;
-    if (!products) continue;
-    for (const product of products) {
-      if (product && !byId.has(product.id)) byId.set(product.id, product);
-    }
-  }
-  return [...byId.values()];
-}
 
 interface SessionResourcesBarProps {
   events: AcpMessage[];
@@ -110,9 +75,10 @@ interface SessionResourcesBarProps {
 
 /**
  * Persistent bar above the composer listing the PostHog products the agent has
- * touched (via the MCP `exec` tool) so far this session. Each product appears
- * once and is added the moment it's first used. Hidden until at least one
- * product has been used. Mirrors PlanStatusBar's placement and styling.
+ * touched so far this session — via the MCP `exec` tool, or by reading a file
+ * from the codebase (the "Code" chip). Each product appears once and is added
+ * the moment it's first used. Hidden until at least one product has been used.
+ * Mirrors PlanStatusBar's placement and styling.
  */
 export function SessionResourcesBar({ events }: SessionResourcesBarProps) {
   const products = useMemo(() => accumulateSessionResources(events), [events]);

@@ -1413,6 +1413,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       settingsManager,
       onModeChange: this.createOnModeChange(),
       onPostHogResourceUsed: this.createOnPostHogResourceUsed(),
+      onCodeFileRead: this.createOnCodeFileRead(),
       onProcessSpawned: this.options?.onProcessSpawned,
       onProcessExited: this.options?.onProcessExited,
       effort,
@@ -1657,16 +1658,27 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
    *  any newly-seen product so the client's persistent list can update live. */
   private createOnPostHogResourceUsed() {
     return (subTool: string, commandText?: string) => {
-      if (!this.session) return;
-      const products = classifyPostHogExecCall(subTool, commandText);
-      // Session-wide dedup: only the first use of a product emits, so the
-      // client's persistent list shows each chip once across all turns.
-      const added = products.filter(
-        (p) => !this.session.sessionResources.has(p),
+      this.recordSessionResources(
+        classifyPostHogExecCall(subTool, commandText),
       );
-      for (const product of added) this.session.sessionResources.add(product);
-      if (added.length > 0) void this.emitResourcesUsed(added);
     };
+  }
+
+  /** Records the `code` product the first time the agent reads a file from the
+   *  codebase, so working with code surfaces a chip just like an MCP call does. */
+  private createOnCodeFileRead() {
+    return () => this.recordSessionResources(["code"]);
+  }
+
+  /** Adds products to the session-wide set and emits any newly-seen ones.
+   *  Session-wide dedup: only the first use of a product emits, so the client's
+   *  persistent list shows each chip once across all turns. */
+  private recordSessionResources(products: PostHogProductId[]): void {
+    if (!this.session) return;
+    const added = products.filter((p) => !this.session.sessionResources.has(p));
+    if (added.length === 0) return;
+    for (const product of added) this.session.sessionResources.add(product);
+    void this.emitResourcesUsed(added);
   }
 
   /** Emits newly-seen PostHog products as soon as they're used, so the client

@@ -7,66 +7,58 @@ import {
 } from "./posthog-products";
 
 describe("classifyPostHogSubTool", () => {
-  it("maps resource sub-tools to their product", () => {
-    expect(classifyPostHogSubTool("experiment-list")).toBe("experiments");
-    expect(classifyPostHogSubTool("feature-flag-update")).toBe("feature_flags");
-    expect(classifyPostHogSubTool("early-access-feature-create")).toBe(
-      "feature_flags",
-    );
-    expect(classifyPostHogSubTool("error-tracking-issue-update")).toBe(
-      "error_tracking",
-    );
-    expect(classifyPostHogSubTool("session-recording-get")).toBe(
-      "session_replay",
-    );
-    expect(classifyPostHogSubTool("survey-create")).toBe("surveys");
-    expect(classifyPostHogSubTool("execute-sql")).toBe("sql");
-    expect(classifyPostHogSubTool("external-data-sources-list")).toBe(
-      "data_warehouse",
-    );
-    expect(classifyPostHogSubTool("cdp-functions-list")).toBe("cdp");
-    expect(classifyPostHogSubTool("insight-create")).toBe("product_analytics");
+  it.each([
+    ["experiment-list", "experiments"],
+    ["feature-flag-update", "feature_flags"],
+    ["early-access-feature-create", "feature_flags"],
+    ["error-tracking-issue-update", "error_tracking"],
+    ["session-recording-get", "session_replay"],
+    ["survey-create", "surveys"],
+    ["execute-sql", "sql"],
+    ["external-data-sources-list", "data_warehouse"],
+    ["cdp-functions-list", "cdp"],
+    ["insight-create", "product_analytics"],
+  ])("maps resource sub-tool %s to %s", (subTool, product) => {
+    expect(classifyPostHogSubTool(subTool)).toBe(product);
   });
 
-  it("classifies query-* sub-tools by query type", () => {
-    expect(classifyPostHogSubTool("query-trends")).toBe("product_analytics");
-    expect(classifyPostHogSubTool("query-trends-actors")).toBe(
-      "product_analytics",
-    );
-    expect(classifyPostHogSubTool("query-paths")).toBe("product_analytics");
-    expect(classifyPostHogSubTool("query-error-tracking-issues-list")).toBe(
-      "error_tracking",
-    );
-    expect(classifyPostHogSubTool("query-session-recordings-list")).toBe(
-      "session_replay",
-    );
-    expect(classifyPostHogSubTool("query-llm-traces-list")).toBe(
-      "llm_analytics",
-    );
-    expect(classifyPostHogSubTool("query-logs")).toBe("logs");
-    expect(classifyPostHogSubTool("query-apm-spans")).toBe("apm");
+  it.each([
+    ["query-trends", "product_analytics"],
+    ["query-trends-actors", "product_analytics"],
+    ["query-paths", "product_analytics"],
+    ["query-error-tracking-issues-list", "error_tracking"],
+    ["query-session-recordings-list", "session_replay"],
+    ["query-llm-traces-list", "llm_analytics"],
+    ["query-logs", "logs"],
+    ["query-apm-spans", "apm"],
+  ])("classifies query sub-tool %s as %s", (subTool, product) => {
+    expect(classifyPostHogSubTool(subTool)).toBe(product);
   });
 
-  it("does not let a short domain shadow a longer one", () => {
-    // `llm` must not swallow the distinct `llma-*` domains.
-    expect(classifyPostHogSubTool("llm-costs")).toBe("llm_analytics");
-    expect(classifyPostHogSubTool("llma-personal-spend")).toBe("llm_analytics");
-  });
+  // `llm` must not swallow the distinct `llma-*` domains.
+  it.each([
+    ["llm-costs", "llm_analytics"],
+    ["llma-personal-spend", "llm_analytics"],
+  ])(
+    "does not let a short domain shadow a longer one: %s",
+    (subTool, product) => {
+      expect(classifyPostHogSubTool(subTool)).toBe(product);
+    },
+  );
 
-  it("returns null for admin/meta/introspection domains", () => {
-    expect(classifyPostHogSubTool("project-get")).toBeNull();
-    expect(classifyPostHogSubTool("activity-log-list")).toBeNull();
-    expect(classifyPostHogSubTool("docs-search")).toBeNull();
-    expect(classifyPostHogSubTool("tasks-list")).toBeNull();
-  });
+  it.each(["project-get", "activity-log-list", "docs-search", "tasks-list"])(
+    "returns null for admin/meta/introspection domain %s",
+    (subTool) => {
+      expect(classifyPostHogSubTool(subTool)).toBeNull();
+    },
+  );
 
   it("falls back to the generic product for unrecognized domains", () => {
     expect(classifyPostHogSubTool("brand-new-thing-list")).toBe("posthog");
   });
 
-  it("returns null for empty input", () => {
-    expect(classifyPostHogSubTool("")).toBeNull();
-    expect(classifyPostHogSubTool("   ")).toBeNull();
+  it.each(["", "   "])("returns null for empty input %j", (subTool) => {
+    expect(classifyPostHogSubTool(subTool)).toBeNull();
   });
 
   it("only emits ids that exist in POSTHOG_PRODUCTS", () => {
@@ -85,16 +77,12 @@ describe("classifyPostHogSubTool", () => {
 });
 
 describe("classifyPostHogSqlQuery", () => {
-  it("attributes a query to the product behind its tables", () => {
-    expect(
-      classifyPostHogSqlQuery("SELECT count() FROM feature_flags"),
-    ).toEqual(["feature_flags"]);
-    expect(classifyPostHogSqlQuery("select * from experiments")).toEqual([
-      "experiments",
-    ]);
-    expect(classifyPostHogSqlQuery("SELECT * FROM events LIMIT 10")).toEqual([
-      "product_analytics",
-    ]);
+  it.each([
+    ["SELECT count() FROM feature_flags", ["feature_flags"]],
+    ["select * from experiments", ["experiments"]],
+    ["SELECT * FROM events LIMIT 10", ["product_analytics"]],
+  ])("attributes %s to the product behind its tables", (sql, expected) => {
+    expect(classifyPostHogSqlQuery(sql)).toEqual(expected);
   });
 
   it("resolves a schema-qualified table by its bare name", () => {
@@ -119,31 +107,30 @@ describe("classifyPostHogSqlQuery", () => {
     expect(products.filter((p) => p === "product_analytics")).toHaveLength(1);
   });
 
-  it("returns nothing when no referenced table maps", () => {
-    expect(classifyPostHogSqlQuery("SELECT 1")).toEqual([]);
-    expect(
-      classifyPostHogSqlQuery("SELECT * FROM some_warehouse_table"),
-    ).toEqual([]);
-  });
+  it.each(["SELECT 1", "SELECT * FROM some_warehouse_table"])(
+    "returns nothing when no referenced table maps: %s",
+    (sql) => {
+      expect(classifyPostHogSqlQuery(sql)).toEqual([]);
+    },
+  );
 
-  it("does not match warehouse tables that merely contain a product name", () => {
-    // Exact-name match only — a similarly-named warehouse table is left alone.
-    expect(
-      classifyPostHogSqlQuery("SELECT * FROM statsig_feature_flags"),
-    ).toEqual([]);
-    expect(
-      classifyPostHogSqlQuery("SELECT * FROM feature_flags_archive"),
-    ).toEqual([]);
-  });
+  // Exact-name match only — a similarly-named warehouse table is left alone.
+  it.each([
+    "SELECT * FROM statsig_feature_flags",
+    "SELECT * FROM feature_flags_archive",
+  ])(
+    "does not match warehouse table that merely contains a name: %s",
+    (sql) => {
+      expect(classifyPostHogSqlQuery(sql)).toEqual([]);
+    },
+  );
 
-  it("does not match a warehouse table qualified with a non-PostHog schema", () => {
-    // `stripe.feature_flags` is a warehouse table, not the PostHog one.
-    expect(
-      classifyPostHogSqlQuery("SELECT * FROM stripe.feature_flags"),
-    ).toEqual([]);
-    expect(classifyPostHogSqlQuery("SELECT * FROM my_source.events")).toEqual(
-      [],
-    );
+  // A non-PostHog schema prefix (a warehouse source) is a different table.
+  it.each([
+    "SELECT * FROM stripe.feature_flags",
+    "SELECT * FROM my_source.events",
+  ])("does not match a non-PostHog-schema-qualified table: %s", (sql) => {
+    expect(classifyPostHogSqlQuery(sql)).toEqual([]);
   });
 });
 

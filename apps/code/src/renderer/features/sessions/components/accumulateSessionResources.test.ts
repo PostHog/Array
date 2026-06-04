@@ -1,6 +1,6 @@
 import type { AcpMessage } from "@shared/types/session-events";
 import { describe, expect, it } from "vitest";
-import { accumulateSessionResources } from "./SessionResourcesBar";
+import { accumulateSessionResources } from "./accumulateSessionResources";
 
 function resourcesUsedMsg(
   ts: number,
