@@ -1,3 +1,4 @@
+import { DashboardRefreshControl } from "@features/canvas/components/DashboardRefreshControl";
 import {
   useDashboard,
   useDashboardMutations,
@@ -129,6 +130,7 @@ function DashboardControls({ dashboardId }: { dashboardId: string }) {
 
   return (
     <Flex align="center" gap="2" className="no-drag ml-auto">
+      <DashboardRefreshControl dashboardId={dashboardId} />
       {editing && (
         <>
           <Button
