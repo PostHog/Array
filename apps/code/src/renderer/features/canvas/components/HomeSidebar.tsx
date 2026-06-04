@@ -69,8 +69,11 @@ function WebsiteSection() {
       <CollapsibleContent>
         <Flex direction="column" gap="1" pt="1">
           <NavButton
-            label="Canvas"
-            active={pathname === "/website"}
+            label="Dashboards"
+            active={
+              pathname === "/website" ||
+              pathname.startsWith("/website/dashboards")
+            }
             onClick={() => navigate({ to: "/website" })}
           />
           <NavButton

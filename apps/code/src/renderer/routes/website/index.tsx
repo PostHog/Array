@@ -1,6 +1,11 @@
-import { WebsiteCanvas } from "@features/canvas/components/WebsiteCanvas";
-import { createFileRoute } from "@tanstack/react-router";
+import { DEFAULT_DASHBOARD_ID } from "@features/canvas/dashboards";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/website/")({
-  component: WebsiteCanvas,
+  beforeLoad: () => {
+    throw redirect({
+      to: "/website/dashboards/$dashboardId",
+      params: { dashboardId: DEFAULT_DASHBOARD_ID },
+    });
+  },
 });

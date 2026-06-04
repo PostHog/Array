@@ -25,6 +25,7 @@ import { Route as FoldersFolderIdRouteImport } from './routes/folders/$folderId'
 import { Route as CodeInboxRouteImport } from './routes/code/inbox'
 import { Route as CodeArchivedRouteImport } from './routes/code/archived'
 import { Route as WebsiteTasksTaskIdRouteImport } from './routes/website/tasks/$taskId'
+import { Route as WebsiteDashboardsDashboardIdRouteImport } from './routes/website/dashboards/$dashboardId'
 import { Route as CodeTasksTaskIdRouteImport } from './routes/code/tasks/$taskId'
 import { Route as CodeTasksPendingKeyRouteImport } from './routes/code/tasks/pending.$key'
 
@@ -108,6 +109,12 @@ const WebsiteTasksTaskIdRoute = WebsiteTasksTaskIdRouteImport.update({
   path: '/tasks/$taskId',
   getParentRoute: () => WebsiteRoute,
 } as any)
+const WebsiteDashboardsDashboardIdRoute =
+  WebsiteDashboardsDashboardIdRouteImport.update({
+    id: '/dashboards/$dashboardId',
+    path: '/dashboards/$dashboardId',
+    getParentRoute: () => WebsiteRoute,
+  } as any)
 const CodeTasksTaskIdRoute = CodeTasksTaskIdRouteImport.update({
   id: '/code/tasks/$taskId',
   path: '/code/tasks/$taskId',
@@ -136,6 +143,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/website/dashboards/$dashboardId': typeof WebsiteDashboardsDashboardIdRoute
   '/website/tasks/$taskId': typeof WebsiteTasksTaskIdRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
 }
@@ -155,6 +163,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsIndexRoute
   '/website': typeof WebsiteIndexRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/website/dashboards/$dashboardId': typeof WebsiteDashboardsDashboardIdRoute
   '/website/tasks/$taskId': typeof WebsiteTasksTaskIdRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
 }
@@ -176,6 +185,7 @@ export interface FileRoutesById {
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/website/dashboards/$dashboardId': typeof WebsiteDashboardsDashboardIdRoute
   '/website/tasks/$taskId': typeof WebsiteTasksTaskIdRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
 }
@@ -198,6 +208,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/website/'
     | '/code/tasks/$taskId'
+    | '/website/dashboards/$dashboardId'
     | '/website/tasks/$taskId'
     | '/code/tasks/pending/$key'
   fileRoutesByTo: FileRoutesByTo
@@ -217,6 +228,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/website'
     | '/code/tasks/$taskId'
+    | '/website/dashboards/$dashboardId'
     | '/website/tasks/$taskId'
     | '/code/tasks/pending/$key'
   id:
@@ -237,6 +249,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/website/'
     | '/code/tasks/$taskId'
+    | '/website/dashboards/$dashboardId'
     | '/website/tasks/$taskId'
     | '/code/tasks/pending/$key'
   fileRoutesById: FileRoutesById
@@ -372,6 +385,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WebsiteTasksTaskIdRouteImport
       parentRoute: typeof WebsiteRoute
     }
+    '/website/dashboards/$dashboardId': {
+      id: '/website/dashboards/$dashboardId'
+      path: '/dashboards/$dashboardId'
+      fullPath: '/website/dashboards/$dashboardId'
+      preLoaderRoute: typeof WebsiteDashboardsDashboardIdRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
     '/code/tasks/$taskId': {
       id: '/code/tasks/$taskId'
       path: '/code/tasks/$taskId'
@@ -393,6 +413,7 @@ interface WebsiteRouteChildren {
   WebsiteNewRoute: typeof WebsiteNewRoute
   WebsiteSettingsRoute: typeof WebsiteSettingsRoute
   WebsiteIndexRoute: typeof WebsiteIndexRoute
+  WebsiteDashboardsDashboardIdRoute: typeof WebsiteDashboardsDashboardIdRoute
   WebsiteTasksTaskIdRoute: typeof WebsiteTasksTaskIdRoute
 }
 
@@ -400,6 +421,7 @@ const WebsiteRouteChildren: WebsiteRouteChildren = {
   WebsiteNewRoute: WebsiteNewRoute,
   WebsiteSettingsRoute: WebsiteSettingsRoute,
   WebsiteIndexRoute: WebsiteIndexRoute,
+  WebsiteDashboardsDashboardIdRoute: WebsiteDashboardsDashboardIdRoute,
   WebsiteTasksTaskIdRoute: WebsiteTasksTaskIdRoute,
 }
 

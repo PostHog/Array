@@ -1,39 +1,98 @@
+import { getDashboard, WEBSITE_DASHBOARDS } from "@features/canvas/dashboards";
 import { useTasks } from "@features/tasks/hooks/useTasks";
-import { CaretRightIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, CaretRightIcon } from "@phosphor-icons/react";
+import {
+  Button,
+  Combobox,
+  ComboboxContent,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+} from "@posthog/quill";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import {
   Link,
   Outlet,
+  useNavigate,
   useParams,
   useRouterState,
 } from "@tanstack/react-router";
+import { useRef, useState } from "react";
 
-type Crumb = { label: string; to?: string };
+const DASHBOARD_IDS = WEBSITE_DASHBOARDS.map((d) => d.id);
 
-function useWebsiteCrumbs(): Crumb[] {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const params = useParams({ strict: false });
-  const taskId = params.taskId;
-  const { data: tasks } = useTasks();
+// The dashboards breadcrumb crumb: a Quill combobox to switch the active
+// dashboard by name. Selecting navigates to that dashboard's route.
+function DashboardPicker({ dashboardId }: { dashboardId?: string }) {
+  const navigate = useNavigate();
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const current = getDashboard(dashboardId);
 
-  const root: Crumb = { label: "Website", to: "/website" };
-
-  if (pathname.startsWith("/website/new")) {
-    return [root, { label: "New task" }];
-  }
-  if (pathname.startsWith("/website/settings")) {
-    return [root, { label: "Settings" }];
-  }
-  if (taskId) {
-    const title = tasks?.find((t) => t.id === taskId)?.title;
-    return [root, { label: title || "Task" }];
-  }
-  return [{ label: "Website" }];
+  return (
+    <Combobox
+      items={DASHBOARD_IDS}
+      value={current.id}
+      onValueChange={(value) =>
+        navigate({
+          to: "/website/dashboards/$dashboardId",
+          params: { dashboardId: value as string },
+        })
+      }
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <div ref={anchorRef} className="no-drag inline-flex">
+        <ComboboxTrigger
+          render={
+            <Button variant="outline" size="sm" title={current.name}>
+              <span className="min-w-0 truncate">{current.name}</span>
+              <CaretDownIcon size={10} weight="bold" className="text-gray-9" />
+            </Button>
+          }
+        />
+      </div>
+      <ComboboxContent
+        anchor={anchorRef}
+        side="bottom"
+        sideOffset={6}
+        className="min-w-[220px]"
+      >
+        <ComboboxList>
+          {(id: string) => {
+            const dashboard = getDashboard(id);
+            return (
+              <ComboboxItem key={id} value={id}>
+                {dashboard.name}
+              </ComboboxItem>
+            );
+          }}
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
+  );
 }
 
 // Breadcrumb topbar + content outlet for the Website space.
 export function WebsiteLayout() {
-  const crumbs = useWebsiteCrumbs();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const params = useParams({ strict: false });
+  const { data: tasks } = useTasks();
+
+  const isDashboards = pathname.startsWith("/website/dashboards");
+  const taskId = params.taskId;
+
+  let secondCrumb: React.ReactNode = null;
+  if (isDashboards) {
+    secondCrumb = <DashboardPicker dashboardId={params.dashboardId} />;
+  } else if (pathname.startsWith("/website/new")) {
+    secondCrumb = <CrumbText>New task</CrumbText>;
+  } else if (pathname.startsWith("/website/settings")) {
+    secondCrumb = <CrumbText>Settings</CrumbText>;
+  } else if (taskId) {
+    const title = tasks?.find((t) => t.id === taskId)?.title;
+    secondCrumb = <CrumbText>{title || "Task"}</CrumbText>;
+  }
 
   return (
     <Flex direction="column" height="100%" overflow="hidden">
@@ -43,33 +102,29 @@ export function WebsiteLayout() {
         px="3"
         className="drag h-9 shrink-0 border-gray-6 border-b"
       >
-        {crumbs.map((crumb, i) => {
-          const isLast = i === crumbs.length - 1;
-          return (
-            <Flex key={crumb.label} align="center" gap="1">
-              {i > 0 && <CaretRightIcon size={12} className="text-gray-8" />}
-              {crumb.to && !isLast ? (
-                <Link to={crumb.to} className="no-drag">
-                  <Text size="1" className="text-gray-10 hover:text-gray-12">
-                    {crumb.label}
-                  </Text>
-                </Link>
-              ) : (
-                <Text
-                  size="1"
-                  weight={isLast ? "medium" : "regular"}
-                  className={isLast ? "text-gray-12" : "text-gray-10"}
-                >
-                  {crumb.label}
-                </Text>
-              )}
-            </Flex>
-          );
-        })}
+        <Link to="/website" className="no-drag">
+          <Text size="1" className="text-gray-10 hover:text-gray-12">
+            Website
+          </Text>
+        </Link>
+        {secondCrumb && (
+          <>
+            <CaretRightIcon size={12} className="text-gray-8" />
+            {secondCrumb}
+          </>
+        )}
       </Flex>
       <Box flexGrow="1" overflow="hidden">
         <Outlet />
       </Box>
     </Flex>
+  );
+}
+
+function CrumbText({ children }: { children: React.ReactNode }) {
+  return (
+    <Text size="1" weight="medium" className="text-gray-12">
+      {children}
+    </Text>
   );
 }
