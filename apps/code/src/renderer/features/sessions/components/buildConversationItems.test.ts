@@ -455,57 +455,24 @@ describe("buildConversationItems", () => {
   });
 
   describe("resources_used", () => {
-    it("renders a resources_used item after the turn's final message", () => {
-      const products = [
-        { id: "experiments", label: "Experiments" },
-        { id: "sql", label: "SQL" },
-      ];
+    it("does not render an inline item (surfaced in the persistent bar)", () => {
       const events: AcpMessage[] = [
         userPromptMsg(1, 1, "list my experiments"),
         agentMessageMsg(2, "Here are your experiments."),
-        resourcesUsedMsg(3, products),
+        resourcesUsedMsg(3, [{ id: "experiments", label: "Experiments" }]),
         promptResponseMsg(4, 1),
       ];
 
       const result = buildConversationItems(events, false);
 
-      const idx = result.items.findIndex(
-        (i) =>
-          i.type === "session_update" &&
-          i.update.sessionUpdate === "resources_used",
-      );
-      expect(idx).toBeGreaterThanOrEqual(0);
-
-      // Must land after the agent's final message in the turn.
-      const msgIdx = result.items.findIndex(
-        (i) =>
-          i.type === "session_update" &&
-          i.update.sessionUpdate === "agent_message_chunk",
-      );
-      expect(idx).toBeGreaterThan(msgIdx);
-
-      const item = result.items[idx];
-      if (
-        item.type === "session_update" &&
-        item.update.sessionUpdate === "resources_used"
-      ) {
-        expect(item.update.products).toEqual(products);
-      }
-    });
-
-    it("ignores a resources_used notification with no products", () => {
-      const events: AcpMessage[] = [
-        userPromptMsg(1, 1, "hi"),
-        resourcesUsedMsg(2, []),
-        promptResponseMsg(3, 1),
-      ];
-
-      const result = buildConversationItems(events, false);
+      // The notification must not produce any conversation item — it's now
+      // handled out-of-band by SessionResourcesBar / accumulateSessionResources.
       expect(
         result.items.some(
           (i) =>
             i.type === "session_update" &&
-            i.update.sessionUpdate === "resources_used",
+            // biome-ignore lint/suspicious/noExplicitAny: removed union member
+            (i.update.sessionUpdate as any) === "resources_used",
         ),
       ).toBe(false);
     });

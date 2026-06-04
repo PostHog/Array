@@ -1,7 +1,6 @@
 import type { Step } from "@components/ui/StepList";
 import type { ConversationItem } from "@features/sessions/components/buildConversationItems";
 import type { SessionUpdate, ToolCall } from "@features/sessions/types";
-import type { PostHogProductId } from "@posthog/agent";
 import { memo } from "react";
 
 import { AgentMessage } from "./AgentMessage";
@@ -9,7 +8,6 @@ import { CompactBoundaryView } from "./CompactBoundaryView";
 import { ConsoleMessage } from "./ConsoleMessage";
 import { ErrorNotificationView } from "./ErrorNotificationView";
 import { ProgressGroupView } from "./ProgressGroupView";
-import { ResourcesUsedView } from "./ResourcesUsedView";
 import { StatusNotificationView } from "./StatusNotificationView";
 import { TaskNotificationView } from "./TaskNotificationView";
 import { ThoughtView } from "./ThoughtView";
@@ -50,10 +48,6 @@ export type RenderItem =
       sessionUpdate: "progress_group";
       steps: Step[];
       isActive: boolean;
-    }
-  | {
-      sessionUpdate: "resources_used";
-      products: { id: PostHogProductId; label: string }[];
     };
 
 interface SessionUpdateViewProps {
@@ -144,8 +138,6 @@ export const SessionUpdateView = memo(function SessionUpdateView({
           turnComplete={turnComplete}
         />
       );
-    case "resources_used":
-      return <ResourcesUsedView products={item.products} />;
     default:
       return null;
   }

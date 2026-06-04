@@ -9,11 +9,7 @@ import {
   extractSkillButtonId,
   type SkillButtonId,
 } from "@features/skill-buttons/prompts";
-import {
-  isNotification,
-  POSTHOG_NOTIFICATIONS,
-  type PostHogProductId,
-} from "@posthog/agent";
+import { isNotification, POSTHOG_NOTIFICATIONS } from "@posthog/agent";
 import {
   type AcpMessage,
   isJsonRpcNotification,
@@ -21,7 +17,6 @@ import {
   isJsonRpcResponse,
   type UserShellExecuteParams,
 } from "@shared/types/session-events";
-import { logger } from "@utils/logger";
 import { extractPromptDisplayContent } from "@utils/promptContent";
 import { type GitActionType, parseGitActionMessage } from "./GitActionMessage";
 import type { RenderItem } from "./session-update/SessionUpdateView";
@@ -356,16 +351,6 @@ function handleNotification(
   ts: number,
   options?: BuildConversationOptions,
 ) {
-  // [resources_used] instrumentation: surface any resources notification the
-  // builder sees (under any name form), confirming it reaches the renderer.
-  // Scoped to "resource" to avoid flooding on every usage_update/turn_complete.
-  if (typeof msg.method === "string" && msg.method.includes("resource")) {
-    logger.debug("[resources_used] handleNotification resource method", {
-      method: msg.method,
-      params: msg.params,
-    });
-  }
-
   if (msg.method === "_array/user_shell_execute") {
     const params = msg.params as UserShellExecuteParams;
     const existing = b.shellExecutes.get(params.id);
@@ -395,23 +380,9 @@ function handleNotification(
     return;
   }
 
-  if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.RESOURCES_USED)) {
-    const params = msg.params as
-      | { products?: { id: PostHogProductId; label: string }[] }
-      | undefined;
-    logger.debug("[resources_used] matched RESOURCES_USED branch", {
-      method: msg.method,
-      productCount: params?.products?.length ?? 0,
-      hasCurrentTurn: !!b.currentTurn,
-    });
-    if (!params?.products?.length) return;
-    if (!b.currentTurn) ensureImplicitTurn(b, ts);
-    pushItem(b, {
-      sessionUpdate: "resources_used",
-      products: params.products,
-    });
-    return;
-  }
+  // `_posthog/resources_used` is intentionally NOT rendered inline here — the
+  // products are surfaced as a persistent, de-duplicated bar above the composer
+  // (see accumulateSessionResources / SessionResourcesBar).
 
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)) {
     const params = msg.params as { stopReason?: string } | undefined;

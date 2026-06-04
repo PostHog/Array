@@ -60,6 +60,7 @@ import {
 import {
   classifyPostHogExecCall,
   POSTHOG_PRODUCTS,
+  type PostHogProductId,
 } from "../../posthog-products";
 import type { PostHogAPIConfig } from "../../types";
 import { isCloudRun, unreachable, withTimeout } from "../../utils/common";
@@ -439,7 +440,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       cachedReadTokens: 0,
       cachedWriteTokens: 0,
     };
-    this.session.turnResources.clear();
+    // sessionResources is intentionally NOT reset here — the products list
+    // accumulates across the whole session and is deduped, not per-turn.
 
     await this.broadcastUserMessage(params);
 
@@ -644,8 +646,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 },
               });
 
-              await this.emitResourcesUsed(params.sessionId);
-
               return {
                 stopReason: this.session.cancelled ? "cancelled" : "end_turn",
               };
@@ -734,8 +734,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 ),
               },
             );
-
-            await this.emitResourcesUsed(params.sessionId);
 
             const usage: Usage = {
               inputTokens: this.session.accumulatedUsage.inputTokens,
@@ -1452,7 +1450,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         cachedReadTokens: 0,
         cachedWriteTokens: 0,
       },
-      turnResources: new Set(),
+      sessionResources: new Set(),
       effort,
       configOptions: [],
       promptRunning: false,
@@ -1659,34 +1657,31 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
    *  current turn can report which products it touched. */
   private createOnPostHogResourceUsed() {
     return (subTool: string, commandText?: string) => {
+      if (!this.session) return;
       const products = classifyPostHogExecCall(subTool, commandText);
+      // Session-wide dedup: only the first use of a product emits, so the
+      // client's persistent list shows each chip once across all turns.
+      const added = products.filter(
+        (p) => !this.session.sessionResources.has(p),
+      );
+      for (const product of added) this.session.sessionResources.add(product);
       this.logger.debug("[resources_used] resource used", {
         subTool,
         products,
-        turnSizeBefore: this.session?.turnResources.size ?? 0,
-        hasSession: !!this.session,
+        added,
+        sessionSize: this.session.sessionResources.size,
       });
-      for (const product of products) this.session?.turnResources.add(product);
+      if (added.length > 0) void this.emitResourcesUsed(added);
     };
   }
 
-  /** Emits the PostHog products used this turn, then clears the accumulator.
-   *  Fires before the prompt response so the notification lands in the turn. */
-  private async emitResourcesUsed(sessionId: string): Promise<void> {
-    this.logger.debug("[resources_used] emitResourcesUsed called", {
-      sessionId,
-      hasSession: !!this.session,
-      turnSize: this.session?.turnResources.size ?? 0,
-    });
-    if (!this.session || this.session.turnResources.size === 0) return;
-    const products = [...this.session.turnResources].map((id) => ({
-      id,
-      label: POSTHOG_PRODUCTS[id],
-    }));
-    this.session.turnResources.clear();
+  /** Emits newly-seen PostHog products as soon as they're used, so the client
+   *  can append them to a persistent, de-duplicated list in real time. */
+  private async emitResourcesUsed(added: PostHogProductId[]): Promise<void> {
+    const products = added.map((id) => ({ id, label: POSTHOG_PRODUCTS[id] }));
     this.logger.debug("[resources_used] emitting notification", { products });
     await this.client.extNotification(POSTHOG_NOTIFICATIONS.RESOURCES_USED, {
-      sessionId,
+      sessionId: this.sessionId,
       products,
     });
   }

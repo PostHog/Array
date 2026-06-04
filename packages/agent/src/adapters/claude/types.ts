@@ -58,9 +58,11 @@ export type Session = BaseSession & {
   effort?: EffortLevel;
   configOptions: SessionConfigOption[];
   accumulatedUsage: AccumulatedUsage;
-  /** PostHog products used during the current turn, derived from MCP exec
-   *  calls. Reset at the start of each prompt() and emitted at turn end. */
-  turnResources: Set<PostHogProductId>;
+  /** PostHog products used during this session, derived from MCP exec calls.
+   *  Accumulates for the whole session (deduped); each newly-seen product is
+   *  emitted immediately so the client can show a persistent, de-duplicated
+   *  list. Never reset between turns. */
+  sessionResources: Set<PostHogProductId>;
   /** Latest context window usage (total tokens from last assistant message) */
   contextUsed?: number;
   /** Context window size in tokens */
