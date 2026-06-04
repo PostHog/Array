@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { classifyPostHogSubTool, POSTHOG_PRODUCTS } from "./posthog-products";
+import {
+  classifyPostHogExecCall,
+  classifyPostHogSqlQuery,
+  classifyPostHogSubTool,
+  POSTHOG_PRODUCTS,
+} from "./posthog-products";
 
 describe("classifyPostHogSubTool", () => {
   it("maps resource sub-tools to their product", () => {
@@ -76,5 +81,81 @@ describe("classifyPostHogSubTool", () => {
     for (const id of ids) {
       expect(POSTHOG_PRODUCTS[id]).toBeDefined();
     }
+  });
+});
+
+describe("classifyPostHogSqlQuery", () => {
+  it("attributes a query to the product behind its tables", () => {
+    expect(
+      classifyPostHogSqlQuery("SELECT count() FROM feature_flags"),
+    ).toEqual(["feature_flags"]);
+    expect(classifyPostHogSqlQuery("select * from experiments")).toEqual([
+      "experiments",
+    ]);
+    expect(classifyPostHogSqlQuery("SELECT * FROM events LIMIT 10")).toEqual([
+      "product_analytics",
+    ]);
+  });
+
+  it("resolves a schema-qualified table by its bare name", () => {
+    expect(
+      classifyPostHogSqlQuery("SELECT count() FROM system.feature_flags"),
+    ).toEqual(["feature_flags"]);
+  });
+
+  it("handles quoted/back-ticked identifiers", () => {
+    expect(classifyPostHogSqlQuery("SELECT * FROM `feature_flags`")).toEqual([
+      "feature_flags",
+    ]);
+  });
+
+  it("collects products across joins, deduped", () => {
+    const products = classifyPostHogSqlQuery(
+      "SELECT * FROM events e JOIN persons p ON e.person_id = p.id JOIN feature_flags f ON true",
+    );
+    expect(products).toContain("product_analytics");
+    expect(products).toContain("feature_flags");
+    // events + persons both map to product_analytics — deduped to one entry.
+    expect(products.filter((p) => p === "product_analytics")).toHaveLength(1);
+  });
+
+  it("returns nothing when no referenced table maps", () => {
+    expect(classifyPostHogSqlQuery("SELECT 1")).toEqual([]);
+    expect(
+      classifyPostHogSqlQuery("SELECT * FROM some_warehouse_table"),
+    ).toEqual([]);
+  });
+});
+
+describe("classifyPostHogExecCall", () => {
+  it("attributes execute-sql to the queried product, not generic SQL", () => {
+    expect(
+      classifyPostHogExecCall(
+        "execute-sql",
+        'call execute-sql {"query":"SELECT count() FROM feature_flags"}',
+      ),
+    ).toEqual(["feature_flags"]);
+  });
+
+  it("falls back to the sql product when no table maps", () => {
+    expect(
+      classifyPostHogExecCall(
+        "execute-sql",
+        'call execute-sql {"query":"SELECT 1"}',
+      ),
+    ).toEqual(["sql"]);
+    // No command text at all → still surfaces something rather than vanishing.
+    expect(classifyPostHogExecCall("execute-sql")).toEqual(["sql"]);
+  });
+
+  it("delegates non-sql sub-tools to the domain classifier", () => {
+    expect(classifyPostHogExecCall("feature-flag-list")).toEqual([
+      "feature_flags",
+    ]);
+    expect(classifyPostHogExecCall("experiment-get")).toEqual(["experiments"]);
+  });
+
+  it("returns an empty array for admin/meta sub-tools", () => {
+    expect(classifyPostHogExecCall("project-get")).toEqual([]);
   });
 });

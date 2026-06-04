@@ -58,7 +58,7 @@ import {
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
 import {
-  classifyPostHogSubTool,
+  classifyPostHogExecCall,
   POSTHOG_PRODUCTS,
 } from "../../posthog-products";
 import type { PostHogAPIConfig } from "../../types";
@@ -1658,15 +1658,15 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   /** Records the PostHog product behind an executed MCP exec `call` so the
    *  current turn can report which products it touched. */
   private createOnPostHogResourceUsed() {
-    return (subTool: string) => {
-      const product = classifyPostHogSubTool(subTool);
+    return (subTool: string, commandText?: string) => {
+      const products = classifyPostHogExecCall(subTool, commandText);
       this.logger.debug("[resources_used] resource used", {
         subTool,
-        product,
+        products,
         turnSizeBefore: this.session?.turnResources.size ?? 0,
         hasSession: !!this.session,
       });
-      if (product) this.session?.turnResources.add(product);
+      for (const product of products) this.session?.turnResources.add(product);
     };
   }
 

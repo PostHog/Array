@@ -176,8 +176,9 @@ export type OnModeChange = (mode: CodeExecutionMode) => Promise<void>;
 
 interface CreatePostToolUseHookParams {
   onModeChange?: OnModeChange;
-  /** Called with the PostHog MCP sub-tool name after a `call` exec executes. */
-  onPostHogResourceUsed?: (subTool: string) => void;
+  /** Called after a PostHog MCP `call` exec executes, with the sub-tool name
+   *  and the raw command (the command embeds the SQL for execute-sql). */
+  onPostHogResourceUsed?: (subTool: string, commandText?: string) => void;
   /** Optional logger for [resources_used] instrumentation. */
   logger?: Logger;
 }
@@ -215,7 +216,13 @@ export const createPostToolUseHook =
       }
       if (onPostHogResourceUsed && isPostHogExecTool(toolName)) {
         const subTool = extractPostHogSubTool(input.tool_input);
-        if (subTool) onPostHogResourceUsed(subTool);
+        if (subTool) {
+          const command = (input.tool_input as { command?: unknown })?.command;
+          onPostHogResourceUsed(
+            subTool,
+            typeof command === "string" ? command : undefined,
+          );
+        }
       }
 
       if (toolUseID) {

@@ -5,6 +5,8 @@ export {
   type McpToolMetadata,
 } from "./adapters/claude/mcp/tool-metadata";
 export {
+  classifyPostHogExecCall,
+  classifyPostHogSqlQuery,
   classifyPostHogSubTool,
   POSTHOG_PRODUCTS,
   type PostHogProductId,

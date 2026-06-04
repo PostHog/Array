@@ -115,6 +115,84 @@ const DOMAIN_PRODUCT: Record<string, PostHogProductId | null> = {
 
 const KNOWN_DOMAINS = Object.keys(DOMAIN_PRODUCT);
 
+/**
+ * HogQL/PostHog table name → product. Lets an `execute-sql` call be attributed
+ * to the product whose data it reads (e.g. `SELECT count() FROM feature_flags`
+ * → Feature flags) instead of a generic "SQL" chip. Keyed by the bare table
+ * name (last dotted segment, lowercased), so `system.feature_flags` matches too.
+ * Tables we can't confidently map are simply omitted — they contribute nothing,
+ * and a query touching no mapped table falls back to the "sql" product.
+ */
+const TABLE_PRODUCT: Record<string, PostHogProductId> = {
+  feature_flags: "feature_flags",
+  experiments: "experiments",
+  events: "product_analytics",
+  person: "product_analytics",
+  persons: "product_analytics",
+  person_distinct_ids: "product_analytics",
+  groups: "product_analytics",
+  cohort_people: "product_analytics",
+  cohortpeople: "product_analytics",
+  sessions: "product_analytics",
+  raw_sessions: "product_analytics",
+  session_replay_events: "session_replay",
+  raw_session_replay_events: "session_replay",
+  surveys: "surveys",
+  logs: "logs",
+};
+
+/** Extract bare table names referenced after FROM/JOIN in a SQL/HogQL string. */
+function extractSqlTables(sql: string): string[] {
+  const tables: string[] = [];
+  // Match `from`/`join` followed by an optionally back-tick/quoted identifier.
+  // Subqueries (`from (`) don't match the identifier class and are skipped;
+  // their inner FROM clauses are still picked up by the global scan.
+  const re = /\b(?:from|join)\s+(["'`]?)([a-zA-Z_][a-zA-Z0-9_.]*)\1/gi;
+  let match: RegExpExecArray | null = re.exec(sql);
+  while (match !== null) {
+    const bare = match[2]?.split(".").pop();
+    if (bare) tables.push(bare.toLowerCase());
+    match = re.exec(sql);
+  }
+  return tables;
+}
+
+/**
+ * Map a HogQL/SQL query to the products whose tables it reads. A query can
+ * touch several tables, so this returns 0..n products (deduped). Returns an
+ * empty array when no referenced table maps to a known product.
+ */
+export function classifyPostHogSqlQuery(sql: string): PostHogProductId[] {
+  const products = new Set<PostHogProductId>();
+  for (const table of extractSqlTables(sql)) {
+    const product = TABLE_PRODUCT[table];
+    if (product) products.add(product);
+  }
+  return [...products];
+}
+
+/**
+ * Classify an executed MCP exec `call` into the products it touched. For
+ * `execute-sql` the query text is inspected so the call is attributed to the
+ * product whose tables it reads (e.g. Feature flags), falling back to the
+ * generic "sql" product only when no table maps. All other sub-tools resolve
+ * to their single domain product (or none, for admin/meta domains).
+ *
+ * `commandText` is the raw exec command (which embeds the SQL for execute-sql).
+ */
+export function classifyPostHogExecCall(
+  subTool: string,
+  commandText?: string,
+): PostHogProductId[] {
+  const name = subTool.trim().toLowerCase();
+  if (name === "execute-sql" || name === "execute_sql") {
+    const fromTables = commandText ? classifyPostHogSqlQuery(commandText) : [];
+    return fromTables.length > 0 ? fromTables : ["sql"];
+  }
+  const product = classifyPostHogSubTool(subTool);
+  return product ? [product] : [];
+}
+
 /** Classify a `query-<type>` sub-tool by its query type. */
 function classifyQuery(type: string): PostHogProductId | null {
   if (type.startsWith("error-tracking")) return "error_tracking";
