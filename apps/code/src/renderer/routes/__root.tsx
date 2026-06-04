@@ -3,6 +3,8 @@ import { HedgehogMode } from "@components/HedgehogMode";
 import { KeyboardShortcutsSheet } from "@components/KeyboardShortcutsSheet";
 import { SpaceSwitcher } from "@components/SpaceSwitcher";
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
+import { CanvasNav } from "@features/canvas/components/CanvasNav";
+import { HomeSidebar } from "@features/canvas/components/HomeSidebar";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { useSetupDiscovery } from "@features/setup/hooks/useSetupDiscovery";
@@ -140,6 +142,12 @@ function RootLayout() {
     select: (s) => s.matches.some((m) => m.routeId.startsWith("/settings")),
   });
 
+  // Home space (the / route) gets its own sidenav + hello-world scene instead
+  // of the code app chrome (header/sidebar/space-switcher).
+  const isHomeRoute = useRouterState({
+    select: (s) => s.matches.some((m) => m.routeId === "/"),
+  });
+
   if (isSettingsRoute) {
     return (
       <Flex direction="column" height="100vh">
@@ -164,23 +172,40 @@ function RootLayout() {
   }
 
   return (
-    <Flex direction="column" height="100vh">
-      <HeaderRow />
-      <Flex flexGrow="1" overflow="hidden">
-        <MainSidebar />
-        <Box flexGrow="1" overflow="hidden">
-          <Outlet />
-        </Box>
+    <Flex height="100vh" overflow="hidden">
+      <CanvasNav />
+      <Flex direction="column" flexGrow="1" overflow="hidden">
+        {isHomeRoute ? (
+          <Flex flexGrow="1" overflow="hidden">
+            <HomeSidebar />
+            <Box flexGrow="1" overflow="hidden">
+              <Outlet />
+            </Box>
+          </Flex>
+        ) : (
+          <>
+            <HeaderRow />
+            <Flex flexGrow="1" overflow="hidden">
+              <MainSidebar />
+              <Box flexGrow="1" overflow="hidden">
+                <Outlet />
+              </Box>
+            </Flex>
+
+            <SpaceSwitcher
+              tasks={visualTaskOrder}
+              activeTaskId={activeTaskId}
+              allTasks={tasks ?? []}
+              isOnNewTask={
+                view.type === "task-input" || view.type === "task-pending"
+              }
+              onNavigateToTask={openTask}
+              onNewTask={openTaskInput}
+            />
+          </>
+        )}
       </Flex>
 
-      <SpaceSwitcher
-        tasks={visualTaskOrder}
-        activeTaskId={activeTaskId}
-        allTasks={tasks ?? []}
-        isOnNewTask={view.type === "task-input" || view.type === "task-pending"}
-        onNavigateToTask={openTask}
-        onNewTask={openTaskInput}
-      />
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
       <KeyboardShortcutsSheet
         open={shortcutsSheetOpen}
