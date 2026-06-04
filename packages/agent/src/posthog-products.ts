@@ -118,10 +118,10 @@ const KNOWN_DOMAINS = Object.keys(DOMAIN_PRODUCT);
 /**
  * HogQL/PostHog table name → product. Lets an `execute-sql` call be attributed
  * to the product whose data it reads (e.g. `SELECT count() FROM feature_flags`
- * → Feature flags) instead of a generic "SQL" chip. Keyed by the bare table
- * name (last dotted segment, lowercased), so `system.feature_flags` matches too.
- * Tables we can't confidently map are simply omitted — they contribute nothing,
- * and a query touching no mapped table falls back to the "sql" product.
+ * → Feature flags) instead of a generic "SQL" chip. Keys are EXACT table names
+ * (lowercased) — `statsig_feature_flags` does not match `feature_flags`. Tables
+ * we can't confidently map are omitted: they contribute nothing, and a query
+ * touching no mapped table falls back to the "sql" product.
  */
 const TABLE_PRODUCT: Record<string, PostHogProductId> = {
   feature_flags: "feature_flags",
@@ -141,7 +141,28 @@ const TABLE_PRODUCT: Record<string, PostHogProductId> = {
   logs: "logs",
 };
 
-/** Extract bare table names referenced after FROM/JOIN in a SQL/HogQL string. */
+/**
+ * Schemas whose tables are PostHog product tables. A qualified reference is
+ * only treated as a PostHog table when its schema is one of these — so a data
+ * warehouse table like `stripe.feature_flags` or `my_source.events` is left
+ * unmapped and can't be mislabeled as a PostHog product.
+ */
+const POSTHOG_SCHEMAS = new Set(["system"]);
+
+/**
+ * Normalize a FROM/JOIN table reference to the PostHog table name to look up,
+ * or `null` if it's qualified with a non-PostHog (e.g. warehouse) schema.
+ * Unqualified names pass through as-is; `system.feature_flags` → `feature_flags`.
+ */
+function normalizePostHogTableRef(ref: string): string | null {
+  const parts = ref.toLowerCase().split(".");
+  if (parts.length === 1) return parts[0] ?? null;
+  const schema = parts[0] ?? "";
+  const table = parts[parts.length - 1] ?? "";
+  return POSTHOG_SCHEMAS.has(schema) ? table : null;
+}
+
+/** Extract PostHog table names referenced after FROM/JOIN in a SQL/HogQL string. */
 function extractSqlTables(sql: string): string[] {
   const tables: string[] = [];
   // Match `from`/`join` followed by an optionally back-tick/quoted identifier.
@@ -150,8 +171,11 @@ function extractSqlTables(sql: string): string[] {
   const re = /\b(?:from|join)\s+(["'`]?)([a-zA-Z_][a-zA-Z0-9_.]*)\1/gi;
   let match: RegExpExecArray | null = re.exec(sql);
   while (match !== null) {
-    const bare = match[2]?.split(".").pop();
-    if (bare) tables.push(bare.toLowerCase());
+    const ref = match[2];
+    if (ref) {
+      const table = normalizePostHogTableRef(ref);
+      if (table) tables.push(table);
+    }
     match = re.exec(sql);
   }
   return tables;

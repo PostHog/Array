@@ -125,6 +125,26 @@ describe("classifyPostHogSqlQuery", () => {
       classifyPostHogSqlQuery("SELECT * FROM some_warehouse_table"),
     ).toEqual([]);
   });
+
+  it("does not match warehouse tables that merely contain a product name", () => {
+    // Exact-name match only — a similarly-named warehouse table is left alone.
+    expect(
+      classifyPostHogSqlQuery("SELECT * FROM statsig_feature_flags"),
+    ).toEqual([]);
+    expect(
+      classifyPostHogSqlQuery("SELECT * FROM feature_flags_archive"),
+    ).toEqual([]);
+  });
+
+  it("does not match a warehouse table qualified with a non-PostHog schema", () => {
+    // `stripe.feature_flags` is a warehouse table, not the PostHog one.
+    expect(
+      classifyPostHogSqlQuery("SELECT * FROM stripe.feature_flags"),
+    ).toEqual([]);
+    expect(classifyPostHogSqlQuery("SELECT * FROM my_source.events")).toEqual(
+      [],
+    );
+  });
 });
 
 describe("classifyPostHogExecCall", () => {
