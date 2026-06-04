@@ -3,28 +3,13 @@ import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { useAppView } from "@hooks/useAppView";
-import { useMeQuery } from "@hooks/useMeQuery";
 import { openTaskInput } from "@hooks/useOpenTask";
-import {
-  FunnelSimple as FunnelSimpleIcon,
-  GitBranch,
-  MagnifyingGlass,
-} from "@phosphor-icons/react";
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  MenuLabel,
-} from "@posthog/quill";
+import { GitBranch } from "@phosphor-icons/react";
+import { MenuLabel } from "@posthog/quill";
 import { Flex, Text } from "@radix-ui/themes";
 import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
 import { useWorkspace } from "@renderer/features/workspace/hooks/useWorkspace";
 import { normalizeRepoKey } from "@shared/utils/repo";
-import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { getRelativeDateGroup } from "@utils/time";
 import { motion } from "framer-motion";
 import { Fragment, useCallback, useEffect, useMemo } from "react";
@@ -60,22 +45,8 @@ interface TaskListViewProps {
   hasMore: boolean;
 }
 
-function SectionLabel({
-  label,
-  endContent,
-}: {
-  label: string;
-  endContent?: React.ReactNode;
-}) {
-  return (
-    <MenuLabel
-      className="flex items-center justify-between py-0 pr-0"
-      htmlFor="null"
-    >
-      {label}
-      {endContent ? <span>{endContent}</span> : null}
-    </MenuLabel>
-  );
+function SectionLabel({ label }: { label: string }) {
+  return <MenuLabel className="flex items-center py-0">{label}</MenuLabel>;
 }
 
 function TaskRow({
@@ -145,115 +116,6 @@ function TaskRow({
       onEditSubmit={onEditSubmit}
       onEditCancel={onEditCancel}
     />
-  );
-}
-
-export function TaskSearchButton() {
-  const openCommandMenu = useCommandMenuStore((state) => state.open);
-  return (
-    <Button
-      type="button"
-      aria-label="Search tasks"
-      size="icon-sm"
-      onClick={() => openCommandMenu()}
-    >
-      <MagnifyingGlass size={14} />
-    </Button>
-  );
-}
-
-export function TaskFilterMenu() {
-  const organizeMode = useSidebarStore((state) => state.organizeMode);
-  const sortMode = useSidebarStore((state) => state.sortMode);
-  const showAllUsers = useSidebarStore((state) => state.showAllUsers);
-  const showInternal = useSidebarStore((state) => state.showInternal);
-  const setOrganizeMode = useSidebarStore((state) => state.setOrganizeMode);
-  const setSortMode = useSidebarStore((state) => state.setSortMode);
-  const setShowAllUsers = useSidebarStore((state) => state.setShowAllUsers);
-  const setShowInternal = useSidebarStore((state) => state.setShowInternal);
-  const { data: currentUser } = useMeQuery();
-  const isStaff = currentUser?.is_staff === true;
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button type="button" aria-label="Filter tasks" size="icon-sm">
-            <FunnelSimpleIcon size={14} />
-          </Button>
-        }
-      />
-      <DropdownMenuContent
-        align="start"
-        side="bottom"
-        sideOffset={6}
-        className="min-w-fit"
-      >
-        <MenuLabel>Organize</MenuLabel>
-        <DropdownMenuRadioGroup
-          value={organizeMode}
-          onValueChange={(value) =>
-            setOrganizeMode(value as typeof organizeMode)
-          }
-        >
-          <DropdownMenuRadioItem value="by-project">
-            By project
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="chronological">
-            Chronological list
-          </DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-
-        <DropdownMenuSeparator />
-
-        <MenuLabel>Sort by</MenuLabel>
-        <DropdownMenuRadioGroup
-          value={sortMode}
-          onValueChange={(value) => setSortMode(value as typeof sortMode)}
-        >
-          <DropdownMenuRadioItem value="created">Created</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="updated">Updated</DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-
-        {import.meta.env.DEV && (
-          <>
-            <DropdownMenuSeparator />
-
-            <MenuLabel>Show</MenuLabel>
-            <DropdownMenuRadioGroup
-              value={showAllUsers ? "all" : "mine"}
-              onValueChange={(value) => setShowAllUsers(value === "all")}
-            >
-              <DropdownMenuRadioItem value="mine">
-                My tasks
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="all">
-                All tasks
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </>
-        )}
-
-        {isStaff && (
-          <>
-            <DropdownMenuSeparator />
-
-            <MenuLabel>Task visibility</MenuLabel>
-            <DropdownMenuRadioGroup
-              value={showInternal ? "internal" : "external"}
-              onValueChange={(value) => setShowInternal(value === "internal")}
-            >
-              <DropdownMenuRadioItem value="external">
-                External
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="internal">
-                Internal
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

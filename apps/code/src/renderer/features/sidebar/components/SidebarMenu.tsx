@@ -15,7 +15,7 @@ import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useAppView } from "@hooks/useAppView";
 import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
-import { MenuLabel, Separator } from "@posthog/quill";
+import { Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
 import {
   navigateToCommandCenter,
@@ -43,7 +43,8 @@ import { McpServersItem } from "./items/McpServersItem";
 import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
-import { TaskFilterMenu, TaskListView, TaskSearchButton } from "./TaskListView";
+import { TaskListView } from "./TaskListView";
+import { TasksHeader } from "./TasksHeader";
 
 const log = logger.scope("sidebar-menu");
 
@@ -370,7 +371,7 @@ function SidebarMenuComponent() {
       id="side-bar-menu"
       className="flex min-h-0 flex-col"
     >
-      <Flex direction="column" className="shrink-0 px-2 py-2" gap="1px">
+      <Flex direction="column" className="shrink-0 gap-px px-2 py-2">
         <Box mb="2">
           <NewTaskItem
             isActive={sidebarData.isHomeActive}
@@ -416,21 +417,10 @@ function SidebarMenuComponent() {
 
       <Separator className="mx-2 my-2 shrink-0" />
 
-      <div className="shrink-0 px-2">
-        <MenuLabel
-          className="flex items-center justify-between pt-0 pr-0 pb-[2px]"
-          htmlFor="null"
-        >
-          Tasks
-          <span className="flex items-center">
-            <TaskSearchButton />
-            <TaskFilterMenu />
-          </span>
-        </MenuLabel>
-      </div>
+      <TasksHeader />
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-        <Flex direction="column" gap="1px" px="2" pb="2">
+        <Flex direction="column" className="gap-px px-2 pb-2">
           {sidebarData.isLoading ? (
             <SidebarItem
               depth={0}
