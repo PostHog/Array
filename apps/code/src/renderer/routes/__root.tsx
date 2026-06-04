@@ -19,12 +19,17 @@ import {
   workspaceApi,
 } from "@features/workspace/hooks/useWorkspace";
 import { useAppView } from "@hooks/useAppView";
-import { useFeatureFlag } from "@hooks/useFeatureFlag";
+import { useFeatureFlag, useFeatureFlagsLoaded } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { Box, Flex } from "@radix-ui/themes";
+import { navigateToCode } from "@renderer/navigationBridge";
 import { useTRPC } from "@renderer/trpc/client";
-import { BILLING_FLAG, SYNC_CLOUD_TASKS_FLAG } from "@shared/constants";
+import {
+  BILLING_FLAG,
+  PROJECT_BLUEBIRD_FLAG,
+  SYNC_CLOUD_TASKS_FLAG,
+} from "@shared/constants";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
@@ -80,6 +85,12 @@ function RootLayout() {
   const reconcilingTaskIds = useRef<Set<string>>(new Set());
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
+  // Default on in dev so local work on the canvas feature isn't hidden behind a
+  // flag PostHog doesn't serve locally; prod is gated purely by project-bluebird.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
 
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
@@ -145,15 +156,32 @@ function RootLayout() {
 
   // Home space routes get their own sidenav + canvas scenes instead of the code
   // app chrome (header/sidebar/space-switcher).
-  const isHomeRoute = useRouterState({
+  const onHomePath = useRouterState({
     select: (s) => isHomeSpacePath(s.location.pathname),
   });
 
   // Inbox is a top-level space: it renders full-screen (rail only, no code
   // header/sidebar/space-switcher).
-  const isInboxRoute = useRouterState({
+  const onInboxPath = useRouterState({
     select: (s) => s.location.pathname === "/inbox",
   });
+
+  // The canvas feature (nav rail + Home/Website/Inbox spaces) is gated behind
+  // project-bluebird. When off, the app is the code-only shell and the canvas
+  // spaces collapse to their pre-canvas layout.
+  const isHomeRoute = bluebirdEnabled && onHomePath;
+  const isInboxRoute = bluebirdEnabled && onInboxPath;
+
+  // With the rail hidden there's no way to leave a canvas-only path, so a user
+  // who lands on one (cold-boot last-route restore, stale deep link) would be
+  // stranded rendering canvas content inside the code chrome. Send them to
+  // /code — but only once flags have resolved, so a flagged user isn't bounced
+  // off /website during the brief window before project-bluebird loads.
+  const flagsLoaded = useFeatureFlagsLoaded();
+  useEffect(() => {
+    if (!flagsLoaded || bluebirdEnabled) return;
+    if (onHomePath || onInboxPath) navigateToCode();
+  }, [flagsLoaded, bluebirdEnabled, onHomePath, onInboxPath]);
 
   if (isSettingsRoute) {
     return (
@@ -180,7 +208,7 @@ function RootLayout() {
 
   return (
     <Flex height="100vh" overflow="hidden">
-      <CanvasNav />
+      {bluebirdEnabled && <CanvasNav />}
       <Flex direction="column" flexGrow="1" overflow="hidden">
         {isHomeRoute ? (
           <Flex flexGrow="1" overflow="hidden">
