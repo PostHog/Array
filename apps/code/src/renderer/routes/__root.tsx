@@ -50,18 +50,21 @@ const TanStackDevtools = import.meta.env.DEV
         import("@tanstack/react-devtools"),
         import("@tanstack/react-router-devtools"),
       ]);
+      // Hoisted so the config/plugins keep stable references across the
+      // RootLayout re-renders that fire on every navigation — otherwise the
+      // shell could remount the panel (and flash) on each route change.
+      const config = {
+        position: "bottom-right",
+        hideUntilHover: true,
+      } as const;
+      const plugins = [
+        {
+          name: "TanStack Router",
+          render: <TanStackRouterDevtoolsPanel />,
+        },
+      ];
       return {
-        default: () => (
-          <DevtoolsShell
-            config={{ position: "bottom-right", hideUntilHover: true }}
-            plugins={[
-              {
-                name: "TanStack Router",
-                render: <TanStackRouterDevtoolsPanel />,
-              },
-            ]}
-          />
-        ),
+        default: () => <DevtoolsShell config={config} plugins={plugins} />,
       };
     })
   : () => null;
