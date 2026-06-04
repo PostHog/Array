@@ -80,3 +80,45 @@ describe("ElectronDialog.pickFile", () => {
     expect(mockShowOpenDialog.mock.calls[0]).toHaveLength(1);
   });
 });
+
+describe("ElectronDialog.confirm", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockShowMessageBox.mockResolvedValue({ response: 0 });
+  });
+
+  it("parents the message box to the focused window when one exists", async () => {
+    const focused = makeWindow();
+    mockGetFocusedWindow.mockReturnValue(focused);
+
+    await new ElectronDialog().confirm({
+      title: "Discard?",
+      message: "Discard changes?",
+      options: ["Cancel", "Discard"],
+    });
+
+    expect(mockShowMessageBox).toHaveBeenCalledWith(
+      focused,
+      expect.any(Object),
+    );
+  });
+
+  it("falls back to a visible window and focuses it when nothing is focused", async () => {
+    mockGetFocusedWindow.mockReturnValue(null);
+    const hidden = makeWindow({ visible: false });
+    const visible = makeWindow({ visible: true });
+    mockGetAllWindows.mockReturnValue([hidden, visible]);
+
+    await new ElectronDialog().confirm({
+      title: "Discard?",
+      message: "Discard changes?",
+      options: ["Cancel", "Discard"],
+    });
+
+    expect(visible.focus).toHaveBeenCalledTimes(1);
+    expect(mockShowMessageBox).toHaveBeenCalledWith(
+      visible,
+      expect.any(Object),
+    );
+  });
+});
