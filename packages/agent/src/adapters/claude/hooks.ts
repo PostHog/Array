@@ -178,12 +178,15 @@ interface CreatePostToolUseHookParams {
   onModeChange?: OnModeChange;
   /** Called with the PostHog MCP sub-tool name after a `call` exec executes. */
   onPostHogResourceUsed?: (subTool: string) => void;
+  /** Optional logger for [resources_used] instrumentation. */
+  logger?: Logger;
 }
 
 export const createPostToolUseHook =
   ({
     onModeChange,
     onPostHogResourceUsed,
+    logger,
   }: CreatePostToolUseHookParams): HookCallback =>
   async (
     input: HookInput,
@@ -199,6 +202,17 @@ export const createPostToolUseHook =
       // Record PostHog product usage from the MCP exec dispatcher. Only the
       // `call <sub-tool>` verb counts as "used a resource" — extractPostHogSubTool
       // matches that verb and ignores introspection (tools/info/schema/search).
+      // [resources_used] instrumentation: log every tool whose name mentions
+      // posthog so we can see the SDK's actual tool_name and whether it matches.
+      if (toolName.toLowerCase().includes("posthog")) {
+        const matched = isPostHogExecTool(toolName);
+        logger?.debug("[resources_used] PostToolUse posthog tool", {
+          toolName,
+          matched,
+          subTool: matched ? extractPostHogSubTool(input.tool_input) : null,
+          hasCallback: !!onPostHogResourceUsed,
+        });
+      }
       if (onPostHogResourceUsed && isPostHogExecTool(toolName)) {
         const subTool = extractPostHogSubTool(input.tool_input);
         if (subTool) onPostHogResourceUsed(subTool);

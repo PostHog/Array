@@ -21,6 +21,7 @@ import {
   isJsonRpcResponse,
   type UserShellExecuteParams,
 } from "@shared/types/session-events";
+import { logger } from "@utils/logger";
 import { extractPromptDisplayContent } from "@utils/promptContent";
 import { type GitActionType, parseGitActionMessage } from "./GitActionMessage";
 import type { RenderItem } from "./session-update/SessionUpdateView";
@@ -355,6 +356,16 @@ function handleNotification(
   ts: number,
   options?: BuildConversationOptions,
 ) {
+  // [resources_used] instrumentation: surface any resources notification the
+  // builder sees (under any name form), confirming it reaches the renderer.
+  // Scoped to "resource" to avoid flooding on every usage_update/turn_complete.
+  if (typeof msg.method === "string" && msg.method.includes("resource")) {
+    logger.debug("[resources_used] handleNotification resource method", {
+      method: msg.method,
+      params: msg.params,
+    });
+  }
+
   if (msg.method === "_array/user_shell_execute") {
     const params = msg.params as UserShellExecuteParams;
     const existing = b.shellExecutes.get(params.id);
@@ -388,6 +399,11 @@ function handleNotification(
     const params = msg.params as
       | { products?: { id: PostHogProductId; label: string }[] }
       | undefined;
+    logger.debug("[resources_used] matched RESOURCES_USED branch", {
+      method: msg.method,
+      productCount: params?.products?.length ?? 0,
+      hasCurrentTurn: !!b.currentTurn,
+    });
     if (!params?.products?.length) return;
     if (!b.currentTurn) ensureImplicitTurn(b, ts);
     pushItem(b, {

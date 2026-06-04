@@ -53,14 +53,14 @@ import {
   POSTHOG_NOTIFICATIONS,
 } from "../../acp-extensions";
 import {
-  classifyPostHogSubTool,
-  POSTHOG_PRODUCTS,
-} from "../../posthog-products";
-import {
   createEnrichment,
   type Enrichment,
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
+import {
+  classifyPostHogSubTool,
+  POSTHOG_PRODUCTS,
+} from "../../posthog-products";
 import type { PostHogAPIConfig } from "../../types";
 import { isCloudRun, unreachable, withTimeout } from "../../utils/common";
 import { resolveGithubToken } from "../../utils/github-token";
@@ -1660,6 +1660,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   private createOnPostHogResourceUsed() {
     return (subTool: string) => {
       const product = classifyPostHogSubTool(subTool);
+      this.logger.debug("[resources_used] resource used", {
+        subTool,
+        product,
+        turnSizeBefore: this.session?.turnResources.size ?? 0,
+        hasSession: !!this.session,
+      });
       if (product) this.session?.turnResources.add(product);
     };
   }
@@ -1667,12 +1673,18 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   /** Emits the PostHog products used this turn, then clears the accumulator.
    *  Fires before the prompt response so the notification lands in the turn. */
   private async emitResourcesUsed(sessionId: string): Promise<void> {
+    this.logger.debug("[resources_used] emitResourcesUsed called", {
+      sessionId,
+      hasSession: !!this.session,
+      turnSize: this.session?.turnResources.size ?? 0,
+    });
     if (!this.session || this.session.turnResources.size === 0) return;
     const products = [...this.session.turnResources].map((id) => ({
       id,
       label: POSTHOG_PRODUCTS[id],
     }));
     this.session.turnResources.clear();
+    this.logger.debug("[resources_used] emitting notification", { products });
     await this.client.extNotification(POSTHOG_NOTIFICATIONS.RESOURCES_USED, {
       sessionId,
       products,
