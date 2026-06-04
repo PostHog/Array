@@ -1,4 +1,5 @@
 import { CANVAS_SYSTEM_PROMPT } from "@features/canvas/genui/catalog";
+import { isNonEmptySpec } from "@json-render/core";
 import type { Spec } from "@json-render/react";
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
@@ -37,6 +38,8 @@ interface CanvasChatStore {
 
   send: (threadId: string, prompt: string) => Promise<void>;
   reset: (threadId: string) => Promise<void>;
+  /** Seed a thread's spec from a saved dashboard without clobbering live work. */
+  ensureSpec: (threadId: string, spec: Spec) => void;
 
   // Stream handlers, driven by the subscription registrar.
   appendProse: (threadId: string, text: string) => void;
@@ -108,6 +111,14 @@ export const useCanvasChatStore = create<CanvasChatStore>()((set, get) => {
     reset: async (threadId) => {
       patch(threadId, () => ({ ...EMPTY_THREAD }));
       await trpcClient.canvasGen.reset.mutate({ threadId }).catch(() => {});
+    },
+
+    ensureSpec: (threadId, spec) => {
+      const cur = get().threads[threadId];
+      // Don't overwrite a live stream or edits already in this session — only
+      // hydrate an empty thread (e.g. first entry into edit on a saved board).
+      if (cur?.isStreaming || isNonEmptySpec(cur?.spec)) return;
+      patch(threadId, (prev) => ({ ...prev, spec }));
     },
 
     appendProse: (threadId, text) => {
