@@ -33,7 +33,7 @@ import {
   useParams,
   useRouterState,
 } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 
 function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
@@ -172,20 +172,37 @@ export function WebsiteLayout() {
   const { data: tasks } = useTasks();
 
   const dashboardId = params.dashboardId;
-  const isDashboards =
-    pathname.startsWith("/website/dashboards") && dashboardId;
+  const isDashboardsIndex = pathname === "/website";
+  const isDashboardDetail =
+    pathname.startsWith("/website/dashboards") && Boolean(dashboardId);
   const taskId = params.taskId;
 
-  let secondCrumb: React.ReactNode = null;
-  if (isDashboards) {
-    secondCrumb = <DashboardPicker dashboardId={dashboardId} />;
+  // Breadcrumb segments after the root "Website" crumb. Dashboards always show
+  // a "Dashboards" crumb (linking back to the index from a detail view), then
+  // the active dashboard's name picker when viewing one.
+  const crumbs: React.ReactNode[] = [];
+  if (isDashboardsIndex) {
+    crumbs.push(<CrumbText key="dashboards">Dashboards</CrumbText>);
+  } else if (isDashboardDetail && dashboardId) {
+    crumbs.push(
+      <Link key="dashboards" to="/website" className="no-drag">
+        <Text
+          size="1"
+          weight="medium"
+          className="text-gray-10 hover:text-gray-12"
+        >
+          Dashboards
+        </Text>
+      </Link>,
+      <DashboardPicker key="picker" dashboardId={dashboardId} />,
+    );
   } else if (pathname.startsWith("/website/new")) {
-    secondCrumb = <CrumbText>New task</CrumbText>;
+    crumbs.push(<CrumbText key="new">New task</CrumbText>);
   } else if (pathname.startsWith("/website/settings")) {
-    secondCrumb = <CrumbText>Settings</CrumbText>;
+    crumbs.push(<CrumbText key="settings">Settings</CrumbText>);
   } else if (taskId) {
     const title = tasks?.find((t) => t.id === taskId)?.title;
-    secondCrumb = <CrumbText>{title || "Task"}</CrumbText>;
+    crumbs.push(<CrumbText key="task">{title || "Task"}</CrumbText>);
   }
 
   return (
@@ -201,13 +218,16 @@ export function WebsiteLayout() {
             Website
           </Text>
         </Link>
-        {secondCrumb && (
-          <>
+        {crumbs.map((crumb, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: crumb order is stable
+          <Fragment key={i}>
             <CaretRightIcon size={12} className="text-gray-8" />
-            {secondCrumb}
-          </>
+            {crumb}
+          </Fragment>
+        ))}
+        {isDashboardDetail && dashboardId && (
+          <DashboardControls dashboardId={dashboardId} />
         )}
-        {isDashboards && <DashboardControls dashboardId={dashboardId} />}
       </Flex>
       <Box flexGrow="1" overflow="hidden">
         <Outlet />

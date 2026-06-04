@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { IStoragePaths } from "@posthog/platform/storage-paths";
 import { inject, injectable } from "inversify";
@@ -84,6 +84,15 @@ export class DashboardsService {
     };
     await this.write(record);
     return record;
+  }
+
+  async delete(id: string): Promise<void> {
+    try {
+      await unlink(this.filePath(id));
+    } catch (err) {
+      // Already gone is a successful delete; surface anything else.
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
   }
 
   private async write(record: DashboardRecord): Promise<void> {

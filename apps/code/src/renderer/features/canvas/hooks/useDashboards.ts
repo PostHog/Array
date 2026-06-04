@@ -57,6 +57,9 @@ export function useDashboardMutations() {
   const create = useMutation(
     trpc.dashboards.create.mutationOptions({ onSuccess: invalidate }),
   );
+  const remove = useMutation(
+    trpc.dashboards.delete.mutationOptions({ onSuccess: invalidate }),
+  );
 
   return {
     saveDashboard: (id: string, spec: Spec | null, name?: string) =>
@@ -70,8 +73,10 @@ export function useDashboardMutations() {
         name,
         spec: spec as Record<string, unknown> | null,
       }),
+    deleteDashboard: (id: string) => remove.mutateAsync({ id }),
     isSaving: save.isPending,
     isCreating: create.isPending,
+    isDeleting: remove.isPending,
   };
 }
 

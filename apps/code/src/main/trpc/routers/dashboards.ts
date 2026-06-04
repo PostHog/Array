@@ -30,4 +30,7 @@ export const dashboardsRouter = router({
     .input(updateDashboardInput)
     .output(dashboardRecordSchema)
     .mutation(({ input }) => getService().update(input)),
+  delete: publicProcedure
+    .input(dashboardIdInput)
+    .mutation(({ input }) => getService().delete(input.id)),
 });

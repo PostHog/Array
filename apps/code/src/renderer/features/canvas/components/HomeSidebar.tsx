@@ -54,10 +54,10 @@ function NavButton({
     <Button
       variant="default"
       size="sm"
-      data-selected={active}
+      data-selected={active || undefined}
       disabled={disabled}
       onClick={onClick}
-      className="w-full justify-start"
+      className="w-full justify-start data-selected:bg-fill-selected data-selected:text-gray-12"
     >
       {label}
       {count != null && (
