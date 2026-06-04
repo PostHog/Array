@@ -14,7 +14,9 @@ esac
 RAW_TARGETS="${TARGETS:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
-    --target|--targets) RAW_TARGETS="${RAW_TARGETS:+$RAW_TARGETS,}$2"; shift 2 ;;
+    --target|--targets)
+      [ -n "${2-}" ] || { echo "Missing value for $1" >&2; exit 1; }
+      RAW_TARGETS="${RAW_TARGETS:+$RAW_TARGETS,}$2"; shift 2 ;;
     --target=*|--targets=*) RAW_TARGETS="${RAW_TARGETS:+$RAW_TARGETS,}${1#*=}"; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
