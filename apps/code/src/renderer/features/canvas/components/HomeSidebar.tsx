@@ -1,6 +1,8 @@
+import { WEBSITE_DASHBOARDS } from "@features/canvas/dashboards";
 import { useWebsiteTasksStore } from "@features/canvas/stores/websiteTasksStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import {
+  Badge,
   Button,
   Collapsible,
   CollapsibleContent,
@@ -36,11 +38,13 @@ function NavButton({
   label,
   active,
   disabled,
+  count,
   onClick,
 }: {
   label: string;
   active?: boolean;
   disabled?: boolean;
+  count?: number;
   onClick?: () => void;
 }) {
   return (
@@ -53,6 +57,11 @@ function NavButton({
       className="w-full justify-start"
     >
       {label}
+      {count != null && (
+        <Badge variant="default" className="ml-auto">
+          {count}
+        </Badge>
+      )}
     </Button>
   );
 }
@@ -70,6 +79,7 @@ function WebsiteSection() {
         <Flex direction="column" gap="1" pt="1" pl="3">
           <NavButton
             label="Dashboards"
+            count={WEBSITE_DASHBOARDS.length}
             active={
               pathname === "/website" ||
               pathname.startsWith("/website/dashboards")
