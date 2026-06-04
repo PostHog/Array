@@ -97,7 +97,7 @@ export function SessionResourcesBar({ events }: SessionResourcesBarProps) {
   if (products.length === 0) return null;
 
   return (
-    <Box className="border-gray-4 border-t bg-gray-2">
+    <Box>
       <Box className="mx-auto" style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}>
         <Flex align="center" gap="2" wrap="wrap" className="px-3 py-2">
           <Text color="gray" className="whitespace-nowrap text-[12px]">
