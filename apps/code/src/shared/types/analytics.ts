@@ -609,6 +609,10 @@ export interface InboxReportActionProperties {
   signal_section?: "relevant_code" | "data_queried";
   why_field?: "priority" | "actionability";
   task_section?: "research" | "implementation";
+  // Identity of the reviewer added/removed/clicked, for the suggested-reviewer
+  // actions. Login is absent when the org-member lookup doesn't expose one.
+  suggested_reviewer_login?: string;
+  suggested_reviewer_uuid?: string;
   // True when the user submitted Discuss with a first question via the popover.
   has_question?: boolean;
   // The first question text the user typed before hitting Discuss. Truncated to

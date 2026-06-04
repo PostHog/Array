@@ -32,11 +32,17 @@ type ReviewerAction =
   | "add_suggested_reviewer"
   | "remove_suggested_reviewer";
 
+/** Identity of the reviewer the action targeted, attached to the analytics event. */
+interface ReviewerActionExtra {
+  suggested_reviewer_login?: string;
+  suggested_reviewer_uuid?: string;
+}
+
 interface SuggestedReviewersEditorProps {
   reportId: string;
   artefact: SuggestedReviewersArtefact;
   meUuid: string | undefined;
-  fireAction: (action: ReviewerAction) => void;
+  fireAction: (action: ReviewerAction, extra?: ReviewerActionExtra) => void;
 }
 
 function isRowMe(
@@ -137,7 +143,10 @@ export function SuggestedReviewersEditor({
 
   const removeReviewer = (target: SuggestedReviewer) => {
     const next = reviewers.filter((r) => r !== target);
-    fireAction("remove_suggested_reviewer");
+    fireAction("remove_suggested_reviewer", {
+      suggested_reviewer_login: target.github_login || undefined,
+      suggested_reviewer_uuid: target.user?.uuid,
+    });
     updateReviewers({
       artefactId: artefact.id,
       content: toWriteContent(next),
@@ -165,7 +174,10 @@ export function SuggestedReviewersEditor({
       },
     };
     const next = [...reviewers, optimisticEntry];
-    fireAction("add_suggested_reviewer");
+    fireAction("add_suggested_reviewer", {
+      suggested_reviewer_login: option.github_login || undefined,
+      suggested_reviewer_uuid: option.uuid,
+    });
     updateReviewers({
       artefactId: artefact.id,
       // Keep existing by login, add the new one by uuid (server canonicalizes).
@@ -337,7 +349,11 @@ export function SuggestedReviewersEditor({
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-0.5 text-[11px] text-gray-9 hover:text-gray-11"
-                    onClick={() => fireAction("click_suggested_reviewer")}
+                    onClick={() =>
+                      fireAction("click_suggested_reviewer", {
+                        suggested_reviewer_login: reviewer.github_login,
+                      })
+                    }
                   >
                     @{reviewer.github_login}
                     <ArrowSquareOutIcon size={10} />
