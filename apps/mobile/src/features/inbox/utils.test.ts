@@ -7,6 +7,7 @@ import type {
 } from "./types";
 import {
   buildInboxViewedProperties,
+  buildPriorityFilterParam,
   buildReviewerOptions,
   reviewerMatchesAvailable,
   toSuggestedReviewerWriteContent,
@@ -226,6 +227,20 @@ describe("reviewerMatchesAvailable", () => {
     },
   ])("$name", ({ reviewer, expected }) => {
     expect(reviewerMatchesAvailable(reviewer, makeAvailable())).toBe(expected);
+  });
+});
+
+describe("buildPriorityFilterParam", () => {
+  it("returns undefined for an empty selection", () => {
+    expect(buildPriorityFilterParam([])).toBeUndefined();
+  });
+
+  it("joins selected priorities with commas", () => {
+    expect(buildPriorityFilterParam(["P0", "P2"])).toBe("P0,P2");
+  });
+
+  it("dedupes repeated priorities", () => {
+    expect(buildPriorityFilterParam(["P1", "P1", "P3"])).toBe("P1,P3");
   });
 });
 

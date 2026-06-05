@@ -7,7 +7,7 @@ import {
   type SourceProduct,
   useInboxFilterStore,
 } from "../stores/inboxFilterStore";
-import type { SignalReportStatus } from "../types";
+import type { SignalReportPriority, SignalReportStatus } from "../types";
 import { inboxStatusLabel } from "../utils";
 
 interface FilterSheetProps {
@@ -46,6 +46,25 @@ function useStatusDotColors(): Record<string, string> {
     candidate: themeColors.status.info,
     potential: themeColors.gray[9],
     failed: themeColors.status.error,
+  };
+}
+
+const FILTERABLE_PRIORITIES: SignalReportPriority[] = [
+  "P0",
+  "P1",
+  "P2",
+  "P3",
+  "P4",
+];
+
+function usePriorityDotColors(): Record<SignalReportPriority, string> {
+  const themeColors = useThemeColors();
+  return {
+    P0: themeColors.status.error,
+    P1: themeColors.status.warning,
+    P2: themeColors.status.warning,
+    P3: themeColors.gray[9],
+    P4: themeColors.gray[9],
   };
 }
 
@@ -97,6 +116,7 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
   const { bottom, sheetContentTop } = useScreenInsets();
   const themeColors = useThemeColors();
   const statusDotColors = useStatusDotColors();
+  const priorityDotColors = usePriorityDotColors();
 
   const sortField = useInboxFilterStore((s) => s.sortField);
   const sortDirection = useInboxFilterStore((s) => s.sortDirection);
@@ -105,10 +125,13 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
   const toggleStatus = useInboxFilterStore((s) => s.toggleStatus);
   const sourceProductFilter = useInboxFilterStore((s) => s.sourceProductFilter);
   const toggleSourceProduct = useInboxFilterStore((s) => s.toggleSourceProduct);
+  const priorityFilter = useInboxFilterStore((s) => s.priorityFilter);
+  const togglePriority = useInboxFilterStore((s) => s.togglePriority);
   const resetFilters = useInboxFilterStore((s) => s.resetFilters);
 
   const hasActiveFilters =
     sourceProductFilter.length > 0 ||
+    priorityFilter.length > 0 ||
     statusFilter.length < FILTERABLE_STATUSES.length;
 
   return (
@@ -180,6 +203,25 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
                       backgroundColor:
                         statusDotColors[status] ?? themeColors.gray[8],
                     }}
+                  />
+                }
+              />
+            ))}
+          </View>
+
+          {/* Priority */}
+          <SectionHeader title="Priority" />
+          <View className="mb-5">
+            {FILTERABLE_PRIORITIES.map((priority) => (
+              <OptionRow
+                key={priority}
+                label={priority}
+                selected={priorityFilter.includes(priority)}
+                onPress={() => togglePriority(priority)}
+                left={
+                  <View
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: priorityDotColors[priority] }}
                   />
                 }
               />

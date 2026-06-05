@@ -3,6 +3,7 @@ import type {
   AvailableSuggestedReviewer,
   SignalReport,
   SignalReportOrderingField,
+  SignalReportPriority,
   SignalReportStatus,
   SuggestedReviewer,
   SuggestedReviewerWriteEntry,
@@ -61,6 +62,13 @@ export function buildSuggestedReviewerFilterParam(
   const normalized = reviewerIds.map((id) => id.trim()).filter(Boolean);
   if (normalized.length === 0) return undefined;
   return Array.from(new Set(normalized)).join(",");
+}
+
+export function buildPriorityFilterParam(
+  priorities: SignalReportPriority[],
+): string | undefined {
+  if (priorities.length === 0) return undefined;
+  return Array.from(new Set(priorities)).join(",");
 }
 
 export function filterReportsBySearch(

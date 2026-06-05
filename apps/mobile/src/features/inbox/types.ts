@@ -53,6 +53,7 @@ export interface SignalReportsQueryParams {
   ordering?: string;
   source_product?: string;
   suggested_reviewers?: string;
+  priority?: string;
 }
 
 export interface SignalProcessingStateResponse {
