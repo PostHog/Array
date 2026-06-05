@@ -14,9 +14,10 @@ import {
   WarningCircle,
 } from "phosphor-react-native";
 import { useState } from "react";
-import { Linking, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { formatRelativeTime } from "@/lib/format";
+import { openExternalUrl } from "@/lib/openExternalUrl";
 import { useThemeColors } from "@/lib/theme";
 import type { Signal, SignalFindingContent } from "../types";
 
@@ -248,7 +249,7 @@ export function SignalCard({ signal, finding }: SignalCardProps) {
           <View className="flex-1" />
           {externalUrl && (
             <Pressable
-              onPress={() => Linking.openURL(externalUrl)}
+              onPress={() => openExternalUrl(externalUrl)}
               hitSlop={6}
               className="flex-row items-center gap-1 active:opacity-60"
             >

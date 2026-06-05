@@ -1,6 +1,7 @@
 import { Text } from "@components/text";
 import type { McpUiDisplayMode } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { isSafeExternalUrl } from "@posthog/shared";
 import * as WebBrowser from "expo-web-browser";
 import { ArrowsIn, ArrowsOut, Warning } from "phosphor-react-native";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -108,6 +109,7 @@ export function McpAppHost(props: McpAppHostProps) {
   );
 
   const handleOpenLink = useCallback(async (args: { url: string }) => {
+    if (!isSafeExternalUrl(args.url)) return;
     await WebBrowser.openBrowserAsync(args.url);
   }, []);
 

@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
-  Linking,
   Pressable,
   ScrollView,
   View,
@@ -13,6 +12,7 @@ import type {
   InboxReportActionProperties,
   InboxReportActionType,
 } from "@/lib/analytics";
+import { openExternalUrl } from "@/lib/openExternalUrl";
 import { useThemeColors } from "@/lib/theme";
 import { useUpdateSuggestedReviewers } from "../hooks/useInboxReports";
 import type {
@@ -159,7 +159,7 @@ export function SuggestedReviewers({
                     fireAction("click_suggested_reviewer", {
                       suggested_reviewer_login: reviewer.github_login,
                     });
-                    Linking.openURL(
+                    openExternalUrl(
                       `https://github.com/${reviewer.github_login}`,
                     );
                   }}
