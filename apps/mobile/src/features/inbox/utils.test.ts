@@ -68,6 +68,7 @@ describe("buildInboxViewedProperties", () => {
       sourceProductFilter: [],
       statusFilter: DEFAULT_STATUS_FILTER,
       suggestedReviewerFilter: [],
+      priorityFilter: [],
       defaultStatusFilter: DEFAULT_STATUS_FILTER,
     });
     expect(props).toMatchObject({
@@ -117,6 +118,7 @@ describe("buildInboxViewedProperties", () => {
       sourceProductFilter: [],
       statusFilter: DEFAULT_STATUS_FILTER,
       suggestedReviewerFilter: [],
+      priorityFilter: [],
       defaultStatusFilter: DEFAULT_STATUS_FILTER,
     });
 
@@ -132,11 +134,12 @@ describe("buildInboxViewedProperties", () => {
     expect(props.actionability_unknown_count).toBe(1);
   });
 
-  it("marks filters active when any of status/source/reviewer differs from defaults", () => {
+  it("marks filters active when any of status/source/reviewer/priority differs from defaults", () => {
     const narrowed = buildInboxViewedProperties([], 0, {
       sourceProductFilter: [],
       statusFilter: ["ready"],
       suggestedReviewerFilter: [],
+      priorityFilter: [],
       defaultStatusFilter: DEFAULT_STATUS_FILTER,
     });
     expect(narrowed.has_active_filters).toBe(true);
@@ -146,6 +149,7 @@ describe("buildInboxViewedProperties", () => {
       sourceProductFilter: ["error_tracking"],
       statusFilter: DEFAULT_STATUS_FILTER,
       suggestedReviewerFilter: [],
+      priorityFilter: [],
       defaultStatusFilter: DEFAULT_STATUS_FILTER,
     });
     expect(sourced.has_active_filters).toBe(true);
@@ -155,9 +159,19 @@ describe("buildInboxViewedProperties", () => {
       sourceProductFilter: [],
       statusFilter: DEFAULT_STATUS_FILTER,
       suggestedReviewerFilter: ["uuid-1"],
+      priorityFilter: [],
       defaultStatusFilter: DEFAULT_STATUS_FILTER,
     });
     expect(reviewer.has_active_filters).toBe(true);
+
+    const prioritized = buildInboxViewedProperties([], 0, {
+      sourceProductFilter: [],
+      statusFilter: DEFAULT_STATUS_FILTER,
+      suggestedReviewerFilter: [],
+      priorityFilter: ["P0"],
+      defaultStatusFilter: DEFAULT_STATUS_FILTER,
+    });
+    expect(prioritized.has_active_filters).toBe(true);
   });
 
   it("treats a reordered default status set as not filtered", () => {
@@ -165,6 +179,7 @@ describe("buildInboxViewedProperties", () => {
       sourceProductFilter: [],
       statusFilter: [...DEFAULT_STATUS_FILTER].reverse(),
       suggestedReviewerFilter: [],
+      priorityFilter: [],
       defaultStatusFilter: DEFAULT_STATUS_FILTER,
     });
     expect(props.has_active_filters).toBe(false);
@@ -231,16 +246,24 @@ describe("reviewerMatchesAvailable", () => {
 });
 
 describe("buildPriorityFilterParam", () => {
-  it("returns undefined for an empty selection", () => {
-    expect(buildPriorityFilterParam([])).toBeUndefined();
-  });
-
-  it("joins selected priorities with commas", () => {
-    expect(buildPriorityFilterParam(["P0", "P2"])).toBe("P0,P2");
-  });
-
-  it("dedupes repeated priorities", () => {
-    expect(buildPriorityFilterParam(["P1", "P1", "P3"])).toBe("P1,P3");
+  it.each([
+    {
+      name: "returns undefined for an empty selection",
+      input: [],
+      expected: undefined,
+    },
+    {
+      name: "joins selected priorities with commas",
+      input: ["P0", "P2"] as const,
+      expected: "P0,P2",
+    },
+    {
+      name: "dedupes repeated priorities",
+      input: ["P1", "P1", "P3"] as const,
+      expected: "P1,P3",
+    },
+  ])("$name", ({ input, expected }) => {
+    expect(buildPriorityFilterParam([...input])).toBe(expected);
   });
 });
 
