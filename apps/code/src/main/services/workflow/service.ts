@@ -37,9 +37,6 @@ export class WorkflowService extends TypedEventEmitter<WorkflowEvents> {
     const json = await this.request("GET", "code_workflow/");
     const parsed = workflowConfig.safeParse(json);
     if (parsed.success) return parsed.data;
-    // Unexpected response shape — render the default rather than breaking the
-    // Home config surface. (Network/auth failures throw and surface as the
-    // query's error state.)
     return buildDefaultWorkflow();
   }
 

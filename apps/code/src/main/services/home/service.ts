@@ -13,9 +13,6 @@ import type { AuthService } from "../auth/service";
 
 const log = logger.scope("home");
 
-// Client poll cadence. The server worker keeps data fresh independently; this
-// just pulls the latest snapshot so an open Home view stays current without a
-// realtime channel (docs/home-tab.md §10 — REST + client poll for v1).
 const POLL_INTERVAL_MS = 120_000;
 
 /**
@@ -55,9 +52,6 @@ export class HomeService extends TypedEventEmitter<HomeEvents> {
   }
 
   async refresh(): Promise<HomeSnapshot> {
-    // Fire-and-forget: the server kicks off an async worker eval. The fresh
-    // result lands via the next poll → onSnapshotUpdated; we just return the
-    // current snapshot so the mutation has a value.
     await this.requestServerRefresh();
     return this.getSnapshot();
   }

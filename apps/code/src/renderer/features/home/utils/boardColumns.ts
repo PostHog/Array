@@ -1,6 +1,6 @@
 import type { HomeWorkstream } from "@shared/types/home-snapshot";
 import { SITUATIONS, type SituationId } from "@shared/types/workflow";
-import { pickPrimarySituation } from "@shared/types/workflow-classify";
+import { pickPrimarySituation } from "@shared/types/workflow-situations";
 
 export type HomeBoardColumn = {
   id: SituationId;

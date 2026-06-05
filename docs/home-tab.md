@@ -358,10 +358,11 @@ Wire shapes (Zod, the shared source of truth for the renderer types):
 - `hooks/useHomeSnapshot.ts`, `hooks/useWorkflow.ts` — one `useQuery` each, kept fresh by `subscriptions.ts` (registered once at boot per R9).
 - `stores/homeUiStore.ts` — UI state only (view mode, selection). `stores/workflowEditorStore.ts` — the uncommitted editor draft only.
 
-Situation classification is authoritative on the server. The renderer reuses the
-same pure logic (`shared/types/workflow-classify.ts`) only to project the
-snapshot's `situations` into board columns — it never re-derives situations from
-PR state.
+Situation classification is authoritative on the server. The renderer only
+picks which of the snapshot's `situations` to highlight — `pickPrimarySituation`
+in `shared/types/workflow-situations.ts` projects the set into a primary
+situation for board columns and accents. It never re-derives situations from PR
+state.
 
 **Rules honoured:** R1 (main owns the client + orchestration), R2 (stores are UI state + subscription caches only), R4 (one `useQuery` per surface), R5 (main emits `workflow.onChanged`; Home reacts via its subscription registrar), R6 (Zod everywhere, inferred types), R9 (subscriptions registered once at boot), R10 (router one-liners).
 

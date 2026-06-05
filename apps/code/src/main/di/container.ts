@@ -155,8 +155,6 @@ container.bind(MAIN_TOKENS.TaskLinkService).to(TaskLinkService);
 container.bind(MAIN_TOKENS.InboxLinkService).to(InboxLinkService);
 container.bind(MAIN_TOKENS.NewTaskLinkService).to(NewTaskLinkService);
 container.bind(MAIN_TOKENS.WatcherRegistryService).to(WatcherRegistryService);
-// Home workflow config + snapshot are owned by PostHog now; these services are
-// thin authenticated clients over the REST API (docs/workflow-architecture.md).
 container.bind(MAIN_TOKENS.WorkflowService).to(WorkflowService);
 container.bind(MAIN_TOKENS.HomeService).to(HomeService);
 container.bind(MAIN_TOKENS.WorkspaceService).to(WorkspaceService);

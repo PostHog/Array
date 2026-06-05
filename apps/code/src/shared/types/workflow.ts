@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-// Order is load-bearing: the renderer iterates this list and the classifier
-// emits situations in this order.
+// Order is load-bearing: the renderer iterates this list to render situations in
+// a stable order. Classification itself runs server-side in PostHog.
 export const SITUATIONS = [
   {
     id: "working",

@@ -11,7 +11,7 @@ export function buildDefaultWorkflow(): WorkflowConfig {
         {
           id: "create_pr",
           label: "Create PR",
-          skillId: "create-pr",
+          skillId: "",
           prompt:
             "Open a PR for the current branch. Use the task history to write a concise description.",
         },
@@ -21,7 +21,7 @@ export function buildDefaultWorkflow(): WorkflowConfig {
         {
           id: "fix_ci",
           label: "Fix CI",
-          skillId: "fix-ci",
+          skillId: "",
           prompt:
             "CI is failing on this PR. Investigate the failing checks and push a fix.",
         },
@@ -30,7 +30,7 @@ export function buildDefaultWorkflow(): WorkflowConfig {
         {
           id: "address_comments",
           label: "Address review",
-          skillId: "address-comments",
+          skillId: "",
           prompt:
             "Address the change requests on this PR — read the latest review and respond with code.",
         },
@@ -39,7 +39,7 @@ export function buildDefaultWorkflow(): WorkflowConfig {
         {
           id: "address_threads",
           label: "Address comments",
-          skillId: "address-comments",
+          skillId: "",
           prompt: "Address the unresolved review comments on this PR.",
         },
       ],
@@ -47,7 +47,7 @@ export function buildDefaultWorkflow(): WorkflowConfig {
         {
           id: "final_check",
           label: "Final check",
-          skillId: "code-review",
+          skillId: "",
           prompt:
             "Do a last-pass review of this PR. Call out anything risky before I merge.",
         },

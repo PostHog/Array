@@ -2,7 +2,7 @@ import { useTasks } from "@renderer/features/tasks/hooks/useTasks";
 import type { HomeWorkstream } from "@shared/types/home-snapshot";
 import type { PrSnapshot } from "@shared/types/pr-snapshot";
 import type { SituationId } from "@shared/types/workflow";
-import { pickPrimarySituation } from "@shared/types/workflow-classify";
+import { pickPrimarySituation } from "@shared/types/workflow-situations";
 import { useNavigationStore } from "@stores/navigationStore";
 import { openUrlInBrowser } from "@utils/browser";
 import {
