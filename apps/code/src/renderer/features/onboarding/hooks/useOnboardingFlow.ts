@@ -9,6 +9,7 @@ import { useActiveRepoStore } from "@stores/activeRepoStore";
 import { track } from "@utils/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ONBOARDING_STEPS, type OnboardingStep } from "../types";
+import { useHasImportableConfig } from "./useHasImportableConfig";
 
 function inferRepositoryProvider(
   remote: string | undefined,
@@ -106,13 +107,15 @@ export function useOnboardingFlow() {
   );
 
   const hasCodeAccess = useAuthStateValue((state) => state.hasCodeAccess);
+  const hasImportableConfig = useHasImportableConfig();
 
   const activeSteps = useMemo(() => {
-    if (hasCodeAccess === true) {
-      return ONBOARDING_STEPS.filter((s) => s !== "invite-code");
-    }
-    return ONBOARDING_STEPS;
-  }, [hasCodeAccess]);
+    return ONBOARDING_STEPS.filter((step) => {
+      if (step === "invite-code" && hasCodeAccess === true) return false;
+      if (step === "import-config" && !hasImportableConfig) return false;
+      return true;
+    });
+  }, [hasCodeAccess, hasImportableConfig]);
 
   useEffect(() => {
     if (!activeSteps.includes(currentStep)) {

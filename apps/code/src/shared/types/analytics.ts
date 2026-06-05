@@ -343,6 +343,7 @@ export type OnboardingStepId =
   | "invite-code"
   | "connect-github"
   | "install-cli"
+  | "import-config"
   | "select-repo";
 
 type OnboardingSkipReason = "no_repo_selected" | "dev_skip";

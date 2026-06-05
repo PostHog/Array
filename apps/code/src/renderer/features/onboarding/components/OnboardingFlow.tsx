@@ -19,6 +19,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 
 import { useOnboardingFlow } from "../hooks/useOnboardingFlow";
 import { ConnectGitHubStep } from "./ConnectGitHubStep";
+import { ImportConfigStep } from "./ImportConfigStep";
 import { InstallCliStep } from "./InstallCliStep";
 import { InviteCodeStep } from "./InviteCodeStep";
 import { ProjectSelectStep } from "./ProjectSelectStep";
@@ -273,6 +274,21 @@ export function OnboardingFlow() {
               className="min-h-0 w-full flex-1"
             >
               <InstallCliStep onNext={handleNext} onBack={handleBack} />
+            </motion.div>
+          )}
+
+          {currentStep === "import-config" && (
+            <motion.div
+              key="import-config"
+              custom={direction}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              variants={stepVariants}
+              transition={{ duration: 0.3 }}
+              className="min-h-0 w-full flex-1"
+            >
+              <ImportConfigStep onNext={handleNext} onBack={handleBack} />
             </motion.div>
           )}
 

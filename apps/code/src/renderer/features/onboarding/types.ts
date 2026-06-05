@@ -4,6 +4,7 @@ export type OnboardingStep =
   | "invite-code"
   | "connect-github"
   | "install-cli"
+  | "import-config"
   | "select-repo";
 
 export const ONBOARDING_STEPS: OnboardingStep[] = [
@@ -12,5 +13,6 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   "invite-code",
   "connect-github",
   "install-cli",
+  "import-config",
   "select-repo",
 ];
