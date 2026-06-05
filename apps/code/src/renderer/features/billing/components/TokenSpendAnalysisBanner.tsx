@@ -254,7 +254,7 @@ function FooterLinks({ data }: { data: SpendAnalysisResponse }) {
           rel="noreferrer"
           className="text-(--accent-11) underline"
         >
-          PostHog LLM analytics
+          PostHog AI Observability
         </a>{" "}
         in your own project for the full slice-and-dice experience.
       </Text>
@@ -363,7 +363,7 @@ export function TokenSpendAnalysisBanner() {
       <Callout.Text>
         <Flex direction="column" gap="2">
           <Text className="font-medium text-sm">
-            Analyse your token usage with PostHog LLM analytics
+            Analyse your token usage with PostHog AI Observability
           </Text>
           <Text className="text-(--gray-11) text-[13px]">
             See where your spend goes — by product, tool, and model — over the
