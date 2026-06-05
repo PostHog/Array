@@ -88,6 +88,13 @@ export function goBackInHistory(): void {
   getRouterOrNull()?.history.back();
 }
 
+// False when the current entry is the first in the session history (index 0),
+// e.g. after a quit+reopen restores a deep route directly. In that case
+// `history.back()` is a no-op and callers should navigate to a fallback route.
+export function canGoBackInHistory(): boolean {
+  return getRouterOrNull()?.history.canGoBack() ?? false;
+}
+
 export function goForwardInHistory(): void {
   getRouterOrNull()?.history.forward();
 }

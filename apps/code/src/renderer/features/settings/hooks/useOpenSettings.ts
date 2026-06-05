@@ -36,8 +36,14 @@ export function openSettings(
  */
 export function closeSettings(): void {
   useSettingsPageStore.getState().reset();
-  if (nav.isOnSettingsRoute()) {
+  if (!nav.isOnSettingsRoute()) return;
+  // history.back() is a no-op when settings is the first history entry — e.g.
+  // the app was quit on the settings page and reopened restoring that route.
+  // There is nothing to go back to, so navigate to the app explicitly.
+  if (nav.canGoBackInHistory()) {
     nav.goBackInHistory();
+  } else {
+    nav.navigateToCode();
   }
 }
 
