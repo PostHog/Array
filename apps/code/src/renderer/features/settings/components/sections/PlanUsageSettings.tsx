@@ -237,7 +237,7 @@ export function PlanUsageSettings() {
               name="Pro"
               price="$200"
               period="/mo"
-              badge="20× Free usage"
+              badge="40× Free usage"
               isCurrent={isOrgPro && !isAlpha}
               resetLabel={
                 isOrgPro && !isAlpha && isCanceling && formattedActiveUntil
@@ -403,7 +403,7 @@ export function PlanUsageSettings() {
             ) : (
               "Your organization"
             )}{" "}
-            will be charged $200/month for 20× the Free usage limit.
+            will be charged $200/month for 40× the Free usage limit.
           </Dialog.Description>
           <Flex
             align="start"
