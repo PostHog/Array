@@ -13,11 +13,13 @@ import {
 } from "@features/tasks/hooks/useArchiveTask";
 import { useTasks, useUpdateTask } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
+import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
 import { ScrollArea, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
 import type { Schemas } from "@renderer/api/generated";
 import { trpcClient } from "@renderer/trpc/client";
+import { HOME_TAB_FLAG } from "@shared/constants";
 import type { Task } from "@shared/types";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
@@ -66,6 +68,8 @@ function SidebarMenuComponent() {
     useTaskContextMenu();
   const { archiveTask } = useArchiveTask();
   const { togglePin } = usePinnedTasks();
+
+  const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
 
   const sidebarData = useSidebarData({
     activeView: view,
@@ -405,12 +409,14 @@ function SidebarMenuComponent() {
             />
           </Box>
 
-          <Box>
-            <HomeItem
-              isActive={sidebarData.isHomeViewActive}
-              onClick={handleHomeClick}
-            />
-          </Box>
+          {homeTabEnabled && (
+            <Box>
+              <HomeItem
+                isActive={sidebarData.isHomeViewActive}
+                onClick={handleHomeClick}
+              />
+            </Box>
+          )}
 
           <Box>
             <SearchItem onClick={handleSearchClick} />

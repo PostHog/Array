@@ -31,13 +31,18 @@ import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { Box, Flex } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc/client";
-import { BILLING_FLAG, SYNC_CLOUD_TASKS_FLAG } from "@shared/constants";
+import {
+  BILLING_FLAG,
+  HOME_TAB_FLAG,
+  SYNC_CLOUD_TASKS_FLAG,
+} from "@shared/constants";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
 import { useQueryClient } from "@tanstack/react-query";
+import { onFeatureFlagsLoaded } from "@utils/analytics";
 import { logger } from "@utils/logger";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNewTaskDeepLink } from "../hooks/useNewTaskDeepLink";
 import { useTaskDeepLink } from "../hooks/useTaskDeepLink";
 import { GlobalEventHandlers } from "./GlobalEventHandlers";
@@ -70,6 +75,7 @@ export function MainLayout() {
   const reconcilingTaskIds = useRef<Set<string>>(new Set());
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
+  const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
 
   // Space switcher data
   const sidebarData = useSidebarData({ activeView: view });
@@ -132,6 +138,14 @@ export function MainLayout() {
     }
   }, [view, navigateToTaskInput]);
 
+  const [flagsLoaded, setFlagsLoaded] = useState(false);
+  useEffect(() => onFeatureFlagsLoaded(() => setFlagsLoaded(true)), []);
+  useEffect(() => {
+    if (flagsLoaded && !homeTabEnabled && view.type === "home") {
+      navigateToTaskInput();
+    }
+  }, [flagsLoaded, homeTabEnabled, view.type, navigateToTaskInput]);
+
   const handleToggleCommandMenu = useCallback(() => {
     toggleCommandMenu();
   }, [toggleCommandMenu]);
@@ -168,7 +182,7 @@ export function MainLayout() {
 
           {view.type === "folder-settings" && <FolderSettingsView />}
 
-          {view.type === "home" && <HomeView />}
+          {view.type === "home" && homeTabEnabled && <HomeView />}
 
           {view.type === "inbox" && <InboxView />}
 
