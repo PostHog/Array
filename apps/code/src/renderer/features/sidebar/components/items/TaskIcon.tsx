@@ -1,4 +1,5 @@
 import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
+import { NestedButton } from "@components/ui/NestedButton";
 import { Tooltip } from "@components/ui/Tooltip";
 import type { SidebarPrState } from "@features/sidebar/hooks/useTaskPrStatus";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
@@ -14,8 +15,8 @@ import {
   PushPin,
   SlackLogo,
 } from "@phosphor-icons/react";
-import { trpcClient } from "@renderer/trpc/client";
 import { isTerminalStatus, type TaskRunStatus } from "@shared/types";
+import { openUrlInBrowser } from "@utils/browser";
 
 export const ICON_SIZE = 12;
 
@@ -39,14 +40,10 @@ function getOriginProductMeta(
   return originProduct ? ORIGIN_PRODUCT_META[originProduct] : undefined;
 }
 
-// Renders the icon inside a span. When `link` is set the span becomes
-// clickable and opens the originating thread externally. SidebarItem renders
-// the row as a `<button>`, so a real `<a>` here would be invalid HTML — match
-// the inline role="button" pattern used by TaskHoverToolbar.
-//
-// Returned as a plain React element (not a component) so the span is the
-// direct child of Tooltip — Radix's `asChild` Slot needs a host element to
-// attach hover handlers to.
+// Renders the icon inside a span. When `link` is set the icon becomes a
+// clickable NestedButton that opens the originating thread externally.
+// SidebarItem renders the row as a `<button>`, so a real `<a>` or a nested
+// `<button>` here would be invalid HTML.
 function renderIconSpan({
   icon,
   link,
@@ -59,31 +56,16 @@ function renderIconSpan({
   if (!link) {
     return <span className="flex items-center justify-center">{icon}</span>;
   }
-  const open = () => {
-    void trpcClient.os.openExternal.mutate({ url: link });
-  };
   return (
-    // biome-ignore lint/a11y/useSemanticElements: nested clickable inside SidebarItem button
-    <span
-      role="button"
-      tabIndex={0}
+    <NestedButton
       aria-label={ariaLabel}
       className="flex cursor-pointer items-center justify-center rounded transition-opacity hover:opacity-70"
-      onClick={(e) => {
-        e.stopPropagation();
-        open();
-      }}
-      onDoubleClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          e.stopPropagation();
-          open();
-        }
+      onActivate={() => {
+        void openUrlInBrowser(link);
       }}
     >
       {icon}
-    </span>
+    </NestedButton>
   );
 }
 
