@@ -42,13 +42,15 @@ describe("openExternalUrl", () => {
     openURL.mockClear();
   });
 
-  it("opens a safe URL", () => {
-    openExternalUrl("https://example.com");
-    expect(openURL).toHaveBeenCalledWith("https://example.com");
-  });
-
-  it("does not open an unsafe URL", () => {
-    openExternalUrl("javascript:alert(1)");
-    expect(openURL).not.toHaveBeenCalled();
+  it.each([
+    ["https://example.com", "https://example.com"],
+    ["javascript:alert(1)", null],
+  ])("opens %s only when safe", (url, expectedCall) => {
+    openExternalUrl(url);
+    if (expectedCall === null) {
+      expect(openURL).not.toHaveBeenCalled();
+    } else {
+      expect(openURL).toHaveBeenCalledWith(expectedCall);
+    }
   });
 });
