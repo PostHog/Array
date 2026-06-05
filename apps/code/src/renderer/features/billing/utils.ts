@@ -1,5 +1,8 @@
 import type { UsageOutput } from "@main/services/llm-gateway/schemas";
 
+/** How much more usage the Pro plan offers relative to the Free plan. */
+export const PRO_USAGE_MULTIPLIER = 40;
+
 export function isUsageExceeded(usage: UsageOutput): boolean {
   return (
     usage.is_rate_limited || usage.sustained.exceeded || usage.burst.exceeded

@@ -3,7 +3,7 @@ import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { TokenSpendAnalysisBanner } from "@features/billing/components/TokenSpendAnalysisBanner";
 import { useUsage } from "@features/billing/hooks/useUsage";
 import { useSeatStore } from "@features/billing/stores/seatStore";
-import { formatResetTime } from "@features/billing/utils";
+import { formatResetTime, PRO_USAGE_MULTIPLIER } from "@features/billing/utils";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useSeat } from "@hooks/useSeat";
 import type { UsageBucket } from "@main/services/llm-gateway/schemas";
@@ -237,7 +237,7 @@ export function PlanUsageSettings() {
               name="Pro"
               price="$200"
               period="/mo"
-              badge="40× Free usage"
+              badge={`${PRO_USAGE_MULTIPLIER}× Free usage`}
               isCurrent={isOrgPro && !isAlpha}
               resetLabel={
                 isOrgPro && !isAlpha && isCanceling && formattedActiveUntil
@@ -403,7 +403,8 @@ export function PlanUsageSettings() {
             ) : (
               "Your organization"
             )}{" "}
-            will be charged $200/month for 40× the Free usage limit.
+            will be charged $200/month for {PRO_USAGE_MULTIPLIER}× the Free
+            usage limit.
           </Dialog.Description>
           <Flex
             align="start"
