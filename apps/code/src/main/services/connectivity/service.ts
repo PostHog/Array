@@ -10,8 +10,12 @@ import {
 
 const log = logger.scope("connectivity");
 
-const CHECK_URL = "https://www.google.com/generate_204";
+const CHECK_URLS = [
+  "https://www.google.com/generate_204",
+  "https://www.cloudflare.com/cdn-cgi/trace",
+];
 const CHECK_TIMEOUT_MS = 5_000;
+const OFFLINE_CONFIRM_THRESHOLD = 2;
 const MIN_POLL_INTERVAL_MS = 3_000;
 const MAX_POLL_INTERVAL_MS = 10_000;
 const ONLINE_POLL_INTERVAL_MS = 3_000;
@@ -21,6 +25,7 @@ export class ConnectivityService extends TypedEventEmitter<ConnectivityEvents> {
   private isOnline = false;
   private pollTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private offlinePollAttempt = 0;
+  private consecutiveFailures = 0;
 
   @postConstruct()
   init(): void {
@@ -54,19 +59,38 @@ export class ConnectivityService extends TypedEventEmitter<ConnectivityEvents> {
 
   private async checkConnectivity(): Promise<void> {
     const verified = await this.verifyWithHttp();
-    this.setOnline(verified);
+
+    if (verified) {
+      this.consecutiveFailures = 0;
+      this.setOnline(true);
+      return;
+    }
+
+    this.consecutiveFailures++;
+    if (this.consecutiveFailures >= OFFLINE_CONFIRM_THRESHOLD) {
+      this.setOnline(false);
+    }
   }
 
   private async verifyWithHttp(): Promise<boolean> {
     try {
-      const response = await fetch(CHECK_URL, {
-        method: "HEAD",
-        signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
-      });
-      return response.ok || response.status === 204;
+      // Resolves as soon as the first host responds reachably; rejects only
+      // when every host fails.
+      await Promise.any(CHECK_URLS.map((url) => this.probe(url)));
+      return true;
     } catch (error) {
       log.debug("HTTP connectivity check failed", { error });
       return false;
+    }
+  }
+
+  private async probe(url: string): Promise<void> {
+    const response = await fetch(url, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
+    });
+    if (!(response.ok || response.status === 204)) {
+      throw new Error(`Unexpected status ${response.status} from ${url}`);
     }
   }
 
