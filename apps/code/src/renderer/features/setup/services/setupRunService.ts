@@ -237,21 +237,6 @@ export class SetupRunService {
   private discoveryStartingByRepo = new Set<string>();
   private enricherSuggestionsRunningByRepo = new Set<string>();
 
-  startSetup(directory: string): void {
-    // Defense in depth: never auto-run from a non-idle persisted state.
-    // The hook (useSetupDiscovery) is the primary gate, but a direct call
-    // path could otherwise re-enter the loop that wedged users on boot —
-    // creating fresh cloud tasks and a tree-sitter parse storm against the
-    // user's repo on every launch.
-    const status = selectRepoDiscovery(
-      useSetupStore.getState(),
-      directory,
-    ).status;
-    if (status !== "idle") return;
-    this.injectEnricherSuggestions(directory);
-    this.startDiscovery(directory);
-  }
-
   startEnricherForRepo(directory: string): void {
     this.injectEnricherSuggestions(directory);
   }
