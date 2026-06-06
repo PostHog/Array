@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { extract } from "tar";
 
@@ -75,14 +76,38 @@ const BINARIES = [
   },
 ];
 
+const MAX_DOWNLOAD_ATTEMPTS = 5;
+const RETRIABLE_HTTP_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+
 async function downloadFile(url, destPath) {
   console.log(`  Downloading: ${url}`);
-  const response = await fetch(url, { redirect: "follow" });
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  for (let attempt = 1; attempt <= MAX_DOWNLOAD_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(url, { redirect: "follow" });
+      if (!response.ok) {
+        const error = new Error(
+          `HTTP ${response.status}: ${response.statusText}`,
+        );
+        error.retriable = RETRIABLE_HTTP_STATUS.has(response.status);
+        throw error;
+      }
+      await pipeline(response.body, createWriteStream(destPath));
+      console.log(`  Saved to: ${destPath}`);
+      return;
+    } catch (error) {
+      // Network-level failures (ECONNRESET, ETIMEDOUT, socket hang up) and
+      // stream errors carry no `retriable` flag; treat those as transient too.
+      const isLastAttempt = attempt === MAX_DOWNLOAD_ATTEMPTS;
+      if (error.retriable === false || isLastAttempt) {
+        throw error;
+      }
+      const delayMs = Math.min(1000 * 2 ** (attempt - 1), 15000);
+      console.warn(
+        `  Attempt ${attempt}/${MAX_DOWNLOAD_ATTEMPTS} failed: ${error.message}. Retrying in ${delayMs / 1000}s...`,
+      );
+      await sleep(delayMs);
+    }
   }
-  await pipeline(response.body, createWriteStream(destPath));
-  console.log(`  Saved to: ${destPath}`);
 }
 
 async function extractArchive(archivePath, destDir) {
