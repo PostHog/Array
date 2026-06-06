@@ -4,6 +4,7 @@ import {
   classifyPostHogSqlQuery,
   classifyPostHogSubTool,
   POSTHOG_PRODUCTS,
+  type PostHogProductId,
 } from "./posthog-products";
 
 describe("classifyPostHogSubTool", () => {
@@ -177,46 +178,39 @@ describe("classifyPostHogExecCall", () => {
     expect(classifyPostHogExecCall("experiment-get")).toEqual(["experiments"]);
   });
 
-  it("returns an empty array for admin/meta sub-tools", () => {
-    expect(classifyPostHogExecCall("project-get")).toEqual([]);
+  it.each<[string, string | undefined, PostHogProductId[]]>([
+    // Plural tool name resolves via the pattern matcher.
+    [
+      "feature-flags-activity-retrieve",
+      'call feature-flags-activity-retrieve {"id":1}',
+      ["feature_flags"],
+    ],
+    // Activity-log reads are attributed by their scope...
+    [
+      "activity-log-list",
+      'call activity-log-list {"scope":"FeatureFlag"}',
+      ["feature_flags"],
+    ],
+    // ...including web analytics, only reachable from the log via this scope.
+    [
+      "activity-log-list",
+      'call activity-log-list {"scope":"WebAnalyticsFilterPreset"}',
+      ["web_analytics"],
+    ],
+    // Multiple scopes are collected and deduped.
+    [
+      "advanced-activity-logs-list",
+      'call advanced-activity-logs-list {"scopes":["FeatureFlag","Insight"]}',
+      ["feature_flags", "product_analytics"],
+    ],
+  ])("attributes %s to its scope/domain product", (subTool, cmd, expected) => {
+    expect(classifyPostHogExecCall(subTool, cmd)).toEqual(expected);
   });
 
-  it("attributes a plural feature-flag tool to feature_flags", () => {
-    expect(
-      classifyPostHogExecCall(
-        "feature-flags-activity-retrieve",
-        'call feature-flags-activity-retrieve {"id":1}',
-      ),
-    ).toEqual(["feature_flags"]);
-  });
-
-  it("attributes an activity-log read to the product of its scope", () => {
-    expect(
-      classifyPostHogExecCall(
-        "activity-log-list",
-        'call activity-log-list {"scope":"FeatureFlag"}',
-      ),
-    ).toEqual(["feature_flags"]);
-    // Web analytics is only reachable from the activity log via this scope.
-    expect(
-      classifyPostHogExecCall(
-        "activity-log-list",
-        'call activity-log-list {"scope":"WebAnalyticsFilterPreset"}',
-      ),
-    ).toEqual(["web_analytics"]);
-  });
-
-  it("attributes advanced-activity-logs to every recognized scope, deduped", () => {
-    expect(
-      classifyPostHogExecCall(
-        "advanced-activity-logs-list",
-        'call advanced-activity-logs-list {"scopes":["FeatureFlag","Insight"]}',
-      ),
-    ).toEqual(["feature_flags", "product_analytics"]);
-  });
-
-  it.each([
-    // No scope / empty scopes → nothing, as before.
+  it.each<[string, string | undefined]>([
+    // Admin/meta sub-tool.
+    ["project-get", undefined],
+    // Unscoped or empty-scope activity-log reads.
     ["activity-log-list", 'call activity-log-list {"page":1}'],
     [
       "advanced-activity-logs-list",
@@ -224,14 +218,9 @@ describe("classifyPostHogExecCall", () => {
     ],
     // Admin/meta scope is not surfaced.
     ["activity-log-list", 'call activity-log-list {"scope":"Team"}'],
-  ])(
-    "returns nothing for unscoped/admin activity-log read: %s",
-    (subTool, cmd) => {
-      expect(classifyPostHogExecCall(subTool, cmd)).toEqual([]);
-    },
-  );
-
-  it("returns nothing for an activity-log read with no command text", () => {
-    expect(classifyPostHogExecCall("activity-log-list")).toEqual([]);
+    // No command text to read a scope from.
+    ["activity-log-list", undefined],
+  ])("returns nothing for %s", (subTool, cmd) => {
+    expect(classifyPostHogExecCall(subTool, cmd)).toEqual([]);
   });
 });
