@@ -16,7 +16,6 @@ import { toast } from "@renderer/utils/toast";
 import { useNavigationStore } from "@stores/navigationStore";
 import { logger } from "@utils/logger";
 import { useCallback, useState } from "react";
-import { useWorkThreadsStore } from "../stores/workThreadsStore";
 
 const log = logger.scope("work-home-prompt");
 
@@ -29,7 +28,6 @@ async function resolveRepoPath(folders: string[]): Promise<string> {
 
 export function WorkHomePrompt() {
   const navigateToWorkTask = useNavigationStore((s) => s.navigateToWorkTask);
-  const addThread = useWorkThreadsStore((s) => s.addThread);
   const { folders, isLoaded: foldersLoaded } = useFolders();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -89,7 +87,6 @@ export function WorkHomePrompt() {
 
         const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
         const result = await taskService.createTask(input, (output) => {
-          addThread(output.task.id);
           navigateToWorkTask(output.task.id);
         });
 
@@ -113,7 +110,6 @@ export function WorkHomePrompt() {
       folders,
       foldersLoaded,
       isSubmitting,
-      addThread,
       navigateToWorkTask,
       adapter,
       currentModel,

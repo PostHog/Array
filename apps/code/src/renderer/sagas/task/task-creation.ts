@@ -61,11 +61,7 @@ export interface TaskCreationInput {
   cloudRunSource?: CloudRunSource;
   signalReportId?: string;
   originProduct?: string;
-  /**
-   * HACKATHON SHORTCUT: see `features/work/hooks/useWorkThreadTasks.ts`. Used by
-   * Work mode to stash `{ work_thread: true, collaborators: [] }` on the task
-   * via the existing JSON field, without backend changes.
-   */
+  /** Free-form JSON bag persisted on the task's `repository_config` field. */
   repositoryConfig?: Record<string, unknown>;
   /** When set, this task is a project chat — the agent gets the Project
    *  Canvas MCP attached and the customInstructions describing the project. */
