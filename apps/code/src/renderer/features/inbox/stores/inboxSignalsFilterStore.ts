@@ -21,7 +21,8 @@ export type SourceProduct =
   | "linear"
   | "zendesk"
   | "conversations"
-  | "pganalyze";
+  | "pganalyze"
+  | "signals_scout";
 
 const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
   "ready",

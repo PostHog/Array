@@ -25,7 +25,7 @@ type SourceProduct = SignalSourceConfig["source_product"];
 type SourceType = SignalSourceConfig["source_type"];
 
 const SOURCE_TYPE_MAP: Record<
-  Exclude<SourceProduct, "error_tracking" | "llm_analytics">,
+  Exclude<SourceProduct, "error_tracking" | "llm_analytics" | "signals_scout">,
   SourceType
 > = {
   session_replay: "session_analysis_cluster",
@@ -369,7 +369,7 @@ export function useSignalSourceManager() {
                 SOURCE_TYPE_MAP[
                   product as Exclude<
                     SourceProduct,
-                    "error_tracking" | "llm_analytics"
+                    "error_tracking" | "llm_analytics" | "signals_scout"
                   >
                 ],
               enabled: true,

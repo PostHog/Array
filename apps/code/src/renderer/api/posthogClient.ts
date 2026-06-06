@@ -101,7 +101,8 @@ export interface SignalSourceConfig {
     | "zendesk"
     | "conversations"
     | "error_tracking"
-    | "pganalyze";
+    | "pganalyze"
+    | "signals_scout";
   source_type:
     | "session_analysis_cluster"
     | "evaluation"
@@ -109,7 +110,8 @@ export interface SignalSourceConfig {
     | "ticket"
     | "issue_created"
     | "issue_reopened"
-    | "issue_spiking";
+    | "issue_spiking"
+    | "cross_source_issue";
   enabled: boolean;
   config: Record<string, unknown>;
   created_at: string;
