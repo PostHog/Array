@@ -98,4 +98,16 @@ describe("buildGatewayPropertyHeaders", () => {
       );
     },
   );
+
+  it("strips characters an HTTP header value cannot carry", () => {
+    expect(buildGatewayPropertyHeaders({ task_title: "don’t🚀ship" })).toBe(
+      "x-posthog-property-task_title: dontship",
+    );
+  });
+
+  it("keeps latin1 characters such as accents", () => {
+    expect(buildGatewayPropertyHeaders({ task_title: "café" })).toBe(
+      "x-posthog-property-task_title: café",
+    );
+  });
 });
