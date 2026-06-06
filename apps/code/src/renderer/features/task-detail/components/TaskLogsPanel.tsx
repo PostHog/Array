@@ -60,6 +60,7 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
     cloudStatus,
     errorTitle,
     errorMessage,
+    errorRetryable,
   } = useSessionViewState(taskId, task);
 
   useSessionConnection({
@@ -145,6 +146,7 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
               hasError={hasError}
               errorTitle={errorTitle}
               errorMessage={errorMessage ?? undefined}
+              errorRetryable={errorRetryable}
               hideInput={hideInput}
               onRetry={handleRetry}
               onNewSession={isCloud ? undefined : handleNewSession}

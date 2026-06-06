@@ -45,7 +45,6 @@ import type { IStoragePaths } from "@posthog/platform/storage-paths";
 import { isAuthError } from "@shared/errors";
 import type { AcpMessage } from "@shared/types/session-events";
 import { inject, injectable, preDestroy } from "inversify";
-import type { IDefaultAdditionalDirectoryRepository } from "../../db/repositories/default-additional-directory-repository";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { isDevBuild } from "../../utils/env";
@@ -329,8 +328,6 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     private readonly appMeta: IAppMeta,
     @inject(MAIN_TOKENS.StoragePaths)
     private readonly storagePaths: IStoragePaths,
-    @inject(MAIN_TOKENS.DefaultAdditionalDirectoryRepository)
-    private readonly defaultAdditionalDirectoryRepository: IDefaultAdditionalDirectoryRepository,
     @inject(MAIN_TOKENS.WorkspaceRepository)
     private readonly workspaceRepository: IWorkspaceRepository,
   ) {
@@ -353,7 +350,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
   }
 
   private getCodexBinaryPath(): string {
-    return this.bundledResources.resolve(".vite/build/codex-acp/codex-acp");
+    const binary = process.platform === "win32" ? "codex-acp.exe" : "codex-acp";
+    return this.bundledResources.resolve(`.vite/build/codex-acp/${binary}`);
   }
 
   /**
@@ -535,20 +533,6 @@ When creating pull requests, add the following footer at the end of the PR descr
     return { append: prompt };
   }
 
-  private resolveAdditionalDirectories(taskId: string): string[] {
-    const defaults = this.defaultAdditionalDirectoryRepository.list();
-    const taskScoped =
-      this.workspaceRepository.getAdditionalDirectories(taskId);
-    const seen = new Set<string>();
-    const merged: string[] = [];
-    for (const path of [...defaults, ...taskScoped]) {
-      if (!path || seen.has(path)) continue;
-      seen.add(path);
-      merged.push(path);
-    }
-    return merged;
-  }
-
   async startSession(params: StartSessionInput): Promise<SessionResponse> {
     this.validateSessionParams(params);
     const config = this.toSessionConfig(params);
@@ -597,7 +581,9 @@ When creating pull requests, add the following footer at the end of the PR descr
     const repoPath = taskId === "__preview__" ? tmpdir() : rawRepoPath;
 
     const additionalDirectories =
-      taskId === "__preview__" ? [] : this.resolveAdditionalDirectories(taskId);
+      taskId === "__preview__"
+        ? []
+        : this.workspaceRepository.getAdditionalDirectories(taskId);
 
     if (!isRetry) {
       const existing = this.sessions.get(taskRunId);

@@ -2,7 +2,9 @@ import type { ChildProcess } from "node:child_process";
 import { execSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
+import { MakerDeb } from "@electron-forge/maker-deb";
 import { MakerDMG } from "@electron-forge/maker-dmg";
+import { MakerRpm } from "@electron-forge/maker-rpm";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
 import { VitePlugin } from "@electron-forge/plugin-vite";
@@ -143,6 +145,18 @@ function copySync(dependency: string, destinationRoot: string, source: string) {
 
 const hasAssetsCar = existsSync("build/Assets.car");
 
+const sharedLinuxOptions = {
+  name: "posthog-code",
+  productName: "PostHog Code",
+  genericName: "Code Editor",
+  description: "PostHog Code desktop app",
+  bin: "posthog-code",
+  icon: "./build/app-icon.png",
+  categories: ["Development"],
+  homepage: "https://github.com/PostHog/code",
+  mimeType: ["x-scheme-handler/posthog-code"],
+};
+
 const config: ForgeConfig = {
   packagerConfig: {
     asar: {
@@ -204,6 +218,19 @@ const config: ForgeConfig = {
         icon: "./build/app-icon.png",
         categories: ["Development"],
         bin: "PostHog Code",
+      },
+    }),
+    new MakerDeb({
+      options: {
+        ...sharedLinuxOptions,
+        section: "devel",
+        maintainer: "PostHog <eng@posthog.com>",
+      },
+    }),
+    new MakerRpm({
+      options: {
+        ...sharedLinuxOptions,
+        license: "MIT",
       },
     }),
     new MakerZIP({}, ["darwin", "linux"]),

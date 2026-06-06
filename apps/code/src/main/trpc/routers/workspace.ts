@@ -3,6 +3,8 @@ import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
 import type { GitService } from "../../services/git/service";
 import {
+  cachedPrUrlInput,
+  cachedPrUrlOutput,
   createWorkspaceInput,
   createWorkspaceOutput,
   deleteWorkspaceInput,
@@ -223,9 +225,15 @@ export const workspaceRouter = router({
       getGitService().getTaskPrStatus(input.taskId, input.cloudPrUrl),
     ),
 
+  getCachedPrUrl: publicProcedure
+    .input(cachedPrUrlInput)
+    .output(cachedPrUrlOutput)
+    .query(({ input }) => getGitService().getCachedPrUrl(input.taskId)),
+
   onError: subscribe(WorkspaceServiceEvent.Error),
   onWarning: subscribe(WorkspaceServiceEvent.Warning),
   onPromoted: subscribe(WorkspaceServiceEvent.Promoted),
   onBranchChanged: subscribe(WorkspaceServiceEvent.BranchChanged),
   onLinkedBranchChanged: subscribe(WorkspaceServiceEvent.LinkedBranchChanged),
+  onTaskPrInfoChanged: subscribe(WorkspaceServiceEvent.TaskPrInfoChanged),
 });

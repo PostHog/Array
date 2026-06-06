@@ -1,6 +1,6 @@
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { SettingRow } from "@features/settings/components/SettingRow";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { closeSettings } from "@features/settings/hooks/useOpenSettings";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useSetupStore } from "@features/setup/stores/setupStore";
 import { useTourStore } from "@features/tour/stores/tourStore";
@@ -26,7 +26,7 @@ export function AdvancedSettings() {
           variant="soft"
           size="1"
           onClick={() => {
-            useSettingsDialogStore.getState().close();
+            closeSettings();
             useOnboardingStore.getState().resetOnboarding();
             useSetupStore.getState().resetSetup();
             useTourStore.getState().resetTours();

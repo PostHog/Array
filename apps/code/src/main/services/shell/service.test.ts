@@ -374,6 +374,20 @@ describe("ShellService", () => {
       expect(service.check("session-1")).toBe(false);
     });
 
+    it("emits an exit event for explicit teardown", async () => {
+      const exitHandler = vi.fn();
+      service.on(ShellEvent.Exit, exitHandler);
+
+      await service.create("session-1");
+
+      service.destroy("session-1");
+
+      expect(exitHandler).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        exitCode: 130,
+      });
+    });
+
     it("does nothing for non-existent session", () => {
       expect(() => service.destroy("nonexistent")).not.toThrow();
     });

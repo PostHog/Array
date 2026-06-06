@@ -149,7 +149,7 @@ export const AgentMessage = memo(function AgentMessage({
   }, [content]);
 
   return (
-    <Box className="group/msg relative py-1 pl-3 text-[13px] [&>*:last-child]:mb-0">
+    <Box className="group/msg relative py-1 pl-3 text-[13px] [&>*:last-child]:mb-0 [&_p]:leading-[1.9]">
       <MarkdownRenderer
         content={content}
         componentsOverride={agentComponents}

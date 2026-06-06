@@ -14,27 +14,49 @@ import {
 } from "phosphor-react-native";
 import { usePostHog } from "posthog-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import {
+  ActivityIndicator,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  ScrollView,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useUserQuery } from "@/features/auth";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { getReportRepository } from "@/features/inbox/api";
 import { DiscussReportSheet } from "@/features/inbox/components/DiscussReportSheet";
-import { DismissReportSheet } from "@/features/inbox/components/DismissReportSheet";
+import {
+  type DismissReportResult,
+  DismissReportSheet,
+} from "@/features/inbox/components/DismissReportSheet";
 import { SignalCard } from "@/features/inbox/components/SignalCard";
-import { SuggestedReviewers } from "@/features/inbox/components/SuggestedReviewers";
+import {
+  type ReviewerActionExtra,
+  SuggestedReviewers,
+} from "@/features/inbox/components/SuggestedReviewers";
+import { DISMISSAL_REASON_OPTIONS } from "@/features/inbox/constants";
+import { useInboxEngagementTracker } from "@/features/inbox/hooks/useInboxEngagementTracker";
 import {
   useInboxReport,
   useInboxReportArtefacts,
   useInboxReportSignals,
 } from "@/features/inbox/hooks/useInboxReports";
+import { useInboxStore } from "@/features/inbox/stores/inboxStore";
 import type {
   ActionabilityJudgmentContent,
   SignalFindingContent,
   SignalReportPriority,
   SignalReportStatus,
-  SuggestedReviewer,
+  SuggestedReviewersArtefact,
 } from "@/features/inbox/types";
 import { inboxStatusLabel } from "@/features/inbox/utils";
+import {
+  computeReportAgeHours,
+  type InboxReportActionType,
+  useAnalytics,
+} from "@/lib/analytics";
 import { useThemeColors } from "@/lib/theme";
 
 const statusColorMap: Record<string, { bg: string; text: string }> = {
@@ -108,12 +130,19 @@ function ActionabilityBadge({ value }: { value: string }) {
 }
 
 export default function ReportDetailScreen() {
-  const { id: reportId } = useLocalSearchParams<{ id: string }>();
+  // Catch-all route: `id` arrives as string[] for `/inbox/<uuid>/<slug>` and
+  // we only read the first segment (the UUID). The slug is purely cosmetic;
+  // receivers ignore everything past the UUID, matching the desktop contract
+  // in `apps/code/src/shared/deeplink.ts`. Expo-router can hand us either a
+  // string or string[] depending on the URL shape, so tolerate both.
+  const { id: idParam } = useLocalSearchParams<{ id: string | string[] }>();
+  const reportId = Array.isArray(idParam) ? idParam[0] : idParam;
   const router = useRouter();
   const themeColors = useThemeColors();
   const insets = useSafeAreaInsets();
   const posthog = usePostHog();
   const { data: report, isLoading, error } = useInboxReport(reportId ?? null);
+  const { data: me } = useUserQuery();
   const [reportRepo, setReportRepo] = useState<string | null>(null);
   const [dismissOpen, setDismissOpen] = useState(false);
   const [discussOpen, setDiscussOpen] = useState(false);
@@ -121,6 +150,76 @@ export default function ReportDetailScreen() {
 
   const artefactsQuery = useInboxReportArtefacts(reportId ?? null);
   const signalsQuery = useInboxReportSignals(reportId ?? null);
+
+  // ── Engagement analytics ────────────────────────────────────────────────
+  const analytics = useAnalytics();
+  const lastVisibleReportIds = useInboxStore((s) => s.lastVisibleReportIds);
+  const previousOpenedReportId = useInboxStore((s) => s.previousOpenedReportId);
+  const setPreviousOpenedReportId = useInboxStore(
+    (s) => s.setPreviousOpenedReportId,
+  );
+  const rank = useMemo(() => {
+    if (!reportId) return -1;
+    const idx = lastVisibleReportIds.indexOf(reportId);
+    return idx;
+  }, [reportId, lastVisibleReportIds]);
+  const listSize = lastVisibleReportIds.length;
+  const tracker = useInboxEngagementTracker({
+    analytics,
+    report: report ?? null,
+    rank,
+    listSize,
+    openMethod: "click",
+    previousReportId: previousOpenedReportId,
+  });
+  // Remember this report as the "previous" once it's been opened so the next
+  // OPENED event can chain to it.
+  useEffect(() => {
+    if (!reportId) return;
+    setPreviousOpenedReportId(reportId);
+  }, [reportId, setPreviousOpenedReportId]);
+
+  const handleScroll = useCallback(
+    (_event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      tracker.signalScroll();
+    },
+    [tracker],
+  );
+
+  const fireReviewerAction = useCallback(
+    (action_type: InboxReportActionType, extra?: ReviewerActionExtra) => {
+      if (!report) return;
+      tracker.signalAction({
+        report_id: report.id,
+        report_title: report.title ?? null,
+        report_age_hours: computeReportAgeHours(report.created_at),
+        action_type,
+        surface: "detail_pane",
+        is_bulk: false,
+        bulk_size: 1,
+        ...extra,
+      });
+    },
+    [report, tracker],
+  );
+
+  const handleToggleSignals = useCallback(() => {
+    // Fire analytics outside the state updater — Strict Mode double-invokes
+    // updaters in development, which would double-fire the event.
+    const next = !signalsExpanded;
+    if (next && report) {
+      tracker.signalAction({
+        report_id: report.id,
+        report_title: report.title ?? null,
+        report_age_hours: computeReportAgeHours(report.created_at),
+        action_type: "expand_signal",
+        surface: "detail_pane",
+        is_bulk: false,
+        bulk_size: 1,
+      });
+    }
+    setSignalsExpanded(next);
+  }, [report, tracker, signalsExpanded]);
 
   useEffect(() => {
     if (!reportId) return;
@@ -148,13 +247,13 @@ export default function ReportDetailScreen() {
       return null;
     }, [artefacts]);
 
-  const suggestedReviewers = useMemo((): SuggestedReviewer[] => {
+  const reviewerArtefact = useMemo((): SuggestedReviewersArtefact | null => {
     for (const a of artefacts) {
       if (a.type === "suggested_reviewers") {
-        return (a.content as SuggestedReviewer[]) ?? [];
+        return a as SuggestedReviewersArtefact;
       }
     }
-    return [];
+    return null;
   }, [artefacts]);
 
   const findingsBySignalId = useMemo(() => {
@@ -181,6 +280,15 @@ export default function ReportDetailScreen() {
   const handleStartTask = useCallback(() => {
     if (!report) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    tracker.signalAction({
+      report_id: report.id,
+      report_title: report.title ?? null,
+      report_age_hours: computeReportAgeHours(report.created_at),
+      action_type: "create_pr",
+      surface: "detail_pane",
+      is_bulk: false,
+      bulk_size: 1,
+    });
     const prompt = `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`;
     router.push({
       pathname: "/task",
@@ -190,12 +298,41 @@ export default function ReportDetailScreen() {
         signalReport: report.id,
       },
     });
-  }, [report, router, reportRepo]);
+  }, [report, router, reportRepo, tracker]);
 
-  const handleDismissed = useCallback(() => {
-    setDismissOpen(false);
-    if (router.canGoBack()) router.back();
-  }, [router]);
+  const handleDismissed = useCallback(
+    (result: DismissReportResult) => {
+      setDismissOpen(false);
+      if (report) {
+        const reasonOption = DISMISSAL_REASON_OPTIONS.find(
+          (o) => o.value === result.reason,
+        );
+        const isSnooze =
+          reasonOption !== undefined &&
+          "snoozesInsteadOfDismiss" in reasonOption &&
+          reasonOption.snoozesInsteadOfDismiss === true;
+        tracker.signalAction({
+          report_id: report.id,
+          report_title: report.title ?? null,
+          report_age_hours: computeReportAgeHours(report.created_at),
+          action_type: isSnooze ? "snooze" : "dismiss",
+          surface: "detail_pane",
+          is_bulk: false,
+          bulk_size: 1,
+          ...(isSnooze
+            ? {}
+            : {
+                dismissal_reason: result.reason,
+                ...(result.note
+                  ? { dismissal_note: result.note.slice(0, 1000) }
+                  : {}),
+              }),
+        });
+      }
+      if (router.canGoBack()) router.back();
+    },
+    [router, report, tracker],
+  );
 
   const handleDiscussSubmit = useCallback(
     ({ prompt, question }: { prompt: string; question: string }) => {
@@ -287,6 +424,8 @@ export default function ReportDetailScreen() {
           paddingTop: 16,
           paddingBottom: insets.bottom + 100,
         }}
+        onScroll={handleScroll}
+        scrollEventThrottle={250}
       >
         {/* Badges row */}
         <View className="mb-3 flex-row flex-wrap items-center gap-1.5">
@@ -358,13 +497,20 @@ export default function ReportDetailScreen() {
         )}
 
         {/* Suggested reviewers */}
-        <SuggestedReviewers reviewers={suggestedReviewers} />
+        {reviewerArtefact && (
+          <SuggestedReviewers
+            reportId={report.id}
+            artefact={reviewerArtefact}
+            meUuid={me?.uuid}
+            fireAction={fireReviewerAction}
+          />
+        )}
 
         {/* Signals */}
         {signals.length > 0 && (
           <View className="mb-4">
             <Pressable
-              onPress={() => setSignalsExpanded((v) => !v)}
+              onPress={handleToggleSignals}
               hitSlop={6}
               accessibilityRole="button"
               accessibilityState={{ expanded: signalsExpanded }}
@@ -455,6 +601,7 @@ export default function ReportDetailScreen() {
       <DiscussReportSheet
         visible={discussOpen}
         reportId={report.id}
+        reportTitle={report.title}
         onClose={() => setDiscussOpen(false)}
         onSubmit={handleDiscussSubmit}
       />

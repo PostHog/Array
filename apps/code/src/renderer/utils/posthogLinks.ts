@@ -9,7 +9,7 @@ export interface LinkOverrides {
 
 function resolveProjectId(override?: number | null): number | null {
   if (override != null) return override;
-  return getCachedAuthState().projectId ?? null;
+  return getCachedAuthState().currentProjectId ?? null;
 }
 
 function withProjectId(

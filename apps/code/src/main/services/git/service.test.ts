@@ -23,10 +23,13 @@ vi.mock("../../utils/logger.js", () => ({
   },
 }));
 
+import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
 import type { AgentService } from "../agent/service";
 import type { LlmGatewayService } from "../llm-gateway/service";
 import type { WorkspaceService } from "../workspace/service";
 import { GitService, mapPrState } from "./service";
+
+const stubWorkspaceRepo = {} as IWorkspaceRepository;
 
 describe("GitService.getPrChangedFiles", () => {
   let service: GitService;
@@ -37,6 +40,7 @@ describe("GitService.getPrChangedFiles", () => {
       {} as LlmGatewayService,
       {} as WorkspaceService,
       { getSessionEnvForTask: async () => ({}) } as unknown as AgentService,
+      stubWorkspaceRepo,
     );
   });
 
@@ -149,6 +153,7 @@ describe("GitService.getGhAuthToken", () => {
       {} as LlmGatewayService,
       {} as WorkspaceService,
       { getSessionEnvForTask: async () => ({}) } as unknown as AgentService,
+      stubWorkspaceRepo,
     );
   });
 
@@ -211,6 +216,7 @@ describe("GitService.getPrUrlForBranch", () => {
       {} as LlmGatewayService,
       {} as WorkspaceService,
       { getSessionEnvForTask: async () => ({}) } as unknown as AgentService,
+      stubWorkspaceRepo,
     );
   });
 
@@ -329,6 +335,7 @@ describe("GitService.getPrReviewComments", () => {
       {} as LlmGatewayService,
       {} as WorkspaceService,
       { getSessionEnvForTask: async () => ({}) } as unknown as AgentService,
+      stubWorkspaceRepo,
     );
   });
 
@@ -487,6 +494,7 @@ describe("GitService.resolveReviewThread", () => {
       {} as LlmGatewayService,
       {} as WorkspaceService,
       { getSessionEnvForTask: async () => ({}) } as unknown as AgentService,
+      stubWorkspaceRepo,
     );
   });
 

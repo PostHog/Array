@@ -18,6 +18,25 @@ function severityToType(severity?: DialogSeverity): MessageBoxOptions["type"] {
   return severity ?? "none";
 }
 
+/**
+ * Resolve the window to parent a native dialog to.
+ *
+ * `BrowserWindow.getFocusedWindow()` returns `null` whenever the app has no
+ * focused window — which happens during onboarding flows that hand focus to
+ * external windows (OS auth, the GitHub device-login browser tab, etc.). An
+ * unparented dialog can then open behind the app window or off-screen, looking
+ * completely unresponsive to the user. Fall back to a visible window and focus
+ * it so the dialog is always parented to and rendered on top of a real window.
+ */
+function resolveDialogParent(): BrowserWindow | null {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused) return focused;
+  const windows = BrowserWindow.getAllWindows();
+  const parent = windows.find((w) => w.isVisible()) ?? windows[0] ?? null;
+  parent?.focus();
+  return parent;
+}
+
 function buildProperties(options: PickFileOptions): OpenDialogProperty[] {
   const properties: OpenDialogProperty[] = ["treatPackageAsDirectory"];
   if (options.filesAndDirectories) {
@@ -37,7 +56,7 @@ function buildProperties(options: PickFileOptions): OpenDialogProperty[] {
 @injectable()
 export class ElectronDialog implements IDialog {
   public async confirm(options: ConfirmOptions): Promise<number> {
-    const parent = BrowserWindow.getFocusedWindow();
+    const parent = resolveDialogParent();
     const electronOptions: MessageBoxOptions = {
       type: severityToType(options.severity),
       title: options.title,
@@ -54,7 +73,7 @@ export class ElectronDialog implements IDialog {
   }
 
   public async pickFile(options: PickFileOptions): Promise<string[]> {
-    const parent = BrowserWindow.getFocusedWindow();
+    const parent = resolveDialogParent();
     const electronOptions: OpenDialogOptions = {
       title: options.title,
       properties: buildProperties(options),

@@ -1,8 +1,10 @@
 import { SignInCard } from "@features/auth/components/SignInCard";
 import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient";
-import { useSelectProjectMutation } from "@features/auth/hooks/authMutations";
 import {
-  authKeys,
+  useSelectProjectMutation,
+  useSwitchOrgMutation,
+} from "@features/auth/hooks/authMutations";
+import {
   useAuthStateFetched,
   useAuthStateValue,
   useCurrentUser,
@@ -36,7 +38,7 @@ import {
 } from "@renderer/styles/fieldTrigger";
 import { BILLING_FLAG } from "@shared/constants";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { AnimatePresence, motion } from "framer-motion";
@@ -62,8 +64,8 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
   const isAuthenticated =
     useAuthStateValue((state) => state.status) === "authenticated";
   const selectProjectMutation = useSelectProjectMutation();
-  const currentProjectId = useAuthStateValue((state) => state.projectId);
-  const { projects, currentProject, currentUser, isLoading } = useProjects();
+  const currentProjectId = useAuthStateValue((state) => state.currentProjectId);
+  const { projects, currentProject } = useProjects();
   const [projectOpen, setProjectOpen] = useState(false);
   const [orgOpen, setOrgOpen] = useState(false);
   const [isSwitchingOrg, setIsSwitchingOrg] = useState(false);
@@ -71,9 +73,11 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
   const projectAnchorRef = useRef<HTMLButtonElement>(null);
 
   const client = useOptionalAuthenticatedClient();
-  const queryClient = useQueryClient();
-  const { data: fullUser } = useCurrentUser({ client });
+  const { data: fullUser, isLoading } = useCurrentUser({
+    client,
+  });
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  const switchOrgTrpcMutation = useSwitchOrgMutation();
 
   const organizations = useMemo<Org[]>(() => {
     if (!fullUser?.organizations) return [];
@@ -105,11 +109,7 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
 
   const switchOrgMutation = useMutation({
     mutationFn: async (orgId: string) => {
-      if (!client) return;
-      await client.switchOrganization(orgId);
-      await queryClient.invalidateQueries({
-        queryKey: authKeys.currentUsers(),
-      });
+      await switchOrgTrpcMutation.mutateAsync(orgId);
       if (billingEnabled) {
         void useSeatStore.getState().fetchSeat({ autoProvision: true });
       }
@@ -370,7 +370,7 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
                     className="text-(--green-9)"
                   />
                   <Text className="text-(--green-11) text-sm">
-                    Signed in as {currentUser?.email}
+                    Signed in as {fullUser?.email}
                   </Text>
                 </Flex>
               )}

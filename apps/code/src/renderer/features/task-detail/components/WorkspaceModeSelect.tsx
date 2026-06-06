@@ -1,5 +1,5 @@
+import { openSettings } from "@features/settings/hooks/useOpenSettings";
 import { useSandboxEnvironments } from "@features/settings/hooks/useSandboxEnvironments";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
 import {
@@ -72,13 +72,12 @@ export function WorkspaceModeSelect({
     useFeatureFlag("twig-cloud-mode-toggle") || import.meta.env.DEV;
 
   const { environments } = useSandboxEnvironments();
-  const openSettings = useSettingsDialogStore((s) => s.open);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const handleAddEnvironment = useCallback(() => {
     setMenuOpen(false);
     openSettings("cloud-environments", "create");
-  }, [openSettings]);
+  }, []);
 
   const showCloud = overrideModes
     ? overrideModes.includes("cloud")

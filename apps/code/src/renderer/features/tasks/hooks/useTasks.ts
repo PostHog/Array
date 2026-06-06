@@ -2,12 +2,13 @@ import { getSessionService } from "@features/sessions/service/service";
 import { pinnedTasksApi } from "@features/sidebar/hooks/usePinnedTasks";
 import { taskKeys } from "@features/tasks/hooks/taskKeys";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
+import { useAppView } from "@hooks/useAppView";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import { useMeQuery } from "@hooks/useMeQuery";
+import { openTaskInput } from "@hooks/useOpenTask";
 import type { Schemas } from "@renderer/api/generated";
 import { useFocusStore } from "@renderer/stores/focusStore";
-import { useNavigationStore } from "@renderer/stores/navigationStore";
 import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
@@ -292,7 +293,7 @@ interface DeleteTaskOptions {
 
 export function useDeleteTask() {
   const queryClient = useQueryClient();
-  const { view, navigateToTaskInput } = useNavigationStore();
+  const view = useAppView();
 
   const mutation = useAuthenticatedMutation(
     async (client, taskId: string) => {
@@ -376,8 +377,8 @@ export function useDeleteTask() {
       }
 
       // Navigate away if viewing the deleted task
-      if (view.type === "task-detail" && view.data?.id === taskId) {
-        navigateToTaskInput();
+      if (view.type === "task-detail" && view.taskId === taskId) {
+        openTaskInput();
       }
 
       pinnedTasksApi.unpin(taskId);
@@ -386,7 +387,7 @@ export function useDeleteTask() {
 
       return true;
     },
-    [mutation, view, navigateToTaskInput],
+    [mutation, view],
   );
 
   return { ...mutation, deleteWithConfirm };

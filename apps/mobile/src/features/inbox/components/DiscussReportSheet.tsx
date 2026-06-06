@@ -11,12 +11,13 @@ import {
   View,
 } from "react-native";
 import { SheetContainer } from "@/components/SheetContainer";
-import { customSchemeUrl, paths } from "@/lib/deep-links";
+import { inboxReportShareUrl } from "@/lib/deep-links";
 import { useThemeColors } from "@/lib/theme";
 
 interface DiscussReportSheetProps {
   visible: boolean;
   reportId: string;
+  reportTitle?: string | null;
   onClose: () => void;
   onSubmit: (params: { prompt: string; question: string }) => void;
 }
@@ -24,6 +25,7 @@ interface DiscussReportSheetProps {
 export function DiscussReportSheet({
   visible,
   reportId,
+  reportTitle,
   onClose,
   onSubmit,
 }: DiscussReportSheetProps) {
@@ -37,7 +39,7 @@ export function DiscussReportSheet({
   const handleSubmit = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const trimmed = question.trim();
-    const reportLink = customSchemeUrl(paths.inboxReport(reportId));
+    const reportLink = inboxReportShareUrl(reportId, reportTitle);
     const prompt = buildDiscussReportPrompt({
       reportId,
       reportLink,

@@ -1,4 +1,3 @@
-import { readGithubTokenFromEnv } from "@posthog/git/signed-commit";
 import type { Logger } from "./logger";
 
 /**
@@ -37,11 +36,6 @@ export function isCloudRun(
     return meta.environment === "cloud";
   }
   return !!process.env.IS_SANDBOX;
-}
-
-/** The GitHub token available to the sandbox, if any. */
-export function resolveGithubToken(): string | undefined {
-  return readGithubTokenFromEnv();
 }
 
 export function unreachable(value: never, logger: Logger): void {

@@ -8,7 +8,7 @@ import { ArrowSquareOutIcon, InfoIcon } from "@phosphor-icons/react";
 import { Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 
 export function CloudGithubMissingNotice() {
-  const projectId = useAuthStateValue((s) => s.projectId);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const { hasGithubIntegration: hasTeamGithubIntegration } =
     useRepositoryIntegration();

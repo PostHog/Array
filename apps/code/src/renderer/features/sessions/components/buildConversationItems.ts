@@ -85,6 +85,8 @@ interface ProgressCardState {
     steps: Step[];
     isActive: boolean;
   };
+  /** Index in `items` where this card sits. */
+  itemIndex: number;
 }
 
 interface TurnState {
@@ -102,9 +104,13 @@ interface TurnState {
   itemCount: number;
 }
 
-interface ItemBuilder {
+export interface ItemBuilder {
   items: ConversationItem[];
   currentTurn: TurnState | null;
+  /** Index in `items` where the current turn's first item sits. Lets an
+   *  incremental consumer treat everything before it (completed turns) as
+   *  frozen and only re-derive the active turn. */
+  currentTurnStartIndex: number;
   pendingPrompts: Map<number, TurnState>;
   shellExecutes: Map<string, { item: UserShellExecute; index: number }>;
   isCompacting: boolean;
@@ -116,18 +122,25 @@ interface ItemBuilder {
   progressCards: Map<string, ProgressCardState>;
   /** Prompt ids of turns the app flagged as network-failed (renderer-known). */
   connectionLostPromptIds?: number[];
+  /** Lowest item index touched by a progress event since it was last reset.
+   *  An incremental consumer resets this before feeding a batch of events and
+   *  reads it after to detect a card being mutated inside an already frozen
+   *  (completed) turn, which would otherwise go unseen. */
+  lowestTouchedProgressIndex: number;
 }
 
-function createItemBuilder(): ItemBuilder {
+export function createItemBuilder(): ItemBuilder {
   let idCounter = 0;
   return {
     items: [],
     currentTurn: null,
+    currentTurnStartIndex: 0,
     pendingPrompts: new Map(),
     shellExecutes: new Map(),
     isCompacting: false,
     nextId: () => idCounter++,
     progressCards: new Map(),
+    lowestTouchedProgressIndex: Number.POSITIVE_INFINITY,
   };
 }
 
@@ -140,7 +153,7 @@ function isThoughtItem(
   );
 }
 
-function markThoughtCompletion(items: ConversationItem[]) {
+export function markThoughtCompletion(items: ConversationItem[]) {
   const seenContexts = new Set<TurnContext>();
 
   for (let i = items.length - 1; i >= 0; i--) {
@@ -186,23 +199,53 @@ export function buildConversationItems(
   b.connectionLostPromptIds = options?.connectionLostPromptIds;
 
   for (const event of events) {
-    const msg = event.message;
-
-    if (isJsonRpcNotification(msg)) {
-      handleNotification(b, msg, event.ts, options);
-      continue;
-    }
-
-    if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
-      handlePromptRequest(b, msg, event.ts);
-      continue;
-    }
-
-    if (isJsonRpcResponse(msg) && b.pendingPrompts.has(msg.id)) {
-      handlePromptResponse(b, msg, event.ts);
-    }
+    processEvent(b, event, options);
   }
 
+  finalizeBuilder(b, isPromptPending);
+
+  const lastTurnInfo = readLastTurnInfo(b);
+
+  return { items: b.items, lastTurnInfo, isCompacting: b.isCompacting };
+}
+
+/**
+ * Apply one raw event to the builder. This is the append-only core: it never
+ * runs end-of-stream finalization, so it is safe to call incrementally as new
+ * events arrive without corrupting prior state.
+ */
+export function processEvent(
+  b: ItemBuilder,
+  event: AcpMessage,
+  options?: BuildConversationOptions,
+) {
+  const msg = event.message;
+
+  if (isJsonRpcNotification(msg)) {
+    handleNotification(b, msg, event.ts, options);
+    return;
+  }
+
+  if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
+    handlePromptRequest(b, msg, event.ts);
+    return;
+  }
+
+  if (isJsonRpcResponse(msg) && b.pendingPrompts.has(msg.id)) {
+    handlePromptResponse(b, msg, event.ts);
+  }
+}
+
+/**
+ * End-of-stream finalization: speculative completions that assume no further
+ * events arrive. Mutates the builder in place, so an incremental consumer must
+ * only apply it to a snapshot it is about to read, never to state it will keep
+ * feeding events into.
+ */
+export function finalizeBuilder(
+  b: ItemBuilder,
+  isPromptPending: boolean | null,
+) {
   // Only mark unresolved prompts as cancelled when we actively track prompt
   // state (local sessions). For cloud sessions isPromptPending is
   // null, meaning that the response hasn't streamed "in" yet
@@ -221,16 +264,16 @@ export function buildConversationItems(
   }
 
   markThoughtCompletion(b.items);
+}
 
-  const lastTurnInfo: LastTurnInfo | null = b.currentTurn
+export function readLastTurnInfo(b: ItemBuilder): LastTurnInfo | null {
+  return b.currentTurn
     ? {
         isComplete: b.currentTurn.isComplete,
         durationMs: b.currentTurn.durationMs,
         stopReason: b.currentTurn.stopReason,
       }
     : null;
-
-  return { items: b.items, lastTurnInfo, isCompacting: b.isCompacting };
 }
 
 function handlePromptRequest(
@@ -264,6 +307,7 @@ function handlePromptRequest(
     turnComplete: false,
   };
 
+  b.currentTurnStartIndex = b.items.length;
   b.currentTurn = {
     id: turnId,
     promptId: msg.id,
@@ -406,6 +450,10 @@ function handleNotification(
     return;
   }
 
+  // `_posthog/resources_used` is intentionally NOT rendered inline here — the
+  // products are surfaced as a persistent, de-duplicated bar above the composer
+  // (see accumulateSessionResources / SessionResourcesBar).
+
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)) {
     const params = msg.params as { stopReason?: string } | undefined;
     if (!b.currentTurn) return;
@@ -486,6 +534,7 @@ function ensureProgressCardForGroup(
   const card: ProgressCardState = {
     steps: new Map(),
     renderItem,
+    itemIndex: b.items.length,
   };
   b.progressCards.set(group, card);
   pushItem(b, renderItem);
@@ -513,6 +562,9 @@ function handleProgress(b: ItemBuilder, rawParams: unknown, ts: number) {
   const status = normalizeStepStatus(params.status);
   const card = ensureProgressCardForGroup(b, params.group, ts);
   if (!card) return;
+  if (card.itemIndex < b.lowestTouchedProgressIndex) {
+    b.lowestTouchedProgressIndex = card.itemIndex;
+  }
   card.steps.set(params.step, {
     key: params.step,
     status,
@@ -551,6 +603,7 @@ function markCompactingStatusComplete(b: ItemBuilder) {
 function ensureImplicitTurn(b: ItemBuilder, ts: number) {
   if (b.currentTurn) return;
 
+  b.currentTurnStartIndex = b.items.length;
   const turnId = `turn-${ts}-implicit`;
   const toolCalls = new Map<string, ToolCall>();
   const childItems = new Map<string, ConversationItem[]>();

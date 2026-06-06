@@ -33,6 +33,10 @@ export const workspaces = sqliteTable(
     lastActivityAt: text(),
     /** JSON-encoded array of absolute paths the agent can access for this task. */
     additionalDirectories: text().notNull().default("[]"),
+    /** Cached PR URL for this task so task switches render without waiting on `gh`. */
+    prUrl: text(),
+    /** Cached PR state — values match the `SidebarPrState` union (open/merged/closed/draft). */
+    prState: text({ enum: ["open", "merged", "closed", "draft"] }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -104,6 +108,7 @@ export const authPreferences = sqliteTable(
     accountKey: text().notNull(),
     cloudRegion: text({ enum: ["us", "eu", "dev"] }).notNull(),
     lastSelectedProjectId: integer(),
+    lastSelectedOrgId: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -111,6 +116,25 @@ export const authPreferences = sqliteTable(
     index("auth_preferences_account_region_idx").on(
       t.accountKey,
       t.cloudRegion,
+    ),
+  ],
+);
+
+export const authOrgProjectPreferences = sqliteTable(
+  "auth_org_project_preferences",
+  {
+    accountKey: text().notNull(),
+    cloudRegion: text({ enum: ["us", "eu", "dev"] }).notNull(),
+    orgId: text().notNull(),
+    lastSelectedProjectId: integer().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("auth_org_project_account_region_org_idx").on(
+      t.accountKey,
+      t.cloudRegion,
+      t.orgId,
     ),
   ],
 );

@@ -10,14 +10,15 @@ import { useHandoffDialogStore } from "@features/sessions/stores/handoffDialogSt
 import { SidebarTrigger } from "@features/sidebar/components/SidebarTrigger";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
 import { SkillButtonsMenu } from "@features/skill-buttons/components/SkillButtonsMenu";
+import { useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
+import { useAppView } from "@hooks/useAppView";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { Cloud, Spinner } from "@phosphor-icons/react";
 import { Button as QuillButton } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { useHeaderStore } from "@stores/headerStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { isWindows } from "@utils/platform";
 import { useState } from "react";
 
@@ -108,14 +109,21 @@ const WINDOWS_TITLEBAR_INSET = 140;
 
 export function HeaderRow() {
   const content = useHeaderStore((state) => state.content);
-  const view = useNavigationStore((state) => state.view);
+  const view = useAppView();
 
   const sidebarOpen = useSidebarStore((state) => state.open);
   const sidebarWidth = useSidebarStore((state) => state.width);
   const isResizing = useSidebarStore((state) => state.isResizing);
   const setIsResizing = useSidebarStore((state) => state.setIsResizing);
 
-  const activeTaskId = view.type === "task-detail" ? view.data?.id : undefined;
+  const activeTaskId = view.type === "task-detail" ? view.taskId : undefined;
+  // Read the live task from the list cache instead of a stale snapshot off the
+  // memoized view, so header content (diff stats, status) stays current while
+  // the user remains on the task.
+  const { data: tasks } = useTasks();
+  const activeTask = activeTaskId
+    ? tasks?.find((t) => t.id === activeTaskId)
+    : undefined;
   const activeWorkspace = useWorkspace(activeTaskId);
   const isCloudTask = activeWorkspace?.mode === "cloud";
   const showTaskSection = view.type === "task-detail";
@@ -172,7 +180,7 @@ export function HeaderRow() {
         </Flex>
       )}
 
-      {showTaskSection && view.type === "task-detail" && view.data && (
+      {showTaskSection && view.type === "task-detail" && activeTask && (
         <Flex
           align="center"
           justify="end"
@@ -182,7 +190,7 @@ export function HeaderRow() {
           className="h-full max-w-[50%] shrink-0 overflow-hidden"
         >
           <div className="no-drag">
-            <SkillButtonsMenu taskId={view.data.id} />
+            <SkillButtonsMenu taskId={activeTask.id} />
           </div>
           {activeWorkspace &&
             (activeWorkspace.branchName || activeWorkspace.baseBranch) && (
@@ -198,18 +206,21 @@ export function HeaderRow() {
                     activeWorkspace.baseBranch ??
                     null
                   }
-                  taskId={view.data.id}
+                  taskId={activeTask.id}
                 />
               </div>
             )}
-          <DiffStatsBadge task={view.data} />
+          <DiffStatsBadge task={activeTask} />
 
           {isCloudTask ? (
-            <CloudGitInteractionHeader taskId={view.data.id} task={view.data} />
+            <CloudGitInteractionHeader
+              taskId={activeTask.id}
+              task={activeTask}
+            />
           ) : (
-            <LocalHandoffButton taskId={view.data.id} task={view.data} />
+            <LocalHandoffButton taskId={activeTask.id} task={activeTask} />
           )}
-          <TaskActionsMenu taskId={view.data.id} isCloud={isCloudTask} />
+          <TaskActionsMenu taskId={activeTask.id} isCloud={isCloudTask} />
         </Flex>
       )}
     </Flex>

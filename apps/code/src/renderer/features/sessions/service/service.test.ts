@@ -148,9 +148,14 @@ const mockAuth = vi.hoisted(() => ({
     status: "authenticated",
     bootstrapComplete: true,
     cloudRegion: "us",
-    projectId: 123,
-    availableProjectIds: [123],
-    availableOrgIds: [],
+    orgProjectsMap: {
+      "org-1": {
+        orgName: "Org 1",
+        projects: [{ id: 123, name: "Project 123" }],
+      },
+    },
+    currentOrgId: "org-1",
+    currentProjectId: 123,
     hasCodeAccess: true,
     needsScopeReauth: false,
   })),
@@ -310,7 +315,12 @@ vi.mock("@utils/session", async () => {
 });
 
 import { toast } from "@renderer/utils/toast";
-import { getSessionService, resetSessionService } from "./service";
+import type { StoredLogEntry } from "@shared/types/session-events";
+import {
+  derivePendingPermissionRequests,
+  getSessionService,
+  resetSessionService,
+} from "./service";
 
 // --- Test Fixtures ---
 
@@ -362,9 +372,14 @@ describe("SessionService", () => {
       status: "authenticated",
       bootstrapComplete: true,
       cloudRegion: "us",
-      projectId: 123,
-      availableProjectIds: [123],
-      availableOrgIds: [],
+      orgProjectsMap: {
+        "org-1": {
+          orgName: "Org 1",
+          projects: [{ id: 123, name: "Project 123" }],
+        },
+      },
+      currentOrgId: "org-1",
+      currentProjectId: 123,
       hasCodeAccess: true,
       needsScopeReauth: false,
     });
@@ -491,9 +506,14 @@ describe("SessionService", () => {
         status: "authenticated",
         bootstrapComplete: true,
         cloudRegion: "us",
-        projectId: 123,
-        availableProjectIds: [123],
-        availableOrgIds: [],
+        orgProjectsMap: {
+          "org-1": {
+            orgName: "Org 1",
+            projects: [{ id: 123, name: "Project 123" }],
+          },
+        },
+        currentOrgId: "org-1",
+        currentProjectId: 123,
         hasCodeAccess: true,
         needsScopeReauth: false,
       });
@@ -551,9 +571,9 @@ describe("SessionService", () => {
         status: "anonymous",
         bootstrapComplete: true,
         cloudRegion: null,
-        projectId: null,
-        availableProjectIds: [],
-        availableOrgIds: [],
+        orgProjectsMap: {},
+        currentOrgId: null,
+        currentProjectId: null,
         hasCodeAccess: null,
         needsScopeReauth: false,
       });
@@ -3306,9 +3326,14 @@ describe("SessionService", () => {
         status: "authenticated",
         bootstrapComplete: true,
         cloudRegion: "us",
-        projectId: 123,
-        availableProjectIds: [123],
-        availableOrgIds: [],
+        orgProjectsMap: {
+          "org-1": {
+            orgName: "Org 1",
+            projects: [{ id: 123, name: "Project 123" }],
+          },
+        },
+        currentOrgId: "org-1",
+        currentProjectId: 123,
         hasCodeAccess: true,
         needsScopeReauth: false,
       });
@@ -4985,5 +5010,67 @@ describe("SessionService", () => {
 
       vi.useRealTimers();
     });
+  });
+});
+
+describe("derivePendingPermissionRequests", () => {
+  const request = (requestId: string, toolCallId: string): StoredLogEntry => ({
+    type: "notification",
+    notification: {
+      method: "_posthog/permission_request",
+      params: {
+        requestId,
+        toolCallId,
+        toolCall: { toolCallId, title: "Ready to code?" },
+        options: [],
+      },
+    },
+  });
+  const resolved = (requestId: string): StoredLogEntry => ({
+    type: "notification",
+    notification: {
+      method: "_posthog/permission_resolved",
+      params: { requestId },
+    },
+  });
+
+  it("returns only unanswered requests, carrying their requestId", () => {
+    const pending = derivePendingPermissionRequests([
+      request("r1", "t1"),
+      resolved("r1"),
+      request("r2", "t2"),
+    ]);
+
+    expect(pending.map((p) => p.requestId)).toEqual(["r2"]);
+    expect(pending[0].toolCall.toolCallId).toBe("t2");
+  });
+
+  it("ignores unrelated entries and requests without a requestId", () => {
+    const pending = derivePendingPermissionRequests([
+      {
+        type: "notification",
+        notification: { method: "_posthog/console", params: {} },
+      },
+      {
+        type: "notification",
+        notification: { method: "_posthog/permission_request", params: {} },
+      },
+    ]);
+
+    expect(pending).toEqual([]);
+  });
+
+  it("drops requests missing a toolCall so they never reach the handler", () => {
+    const pending = derivePendingPermissionRequests([
+      {
+        type: "notification",
+        notification: {
+          method: "_posthog/permission_request",
+          params: { requestId: "r1", options: [] },
+        },
+      },
+    ]);
+
+    expect(pending).toEqual([]);
   });
 });

@@ -8,6 +8,7 @@ import type {
   Query,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import type { PostHogProductId } from "../../posthog-products";
 import type { Pushable } from "../../utils/streams";
 import type { BaseSession } from "../base-acp-agent";
 import type { ContextBreakdownBaseline } from "./context-breakdown";
@@ -57,6 +58,11 @@ export type Session = BaseSession & {
   effort?: EffortLevel;
   configOptions: SessionConfigOption[];
   accumulatedUsage: AccumulatedUsage;
+  /** PostHog products used during this session, derived from MCP exec calls.
+   *  Accumulates for the whole session (deduped); each newly-seen product is
+   *  emitted immediately so the client can show a persistent, de-duplicated
+   *  list. Never reset between turns. */
+  sessionResources: Set<PostHogProductId>;
   /** Latest context window usage (total tokens from last assistant message) */
   contextUsed?: number;
   /** Context window size in tokens */

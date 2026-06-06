@@ -1,10 +1,10 @@
 import { tryExecuteCodeCommand } from "@features/message-editor/commands";
 import { useDraftStore } from "@features/message-editor/stores/draftStore";
 import { useTaskViewed } from "@features/sidebar/hooks/useTaskViewed";
+import { getAppViewSnapshot } from "@hooks/useAppView";
 import { trpcClient } from "@renderer/trpc/client";
 import { isSendConnectivityError } from "@shared/errors";
 import type { Task } from "@shared/types";
-import { useNavigationStore } from "@stores/navigationStore";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
 import { useCallback, useRef } from "react";
@@ -62,9 +62,9 @@ export function useSessionCallbacks({
         markActivity(taskId);
         await getSessionService().sendPrompt(taskId, text);
 
-        const view = useNavigationStore.getState().view;
+        const view = getAppViewSnapshot();
         const isViewingTask =
-          view?.type === "task-detail" && view?.data?.id === taskId;
+          view?.type === "task-detail" && view?.taskId === taskId;
         if (isViewingTask) {
           markAsViewed(taskId);
         }

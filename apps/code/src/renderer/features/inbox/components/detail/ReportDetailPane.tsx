@@ -1,4 +1,3 @@
-import { Badge } from "@components/ui/Badge";
 import { Button } from "@components/ui/Button";
 import {
   useInboxReportArtefacts,
@@ -12,11 +11,9 @@ import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import { useDetectedCloudRepository } from "@hooks/useDetectedCloudRepository";
 import { useMeQuery } from "@hooks/useMeQuery";
 import {
-  ArrowSquareOutIcon,
   CaretDownIcon,
   CaretRightIcon,
   ChatCircleIcon,
-  EyeIcon,
   LinkSimpleIcon,
   Plus,
   ThumbsDownIcon,
@@ -45,7 +42,6 @@ import type {
   SignalFindingArtefact,
   SignalReport,
   SignalReportTask,
-  SuggestedReviewer,
   SuggestedReviewersArtefact,
   Task,
 } from "@shared/types";
@@ -71,14 +67,8 @@ import { SignalReportStatusBadge } from "../utils/SignalReportStatusBadge";
 import { SignalReportSummaryMarkdown } from "../utils/SignalReportSummaryMarkdown";
 import { ReportTaskLogs } from "./ReportTaskLogs";
 import { SignalCard } from "./SignalCard";
+import { SuggestedReviewersEditor } from "./SuggestedReviewersEditor";
 import type { SignalInteractionAction } from "./signalInteractionContext";
-
-function isSuggestedReviewerRowMe(
-  reviewer: SuggestedReviewer,
-  meUuid: string | undefined,
-): boolean {
-  return !!reviewer.user?.uuid && !!meUuid && meUuid === reviewer.user.uuid;
-}
 
 const REPOSITORY_SOURCE_RELATIONSHIPS: SignalReportTask["relationship"][] = [
   "repo_selection",
@@ -207,12 +197,14 @@ export function ReportDetailPane({
   });
   const allArtefacts = artefactsQuery.data?.results ?? [];
 
-  const suggestedReviewers = useMemo(() => {
-    const reviewerArtefact = allArtefacts.find(
-      (a): a is SuggestedReviewersArtefact => a.type === "suggested_reviewers",
-    );
-    return reviewerArtefact?.content ?? [];
-  }, [allArtefacts]);
+  const reviewerArtefact = useMemo(
+    () =>
+      allArtefacts.find(
+        (a): a is SuggestedReviewersArtefact =>
+          a.type === "suggested_reviewers",
+      ) ?? null,
+    [allArtefacts],
+  );
 
   const signalFindings = useMemo(() => {
     const map = new Map<string, SignalFindingArtefact["content"]>();
@@ -764,79 +756,13 @@ export function ReportDetailPane({
           )}
 
           {/* ── Suggested reviewers ─────────────────────────────── */}
-          {suggestedReviewers.length > 0 && (
-            <Box>
-              <Text className="block font-medium text-sm" mb="2">
-                Suggested reviewers
-              </Text>
-              <Flex direction="column" gap="1">
-                {suggestedReviewers.map((reviewer) => {
-                  const isMe = isSuggestedReviewerRowMe(reviewer, me?.uuid);
-                  return (
-                    <Flex
-                      key={reviewer.github_login}
-                      align="center"
-                      gap="2"
-                      wrap="wrap"
-                    >
-                      <img
-                        src={`https://github.com/${reviewer.github_login}.png?size=28`}
-                        alt=""
-                        className="github-avatar h-[18px] w-[18px] shrink-0 rounded-full"
-                        onLoad={(e) => e.currentTarget.classList.add("loaded")}
-                      />
-                      <Text className="text-[12px]">
-                        {reviewer.user?.first_name ??
-                          reviewer.github_name ??
-                          reviewer.github_login}
-                      </Text>
-                      {isMe && (
-                        <Tooltip content="You are a suggested reviewer">
-                          <Badge color="amber" className="!py-1 !text-[8px]">
-                            <EyeIcon
-                              size={8}
-                              weight="bold"
-                              className="shrink-0"
-                            />
-                          </Badge>
-                        </Tooltip>
-                      )}
-                      <a
-                        href={`https://github.com/${reviewer.github_login}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-0.5 text-[11px] text-gray-9 hover:text-gray-11"
-                        onClick={() =>
-                          fireDetailAction("click_suggested_reviewer")
-                        }
-                      >
-                        @{reviewer.github_login}
-                        <ArrowSquareOutIcon size={10} />
-                      </a>
-                      {reviewer.relevant_commits.length > 0 && (
-                        <span className="text-[11px] text-gray-9">
-                          {reviewer.relevant_commits.map((commit, i) => (
-                            <span key={commit.sha}>
-                              {i > 0 && ", "}
-                              <Tooltip content={commit.reason || undefined}>
-                                <a
-                                  href={commit.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="font-mono text-gray-9 hover:text-gray-11"
-                                >
-                                  {commit.sha.slice(0, 7)}
-                                </a>
-                              </Tooltip>
-                            </span>
-                          ))}
-                        </span>
-                      )}
-                    </Flex>
-                  );
-                })}
-              </Flex>
-            </Box>
+          {reviewerArtefact && (
+            <SuggestedReviewersEditor
+              reportId={report.id}
+              artefact={reviewerArtefact}
+              meUuid={me?.uuid}
+              fireAction={fireDetailAction}
+            />
           )}
 
           {/* ── Signals ─────────────────────────────────────────── */}

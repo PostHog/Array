@@ -9,14 +9,12 @@ import { motion } from "framer-motion";
 
 export interface SuggestedTaskCardProps {
   task: DiscoveredTask;
-  index: number;
   onSelect: (task: DiscoveredTask) => void;
   onDismiss: (task: DiscoveredTask) => void;
 }
 
 export function SuggestedTaskCard({
   task,
-  index,
   onSelect,
   onDismiss,
 }: SuggestedTaskCardProps) {
@@ -26,19 +24,15 @@ export function SuggestedTaskCard({
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{
-        opacity: 0,
-        y: -4,
-        transition: { duration: 0.12, delay: 0 },
-      }}
+      initial={{ opacity: 0, scale: 0.97 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
       transition={{
-        duration: 0.18,
-        delay: index * 0.04,
-        layout: { type: "spring", damping: 25, stiffness: 300 },
+        opacity: { duration: 0.15, ease: "easeOut" },
+        scale: { duration: 0.15, ease: "easeOut" },
+        layout: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
       }}
-      className="group relative"
+      className="group relative origin-center"
     >
       <button
         onClick={() => onSelect(task)}

@@ -57,13 +57,14 @@ import {
   type Enrichment,
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
-import type { PostHogAPIConfig } from "../../types";
 import {
-  isCloudRun,
-  resolveGithubToken,
-  unreachable,
-  withTimeout,
-} from "../../utils/common";
+  classifyPostHogExecCall,
+  POSTHOG_PRODUCTS,
+  type PostHogProductId,
+} from "../../posthog-products";
+import type { PostHogAPIConfig } from "../../types";
+import { isCloudRun, unreachable, withTimeout } from "../../utils/common";
+import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
 import { BaseAcpAgent } from "../base-acp-agent";
@@ -439,6 +440,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       cachedReadTokens: 0,
       cachedWriteTokens: 0,
     };
+    // sessionResources is intentionally NOT reset here — the products list
+    // accumulates across the whole session and is deduped, not per-turn.
 
     await this.broadcastUserMessage(params);
 
@@ -1093,7 +1096,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // We allocate a fresh controller for the new Query below so aborting
     // the old one doesn't poison it.
     prev.abortController.abort();
-    await prev.query.interrupt();
+    try {
+      await prev.query.interrupt();
+    } catch (error) {
+      this.logger.debug("Ignoring interrupt error during session refresh", {
+        sessionId: this.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     prev.input.end();
 
     // Reuse every option from the running session; swap mcpServers, re-root
@@ -1402,6 +1412,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       outputFormat,
       settingsManager,
       onModeChange: this.createOnModeChange(),
+      onPostHogResourceUsed: this.createOnPostHogResourceUsed(),
+      onCodeFileRead: this.createOnCodeFileRead(),
       onProcessSpawned: this.options?.onProcessSpawned,
       onProcessExited: this.options?.onProcessExited,
       effort,
@@ -1439,6 +1451,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         cachedReadTokens: 0,
         cachedWriteTokens: 0,
       },
+      sessionResources: new Set(),
       effort,
       configOptions: [],
       promptRunning: false,
@@ -1639,6 +1652,43 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
       await this.updateConfigOption("mode", newMode);
     };
+  }
+
+  /** Records the PostHog product behind an executed MCP exec `call` and emits
+   *  any newly-seen product so the client's persistent list can update live. */
+  private createOnPostHogResourceUsed() {
+    return (subTool: string, commandText?: string) => {
+      this.recordSessionResources(
+        classifyPostHogExecCall(subTool, commandText),
+      );
+    };
+  }
+
+  /** Records the `code` product the first time the agent reads a file from the
+   *  codebase, so working with code surfaces a chip just like an MCP call does. */
+  private createOnCodeFileRead() {
+    return () => this.recordSessionResources(["code"]);
+  }
+
+  /** Adds products to the session-wide set and emits any newly-seen ones.
+   *  Session-wide dedup: only the first use of a product emits, so the client's
+   *  persistent list shows each chip once across all turns. */
+  private recordSessionResources(products: PostHogProductId[]): void {
+    if (!this.session) return;
+    const added = products.filter((p) => !this.session.sessionResources.has(p));
+    if (added.length === 0) return;
+    for (const product of added) this.session.sessionResources.add(product);
+    void this.emitResourcesUsed(added);
+  }
+
+  /** Emits newly-seen PostHog products as soon as they're used, so the client
+   *  can append them to a persistent, de-duplicated list in real time. */
+  private async emitResourcesUsed(added: PostHogProductId[]): Promise<void> {
+    const products = added.map((id) => ({ id, label: POSTHOG_PRODUCTS[id] }));
+    await this.client.extNotification(POSTHOG_NOTIFICATIONS.RESOURCES_USED, {
+      sessionId: this.sessionId,
+      products,
+    });
   }
 
   private getExistingSessionState(

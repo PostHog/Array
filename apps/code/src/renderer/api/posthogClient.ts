@@ -28,6 +28,7 @@ import type {
   SlackChannelsQueryParams,
   SlackChannelsResponse,
   SuggestedReviewersArtefact,
+  SuggestedReviewerWriteEntry,
   Task,
   TaskRun,
 } from "@shared/types";
@@ -100,7 +101,8 @@ export interface SignalSourceConfig {
     | "zendesk"
     | "conversations"
     | "error_tracking"
-    | "pganalyze";
+    | "pganalyze"
+    | "signals_scout";
   source_type:
     | "session_analysis_cluster"
     | "evaluation"
@@ -108,7 +110,8 @@ export interface SignalSourceConfig {
     | "ticket"
     | "issue_created"
     | "issue_reopened"
-    | "issue_spiking";
+    | "issue_spiking"
+    | "cross_source_issue";
   enabled: boolean;
   config: Record<string, unknown>;
   created_at: string;
@@ -581,8 +584,8 @@ export class PostHogAPIClient {
     }
   }
 
-  setTeamId(teamId: number): void {
-    this._teamId = teamId;
+  setTeamId(teamId: number | null | undefined): void {
+    this._teamId = teamId ?? null;
   }
 
   private async getTeamId(): Promise<number> {
@@ -690,6 +693,19 @@ export class PostHogAPIClient {
     await this.api.patch("/api/users/{uuid}/", {
       path: { uuid: "@me" },
       body: { set_current_organization: orgId } as Record<string, unknown>,
+    });
+  }
+
+  async approveAiDataProcessing(): Promise<void> {
+    const urlPath = `/api/organizations/@current/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ is_ai_data_processing_approved: true }),
+      },
     });
   }
 
@@ -1902,6 +1918,9 @@ export class PostHogAPIClient {
     if (params?.suggested_reviewers) {
       url.searchParams.set("suggested_reviewers", params.suggested_reviewers);
     }
+    if (params?.priority) {
+      url.searchParams.set("priority", params.priority);
+    }
 
     const response = await this.api.fetcher.fetch({
       method: "get",
@@ -2109,6 +2128,45 @@ export class PostHogAPIClient {
     return (await response.json()) as SignalReport;
   }
 
+  /**
+   * Replace the content of a `suggested_reviewers` artefact (full replacement).
+   * The server canonicalizes each entry to a lowercase `github_login` and preserves
+   * `relevant_commits` / `github_name` for logins that survive the replace.
+   */
+  async updateSignalReportArtefact(
+    reportId: string,
+    artefactId: string,
+    content: SuggestedReviewerWriteEntry[],
+  ): Promise<SuggestedReviewersArtefact> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/signals/reports/${reportId}/artefacts/${artefactId}/`,
+    );
+    const path = `/api/projects/${teamId}/signals/reports/${reportId}/artefacts/${artefactId}/`;
+
+    const response = await this.api.fetcher.fetch({
+      method: "put",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify({ content }),
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "Failed to update suggested reviewers");
+    }
+
+    const parsed = normalizeSignalReportArtefact(await response.json());
+    if (!parsed || parsed.type !== "suggested_reviewers") {
+      throw new Error("Unexpected response updating suggested reviewers");
+    }
+    // `SignalReportArtefact.type` is a plain string, so the guard above can't
+    // statically narrow the union — the runtime check makes this cast safe.
+    return parsed as SuggestedReviewersArtefact;
+  }
+
   async deleteSignalReport(reportId: string): Promise<{
     status: "deletion_started" | "already_running";
     report_id: string;
@@ -2214,9 +2272,12 @@ export class PostHogAPIClient {
     return (await response.json()) as SignalTeamConfig;
   }
 
-  async updateSignalTeamConfig(updates: {
-    default_autostart_priority: string;
-  }): Promise<SignalTeamConfig> {
+  async updateSignalTeamConfig(
+    updates: Partial<{
+      default_autostart_priority: string;
+      default_slack_notification_channel: string | null;
+    }>,
+  ): Promise<SignalTeamConfig> {
     const teamId = await this.getTeamId();
     const url = new URL(
       `${this.api.baseUrl}/api/projects/${teamId}/signals/config/`,

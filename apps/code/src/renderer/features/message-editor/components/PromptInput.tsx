@@ -287,7 +287,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         <InputGroup
           onClick={handleContainerClick}
           onContextMenu={handleContextMenu}
-          className={`h-auto cursor-text bg-card ${isBashMode ? "ring-1 ring-blue-9" : ""}`}
+          className={`h-auto cursor-text bg-card ${isBashMode ? "ring-1 ring-blue-9" : "focus-within:ring-1 focus-within:ring-purple-9"}`}
           {...(tourTarget && {
             "data-tour": `${tourTarget}-editor`,
             "data-tour-ready": !isEmpty ? "true" : undefined,
@@ -309,7 +309,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
           >
             <EditorContent editor={editor} />
           </div>
-          <InputGroupAddon align="block-end">
+          <InputGroupAddon align="block-end" className="p-1">
             <AttachmentMenu
               disabled={disabled}
               repoPath={repoPath}

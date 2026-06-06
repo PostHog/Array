@@ -1,12 +1,32 @@
+import { NestedButton } from "@components/ui/NestedButton";
 import { Tooltip } from "@components/ui/Tooltip";
 import type { SidebarPrState } from "@features/sidebar/hooks/useTaskPrStatus";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
-import { Archive, PushPin } from "@phosphor-icons/react";
+import { Archive, GitPullRequest, PushPin } from "@phosphor-icons/react";
+import { parseGithubUrl } from "@posthog/git/utils";
 import type { TaskRunStatus } from "@shared/types";
+import { openUrlInBrowser } from "@utils/browser";
 import { formatRelativeTimeShort } from "@utils/time";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SidebarItem } from "../SidebarItem";
 import { TaskIcon } from "./TaskIcon";
+
+function PrBadge({ url, number }: { url: string; number: number }) {
+  return (
+    <Tooltip content="Open pull request" side="top">
+      <NestedButton
+        aria-label={`Open pull request #${number}`}
+        className="flex h-4 shrink-0 cursor-pointer items-center gap-0.5 rounded bg-gray-3 px-1 text-[11px] text-gray-11 transition-colors hover:bg-gray-4 hover:text-gray-12"
+        onActivate={() => {
+          void openUrlInBrowser(url);
+        }}
+      >
+        <GitPullRequest size={10} weight="bold" />
+        {`#${number}`}
+      </NestedButton>
+    </Tooltip>
+  );
+}
 
 interface TaskItemProps {
   depth?: number;
@@ -27,6 +47,7 @@ interface TaskItemProps {
   slackThreadUrl?: string;
   prState?: SidebarPrState;
   hasDiff?: boolean;
+  prUrl?: string | null;
   timestamp?: number;
   isEditing?: boolean;
   onClick: (e: React.MouseEvent) => void;
@@ -53,50 +74,24 @@ function TaskHoverToolbar({
     <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
       {onTogglePin && (
         <Tooltip content={isPinned ? "Unpin task" : "Pin task"} side="top">
-          {/* biome-ignore lint/a11y/useSemanticElements: Cannot use button inside parent button (SidebarItem) */}
-          <span
-            role="button"
-            tabIndex={0}
+          <NestedButton
+            aria-label={isPinned ? "Unpin task" : "Pin task"}
             className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
-            onClick={(e) => {
-              e.stopPropagation();
-              onTogglePin();
-            }}
-            onDoubleClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                e.stopPropagation();
-                onTogglePin();
-              }
-            }}
+            onActivate={onTogglePin}
           >
             <PushPin size={12} weight={isPinned ? "fill" : "regular"} />
-          </span>
+          </NestedButton>
         </Tooltip>
       )}
       {onArchive && (
         <Tooltip content="Archive task" side="top">
-          {/* biome-ignore lint/a11y/useSemanticElements: Cannot use button inside parent button (SidebarItem) */}
-          <span
-            role="button"
-            tabIndex={0}
+          <NestedButton
+            aria-label="Archive task"
             className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
-            onClick={(e) => {
-              e.stopPropagation();
-              onArchive();
-            }}
-            onDoubleClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                e.stopPropagation();
-                onArchive();
-              }
-            }}
+            onActivate={onArchive}
           >
             <Archive size={12} />
-          </span>
+          </NestedButton>
         </Tooltip>
       )}
     </span>
@@ -123,6 +118,7 @@ export function TaskItem({
   slackThreadUrl,
   prState,
   hasDiff,
+  prUrl,
   timestamp,
   isEditing = false,
   onClick,
@@ -149,11 +145,19 @@ export function TaskItem({
     />
   );
 
-  const timestampNode = timestamp ? (
-    <span className="shrink-0 text-[11px] text-gray-11 group-hover:hidden">
-      {formatRelativeTimeShort(timestamp)}
-    </span>
-  ) : null;
+  const prRef = useMemo(() => (prUrl ? parseGithubUrl(prUrl) : null), [prUrl]);
+  const prBadge =
+    prUrl && prRef?.kind === "pr" ? (
+      <PrBadge url={prUrl} number={prRef.number} />
+    ) : null;
+
+  // The PR badge takes the timestamp's slot, so hide the timestamp when shown.
+  const timestampNode =
+    timestamp && !prBadge ? (
+      <span className="shrink-0 text-[11px] text-gray-11 group-hover:hidden">
+        {formatRelativeTimeShort(timestamp)}
+      </span>
+    ) : null;
 
   const toolbar =
     !hideHoverActions && (onArchive || onTogglePin) ? (
@@ -165,8 +169,9 @@ export function TaskItem({
     ) : null;
 
   const endContent =
-    timestampNode || toolbar ? (
+    prBadge || timestampNode || toolbar ? (
       <>
+        {prBadge}
         {timestampNode}
         {toolbar}
       </>
@@ -232,7 +237,7 @@ function InlineEditInput({
     const input = inputRef.current;
     if (input) {
       input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
+      input.select();
     }
   }, []);
 

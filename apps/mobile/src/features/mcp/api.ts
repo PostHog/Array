@@ -1,5 +1,4 @@
-import { fetch } from "expo/fetch";
-import { getBaseUrl, getHeaders, getProjectId } from "@/lib/api";
+import { authedFetch, getBaseUrl, getProjectId } from "@/lib/api";
 import type {
   InstallCustomMcpServerOptions,
   InstallMcpTemplateOptions,
@@ -37,9 +36,8 @@ export async function getMcpRecommendedServers(): Promise<
 > {
   const base = getBaseUrl();
   const projectId = getProjectId();
-  const response = await fetch(
+  const response = await authedFetch(
     `${base}/api/environments/${projectId}/mcp_servers/`,
-    { headers: getHeaders() },
   );
   const data = await readJsonOrThrow<
     McpRecommendedServer[] | { results?: McpRecommendedServer[] }
@@ -51,7 +49,7 @@ export async function getMcpRecommendedServers(): Promise<
 export async function getMcpServerInstallations(): Promise<
   McpServerInstallation[]
 > {
-  const response = await fetch(`${mcpBaseUrl()}/`, { headers: getHeaders() });
+  const response = await authedFetch(`${mcpBaseUrl()}/`);
   const data = await readJsonOrThrow<
     McpServerInstallation[] | { results?: McpServerInstallation[] }
   >(response, "Failed to fetch MCP server installations");
@@ -62,9 +60,8 @@ export async function getMcpServerInstallations(): Promise<
 export async function installCustomMcpServer(
   options: InstallCustomMcpServerOptions,
 ): Promise<McpInstallResponse> {
-  const response = await fetch(`${mcpBaseUrl()}/install_custom/`, {
+  const response = await authedFetch(`${mcpBaseUrl()}/install_custom/`, {
     method: "POST",
-    headers: getHeaders(),
     body: JSON.stringify(options),
   });
   return readJsonOrThrow<McpInstallResponse>(
@@ -77,9 +74,8 @@ export async function installCustomMcpServer(
 export async function installMcpTemplate(
   options: InstallMcpTemplateOptions,
 ): Promise<McpInstallResponse> {
-  const response = await fetch(`${mcpBaseUrl()}/install_template/`, {
+  const response = await authedFetch(`${mcpBaseUrl()}/install_template/`, {
     method: "POST",
-    headers: getHeaders(),
     body: JSON.stringify(options),
   });
   return readJsonOrThrow<McpInstallResponse>(
@@ -93,9 +89,8 @@ export async function updateMcpServerInstallation(
   installationId: string,
   updates: UpdateMcpServerInstallationOptions,
 ): Promise<McpServerInstallation> {
-  const response = await fetch(`${mcpBaseUrl()}/${installationId}/`, {
+  const response = await authedFetch(`${mcpBaseUrl()}/${installationId}/`, {
     method: "PATCH",
-    headers: getHeaders(),
     body: JSON.stringify(updates),
   });
   return readJsonOrThrow<McpServerInstallation>(
@@ -108,9 +103,8 @@ export async function updateMcpServerInstallation(
 export async function uninstallMcpServer(
   installationId: string,
 ): Promise<void> {
-  const response = await fetch(`${mcpBaseUrl()}/${installationId}/`, {
+  const response = await authedFetch(`${mcpBaseUrl()}/${installationId}/`, {
     method: "DELETE",
-    headers: getHeaders(),
   });
   if (!response.ok && response.status !== 204) {
     throw new Error(`Failed to uninstall MCP server: ${response.statusText}`);
@@ -131,9 +125,8 @@ export async function authorizeMcpInstallation(options: {
   if (options.posthog_code_callback_url) {
     params.set("posthog_code_callback_url", options.posthog_code_callback_url);
   }
-  const response = await fetch(
+  const response = await authedFetch(
     `${mcpBaseUrl()}/authorize/?${params.toString()}`,
-    { headers: getHeaders() },
   );
   return readJsonOrThrow<McpOAuthRedirectResponse>(
     response,
@@ -149,9 +142,8 @@ export async function getMcpInstallationTools(
   const params = new URLSearchParams();
   if (options.includeRemoved) params.set("include_removed", "1");
   const query = params.toString();
-  const response = await fetch(
+  const response = await authedFetch(
     `${mcpBaseUrl()}/${installationId}/tools/${query ? `?${query}` : ""}`,
-    { headers: getHeaders() },
   );
   const data = await readJsonOrThrow<
     McpInstallationTool[] | { results?: McpInstallationTool[] }
@@ -165,11 +157,10 @@ export async function updateMcpToolApproval(
   toolName: string,
   approval_state: McpApprovalState,
 ): Promise<McpInstallationTool> {
-  const response = await fetch(
+  const response = await authedFetch(
     `${mcpBaseUrl()}/${installationId}/tools/${encodeURIComponent(toolName)}/`,
     {
       method: "PATCH",
-      headers: getHeaders(),
       body: JSON.stringify({ approval_state }),
     },
   );
@@ -183,9 +174,9 @@ export async function updateMcpToolApproval(
 export async function refreshMcpInstallationTools(
   installationId: string,
 ): Promise<McpInstallationTool[]> {
-  const response = await fetch(
+  const response = await authedFetch(
     `${mcpBaseUrl()}/${installationId}/tools/refresh/`,
-    { method: "POST", headers: getHeaders() },
+    { method: "POST" },
   );
   const data = await readJsonOrThrow<
     McpInstallationTool[] | { results?: McpInstallationTool[] }

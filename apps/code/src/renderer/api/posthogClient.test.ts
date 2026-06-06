@@ -385,4 +385,101 @@ describe("PostHogAPIClient", () => {
       expect(result.length).toBe(50);
     });
   });
+
+  describe("updateSignalReportArtefact", () => {
+    const ARTEFACT_PATH =
+      "/api/projects/123/signals/reports/report-1/artefacts/art-1/";
+
+    function makeClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    const OCTOCAT_REVIEWER = {
+      github_login: "octocat",
+      github_name: "The Octocat",
+      relevant_commits: [],
+      user: null,
+    };
+
+    it.each([
+      {
+        name: "PUTs the full-replacement content and returns the parsed artefact",
+        input: [{ github_login: "octocat" }, { user_uuid: "uuid-1" }],
+        responseContent: [OCTOCAT_REVIEWER],
+      },
+      {
+        name: "sends an empty content array when clearing reviewers",
+        input: [],
+        responseContent: [],
+      },
+    ])("$name", async ({ input, responseContent }) => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          id: "art-1",
+          type: "suggested_reviewers",
+          created_at: "2024-01-01T00:00:00Z",
+          content: responseContent,
+        }),
+      });
+      const client = makeClient(fetch);
+
+      const result = await client.updateSignalReportArtefact(
+        "report-1",
+        "art-1",
+        input,
+      );
+
+      expect(result.type).toBe("suggested_reviewers");
+      expect(result.content).toEqual(responseContent);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "put",
+          path: ARTEFACT_PATH,
+          overrides: { body: JSON.stringify({ content: input }) },
+        }),
+      );
+    });
+
+    it("throws with the server message on a non-ok response", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        text: async () =>
+          '{"error":"Only suggested_reviewers artefacts may be modified via this endpoint."}',
+      });
+      const client = makeClient(fetch);
+
+      await expect(
+        client.updateSignalReportArtefact("report-1", "art-1", []),
+      ).rejects.toThrow("Only suggested_reviewers");
+    });
+
+    it("throws when the response is not a suggested_reviewers artefact", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          id: "art-1",
+          type: "dismissal",
+          created_at: "2024-01-01T00:00:00Z",
+          content: { reason: "noise", note: "" },
+        }),
+      });
+      const client = makeClient(fetch);
+
+      await expect(
+        client.updateSignalReportArtefact("report-1", "art-1", []),
+      ).rejects.toThrow("Unexpected response");
+    });
+  });
 });

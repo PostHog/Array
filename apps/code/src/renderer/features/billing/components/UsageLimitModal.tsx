@@ -1,6 +1,6 @@
 import { useUsageLimitStore } from "@features/billing/stores/usageLimitStore";
-import { formatResetTime } from "@features/billing/utils";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { formatResetTime, PRO_USAGE_MULTIPLIER } from "@features/billing/utils";
+import { openSettings } from "@features/settings/hooks/useOpenSettings";
 import { useSeat } from "@hooks/useSeat";
 import { WarningCircle } from "@phosphor-icons/react";
 import { Button, Dialog, Flex, Text } from "@radix-ui/themes";
@@ -34,7 +34,7 @@ export function UsageLimitModal() {
       surface: "usage_limit_modal",
     });
     hide();
-    useSettingsDialogStore.getState().open("plan-usage");
+    openSettings("plan-usage");
   };
 
   const handleSupport = () => {
@@ -62,7 +62,7 @@ export function UsageLimitModal() {
     ? `Your Pro plan has ${proCapLabel}.${resetLabel ? ` ${resetLabel}.` : ""}`
     : `You've hit your Free ${
         isDaily ? "daily" : isMonthly ? "monthly" : "usage"
-      } limit. Upgrade to Pro for 20x more usage.`;
+      } limit. Upgrade to Pro for ${PRO_USAGE_MULTIPLIER}× more usage.`;
 
   return (
     <Dialog.Root open={isOpen}>

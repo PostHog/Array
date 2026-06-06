@@ -386,6 +386,57 @@ describe("Question relay", () => {
     });
   });
 
+  describe("permission lifecycle persisted to log", () => {
+    it("persists the request (with requestId) and its resolution", async () => {
+      const appendRawLine = vi.fn();
+      const srv = server as TestableAgentServer & {
+        relayPermissionToClient: (p: {
+          options: unknown[];
+          toolCall?: unknown;
+        }) => Promise<{ outcome: { outcome: string; optionId: string } }>;
+        resolvePermission: (requestId: string, optionId: string) => boolean;
+        session: {
+          payload: typeof TEST_PAYLOAD;
+          sseController: null;
+          logWriter: { appendRawLine: typeof appendRawLine };
+        };
+      };
+      srv.session = {
+        payload: TEST_PAYLOAD,
+        sseController: null,
+        logWriter: { appendRawLine },
+      };
+
+      const logged = (method: string) =>
+        appendRawLine.mock.calls
+          .map(([, line]) => JSON.parse(line))
+          .find((n) => n?.method === method);
+
+      const promise = srv.relayPermissionToClient({
+        options: [{ kind: "allow_once", optionId: "allow", name: "Allow" }],
+        toolCall: { toolCallId: "tool-1", title: "Ready to code?" },
+      });
+
+      const request = logged("_posthog/permission_request");
+      expect(request).toBeTruthy();
+      expect(typeof request.params.requestId).toBe("string");
+      expect(request.params.toolCallId).toBe("tool-1");
+      const requestId = request.params.requestId;
+
+      expect(srv.resolvePermission(requestId, "allow")).toBe(true);
+
+      const resolved = logged("_posthog/permission_resolved");
+      expect(resolved).toBeTruthy();
+      expect(resolved.params.requestId).toBe(requestId);
+      expect(resolved.params.toolCallId).toBe("tool-1");
+      expect(resolved.params.optionId).toBe("allow");
+
+      await expect(promise).resolves.toMatchObject({
+        outcome: { outcome: "selected", optionId: "allow" },
+      });
+    });
+  });
+
   describe("relayAgentResponse duplicate suppression", () => {
     it("skips relay when questionRelayedToSlack is set", async () => {
       const relaySpy = vi

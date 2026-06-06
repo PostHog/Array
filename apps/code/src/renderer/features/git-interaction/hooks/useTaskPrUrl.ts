@@ -11,6 +11,10 @@ import { useQuery } from "@tanstack/react-query";
  *   - local: the linked-branch lookup, falling back to `getPrStatus` on the
  *     active repo path
  *
+ * On task switch we prefer the cached PR URL from the workspaces table so the
+ * value is available synchronously — the live `gh` lookups still run and
+ * supersede the cache as their values arrive.
+ *
  * Shared by the task header (`TaskActionsMenu`) and the command center cell
  * header (`CommandCenterPRButton`) so they always agree on what PR a task
  * points at.
@@ -35,6 +39,13 @@ export function useTaskPrUrl(taskId: string, isCloud: boolean): string | null {
     ),
   );
 
+  const { data: cached } = useQuery(
+    trpc.workspace.getCachedPrUrl.queryOptions(
+      { taskId },
+      { enabled: !isCloud, staleTime: 60_000 },
+    ),
+  );
+
   if (isCloud) return cloudPrUrl;
-  return linkedPrUrl ?? prStatus?.prUrl ?? null;
+  return linkedPrUrl ?? prStatus?.prUrl ?? cached?.prUrl ?? null;
 }

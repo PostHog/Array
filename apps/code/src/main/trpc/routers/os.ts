@@ -9,6 +9,7 @@ import {
   ALLOWED_IMAGE_MIME_TYPES,
   IMAGE_MIME_TYPES,
   isRasterImageFile,
+  isSafeExternalUrl,
 } from "@posthog/shared";
 import { z } from "zod";
 import { container } from "../../di/container";
@@ -223,7 +224,16 @@ export const osRouter = router({
    * Open URL in external browser
    */
   openExternal: publicProcedure
-    .input(z.object({ url: z.string() }))
+    .input(
+      z.object({
+        url: z
+          .string()
+          .refine(
+            isSafeExternalUrl,
+            "Only http(s) and mailto URLs may be opened externally",
+          ),
+      }),
+    )
     .mutation(async ({ input }) => {
       await getUrlLauncher().launch(input.url);
     }),

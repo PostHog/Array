@@ -1,6 +1,8 @@
+import type { Task } from "@shared/types";
 import { useWorkspace } from "./useWorkspace";
 
-export function useIsCloudTask(taskId: string): boolean {
+export function useIsCloudTask(taskId: string, task?: Task): boolean {
   const workspace = useWorkspace(taskId);
-  return workspace?.mode === "cloud";
+  if (workspace?.mode === "cloud") return true;
+  return task?.latest_run?.environment === "cloud";
 }

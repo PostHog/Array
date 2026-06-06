@@ -12,13 +12,21 @@ import {
 } from "@features/tasks/hooks/useArchiveTask";
 import { useRenameTask, useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
+import { useAppView } from "@hooks/useAppView";
+import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
-import { ScrollArea, Separator } from "@posthog/quill";
+import { Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
+import {
+  navigateToCommandCenter,
+  navigateToInbox,
+  navigateToMcpServers,
+  navigateToSkills,
+  navigateToTaskDetail,
+} from "@renderer/navigationBridge";
 import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
@@ -36,19 +44,12 @@ import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
 import { TaskListView } from "./TaskListView";
+import { TasksHeader } from "./TasksHeader";
 
 const log = logger.scope("sidebar-menu");
 
 function SidebarMenuComponent() {
-  const {
-    view,
-    navigateToTask,
-    navigateToTaskInput,
-    navigateToInbox,
-    navigateToCommandCenter,
-    navigateToSkills,
-    navigateToMcpServers,
-  } = useNavigationStore();
+  const view = useAppView();
 
   // Must mirror useSidebarData's filters so taskMap covers every rendered
   // task — otherwise handleTaskClick silently bails for tasks not in the map.
@@ -95,7 +96,7 @@ function SidebarMenuComponent() {
 
   useEffect(() => {
     const currentTaskId =
-      view.type === "task-detail" && view.data ? view.data.id : null;
+      view.type === "task-detail" && view.taskId ? view.taskId : null;
 
     if (
       previousTaskIdRef.current &&
@@ -112,7 +113,7 @@ function SidebarMenuComponent() {
   }, [view, markAsViewed]);
 
   const handleNewTaskClick = () => {
-    navigateToTaskInput();
+    openTaskInput();
   };
 
   const handleInboxClick = () => {
@@ -211,7 +212,12 @@ function SidebarMenuComponent() {
     clearSelection();
     const task = taskMap.get(taskId);
     if (task) {
-      navigateToTask(task);
+      void openTask(task);
+    } else {
+      // Sidebar rows come from the summaries path, which can include tasks the
+      // full-list query (taskMap) doesn't carry. Don't silently bail — navigate
+      // by id; the task-detail route resolves the task from its own query.
+      navigateToTaskDetail(taskId);
     }
   };
 
@@ -359,53 +365,62 @@ function SidebarMenuComponent() {
   }, [setEditingTaskId]);
 
   return (
-    <Box height="100%" position="relative" id="side-bar-menu">
-      <ScrollArea className="h-full overflow-y-auto overflow-x-hidden">
-        <Flex direction="column" py="2" px="2" gap="1px">
-          <Box mb="2">
-            <NewTaskItem
-              isActive={sidebarData.isHomeActive}
-              onClick={handleNewTaskClick}
-              variant="primary"
-            />
-          </Box>
+    <Box
+      height="100%"
+      position="relative"
+      id="side-bar-menu"
+      className="flex min-h-0 flex-col"
+    >
+      <Flex direction="column" className="shrink-0 gap-px px-2 py-2">
+        <Box mb="2">
+          <NewTaskItem
+            isActive={sidebarData.isHomeActive}
+            onClick={handleNewTaskClick}
+            variant="primary"
+          />
+        </Box>
 
-          <Box>
-            <SearchItem onClick={handleSearchClick} />
-          </Box>
+        <Box>
+          <SearchItem onClick={handleSearchClick} />
+        </Box>
 
-          <Box>
-            <InboxItem
-              isActive={sidebarData.isInboxActive}
-              onClick={handleInboxClick}
-              signalCount={inboxSignalCount}
-            />
-          </Box>
+        <Box>
+          <InboxItem
+            isActive={sidebarData.isInboxActive}
+            onClick={handleInboxClick}
+            signalCount={inboxSignalCount}
+          />
+        </Box>
 
-          <Box>
-            <SkillsItem
-              isActive={sidebarData.isSkillsActive}
-              onClick={handleSkillsClick}
-            />
-          </Box>
+        <Box>
+          <SkillsItem
+            isActive={sidebarData.isSkillsActive}
+            onClick={handleSkillsClick}
+          />
+        </Box>
 
-          <Box>
-            <McpServersItem
-              isActive={sidebarData.isMcpServersActive}
-              onClick={handleMcpServersClick}
-            />
-          </Box>
+        <Box>
+          <McpServersItem
+            isActive={sidebarData.isMcpServersActive}
+            onClick={handleMcpServersClick}
+          />
+        </Box>
 
-          <Box mb="2">
-            <CommandCenterItem
-              isActive={sidebarData.isCommandCenterActive}
-              onClick={handleCommandCenterClick}
-              activeCount={commandCenterActiveCount}
-            />
-          </Box>
+        <Box mb="2">
+          <CommandCenterItem
+            isActive={sidebarData.isCommandCenterActive}
+            onClick={handleCommandCenterClick}
+            activeCount={commandCenterActiveCount}
+          />
+        </Box>
+      </Flex>
 
-          <Separator className="mx-2 my-2" />
+      <Separator className="mx-2 my-2 shrink-0" />
 
+      <TasksHeader />
+
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <Flex direction="column" className="gap-px px-2 pb-2">
           {sidebarData.isLoading ? (
             <SidebarItem
               depth={0}
@@ -432,7 +447,7 @@ function SidebarMenuComponent() {
             />
           )}
         </Flex>
-      </ScrollArea>
+      </div>
     </Box>
   );
 }

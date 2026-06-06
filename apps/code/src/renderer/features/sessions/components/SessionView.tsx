@@ -48,6 +48,7 @@ import { PendingChatView } from "./PendingChatView";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { ReasoningLevelSelector } from "./ReasoningLevelSelector";
 import { RawLogsView } from "./raw-logs/RawLogsView";
+import { SessionResourcesBar } from "./SessionResourcesBar";
 
 interface SessionViewProps {
   events: AcpMessage[];
@@ -70,6 +71,7 @@ interface SessionViewProps {
   hasError?: boolean;
   errorTitle?: string;
   errorMessage?: string;
+  errorRetryable?: boolean;
   onRetry?: () => void;
   onNewSession?: () => void;
   isInitializing?: boolean;
@@ -84,6 +86,48 @@ interface SessionViewProps {
 
 const DEFAULT_ERROR_MESSAGE =
   "Failed to resume this session. The working directory may have been deleted. Please start a new session.";
+
+interface CloudStreamDisconnectedBannerProps {
+  errorTitle?: string;
+  errorMessage?: string;
+  onRetry?: () => void;
+}
+
+function CloudStreamDisconnectedBanner({
+  errorTitle,
+  errorMessage,
+  onRetry,
+}: CloudStreamDisconnectedBannerProps) {
+  return (
+    <Flex
+      align="center"
+      justify="between"
+      gap="3"
+      py="2"
+      px="3"
+      className="shrink-0 border-(--red-5) border-b bg-(--red-2)"
+    >
+      <Flex align="center" gap="2" className="min-w-0">
+        <Warning size={14} weight="duotone" color="var(--red-9)" />
+        {errorTitle && (
+          <Text className="shrink-0 font-medium text-(--red-12) text-[13px]">
+            {errorTitle}
+          </Text>
+        )}
+        {errorMessage && (
+          <Text color="gray" className="truncate text-[13px]">
+            {errorMessage}
+          </Text>
+        )}
+      </Flex>
+      {onRetry && (
+        <Button variant="soft" size="1" color="red" onClick={onRetry}>
+          Retry
+        </Button>
+      )}
+    </Flex>
+  );
+}
 
 /**
  * When an allow_always permission is granted outside a mode-switch prompt,
@@ -123,6 +167,7 @@ export function SessionView({
   hasError = false,
   errorTitle,
   errorMessage = DEFAULT_ERROR_MESSAGE,
+  errorRetryable = false,
   onRetry,
   onNewSession,
   isInitializing = false,
@@ -145,6 +190,7 @@ export function SessionView({
   const currentModeId = modeOption?.currentValue;
   const handoffInProgress =
     useSessionForTask(taskId)?.handoffInProgress ?? false;
+  const showInlineBanner = hasError && errorRetryable && events.length > 0;
 
   useEffect(() => {
     if (!taskId) return;
@@ -479,7 +525,7 @@ export function SessionView({
                 />
                 <Box className="border-gray-4 border-t">
                   <Box
-                    className="mx-auto p-2"
+                    className="mx-auto px-2 pb-3"
                     style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
                   >
                     <Flex
@@ -544,6 +590,13 @@ export function SessionView({
             ) : (
               <>
                 <DropZoneOverlay isVisible={isDraggingFile} />
+                {showInlineBanner && (
+                  <CloudStreamDisconnectedBanner
+                    errorTitle={errorTitle}
+                    errorMessage={errorMessage}
+                    onRetry={onRetry}
+                  />
+                )}
                 <ConversationView
                   events={events}
                   isPromptPending={isPromptPending}
@@ -556,9 +609,11 @@ export function SessionView({
                   onRetryPrompt={onSendPrompt}
                 />
 
+                <SessionResourcesBar events={events} />
+
                 <PlanStatusBar plan={latestPlan} />
 
-                {hasError ? (
+                {hasError && !showInlineBanner ? (
                   <Flex
                     align="center"
                     justify="center"
@@ -602,9 +657,9 @@ export function SessionView({
                     </Flex>
                   </Flex>
                 ) : hideInput ? null : firstPendingPermission ? (
-                  <Box className="max-h-1/2 min-h-0 overflow-y-auto border-gray-4 border-t">
+                  <Box className="min-h-0 overflow-y-auto">
                     <Box
-                      className={compact ? "p-1" : "mx-auto p-2"}
+                      className={compact ? "p-1" : "mx-auto px-2 pb-3"}
                       style={
                         compact
                           ? undefined
@@ -620,7 +675,7 @@ export function SessionView({
                     </Box>
                   </Box>
                 ) : (
-                  <Box className="relative border-gray-4 border-t">
+                  <Box className="relative">
                     <Box
                       className={`absolute inset-0 flex min-h-[66px] items-center justify-center gap-2 transition-opacity duration-200 ${
                         isRunning
@@ -641,7 +696,7 @@ export function SessionView({
                       }`}
                     >
                       <Box
-                        className={compact ? "p-1" : "mx-auto p-2"}
+                        className={compact ? "p-1" : "mx-auto px-2 pb-3"}
                         style={
                           compact
                             ? undefined

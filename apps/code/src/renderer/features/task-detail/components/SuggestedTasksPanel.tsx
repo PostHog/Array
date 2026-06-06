@@ -37,12 +37,6 @@ const BOTTOM_PADDING = 56;
 const LOG_LINE_HEIGHT = 24;
 const LOG_FEED_PADDING = 16;
 
-const pageVariants = {
-  enter: (dir: number) => ({ x: dir * 32, opacity: 0 }),
-  center: { x: 0, opacity: 1 },
-  exit: (dir: number) => ({ x: -dir * 32, opacity: 0 }),
-};
-
 const fadeMotion = {
   initial: { opacity: 0 },
   animate: { opacity: 1 },
@@ -227,31 +221,42 @@ export function SuggestedTasksPanel() {
         </Flex>
       )}
       {hasTasks && (
-        <div className="relative overflow-hidden">
-          <AnimatePresence
-            mode="popLayout"
-            initial={false}
-            custom={pageDirection}
-          >
+        <div className="relative">
+          <AnimatePresence mode="wait" initial={false} custom={pageDirection}>
             <motion.div
               key={effectivePageStart}
               custom={pageDirection}
-              variants={pageVariants}
               initial="enter"
               animate="center"
               exit="exit"
-              transition={{ duration: 0.18, ease: "easeOut" }}
+              variants={{
+                enter: (dir: number) => ({ x: dir * 32, opacity: 0 }),
+                center: {
+                  x: 0,
+                  opacity: 1,
+                  transition: {
+                    x: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
+                    opacity: { duration: 0.18, ease: "easeOut" },
+                  },
+                },
+                exit: (dir: number) => ({
+                  x: -dir * 32,
+                  opacity: 0,
+                  transition: { duration: 0.13, ease: "easeIn" },
+                }),
+              }}
               className="flex flex-col gap-2"
             >
-              {visibleTasks.map((task, index) => (
-                <SuggestedTaskCard
-                  key={task.id}
-                  task={task}
-                  index={index}
-                  onSelect={handleSelectTask}
-                  onDismiss={handleDismiss}
-                />
-              ))}
+              <AnimatePresence mode="sync" initial={false}>
+                {visibleTasks.map((task) => (
+                  <SuggestedTaskCard
+                    key={task.id}
+                    task={task}
+                    onSelect={handleSelectTask}
+                    onDismiss={handleDismiss}
+                  />
+                ))}
+              </AnimatePresence>
             </motion.div>
           </AnimatePresence>
         </div>

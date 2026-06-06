@@ -158,6 +158,42 @@ function hasSessionPromptEvent(events: AcpMessage[]): boolean {
   );
 }
 
+type DerivedPermissionRequest = Pick<
+  CloudTaskPermissionRequestUpdate,
+  "requestId" | "toolCall" | "options"
+>;
+
+export function derivePendingPermissionRequests(
+  entries: StoredLogEntry[],
+): DerivedPermissionRequest[] {
+  const requests = new Map<string, DerivedPermissionRequest>();
+  const resolved = new Set<string>();
+  for (const entry of entries) {
+    const method = entry.notification?.method;
+    if (!method) continue;
+    const params = (entry.notification?.params ?? {}) as {
+      requestId?: string;
+      toolCall?: CloudTaskPermissionRequestUpdate["toolCall"];
+      options?: CloudTaskPermissionRequestUpdate["options"];
+    };
+    if (typeof params.requestId !== "string") continue;
+    if (isNotification(method, POSTHOG_NOTIFICATIONS.PERMISSION_RESOLVED)) {
+      resolved.add(params.requestId);
+    } else if (
+      isNotification(method, POSTHOG_NOTIFICATIONS.PERMISSION_REQUEST) &&
+      typeof params.toolCall?.toolCallId === "string" &&
+      Array.isArray(params.options)
+    ) {
+      requests.set(params.requestId, {
+        requestId: params.requestId,
+        toolCall: params.toolCall,
+        options: params.options,
+      });
+    }
+  }
+  return [...requests.values()].filter((r) => !resolved.has(r.requestId));
+}
+
 function buildCloudDefaultConfigOptions(
   initialMode: string | undefined,
   adapter: Adapter = "claude",
@@ -1470,7 +1506,7 @@ export class SessionService {
 
   private handleCloudPermissionRequest(
     taskRunId: string,
-    update: CloudTaskPermissionRequestUpdate,
+    update: DerivedPermissionRequest,
   ): void {
     log.info("Cloud permission request received", {
       taskRunId,
@@ -1502,6 +1538,15 @@ export class SessionService {
     sessionStoreSetters.setPendingPermissions(taskRunId, newPermissions);
     taskViewedApi.markActivity(session.taskId);
     notifyPermissionRequest(session.taskTitle, session.taskId);
+  }
+
+  private surfacePersistedPendingPermissions(
+    taskRunId: string,
+    entries: StoredLogEntry[],
+  ): void {
+    for (const request of derivePendingPermissionRequests(entries)) {
+      this.handleCloudPermissionRequest(taskRunId, request);
+    }
   }
 
   // --- Prompt Handling ---
@@ -2291,10 +2336,10 @@ export class SessionService {
     teamId: number;
   } | null> {
     const authState = await fetchAuthState();
-    if (!authState.cloudRegion || !authState.projectId) return null;
+    if (!authState.cloudRegion || !authState.currentProjectId) return null;
     return {
       apiHost: getCloudUrlFromRegion(authState.cloudRegion),
-      teamId: authState.projectId,
+      teamId: authState.currentProjectId,
     };
   }
 
@@ -3278,13 +3323,13 @@ export class SessionService {
       toast.error(`Authentication required for handoff: ${message}`);
       return null;
     }
-    if (!auth.projectId || !auth.cloudRegion) {
+    if (!auth.currentProjectId || !auth.cloudRegion) {
       toast.error("Missing project configuration for handoff");
       return null;
     }
     return {
       apiHost: getCloudUrlFromRegion(auth.cloudRegion),
-      projectId: auth.projectId,
+      projectId: auth.currentProjectId,
     };
   }
 
@@ -3352,11 +3397,13 @@ export class SessionService {
 
     const previousErrorTitle = session.errorTitle;
     const previousErrorMessage = session.errorMessage;
+    const previousErrorRetryable = session.errorRetryable;
 
     sessionStoreSetters.updateSession(session.taskRunId, {
       status: "disconnected",
       errorTitle: undefined,
       errorMessage: undefined,
+      errorRetryable: undefined,
       isPromptPending: false,
     });
 
@@ -3370,6 +3417,7 @@ export class SessionService {
         status: "error",
         errorTitle: previousErrorTitle,
         errorMessage: previousErrorMessage,
+        errorRetryable: previousErrorRetryable,
       });
       throw error;
     }
@@ -3669,6 +3717,7 @@ export class SessionService {
         errorMessage:
           update.errorMessage ??
           "Lost connection to the cloud run. Retry to reconnect.",
+        errorRetryable: update.retryable,
         isPromptPending: false,
       });
       return;
@@ -3731,6 +3780,10 @@ export class SessionService {
           logUrl: session?.logUrl,
         });
       }
+    }
+
+    if (update.kind === "snapshot" && !isTerminalStatus(update.status)) {
+      this.surfacePersistedPendingPermissions(taskRunId, update.newEntries);
     }
 
     // NOTE: Don't auto-flush on `!isPromptPending && queue.length > 0` here.
@@ -3826,7 +3879,7 @@ export class SessionService {
     const apiHost = authState.cloudRegion
       ? getCloudUrlFromRegion(authState.cloudRegion)
       : null;
-    const projectId = authState.projectId;
+    const projectId = authState.currentProjectId;
     const client = createAuthenticatedClient(authState);
 
     if (!apiHost || !projectId || !client) return null;

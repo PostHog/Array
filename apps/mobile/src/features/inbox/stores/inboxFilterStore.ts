@@ -19,7 +19,7 @@ export type SourceProduct =
   | "zendesk"
   | "conversations";
 
-const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
+export const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
   "ready",
   "pending_input",
   "in_progress",

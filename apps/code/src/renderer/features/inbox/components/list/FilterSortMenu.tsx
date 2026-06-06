@@ -13,6 +13,7 @@ import {
   CalendarPlus,
   Check,
   Clock,
+  CompassIcon,
   FunnelSimple as FunnelSimpleIcon,
   GithubLogoIcon,
   KanbanIcon,
@@ -25,6 +26,7 @@ import {
 import { Box, Flex, Popover, Text } from "@radix-ui/themes";
 import type {
   SignalReportOrderingField,
+  SignalReportPriority,
   SignalReportStatus,
 } from "@shared/types";
 import type React from "react";
@@ -76,6 +78,14 @@ const FILTERABLE_STATUSES: SignalReportStatus[] = [
   "potential",
 ];
 
+const PRIORITY_OPTIONS: { value: SignalReportPriority; accent: string }[] = [
+  { value: "P0", accent: "var(--red-9)" },
+  { value: "P1", accent: "var(--orange-9)" },
+  { value: "P2", accent: "var(--amber-9)" },
+  { value: "P3", accent: "var(--gray-9)" },
+  { value: "P4", accent: "var(--gray-9)" },
+];
+
 const SOURCE_PRODUCT_OPTIONS: {
   value: SourceProduct;
   label: string;
@@ -105,6 +115,7 @@ const SOURCE_PRODUCT_OPTIONS: {
     icon: <LifebuoyIcon size={14} />,
   },
   { value: "pganalyze", label: "pganalyze", icon: <PgAnalyzeIcon size={14} /> },
+  { value: "signals_scout", label: "Scout", icon: <CompassIcon size={14} /> },
 ];
 
 const ITEM_CLASS_NAME =
@@ -122,6 +133,8 @@ export function FilterSortMenu() {
   const toggleSourceProduct = useInboxSignalsFilterStore(
     (s) => s.toggleSourceProduct,
   );
+  const priorityFilter = useInboxSignalsFilterStore((s) => s.priorityFilter);
+  const togglePriority = useInboxSignalsFilterStore((s) => s.togglePriority);
 
   const handleContentKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
@@ -189,6 +202,35 @@ export function FilterSortMenu() {
                     <span className="flex items-center gap-1 text-gray-12">
                       {option.icon}
                       <span>{option.label}</span>
+                    </span>
+                    {isActive && <Check size={12} className="text-gray-12" />}
+                  </button>
+                );
+              })}
+            </Box>
+          </Box>
+
+          <Box>
+            <Text className="pl-[1px] font-medium text-[13px] text-gray-10">
+              Priority
+            </Text>
+            <Box mt="1">
+              {PRIORITY_OPTIONS.map((option) => {
+                const isActive = priorityFilter.includes(option.value);
+
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={ITEM_CLASS_NAME}
+                    onClick={() => togglePriority(option.value)}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className="inline-block h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: option.accent }}
+                      />
+                      <span className="text-gray-12">{option.value}</span>
                     </span>
                     {isActive && <Check size={12} className="text-gray-12" />}
                   </button>

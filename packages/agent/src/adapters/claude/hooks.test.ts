@@ -10,6 +10,7 @@ vi.mock("../../enrichment/file-enricher", () => ({
 import { Logger } from "../../utils/logger";
 import type { TaskState } from "./conversion/task-state";
 import {
+  createPostToolUseHook,
   createPreToolUseHook,
   createReadEnrichmentHook,
   createSignedCommitGuardHook,
@@ -197,6 +198,38 @@ describe("createReadEnrichmentHook", () => {
 
     const [, , content] = enrichFileMock.mock.calls[0];
     expect(content).toBe("foo");
+  });
+});
+
+describe("createPostToolUseHook onCodeFileRead", () => {
+  const signal = { signal: new AbortController().signal };
+
+  test("fires onCodeFileRead when a file is read", async () => {
+    const onCodeFileRead = vi.fn();
+    const hook = createPostToolUseHook({ onCodeFileRead });
+    await hook(buildReadHookInput({ tool_name: "Read" }), "toolu_1", signal);
+
+    expect(onCodeFileRead).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not fire onCodeFileRead for non-Read tools", async () => {
+    const onCodeFileRead = vi.fn();
+    const hook = createPostToolUseHook({ onCodeFileRead });
+    await hook(buildReadHookInput({ tool_name: "Bash" }), "toolu_1", signal);
+
+    expect(onCodeFileRead).not.toHaveBeenCalled();
+  });
+
+  test("does not fire onCodeFileRead for non-PostToolUse events", async () => {
+    const onCodeFileRead = vi.fn();
+    const hook = createPostToolUseHook({ onCodeFileRead });
+    await hook(
+      { hook_event_name: "PreToolUse", tool_name: "Read" } as HookInput,
+      "toolu_1",
+      signal,
+    );
+
+    expect(onCodeFileRead).not.toHaveBeenCalled();
   });
 });
 

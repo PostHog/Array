@@ -34,6 +34,7 @@ export function CommandCenterSessionView({
     cloudStatus,
     errorTitle,
     errorMessage,
+    errorRetryable,
   } = useSessionViewState(taskId, task);
 
   useSessionConnection({ taskId, task, session, repoPath, isCloud });
@@ -67,6 +68,7 @@ export function CommandCenterSessionView({
         hasError={hasError}
         errorTitle={errorTitle}
         errorMessage={errorMessage ?? undefined}
+        errorRetryable={errorRetryable}
         onRetry={handleRetry}
         onNewSession={isCloud ? undefined : handleNewSession}
         isInitializing={isInitializing}

@@ -38,6 +38,7 @@ import { PullSaga } from "@posthog/git/sagas/pull";
 import { PushSaga } from "@posthog/git/sagas/push";
 import { parseGithubUrl } from "@posthog/git/utils";
 import { inject, injectable } from "inversify";
+import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
@@ -133,6 +134,7 @@ function toUnifiedDiffPatch(
 @injectable()
 export class GitService extends TypedEventEmitter<GitServiceEvents> {
   private lastFetchTime = new Map<string, number>();
+  private taskPrRevalidations = new Map<string, Promise<void>>();
 
   constructor(
     @inject(MAIN_TOKENS.LlmGatewayService)
@@ -141,6 +143,8 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
     private readonly workspaceService: WorkspaceService,
     @inject(MAIN_TOKENS.AgentService)
     private readonly agentService: AgentService,
+    @inject(MAIN_TOKENS.WorkspaceRepository)
+    private readonly workspaceRepo: IWorkspaceRepository,
   ) {
     super();
   }
@@ -1977,51 +1981,159 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
     }
   }
 
+  /**
+   * Returns cached PR state for the task immediately and kicks off a background
+   * revalidation against `gh`. The fresh result is written back to the DB and,
+   * if the state changed, broadcast via `WorkspaceServiceEvent.TaskPrInfoChanged`
+   * so the renderer can update without re-querying.
+   *
+   * `hasDiff` is computed synchronously for worktrees without a cached PR — it
+   * relies only on local git state, so it stays cheap.
+   */
   async getTaskPrStatus(
     taskId: string,
     cloudPrUrl: string | null,
   ): Promise<{ prState: SidebarPrState; hasDiff: boolean }> {
+    const cached = this.workspaceRepo.findByTaskId(taskId);
+    const cachedPrState = (cached?.prState ?? null) as SidebarPrState;
+
+    void this.revalidateTaskPrStatus(taskId, cloudPrUrl);
+
+    if (cachedPrState) return { prState: cachedPrState, hasDiff: false };
+
+    const hasDiff = await this.computeWorktreeHasDiff(taskId);
+    return { prState: null, hasDiff };
+  }
+
+  getCachedPrUrl(taskId: string): { prUrl: string | null } {
+    const row = this.workspaceRepo.findByTaskId(taskId);
+    return { prUrl: row?.prUrl ?? null };
+  }
+
+  private async computeWorktreeHasDiff(taskId: string): Promise<boolean> {
     const workspace = await this.workspaceService.getWorkspace(taskId);
-    if (!workspace) return { prState: null, hasDiff: false };
+    if (
+      !workspace ||
+      workspace.mode !== "worktree" ||
+      !workspace.worktreePath
+    ) {
+      return false;
+    }
+    if (workspace.linkedBranch) return false;
+    const [diffStats, syncStatus] = await Promise.all([
+      this.getDiffStats(workspace.worktreePath),
+      this.getGitSyncStatus(workspace.worktreePath),
+    ]);
+    return (
+      (diffStats?.filesChanged ?? 0) > 0 ||
+      (syncStatus?.aheadOfDefault ?? 0) > 0
+    );
+  }
+
+  /**
+   * Performs the actual `gh` lookups for a task's PR, writes the result to the
+   * workspaces cache, and emits `TaskPrInfoChanged` when the cached value
+   * changed. Deduplicated per task so concurrent callers share one network
+   * roundtrip.
+   */
+  private async revalidateTaskPrStatus(
+    taskId: string,
+    cloudPrUrl: string | null,
+  ): Promise<void> {
+    const inFlight = this.taskPrRevalidations.get(taskId);
+    if (inFlight) return inFlight;
+
+    const promise = this.computeTaskPrStatus(taskId, cloudPrUrl)
+      .then((fresh) => {
+        const cached = this.workspaceRepo.findByTaskId(taskId);
+        if (!cached) return;
+
+        const cachedPrUrl = cached.prUrl ?? null;
+        const cachedPrState = (cached.prState ?? null) as SidebarPrState;
+
+        this.workspaceRepo.updatePrCache(taskId, {
+          prUrl: fresh.prUrl,
+          prState: fresh.prState,
+        });
+
+        // Emit only when PR identity or state actually changed. `hasDiff` is
+        // not persisted (and is recomputed inline on each `getTaskPrStatus`
+        // call), so it must not feed into the emit decision — otherwise a
+        // worktree with uncommitted changes but no PR would emit on every
+        // revalidation cycle.
+        if (cachedPrUrl === fresh.prUrl && cachedPrState === fresh.prState) {
+          return;
+        }
+
+        // String literal (rather than `WorkspaceServiceEvent.TaskPrInfoChanged`)
+        // avoids a circular import: workspace/service eagerly loads the DI
+        // container, which in turn re-enters this module.
+        this.workspaceService.emit("taskPrInfoChanged", {
+          taskId,
+          prUrl: fresh.prUrl,
+          prState: fresh.prState,
+        });
+      })
+      .catch((err) => {
+        log.warn("Failed to revalidate task PR status", { taskId, err });
+      })
+      .finally(() => {
+        this.taskPrRevalidations.delete(taskId);
+      });
+
+    this.taskPrRevalidations.set(taskId, promise);
+    return promise;
+  }
+
+  private async computeTaskPrStatus(
+    taskId: string,
+    cloudPrUrl: string | null,
+  ): Promise<{
+    prUrl: string | null;
+    prState: SidebarPrState;
+    hasDiff: boolean;
+  }> {
+    const workspace = await this.workspaceService.getWorkspace(taskId);
+    if (!workspace) return { prUrl: null, prState: null, hasDiff: false };
 
     const { mode, worktreePath, folderPath, linkedBranch } = workspace;
     const isCloud = mode === "cloud";
     const repoPath = worktreePath ?? (folderPath || null);
 
-    // Cloud tasks: look up PR details by the cloud run's PR URL
     if (isCloud && cloudPrUrl) {
       const details = await this.getPrDetailsByUrl(cloudPrUrl);
       if (details) {
         return {
+          prUrl: cloudPrUrl,
           prState: mapPrState(details.state, details.merged, details.draft),
           hasDiff: false,
         };
       }
-      return { prState: null, hasDiff: false };
+      return { prUrl: cloudPrUrl, prState: null, hasDiff: false };
     }
 
-    if (isCloud) return { prState: null, hasDiff: false };
+    if (isCloud) return { prUrl: null, prState: null, hasDiff: false };
 
-    // Linked branch: look up PR by branch name
     if (linkedBranch && repoPath) {
       const prUrl = await this.getPrUrlForBranch(repoPath, linkedBranch);
       if (prUrl) {
         const details = await this.getPrDetailsByUrl(prUrl);
         if (details) {
           return {
+            prUrl,
             prState: mapPrState(details.state, details.merged, details.draft),
             hasDiff: false,
           };
         }
       }
-      return { prState: null, hasDiff: false };
+      return { prUrl: null, prState: null, hasDiff: false };
     }
 
-    // Worktree tasks without linked branch: check current branch PR + diff
     if (worktreePath) {
       const prStatus = await this.getPrStatus(worktreePath);
       if (prStatus.prExists && prStatus.prState) {
         return {
+          prUrl: prStatus.prUrl,
           prState: mapPrState(
             prStatus.prState,
             false,
@@ -2040,9 +2152,9 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
         (diffStats?.filesChanged ?? 0) > 0 ||
         (syncStatus?.aheadOfDefault ?? 0) > 0;
 
-      return { prState: null, hasDiff };
+      return { prUrl: null, prState: null, hasDiff };
     }
 
-    return { prState: null, hasDiff: false };
+    return { prUrl: null, prState: null, hasDiff: false };
   }
 }

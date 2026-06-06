@@ -6,8 +6,10 @@ import {
 import { useSignalSourceManager } from "@features/inbox/hooks/useSignalSourceManager";
 import { SettingsOptionSelect } from "@features/settings/components/SettingsOptionSelect";
 import { GitHubIntegrationSection } from "@features/settings/components/sections/GitHubIntegrationSection";
-import { SignalSlackNotificationsSettings } from "@features/settings/components/sections/SignalSlackNotificationsSettings";
+import { SlackInboxNotificationsSettings } from "@features/settings/components/sections/SlackInboxNotificationsSettings";
+import { openSettings } from "@features/settings/hooks/useOpenSettings";
 import { useRepositoryIntegration } from "@hooks/useIntegrations";
+import { ArrowRightIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import type { SignalReportPriority } from "@shared/types";
 
@@ -29,10 +31,17 @@ const USER_PRIORITY_OPTIONS: { value: string; label: string }[] = [
 interface SignalSourcesSettingsProps {
   /** Slack channel combobox is inside a Radix modal dialog (Inbox configuration). */
   slackNotificationsInModal?: boolean;
+  /**
+   * Render the Slack inbox-notification config inline. True in the inbox setup
+   * flow (where picking a channel is part of onboarding); false in the Settings
+   * dialog's Signals section, which links out to the dedicated Slack section.
+   */
+  showSlackNotifications?: boolean;
 }
 
 export function SignalSourcesSettings({
   slackNotificationsInModal = false,
+  showSlackNotifications = true,
 }: SignalSourcesSettingsProps) {
   const {
     displayValues,
@@ -110,9 +119,14 @@ export function SignalSourcesSettings({
         style={{ borderTop: "1px dashed var(--gray-5)" }}
       >
         <Flex direction="column" gap="1">
-          <Text className="font-medium text-(--gray-12) text-sm">
-            Your PR auto-start threshold
-          </Text>
+          <Flex align="center" gap="2">
+            <Box className="shrink-0 text-(--gray-11)">
+              <GithubLogoIcon size={16} />
+            </Box>
+            <Text className="font-medium text-(--gray-12) text-sm">
+              Your PR auto-start threshold
+            </Text>
+          </Flex>
           <Text className="text-(--gray-11) text-[13px]">
             Automatically start tasks assigned to you for reports at or above
             this priority. These count toward your usage. Choose
@@ -135,10 +149,38 @@ export function SignalSourcesSettings({
           />
         )}
       </Flex>
-      <SignalSlackNotificationsSettings
-        channelComboboxModal={slackNotificationsInModal}
-        isLoading={isLoadingIntegrations}
-      />
+      {showSlackNotifications ? (
+        <SlackInboxNotificationsSettings
+          channelComboboxModal={slackNotificationsInModal}
+          isLoading={isLoadingIntegrations}
+        />
+      ) : (
+        <Flex
+          align="center"
+          justify="between"
+          gap="2"
+          pt="3"
+          wrap="wrap"
+          style={{ borderTop: "1px dashed var(--gray-5)" }}
+        >
+          <Flex direction="column" gap="1" className="min-w-0">
+            <Text className="font-medium text-(--gray-12) text-sm">
+              Slack notifications
+            </Text>
+            <Text className="text-(--gray-11) text-[13px]">
+              Choose where ready inbox reports are posted and who gets pinged.
+            </Text>
+          </Flex>
+          <button
+            type="button"
+            className="flex shrink-0 cursor-pointer items-center gap-1 border-0 bg-transparent text-[13px] text-accent-11 transition-colors hover:text-accent-12"
+            onClick={() => openSettings("slack")}
+          >
+            Manage in Slack settings
+            <ArrowRightIcon size={13} />
+          </button>
+        </Flex>
+      )}
     </Flex>
   );
 }

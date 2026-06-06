@@ -2,6 +2,7 @@
 // resolve this node-only module against vite's `__vite-browser-external` stub,
 // which has no named exports. This module never runs in the browser.
 import * as childProcess from "node:child_process";
+import * as crypto from "node:crypto";
 import { mapWithConcurrency } from "./concurrency";
 import { execGh, execGhWithRetry } from "./gh";
 import { buildPostHogTrailers } from "./trailers";
@@ -54,6 +55,11 @@ export interface SignedCommitResult {
   branch: string;
   /** One entry per chunk; >1 only when the payload was split. */
   commits: { sha: string; url: string }[];
+}
+
+export interface SignedRewriteInput {
+  branch?: string;
+  onto?: string;
 }
 
 export class OversizedFileError extends Error {
@@ -189,13 +195,25 @@ async function remoteTip(
   return out.split("\t")[0]?.trim() || null;
 }
 
-async function createRef(
+async function refApi(
+  ctx: SignedCommitCtx,
+  args: string[],
+  errLabel: string,
+): Promise<void> {
+  const res = await execGh(args, { cwd: ctx.cwd, env: ghTokenEnv(ctx.token) });
+  if (res.exitCode !== 0) {
+    throw new Error(`${errLabel}: ${res.stderr || res.error}`);
+  }
+}
+
+function createRef(
   ctx: SignedCommitCtx,
   repo: string,
   branch: string,
   sha: string,
 ): Promise<void> {
-  const res = await execGh(
+  return refApi(
+    ctx,
     [
       "api",
       "-X",
@@ -206,13 +224,42 @@ async function createRef(
       "-f",
       `sha=${sha}`,
     ],
-    { cwd: ctx.cwd, env: ghTokenEnv(ctx.token) },
+    `Failed to create branch '${branch}'`,
   );
-  if (res.exitCode !== 0) {
-    throw new Error(
-      `Failed to create branch '${branch}': ${res.stderr || res.error}`,
-    );
-  }
+}
+
+function forceUpdateRef(
+  ctx: SignedCommitCtx,
+  repo: string,
+  branch: string,
+  sha: string,
+): Promise<void> {
+  return refApi(
+    ctx,
+    [
+      "api",
+      "-X",
+      "PATCH",
+      `/repos/${repo}/git/refs/heads/${branch}`,
+      "-f",
+      `sha=${sha}`,
+      "-F",
+      "force=true",
+    ],
+    `Failed to force-update '${branch}'`,
+  );
+}
+
+function deleteRef(
+  ctx: SignedCommitCtx,
+  repo: string,
+  branch: string,
+): Promise<void> {
+  return refApi(
+    ctx,
+    ["api", "-X", "DELETE", `/repos/${repo}/git/refs/heads/${branch}`],
+    `Failed to delete ref '${branch}'`,
+  );
 }
 
 /** Env var names the GitHub CLI / git credential helper read a token from, in order. */
@@ -236,19 +283,16 @@ export function ghTokenEnv(token: string): Record<string, string> {
 // still cutting wall-clock for multi-file commits.
 const STAGED_READ_CONCURRENCY = 16;
 
-async function buildFileChanges(
+// Turns a `--name-status -z` diff into the `FileChanges` payload, reading each
+// added/modified file's new blob via `readBlob`
+async function readChangesFromDiff(
   ctx: SignedCommitCtx,
-  baseOid: string,
+  diffArgs: string[],
+  readBlob: (path: string) => string[],
 ): Promise<FileChanges> {
-  // One `--name-status -z` diff yields additions and deletions together; output
-  // is `<status>\0<path>\0...` (no rename pairs, since `--no-renames`). Read raw
-  // (no trim) so paths with leading/trailing spaces survive.
-  const diff = await runGit(
-    ["diff", "--cached", "-z", "--no-renames", "--name-status", baseOid],
-    ctx.cwd,
-  );
+  const diff = await runGit(diffArgs, ctx.cwd);
   if (diff.exitCode !== 0) {
-    throw new Error(`git diff --cached failed: ${diff.stderr.trim()}`);
+    throw new Error(`git ${diffArgs.join(" ")} failed: ${diff.stderr.trim()}`);
   }
   const tokens = diff.stdout.toString("utf8").split("\0").filter(Boolean);
 
@@ -267,18 +311,41 @@ async function buildFileChanges(
     addPaths,
     STAGED_READ_CONCURRENCY,
     async (path) => {
-      // Read the *staged* blob (`:path`) so we commit exactly what was staged,
-      // not any later unstaged edits in the working tree.
-      const r = await runGit(["show", `:${path}`], ctx.cwd);
+      const r = await runGit(readBlob(path), ctx.cwd);
       if (r.exitCode !== 0) {
-        throw new Error(
-          `Failed to read staged file '${path}': ${r.stderr.trim()}`,
-        );
+        throw new Error(`Failed to read file '${path}': ${r.stderr.trim()}`);
       }
       return { path, contents: r.stdout.toString("base64") };
     },
   );
   return { additions, deletions };
+}
+
+function buildFileChanges(
+  ctx: SignedCommitCtx,
+  baseOid: string,
+): Promise<FileChanges> {
+  // Read the *staged* blob (`:path`) so we commit exactly what was staged, not
+  // any later unstaged edits in the working tree.
+  return readChangesFromDiff(
+    ctx,
+    ["diff", "--cached", "-z", "--no-renames", "--name-status", baseOid],
+    (path) => ["show", `:${path}`],
+  );
+}
+
+// The change between two arbitrary commits/trees, reading the new blob from the
+// `to` side. Used by the rewrite path to replay one commit's net diff at a time.
+function buildFileChangesBetween(
+  ctx: SignedCommitCtx,
+  fromOid: string,
+  toOid: string,
+): Promise<FileChanges> {
+  return readChangesFromDiff(
+    ctx,
+    ["diff", "-z", "--no-renames", "--name-status", fromOid, toOid],
+    (path) => ["show", `${toOid}:${path}`],
+  );
 }
 
 function additionBytes(a: FileAddition): number {
@@ -410,6 +477,38 @@ async function syncLocalCheckout(
   }
 }
 
+async function publishChanges(
+  ctx: SignedCommitCtx,
+  repo: string,
+  branch: string,
+  baseOid: string,
+  headline: string,
+  body: string,
+  changes: FileChanges,
+): Promise<{ commits: { sha: string; url: string }[]; tip: string }> {
+  const chunks = chunkFileChanges(changes, DEFAULT_MAX_PAYLOAD_BYTES);
+  const commits: { sha: string; url: string }[] = [];
+  let tip = baseOid;
+  for (let i = 0; i < chunks.length; i++) {
+    const hl =
+      chunks.length > 1
+        ? `${headline} — part ${i + 1}/${chunks.length}`
+        : headline;
+    const commit = await createCommitOnBranch(
+      ctx,
+      repo,
+      branch,
+      tip,
+      hl,
+      body,
+      chunks[i],
+    );
+    commits.push({ sha: commit.oid, url: commit.url });
+    tip = commit.oid;
+  }
+  return { commits, tip };
+}
+
 export async function createSignedCommit(
   ctx: SignedCommitCtx,
   input: SignedCommitInput,
@@ -447,31 +546,153 @@ export async function createSignedCommit(
     );
   }
 
-  const chunks = chunkFileChanges(changes, DEFAULT_MAX_PAYLOAD_BYTES);
   const body = [input.body, buildPostHogTrailers(ctx.taskId).join("\n")]
     .filter(Boolean)
     .join("\n\n");
 
-  const commits: { sha: string; url: string }[] = [];
-  let expectedHeadOid = tip;
-  for (let i = 0; i < chunks.length; i++) {
-    const headline =
-      chunks.length > 1
-        ? `${input.message} — part ${i + 1}/${chunks.length}`
-        : input.message;
-    const commit = await createCommitOnBranch(
-      ctx,
-      repo,
-      branch,
-      expectedHeadOid,
-      headline,
-      body,
-      chunks[i],
+  const { commits, tip: newTip } = await publishChanges(
+    ctx,
+    repo,
+    branch,
+    tip,
+    input.message,
+    body,
+    changes,
+  );
+
+  await syncLocalCheckout(ctx, branch, newTip);
+  return { branch, commits };
+}
+
+/** Splits a raw commit message into a headline and the remaining body */
+export function splitCommitMessage(raw: string): {
+  headline: string;
+  body: string;
+} {
+  const nl = raw.indexOf("\n");
+  if (nl === -1) return { headline: raw.trim(), body: "" };
+  return {
+    headline: raw.slice(0, nl).trim(),
+    body: raw
+      .slice(nl + 1)
+      .replace(/^\n+/, "")
+      .trimEnd(),
+  };
+}
+
+async function resolveOnto(
+  ctx: SignedCommitCtx,
+  input: SignedRewriteInput,
+  baseBranch: string | null,
+): Promise<string> {
+  if (input.onto) {
+    return gitText(["rev-parse", `${input.onto}^{commit}`], ctx.cwd);
+  }
+  if (!baseBranch) {
+    throw new Error(
+      "Could not determine the base branch — pass `onto` explicitly (e.g. origin/master).",
     );
-    commits.push({ sha: commit.oid, url: commit.url });
-    expectedHeadOid = commit.oid;
+  }
+  return gitText(["merge-base", `origin/${baseBranch}`, "HEAD"], ctx.cwd);
+}
+
+/**
+ * Republishes the current local branch as GitHub-signed history and
+ * force-updates the remote branch onto it — the signed-commit equivalent of `git push --force`
+ */
+export async function createSignedRewrite(
+  ctx: SignedCommitCtx,
+  input: SignedRewriteInput,
+): Promise<SignedCommitResult> {
+  const [repo, branch] = await Promise.all([
+    resolveRepoNameWithOwner(ctx),
+    resolveBranchName(ctx, { message: "", branch: input.branch }),
+  ]);
+
+  // Rewrite only updates existing history — a brand-new branch goes through
+  // createSignedCommit instead.
+  const staleTip = await remoteTip(ctx, branch);
+  if (staleTip === null) {
+    throw new Error(
+      `Branch '${branch}' does not exist on the remote. Use git_signed_commit to create it first.`,
+    );
   }
 
-  await syncLocalCheckout(ctx, branch, expectedHeadOid);
-  return { branch, commits };
+  const baseBranch = await resolveBaseBranch(ctx);
+  if (baseBranch) {
+    await runGit(["fetch", "--no-tags", "origin", baseBranch], ctx.cwd);
+  }
+  const onto = await resolveOnto(ctx, input, baseBranch);
+
+  // HEAD must descend from `onto` so `onto..HEAD` is exactly the set to replay.
+  const ancestry = await runGit(
+    ["merge-base", "--is-ancestor", onto, "HEAD"],
+    ctx.cwd,
+  );
+  if (ancestry.exitCode !== 0) {
+    throw new Error(
+      `Local HEAD is not based on ${onto} — rebase onto the base branch first, then call git_signed_rewrite.`,
+    );
+  }
+
+  const list = await gitText(
+    ["rev-list", "--reverse", "--first-parent", `${onto}..HEAD`],
+    ctx.cwd,
+  );
+  const localCommits = list ? list.split("\n").filter(Boolean) : [];
+  if (localCommits.length === 0) {
+    throw new Error(`No commits between ${onto} and HEAD to publish.`);
+  }
+
+  const scratch = `posthog-code/rewrite-tmp/${crypto.randomUUID()}`;
+  await createRef(ctx, repo, scratch, onto);
+
+  const commits: { sha: string; url: string }[] = [];
+  try {
+    let expectedHeadOid = onto;
+    let prevTree = onto;
+    for (const sha of localCommits) {
+      const changes = await buildFileChangesBetween(ctx, prevTree, sha);
+      prevTree = sha;
+      // Skip empty commits (e.g. a merge that's a no-op on the first-parent
+      // line) — createCommitOnBranch rejects an empty fileChanges payload.
+      if (changes.additions.length === 0 && changes.deletions.length === 0) {
+        continue;
+      }
+      const { headline, body } = splitCommitMessage(
+        await gitText(["log", "-1", "--format=%B", sha], ctx.cwd),
+      );
+      const published = await publishChanges(
+        ctx,
+        repo,
+        scratch,
+        expectedHeadOid,
+        headline,
+        body,
+        changes,
+      );
+      commits.push(...published.commits);
+      expectedHeadOid = published.tip;
+    }
+
+    if (commits.length === 0) {
+      throw new Error(
+        "Nothing to publish — every commit was empty after diffing.",
+      );
+    }
+
+    const currentTip = await remoteTip(ctx, branch);
+    if (currentTip !== staleTip) {
+      throw new Error(
+        `Branch '${branch}' moved while rewriting (expected ${staleTip}, found ${currentTip}). Re-fetch and retry.`,
+      );
+    }
+    await forceUpdateRef(ctx, repo, branch, expectedHeadOid);
+    await syncLocalCheckout(ctx, branch, expectedHeadOid);
+    return { branch, commits };
+  } finally {
+    // The history is already published via the ref move; the scratch ref is just
+    // bookkeeping, so a delete failure is non-fatal.
+    await deleteRef(ctx, repo, scratch).catch(() => {});
+  }
 }

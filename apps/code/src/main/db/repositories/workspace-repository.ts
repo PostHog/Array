@@ -8,11 +8,17 @@ import type { DatabaseService } from "../service";
 export type Workspace = typeof workspaces.$inferSelect;
 export type NewWorkspace = typeof workspaces.$inferInsert;
 export type WorkspaceMode = "cloud" | "local" | "worktree";
+export type CachedPrState = "open" | "merged" | "closed" | "draft";
 
 export interface CreateWorkspaceData {
   taskId: string;
   repositoryId: string | null;
   mode: WorkspaceMode;
+}
+
+export interface PrCacheUpdate {
+  prUrl: string | null;
+  prState: CachedPrState | null;
 }
 
 export interface IWorkspaceRepository {
@@ -38,6 +44,7 @@ export interface IWorkspaceRepository {
   getAdditionalDirectories(taskId: string): string[];
   addAdditionalDirectory(taskId: string, path: string): void;
   removeAdditionalDirectory(taskId: string, path: string): void;
+  updatePrCache(taskId: string, update: PrCacheUpdate): void;
   deleteAll(): void;
 }
 
@@ -221,6 +228,18 @@ export class WorkspaceRepository implements IWorkspaceRepository {
         ? current.filter((p) => p !== normalized)
         : null,
     );
+  }
+
+  updatePrCache(taskId: string, update: PrCacheUpdate): void {
+    this.db
+      .update(workspaces)
+      .set({
+        prUrl: update.prUrl,
+        prState: update.prState,
+        updatedAt: now(),
+      })
+      .where(byTaskId(taskId))
+      .run();
   }
 
   deleteAll(): void {

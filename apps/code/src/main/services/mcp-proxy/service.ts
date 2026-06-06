@@ -166,6 +166,12 @@ export class McpProxyService {
     options: RequestInit,
     res: http.ServerResponse,
   ): Promise<void> {
+    log.debug("MCP proxy forwarding request", {
+      id,
+      url,
+      method: options.method,
+      requestBody: truncateRequestBody(options.body),
+    });
     try {
       let response = await this.authService.authenticatedFetch(
         fetch,
@@ -187,6 +193,8 @@ export class McpProxyService {
           log.warn("MCP auth failure — refreshing token and retrying", {
             id,
             url,
+            method: options.method,
+            requestBody: truncateRequestBody(options.body),
             status: response.status,
           });
           await this.authService.refreshAccessToken();
@@ -228,7 +236,13 @@ export class McpProxyService {
 
       this.writeStreamingResponse(response, res);
     } catch (err) {
-      log.error("MCP proxy forward error", { id, url, err });
+      log.error("MCP proxy forward error", {
+        id,
+        url,
+        method: options.method,
+        requestBody: truncateRequestBody(options.body),
+        err,
+      });
       if (!res.headersSent) {
         res.writeHead(502);
       }

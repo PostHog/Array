@@ -74,6 +74,12 @@ function signalCardSourceLine(signal: {
   if (source_product === "pganalyze" && source_type === "issue") {
     return "pganalyze · Issue";
   }
+  if (
+    source_product === "signals_scout" &&
+    source_type === "cross_source_issue"
+  ) {
+    return "Scout · Cross-source issue";
+  }
 
   const productLabel = source_product.replace(/_/g, " ");
   const typeLabel = source_type.replace(/_/g, " ");
@@ -616,7 +622,7 @@ function SessionRecordingVideo({
   exportedAssetId?: number;
   sessionId: string;
 }) {
-  const projectId = useAuthStateValue((state) => state.projectId);
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hasFiredPlayRef = useRef(false);
   const interaction = useSignalInteraction();
@@ -680,7 +686,7 @@ function ErrorTrackingSignalCard({
   codePaths?: string[];
   dataQueried?: string;
 }) {
-  const projectId = useAuthStateValue((s) => s.projectId);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const issueUrl = signal.source_id
     ? errorTrackingIssueUrl(signal.source_id, { projectId, cloudRegion })

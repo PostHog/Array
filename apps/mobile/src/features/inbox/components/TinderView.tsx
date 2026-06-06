@@ -22,6 +22,11 @@ import type {
   CreateTaskOptions,
   RepositoryOption,
 } from "@/features/tasks/types";
+import {
+  ANALYTICS_EVENTS,
+  computeReportAgeHours,
+  useAnalytics,
+} from "@/lib/analytics";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 import { getReportRepository } from "../api";
@@ -138,6 +143,34 @@ export function TinderView({
   const dismissReport = useDismissedReportsStore((s) => s.dismissReport);
   const acceptReport = useDismissedReportsStore((s) => s.acceptReport);
 
+  const analytics = useAnalytics();
+
+  const trackReportAction = useCallback(
+    (
+      report: SignalReport,
+      actionType: "dismiss" | "create_pr",
+      position: number,
+      total: number,
+    ) => {
+      analytics.track(ANALYTICS_EVENTS.INBOX_REPORT_ACTION, {
+        report_id: report.id,
+        report_title: report.title ?? null,
+        report_age_hours: computeReportAgeHours(report.created_at),
+        priority: report.priority ?? null,
+        actionability: report.actionability ?? null,
+        action_type: actionType,
+        // Tinder cards stack like a list of rows the user is acting on
+        // without opening a detail view — closest desktop analogue.
+        surface: "list_row",
+        is_bulk: false,
+        bulk_size: 1,
+        rank: position,
+        list_size: total,
+      });
+    },
+    [analytics],
+  );
+
   // Local state
   const [expandedReport, setExpandedReport] = useState<SignalReport | null>(
     null,
@@ -162,15 +195,22 @@ export function TinderView({
     toastTimer.current = setTimeout(() => setToast(null), 10_000);
   }, []);
 
+  const reportsRef = useRef(reports);
+  reportsRef.current = reports;
+
   const handleDismiss = useCallback(
     (reportId: string) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const visible = reportsRef.current;
+      const idx = visible.findIndex((r) => r.id === reportId);
+      const target = idx >= 0 ? visible[idx] : null;
+      if (target) trackReportAction(target, "dismiss", idx, visible.length);
       dismissReport(reportId);
       // Don't advanceCard() — the parent filters dismissed IDs from the
       // reports array, so removing the report shifts the next one into
       // the current index position automatically.
     },
-    [dismissReport],
+    [dismissReport, trackReportAction],
   );
 
   const handleAccept = useCallback(
@@ -178,6 +218,11 @@ export function TinderView({
       setCreating(true);
       setError(null);
       showToastPending(report.title ?? "Untitled report");
+      // Snapshot rank/list_size before the swipe completes — accepting filters
+      // the report out of the visible deck.
+      const visibleBefore = reportsRef.current;
+      const acceptedRank = visibleBefore.findIndex((r) => r.id === report.id);
+      const acceptedListSize = visibleBefore.length;
       try {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -214,6 +259,7 @@ export function TinderView({
         });
 
         acceptReport(report.id);
+        trackReportAction(report, "create_pr", acceptedRank, acceptedListSize);
         showToastDone(task.id, report.title ?? "Untitled report");
       } catch (e) {
         const message =
@@ -225,7 +271,13 @@ export function TinderView({
         setCreating(false);
       }
     },
-    [repositoryOptions, showToastPending, showToastDone, acceptReport],
+    [
+      repositoryOptions,
+      showToastPending,
+      showToastDone,
+      acceptReport,
+      trackReportAction,
+    ],
   );
 
   const currentReport =

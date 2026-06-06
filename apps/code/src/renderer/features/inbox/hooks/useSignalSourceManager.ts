@@ -25,7 +25,7 @@ type SourceProduct = SignalSourceConfig["source_product"];
 type SourceType = SignalSourceConfig["source_type"];
 
 const SOURCE_TYPE_MAP: Record<
-  Exclude<SourceProduct, "error_tracking" | "llm_analytics">,
+  Exclude<SourceProduct, "error_tracking" | "llm_analytics" | "signals_scout">,
   SourceType
 > = {
   session_replay: "session_analysis_cluster",
@@ -105,7 +105,7 @@ function computeValues(
 }
 
 export function useSignalSourceManager() {
-  const projectId = useAuthStateValue((state) => state.projectId);
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const client = useAuthenticatedClient();
   const queryClient = useQueryClient();
@@ -369,7 +369,7 @@ export function useSignalSourceManager() {
                 SOURCE_TYPE_MAP[
                   product as Exclude<
                     SourceProduct,
-                    "error_tracking" | "llm_analytics"
+                    "error_tracking" | "llm_analytics" | "signals_scout"
                   >
                 ],
               enabled: true,
@@ -471,6 +471,27 @@ export function useSignalSourceManager() {
           error instanceof Error
             ? error.message
             : "Failed to update autostart priority";
+        toast.error(message);
+      }
+    },
+    [client, queryClient],
+  );
+
+  const handleUpdateTeamSlackChannel = useCallback(
+    async (channel: string | null) => {
+      if (!client) return;
+      try {
+        await client.updateSignalTeamConfig({
+          default_slack_notification_channel: channel,
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ["signals", "team-config"],
+        });
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to update default notification channel";
         toast.error(message);
       }
     },
@@ -591,6 +612,7 @@ export function useSignalSourceManager() {
     handleToggleEvaluation,
     teamConfig,
     handleUpdateAutostartPriority,
+    handleUpdateTeamSlackChannel,
     userAutonomyConfig,
     userAutonomyConfigLoading,
     handleUpdateUserAutonomyPriority,

@@ -4,6 +4,7 @@ import {
 } from "@features/auth/hooks/authQueries";
 import { useInboxAvailableSuggestedReviewersStore } from "@features/inbox/stores/inboxAvailableSuggestedReviewersStore";
 import { useAuthenticatedInfiniteQuery } from "@hooks/useAuthenticatedInfiniteQuery";
+import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import type {
   AvailableSuggestedReviewersResponse,
@@ -13,8 +14,12 @@ import type {
   SignalReportSignalsResponse,
   SignalReportsQueryParams,
   SignalReportsResponse,
+  SuggestedReviewersArtefact,
+  SuggestedReviewerWriteEntry,
 } from "@shared/types";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
+import { toast } from "sonner";
 
 const REPORTS_PAGE_SIZE = 100;
 
@@ -207,5 +212,67 @@ export function useInboxReportSignals(
     reportKeys.signals(reportId),
     (client) => client.getSignalReportSignals(reportId),
     { enabled: !!reportId && (options?.enabled ?? true) },
+  );
+}
+
+interface UpdateSuggestedReviewersVariables {
+  artefactId: string;
+  /** Full-replacement payload sent to the server. */
+  content: SuggestedReviewerWriteEntry[];
+  /** Read-shape list used to optimistically patch the cache for immediate-apply UI. */
+  optimisticReviewers: SuggestedReviewersArtefact["content"];
+}
+
+/**
+ * Persists a full replacement of a report's `suggested_reviewers` artefact and optimistically
+ * patches the cached artefacts so the detail pane reflects the change instantly (immediate apply).
+ */
+export function useUpdateSuggestedReviewers(reportId: string) {
+  const queryClient = useQueryClient();
+  const queryKey = reportKeys.artefacts(reportId);
+
+  return useAuthenticatedMutation<
+    SuggestedReviewersArtefact,
+    Error,
+    UpdateSuggestedReviewersVariables
+  >(
+    (client, { artefactId, content }) =>
+      client.updateSignalReportArtefact(reportId, artefactId, content),
+    {
+      onMutate: async ({ artefactId, optimisticReviewers }) => {
+        await queryClient.cancelQueries({ queryKey });
+        const previous =
+          queryClient.getQueryData<SignalReportArtefactsResponse>(queryKey);
+
+        if (previous) {
+          queryClient.setQueryData<SignalReportArtefactsResponse>(queryKey, {
+            ...previous,
+            results: previous.results.map((artefact) =>
+              artefact.id === artefactId &&
+              artefact.type === "suggested_reviewers"
+                ? ({
+                    ...artefact,
+                    content: optimisticReviewers,
+                  } as SuggestedReviewersArtefact)
+                : artefact,
+            ),
+          });
+        }
+
+        return { previous };
+      },
+      onError: (error, _variables, context) => {
+        const previous = (
+          context as { previous?: SignalReportArtefactsResponse }
+        )?.previous;
+        if (previous) {
+          queryClient.setQueryData(queryKey, previous);
+        }
+        toast.error(error.message || "Failed to update suggested reviewers");
+      },
+      onSettled: () => {
+        queryClient.invalidateQueries({ queryKey });
+      },
+    },
   );
 }
