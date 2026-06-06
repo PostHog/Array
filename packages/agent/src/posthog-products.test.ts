@@ -197,6 +197,13 @@ describe("classifyPostHogExecCall", () => {
         'call activity-log-list {"scope":"FeatureFlag"}',
       ),
     ).toEqual(["feature_flags"]);
+    // Web analytics is only reachable from the activity log via this scope.
+    expect(
+      classifyPostHogExecCall(
+        "activity-log-list",
+        'call activity-log-list {"scope":"WebAnalyticsFilterPreset"}',
+      ),
+    ).toEqual(["web_analytics"]);
   });
 
   it("attributes advanced-activity-logs to every recognized scope, deduped", () => {

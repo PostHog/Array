@@ -245,6 +245,7 @@ const ACTIVITY_SCOPE_PRODUCT: Record<string, PostHogProductId> = {
   Log: "logs",
   LogsAlertConfiguration: "logs",
   LogsExclusionRule: "logs",
+  WebAnalyticsFilterPreset: "web_analytics",
   Insight: "product_analytics",
   Dashboard: "product_analytics",
   DashboardWidget: "product_analytics",
@@ -257,8 +258,11 @@ const ACTIVITY_SCOPE_PRODUCT: Record<string, PostHogProductId> = {
   PropertyDefinition: "product_analytics",
   Annotation: "product_analytics",
   Endpoint: "product_analytics",
+  EndpointVersion: "product_analytics",
   Subscription: "product_analytics",
   AlertConfiguration: "product_analytics",
+  Threshold: "product_analytics",
+  AlertSubscription: "product_analytics",
 };
 
 /**
