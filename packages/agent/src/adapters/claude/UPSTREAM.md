@@ -5,8 +5,8 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 ## Fork Point
 
 - **Forked**: v0.10.9, commit `5411e0f4`, Dec 2 2025
-- **Last sync**: v0.39.0, commit `51a370e`, May 29 2026
-- **SDK**: `@anthropic-ai/claude-agent-sdk` 0.3.156, `@agentclientprotocol/sdk` 0.22.1, `@anthropic-ai/sdk` 0.100.1
+- **Last sync**: v0.42.0, commit `0dbccf5`, Jun 5 2026
+- **SDK**: `@anthropic-ai/claude-agent-sdk` 0.3.165, `@agentclientprotocol/sdk` 0.25.0, `@anthropic-ai/sdk` 0.100.1
 
 ## File Mapping
 
@@ -54,6 +54,70 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 | Session fingerprinting | Implicit teardown on cwd/mcp change | Explicit `refreshSession()` | Caller-initiated is more predictable |
 | Shutdown on ACP close | Process exits | No standalone process | Agent is embedded in server |
 | Unsupported slash commands | Loops silently on early idle | Emits "Unsupported slash command" chunk, gated on `initializationResult().commands` so plugin/skill commands (e.g. `/skills-store`) whose echoes use a fresh uuid are not false-flagged | The SDK consumes some slash commands without producing output (e.g. `/plugin` in non-interactive mode); without this we hang. The known-commands gate avoids racing plugin/skill loads where idle can arrive before the transformed user-message echo. |
+
+## Changes Ported in v0.42.0 Sync
+
+- **SDK bumps**: claude-agent-sdk 0.3.156 -> 0.3.165, ACP SDK 0.22.1 -> 0.25.0, anthropic SDK
+  unchanged at 0.100.1.
+- **ACP SDK 0.25.0 model-state removal** (#737, 32175b8): 0.24.0 deleted `SessionModelState`,
+  `SetSessionModelRequest/Response`, `ModelInfo`, and the `models` field on every session lifecycle
+  response; model selection moved entirely into `SessionConfigOption` (category "model"). Our fork
+  already drove model selection through config options, so this just removed the vestigial legacy
+  path: dropped those imports, the `unstable_setSessionModel` method, and the `models` build/return
+  in `createSession` / `getExistingSessionState` / `loadSession`. The codex adapter's
+  `response.models?.currentModelId` read was replaced with a `modelIdFromConfigOptions()` helper
+  (codex `models.ts`). Verified the renderer reads only `configOptions`, never `.models`.
+- **ACP SDK 0.25.0 `deleteSession` rename** (#753, 0dbccf5): No-op for us — our fork never
+  implemented `unstable_deleteSession`, and the method is optional on the `Agent` interface.
+- **Refusal handling** (SDK 0.3.162, #740, add7e31): Capture the refused assistant message's
+  `stop_details.explanation`; the terminal `result` (stop_reason "refusal") emits it as an
+  `agent_message_chunk` and returns ACP's dedicated `refusal` stop reason instead of letting the
+  `is_error` path surface it as an internal error.
+- **commands_changed** (SDK 0.3.162, #740, add7e31): New `system` subtype handled inline in the
+  prompt loop — pushes `available_commands_update` straight from `message.commands` (rather than
+  re-querying `supportedCommands()`, which only ever reflects the init list) and refreshes
+  `session.knownSlashCommands` so the unsupported-slash-command gate stays accurate.
+- **Optimized marker stripping** (#738, 895422c): `stripMarkerTags` rewritten as a single-pass
+  scanner in `conversion/sdk-to-acp.ts`, removing the `[\s\S]*?` backtracking risk on pathological
+  input.
+- **Force-cancel backstop** (#742, cffea4b): Added per-turn `cancelController` + `forceCancelTimer`
+  on `Session` and a mutable `forceCancelGraceMs` (30s) on the agent. The prompt loop races
+  `query.next()` against the cancel signal; `interrupt()` arms a grace-period timer that aborts it,
+  so a wedged SDK that never yields after interrupt (issue #680, e.g. a blocking `TaskOutput` poll)
+  returns "cancelled" instead of hanging. Adapted to our single-session model; preserves the
+  `interruptReason` meta on the forced return.
+- **Cross-family model match fix** (#731, f4704c1): `scoreModelMatch` (session/models.ts) now
+  returns 0 when only the context-hint token matched, so `claude-opus-4-6[1m]` can't resolve to
+  `sonnet[1m]` purely on the shared "1m" token. Layers on top of our existing
+  `modelVersionsCompatible` filter.
+- **compact_boundary getContextUsage** (#747, 398f763): compact_boundary now fetches the
+  authoritative post-compaction `used` via `query.getContextUsage()` (helper
+  `fetchContextUsedTokens`), falling back to 0 on failure. `size` still comes from the
+  gateway-learned window (getContextUsage under-reports 1M windows). Our fork-specific
+  `promptReplayed = true` side effect is preserved.
+- **New SDK message handling** (#747, 398f763): `tool_progress` -> `tool_call_update` `in_progress`
+  with `elapsedTimeSeconds`; `rate_limit_event` -> `usage_update` carrying `_claude/rateLimit`;
+  `permission_denied` -> `tool_call_update` `failed` (in `handleSystemMessage`); `mirror_error` ->
+  logged (history-persistence failure / potential data loss on resume).
+- **Prune tool cache** (#748, ec14211): `toolUseCache` was never cleared in our fork (set once in
+  the constructor, accumulated for the whole agent lifetime). Now pruned at `tool_result` time. The
+  PostToolUse hook closes over the tool name + bash command instead of re-reading the cache, so the
+  Edit/Write diff survives any hook/result reordering. We did NOT adopt upstream's per-session cache
+  move (we are single-session) or its `backgroundTerminals` deletion.
+- **Test mock**: added `reloadSkills` to the SDK `MockQuery` (new method on the SDK `Query`
+  interface in 0.3.165).
+
+## Skipped in v0.42.0 Sync
+
+- **Message ids** (#750, 18516a3): Upstream records an ACP `messageId` -> SDK uuid map for a future
+  fork/rewind feature, explicitly "NOT READ YET". We don't consume it, it adds a `Session` field and
+  threads `messageId` through many `toAcpNotifications` call sites, so it is deferred until we wire
+  up rewind. (ACP 0.25.0 does expose the `messageId` field, so the port is unblocked when wanted.)
+- **resolveThinkingConfig** (#747, 398f763): Upstream maps the legacy `MAX_THINKING_TOKENS` env var
+  to the SDK's new `thinking` option. Our fork never reads `MAX_THINKING_TOKENS` (model setup is
+  gateway-driven via `session/options.ts`), so there is nothing to migrate.
+- **Pure dep-group / release / CI bumps** (#736, #741, #745, #728, #743): No fork-relevant code
+  beyond the SDK versions captured above.
 
 ## Changes Ported in v0.30.0 Sync
 
@@ -165,7 +229,7 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 
 ## Next Sync
 
-1. Check upstream changelog since v0.37.0
+1. Check upstream changelog since v0.42.0
 2. Diff upstream source against PostHog Code using the file mapping above
 3. Port in phases: bug fixes first, then features
 4. After each phase: `pnpm --filter agent typecheck && pnpm --filter agent build && pnpm lint`

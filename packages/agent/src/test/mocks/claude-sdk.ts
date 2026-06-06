@@ -104,6 +104,7 @@ export function createMockQuery(
     applyFlagSettings: vi.fn().mockResolvedValue(undefined),
     getContextUsage: vi.fn().mockResolvedValue({}),
     reloadPlugins: vi.fn().mockResolvedValue(undefined),
+    reloadSkills: vi.fn().mockResolvedValue(undefined),
     seedReadState: vi.fn().mockResolvedValue(undefined),
     readFile: vi.fn().mockResolvedValue(""),
     backgroundTasks: vi.fn().mockResolvedValue([]),

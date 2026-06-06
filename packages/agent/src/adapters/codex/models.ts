@@ -25,6 +25,18 @@ export function formatCodexModelName(value: string): string {
   return value.toLowerCase();
 }
 
+/** Derive the current model id from the "model" config option's currentValue.
+ *  Replaces the legacy `response.models.currentModelId` lookup that ACP SDK
+ *  0.25.0 removed (model selection moved entirely into config options). */
+export function modelIdFromConfigOptions(
+  configOptions: SessionConfigOption[] | null | undefined,
+): string | undefined {
+  const modelOption = configOptions?.find((o) => o.category === "model");
+  return typeof modelOption?.currentValue === "string"
+    ? modelOption.currentValue
+    : undefined;
+}
+
 export function normalizeCodexConfigOptions(
   configOptions: SessionConfigOption[] | null | undefined,
 ): SessionConfigOption[] | null | undefined {

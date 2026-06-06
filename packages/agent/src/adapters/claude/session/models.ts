@@ -138,11 +138,17 @@ function scoreModelMatch(
 ): number {
   const haystack = `${model.value} ${model.name ?? ""}`.toLowerCase();
   let score = 0;
+  let nonHintMatched = false;
   for (const token of tokens) {
     if (haystack.includes(token)) {
+      if (token !== contextHint) nonHintMatched = true;
       score += token === contextHint ? 3 : 1;
     }
   }
+  // A context hint alone (e.g. "1m") must not carry a match across model
+  // families: without a real family/name token also matching, "opus[1m]" would
+  // otherwise score against "sonnet[1m]" purely on the shared "1m" token.
+  if (contextHint && !nonHintMatched) return 0;
   return score;
 }
 

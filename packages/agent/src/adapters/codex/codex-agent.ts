@@ -79,7 +79,10 @@ import {
 } from "../local-tools";
 import { resolveTaskId } from "../session-meta";
 import { createCodexClient } from "./codex-client";
-import { normalizeCodexConfigOptions } from "./models";
+import {
+  modelIdFromConfigOptions,
+  normalizeCodexConfigOptions,
+} from "./models";
 import {
   type CodexSessionState,
   createSessionState,
@@ -421,7 +424,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       taskRunId: meta?.taskRunId,
       taskId: resolveTaskId(meta),
       modeId: response.modes?.currentModeId ?? "auto",
-      modelId: response.models?.currentModelId,
+      modelId: modelIdFromConfigOptions(response.configOptions),
       permissionMode: requestedPermissionMode,
     });
     this.sessionId = response.sessionId;
@@ -537,7 +540,6 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
     return {
       modes: loadResponse.modes,
-      models: loadResponse.models,
       configOptions: loadResponse.configOptions,
     };
   }

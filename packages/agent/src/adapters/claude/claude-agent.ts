@@ -3,7 +3,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  type ModelInfo as AcpModelInfo,
   type AgentSideConnection,
   type ClientCapabilities,
   type ForkSessionRequest,
@@ -24,12 +23,9 @@ import {
   type SessionConfigOption,
   type SessionConfigOptionCategory,
   type SessionConfigSelectOption,
-  type SessionModelState,
   type SessionModeState,
   type SetSessionConfigOptionRequest,
   type SetSessionConfigOptionResponse,
-  type SetSessionModelRequest,
-  type SetSessionModelResponse,
   type SetSessionModeRequest,
   type SetSessionModeResponse,
   type Usage,
@@ -42,6 +38,7 @@ import {
   type Options,
   type Query,
   query,
+  type SDKMessage,
   type SDKUserMessage,
   type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -130,11 +127,24 @@ import type {
   NewSessionMeta,
   SDKMessageFilter,
   Session,
+  ToolUpdateMeta,
   ToolUseCache,
   ToolUseStreamCache,
 } from "./types";
 
 const SESSION_VALIDATION_TIMEOUT_MS = 30_000;
+
+/** Grace period after `session/cancel` before the adapter forces a wedged
+ *  prompt loop to return "cancelled". `query.interrupt()` normally makes the SDK
+ *  yield a trailing idle within milliseconds and the loop returns through its
+ *  usual path, so this timer is armed and cleared (never fired) on healthy
+ *  cancels. It only trips when the SDK is genuinely wedged (e.g. a
+ *  `TaskOutput { block: true }` poll against a hung background task — issue
+ *  #680) and never yields. Deliberately loose: an "obviously stuck" ceiling,
+ *  not a guess at interrupt latency, so it can't pre-empt a slow-but-healthy
+ *  interrupt. */
+const DEFAULT_FORCE_CANCEL_GRACE_MS = 30_000;
+
 const MAX_TITLE_LENGTH = 256;
 const LOCAL_ONLY_COMMANDS = new Set(["/context", "/heapdump", "/extra-usage"]);
 
@@ -189,6 +199,28 @@ function shouldEmitRawMessage(
   );
 }
 
+/** Fetch the SDK's authoritative context-window occupancy via the
+ *  `getContextUsage` control request. Unlike the per-message API usage numbers
+ *  (which only count message tokens), `totalTokens` includes the system prompt,
+ *  tool schemas, MCP tools, and memory-file overhead — the real occupancy the
+ *  user sees. Returns `null` on any control-request failure.
+ *
+ *  We deliberately do NOT use this response's window fields for `size`: they
+ *  have been observed to under-report extended (1M) context windows, so the
+ *  window keeps coming from the gateway / model heuristic. */
+async function fetchContextUsedTokens(
+  sdkQuery: Query,
+  logger: Logger,
+): Promise<number | null> {
+  try {
+    const usage = await sdkQuery.getContextUsage();
+    return usage.totalTokens;
+  } catch (error) {
+    logger.error("Failed to fetch context usage from SDK:", error);
+    return null;
+  }
+}
+
 export interface ClaudeAcpAgentOptions {
   onProcessSpawned?: (info: ProcessSpawnedInfo) => void;
   onProcessExited?: (pid: number) => void;
@@ -204,6 +236,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   toolUseStreamCache: ToolUseStreamCache;
   backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
+  /** Grace period before a `session/cancel` forces a wedged prompt loop to
+   *  return "cancelled". See {@link DEFAULT_FORCE_CANCEL_GRACE_MS}. Mutable so
+   *  tests can shrink it. */
+  forceCancelGraceMs: number = DEFAULT_FORCE_CANCEL_GRACE_MS;
   private options?: ClaudeAcpAgentOptions;
   private enrichment?: Enrichment;
   private enrichedReadCache: EnrichedReadCache = new Map();
@@ -357,7 +393,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     return {
       modes: response.modes,
-      models: response.models,
       configOptions: response.configOptions,
     };
   }
@@ -446,9 +481,24 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     await this.broadcastUserMessage(params);
 
     this.session.promptRunning = true;
+    // Wake-up channel so cancel() can force this loop to return "cancelled" even
+    // when query.next() is wedged and never yields again (issue #680). The
+    // force-cancel backstop armed in interrupt() aborts this controller.
+    const cancelController = new AbortController();
+    this.session.cancelController = cancelController;
+    const cancelled = new Promise<void>((resolve) => {
+      cancelController.signal.addEventListener("abort", () => resolve(), {
+        once: true,
+      });
+    });
     let handedOff = false;
     let errored = false;
     let lastAssistantTotalUsage: number | null = null;
+    // When a streaming classifier refuses a turn, the assistant message carries
+    // stop_reason "refusal" and structured stop_details. We capture the
+    // human-readable explanation here so the terminal `result` can surface it to
+    // the user (the refused assistant message itself usually has no content).
+    let lastRefusalExplanation: string | null = null;
     let lastStreamUsage = {
       input_tokens: 0,
       output_tokens: 0,
@@ -494,7 +544,25 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     try {
       while (true) {
-        const { value: message, done } = await this.session.query.next();
+        const nextMessage = this.session.query.next();
+        const next = await Promise.race([nextMessage, cancelled]);
+        if (cancelController.signal.aborted) {
+          // The SDK never yielded after interrupt() (e.g. a wedged TaskOutput
+          // block). Abandon the in-flight next() — swallowing any later
+          // rejection so it can't surface as an unhandled rejection — and honor
+          // the cancel per the ACP contract.
+          void nextMessage.catch(() => {});
+          return {
+            stopReason: "cancelled",
+            _meta: this.session.interruptReason
+              ? { interruptReason: this.session.interruptReason }
+              : undefined,
+          };
+        }
+        const { value: message, done } = next as IteratorResult<
+          SDKMessage,
+          void
+        >;
 
         if (done || !message) {
           if (this.session.cancelled) {
@@ -521,18 +589,50 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         switch (message.type) {
           case "system":
             if (message.subtype === "compact_boundary") {
-              // Send used:0 immediately so the client doesn't keep showing
-              // the stale pre-compaction context size until the next turn.
-              lastAssistantTotalUsage = 0;
+              // Refresh the displayed usage immediately so the client doesn't
+              // keep showing the stale pre-compaction size right after the user
+              // sees "Compacting completed". Prefer the SDK's authoritative
+              // post-compaction `used` via getContextUsage — it reflects the
+              // real retained context (system prompt + tools + surviving
+              // messages), which per-message API usage can't give us until the
+              // next turn. Fall back to 0 on failure: directionally correct
+              // (context just dropped) and replaced within seconds by the next
+              // result. `size` keeps coming from the gateway-learned window
+              // (getContextUsage under-reports extended 1M windows).
+              const usedTokens = await fetchContextUsedTokens(
+                this.session.query,
+                this.logger,
+              );
+              lastAssistantTotalUsage = usedTokens ?? 0;
               promptReplayed = true;
               await this.client.sessionUpdate({
                 sessionId: params.sessionId,
                 update: {
                   sessionUpdate: "usage_update",
-                  used: 0,
+                  used: lastAssistantTotalUsage,
                   size: lastContextWindowSize,
                 },
               });
+            }
+            if (message.subtype === "commands_changed") {
+              // Mid-session command-list change (e.g. skills discovered as the
+              // agent works in a subdirectory). Push the new list straight from
+              // the message rather than re-querying (supportedCommands() only
+              // ever reflects the init list), and refresh the known-commands
+              // gate used to flag unsupported slash commands.
+              this.session.knownSlashCommands = collectKnownSlashCommands(
+                message.commands,
+              );
+              await this.client.sessionUpdate({
+                sessionId: params.sessionId,
+                update: {
+                  sessionUpdate: "available_commands_update",
+                  availableCommands: getAvailableSlashCommands(
+                    message.commands,
+                  ),
+                },
+              });
+              break;
             }
             if (message.subtype === "local_command_output") {
               promptReplayed = true;
@@ -748,6 +848,27 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 this.session.accumulatedUsage.cachedWriteTokens,
             };
 
+            // A refusal can arrive on any result subtype (and may even set
+            // is_error), so handle it before handleResultMessage — otherwise the
+            // is_error path would surface it as an internal error. The refused
+            // assistant message carries no visible content, so surface the
+            // classifier's explanation (when available) and report ACP's
+            // dedicated `refusal` stop reason.
+            if (
+              (message as { stop_reason?: string }).stop_reason === "refusal"
+            ) {
+              if (lastRefusalExplanation) {
+                await this.client.sessionUpdate({
+                  sessionId: params.sessionId,
+                  update: {
+                    sessionUpdate: "agent_message_chunk",
+                    content: { type: "text", text: lastRefusalExplanation },
+                  },
+                });
+              }
+              return { stopReason: "refusal", usage };
+            }
+
             const result = handleResultMessage(message);
             if (result.error) throw result.error;
 
@@ -865,6 +986,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               break;
             }
 
+            // Capture a refusal explanation from the assistant message so the
+            // terminal `result` can surface it (the refused message itself has
+            // no visible content). stop_reason/stop_details live on the inner
+            // Anthropic message; read them via cast like the usage block below.
+            if (message.type === "assistant") {
+              const inner = message.message as unknown as {
+                stop_reason?: string | null;
+                stop_details?: { explanation?: string | null } | null;
+              };
+              if (inner.stop_reason === "refusal") {
+                lastRefusalExplanation =
+                  inner.stop_details?.explanation ?? null;
+              }
+            }
+
             // Store latest assistant usage (excluding subagents)
             // Sum all token types as a proxy for post-turn context occupancy:
             // current turn's output will become next turn's input.
@@ -908,11 +1044,46 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             break;
           }
 
-          case "tool_progress":
+          case "tool_progress": {
+            // Surface "still working" progress on a long-running tool call so
+            // the client can show elapsed time instead of a stalled spinner.
+            await this.client.sessionUpdate({
+              sessionId: message.session_id,
+              update: {
+                sessionUpdate: "tool_call_update",
+                toolCallId: message.tool_use_id,
+                status: "in_progress",
+                _meta: {
+                  claudeCode: {
+                    toolName: message.tool_name,
+                    toolResponse: {
+                      elapsedTimeSeconds: message.elapsed_time_seconds,
+                    },
+                  },
+                } satisfies ToolUpdateMeta,
+              },
+            });
+            break;
+          }
+          case "rate_limit_event": {
+            // Re-emit the current usage carrying the subscription rate-limit
+            // info so the client can warn before the limit bites.
+            if (lastAssistantTotalUsage !== null) {
+              await this.client.sessionUpdate({
+                sessionId: message.session_id,
+                update: {
+                  sessionUpdate: "usage_update",
+                  used: lastAssistantTotalUsage,
+                  size: lastContextWindowSize,
+                  _meta: { "_claude/rateLimit": message.rate_limit_info },
+                },
+              });
+            }
+            break;
+          }
           case "auth_status":
           case "tool_use_summary":
           case "prompt_suggestion":
-          case "rate_limit_event":
             break;
 
           default:
@@ -976,6 +1147,16 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
       throw error;
     } finally {
+      // The loop is returning — interrupt() succeeded or the prompt finished —
+      // so disarm the force-cancel backstop and release the wake-up channel
+      // (only if we still own it; a handoff installs the next prompt's).
+      if (this.session.forceCancelTimer) {
+        clearTimeout(this.session.forceCancelTimer);
+        this.session.forceCancelTimer = undefined;
+      }
+      if (this.session.cancelController === cancelController) {
+        this.session.cancelController = undefined;
+      }
       // Drop any leftover streaming-input buffers. Normally cleared per index
       // on `content_block_stop`, but a cancelled or errored turn may leave
       // entries behind; without this they'd carry over into the next turn
@@ -1014,6 +1195,31 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       pending.resolve(true);
     }
     this.session.pendingMessages.clear();
+
+    // Arm a backstop before interrupting: if a prompt is actively consuming the
+    // query and interrupt() doesn't make the SDK yield (e.g. a wedged TaskOutput
+    // block — issue #680), force the loop to return "cancelled" after the grace
+    // period so the pending prompt() resolves per the ACP cancellation contract
+    // instead of hanging forever. The loop's `finally` clears this timer when
+    // interrupt() works and it returns through the normal idle path, so on
+    // healthy cancels it is armed but never fires. Arm at most once per turn:
+    // the floor is an absolute ceiling from the first cancel, so a client that
+    // re-sends cancel can't keep pushing the deadline out.
+    if (
+      this.session.promptRunning &&
+      this.session.cancelController &&
+      !this.session.cancelController.signal.aborted &&
+      !this.session.forceCancelTimer
+    ) {
+      const cancelController = this.session.cancelController;
+      this.session.forceCancelTimer = setTimeout(() => {
+        this.logger.error(
+          `Session ${this.sessionId}: cancel floor elapsed without the SDK yielding; forcing "cancelled". The underlying query may still be wedged — a new session may be required.`,
+        );
+        cancelController.abort();
+      }, this.forceCancelGraceMs);
+    }
+
     await this.session.query.interrupt();
   }
 
@@ -1146,19 +1352,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     // Re-fetch MCP tool metadata + slash commands — the server list changed.
     this.deferBackgroundFetches(newQuery);
-  }
-
-  async unstable_setSessionModel(
-    params: SetSessionModelRequest,
-  ): Promise<SetSessionModelResponse | undefined> {
-    await this.session.query.setModel(toSdkModelId(params.modelId));
-    this.session.modelId = params.modelId;
-    this.session.lastContextWindowSize = this.getContextWindowForModel(
-      params.modelId,
-    );
-    this.rebuildEffortConfigOption(params.modelId);
-    await this.updateConfigOption("model", params.modelId);
-    return {};
   }
 
   async setSessionMode(
@@ -1309,6 +1502,38 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
   }
 
+  /**
+   * Ensures the requested `cwd` is an absolute path that points at an existing
+   * directory before we create a session. Throws an `invalidParams` error with
+   * an actionable message so clients can surface it to the user instead of
+   * failing later with an opaque "native binary failed to launch" SDK error.
+   */
+  private async validateCwd(cwd: string): Promise<void> {
+    if (!path.isAbsolute(cwd)) {
+      throw RequestError.invalidParams(
+        { cwd },
+        `\`cwd\` must be an absolute path, but received: ${cwd}`,
+      );
+    }
+
+    let stats: fs.Stats;
+    try {
+      stats = await fs.promises.stat(cwd);
+    } catch {
+      throw RequestError.invalidParams(
+        { cwd },
+        `\`cwd\` does not exist on the machine running the agent: ${cwd}`,
+      );
+    }
+
+    if (!stats.isDirectory()) {
+      throw RequestError.invalidParams(
+        { cwd },
+        `\`cwd\` is not a directory: ${cwd}`,
+      );
+    }
+  }
+
   private async createSession(
     params: {
       cwd: string;
@@ -1324,6 +1549,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   ): Promise<NewSessionResponse> {
     const { cwd } = params;
     const { resume, forkSession } = creationOpts;
+
+    // Validate `cwd` up front. The ACP spec requires an absolute path, and the
+    // directory must exist on the machine running the agent. Without this the
+    // failure only surfaces later as a confusing SDK launch error (issue #749).
+    await this.validateCwd(cwd);
 
     const isResume = !!resume;
 
@@ -1606,17 +1836,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       })),
     };
 
-    const models: SessionModelState = {
-      currentModelId: resolvedModelId,
-      availableModels: modelOptions.options.map(
-        (opt): AcpModelInfo => ({
-          modelId: opt.value,
-          name: opt.name,
-          description: opt.description,
-        }),
-      ),
-    };
-
     const configOptions = this.buildConfigOptions(
       permissionMode,
       modelOptions,
@@ -1628,7 +1847,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.deferBackgroundFetches(q);
     }
 
-    return { sessionId, modes, models, configOptions };
+    return { sessionId, modes, configOptions };
   }
 
   private createCanUseTool(
@@ -1713,31 +1932,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       })),
     };
 
-    const modelOptions = this.session.configOptions.find(
-      (o) => o.id === "model",
-    );
-    const models: SessionModelState = {
-      currentModelId: this.session.modelId ?? DEFAULT_MODEL,
-      availableModels:
-        modelOptions && "options" in modelOptions
-          ? (
-              modelOptions.options as Array<{
-                value: string;
-                name: string;
-                description?: string;
-              }>
-            ).map((opt) => ({
-              modelId: opt.value,
-              name: opt.name,
-              description: opt.description,
-            }))
-          : [],
-    };
-
     return {
       sessionId,
       modes,
-      models,
       configOptions: this.session.configOptions,
     };
   }
