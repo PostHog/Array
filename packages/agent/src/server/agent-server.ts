@@ -930,6 +930,7 @@ export class AgentServer {
       taskId: payload.task_id,
       taskRunId: payload.run_id,
       taskUserId: payload.user_id,
+      taskTitle: preTask?.title,
     });
 
     const prUrl = getTaskRunStateString(preTaskRun, "slack_notified_pr_url");
@@ -1932,6 +1933,7 @@ ${signedCommitInstructions}
     taskId,
     taskRunId,
     taskUserId,
+    taskTitle,
   }: {
     isInternal?: boolean;
     originProduct?: Task["origin_product"] | null;
@@ -1939,6 +1941,7 @@ ${signedCommitInstructions}
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
+    taskTitle?: string | null;
   } = {}): void {
     const { apiKey, apiUrl, projectId } = this.config;
     const product = resolveGatewayProduct({ isInternal, originProduct });
@@ -1960,6 +1963,7 @@ ${signedCommitInstructions}
       task_id: taskId,
       task_run_id: taskRunId,
       task_user_id: taskUserId,
+      task_title: taskTitle,
     });
 
     Object.assign(process.env, {

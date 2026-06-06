@@ -10,6 +10,7 @@ interface TestableServer {
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
+    taskTitle?: string | null;
   }): void;
 }
 
@@ -140,6 +141,7 @@ describe("AgentServer.configureEnvironment", () => {
       taskId: "task-abc",
       taskRunId: "run-xyz",
       taskUserId: 42,
+      taskTitle: "Fix the bug",
     });
 
     expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toBe(
@@ -150,7 +152,21 @@ describe("AgentServer.configureEnvironment", () => {
         "x-posthog-property-task_id: task-abc",
         "x-posthog-property-task_run_id: run-xyz",
         "x-posthog-property-task_user_id: 42",
+        "x-posthog-property-task_title: Fix the bug",
       ].join("\n"),
+    );
+  });
+
+  // A signals_scout title is multi-line; it must not inject extra header lines.
+  it("collapses newlines in the task title", () => {
+    buildServer("background").configureEnvironment({
+      isInternal: false,
+      taskId: "task-abc",
+      taskTitle: "[sandbox_prompt:signals_scout:signals-scout-logs]\nLine two",
+    });
+
+    expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toContain(
+      "x-posthog-property-task_title: [sandbox_prompt:signals_scout:signals-scout-logs] Line two",
     );
   });
 

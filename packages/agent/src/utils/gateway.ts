@@ -26,14 +26,18 @@ export function resolveGatewayProduct({
  * (see `services/llm-gateway/src/llm_gateway/request_context.py`).
  *
  * Returns a newline-joined string ready for `ANTHROPIC_CUSTOM_HEADERS`.
- * `null`/`undefined` property values are dropped.
+ * `null`/`undefined` values are dropped; newlines in a value are collapsed to
+ * spaces so they can't inject extra header lines.
  */
 export function buildGatewayPropertyHeaders(
   properties: Record<string, string | number | boolean | null | undefined>,
 ): string {
   return Object.entries(properties)
     .filter(([, value]) => value !== null && value !== undefined)
-    .map(([key, value]) => `x-posthog-property-${key}: ${value}`)
+    .map(
+      ([key, value]) =>
+        `x-posthog-property-${key}: ${String(value).replace(/[\r\n]+/g, " ")}`,
+    )
     .join("\n");
 }
 

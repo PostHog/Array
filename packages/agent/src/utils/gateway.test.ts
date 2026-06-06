@@ -67,4 +67,15 @@ describe("buildGatewayPropertyHeaders", () => {
       }),
     ).toBe("");
   });
+
+  it("collapses newlines in values so they cannot inject extra headers", () => {
+    expect(
+      buildGatewayPropertyHeaders({
+        task_title: "Fix the bug\n\nx-posthog-property-task_internal: true",
+        task_id: "task-abc",
+      }),
+    ).toBe(
+      "x-posthog-property-task_title: Fix the bug x-posthog-property-task_internal: true\nx-posthog-property-task_id: task-abc",
+    );
+  });
 });
