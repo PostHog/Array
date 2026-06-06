@@ -9,6 +9,7 @@ import {
 } from "@features/auth/hooks/authClient";
 import { fetchAuthState } from "@features/auth/hooks/authQueries";
 import { useUsageLimitStore } from "@features/billing/stores/usageLimitStore";
+import { waitForConnectivity } from "@features/connectivity/waitForConnectivity";
 import { useAddDirectoryDialogStore } from "@features/folder-picker/stores/addDirectoryDialogStore";
 import { useSessionAdapterStore } from "@features/sessions/stores/sessionAdapterStore";
 import {
@@ -98,8 +99,6 @@ const LOCAL_SESSION_RECOVERY_FAILED_MESSAGE =
 const GITHUB_AUTHORIZATION_REQUIRED_CODE = "github_authorization_required";
 const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const AUTO_RETRY_DELAY_MS = 10_000;
-// How often to re-check connectivity while waiting for it to return.
-const SEND_CONNECTIVITY_POLL_MS = 1_000;
 // How long a local turn may stay offline before we stop waiting, cancel it and
 // surface a connection-lost error. The connection returning before this cancels
 // the timer (the turn auto-resumes), so this only fires on a sustained outage.
@@ -1511,24 +1510,6 @@ export class SessionService {
    * Send a prompt to the agent.
    * Queues if a prompt is already pending.
    */
-  /**
-   * Poll for connectivity up to `timeoutMs`. Returns true as soon as the
-   * connection is back, false if the window elapses while still offline. The
-   * connectivity service re-checks in the background every few seconds, so
-   * polling the cached status is enough.
-   */
-  private async waitForConnectivity(timeoutMs: number): Promise<boolean> {
-    if (getIsOnline()) return true;
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, SEND_CONNECTIVITY_POLL_MS),
-      );
-      if (getIsOnline()) return true;
-    }
-    return getIsOnline();
-  }
-
   async sendPrompt(
     taskId: string,
     prompt: string | ContentBlock[],
@@ -1546,7 +1527,7 @@ export class SessionService {
           pausedDurationMs: 0,
         });
       }
-      const recovered = await this.waitForConnectivity(OFFLINE_TURN_GIVEUP_MS);
+      const recovered = await waitForConnectivity(OFFLINE_TURN_GIVEUP_MS);
       // Clear the transient reconnecting state; the normal flow re-applies
       // pending when it actually dispatches.
       if (offlineSession) {
