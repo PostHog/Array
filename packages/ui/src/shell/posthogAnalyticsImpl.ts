@@ -41,7 +41,12 @@ type PendingFlagListener = {
 // Subscribers added before initializePostHog runs.
 const pendingFlagListeners = new Set<PendingFlagListener>();
 
-export function initializePostHog() {
+/**
+ * @param sessionId Main-owned session id (UUIDv7) to bootstrap posthog-js with,
+ *   so the recording shares the id main stamps on crash events. Main owns it so
+ *   it survives a renderer crash+reload as one continuous session.
+ */
+export function initializePostHog(sessionId?: string) {
   const apiKey = import.meta.env.VITE_POSTHOG_API_KEY;
   const apiHost =
     import.meta.env.VITE_POSTHOG_API_HOST || "https://internal-c.posthog.com";
@@ -56,6 +61,12 @@ export function initializePostHog() {
     api_host: apiHost,
     ui_host: uiHost,
     disable_session_recording: false,
+    // Hold the session open through long idle (max posthog-js allows) so its
+    // own rotation doesn't replace main's bootstrapped id mid-run. This app
+    // sits idle for hours with background tasks, which is exactly when a
+    // shorter timeout would silently rotate and break crash->replay linking.
+    session_idle_timeout_seconds: 36000,
+    ...(sessionId ? { bootstrap: { sessionID: sessionId } } : {}),
     capture_exceptions: import.meta.env.DEV
       ? false
       : {

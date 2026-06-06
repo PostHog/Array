@@ -6,6 +6,13 @@ export interface IAnalytics {
   identify(userId: string, properties?: AnalyticsProperties): void;
   setCurrentUserId(userId: string | null): void;
   getCurrentUserId(): string | null;
+  /**
+   * Stable analytics session id owned by the host process. Minted lazily on
+   * first request so renderer windows can bootstrap posthog-js with it and
+   * host-captured crash events link to the same replay session.
+   */
+  getOrCreateSessionId(): string;
+  getSessionId(): string | null;
   resetUser(): void;
   captureException(
     error: unknown,

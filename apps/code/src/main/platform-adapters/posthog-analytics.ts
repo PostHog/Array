@@ -4,10 +4,12 @@ import type {
 } from "@posthog/platform/analytics";
 import { PostHog } from "posthog-node";
 import { getAppVersion } from "../utils/env";
+import { uuidv7 } from "../utils/uuidv7";
 
 export class PosthogNodeAnalytics implements IAnalytics {
   private client: PostHog | null = null;
   private currentUserId: string | null = null;
+  private sessionId: string | null = null;
 
   initialize(): void {
     if (this.client) {
@@ -33,6 +35,29 @@ export class PosthogNodeAnalytics implements IAnalytics {
 
   getCurrentUserId(): string | null {
     return this.currentUserId;
+  }
+
+  /**
+   * The PostHog session id is OWNED BY MAIN. Main mints one UUIDv7 and every
+   * renderer window bootstraps posthog-js with it (`bootstrap.sessionID`).
+   * Because main outlives the renderer, the id stays stable across a renderer
+   * crash + reload, so the replay is one continuous session spanning the crash
+   * and main-captured crash events (the renderer can't report its own OOM)
+   * always carry the right `$session_id` with no race or hand-off.
+   *
+   * Minted lazily on first request (a window asks at boot, before posthog-js
+   * init) so its UUIDv7 timestamp precedes the session's first event, as
+   * posthog-js requires.
+   */
+  getOrCreateSessionId(): string {
+    if (!this.sessionId) {
+      this.sessionId = uuidv7();
+    }
+    return this.sessionId;
+  }
+
+  getSessionId(): string | null {
+    return this.sessionId;
   }
 
   track(eventName: string, properties?: AnalyticsProperties): void {
@@ -82,6 +107,7 @@ export class PosthogNodeAnalytics implements IAnalytics {
     const distinctId = this.currentUserId || "anonymous-app-event";
     this.client.captureException(error, distinctId, {
       team: "posthog-code",
+      ...(this.sessionId ? { $session_id: this.sessionId } : {}),
       ...additionalProperties,
       app_version: getAppVersion(),
     });

@@ -12,13 +12,25 @@ const log = logger.scope("app-boot");
 @injectable()
 export class AnalyticsBootContribution implements Contribution {
   start(): void {
-    initializePostHog();
-    trpcClient.os.getAppVersion
-      .query()
-      .then(registerAppVersion)
-      .catch((error) => {
-        log.warn("Failed to register app version super property", { error });
-      });
+    // Fetch the main-owned session id BEFORE initializing posthog-js so the
+    // recording shares the id main stamps on crash events. Init is gated on it
+    // so the id is set before the first event (posthog-js requires the
+    // bootstrap id's timestamp to precede the session's first event).
+    void (async () => {
+      let sessionId: string | undefined;
+      try {
+        ({ sessionId } = await trpcClient.analytics.getSessionId.query());
+      } catch (error) {
+        log.warn("Failed to fetch session id from main", { error });
+      }
+      initializePostHog(sessionId);
+      trpcClient.os.getAppVersion
+        .query()
+        .then(registerAppVersion)
+        .catch((error) => {
+          log.warn("Failed to register app version super property", { error });
+        });
+    })();
   }
 }
 
