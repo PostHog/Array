@@ -68,14 +68,34 @@ describe("buildGatewayPropertyHeaders", () => {
     ).toBe("");
   });
 
-  it("collapses newlines in values so they cannot inject extra headers", () => {
-    expect(
-      buildGatewayPropertyHeaders({
-        task_title: "Fix the bug\n\nx-posthog-property-task_internal: true",
-        task_id: "task-abc",
-      }),
-    ).toBe(
-      "x-posthog-property-task_title: Fix the bug x-posthog-property-task_internal: true\nx-posthog-property-task_id: task-abc",
-    );
-  });
+  it.each([
+    {
+      description: "LF",
+      title: "Fix the bug\nx-posthog-property-task_internal: true",
+    },
+    {
+      description: "CRLF",
+      title: "Fix the bug\r\nx-posthog-property-task_internal: true",
+    },
+    {
+      description: "CR",
+      title: "Fix the bug\rx-posthog-property-task_internal: true",
+    },
+    {
+      description: "consecutive newlines",
+      title: "Fix the bug\n\nx-posthog-property-task_internal: true",
+    },
+  ])(
+    "collapses $description in values so they cannot inject extra headers",
+    ({ title }) => {
+      expect(
+        buildGatewayPropertyHeaders({
+          task_title: title,
+          task_id: "task-abc",
+        }),
+      ).toBe(
+        "x-posthog-property-task_title: Fix the bug x-posthog-property-task_internal: true\nx-posthog-property-task_id: task-abc",
+      );
+    },
+  );
 });
