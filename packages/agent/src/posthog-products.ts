@@ -118,6 +118,23 @@ const DOMAIN_PRODUCT: Record<string, PostHogProductId | null> = {
 
 const KNOWN_DOMAINS = Object.keys(DOMAIN_PRODUCT);
 
+const escapeRe = (s: string): string =>
+  s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * One regex per domain: the domain must appear as a complete hyphen-delimited
+ * token run anywhere in the sub-tool name, tolerating a plural trailing "s".
+ * A single pattern covers `feature-flag-get` (prefix), `create-feature-flag`
+ * (verb-first) and `feature-flags-status-retrieve` (plural) — so a new
+ * `feature-flags-*` tool needs no entry here. The `(^|-)…($|-)` boundaries keep
+ * a domain from matching a partial token, and `s?` matches zero for
+ * already-plural domains like `external-data-sources`.
+ */
+const DOMAIN_PATTERNS: ReadonlyArray<readonly [string, RegExp]> =
+  KNOWN_DOMAINS.map(
+    (d) => [d, new RegExp(`(^|-)${escapeRe(d)}s?($|-)`)] as const,
+  );
+
 /**
  * HogQL/PostHog table name → product. Lets an `execute-sql` call be attributed
  * to the product whose data it reads (e.g. `SELECT count() FROM feature_flags`
@@ -199,13 +216,92 @@ export function classifyPostHogSqlQuery(sql: string): PostHogProductId[] {
 }
 
 /**
+ * Activity-log `scope` value → product. The activity-log tools are generic
+ * audit readers (their own domain is suppressed), but a call scoped to a
+ * specific entity type is really about that entity's product. Keys are the
+ * PascalCase scope enum values; only scopes that map to a surfaced product are
+ * listed — admin/meta scopes (Team, Project, User, Role, Comment, Tag, …) are
+ * omitted so a scoped audit read of them surfaces nothing, as before.
+ */
+const ACTIVITY_SCOPE_PRODUCT: Record<string, PostHogProductId> = {
+  FeatureFlag: "feature_flags",
+  EarlyAccessFeature: "feature_flags",
+  Experiment: "experiments",
+  ExperimentHoldout: "experiments",
+  ExperimentSavedMetric: "experiments",
+  ErrorTrackingIssue: "error_tracking",
+  Replay: "session_replay",
+  SessionRecordingPlaylist: "session_replay",
+  Survey: "surveys",
+  LLMTrace: "llm_analytics",
+  Evaluation: "llm_analytics",
+  DataWarehouseSavedQuery: "data_warehouse",
+  ExternalDataSource: "data_warehouse",
+  ExternalDataSchema: "data_warehouse",
+  BatchExport: "data_warehouse",
+  BatchImport: "data_warehouse",
+  HogFunction: "cdp",
+  HogFlow: "cdp",
+  Log: "logs",
+  LogsAlertConfiguration: "logs",
+  LogsExclusionRule: "logs",
+  Insight: "product_analytics",
+  Dashboard: "product_analytics",
+  DashboardWidget: "product_analytics",
+  Cohort: "product_analytics",
+  Person: "product_analytics",
+  Group: "product_analytics",
+  Notebook: "product_analytics",
+  Action: "product_analytics",
+  EventDefinition: "product_analytics",
+  PropertyDefinition: "product_analytics",
+  Annotation: "product_analytics",
+  Endpoint: "product_analytics",
+  Subscription: "product_analytics",
+  AlertConfiguration: "product_analytics",
+};
+
+/**
+ * Attribute an activity-log call to the product(s) of its `scope`/`scopes`
+ * argument. Returns an empty array when the body has no recognized scope (so an
+ * unscoped or admin-scoped audit read still surfaces nothing).
+ */
+function classifyPostHogActivityLog(commandText: string): PostHogProductId[] {
+  const start = commandText.indexOf("{");
+  const end = commandText.lastIndexOf("}");
+  if (start === -1 || end <= start) return [];
+  let body: unknown;
+  try {
+    body = JSON.parse(commandText.slice(start, end + 1));
+  } catch {
+    return [];
+  }
+  if (!body || typeof body !== "object") return [];
+  const scopesField = (body as { scopes?: unknown }).scopes;
+  const raw: unknown[] = [
+    (body as { scope?: unknown }).scope,
+    ...(Array.isArray(scopesField) ? scopesField : []),
+  ];
+  const products = new Set<PostHogProductId>();
+  for (const s of raw) {
+    if (typeof s === "string") {
+      const product = ACTIVITY_SCOPE_PRODUCT[s];
+      if (product) products.add(product);
+    }
+  }
+  return [...products];
+}
+
+/**
  * Classify an executed MCP exec `call` into the products it touched. For
  * `execute-sql` the query text is inspected so the call is attributed to the
  * product whose tables it reads (e.g. Feature flags), falling back to the
- * generic "sql" product only when no table maps. All other sub-tools resolve
- * to their single domain product (or none, for admin/meta domains).
+ * generic "sql" product only when no table maps. Activity-log reads are
+ * attributed by their `scope` argument. All other sub-tools resolve to their
+ * single domain product (or none, for admin/meta domains).
  *
- * `commandText` is the raw exec command (which embeds the SQL for execute-sql).
+ * `commandText` is the raw exec command (which embeds the SQL for execute-sql
+ * and the scope JSON for activity-log reads).
  */
 export function classifyPostHogExecCall(
   subTool: string,
@@ -215,6 +311,13 @@ export function classifyPostHogExecCall(
   if (name === "execute-sql" || name === "execute_sql") {
     const fromTables = commandText ? classifyPostHogSqlQuery(commandText) : [];
     return fromTables.length > 0 ? fromTables : ["sql"];
+  }
+  if (
+    name === "activity-log" ||
+    name.startsWith("activity-log-") ||
+    name.startsWith("advanced-activity-logs")
+  ) {
+    return commandText ? classifyPostHogActivityLog(commandText) : [];
   }
   const product = classifyPostHogSubTool(subTool);
   return product ? [product] : [];
@@ -249,8 +352,8 @@ export function classifyPostHogSubTool(
   // Longest matching domain wins so `feature-flag` beats a hypothetical
   // `feature` and multi-word domains aren't shadowed by shorter prefixes.
   let best: string | null = null;
-  for (const domain of KNOWN_DOMAINS) {
-    if (name === domain || name.startsWith(`${domain}-`)) {
+  for (const [domain, re] of DOMAIN_PATTERNS) {
+    if (re.test(name)) {
       if (best === null || domain.length > best.length) best = domain;
     }
   }
