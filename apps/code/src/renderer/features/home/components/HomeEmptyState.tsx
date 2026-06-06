@@ -1,15 +1,13 @@
+import { openTaskInput } from "@hooks/useOpenTask";
 import { CheckCircle, Plus } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Flex, Text } from "@radix-ui/themes";
-import { useNavigationStore } from "@stores/navigationStore";
 
 interface HomeEmptyStateProps {
   hasRunningAgents: boolean;
 }
 
 export function HomeEmptyState({ hasRunningAgents }: HomeEmptyStateProps) {
-  const navigateToTaskInput = useNavigationStore((s) => s.navigateToTaskInput);
-
   return (
     <Flex
       direction="column"
@@ -34,11 +32,7 @@ export function HomeEmptyState({ hasRunningAgents }: HomeEmptyStateProps) {
           : "Nothing needs your attention right now. Start something new when you're ready."}
       </Text>
       {!hasRunningAgents ? (
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => navigateToTaskInput()}
-        >
+        <Button variant="primary" size="sm" onClick={() => openTaskInput()}>
           <Plus size={12} />
           New task
         </Button>

@@ -3,12 +3,12 @@ import { router } from "expo-router";
 import { ArrowSquareOut, CaretRight, SpeakerHigh } from "phosphor-react-native";
 import { useState } from "react";
 import { Linking, Pressable, ScrollView, Switch, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore, useProjectsQuery, useUserQuery } from "@/features/auth";
 import { useDismissedReportsStore } from "@/features/inbox/stores/dismissedReportsStore";
 import { usePushTokenStore } from "@/features/notifications/stores/pushTokenStore";
 import {
   type CompletionSound,
+  type DefaultReasoningEffort,
   type InitialTaskMode,
   type ThemePreference,
   usePreferencesStore,
@@ -19,6 +19,7 @@ import { SettingsRow } from "@/features/settings/components/SettingsRow";
 import { SettingsSection } from "@/features/settings/components/SettingsSection";
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
 import { playCompletionSound } from "@/features/tasks/utils/sounds";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
@@ -59,6 +60,23 @@ const TASK_MODE_OPTIONS = [
   },
 ] as const;
 
+const REASONING_EFFORT_OPTIONS: ReadonlyArray<{
+  value: DefaultReasoningEffort;
+  label: string;
+  description?: string;
+}> = [
+  {
+    value: "last_used",
+    label: "Last used",
+    description: "Remember the effort level you picked last time",
+  },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "xhigh", label: "Extra High" },
+  { value: "max", label: "Max" },
+];
+
 function themeLabel(theme: ThemePreference): string {
   return THEME_OPTIONS.find((o) => o.value === theme)?.label ?? "Match system";
 }
@@ -78,9 +96,16 @@ function taskModeLabel(mode: InitialTaskMode): string {
   return TASK_MODE_OPTIONS.find((o) => o.value === mode)?.label ?? "Plan";
 }
 
+function reasoningEffortLabel(effort: DefaultReasoningEffort): string {
+  return (
+    REASONING_EFFORT_OPTIONS.find((o) => o.value === effort)?.label ??
+    "Last used"
+  );
+}
+
 export default function SettingsScreen() {
   const themeColors = useThemeColors();
-  const insets = useSafeAreaInsets();
+  const { insets, bottom } = useScreenInsets();
 
   const {
     logout,
@@ -113,6 +138,12 @@ export default function SettingsScreen() {
   const setDefaultInitialTaskMode = usePreferencesStore(
     (s) => s.setDefaultInitialTaskMode,
   );
+  const defaultReasoningEffort = usePreferencesStore(
+    (s) => s.defaultReasoningEffort,
+  );
+  const setDefaultReasoningEffort = usePreferencesStore(
+    (s) => s.setDefaultReasoningEffort,
+  );
   const decidedCount = useDismissedReportsStore(
     (s) => s.dismissedIds.length + s.acceptedIds.length,
   );
@@ -122,6 +153,8 @@ export default function SettingsScreen() {
   const [soundSheetOpen, setSoundSheetOpen] = useState(false);
   const [volumeSheetOpen, setVolumeSheetOpen] = useState(false);
   const [taskModeSheetOpen, setTaskModeSheetOpen] = useState(false);
+  const [reasoningEffortSheetOpen, setReasoningEffortSheetOpen] =
+    useState(false);
   const [projectSheetOpen, setProjectSheetOpen] = useState(false);
 
   // The selected project's name. Prefer the names fetched for the scoped teams
@@ -171,7 +204,7 @@ export default function SettingsScreen() {
   // padding clears the home indicator and gives breathing room past the last
   // row so it never hides behind it.
   const contentPaddingTop = insets.top + 60;
-  const contentPaddingBottom = insets.bottom + 32;
+  const contentPaddingBottom = bottom("default");
 
   return (
     <View className="flex-1 bg-background">
@@ -272,11 +305,24 @@ export default function SettingsScreen() {
             label="Initial task mode"
             description="What mode new tasks start in"
             onPress={() => setTaskModeSheetOpen(true)}
-            showDivider={false}
             rightSlot={
               <>
                 <Text className="text-[14px] text-gray-11">
                   {taskModeLabel(defaultInitialTaskMode)}
+                </Text>
+                <CaretRight size={14} color={themeColors.gray[10]} />
+              </>
+            }
+          />
+          <SettingsRow
+            label="Default effort level"
+            description="Reasoning effort to pre-fill on new tasks"
+            onPress={() => setReasoningEffortSheetOpen(true)}
+            showDivider={false}
+            rightSlot={
+              <>
+                <Text className="text-[14px] text-gray-11">
+                  {reasoningEffortLabel(defaultReasoningEffort)}
                 </Text>
                 <CaretRight size={14} color={themeColors.gray[10]} />
               </>
@@ -502,6 +548,21 @@ export default function SettingsScreen() {
         }
         onClose={() => setTaskModeSheetOpen(false)}
         options={TASK_MODE_OPTIONS.map((option) => ({
+          value: option.value,
+          label: option.label,
+          description: option.description,
+        }))}
+      />
+
+      <SelectSheet
+        open={reasoningEffortSheetOpen}
+        title="Default effort level"
+        value={defaultReasoningEffort}
+        onChange={(value) =>
+          setDefaultReasoningEffort(value as DefaultReasoningEffort)
+        }
+        onClose={() => setReasoningEffortSheetOpen(false)}
+        options={REASONING_EFFORT_OPTIONS.map((option) => ({
           value: option.value,
           label: option.label,
           description: option.description,

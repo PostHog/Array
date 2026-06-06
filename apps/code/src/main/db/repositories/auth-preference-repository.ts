@@ -1,16 +1,28 @@
 import { and, eq } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
-import { authPreferences } from "../schema";
+import { authOrgProjectPreferences, authPreferences } from "../schema";
 import type { DatabaseService } from "../service";
 
 export type AuthPreference = typeof authPreferences.$inferSelect;
 export type NewAuthPreference = typeof authPreferences.$inferInsert;
+export type AuthOrgProjectPreference =
+  typeof authOrgProjectPreferences.$inferSelect;
+export type NewAuthOrgProjectPreference =
+  typeof authOrgProjectPreferences.$inferInsert;
 
 export interface PersistAuthPreferenceInput {
   accountKey: string;
   cloudRegion: "us" | "eu" | "dev";
   lastSelectedProjectId: number | null;
+  lastSelectedOrgId: string | null;
+}
+
+export interface PersistAuthOrgProjectPreferenceInput {
+  accountKey: string;
+  cloudRegion: "us" | "eu" | "dev";
+  orgId: string;
+  lastSelectedProjectId: number;
 }
 
 export interface IAuthPreferenceRepository {
@@ -19,6 +31,14 @@ export interface IAuthPreferenceRepository {
     cloudRegion: "us" | "eu" | "dev",
   ): AuthPreference | null;
   save(input: PersistAuthPreferenceInput): AuthPreference;
+  getOrgProject(
+    accountKey: string,
+    cloudRegion: "us" | "eu" | "dev",
+    orgId: string,
+  ): AuthOrgProjectPreference | null;
+  saveOrgProject(
+    input: PersistAuthOrgProjectPreferenceInput,
+  ): AuthOrgProjectPreference;
 }
 
 const now = () => new Date().toISOString();
@@ -61,6 +81,7 @@ export class AuthPreferenceRepository implements IAuthPreferenceRepository {
       accountKey: input.accountKey,
       cloudRegion: input.cloudRegion,
       lastSelectedProjectId: input.lastSelectedProjectId,
+      lastSelectedOrgId: input.lastSelectedOrgId,
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
@@ -83,6 +104,73 @@ export class AuthPreferenceRepository implements IAuthPreferenceRepository {
     const saved = this.get(input.accountKey, input.cloudRegion);
     if (!saved) {
       throw new Error("Failed to persist auth preference");
+    }
+    return saved;
+  }
+
+  getOrgProject(
+    accountKey: string,
+    cloudRegion: "us" | "eu" | "dev",
+    orgId: string,
+  ): AuthOrgProjectPreference | null {
+    return (
+      this.db
+        .select()
+        .from(authOrgProjectPreferences)
+        .where(
+          and(
+            eq(authOrgProjectPreferences.accountKey, accountKey),
+            eq(authOrgProjectPreferences.cloudRegion, cloudRegion),
+            eq(authOrgProjectPreferences.orgId, orgId),
+          ),
+        )
+        .limit(1)
+        .get() ?? null
+    );
+  }
+
+  saveOrgProject(
+    input: PersistAuthOrgProjectPreferenceInput,
+  ): AuthOrgProjectPreference {
+    const timestamp = now();
+    const existing = this.getOrgProject(
+      input.accountKey,
+      input.cloudRegion,
+      input.orgId,
+    );
+
+    const row: NewAuthOrgProjectPreference = {
+      accountKey: input.accountKey,
+      cloudRegion: input.cloudRegion,
+      orgId: input.orgId,
+      lastSelectedProjectId: input.lastSelectedProjectId,
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+    };
+
+    if (existing) {
+      this.db
+        .update(authOrgProjectPreferences)
+        .set(row)
+        .where(
+          and(
+            eq(authOrgProjectPreferences.accountKey, input.accountKey),
+            eq(authOrgProjectPreferences.cloudRegion, input.cloudRegion),
+            eq(authOrgProjectPreferences.orgId, input.orgId),
+          ),
+        )
+        .run();
+    } else {
+      this.db.insert(authOrgProjectPreferences).values(row).run();
+    }
+
+    const saved = this.getOrgProject(
+      input.accountKey,
+      input.cloudRegion,
+      input.orgId,
+    );
+    if (!saved) {
+      throw new Error("Failed to persist auth org project preference");
     }
     return saved;
   }

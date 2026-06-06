@@ -8,9 +8,11 @@ import type {
   Query,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import type { PostHogProductId } from "../../posthog-products";
 import type { Pushable } from "../../utils/streams";
 import type { BaseSession } from "../base-acp-agent";
 import type { ContextBreakdownBaseline } from "./context-breakdown";
+import type { TaskState } from "./conversion/task-state";
 import type { McpToolApprovals } from "./mcp/tool-metadata";
 import type { SettingsManager } from "./session/settings";
 import type { CodeExecutionMode } from "./tools";
@@ -56,6 +58,11 @@ export type Session = BaseSession & {
   effort?: EffortLevel;
   configOptions: SessionConfigOption[];
   accumulatedUsage: AccumulatedUsage;
+  /** PostHog products used during this session, derived from MCP exec calls.
+   *  Accumulates for the whole session (deduped); each newly-seen product is
+   *  emitted immediately so the client can show a persistent, de-duplicated
+   *  list. Never reset between turns. */
+  sessionResources: Set<PostHogProductId>;
   /** Latest context window usage (total tokens from last assistant message) */
   contextUsed?: number;
   /** Context window size in tokens */
@@ -68,6 +75,20 @@ export type Session = BaseSession & {
   emitRawSDKMessages: boolean | SDKMessageFilter[];
   /** Refreshed at session init and on MCP/skill changes. */
   contextBreakdownBaseline?: ContextBreakdownBaseline;
+  /**
+   * Slash command names (without leading slash) the SDK recognizes for this
+   * session — built-ins plus plugin/skill commands. Captured from the SDK's
+   * init response. Used to distinguish "command produced no output" from
+   * "command is genuinely unknown" when the session goes idle without an echo.
+   */
+  knownSlashCommands?: Set<string>;
+  /**
+   * Per-session task list accumulated from Task* tool calls.
+   * SDK >=0.3.142 replaced TodoWrite (snapshot) with TaskCreate/TaskUpdate
+   * (incremental, keyed by task id). Map iteration preserves insertion order
+   * which we use for plan entry ordering.
+   */
+  taskState: TaskState;
 };
 
 export type ToolUseCache = {

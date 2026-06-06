@@ -1,3 +1,4 @@
+import { openTask } from "@hooks/useOpenTask";
 import {
   ArrowSquareOut,
   CaretDown,
@@ -22,7 +23,6 @@ import type {
   HomeWorkstreamTask,
 } from "@shared/types/home-snapshot";
 import type { PrSnapshot } from "@shared/types/pr-snapshot";
-import { useNavigationStore } from "@stores/navigationStore";
 import { openUrlInBrowser } from "@utils/browser";
 import { formatRelativeTimeShort } from "@utils/time";
 import { type BoundAction, useBoundActions } from "../hooks/useBoundActions";
@@ -36,7 +36,6 @@ interface Props {
 
 export function HomeWorkstreamDetailPanel({ workstream, onClose }: Props) {
   const { data: allTasks = [] } = useTasks();
-  const navigateToTask = useNavigationStore((s) => s.navigateToTask);
   const boundActions = useBoundActions(workstream);
   const runAction = useRunWorkstreamAction();
 
@@ -47,7 +46,7 @@ export function HomeWorkstreamDetailPanel({ workstream, onClose }: Props) {
 
   function handleOpenTask(task: HomeWorkstreamTask) {
     const found = allTasks.find((t) => t.id === task.id);
-    if (found) navigateToTask(found);
+    if (found) void openTask(found);
   }
 
   function handleOpenPr() {

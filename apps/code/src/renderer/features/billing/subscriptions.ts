@@ -1,6 +1,6 @@
 import { useUsageLimitStore } from "@features/billing/stores/usageLimitStore";
 import { formatResetTime } from "@features/billing/utils";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { openSettings } from "@features/settings/hooks/useOpenSettings";
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
@@ -8,7 +8,7 @@ import { toast } from "@utils/toast";
 const log = logger.scope("billing-subscriptions");
 
 const openPlanUsage = () => {
-  useSettingsDialogStore.getState().open("plan-usage");
+  openSettings("plan-usage");
 };
 
 export function registerBillingSubscriptions() {
@@ -20,7 +20,11 @@ export function registerBillingSubscriptions() {
 
         if (event.threshold === 100) {
           if (event.userIsActive) {
-            useUsageLimitStore.getState().show();
+            useUsageLimitStore.getState().show({
+              bucket: event.bucket,
+              resetAt: event.resetAt,
+              isPro: event.isPro,
+            });
             return;
           }
           toast.error("Usage limit reached", {

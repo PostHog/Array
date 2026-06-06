@@ -9,6 +9,7 @@ import {
   getSignalReportArtefacts,
   getSignalReportSignals,
   getSignalReports,
+  updateSignalReportArtefact,
 } from "../api";
 import { INBOX_REFETCH_INTERVAL_MS } from "../constants";
 import { useInboxFilterStore } from "../stores/inboxFilterStore";
@@ -20,6 +21,8 @@ import type {
   SignalReportSignalsResponse,
   SignalReportsQueryParams,
   SignalReportsResponse,
+  SuggestedReviewer,
+  SuggestedReviewerWriteEntry,
 } from "../types";
 import {
   buildSignalReportListOrdering,
@@ -140,6 +143,52 @@ export function useInboxReportSignals(reportId: string | null) {
       return getSignalReportSignals(reportId);
     },
     enabled: !!projectId && !!oauthAccessToken && !!reportId,
+  });
+}
+
+interface UpdateSuggestedReviewersVariables {
+  artefactId: string;
+  content: SuggestedReviewerWriteEntry[];
+  optimisticReviewers: SuggestedReviewer[];
+}
+
+export function useUpdateSuggestedReviewers(reportId: string) {
+  const queryClient = useQueryClient();
+  const queryKey = inboxKeys.artefacts(reportId);
+
+  return useMutation<
+    void,
+    Error,
+    UpdateSuggestedReviewersVariables,
+    { previous: SignalReportArtefactsResponse | undefined }
+  >({
+    mutationFn: ({ artefactId, content }) =>
+      updateSignalReportArtefact(reportId, artefactId, content),
+    onMutate: async ({ artefactId, optimisticReviewers }) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous =
+        queryClient.getQueryData<SignalReportArtefactsResponse>(queryKey);
+      if (previous) {
+        queryClient.setQueryData<SignalReportArtefactsResponse>(queryKey, {
+          ...previous,
+          results: previous.results.map((artefact) =>
+            artefact.id === artefactId &&
+            artefact.type === "suggested_reviewers"
+              ? { ...artefact, content: optimisticReviewers }
+              : artefact,
+          ),
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKey, context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey });
+    },
   });
 }
 

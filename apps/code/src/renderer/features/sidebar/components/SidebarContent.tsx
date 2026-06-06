@@ -2,7 +2,7 @@ import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { SidebarUsageBar } from "@features/billing/components/SidebarUsageBar";
 import { ArchiveIcon } from "@phosphor-icons/react";
 import { Box, Flex } from "@radix-ui/themes";
-import { useNavigationStore } from "@stores/navigationStore";
+import { navigateToArchived } from "@renderer/navigationBridge";
 import type React from "react";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { SidebarMenu } from "./SidebarMenu";
@@ -10,9 +10,6 @@ import { UpdateBanner } from "./UpdateBanner";
 
 export const SidebarContent: React.FC = () => {
   const archivedTaskIds = useArchivedTaskIds();
-  const navigateToArchived = useNavigationStore(
-    (state) => state.navigateToArchived,
-  );
   return (
     <Flex direction="column" height="100%">
       <Box flexGrow="1" overflow="hidden">

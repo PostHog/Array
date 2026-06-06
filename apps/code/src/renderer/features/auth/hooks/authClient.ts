@@ -30,11 +30,11 @@ export function createAuthenticatedClient(
     getCloudUrlFromRegion(authState.cloudRegion),
     getValidAccessToken,
     refreshAccessToken,
-    authState.projectId ?? undefined,
+    authState.currentProjectId ?? undefined,
   );
 
-  if (authState.projectId) {
-    client.setTeamId(authState.projectId);
+  if (authState.currentProjectId) {
+    client.setTeamId(authState.currentProjectId);
   }
 
   return client;
@@ -49,7 +49,12 @@ export function useOptionalAuthenticatedClient(): PostHogAPIClient | null {
 
   return useMemo(
     () => createAuthenticatedClient(authState),
-    [authState.cloudRegion, authState.projectId, authState.status, authState],
+    [
+      authState.cloudRegion,
+      authState.currentProjectId,
+      authState.status,
+      authState,
+    ],
   );
 }
 

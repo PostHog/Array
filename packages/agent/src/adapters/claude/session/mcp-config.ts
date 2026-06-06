@@ -48,6 +48,7 @@ export function loadUserClaudeJsonMcpServers(
 
 export function parseMcpServers(
   params: Pick<NewSessionRequest, "mcpServers">,
+  logger?: Logger,
 ): Record<string, McpServerConfig> {
   const mcpServers: Record<string, McpServerConfig> = {};
   if (!Array.isArray(params.mcpServers)) {
@@ -56,13 +57,28 @@ export function parseMcpServers(
 
   for (const server of params.mcpServers) {
     if ("type" in server) {
-      mcpServers[server.name] = {
-        type: server.type,
-        url: server.url,
-        headers: server.headers
-          ? Object.fromEntries(server.headers.map((e) => [e.name, e.value]))
-          : undefined,
-      };
+      if (server.type === "http" || server.type === "sse") {
+        mcpServers[server.name] = {
+          type: server.type,
+          url: server.url,
+          headers: server.headers
+            ? Object.fromEntries(
+                server.headers.map((e: { name: string; value: string }) => [
+                  e.name,
+                  e.value,
+                ]),
+              )
+            : undefined,
+        };
+      } else {
+        // ACP 0.22 introduced the `sdk` McpServerConfig variant; the SDK
+        // adapter doesn't construct in-process servers, so surface a warning
+        // rather than silently dropping the entry.
+        logger?.warn("parseMcpServers: dropping unsupported MCP server type", {
+          name: server.name,
+          type: (server as { type: string }).type,
+        });
+      }
     } else {
       mcpServers[server.name] = {
         type: "stdio",

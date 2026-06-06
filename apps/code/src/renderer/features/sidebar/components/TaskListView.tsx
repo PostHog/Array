@@ -2,28 +2,14 @@ import { PointerSensor } from "@dnd-kit/dom";
 import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useFolders } from "@features/folders/hooks/useFolders";
-import { useMeQuery } from "@hooks/useMeQuery";
-import {
-  FunnelSimple as FunnelSimpleIcon,
-  GitBranch,
-  MagnifyingGlass,
-} from "@phosphor-icons/react";
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  MenuLabel,
-} from "@posthog/quill";
+import { useAppView } from "@hooks/useAppView";
+import { openTaskInput } from "@hooks/useOpenTask";
+import { GitBranch } from "@phosphor-icons/react";
+import { MenuLabel } from "@posthog/quill";
 import { Flex, Text } from "@radix-ui/themes";
 import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
 import { useWorkspace } from "@renderer/features/workspace/hooks/useWorkspace";
 import { normalizeRepoKey } from "@shared/utils/repo";
-import { useCommandMenuStore } from "@stores/commandMenuStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { getRelativeDateGroup } from "@utils/time";
 import { motion } from "framer-motion";
 import { Fragment, useCallback, useEffect, useMemo } from "react";
@@ -50,27 +36,17 @@ interface TaskListViewProps {
   ) => void;
   onTaskArchive: (taskId: string) => void;
   onTaskTogglePin: (taskId: string) => void;
-  onTaskEditSubmit: (taskId: string, newTitle: string) => void;
+  onTaskEditSubmit: (
+    taskId: string,
+    currentTitle: string,
+    newTitle: string,
+  ) => void;
   onTaskEditCancel: () => void;
   hasMore: boolean;
 }
 
-function SectionLabel({
-  label,
-  endContent,
-}: {
-  label: string;
-  endContent?: React.ReactNode;
-}) {
-  return (
-    <MenuLabel
-      className="flex items-center justify-between py-0 pr-0"
-      htmlFor="null"
-    >
-      {label}
-      {endContent ? <span>{endContent}</span> : null}
-    </MenuLabel>
-  );
+function SectionLabel({ label }: { label: string }) {
+  return <MenuLabel className="flex items-center py-0">{label}</MenuLabel>;
 }
 
 function TaskRow({
@@ -131,6 +107,7 @@ function TaskRow({
       slackThreadUrl={task.slackThreadUrl}
       prState={prState}
       hasDiff={hasDiff}
+      prUrl={task.cloudPrUrl}
       timestamp={timestamp}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
@@ -140,115 +117,6 @@ function TaskRow({
       onEditSubmit={onEditSubmit}
       onEditCancel={onEditCancel}
     />
-  );
-}
-
-function TaskSearchButton() {
-  const openCommandMenu = useCommandMenuStore((state) => state.open);
-  return (
-    <Button
-      type="button"
-      aria-label="Search tasks"
-      size="icon-sm"
-      onClick={() => openCommandMenu()}
-    >
-      <MagnifyingGlass size={14} />
-    </Button>
-  );
-}
-
-function TaskFilterMenu() {
-  const organizeMode = useSidebarStore((state) => state.organizeMode);
-  const sortMode = useSidebarStore((state) => state.sortMode);
-  const showAllUsers = useSidebarStore((state) => state.showAllUsers);
-  const showInternal = useSidebarStore((state) => state.showInternal);
-  const setOrganizeMode = useSidebarStore((state) => state.setOrganizeMode);
-  const setSortMode = useSidebarStore((state) => state.setSortMode);
-  const setShowAllUsers = useSidebarStore((state) => state.setShowAllUsers);
-  const setShowInternal = useSidebarStore((state) => state.setShowInternal);
-  const { data: currentUser } = useMeQuery();
-  const isStaff = currentUser?.is_staff === true;
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button type="button" aria-label="Filter tasks" size="icon-sm">
-            <FunnelSimpleIcon size={14} />
-          </Button>
-        }
-      />
-      <DropdownMenuContent
-        align="start"
-        side="bottom"
-        sideOffset={6}
-        className="min-w-fit"
-      >
-        <MenuLabel>Organize</MenuLabel>
-        <DropdownMenuRadioGroup
-          value={organizeMode}
-          onValueChange={(value) =>
-            setOrganizeMode(value as typeof organizeMode)
-          }
-        >
-          <DropdownMenuRadioItem value="by-project">
-            By project
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="chronological">
-            Chronological list
-          </DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-
-        <DropdownMenuSeparator />
-
-        <MenuLabel>Sort by</MenuLabel>
-        <DropdownMenuRadioGroup
-          value={sortMode}
-          onValueChange={(value) => setSortMode(value as typeof sortMode)}
-        >
-          <DropdownMenuRadioItem value="created">Created</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="updated">Updated</DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-
-        {import.meta.env.DEV && (
-          <>
-            <DropdownMenuSeparator />
-
-            <MenuLabel>Show</MenuLabel>
-            <DropdownMenuRadioGroup
-              value={showAllUsers ? "all" : "mine"}
-              onValueChange={(value) => setShowAllUsers(value === "all")}
-            >
-              <DropdownMenuRadioItem value="mine">
-                My tasks
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="all">
-                All tasks
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </>
-        )}
-
-        {isStaff && (
-          <>
-            <DropdownMenuSeparator />
-
-            <MenuLabel>Task visibility</MenuLabel>
-            <DropdownMenuRadioGroup
-              value={showInternal ? "internal" : "external"}
-              onValueChange={(value) => setShowInternal(value === "internal")}
-            >
-              <DropdownMenuRadioItem value="external">
-                External
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="internal">
-                Internal
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
@@ -282,13 +150,9 @@ export function TaskListView({
     (state) => state.resetHistoryVisibleCount,
   );
   const { folders } = useFolders();
-  const navigateToTaskInput = useNavigationStore(
-    (state) => state.navigateToTaskInput,
-  );
-  const isOnTaskInput = useNavigationStore(
-    (state) =>
-      state.view.type === "task-input" || state.view.type === "task-pending",
-  );
+  const view = useAppView();
+  const isOnTaskInput =
+    view.type === "task-input" || view.type === "task-pending";
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset pagination when filters change
   useEffect(() => {
@@ -346,23 +210,15 @@ export function TaskListView({
               }
               onArchive={() => onTaskArchive(task.id)}
               onTogglePin={() => onTaskTogglePin(task.id)}
-              onEditSubmit={(newTitle) => onTaskEditSubmit(task.id, newTitle)}
+              onEditSubmit={(newTitle) =>
+                onTaskEditSubmit(task.id, task.title, newTitle)
+              }
               onEditCancel={onTaskEditCancel}
               timestamp={task[timestampKey]}
             />
           ))}
         </>
       )}
-
-      <SectionLabel
-        label="Tasks"
-        endContent={
-          <span className="flex items-center">
-            <TaskSearchButton />
-            <TaskFilterMenu />
-          </span>
-        }
-      />
 
       {pinnedTasks.length === 0 &&
       flatTasks.length === 0 &&
@@ -392,7 +248,7 @@ export function TaskListView({
             <motion.button
               type="button"
               className="mt-1 rounded-md bg-gray-3 px-3 py-1.5 text-[13px] text-gray-12"
-              onClick={() => navigateToTaskInput()}
+              onClick={() => openTaskInput()}
               whileHover={{ scale: 1.05, backgroundColor: "var(--gray-4)" }}
               whileTap={{ scale: 0.97 }}
             >
@@ -437,9 +293,9 @@ export function TaskListView({
                     tooltipContent={folder?.path ?? group.id}
                     onNewTask={() => {
                       if (groupFolderId) {
-                        navigateToTaskInput(groupFolderId);
+                        openTaskInput(groupFolderId);
                       } else {
-                        navigateToTaskInput();
+                        openTaskInput();
                       }
                     }}
                     newTaskTooltip={`Start new task in ${folder?.name ?? group.name}`}
@@ -460,7 +316,7 @@ export function TaskListView({
                         onArchive={() => onTaskArchive(task.id)}
                         onTogglePin={() => onTaskTogglePin(task.id)}
                         onEditSubmit={(newTitle) =>
-                          onTaskEditSubmit(task.id, newTitle)
+                          onTaskEditSubmit(task.id, task.title, newTitle)
                         }
                         onEditCancel={onTaskEditCancel}
                         timestamp={task[timestampKey]}
@@ -494,7 +350,7 @@ export function TaskListView({
                   onArchive={() => onTaskArchive(task.id)}
                   onTogglePin={() => onTaskTogglePin(task.id)}
                   onEditSubmit={(newTitle) =>
-                    onTaskEditSubmit(task.id, newTitle)
+                    onTaskEditSubmit(task.id, task.title, newTitle)
                   }
                   onEditCancel={onTaskEditCancel}
                   timestamp={task[timestampKey]}

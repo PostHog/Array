@@ -17,7 +17,7 @@ function authedStub(): AuthService {
   return {
     getState: vi.fn(() => ({
       status: "authenticated",
-      projectId: 42,
+      currentProjectId: 42,
       cloudRegion: "us",
     })),
     getValidAccessToken: vi.fn(async () => ({

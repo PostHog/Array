@@ -33,7 +33,7 @@ export function SessionFooter({
   usage,
 }: SessionFooterProps) {
   const rightSide = (
-    <Flex align="center" gap="3" className="shrink-0">
+    <Flex align="center" gap="3" className="ml-auto shrink-0">
       {task && <DiffStatsChip task={task} />}
       <ContextUsageIndicator usage={usage ?? null} />
     </Flex>
@@ -41,16 +41,16 @@ export function SessionFooter({
   if (isPromptPending && !isCompacting) {
     if (hasPendingPermission) {
       return (
-        <Box className="pt-3 pb-1">
+        <Box className="pt-3 pb-1 opacity-50 transition-opacity group-hover/thread:opacity-100">
           <Flex align="center" justify="between" gap="2">
             <Flex
               align="center"
               gap="2"
-              className="min-w-0 select-none select-none text-gray-10"
+              className="min-w-0 select-none text-muted-foreground"
               style={{ WebkitUserSelect: "none" }}
             >
               <Pause size={14} weight="fill" className="shrink-0" />
-              <Text className="truncate text-[13px]">
+              <Text className="truncate text-[13px] text-muted-foreground">
                 Awaiting permission...
               </Text>
             </Flex>
@@ -61,7 +61,7 @@ export function SessionFooter({
     }
 
     return (
-      <Box className="pt-3 pb-1">
+      <Box className="pt-3 pb-1 opacity-50 transition-opacity group-hover/thread:opacity-100">
         <Flex align="center" justify="between" gap="2">
           <Flex align="center" gap="2" className="min-w-0">
             <GeneratingIndicator
@@ -69,7 +69,7 @@ export function SessionFooter({
               pausedDurationMs={pausedDurationMs}
             />
             {queuedCount > 0 && (
-              <Text color="gray" className="truncate text-[13px]">
+              <Text className="truncate text-[13px] text-muted-foreground">
                 ({queuedCount} queued)
               </Text>
             )}
@@ -89,19 +89,18 @@ export function SessionFooter({
     !wasCancelled;
 
   return (
-    <Box className="pb-1">
+    <Box className="pb-1 opacity-50 transition-opacity group-hover/thread:opacity-100">
       <Flex align="center" justify="between" gap="2">
         {showDuration && (
           <Flex
             align="center"
             gap="2"
-            className="min-w-0 select-none text-gray-10"
+            className="min-w-0 select-none text-muted-foreground"
           >
             <Brain size={12} className="shrink-0" />
             <Text
-              color="gray"
               style={{ fontVariantNumeric: "tabular-nums" }}
-              className="truncate text-[13px]"
+              className="truncate text-[13px] text-muted-foreground"
             >
               Generated in {formatDuration(lastGenerationDuration)}
             </Text>

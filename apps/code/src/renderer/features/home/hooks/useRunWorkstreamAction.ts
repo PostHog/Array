@@ -8,12 +8,13 @@ import type {
 import { useCreateTask } from "@features/tasks/hooks/useTasks";
 import { useConnectivity } from "@hooks/useConnectivity";
 import { useUserRepositoryIntegration } from "@hooks/useIntegrations";
+import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
+import { navigateToTaskPending } from "@renderer/navigationBridge";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import type { HomeWorkstream } from "@shared/types/home-snapshot";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
-import { useNavigationStore } from "@stores/navigationStore";
 import { pendingTaskPromptStoreApi } from "@stores/pendingTaskPromptStore";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
@@ -38,11 +39,6 @@ function buildSkillPrompt(action: BoundAction): string {
  * cleanly — offline, signed out, or the repo has no GitHub integration.
  */
 export function useRunWorkstreamAction() {
-  const navigateToTaskInput = useNavigationStore((s) => s.navigateToTaskInput);
-  const navigateToTask = useNavigationStore((s) => s.navigateToTask);
-  const navigateToPendingTask = useNavigationStore(
-    (s) => s.navigateToPendingTask,
-  );
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
   );
@@ -66,7 +62,7 @@ export function useRunWorkstreamAction() {
         : undefined;
 
       const fallbackToTaskInput = () => {
-        navigateToTaskInput({
+        openTaskInput({
           initialPrompt: promptText,
           initialCloudRepository: repo ?? undefined,
         });
@@ -90,7 +86,7 @@ export function useRunWorkstreamAction() {
         promptText,
         attachments: [],
       });
-      navigateToPendingTask(pendingTaskKey);
+      navigateToTaskPending(pendingTaskKey);
 
       void (async () => {
         try {
@@ -131,7 +127,7 @@ export function useRunWorkstreamAction() {
           const result = await taskService.createTask(input, (output) => {
             invalidateTasks(output.task);
             pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
-            navigateToTask(output.task);
+            void openTask(output.task);
           });
 
           if (result.success) {
@@ -166,9 +162,6 @@ export function useRunWorkstreamAction() {
       })();
     },
     [
-      navigateToTaskInput,
-      navigateToTask,
-      navigateToPendingTask,
       isAuthenticated,
       isOnline,
       cloudRegion,

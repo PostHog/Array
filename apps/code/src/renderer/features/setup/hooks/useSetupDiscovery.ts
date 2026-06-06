@@ -1,27 +1,31 @@
-import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import type { SetupRunService } from "@features/setup/services/setupRunService";
 import { useSetupStore } from "@features/setup/stores/setupStore";
+import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
-import { useEffect, useRef } from "react";
+import { DISCOVERY_RUN_FLAG } from "@shared/constants";
+import { useActiveRepoStore } from "@stores/activeRepoStore";
+import { useEffect } from "react";
 
 export function useSetupDiscovery() {
-  const selectedDirectory = useOnboardingStore((s) => s.selectedDirectory);
-  const discoveryStatus = useSetupStore((s) => s.discoveryStatus);
+  const selectedDirectory = useActiveRepoStore((s) => s.path);
+  const discoveryEnabled = useFeatureFlag(DISCOVERY_RUN_FLAG);
 
-  const startedRef = useRef(false);
-
+  // Discovery is a one-time-per-user agent run; once any repo has triggered
+  // it we never auto-launch another one from this hook. Errored/interrupted
+  // runs require explicit user retry (see setupStore partialize and #2257).
+  // Enricher runs per repo on every selection (gated on per-repo status
+  // inside the service).
   useEffect(() => {
-    if (startedRef.current) return;
-    // Only auto-fire from a clean "idle" state. "done" needs no rerun, and
-    // "error" (which now includes interrupted runs persisted across boots —
-    // see setupStore partialize) requires an explicit user retry to recover.
-    if (discoveryStatus !== "idle") return;
     if (!selectedDirectory) return;
+    const service = get<SetupRunService>(RENDERER_TOKENS.SetupRunService);
 
-    startedRef.current = true;
-    get<SetupRunService>(RENDERER_TOKENS.SetupRunService).startSetup(
-      selectedDirectory,
-    );
-  }, [discoveryStatus, selectedDirectory]);
+    service.startEnricherForRepo(selectedDirectory);
+
+    if (!discoveryEnabled) return;
+    const discoveryEverStarted = Object.values(
+      useSetupStore.getState().discoveryByRepo,
+    ).some((d) => d.status !== "idle");
+    if (!discoveryEverStarted) service.startDiscovery(selectedDirectory);
+  }, [selectedDirectory, discoveryEnabled]);
 }

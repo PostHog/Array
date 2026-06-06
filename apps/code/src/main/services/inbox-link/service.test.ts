@@ -91,6 +91,15 @@ describe("InboxLinkService", () => {
     expect(listener).toHaveBeenCalledWith({ reportId: "abc-123" });
   });
 
+  it("ignores a trailing slug segment after the report id", () => {
+    const listener = vi.fn();
+    service.on(InboxLinkEvent.OpenReport, listener);
+
+    deepLinkService.trigger("inbox", "abc-123/fix-inbox--Add-foo");
+
+    expect(listener).toHaveBeenCalledWith({ reportId: "abc-123" });
+  });
+
   it("returns false and does not emit when the path is empty", () => {
     const listener = vi.fn();
     service.on(InboxLinkEvent.OpenReport, listener);

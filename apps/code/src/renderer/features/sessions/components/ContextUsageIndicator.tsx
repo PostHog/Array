@@ -58,7 +58,7 @@ export function ContextUsageIndicator({ usage }: ContextUsageIndicatorProps) {
                 strokeLinecap="round"
               />
             </svg>
-            <Text className="text-[13px] text-gray-10 tabular-nums">
+            <Text className="text-[13px] text-muted-foreground tabular-nums">
               {formatTokensCompact(used)}/{formatTokensCompact(size)} ·{" "}
               {percentage}%
             </Text>

@@ -1,5 +1,6 @@
 import { CHAT_CONTENT_MAX_WIDTH } from "@features/sessions/constants";
 import { useContextUsage } from "@features/sessions/hooks/useContextUsage";
+import { useConversationItems } from "@features/sessions/hooks/useConversationItems";
 import { useConversationSearch } from "@features/sessions/hooks/useConversationSearch";
 import { SessionTaskIdProvider } from "@features/sessions/hooks/useSessionTaskId";
 import {
@@ -14,15 +15,17 @@ import { SkillButtonActionMessage } from "@features/skill-buttons/components/Ski
 import { ArrowDown, XCircle } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import WorkerUrl from "@pierre/diffs/worker/worker.js?worker&url";
-import { Box, Button, Flex, Text } from "@radix-ui/themes";
+import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@posthog/quill";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import type { AcpMessage } from "@shared/types/session-events";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  buildConversationItems,
-  type ConversationItem,
-  type TurnContext,
-} from "./buildConversationItems";
+import type { ConversationItem, TurnContext } from "./buildConversationItems";
 import { ConversationSearchBar } from "./ConversationSearchBar";
 import { GitActionMessage } from "./GitActionMessage";
 import { GitActionResult } from "./GitActionResult";
@@ -76,19 +79,21 @@ export function ConversationView({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const debugLogsCloudRuns = useSettingsStore((s) => s.debugLogsCloudRuns);
   const showDebugLogs = debugLogsCloudRuns;
+
   const contextUsage = useContextUsage(events);
 
+  // Streaming appends one event per token. The parse is incremental — each
+  // event is handled once and completed turns are reused by reference — so per
+  // token the work tracks the active turn, not the whole thread. We feed
+  // `events` directly (no frame-throttle) so a sent message's optimistic->real
+  // swap is never delayed past the frame the store commits it.
   const {
     items: conversationItems,
     lastTurnInfo,
     isCompacting,
-  } = useMemo(
-    () =>
-      buildConversationItems(events, isPromptPending, {
-        showDebugLogs,
-      }),
-    [events, isPromptPending, showDebugLogs],
-  );
+  } = useConversationItems(events, isPromptPending, {
+    showDebugLogs,
+  });
 
   const firstUserMessageIdRef = useRef<string | undefined>(undefined);
   if (firstUserMessageIdRef.current === undefined) {
@@ -250,7 +255,7 @@ export function ConversationView({
       poolOptions={DIFFS_POOL_OPTIONS}
       highlighterOptions={DIFFS_HIGHLIGHTER_OPTIONS}
     >
-      <div ref={containerRef} className="relative flex-1">
+      <div ref={containerRef} className="group/thread relative flex-1">
         <div
           id="fullscreen-portal"
           className="pointer-events-none absolute inset-0 z-20"
@@ -302,11 +307,21 @@ export function ConversationView({
           />
         </SessionTaskIdProvider>
         {showScrollButton && (
-          <Box className="absolute right-4 bottom-4 z-10">
-            <Button size="1" variant="solid" onClick={scrollToBottom}>
-              <ArrowDown size={14} weight="bold" />
-              Scroll to bottom
-            </Button>
+          <Box className="absolute right-6 bottom-4 z-10">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-lg"
+                    variant="outline"
+                    onClick={scrollToBottom}
+                  >
+                    <ArrowDown size={14} weight="bold" />
+                  </Button>
+                }
+              />
+              <TooltipContent>Scroll to bottom</TooltipContent>
+            </Tooltip>
           </Box>
         )}
       </div>

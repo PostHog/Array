@@ -1,4 +1,4 @@
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { openSettings } from "@features/settings/hooks/useOpenSettings";
 import { CaretDown, HardDrives, Plus } from "@phosphor-icons/react";
 import {
   Button,
@@ -59,9 +59,7 @@ export function EnvironmentSelector({
 
   const handleOpenSettings = () => {
     setOpen(false);
-    useSettingsDialogStore
-      .getState()
-      .open("environments", { repoPath: repoPath ?? undefined });
+    openSettings("environments", { repoPath: repoPath ?? undefined });
   };
 
   const isDisabled = disabled || !repoPath;

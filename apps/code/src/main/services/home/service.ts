@@ -66,7 +66,7 @@ export class HomeService extends TypedEventEmitter<HomeEvents> {
   }
 
   private async fetchSnapshot(): Promise<HomeSnapshot | null> {
-    if (this.authService.getState().projectId == null) return null;
+    if (this.authService.getState().currentProjectId == null) return null;
     try {
       const res = await this.authService.authenticatedProjectFetch(
         "code_home/",
@@ -93,7 +93,7 @@ export class HomeService extends TypedEventEmitter<HomeEvents> {
   }
 
   private async requestServerRefresh(): Promise<void> {
-    if (this.authService.getState().projectId == null) return;
+    if (this.authService.getState().currentProjectId == null) return;
     try {
       await this.authService.authenticatedProjectFetch("code_home/refresh/", {
         method: "POST",

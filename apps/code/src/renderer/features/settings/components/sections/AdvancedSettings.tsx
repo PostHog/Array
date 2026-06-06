@@ -1,6 +1,6 @@
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { SettingRow } from "@features/settings/components/SettingRow";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { closeSettings } from "@features/settings/hooks/useOpenSettings";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { useSetupStore } from "@features/setup/stores/setupStore";
 import { useTourStore } from "@features/tour/stores/tourStore";
@@ -19,29 +19,18 @@ export function AdvancedSettings() {
   return (
     <Flex direction="column">
       <SettingRow
-        label="Reset onboarding"
-        description="Re-run the onboarding tutorial on next app restart"
+        label="Reset onboarding and tours"
+        description="Re-run the onboarding tutorial and product tours on next app restart"
       >
         <Button
           variant="soft"
           size="1"
           onClick={() => {
-            useSettingsDialogStore.getState().close();
+            closeSettings();
             useOnboardingStore.getState().resetOnboarding();
             useSetupStore.getState().resetSetup();
+            useTourStore.getState().resetTours();
           }}
-        >
-          Reset
-        </Button>
-      </SettingRow>
-      <SettingRow
-        label="Reset product tours"
-        description="Re-run product tours on next app restart"
-      >
-        <Button
-          variant="soft"
-          size="1"
-          onClick={() => useTourStore.getState().resetTours()}
         >
           Reset
         </Button>

@@ -4,13 +4,45 @@ import { cloudRegion, type oAuthTokenResponse } from "../oauth/schemas";
 export const authStatusSchema = z.enum(["anonymous", "authenticated"]);
 export type AuthStatus = z.infer<typeof authStatusSchema>;
 
+export const orgProjectsSchema = z.object({
+  orgName: z.string(),
+  projects: z.array(z.object({ id: z.number(), name: z.string() })),
+});
+export type OrgProjects = z.infer<typeof orgProjectsSchema>;
+
+export const orgProjectsMapSchema = z.record(z.string(), orgProjectsSchema);
+export type OrgProjectsMap = z.infer<typeof orgProjectsMapSchema>;
+
+export function flattenProjectIds(map: OrgProjectsMap): number[] {
+  return Object.values(map).flatMap((org) => org.projects.map((p) => p.id));
+}
+
+export function findOrgForProject(
+  map: OrgProjectsMap,
+  projectId: number,
+  preferredOrgId: string | null,
+): string | null {
+  if (
+    preferredOrgId &&
+    map[preferredOrgId]?.projects.some((p) => p.id === projectId)
+  ) {
+    return preferredOrgId;
+  }
+  for (const [orgId, org] of Object.entries(map)) {
+    if (org.projects.some((p) => p.id === projectId)) {
+      return orgId;
+    }
+  }
+  return null;
+}
+
 export const authStateSchema = z.object({
   status: authStatusSchema,
   bootstrapComplete: z.boolean(),
   cloudRegion: cloudRegion.nullable(),
-  projectId: z.number().nullable(),
-  availableProjectIds: z.array(z.number()),
-  availableOrgIds: z.array(z.string()),
+  orgProjectsMap: orgProjectsMapSchema,
+  currentOrgId: z.string().nullable(),
+  currentProjectId: z.number().nullable(),
   hasCodeAccess: z.boolean().nullable(),
   needsScopeReauth: z.boolean(),
 });
@@ -33,6 +65,11 @@ export const redeemInviteCodeInput = z.object({
 export const selectProjectInput = z.object({
   projectId: z.number(),
 });
+
+export const switchOrgInput = z.object({
+  orgId: z.string().min(1),
+});
+export type SwitchOrgInput = z.infer<typeof switchOrgInput>;
 
 export const validAccessTokenOutput = z.object({
   accessToken: z.string(),

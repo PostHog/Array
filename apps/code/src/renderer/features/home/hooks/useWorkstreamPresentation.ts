@@ -1,9 +1,9 @@
+import { openTask } from "@hooks/useOpenTask";
 import { useTasks } from "@renderer/features/tasks/hooks/useTasks";
 import type { HomeWorkstream } from "@shared/types/home-snapshot";
 import type { PrSnapshot } from "@shared/types/pr-snapshot";
 import type { SituationId } from "@shared/types/workflow";
 import { pickPrimarySituation } from "@shared/types/workflow-situations";
-import { useNavigationStore } from "@stores/navigationStore";
 import { openUrlInBrowser } from "@utils/browser";
 import {
   SITUATION_VISUAL,
@@ -42,7 +42,6 @@ export function useWorkstreamPresentation(
   workstream: HomeWorkstream,
 ): WorkstreamPresentation {
   const { data: tasks = [] } = useTasks();
-  const navigateToTask = useNavigationStore((s) => s.navigateToTask);
   const boundActions = useBoundActions(workstream);
   const run = useRunWorkstreamAction();
 
@@ -84,7 +83,7 @@ export function useWorkstreamPresentation(
     openTask: () => {
       if (!headTask) return;
       const task = tasks.find((t) => t.id === headTask.id);
-      if (task) navigateToTask(task);
+      if (task) void openTask(task);
     },
     openPr: () => {
       if (workstream.prUrl) void openUrlInBrowser(workstream.prUrl);

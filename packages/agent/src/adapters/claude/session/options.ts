@@ -13,12 +13,14 @@ import type {
 import type { FileEnrichmentDeps } from "../../../enrichment/file-enricher";
 import { IS_ROOT } from "../../../utils/common";
 import type { Logger } from "../../../utils/logger";
+import type { TaskState } from "../conversion/task-state";
 import {
   createPostToolUseHook,
   createPreToolUseHook,
   createReadEnrichmentHook,
   createSignedCommitGuardHook,
   createSubagentRewriteHook,
+  createTaskHook,
   type EnrichedReadCache,
   type OnModeChange,
 } from "../hooks";
@@ -56,8 +58,18 @@ export interface BuildOptionsParams {
   effort?: EffortLevel;
   enrichmentDeps?: FileEnrichmentDeps;
   enrichedReadCache?: EnrichedReadCache;
+  /** Records PostHog product usage from MCP exec calls (deduped, session-wide). */
+  onPostHogResourceUsed?: (subTool: string, commandText?: string) => void;
+  /** Records the `code` product when the agent reads a file from the codebase
+   *  (deduped, session-wide). */
+  onCodeFileRead?: () => void;
   /** Cloud task session — enables the signed-commit guard. */
   cloudMode?: boolean;
+  /** Per-session task state populated by createTaskHook from SDK Task* events. */
+  taskState: TaskState;
+  /** Called after createTaskHook mutates taskState so callers can emit a plan
+   * sessionUpdate to the client. */
+  onTaskStateChange?: () => Promise<void>;
 }
 
 export function buildSystemPrompt(
@@ -105,11 +117,35 @@ function buildMcpServers(
 }
 
 function buildEnvironment(): Record<string, string> {
-  const bedrockFallbackHeader = "x-posthog-use-bedrock-fallback: true";
+  // Custom HTTP headers reach the model only through the Claude CLI subprocess,
+  // which reads them from this env var (newline-delimited `name: value` lines)
+  // — the SDK has no direct header option. We finalize them here, the single
+  // chokepoint every session (desktop and cloud) funnels through.
+  const headerLines: string[] = [];
   const existingCustomHeaders = process.env.ANTHROPIC_CUSTOM_HEADERS;
-  const customHeaders = existingCustomHeaders
-    ? `${existingCustomHeaders}\n${bedrockFallbackHeader}`
-    : bedrockFallbackHeader;
+  if (existingCustomHeaders) {
+    headerLines.push(existingCustomHeaders);
+  }
+  // Attribute every captured $ai_generation event to the customer's team. The
+  // gateway authenticates with a shared key, so without this the spend lands on
+  // the key owner's team. The gateway lifts `x-posthog-property-*` headers onto
+  // the event; both entrypoints export POSTHOG_PROJECT_ID before this runs
+  // (apps/code auth-adapter.ts, server/agent-server.ts). Mirrors django's
+  // get_llm_client(team_id=...).
+  const projectId = process.env.POSTHOG_PROJECT_ID;
+  if (projectId) {
+    headerLines.push(`x-posthog-property-team_id: ${projectId}`);
+  }
+  // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
+  headerLines.push("x-posthog-use-bedrock-fallback: true");
+  const customHeaders = headerLines.join("\n");
+
+  // SDK 0.3.142 made MCP servers connect in the background by default. That
+  // default is what we want: a slow or unreachable user MCP server (PostHog
+  // MCP, custom stdio servers) would otherwise stall turn 1 by up to ~5s per
+  // server. We honor an explicit override from the caller's environment for
+  // sessions that genuinely need MCP tools available on turn 1.
+  const mcpNonblocking = process.env.MCP_CONNECTION_NONBLOCKING;
 
   return {
     ...process.env,
@@ -119,7 +155,9 @@ function buildEnvironment(): Record<string, string> {
     ENABLE_TOOL_SEARCH: "auto:0",
     // Enable idle state as end-of-turn signal (required for SDK 0.2.114+)
     CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
-    // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
+    ...(mcpNonblocking !== undefined && {
+      MCP_CONNECTION_NONBLOCKING: mcpNonblocking,
+    }),
     ANTHROPIC_CUSTOM_HEADERS: customHeaders,
   };
 }
@@ -127,14 +165,26 @@ function buildEnvironment(): Record<string, string> {
 function buildHooks(
   userHooks: Options["hooks"],
   onModeChange: OnModeChange | undefined,
+  onPostHogResourceUsed:
+    | ((subTool: string, commandText?: string) => void)
+    | undefined,
+  onCodeFileRead: (() => void) | undefined,
   settingsManager: SettingsManager,
   logger: Logger,
   enrichmentDeps: FileEnrichmentDeps | undefined,
   enrichedReadCache: EnrichedReadCache | undefined,
   registeredAgents: ReadonlySet<string>,
   cloudMode: boolean,
+  taskState: TaskState,
+  onTaskStateChange: (() => Promise<void>) | undefined,
 ): Options["hooks"] {
-  const postToolUseHooks = [createPostToolUseHook({ onModeChange })];
+  const postToolUseHooks = [
+    createPostToolUseHook({
+      onModeChange,
+      onPostHogResourceUsed,
+      onCodeFileRead,
+    }),
+  ];
   if (enrichmentDeps && enrichedReadCache) {
     postToolUseHooks.push(
       createReadEnrichmentHook(enrichmentDeps, enrichedReadCache),
@@ -149,6 +199,8 @@ function buildHooks(
     preToolUseHooks.push(createSignedCommitGuardHook(logger));
   }
 
+  const taskHook = createTaskHook(taskState, onTaskStateChange);
+
   return {
     ...userHooks,
     PostToolUse: [
@@ -156,11 +208,13 @@ function buildHooks(
       { hooks: postToolUseHooks },
     ],
     PreToolUse: [...(userHooks?.PreToolUse || []), { hooks: preToolUseHooks }],
+    TaskCreated: [...(userHooks?.TaskCreated || []), { hooks: [taskHook] }],
+    TaskCompleted: [...(userHooks?.TaskCompleted || []), { hooks: [taskHook] }],
   };
 }
 
 /**
- * Read-only Haiku-powered exploration agent. Registered under the `ph-explore`
+ * Read-only exploration agent. Registered under the `ph-explore`
  * name rather than `Explore` to work around a Claude Agent SDK bug where
  * `options.agents` cannot shadow built-in agent definitions. The
  * `createSubagentRewriteHook` rewrites `subagent_type: "Explore"` to
@@ -195,7 +249,10 @@ Rules:
     "WebFetch",
     "WebSearch",
     "NotebookRead",
-    "TodoWrite",
+    "TaskCreate",
+    "TaskUpdate",
+    "TaskGet",
+    "TaskList",
   ],
 };
 
@@ -351,12 +408,16 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     hooks: buildHooks(
       params.userProvidedOptions?.hooks,
       params.onModeChange,
+      params.onPostHogResourceUsed,
+      params.onCodeFileRead,
       params.settingsManager,
       params.logger,
       params.enrichmentDeps,
       params.enrichedReadCache,
       registeredAgentNames,
       params.cloudMode ?? false,
+      params.taskState,
+      params.onTaskStateChange,
     ),
     outputFormat: params.outputFormat,
     abortController: getAbortController(

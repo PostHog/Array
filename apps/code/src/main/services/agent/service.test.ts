@@ -21,9 +21,7 @@ const mockClientSideConnection = vi.hoisted(() =>
     this.initialize = vi.fn().mockResolvedValue({});
     this.newSession = mockNewSession;
     this.loadSession = vi.fn().mockResolvedValue({ configOptions: [] });
-    this.unstable_resumeSession = vi
-      .fn()
-      .mockResolvedValue({ configOptions: [] });
+    this.resumeSession = vi.fn().mockResolvedValue({ configOptions: [] });
   }),
 );
 
@@ -91,9 +89,12 @@ vi.mock("@posthog/agent/posthog-api", () => ({
 }));
 
 vi.mock("@posthog/agent/gateway-models", () => ({
+  DEFAULT_GATEWAY_MODEL: "claude-opus-4-8",
+  DEFAULT_CODEX_MODEL: "gpt-5.5",
   fetchGatewayModels: vi.fn().mockResolvedValue([]),
   formatGatewayModelName: vi.fn(),
   getProviderName: vi.fn(),
+  isBlockedModelId: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("@posthog/agent/adapters/claude/session/jsonl-hydration", () => ({
@@ -190,11 +191,6 @@ function createMockDependencies() {
       appDataPath: "/mock/userData",
       logsPath: "/mock/logs",
     },
-    defaultAdditionalDirectoryRepository: {
-      list: vi.fn(() => [] as string[]),
-      add: vi.fn(),
-      remove: vi.fn(),
-    },
     workspaceRepository: {
       getAdditionalDirectories: vi.fn(() => [] as string[]),
       addAdditionalDirectory: vi.fn(),
@@ -230,7 +226,6 @@ describe("AgentService", () => {
       deps.bundledResources as never,
       deps.appMeta as never,
       deps.storagePaths as never,
-      deps.defaultAdditionalDirectoryRepository as never,
       deps.workspaceRepository as never,
     );
   });

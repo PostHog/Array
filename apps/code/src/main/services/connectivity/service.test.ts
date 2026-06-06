@@ -54,12 +54,24 @@ describe("ConnectivityService", () => {
       );
     });
 
-    it("goes offline when the HEAD check throws", async () => {
+    it("stays online after a single failed check (requires confirmation)", async () => {
       mockFetch.mockImplementation(offline);
 
       service.init();
       await vi.advanceTimersByTimeAsync(0);
 
+      // One dropped probe is a transient blip, not an outage.
+      expect(service.getStatus()).toEqual({ isOnline: true });
+    });
+
+    it("goes offline only after consecutive failed checks", async () => {
+      mockFetch.mockImplementation(offline);
+
+      service.init();
+      await vi.advanceTimersByTimeAsync(0); // 1st failure
+      expect(service.getStatus()).toEqual({ isOnline: true });
+
+      await vi.advanceTimersByTimeAsync(3000); // 2nd failure -> confirmed offline
       expect(service.getStatus()).toEqual({ isOnline: false });
     });
   });
@@ -74,27 +86,28 @@ describe("ConnectivityService", () => {
       expect(result).toEqual({ isOnline: true });
     });
 
-    it("returns offline when HEAD rejects", async () => {
-      mockFetch.mockRejectedValue(new Error("Network error"));
+    it("does not flip offline on a single failed check", async () => {
+      mockFetch.mockResolvedValue(ok(204));
       service.init();
       await vi.advanceTimersByTimeAsync(0);
 
+      mockFetch.mockRejectedValue(new Error("Network error"));
       const result = await service.checkNow();
-      expect(result).toEqual({ isOnline: false });
+      expect(result).toEqual({ isOnline: true });
     });
 
-    it("returns offline when HEAD returns a non-ok non-204 response", async () => {
-      mockFetch.mockResolvedValue(notOk(500));
+    it("returns offline once failures reach the threshold", async () => {
+      mockFetch.mockRejectedValue(new Error("Network error"));
       service.init();
-      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0); // 1st failure
 
-      const result = await service.checkNow();
+      const result = await service.checkNow(); // 2nd failure -> offline
       expect(result).toEqual({ isOnline: false });
     });
   });
 
   describe("status change events", () => {
-    it("emits when going offline", async () => {
+    it("emits when going offline after confirmation", async () => {
       mockFetch.mockResolvedValue(ok(204));
       service.init();
       await vi.advanceTimersByTimeAsync(0);
@@ -103,21 +116,38 @@ describe("ConnectivityService", () => {
       service.on(ConnectivityEvent.StatusChange, handler);
 
       mockFetch.mockRejectedValue(new Error("offline"));
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(6000); // two failed polls
 
       expect(handler).toHaveBeenCalledWith({ isOnline: false });
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not emit on a single transient failure", async () => {
+      mockFetch.mockResolvedValue(ok(204));
+      service.init();
+      await vi.advanceTimersByTimeAsync(0);
+
+      const handler = vi.fn();
+      service.on(ConnectivityEvent.StatusChange, handler);
+
+      mockFetch.mockRejectedValue(new Error("offline"));
+      await vi.advanceTimersByTimeAsync(3000); // one failed poll only
+
+      expect(handler).not.toHaveBeenCalled();
     });
 
     it("emits when coming back online", async () => {
       mockFetch.mockRejectedValue(new Error("offline"));
       service.init();
-      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0); // 1st failure
+      await vi.advanceTimersByTimeAsync(3000); // 2nd failure -> offline
+      expect(service.getStatus()).toEqual({ isOnline: false });
 
       const handler = vi.fn();
       service.on(ConnectivityEvent.StatusChange, handler);
 
       mockFetch.mockResolvedValue(ok(204));
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(3000); // recovery is instant
 
       expect(handler).toHaveBeenCalledWith({ isOnline: true });
     });
@@ -153,6 +183,43 @@ describe("ConnectivityService", () => {
 
       const result = await service.checkNow();
       expect(result).toEqual({ isOnline: true });
+    });
+
+    it("treats a non-ok non-204 response as a failed probe", async () => {
+      mockFetch.mockResolvedValue(notOk(500));
+      service.init();
+      await vi.advanceTimersByTimeAsync(0); // 1st failure
+
+      const result = await service.checkNow(); // 2nd failure -> offline
+      expect(result).toEqual({ isOnline: false });
+    });
+  });
+
+  describe("multi-endpoint probing", () => {
+    it("stays online when at least one host is reachable", async () => {
+      // Google is blocked, Cloudflare answers.
+      mockFetch.mockImplementation((url: string) =>
+        url.includes("google")
+          ? Promise.reject(new Error("blocked"))
+          : Promise.resolve(ok(204)),
+      );
+
+      service.init();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      const result = await service.checkNow();
+      expect(result).toEqual({ isOnline: true });
+    });
+
+    it("goes offline only when every host fails", async () => {
+      mockFetch.mockRejectedValue(new Error("blocked"));
+
+      service.init();
+      await vi.advanceTimersByTimeAsync(0); // 1st failure
+      await vi.advanceTimersByTimeAsync(3000); // 2nd failure -> offline
+
+      expect(service.getStatus()).toEqual({ isOnline: false });
     });
   });
 

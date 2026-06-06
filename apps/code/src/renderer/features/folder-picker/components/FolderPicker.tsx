@@ -1,6 +1,7 @@
 import { useFolders } from "@features/folders/hooks/useFolders";
 import {
   CaretDown,
+  CircleNotch,
   Folder as FolderIcon,
   FolderOpen,
   GitBranch,
@@ -18,7 +19,7 @@ import { Flex, Text } from "@radix-ui/themes";
 import { FIELD_TRIGGER_CLASS } from "@renderer/styles/fieldTrigger";
 import { trpcClient } from "@renderer/trpc";
 import { logger } from "@utils/logger";
-import type { RefObject } from "react";
+import { type RefObject, useState } from "react";
 
 const log = logger.scope("folder-picker");
 
@@ -49,6 +50,8 @@ export function FolderPicker({
   const displayValue = getFolderDisplayName(value);
   const isField = variant === "field";
 
+  const [isOpening, setIsOpening] = useState(false);
+
   const handleSelect = (path: string) => {
     onChange(path);
     const folder = getFolderByPath(path);
@@ -56,6 +59,8 @@ export function FolderPicker({
   };
 
   const handleOpenFilePicker = async () => {
+    if (isOpening) return;
+    setIsOpening(true);
     try {
       const selectedPath = await trpcClient.os.selectDirectory.query();
       if (!selectedPath) return;
@@ -63,6 +68,8 @@ export function FolderPicker({
       onChange(selectedPath);
     } catch (error) {
       log.error("Failed to open folder picker", { error });
+    } finally {
+      setIsOpening(false);
     }
   };
 
@@ -74,10 +81,17 @@ export function FolderPicker({
           className="min-w-0 max-w-full truncate text-left font-medium text-(--gray-12)"
           title={displayValue || undefined}
         >
-          {displayValue || placeholder}
+          {isOpening ? "Opening..." : displayValue || placeholder}
         </Text>
       </Flex>
-      <CaretDown size={14} className="shrink-0 text-(--gray-9)" />
+      {isOpening ? (
+        <CircleNotch
+          size={14}
+          className="shrink-0 animate-spin text-(--gray-9)"
+        />
+      ) : (
+        <CaretDown size={14} className="shrink-0 text-(--gray-9)" />
+      )}
     </>
   );
 
@@ -85,9 +99,13 @@ export function FolderPicker({
     <>
       <FolderIcon size={14} weight="regular" className="shrink-0" />
       <span className="max-w-[120px] truncate">
-        {displayValue || placeholder}
+        {isOpening ? "Opening..." : displayValue || placeholder}
       </span>
-      <CaretDown size={10} weight="bold" className="text-muted-foreground" />
+      {isOpening ? (
+        <CircleNotch size={10} className="animate-spin text-muted-foreground" />
+      ) : (
+        <CaretDown size={10} weight="bold" className="text-muted-foreground" />
+      )}
     </>
   );
 
@@ -97,6 +115,8 @@ export function FolderPicker({
         type="button"
         onClick={handleOpenFilePicker}
         className={FIELD_TRIGGER_CLASS}
+        disabled={isOpening}
+        aria-busy={isOpening}
       >
         {fieldContent}
       </button>
@@ -106,6 +126,8 @@ export function FolderPicker({
         size="sm"
         aria-label="Folder"
         onClick={handleOpenFilePicker}
+        disabled={isOpening}
+        aria-busy={isOpening}
       >
         {compactContent}
       </Button>

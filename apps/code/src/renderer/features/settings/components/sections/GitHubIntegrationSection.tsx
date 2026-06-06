@@ -48,7 +48,7 @@ export function GitHubIntegrationSection({
         : null,
     [repositories],
   );
-  const projectId = useAuthStateValue((state) => state.projectId);
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
   const {
     error: connectError,
     isConnecting: connecting,

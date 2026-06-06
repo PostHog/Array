@@ -1,8 +1,8 @@
+import { openTask } from "@hooks/useOpenTask";
 import { CircleNotch, GitBranch, Warning } from "@phosphor-icons/react";
 import { Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { useTasks } from "@renderer/features/tasks/hooks/useTasks";
 import type { HomeActiveAgent } from "@shared/types/home-snapshot";
-import { useNavigationStore } from "@stores/navigationStore";
 import { formatRelativeTimeShort } from "@utils/time";
 import { useMemo } from "react";
 
@@ -12,7 +12,6 @@ interface HomeActiveAgentsStripProps {
 
 export function HomeActiveAgentsStrip({ agents }: HomeActiveAgentsStripProps) {
   const { data: tasks = [] } = useTasks();
-  const navigateToTask = useNavigationStore((s) => s.navigateToTask);
   const taskById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
 
   if (agents.length === 0) return null;
@@ -44,7 +43,7 @@ export function HomeActiveAgentsStrip({ agents }: HomeActiveAgentsStripProps) {
                 key={agent.taskId}
                 type="button"
                 onClick={() => {
-                  if (task) navigateToTask(task);
+                  if (task) void openTask(task);
                 }}
                 className="group hover:-translate-y-px flex min-w-[260px] max-w-[320px] shrink-0 cursor-pointer flex-col items-start gap-1.5 rounded-lg border border-(--gray-4) bg-(--color-panel-solid) px-3 py-2.5 text-left transition-all hover:border-(--gray-7) hover:shadow-sm"
               >

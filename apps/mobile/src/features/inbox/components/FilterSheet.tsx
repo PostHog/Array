@@ -1,7 +1,7 @@
 import { Text } from "@components/text";
 import { Check } from "phosphor-react-native";
 import { Modal, Pressable, ScrollView, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 import {
   type SourceProduct,
@@ -94,7 +94,7 @@ function OptionRow({
 }
 
 export function FilterSheet({ visible, onClose }: FilterSheetProps) {
-  const insets = useSafeAreaInsets();
+  const { bottom, sheetContentTop } = useScreenInsets();
   const themeColors = useThemeColors();
   const statusDotColors = useStatusDotColors();
 
@@ -120,7 +120,7 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
     >
       <View
         className="flex-1 bg-background"
-        style={{ paddingTop: insets.top + 8 }}
+        style={{ paddingTop: sheetContentTop() }}
       >
         {/* Header */}
         <View className="flex-row items-center justify-between border-gray-6 border-b px-4 pb-3">
@@ -145,7 +145,7 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
           contentContainerStyle={{
             paddingHorizontal: 16,
             paddingTop: 16,
-            paddingBottom: insets.bottom + 40,
+            paddingBottom: bottom("roomy"),
           }}
         >
           {/* Sort */}

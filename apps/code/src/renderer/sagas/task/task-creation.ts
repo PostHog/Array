@@ -1,5 +1,4 @@
 import { buildPromptBlocks } from "@features/editor/utils/prompt-builder";
-import { xmlToPlainText } from "@features/message-editor/utils/content";
 import { DEFAULT_PANEL_IDS } from "@features/panels/constants/panelConstants";
 import { usePanelLayoutStore } from "@features/panels/store/panelLayoutStore";
 import { useProvisioningStore } from "@features/provisioning/stores/provisioningStore";
@@ -60,6 +59,7 @@ export interface TaskCreationInput {
   cloudPrAuthorshipMode?: PrAuthorshipMode;
   cloudRunSource?: CloudRunSource;
   signalReportId?: string;
+  additionalDirectories?: string[];
 }
 
 export interface TaskCreationOutput {
@@ -202,6 +202,40 @@ export class TaskCreationSaga extends Saga<
         linkedBranch: null,
         createdAt: new Date().toISOString(),
       };
+    }
+
+    const extraDirectories = input.taskId
+      ? []
+      : (input.additionalDirectories ?? []).filter(
+          (path) => path && path !== repoPath,
+        );
+    if (extraDirectories.length > 0) {
+      await this.step({
+        name: "additional_directories",
+        execute: async () => {
+          await Promise.all(
+            extraDirectories.map((path) =>
+              trpcClient.additionalDirectories.addForTask.mutate({
+                taskId: task.id,
+                path,
+              }),
+            ),
+          );
+          return { taskId: task.id, paths: extraDirectories };
+        },
+        rollback: async ({ taskId, paths }) => {
+          log.info("Rolling back: removing additional directories", { taskId });
+          await Promise.all(
+            paths.map((path) =>
+              trpcClient.additionalDirectories.removeForTask
+                .mutate({ taskId, path })
+                .catch((error) => {
+                  log.warn("Failed to remove additional directory", { error });
+                }),
+            ),
+          );
+        },
+      });
     }
 
     const shouldStartCloudRun = workspaceMode === "cloud" && !task.latest_run;
@@ -401,9 +435,7 @@ export class TaskCreationSaga extends Saga<
       name: "task_creation",
       execute: async () => {
         const description = input.taskDescription ?? input.content ?? "";
-        const plainText = xmlToPlainText(description).trim();
         const result = await this.deps.posthogClient.createTask({
-          title: (plainText || "Untitled").slice(0, 255),
           description,
           repository: repository ?? undefined,
           github_integration:

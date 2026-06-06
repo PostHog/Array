@@ -1,11 +1,16 @@
 import { useReviewNavigationStore } from "@features/code-review/stores/reviewNavigationStore";
 import { CommandKeyHints } from "@features/command/components/CommandKeyHints";
 import { useFolders } from "@features/folders/hooks/useFolders";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import {
+  closeSettings,
+  openSettings,
+} from "@features/settings/hooks/useOpenSettings";
 import { TaskIcon } from "@features/sidebar/components/items/TaskIcon";
 import { useTaskPrStatus } from "@features/sidebar/hooks/useTaskPrStatus";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
+import { useAppView } from "@hooks/useAppView";
+import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import {
   Autocomplete,
   AutocompleteCollection,
@@ -32,7 +37,6 @@ import {
   ANALYTICS_EVENTS,
   type CommandMenuAction,
 } from "@shared/types/analytics";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useThemeStore } from "@stores/themeStore";
 import { track } from "@utils/analytics";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -82,13 +86,12 @@ function TaskCommandIcon({ task }: { task: Task }) {
 }
 
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
-  const { navigateToTaskInput, navigateToTask } = useNavigationStore();
-  const openSettingsDialog = useSettingsDialogStore((state) => state.open);
-  const closeSettingsDialog = useSettingsDialogStore((state) => state.close);
+  const openSettingsDialog = openSettings;
+  const closeSettingsDialog = closeSettings;
   const { folders } = useFolders();
   const { theme, setTheme } = useThemeStore();
   const toggleLeftSidebar = useSidebarStore((state) => state.toggle);
-  const view = useNavigationStore((state) => state.view);
+  const view = useAppView();
   const setReviewMode = useReviewNavigationStore(
     (state) => state.setReviewMode,
   );
@@ -110,7 +113,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   }, []);
 
   const openReviewPanel = useCallback(() => {
-    const taskId = view.type === "task-detail" ? view.data?.id : undefined;
+    const taskId = view.type === "task-detail" ? view.taskId : undefined;
     if (!taskId) return;
     const mode = getReviewMode(taskId);
     if (mode === "closed") {
@@ -173,7 +176,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         action: "home",
         onRun: () => {
           closeSettingsDialog();
-          navigateToTaskInput();
+          openTaskInput();
         },
       },
       {
@@ -209,7 +212,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         action: "new-task",
         onRun: () => {
           closeSettingsDialog();
-          navigateToTaskInput();
+          openTaskInput();
         },
       },
     ];
@@ -230,7 +233,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           action: "new-task",
           onRun: () => {
             closeSettingsDialog();
-            navigateToTaskInput(folder.id);
+            openTaskInput(folder.id);
           },
         })),
       });
@@ -240,7 +243,6 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   }, [
     folders,
     themeOptions,
-    navigateToTaskInput,
     openSettingsDialog,
     closeSettingsDialog,
     toggleLeftSidebar,
@@ -259,12 +261,12 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           action: "open-task" as CommandMenuAction,
           onRun: () => {
             closeSettingsDialog();
-            navigateToTask(task);
+            void openTask(task);
           },
         })),
       },
     ];
-  }, [tasks, navigateToTask, closeSettingsDialog]);
+  }, [tasks, closeSettingsDialog]);
 
   // Commands and tasks share a single filterable list.
   const sections = useMemo(

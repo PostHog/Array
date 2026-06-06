@@ -9,9 +9,12 @@ const authState = {
   status: "anonymous" as const,
   bootstrapComplete: true,
   cloudRegion: null as "us" | "eu" | "dev" | null,
-  projectId: null,
-  availableProjectIds: [],
-  availableOrgIds: [],
+  orgProjectsMap: {} as Record<
+    string,
+    { orgName: string; projects: { id: number; name: string }[] }
+  >,
+  currentOrgId: null as string | null,
+  currentProjectId: null as number | null,
   hasCodeAccess: null,
   needsScopeReauth: false,
 };
@@ -57,7 +60,7 @@ describe("ScopeReauthPrompt", () => {
     vi.clearAllMocks();
     authState.status = "anonymous";
     authState.cloudRegion = null;
-    authState.projectId = null;
+    authState.currentProjectId = null;
     authState.hasCodeAccess = null;
     authState.needsScopeReauth = false;
   });

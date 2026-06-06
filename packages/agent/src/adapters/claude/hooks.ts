@@ -6,6 +6,7 @@ import {
 import type { Logger } from "../../utils/logger";
 import { SIGNED_COMMIT_QUALIFIED_TOOL_NAME } from "../signed-commit-shared";
 import { stripCatLineNumbers } from "./conversion/sdk-to-acp";
+import type { TaskState } from "./conversion/task-state";
 import {
   extractPostHogSubTool,
   isPostHogDestructiveSubTool,
@@ -129,14 +130,66 @@ export const registerHookCallback = (
   };
 };
 
+/**
+ * Pre-populate the per-session task list from SDK TaskCreated/TaskCompleted
+ * hook events. These fire before the matching tool_result chunk arrives, so
+ * by the time TaskUpdate runs (which only carries taskId + status) the entry
+ * already exists with a real subject — no placeholder with empty content.
+ *
+ * Plan-update emission happens in the tool_result handler, which mirrors the
+ * old TodoWrite suppress-tool-call + emit-plan flow.
+ */
+export const createTaskHook =
+  (taskState: TaskState, onChange?: () => Promise<void>): HookCallback =>
+  async (input: HookInput): Promise<{ continue: boolean }> => {
+    const taskId =
+      "task_id" in input && typeof input.task_id === "string"
+        ? input.task_id
+        : undefined;
+    if (!taskId) return { continue: true };
+
+    let mutated = false;
+    if (input.hook_event_name === "TaskCreated") {
+      if (!input.task_subject) return { continue: true };
+      // Guard against the SDK firing TaskCreated twice for the same id —
+      // re-entry would clobber any TaskUpdate that landed in between.
+      if (taskState.has(taskId)) return { continue: true };
+      taskState.set(taskId, {
+        subject: input.task_subject,
+        status: "pending",
+        description: input.task_description,
+      });
+      mutated = true;
+    } else if (input.hook_event_name === "TaskCompleted") {
+      const existing = taskState.get(taskId);
+      if (!existing || existing.status === "completed") {
+        return { continue: true };
+      }
+      taskState.set(taskId, { ...existing, status: "completed" });
+      mutated = true;
+    }
+    if (mutated && onChange) await onChange();
+    return { continue: true };
+  };
+
 export type OnModeChange = (mode: CodeExecutionMode) => Promise<void>;
 
 interface CreatePostToolUseHookParams {
   onModeChange?: OnModeChange;
+  /** Called after a PostHog MCP `call` exec executes, with the sub-tool name
+   *  and the raw command (the command embeds the SQL for execute-sql). */
+  onPostHogResourceUsed?: (subTool: string, commandText?: string) => void;
+  /** Called after the agent reads a file from the codebase, to surface the
+   *  "Code" resource chip. */
+  onCodeFileRead?: () => void;
 }
 
 export const createPostToolUseHook =
-  ({ onModeChange }: CreatePostToolUseHookParams): HookCallback =>
+  ({
+    onModeChange,
+    onPostHogResourceUsed,
+    onCodeFileRead,
+  }: CreatePostToolUseHookParams): HookCallback =>
   async (
     input: HookInput,
     toolUseID: string | undefined,
@@ -148,6 +201,25 @@ export const createPostToolUseHook =
         await onModeChange("plan");
       }
 
+      // Any file read counts as "used PostHog Code" — surface the Code chip.
+      if (onCodeFileRead && toolName === "Read") {
+        onCodeFileRead();
+      }
+
+      // Record PostHog product usage from the MCP exec dispatcher. Only the
+      // `call <sub-tool>` verb counts as "used a resource" — extractPostHogSubTool
+      // matches that verb and ignores introspection (tools/info/schema/search).
+      if (onPostHogResourceUsed && isPostHogExecTool(toolName)) {
+        const subTool = extractPostHogSubTool(input.tool_input);
+        if (subTool) {
+          const command = (input.tool_input as { command?: unknown })?.command;
+          onPostHogResourceUsed(
+            subTool,
+            typeof command === "string" ? command : undefined,
+          );
+        }
+      }
+
       if (toolUseID) {
         const onPostToolUseHook =
           toolUseCallbacks[toolUseID]?.onPostToolUseHook;
@@ -157,10 +229,8 @@ export const createPostToolUseHook =
             input.tool_input,
             input.tool_response,
           );
-          delete toolUseCallbacks[toolUseID];
-        } else {
-          delete toolUseCallbacks[toolUseID];
         }
+        delete toolUseCallbacks[toolUseID];
       }
     }
     return { continue: true };

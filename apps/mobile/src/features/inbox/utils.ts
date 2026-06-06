@@ -1,7 +1,11 @@
+import type { InboxViewedProperties } from "@/lib/analytics";
 import type {
+  AvailableSuggestedReviewer,
   SignalReport,
   SignalReportOrderingField,
   SignalReportStatus,
+  SuggestedReviewer,
+  SuggestedReviewerWriteEntry,
 } from "./types";
 
 export function inboxStatusLabel(status: SignalReportStatus): string {
@@ -86,4 +90,165 @@ export function getActionableReports(reports: SignalReport[]): SignalReport[] {
       r.actionability === "immediately_actionable" &&
       !r.already_addressed,
   );
+}
+
+export interface ReviewerOption {
+  uuid: string;
+  name: string;
+  email: string;
+  github_login: string;
+  isMe: boolean;
+}
+
+/** Deduplicate the available-reviewers list by uuid and sort "Me" first, then by name. */
+export function buildReviewerOptions(
+  reviewers: AvailableSuggestedReviewer[],
+  currentUserUuid: string | undefined,
+): ReviewerOption[] {
+  const seen = new Set<string>();
+  const options: ReviewerOption[] = [];
+
+  for (const r of reviewers) {
+    if (!r.uuid || seen.has(r.uuid)) continue;
+    seen.add(r.uuid);
+    options.push({
+      uuid: r.uuid,
+      name: r.name?.trim() || "",
+      email: r.email?.trim() || "",
+      github_login: r.github_login?.trim() || "",
+      isMe: r.uuid === currentUserUuid,
+    });
+  }
+
+  options.sort((a, b) => {
+    if (a.isMe && !b.isMe) return -1;
+    if (!a.isMe && b.isMe) return 1;
+    return (a.name || a.email).localeCompare(b.name || b.email);
+  });
+
+  return options;
+}
+
+export function reviewerOptionLabel(r: ReviewerOption): string {
+  const base = r.name || r.email || "Unknown user";
+  return r.isMe ? `${base} (Me)` : base;
+}
+
+/** A reviewer in the artefact matches an org member by user uuid or (case-insensitive) login. */
+export function reviewerMatchesAvailable(
+  reviewer: SuggestedReviewer,
+  available: AvailableSuggestedReviewer,
+): boolean {
+  if (reviewer.user?.uuid && reviewer.user.uuid === available.uuid) {
+    return true;
+  }
+  return (
+    !!reviewer.github_login &&
+    !!available.github_login &&
+    reviewer.github_login.toLowerCase() === available.github_login.toLowerCase()
+  );
+}
+
+/**
+ * Build the full-replacement write payload from a read-shape list. Kept reviewers
+ * are sent by `github_login` so the server preserves their commits/name; an entry
+ * with only a resolved user falls back to `user_uuid`. Entries with neither are
+ * dropped.
+ */
+export function toSuggestedReviewerWriteContent(
+  reviewers: SuggestedReviewer[],
+): SuggestedReviewerWriteEntry[] {
+  return reviewers
+    .map((reviewer): SuggestedReviewerWriteEntry | null => {
+      if (reviewer.github_login) return { github_login: reviewer.github_login };
+      if (reviewer.user?.uuid) return { user_uuid: reviewer.user.uuid };
+      return null;
+    })
+    .filter((entry): entry is SuggestedReviewerWriteEntry => entry !== null);
+}
+
+interface InboxViewedFilterState {
+  sourceProductFilter: string[];
+  statusFilter: SignalReportStatus[];
+  suggestedReviewerFilter: string[];
+  /** Default status filter as defined in the filter store, used to detect whether the user has narrowed it. */
+  defaultStatusFilter: SignalReportStatus[];
+}
+
+/**
+ * Build the property payload for the `Inbox viewed` analytics event.
+ *
+ * Mirrors apps/code/src/renderer/features/inbox/components/InboxSignalsTab.tsx so
+ * desktop and mobile send the same shape into PostHog.
+ */
+export function buildInboxViewedProperties(
+  reports: SignalReport[],
+  totalCount: number,
+  filters: InboxViewedFilterState,
+): InboxViewedProperties {
+  const priorityCounts = {
+    P0: 0,
+    P1: 0,
+    P2: 0,
+    P3: 0,
+    P4: 0,
+    unknown: 0,
+  };
+  const actionabilityCounts = {
+    immediately_actionable: 0,
+    requires_human_input: 0,
+    not_actionable: 0,
+    unknown: 0,
+  };
+  let readyCount = 0;
+  for (const r of reports) {
+    if (r.status === "ready") readyCount += 1;
+    const p = r.priority;
+    if (p === "P0" || p === "P1" || p === "P2" || p === "P3" || p === "P4") {
+      priorityCounts[p] += 1;
+    } else {
+      priorityCounts.unknown += 1;
+    }
+    const a = r.actionability;
+    if (
+      a === "immediately_actionable" ||
+      a === "requires_human_input" ||
+      a === "not_actionable"
+    ) {
+      actionabilityCounts[a] += 1;
+    } else {
+      actionabilityCounts.unknown += 1;
+    }
+  }
+
+  const statusFiltered =
+    filters.statusFilter.length !== filters.defaultStatusFilter.length ||
+    filters.statusFilter.some((s) => !filters.defaultStatusFilter.includes(s));
+  const hasActiveFilters =
+    statusFiltered ||
+    filters.sourceProductFilter.length > 0 ||
+    filters.suggestedReviewerFilter.length > 0;
+
+  return {
+    report_count: reports.length,
+    total_count: totalCount,
+    ready_count: readyCount,
+    has_active_filters: hasActiveFilters,
+    source_product_filter: filters.sourceProductFilter,
+    status_filter_count: filters.statusFilter.length,
+    is_empty: totalCount === 0,
+    is_gated_due_to_scale: false,
+    priority_p0_count: priorityCounts.P0,
+    priority_p1_count: priorityCounts.P1,
+    priority_p2_count: priorityCounts.P2,
+    priority_p3_count: priorityCounts.P3,
+    priority_p4_count: priorityCounts.P4,
+    priority_unknown_count: priorityCounts.unknown,
+    actionability_immediately_actionable_count:
+      actionabilityCounts.immediately_actionable,
+    actionability_requires_human_input_count:
+      actionabilityCounts.requires_human_input,
+    actionability_not_actionable_count: actionabilityCounts.not_actionable,
+    actionability_unknown_count: actionabilityCounts.unknown,
+  };
 }

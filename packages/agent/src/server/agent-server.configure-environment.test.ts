@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { Task } from "../types";
 import { AgentServer } from "./agent-server";
 
 interface TestableServer {
   configureEnvironment(args?: {
     isInternal?: boolean;
-    originProduct?: string | null;
+    originProduct?: Task["origin_product"] | null;
     signalReportId?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
@@ -17,6 +18,7 @@ const ENV_KEYS_UNDER_TEST = [
   "ANTHROPIC_BASE_URL",
   "OPENAI_BASE_URL",
   "ANTHROPIC_CUSTOM_HEADERS",
+  "POSTHOG_PROJECT_ID",
 ] as const;
 
 describe("AgentServer.configureEnvironment", () => {
@@ -72,6 +74,15 @@ describe("AgentServer.configureEnvironment", () => {
     expect(process.env.LLM_GATEWAY_URL).toBe(
       "https://gateway.us.posthog.com/posthog_code",
     );
+  });
+
+  // The Claude session builder reads POSTHOG_PROJECT_ID to emit the
+  // `x-posthog-property-team_id` attribution header (see
+  // adapters/claude/session/options.ts), so the cloud path must export it.
+  it("exports POSTHOG_PROJECT_ID for the team_id attribution header", () => {
+    buildServer("background").configureEnvironment({ isInternal: false });
+
+    expect(process.env.POSTHOG_PROJECT_ID).toBe("1");
   });
 
   it("tags as posthog_code when isInternal is omitted (getTask failure fallback)", () => {
@@ -159,6 +170,43 @@ describe("AgentServer.configureEnvironment", () => {
 
     expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toBe(
       "x-posthog-property-task_internal: false",
+    );
+  });
+
+  it("tags as slack_app when the task was initiated from Slack", () => {
+    buildServer("interactive").configureEnvironment({
+      originProduct: "slack",
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "https://gateway.us.posthog.com/slack_app",
+    );
+    expect(process.env.ANTHROPIC_BASE_URL).toBe(
+      "https://gateway.us.posthog.com/slack_app",
+    );
+    expect(process.env.OPENAI_BASE_URL).toBe(
+      "https://gateway.us.posthog.com/slack_app/v1",
+    );
+  });
+
+  it("prefers slack_app over background_agents when both signals are present", () => {
+    buildServer("interactive").configureEnvironment({
+      isInternal: true,
+      originProduct: "slack",
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "https://gateway.us.posthog.com/slack_app",
+    );
+  });
+
+  it("falls back to posthog_code for non-slack origin products", () => {
+    buildServer("background").configureEnvironment({
+      originProduct: "user_created",
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "https://gateway.us.posthog.com/posthog_code",
     );
   });
 

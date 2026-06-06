@@ -1,5 +1,5 @@
 import { useFolders } from "@features/folders/hooks/useFolders";
-import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
+import { useSettingsPageStore } from "@features/settings/stores/settingsPageStore";
 import type { Environment } from "@main/services/environment/schemas";
 import type { RegisteredFolder } from "@main/services/folders/schemas";
 import { Flex, Text } from "@radix-ui/themes";
@@ -51,9 +51,9 @@ export function LocalEnvironmentsSettings() {
     return result.sort((a, b) => a.folder.name.localeCompare(b.folder.name));
   }, [folders, environmentQueries]);
 
-  const context = useSettingsDialogStore((s) => s.context);
-  const clearContext = useSettingsDialogStore((s) => s.clearContext);
-  const setFormMode = useSettingsDialogStore((s) => s.setFormMode);
+  const context = useSettingsPageStore((s) => s.context);
+  const clearContext = useSettingsPageStore((s) => s.clearContext);
+  const setFormMode = useSettingsPageStore((s) => s.setFormMode);
 
   useEffect(() => {
     if (!context.repoPath) return;

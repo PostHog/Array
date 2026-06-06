@@ -74,6 +74,38 @@ function turnCompleteMsg(ts: number, stopReason = "end_turn"): AcpMessage {
   };
 }
 
+function agentMessageMsg(ts: number, text: string): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text },
+        },
+      },
+    },
+  };
+}
+
+function resourcesUsedMsg(
+  ts: number,
+  products: { id: string; label: string }[],
+): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "_posthog/resources_used",
+      params: { sessionId: "session-1", products },
+    },
+  };
+}
+
 describe("buildConversationItems", () => {
   it("extracts cloud prompt attachments into user messages", () => {
     const uri = makeAttachmentUri("/tmp/hello world.txt");
@@ -419,6 +451,30 @@ describe("buildConversationItems", () => {
 
       const result = buildConversationItems(events, null);
       expect(findProgressGroups(result.items)).toHaveLength(0);
+    });
+  });
+
+  describe("resources_used", () => {
+    it("does not render an inline item (surfaced in the persistent bar)", () => {
+      const events: AcpMessage[] = [
+        userPromptMsg(1, 1, "list my experiments"),
+        agentMessageMsg(2, "Here are your experiments."),
+        resourcesUsedMsg(3, [{ id: "experiments", label: "Experiments" }]),
+        promptResponseMsg(4, 1),
+      ];
+
+      const result = buildConversationItems(events, false);
+
+      // The notification must not produce any conversation item — it's now
+      // handled out-of-band by SessionResourcesBar / accumulateSessionResources.
+      expect(
+        result.items.some(
+          (i) =>
+            i.type === "session_update" &&
+            // biome-ignore lint/suspicious/noExplicitAny: removed union member
+            (i.update.sessionUpdate as any) === "resources_used",
+        ),
+      ).toBe(false);
     });
   });
 });

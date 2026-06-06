@@ -1,3 +1,4 @@
+import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import {
   getGatewayInvalidatePlanCacheUrl,
   getGatewayUsageUrl,
@@ -51,7 +52,7 @@ export class LlmGatewayService {
     const {
       system,
       maxTokens,
-      model = "claude-haiku-4-5",
+      model = DEFAULT_GATEWAY_MODEL,
       signal,
       timeoutMs = 60_000,
     } = options;

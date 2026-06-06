@@ -1,15 +1,10 @@
-import { getSessionService } from "@features/sessions/service/service";
 import {
   MagnifyingGlassMinus,
   MagnifyingGlassPlus,
-  Stop,
   Trash,
 } from "@phosphor-icons/react";
 import { Flex, Select, Text } from "@radix-ui/themes";
-import type {
-  CommandCenterCellData,
-  StatusSummary,
-} from "../hooks/useCommandCenterData";
+import type { StatusSummary } from "../hooks/useCommandCenterData";
 import {
   type LayoutPreset,
   useCommandCenterStore,
@@ -68,7 +63,6 @@ const LAYOUT_OPTIONS: {
 
 interface CommandCenterToolbarProps {
   summary: StatusSummary;
-  cells: CommandCenterCellData[];
 }
 
 function StatusSummaryText({ summary }: { summary: StatusSummary }) {
@@ -85,30 +79,13 @@ function StatusSummaryText({ summary }: { summary: StatusSummary }) {
   );
 }
 
-export function CommandCenterToolbar({
-  summary,
-  cells,
-}: CommandCenterToolbarProps) {
+export function CommandCenterToolbar({ summary }: CommandCenterToolbarProps) {
   const layout = useCommandCenterStore((s) => s.layout);
   const setLayout = useCommandCenterStore((s) => s.setLayout);
   const clearAll = useCommandCenterStore((s) => s.clearAll);
   const zoom = useCommandCenterStore((s) => s.zoom);
   const zoomIn = useCommandCenterStore((s) => s.zoomIn);
   const zoomOut = useCommandCenterStore((s) => s.zoomOut);
-
-  const hasActiveAgents = summary.running > 0 || summary.waiting > 0;
-
-  const stopAll = () => {
-    const service = getSessionService();
-    for (const cell of cells) {
-      if (
-        cell.taskId &&
-        (cell.status === "running" || cell.status === "waiting")
-      ) {
-        service.cancelPrompt(cell.taskId);
-      }
-    }
-  };
 
   return (
     <Flex
@@ -162,17 +139,6 @@ export function CommandCenterToolbar({
       </Flex>
 
       <div className="flex-1" />
-
-      <button
-        type="button"
-        onClick={stopAll}
-        disabled={!hasActiveAgents}
-        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] text-red-10 transition-colors hover:bg-red-3 hover:text-red-11 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-red-10"
-        title="Stop all agents"
-      >
-        <Stop size={12} weight="fill" />
-        Stop All
-      </button>
 
       <button
         type="button"

@@ -105,6 +105,18 @@ describe("AgentAuthAdapter", () => {
     );
   });
 
+  it("identifies as the PostHog Code consumer so the MCP server emits UI-app metadata", async () => {
+    const { servers } = await adapter.buildMcpServers(baseCredentials);
+
+    const posthogServer = servers.find((s) => s.name === "posthog");
+    expect(posthogServer).toBeDefined();
+    expect(posthogServer?.headers).toEqual(
+      expect.arrayContaining([
+        { name: "x-posthog-mcp-consumer", value: "posthog-code" },
+      ]),
+    );
+  });
+
   it("routes authenticated installed MCP servers through the proxy URL", async () => {
     mockFetch.mockResolvedValue({
       ok: true,

@@ -15,13 +15,13 @@ const mockModelOption = {
   id: "model",
   name: "Model",
   type: "select" as const,
-  currentValue: "gpt-5.4",
+  currentValue: "gpt-5.5",
   options: [
     {
       group: "recommended",
       name: "Recommended",
       options: [
-        { value: "gpt-5.4", name: "GPT 5.4" },
+        { value: "gpt-5.5", name: "gpt-5.5" },
         { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
       ],
     },
@@ -29,9 +29,8 @@ const mockModelOption = {
       group: "other",
       name: "Other",
       options: [
-        { value: "claude-opus-4-6", name: "Claude Opus 4.6" },
+        { value: "claude-opus-4-8", name: "Claude Opus 4.8" },
         { value: "o3-pro", name: "o3-pro" },
-        { value: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
       ],
     },
   ],

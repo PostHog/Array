@@ -1,6 +1,5 @@
 import { ErrorBoundary } from "@components/ErrorBoundary";
 import { LoginTransition } from "@components/LoginTransition";
-import { MainLayout } from "@components/MainLayout";
 import { ScopeReauthPrompt } from "@components/ScopeReauthPrompt";
 import { AiApprovalScreen } from "@features/ai-approval/components/AiApprovalScreen";
 import { AuthScreen } from "@features/auth/components/AuthScreen";
@@ -19,6 +18,7 @@ import { OnboardingFlow } from "@features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { initializeConnectivityToast } from "@renderer/features/connectivity/connectivityToast";
+import { router } from "@renderer/router";
 import { initializeConnectivityStore } from "@renderer/stores/connectivityStore";
 import { useFocusStore } from "@renderer/stores/focusStore";
 import { useThemeStore } from "@renderer/stores/themeStore";
@@ -27,6 +27,7 @@ import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { isNotAuthenticatedError } from "@shared/errors";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useQueryClient } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { initializePostHog, registerAppVersion, track } from "@utils/analytics";
 import { logger } from "@utils/logger";
@@ -140,6 +141,41 @@ function App() {
       onData: () => {
         void queryClient.invalidateQueries(
           trpcReact.workspace.getAll.pathFilter(),
+        );
+      },
+    }),
+  );
+
+  useSubscription(
+    trpcReact.workspace.onTaskPrInfoChanged.subscriptionOptions(undefined, {
+      onData: ({ taskId, prUrl, prState }) => {
+        // Push the fresh PR state into every matching getTaskPrStatus query
+        // (one per cloudPrUrl variant). hasDiff isn't carried by the event —
+        // it's recomputed inline by the next refetch — so we preserve any
+        // existing value rather than overwriting it.
+        queryClient.setQueriesData<{
+          prState: typeof prState;
+          hasDiff: boolean;
+        }>(
+          {
+            ...trpcReact.workspace.getTaskPrStatus.pathFilter(),
+            predicate: (query) => {
+              const [, params] = query.queryKey as [
+                unknown,
+                { input?: { taskId?: string } } | undefined,
+              ];
+              return params?.input?.taskId === taskId;
+            },
+          },
+          (prev) => (prev ? { ...prev, prState } : { prState, hasDiff: false }),
+        );
+
+        // Keep the cached PR URL warm so `useTaskPrUrl`'s "Open PR" fast-path
+        // sees the new URL immediately instead of waiting for `getCachedPrUrl`
+        // to go stale.
+        queryClient.setQueryData(
+          trpcReact.workspace.getCachedPrUrl.queryKey({ taskId }),
+          { prUrl },
         );
       },
     }),
@@ -296,9 +332,9 @@ function App() {
         key="main"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.5, delay: showTransition ? 1.5 : 0 }}
+        transition={{ duration: 0.5, delay: showTransition ? 0.5 : 0 }}
       >
-        <MainLayout />
+        <RouterProvider router={router} />
       </motion.div>
     );
   };

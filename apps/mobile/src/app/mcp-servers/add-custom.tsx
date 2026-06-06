@@ -11,11 +11,11 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FloatingMcpHeader } from "@/features/mcp/components/FloatingMcpHeader";
 import { useMcpInstallations } from "@/features/mcp/hooks";
 import { installCustomWithOAuth } from "@/features/mcp/oauth";
 import type { McpAuthType } from "@/features/mcp/types";
+import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
@@ -29,7 +29,7 @@ const AUTH_OPTIONS: { value: McpAuthType; label: string }[] = [
 
 export default function AddCustomMcpServerScreen() {
   const themeColors = useThemeColors();
-  const insets = useSafeAreaInsets();
+  const { insets, bottom } = useScreenInsets();
   const installations = useMcpInstallations();
 
   const [name, setName] = useState("");
@@ -85,7 +85,7 @@ export default function AddCustomMcpServerScreen() {
           className="flex-1"
           contentContainerStyle={{
             paddingTop: insets.top + 60,
-            paddingBottom: insets.bottom + 24,
+            paddingBottom: bottom("default"),
             paddingHorizontal: 16,
           }}
           keyboardShouldPersistTaps="handled"

@@ -1,5 +1,6 @@
 import { useDraftStore } from "@features/message-editor/stores/draftStore";
 import type { ToolCall } from "@features/sessions/types";
+import { getAppViewSnapshot } from "@hooks/useAppView";
 import {
   AppBridge,
   type McpUiDisplayMode,
@@ -14,7 +15,6 @@ import type {
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { McpUiResource } from "@shared/types/mcp-apps";
-import { useNavigationStore } from "@stores/navigationStore";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useRef } from "react";
 import {
@@ -62,7 +62,7 @@ interface UseAppBridgeReturn {
   sendWhenReady: (fn: (bridge: AppBridge) => void) => void;
 }
 
-const HOST_INFO = { name: "Twig", version: "1.0.0" };
+const HOST_INFO = { name: "posthog-code", version: "1.0.0" };
 
 const HOST_CAPABILITIES: McpUiHostCapabilities = {
   openLinks: {},
@@ -213,10 +213,10 @@ export function useAppBridge(args: UseAppBridgeArgs): UseAppBridgeReturn {
           const message = textParts.join("\n");
           if (message) {
             // Route to the current task's session, or "default" if not on a task
-            const view = useNavigationStore.getState().view;
+            const view = getAppViewSnapshot();
             const sessionId =
               view.type === "task-detail"
-                ? (view.data?.id ?? "default")
+                ? (view.taskId ?? "default")
                 : "default";
             const { setPendingContent, requestFocus } =
               useDraftStore.getState().actions;

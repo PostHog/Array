@@ -6,23 +6,30 @@ import {
   INBOX_PIPELINE_STATUS_FILTER,
   INBOX_REFETCH_INTERVAL_MS,
 } from "@features/inbox/utils/inboxConstants";
-import { getSessionService } from "@features/sessions/service/service";
 import {
   archiveTasksImperative,
   useArchiveTask,
 } from "@features/tasks/hooks/useArchiveTask";
-import { useTasks, useUpdateTask } from "@features/tasks/hooks/useTasks";
+import { useRenameTask, useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
+import { useAppView } from "@hooks/useAppView";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
+import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
-import { ScrollArea, Separator } from "@posthog/quill";
+import { Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
-import type { Schemas } from "@renderer/api/generated";
+import {
+  navigateToCommandCenter,
+  navigateToHome,
+  navigateToInbox,
+  navigateToMcpServers,
+  navigateToSkills,
+  navigateToTaskDetail,
+} from "@renderer/navigationBridge";
 import { trpcClient } from "@renderer/trpc/client";
 import { HOME_TAB_FLAG } from "@shared/constants";
 import type { Task } from "@shared/types";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
@@ -42,18 +49,12 @@ import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
 import { TaskListView } from "./TaskListView";
+import { TasksHeader } from "./TasksHeader";
+
+const log = logger.scope("sidebar-menu");
 
 function SidebarMenuComponent() {
-  const {
-    view,
-    navigateToTask,
-    navigateToTaskInput,
-    navigateToHome,
-    navigateToInbox,
-    navigateToCommandCenter,
-    navigateToSkills,
-    navigateToMcpServers,
-  } = useNavigationStore();
+  const view = useAppView();
 
   // Must mirror useSidebarData's filters so taskMap covers every rendered
   // task — otherwise handleTaskClick silently bails for tasks not in the map.
@@ -67,6 +68,7 @@ function SidebarMenuComponent() {
   const { showContextMenu, editingTaskId, setEditingTaskId } =
     useTaskContextMenu();
   const { archiveTask } = useArchiveTask();
+  const { renameTask } = useRenameTask();
   const { togglePin } = usePinnedTasks();
 
   const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
@@ -101,7 +103,7 @@ function SidebarMenuComponent() {
 
   useEffect(() => {
     const currentTaskId =
-      view.type === "task-detail" && view.data ? view.data.id : null;
+      view.type === "task-detail" && view.taskId ? view.taskId : null;
 
     if (
       previousTaskIdRef.current &&
@@ -118,7 +120,7 @@ function SidebarMenuComponent() {
   }, [view, markAsViewed]);
 
   const handleNewTaskClick = () => {
-    navigateToTaskInput();
+    openTaskInput();
   };
 
   const handleHomeClick = () => {
@@ -221,7 +223,12 @@ function SidebarMenuComponent() {
     clearSelection();
     const task = taskMap.get(taskId);
     if (task) {
-      navigateToTask(task);
+      void openTask(task);
+    } else {
+      // Sidebar rows come from the summaries path, which can include tasks the
+      // full-list query (taskMap) doesn't carry. Don't silently bail — navigate
+      // by id; the task-detail route resolves the task from its own query.
+      navigateToTaskDetail(taskId);
     }
   };
 
@@ -250,9 +257,7 @@ function SidebarMenuComponent() {
           }
         }
       } catch (error) {
-        logger
-          .scope("sidebar-menu")
-          .error("Failed to show bulk context menu", error);
+        log.error("Failed to show bulk context menu", error);
       }
     },
     [queryClient, clearSelection],
@@ -311,8 +316,6 @@ function SidebarMenuComponent() {
     await archiveTask({ taskId });
   };
 
-  const updateTask = useUpdateTask();
-
   const handleArchivePrior = useCallback(
     async (taskId: string) => {
       const allVisible = [...sidebarData.pinnedTasks, ...sidebarData.flatTasks];
@@ -344,8 +347,6 @@ function SidebarMenuComponent() {
     },
     [sidebarData.pinnedTasks, sidebarData.flatTasks, queryClient],
   );
-  const log = logger.scope("sidebar-menu");
-
   const handleTaskDoubleClick = useCallback(
     (taskId: string) => {
       setEditingTaskId(taskId);
@@ -354,43 +355,20 @@ function SidebarMenuComponent() {
   );
 
   const handleTaskEditSubmit = useCallback(
-    async (taskId: string, newTitle: string) => {
+    async (taskId: string, currentTitle: string, newTitle: string) => {
       setEditingTaskId(null);
 
-      // Optimistically update task title in all cached task lists
-      queryClient.setQueriesData<Task[]>(
-        { queryKey: ["tasks", "list"] },
-        (old) =>
-          old?.map((task) =>
-            task.id === taskId
-              ? { ...task, title: newTitle, title_manually_set: true }
-              : task,
-          ),
-      );
-      queryClient.setQueriesData<Schemas.TaskSummary[]>(
-        { queryKey: ["tasks", "summaries"] },
-        (old) =>
-          old?.map((task) =>
-            task.id === taskId ? { ...task, title: newTitle } : task,
-          ),
-      );
-
-      // Sync to session store so notifications use the updated title
-      getSessionService().updateSessionTaskTitle(taskId, newTitle);
-
       try {
-        await updateTask.mutateAsync({
+        await renameTask({
           taskId,
-          updates: { title: newTitle, title_manually_set: true },
+          currentTitle,
+          newTitle,
         });
       } catch (error) {
         log.error("Failed to rename task", error);
-        // Refetch to revert optimistic update on failure
-        queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
-        queryClient.invalidateQueries({ queryKey: ["tasks", "summaries"] });
       }
     },
-    [setEditingTaskId, updateTask, queryClient, log],
+    [renameTask, setEditingTaskId],
   );
 
   const handleTaskEditCancel = useCallback(() => {
@@ -398,62 +376,71 @@ function SidebarMenuComponent() {
   }, [setEditingTaskId]);
 
   return (
-    <Box height="100%" position="relative" id="side-bar-menu">
-      <ScrollArea className="h-full overflow-y-auto overflow-x-hidden">
-        <Flex direction="column" py="2" px="2" gap="1px">
-          <Box mb="2">
-            <NewTaskItem
-              isActive={sidebarData.isHomeActive}
-              onClick={handleNewTaskClick}
-              variant="primary"
-            />
-          </Box>
+    <Box
+      height="100%"
+      position="relative"
+      id="side-bar-menu"
+      className="flex min-h-0 flex-col"
+    >
+      <Flex direction="column" className="shrink-0 gap-px px-2 py-2">
+        <Box mb="2">
+          <NewTaskItem
+            isActive={sidebarData.isHomeActive}
+            onClick={handleNewTaskClick}
+            variant="primary"
+          />
+        </Box>
 
-          {homeTabEnabled && (
-            <Box>
-              <HomeItem
-                isActive={sidebarData.isHomeViewActive}
-                onClick={handleHomeClick}
-              />
-            </Box>
-          )}
-
+        {homeTabEnabled && (
           <Box>
-            <SearchItem onClick={handleSearchClick} />
-          </Box>
-
-          <Box>
-            <InboxItem
-              isActive={sidebarData.isInboxActive}
-              onClick={handleInboxClick}
-              signalCount={inboxSignalCount}
+            <HomeItem
+              isActive={sidebarData.isHomeViewActive}
+              onClick={handleHomeClick}
             />
           </Box>
+        )}
 
-          <Box>
-            <SkillsItem
-              isActive={sidebarData.isSkillsActive}
-              onClick={handleSkillsClick}
-            />
-          </Box>
+        <Box>
+          <SearchItem onClick={handleSearchClick} />
+        </Box>
 
-          <Box>
-            <McpServersItem
-              isActive={sidebarData.isMcpServersActive}
-              onClick={handleMcpServersClick}
-            />
-          </Box>
+        <Box>
+          <InboxItem
+            isActive={sidebarData.isInboxActive}
+            onClick={handleInboxClick}
+            signalCount={inboxSignalCount}
+          />
+        </Box>
 
-          <Box mb="2">
-            <CommandCenterItem
-              isActive={sidebarData.isCommandCenterActive}
-              onClick={handleCommandCenterClick}
-              activeCount={commandCenterActiveCount}
-            />
-          </Box>
+        <Box>
+          <SkillsItem
+            isActive={sidebarData.isSkillsActive}
+            onClick={handleSkillsClick}
+          />
+        </Box>
 
-          <Separator className="mx-2 my-2" />
+        <Box>
+          <McpServersItem
+            isActive={sidebarData.isMcpServersActive}
+            onClick={handleMcpServersClick}
+          />
+        </Box>
 
+        <Box mb="2">
+          <CommandCenterItem
+            isActive={sidebarData.isCommandCenterActive}
+            onClick={handleCommandCenterClick}
+            activeCount={commandCenterActiveCount}
+          />
+        </Box>
+      </Flex>
+
+      <Separator className="mx-2 my-2 shrink-0" />
+
+      <TasksHeader />
+
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <Flex direction="column" className="gap-px px-2 pb-2">
           {sidebarData.isLoading ? (
             <SidebarItem
               depth={0}
@@ -480,7 +467,7 @@ function SidebarMenuComponent() {
             />
           )}
         </Flex>
-      </ScrollArea>
+      </div>
     </Box>
   );
 }

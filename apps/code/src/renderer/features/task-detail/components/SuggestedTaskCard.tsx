@@ -3,24 +3,20 @@ import {
   CATEGORY_CONFIG,
   FALLBACK_CATEGORY_CONFIG,
 } from "@features/setup/utils/categoryConfig";
-import { ArrowSquareOut, X } from "@phosphor-icons/react";
+import { X } from "@phosphor-icons/react";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { motion } from "framer-motion";
 
 export interface SuggestedTaskCardProps {
   task: DiscoveredTask;
-  index: number;
   onSelect: (task: DiscoveredTask) => void;
   onDismiss: (task: DiscoveredTask) => void;
-  onViewDetails: (task: DiscoveredTask) => void;
 }
 
 export function SuggestedTaskCard({
   task,
-  index,
   onSelect,
   onDismiss,
-  onViewDetails,
 }: SuggestedTaskCardProps) {
   const config = CATEGORY_CONFIG[task.category] ?? FALLBACK_CATEGORY_CONFIG;
   const TaskIcon = config.icon;
@@ -28,19 +24,15 @@ export function SuggestedTaskCard({
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{
-        opacity: 0,
-        y: -4,
-        transition: { duration: 0.12, delay: 0 },
-      }}
+      initial={{ opacity: 0, scale: 0.97 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
       transition={{
-        duration: 0.18,
-        delay: index * 0.04,
-        layout: { type: "spring", damping: 25, stiffness: 300 },
+        opacity: { duration: 0.15, ease: "easeOut" },
+        scale: { duration: 0.15, ease: "easeOut" },
+        layout: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
       }}
-      className="group relative"
+      className="group relative origin-center"
     >
       <button
         onClick={() => onSelect(task)}
@@ -85,19 +77,6 @@ export function SuggestedTaskCard({
         gap="1"
         className="pointer-events-none absolute top-2 right-2 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
       >
-        <Tooltip content="View details">
-          <button
-            type="button"
-            aria-label="View details"
-            onClick={(e) => {
-              e.stopPropagation();
-              onViewDetails(task);
-            }}
-            className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-(--gray-9) hover:bg-(--gray-a3) hover:text-(--gray-12)"
-          >
-            <ArrowSquareOut size={12} weight="bold" />
-          </button>
-        </Tooltip>
         <Tooltip content="Dismiss">
           <button
             type="button"

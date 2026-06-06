@@ -67,8 +67,17 @@ export const POSTHOG_NOTIFICATIONS = {
   /** Token usage update for a session turn */
   USAGE_UPDATE: "_posthog/usage_update",
 
+  /** PostHog products used during a turn (derived from MCP exec calls) */
+  RESOURCES_USED: "_posthog/resources_used",
+
   /** Response to a relayed permission request (plan approval, question) */
   PERMISSION_RESPONSE: "_posthog/permission_response",
+
+  /** Permission request raised by the agent, persisted to the log so a reconnecting client can recover its requestId */
+  PERMISSION_REQUEST: "_posthog/permission_request",
+
+  /** Permission request resolved, persisted so a reconnecting client can tell it is no longer pending */
+  PERMISSION_RESOLVED: "_posthog/permission_resolved",
 } as const;
 
 /**

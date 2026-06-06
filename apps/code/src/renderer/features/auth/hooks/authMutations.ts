@@ -6,10 +6,10 @@ import {
 import { useAuthUiStateStore } from "@features/auth/stores/authUiStateStore";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
 import { resetSessionService } from "@features/sessions/service/service";
+import { openTaskInput } from "@hooks/useOpenTask";
 import { trpcClient } from "@renderer/trpc/client";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import type { CloudRegion } from "@shared/types/regions";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useMutation } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
 
@@ -26,7 +26,7 @@ function useAuthFlowMutation(
       await refreshAuthStateQuery();
       useAuthUiStateStore.getState().clearStaleRegion();
       track(ANALYTICS_EVENTS.USER_LOGGED_IN, {
-        project_id: state.projectId?.toString() ?? "",
+        project_id: state.currentProjectId?.toString() ?? "",
         region,
       });
     },
@@ -54,7 +54,20 @@ export function useSelectProjectMutation() {
     onSuccess: async () => {
       clearAuthScopedQueries();
       await refreshAuthStateQuery();
-      useNavigationStore.getState().navigateToTaskInput();
+      openTaskInput();
+    },
+  });
+}
+
+export function useSwitchOrgMutation() {
+  return useMutation({
+    mutationFn: async (orgId: string) => {
+      resetSessionService();
+      return await trpcClient.auth.switchOrg.mutate({ orgId });
+    },
+    onSuccess: async () => {
+      clearAuthScopedQueries();
+      await refreshAuthStateQuery();
     },
   });
 }
@@ -82,7 +95,7 @@ export function useLogoutMutation() {
     onSuccess: async ({ previousState }) => {
       clearAuthScopedQueries();
       useAuthUiStateStore.getState().setStaleRegion(previousState.cloudRegion);
-      useNavigationStore.getState().navigateToTaskInput();
+      openTaskInput();
       useOnboardingStore.getState().resetSelections();
 
       await trpcClient.auth.logout.mutate();

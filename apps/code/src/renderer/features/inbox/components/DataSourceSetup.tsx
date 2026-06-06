@@ -64,7 +64,7 @@ interface SetupFormProps {
 }
 
 function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
-  const projectId = useAuthStateValue((state) => state.projectId);
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
   const client = useAuthenticatedClient();
   const {
     repositories,
@@ -265,7 +265,7 @@ const POLL_TIMEOUT_MS = 300_000; // 5 minutes
 
 function LinearSetup({ onComplete }: SetupFormProps) {
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
-  const projectId = useAuthStateValue((state) => state.projectId);
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
   const client = useAuthenticatedClient();
   const [loading, setLoading] = useState(false);
   const [oauthConnected, setOauthConnected] = useState(false);
@@ -395,7 +395,7 @@ function LinearSetup({ onComplete }: SetupFormProps) {
 }
 
 function ZendeskSetup({ onComplete, onCancel }: SetupFormProps) {
-  const projectId = useAuthStateValue((state) => state.projectId);
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
   const client = useAuthenticatedClient();
   const [subdomain, setSubdomain] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -480,7 +480,7 @@ function ZendeskSetup({ onComplete, onCancel }: SetupFormProps) {
 }
 
 function PgAnalyzeSetup({ onComplete, onCancel }: SetupFormProps) {
-  const projectId = useAuthStateValue((state) => state.projectId);
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
   const client = useAuthenticatedClient();
   const [apiKey, setApiKey] = useState("");
   const [organizationSlug, setOrganizationSlug] = useState("");
