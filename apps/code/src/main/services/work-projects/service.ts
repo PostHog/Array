@@ -18,7 +18,6 @@ import { getUserDataDir } from "../../utils/env";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import type { LlmGatewayService } from "../llm-gateway/service";
-import { SEED_PROJECTS } from "./seeds";
 
 const log = logger.scope("work-projects-service");
 
@@ -74,8 +73,6 @@ function defaultSizeFor(type: NewTileInput["type"]): TileSize {
     case "insight":
       return "md";
     case "file":
-      return "md";
-    case "skill_output":
       return "md";
     case "note":
       return "sm";
@@ -252,13 +249,11 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
   private ensureSeeded(): void {
     const state = this.readState();
     if (state.seeded) return;
-    for (const p of SEED_PROJECTS) {
-      state.projects[p.id] = p;
-      state.order.push(p.id);
-    }
+    // No demo projects are seeded. New users start with a genuine empty
+    // workspace and onboard via the real empty state. The `seeded` guard is
+    // retained so real first-run onboarding content can be added here later.
     state.seeded = true;
     this.writeState(state);
-    log.info("Seeded work projects", { count: state.order.length });
   }
 
   private emitProjectChanged(projectId: string): void {

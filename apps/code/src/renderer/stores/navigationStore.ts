@@ -42,9 +42,6 @@ export type WorkView =
   | "generate"
   | "skill-detail"
   | "library"
-  | "scheduled-list"
-  | "scheduled-create-prompt"
-  | "scheduled-edit"
   | "data-sources"
   | "projects"
   | "project-detail"
@@ -56,7 +53,6 @@ export type ChatView = "home" | "conversation";
 interface WorkSnapshot {
   workView: WorkView;
   workSelectedSkillId?: string;
-  workScheduledEditId?: string;
   workSelectedProjectId?: string;
   workActiveTaskId?: string;
 }
@@ -81,7 +77,6 @@ interface NavigationStore {
   skipWorkOnboarding: () => void;
   workView: WorkView;
   workSelectedSkillId?: string;
-  workScheduledEditId?: string;
   workSelectedProjectId?: string;
   workActiveTaskId?: string;
   workHistory: WorkSnapshot[];
@@ -90,10 +85,6 @@ interface NavigationStore {
   navigateToWorkGenerate: () => void;
   navigateToWorkSkill: (skillId: string) => void;
   navigateToWorkLibrary: () => void;
-  navigateToWorkScheduledList: () => void;
-  navigateToWorkScheduledCreatePrompt: () => void;
-  navigateToWorkScheduledCreate: () => void;
-  navigateToWorkScheduledEdit: (scheduledId: string) => void;
   navigateToWorkDataSources: () => void;
   navigateToWorkMemory: () => void;
   navigateToWorkProjects: () => void;
@@ -178,7 +169,6 @@ export const useNavigationStore = create<NavigationStore>()(
         const snapshot: WorkSnapshot = {
           workView: current.workView,
           workSelectedSkillId: current.workSelectedSkillId,
-          workScheduledEditId: current.workScheduledEditId,
           workSelectedProjectId: current.workSelectedProjectId,
           workActiveTaskId: current.workActiveTaskId,
         };
@@ -208,7 +198,6 @@ export const useNavigationStore = create<NavigationStore>()(
         skipWorkOnboarding: () => set({ workOnboardingSkipped: true }),
         workView: "home",
         workSelectedSkillId: undefined,
-        workScheduledEditId: undefined,
         workActiveTaskId: undefined,
         workHistory: [],
         workGoBack: () => {
@@ -218,7 +207,6 @@ export const useNavigationStore = create<NavigationStore>()(
           set({
             workView: prev.workView,
             workSelectedSkillId: prev.workSelectedSkillId,
-            workScheduledEditId: prev.workScheduledEditId,
             workSelectedProjectId: prev.workSelectedProjectId,
             workActiveTaskId: prev.workActiveTaskId,
             workHistory: workHistory.slice(0, -1),
@@ -228,75 +216,41 @@ export const useNavigationStore = create<NavigationStore>()(
           navigateWork({
             workView: "home",
             workSelectedSkillId: undefined,
-            workScheduledEditId: undefined,
             workActiveTaskId: undefined,
           }),
         navigateToWorkGenerate: () =>
           navigateWork({
             workView: "generate",
             workSelectedSkillId: undefined,
-            workScheduledEditId: undefined,
             workActiveTaskId: undefined,
           }),
         navigateToWorkSkill: (skillId: string) =>
           navigateWork({
             workView: "skill-detail",
             workSelectedSkillId: skillId,
-            workScheduledEditId: undefined,
             workActiveTaskId: undefined,
           }),
         navigateToWorkLibrary: () =>
           navigateWork({
             workView: "library",
             workSelectedSkillId: undefined,
-            workScheduledEditId: undefined,
-            workActiveTaskId: undefined,
-          }),
-        navigateToWorkScheduledList: () =>
-          navigateWork({
-            workView: "scheduled-list",
-            workSelectedSkillId: undefined,
-            workScheduledEditId: undefined,
-            workActiveTaskId: undefined,
-          }),
-        navigateToWorkScheduledCreatePrompt: () =>
-          navigateWork({
-            workView: "scheduled-create-prompt",
-            workSelectedSkillId: undefined,
-            workScheduledEditId: undefined,
-          }),
-        navigateToWorkScheduledCreate: () =>
-          navigateWork({
-            workView: "scheduled-edit",
-            workSelectedSkillId: undefined,
-            workScheduledEditId: undefined,
-            workActiveTaskId: undefined,
-          }),
-        navigateToWorkScheduledEdit: (scheduledId: string) =>
-          navigateWork({
-            workView: "scheduled-edit",
-            workSelectedSkillId: undefined,
-            workScheduledEditId: scheduledId,
             workActiveTaskId: undefined,
           }),
         navigateToWorkDataSources: () =>
           navigateWork({
             workView: "data-sources",
             workSelectedSkillId: undefined,
-            workScheduledEditId: undefined,
             workActiveTaskId: undefined,
           }),
         navigateToWorkMemory: () =>
           navigateWork({
             workView: "memory",
             workSelectedSkillId: undefined,
-            workScheduledEditId: undefined,
           }),
         navigateToWorkProjects: () =>
           navigateWork({
             workView: "projects",
             workSelectedSkillId: undefined,
-            workScheduledEditId: undefined,
             workSelectedProjectId: undefined,
             workActiveTaskId: undefined,
           }),
@@ -304,7 +258,6 @@ export const useNavigationStore = create<NavigationStore>()(
           navigateWork({
             workView: "project-detail",
             workSelectedSkillId: undefined,
-            workScheduledEditId: undefined,
             workSelectedProjectId: projectId,
             workActiveTaskId: undefined,
           }),
@@ -312,7 +265,6 @@ export const useNavigationStore = create<NavigationStore>()(
           navigateWork({
             workView: "task-detail",
             workSelectedSkillId: undefined,
-            workScheduledEditId: undefined,
             workActiveTaskId: taskId,
           }),
         chatView: "home",
@@ -341,7 +293,6 @@ export const useNavigationStore = create<NavigationStore>()(
           navigateWork({
             workView: "generate",
             workSelectedSkillId: undefined,
-            workScheduledEditId: undefined,
             workActiveTaskId: undefined,
           });
         },
@@ -569,14 +520,8 @@ export const useNavigationStore = create<NavigationStore>()(
       partialize: (state) => ({
         mode: state.mode,
         workOnboardingSkipped: state.workOnboardingSkipped,
-        // scheduled-create-prompt is transient — it depends on the
-        // unpersisted pendingCreateDraft. Roll it back to the list on reload.
-        workView:
-          state.workView === "scheduled-create-prompt"
-            ? "scheduled-list"
-            : state.workView,
+        workView: state.workView,
         workSelectedSkillId: state.workSelectedSkillId,
-        workScheduledEditId: state.workScheduledEditId,
         workSelectedProjectId: state.workSelectedProjectId,
         workActiveTaskId: state.workActiveTaskId,
         chatView: state.chatView,

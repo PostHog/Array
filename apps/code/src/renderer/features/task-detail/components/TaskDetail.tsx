@@ -15,7 +15,6 @@ import { useCwd } from "@features/sidebar/hooks/useCwd";
 import { useTaskData } from "@features/task-detail/hooks/useTaskData";
 import { useUpdateTask } from "@features/tasks/hooks/useTasks";
 import { useTaskStore } from "@features/tasks/stores/taskStore";
-import { SaveAsScheduledTaskButton } from "@features/work/components/SaveAsScheduledTaskButton";
 import { useWorkspaceEvents } from "@features/workspace/hooks";
 import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
 import { useBlurOnEscape } from "@hooks/useBlurOnEscape";
@@ -158,7 +157,6 @@ export function TaskDetail({
         )}
         <Flex align="center" gap="1" className="shrink-0">
           <MemoryIndicator />
-          <SaveAsScheduledTaskButton taskId={taskId} />
           {!chatOnly && openTargetPath && (
             <ExternalAppsOpener targetPath={openTargetPath} />
           )}
@@ -167,7 +165,6 @@ export function TaskDetail({
     ),
     [
       task.title,
-      taskId,
       openTargetPath,
       isEditingTitle,
       handleTitleEditSubmit,

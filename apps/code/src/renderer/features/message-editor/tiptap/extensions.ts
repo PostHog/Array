@@ -5,7 +5,6 @@ import { createCommandMention } from "./CommandMention";
 import { createFileMention } from "./FileMention";
 import { createIssueMention } from "./IssueMention";
 import { MentionChipNode } from "./MentionChipNode";
-import { createTeamMemberMention } from "./TeamMemberMention";
 
 export interface EditorExtensionsOptions {
   sessionId: string;
@@ -13,7 +12,6 @@ export interface EditorExtensionsOptions {
   fileMentions?: boolean;
   issueMentions?: boolean;
   commands?: boolean;
-  teamMentions?: boolean;
 }
 
 export function getEditorExtensions(options: EditorExtensionsOptions) {
@@ -23,7 +21,6 @@ export function getEditorExtensions(options: EditorExtensionsOptions) {
     fileMentions = true,
     issueMentions = true,
     commands = true,
-    teamMentions = false,
   } = options;
 
   const extensions = [
@@ -44,12 +41,7 @@ export function getEditorExtensions(options: EditorExtensionsOptions) {
     MentionChipNode,
   ];
 
-  // teamMentions and fileMentions both claim the `@` trigger. When team mentions
-  // are enabled (Work-mode threads) the editor uses `@` for people; file mentions
-  // are not registered to avoid a double-claim on the trigger character.
-  if (teamMentions) {
-    extensions.push(createTeamMemberMention());
-  } else if (fileMentions) {
+  if (fileMentions) {
     extensions.push(createFileMention(sessionId));
   }
 

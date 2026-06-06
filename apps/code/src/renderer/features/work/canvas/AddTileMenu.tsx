@@ -2,7 +2,6 @@ import {
   FileText,
   GaugeIcon,
   GithubLogo,
-  Lightbulb,
   NoteIcon,
   Plus,
 } from "@phosphor-icons/react";
@@ -61,17 +60,6 @@ const POSTHOG_OPTIONS: TileTypeOption[] = [
 ];
 
 const WORK_OPTIONS: TileTypeOption[] = [
-  {
-    type: "skill_output",
-    label: "Skill output",
-    description: "Pin the latest run of a skill.",
-    icon: Lightbulb,
-    factory: () => ({
-      type: "skill_output",
-      skillName: "Untitled skill",
-      size: "md",
-    }),
-  },
   {
     type: "github_activity",
     label: "GitHub activity",

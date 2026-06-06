@@ -1,9 +1,5 @@
 import {
   ArrowSquareOut,
-  CalendarCheck,
-  ChartLineUp,
-  Compass,
-  CurrencyDollar,
   Hash,
   type IconProps,
   Lightbulb,
@@ -52,48 +48,6 @@ const TAG_ORDER: SkillTag[] = [
   "customer",
   "reporting",
 ];
-
-interface TeamSkill {
-  icon: ComponentType<IconProps>;
-  title: string;
-  description: string;
-  tags: SkillTag[];
-}
-
-/**
- * Team-scope skills live in PostHog Cloud — the in-app cards are decorative
- * pointers; the "Manage in PostHog" link is the canonical surface.
- */
-const TEAM_SKILLS: { active: TeamSkill[]; library: TeamSkill[] } = {
-  active: [
-    {
-      icon: CurrencyDollar,
-      title: "Pipeline brief",
-      description: "Shared with sales every Monday at 9am",
-      tags: ["sales"],
-    },
-    {
-      icon: ChartLineUp,
-      title: "Feature adoption report",
-      description: "Tracks adoption of recently shipped product work",
-      tags: ["product"],
-    },
-  ],
-  library: [
-    {
-      icon: Compass,
-      title: "Roadmap proposal",
-      description: "Drafts a next-quarter pitch from signals + interviews",
-      tags: ["product", "customer"],
-    },
-    {
-      icon: CalendarCheck,
-      title: "Quarterly review",
-      description: "Pulls KPIs, wins, and misses into a board-ready doc",
-      tags: ["reporting"],
-    },
-  ],
-};
 
 function TagFilterChip({
   label,
@@ -470,9 +424,6 @@ export function WorkSkillsView() {
     (c) => !activeWorkSkillByCatalogId.has(c.id) && matchesTag(c),
   );
 
-  const teamActive = TEAM_SKILLS.active.filter(matchesTag);
-  const teamLibrary = TEAM_SKILLS.library.filter(matchesTag);
-
   const handleAddCatalog = (catalog: CatalogSkill) => {
     const id = newSkillId();
     addSkill({
@@ -621,21 +572,23 @@ export function WorkSkillsView() {
           </button>
         )}
 
-        <Flex align="center" gap="2" wrap="wrap">
-          <TagFilterChip
-            label="All"
-            active={tagFilter === "all"}
-            onClick={() => setTagFilter("all")}
-          />
-          {TAG_ORDER.map((t) => (
+        {scope === "user" && (
+          <Flex align="center" gap="2" wrap="wrap">
             <TagFilterChip
-              key={t}
-              label={TAG_META[t].label}
-              active={tagFilter === t}
-              onClick={() => setTagFilter(t)}
+              label="All"
+              active={tagFilter === "all"}
+              onClick={() => setTagFilter("all")}
             />
-          ))}
-        </Flex>
+            {TAG_ORDER.map((t) => (
+              <TagFilterChip
+                key={t}
+                label={TAG_META[t].label}
+                active={tagFilter === t}
+                onClick={() => setTagFilter(t)}
+              />
+            ))}
+          </Flex>
+        )}
 
         {scope === "user" ? (
           <>
@@ -688,41 +641,32 @@ export function WorkSkillsView() {
             </SkillSection>
           </>
         ) : (
-          <>
-            <SkillSection
-              label="Active"
-              hint="Currently running on the schedules you've set."
-              count={teamActive.length}
-              emptyMessage="No active team skills."
+          <Box className="rounded-(--radius-3) border border-(--gray-5) border-dashed bg-(--gray-1) p-6 text-center">
+            <Text
+              as="div"
+              weight="medium"
+              className="text-(--gray-12) text-[14px]"
             >
-              {teamActive.map((s) => (
-                <SkillCard
-                  key={s.title}
-                  icon={s.icon}
-                  title={s.title}
-                  description={s.description}
-                  isActive
-                />
-              ))}
-            </SkillSection>
-
-            <SkillSection
-              label="Library"
-              hint="Available skills you haven't activated yet."
-              count={teamLibrary.length}
-              emptyMessage="No skills match this tag."
+              Team skills live in PostHog Cloud
+            </Text>
+            <Text
+              as="div"
+              className="mx-auto mt-1 max-w-[420px] text-(--gray-11) text-[13px]"
             >
-              {teamLibrary.map((s) => (
-                <SkillCard
-                  key={s.title}
-                  icon={s.icon}
-                  title={s.title}
-                  description={s.description}
-                  isActive={false}
-                />
-              ))}
-            </SkillSection>
-          </>
+              Skills your team shares are created and scheduled in PostHog. Open
+              the library to view and manage them.
+            </Text>
+            <Flex justify="center" className="mt-3">
+              <button
+                type="button"
+                onClick={() => openUrlInBrowser(TEAM_SKILLS_LIBRARY_URL)}
+                className="flex items-center gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-2.5 py-1 text-(--gray-11) text-[12px] transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) hover:text-(--gray-12)"
+              >
+                Manage in PostHog
+                <ArrowSquareOut size={12} weight="bold" />
+              </button>
+            </Flex>
+          </Box>
         )}
 
         <Box className="mt-2 border-(--gray-5) border-t pt-4">

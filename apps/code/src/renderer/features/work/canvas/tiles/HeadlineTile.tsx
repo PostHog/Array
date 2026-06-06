@@ -19,7 +19,6 @@ import { openUrlInBrowser } from "@utils/browser";
 import { memo, useMemo, useState } from "react";
 import { TileFrame } from "../TileFrame";
 import { InsightFrame } from "./headline/InsightFrame";
-import { SparklineBars } from "./headline/viz/SparklineBars";
 
 interface HeadlineTileProps {
   tile: HeadlineTileType;
@@ -144,48 +143,42 @@ function LiveHeadline({
       {shareToken ? (
         <InsightFrame shareToken={shareToken} posthogUrl={tile.posthogUrl} />
       ) : (
-        <SnapshotBody tile={tile} />
+        <NoLiveDataBody tile={tile} />
       )}
     </TileFrame>
   );
 }
 
-/** Rendered when there's no PostHog sharing token to embed — either because
- *  the tile was proposed by the agent (snapshot values only) or because the
- *  sharing mint failed at pick time. Shows the agent-provided fallback as a
- *  number + sparkline. */
-function SnapshotBody({ tile }: { tile: HeadlineTileType }) {
+/** Rendered when there's no PostHog sharing token to embed — the insight is
+ *  real (the tile holds a query) but a share token was never minted (e.g. the
+ *  mint failed at pick time, or the tile was proposed by the agent). We do NOT
+ *  render the agent-estimated `fallback*` numbers here — they're not real data.
+ *  Instead we point the user at the live insight in PostHog; the pencil "Change
+ *  insight" action in the header lets them re-pick to mint a token.
+ *  FOLLOW-UP: drop the `fallbackValue`/`fallbackDelta`/`fallbackSparkline`
+ *  fields from HeadlineTileType + the MCP `propose_tile_headline` tool once no
+ *  caller depends on them. */
+function NoLiveDataBody({ tile }: { tile: HeadlineTileType }) {
   return (
-    <Box className="px-4 py-3">
-      <Flex align="center" gap="2">
-        <Box className="h-1.5 w-1.5 rounded-full bg-(--gray-8)" />
-        <Text
-          as="span"
-          className="text-(--gray-10) text-[11px] uppercase tracking-wide"
+    <Flex
+      align="center"
+      justify="center"
+      direction="column"
+      gap="2"
+      className="h-full px-4 py-3 text-center text-(--gray-10) text-[12px]"
+    >
+      <Text as="span">Live data isn't connected for this metric yet.</Text>
+      {tile.posthogUrl && (
+        <button
+          type="button"
+          onClick={() => tile.posthogUrl && openUrlInBrowser(tile.posthogUrl)}
+          className="inline-flex items-center gap-1 text-(--gray-11) hover:text-(--gray-12)"
         >
-          Snapshot
-        </Text>
-      </Flex>
-      <Flex align="baseline" gap="3" className="mt-1">
-        <Text
-          as="span"
-          weight="medium"
-          className="text-(--gray-12) text-[32px] leading-tight"
-        >
-          {tile.fallbackValue}
-        </Text>
-        {tile.fallbackDelta && (
-          <Text as="span" className="text-(--green-11) text-[12px]">
-            {tile.fallbackDelta}
-          </Text>
-        )}
-      </Flex>
-      {tile.fallbackSparkline.length > 0 && (
-        <Box className="mt-2">
-          <SparklineBars values={tile.fallbackSparkline} />
-        </Box>
+          Open in PostHog
+          <ArrowSquareOut size={10} weight="bold" />
+        </button>
       )}
-    </Box>
+    </Flex>
   );
 }
 

@@ -309,8 +309,6 @@ export function WorkSampleProjects({ projects }: { projects: WorkProject[] }) {
         content: prompt,
         repoPath,
         workspaceMode: "local",
-        // HACKATHON SHORTCUT: see useWorkThreadTasks.ts.
-        repositoryConfig: { work_thread: true, collaborators: [] },
       };
 
       const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);

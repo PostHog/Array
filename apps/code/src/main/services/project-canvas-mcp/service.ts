@@ -477,14 +477,6 @@ Arrives as a ghost tile the user reviews before it's accepted.`,
             if (t.type === "note") {
               return { ...base, body: t.body, tone: t.tone };
             }
-            if (t.type === "skill_output") {
-              return {
-                ...base,
-                skillName: t.skillName,
-                lastRunAt: t.lastRunAt,
-                preview: t.lastRunOutput?.slice(0, 200),
-              };
-            }
             return base;
           }),
         };

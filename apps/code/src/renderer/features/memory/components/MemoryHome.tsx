@@ -1,8 +1,6 @@
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
-import { useWorkStore } from "@features/work/stores/workStore";
 import {
   ArrowClockwise,
-  CalendarBlank,
   PencilSimple,
   Plus,
   Trash,
@@ -10,7 +8,6 @@ import {
 } from "@phosphor-icons/react";
 import { Box, Flex, ScrollArea, Text, Tooltip } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@utils/toast";
 import { useEffect, useMemo, useState } from "react";
@@ -59,11 +56,6 @@ export function MemoryHome() {
   const deleteMutation = useMutation(trpc.memory.delete.mutationOptions());
 
   const parsed = useMemo(() => parseMemoryMd(memoryMd ?? ""), [memoryMd]);
-
-  const setPendingCreateDraft = useWorkStore((s) => s.setPendingCreateDraft);
-  const navigateToWorkScheduledCreate = useNavigationStore(
-    (s) => s.navigateToWorkScheduledCreate,
-  );
 
   const people = useMemo<PersonEntryLite[]>(
     () =>
@@ -165,26 +157,6 @@ export function MemoryHome() {
     }
   };
 
-  const scheduleSectionRefresh = (heading: string) => {
-    setPendingCreateDraft({
-      name: `Refresh memory: ${heading}`,
-      prompt: `Refresh the "${heading}" section of my personal memory (MEMORY.md in the memory root). Read the current content, check what's stale, and update only what's changed. Apply the maintenance rules — auto-clean past dates and obvious staleness, but flag role/responsibility/status changes for me to confirm. Bump the \`_Edited: YYYY-MM-DD_\` marker when done.`,
-      scheduleText: "every Monday at 9am",
-      enabled: true,
-    });
-    navigateToWorkScheduledCreate();
-  };
-
-  const schedulePersonRefresh = (name: string, relativePath: string) => {
-    setPendingCreateDraft({
-      name: `Refresh memory: ${name}`,
-      prompt: `Refresh the memory entry for ${name} at \`${relativePath}\` in my memory folder. Pull anything new from recent context (Slack, GitHub, calendar, recent tasks). Apply the maintenance rules — auto-clean obvious staleness, flag role/responsibility changes for confirmation. Bump any \`last_edited\` marker when done.`,
-      scheduleText: "every Monday at 9am",
-      enabled: true,
-    });
-    navigateToWorkScheduledCreate();
-  };
-
   return (
     <ScrollArea type="auto" className="h-full">
       <Box className="mx-auto max-w-3xl px-6 py-6">
@@ -240,7 +212,6 @@ export function MemoryHome() {
                 person={p}
                 onEdit={() => startEditPerson(p.relativePath)}
                 onRemove={() => removePerson(p.relativePath)}
-                onSchedule={() => schedulePersonRefresh(p.name, p.relativePath)}
               />
             ),
           )}
@@ -296,7 +267,6 @@ export function MemoryHome() {
           body={parsed.sections.get(STANDARD_SECTIONS.me) ?? ""}
           placeholder="Your role, where you're based, when you joined. Bullets work great."
           onSave={(b) => saveSection(STANDARD_SECTIONS.me, b)}
-          onSchedule={() => scheduleSectionRefresh(STANDARD_SECTIONS.me)}
           fallbackMtimeMs={memoryFileMtimeMs}
         />
 
@@ -306,7 +276,6 @@ export function MemoryHome() {
           body={parsed.sections.get(STANDARD_SECTIONS.focus) ?? ""}
           placeholder="What you're driving vs watching. Drop links to dashboards, docs, issues."
           onSave={(b) => saveSection(STANDARD_SECTIONS.focus, b)}
-          onSchedule={() => scheduleSectionRefresh(STANDARD_SECTIONS.focus)}
           fallbackMtimeMs={memoryFileMtimeMs}
         />
 
@@ -316,7 +285,6 @@ export function MemoryHome() {
           body={parsed.sections.get(STANDARD_SECTIONS.glossary) ?? ""}
           placeholder={`Decoder ring for shorthand. Markdown tables work great:\n\n| Term | Meaning |\n|------|---------|\n| ARR | Annual Recurring Revenue |\n| BDR | Business Development Rep |`}
           onSave={(b) => saveSection(STANDARD_SECTIONS.glossary, b)}
-          onSchedule={() => scheduleSectionRefresh(STANDARD_SECTIONS.glossary)}
           fallbackMtimeMs={memoryFileMtimeMs}
         />
 
@@ -326,9 +294,6 @@ export function MemoryHome() {
           body={parsed.sections.get(STANDARD_SECTIONS.workingStyle) ?? ""}
           placeholder={`e.g. "Tuesdays meeting-free", "prefer async over meetings", timezone.`}
           onSave={(b) => saveSection(STANDARD_SECTIONS.workingStyle, b)}
-          onSchedule={() =>
-            scheduleSectionRefresh(STANDARD_SECTIONS.workingStyle)
-          }
           fallbackMtimeMs={memoryFileMtimeMs}
         />
 
@@ -338,9 +303,6 @@ export function MemoryHome() {
           body={parsed.sections.get(STANDARD_SECTIONS.findThings) ?? ""}
           placeholder="Handbook URL, key Slack channels, recurring meetings — links welcome."
           onSave={(b) => saveSection(STANDARD_SECTIONS.findThings, b)}
-          onSchedule={() =>
-            scheduleSectionRefresh(STANDARD_SECTIONS.findThings)
-          }
           fallbackMtimeMs={memoryFileMtimeMs}
         />
 
@@ -360,7 +322,6 @@ export function MemoryHome() {
               body={parsed.sections.get(heading) ?? ""}
               placeholder=""
               onSave={(b) => saveSection(heading, b)}
-              onSchedule={() => scheduleSectionRefresh(heading)}
               fallbackMtimeMs={memoryFileMtimeMs}
             />
           ))}
@@ -385,12 +346,10 @@ function PersonRow({
   person,
   onEdit,
   onRemove,
-  onSchedule,
 }: {
   person: PersonEntryLite;
   onEdit: () => void;
   onRemove: () => void;
-  onSchedule: () => void;
 }) {
   return (
     <Flex
@@ -426,15 +385,6 @@ function PersonRow({
         gap="1"
         className="opacity-0 group-hover:opacity-100"
       >
-        <Tooltip content="Schedule refresh" side="top">
-          <button
-            type="button"
-            onClick={onSchedule}
-            className="rounded p-1 text-gray-10 hover:bg-gray-4 hover:text-gray-12"
-          >
-            <CalendarBlank size={12} />
-          </button>
-        </Tooltip>
         <Tooltip content="Edit" side="top">
           <button
             type="button"
@@ -464,7 +414,6 @@ function EditableSection({
   placeholder,
   fallbackMtimeMs,
   onSave,
-  onSchedule,
 }: {
   title: string;
   heading: string;
@@ -472,7 +421,6 @@ function EditableSection({
   placeholder: string;
   fallbackMtimeMs: number | null;
   onSave: (body: string) => Promise<void>;
-  onSchedule: () => void;
 }) {
   const { visible, lastEdited } = useMemo(() => readSectionBody(body), [body]);
   const [editing, setEditing] = useState(false);
@@ -526,17 +474,6 @@ function EditableSection({
           )}
         </Flex>
         <Flex align="center" gap="1">
-          {!editing && !isEmpty && (
-            <Tooltip content="Schedule refresh" side="top">
-              <button
-                type="button"
-                onClick={onSchedule}
-                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-gray-10 hover:bg-gray-3 hover:text-gray-12"
-              >
-                <CalendarBlank size={11} />
-              </button>
-            </Tooltip>
-          )}
           {!editing && (
             <button
               type="button"

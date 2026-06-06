@@ -22,9 +22,9 @@ export interface ExamplePrompt {
 }
 
 /**
- * Curated suggestions for the empty Scheduled tab. Each entry is the kind of
- * recurring job a non-engineer would actually want to schedule. Clicking one
- * prefills both the name and the prompt in the editor.
+ * Curated starter prompts shown in the Generate view. Each entry is the kind of
+ * recurring job a non-engineer would actually want an agent to do. Clicking one
+ * prefills the generator.
  */
 export const EXAMPLE_PROMPTS: ExamplePrompt[] = [
   {

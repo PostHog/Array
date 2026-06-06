@@ -147,15 +147,6 @@ export const fileTile = tileBase.extend({
 });
 export type FileTile = z.infer<typeof fileTile>;
 
-export const skillOutputTile = tileBase.extend({
-  type: z.literal("skill_output"),
-  skillName: z.string(),
-  skillDescription: z.string().optional(),
-  lastRunOutput: z.string().optional(),
-  lastRunAt: z.string().optional(),
-});
-export type SkillOutputTile = z.infer<typeof skillOutputTile>;
-
 export const noteTile = tileBase.extend({
   type: z.literal("note"),
   body: z.string(),
@@ -262,7 +253,6 @@ export const tile = z.discriminatedUnion("type", [
   headlineTile,
   insightTile,
   fileTile,
-  skillOutputTile,
   noteTile,
   artifactTile,
   githubActivityTile,
@@ -328,11 +318,6 @@ export const newTileInput = z.discriminatedUnion("type", [
   fileTile.omit({ id: true, state: true, origin: true, size: true }).extend({
     size: tileSize.optional(),
   }),
-  skillOutputTile
-    .omit({ id: true, state: true, origin: true, size: true })
-    .extend({
-      size: tileSize.optional(),
-    }),
   noteTile.omit({ id: true, state: true, origin: true, size: true }).extend({
     size: tileSize.optional(),
   }),

@@ -1,5 +1,4 @@
 import { Tooltip } from "@components/ui/Tooltip";
-import { getTeamMemberAvatar } from "@features/sessions/components/session-update/parseFileMentions";
 import { useSettingsStore as useFeatureSettingsStore } from "@features/settings/stores/settingsStore";
 import {
   ChartLineIcon,
@@ -10,7 +9,6 @@ import {
   GithubLogoIcon,
   GitPullRequestIcon,
   TerminalIcon,
-  UserIcon,
   WarningIcon,
   XIcon,
 } from "@phosphor-icons/react";
@@ -35,21 +33,16 @@ const typeIconMap: Record<ChipType, React.ComponentType<{ size: number }>> = {
   experiment: FlaskIcon,
   insight: ChartLineIcon,
   feature_flag: FlagIcon,
-  team_member: UserIcon,
 };
 
 function IconCloseButton({
   type,
-  id,
   onRemove,
 }: {
   type: ChipType;
-  id?: string;
   onRemove: () => void;
 }) {
   const Icon = typeIconMap[type] || FileTextIcon;
-  const avatarUrl =
-    type === "team_member" && id ? getTeamMemberAvatar(id) : undefined;
 
   return (
     <button
@@ -62,17 +55,9 @@ function IconCloseButton({
       }}
     >
       <span className="ease pointer-events-none absolute inset-0 flex items-center justify-center transition-opacity duration-150 group-hover/chip:opacity-0 motion-reduce:transition-none">
-        {avatarUrl ? (
-          <img
-            src={avatarUrl}
-            alt=""
-            className="size-3.5 rounded-full object-cover"
-          />
-        ) : (
-          <span className="opacity-50">
-            <Icon size={10} />
-          </span>
-        )}
+        <span className="opacity-50">
+          <Icon size={10} />
+        </span>
       </span>
       <span className="ease pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-150 group-hover/chip:opacity-100 motion-reduce:transition-none">
         <XIcon size={10} />
@@ -108,7 +93,7 @@ function DefaultChip({
       onClick={canOpenUrl ? () => window.open(id, "_blank") : undefined}
       className={`${chipBase} max-w-full whitespace-nowrap ${isGithubRef ? "cursor-pointer!" : "cursor-default! active:translate-y-0!"} ${isCommand ? "cli-slash-command" : "cli-file-mention"} ${selected ? selectedRing : ""}`}
     >
-      <IconCloseButton type={type as ChipType} id={id} onRemove={onRemove} />
+      <IconCloseButton type={type as ChipType} onRemove={onRemove} />
       {isGithubRef ? (
         <span className="min-w-0 truncate">{label}</span>
       ) : (

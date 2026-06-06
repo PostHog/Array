@@ -404,13 +404,6 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       "Run the PMF skill, surface the 40% threshold, list power users worth interviewing.",
     tiles: [
       {
-        type: "skill_output",
-        size: "md",
-        skillName: "Product-market fit tracker",
-        skillDescription:
-          "Sets up or reads PMF surveys, scores them against the 40% threshold, surfaces users worth interviewing.",
-      },
-      {
         type: "note",
         size: "md",
         body: `# PMF action plan\n\n**Current score:** _(agent will fill)_\n\n## What's working\n_…_\n\n## What to fix\n_…_\n\n## Next actions\n1. _…_\n2. _…_\n3. _…_\n`,
@@ -424,7 +417,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       },
     ],
     openingPrompt:
-      "Use the product-market-fit skill to set up or read the latest PMF survey results in PostHog. Fill the skill_output tile with the latest survey state, then propose 2–3 concrete next actions in pmf-action-plan.md.",
+      "Use the product-market-fit skill to set up or read the latest PMF survey results in PostHog, then propose 2–3 concrete next actions in pmf-action-plan.md.",
   },
   {
     id: "competitor-intel",
@@ -435,13 +428,6 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     description:
       "A weekly digest of what competitors changed — features, pricing, positioning.",
     tiles: [
-      {
-        type: "skill_output",
-        size: "md",
-        skillName: "Competitor changelog tracker",
-        skillDescription:
-          "Scans competitor changelogs, blogs, and release notes for recent changes.",
-      },
       {
         type: "note",
         size: "md",
@@ -456,7 +442,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       },
     ],
     openingPrompt:
-      "Use the competitor-changelog-tracker skill to surface recent competitor changes. Fill the skill_output tile with the raw findings, then synthesize 1–2 takeaways into digest.md and put the single top action in the note tile.",
+      "Use the competitor-changelog-tracker skill to surface recent competitor changes, then synthesize 1–2 takeaways into digest.md and put the single top action in the note tile.",
   },
   {
     id: "power-users-to-interview",
@@ -467,13 +453,6 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     description:
       "Identify power users from PostHog, save a cohort, prep interview questions.",
     tiles: [
-      {
-        type: "skill_output",
-        size: "md",
-        skillName: "Power user discovery",
-        skillDescription:
-          "Scores users by frequency, depth, value actions, feature breadth — saves the top group as a cohort.",
-      },
       {
         type: "note",
         size: "md",
@@ -496,7 +475,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       },
     ],
     openingPrompt:
-      "Use the power-user-discovery skill to find our top power users and save them as a PostHog cohort. Fill the skill_output tile, then draft an interview guide in interview-prep.md based on what makes them power users.",
+      "Use the power-user-discovery skill to find our top power users and save them as a PostHog cohort, then draft an interview guide in interview-prep.md based on what makes them power users.",
   },
   {
     id: "weekly-slack-digest",
@@ -507,13 +486,6 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     description:
       "A short digest of long threads, unresolved debates, and important decisions from the last 7 days.",
     tiles: [
-      {
-        type: "skill_output",
-        size: "md",
-        skillName: "Important Slack threads",
-        skillDescription:
-          "Scans Slack for long, controversial, or unresolved threads from the last 7 days.",
-      },
       {
         type: "note",
         size: "md",
@@ -528,7 +500,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       },
     ],
     openingPrompt:
-      "Use the important-slack-threads skill to scan the last 7 days. Fill the skill_output tile with the digest, then pick the single most-important action item and put it in the note tile.",
+      "Use the important-slack-threads skill to scan the last 7 days, then pick the single most-important action item and put it in the note tile.",
   },
   {
     id: "customer-discovery",

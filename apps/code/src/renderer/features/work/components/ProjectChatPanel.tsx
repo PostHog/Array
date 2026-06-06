@@ -61,12 +61,6 @@ function summarizeTilesForPrompt(project: WorkProject): string {
       lines.push(
         `- files · ${label} (${t.items.length} item${t.items.length === 1 ? "" : "s"})`,
       );
-    } else if (t.type === "skill_output") {
-      lines.push(
-        `- skill output · ${t.skillName}${
-          t.skillDescription ? ` — ${t.skillDescription}` : ""
-        }`,
-      );
     } else if (t.type === "note") {
       lines.push(`- note · ${t.body.slice(0, 80)}`);
     }

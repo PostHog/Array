@@ -114,7 +114,6 @@ export function ProjectHeader({
             const label = t.title ?? "Files";
             return `• ${label} (${t.items.length})`;
           }
-          if (t.type === "skill_output") return `• Skill: ${t.skillName}`;
           return null;
         })
         .filter(Boolean),

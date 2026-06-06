@@ -38,8 +38,6 @@ export interface PromptInputProps {
   // capabilities
   enableBashMode?: boolean;
   enableCommands?: boolean;
-  /** When true, `@` triggers team-member autocomplete instead of file mentions. */
-  enableTeamMentions?: boolean;
   // toolbar slots
   modelSelector?: React.ReactElement | null | false;
   reasoningSelector?: React.ReactElement | null | false;
@@ -82,7 +80,6 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       allowBypassPermissions = false,
       enableBashMode = false,
       enableCommands = true,
-      enableTeamMentions = false,
       modelSelector,
       reasoningSelector,
       historyButton,
@@ -136,8 +133,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       capabilities: {
         bashMode: enableBashMode,
         commands: enableCommands,
-        teamMentions: enableTeamMentions,
-        fileMentions: !enableTeamMentions,
+        fileMentions: true,
       },
       getPromptHistory,
       onBeforeSubmit,

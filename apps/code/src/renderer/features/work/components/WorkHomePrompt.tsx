@@ -85,10 +85,6 @@ export function WorkHomePrompt() {
           adapter,
           model: currentModel,
           reasoningLevel: currentReasoningLevel,
-          // HACKATHON SHORTCUT: see useWorkThreadTasks.ts for the why. We mark
-          // Work-mode tasks by stashing { work_thread: true, collaborators: [] }
-          // into the existing `repository_config` JSON field. No backend deploy.
-          repositoryConfig: { work_thread: true, collaborators: [] },
         };
 
         const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
@@ -128,13 +124,12 @@ export function WorkHomePrompt() {
   return (
     <PromptInput
       sessionId={WORK_HOME_SESSION_ID}
-      placeholder="What should I take off your plate this week? @ to mention teammates"
+      placeholder="What should I take off your plate this week?"
       autoFocus
       clearOnSubmit
       editorHeight="large"
       enableCommands={false}
       enableBashMode={false}
-      enableTeamMentions
       onSubmit={handleSubmit}
       modelSelector={
         <UnifiedModelSelector

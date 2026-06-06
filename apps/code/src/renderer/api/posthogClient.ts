@@ -74,28 +74,6 @@ export type McpInstallationTool = Schemas.MCPServerInstallationTool;
 
 export type Evaluation = Schemas.Evaluation;
 
-export interface OrgMember {
-  membershipId: string;
-  uuid: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-}
-
-const STUB_ORG_MEMBERS: OrgMember[] = [
-  { firstName: "Charles", email: "charles@posthog.com" },
-  { firstName: "Andy", email: "andy@posthog.com" },
-  { firstName: "Joe", email: "joe@posthog.com" },
-  { firstName: "Cleo", email: "cleo@posthog.com" },
-  { firstName: "James", email: "james@posthog.com" },
-].map((m) => ({
-  membershipId: m.email,
-  uuid: m.email,
-  email: m.email,
-  firstName: m.firstName,
-  lastName: "",
-}));
-
 export interface UserGitHubIntegration {
   id: string;
   kind: "github";
@@ -625,95 +603,6 @@ export class PostHogAPIClient {
       path: { uuid: "@me" },
     });
     return data;
-  }
-
-  async getOrgMembers(): Promise<OrgMember[]> {
-    // TODO: replace with a real API call once PostHog backend exposes a
-    // project-scoped org-members endpoint. `/api/organizations/@current/members/`
-    // is blocked for project-scoped OAuth tokens, and `/api/users/` returns
-    // global PostHog users — neither works. For now, return a fixed list.
-    return STUB_ORG_MEMBERS;
-  }
-
-  /**
-   * HACKATHON SHORTCUT — no dedicated collaborators endpoint exists on the
-   * backend yet. The backend Task serializer doesn't expose `repository_config`
-   * (verified: not in the OpenAPI schema), so the earlier squat on that field
-   * was silently dropped server-side. `json_schema` IS on the serializer and
-   * round-trips as arbitrary JSON, so we nest under `json_schema.__code_meta`
-   * to avoid clobbering any legitimate schema written there (e.g. by the
-   * task-discovery setup flow).
-   *
-   * Replace with `POST /api/projects/{team}/tasks/{id}/collaborators/` once the
-   * proper backend (`Task.collaborators` M2M + endpoint) ships. The change is
-   * isolated to this function + the readers — call sites stay the same.
-   */
-  async addTaskCollaborators(
-    taskId: string,
-    userUuids: string[],
-  ): Promise<{ ok: boolean }> {
-    if (userUuids.length === 0) return { ok: true };
-    const task = (await this.getTask(taskId)) as unknown as Task;
-    const existingSchema = (task.json_schema ?? {}) as Record<string, unknown>;
-    const existingMeta =
-      typeof existingSchema.__code_meta === "object" &&
-      existingSchema.__code_meta !== null
-        ? (existingSchema.__code_meta as Record<string, unknown>)
-        : {};
-    const existingCollaborators = Array.isArray(existingMeta.collaborators)
-      ? (existingMeta.collaborators as unknown[]).filter(
-          (v): v is string => typeof v === "string",
-        )
-      : [];
-    const merged = [...existingCollaborators];
-    for (const uuid of userUuids) {
-      if (!merged.includes(uuid)) merged.push(uuid);
-    }
-    if (merged.length === existingCollaborators.length) {
-      log.info("addTaskCollaborators: nothing to add", {
-        taskId,
-        existingCollaborators,
-      });
-      return { ok: true };
-    }
-
-    const newJsonSchema = {
-      ...existingSchema,
-      __code_meta: {
-        ...existingMeta,
-        work_thread: true,
-        collaborators: merged,
-      },
-    };
-    log.info("addTaskCollaborators PATCH body", {
-      taskId,
-      existingSchema,
-      newJsonSchema,
-    });
-    const patchResponse = (await this.updateTask(taskId, {
-      json_schema: newJsonSchema,
-    } as Partial<Schemas.Task>)) as unknown as {
-      id?: string;
-      json_schema?: unknown;
-    };
-    log.info("addTaskCollaborators PATCH response", {
-      taskId,
-      returned_json_schema: patchResponse?.json_schema,
-    });
-
-    try {
-      const verify = (await this.getTask(taskId)) as unknown as {
-        json_schema?: unknown;
-      };
-      log.info("addTaskCollaborators GET verify", {
-        taskId,
-        json_schema: verify?.json_schema,
-      });
-    } catch (error) {
-      log.warn("addTaskCollaborators GET verify failed", { taskId, error });
-    }
-
-    return { ok: true };
   }
 
   async getGithubLogin(): Promise<string | null> {

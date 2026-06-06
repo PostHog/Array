@@ -3,7 +3,7 @@ import {
   baseComponents,
   defaultRemarkPlugins,
 } from "@features/editor/components/MarkdownRenderer";
-import { File, User, Warning } from "@phosphor-icons/react";
+import { File, Warning } from "@phosphor-icons/react";
 import { Text } from "@radix-ui/themes";
 import { unescapeXmlAttr } from "@utils/xml";
 import type { ReactNode } from "react";
@@ -12,97 +12,10 @@ import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 
 const MENTION_TAG_REGEX =
-  /<file\s+path="([^"]+)"\s*\/>|<(github_issue|github_pr)\s+number="([^"]+)"(?:\s+title="([^"]*)")?(?:\s+url="([^"]*)")?\s*\/>|<error_context\s+label="([^"]*)">[\s\S]*?<\/error_context>|<team_member\s+uuid="([^"]+)"\s+name="([^"]+)"\s*\/>/g;
+  /<file\s+path="([^"]+)"\s*\/>|<(github_issue|github_pr)\s+number="([^"]+)"(?:\s+title="([^"]*)")?(?:\s+url="([^"]*)")?\s*\/>|<error_context\s+label="([^"]*)">[\s\S]*?<\/error_context>/g;
 const MENTION_TAG_TEST =
-  /<(?:file\s+path|github_issue\s+number|github_pr\s+number|error_context\s+label|team_member\s+uuid)="[^"]+"/;
-const TEAM_MEMBER_TAG_REGEX =
-  /<team_member\s+uuid="([^"]+)"\s+name="([^"]+)"\s*\/>/g;
+  /<(?:file\s+path|github_issue\s+number|github_pr\s+number|error_context\s+label)="[^"]+"/;
 const SLASH_COMMAND_START = /^\/([a-zA-Z][\w-]*)(?=\s|$)/;
-
-export interface TeamMemberRef {
-  uuid: string;
-  name: string;
-  avatar?: string;
-}
-
-export function extractTeamMembers(content: string): TeamMemberRef[] {
-  const seen = new Set<string>();
-  const members: TeamMemberRef[] = [];
-  for (const match of content.matchAll(TEAM_MEMBER_TAG_REGEX)) {
-    const uuid = unescapeXmlAttr(match[1]);
-    if (seen.has(uuid)) continue;
-    seen.add(uuid);
-    members.push({
-      uuid,
-      name: unescapeXmlAttr(match[2]),
-      avatar: getTeamMemberAvatar(uuid),
-    });
-  }
-  return members;
-}
-
-// HACKATHON SHORTCUT — until we have a real /api/profiles endpoint, the
-// stub-org-member uuids are their emails. Map them to the small face avatars
-// from posthog.com/teams. Keep in sync with STUB_ORG_MEMBERS.
-interface StubMember {
-  name: string;
-  avatar: string;
-}
-const STUB_TEAM_MEMBERS: Record<string, StubMember> = {
-  "james@posthog.com": {
-    name: "James Hawkins",
-    avatar:
-      "https://res.cloudinary.com/dmukukwp6/image/upload/v1738943658/James_H_5cb4c53d9a.png",
-  },
-  "joe@posthog.com": {
-    name: "Joe Martin",
-    avatar:
-      "https://res.cloudinary.com/dmukukwp6/image/upload/v1688578142/joe_5c087079c2.png",
-  },
-  "charles@posthog.com": {
-    name: "Charles Cook",
-    avatar:
-      "https://res.cloudinary.com/dmukukwp6/image/upload/v1688579622/charles_525b6ac4e2.png",
-  },
-  "andy@posthog.com": {
-    name: "Andy Vandervell",
-    avatar:
-      "https://res.cloudinary.com/dmukukwp6/image/upload/v1695024176/andy_86a7232754.png",
-  },
-  "cleo@posthog.com": {
-    name: "Cleo Lant",
-    avatar:
-      "https://res.cloudinary.com/dmukukwp6/image/upload/v1761768467/Cleo_s_Portrait_1_e0d9ac23b6.png",
-  },
-};
-
-export function getTeamMemberAvatar(uuid: string): string | undefined {
-  return STUB_TEAM_MEMBERS[uuid.toLowerCase()]?.avatar;
-}
-
-export function getTeamMemberDisplay(uuid: string): {
-  name: string;
-  avatar?: string;
-} {
-  const entry = STUB_TEAM_MEMBERS[uuid.toLowerCase()];
-  if (entry) return entry;
-  // Fallback: derive a display name from email-style uuids.
-  const base = uuid.split("@")[0] ?? uuid;
-  const name = base.charAt(0).toUpperCase() + base.slice(1);
-  return { name };
-}
-
-export function listKnownTeamMembers(): Array<{
-  uuid: string;
-  name: string;
-  avatar: string;
-}> {
-  return Object.entries(STUB_TEAM_MEMBERS).map(([uuid, { name, avatar }]) => ({
-    uuid,
-    name,
-    avatar,
-  }));
-}
 
 const inlineComponents: Components = {
   ...baseComponents,
@@ -236,27 +149,6 @@ export function parseMentionTags(content: string): ReactNode[] {
           key={`error-ctx-${matchIndex}`}
           icon={<Warning size={12} />}
           label={unescapeXmlAttr(match[6])}
-        />,
-      );
-    } else if (match[8]) {
-      const uuid = unescapeXmlAttr(match[7]);
-      const name = unescapeXmlAttr(match[8]);
-      const avatar = getTeamMemberAvatar(uuid);
-      parts.push(
-        <MentionChip
-          key={`team-${matchIndex}`}
-          icon={
-            avatar ? (
-              <img
-                src={avatar}
-                alt=""
-                className="size-3.5 shrink-0 rounded-full object-cover"
-              />
-            ) : (
-              <User size={12} weight="fill" />
-            )
-          }
-          label={`@${name}`}
         />,
       );
     }

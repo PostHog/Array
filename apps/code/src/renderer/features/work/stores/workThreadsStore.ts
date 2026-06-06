@@ -3,14 +3,12 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 /**
- * HACKATHON SHORTCUT — local-machine record of task IDs the user created
- * from Work mode. This is the primary signal for "is this a Work thread?"
- * because relying on a server-side marker (`repository_config.work_thread`)
- * has proven unreliable in the current backend without proper schema work.
+ * Local-machine record of task IDs the user created from Work mode. This is the
+ * signal for "is this a Work thread?" — there is no cross-user thread sharing,
+ * so this single-machine list is the source of truth.
  *
- * Cross-user sharing still works via `repository_config.collaborators` — the
- * recipient's filter checks that array, not this local store, so they see
- * the thread without us having to sync this store across machines.
+ * FOLLOW-UP: when `Task.collaborators` (M2M + endpoint) ships, derive
+ * "is a Work thread" from the server and drop this local store entirely.
  */
 interface WorkThreadsStoreState {
   taskIds: string[];

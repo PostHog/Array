@@ -12,7 +12,6 @@ import { GithubActivityTile } from "./tiles/GithubActivityTile";
 import { HeadlineTile } from "./tiles/HeadlineTile";
 import { InsightTile } from "./tiles/InsightTile";
 import { NoteTile } from "./tiles/NoteTile";
-import { SkillOutputTile } from "./tiles/SkillOutputTile";
 import { TitleTile } from "./tiles/TitleTile";
 
 interface TileRendererProps {
@@ -108,17 +107,6 @@ export function TileRenderer({
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
           onUpdate={onUpdateFileTile}
-        />
-      );
-    case "skill_output":
-      return (
-        <SkillOutputTile
-          tile={tile}
-          currentGridSize={currentGridSize}
-          onRemove={onRemove}
-          onResizeGrid={onResizeGrid}
-          onApplyPending={onApplyPending}
-          onRejectPending={onRejectPending}
         />
       );
     case "note":

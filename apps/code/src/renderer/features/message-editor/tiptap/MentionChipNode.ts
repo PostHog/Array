@@ -11,8 +11,7 @@ export type ChipType =
   | "insight"
   | "feature_flag"
   | "github_issue"
-  | "github_pr"
-  | "team_member";
+  | "github_pr";
 
 export interface MentionChipAttrs {
   type: ChipType;

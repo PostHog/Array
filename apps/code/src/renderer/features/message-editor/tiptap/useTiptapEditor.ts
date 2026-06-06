@@ -40,7 +40,6 @@ export interface UseTiptapEditorOptions {
     fileMentions?: boolean;
     commands?: boolean;
     bashMode?: boolean;
-    teamMentions?: boolean;
   };
   clearOnSubmit?: boolean;
   getPromptHistory?: () => string[];
@@ -209,7 +208,6 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     fileMentions = true,
     commands = true,
     bashMode: enableBashMode = true,
-    teamMentions = false,
   } = capabilities;
 
   const callbackRefs = useRef({
@@ -258,7 +256,6 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
         placeholder,
         fileMentions,
         commands,
-        teamMentions,
       }),
       editable: !disabled,
       autofocus: autoFocus ? "end" : false,
@@ -530,7 +527,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
         callbackRefs.current.onBlur?.();
       },
     },
-    [sessionId, disabled, fileMentions, commands, teamMentions, placeholder],
+    [sessionId, disabled, fileMentions, commands, placeholder],
   );
 
   const draft = useDraftSync(editor, sessionId, context);
