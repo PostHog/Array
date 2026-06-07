@@ -34,15 +34,6 @@ export function validateWorkflow(draft: WorkflowDraft): ValidationResult {
           actionId: action.id,
         });
       }
-      if (action.skillId.trim() === "") {
-        diagnostics.push({
-          severity: "error",
-          code: "action_missing_skill",
-          message: `Action "${action.label}" in ${sid} has no skill selected`,
-          situationId: sid as SituationId,
-          actionId: action.id,
-        });
-      }
       if (action.prompt.trim() === "") {
         diagnostics.push({
           severity: "error",

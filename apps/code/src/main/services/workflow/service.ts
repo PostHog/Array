@@ -12,7 +12,6 @@ import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import type { AuthService } from "../auth/service";
-import { buildDefaultWorkflow } from "./default-workflow";
 
 const log = logger.scope("workflow");
 
@@ -21,8 +20,7 @@ const log = logger.scope("workflow");
  * (`/api/projects/:id/code_workflow/`). The server owns persistence, the
  * monotonic `version`, optimistic concurrency, validation, and the default
  * seed; this service is a thin authenticated client that emits
- * {@link WorkflowEvent.Changed} on save/reset. Offline, `get()` falls back to
- * the built-in default so the editor still renders.
+ * {@link WorkflowEvent.Changed} on save/reset.
  */
 @injectable()
 export class WorkflowService extends TypedEventEmitter<WorkflowEvents> {
@@ -35,9 +33,7 @@ export class WorkflowService extends TypedEventEmitter<WorkflowEvents> {
 
   async get(): Promise<WorkflowConfig> {
     const json = await this.request("GET", "code_workflow/");
-    const parsed = workflowConfig.safeParse(json);
-    if (parsed.success) return parsed.data;
-    return buildDefaultWorkflow();
+    return workflowConfig.parse(json);
   }
 
   async save(input: SaveInput): Promise<SaveResult> {

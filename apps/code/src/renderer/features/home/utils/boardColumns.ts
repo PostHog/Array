@@ -1,6 +1,5 @@
 import type { HomeWorkstream } from "@shared/types/home-snapshot";
 import { SITUATIONS, type SituationId } from "@shared/types/workflow";
-import { pickPrimarySituation } from "@shared/types/workflow-situations";
 
 export type HomeBoardColumn = {
   id: SituationId;
@@ -23,7 +22,7 @@ const BOARD_COLUMN_IDS: SituationId[] = [
 export function columnForWorkstream(
   workstream: HomeWorkstream,
 ): SituationId | null {
-  const primary = pickPrimarySituation(workstream.situations);
+  const primary = workstream.primarySituation;
   if (!primary) return null;
   // Push terminal/done situations off the active board.
   if (primary === "done") return null;

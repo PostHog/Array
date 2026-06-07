@@ -101,8 +101,9 @@ config endpoints and emits `workflow.onChanged`. Both subscriptions write back
 into the TanStack Query cache. A realtime push channel (SSE) is a future
 enhancement — the tRPC subscription contract wouldn't change.
 
-`WorkflowService.get()` falls back to the built-in default
-(`workflow/default-workflow.ts`) when offline so the config canvas still renders.
+`WorkflowService.get()` surfaces network/load failures rather than masking them:
+the config endpoint is the only source of truth, so when it can't be reached the
+canvas shows an offline/error state with a retry instead of fabricating a config.
 
 ---
 

@@ -98,8 +98,7 @@ export function SituationStation({ id, bindings }: Props) {
             selection?.kind === "action" &&
             selection.situationId === id &&
             selection.actionId === action.id;
-          const incomplete =
-            action.skillId.trim() === "" || action.prompt.trim() === "";
+          const incomplete = action.prompt.trim() === "";
           return (
             <button
               type="button"

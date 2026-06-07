@@ -57,18 +57,14 @@ export const workflowAction = z
   .object({
     id: z.string().min(1).max(64),
     label: z.string().min(1).max(120),
-    skillId: z.string().min(1),
+    skillId: z.string(),
     prompt: z.string().min(1).max(8_000),
-    // Quick actions run as cloud tasks, which require a model. Pin a model/adapter
-    // per action; unset falls back to the user's last-used / default.
     adapter: z.enum(["claude", "codex"]).optional(),
     model: z.string().min(1).optional(),
   })
   .strict();
 export type WorkflowAction = z.infer<typeof workflowAction>;
 
-// situation id → ordered actions. Every situation is present (at least an empty
-// array) so the renderer can iterate SITUATIONS without null checks.
 export const workflowBindings = z.record(situationId, z.array(workflowAction));
 export type WorkflowBindings = z.infer<typeof workflowBindings>;
 
@@ -92,7 +88,6 @@ export const validationDiagnostic = z
     severity: z.enum(["error", "warning"]),
     code: z.enum([
       "duplicate_action_id",
-      "action_missing_skill",
       "action_empty_prompt",
       "action_empty_label",
     ]),

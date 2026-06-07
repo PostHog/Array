@@ -1,7 +1,9 @@
 import { useWorkflow } from "@features/home/hooks/useWorkflow";
 import { useWorkflowEditorStore } from "@features/home/stores/workflowEditorStore";
+import { useConnectivity } from "@hooks/useConnectivity";
 import {
   ArrowCounterClockwise,
+  CloudSlash,
   FloppyDisk,
   Warning,
 } from "@phosphor-icons/react";
@@ -22,6 +24,7 @@ import { MAP_HEIGHT, MAP_WIDTH } from "./workflowMapLayout";
 export function ConfigMap() {
   const trpc = useTRPC();
   const { workflow, isLoading, error, refetch } = useWorkflow();
+  const { isOnline, isChecking, check } = useConnectivity();
   const draft = useWorkflowEditorStore((s) => s.draft);
   const dirty = useWorkflowEditorStore((s) => s.dirty);
   const diagnostics = useWorkflowEditorStore((s) => s.diagnostics);
@@ -49,32 +52,50 @@ export function ConfigMap() {
 
   const onSave = useCallback(async () => {
     if (!draft) return;
-    const result = await saveMutation.mutateAsync({
-      config: draft,
-      expectedVersion: draft.version,
-    });
-    if (result.status === "saved") {
-      toast.success("Workflow saved");
-      beginEdit(result.config);
-      return;
-    }
-    if (result.status === "conflict") {
-      toast.error("Workflow changed elsewhere", {
-        description:
-          "Another window saved a newer version. Reload to pick it up.",
+    try {
+      const result = await saveMutation.mutateAsync({
+        config: draft,
+        expectedVersion: draft.version,
       });
-      return;
-    }
-    if (result.status === "invalid") {
-      toast.error("Can't save — fix the errors below");
-      setDiagnostics(result.diagnostics ?? []);
+      if (result.status === "saved") {
+        toast.success("Workflow saved");
+        beginEdit(result.config);
+        return;
+      }
+      if (result.status === "conflict") {
+        toast.error("Workflow changed elsewhere", {
+          description:
+            "Another window saved a newer version. Reload to pick it up.",
+        });
+        return;
+      }
+      if (result.status === "invalid") {
+        toast.error("Can't save — fix the errors below");
+        setDiagnostics(result.diagnostics ?? []);
+      }
+    } catch (error) {
+      toast.error("Failed to save workflow", {
+        description:
+          error instanceof Error
+            ? error.message
+            : "Check your connection and try again.",
+      });
     }
   }, [draft, saveMutation, beginEdit, setDiagnostics]);
 
   const onReset = useCallback(async () => {
-    const fresh = await resetMutation.mutateAsync();
-    beginEdit(fresh);
-    toast.success("Reset to default workflow");
+    try {
+      const fresh = await resetMutation.mutateAsync();
+      beginEdit(fresh);
+      toast.success("Reset to default workflow");
+    } catch (error) {
+      toast.error("Failed to reset workflow", {
+        description:
+          error instanceof Error
+            ? error.message
+            : "Check your connection and try again.",
+      });
+    }
   }, [resetMutation, beginEdit]);
 
   useEffect(() => {
@@ -93,6 +114,7 @@ export function ConfigMap() {
   }, [dirty, onSave, clearSelection]);
 
   if (error) {
+    const offline = !isOnline;
     return (
       <Flex
         align="center"
@@ -101,10 +123,28 @@ export function ConfigMap() {
         gap="2"
         className="h-full p-6 text-center"
       >
-        <Text className="text-(--red-11) text-[12px]">
-          Couldn't load workflow: {error.message}
+        {offline ? (
+          <CloudSlash size={24} className="text-gray-9" />
+        ) : (
+          <Warning size={24} className="text-(--red-9)" />
+        )}
+        <Text className="font-medium text-[13px] text-gray-12">
+          {offline ? "You're offline" : "Couldn't load workflow"}
         </Text>
-        <Button size="xs" variant="primary" onClick={() => refetch()}>
+        <Text className="max-w-[300px] text-[11px] text-gray-10">
+          {offline
+            ? "Your workflow lives on PostHog. Reconnect to view and edit it."
+            : error.message}
+        </Text>
+        <Button
+          size="xs"
+          variant="primary"
+          disabled={isChecking}
+          onClick={() => {
+            void check();
+            void refetch();
+          }}
+        >
           Retry
         </Button>
       </Flex>

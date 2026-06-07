@@ -53,6 +53,9 @@ export const homeWorkstream = z
     pr: prSnapshot.nullable(),
     tasks: z.array(homeWorkstreamTask),
     situations: z.array(situationId),
+    // The board column to place this workstream in, picked server-side from
+    // `situations` by priority. Null when no situation applies.
+    primarySituation: situationId.nullable(),
     lastActivityAt: z.number(),
   })
   .strict();

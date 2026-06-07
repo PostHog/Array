@@ -81,8 +81,7 @@ export function SituationOverviewPanel({ situationId, actions }: Props) {
             </Text>
           ) : (
             actions.map((action) => {
-              const incomplete =
-                action.skillId.trim() === "" || action.prompt.trim() === "";
+              const incomplete = action.prompt.trim() === "";
               return (
                 <Flex
                   key={action.id}

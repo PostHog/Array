@@ -48,7 +48,9 @@ export class HomeService extends TypedEventEmitter<HomeEvents> {
   }
 
   async getSnapshot(): Promise<HomeSnapshot> {
-    return (await this.fetchSnapshot()) ?? EMPTY_HOME_SNAPSHOT;
+    const snapshot = (await this.fetchSnapshot()) ?? EMPTY_HOME_SNAPSHOT;
+    this.lastSerialized = JSON.stringify(snapshot);
+    return snapshot;
   }
 
   async refresh(): Promise<HomeSnapshot> {

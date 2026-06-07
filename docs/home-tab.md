@@ -298,7 +298,7 @@ The board renders one column per step/queue node in the order above; the list re
 
 Per R1 / R2 / R3: even though the canvas is the most visually expensive surface in the app, no business logic lives in the renderer.
 
-- **`WorkflowService` (main).** Thin authenticated client over `/code_workflow/*`: reads/writes the canonical `WorkflowConfig`, emits `workflow.onChanged`, and falls back to the built-in default (`workflow/default-workflow.ts`) when offline. Persistence, version bumps, validation, the default seed, and classification all live server-side in PostHog.
+- **`WorkflowService` (main).** Thin authenticated client over `/code_workflow/*`: reads/writes the canonical `WorkflowConfig` and emits `workflow.onChanged`. The config endpoint is the only source of truth — load failures propagate so the canvas can show an offline/error state, never a fabricated config. Persistence, version bumps, validation, the default seed, and classification all live server-side in PostHog.
 - **tRPC `workflow.*` router (main).** One-liners only: `workflow.get` (query, returns `WorkflowConfig`), `workflow.save` (mutation, `{ config, expectedVersion }` → new version or `ConflictError`), `workflow.resetToDefault` (mutation), `workflow.onChanged` (subscription, `WorkflowConfig` diff stream).
 - **`useWorkflow` (renderer hook).** Single `useQuery` against `workflow.get`, kept fresh by the subscription registrar in `features/home/subscriptions.ts` per R9. No multi-query orchestration in the hook.
 - **`workflowEditorStore` (renderer Zustand, R2-clean).** Holds *only* uncommitted edit state: `viewport: { x, y, zoom }`, `selectedNodeId`, `selectedEdgeId`, `draftConfig` (deep-clone of the persisted config the moment editing starts), `dirty`, `validationErrors` (fed from main on each draft change via `workflow.validateDraft`). The persisted `WorkflowConfig` is *not* in this store — it's the `useQuery` result. Save action is one `useMutation` call; the store's job ends there.
@@ -342,7 +342,7 @@ Electron app is a thin authenticated client. Full server design and wire shapes:
 persistence and no `gh` polling:
 
 - `services/home/service.ts` (`HomeService`) — polls `GET /code_home/` and emits `home.onSnapshotUpdated` when the snapshot changes.
-- `services/workflow/service.ts` (`WorkflowService`) — reads/writes the workflow config via `/code_workflow/*`, emits `workflow.onChanged`, and falls back to the built-in default (`workflow/default-workflow.ts`) when offline.
+- `services/workflow/service.ts` (`WorkflowService`) — reads/writes the workflow config via `/code_workflow/*` and emits `workflow.onChanged`; load failures propagate so the canvas shows an offline/error state rather than a fabricated config.
 - `services/auth/service.ts` (`authenticatedProjectFetch`) — the project-scoped authenticated fetch both services share.
 - tRPC routers (`trpc/routers/home.ts`, `trpc/routers/workflow.ts`) — one-liners over the two services: `home.getSnapshot` / `home.refresh` / `home.onSnapshotUpdated`, and `workflow.get` / `workflow.save` / `workflow.resetToDefault` / `workflow.onChanged`.
 
@@ -358,11 +358,11 @@ Wire shapes (Zod, the shared source of truth for the renderer types):
 - `hooks/useHomeSnapshot.ts`, `hooks/useWorkflow.ts` — one `useQuery` each, kept fresh by `subscriptions.ts` (registered once at boot per R9).
 - `stores/homeUiStore.ts` — UI state only (view mode, selection). `stores/workflowEditorStore.ts` — the uncommitted editor draft only.
 
-Situation classification is authoritative on the server. The renderer only
-picks which of the snapshot's `situations` to highlight — `pickPrimarySituation`
-in `shared/types/workflow-situations.ts` projects the set into a primary
-situation for board columns and accents. It never re-derives situations from PR
-state.
+Situation classification is authoritative on the server, including the
+`primarySituation` (the priority pick used for board column placement and
+accents) which arrives on each workstream in the snapshot. The renderer never
+re-derives situations or the primary from PR state — it reads `primarySituation`
+directly and uses `situations` only to render the extra chips.
 
 **Rules honoured:** R1 (main owns the client + orchestration), R2 (stores are UI state + subscription caches only), R4 (one `useQuery` per surface), R5 (main emits `workflow.onChanged`; Home reacts via its subscription registrar), R6 (Zod everywhere, inferred types), R9 (subscriptions registered once at boot), R10 (router one-liners).
 

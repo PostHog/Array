@@ -33,6 +33,8 @@ export function HomeWorkstreamRow({ workstream }: HomeWorkstreamRowProps) {
     accent,
     author,
     extraSituations,
+    generating,
+    needsPermission,
     primaryBound,
     restBound,
     primaryIsPr,
@@ -50,9 +52,6 @@ export function HomeWorkstreamRow({ workstream }: HomeWorkstreamRowProps) {
   const isSelected = useHomeUiStore(
     (s) => s.selectedWorkstreamId === workstream.id,
   );
-
-  const generating = workstream.tasks.some((t) => t.isGenerating);
-  const awaitingPermission = workstream.tasks.some((t) => t.needsPermission);
 
   const meta: MetaItem[] = [];
   if (workstream.repoName) {
@@ -83,7 +82,7 @@ export function HomeWorkstreamRow({ workstream }: HomeWorkstreamRowProps) {
       node: <CiIndicator status={pr.ciStatus} showLabel />,
     });
   }
-  if (awaitingPermission) {
+  if (needsPermission) {
     meta.push({
       key: "perm",
       node: (

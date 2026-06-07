@@ -1,4 +1,9 @@
-import { GitBranch, GitPullRequest, Sparkle } from "@phosphor-icons/react";
+import {
+  GitBranch,
+  GitPullRequest,
+  Sparkle,
+  Warning,
+} from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import type { HomeWorkstream } from "@shared/types/home-snapshot";
@@ -27,6 +32,7 @@ export function HomeWorkstreamCard({ workstream }: HomeWorkstreamCardProps) {
     accent,
     author,
     extraSituations,
+    needsPermission,
     primaryBound,
     restBound,
     primaryIsPr,
@@ -65,6 +71,17 @@ export function HomeWorkstreamCard({ workstream }: HomeWorkstreamCardProps) {
   }
   if (pr) {
     meta.push({ key: "pr", node: <span>#{pr.number}</span> });
+  }
+  if (needsPermission) {
+    meta.push({
+      key: "perm",
+      node: (
+        <span className="inline-flex items-center gap-1 text-(--amber-11)">
+          <Warning size={11} weight="fill" />
+          Awaiting permission
+        </span>
+      ),
+    });
   }
   meta.push({
     key: "time",

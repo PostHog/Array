@@ -25,10 +25,13 @@ import type { BoundAction } from "./useBoundActions";
 const log = logger.scope("home-quick-action");
 
 // The agent runs the bound skill when the prompt starts with `/<skill-id>`, so
-// embed it directly; the descriptive prompt follows as the instruction.
+// embed it directly; the descriptive prompt follows as the instruction. With no
+// skill bound, send the prompt on its own.
 function buildSkillPrompt(action: BoundAction): string {
-  const command = `/${action.skillId}`;
   const body = action.prompt.trim();
+  const skillId = action.skillId.trim();
+  if (!skillId) return body;
+  const command = `/${skillId}`;
   return body ? `${command}\n\n${body}` : command;
 }
 

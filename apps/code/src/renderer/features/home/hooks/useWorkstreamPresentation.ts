@@ -3,7 +3,6 @@ import { useTasks } from "@renderer/features/tasks/hooks/useTasks";
 import type { HomeWorkstream } from "@shared/types/home-snapshot";
 import type { PrSnapshot } from "@shared/types/pr-snapshot";
 import type { SituationId } from "@shared/types/workflow";
-import { pickPrimarySituation } from "@shared/types/workflow-situations";
 import { openUrlInBrowser } from "@utils/browser";
 import {
   SITUATION_VISUAL,
@@ -22,6 +21,9 @@ export interface WorkstreamPresentation {
   author: string | null;
   /** Situations to render as chips — primary + the calm `in_review` are omitted. */
   extraSituations: SituationId[];
+  generating: boolean;
+  /** A task in this workstream is blocked awaiting a permission response. */
+  needsPermission: boolean;
   primaryBound: BoundAction | null;
   restBound: BoundAction[];
   primaryIsPr: boolean;
@@ -49,12 +51,14 @@ export function useWorkstreamPresentation(
   const headTask = workstream.tasks[0];
   const title =
     pr?.title ?? headTask?.title ?? workstream.branch ?? "Workstream";
-  const primarySid = pickPrimarySituation(workstream.situations) ?? "working";
+  const primarySid = workstream.primarySituation ?? "working";
   const accent = situationCss(SITUATION_VISUAL[primarySid].color);
   const author = pr?.author && !pr.isCurrentUserAuthor ? pr.author : null;
   const extraSituations = workstream.situations.filter(
     (s) => s !== primarySid && s !== "in_review",
   );
+  const generating = workstream.tasks.some((t) => t.isGenerating);
+  const needsPermission = workstream.tasks.some((t) => t.needsPermission);
 
   const primaryBound = boundActions[0] ?? null;
   const restBound = primaryBound ? boundActions.slice(1) : [];
@@ -72,6 +76,8 @@ export function useWorkstreamPresentation(
     accent,
     author,
     extraSituations,
+    generating,
+    needsPermission,
     primaryBound,
     restBound,
     primaryIsPr,
