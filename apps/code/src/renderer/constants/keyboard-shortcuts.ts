@@ -58,6 +58,25 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     category: "general",
   },
   {
+    id: "zoom-in",
+    keys: "mod+=",
+    description: "Zoom in",
+    category: "general",
+    alternateKeys: "mod+shift+=",
+  },
+  {
+    id: "zoom-out",
+    keys: "mod+-",
+    description: "Zoom out",
+    category: "general",
+  },
+  {
+    id: "zoom-reset",
+    keys: "mod+0",
+    description: "Reset zoom",
+    category: "general",
+  },
+  {
     id: "shortcuts",
     keys: SHORTCUTS.SHORTCUTS_SHEET,
     description: "Show keyboard shortcuts",

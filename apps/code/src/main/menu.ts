@@ -16,6 +16,7 @@ import type { AuthService } from "./services/auth/service";
 import type { McpAppsService } from "./services/mcp-apps/service";
 import type { UIService } from "./services/ui/service";
 import type { UpdatesService } from "./services/updates/service";
+import type { ZoomService } from "./services/zoom/service";
 import { isDevBuild } from "./utils/env";
 import { getLogFilePath } from "./utils/logger";
 
@@ -308,9 +309,30 @@ function buildViewMenu(): MenuItemConstructorOptions {
       },
       { role: "toggleDevTools" },
       { type: "separator" },
-      { role: "resetZoom" },
-      { role: "zoomIn" },
-      { role: "zoomOut" },
+      // Accelerators are shown for discoverability but not registered here:
+      // the renderer owns the key handling (so it can preventDefault Chromium's
+      // built-in zoom and keep a single source of truth). Clicks still work.
+      {
+        label: "Zoom In",
+        accelerator: "CmdOrCtrl+Plus",
+        registerAccelerator: false,
+        click: () =>
+          container.get<ZoomService>(MAIN_TOKENS.ZoomService).zoomIn(),
+      },
+      {
+        label: "Zoom Out",
+        accelerator: "CmdOrCtrl+-",
+        registerAccelerator: false,
+        click: () =>
+          container.get<ZoomService>(MAIN_TOKENS.ZoomService).zoomOut(),
+      },
+      {
+        label: "Reset Zoom",
+        accelerator: "CmdOrCtrl+0",
+        registerAccelerator: false,
+        click: () =>
+          container.get<ZoomService>(MAIN_TOKENS.ZoomService).reset(),
+      },
       { type: "separator" },
       { role: "togglefullscreen" },
       { type: "separator" },

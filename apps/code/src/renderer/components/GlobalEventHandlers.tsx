@@ -9,6 +9,8 @@ import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { useFocusWorkspace } from "@features/workspace/hooks/useFocusWorkspace";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
+import { useZoomActions } from "@features/zoom/hooks/useZoom";
+import { resolveZoomIntent } from "@features/zoom/zoomKeybinding";
 import { useAppView } from "@hooks/useAppView";
 import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
@@ -53,6 +55,7 @@ export function GlobalEventHandlers({
   const getReviewMode = useReviewNavigationStore(
     (state) => state.getReviewMode,
   );
+  const { zoomIn, zoomOut, reset: resetZoom } = useZoomActions();
 
   const currentTaskId = view.type === "task-detail" ? view.taskId : undefined;
   const { workspace: currentWorkspace, handleToggleFocus } = useFocusWorkspace(
@@ -197,6 +200,23 @@ export function GlobalEventHandlers({
     globalOptions,
     [handleSwitchTask],
   );
+
+  // Zoom shortcuts (Ctrl/Cmd with +, -, 0). A raw keydown listener is used
+  // instead of react-hotkeys-hook because the latter mis-parses symbol keys.
+  // Key resolution lives in resolveZoomIntent (pure + unit-tested); the zoom is
+  // applied in the main process and preventDefault stops Chromium's native zoom.
+  useEffect(() => {
+    const handleZoomKey = (event: KeyboardEvent) => {
+      const intent = resolveZoomIntent(event);
+      if (!intent) return;
+      event.preventDefault();
+      if (intent === "in") zoomIn();
+      else if (intent === "out") zoomOut();
+      else resetZoom();
+    };
+    window.addEventListener("keydown", handleZoomKey);
+    return () => window.removeEventListener("keydown", handleZoomKey);
+  }, [zoomIn, zoomOut, resetZoom]);
 
   // Konami code confetti
   const konamiProgressRef = useRef(0);

@@ -35,4 +35,15 @@ export class ElectronMainWindow implements IMainWindow {
     app.on("browser-window-focus", listener);
     return () => app.off("browser-window-focus", listener);
   }
+
+  public getZoomLevel(): number {
+    return this.getBrowserWindow()?.webContents.getZoomLevel() ?? 0;
+  }
+
+  public setZoomLevel(level: number): void {
+    const webContents = this.getBrowserWindow()?.webContents;
+    if (webContents) {
+      webContents.setZoomLevel(level);
+    }
+  }
 }

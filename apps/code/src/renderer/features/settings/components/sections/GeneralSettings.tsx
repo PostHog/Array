@@ -9,6 +9,7 @@ import {
   type SendMessagesWith,
   useSettingsStore,
 } from "@features/settings/stores/settingsStore";
+import { ZoomControl } from "@features/zoom/components/ZoomControl";
 import { ArrowSquareOut } from "@phosphor-icons/react";
 import {
   Button,
@@ -271,6 +272,14 @@ export function GeneralSettings() {
             <Select.Item value="system">System</Select.Item>
           </Select.Content>
         </Select.Root>
+      </SettingRow>
+
+      <SettingRow
+        label="Interface zoom"
+        description="Scale the entire interface. Use Ctrl/⌘ with +, -, or 0 to adjust"
+        noBorder
+      >
+        <ZoomControl />
       </SettingRow>
 
       {/* Notifications */}

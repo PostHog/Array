@@ -70,6 +70,9 @@ import { UpdatesService } from "../services/updates/service";
 import { UsageMonitorService } from "../services/usage-monitor/service";
 import { WatcherRegistryService } from "../services/watcher-registry/service";
 import { WorkspaceService } from "../services/workspace/service";
+import type { ZoomPersistence } from "../services/zoom/schemas";
+import { ZoomService } from "../services/zoom/service";
+import { windowStateStore } from "../utils/store";
 import { MAIN_TOKENS } from "./tokens";
 
 export const container = new Container({
@@ -147,6 +150,12 @@ container.bind(MAIN_TOKENS.SleepService).to(SleepService);
 container.bind(MAIN_TOKENS.ShellService).to(ShellService);
 container.bind(MAIN_TOKENS.SlackIntegrationService).to(SlackIntegrationService);
 container.bind(MAIN_TOKENS.UIService).to(UIService);
+const zoomPersistence: ZoomPersistence = {
+  getZoomLevel: () => windowStateStore.get("zoomLevel", 0),
+  setZoomLevel: (level: number) => windowStateStore.set("zoomLevel", level),
+};
+container.bind(MAIN_TOKENS.ZoomPersistence).toConstantValue(zoomPersistence);
+container.bind(MAIN_TOKENS.ZoomService).to(ZoomService);
 container.bind(MAIN_TOKENS.UpdatesService).to(UpdatesService);
 container.bind(MAIN_TOKENS.UsageMonitorService).to(UsageMonitorService);
 container.bind(MAIN_TOKENS.TaskLinkService).to(TaskLinkService);

@@ -13,6 +13,7 @@ import { container } from "./di/container";
 import { MAIN_TOKENS } from "./di/tokens";
 import { buildApplicationMenu } from "./menu";
 import type { ElectronMainWindow } from "./platform-adapters/electron-main-window";
+import type { ZoomService } from "./services/zoom/service";
 import { trpcRouter } from "./trpc/router";
 import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
@@ -41,6 +42,7 @@ function getSavedWindowState(): WindowStateSchema {
     width: windowStateStore.get("width", 1200),
     height: windowStateStore.get("height", 600),
     isMaximized: windowStateStore.get("isMaximized", true),
+    zoomLevel: windowStateStore.get("zoomLevel", 0),
   };
 
   // Validate position is still on a connected display
@@ -252,6 +254,12 @@ export function createWindow(): void {
   setupEditableContextMenu(mainWindow);
   setupCrashLogging(mainWindow);
   buildApplicationMenu();
+
+  // The web contents reset zoom to 0 on every load, so re-apply the persisted
+  // level once loading completes.
+  mainWindow.webContents.on("did-finish-load", () => {
+    container.get<ZoomService>(MAIN_TOKENS.ZoomService).restore();
+  });
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
