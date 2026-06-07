@@ -27,6 +27,11 @@ export class PosthogNodeAnalytics implements IAnalytics {
       host: apiHost || "https://internal-c.posthog.com",
       enableExceptionAutocapture: true,
     });
+
+    // Mint the main-owned session id now, before the first window, so crash
+    // handlers can stamp $session_id even when the renderer crashes during
+    // startup (before it fetches the id to bootstrap posthog-js).
+    this.getOrCreateSessionId();
   }
 
   setCurrentUserId(userId: string | null): void {
@@ -107,8 +112,10 @@ export class PosthogNodeAnalytics implements IAnalytics {
     const distinctId = this.currentUserId || "anonymous-app-event";
     this.client.captureException(error, distinctId, {
       team: "posthog-code",
-      ...(this.sessionId ? { $session_id: this.sessionId } : {}),
       ...additionalProperties,
+      // System-owned fields last so callers can't overwrite them: main owns
+      // the session id used for crash->replay linking.
+      ...(this.sessionId ? { $session_id: this.sessionId } : {}),
       app_version: getAppVersion(),
     });
   }

@@ -93,4 +93,15 @@ describe("posthog-analytics", () => {
       }),
     );
   });
+
+  it("stamps the main-owned session id and ignores a caller override", () => {
+    posthogNodeAnalytics.captureException(new Error("boom"), {
+      $session_id: "spoofed",
+    });
+
+    const props = mockCaptureException.mock.calls.at(-1)?.[2];
+    expect(props.$session_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
 });
