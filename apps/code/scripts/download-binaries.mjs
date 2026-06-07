@@ -6,6 +6,7 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
+  realpathSync,
   rmSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -76,34 +77,46 @@ const BINARIES = [
   },
 ];
 
-const MAX_DOWNLOAD_ATTEMPTS = 5;
-const RETRIABLE_HTTP_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+export const MAX_DOWNLOAD_ATTEMPTS = 5;
+const RETRIABLE_HTTP_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
-async function downloadFile(url, destPath) {
+// Thrown for HTTP statuses that will never succeed on retry (e.g. 404), so the
+// loop fails fast on them while treating every other error as transient.
+class NonRetriableError extends Error {}
+
+function backoffDelayMs(attempt) {
+  const base = Math.min(1000 * 2 ** (attempt - 1), 15000);
+  // Full jitter so parallel CI runners hitting a throttled CDN don't retry in lockstep.
+  return Math.floor(base * (0.5 + Math.random() * 0.5));
+}
+
+export async function downloadFile(url, destPath) {
   console.log(`  Downloading: ${url}`);
   for (let attempt = 1; attempt <= MAX_DOWNLOAD_ATTEMPTS; attempt++) {
     try {
       const response = await fetch(url, { redirect: "follow" });
       if (!response.ok) {
-        const error = new Error(
-          `HTTP ${response.status}: ${response.statusText}`,
-        );
-        error.retriable = RETRIABLE_HTTP_STATUS.has(response.status);
-        throw error;
+        const message = `HTTP ${response.status}: ${response.statusText}`;
+        if (RETRIABLE_HTTP_STATUSES.has(response.status)) {
+          throw new Error(message);
+        }
+        throw new NonRetriableError(message);
       }
       await pipeline(response.body, createWriteStream(destPath));
       console.log(`  Saved to: ${destPath}`);
       return;
     } catch (error) {
       // Network-level failures (ECONNRESET, ETIMEDOUT, socket hang up) and
-      // stream errors carry no `retriable` flag; treat those as transient too.
-      const isLastAttempt = attempt === MAX_DOWNLOAD_ATTEMPTS;
-      if (error.retriable === false || isLastAttempt) {
+      // stream errors are transient; only a NonRetriableError fails fast.
+      if (
+        error instanceof NonRetriableError ||
+        attempt === MAX_DOWNLOAD_ATTEMPTS
+      ) {
         throw error;
       }
-      const delayMs = Math.min(1000 * 2 ** (attempt - 1), 15000);
+      const delayMs = backoffDelayMs(attempt);
       console.warn(
-        `  Attempt ${attempt}/${MAX_DOWNLOAD_ATTEMPTS} failed: ${error.message}. Retrying in ${delayMs / 1000}s...`,
+        `  Attempt ${attempt}/${MAX_DOWNLOAD_ATTEMPTS} failed: ${error.message}. Retrying in ${(delayMs / 1000).toFixed(1)}s...`,
       );
       await sleep(delayMs);
     }
@@ -181,7 +194,13 @@ async function main() {
   console.log("\nDone.");
 }
 
-main().catch((err) => {
-  console.error("\nFailed:", err.message);
-  process.exit(1);
-});
+// Only run when executed directly (e.g. via postinstall), not when imported by tests.
+const isEntrypoint =
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isEntrypoint) {
+  main().catch((err) => {
+    console.error("\nFailed:", err.message);
+    process.exit(1);
+  });
+}
