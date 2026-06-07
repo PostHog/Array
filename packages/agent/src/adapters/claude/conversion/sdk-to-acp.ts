@@ -792,8 +792,11 @@ export async function handleSystemMessage(
       // tool_call, so mark it failed with the rejection reason — otherwise the
       // client shows a tool call that silently never resolves.
       const reason = message.decision_reason ?? message.message;
+      // Route by the ACP session id (context) — the original tool_call was
+      // emitted under it, so the failed update must match or the client drops it
+      // and the tool call hangs unresolved.
       await client.sessionUpdate({
-        sessionId: message.session_id,
+        sessionId,
         update: {
           sessionUpdate: "tool_call_update",
           toolCallId: message.tool_use_id,

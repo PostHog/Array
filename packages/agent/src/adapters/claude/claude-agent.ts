@@ -623,15 +623,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               this.session.knownSlashCommands = collectKnownSlashCommands(
                 message.commands,
               );
+              const available = getAvailableSlashCommands(message.commands);
               await this.client.sessionUpdate({
                 sessionId: params.sessionId,
                 update: {
                   sessionUpdate: "available_commands_update",
-                  availableCommands: getAvailableSlashCommands(
-                    message.commands,
-                  ),
+                  availableCommands: available,
                 },
               });
+              // Keep the context-breakdown skills estimate in sync with the new
+              // command list (mirrors sendAvailableCommandsUpdate), so later
+              // usage breakdowns don't report stale skills context.
+              this.updateBreakdownCategory(
+                "skills",
+                estimateSkillsTokens(available),
+              );
               break;
             }
             if (message.subtype === "local_command_output") {
@@ -1047,8 +1053,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           case "tool_progress": {
             // Surface "still working" progress on a long-running tool call so
             // the client can show elapsed time instead of a stalled spinner.
+            // Route by the ACP session id (params.sessionId) like every other
+            // update in this loop — the client renders by ACP session, not the
+            // SDK's message.session_id.
             await this.client.sessionUpdate({
-              sessionId: message.session_id,
+              sessionId: params.sessionId,
               update: {
                 sessionUpdate: "tool_call_update",
                 toolCallId: message.tool_use_id,
@@ -1067,10 +1076,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           }
           case "rate_limit_event": {
             // Re-emit the current usage carrying the subscription rate-limit
-            // info so the client can warn before the limit bites.
+            // info so the client can warn before the limit bites. Route by the
+            // ACP session id (params.sessionId) like every other update here.
             if (lastAssistantTotalUsage !== null) {
               await this.client.sessionUpdate({
-                sessionId: message.session_id,
+                sessionId: params.sessionId,
                 update: {
                   sessionUpdate: "usage_update",
                   used: lastAssistantTotalUsage,
