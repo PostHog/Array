@@ -1464,7 +1464,7 @@ describe("AgentServer HTTP Mode", () => {
     });
 
     describe("PR body guidance (why context + brevity)", () => {
-      it("instructs Why, brevity, and a thread-link fallback when auto-creating a Slack PR", () => {
+      it("instructs Why and brevity (no thread link without a URL) when auto-creating a Slack PR", () => {
         process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
         try {
           const prompt = (
@@ -1477,10 +1477,8 @@ describe("AgentServer HTTP Mode", () => {
           // brevity
           expect(prompt).toContain("Keep the PR description brief");
           expect(prompt).toContain("do NOT enumerate every change");
-          // thread-link fallback when no concrete URL is known
-          expect(prompt).toContain(
-            "If the task started from a Slack thread, link to that thread.",
-          );
+          // no thread link is added when no concrete URL is available
+          expect(prompt).not.toContain("Slack thread");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }

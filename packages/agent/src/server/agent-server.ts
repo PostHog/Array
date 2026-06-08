@@ -1732,9 +1732,7 @@ we want:
 
     const threadLinkInstruction = slackThreadUrl
       ? ` Since this task started from a Slack thread, also link it: ${slackThreadUrl}.`
-      : isSlack
-        ? " If the task started from a Slack thread, link to that thread."
-        : "";
+      : "";
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.${threadLinkInstruction}`;
 
     if (prUrl) {
