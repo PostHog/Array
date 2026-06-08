@@ -1,5 +1,5 @@
 import { useDiffViewerStore } from "@features/code-editor/stores/diffViewerStore";
-import { useLinkedBranchPrUrl } from "@features/git-interaction/hooks/useLinkedBranchPrUrl";
+import { useTaskPrUrl } from "@features/git-interaction/hooks/useTaskPrUrl";
 import type { DiffStats } from "@features/git-interaction/utils/diffStats";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
 import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
@@ -72,10 +72,7 @@ export function useEffectiveDiffSource(taskId: string): EffectiveDiffSource {
   const hasLocalChanges = diffStats.filesChanged > 0;
   const branchSourceAvailable = !!linkedBranch && aheadOfDefault > 0;
 
-  const prUrl = useLinkedBranchPrUrl({
-    linkedBranch,
-    folderPath: workspace?.folderPath ?? null,
-  });
+  const prUrl = useTaskPrUrl(taskId, workspace?.mode === "cloud");
   const prSourceAvailable = !!prUrl;
 
   const repoSlug = repoInfo
