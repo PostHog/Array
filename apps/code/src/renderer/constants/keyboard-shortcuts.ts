@@ -37,6 +37,8 @@ export interface KeyboardShortcut {
   category: ShortcutCategory;
   context?: string;
   alternateKeys?: string;
+  /** Whether this shortcut's keybinding can be customized by the user. */
+  configurable?: boolean;
 }
 
 export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [

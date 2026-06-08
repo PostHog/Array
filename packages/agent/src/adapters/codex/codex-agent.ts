@@ -455,7 +455,15 @@ export class CodexAcpAgent extends BaseAcpAgent {
       this.applyStructuredOutput(params, meta),
       meta,
     );
-    const response = await this.codexConnection.loadSession(injectedParams);
+    // Suppress replayed session/update events during load so codex-acp's
+    // rollout re-stream isn't re-persisted (logs.ndjson + S3) or re-displayed.
+    this.sessionState.suppressReplay = true;
+    let response: LoadSessionResponse;
+    try {
+      response = await this.codexConnection.loadSession(injectedParams);
+    } finally {
+      this.sessionState.suppressReplay = false;
+    }
     response.configOptions = normalizeCodexConfigOptions(
       response.configOptions,
     );
@@ -506,8 +514,15 @@ export class CodexAcpAgent extends BaseAcpAgent {
       meta,
     );
 
-    // codex-acp doesn't support resume natively, use loadSession instead
-    const loadResponse = await this.codexConnection.loadSession(injectedParams);
+    // codex-acp doesn't support resume natively, use loadSession instead.
+    // Suppress the rollout replay so it isn't re-persisted or re-displayed.
+    this.sessionState.suppressReplay = true;
+    let loadResponse: LoadSessionResponse;
+    try {
+      loadResponse = await this.codexConnection.loadSession(injectedParams);
+    } finally {
+      this.sessionState.suppressReplay = false;
+    }
     loadResponse.configOptions = normalizeCodexConfigOptions(
       loadResponse.configOptions,
     );
@@ -899,11 +914,18 @@ export class CodexAcpAgent extends BaseAcpAgent {
       protocolVersion: 1,
     };
     await newConnection.initialize(initRequest);
-    await newConnection.loadSession({
-      sessionId: this.sessionId,
-      cwd: this.sessionState.cwd,
-      mcpServers,
-    });
+    // Suppress the rollout replay during rehydration so it isn't re-persisted
+    // or re-displayed. newConnection shares this.sessionState via its client.
+    this.sessionState.suppressReplay = true;
+    try {
+      await newConnection.loadSession({
+        sessionId: this.sessionId,
+        cwd: this.sessionState.cwd,
+        mcpServers,
+      });
+    } finally {
+      this.sessionState.suppressReplay = false;
+    }
 
     // Swap everything at once so closeSession/prompt/cancel target the new
     // subprocess going forward. Preserve sessionState (accumulatedUsage,

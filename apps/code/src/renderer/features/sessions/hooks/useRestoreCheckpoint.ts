@@ -1,3 +1,4 @@
+import { getSessionService } from "@features/sessions/service/service";
 import { sessionStoreSetters } from "@features/sessions/stores/sessionStore";
 import { trpcClient } from "@renderer/trpc";
 import { useCallback, useState } from "react";
@@ -30,7 +31,7 @@ export function useRestoreCheckpoint({
 
     setIsRestoring(true);
     try {
-      await trpcClient.checkpoint.restore.mutate({
+      const restoreResult = await trpcClient.checkpoint.restore.mutate({
         checkpointId: pendingCheckpointId,
         repoPath,
         taskRunId,
@@ -40,6 +41,15 @@ export function useRestoreCheckpoint({
           taskId,
           pendingCheckpointId,
         );
+        // Reconnect the agent, resuming the same Codex/Claude session so the
+        // agent has memory only up to the restored checkpoint.
+        getSessionService()
+          .restoreCheckpointReconnect(
+            taskId,
+            repoPath,
+            restoreResult?.restoredSessionId,
+          )
+          .catch(() => {});
       }
       toast.success("Checkpoint restored successfully");
       setDialogOpen(false);

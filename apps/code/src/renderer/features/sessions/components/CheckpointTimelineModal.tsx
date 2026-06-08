@@ -105,7 +105,7 @@ export function CheckpointTimelineModal({
               No checkpoints in this session yet.
             </Text>
           ) : (
-            <ScrollArea maxHeight="60vh">
+            <ScrollArea style={{ maxHeight: "60vh" }}>
               <Flex direction="column" gap="2" pr="2">
                 {entries.map((entry) => (
                   <CheckpointRow

@@ -1,4 +1,4 @@
-import fs, { mkdirSync, promises as fsPromises, symlinkSync } from "node:fs";
+import fs, { promises as fsPromises, mkdirSync, symlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
@@ -290,6 +290,13 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
 
   private sessions = new Map<string, ManagedSession>();
   private pendingPermissions = new Map<string, PendingPermission>();
+  /** taskRunIds that need force-refetch of JSONL on next reconnect (checkpoint restore). */
+  private checkpointRestoreTaskRunIds = new Set<string>();
+  /** Checkpoint notifications captured per taskRunId, in capture order. Survives session reconnect. */
+  private sessionCheckpoints = new Map<
+    string,
+    Array<{ checkpointId: string; ts: number; promptId: number | undefined }>
+  >();
   private mockNodeReady = false;
   private idleTimeouts = new Map<
     string,
@@ -762,6 +769,11 @@ When creating pull requests, add the following footer at the end of the PR descr
         if (adapter !== "codex") {
           const posthogAPI = agent.getPosthogAPI();
           if (posthogAPI) {
+            const forceRefetch =
+              this.checkpointRestoreTaskRunIds.has(taskRunId);
+            if (forceRefetch) {
+              this.checkpointRestoreTaskRunIds.delete(taskRunId);
+            }
             const hasSession = await hydrateSessionJsonl({
               sessionId: existingSessionId,
               cwd: repoPath,
@@ -770,6 +782,7 @@ When creating pull requests, add the following footer at the end of the PR descr
               permissionMode: config.permissionMode,
               posthogAPI,
               log,
+              forceRefetch,
             });
             if (!hasSession) {
               log.info(
@@ -784,6 +797,11 @@ When creating pull requests, add the following footer at the end of the PR descr
 
       if (isReconnect && config.sessionId) {
         const existingSessionId = config.sessionId;
+        log.info("Reconnecting with existing sessionId", {
+          taskId,
+          taskRunId,
+          sessionId: existingSessionId,
+        });
 
         // Both adapters implement resumeSession:
         // - Claude: delegates to SDK's resumeSession with JSONL hydration
@@ -997,12 +1015,104 @@ When creating pull requests, add the following footer at the end of the PR descr
     return this.sessions.get(taskRunId);
   }
 
-  getSessionInfo(
-    taskRunId: string,
-  ): { sessionId: string; repoPath: string } | undefined {
+  getSessionInfo(taskRunId: string):
+    | {
+        sessionId: string;
+        repoPath: string;
+        taskId: string;
+        apiHost: string;
+        projectId: number;
+        adapter: "claude" | "codex" | undefined;
+      }
+    | undefined {
     const session = this.sessions.get(taskRunId);
     if (!session?.config.sessionId) return undefined;
-    return { sessionId: session.config.sessionId, repoPath: session.repoPath };
+    return {
+      sessionId: session.config.sessionId,
+      repoPath: session.repoPath,
+      taskId: session.config.taskId,
+      apiHost: session.config.credentials.apiHost,
+      projectId: session.config.credentials.projectId,
+      adapter: session.config.adapter,
+    };
+  }
+
+  /**
+   * Re-emit stored checkpoint notifications through the SessionEvent channel.
+   * Called by the renderer after its subscription is set up so no events are lost.
+   */
+  replayCheckpoints(taskRunId: string): number {
+    const checkpoints = this.sessionCheckpoints.get(taskRunId) ?? [];
+    if (checkpoints.length === 0) return 0;
+
+    log.info("Replaying stored checkpoints via SessionEvent", {
+      taskRunId,
+      count: checkpoints.length,
+    });
+
+    for (const { checkpointId, ts, promptId } of checkpoints) {
+      this.emit(AgentServiceEvent.SessionEvent, {
+        taskRunId,
+        payload: {
+          type: "acp_message",
+          ts,
+          message: {
+            jsonrpc: "2.0" as const,
+            method: POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT,
+            // Mark as replay so renderer doesn't re-sync to S3
+            params: { checkpointId, promptId, replay: true },
+          },
+        },
+      });
+    }
+
+    return checkpoints.length;
+  }
+
+  /**
+   * Get the promptId for a checkpoint. Used when truncating S3 log so the
+   * backend can find the correct turn boundary by promptId.
+   */
+  getCheckpointPromptId(
+    taskRunId: string,
+    checkpointId: string,
+  ): number | undefined {
+    const checkpoints = this.sessionCheckpoints.get(taskRunId) ?? [];
+    const cp = checkpoints.find((c) => c.checkpointId === checkpointId);
+    return cp?.promptId;
+  }
+
+  /**
+   * Remove stored checkpoints that come AFTER the given checkpointId (inclusive
+   * of the target). Called after a restore so replayCheckpoints only re-emits
+   * the surviving checkpoints and not orphaned ones whose git refs were deleted.
+   */
+  truncateCheckpoints(taskRunId: string, keepUpToCheckpointId: string): number {
+    const checkpoints = this.sessionCheckpoints.get(taskRunId) ?? [];
+    const idx = checkpoints.findIndex(
+      (cp) => cp.checkpointId === keepUpToCheckpointId,
+    );
+    if (idx === -1) return 0;
+    this.sessionCheckpoints.set(taskRunId, checkpoints.slice(0, idx + 1));
+    log.info("Truncated stored checkpoints after restore", {
+      taskRunId,
+      keepUpTo: keepUpToCheckpointId,
+      kept: idx + 1,
+      removed: checkpoints.length - idx - 1,
+    });
+    return idx + 1;
+  }
+
+  /**
+   * Mark a taskRunId so the next reconnect forces JSONL re-hydration from S3
+   * instead of reusing an existing (stale) JSONL file. Called before cancelSession
+   * during checkpoint restore so hydrateSessionJsonl skips the "already exists" guard.
+   */
+  markCheckpointRestore(taskRunId: string): void {
+    this.checkpointRestoreTaskRunIds.add(taskRunId);
+    log.info("Marked taskRunId for force JSONL refetch on reconnect", {
+      taskRunId,
+    });
   }
 
   async setSessionConfigOption(
@@ -1275,6 +1385,10 @@ For git operations while detached:
       });
     };
 
+    // Track the most recent session/prompt request ID so the checkpoint
+    // notification can be tagged with the turn it belongs to.
+    let latestPromptId: number | undefined;
+
     const onAcpMessage = (message: unknown) => {
       const acpMessage: AcpMessage = {
         type: "acp_message",
@@ -1283,13 +1397,25 @@ For git operations while detached:
       };
       emitToRenderer(acpMessage);
 
+      // Track session/prompt request IDs for turn-tagging
+      const raw = message as { method?: string; id?: number };
+      if (raw.method === "session/prompt" && raw.id !== undefined) {
+        latestPromptId = raw.id;
+        log.debug("Tracked session/prompt id", { taskRunId, promptId: raw.id });
+      }
+
       // Inspect tool call updates for PR URLs and file activity
       this.handleToolCallUpdate(taskRunId, message as AcpMessage["message"]);
 
       // Capture a local git checkpoint when a turn completes.
       // Intercepted here (raw stream tap) rather than extNotification because
       // the ACP SDK does not reliably route _posthog/ notifications to that callback.
-      this.handleTurnCompleteForCheckpoint(taskRunId, message, emitToRenderer);
+      this.handleTurnCompleteForCheckpoint(
+        taskRunId,
+        message,
+        latestPromptId,
+        emitToRenderer,
+      );
     };
 
     const tappedReadable = createTappedReadableStream(
@@ -1749,10 +1875,12 @@ For git operations while detached:
   private handleTurnCompleteForCheckpoint(
     taskRunId: string,
     message: unknown,
+    promptId: number | undefined,
     emitToRenderer: (payload: unknown) => void,
   ): void {
     const msg = message as { method?: string };
-    if (!isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)) return;
+    if (!isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE))
+      return;
 
     const session = this.sessions.get(taskRunId);
     if (!session?.config.repoPath) {
@@ -1765,12 +1893,14 @@ For git operations while detached:
     log.info("TURN_COMPLETE in stream — capturing local checkpoint", {
       taskRunId,
       repoPath: session.config.repoPath,
+      promptId,
     });
 
     this.captureLocalCheckpoint(
       taskRunId,
       session.config.repoPath,
       session.config.sessionId,
+      promptId,
       emitToRenderer,
     ).catch((err) => {
       log.warn("Local checkpoint capture failed", {
@@ -1789,22 +1919,22 @@ For git operations while detached:
     taskRunId: string,
     repoPath: string,
     sessionId: string | undefined,
+    promptId: number | undefined,
     emitToRenderer: (payload: unknown) => void,
   ): Promise<void> {
     log.info("Capturing local checkpoint after turn", { taskRunId, repoPath });
 
     const saga = new CaptureCheckpointSaga();
-    let result: Awaited<ReturnType<typeof saga.execute>>;
-    try {
-      result = await saga.execute({ baseDir: repoPath });
-    } catch (err) {
+    const sagaResult = await saga.run({ baseDir: repoPath });
+    if (!sagaResult.success) {
       log.warn("CaptureCheckpointSaga failed — no checkpoint for this turn", {
         taskRunId,
-        error: err instanceof Error ? err.message : String(err),
+        error: sagaResult.error,
       });
       return;
     }
 
+    const result = sagaResult.data;
     log.info("Local checkpoint captured", {
       taskRunId,
       checkpointId: result.checkpointId,
@@ -1812,10 +1942,23 @@ For git operations while detached:
       branch: result.branch,
     });
 
+    // Persist mapping so we can re-inject on reconnect, with promptId for
+    // correct turn association regardless of when the notification arrives.
+    const ts = Date.now();
+    const existing = this.sessionCheckpoints.get(taskRunId) ?? [];
+    existing.push({ checkpointId: result.checkpointId, ts, promptId });
+    this.sessionCheckpoints.set(taskRunId, existing);
+    log.info("Stored checkpoint for reconnect replay", {
+      taskRunId,
+      checkpointId: result.checkpointId,
+      promptId,
+      totalStored: existing.length,
+    });
+
     const notification = {
       jsonrpc: "2.0" as const,
       method: POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT,
-      params: { checkpointId: result.checkpointId },
+      params: { checkpointId: result.checkpointId, promptId },
     };
 
     // Emit to renderer so the restore button activates on the completed turn
@@ -1843,10 +1986,13 @@ For git operations while detached:
           jsonlPath,
         });
       } catch (err) {
-        log.warn("Failed to append checkpoint to JSONL (restore may not survive reload)", {
-          taskRunId,
-          error: err instanceof Error ? err.message : String(err),
-        });
+        log.warn(
+          "Failed to append checkpoint to JSONL (restore may not survive reload)",
+          {
+            taskRunId,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        );
       }
     } else {
       log.warn("No sessionId yet — checkpoint not written to JSONL", {

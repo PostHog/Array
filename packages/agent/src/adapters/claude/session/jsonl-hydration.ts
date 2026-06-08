@@ -497,16 +497,28 @@ export async function hydrateSessionJsonl(params: {
   permissionMode?: string;
   posthogAPI: PostHogAPIClient;
   log: HydrationLog;
+  forceRefetch?: boolean;
 }): Promise<boolean> {
   const { posthogAPI, log } = params;
 
   try {
     const jsonlPath = getSessionJsonlPath(params.sessionId, params.cwd);
-    try {
-      await fs.access(jsonlPath);
-      return true;
-    } catch {
-      // File doesn't exist, proceed with hydration
+    if (!params.forceRefetch) {
+      try {
+        await fs.access(jsonlPath);
+        log.info("Session JSONL already exists, reusing without S3 fetch", {
+          sessionId: params.sessionId,
+          jsonlPath,
+        });
+        return true;
+      } catch {
+        // File doesn't exist, proceed with hydration
+      }
+    } else {
+      log.info(
+        "Force-refetching JSONL from S3 (checkpoint restore), skipping existing file check",
+        { sessionId: params.sessionId, jsonlPath },
+      );
     }
 
     const taskRun = await posthogAPI.getTaskRun(params.taskId, params.runId);

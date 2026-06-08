@@ -165,6 +165,12 @@ export function createCodexClient(
     },
 
     async sessionUpdate(params: SessionNotification): Promise<void> {
+      // During loadSession replay, codex-acp re-streams the entire rollout as
+      // session/update notifications. Forwarding them would re-persist history
+      // (logs.ndjson + S3) and re-fire structured-output callbacks. Drop them;
+      // post-load state is re-established by resetSessionState.
+      if (sessionState.suppressReplay) return;
+
       const update = params.update as Record<string, unknown> | undefined;
 
       if (

@@ -7,7 +7,7 @@ import { useSessionTaskId } from "@features/sessions/hooks/useSessionTaskId";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
 import type { FileItem } from "@hooks/useRepoFiles";
 import { useRepoFiles } from "@hooks/useRepoFiles";
-import { ArrowCounterClockwise, Check, Copy } from "@phosphor-icons/react";
+import { Check, Copy } from "@phosphor-icons/react";
 import { Box, Code, Flex, IconButton } from "@radix-ui/themes";
 import { memo, useCallback, useMemo, useState } from "react";
 import type { Components } from "react-markdown";
@@ -135,17 +135,12 @@ const agentComponents: Partial<Components> = {
 
 interface AgentMessageProps {
   content: string;
-  showRestoreButton?: boolean;
-  onRestoreCheckpoint?: () => void;
 }
 
 export const AgentMessage = memo(function AgentMessage({
   content,
-  showRestoreButton,
-  onRestoreCheckpoint,
 }: AgentMessageProps) {
   const [copied, setCopied] = useState(false);
-  const canRestore = !!onRestoreCheckpoint;
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(content);
@@ -174,26 +169,6 @@ export const AgentMessage = memo(function AgentMessage({
             {copied ? <Check size={14} /> : <Copy size={14} />}
           </IconButton>
         </Tooltip>
-        {showRestoreButton && (
-          <Tooltip
-            content={
-              canRestore
-                ? "Restore checkpoint"
-                : "No checkpoint available for this turn"
-            }
-          >
-            <IconButton
-              size="1"
-              variant="ghost"
-              color="gray"
-              onClick={canRestore ? onRestoreCheckpoint : undefined}
-              disabled={!canRestore}
-              aria-label="Restore checkpoint"
-            >
-              <ArrowCounterClockwise size={14} />
-            </IconButton>
-          </Tooltip>
-        )}
       </Flex>
     </Box>
   );

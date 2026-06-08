@@ -619,7 +619,28 @@ export class SessionService {
     }
 
     sessionStoreSetters.setSession(session);
+
     this.subscribeToChannel(taskRunId);
+
+    // Re-emit stored checkpoint notifications through the SessionEvent channel
+    // so restore buttons survive reconnects. Must be called AFTER subscribeToChannel
+    // so the subscription is active and the emitted events are not lost.
+    trpcClient.checkpoint.replayCheckpoints
+      .mutate({ taskRunId })
+      .then(({ count }) => {
+        if (count > 0) {
+          log.info("Checkpoint replay triggered after reconnect", {
+            taskRunId,
+            count,
+          });
+        }
+      })
+      .catch((err) => {
+        log.warn("Failed to replay checkpoints after reconnect", {
+          taskRunId,
+          error: err,
+        });
+      });
 
     try {
       const modeOpt = getConfigOptionByCategory(persistedConfigOptions, "mode");
@@ -647,6 +668,7 @@ export class SessionService {
         });
 
       const { customInstructions } = useSettingsStore.getState();
+
       const result = await trpcClient.agent.reconnect.mutate({
         taskId,
         taskRunId,
@@ -1401,6 +1423,56 @@ export class SessionService {
       });
 
       this.drainQueuedMessages(taskRunId, session);
+    }
+
+    // Sync GIT_CHECKPOINT notifications to S3 so truncate_log can find them
+    if (
+      "method" in msg &&
+      isNotification(msg.method, POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT)
+    ) {
+      const params = msg.params as {
+        checkpointId?: string;
+        promptId?: number;
+        replay?: boolean;
+      };
+      // Skip replayed checkpoints - they're already persisted and syncing them
+      // would undo S3 log truncation after a restore
+      if (params?.replay) {
+        log.debug("Skipping checkpoint sync (replayed)", {
+          taskRunId,
+          checkpointId: params.checkpointId,
+        });
+        return;
+      }
+      if (params?.checkpointId) {
+        const storedEntry: StoredLogEntry = {
+          type: "notification",
+          timestamp: new Date().toISOString(),
+          notification: msg as StoredLogEntry["notification"],
+        };
+        getAuthenticatedClient()
+          .then((client) => {
+            if (client) {
+              return client.appendTaskRunLog(session.taskId, taskRunId, [
+                storedEntry,
+              ]);
+            }
+            return undefined;
+          })
+          .then(() => {
+            log.info("Checkpoint synced to S3", {
+              taskRunId,
+              checkpointId: params.checkpointId,
+            });
+          })
+          .catch((error) => {
+            log.warn("Failed to sync checkpoint to S3", {
+              taskRunId,
+              checkpointId: params.checkpointId,
+              error,
+            });
+          });
+      }
     }
   }
 
@@ -2616,6 +2688,113 @@ export class SessionService {
   async resetSession(taskId: string, repoPath: string): Promise<void> {
     this.localRepoPaths.set(taskId, repoPath);
     await this.reconnectInPlace(taskId, repoPath, null);
+  }
+
+  /**
+   * Reconnect after a checkpoint restore without overwriting the renderer's
+   * already-truncated events or replaying S3 history.
+   *
+   * The normal reconnect path (reconnectToLocalSession) always overwrites
+   * session.events from the JSONL and then hydrates the agent from S3, which
+   * causes both the truncated conversation to disappear and all post-checkpoint
+   * turns to reappear.  This method:
+   *   1. Keeps the existing session.events untouched (truncated by the caller).
+   *   2. Cancels the old agent and re-subscribes.
+   *   3. Starts a FRESH agent session (sessionId=undefined) so codex-acp / claude
+   *      has no memory of turns after the restored checkpoint.
+   *   4. Disables the prompt input while reconnecting rather than showing a
+   *      full "Connecting to agent…" overlay.
+   */
+  async restoreCheckpointReconnect(
+    taskId: string,
+    repoPath: string,
+    restoredSessionId?: string | null,
+  ): Promise<void> {
+    this.localRepoPaths.set(taskId, repoPath);
+    const session = sessionStoreSetters.getSessionByTaskId(taskId);
+    if (!session || session.isCloud) return;
+
+    const { taskRunId, logUrl } = session;
+
+    // Block prompt input while reconnecting, but keep status=connected so
+    // the UI doesn't show a "Connecting to agent…" overlay.
+    sessionStoreSetters.updateSession(taskRunId, {
+      isPromptPending: true,
+      promptStartedAt: null,
+    });
+
+    try {
+      await trpcClient.agent.cancel.mutate({ sessionId: taskRunId });
+    } catch {
+      // expected if agent already exited
+    }
+    this.unsubscribeFromChannel(taskRunId);
+    this.subscribeToChannel(taskRunId);
+
+    // Do NOT call replayCheckpoints here — truncateEventsToCheckpoint already
+    // preserved the surviving checkpoints in session.events. Replaying would
+    // duplicate them.
+
+    const auth = await this.getAuthCredentials();
+    if (!auth) {
+      sessionStoreSetters.updateSession(taskRunId, {
+        status: "error",
+        isPromptPending: false,
+        errorMessage: "Authentication required. Please sign in.",
+      });
+      return;
+    }
+
+    const persistedConfigOptions = getPersistedConfigOptions(taskRunId);
+    const modeOpt = getConfigOptionByCategory(persistedConfigOptions, "mode");
+    const persistedMode =
+      modeOpt?.type === "select" ? String(modeOpt.currentValue) : undefined;
+    const { customInstructions } = useSettingsStore.getState();
+
+    log.info(
+      "restoreCheckpointReconnect: resuming with session from restore mutation",
+      {
+        taskRunId,
+        restoredSessionId,
+        willResumeSession: !!restoredSessionId,
+      },
+    );
+
+    try {
+      const result = await trpcClient.agent.reconnect.mutate({
+        taskId,
+        taskRunId,
+        repoPath,
+        apiHost: auth.apiHost,
+        projectId: auth.projectId,
+        logUrl,
+        sessionId: restoredSessionId ?? undefined,
+        adapter: session.adapter,
+        permissionMode: persistedMode,
+        customInstructions: customInstructions || undefined,
+      });
+
+      if (result) {
+        sessionStoreSetters.updateSession(taskRunId, {
+          status: "connected",
+          isPromptPending: false,
+        });
+      } else {
+        sessionStoreSetters.updateSession(taskRunId, {
+          status: "error",
+          isPromptPending: false,
+          errorMessage:
+            "Session could not resume after restore. Please retry or start a new session.",
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      sessionStoreSetters.updateSession(taskRunId, {
+        status: "error",
+        isPromptPending: false,
+        errorMessage: msg || "Failed to reconnect after restore.",
+      });
+    }
   }
 
   /**

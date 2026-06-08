@@ -214,6 +214,14 @@ export function ConversationView({
                   ? slackThreadUrl
                   : undefined
               }
+              onRestoreCheckpoint={
+                item.turnContext?.lastCheckpointId
+                  ? () =>
+                      restore.requestRestore(
+                        item.turnContext?.lastCheckpointId as string,
+                      )
+                  : undefined
+              }
             />
           );
         case "git_action":
@@ -226,16 +234,6 @@ export function ConversationView({
               update={item.update}
               turnContext={item.turnContext}
               thoughtComplete={item.thoughtComplete}
-              showRestoreButton={item.turnContext.turnComplete}
-              onRestoreCheckpoint={
-                item.turnContext.turnComplete &&
-                item.turnContext.lastCheckpointId
-                  ? () =>
-                      restore.requestRestore(
-                        item.turnContext.lastCheckpointId as string,
-                      )
-                  : undefined
-              }
             />
           );
         case "git_action_result":
@@ -364,14 +362,10 @@ const SessionUpdateRow = memo(function SessionUpdateRow({
   update,
   turnContext,
   thoughtComplete,
-  showRestoreButton,
-  onRestoreCheckpoint,
 }: {
   update: RenderItem;
   turnContext: TurnContext;
   thoughtComplete?: boolean;
-  showRestoreButton?: boolean;
-  onRestoreCheckpoint?: () => void;
 }) {
   return (
     <SessionUpdateView
@@ -381,8 +375,6 @@ const SessionUpdateRow = memo(function SessionUpdateRow({
       turnCancelled={turnContext.turnCancelled}
       turnComplete={turnContext.turnComplete}
       thoughtComplete={thoughtComplete}
-      showRestoreButton={showRestoreButton}
-      onRestoreCheckpoint={onRestoreCheckpoint}
     />
   );
 });

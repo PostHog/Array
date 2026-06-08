@@ -52,6 +52,7 @@ export function ToolCallBlock({
       childItems: childItemsMap ?? new Map(),
       turnCancelled: turnCancelled ?? false,
       turnComplete: turnComplete ?? false,
+      lastCheckpointId: null,
     };
     return (
       <Box className="pl-3">

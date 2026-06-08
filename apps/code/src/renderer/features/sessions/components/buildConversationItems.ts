@@ -39,6 +39,7 @@ export type ConversationItem =
       timestamp: number;
       attachments?: UserMessageAttachment[];
       pinToTop?: boolean;
+      turnContext?: TurnContext;
     }
   | { type: "git_action"; id: string; actionType: GitActionType }
   | { type: "skill_button_action"; id: string; buttonId: SkillButtonId }
@@ -100,6 +101,15 @@ interface ItemBuilder {
   items: ConversationItem[];
   currentTurn: TurnState | null;
   pendingPrompts: Map<number, TurnState>;
+  /** All turns ever created, keyed by promptId. Used to associate GIT_CHECKPOINT
+   *  notifications with the correct turn regardless of stream order. */
+  allTurns: Map<number, TurnState>;
+  /** GIT_CHECKPOINT notifications deferred until after all turns are built,
+   *  so allTurns.get(promptId) is guaranteed to find the right entry. */
+  pendingCheckpoints: Array<{
+    checkpointId: string;
+    promptId: number | undefined;
+  }>;
   shellExecutes: Map<string, { item: UserShellExecute; index: number }>;
   isCompacting: boolean;
   nextId: () => number;
@@ -116,6 +126,8 @@ function createItemBuilder(): ItemBuilder {
     items: [],
     currentTurn: null,
     pendingPrompts: new Map(),
+    allTurns: new Map(),
+    pendingCheckpoints: [],
     shellExecutes: new Map(),
     isCompacting: false,
     nextId: () => idCounter++,
@@ -208,6 +220,18 @@ export function buildConversationItems(
     b.currentTurn.context.turnComplete = true;
   }
 
+  // Post-pass: assign deferred checkpoints now that allTurns is fully populated.
+  for (const { checkpointId, promptId } of b.pendingCheckpoints) {
+    const targetTurn =
+      promptId !== undefined
+        ? (b.allTurns.get(promptId) ?? b.currentTurn)
+        : b.currentTurn;
+    if (targetTurn) {
+      targetTurn.lastCheckpointId = checkpointId;
+      targetTurn.context.lastCheckpointId = checkpointId;
+    }
+  }
+
   markThoughtCompletion(b.items);
 
   const lastTurnInfo: LastTurnInfo | null = b.currentTurn
@@ -266,6 +290,7 @@ function handlePromptRequest(
   };
 
   b.pendingPrompts.set(msg.id, b.currentTurn);
+  b.allTurns.set(msg.id, b.currentTurn);
 
   if (gitAction.isGitAction && gitAction.actionType) {
     b.items.push({
@@ -286,6 +311,7 @@ function handlePromptRequest(
       content: userContent,
       timestamp: ts,
       attachments: userPrompt.attachments,
+      turnContext: context,
     });
   }
 }
@@ -445,22 +471,15 @@ function handleNotification(
   }
 
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT)) {
-    const params = msg.params as { checkpointId?: string };
-    if (params?.checkpointId && b.currentTurn) {
-      b.currentTurn.lastCheckpointId = params.checkpointId;
-      b.currentTurn.context.lastCheckpointId = params.checkpointId;
-      console.log("[checkpoint] GIT_CHECKPOINT set on turn", {
-        checkpointId: params.checkpointId,
-        turnId: b.currentTurn.id,
-        turnComplete: b.currentTurn.isComplete,
-      });
-    } else {
-      console.warn("[checkpoint] GIT_CHECKPOINT received but could not be applied", {
-        checkpointId: params?.checkpointId,
-        hasCurrentTurn: !!b.currentTurn,
-        currentTurnId: b.currentTurn?.id,
-      });
-    }
+    const params = msg.params as { checkpointId?: string; promptId?: number };
+    if (!params?.checkpointId) return;
+    // Defer until after all turns are built so allTurns.get(promptId) always
+    // finds the right entry, even if this notification arrives before the
+    // session/prompt events (e.g. after a reconnect replay).
+    b.pendingCheckpoints.push({
+      checkpointId: params.checkpointId,
+      promptId: params.promptId,
+    });
     return;
   }
 }

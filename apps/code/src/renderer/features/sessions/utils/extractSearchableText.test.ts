@@ -26,6 +26,7 @@ describe("extractSearchableText", () => {
         childItems: new Map(),
         turnCancelled: false,
         turnComplete: true,
+        lastCheckpointId: null,
       },
     };
     expect(extractSearchableText(item)).toBe("agent reply");
@@ -44,6 +45,7 @@ describe("extractSearchableText", () => {
         childItems: new Map(),
         turnCancelled: false,
         turnComplete: true,
+        lastCheckpointId: null,
       },
     };
     expect(extractSearchableText(item)).toBe("thinking...");
@@ -66,6 +68,7 @@ describe("extractSearchableText", () => {
         childItems: new Map(),
         turnCancelled: false,
         turnComplete: true,
+        lastCheckpointId: null,
       },
     };
     expect(extractSearchableText(item)).toBe("");
@@ -85,6 +88,7 @@ describe("extractSearchableText", () => {
         childItems: new Map(),
         turnCancelled: false,
         turnComplete: true,
+        lastCheckpointId: null,
       },
     };
     expect(extractSearchableText(item)).toBe("");
@@ -104,6 +108,7 @@ describe("extractSearchableText", () => {
         childItems: new Map(),
         turnCancelled: false,
         turnComplete: true,
+        lastCheckpointId: null,
       },
     };
     expect(extractSearchableText(item)).toBe("console output");
@@ -123,6 +128,7 @@ describe("extractSearchableText", () => {
         childItems: new Map(),
         turnCancelled: false,
         turnComplete: true,
+        lastCheckpointId: null,
       },
     };
     expect(extractSearchableText(item)).toBe("something broke");
@@ -141,6 +147,7 @@ describe("extractSearchableText", () => {
         childItems: new Map(),
         turnCancelled: false,
         turnComplete: true,
+        lastCheckpointId: null,
       },
     };
     expect(extractSearchableText(item)).toBe("running");
@@ -162,6 +169,7 @@ describe("extractSearchableText", () => {
         childItems: new Map(),
         turnCancelled: false,
         turnComplete: true,
+        lastCheckpointId: null,
       },
     };
     expect(extractSearchableText(item)).toBe("task done");

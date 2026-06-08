@@ -22,6 +22,13 @@ export interface CodexSessionState {
   permissionMode: PermissionMode;
   taskRunId?: string;
   taskId?: string;
+  /**
+   * True while a loadSession replay is in flight. codex-acp re-streams the
+   * entire rollout as session/update notifications on load; forwarding them
+   * would re-persist history (logs.ndjson + S3) and re-fire callbacks. The
+   * codex-client drops session updates while this is set.
+   */
+  suppressReplay?: boolean;
 }
 
 export function createSessionState(
@@ -50,6 +57,7 @@ export function createSessionState(
     permissionMode: opts?.permissionMode ?? "auto",
     taskRunId: opts?.taskRunId,
     taskId: opts?.taskId,
+    suppressReplay: false,
   };
 }
 
@@ -85,6 +93,7 @@ export function resetSessionState(
   state.permissionMode = opts?.permissionMode ?? "auto";
   state.taskRunId = opts?.taskRunId;
   state.taskId = opts?.taskId;
+  state.suppressReplay = false;
 }
 
 export function resetUsage(state: CodexSessionState): void {

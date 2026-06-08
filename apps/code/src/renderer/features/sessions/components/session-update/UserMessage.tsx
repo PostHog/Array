@@ -1,6 +1,7 @@
 import { Tooltip } from "@components/ui/Tooltip";
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
 import {
+  ArrowCounterClockwise,
   CaretDown,
   CaretUp,
   Check,
@@ -30,6 +31,7 @@ interface UserMessageProps {
   sourceUrl?: string;
   attachments?: UserMessageAttachment[];
   animate?: boolean;
+  onRestoreCheckpoint?: () => void;
 }
 
 function formatTimestamp(ts: number): string {
@@ -49,6 +51,7 @@ export function UserMessage({
   sourceUrl,
   attachments = [],
   animate = true,
+  onRestoreCheckpoint,
 }: UserMessageProps) {
   const containsFileMentions = hasFileMentions(content);
   const showAttachmentChips = attachments.length > 0 && !containsFileMentions;
@@ -160,6 +163,19 @@ export function UserMessage({
             <span aria-hidden className="text-[11px] text-gray-10">
               {formatTimestamp(timestamp)}
             </span>
+          )}
+          {onRestoreCheckpoint && (
+            <Tooltip content="Restore checkpoint">
+              <IconButton
+                size="1"
+                variant="ghost"
+                color="gray"
+                onClick={onRestoreCheckpoint}
+                aria-label="Restore checkpoint"
+              >
+                <ArrowCounterClockwise size={12} />
+              </IconButton>
+            </Tooltip>
           )}
           <Tooltip content={copied ? "Copied!" : "Copy message"}>
             <IconButton

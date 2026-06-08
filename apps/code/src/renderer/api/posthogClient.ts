@@ -1410,6 +1410,34 @@ export class PostHogAPIClient {
     }
   }
 
+  async truncateTaskRunLog(
+    taskId: string,
+    runId: string,
+    checkpointId: string,
+  ): Promise<{
+    truncated: boolean;
+    original_line_count: number;
+    truncated_line_count: number;
+    orphaned_checkpoint_ids: string[];
+  }> {
+    const teamId = await this.getTeamId();
+    const url = `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/truncate_log/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(url),
+      path: url,
+      overrides: {
+        body: JSON.stringify({ checkpoint_id: checkpointId }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to truncate task run log: ${response.statusText}`,
+      );
+    }
+    return response.json();
+  }
+
   async getTaskRunSessionLogs(
     taskId: string,
     runId: string,

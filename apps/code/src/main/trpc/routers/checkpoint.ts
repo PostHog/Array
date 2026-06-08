@@ -1,6 +1,4 @@
-import fs from "node:fs/promises";
-import { isNotification, POSTHOG_NOTIFICATIONS } from "@posthog/agent";
-import { getSessionJsonlPath } from "@posthog/agent/adapters/claude/session/jsonl-hydration";
+import { truncateCodexRollout } from "@posthog/agent/adapters/codex/rollout";
 import { createGitClient } from "@posthog/git/client";
 import {
   deleteCheckpoint,
@@ -10,6 +8,8 @@ import { z } from "zod";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
 import type { AgentService } from "../../services/agent/service";
+import type { AuthService } from "../../services/auth/service";
+import type { LocalLogsService } from "../../services/local-logs/service";
 import { logger } from "../../utils/logger";
 import { publicProcedure, router } from "../trpc";
 
@@ -18,202 +18,223 @@ const log = logger.scope("checkpoint-router");
 const getAgentService = () =>
   container.get<AgentService>(MAIN_TOKENS.AgentService);
 
+const getAuthService = () =>
+  container.get<AuthService>(MAIN_TOKENS.AuthService);
+
+const getLocalLogsService = () =>
+  container.get<LocalLogsService>(MAIN_TOKENS.LocalLogsService);
+
 const restoreInput = z.object({
   checkpointId: z.string(),
   repoPath: z.string(),
   taskRunId: z.string().optional(),
 });
 
-const restoreOutput = z.object({
-  checkpointId: z.string(),
-  commit: z.string(),
-  head: z.string().nullable(),
-  branch: z.string().nullable(),
-});
-
-interface TruncateResult {
-  truncated: boolean;
-  /** Checkpoint IDs that appear in the discarded portion (orphaned refs). */
-  orphanedCheckpointIds: string[];
-}
-
-/**
- * Truncate a session JSONL file at the turn containing the given checkpoint.
- * Finds the `_posthog/git_checkpoint` entry with matching checkpointId, then
- * includes all entries up to (but not including) the next user message group.
- * Returns orphaned checkpoint IDs from the discarded lines for cleanup.
- */
-async function truncateSessionJsonl(
-  jsonlPath: string,
-  checkpointId: string,
-): Promise<TruncateResult> {
-  let content: string;
-  try {
-    content = await fs.readFile(jsonlPath, "utf-8");
-  } catch {
-    return { truncated: false, orphanedCheckpointIds: [] };
-  }
-
-  const lines = content.split("\n").filter((l) => l.trim());
-  let checkpointLineIdx = -1;
-
-  for (let i = 0; i < lines.length; i++) {
-    try {
-      const entry = JSON.parse(lines[i]);
-      const method = entry.notification?.method;
-      if (!method) continue;
-      if (!isNotification(method, POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT))
-        continue;
-      const params = entry.notification?.params;
-      if (params?.checkpointId === checkpointId) {
-        checkpointLineIdx = i;
-        break;
-      }
-    } catch {
-      // skip malformed lines
-    }
-  }
-
-  if (checkpointLineIdx === -1)
-    return { truncated: false, orphanedCheckpointIds: [] };
-
-  // Find the end of the current turn: scan forward for the next user message
-  // group start (a user_message_chunk after non-user content).
-  let cutoff = lines.length;
-  let inUserMessage = false;
-  let passedNonUser = false;
-
-  for (let i = checkpointLineIdx + 1; i < lines.length; i++) {
-    try {
-      const entry = JSON.parse(lines[i]);
-      const method = entry.notification?.method;
-      const params = entry.notification?.params as
-        | Record<string, unknown>
-        | undefined;
-
-      if (method === "session/update" && params?.update) {
-        const update = params.update as { sessionUpdate?: string };
-        const isUserChunk =
-          update.sessionUpdate === "user_message" ||
-          update.sessionUpdate === "user_message_chunk";
-
-        if (isUserChunk) {
-          if (passedNonUser && !inUserMessage) {
-            // Start of a new user message group — stop here
-            cutoff = i;
-            break;
-          }
-          inUserMessage = true;
-        } else {
-          if (inUserMessage) {
-            passedNonUser = true;
-          }
-          inUserMessage = false;
-        }
-      } else if (method === "session/prompt") {
-        // session/prompt request also marks a turn boundary
-        cutoff = i;
-        break;
-      } else {
-        if (inUserMessage) {
-          passedNonUser = true;
-        }
-        inUserMessage = false;
-      }
-    } catch {
-      // skip malformed
-    }
-  }
-
-  // Collect checkpoint IDs from the discarded lines so their refs can be cleaned up
-  const orphanedCheckpointIds: string[] = [];
-  for (let i = cutoff; i < lines.length; i++) {
-    try {
-      const entry = JSON.parse(lines[i]);
-      const method = entry.notification?.method;
-      if (!method) continue;
-      if (!isNotification(method, POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT))
-        continue;
-      const id = entry.notification?.params?.checkpointId;
-      if (id) orphanedCheckpointIds.push(id);
-    } catch {
-      // skip malformed
-    }
-  }
-
-  const truncatedLines = lines.slice(0, cutoff);
-  const tmpPath = `${jsonlPath}.tmp.${Date.now()}`;
-  await fs.writeFile(tmpPath, `${truncatedLines.join("\n")}\n`, "utf-8");
-  await fs.rename(tmpPath, jsonlPath);
-
-  log.info("Truncated session JSONL", {
-    checkpointId,
-    originalLines: lines.length,
-    truncatedLines: truncatedLines.length,
-    orphanedCheckpointIds,
-  });
-  return { truncated: true, orphanedCheckpointIds };
-}
-
 export const checkpointRouter = router({
-  restore: publicProcedure
-    .input(restoreInput)
-    .output(restoreOutput)
-    .mutation(async ({ input }) => {
-      // 1. Revert git files to checkpoint state
-      const saga = new RevertCheckpointSaga();
-      const result = await saga.run({
-        baseDir: input.repoPath,
-        checkpointId: input.checkpointId,
+  /**
+   * Re-emit stored checkpoint notifications for a session through the existing
+   * SessionEvent channel so the renderer receives them after a reconnect.
+   * Called after subscribeToChannel so events are not lost.
+   */
+  replayCheckpoints: publicProcedure
+    .input(z.object({ taskRunId: z.string() }))
+    .mutation(({ input }) => {
+      const agentService = getAgentService();
+      const count = agentService.replayCheckpoints(input.taskRunId);
+      log.info("replayCheckpoints mutation", {
+        taskRunId: input.taskRunId,
+        count,
       });
-      if (!result.success) {
-        throw new Error(result.error ?? "Failed to revert checkpoint");
-      }
+      return { count };
+    }),
 
-      // 2. Truncate agent's session JSONL, clean up orphaned checkpoint refs, and restart agent
-      if (input.taskRunId) {
-        try {
-          const agentService = getAgentService();
-          const info = agentService.getSessionInfo(input.taskRunId);
-          if (info) {
-            const jsonlPath = getSessionJsonlPath(
-              info.sessionId,
-              info.repoPath,
+  restore: publicProcedure.input(restoreInput).mutation(async ({ input }) => {
+    // 1. Revert git files to checkpoint state
+    const saga = new RevertCheckpointSaga();
+    const result = await saga.run({
+      baseDir: input.repoPath,
+      checkpointId: input.checkpointId,
+    });
+    if (!result.success) {
+      throw new Error(result.error ?? "Failed to revert checkpoint");
+    }
+
+    // 2. Truncate logs, clean up orphaned refs, and restart the agent.
+    // Everything here is non-fatal: git files were already reverted.
+    let restoredSessionId: string | undefined;
+    if (input.taskRunId) {
+      try {
+        const agentService = getAgentService();
+        const info = agentService.getSessionInfo(input.taskRunId);
+        if (info) {
+          restoredSessionId = info.sessionId;
+          let orphanedCheckpointIds: string[] = [];
+
+          // Truncate S3 + local cache BEFORE cancelling the session.
+          // cancelSession triggers reconnect; if reconnect reads local cache
+          // before truncation, the stale full history would be loaded.
+          try {
+            const authService = getAuthService();
+            const url = `${info.apiHost}/api/projects/${info.projectId}/tasks/${info.taskId}/runs/${input.taskRunId}/truncate_log/`;
+            const promptId = agentService.getCheckpointPromptId(
+              input.taskRunId,
+              input.checkpointId,
             );
-            const { truncated, orphanedCheckpointIds } =
-              await truncateSessionJsonl(jsonlPath, input.checkpointId);
-            if (truncated) {
-              // Delete git refs for checkpoints in the abandoned future turns
-              if (orphanedCheckpointIds.length > 0) {
-                const git = createGitClient(input.repoPath);
-                await Promise.all(
-                  orphanedCheckpointIds.map((id) =>
-                    deleteCheckpoint(git, id).catch(() => {}),
-                  ),
-                );
-                log.info("Deleted orphaned checkpoint refs", {
-                  orphanedCheckpointIds,
-                });
-              }
-              // Cancel the agent session — the renderer will automatically
-              // reconnect and resume from the truncated JSONL
-              await agentService.cancelSession(input.taskRunId);
-              log.info("Agent session cancelled for checkpoint restore", {
+            const response = await authService.authenticatedFetch(fetch, url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                checkpoint_id: input.checkpointId,
+                prompt_id: promptId,
+              }),
+            });
+            if (response.ok) {
+              const s3Result = (await response.json()) as {
+                truncated: boolean;
+                original_line_count: number;
+                truncated_line_count: number;
+                orphaned_checkpoint_ids: string[];
+              };
+              log.info("S3 log truncated after checkpoint restore", {
                 taskRunId: input.taskRunId,
                 checkpointId: input.checkpointId,
+                promptId,
+                truncated: s3Result.truncated,
+                originalLines: s3Result.original_line_count,
+                truncatedLines: s3Result.truncated_line_count,
+                orphanedCheckpoints: s3Result.orphaned_checkpoint_ids,
+              });
+              const localLogsSvc = getLocalLogsService();
+              if (s3Result.truncated) {
+                orphanedCheckpointIds = s3Result.orphaned_checkpoint_ids ?? [];
+                // Coarse trim: align local cache with the S3 line count.
+                await localLogsSvc
+                  .truncateLocalLogs(
+                    input.taskRunId,
+                    s3Result.truncated_line_count,
+                  )
+                  .catch((err: unknown) => {
+                    log.warn("Failed to truncate local log cache (non-fatal)", {
+                      taskRunId: input.taskRunId,
+                      error: err instanceof Error ? err.message : String(err),
+                    });
+                  });
+              } else {
+                log.warn(
+                  "S3 log was not truncated — will rely on client-side prompt-boundary trim",
+                  {
+                    taskRunId: input.taskRunId,
+                    checkpointId: input.checkpointId,
+                    promptId,
+                  },
+                );
+              }
+              // Fine-trim to the exact prompt boundary regardless of S3 result.
+              // This is the primary defense for Codex sessions (all events are
+              // type:"notification", so the backend may not find turn boundaries).
+              // Cancel any in-flight drain first so our write wins.
+              localLogsSvc.cancelPendingWrite(input.taskRunId);
+              await localLogsSvc
+                .truncateLocalLogsAtPromptBoundary(
+                  input.taskRunId,
+                  promptId ?? -1,
+                )
+                .catch((err: unknown) => {
+                  log.warn(
+                    "Failed to truncate local logs at prompt boundary (non-fatal)",
+                    {
+                      taskRunId: input.taskRunId,
+                      error: err instanceof Error ? err.message : String(err),
+                    },
+                  );
+                });
+            } else {
+              log.warn("S3 log truncation returned non-ok status", {
+                taskRunId: input.taskRunId,
+                status: response.status,
               });
             }
+          } catch (err) {
+            log.warn("Failed to truncate S3 log (non-fatal)", {
+              taskRunId: input.taskRunId,
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
-        } catch (err) {
-          // Non-fatal: git files were already reverted successfully.
-          // The UI will truncate its events regardless.
-          log.warn("Failed to truncate agent session", {
+
+          // Clean up git refs for orphaned checkpoints
+          if (orphanedCheckpointIds.length > 0) {
+            const git = createGitClient(input.repoPath);
+            await Promise.all(
+              orphanedCheckpointIds.map((id) =>
+                deleteCheckpoint(git, id).catch(() => {}),
+              ),
+            );
+            log.info("Deleted orphaned checkpoint refs", {
+              orphanedCheckpointIds,
+            });
+          }
+
+          // Trim in-memory checkpoints so replayCheckpoints only re-emits
+          // survivors — must happen before cancelSession triggers reconnect.
+          // Returns the number of surviving turns (used as keepTurns for Codex).
+          const survivingTurns = agentService.truncateCheckpoints(
+            input.taskRunId,
+            input.checkpointId,
+          );
+
+          // Mark this taskRunId so hydrateSessionJsonl force-refetches from
+          // the truncated S3 on reconnect, bypassing any stale existing JSONL.
+          // Must be set before cancelSession triggers the reconnect.
+          agentService.markCheckpointRestore(input.taskRunId);
+
+          // Cancel the session — renderer reconnects, hydrateSessionJsonl
+          // fetches the truncated S3 log and overwrites the stale JSONL.
+          await agentService.cancelSession(input.taskRunId);
+          log.info("Agent session cancelled for checkpoint restore", {
             taskRunId: input.taskRunId,
-            error: err instanceof Error ? err.message : String(err),
+            checkpointId: input.checkpointId,
+          });
+
+          // For Codex: truncate the on-disk rollout AFTER the subprocess is
+          // killed (file is now closed) so the resumed session has memory only
+          // up to the checkpoint. Must happen after cancelSession.
+          // survivingTurns=0 means the checkpoint wasn't found — skip truncation.
+          log.info("Checkpoint restore rollout decision", {
+            taskRunId: input.taskRunId,
+            adapter: info.adapter,
+            sessionId: info.sessionId,
+            survivingTurns,
+          });
+          if (info.adapter === "codex" && survivingTurns > 0) {
+            await truncateCodexRollout(
+              info.sessionId,
+              survivingTurns,
+              log,
+            ).catch((err: unknown) => {
+              log.warn("Failed to truncate codex rollout (non-fatal)", {
+                taskRunId: input.taskRunId,
+                sessionId: info.sessionId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
+          }
+        } else {
+          log.warn("No active session found for checkpoint restore", {
+            taskRunId: input.taskRunId,
           });
         }
+      } catch (err) {
+        log.warn("Failed to truncate agent session", {
+          taskRunId: input.taskRunId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
+    }
 
-      return result;
-    }),
+    log.info("Checkpoint restore complete", {
+      taskRunId: input.taskRunId,
+      restoredSessionId,
+    });
+    return { restoredSessionId };
+  }),
 });
