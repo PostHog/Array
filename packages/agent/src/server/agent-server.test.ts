@@ -1463,6 +1463,30 @@ describe("AgentServer HTTP Mode", () => {
       });
     });
 
+    describe("brevity", () => {
+      it("instructs keeping the PR description brief when auto-creating a PR", () => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+        const s = createServer();
+        const prompt = (
+          s as unknown as TestableServer
+        ).buildCloudSystemPrompt();
+        expect(prompt).toContain("gh pr create --draft");
+        expect(prompt).toContain("Keep the PR description brief");
+        expect(prompt).toContain("do NOT enumerate every change");
+        delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+      });
+
+      it("instructs keeping the PR description brief on the no-repository path", () => {
+        delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        const s = createServer({ repositoryPath: undefined });
+        const prompt = (
+          s as unknown as TestableServer
+        ).buildCloudSystemPrompt();
+        expect(prompt).toContain("open a draft pull request");
+        expect(prompt).toContain("Keep the PR description brief");
+      });
+    });
+
     describe("why context", () => {
       it("instructs adding a brief Why to the PR body when creating a PR", () => {
         process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
