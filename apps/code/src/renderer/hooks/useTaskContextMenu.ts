@@ -30,6 +30,7 @@ export function useTaskContextMenu() {
         isInCommandCenter?: boolean;
         hasEmptyCommandCenterCell?: boolean;
         onTogglePin?: () => void;
+        onArchive?: (taskId: string) => void;
         onArchivePrior?: (taskId: string) => void;
         onAddToCommandCenter?: () => void;
       },
@@ -45,6 +46,7 @@ export function useTaskContextMenu() {
         isInCommandCenter,
         hasEmptyCommandCenterCell,
         onTogglePin,
+        onArchive,
         onArchivePrior,
         onAddToCommandCenter,
       } = options ?? {};
@@ -77,7 +79,11 @@ export function useTaskContextMenu() {
             }
             break;
           case "archive":
-            await archiveTask({ taskId: task.id });
+            if (onArchive) {
+              onArchive(task.id);
+            } else {
+              await archiveTask({ taskId: task.id });
+            }
             break;
           case "archive-prior":
             await onArchivePrior?.(task.id);

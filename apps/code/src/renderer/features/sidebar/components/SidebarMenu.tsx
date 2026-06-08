@@ -31,12 +31,13 @@ import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
-import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePinnedTasks } from "../hooks/usePinnedTasks";
-import { useSidebarData } from "../hooks/useSidebarData";
+import { type TaskData, useSidebarData } from "../hooks/useSidebarData";
 import { useTaskViewed } from "../hooks/useTaskViewed";
 import { useSidebarStore } from "../stores/sidebarStore";
 import { useTaskSelectionStore } from "../stores/taskSelectionStore";
+import { ArchiveRunningTaskDialog } from "./ArchiveRunningTaskDialog";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
 import { McpServersItem } from "./items/McpServersItem";
@@ -47,6 +48,10 @@ import { TaskListView } from "./TaskListView";
 import { TasksHeader } from "./TasksHeader";
 
 const log = logger.scope("sidebar-menu");
+
+function isTaskActivelyRunning(task: TaskData): boolean {
+  return task.taskRunStatus === "in_progress" || task.isGenerating;
+}
 
 function SidebarMenuComponent() {
   const view = useAppView();
@@ -138,6 +143,11 @@ function SidebarMenuComponent() {
   };
 
   const queryClient = useQueryClient();
+
+  const [archiveConfirm, setArchiveConfirm] = useState<{
+    taskId: string;
+    taskTitle: string;
+  } | null>(null);
 
   const selectedTaskIds = useTaskSelectionStore((s) => s.selectedTaskIds);
   const toggleTaskSelection = useTaskSelectionStore(
@@ -286,6 +296,7 @@ function SidebarMenuComponent() {
         isInCommandCenter,
         hasEmptyCommandCenterCell,
         onTogglePin: () => togglePin(taskId),
+        onArchive: handleTaskArchive,
         onArchivePrior: handleArchivePrior,
         onAddToCommandCenter: () => {
           const cells = useCommandCenterStore.getState().cells;
@@ -301,9 +312,24 @@ function SidebarMenuComponent() {
     }
   };
 
-  const handleTaskArchive = async (taskId: string) => {
-    await archiveTask({ taskId });
-  };
+  const handleTaskArchive = useCallback(
+    (taskId: string) => {
+      const task = allSidebarTasks.find((t) => t.id === taskId);
+      if (task && isTaskActivelyRunning(task)) {
+        setArchiveConfirm({ taskId, taskTitle: task.title });
+        return;
+      }
+      void archiveTask({ taskId });
+    },
+    [allSidebarTasks, archiveTask],
+  );
+
+  const handleConfirmArchive = useCallback(() => {
+    if (!archiveConfirm) return;
+    const { taskId } = archiveConfirm;
+    setArchiveConfirm(null);
+    void archiveTask({ taskId });
+  }, [archiveConfirm, archiveTask]);
 
   const handleArchivePrior = useCallback(
     async (taskId: string) => {
@@ -448,6 +474,13 @@ function SidebarMenuComponent() {
           )}
         </Flex>
       </div>
+
+      <ArchiveRunningTaskDialog
+        open={archiveConfirm !== null}
+        taskTitle={archiveConfirm?.taskTitle ?? ""}
+        onConfirm={handleConfirmArchive}
+        onCancel={() => setArchiveConfirm(null)}
+      />
     </Box>
   );
 }
