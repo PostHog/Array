@@ -13,10 +13,12 @@ const head = (
   ""
 ).trim();
 
+const MAX_LISTED = 50;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const inline = (value) =>
   String(value ?? "")
     .replace(/\s+/g, " ")
+    .replace(/[`<>]/g, "")
     .trim();
 const byFileThenLine = (a, b) =>
   a.filePath === b.filePath
@@ -26,8 +28,8 @@ const byFileThenLine = (a, b) =>
       : 1;
 const fileLink = (file, line) =>
   slug && head
-    ? `[\`${file}:${line}\`](${server}/${slug}/blob/${head}/${file}#L${line})`
-    : `\`${file}:${line}\``;
+    ? `[\`${inline(file)}:${line}\`](${server}/${slug}/blob/${head}/${file}#L${line})`
+    : `\`${inline(file)}:${line}\``;
 
 let report;
 try {
@@ -70,12 +72,17 @@ if (!report) {
       .sort(byFileThenLine);
     if (errors.length) {
       lines.push("", "**Errors**", "");
-      for (const error of errors) {
+      for (const error of errors.slice(0, MAX_LISTED)) {
         const title = inline(error.title);
         lines.push(
-          `- ❌ ${fileLink(error.filePath, error.line)}${title ? ` ${title}` : ""} \`${error.rule}\``,
+          `- ❌ ${fileLink(error.filePath, error.line)}${title ? ` ${title}` : ""} \`${inline(error.rule)}\``,
         );
       }
+      if (errors.length > MAX_LISTED)
+        lines.push(
+          "",
+          `${plural(errors.length - MAX_LISTED, "more error")} not shown.`,
+        );
     }
 
     const warnings = diagnostics
@@ -88,21 +95,21 @@ if (!report) {
         "",
       );
       let currentFile = null;
-      for (const warning of warnings.slice(0, 50)) {
+      for (const warning of warnings.slice(0, MAX_LISTED)) {
         if (warning.filePath !== currentFile) {
           if (currentFile !== null) lines.push("");
-          lines.push(`**\`${warning.filePath}\`**`);
+          lines.push(`**\`${inline(warning.filePath)}\`**`);
           currentFile = warning.filePath;
         }
         const title = inline(warning.title);
         lines.push(
-          `- ⚠️ ${fileLink(warning.filePath, warning.line)}${title ? ` ${title}` : ""} \`${warning.rule}\``,
+          `- ⚠️ ${fileLink(warning.filePath, warning.line)}${title ? ` ${title}` : ""} \`${inline(warning.rule)}\``,
         );
       }
-      if (warnings.length > 50)
+      if (warnings.length > MAX_LISTED)
         lines.push(
           "",
-          `${plural(warnings.length - 50, "more warning")} not shown.`,
+          `${plural(warnings.length - MAX_LISTED, "more warning")} not shown.`,
         );
       lines.push("", "</details>");
     }
