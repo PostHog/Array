@@ -12,7 +12,6 @@ export interface IAnalytics {
    * host-captured crash events link to the same replay session.
    */
   getOrCreateSessionId(): string;
-  getSessionId(): string | null;
   resetUser(): void;
   captureException(
     error: unknown,

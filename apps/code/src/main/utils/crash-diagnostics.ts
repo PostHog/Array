@@ -47,3 +47,22 @@ export function collectMemorySnapshot(
     return undefined;
   }
 }
+
+/**
+ * Flatten a snapshot into scalar event properties for PostHog (which doesn't
+ * accept nested objects, so `byType` is serialized). Returns `{}` when no
+ * snapshot was collected, so it spreads cleanly into a crash event's props.
+ */
+export function flattenMemorySnapshot(
+  memory: MemorySnapshot | undefined,
+): Record<string, number | string> {
+  if (!memory) {
+    return {};
+  }
+  return {
+    memoryTotalWorkingSetKb: memory.totalWorkingSetKb,
+    memoryPeakWorkingSetKb: memory.peakWorkingSetKb,
+    memoryProcessCount: memory.processCount,
+    memoryByType: JSON.stringify(memory.byType),
+  };
+}

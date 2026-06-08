@@ -61,10 +61,6 @@ export class PosthogNodeAnalytics implements IAnalytics {
     return this.sessionId;
   }
 
-  getSessionId(): string | null {
-    return this.sessionId;
-  }
-
   track(eventName: string, properties?: AnalyticsProperties): void {
     if (!this.client) {
       return;

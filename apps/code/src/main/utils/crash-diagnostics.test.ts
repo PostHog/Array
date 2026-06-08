@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { collectMemorySnapshot } from "./crash-diagnostics";
+import {
+  collectMemorySnapshot,
+  flattenMemorySnapshot,
+} from "./crash-diagnostics";
 
 function metric(
   type: string,
@@ -44,5 +47,27 @@ describe("collectMemorySnapshot", () => {
         throw new Error("getAppMetrics unavailable");
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("flattenMemorySnapshot", () => {
+  it("flattens scalars and serializes byType for PostHog", () => {
+    expect(
+      flattenMemorySnapshot({
+        totalWorkingSetKb: 430,
+        peakWorkingSetKb: 500,
+        processCount: 4,
+        byType: { Browser: 100, Tab: 250, GPU: 80 },
+      }),
+    ).toEqual({
+      memoryTotalWorkingSetKb: 430,
+      memoryPeakWorkingSetKb: 500,
+      memoryProcessCount: 4,
+      memoryByType: '{"Browser":100,"Tab":250,"GPU":80}',
+    });
+  });
+
+  it("returns an empty object when no snapshot was collected", () => {
+    expect(flattenMemorySnapshot(undefined)).toEqual({});
   });
 });

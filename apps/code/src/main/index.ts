@@ -55,7 +55,10 @@ import {
   focusWorktreePaths,
 } from "./services/focus/desktop-adapters";
 import type { WorkspaceServerService } from "./services/workspace-server/service";
-import { collectMemorySnapshot } from "./utils/crash-diagnostics";
+import {
+  collectMemorySnapshot,
+  flattenMemorySnapshot,
+} from "./utils/crash-diagnostics";
 import { ensureClaudeConfigDir } from "./utils/env";
 import {
   getChromiumLogFilePath,
@@ -130,9 +133,18 @@ function isCrashLoop(): boolean {
   return recentCrashTimestamps.length >= CRASH_LOOP_THRESHOLD;
 }
 
+// Shared diagnostics attached to every crash event: uptime, the native chromium
+// log tail, and flattened memory. A hard OOM kills the renderer before it can
+// log, so the memory snapshot is often the only signal of what happened.
+function crashDiagnostics() {
+  return {
+    appUptimeSeconds: Math.round(process.uptime()),
+    chromiumLogTail: readChromiumLogTail(),
+    ...flattenMemorySnapshot(collectMemorySnapshot(() => app.getAppMetrics())),
+  };
+}
+
 app.on("render-process-gone", (_event, webContents, details) => {
-  const memory = collectMemorySnapshot(() => app.getAppMetrics());
-  const chromiumLogTail = readChromiumLogTail();
   const props = {
     source: "main",
     type: "render-process-gone",
@@ -141,18 +153,13 @@ app.on("render-process-gone", (_event, webContents, details) => {
     url: webContents.getURL(),
     title: webContents.getTitle(),
     webContentsId: String(webContents.id),
-    appUptimeSeconds: Math.round(process.uptime()),
-    memoryTotalWorkingSetKb: memory?.totalWorkingSetKb,
-    memoryPeakWorkingSetKb: memory?.peakWorkingSetKb,
-    memoryProcessCount: memory?.processCount,
-    memoryByType: memory ? JSON.stringify(memory.byType) : undefined,
+    ...crashDiagnostics(),
   };
-  log.error("Renderer process gone", { ...props, chromiumLogTail });
+  log.error("Renderer process gone", props);
   posthogNodeAnalytics.captureException(
     new Error(`Renderer process gone: ${details.reason}`),
     {
       ...props,
-      chromiumLogTail,
       // Stack is always this handler, so default grouping collapses every
       // renderer death into one issue. Split by reason instead.
       $exception_fingerprint: ["render-process-gone", details.reason],
@@ -188,8 +195,6 @@ app.on("render-process-gone", (_event, webContents, details) => {
 });
 
 app.on("child-process-gone", (_event, details) => {
-  const memory = collectMemorySnapshot(() => app.getAppMetrics());
-  const chromiumLogTail = readChromiumLogTail();
   const props = {
     source: "main",
     type: "child-process-gone",
@@ -198,18 +203,13 @@ app.on("child-process-gone", (_event, details) => {
     exitCode: String(details.exitCode),
     serviceName: details.serviceName ?? "",
     name: details.name ?? "",
-    appUptimeSeconds: Math.round(process.uptime()),
-    memoryTotalWorkingSetKb: memory?.totalWorkingSetKb,
-    memoryPeakWorkingSetKb: memory?.peakWorkingSetKb,
-    memoryProcessCount: memory?.processCount,
-    memoryByType: memory ? JSON.stringify(memory.byType) : undefined,
+    ...crashDiagnostics(),
   };
-  log.error("Child process gone", { ...props, chromiumLogTail });
+  log.error("Child process gone", props);
   posthogNodeAnalytics.captureException(
     new Error(`Child process gone (${details.type}): ${details.reason}`),
     {
       ...props,
-      chromiumLogTail,
       $exception_fingerprint: [
         "child-process-gone",
         details.type,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { uuidv7 } from "./uuidv7";
 
 const UUID_V7 =
@@ -25,5 +25,17 @@ describe("uuidv7", () => {
   it("is unique across rapid calls", () => {
     const ids = new Set(Array.from({ length: 1000 }, () => uuidv7()));
     expect(ids.size).toBe(1000);
+  });
+
+  it("writes the 48-bit millisecond timestamp big-endian into the first 6 bytes", () => {
+    vi.spyOn(Date, "now").mockReturnValue(0x0123456789ab);
+    try {
+      const id = uuidv7();
+      // bytes 0-5 of 0x0123456789ab -> "01234567" then "89ab"
+      expect(id.slice(0, 8)).toBe("01234567");
+      expect(id.slice(9, 13)).toBe("89ab");
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });
