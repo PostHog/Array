@@ -134,8 +134,6 @@ describe("resolveModelPreference", () => {
   });
 
   it("does not inherit a cross-family match from the context hint alone", () => {
-    // `opus[1m]` must not resolve to a sonnet entry purely because both share
-    // the "1m" hint token, with no real family token matching (#731).
     const sonnetOnly = [
       { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (1M context)" },
     ];
@@ -143,8 +141,6 @@ describe("resolveModelPreference", () => {
   });
 
   it("resolves a hinted alias to the right family when a family token matches", () => {
-    // Both entries carry the "1m" hint; the "opus" token must break the tie so
-    // the hint alone can't pull the match onto sonnet.
     const withHints = [
       { value: "claude-opus-4-8", name: "Claude Opus 4.8 (1M context)" },
       { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (1M context)" },

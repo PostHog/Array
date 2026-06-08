@@ -33,8 +33,6 @@ describe("stripMarkerTags", () => {
   });
 
   it("matches the nearest closing tag for a repeated opener", () => {
-    // Lazy match: the first opener pairs with the first close, swallowing the
-    // inner opener and its text, exactly like the original `[\s\S]*?` regex.
     expect(
       stripMarkerTags(
         "<command-name>outer<command-name>inner</command-name>trailing",
@@ -43,7 +41,6 @@ describe("stripMarkerTags", () => {
   });
 
   it("stays linear on pathological unclosed input", () => {
-    // A long run of openers with no close must not catastrophically backtrack.
     const input = `${"<command-name>".repeat(20000)}tail`;
     expect(stripMarkerTags(input)).toBe(input);
   });

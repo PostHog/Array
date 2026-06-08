@@ -182,9 +182,7 @@ describe("ClaudeAcpAgent.prompt — force-cancel backstop", () => {
     const { agent } = makeAgent();
     const sessionId = "s-wedged";
     const query = installFakeSession(agent, sessionId);
-    // Simulate a wedged SDK: interrupt() resolves but never makes next() yield.
     query.interrupt.mockImplementation(async () => {});
-    // Shrink the grace period so the backstop fires promptly under real timers.
     (agent as unknown as { forceCancelGraceMs: number }).forceCancelGraceMs = 5;
 
     const promptPromise = agent.prompt({
@@ -192,11 +190,8 @@ describe("ClaudeAcpAgent.prompt — force-cancel backstop", () => {
       prompt: [{ type: "text", text: "do something slow" }],
     });
 
-    // Let the loop reach `await query.next()`, which stays pending forever.
     await new Promise((resolve) => setImmediate(resolve));
 
-    // Arms the backstop and calls the (no-op) interrupt; the timer must drive
-    // the loop to return rather than hanging on the wedged next().
     await agent.cancel({ sessionId });
 
     const result = await promptPromise;
@@ -207,8 +202,6 @@ describe("ClaudeAcpAgent.prompt — force-cancel backstop", () => {
     const { agent } = makeAgent();
     const sessionId = "s-healthy";
     installFakeSession(agent, sessionId);
-    // Large grace so the test can only pass via the normal idle/done path, not
-    // the timer; the loop must clear the armed timer in its finally.
     (agent as unknown as { forceCancelGraceMs: number }).forceCancelGraceMs =
       50_000;
 
@@ -218,8 +211,6 @@ describe("ClaudeAcpAgent.prompt — force-cancel backstop", () => {
     });
     await new Promise((resolve) => setImmediate(resolve));
 
-    // The mock's default interrupt() resolves next() with done, so the loop
-    // returns through its normal path well before the 50s backstop.
     await agent.cancel({ sessionId });
 
     const result = await promptPromise;

@@ -70,15 +70,7 @@ export type Session = BaseSession & {
   /** Persists across prompt() calls so SDK-reported values survive turn boundaries */
   lastContextWindowSize?: number;
   promptRunning: boolean;
-  /** Per-turn signal the active prompt loop races `query.next()` against.
-   *  Aborted by the force-cancel backstop when the SDK wedges and never yields
-   *  after `interrupt()` (issue #680), forcing the loop to return "cancelled"
-   *  instead of hanging. Distinct from `abortController`: this only wakes the
-   *  loop; it does not touch the SDK query/subprocess. Undefined when no prompt
-   *  is actively consuming the query. */
   cancelController?: AbortController;
-  /** Pending grace-period timer that aborts `cancelController`. Cleared when the
-   *  loop returns normally so the backstop never fires after a clean cancel. */
   forceCancelTimer?: ReturnType<typeof setTimeout>;
   pendingMessages: Map<string, PendingMessage>;
   nextPendingOrder: number;

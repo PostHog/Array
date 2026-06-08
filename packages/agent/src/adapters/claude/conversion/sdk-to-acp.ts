@@ -190,11 +190,6 @@ function handleToolUseChunk(
   }
 
   if (!alreadyCached && ctx.registerHooks !== false) {
-    // Capture what the hook needs in the closure rather than re-reading the
-    // cache when it fires. The cache entry is pruned at tool_result time, and a
-    // PostToolUse hook can fire after that, so closing over the name and bash
-    // command keeps the diff working without depending on (or pinning) the
-    // cache entry's lifetime.
     const toolName = chunk.name;
     const bashCommand = bashCommandFromToolUse(chunk);
     registerHookCallback(chunk.id, {
@@ -344,10 +339,6 @@ function handleToolResultChunk(
     return [];
   }
 
-  // The tool_use is fully resolved now — drop it so a long-running session
-  // doesn't retain every tool call for its whole lifetime. Everything below uses
-  // the captured `toolUse` local, and the PostToolUse hook closes over the tool
-  // name/bash command, so pruning here is safe regardless of hook/result order.
   delete ctx.toolUseCache[chunk.tool_use_id];
 
   if (
@@ -779,22 +770,12 @@ export async function handleSystemMessage(
       break;
     }
     case "mirror_error":
-      // The SDK failed to persist session history (append rejected/timed out
-      // after retry) — potential data loss on resume the user should know about
-      // rather than a silent gap. Log it; no user-facing chunk.
       logger.error(
         `Session ${sessionId}: failed to persist history: ${message.error}`,
       );
       break;
     case "permission_denied": {
-      // A tool call was auto-denied (by a rule, the classifier, dontAsk mode,
-      // etc.) before running. The tool_use block was already emitted as a
-      // tool_call, so mark it failed with the rejection reason — otherwise the
-      // client shows a tool call that silently never resolves.
       const reason = message.decision_reason ?? message.message;
-      // Route by the ACP session id (context) — the original tool_call was
-      // emitted under it, so the failed update must match or the client drops it
-      // and the tool call hangs unresolved.
       await client.sessionUpdate({
         sessionId,
         update: {
@@ -1006,10 +987,6 @@ const LOCAL_COMMAND_MARKERS = [
   "local-command-stderr",
 ].map((tag) => ({ open: `<${tag}>`, close: `</${tag}>` }));
 
-// Single-pass scanner that removes each `<tag>…</tag>` marker (matching the
-// nearest closing tag of the same name, like a lazy regex would) without the
-// catastrophic-backtracking risk of `[\s\S]*?` over pathological input.
-// Exported for unit testing.
 export function stripMarkerTags(text: string): string {
   const dead = new Set<string>();
   let result = "";
@@ -1027,9 +1004,6 @@ export function stripMarkerTags(text: string): string {
           i = copiedUpTo = end + marker.close.length;
           continue;
         }
-        // No closing marker remains anywhere ahead, and `indexOf` only ever
-        // searches forward from here on, so stop treating this tag as an
-        // opener — that avoids rescanning the tail for it on every match.
         dead.add(marker.open);
       }
     }

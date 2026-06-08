@@ -134,15 +134,6 @@ import type {
 
 const SESSION_VALIDATION_TIMEOUT_MS = 30_000;
 
-/** Grace period after `session/cancel` before the adapter forces a wedged
- *  prompt loop to return "cancelled". `query.interrupt()` normally makes the SDK
- *  yield a trailing idle within milliseconds and the loop returns through its
- *  usual path, so this timer is armed and cleared (never fired) on healthy
- *  cancels. It only trips when the SDK is genuinely wedged (e.g. a
- *  `TaskOutput { block: true }` poll against a hung background task — issue
- *  #680) and never yields. Deliberately loose: an "obviously stuck" ceiling,
- *  not a guess at interrupt latency, so it can't pre-empt a slow-but-healthy
- *  interrupt. */
 const DEFAULT_FORCE_CANCEL_GRACE_MS = 30_000;
 
 const MAX_TITLE_LENGTH = 256;
@@ -199,15 +190,6 @@ function shouldEmitRawMessage(
   );
 }
 
-/** Fetch the SDK's authoritative context-window occupancy via the
- *  `getContextUsage` control request. Unlike the per-message API usage numbers
- *  (which only count message tokens), `totalTokens` includes the system prompt,
- *  tool schemas, MCP tools, and memory-file overhead — the real occupancy the
- *  user sees. Returns `null` on any control-request failure.
- *
- *  We deliberately do NOT use this response's window fields for `size`: they
- *  have been observed to under-report extended (1M) context windows, so the
- *  window keeps coming from the gateway / model heuristic. */
 async function fetchContextUsedTokens(
   sdkQuery: Query,
   logger: Logger,
@@ -236,9 +218,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   toolUseStreamCache: ToolUseStreamCache;
   backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
-  /** Grace period before a `session/cancel` forces a wedged prompt loop to
-   *  return "cancelled". See {@link DEFAULT_FORCE_CANCEL_GRACE_MS}. Mutable so
-   *  tests can shrink it. */
   forceCancelGraceMs: number = DEFAULT_FORCE_CANCEL_GRACE_MS;
   private options?: ClaudeAcpAgentOptions;
   private enrichment?: Enrichment;
@@ -481,14 +460,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     await this.broadcastUserMessage(params);
 
     this.session.promptRunning = true;
-    // Wake-up channel so cancel() can force this loop to return "cancelled" even
-    // when query.next() is wedged and never yields again (issue #680). The
-    // force-cancel backstop armed in interrupt() aborts this controller.
     const cancelController = new AbortController();
     this.session.cancelController = cancelController;
-    // Resolves when the backstop aborts the controller. Named distinctly from
-    // the `cancelled` boolean above (the queue-handoff result) to avoid two
-    // variables named `cancelled` in this method.
     const cancelWake = new Promise<void>((resolve) => {
       cancelController.signal.addEventListener("abort", () => resolve(), {
         once: true,
@@ -497,10 +470,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     let handedOff = false;
     let errored = false;
     let lastAssistantTotalUsage: number | null = null;
-    // When a streaming classifier refuses a turn, the assistant message carries
-    // stop_reason "refusal" and structured stop_details. We capture the
-    // human-readable explanation here so the terminal `result` can surface it to
-    // the user (the refused assistant message itself usually has no content).
     let lastRefusalExplanation: string | null = null;
     let lastStreamUsage = {
       input_tokens: 0,
@@ -550,11 +519,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         const nextMessage = this.session.query.next();
         const next = await Promise.race([nextMessage, cancelWake]);
         if (cancelController.signal.aborted) {
-          // The SDK never yielded after interrupt() (e.g. a wedged TaskOutput
-          // block). Abandon the in-flight next(); log any later rejection (an
-          // auth/process error the SDK threw at cancel time would otherwise be
-          // lost) but swallow it so it can't surface as an unhandled rejection,
-          // then honor the cancel per the ACP contract.
           void nextMessage.catch((err) =>
             this.logger.warn("in-flight query.next() rejected after cancel", {
               sessionId: params.sessionId,
@@ -598,22 +562,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         switch (message.type) {
           case "system":
             if (message.subtype === "compact_boundary") {
-              // Refresh the displayed usage immediately so the client doesn't
-              // keep showing the stale pre-compaction size right after the user
-              // sees "Compacting completed". Prefer the SDK's authoritative
-              // post-compaction `used` via getContextUsage — it reflects the
-              // real retained context (system prompt + tools + surviving
-              // messages), which per-message API usage can't give us until the
-              // next turn. Fall back to 0 on failure: directionally correct
-              // (context just dropped) and replaced within seconds by the next
-              // result. `size` keeps coming from the gateway-learned window
-              // (getContextUsage under-reports extended 1M windows).
-              // Race the control request against the force-cancel wake: the
-              // loop only observes cancelWake at its top, so a wedged
-              // getContextUsage() awaited here would otherwise re-introduce the
-              // exact hang the backstop exists to break (issue #680). On a
-              // forced cancel usedTokens is null and the next iteration returns
-              // "cancelled".
               const usedTokens = await Promise.race([
                 fetchContextUsedTokens(this.session.query, this.logger),
                 cancelWake.then(() => null),
@@ -628,15 +576,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                   size: lastContextWindowSize,
                 },
               });
-              // No break: intentionally falls through to handleSystemMessage so
-              // the COMPACT_BOUNDARY ext notification still fires.
             }
             if (message.subtype === "commands_changed") {
-              // Mid-session command-list change (e.g. skills discovered as the
-              // agent works in a subdirectory). Push the new list straight from
-              // the message rather than re-querying (supportedCommands() only
-              // ever reflects the init list), and refresh the known-commands
-              // gate used to flag unsupported slash commands.
               this.session.knownSlashCommands = collectKnownSlashCommands(
                 message.commands,
               );
@@ -648,9 +589,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                   availableCommands: available,
                 },
               });
-              // Keep the context-breakdown skills estimate in sync with the new
-              // command list (mirrors sendAvailableCommandsUpdate), so later
-              // usage breakdowns don't report stale skills context.
               this.updateBreakdownCategory(
                 "skills",
                 estimateSkillsTokens(available),
@@ -871,12 +809,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 this.session.accumulatedUsage.cachedWriteTokens,
             };
 
-            // A refusal can arrive on any result subtype (and may even set
-            // is_error), so handle it before handleResultMessage — otherwise the
-            // is_error path would surface it as an internal error. The refused
-            // assistant message carries no visible content, so surface the
-            // classifier's explanation (when available) and report ACP's
-            // dedicated `refusal` stop reason.
             if (
               (message as { stop_reason?: string }).stop_reason === "refusal"
             ) {
@@ -1009,10 +941,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               break;
             }
 
-            // Capture a refusal explanation from the assistant message so the
-            // terminal `result` can surface it (the refused message itself has
-            // no visible content). stop_reason/stop_details live on the inner
-            // Anthropic message; read them via cast like the usage block below.
             if (message.type === "assistant") {
               const inner = message.message as unknown as {
                 stop_reason?: string | null;
@@ -1068,11 +996,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           }
 
           case "tool_progress": {
-            // Surface "still working" progress on a long-running tool call so
-            // the client can show elapsed time instead of a stalled spinner.
-            // Route by the ACP session id (params.sessionId) like every other
-            // update in this loop — the client renders by ACP session, not the
-            // SDK's message.session_id.
             await this.client.sessionUpdate({
               sessionId: params.sessionId,
               update: {
@@ -1092,9 +1015,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             break;
           }
           case "rate_limit_event": {
-            // Re-emit the current usage carrying the subscription rate-limit
-            // info so the client can warn before the limit bites. Route by the
-            // ACP session id (params.sessionId) like every other update here.
             if (lastAssistantTotalUsage !== null) {
               await this.client.sessionUpdate({
                 sessionId: params.sessionId,
@@ -1174,9 +1094,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
       throw error;
     } finally {
-      // The loop is returning — interrupt() succeeded or the prompt finished —
-      // so disarm the force-cancel backstop and release the wake-up channel
-      // (only if we still own it; a handoff installs the next prompt's).
       if (this.session.forceCancelTimer) {
         clearTimeout(this.session.forceCancelTimer);
         this.session.forceCancelTimer = undefined;
@@ -1223,15 +1140,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
     this.session.pendingMessages.clear();
 
-    // Arm a backstop before interrupting: if a prompt is actively consuming the
-    // query and interrupt() doesn't make the SDK yield (e.g. a wedged TaskOutput
-    // block — issue #680), force the loop to return "cancelled" after the grace
-    // period so the pending prompt() resolves per the ACP cancellation contract
-    // instead of hanging forever. The loop's `finally` clears this timer when
-    // interrupt() works and it returns through the normal idle path, so on
-    // healthy cancels it is armed but never fires. Arm at most once per turn:
-    // the floor is an absolute ceiling from the first cancel, so a client that
-    // re-sends cancel can't keep pushing the deadline out.
     if (
       this.session.promptRunning &&
       this.session.cancelController &&
@@ -1529,12 +1437,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
   }
 
-  /**
-   * Ensures the requested `cwd` is an absolute path that points at an existing
-   * directory before we create a session. Throws an `invalidParams` error with
-   * an actionable message so clients can surface it to the user instead of
-   * failing later with an opaque "native binary failed to launch" SDK error.
-   */
   private async validateCwd(cwd: string): Promise<void> {
     if (!path.isAbsolute(cwd)) {
       throw RequestError.invalidParams(
@@ -1577,9 +1479,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const { cwd } = params;
     const { resume, forkSession } = creationOpts;
 
-    // Validate `cwd` up front. The ACP spec requires an absolute path, and the
-    // directory must exist on the machine running the agent. Without this the
-    // failure only surfaces later as a confusing SDK launch error (issue #749).
     await this.validateCwd(cwd);
 
     const isResume = !!resume;
