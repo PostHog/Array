@@ -32,6 +32,9 @@ export interface VirtualizedListHandle {
 const AT_BOTTOM_THRESHOLD = 50;
 const ESTIMATED_ROW_SIZE = 80;
 const OVERSCAN = 6;
+// A real upward drift, not a 1-frame measure transient: the DOM bottom sits
+// this far below the viewport. Well above any single append's measure gap.
+const FAR_DRIFT_THRESHOLD = 400;
 
 function VirtualizedListInner<T>(
   {
@@ -193,9 +196,9 @@ function VirtualizedListInner<T>(
 
     const atEnd = virtualizer.isAtEnd(AT_BOTTOM_THRESHOLD);
     // Genuine far drift (not a 1-frame measure transient): the DOM bottom sits
-    // well below the viewport. 400px >> any single append's measure gap.
+    // well below the viewport.
     const farFromEnd = el
-      ? el.scrollHeight - el.clientHeight - scrollTop > 400
+      ? el.scrollHeight - el.clientHeight - scrollTop > FAR_DRIFT_THRESHOLD
       : false;
     // Hysteresis for the scroll-to-bottom button (pure UI state — tanstack still
     // drives the actual scrolling). Each append measures taller than the 80px
