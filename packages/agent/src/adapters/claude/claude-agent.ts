@@ -486,7 +486,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // force-cancel backstop armed in interrupt() aborts this controller.
     const cancelController = new AbortController();
     this.session.cancelController = cancelController;
-    const cancelled = new Promise<void>((resolve) => {
+    // Resolves when the backstop aborts the controller. Named distinctly from
+    // the `cancelled` boolean above (the queue-handoff result) to avoid two
+    // variables named `cancelled` in this method.
+    const cancelWake = new Promise<void>((resolve) => {
       cancelController.signal.addEventListener("abort", () => resolve(), {
         once: true,
       });
@@ -545,13 +548,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     try {
       while (true) {
         const nextMessage = this.session.query.next();
-        const next = await Promise.race([nextMessage, cancelled]);
+        const next = await Promise.race([nextMessage, cancelWake]);
         if (cancelController.signal.aborted) {
           // The SDK never yielded after interrupt() (e.g. a wedged TaskOutput
-          // block). Abandon the in-flight next() — swallowing any later
-          // rejection so it can't surface as an unhandled rejection — and honor
-          // the cancel per the ACP contract.
-          void nextMessage.catch(() => {});
+          // block). Abandon the in-flight next(); log any later rejection (an
+          // auth/process error the SDK threw at cancel time would otherwise be
+          // lost) but swallow it so it can't surface as an unhandled rejection,
+          // then honor the cancel per the ACP contract.
+          void nextMessage.catch((err) =>
+            this.logger.warn("in-flight query.next() rejected after cancel", {
+              sessionId: params.sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
           return {
             stopReason: "cancelled",
             _meta: this.session.interruptReason
@@ -599,10 +608,16 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               // (context just dropped) and replaced within seconds by the next
               // result. `size` keeps coming from the gateway-learned window
               // (getContextUsage under-reports extended 1M windows).
-              const usedTokens = await fetchContextUsedTokens(
-                this.session.query,
-                this.logger,
-              );
+              // Race the control request against the force-cancel wake: the
+              // loop only observes cancelWake at its top, so a wedged
+              // getContextUsage() awaited here would otherwise re-introduce the
+              // exact hang the backstop exists to break (issue #680). On a
+              // forced cancel usedTokens is null and the next iteration returns
+              // "cancelled".
+              const usedTokens = await Promise.race([
+                fetchContextUsedTokens(this.session.query, this.logger),
+                cancelWake.then(() => null),
+              ]);
               lastAssistantTotalUsage = usedTokens ?? 0;
               promptReplayed = true;
               await this.client.sessionUpdate({
@@ -613,6 +628,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                   size: lastContextWindowSize,
                 },
               });
+              // No break: intentionally falls through to handleSystemMessage so
+              // the COMPACT_BOUNDARY ext notification still fires.
             }
             if (message.subtype === "commands_changed") {
               // Mid-session command-list change (e.g. skills discovered as the

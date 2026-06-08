@@ -1009,7 +1009,8 @@ const LOCAL_COMMAND_MARKERS = [
 // Single-pass scanner that removes each `<tag>…</tag>` marker (matching the
 // nearest closing tag of the same name, like a lazy regex would) without the
 // catastrophic-backtracking risk of `[\s\S]*?` over pathological input.
-function stripMarkerTags(text: string): string {
+// Exported for unit testing.
+export function stripMarkerTags(text: string): string {
   const dead = new Set<string>();
   let result = "";
   let copiedUpTo = 0;
