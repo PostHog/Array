@@ -150,7 +150,8 @@ const sharedLinuxOptions = {
   productName: "PostHog Code",
   genericName: "Code Editor",
   description: "PostHog Code desktop app",
-  bin: "posthog-code",
+  // Must match packagerConfig.executableName — the maker locates the packaged binary by this name
+  bin: "PostHog Code",
   icon: "./build/app-icon.png",
   categories: ["Development"],
   homepage: "https://github.com/PostHog/code",
