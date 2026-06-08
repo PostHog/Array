@@ -24,7 +24,9 @@ import {
   SIGNAL_REPORT_TASK_IMPLEMENTATION_RELATIONSHIP,
   type Task,
 } from "@shared/types";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import type { CloudRunSource, PrAuthorshipMode } from "@shared/types/cloud";
+import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 
 const log = logger.scope("task-creation-saga");
@@ -303,13 +305,28 @@ export class TaskCreationSaga extends Saga<
               )
             : [];
 
-          return this.deps.posthogClient.startTaskRun(task.id, taskRun.id, {
-            pendingUserMessage: transport?.messageText,
-            pendingUserArtifactIds:
-              pendingUserArtifactIds.length > 0
-                ? pendingUserArtifactIds
-                : undefined,
-          });
+          const startedRun = await this.deps.posthogClient.startTaskRun(
+            task.id,
+            taskRun.id,
+            {
+              pendingUserMessage: transport?.messageText,
+              pendingUserArtifactIds:
+                pendingUserArtifactIds.length > 0
+                  ? pendingUserArtifactIds
+                  : undefined,
+            },
+          );
+
+          if (transport) {
+            track(ANALYTICS_EVENTS.PROMPT_SENT, {
+              task_id: task.id,
+              is_initial: true,
+              execution_type: "cloud",
+              prompt_length_chars: transport.messageText?.length ?? 0,
+            });
+          }
+
+          return startedRun;
         },
         rollback: async () => {
           log.info("Rolling back: cloud run (no-op)", { taskId: task.id });
