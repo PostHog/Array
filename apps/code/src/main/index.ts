@@ -133,9 +133,6 @@ function isCrashLoop(): boolean {
   return recentCrashTimestamps.length >= CRASH_LOOP_THRESHOLD;
 }
 
-// Shared diagnostics attached to every crash event: uptime, the native chromium
-// log tail, and flattened memory. A hard OOM kills the renderer before it can
-// log, so the memory snapshot is often the only signal of what happened.
 function crashDiagnostics() {
   return {
     appUptimeSeconds: Math.round(process.uptime()),
@@ -160,8 +157,6 @@ app.on("render-process-gone", (_event, webContents, details) => {
     new Error(`Renderer process gone: ${details.reason}`),
     {
       ...props,
-      // Stack is always this handler, so default grouping collapses every
-      // renderer death into one issue. Split by reason instead.
       $exception_fingerprint: ["render-process-gone", details.reason],
     },
   );

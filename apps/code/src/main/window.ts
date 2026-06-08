@@ -112,8 +112,6 @@ function setupCrashLogging(window: BrowserWindow): void {
     });
   });
 
-  // Unresponsive often precedes an OOM kill, and here the renderer is still
-  // alive, so this memory sample reflects its real (bloated) footprint.
   window.on("unresponsive", () => {
     log.warn("Window unresponsive", {
       url: window.webContents.getURL(),

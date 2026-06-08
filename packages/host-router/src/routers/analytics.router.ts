@@ -24,11 +24,6 @@ export const analyticsRouter = router({
       }
     }),
 
-  /**
-   * Return the main-owned session id for a window to bootstrap posthog-js with
-   * (`bootstrap.sessionID`). Main owns it so crash events captured from main
-   * link to the right replay, and the id survives renderer crash+reload.
-   */
   getSessionId: publicProcedure
     .output(z.object({ sessionId: z.string() }))
     .query(({ ctx }) => ({

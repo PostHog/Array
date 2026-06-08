@@ -28,9 +28,6 @@ export class PosthogNodeAnalytics implements IAnalytics {
       enableExceptionAutocapture: true,
     });
 
-    // Mint the main-owned session id now, before the first window, so crash
-    // handlers can stamp $session_id even when the renderer crashes during
-    // startup (before it fetches the id to bootstrap posthog-js).
     this.getOrCreateSessionId();
   }
 
@@ -42,18 +39,6 @@ export class PosthogNodeAnalytics implements IAnalytics {
     return this.currentUserId;
   }
 
-  /**
-   * The PostHog session id is OWNED BY MAIN. Main mints one UUIDv7 and every
-   * renderer window bootstraps posthog-js with it (`bootstrap.sessionID`).
-   * Because main outlives the renderer, the id stays stable across a renderer
-   * crash + reload, so the replay is one continuous session spanning the crash
-   * and main-captured crash events (the renderer can't report its own OOM)
-   * always carry the right `$session_id` with no race or hand-off.
-   *
-   * Minted lazily on first request (a window asks at boot, before posthog-js
-   * init) so its UUIDv7 timestamp precedes the session's first event, as
-   * posthog-js requires.
-   */
   getOrCreateSessionId(): string {
     if (!this.sessionId) {
       this.sessionId = uuidv7();
@@ -109,8 +94,6 @@ export class PosthogNodeAnalytics implements IAnalytics {
     this.client.captureException(error, distinctId, {
       team: "posthog-code",
       ...additionalProperties,
-      // System-owned fields last so callers can't overwrite them: main owns
-      // the session id used for crash->replay linking.
       ...(this.sessionId ? { $session_id: this.sessionId } : {}),
       app_version: getAppVersion(),
     });

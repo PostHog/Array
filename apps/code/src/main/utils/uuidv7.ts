@@ -1,15 +1,5 @@
 import { randomBytes } from "node:crypto";
 
-/**
- * Generate a UUIDv7 (time-ordered, RFC 9562). posthog-js requires this exact
- * format for `bootstrap.sessionID`: a valid v7 whose 48-bit timestamp precedes
- * the session's first event. Main mints it before any window starts posthog-js,
- * so the ordering holds.
- *
- * Layout: 48-bit big-endian unix-ms timestamp, 4-bit version (7), 2-bit variant
- * (10), 74 random bits. Hand-rolled to avoid a phantom dependency on `uuid`
- * (transitive only, and several major versions resolve in the tree).
- */
 export function uuidv7(): string {
   const bytes = randomBytes(16);
   const timestamp = Date.now();

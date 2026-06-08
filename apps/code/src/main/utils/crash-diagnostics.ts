@@ -5,21 +5,6 @@ export interface MemorySnapshot {
   byType: Record<string, number>;
 }
 
-/**
- * Summarize per-process memory (from `app.getAppMetrics()`, passed in by the
- * caller so this stays free of a direct `electron` import) for crash
- * diagnostics. Working-set sizes are in KB. Attached to renderer/child crash
- * events so PostHog Error Tracking can show whether the app was under memory
- * pressure: a hard OOM kills the renderer before it can log anything, so the
- * chromium log usually goes silent and this is the only reliable signal.
- *
- * Defensive on purpose: a throw here would run before the crash handler's
- * auto-recovery reload, so failures return `undefined` instead.
- *
- * Caveat: at `render-process-gone` time the dead renderer is already gone from
- * the metrics, so the `Tab` total understates the renderer's real peak. The
- * `unresponsive` sample (renderer still alive) is the more telling one.
- */
 export function collectMemorySnapshot(
   getMetrics: () => Electron.ProcessMetric[],
 ): MemorySnapshot | undefined {
@@ -48,11 +33,6 @@ export function collectMemorySnapshot(
   }
 }
 
-/**
- * Flatten a snapshot into scalar event properties for PostHog (which doesn't
- * accept nested objects, so `byType` is serialized). Returns `{}` when no
- * snapshot was collected, so it spreads cleanly into a crash event's props.
- */
 export function flattenMemorySnapshot(
   memory: MemorySnapshot | undefined,
 ): Record<string, number | string> {

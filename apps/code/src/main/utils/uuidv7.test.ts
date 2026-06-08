@@ -16,7 +16,6 @@ describe("uuidv7", () => {
     const id = uuidv7();
     const after = Date.now();
 
-    // First 48 bits (first 12 hex chars, minus the dash) are the unix-ms stamp.
     const stampMs = Number.parseInt(id.slice(0, 8) + id.slice(9, 13), 16);
     expect(stampMs).toBeGreaterThanOrEqual(before);
     expect(stampMs).toBeLessThanOrEqual(after);
@@ -31,7 +30,6 @@ describe("uuidv7", () => {
     vi.spyOn(Date, "now").mockReturnValue(0x0123456789ab);
     try {
       const id = uuidv7();
-      // bytes 0-5 of 0x0123456789ab -> "01234567" then "89ab"
       expect(id.slice(0, 8)).toBe("01234567");
       expect(id.slice(9, 13)).toBe("89ab");
     } finally {
