@@ -163,15 +163,26 @@ function VirtualizedListInner<T>(
     });
   }, [items.length, settleAtEnd]);
 
-  // Footer height feeds paddingEnd, but a paddingEnd change does not trigger
-  // tanstack's anchor logic (that only watches item count/keys). So when the
-  // footer's own height changes while we're following — the one thing tanstack
-  // can't track, since the footer isn't a virtual item — re-pin to end.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: footerHeight is the trigger, not a body dependency
-  useEffect(() => {
-    if (!initializedRef.current || !isAtBottomRef.current) return;
+  const totalSize = virtualizer.getTotalSize();
+
+  // Anything that changes the virtual height while we're following has to re-pin
+  // to the new bottom: rows remeasuring past the 80px estimate, late async
+  // content (syntax highlighting, diffs) growing rows, and the footer's own
+  // resize (which feeds paddingEnd). tanstack's anchor logic only watches item
+  // count/keys, so none of these trigger it — totalSize is the one value that
+  // moves for all of them, so key the re-pin off it.
+  //
+  // Gate on isAtBottomRef (true until the user scrolls up), NOT initializedRef.
+  // footerHeight starts at 0, so the initial settle pins to a bottom that
+  // excludes the footer; the footer then measures and grows paddingEnd before
+  // initializedRef flips, stranding us above the real bottom. Running pre-init
+  // closes that gap. This is a layout effect so the re-pin lands synchronously,
+  // before paint — no visible drift, no transient isAtEnd=false flicker.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: totalSize is the trigger, not a body dependency
+  useLayoutEffect(() => {
+    if (!isAtBottomRef.current) return;
     virtualizer.scrollToEnd();
-  }, [footerHeight, virtualizer]);
+  }, [totalSize, virtualizer]);
 
   const handleScroll = useCallback(() => {
     const el = parentRef.current;
@@ -208,7 +219,6 @@ function VirtualizedListInner<T>(
     onScrollStateChangeRef.current?.(isAtBottomRef.current);
   }, [virtualizer]);
 
-  const totalSize = virtualizer.getTotalSize();
   const virtualItems = virtualizer.getVirtualItems();
 
   const renderedIndices = useMemo(() => {
