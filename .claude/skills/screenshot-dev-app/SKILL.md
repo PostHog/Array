@@ -38,7 +38,7 @@ http://localhost:5173/?previewMode=true#<hash-route>
 | Inbox PR detail | `#/code/inbox/pulls/<reportId>` |
 | Inbox report detail | `#/code/inbox/reports/<reportId>` |
 | Inbox run detail | `#/code/inbox/runs/<reportId>` |
-| Task detail | `#/code/tasks/<taskId>` | Needs a real task id |
+| Task detail | `#/code/tasks/<taskId>` (needs a real task id) |
 | Skills | `#/skills` |
 | MCP servers | `#/mcp-servers` |
 | Command Center | `#/command-center` |
