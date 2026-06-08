@@ -10,6 +10,7 @@ import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useLogoutMutation } from "@posthog/ui/features/auth/useAuthMutations";
 import { useUserGithubIntegrations } from "@posthog/ui/features/integrations/useIntegrations";
 import { ConnectGitHubStep } from "@posthog/ui/features/onboarding/components/ConnectGitHubStep";
+import { ImportConfigStep } from "@posthog/ui/features/onboarding/components/ImportConfigStep";
 import { InstallCliStep } from "@posthog/ui/features/onboarding/components/InstallCliStep";
 import { StepIndicator } from "@posthog/ui/features/onboarding/components/StepIndicator";
 import { WelcomeScreen } from "@posthog/ui/features/onboarding/components/WelcomeScreen";
@@ -279,6 +280,21 @@ export function OnboardingFlow() {
               className="min-h-0 w-full flex-1"
             >
               <InstallCliStep onNext={handleNext} onBack={handleBack} />
+            </motion.div>
+          )}
+
+          {currentStep === "import-config" && (
+            <motion.div
+              key="import-config"
+              custom={direction}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              variants={stepVariants}
+              transition={{ duration: 0.3 }}
+              className="min-h-0 w-full flex-1"
+            >
+              <ImportConfigStep onNext={handleNext} onBack={handleBack} />
             </motion.div>
           )}
 

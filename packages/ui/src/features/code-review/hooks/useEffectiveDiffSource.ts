@@ -6,7 +6,7 @@ import { useHostTRPC } from "@posthog/host-router/react";
 import { useQuery } from "@tanstack/react-query";
 import { useDiffViewerStore } from "../../code-editor/diffViewerStore";
 import { useDiffStats } from "../../diff-stats/useDiffStats";
-import { useLinkedBranchPrUrl } from "../../git-interaction/useLinkedBranchPrUrl";
+import { useTaskPrUrl } from "../../git-interaction/useTaskPrUrl";
 import type { DiffStats } from "../../git-interaction/utils/diffStats";
 import { useCwd } from "../../sidebar/useCwd";
 import { useWorkspace } from "../../workspace/useWorkspace";
@@ -58,10 +58,7 @@ export function useEffectiveDiffSource(taskId: string): EffectiveDiffSource {
   const hasLocalChanges = diffStats.filesChanged > 0;
   const branchSourceAvailable = !!linkedBranch && aheadOfDefault > 0;
 
-  const prUrl = useLinkedBranchPrUrl({
-    linkedBranch,
-    folderPath: workspace?.folderPath ?? null,
-  });
+  const prUrl = useTaskPrUrl(taskId, workspace?.mode === "cloud");
   const prSourceAvailable = !!prUrl;
 
   const repoSlug = repoInfo

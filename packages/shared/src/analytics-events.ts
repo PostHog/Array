@@ -346,6 +346,7 @@ export type OnboardingStepId =
   | "invite-code"
   | "connect-github"
   | "install-cli"
+  | "import-config"
   | "select-repo";
 
 type OnboardingSkipReason = "no_repo_selected" | "dev_skip";
@@ -396,6 +397,11 @@ export interface OnboardingCliCheckCompletedProperties {
   git_installed: boolean;
   gh_installed: boolean;
   gh_authenticated: boolean;
+}
+
+export interface OnboardingCliRunCompletedProperties {
+  command: "install_git" | "install_gh" | "auth_gh";
+  exit_code: number;
 }
 
 export interface OnboardingCompletedProperties {
@@ -751,6 +757,7 @@ export const ANALYTICS_EVENTS = {
   ONBOARDING_GITHUB_CONNECT_FAILED: "Onboarding github connect failed",
   ONBOARDING_GITHUB_CONNECTED: "Onboarding github connected",
   ONBOARDING_CLI_CHECK_COMPLETED: "Onboarding cli check completed",
+  ONBOARDING_CLI_RUN_COMPLETED: "Onboarding cli run completed",
   ONBOARDING_COMPLETED: "Onboarding completed",
   ONBOARDING_ABANDONED: "Onboarding abandoned",
   AI_CONSENT_GATE_SHOWN: "Ai consent gate shown",
@@ -874,6 +881,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECT_FAILED]: OnboardingGithubConnectFailedProperties;
   [ANALYTICS_EVENTS.ONBOARDING_GITHUB_CONNECTED]: never;
   [ANALYTICS_EVENTS.ONBOARDING_CLI_CHECK_COMPLETED]: OnboardingCliCheckCompletedProperties;
+  [ANALYTICS_EVENTS.ONBOARDING_CLI_RUN_COMPLETED]: OnboardingCliRunCompletedProperties;
   [ANALYTICS_EVENTS.ONBOARDING_COMPLETED]: OnboardingCompletedProperties;
   [ANALYTICS_EVENTS.ONBOARDING_ABANDONED]: OnboardingAbandonedProperties;
   [ANALYTICS_EVENTS.AI_CONSENT_GATE_SHOWN]: AiConsentGateShownProperties;

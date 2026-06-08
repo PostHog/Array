@@ -7,9 +7,10 @@ import {
   Copy,
   GitBranch,
   GithubLogo,
+  Play,
   Warning,
 } from "@phosphor-icons/react";
-import { useHostTRPC } from "@posthog/host-router/react";
+import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { EXTERNAL_LINKS } from "@posthog/shared";
 import {
   ANALYTICS_EVENTS,
@@ -22,11 +23,14 @@ import {
 } from "@posthog/ui/features/onboarding/components/CliCheckPanel";
 import { OptionalBadge } from "@posthog/ui/features/onboarding/components/OptionalBadge";
 import { StepActions } from "@posthog/ui/features/onboarding/components/StepActions";
+import { Terminal } from "@posthog/ui/features/terminal/Terminal";
+import { terminalManager } from "@posthog/ui/features/terminal/TerminalManager";
 import { OnboardingHogTip } from "@posthog/ui/primitives/OnboardingHogTip";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { track } from "@posthog/ui/shell/analytics";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
-import { Button, Flex, IconButton, Text } from "@radix-ui/themes";
+import { isMac } from "@posthog/ui/utils/platform";
+import { Box, Button, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -66,6 +70,130 @@ function CommandLine({ command }: { command: string }) {
           {copied ? <Check size={14} /> : <Copy size={14} />}
         </IconButton>
       </Tooltip>
+    </Flex>
+  );
+}
+
+/**
+ * A command the user can copy, or — on macOS — run directly in an embedded
+ * terminal. The run streams into an interactive xterm (so flows like
+ * `gh auth login` that prompt or open a browser work), and on a clean exit
+ * calls `onSuccess` so the parent can re-check install/auth status.
+ */
+function RunnableCommand({
+  displayCommand,
+  runCommand,
+  sessionPrefix,
+  analyticsCommand,
+  onSuccess,
+}: {
+  displayCommand: string;
+  runCommand?: string;
+  sessionPrefix: string;
+  analyticsCommand: "install_git" | "install_gh" | "auth_gh";
+  onSuccess?: () => void;
+}) {
+  const hostClient = useHostTRPCClient();
+  const [copied, setCopied] = useState(false);
+  // 0 = not started; each run bumps the generation for a fresh PTY/session.
+  const [generation, setGeneration] = useState(0);
+  const [exitCode, setExitCode] = useState<number | null>(null);
+
+  const sessionId = `${sessionPrefix}-${generation}`;
+  const isRunning = generation > 0 && exitCode === null;
+
+  const handleCopy = useCallback(async () => {
+    await navigator.clipboard.writeText(displayCommand);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [displayCommand]);
+
+  const handleRun = useCallback(() => {
+    setExitCode(null);
+    setGeneration((g) => g + 1);
+  }, []);
+
+  const handleExit = useCallback(
+    (code?: number) => {
+      const resolved = code ?? 0;
+      setExitCode(resolved);
+      track(ANALYTICS_EVENTS.ONBOARDING_CLI_RUN_COMPLETED, {
+        command: analyticsCommand,
+        exit_code: resolved,
+      });
+      if (resolved === 0) {
+        void onSuccess?.();
+      }
+    },
+    [analyticsCommand, onSuccess],
+  );
+
+  // Tear down the embedded terminal (and its PTY, if still alive) when the user
+  // re-runs or this command unmounts — onboarding shells shouldn't outlive it.
+  useEffect(() => {
+    if (generation === 0) return;
+    return () => {
+      terminalManager.destroy(sessionId);
+      void hostClient.shell.destroy.mutate({ sessionId }).catch(() => {});
+    };
+  }, [sessionId, generation, hostClient]);
+
+  return (
+    <Flex direction="column" gap="2">
+      <Flex
+        align="center"
+        justify="between"
+        gap="2"
+        className="rounded-(--radius-2) border border-(--gray-a3) bg-(--gray-2) py-[6px] pr-2 pl-3"
+      >
+        <Flex align="center" gap="2" className="min-w-0">
+          <Text className="select-none font-[var(--code-font-family)] text-(--gray-9) text-sm">
+            $
+          </Text>
+          <Text className="truncate font-[var(--code-font-family)] text-(--gray-12) text-sm">
+            {displayCommand}
+          </Text>
+        </Flex>
+        <Flex align="center" gap="2" className="shrink-0">
+          {isMac && (
+            <Button size="1" onClick={handleRun} loading={isRunning}>
+              <Play size={14} weight="fill" />
+              Run
+            </Button>
+          )}
+          <Tooltip content={copied ? "Copied!" : "Copy command"}>
+            <IconButton
+              size="1"
+              variant="ghost"
+              color="gray"
+              onClick={() => void handleCopy()}
+              aria-label="Copy command"
+            >
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+            </IconButton>
+          </Tooltip>
+        </Flex>
+      </Flex>
+
+      {generation > 0 && (
+        <Box className="h-[220px] overflow-hidden rounded-(--radius-2) border border-(--gray-a3) bg-(--gray-2)">
+          <Terminal
+            key={sessionId}
+            sessionId={sessionId}
+            persistenceKey={sessionId}
+            cwd="~"
+            command={runCommand ?? displayCommand}
+            onExit={handleExit}
+          />
+        </Box>
+      )}
+
+      {exitCode !== null && exitCode !== 0 && (
+        <Text className="text-(--amber-11) text-xs">
+          Exited with code {exitCode}. Re-run it, or copy the command to run
+          manually.
+        </Text>
+      )}
     </Flex>
   );
 }
@@ -184,7 +312,12 @@ export function InstallCliStep({ onNext, onBack }: InstallCliStepProps) {
                         Install with Homebrew or Xcode Command Line Tools:
                       </Text>
                       <Flex direction="column" gap="2">
-                        <CommandLine command="brew install git" />
+                        <RunnableCommand
+                          displayCommand="brew install git"
+                          sessionPrefix="onboarding-git-install"
+                          analyticsCommand="install_git"
+                          onSuccess={() => void handleCheckGit()}
+                        />
                         <CommandLine command="xcode-select --install" />
                       </Flex>
                       <Flex align="center" justify="between" gap="3">
@@ -252,7 +385,12 @@ export function InstallCliStep({ onNext, onBack }: InstallCliStepProps) {
                       <Text className="text-(--gray-11) text-sm">
                         Install with Homebrew:
                       </Text>
-                      <CommandLine command="brew install gh" />
+                      <RunnableCommand
+                        displayCommand="brew install gh"
+                        sessionPrefix="onboarding-gh-install"
+                        analyticsCommand="install_gh"
+                        onSuccess={() => void handleCheckGh()}
+                      />
                       <Flex align="center" justify="between" gap="3">
                         <Button
                           size="1"
@@ -281,9 +419,15 @@ export function InstallCliStep({ onNext, onBack }: InstallCliStepProps) {
                   {!isLoadingGh && ghInstalled && !ghAuthenticated && (
                     <Flex direction="column" gap="3">
                       <Text className="text-(--gray-11) text-sm">
-                        Run this in your terminal to log in:
+                        Log in to the GitHub CLI
                       </Text>
-                      <CommandLine command="gh auth login" />
+                      <RunnableCommand
+                        displayCommand="gh auth login"
+                        runCommand="gh auth login --web --hostname github.com --git-protocol https"
+                        sessionPrefix="onboarding-gh-auth"
+                        analyticsCommand="auth_gh"
+                        onSuccess={() => void handleCheckGh()}
+                      />
                       <Flex justify="end">
                         <Button
                           size="1"

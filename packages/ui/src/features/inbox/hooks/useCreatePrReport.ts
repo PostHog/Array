@@ -13,6 +13,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
 import { useCallback, useState } from "react";
 import { toast as sonnerToast } from "sonner";
+import { useSignalTeamConfig } from "./useSignalTeamConfig";
 
 const log = logger.scope("create-pr-report");
 
@@ -46,6 +47,7 @@ export function useCreatePrReport({
   const { getUserIntegrationIdForRepo } = useUserRepositoryIntegration();
   const { invalidateTasks } = useCreateTask();
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
+  const { data: teamConfig } = useSignalTeamConfig();
   const service = useService<SignalReportTaskService>(
     SIGNAL_REPORT_TASK_SERVICE,
   );
@@ -60,6 +62,15 @@ export function useCreatePrReport({
     const settings = useSettingsStore.getState();
     const adapter = settings.lastUsedAdapter ?? "claude";
 
+    const baseBranchOverrides = teamConfig?.autostart_base_branches ?? {};
+    const targetRepo = cloudRepository?.toLowerCase();
+    const baseBranch =
+      targetRepo != null
+        ? (Object.entries(baseBranchOverrides).find(
+            ([repo]) => repo.toLowerCase() === targetRepo,
+          )?.[1] ?? null)
+        : null;
+
     const result = await service.createSignalReportTask(
       {
         kind: "create-pr",
@@ -73,6 +84,7 @@ export function useCreatePrReport({
         adapter,
         modelOverride: settings.lastUsedModel,
         reasoningLevel: settings.lastUsedReasoningEffort ?? undefined,
+        baseBranch,
         isDevBuild: import.meta.env.DEV,
       },
       (output) => {
@@ -91,7 +103,7 @@ export function useCreatePrReport({
           created_from: "command-menu",
           repository_provider: "github",
           workspace_mode: "cloud",
-          has_branch: false,
+          has_branch: baseBranch != null,
           cloud_run_source: "signal_report",
           cloud_pr_authorship_mode: "user",
           signal_report_id: reportId,
@@ -148,6 +160,7 @@ export function useCreatePrReport({
     getUserIntegrationIdForRepo,
     invalidateTasks,
     service,
+    teamConfig,
   ]);
 
   return { createPrReport, isCreatingPr };

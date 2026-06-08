@@ -165,6 +165,7 @@ import { MCP_PROXY_AUTH } from "@posthog/workspace-server/services/mcp-proxy/ide
 import { mcpProxyModule } from "@posthog/workspace-server/services/mcp-proxy/mcp-proxy.module";
 import { OAUTH_CALLBACK_SERVER } from "@posthog/workspace-server/services/oauth-callback/identifiers";
 import { oauthCallbackModule } from "@posthog/workspace-server/services/oauth-callback/oauth-callback.module";
+import { onboardingImportModule } from "@posthog/workspace-server/services/onboarding-import/onboarding-import.module";
 import { osModule } from "@posthog/workspace-server/services/os/os.module";
 import { POSTHOG_PLUGIN_SERVICE } from "@posthog/workspace-server/services/posthog-plugin/identifiers";
 import { posthogPluginModule } from "@posthog/workspace-server/services/posthog-plugin/posthog-plugin.module";
@@ -547,6 +548,7 @@ container
   .bind(MAIN_TOKENS.PosthogPluginService)
   .toService(POSTHOG_PLUGIN_SERVICE);
 container.load(skillsModule);
+container.load(onboardingImportModule);
 container.load(additionalDirectoriesModule);
 container.bind(MAIN_TOKENS.SleepService).to(SleepService);
 container.bind(SLEEP_SERVICE).toService(MAIN_TOKENS.SleepService);

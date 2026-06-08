@@ -19,6 +19,7 @@ import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingSt
 import { useActiveRepoStore } from "@posthog/ui/shell/activeRepoStore";
 import { track } from "@posthog/ui/shell/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useHasImportableConfig } from "./useHasImportableConfig";
 
 export type { DetectedRepo };
 
@@ -77,10 +78,11 @@ export function useOnboardingFlow() {
   );
 
   const hasCodeAccess = useAuthStateValue((state) => state.hasCodeAccess);
+  const hasImportableConfig = useHasImportableConfig();
 
   const activeSteps = useMemo(
-    () => computeActiveSteps(hasCodeAccess),
-    [hasCodeAccess],
+    () => computeActiveSteps(hasCodeAccess, hasImportableConfig),
+    [hasCodeAccess, hasImportableConfig],
   );
 
   useEffect(() => {

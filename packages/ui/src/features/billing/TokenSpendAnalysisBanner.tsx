@@ -26,7 +26,7 @@ import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { Button, Callout, Flex, Spinner, Table, Text } from "@radix-ui/themes";
 
-const DOCS_URL = "https://posthog.com/docs/llm-analytics";
+const DOCS_URL = "https://posthog.com/docs/ai-observability";
 
 function SummaryRow({ data }: { data: SpendAnalysisResponse }) {
   const { summary } = data;
@@ -205,7 +205,7 @@ function FooterLinks({ data }: { data: SpendAnalysisResponse }) {
           rel="noreferrer"
           className="text-(--accent-11) underline"
         >
-          PostHog AI Observability
+          PostHog AI observability
         </a>{" "}
         in your own project for the full slice-and-dice experience.
       </Text>
@@ -314,7 +314,7 @@ export function TokenSpendAnalysisBanner() {
       <Callout.Text>
         <Flex direction="column" gap="2">
           <Text className="font-medium text-sm">
-            Analyse your token usage with PostHog AI Observability
+            Analyse your token usage with PostHog AI observability
           </Text>
           <Text className="text-(--gray-11) text-[13px]">
             See where your spend goes — by product, tool, and model — over the

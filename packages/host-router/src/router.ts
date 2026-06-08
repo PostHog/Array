@@ -25,6 +25,7 @@ import { mcpAppsRouter } from "./routers/mcp-apps.router";
 import { mcpCallbackRouter } from "./routers/mcp-callback.router";
 import { notificationRouter } from "./routers/notification.router";
 import { oauthRouter } from "./routers/oauth.router";
+import { onboardingImportRouter } from "./routers/onboarding-import.router";
 import { osRouter } from "./routers/os.router";
 import { processTrackingRouter } from "./routers/process-tracking.router";
 import { provisioningRouter } from "./routers/provisioning.router";
@@ -66,6 +67,7 @@ export const hostRouter = router({
   mcpCallback: mcpCallbackRouter,
   notification: notificationRouter,
   oauth: oauthRouter,
+  onboardingImport: onboardingImportRouter,
   os: osRouter,
   processTracking: processTrackingRouter,
   provisioning: provisioningRouter,

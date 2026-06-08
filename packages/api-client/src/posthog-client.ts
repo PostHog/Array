@@ -2349,6 +2349,7 @@ export class PostHogAPIClient {
     updates: Partial<{
       default_autostart_priority: string;
       default_slack_notification_channel: string | null;
+      autostart_base_branches: Record<string, string>;
     }>,
   ): Promise<SignalTeamConfig> {
     const teamId = await this.getTeamId();

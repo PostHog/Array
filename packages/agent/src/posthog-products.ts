@@ -22,7 +22,7 @@ export const POSTHOG_PRODUCTS = {
   error_tracking: "Error tracking",
   session_replay: "Session replay",
   surveys: "Surveys",
-  llm_analytics: "LLM analytics",
+  llm_analytics: "AI observability",
   data_warehouse: "Data warehouse",
   cdp: "Data pipelines",
   logs: "Logs",

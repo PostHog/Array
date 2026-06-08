@@ -51,7 +51,6 @@ import {
   type AgentAdapter,
   useSettingsStore,
 } from "../../settings/settingsStore";
-import { useSkills } from "../../skills/useSkills";
 import { useInitialDirectoryFromFolderId } from "../hooks/useInitialDirectoryFromFolderId";
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
@@ -83,7 +82,6 @@ export function TaskInput({
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const trpc = useHostTRPC();
   const hostClient = useHostTRPCClient();
-  const { data: skills } = useSkills();
   const gitWriteClient = useMemo(
     () => ({
       createBranch: async (directoryPath: string, branchName: string) => {
@@ -545,18 +543,6 @@ export function TaskInput({
 
   const { isOnline } = useConnectivity();
   const promptSessionId = sessionId;
-
-  // Populate command list for @ file mentions + / skills on mount
-  useEffect(() => {
-    if (!skills) return;
-    useDraftStore.getState().actions.setCommands(
-      promptSessionId,
-      skills.map((s) => ({ name: s.name, description: s.description })),
-    );
-    return () => {
-      useDraftStore.getState().actions.clearCommands(promptSessionId);
-    };
-  }, [promptSessionId, skills]);
 
   const hasHistory = useTaskInputHistoryStore((s) => s.entries.length > 0);
   const getPromptHistory = useCallback(

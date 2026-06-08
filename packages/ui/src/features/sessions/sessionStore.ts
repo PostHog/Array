@@ -67,7 +67,6 @@ export {
   getPendingPermissionsForTask,
   getUserPromptsForTask,
   useAdapterForTask,
-  useAvailableCommandsForTask,
   useConfigOptionForTask,
   useModeConfigOptionForTask,
   useModelConfigOptionForTask,

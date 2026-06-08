@@ -33,7 +33,10 @@ import { TasksHeader } from "@posthog/ui/features/sidebar/components/TasksHeader
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskSelectionStore } from "@posthog/ui/features/sidebar/taskSelectionStore";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
-import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
+import {
+  type TaskData,
+  useSidebarData,
+} from "@posthog/ui/features/sidebar/useSidebarData";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { useTaskContextMenu } from "@posthog/ui/features/tasks/useTaskContextMenu";
 import { useRenameTask } from "@posthog/ui/features/tasks/useTaskMutations";
@@ -55,9 +58,14 @@ import { logger } from "@posthog/ui/shell/logger";
 import { useRendererWindowFocusStore } from "@posthog/ui/shell/rendererWindowFocusStore";
 import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
-import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArchiveRunningTaskDialog } from "./ArchiveRunningTaskDialog";
 
 const log = logger.scope("sidebar-menu");
+
+function isTaskActivelyRunning(task: TaskData): boolean {
+  return task.taskRunStatus === "in_progress" || task.isGenerating;
+}
 
 function SidebarMenuComponent() {
   const view = useAppView();
@@ -151,6 +159,11 @@ function SidebarMenuComponent() {
   };
 
   const queryClient = useQueryClient();
+
+  const [archiveConfirm, setArchiveConfirm] = useState<{
+    taskId: string;
+    taskTitle: string;
+  } | null>(null);
 
   const selectedTaskIds = useTaskSelectionStore((s) => s.selectedTaskIds);
   const toggleTaskSelection = useTaskSelectionStore(
@@ -285,6 +298,7 @@ function SidebarMenuComponent() {
         isInCommandCenter,
         hasEmptyCommandCenterCell,
         onTogglePin: () => togglePin(taskId),
+        onArchive: handleTaskArchive,
         onArchivePrior: handleArchivePrior,
         onAddToCommandCenter: () => {
           const cells = useCommandCenterStore.getState().cells;
@@ -300,9 +314,24 @@ function SidebarMenuComponent() {
     }
   };
 
-  const handleTaskArchive = async (taskId: string) => {
-    await archiveTask({ taskId });
-  };
+  const handleTaskArchive = useCallback(
+    (taskId: string) => {
+      const task = allSidebarTasks.find((t) => t.id === taskId);
+      if (task && isTaskActivelyRunning(task)) {
+        setArchiveConfirm({ taskId, taskTitle: task.title });
+        return;
+      }
+      void archiveTask({ taskId });
+    },
+    [allSidebarTasks, archiveTask],
+  );
+
+  const handleConfirmArchive = useCallback(() => {
+    if (!archiveConfirm) return;
+    const { taskId } = archiveConfirm;
+    setArchiveConfirm(null);
+    void archiveTask({ taskId });
+  }, [archiveConfirm, archiveTask]);
 
   const handleArchivePrior = useCallback(
     async (taskId: string) => {
@@ -446,6 +475,13 @@ function SidebarMenuComponent() {
           )}
         </Flex>
       </div>
+
+      <ArchiveRunningTaskDialog
+        open={archiveConfirm !== null}
+        taskTitle={archiveConfirm?.taskTitle ?? ""}
+        onConfirm={handleConfirmArchive}
+        onCancel={() => setArchiveConfirm(null)}
+      />
     </Box>
   );
 }

@@ -33,6 +33,7 @@ export interface BuildSignalReportTaskInput {
   adapter: "claude" | "codex";
   model: string;
   reasoningLevel?: string;
+  baseBranch?: string | null;
 }
 
 /** Build the `TaskCreationInput` for an inbox direct-create (Discuss / Create-PR) flow. */
@@ -47,6 +48,7 @@ export function buildSignalReportTaskInput(
     adapter,
     model,
     reasoningLevel,
+    baseBranch,
   } = args;
   return {
     content: prompt,
@@ -57,6 +59,7 @@ export function buildSignalReportTaskInput(
     executionMode: "auto",
     adapter,
     model,
+    branch: baseBranch ?? null,
     reasoningLevel: reasoningLevel ?? undefined,
     cloudPrAuthorshipMode: "user",
     cloudRunSource: "signal_report",

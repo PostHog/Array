@@ -4,6 +4,7 @@ export type OnboardingStep =
   | "invite-code"
   | "connect-github"
   | "install-cli"
+  | "import-config"
   | "select-repo";
 
 export const ONBOARDING_STEPS: OnboardingStep[] = [
@@ -12,6 +13,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   "invite-code",
   "connect-github",
   "install-cli",
+  "import-config",
   "select-repo",
 ];
 
@@ -25,11 +27,13 @@ export interface DetectedRepo {
 
 export function computeActiveSteps(
   hasCodeAccess: boolean | null | undefined,
+  hasImportableConfig: boolean,
 ): OnboardingStep[] {
-  if (hasCodeAccess === true) {
-    return ONBOARDING_STEPS.filter((step) => step !== "invite-code");
-  }
-  return ONBOARDING_STEPS;
+  return ONBOARDING_STEPS.filter((step) => {
+    if (step === "invite-code" && hasCodeAccess === true) return false;
+    if (step === "import-config" && !hasImportableConfig) return false;
+    return true;
+  });
 }
 
 export function stepIndexOf(

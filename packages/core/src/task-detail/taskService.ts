@@ -4,6 +4,10 @@ import {
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
+import {
+  ANALYTICS_SERVICE,
+  type IAnalytics,
+} from "@posthog/platform/analytics";
 import type {
   SagaResult,
   TaskCreationInput,
@@ -42,6 +46,8 @@ export class TaskService {
     private readonly sessionService: SessionService,
     @inject(TASK_CREATION_EFFECTS)
     private readonly effects: TaskCreationEffects,
+    @inject(ANALYTICS_SERVICE)
+    private readonly analytics: IAnalytics,
     @inject(ROOT_LOGGER)
     rootLogger: RootLogger,
   ) {
@@ -103,6 +109,7 @@ export class TaskService {
         posthogClient,
         host: this.host,
         sessionService: this.sessionService,
+        track: (event, props) => this.analytics.track(event, props),
         onTaskReady: onTaskReady
           ? (output) => {
               this.effects.onWorkspaceCreated(output);
@@ -175,6 +182,7 @@ export class TaskService {
         posthogClient,
         host: this.host,
         sessionService: this.sessionService,
+        track: (event, props) => this.analytics.track(event, props),
       },
       this.log,
     );

@@ -3,6 +3,7 @@ import type {
   ConnectParams,
   SessionService,
 } from "@posthog/core/sessions/sessionService";
+import type { AnalyticsProperties } from "@posthog/platform/analytics";
 import {
   getTaskRepository,
   Saga,
@@ -11,6 +12,7 @@ import {
   type TaskCreationOutput,
   type Workspace,
 } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import {
   SIGNAL_REPORT_TASK_IMPLEMENTATION_RELATIONSHIP,
   type Task,
@@ -23,6 +25,7 @@ export interface TaskCreationDeps {
   host: ITaskCreationHost;
   sessionService: SessionService;
   onTaskReady?: (output: TaskCreationOutput) => void;
+  track: (event: string, props?: AnalyticsProperties) => void;
 }
 
 export class TaskCreationSaga extends Saga<
@@ -262,13 +265,28 @@ export class TaskCreationSaga extends Saga<
               )
             : [];
 
-          return this.deps.posthogClient.startTaskRun(task.id, taskRun.id, {
-            pendingUserMessage: transport?.messageText,
-            pendingUserArtifactIds:
-              pendingUserArtifactIds.length > 0
-                ? pendingUserArtifactIds
-                : undefined,
-          });
+          const startedRun = await this.deps.posthogClient.startTaskRun(
+            task.id,
+            taskRun.id,
+            {
+              pendingUserMessage: transport?.messageText,
+              pendingUserArtifactIds:
+                pendingUserArtifactIds.length > 0
+                  ? pendingUserArtifactIds
+                  : undefined,
+            },
+          );
+
+          if (transport) {
+            this.deps.track(ANALYTICS_EVENTS.PROMPT_SENT, {
+              task_id: task.id,
+              is_initial: true,
+              execution_type: "cloud",
+              prompt_length_chars: transport.messageText?.length ?? 0,
+            });
+          }
+
+          return startedRun;
         },
         rollback: async () => {
           this.log.info("Rolling back: cloud run (no-op)", {

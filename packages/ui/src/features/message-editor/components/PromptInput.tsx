@@ -9,6 +9,7 @@ import { EditorContent } from "@tiptap/react";
 import clsx from "clsx";
 import { forwardRef, useCallback, useEffect, useImperativeHandle } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useSkills } from "../../skills/useSkills";
 import { ModeSelector } from "../components/ModeSelector";
 import { useDraftStore } from "../draftStore";
 import { useTiptapEditor } from "../tiptap/useTiptapEditor";
@@ -101,6 +102,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
   ) => {
     const focusRequested = useDraftStore((s) => s.focusRequested[sessionId]);
     const clearFocusRequest = useDraftStore((s) => s.actions.clearFocusRequest);
+    const { data: skills } = useSkills();
 
     const {
       editor,
@@ -181,6 +183,21 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       focus();
       clearFocusRequest(sessionId);
     }, [focusRequested, focus, clearFocusRequest, sessionId, isReady]);
+
+    // Populate the draft-store skills list as a fallback for the / command
+    // popup. The agent emits an `available_commands_update` shortly after a
+    // session starts, but typing `/` before that arrives would otherwise show
+    // only the built-in /good /bad /feedback commands.
+    useEffect(() => {
+      if (!enableCommands || !skills) return;
+      useDraftStore.getState().actions.setCommands(
+        sessionId,
+        skills.map((s) => ({ name: s.name, description: s.description })),
+      );
+      return () => {
+        useDraftStore.getState().actions.clearCommands(sessionId);
+      };
+    }, [sessionId, enableCommands, skills]);
 
     useHotkeys(
       "escape",

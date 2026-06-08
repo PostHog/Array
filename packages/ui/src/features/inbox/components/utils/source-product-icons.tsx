@@ -33,7 +33,7 @@ export const SOURCE_PRODUCT_META: Record<
   llm_analytics: {
     Icon: BrainIcon,
     color: "var(--purple-9)",
-    label: "LLM analytics",
+    label: "AI observability",
   },
   github: {
     Icon: GithubLogoIcon,

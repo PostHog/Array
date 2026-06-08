@@ -52,7 +52,7 @@ function useStatusDotColors(): Record<string, string> {
 const SOURCE_PRODUCT_OPTIONS: { value: SourceProduct; label: string }[] = [
   { value: "session_replay", label: "Session replay" },
   { value: "error_tracking", label: "Error tracking" },
-  { value: "llm_analytics", label: "LLM analytics" },
+  { value: "llm_analytics", label: "AI observability" },
   { value: "github", label: "GitHub" },
   { value: "linear", label: "Linear" },
   { value: "zendesk", label: "Zendesk" },

@@ -11,18 +11,22 @@ import {
 
 describe("computeActiveSteps", () => {
   it("drops invite-code when the user already has code access", () => {
-    expect(computeActiveSteps(true)).not.toContain("invite-code");
+    expect(computeActiveSteps(true, true)).not.toContain("invite-code");
   });
 
   it("keeps invite-code when access is unknown or false", () => {
-    expect(computeActiveSteps(false)).toEqual(ONBOARDING_STEPS);
-    expect(computeActiveSteps(null)).toEqual(ONBOARDING_STEPS);
-    expect(computeActiveSteps(undefined)).toEqual(ONBOARDING_STEPS);
+    expect(computeActiveSteps(false, true)).toEqual(ONBOARDING_STEPS);
+    expect(computeActiveSteps(null, true)).toEqual(ONBOARDING_STEPS);
+    expect(computeActiveSteps(undefined, true)).toEqual(ONBOARDING_STEPS);
+  });
+
+  it("drops import-config when there is no importable config", () => {
+    expect(computeActiveSteps(false, false)).not.toContain("import-config");
   });
 });
 
 describe("step navigation", () => {
-  const steps = computeActiveSteps(true);
+  const steps = computeActiveSteps(true, true);
 
   it("identifies first and last steps", () => {
     expect(isFirstStep(0)).toBe(true);

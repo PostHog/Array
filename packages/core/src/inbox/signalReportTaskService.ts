@@ -29,6 +29,7 @@ export interface CreateSignalReportTaskInput {
   modelOverride?: string | null;
   reasoningLevel?: string;
   question?: string;
+  baseBranch?: string | null;
   isDevBuild: boolean;
 }
 
@@ -92,6 +93,7 @@ export class SignalReportTaskService {
       adapter: input.adapter,
       model,
       reasoningLevel: input.reasoningLevel,
+      baseBranch: input.baseBranch,
     });
 
     let result: CreateTaskResult;

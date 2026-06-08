@@ -9,6 +9,7 @@ import { useSignalSourceManager } from "@posthog/ui/features/inbox/hooks/useSign
 import { useRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
+import { AutostartBaseBranchesSettings } from "@posthog/ui/features/settings/sections/AutostartBaseBranchesSettings";
 import { GitHubIntegrationSection } from "@posthog/ui/features/settings/sections/GitHubIntegrationSection";
 import { SlackInboxNotificationsSettings } from "@posthog/ui/features/settings/sections/SlackInboxNotificationsSettings";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
@@ -55,6 +56,9 @@ export function SignalSourcesSettings({
     userAutonomyConfig,
     userAutonomyConfigLoading,
     handleUpdateUserAutonomyPriority,
+    teamConfig,
+    teamConfigLoading,
+    handleUpdateAutostartBaseBranches,
   } = useSignalSourceManager();
 
   const { hasGithubIntegration, isLoadingIntegrations } =
@@ -149,6 +153,11 @@ export function SignalSourcesSettings({
           />
         )}
       </Flex>
+      <AutostartBaseBranchesSettings
+        branches={teamConfig?.autostart_base_branches ?? {}}
+        onChange={(next) => void handleUpdateAutostartBaseBranches(next)}
+        isLoading={teamConfigLoading}
+      />
       {showSlackNotifications ? (
         <SlackInboxNotificationsSettings
           channelComboboxModal={slackNotificationsInModal}

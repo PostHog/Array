@@ -106,6 +106,7 @@ describe("TaskCreationSaga", () => {
       } as never,
       host,
       sessionService,
+      track: vi.fn(),
       onTaskReady,
     });
 
@@ -182,6 +183,7 @@ describe("TaskCreationSaga", () => {
       } as never,
       host,
       sessionService,
+      track: vi.fn(),
       onTaskReady,
     });
 
@@ -263,6 +265,7 @@ describe("TaskCreationSaga", () => {
       } as never,
       host,
       sessionService,
+      track: vi.fn(),
     });
 
     const result = await saga.run({
@@ -312,6 +315,7 @@ describe("TaskCreationSaga", () => {
       } as never,
       host,
       sessionService,
+      track: vi.fn(),
     });
 
     const result = await saga.run({
@@ -360,6 +364,7 @@ describe("TaskCreationSaga", () => {
       } as never,
       host,
       sessionService,
+      track: vi.fn(),
     });
 
     await saga.run({
@@ -396,6 +401,7 @@ describe("TaskCreationSaga", () => {
       } as never,
       host,
       sessionService,
+      track: vi.fn(),
     });
 
     await saga.run({
@@ -438,6 +444,7 @@ describe("TaskCreationSaga", () => {
       } as never,
       host,
       sessionService,
+      track: vi.fn(),
     });
 
     const result = await saga.run({
