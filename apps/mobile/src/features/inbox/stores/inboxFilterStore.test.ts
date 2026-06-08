@@ -8,24 +8,27 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
   },
 }));
 
-import { useInboxFilterStore } from "./inboxFilterStore";
+import { type SourceProduct, useInboxFilterStore } from "./inboxFilterStore";
 
 describe("inboxFilterStore", () => {
   beforeEach(() => {
     useInboxFilterStore.getState().resetFilters();
   });
 
-  it("toggles signals_scout in and out of the source filter", () => {
-    const { toggleSourceProduct } = useInboxFilterStore.getState();
+  it.each<SourceProduct>(["signals_scout", "error_tracking", "github"])(
+    "toggles %s in and out of the source filter",
+    (source) => {
+      const { toggleSourceProduct } = useInboxFilterStore.getState();
 
-    toggleSourceProduct("signals_scout");
-    expect(useInboxFilterStore.getState().sourceProductFilter).toEqual([
-      "signals_scout",
-    ]);
+      toggleSourceProduct(source);
+      expect(useInboxFilterStore.getState().sourceProductFilter).toEqual([
+        source,
+      ]);
 
-    toggleSourceProduct("signals_scout");
-    expect(useInboxFilterStore.getState().sourceProductFilter).toEqual([]);
-  });
+      toggleSourceProduct(source);
+      expect(useInboxFilterStore.getState().sourceProductFilter).toEqual([]);
+    },
+  );
 });
 
 const INITIAL_STATE = useInboxFilterStore.getState();
