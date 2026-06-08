@@ -523,8 +523,6 @@ export interface InboxViewedProperties {
   source_product_filter: string[];
   status_filter_count: number;
   is_empty: boolean;
-  /** True when the inbox is scale-gated (GatedDueToScalePane shown, data not loaded). */
-  is_gated_due_to_scale: boolean;
   /** Breakdown of the visible report_count by priority (P0–P4, or "unknown"). */
   priority_p0_count: number;
   priority_p1_count: number;
@@ -776,7 +774,6 @@ export const ANALYTICS_EVENTS = {
   CLOUD_STREAM_DISCONNECTED: "Cloud stream disconnected",
 
   // Inbox events
-  INBOX_INTEREST_REGISTERED: "Inbox interest registered",
   INBOX_VIEWED: "Inbox viewed",
   INBOX_REPORT_OPENED: "Inbox report opened",
   INBOX_REPORT_CLOSED: "Inbox report closed",
@@ -899,7 +896,6 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.CLOUD_STREAM_DISCONNECTED]: CloudStreamDisconnectedProperties;
 
   // Inbox events
-  [ANALYTICS_EVENTS.INBOX_INTEREST_REGISTERED]: never;
   [ANALYTICS_EVENTS.INBOX_VIEWED]: InboxViewedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_OPENED]: InboxReportOpenedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;

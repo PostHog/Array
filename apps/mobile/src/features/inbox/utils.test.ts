@@ -75,7 +75,6 @@ describe("buildInboxViewedProperties", () => {
       ready_count: 0,
       has_active_filters: false,
       is_empty: true,
-      is_gated_due_to_scale: false,
       priority_p0_count: 0,
       priority_p1_count: 0,
       priority_p2_count: 0,

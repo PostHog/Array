@@ -237,7 +237,6 @@ export function buildInboxViewedProperties(
     source_product_filter: filters.sourceProductFilter,
     status_filter_count: filters.statusFilter.length,
     is_empty: totalCount === 0,
-    is_gated_due_to_scale: false,
     priority_p0_count: priorityCounts.P0,
     priority_p1_count: priorityCounts.P1,
     priority_p2_count: priorityCounts.P2,

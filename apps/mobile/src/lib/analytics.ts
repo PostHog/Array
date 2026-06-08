@@ -62,7 +62,6 @@ export interface InboxViewedProperties {
   source_product_filter: string[];
   status_filter_count: number;
   is_empty: boolean;
-  is_gated_due_to_scale: boolean;
   priority_p0_count: number;
   priority_p1_count: number;
   priority_p2_count: number;
