@@ -26,9 +26,18 @@ const byFileThenLine = (a, b) =>
     : a.filePath < b.filePath
       ? -1
       : 1;
+const encodedPath = (file) =>
+  String(file ?? "")
+    .split("/")
+    .map((segment) =>
+      encodeURIComponent(segment).replace(/[()]/g, (c) =>
+        c === "(" ? "%28" : "%29",
+      ),
+    )
+    .join("/");
 const fileLink = (file, line) =>
   slug && head
-    ? `[\`${inline(file)}:${line}\`](${server}/${slug}/blob/${head}/${file}#L${line})`
+    ? `[\`${inline(file)}:${line}\`](${server}/${slug}/blob/${head}/${encodedPath(file)}#L${line})`
     : `\`${inline(file)}:${line}\``;
 
 let report;
