@@ -93,7 +93,7 @@ export function buildAnalysisPrompt(data: SpendAnalysisResponse): string {
 
   return `Here is my PostHog Code LLM spend for the last ${windowDays}. Help me understand what's driving the cost and what concrete changes I should make to reduce it.
 
-Work only from the tables below — do **not** try to query PostHog LLM analytics or any external data source. The numbers here are everything you have. Rank advice by impact, lead with the biggest lever, and keep each suggestion concrete and actionable.
+Work only from the tables below — do **not** try to query PostHog AI observability or any external data source. The numbers here are everything you have. Rank advice by impact, lead with the biggest lever, and keep each suggestion concrete and actionable.
 
 ## My spend
 

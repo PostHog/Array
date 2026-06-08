@@ -103,7 +103,7 @@ const SOURCE_PRODUCT_OPTIONS: {
   },
   {
     value: "llm_analytics",
-    label: "LLM analytics",
+    label: "AI observability",
     icon: <BrainIcon size={14} />,
   },
   { value: "github", label: "GitHub", icon: <GithubLogoIcon size={14} /> },

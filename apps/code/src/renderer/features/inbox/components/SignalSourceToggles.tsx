@@ -178,7 +178,7 @@ export const EvaluationsSection = memo(function EvaluationsSection({
           <Flex direction="column" gap="1">
             <Flex align="center" gap="2">
               <Text className="font-medium text-(--gray-12) text-sm">
-                LLM Analytics
+                AI observability
               </Text>
               <Tooltip content="This is only visible to staff users of PostHog">
                 <Badge color="blue">Internal</Badge>
@@ -189,21 +189,21 @@ export const EvaluationsSection = memo(function EvaluationsSection({
             </Text>
             <Text className="text-(--gray-11) text-[13px]">
               <a
-                href="https://posthog.com/docs/llm-analytics"
+                href="https://posthog.com/docs/ai-observability"
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => {
                   e.stopPropagation();
                   e.preventDefault();
                   window.open(
-                    "https://posthog.com/docs/llm-analytics",
+                    "https://posthog.com/docs/ai-observability",
                     "_blank",
                     "noopener",
                   );
                 }}
                 className="inline-flex items-center gap-[4px] text-(--accent-11) no-underline"
               >
-                Learn about LLM Analytics
+                Learn about AI observability
                 <ArrowSquareOutIcon size={11} />
               </a>
             </Text>

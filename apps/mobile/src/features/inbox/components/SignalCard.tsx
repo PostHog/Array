@@ -38,7 +38,7 @@ function sourceLine(signal: Signal): string {
   if (source_product === "session_replay" && source_type === "session_problem")
     return "Session replay · Session problem";
   if (source_product === "llm_analytics" && source_type === "evaluation")
-    return "LLM analytics · Evaluation";
+    return "AI observability · Evaluation";
   if (source_product === "zendesk" && source_type === "ticket")
     return "Zendesk · Ticket";
   if (source_product === "github" && source_type === "issue")
