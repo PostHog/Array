@@ -29,6 +29,20 @@ export function useRestoreCheckpoint({
   const confirmRestore = useCallback(async () => {
     if (!pendingCheckpointId || !repoPath) return;
 
+    // Checkpoint restore only works for local sessions: it reverts local git
+    // state and truncates the on-disk rollout/logs. Cloud sessions have no
+    // local agent to reconnect, so block here (before any destructive revert)
+    // and tell the user why instead of failing silently.
+    const session = taskId
+      ? sessionStoreSetters.getSessionByTaskId(taskId)
+      : undefined;
+    if (session?.isCloud) {
+      toast.error("Checkpoint restore isn't available for cloud sessions");
+      setDialogOpen(false);
+      setPendingCheckpointId(null);
+      return;
+    }
+
     setIsRestoring(true);
     try {
       const restoreResult = await trpcClient.checkpoint.restore.mutate({
@@ -51,7 +65,13 @@ export function useRestoreCheckpoint({
           )
           .catch(() => {});
       }
-      toast.success("Checkpoint restored successfully");
+      if (restoreResult?.truncationFailed) {
+        toast.warning(
+          "Checkpoint restored, but trimming the agent's history failed — it may still remember messages after this point.",
+        );
+      } else {
+        toast.success("Checkpoint restored successfully");
+      }
       setDialogOpen(false);
       setPendingCheckpointId(null);
     } catch (error) {

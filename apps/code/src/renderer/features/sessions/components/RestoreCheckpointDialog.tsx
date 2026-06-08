@@ -6,6 +6,8 @@ interface RestoreCheckpointDialogProps {
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
   isLoading: boolean;
+  /** True when the agent is mid-response; restoring will stop it. */
+  isTurnInProgress?: boolean;
 }
 
 export function RestoreCheckpointDialog({
@@ -13,6 +15,7 @@ export function RestoreCheckpointDialog({
   onOpenChange,
   onConfirm,
   isLoading,
+  isTurnInProgress = false,
 }: RestoreCheckpointDialogProps) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -24,11 +27,18 @@ export function RestoreCheckpointDialog({
               Restore checkpoint
             </Dialog.Title>
           </Flex>
-          <Flex gap="2" align="start" className="rounded-(--radius-2) bg-(--amber-2) p-2">
+          <Flex
+            gap="2"
+            align="start"
+            className="rounded-(--radius-2) bg-(--amber-2) p-2"
+          >
             <Warning size={16} className="mt-0.5 shrink-0 text-(--amber-9)" />
             <Text size="2" color="gray">
               This will revert all file changes made after this point. This
               action cannot be undone.
+              {isTurnInProgress
+                ? " The agent is still responding — restoring will stop the current response."
+                : ""}
             </Text>
           </Flex>
           <Flex gap="2" justify="end">

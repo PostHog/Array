@@ -62,10 +62,18 @@ export class LocalLogsService {
     }
   }
 
+  /**
+   * Trims local logs.ndjson to the JSON-RPC response for the given prompt id
+   * (the turn-completion boundary). Returns false when the trim could not be
+   * guaranteed — a real read/write error, or the boundary line was not found
+   * while there was content to search — so the caller can warn the user that
+   * the restored view may still contain post-checkpoint turns. A missing log
+   * file (nothing to trim) returns true.
+   */
   async truncateLocalLogsAtPromptBoundary(
     taskRunId: string,
     promptId: number,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const logPath = this.getLocalLogPath(taskRunId);
     let content: string;
     try {
@@ -76,8 +84,10 @@ export class LocalLogsService {
           "Failed to read local logs for prompt-boundary truncation:",
           error,
         );
+        return false;
       }
-      return;
+      // No log file yet — nothing to truncate.
+      return true;
     }
 
     const lines = content.split("\n").filter((l) => l.trim());
@@ -109,11 +119,12 @@ export class LocalLogsService {
         taskRunId,
         promptId,
       });
-      return;
+      return false;
     }
 
     if (boundaryIdx + 1 >= lines.length) {
-      return;
+      // Boundary is already the last line — log is correctly trimmed.
+      return true;
     }
 
     const truncated = `${lines.slice(0, boundaryIdx + 1).join("\n")}\n`;
@@ -124,7 +135,7 @@ export class LocalLogsService {
     } catch (error) {
       log.warn("Failed to write prompt-boundary truncated local logs:", error);
       await fs.promises.unlink(tmpPath).catch(() => {});
-      return;
+      return false;
     }
 
     log.info(
@@ -141,6 +152,7 @@ export class LocalLogsService {
     // that overwrites the file with pre-truncate content is followed by a
     // corrective write of the properly-trimmed content.
     this.writeLocalLogs(taskRunId, truncated);
+    return true;
   }
 
   async readLocalLogs(taskRunId: string): Promise<string | null> {

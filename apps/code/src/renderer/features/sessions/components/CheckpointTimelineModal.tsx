@@ -3,7 +3,14 @@ import {
   ClockCounterClockwise,
 } from "@phosphor-icons/react";
 import { isNotification, POSTHOG_NOTIFICATIONS } from "@posthog/agent";
-import { Button, Dialog, Flex, ScrollArea, Text } from "@radix-ui/themes";
+import {
+  Badge,
+  Button,
+  Dialog,
+  Flex,
+  ScrollArea,
+  Text,
+} from "@radix-ui/themes";
 import type { AcpMessage } from "@shared/types/session-events";
 import {
   isJsonRpcNotification,
@@ -80,6 +87,8 @@ interface CheckpointTimelineModalProps {
   onOpenChange: (open: boolean) => void;
   events: AcpMessage[];
   onRestore: (checkpointId: string) => void;
+  /** Disables restore actions while a restore is already in progress. */
+  isRestoring?: boolean;
 }
 
 export function CheckpointTimelineModal({
@@ -87,6 +96,7 @@ export function CheckpointTimelineModal({
   onOpenChange,
   events,
   onRestore,
+  isRestoring = false,
 }: CheckpointTimelineModalProps) {
   const entries = useMemo(() => parseTimeline(events), [events]);
 
@@ -107,10 +117,14 @@ export function CheckpointTimelineModal({
           ) : (
             <ScrollArea style={{ maxHeight: "60vh" }}>
               <Flex direction="column" gap="2" pr="2">
-                {entries.map((entry) => (
+                {entries.map((entry, index) => (
                   <CheckpointRow
                     key={entry.checkpointId}
                     entry={entry}
+                    // entries are newest-first; the first is the current head,
+                    // so restoring to it is a no-op (nothing to truncate after).
+                    isCurrent={index === 0}
+                    isRestoring={isRestoring}
                     onRestore={() => {
                       onOpenChange(false);
                       onRestore(entry.checkpointId);
@@ -135,9 +149,13 @@ export function CheckpointTimelineModal({
 
 function CheckpointRow({
   entry,
+  isCurrent,
+  isRestoring,
   onRestore,
 }: {
   entry: CheckpointEntry;
+  isCurrent: boolean;
+  isRestoring: boolean;
   onRestore: () => void;
 }) {
   const snippet = entry.userMessageSnippet.trim().slice(0, 120);
@@ -158,16 +176,23 @@ function CheckpointRow({
           {formatRelativeTimeShort(entry.timestamp)}
         </Text>
       </Flex>
-      <Button
-        size="1"
-        variant="soft"
-        color="gray"
-        onClick={onRestore}
-        className="shrink-0"
-      >
-        <ArrowCounterClockwise size={12} />
-        Restore
-      </Button>
+      {isCurrent ? (
+        <Badge color="gray" variant="soft" className="shrink-0">
+          Current
+        </Badge>
+      ) : (
+        <Button
+          size="1"
+          variant="soft"
+          color="gray"
+          onClick={onRestore}
+          disabled={isRestoring}
+          className="shrink-0"
+        >
+          <ArrowCounterClockwise size={12} />
+          Restore
+        </Button>
+      )}
     </Flex>
   );
 }

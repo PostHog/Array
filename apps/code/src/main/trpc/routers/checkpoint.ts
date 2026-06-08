@@ -15,6 +15,11 @@ import { publicProcedure, router } from "../trpc";
 
 const log = logger.scope("checkpoint-router");
 
+// Guards against concurrent restores for the same session. Two restores racing
+// would truncate logs.ndjson + the rollout at different offsets and corrupt
+// both. Keyed by taskRunId (falling back to repoPath when there is no run).
+const restoreInFlight = new Set<string>();
+
 const getAgentService = () =>
   container.get<AgentService>(MAIN_TOKENS.AgentService);
 
@@ -49,192 +54,236 @@ export const checkpointRouter = router({
     }),
 
   restore: publicProcedure.input(restoreInput).mutation(async ({ input }) => {
-    // 1. Revert git files to checkpoint state
-    const saga = new RevertCheckpointSaga();
-    const result = await saga.run({
-      baseDir: input.repoPath,
-      checkpointId: input.checkpointId,
-    });
-    if (!result.success) {
-      throw new Error(result.error ?? "Failed to revert checkpoint");
+    // Reject overlapping restores for the same session (see restoreInFlight).
+    const lockKey = input.taskRunId ?? input.repoPath;
+    if (restoreInFlight.has(lockKey)) {
+      throw new Error(
+        "A checkpoint restore is already in progress for this session. Please wait for it to finish.",
+      );
     }
+    restoreInFlight.add(lockKey);
+    try {
+      return await runRestore(input);
+    } finally {
+      restoreInFlight.delete(lockKey);
+    }
+  }),
+});
 
-    // 2. Truncate logs, clean up orphaned refs, and restart the agent.
-    // Everything here is non-fatal: git files were already reverted.
-    let restoredSessionId: string | undefined;
-    if (input.taskRunId) {
-      try {
-        const agentService = getAgentService();
-        const info = agentService.getSessionInfo(input.taskRunId);
-        if (info) {
-          restoredSessionId = info.sessionId;
-          let orphanedCheckpointIds: string[] = [];
+/**
+ * Performs the actual checkpoint restore. Extracted so the mutation can wrap it
+ * in the restoreInFlight lock with a try/finally.
+ *
+ * Returns `truncationFailed: true` when any log/rollout truncation step errored.
+ * The git revert still succeeded in that case, but the agent may keep memory
+ * past the checkpoint, so the renderer surfaces a warning to the user.
+ */
+async function runRestore(input: {
+  checkpointId: string;
+  repoPath: string;
+  taskRunId?: string;
+}): Promise<{ restoredSessionId?: string; truncationFailed: boolean }> {
+  // 1. Revert git files to checkpoint state
+  const saga = new RevertCheckpointSaga();
+  const result = await saga.run({
+    baseDir: input.repoPath,
+    checkpointId: input.checkpointId,
+  });
+  if (!result.success) {
+    throw new Error(result.error ?? "Failed to revert checkpoint");
+  }
 
-          // Truncate S3 + local cache BEFORE cancelling the session.
-          // cancelSession triggers reconnect; if reconnect reads local cache
-          // before truncation, the stale full history would be loaded.
-          try {
-            const authService = getAuthService();
-            const url = `${info.apiHost}/api/projects/${info.projectId}/tasks/${info.taskId}/runs/${input.taskRunId}/truncate_log/`;
-            const promptId = agentService.getCheckpointPromptId(
-              input.taskRunId,
-              input.checkpointId,
-            );
-            const response = await authService.authenticatedFetch(fetch, url, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                checkpoint_id: input.checkpointId,
-                prompt_id: promptId,
-              }),
-            });
-            if (response.ok) {
-              const s3Result = (await response.json()) as {
-                truncated: boolean;
-                original_line_count: number;
-                truncated_line_count: number;
-                orphaned_checkpoint_ids: string[];
-              };
-              log.info("S3 log truncated after checkpoint restore", {
-                taskRunId: input.taskRunId,
-                checkpointId: input.checkpointId,
-                promptId,
-                truncated: s3Result.truncated,
-                originalLines: s3Result.original_line_count,
-                truncatedLines: s3Result.truncated_line_count,
-                orphanedCheckpoints: s3Result.orphaned_checkpoint_ids,
-              });
-              const localLogsSvc = getLocalLogsService();
-              if (s3Result.truncated) {
-                orphanedCheckpointIds = s3Result.orphaned_checkpoint_ids ?? [];
-                // Coarse trim: align local cache with the S3 line count.
-                await localLogsSvc
-                  .truncateLocalLogs(
-                    input.taskRunId,
-                    s3Result.truncated_line_count,
-                  )
-                  .catch((err: unknown) => {
-                    log.warn("Failed to truncate local log cache (non-fatal)", {
-                      taskRunId: input.taskRunId,
-                      error: err instanceof Error ? err.message : String(err),
-                    });
-                  });
-              } else {
-                log.warn(
-                  "S3 log was not truncated — will rely on client-side prompt-boundary trim",
-                  {
-                    taskRunId: input.taskRunId,
-                    checkpointId: input.checkpointId,
-                    promptId,
-                  },
-                );
-              }
-              // Fine-trim to the exact prompt boundary regardless of S3 result.
-              // This is the primary defense for Codex sessions (all events are
-              // type:"notification", so the backend may not find turn boundaries).
-              // Cancel any in-flight drain first so our write wins.
-              localLogsSvc.cancelPendingWrite(input.taskRunId);
-              await localLogsSvc
-                .truncateLocalLogsAtPromptBoundary(
-                  input.taskRunId,
-                  promptId ?? -1,
-                )
-                .catch((err: unknown) => {
-                  log.warn(
-                    "Failed to truncate local logs at prompt boundary (non-fatal)",
-                    {
-                      taskRunId: input.taskRunId,
-                      error: err instanceof Error ? err.message : String(err),
-                    },
-                  );
-                });
-            } else {
-              log.warn("S3 log truncation returned non-ok status", {
-                taskRunId: input.taskRunId,
-                status: response.status,
-              });
-            }
-          } catch (err) {
-            log.warn("Failed to truncate S3 log (non-fatal)", {
-              taskRunId: input.taskRunId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
+  // 2. Truncate logs, clean up orphaned refs, and restart the agent.
+  // Everything here is non-fatal: git files were already reverted.
+  let restoredSessionId: string | undefined;
+  // Tracks whether any truncation step failed, so the renderer can warn that
+  // the restore was partial (agent memory may extend past the checkpoint).
+  let truncationFailed = false;
+  if (input.taskRunId) {
+    try {
+      const agentService = getAgentService();
+      const info = agentService.getSessionInfo(input.taskRunId);
+      if (info) {
+        restoredSessionId = info.sessionId;
+        let orphanedCheckpointIds: string[] = [];
 
-          // Clean up git refs for orphaned checkpoints
-          if (orphanedCheckpointIds.length > 0) {
-            const git = createGitClient(input.repoPath);
-            await Promise.all(
-              orphanedCheckpointIds.map((id) =>
-                deleteCheckpoint(git, id).catch(() => {}),
-              ),
-            );
-            log.info("Deleted orphaned checkpoint refs", {
-              orphanedCheckpointIds,
-            });
-          }
-
-          // Trim in-memory checkpoints so replayCheckpoints only re-emits
-          // survivors — must happen before cancelSession triggers reconnect.
-          // Returns the number of surviving turns (used as keepTurns for Codex).
-          const survivingTurns = agentService.truncateCheckpoints(
+        // Truncate S3 + local cache BEFORE cancelling the session.
+        // cancelSession triggers reconnect; if reconnect reads local cache
+        // before truncation, the stale full history would be loaded.
+        try {
+          const authService = getAuthService();
+          const url = `${info.apiHost}/api/projects/${info.projectId}/tasks/${info.taskId}/runs/${input.taskRunId}/truncate_log/`;
+          const promptId = agentService.getCheckpointPromptId(
             input.taskRunId,
             input.checkpointId,
           );
-
-          // Mark this taskRunId so hydrateSessionJsonl force-refetches from
-          // the truncated S3 on reconnect, bypassing any stale existing JSONL.
-          // Must be set before cancelSession triggers the reconnect.
-          agentService.markCheckpointRestore(input.taskRunId);
-
-          // Cancel the session — renderer reconnects, hydrateSessionJsonl
-          // fetches the truncated S3 log and overwrites the stale JSONL.
-          await agentService.cancelSession(input.taskRunId);
-          log.info("Agent session cancelled for checkpoint restore", {
-            taskRunId: input.taskRunId,
-            checkpointId: input.checkpointId,
+          const response = await authService.authenticatedFetch(fetch, url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              checkpoint_id: input.checkpointId,
+              prompt_id: promptId,
+            }),
           });
-
-          // For Codex: truncate the on-disk rollout AFTER the subprocess is
-          // killed (file is now closed) so the resumed session has memory only
-          // up to the checkpoint. Must happen after cancelSession.
-          // survivingTurns=0 means the checkpoint wasn't found — skip truncation.
-          log.info("Checkpoint restore rollout decision", {
+          if (response.ok) {
+            const s3Result = (await response.json()) as {
+              truncated: boolean;
+              original_line_count: number;
+              truncated_line_count: number;
+              orphaned_checkpoint_ids: string[];
+            };
+            log.info("S3 log truncated after checkpoint restore", {
+              taskRunId: input.taskRunId,
+              checkpointId: input.checkpointId,
+              promptId,
+              truncated: s3Result.truncated,
+              originalLines: s3Result.original_line_count,
+              truncatedLines: s3Result.truncated_line_count,
+              orphanedCheckpoints: s3Result.orphaned_checkpoint_ids,
+            });
+            const localLogsSvc = getLocalLogsService();
+            if (s3Result.truncated) {
+              orphanedCheckpointIds = s3Result.orphaned_checkpoint_ids ?? [];
+              // Coarse trim: align local cache with the S3 line count.
+              await localLogsSvc
+                .truncateLocalLogs(
+                  input.taskRunId,
+                  s3Result.truncated_line_count,
+                )
+                .catch((err: unknown) => {
+                  truncationFailed = true;
+                  log.warn("Failed to truncate local log cache (non-fatal)", {
+                    taskRunId: input.taskRunId,
+                    error: err instanceof Error ? err.message : String(err),
+                  });
+                });
+            } else {
+              log.warn(
+                "S3 log was not truncated — will rely on client-side prompt-boundary trim",
+                {
+                  taskRunId: input.taskRunId,
+                  checkpointId: input.checkpointId,
+                  promptId,
+                },
+              );
+            }
+            // Fine-trim to the exact prompt boundary regardless of S3 result.
+            // This is the primary defense for Codex sessions (all events are
+            // type:"notification", so the backend may not find turn boundaries).
+            // Cancel any in-flight drain first so our write wins.
+            localLogsSvc.cancelPendingWrite(input.taskRunId);
+            const boundaryTrimmed = await localLogsSvc
+              .truncateLocalLogsAtPromptBoundary(
+                input.taskRunId,
+                promptId ?? -1,
+              )
+              .catch((err: unknown) => {
+                log.warn(
+                  "Failed to truncate local logs at prompt boundary (non-fatal)",
+                  {
+                    taskRunId: input.taskRunId,
+                    error: err instanceof Error ? err.message : String(err),
+                  },
+                );
+                return false;
+              });
+            // Flag a missing boundary only when we had a real prompt id to
+            // anchor to — a checkpoint without one (-1) has nothing to find.
+            if (!boundaryTrimmed && promptId != null) {
+              truncationFailed = true;
+              log.warn(
+                "Prompt-boundary trim did not complete; restored view may keep post-checkpoint turns",
+                { taskRunId: input.taskRunId, promptId },
+              );
+            }
+          } else {
+            log.warn("S3 log truncation returned non-ok status", {
+              taskRunId: input.taskRunId,
+              status: response.status,
+            });
+          }
+        } catch (err) {
+          truncationFailed = true;
+          log.warn("Failed to truncate S3 log (non-fatal)", {
             taskRunId: input.taskRunId,
-            adapter: info.adapter,
-            sessionId: info.sessionId,
-            survivingTurns,
+            error: err instanceof Error ? err.message : String(err),
           });
-          if (info.adapter === "codex" && survivingTurns > 0) {
-            await truncateCodexRollout(
-              info.sessionId,
-              survivingTurns,
-              log,
-            ).catch((err: unknown) => {
+        }
+
+        // Clean up git refs for orphaned checkpoints
+        if (orphanedCheckpointIds.length > 0) {
+          const git = createGitClient(input.repoPath);
+          await Promise.all(
+            orphanedCheckpointIds.map((id) =>
+              deleteCheckpoint(git, id).catch(() => {}),
+            ),
+          );
+          log.info("Deleted orphaned checkpoint refs", {
+            orphanedCheckpointIds,
+          });
+        }
+
+        // Trim in-memory checkpoints so replayCheckpoints only re-emits
+        // survivors — must happen before cancelSession triggers reconnect.
+        // Returns the number of surviving turns (used as keepTurns for Codex).
+        const survivingTurns = agentService.truncateCheckpoints(
+          input.taskRunId,
+          input.checkpointId,
+        );
+
+        // Mark this taskRunId so hydrateSessionJsonl force-refetches from
+        // the truncated S3 on reconnect, bypassing any stale existing JSONL.
+        // Must be set before cancelSession triggers the reconnect.
+        agentService.markCheckpointRestore(input.taskRunId);
+
+        // Cancel the session — renderer reconnects, hydrateSessionJsonl
+        // fetches the truncated S3 log and overwrites the stale JSONL.
+        await agentService.cancelSession(input.taskRunId);
+        log.info("Agent session cancelled for checkpoint restore", {
+          taskRunId: input.taskRunId,
+          checkpointId: input.checkpointId,
+        });
+
+        // For Codex: truncate the on-disk rollout AFTER the subprocess is
+        // killed (file is now closed) so the resumed session has memory only
+        // up to the checkpoint. Must happen after cancelSession.
+        // survivingTurns=0 means the checkpoint wasn't found — skip truncation.
+        log.info("Checkpoint restore rollout decision", {
+          taskRunId: input.taskRunId,
+          adapter: info.adapter,
+          sessionId: info.sessionId,
+          survivingTurns,
+        });
+        if (info.adapter === "codex" && survivingTurns > 0) {
+          await truncateCodexRollout(info.sessionId, survivingTurns, log).catch(
+            (err: unknown) => {
+              truncationFailed = true;
               log.warn("Failed to truncate codex rollout (non-fatal)", {
                 taskRunId: input.taskRunId,
                 sessionId: info.sessionId,
                 error: err instanceof Error ? err.message : String(err),
               });
-            });
-          }
-        } else {
-          log.warn("No active session found for checkpoint restore", {
-            taskRunId: input.taskRunId,
-          });
+            },
+          );
         }
-      } catch (err) {
-        log.warn("Failed to truncate agent session", {
+      } else {
+        log.warn("No active session found for checkpoint restore", {
           taskRunId: input.taskRunId,
-          error: err instanceof Error ? err.message : String(err),
         });
       }
+    } catch (err) {
+      truncationFailed = true;
+      log.warn("Failed to truncate agent session", {
+        taskRunId: input.taskRunId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
+  }
 
-    log.info("Checkpoint restore complete", {
-      taskRunId: input.taskRunId,
-      restoredSessionId,
-    });
-    return { restoredSessionId };
-  }),
-});
+  log.info("Checkpoint restore complete", {
+    taskRunId: input.taskRunId,
+    restoredSessionId,
+    truncationFailed,
+  });
+  return { restoredSessionId, truncationFailed };
+}

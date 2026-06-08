@@ -347,12 +347,14 @@ export function ConversationView({
         onOpenChange={restore.setDialogOpen}
         onConfirm={restore.confirmRestore}
         isLoading={restore.isRestoring}
+        isTurnInProgress={!!isPromptPending}
       />
       <CheckpointTimelineModal
         open={timelineOpen}
         onOpenChange={setTimelineOpen}
         events={events}
         onRestore={restore.requestRestore}
+        isRestoring={restore.isRestoring}
       />
     </WorkerPoolContextProvider>
   );
