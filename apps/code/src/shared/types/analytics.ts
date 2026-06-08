@@ -654,6 +654,11 @@ export interface UpgradePromptClickedProperties {
   surface: UpgradePromptClickedSurface;
 }
 
+export interface CloudTaskUsageBlockedProperties {
+  bucket: "burst" | "sustained" | null;
+  is_pro: boolean;
+}
+
 export interface SubscriptionStartedProperties {
   plan_key: string;
   previous_plan_key?: string;
@@ -788,6 +793,7 @@ export const ANALYTICS_EVENTS = {
   // Subscription events
   UPGRADE_PROMPT_SHOWN: "Upgrade prompt shown",
   UPGRADE_PROMPT_CLICKED: "Upgrade prompt clicked",
+  CLOUD_TASK_USAGE_BLOCKED: "Cloud task usage blocked",
   SUBSCRIPTION_STARTED: "Subscription started",
   SUBSCRIPTION_CANCELLED: "Subscription cancelled",
 } as const;
@@ -910,6 +916,7 @@ export type EventPropertyMap = {
   // Subscription events
   [ANALYTICS_EVENTS.UPGRADE_PROMPT_SHOWN]: UpgradePromptShownProperties;
   [ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED]: UpgradePromptClickedProperties;
+  [ANALYTICS_EVENTS.CLOUD_TASK_USAGE_BLOCKED]: CloudTaskUsageBlockedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
 };

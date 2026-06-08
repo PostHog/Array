@@ -1,4 +1,6 @@
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
+import { assertCloudUsageAvailable } from "@features/billing/preflightCloudUsage";
+import { useUsageLimitStore } from "@features/billing/stores/usageLimitStore";
 import { buildCloudTaskDescription } from "@features/editor/utils/cloud-prompt";
 import { useTaskInputHistoryStore } from "@features/message-editor/stores/taskInputHistoryStore";
 import type { EditorHandle } from "@features/message-editor/types";
@@ -28,7 +30,11 @@ import { useQuery } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback, useState } from "react";
-import type { TaskCreationInput, TaskService } from "../service/service";
+import {
+  isUsageLimitResult,
+  type TaskCreationInput,
+  type TaskService,
+} from "../service/service";
 
 const log = logger.scope("task-creation");
 
@@ -232,6 +238,11 @@ export function useTaskCreation({
       const allowSubmit = contentOverride ? canSubmitBase : canSubmit;
       if (!allowSubmit) return false;
 
+      // Block over-limit cloud creation before the pending view so it doesn't flash.
+      if (workspaceMode === "cloud" && !(await assertCloudUsageAvailable())) {
+        return false;
+      }
+
       setIsCreatingTask(true);
 
       const content = contentOverride ?? editor.getContent();
@@ -285,24 +296,29 @@ export function useTaskCreation({
         }
 
         const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
-        const result = await taskService.createTask(input, (output) => {
-          invalidateTasks(output.task);
-          if (signalReportId) {
-            clearTaskInputReportAssociation();
-          }
-          if (pendingTaskKey) {
-            pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
-          }
-          if (onTaskCreated) {
-            onTaskCreated(output.task);
-          } else {
-            void openTask(output.task);
-          }
-          useTourStore.getState().completeTour(createFirstTaskTour.id);
-          if (!pendingTaskKey && !contentOverride) {
-            editor.clear();
-          }
-        });
+        const result = await taskService.createTask(
+          input,
+          (output) => {
+            invalidateTasks(output.task);
+            if (signalReportId) {
+              clearTaskInputReportAssociation();
+            }
+            if (pendingTaskKey) {
+              pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
+            }
+            if (onTaskCreated) {
+              onTaskCreated(output.task);
+            } else {
+              void openTask(output.task);
+            }
+            useTourStore.getState().completeTour(createFirstTaskTour.id);
+            if (!pendingTaskKey && !contentOverride) {
+              editor.clear();
+            }
+            // Pre-flight already ran above for cloud; skip the service's duplicate check.
+          },
+          { skipCloudUsagePreflight: true },
+        );
 
         if (result.success) {
           setAdditionalDirectoriesOverride(null);
@@ -310,12 +326,18 @@ export function useTaskCreation({
         }
 
         if (!result.success) {
-          const title = getErrorTitle(result.failedStep);
-          toast.error(title, { description: result.error });
-          log.error("Task creation failed", {
-            failedStep: result.failedStep,
-            error: result.error,
-          });
+          // Usage-limit blocks already show the upgrade modal; don't also toast an error.
+          if (isUsageLimitResult(result)) {
+            useUsageLimitStore.getState().show();
+            log.warn("Cloud task creation blocked by usage limit");
+          } else {
+            const title = getErrorTitle(result.failedStep);
+            toast.error(title, { description: result.error });
+            log.error("Task creation failed", {
+              failedStep: result.failedStep,
+              error: result.error,
+            });
+          }
           if (pendingTaskKey) {
             pendingTaskPromptStoreApi.clear(pendingTaskKey);
             openTaskInput({ initialPrompt: plainPromptText });

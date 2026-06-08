@@ -1,9 +1,11 @@
 import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
+import { assertCloudUsageAvailable } from "@features/billing/preflightCloudUsage";
 import { useDraftStore } from "@features/message-editor/stores/draftStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import type { Workspace } from "@main/services/workspace/schemas";
 import type { SagaResult } from "@posthog/shared";
+import { CLOUD_USAGE_LIMIT_ERROR_MESSAGE } from "@renderer/api/posthogClient";
 import {
   type TaskCreationInput,
   type TaskCreationOutput,
@@ -20,6 +22,18 @@ const log = logger.scope("task-service");
 
 export type CreateTaskResult = SagaResult<TaskCreationOutput>;
 
+/**
+ * True when a failed createTask was blocked by the usage limit. The upgrade modal is
+ * already shown in this case, so callers should suppress their own error toast.
+ */
+export function isUsageLimitResult(result: CreateTaskResult): boolean {
+  return (
+    !result.success &&
+    (result.failedStep === "usage_limit" ||
+      result.error === CLOUD_USAGE_LIMIT_ERROR_MESSAGE)
+  );
+}
+
 @injectable()
 export class TaskService {
   /**
@@ -33,6 +47,7 @@ export class TaskService {
   public async createTask(
     input: TaskCreationInput,
     onTaskReady?: (output: TaskCreationOutput) => void,
+    options?: { skipCloudUsagePreflight?: boolean },
   ): Promise<CreateTaskResult> {
     log.info("Creating task", {
       workspaceMode: input.workspaceMode,
@@ -54,6 +69,20 @@ export class TaskService {
         success: false,
         error: "Not authenticated",
         failedStep: "validation",
+      };
+    }
+
+    // Backstop for callers that bypass useTaskCreation (e.g. inbox); the helper shows the modal.
+    // Callers that already pre-flighted pass skipCloudUsagePreflight to avoid a second fetch.
+    if (
+      !options?.skipCloudUsagePreflight &&
+      input.workspaceMode === "cloud" &&
+      !(await assertCloudUsageAvailable())
+    ) {
+      return {
+        success: false,
+        error: CLOUD_USAGE_LIMIT_ERROR_MESSAGE,
+        failedStep: "usage_limit",
       };
     }
 

@@ -12,9 +12,10 @@ import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback, useState } from "react";
 import { toast as sonnerToast } from "sonner";
-import type {
-  TaskCreationInput,
-  TaskService,
+import {
+  isUsageLimitResult,
+  type TaskCreationInput,
+  type TaskService,
 } from "../../task-detail/service/service";
 import { buildCreatePrReportPrompt } from "../utils/buildCreatePrReportPrompt";
 import { resolveDefaultModel } from "../utils/resolveDefaultModel";
@@ -136,15 +137,18 @@ export function useCreatePrReport({
         });
       } else {
         sonnerToast.dismiss(toastId);
-        toast.error("Failed to start PR task", {
-          description: result.error,
-        });
-        log.error("Create PR task creation failed", {
-          failedStep: result.failedStep,
-          error: result.error,
-          reportId,
-          reportTitle,
-        });
+        // Usage-limit blocks already show the upgrade modal; don't also toast an error.
+        if (!isUsageLimitResult(result)) {
+          toast.error("Failed to start PR task", {
+            description: result.error,
+          });
+          log.error("Create PR task creation failed", {
+            failedStep: result.failedStep,
+            error: result.error,
+            reportId,
+            reportTitle,
+          });
+        }
       }
     } catch (error) {
       sonnerToast.dismiss(toastId);
