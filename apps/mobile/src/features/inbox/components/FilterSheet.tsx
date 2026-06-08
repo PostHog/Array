@@ -76,6 +76,7 @@ const SOURCE_PRODUCT_OPTIONS: { value: SourceProduct; label: string }[] = [
   { value: "linear", label: "Linear" },
   { value: "zendesk", label: "Zendesk" },
   { value: "conversations", label: "Conversations" },
+  { value: "signals_scout", label: "Scout" },
 ];
 
 function SectionHeader({ title }: { title: string }) {

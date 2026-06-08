@@ -7,6 +7,7 @@ import {
   ChatCircle,
   CheckCircle,
   Code,
+  Compass,
   GithubLogo,
   LinkSimple,
   Question,
@@ -46,6 +47,12 @@ function sourceLine(signal: Signal): string {
     return "GitHub · Issue";
   if (source_product === "linear" && source_type === "issue")
     return "Linear · Issue";
+  if (
+    source_product === "signals_scout" &&
+    source_type === "cross_source_issue"
+  )
+    return "Scout · Cross-source issue";
+  if (source_product === "signals_scout") return "Scout";
   const product = source_product.replace(/_/g, " ");
   const type = source_type.replace(/_/g, " ");
   return `${product} · ${type}`;
@@ -73,6 +80,8 @@ function SourceIcon({
       return <ChatCircle size={size} color={color} />;
     case "linear":
       return <LinkSimple size={size} color={color} />;
+    case "signals_scout":
+      return <Compass size={size} color={color} />;
     default:
       return <WarningCircle size={size} color={color} />;
   }

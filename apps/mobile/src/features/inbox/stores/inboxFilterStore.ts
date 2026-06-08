@@ -21,7 +21,8 @@ export type SourceProduct =
   | "github"
   | "linear"
   | "zendesk"
-  | "conversations";
+  | "conversations"
+  | "signals_scout";
 
 export const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
   "ready",
