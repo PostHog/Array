@@ -82,22 +82,24 @@ describe("buildSessionOptions", () => {
       }
     });
 
-    it("does not force node when Claude executable is a native binary", () => {
-      process.env.CLAUDE_CODE_EXECUTABLE = "/tmp/claude";
+    it.each([
+      {
+        executablePath: "/tmp/claude",
+        expectedExecutable: undefined,
+        name: "does not force node when Claude executable is a native binary",
+      },
+      {
+        executablePath: "/tmp/cli.js",
+        expectedExecutable: "node",
+        name: "uses node when Claude executable is the legacy JavaScript CLI",
+      },
+    ])("$name", ({ executablePath, expectedExecutable }) => {
+      process.env.CLAUDE_CODE_EXECUTABLE = executablePath;
 
       const options = buildSessionOptions(makeParams());
 
-      expect(options.pathToClaudeCodeExecutable).toBe("/tmp/claude");
-      expect(options.executable).toBeUndefined();
-    });
-
-    it("uses node when Claude executable is the legacy JavaScript CLI", () => {
-      process.env.CLAUDE_CODE_EXECUTABLE = "/tmp/cli.js";
-
-      const options = buildSessionOptions(makeParams());
-
-      expect(options.pathToClaudeCodeExecutable).toBe("/tmp/cli.js");
-      expect(options.executable).toBe("node");
+      expect(options.pathToClaudeCodeExecutable).toBe(executablePath);
+      expect(options.executable).toBe(expectedExecutable);
     });
   });
 
