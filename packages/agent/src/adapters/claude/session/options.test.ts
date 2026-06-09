@@ -71,6 +71,36 @@ describe("buildSessionOptions", () => {
     expect(options.agents?.["ph-explore"]).toEqual(override);
   });
 
+  describe("CLAUDE_CODE_EXECUTABLE", () => {
+    const originalClaudeExecutable = process.env.CLAUDE_CODE_EXECUTABLE;
+
+    afterEach(() => {
+      if (originalClaudeExecutable === undefined) {
+        delete process.env.CLAUDE_CODE_EXECUTABLE;
+      } else {
+        process.env.CLAUDE_CODE_EXECUTABLE = originalClaudeExecutable;
+      }
+    });
+
+    it("does not force node when Claude executable is a native binary", () => {
+      process.env.CLAUDE_CODE_EXECUTABLE = "/tmp/claude";
+
+      const options = buildSessionOptions(makeParams());
+
+      expect(options.pathToClaudeCodeExecutable).toBe("/tmp/claude");
+      expect(options.executable).toBeUndefined();
+    });
+
+    it("uses node when Claude executable is the legacy JavaScript CLI", () => {
+      process.env.CLAUDE_CODE_EXECUTABLE = "/tmp/cli.js";
+
+      const options = buildSessionOptions(makeParams());
+
+      expect(options.pathToClaudeCodeExecutable).toBe("/tmp/cli.js");
+      expect(options.executable).toBe("node");
+    });
+  });
+
   describe("ANTHROPIC_CUSTOM_HEADERS", () => {
     const originalProjectId = process.env.POSTHOG_PROJECT_ID;
     const originalCustomHeaders = process.env.ANTHROPIC_CUSTOM_HEADERS;
