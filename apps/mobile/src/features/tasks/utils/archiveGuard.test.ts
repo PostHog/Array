@@ -39,22 +39,19 @@ describe("isTaskRunning", () => {
     expect(isTaskRunning(makeTask())).toBe(false);
   });
 
-  it("treats non-terminal run statuses as running", () => {
-    for (const status of [
-      "not_started",
-      "queued",
-      "started",
-      "in_progress",
-    ] as const) {
+  it.each(["not_started", "queued", "started", "in_progress"] as const)(
+    "treats %s as running",
+    (status) => {
       expect(isTaskRunning(makeTask(status))).toBe(true);
-    }
-  });
+    },
+  );
 
-  it("treats terminal run statuses as not running", () => {
-    for (const status of ["completed", "failed", "cancelled"] as const) {
+  it.each(["completed", "failed", "cancelled"] as const)(
+    "treats %s as not running",
+    (status) => {
       expect(isTaskRunning(makeTask(status))).toBe(false);
-    }
-  });
+    },
+  );
 });
 
 describe("confirmArchiveRunningTask", () => {
