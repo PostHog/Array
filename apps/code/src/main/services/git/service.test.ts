@@ -289,6 +289,50 @@ describe("GitService.getPrUrlForBranch", () => {
   });
 });
 
+describe("GitService.getTaskPrStatus (missing worktree directory)", () => {
+  let service: GitService;
+  let workspaceService: {
+    getWorkspace: ReturnType<typeof vi.fn>;
+    emit: ReturnType<typeof vi.fn>;
+  };
+  let workspaceRepo: {
+    findByTaskId: ReturnType<typeof vi.fn>;
+    updatePrCache: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    workspaceService = { getWorkspace: vi.fn(), emit: vi.fn() };
+    workspaceRepo = {
+      findByTaskId: vi.fn().mockReturnValue(null),
+      updatePrCache: vi.fn(),
+    };
+    service = new GitService(
+      {} as LlmGatewayService,
+      workspaceService as unknown as WorkspaceService,
+      { getSessionEnvForTask: async () => ({}) } as unknown as AgentService,
+      workspaceRepo as unknown as IWorkspaceRepository,
+    );
+  });
+
+  it("returns no diff and never touches git when the worktree directory is gone", async () => {
+    workspaceService.getWorkspace.mockResolvedValue({
+      mode: "worktree",
+      worktreePath: "/tmp/posthog-code-worktree-does-not-exist-xyz",
+      folderPath: null,
+      linkedBranch: null,
+    });
+    const diffSpy = vi.spyOn(service, "getDiffStats");
+
+    // Before the existence guard this rejected with "Cannot use simple-git on a
+    // directory that does not exist"; now it resolves cleanly to no diff.
+    const result = await service.getTaskPrStatus("task-1", null);
+
+    expect(result).toEqual({ prState: null, hasDiff: false });
+    expect(diffSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("mapPrState", () => {
   it("returns merged when merged boolean is true", () => {
     expect(mapPrState("open", true, false)).toBe("merged");
