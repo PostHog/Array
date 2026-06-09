@@ -28,9 +28,6 @@ export const POSTHOG_PRODUCTS = {
   logs: "Logs",
   apm: "APM",
   sql: "SQL",
-  /** Sourced from the agent reading a file in the user's codebase, not from an
-   *  MCP sub-tool — see the PostToolUse hook's Read handling. */
-  code: "Code",
   /** Generic fallback for a recognized-PostHog call we don't classify yet. */
   posthog: "PostHog",
 } as const;

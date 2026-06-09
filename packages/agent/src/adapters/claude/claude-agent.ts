@@ -1413,7 +1413,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       settingsManager,
       onModeChange: this.createOnModeChange(),
       onPostHogResourceUsed: this.createOnPostHogResourceUsed(),
-      onCodeFileRead: this.createOnCodeFileRead(),
       onProcessSpawned: this.options?.onProcessSpawned,
       onProcessExited: this.options?.onProcessExited,
       effort,
@@ -1662,12 +1661,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         classifyPostHogExecCall(subTool, commandText),
       );
     };
-  }
-
-  /** Records the `code` product the first time the agent reads a file from the
-   *  codebase, so working with code surfaces a chip just like an MCP call does. */
-  private createOnCodeFileRead() {
-    return () => this.recordSessionResources(["code"]);
   }
 
   /** Adds products to the session-wide set and emits any newly-seen ones.

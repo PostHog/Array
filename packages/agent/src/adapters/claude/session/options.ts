@@ -60,9 +60,6 @@ export interface BuildOptionsParams {
   enrichedReadCache?: EnrichedReadCache;
   /** Records PostHog product usage from MCP exec calls (deduped, session-wide). */
   onPostHogResourceUsed?: (subTool: string, commandText?: string) => void;
-  /** Records the `code` product when the agent reads a file from the codebase
-   *  (deduped, session-wide). */
-  onCodeFileRead?: () => void;
   /** Cloud task session — enables the signed-commit guard. */
   cloudMode?: boolean;
   /** Per-session task state populated by createTaskHook from SDK Task* events. */
@@ -168,7 +165,6 @@ function buildHooks(
   onPostHogResourceUsed:
     | ((subTool: string, commandText?: string) => void)
     | undefined,
-  onCodeFileRead: (() => void) | undefined,
   settingsManager: SettingsManager,
   logger: Logger,
   enrichmentDeps: FileEnrichmentDeps | undefined,
@@ -182,7 +178,6 @@ function buildHooks(
     createPostToolUseHook({
       onModeChange,
       onPostHogResourceUsed,
-      onCodeFileRead,
     }),
   ];
   if (enrichmentDeps && enrichedReadCache) {
@@ -409,7 +404,6 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.userProvidedOptions?.hooks,
       params.onModeChange,
       params.onPostHogResourceUsed,
-      params.onCodeFileRead,
       params.settingsManager,
       params.logger,
       params.enrichmentDeps,

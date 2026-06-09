@@ -5,7 +5,6 @@ import {
   BugIcon,
   ChartLineIcon,
   ClipboardTextIcon,
-  CodeIcon,
   DatabaseIcon,
   FileTextIcon,
   FlagIcon,
@@ -42,7 +41,6 @@ const PRODUCT_ICON: Record<PostHogProductId, ComponentType<IconProps>> = {
   logs: FileTextIcon,
   apm: GaugeIcon,
   sql: TableIcon,
-  code: CodeIcon,
   posthog: SparkleIcon,
 };
 
@@ -65,7 +63,6 @@ const PRODUCT_DOC_URL: Partial<Record<PostHogProductId, string>> = {
   cdp: "https://posthog.com/docs/cdp",
   logs: "https://posthog.com/docs/logs",
   sql: "https://posthog.com/docs/sql",
-  code: "https://posthog.com/code",
   posthog: "https://posthog.com/docs",
 };
 
