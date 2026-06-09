@@ -30,9 +30,21 @@ const ERROR_TRACKING_TYPE_LABELS: Record<string, string> = {
   issue_spiking: "Volume spike",
 };
 
+// Turn a scout's skill_name (e.g. "signals-scout-error-tracking") into a
+// human-friendly label (e.g. "Error tracking").
+function prettifyScoutName(skillName: string): string {
+  const cleaned = skillName
+    .replace(/^signals-scout-/, "")
+    .replace(/[-_]/g, " ")
+    .trim();
+  if (!cleaned) return "";
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
 function signalCardSourceLine(signal: {
   source_product: string;
   source_type: string;
+  extra?: Record<string, unknown>;
 }): string {
   const { source_product, source_type } = signal;
 
@@ -78,7 +90,11 @@ function signalCardSourceLine(signal: {
     source_product === "signals_scout" &&
     source_type === "cross_source_issue"
   ) {
-    return "Scout · Cross-source issue";
+    const skillName =
+      typeof signal.extra?.skill_name === "string"
+        ? prettifyScoutName(signal.extra.skill_name)
+        : "";
+    return skillName ? `Scout · ${skillName}` : "Scout · Cross-source issue";
   }
 
   const productLabel = source_product.replace(/_/g, " ");
@@ -271,7 +287,7 @@ function SignalCardHeader({
         )}
       </span>
       <Text className="font-medium text-(--gray-10) text-[13px]">
-        {signalCardSourceLine(signal)}
+        {signalCardSourceLine({ ...signal, extra: parseExtra(signal.extra) })}
       </Text>
       <span className="flex-1" />
       <RelativeTimestamp timestamp={signal.timestamp} />
