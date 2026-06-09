@@ -3,6 +3,7 @@ import { EnvelopeSimple } from "@phosphor-icons/react";
 import { Badge } from "@posthog/quill";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
 import { SidebarItem } from "../SidebarItem";
+import { SidebarCountBadge } from "./SidebarCountBadge";
 import { SidebarKbdHint } from "./SidebarKbdHint";
 
 interface InboxItemProps {
@@ -11,16 +12,15 @@ interface InboxItemProps {
   signalCount?: number;
 }
 
-function formatSignalCount(count: number): string {
-  if (count > 99) return "99+";
-  return String(count);
-}
-
-export function InboxItem({ isActive, onClick, signalCount }: InboxItemProps) {
+export function InboxItem({
+  isActive,
+  onClick,
+  signalCount = 0,
+}: InboxItemProps) {
   return (
     <Tooltip
       content={
-        signalCount && signalCount > 0
+        signalCount > 0
           ? `${signalCount} actionable report${signalCount === 1 ? "" : "s"} assigned to you`
           : "No actionable reports assigned to you yet"
       }
@@ -35,17 +35,10 @@ export function InboxItem({ isActive, onClick, signalCount }: InboxItemProps) {
           label={
             <>
               Inbox
-              {signalCount && signalCount > 0 ? (
-                <span
-                  className="ml-2 inline-flex shrink-0 items-center justify-center rounded-full bg-(--red-9) p-1 font-medium text-[10px] leading-none"
-                  style={{
-                    color: "white",
-                  }}
-                  title={`${signalCount} actionable reports for you`}
-                >
-                  {formatSignalCount(signalCount)}
-                </span>
-              ) : null}
+              <SidebarCountBadge
+                count={signalCount}
+                title={`${signalCount} actionable reports for you`}
+              />
             </>
           }
           isActive={isActive}

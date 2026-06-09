@@ -1,6 +1,7 @@
 import { House } from "@phosphor-icons/react";
 import { Badge } from "@posthog/quill";
 import { SidebarItem } from "../SidebarItem";
+import { SidebarCountBadge } from "./SidebarCountBadge";
 
 interface HomeItemProps {
   isActive: boolean;
@@ -8,12 +9,11 @@ interface HomeItemProps {
   attentionCount?: number;
 }
 
-function formatAttentionCount(count: number): string {
-  if (count > 99) return "99+";
-  return String(count);
-}
-
-export function HomeItem({ isActive, onClick, attentionCount }: HomeItemProps) {
+export function HomeItem({
+  isActive,
+  onClick,
+  attentionCount = 0,
+}: HomeItemProps) {
   return (
     <SidebarItem
       depth={0}
@@ -21,15 +21,10 @@ export function HomeItem({ isActive, onClick, attentionCount }: HomeItemProps) {
       label={
         <>
           Home
-          {attentionCount && attentionCount > 0 ? (
-            <span
-              className="ml-2 inline-flex shrink-0 items-center justify-center rounded-full bg-(--red-9) p-1 font-medium text-[10px] leading-none"
-              style={{ color: "white" }}
-              title={`${attentionCount} item${attentionCount === 1 ? "" : "s"} needing attention`}
-            >
-              {formatAttentionCount(attentionCount)}
-            </span>
-          ) : null}
+          <SidebarCountBadge
+            count={attentionCount}
+            title={`${attentionCount} item${attentionCount === 1 ? "" : "s"} needing attention`}
+          />
         </>
       }
       isActive={isActive}
