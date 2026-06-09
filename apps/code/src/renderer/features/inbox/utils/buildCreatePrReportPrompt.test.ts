@@ -51,17 +51,21 @@ describe("buildCreatePrReportPrompt", () => {
     expect(prompt).toContain("Use the v2 endpoint, not v1.");
   });
 
-  it("trims feedback and omits the section when it's blank", () => {
-    const withWhitespace = buildCreatePrReportPrompt({
+  it.each([
+    { label: "undefined", feedback: undefined },
+    { label: "empty string", feedback: "" },
+    { label: "whitespace only", feedback: "   " },
+  ])("omits the feedback section when feedback is $label", ({ feedback }) => {
+    const base = buildCreatePrReportPrompt({
       reportId: "abc123",
       isDevBuild: false,
-      feedback: "   ",
     });
-    const withoutFeedback = buildCreatePrReportPrompt({
+    const prompt = buildCreatePrReportPrompt({
       reportId: "abc123",
       isDevBuild: false,
+      feedback,
     });
-    expect(withWhitespace).toBe(withoutFeedback);
-    expect(withWhitespace).not.toMatch(/Additional feedback/i);
+    expect(prompt).toBe(base);
+    expect(prompt).not.toMatch(/Additional feedback/i);
   });
 });
