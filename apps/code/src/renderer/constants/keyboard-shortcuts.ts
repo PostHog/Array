@@ -23,7 +23,6 @@ export const SHORTCUTS = {
   SPACE_DOWN: "mod+down",
   FIND_IN_CONVERSATION: "mod+f",
   FILE_PICKER: "mod+p",
-  CHECKPOINT_TIMELINE: "mod+shift+h",
   BLUR: "escape",
   SUBMIT_BLUR: "mod+enter",
 } as const;
@@ -173,14 +172,6 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     configurable: true,
   },
   {
-    id: "checkpoint-timeline",
-    keys: SHORTCUTS.CHECKPOINT_TIMELINE,
-    description: "Open checkpoint timeline",
-    category: "panels",
-    context: "Task detail",
-    configurable: true,
-  },
-  {
     id: "paste-as-file",
     keys: SHORTCUTS.PASTE_AS_FILE,
     description: "Paste as file attachment",
@@ -257,7 +248,6 @@ export const CONFIGURABLE_SHORTCUT_IDS = [
   "copy-path",
   "toggle-focus",
   "file-picker",
-  "checkpoint-timeline",
   "paste-as-file",
   "prompt-history-prev",
   "prompt-history-next",
@@ -284,7 +274,6 @@ export const DEFAULT_KEYBINDINGS: Record<ConfigurableShortcutId, string> = {
   "copy-path": SHORTCUTS.COPY_PATH,
   "toggle-focus": SHORTCUTS.TOGGLE_FOCUS,
   "file-picker": SHORTCUTS.FILE_PICKER,
-  "checkpoint-timeline": SHORTCUTS.CHECKPOINT_TIMELINE,
   "paste-as-file": SHORTCUTS.PASTE_AS_FILE,
   "prompt-history-prev": "shift+up",
   "prompt-history-next": "shift+down",

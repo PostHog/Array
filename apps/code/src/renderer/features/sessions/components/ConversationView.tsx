@@ -12,7 +12,6 @@ import {
 } from "@features/sessions/stores/sessionStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { SkillButtonActionMessage } from "@features/skill-buttons/components/SkillButtonActionMessage";
-import { useShortcut } from "@hooks/useShortcut";
 import { ArrowDown, XCircle } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import WorkerUrl from "@pierre/diffs/worker/worker.js?worker&url";
@@ -20,13 +19,11 @@ import { Box, Button, Flex, Text } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import type { AcpMessage } from "@shared/types/session-events";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import {
   buildConversationItems,
   type ConversationItem,
   type TurnContext,
 } from "./buildConversationItems";
-import { CheckpointTimelineModal } from "./CheckpointTimelineModal";
 import { ConversationSearchBar } from "./ConversationSearchBar";
 import { GitActionMessage } from "./GitActionMessage";
 import { GitActionResult } from "./GitActionResult";
@@ -79,7 +76,6 @@ export function ConversationView({
   const listRef = useRef<VirtualizedListHandle>(null);
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const [timelineOpen, setTimelineOpen] = useState(false);
   const debugLogsCloudRuns = useSettingsStore((s) => s.debugLogsCloudRuns);
   const showDebugLogs = debugLogsCloudRuns;
   const contextUsage = useContextUsage(events);
@@ -136,16 +132,6 @@ export function ConversationView({
     repoPath: repoPath ?? undefined,
     taskId,
     taskRunId: session?.taskRunId,
-  });
-
-  const checkpointTimelineKey = useShortcut("checkpoint-timeline");
-  useHotkeys(checkpointTimelineKey, () => setTimelineOpen((o) => !o), {
-    preventDefault: true,
-    // Match the global shortcuts: fire even when focus is in the message
-    // editor (a contentEditable) or other form fields, otherwise the hotkey
-    // silently does nothing while the composer is focused (the common case).
-    enableOnFormTags: true,
-    enableOnContentEditable: true,
   });
 
   const items = useMemo<ConversationItem[]>(
@@ -359,13 +345,6 @@ export function ConversationView({
         onConfirm={restore.confirmRestore}
         isLoading={restore.isRestoring}
         isTurnInProgress={!!isPromptPending}
-      />
-      <CheckpointTimelineModal
-        open={timelineOpen}
-        onOpenChange={setTimelineOpen}
-        events={events}
-        onRestore={restore.requestRestore}
-        isRestoring={restore.isRestoring}
       />
     </WorkerPoolContextProvider>
   );
