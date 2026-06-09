@@ -4,10 +4,9 @@ import { Text } from "@radix-ui/themes";
 import {
   SITUATIONS,
   type SituationId,
-  type WorkflowAction,
   type WorkflowBindings,
 } from "@shared/types/workflow";
-import { freshActionId } from "./freshActionId";
+import { createDefaultAction } from "./freshActionId";
 import { SITUATION_TONE, STATION_LAYOUT } from "./workflowMapLayout";
 
 interface Props {
@@ -33,12 +32,7 @@ export function SituationStation({ id, bindings }: Props) {
 
   function handleAdd(e: React.MouseEvent) {
     e.stopPropagation();
-    const newAction: WorkflowAction = {
-      id: freshActionId(actions.map((a) => a.id)),
-      label: "Run skill",
-      skillId: "",
-      prompt: "",
-    };
+    const newAction = createDefaultAction(actions.map((a) => a.id));
     addAction(id, newAction);
     selectAction({
       kind: "action",

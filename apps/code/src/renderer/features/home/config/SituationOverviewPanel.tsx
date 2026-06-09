@@ -7,7 +7,7 @@ import {
   type SituationId,
   type WorkflowAction,
 } from "@shared/types/workflow";
-import { freshActionId } from "./freshActionId";
+import { createDefaultAction } from "./freshActionId";
 import { SITUATION_TONE } from "./workflowMapLayout";
 
 interface Props {
@@ -25,12 +25,7 @@ export function SituationOverviewPanel({ situationId, actions }: Props) {
   const tone = SITUATION_TONE[situationId];
 
   function handleAdd() {
-    const action: WorkflowAction = {
-      id: freshActionId(actions.map((a) => a.id)),
-      label: "Run skill",
-      skillId: "",
-      prompt: "",
-    };
+    const action = createDefaultAction(actions.map((a) => a.id));
     addAction(situationId, action);
     selectAction({
       kind: "action",
