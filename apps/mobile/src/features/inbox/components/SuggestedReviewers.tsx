@@ -21,6 +21,7 @@ import type {
   SuggestedReviewersArtefact,
 } from "../types";
 import {
+  orderSuggestedReviewers,
   reviewerMatchesAvailable,
   toSuggestedReviewerWriteContent,
 } from "../utils";
@@ -54,12 +55,10 @@ export function SuggestedReviewers({
 
   const reviewers = artefact.content;
 
-  const displayReviewers = useMemo(() => {
-    if (!meUuid) return reviewers;
-    const meIndex = reviewers.findIndex((r) => r.user?.uuid === meUuid);
-    if (meIndex <= 0) return reviewers;
-    return [reviewers[meIndex], ...reviewers.filter((_, i) => i !== meIndex)];
-  }, [reviewers, meUuid]);
+  const displayReviewers = useMemo(
+    () => orderSuggestedReviewers(reviewers, meUuid),
+    [reviewers, meUuid],
+  );
 
   const removeReviewer = (target: SuggestedReviewer) => {
     const next = reviewers.filter((r) => r !== target);
