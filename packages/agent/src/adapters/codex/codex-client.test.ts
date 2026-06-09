@@ -289,6 +289,96 @@ describe("createCodexClient onStructuredOutput", () => {
   });
 });
 
+describe("createCodexClient suppressReplay", () => {
+  const logger = new Logger({ debug: false, prefix: "[test]" });
+
+  function makeUpstream(): AgentSideConnection {
+    return {
+      sessionUpdate: vi.fn(async () => {}),
+      requestPermission: vi.fn(),
+      readTextFile: vi.fn(),
+      writeTextFile: vi.fn(),
+      createTerminal: vi.fn(),
+      terminalOutput: vi.fn(),
+      releaseTerminal: vi.fn(),
+      waitForTerminalExit: vi.fn(),
+      killTerminal: vi.fn(),
+      extMethod: vi.fn(),
+      extNotification: vi.fn(),
+    } as unknown as AgentSideConnection;
+  }
+
+  function notification(update: Record<string, unknown>): SessionNotification {
+    return { sessionId: "sess", update } as unknown as SessionNotification;
+  }
+
+  // Core of the checkpoint-restore duplication fix: while a loadSession replay
+  // is in flight, codex-acp re-streams the whole rollout as session/update
+  // events. Forwarding them re-persists history (logs.ndjson + S3) and re-fires
+  // callbacks. The client must drop them at the top of sessionUpdate.
+  test("drops session updates while suppressReplay is set (no upstream forward)", async () => {
+    const sessionState = createSessionState("sess", "/tmp");
+    sessionState.suppressReplay = true;
+    const upstream = makeUpstream();
+    const client = createCodexClient(upstream, logger, sessionState);
+
+    await client.sessionUpdate?.(
+      notification({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "replayed history" },
+      }),
+    );
+
+    expect(upstream.sessionUpdate).not.toHaveBeenCalled();
+  });
+
+  test("forwards session updates once suppressReplay is cleared", async () => {
+    const sessionState = createSessionState("sess", "/tmp");
+    sessionState.suppressReplay = true;
+    const upstream = makeUpstream();
+    const client = createCodexClient(upstream, logger, sessionState);
+
+    const note = notification({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "live turn" },
+    });
+
+    await client.sessionUpdate?.(note);
+    expect(upstream.sessionUpdate).not.toHaveBeenCalled();
+
+    // Replay finished — subsequent live events flow through normally.
+    sessionState.suppressReplay = false;
+    await client.sessionUpdate?.(note);
+    expect(upstream.sessionUpdate).toHaveBeenCalledTimes(1);
+    expect(upstream.sessionUpdate).toHaveBeenCalledWith(note);
+  });
+
+  test("does not re-fire onStructuredOutput for a replayed create_output", async () => {
+    const sessionState = createSessionState("sess", "/tmp");
+    sessionState.suppressReplay = true;
+    const onStructuredOutput = vi.fn(async () => {});
+    const upstream = makeUpstream();
+    const client = createCodexClient(upstream, logger, sessionState, {
+      onStructuredOutput,
+    });
+
+    // A historical create_output completion arriving during replay must not
+    // re-trigger the structured-output callback.
+    await client.sessionUpdate?.(
+      notification({
+        sessionUpdate: "tool_call",
+        toolCallId: "tc-replay",
+        title: "create_output",
+        status: "completed",
+        rawInput: { result: "stale" },
+      }),
+    );
+
+    expect(onStructuredOutput).not.toHaveBeenCalled();
+    expect(upstream.sessionUpdate).not.toHaveBeenCalled();
+  });
+});
+
 describe("createCodexClient usage_update propagation", () => {
   const logger = new Logger({ debug: false, prefix: "[test]" });
 

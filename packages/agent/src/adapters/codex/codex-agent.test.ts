@@ -145,6 +145,50 @@ describe("CodexAcpAgent", () => {
     );
   });
 
+  it("suppresses rollout replay during loadSession and clears it after", async () => {
+    const { agent } = createAgent();
+    const state = (
+      agent as unknown as { sessionState: { suppressReplay?: boolean } }
+    ).sessionState;
+
+    // Capture the flag's value at the moment codex-acp would re-stream the
+    // rollout (i.e. while loadSession is in flight).
+    let duringLoad: boolean | undefined;
+    mockCodexConnection.loadSession.mockImplementation(async () => {
+      duringLoad = state.suppressReplay;
+      return {
+        modes: { currentModeId: "auto", availableModes: [] },
+        configOptions: [],
+      } satisfies Partial<LoadSessionResponse>;
+    });
+
+    expect(state.suppressReplay).toBe(false);
+    await agent.loadSession({
+      sessionId: "session-1",
+      cwd: process.cwd(),
+    } as never);
+
+    expect(duringLoad).toBe(true);
+    expect(state.suppressReplay).toBe(false);
+  });
+
+  it("clears suppressReplay even when loadSession throws", async () => {
+    const { agent } = createAgent();
+    const state = (
+      agent as unknown as { sessionState: { suppressReplay?: boolean } }
+    ).sessionState;
+
+    mockCodexConnection.loadSession.mockRejectedValue(new Error("load failed"));
+
+    await expect(
+      agent.loadSession({
+        sessionId: "session-1",
+        cwd: process.cwd(),
+      } as never),
+    ).rejects.toThrow("load failed");
+    expect(state.suppressReplay).toBe(false);
+  });
+
   it("does not emit SDK_SESSION on loadSession when taskRunId is absent", async () => {
     const { agent, client } = createAgent();
     mockCodexConnection.loadSession.mockResolvedValue({

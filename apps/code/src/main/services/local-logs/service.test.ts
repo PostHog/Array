@@ -2,11 +2,14 @@ import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockMkdir, mockWriteFile, mockReadFile } = vi.hoisted(() => ({
-  mockMkdir: vi.fn(),
-  mockWriteFile: vi.fn(),
-  mockReadFile: vi.fn(),
-}));
+const { mockMkdir, mockWriteFile, mockReadFile, mockRename, mockUnlink } =
+  vi.hoisted(() => ({
+    mockMkdir: vi.fn(),
+    mockWriteFile: vi.fn(),
+    mockReadFile: vi.fn(),
+    mockRename: vi.fn(),
+    mockUnlink: vi.fn(),
+  }));
 
 vi.mock("node:fs", () => ({
   default: {
@@ -14,6 +17,8 @@ vi.mock("node:fs", () => ({
       mkdir: mockMkdir,
       writeFile: mockWriteFile,
       readFile: mockReadFile,
+      rename: mockRename,
+      unlink: mockUnlink,
     },
   },
 }));
@@ -63,6 +68,8 @@ describe("LocalLogsService", () => {
     mockMkdir.mockReset().mockResolvedValue(undefined);
     mockWriteFile.mockReset().mockResolvedValue(undefined);
     mockReadFile.mockReset();
+    mockRename.mockReset().mockResolvedValue(undefined);
+    mockUnlink.mockReset().mockResolvedValue(undefined);
   });
 
   describe("readLocalLogs", () => {
@@ -229,6 +236,83 @@ describe("LocalLogsService", () => {
 
       expect(mockWriteFile).toHaveBeenCalledTimes(2);
       expect(mockMkdir).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("truncateLocalLogsAtPromptBoundary", () => {
+    // A boundary line is the JSON-RPC response to a session/prompt request:
+    // type "notification" with a matching notification.id and a result field.
+    const responseLine = (id: number) =>
+      JSON.stringify({
+        type: "notification",
+        notification: { id, result: {} },
+      });
+
+    it("truncates to the prompt boundary and returns true", async () => {
+      const kept = `${[responseLine(2), responseLine(3)].join("\n")}\n`;
+      mockReadFile.mockResolvedValue(
+        `${[responseLine(2), responseLine(3), responseLine(4)].join("\n")}\n`,
+      );
+
+      const service = new LocalLogsService();
+      const result = await service.truncateLocalLogsAtPromptBoundary(RUN_ID, 3);
+
+      expect(result).toBe(true);
+      // Atomic write: tmp file written then renamed over the real path.
+      expect(mockRename).toHaveBeenCalledTimes(1);
+      const wroteTruncated = mockWriteFile.mock.calls.some(
+        (call) => call[1] === kept,
+      );
+      expect(wroteTruncated).toBe(true);
+      await flushMicrotasks();
+    });
+
+    it("returns false and does not rewrite when the boundary is not found", async () => {
+      mockReadFile.mockResolvedValue(
+        `${[responseLine(2), responseLine(3)].join("\n")}\n`,
+      );
+
+      const service = new LocalLogsService();
+      const result = await service.truncateLocalLogsAtPromptBoundary(
+        RUN_ID,
+        99,
+      );
+
+      expect(result).toBe(false);
+      expect(mockRename).not.toHaveBeenCalled();
+    });
+
+    it("returns true without rewriting when the boundary is already last", async () => {
+      mockReadFile.mockResolvedValue(
+        `${[responseLine(2), responseLine(3)].join("\n")}\n`,
+      );
+
+      const service = new LocalLogsService();
+      const result = await service.truncateLocalLogsAtPromptBoundary(RUN_ID, 3);
+
+      expect(result).toBe(true);
+      expect(mockRename).not.toHaveBeenCalled();
+    });
+
+    it("returns true when the log file does not exist", async () => {
+      mockReadFile.mockRejectedValue(
+        Object.assign(new Error("nope"), { code: "ENOENT" }),
+      );
+
+      const service = new LocalLogsService();
+      const result = await service.truncateLocalLogsAtPromptBoundary(RUN_ID, 3);
+
+      expect(result).toBe(true);
+      expect(mockRename).not.toHaveBeenCalled();
+    });
+
+    it("returns false on a non-ENOENT read error", async () => {
+      mockReadFile.mockRejectedValue(new Error("boom"));
+
+      const service = new LocalLogsService();
+      const result = await service.truncateLocalLogsAtPromptBoundary(RUN_ID, 3);
+
+      expect(result).toBe(false);
     });
   });
 });
