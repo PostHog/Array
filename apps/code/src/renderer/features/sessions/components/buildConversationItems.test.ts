@@ -1,3 +1,4 @@
+import { POSTHOG_NOTIFICATIONS } from "@posthog/agent";
 import type { AcpMessage } from "@shared/types/session-events";
 import { makeAttachmentUri } from "@utils/promptContent";
 import { describe, expect, it } from "vitest";
@@ -74,6 +75,22 @@ function turnCompleteMsg(ts: number, stopReason = "end_turn"): AcpMessage {
   };
 }
 
+function gitCheckpointMsg(
+  ts: number,
+  checkpointId: string,
+  promptId: number,
+): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT,
+      params: { checkpointId, promptId },
+    },
+  };
+}
+
 describe("buildConversationItems", () => {
   it("extracts cloud prompt attachments into user messages", () => {
     const uri = makeAttachmentUri("/tmp/hello world.txt");
@@ -117,8 +134,51 @@ describe("buildConversationItems", () => {
             label: "hello world.txt",
           },
         ],
+        turnContext: expect.anything(),
       },
     ]);
+  });
+
+  // Restore-icon gating: a turn is restorable iff its user_message carries a
+  // lastCheckpointId, set from the GIT_CHECKPOINT notification. This must work
+  // when the checkpoint is loaded from logs.ndjson on a cold start (the only
+  // place it lives after the in-memory map is gone on app restart).
+  it("associates a git_checkpoint notification with its turn via promptId", () => {
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "first"),
+        promptResponseMsg(2, 1),
+        turnCompleteMsg(3),
+        gitCheckpointMsg(4, "cp-abc", 1),
+      ],
+      null,
+    );
+
+    const userMsg = result.items.find((i) => i.type === "user_message");
+    expect(userMsg?.type).toBe("user_message");
+    expect(
+      userMsg?.type === "user_message"
+        ? userMsg.turnContext?.lastCheckpointId
+        : undefined,
+    ).toBe("cp-abc");
+  });
+
+  it("leaves lastCheckpointId unset for a turn with no checkpoint", () => {
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "first"),
+        promptResponseMsg(2, 1),
+        turnCompleteMsg(3),
+      ],
+      null,
+    );
+
+    const userMsg = result.items.find((i) => i.type === "user_message");
+    expect(
+      userMsg?.type === "user_message"
+        ? (userMsg.turnContext?.lastCheckpointId ?? null)
+        : "missing",
+    ).toBeNull();
   });
 
   it("marks cloud turns complete from structured turn completion notifications", () => {
@@ -175,6 +235,7 @@ describe("buildConversationItems", () => {
             label: "test.txt",
           },
         ],
+        turnContext: expect.anything(),
       },
     ]);
   });
@@ -218,6 +279,7 @@ describe("buildConversationItems", () => {
             label: "Receipt-2264-0277.pdf",
           },
         ],
+        turnContext: expect.anything(),
       },
     ]);
   });

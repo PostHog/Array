@@ -46,6 +46,7 @@ import type { IAppMeta } from "@posthog/platform/app-meta";
 import type { IBundledResources } from "@posthog/platform/bundled-resources";
 import type { IPowerManager } from "@posthog/platform/power-manager";
 import type { IStoragePaths } from "@posthog/platform/storage-paths";
+import { DATA_DIR } from "@shared/constants";
 import { isAuthError } from "@shared/errors";
 import type { AcpMessage } from "@shared/types/session-events";
 import { inject, injectable, preDestroy } from "inversify";
@@ -1997,6 +1998,37 @@ For git operations while detached:
     } else {
       log.warn("No sessionId yet — checkpoint not written to JSONL", {
         taskRunId,
+      });
+    }
+
+    // Also append to the local logs.ndjson cache. The renderer's fetchSessionLogs
+    // reads logs.ndjson first (before S3), and the in-memory sessionCheckpoints
+    // map is lost when the main process restarts. Without this, the checkpoint
+    // notification lives only in S3 + the in-memory map, so after the app is
+    // reopened the cold load reads a checkpoint-less local cache and every
+    // restore icon goes disabled. This append (matching the SessionLogWriter
+    // tap's line-by-line model) keeps checkpoints visible across restarts.
+    try {
+      const sessionDir = join(homedir(), DATA_DIR, "sessions", taskRunId);
+      await fsPromises.mkdir(sessionDir, { recursive: true });
+      const entry = {
+        type: "notification" as const,
+        timestamp: new Date().toISOString(),
+        notification,
+      };
+      await fsPromises.appendFile(
+        join(sessionDir, "logs.ndjson"),
+        `${JSON.stringify(entry)}\n`,
+        "utf-8",
+      );
+      log.info("Checkpoint appended to local logs.ndjson", {
+        taskRunId,
+        checkpointId: result.checkpointId,
+      });
+    } catch (err) {
+      log.warn("Failed to append checkpoint to local logs.ndjson", {
+        taskRunId,
+        error: err instanceof Error ? err.message : String(err),
       });
     }
   }
