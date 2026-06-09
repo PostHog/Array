@@ -1,10 +1,5 @@
 import { cloneElement, type ReactElement } from "react";
-import {
-  StyleSheet,
-  Text,
-  type TextProps,
-  type TextStyle,
-} from "react-native";
+import { StyleSheet, Text, type TextProps, type TextStyle } from "react-native";
 import {
   FONT_SCALE_BY_PREFERENCE,
   usePreferencesStore,

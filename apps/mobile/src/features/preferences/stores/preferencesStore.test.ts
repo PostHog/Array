@@ -63,16 +63,11 @@ describe("preferencesStore font size", () => {
   });
 
   it.each([
-    ["small", true],
-    ["large", false],
-    ["xlarge", false],
-  ] as const)("orders the %s scale relative to default", (size, smaller) => {
-    const scale = FONT_SCALE_BY_PREFERENCE[size];
-    if (smaller) {
-      expect(scale).toBeLessThan(1);
-    } else {
-      expect(scale).toBeGreaterThan(1);
-    }
+    ["small", 0.9],
+    ["large", 1.15],
+    ["xlarge", 1.3],
+  ] as const)("FONT_SCALE_BY_PREFERENCE.%s equals %s", (size, expected) => {
+    expect(FONT_SCALE_BY_PREFERENCE[size]).toBe(expected);
   });
 
   it.each(["small", "default", "large", "xlarge"] as const)(
