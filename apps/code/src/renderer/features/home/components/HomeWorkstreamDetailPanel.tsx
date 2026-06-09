@@ -28,6 +28,7 @@ import { formatRelativeTimeShort } from "@utils/time";
 import { type BoundAction, useBoundActions } from "../hooks/useBoundActions";
 import { useRunWorkstreamAction } from "../hooks/useRunWorkstreamAction";
 import { SituationChip } from "./SituationChip";
+import { CiIndicator } from "./WorkstreamBits";
 
 interface Props {
   workstream: HomeWorkstream;
@@ -227,7 +228,7 @@ function PrBlock({ pr, onOpen }: { pr: PrSnapshot; onOpen: () => void }) {
       >
         <Flex align="center" justify="between" gap="2">
           <PrStatePill pr={pr} />
-          <CiBadge status={pr.ciStatus} />
+          <CiIndicator status={pr.ciStatus} showLabel />
         </Flex>
         {pr.reviewDecision === "approved" ? (
           <Flex
@@ -280,34 +281,6 @@ function PrStatePill({ pr }: { pr: PrSnapshot }) {
   if (pr.state === "draft") return <Badge variant="default">Draft</Badge>;
   if (pr.state === "closed") return <Badge variant="default">Closed</Badge>;
   return <Badge variant="success">Open</Badge>;
-}
-
-function CiBadge({ status }: { status: PrSnapshot["ciStatus"] }) {
-  if (status === "passing") {
-    return (
-      <Flex align="center" gap="1" className="text-(--green-11) text-[11px]">
-        <CheckCircle size={11} weight="fill" />
-        <span>CI passing</span>
-      </Flex>
-    );
-  }
-  if (status === "failing") {
-    return (
-      <Flex align="center" gap="1" className="text-(--red-11) text-[11px]">
-        <XCircle size={11} weight="fill" />
-        <span>CI failing</span>
-      </Flex>
-    );
-  }
-  if (status === "pending") {
-    return (
-      <Flex align="center" gap="1" className="text-(--amber-11) text-[11px]">
-        <Spinner size={11} className="animate-spin" />
-        <span>CI pending</span>
-      </Flex>
-    );
-  }
-  return null;
 }
 
 function TaskRow({
