@@ -303,23 +303,21 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
             return true;
           }
 
-          if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+          if (
+            (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+            // Only navigate prompt history when the input is empty, so arrow
+            // keys (and Shift+Arrow selection) behave normally while editing.
+            !event.shiftKey
+          ) {
             const historyGetter = getPromptHistoryRef.current;
             if (!taskId && !historyGetter) return false;
 
             const currentText = view.state.doc.textContent;
             const isEmpty = !currentText.trim();
-            const { from } = view.state.selection;
-            const isAtStart = from === 1;
-            const isAtEnd = from === view.state.doc.content.size - 1;
 
-            const forceNavigate = event.shiftKey;
             const history = historyGetter?.() ?? [];
 
-            if (
-              event.key === "ArrowUp" &&
-              (forceNavigate || isEmpty || isAtStart)
-            ) {
+            if (event.key === "ArrowUp" && isEmpty) {
               if (taskId) {
                 const queuedContent =
                   sessionStoreSetters.dequeueMessagesAsText(taskId);
@@ -346,10 +344,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               }
             }
 
-            if (
-              event.key === "ArrowDown" &&
-              (forceNavigate || isEmpty || isAtEnd)
-            ) {
+            if (event.key === "ArrowDown" && isEmpty) {
               const newText = historyActions.navigateDown(history);
               if (newText !== null) {
                 event.preventDefault();
