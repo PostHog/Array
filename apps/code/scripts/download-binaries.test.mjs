@@ -2,8 +2,6 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { downloadFile, MAX_DOWNLOAD_ATTEMPTS } from "./download-binaries.mjs";
 
-// Resolve sleep instantly and stub out the file write so downloadFile's retry
-// control flow can be tested without real delays or filesystem access.
 vi.mock("node:timers/promises", () => {
   const setTimeout = vi.fn(() => Promise.resolve());
   return { setTimeout, default: { setTimeout } };

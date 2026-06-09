@@ -80,13 +80,10 @@ const BINARIES = [
 export const MAX_DOWNLOAD_ATTEMPTS = 5;
 const RETRIABLE_HTTP_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
-// Thrown for HTTP statuses that will never succeed on retry (e.g. 404), so the
-// loop fails fast on them while treating every other error as transient.
 class NonRetriableError extends Error {}
 
 function backoffDelayMs(attempt) {
   const base = Math.min(1000 * 2 ** (attempt - 1), 15000);
-  // Full jitter so parallel CI runners hitting a throttled CDN don't retry in lockstep.
   return Math.floor(base * (0.5 + Math.random() * 0.5));
 }
 
@@ -106,8 +103,6 @@ export async function downloadFile(url, destPath) {
       console.log(`  Saved to: ${destPath}`);
       return;
     } catch (error) {
-      // Network-level failures (ECONNRESET, ETIMEDOUT, socket hang up) and
-      // stream errors are transient; only a NonRetriableError fails fast.
       if (
         error instanceof NonRetriableError ||
         attempt === MAX_DOWNLOAD_ATTEMPTS
@@ -194,7 +189,6 @@ async function main() {
   console.log("\nDone.");
 }
 
-// Only run when executed directly (e.g. via postinstall), not when imported by tests.
 const isEntrypoint =
   process.argv[1] &&
   realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
