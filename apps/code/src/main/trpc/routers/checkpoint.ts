@@ -1,3 +1,4 @@
+import { POSTHOG_NOTIFICATIONS } from "@posthog/agent";
 import { truncateCodexRollout } from "@posthog/agent/adapters/codex/rollout";
 import { createGitClient } from "@posthog/git/client";
 import {
@@ -172,10 +173,30 @@ async function runRestore(input: {
             // type:"notification", so the backend may not find turn boundaries).
             // Cancel any in-flight drain first so our write wins.
             localLogsSvc.cancelPendingWrite(input.taskRunId);
+            // Preserve the restored turn's own checkpoint notification: the trim
+            // cuts at the prompt response, dropping the git_checkpoint line that
+            // was appended after it on TURN_COMPLETE. Without re-adding it, the
+            // restored turn shows a disabled restore icon after an app restart.
+            const restoredCheckpointEntry =
+              promptId != null
+                ? JSON.stringify({
+                    type: "notification",
+                    timestamp: new Date().toISOString(),
+                    notification: {
+                      jsonrpc: "2.0",
+                      method: POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT,
+                      params: {
+                        checkpointId: input.checkpointId,
+                        promptId,
+                      },
+                    },
+                  })
+                : undefined;
             const boundaryTrimmed = await localLogsSvc
               .truncateLocalLogsAtPromptBoundary(
                 input.taskRunId,
                 promptId ?? -1,
+                restoredCheckpointEntry ? [restoredCheckpointEntry] : [],
               )
               .catch((err: unknown) => {
                 log.warn(

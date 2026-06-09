@@ -73,6 +73,7 @@ export class LocalLogsService {
   async truncateLocalLogsAtPromptBoundary(
     taskRunId: string,
     promptId: number,
+    preserveTrailingEntries: string[] = [],
   ): Promise<boolean> {
     const logPath = this.getLocalLogPath(taskRunId);
     let content: string;
@@ -122,12 +123,21 @@ export class LocalLogsService {
       return false;
     }
 
-    if (boundaryIdx + 1 >= lines.length) {
-      // Boundary is already the last line — log is correctly trimmed.
+    const keptLines = lines.slice(0, boundaryIdx + 1);
+    // Re-add entries that belong to the kept turns but were appended after the
+    // boundary — e.g. the restored turn's git_checkpoint notification, captured
+    // on TURN_COMPLETE after the prompt response, which the trim would otherwise
+    // drop (leaving the restored turn with a disabled restore icon). Skip dups.
+    const preserved = preserveTrailingEntries
+      .map((e) => e.trim())
+      .filter((e) => e.length > 0 && !keptLines.includes(e));
+
+    // Nothing after the boundary and nothing to re-add → already trimmed.
+    if (boundaryIdx + 1 >= lines.length && preserved.length === 0) {
       return true;
     }
 
-    const truncated = `${lines.slice(0, boundaryIdx + 1).join("\n")}\n`;
+    const truncated = `${[...keptLines, ...preserved].join("\n")}\n`;
     const tmpPath = `${logPath}.tmp.${Date.now()}`;
     try {
       await fs.promises.writeFile(tmpPath, truncated, "utf-8");
@@ -143,7 +153,8 @@ export class LocalLogsService {
       {
         taskRunId,
         promptId,
-        keptLines: boundaryIdx + 1,
+        keptLines: keptLines.length,
+        preserved: preserved.length,
         originalLines: lines.length,
       },
     );

@@ -314,5 +314,64 @@ describe("LocalLogsService", () => {
 
       expect(result).toBe(false);
     });
+
+    // The restored turn's git_checkpoint notification sits after its prompt
+    // response, so the trim drops it; the restore flow re-adds it so the
+    // restored turn stays restorable after an app restart.
+    it("re-appends preserved trailing entries after the boundary", async () => {
+      const cpEntry = JSON.stringify({
+        type: "notification",
+        timestamp: "t",
+        notification: {
+          jsonrpc: "2.0",
+          method: "_posthog/git_checkpoint",
+          params: { checkpointId: "cp1", promptId: 3 },
+        },
+      });
+      mockReadFile.mockResolvedValue(
+        `${[responseLine(2), responseLine(3), responseLine(4)].join("\n")}\n`,
+      );
+
+      const service = new LocalLogsService();
+      const result = await service.truncateLocalLogsAtPromptBoundary(
+        RUN_ID,
+        3,
+        [cpEntry],
+      );
+
+      expect(result).toBe(true);
+      const expected = `${[responseLine(2), responseLine(3), cpEntry].join("\n")}\n`;
+      expect(
+        mockWriteFile.mock.calls.some((call) => call[1] === expected),
+      ).toBe(true);
+      await flushMicrotasks();
+    });
+
+    it("re-appends preserved entries even when the boundary is the last line", async () => {
+      const cpEntry = JSON.stringify({
+        type: "notification",
+        timestamp: "t",
+        notification: {
+          jsonrpc: "2.0",
+          method: "_posthog/git_checkpoint",
+          params: { checkpointId: "cp1", promptId: 3 },
+        },
+      });
+      mockReadFile.mockResolvedValue(
+        `${[responseLine(2), responseLine(3)].join("\n")}\n`,
+      );
+
+      const service = new LocalLogsService();
+      const result = await service.truncateLocalLogsAtPromptBoundary(
+        RUN_ID,
+        3,
+        [cpEntry],
+      );
+
+      expect(result).toBe(true);
+      // Boundary was the last line, but the preserved entry forces a rewrite.
+      expect(mockRename).toHaveBeenCalledTimes(1);
+      await flushMicrotasks();
+    });
   });
 });
