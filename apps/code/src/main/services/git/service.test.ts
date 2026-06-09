@@ -324,8 +324,7 @@ describe("GitService.getTaskPrStatus (missing worktree directory)", () => {
     });
     const diffSpy = vi.spyOn(service, "getDiffStats");
 
-    // Before the existence guard this rejected with "Cannot use simple-git on a
-    // directory that does not exist"; now it resolves cleanly to no diff.
+    // Pre-guard this rejected; now it resolves to no diff.
     const result = await service.getTaskPrStatus("task-1", null);
 
     expect(result).toEqual({ prState: null, hasDiff: false });

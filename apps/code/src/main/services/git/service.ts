@@ -2020,9 +2020,7 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
       return false;
     }
     if (workspace.linkedBranch) return false;
-    // The workspace row can outlive its worktree directory (manually deleted,
-    // pruned, or the parent repo moved). Running git against a missing path
-    // makes simple-git throw, so skip it and report no diff.
+    // Worktree dir can be gone while the row remains; git would throw.
     if (!fs.existsSync(workspace.worktreePath)) return false;
     const [diffStats, syncStatus] = await Promise.all([
       this.getDiffStats(workspace.worktreePath),
@@ -2118,10 +2116,7 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
 
     if (isCloud) return { prUrl: null, prState: null, hasDiff: false };
 
-    // A local task's repo/worktree directory can be deleted out from under the
-    // workspace row. Bail before touching git so simple-git doesn't throw
-    // "Cannot use simple-git on a directory that does not exist" on every
-    // sidebar revalidation cycle.
+    // Repo/worktree dir can be gone while the row remains; git would throw.
     if (repoPath && !fs.existsSync(repoPath)) {
       return { prUrl: null, prState: null, hasDiff: false };
     }
