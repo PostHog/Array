@@ -10,7 +10,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Get app token
+        id: app-token
+        uses: getsentry/action-github-app-token@d4b5da6c5e37703f8c3b3e43abb5705b46e159cc # v3.0.0
+        with:
+          app_id: ${{ secrets.GH_APP_ARRAY_RELEASER_APP_ID }}
+          private_key: ${{ secrets.GH_APP_ARRAY_RELEASER_PRIVATE_KEY }}
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release if absent
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Pre-create a single draft release so every parallel publish job uploads
+          # into the same release. Without this, electron-forge's GitHub publisher
+          # creates-if-missing from each job at once, producing multiple releases for
+          # one tag and scattering assets (the orphans get left as drafts).
+          if gh release view "v$APP_VERSION" --repo PostHog/code >/dev/null 2>&1; then
+            echo "Release v$APP_VERSION already exists — reusing it"
+          else
+            gh release create "v$APP_VERSION" --repo PostHog/code --draft \
+              --title "v$APP_VERSION" --notes "Release v$APP_VERSION (build in progress)"
+          fi
+
   publish-macos:
+    needs: [prepare-release]
     strategy:
       fail-fast: false
       matrix:
@@ -164,6 +199,7 @@ jobs:
         run: pnpm --filter code exec electron-forge publish --from-dry-run
 
   publish-windows:
+    needs: [prepare-release]
     runs-on: windows-latest
     permissions:
       id-token: write
@@ -245,6 +281,7 @@ jobs:
         run: pnpm --filter code run publish
 
   publish-linux:
+    needs: [prepare-release]
     strategy:
       fail-fast: false
       matrix:
