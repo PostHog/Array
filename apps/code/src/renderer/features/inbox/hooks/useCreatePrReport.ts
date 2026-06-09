@@ -30,8 +30,12 @@ interface UseCreatePrReportOptions {
 }
 
 interface UseCreatePrReportReturn {
-  /** Create an auto-mode implementation task for the report and navigate to it on success. */
-  createPrReport: () => Promise<void>;
+  /**
+   * Create an auto-mode implementation task for the report and navigate to it on success.
+   * Optional `feedback` is folded into the agent prompt, e.g. to answer questions raised
+   * in the report thread.
+   */
+  createPrReport: (feedback?: string) => Promise<void>;
   /** True while the task is being created. */
   isCreatingPr: boolean;
 }
@@ -55,133 +59,137 @@ export function useCreatePrReport({
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const { data: teamConfig } = useSignalTeamConfig();
 
-  const createPrReport = useCallback(async () => {
-    if (isCreatingPr) return;
-    if (!cloudRepository) {
-      toast.error("Pick a cloud repository before creating a PR");
-      return;
-    }
-
-    const githubUserIntegrationId =
-      getUserIntegrationIdForRepo(cloudRepository);
-    if (!githubUserIntegrationId) {
-      toast.error("Connect a GitHub integration to create a PR");
-      return;
-    }
-
-    if (!cloudRegion) {
-      toast.error("Sign in to create a PR");
-      return;
-    }
-
-    setIsCreatingPr(true);
-    const toastId = toast.loading(
-      "Starting PR task...",
-      reportTitle ?? undefined,
-    );
-
-    const prompt = buildCreatePrReportPrompt({
-      reportId,
-      isDevBuild: import.meta.env.DEV,
-    });
-
-    const settings = useSettingsStore.getState();
-    const adapter = settings.lastUsedAdapter ?? "claude";
-    const apiHost = getCloudUrlFromRegion(cloudRegion);
-
-    const model =
-      settings.lastUsedModel ?? (await resolveDefaultModel(apiHost, adapter));
-
-    if (!model) {
-      sonnerToast.dismiss(toastId);
-      toast.error("Failed to start PR task", {
-        description:
-          "Couldn't resolve a default model. Open the task page once and pick a model, then try again.",
-      });
-      setIsCreatingPr(false);
-      return;
-    }
-
-    const baseBranchOverrides = teamConfig?.autostart_base_branches ?? {};
-    const targetRepo = cloudRepository.toLowerCase();
-    const baseBranch =
-      Object.entries(baseBranchOverrides).find(
-        ([repo]) => repo.toLowerCase() === targetRepo,
-      )?.[1] ?? null;
-
-    const input: TaskCreationInput = {
-      content: prompt,
-      taskDescription: prompt,
-      repository: cloudRepository,
-      githubUserIntegrationId,
-      workspaceMode: "cloud",
-      executionMode: "auto",
-      adapter,
-      model,
-      branch: baseBranch,
-      reasoningLevel: settings.lastUsedReasoningEffort ?? undefined,
-      cloudPrAuthorshipMode: "user",
-      cloudRunSource: "signal_report",
-      signalReportId: reportId,
-    };
-
-    try {
-      const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
-      const result = await taskService.createTask(input, (output) => {
-        invalidateTasks(output.task);
-        void openTask(output.task);
-      });
-
-      if (result.success) {
-        sonnerToast.dismiss(toastId);
-        track(ANALYTICS_EVENTS.TASK_CREATED, {
-          auto_run: true,
-          created_from: "command-menu",
-          repository_provider: "github",
-          workspace_mode: "cloud",
-          has_branch: baseBranch != null,
-          cloud_run_source: "signal_report",
-          cloud_pr_authorship_mode: "user",
-          signal_report_id: reportId,
-          adapter,
-        });
-      } else {
-        sonnerToast.dismiss(toastId);
-        // Usage-limit blocks already show the upgrade modal; don't also toast an error.
-        if (!isUsageLimitResult(result)) {
-          toast.error("Failed to start PR task", {
-            description: result.error,
-          });
-          log.error("Create PR task creation failed", {
-            failedStep: result.failedStep,
-            error: result.error,
-            reportId,
-            reportTitle,
-          });
-        }
+  const createPrReport = useCallback(
+    async (feedback?: string) => {
+      if (isCreatingPr) return;
+      if (!cloudRepository) {
+        toast.error("Pick a cloud repository before creating a PR");
+        return;
       }
-    } catch (error) {
-      sonnerToast.dismiss(toastId);
-      const description =
-        error instanceof Error ? error.message : "Unknown error";
-      toast.error("Failed to start PR task", { description });
-      log.error("Unexpected error during Create PR task creation", {
-        error,
+
+      const githubUserIntegrationId =
+        getUserIntegrationIdForRepo(cloudRepository);
+      if (!githubUserIntegrationId) {
+        toast.error("Connect a GitHub integration to create a PR");
+        return;
+      }
+
+      if (!cloudRegion) {
+        toast.error("Sign in to create a PR");
+        return;
+      }
+
+      setIsCreatingPr(true);
+      const toastId = toast.loading(
+        "Starting PR task...",
+        reportTitle ?? undefined,
+      );
+
+      const prompt = buildCreatePrReportPrompt({
         reportId,
+        isDevBuild: import.meta.env.DEV,
+        feedback,
       });
-    } finally {
-      setIsCreatingPr(false);
-    }
-  }, [
-    isCreatingPr,
-    cloudRepository,
-    cloudRegion,
-    reportId,
-    reportTitle,
-    getUserIntegrationIdForRepo,
-    invalidateTasks,
-    teamConfig,
-  ]);
+
+      const settings = useSettingsStore.getState();
+      const adapter = settings.lastUsedAdapter ?? "claude";
+      const apiHost = getCloudUrlFromRegion(cloudRegion);
+
+      const model =
+        settings.lastUsedModel ?? (await resolveDefaultModel(apiHost, adapter));
+
+      if (!model) {
+        sonnerToast.dismiss(toastId);
+        toast.error("Failed to start PR task", {
+          description:
+            "Couldn't resolve a default model. Open the task page once and pick a model, then try again.",
+        });
+        setIsCreatingPr(false);
+        return;
+      }
+
+      const baseBranchOverrides = teamConfig?.autostart_base_branches ?? {};
+      const targetRepo = cloudRepository.toLowerCase();
+      const baseBranch =
+        Object.entries(baseBranchOverrides).find(
+          ([repo]) => repo.toLowerCase() === targetRepo,
+        )?.[1] ?? null;
+
+      const input: TaskCreationInput = {
+        content: prompt,
+        taskDescription: prompt,
+        repository: cloudRepository,
+        githubUserIntegrationId,
+        workspaceMode: "cloud",
+        executionMode: "auto",
+        adapter,
+        model,
+        branch: baseBranch,
+        reasoningLevel: settings.lastUsedReasoningEffort ?? undefined,
+        cloudPrAuthorshipMode: "user",
+        cloudRunSource: "signal_report",
+        signalReportId: reportId,
+      };
+
+      try {
+        const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
+        const result = await taskService.createTask(input, (output) => {
+          invalidateTasks(output.task);
+          void openTask(output.task);
+        });
+
+        if (result.success) {
+          sonnerToast.dismiss(toastId);
+          track(ANALYTICS_EVENTS.TASK_CREATED, {
+            auto_run: true,
+            created_from: "command-menu",
+            repository_provider: "github",
+            workspace_mode: "cloud",
+            has_branch: baseBranch != null,
+            cloud_run_source: "signal_report",
+            cloud_pr_authorship_mode: "user",
+            signal_report_id: reportId,
+            adapter,
+          });
+        } else {
+          sonnerToast.dismiss(toastId);
+          // Usage-limit blocks already show the upgrade modal; don't also toast an error.
+          if (!isUsageLimitResult(result)) {
+            toast.error("Failed to start PR task", {
+              description: result.error,
+            });
+            log.error("Create PR task creation failed", {
+              failedStep: result.failedStep,
+              error: result.error,
+              reportId,
+              reportTitle,
+            });
+          }
+        }
+      } catch (error) {
+        sonnerToast.dismiss(toastId);
+        const description =
+          error instanceof Error ? error.message : "Unknown error";
+        toast.error("Failed to start PR task", { description });
+        log.error("Unexpected error during Create PR task creation", {
+          error,
+          reportId,
+        });
+      } finally {
+        setIsCreatingPr(false);
+      }
+    },
+    [
+      isCreatingPr,
+      cloudRepository,
+      cloudRegion,
+      reportId,
+      reportTitle,
+      getUserIntegrationIdForRepo,
+      invalidateTasks,
+      teamConfig,
+    ],
+  );
 
   return { createPrReport, isCreatingPr };
 }

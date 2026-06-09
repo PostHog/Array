@@ -624,6 +624,11 @@ export interface InboxReportActionProperties {
   // The first question text the user typed before hitting Discuss. Truncated to
   // 500 chars to keep event payloads bounded.
   question_text?: string;
+  // True when the user submitted Create PR with extra feedback via the popover.
+  has_feedback?: boolean;
+  // The feedback text the user typed before hitting Create PR. Truncated to
+  // 500 chars to keep event payloads bounded.
+  feedback_text?: string;
 }
 
 export interface SignalSourceConnectedProperties {

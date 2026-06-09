@@ -189,6 +189,8 @@ export function ReportDetailPane({
 }: ReportDetailPaneProps) {
   const [discussQuestion, setDiscussQuestion] = useState("");
   const [discussQuestionOpen, setDiscussQuestionOpen] = useState(false);
+  const [prFeedback, setPrFeedback] = useState("");
+  const [prFeedbackOpen, setPrFeedbackOpen] = useState(false);
   const { data: me } = useMeQuery();
 
   // ── Report data ─────────────────────────────────────────────────────────
@@ -357,16 +359,29 @@ export function ReportDetailPane({
     cloudRepository: effectiveCloudRepository,
   });
 
-  const handleCreateImplementationTask = useCallback(async () => {
-    if (!canCreateImplementationPr || isCreatingPr) return;
-    fireDetailAction("create_pr");
-    await createPrReport();
-  }, [
-    canCreateImplementationPr,
-    isCreatingPr,
-    createPrReport,
-    fireDetailAction,
-  ]);
+  const handleCreateImplementationTask = useCallback(
+    async (feedback?: string) => {
+      if (!canCreateImplementationPr || isCreatingPr) return;
+      const trimmedFeedback = feedback?.trim();
+      fireDetailAction("create_pr", {
+        has_feedback: !!trimmedFeedback,
+        feedback_text: trimmedFeedback
+          ? trimmedFeedback.slice(0, 500)
+          : undefined,
+      });
+      setPrFeedbackOpen(false);
+      await createPrReport(trimmedFeedback);
+    },
+    [canCreateImplementationPr, isCreatingPr, createPrReport, fireDetailAction],
+  );
+
+  const handleCreatePrSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      handleCreateImplementationTask(prFeedback);
+    },
+    [prFeedback, handleCreateImplementationTask],
+  );
 
   const { discussReport, isDiscussing } = useDiscussReport({
     reportId: report.id,
@@ -594,24 +609,97 @@ export function ReportDetailPane({
               onLinkClick={() => fireDetailAction("open_pr")}
             />
           ) : canCreateImplementationPr ? (
-            <Tooltip
-              content={
-                <Flex align="center" gap="1">
-                  Create PR <Kbd>{isMac ? "⌘↵" : "Ctrl+↵"}</Kbd>
-                </Flex>
-              }
-            >
-              <Button
-                size="1"
-                variant="solid"
-                className="gap-1 text-[12px]"
-                disabled={isCreatingPr}
-                onClick={handleCreateImplementationTask}
+            <Flex align="center" gap="0">
+              <Tooltip
+                content={
+                  <Flex align="center" gap="1">
+                    Create PR <Kbd>{isMac ? "⌘↵" : "Ctrl+↵"}</Kbd>
+                  </Flex>
+                }
               >
-                {isCreatingPr ? <Spinner size="1" /> : <Plus size={12} />}
-                Create PR
-              </Button>
-            </Tooltip>
+                <Button
+                  size="1"
+                  variant="solid"
+                  className="gap-1 rounded-r-none text-[12px]"
+                  disabled={isCreatingPr}
+                  onClick={() => handleCreateImplementationTask()}
+                >
+                  {isCreatingPr ? <Spinner size="1" /> : <Plus size={12} />}
+                  Create PR
+                </Button>
+              </Tooltip>
+              <Popover.Root
+                open={prFeedbackOpen}
+                onOpenChange={setPrFeedbackOpen}
+              >
+                <Popover.Trigger>
+                  <Button
+                    size="1"
+                    variant="solid"
+                    className="rounded-l-none border-l border-l-(--gray-a5) px-1"
+                    aria-label="Add optional feedback for the PR"
+                    disabled={isCreatingPr}
+                  >
+                    <CaretDownIcon size={12} />
+                  </Button>
+                </Popover.Trigger>
+                <Popover.Content
+                  align="end"
+                  className="w-[420px] border border-(--gray-6) bg-(--color-panel-solid) p-3 shadow-6"
+                  side="bottom"
+                  sideOffset={6}
+                >
+                  <form
+                    className="flex flex-col gap-2"
+                    onSubmit={handleCreatePrSubmit}
+                  >
+                    <TextArea
+                      aria-label="Optional feedback for Create PR"
+                      autoFocus
+                      placeholder="Add any extra feedback, e.g. answers to questions raised in the report thread..."
+                      resize="vertical"
+                      rows={5}
+                      size="2"
+                      value={prFeedback}
+                      onChange={(event) => setPrFeedback(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === "Enter" &&
+                          (event.metaKey || event.ctrlKey)
+                        ) {
+                          event.preventDefault();
+                          handleCreateImplementationTask(prFeedback);
+                        }
+                      }}
+                    />
+                    <Flex justify="between" align="center" gap="2">
+                      <Text size="1" color="gray">
+                        <Kbd>{isMac ? "⌘↵" : "Ctrl+↵"}</Kbd> to create
+                      </Text>
+                      <Flex gap="2">
+                        <Button
+                          color="gray"
+                          size="1"
+                          type="button"
+                          variant="soft"
+                          onClick={() => setPrFeedbackOpen(false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="1"
+                          type="submit"
+                          variant="solid"
+                          disabled={isCreatingPr}
+                        >
+                          Create PR
+                        </Button>
+                      </Flex>
+                    </Flex>
+                  </form>
+                </Popover.Content>
+              </Popover.Root>
+            </Flex>
           ) : null}
           <button
             type="button"
