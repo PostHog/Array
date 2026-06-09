@@ -18,9 +18,7 @@ vi.mock("../settingsStore", () => ({
   getWorktreeLocation: () => testWorktreeBasePath,
 }));
 
-// Importing the real DI container, analytics client, and focus service drags in
-// electron / native modules. None are exercised by verifyWorkspaceExists, so
-// stub them out to keep this a fast, isolated unit test.
+// Stub modules that drag in electron / native deps but aren't used here.
 vi.mock("../../di/container", () => ({ container: {} }));
 vi.mock("@main/services/posthog-analytics", () => ({ trackAppEvent: vi.fn() }));
 vi.mock("../focus/service", () => ({
@@ -69,8 +67,7 @@ describe("WorkspaceService.verifyWorkspaceExists", () => {
     const { service, repositoryRepo, workspaceRepo, worktreeRepo } =
       createService();
 
-    // Repo folder exists, but the worktree directory does not (e.g. a volume
-    // not mounted yet on relaunch, or a worktree pruned out from under us).
+    // Repo folder exists, but the worktree directory does not.
     const repoPath = path.join(tmpDir, REPO_NAME);
     await fsp.mkdir(repoPath, { recursive: true });
     const repo = repositoryRepo.create({ path: repoPath });
@@ -89,7 +86,7 @@ describe("WorkspaceService.verifyWorkspaceExists", () => {
 
     expect(result.exists).toBe(false);
     expect(result.missingPath).toContain(WORKTREE_NAME);
-    // The association must survive so the task can recover on the next launch.
+    // Association must survive so the task can recover later.
     expect(workspaceRepo.findByTaskId(TASK_ID)).not.toBeNull();
     expect(worktreeRepo.findByWorkspaceId(workspace.id)).not.toBeNull();
   });

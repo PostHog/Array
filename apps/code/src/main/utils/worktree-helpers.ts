@@ -3,13 +3,9 @@ import path from "node:path";
 import { getWorktreeLocation } from "../services/settingsStore";
 
 /**
- * Resolves the on-disk path of a worktree, matching WorktreeManager's layout
- * (`<base>/<name>/<repo>`). Older worktrees used `<base>/<repo>/<name>`, so we
- * fall back to that when the new layout isn't present on disk.
- *
- * This must be filesystem-aware rather than guessing from the name: worktree
- * names are now human-readable slugs (e.g. "plucky-summit-59"), so the name
- * alone no longer indicates which layout was used.
+ * Resolves a worktree's on-disk path. Prefers the current layout
+ * (`<base>/<name>/<repo>`) and falls back to the legacy `<base>/<repo>/<name>`.
+ * Checks disk rather than the name: names are now slugs, not numbers.
  */
 export function deriveWorktreePath(
   folderPath: string,
