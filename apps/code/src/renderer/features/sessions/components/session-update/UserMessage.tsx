@@ -32,6 +32,12 @@ interface UserMessageProps {
   attachments?: UserMessageAttachment[];
   animate?: boolean;
   onRestoreCheckpoint?: () => void;
+  /**
+   * Tooltip shown when restore is unavailable for this turn. When
+   * onRestoreCheckpoint is absent the button still renders but is disabled,
+   * with this text explaining why (no checkpoint, or cloud task).
+   */
+  restoreDisabledReason?: string;
 }
 
 function formatTimestamp(ts: number): string {
@@ -52,6 +58,7 @@ export function UserMessage({
   attachments = [],
   animate = true,
   onRestoreCheckpoint,
+  restoreDisabledReason,
 }: UserMessageProps) {
   const containsFileMentions = hasFileMentions(content);
   const showAttachmentChips = attachments.length > 0 && !containsFileMentions;
@@ -164,19 +171,28 @@ export function UserMessage({
               {formatTimestamp(timestamp)}
             </span>
           )}
-          {onRestoreCheckpoint && (
-            <Tooltip content="Restore checkpoint">
+          <Tooltip
+            content={
+              onRestoreCheckpoint
+                ? "Restore checkpoint"
+                : (restoreDisabledReason ?? "No checkpoint for this turn")
+            }
+          >
+            {/* span wrapper keeps the tooltip hoverable when the button is
+                disabled (Radix disables pointer events on disabled buttons) */}
+            <span className="inline-flex">
               <IconButton
                 size="1"
                 variant="ghost"
                 color="gray"
                 onClick={onRestoreCheckpoint}
+                disabled={!onRestoreCheckpoint}
                 aria-label="Restore checkpoint"
               >
                 <ArrowCounterClockwise size={12} />
               </IconButton>
-            </Tooltip>
-          )}
+            </span>
+          </Tooltip>
           <Tooltip content={copied ? "Copied!" : "Copy message"}>
             <IconButton
               size="1"

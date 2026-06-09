@@ -141,6 +141,11 @@ export function ConversationView({
   const checkpointTimelineKey = useShortcut("checkpoint-timeline");
   useHotkeys(checkpointTimelineKey, () => setTimelineOpen((o) => !o), {
     preventDefault: true,
+    // Match the global shortcuts: fire even when focus is in the message
+    // editor (a contentEditable) or other form fields, otherwise the hotkey
+    // silently does nothing while the composer is focused (the common case).
+    enableOnFormTags: true,
+    enableOnContentEditable: true,
   });
 
   const items = useMemo<ConversationItem[]>(
@@ -215,12 +220,17 @@ export function ConversationView({
                   : undefined
               }
               onRestoreCheckpoint={
-                item.turnContext?.lastCheckpointId
+                item.turnContext?.lastCheckpointId && !isCloud
                   ? () =>
                       restore.requestRestore(
                         item.turnContext?.lastCheckpointId as string,
                       )
                   : undefined
+              }
+              restoreDisabledReason={
+                isCloud
+                  ? "Checkpoint restore isn't available for cloud tasks"
+                  : "No checkpoint was captured for this turn"
               }
             />
           );
@@ -272,6 +282,7 @@ export function ConversationView({
       firstUserMessageId,
       initialItemIds,
       restore.requestRestore,
+      isCloud,
     ],
   );
 
