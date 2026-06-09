@@ -231,7 +231,7 @@ export function ConfigMap() {
               size="xs"
               variant="primary"
               onClick={onSave}
-              disabled={!dirty || saveMutation.isPending}
+              disabled={!dirty || saveMutation.isPending || errors.length > 0}
             >
               <FloppyDisk size={12} />
               {saveMutation.isPending ? "Saving…" : "Save"}
