@@ -802,19 +802,21 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       return { exists: true };
     }
 
+    // NOTE: this is a read-only check. It must never mutate the DB. A missing
+    // path can be transient (volume not mounted yet on relaunch, a git worktree
+    // momentarily absent, settings resolving a path differently mid-boot), and
+    // deleting the association here permanently strips a task of its local
+    // working directory. The caller surfaces { exists: false } as an error
+    // state; the association is only ever removed via an explicit deleteWorkspace.
     const folderPath = this.getFolderPath(association.folderId);
     if (!folderPath) {
-      this.removeTaskAssociation(taskId);
       return { exists: false, missingPath: "(folder not found)" };
     }
 
     if (association.mode === "local") {
       const exists = fs.existsSync(folderPath);
       if (!exists) {
-        log.info(
-          `Folder for task ${taskId} no longer exists, removing association`,
-        );
-        this.removeTaskAssociation(taskId);
+        log.info(`Folder for task ${taskId} no longer exists`);
         return { exists: false, missingPath: folderPath };
       }
       return { exists: true };
@@ -824,10 +826,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       const worktreePath = deriveWorktreePath(folderPath, association.worktree);
       const exists = fs.existsSync(worktreePath);
       if (!exists) {
-        log.info(
-          `Worktree for task ${taskId} no longer exists, removing association`,
-        );
-        this.removeTaskAssociation(taskId);
+        log.info(`Worktree for task ${taskId} no longer exists`);
         return { exists: false, missingPath: worktreePath };
       }
       return { exists: true };
