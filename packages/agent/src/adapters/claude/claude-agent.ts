@@ -1111,9 +1111,18 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // fresh AbortController.
     const newAbortController = new AbortController();
     const { sessionId: _drop, ...rest } = prev.queryOptions;
+
+    // parseMcpServers yields only http/sse/stdio — carry over any in-process
+    // ("sdk") server so the local-tools server (signed commits) survives.
+    const preservedInProcess = Object.fromEntries(
+      Object.entries(prev.queryOptions.mcpServers ?? {}).filter(
+        ([, cfg]) => (cfg as { type?: string }).type === "sdk",
+      ),
+    );
+
     const newOptions: Options = {
       ...rest,
-      mcpServers,
+      mcpServers: { ...mcpServers, ...preservedInProcess },
       resume: this.sessionId,
       forkSession: false,
       abortController: newAbortController,
