@@ -308,6 +308,21 @@ export type PrDetailsByUrlOutput = z.infer<typeof getPrDetailsByUrlOutput>;
 
 export const getPrChangedFilesInput = z.object({ prUrl: z.string() });
 
+export const prDiffStatsSchema = z.object({
+  additions: z.number(),
+  deletions: z.number(),
+  changedFiles: z.number(),
+});
+export type PrDiffStats = z.infer<typeof prDiffStatsSchema>;
+
+export const getPrDiffStatsBatchInput = z.object({
+  prUrls: z.array(z.string()),
+});
+export const getPrDiffStatsBatchOutput = z.record(
+  z.string(),
+  prDiffStatsSchema,
+);
+
 export const getBranchChangedFilesInput = z.object({
   repo: z.string(),
   branch: z.string(),

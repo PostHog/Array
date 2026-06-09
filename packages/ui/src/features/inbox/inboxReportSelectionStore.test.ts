@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { useInboxReportSelectionStore } from "./inboxReportSelectionStore";
+import { useInboxReportSelectionStore } from "./stores/inboxReportSelectionStore";
 
 describe("inboxReportSelectionStore", () => {
   beforeEach(() => {

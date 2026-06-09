@@ -16,6 +16,22 @@
       "types": "./dist/domain-types.d.ts",
       "import": "./dist/domain-types.js"
     },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    },
+    "./deeplink": {
+      "types": "./dist/deeplink.d.ts",
+      "import": "./dist/deeplink.js"
+    },
+    "./dismissalReasons": {
+      "types": "./dist/dismissalReasons.d.ts",
+      "import": "./dist/dismissalReasons.js"
+    },
+    "./constants": {
+      "types": "./dist/constants.d.ts",
+      "import": "./dist/constants.js"
+    },
     "./mcp-sandbox-proxy": {
       "types": "./dist/mcp-sandbox-proxy.d.ts",
       "import": "./dist/mcp-sandbox-proxy.js"

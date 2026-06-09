@@ -20,8 +20,20 @@ import { Route as FoldersFolderIdRouteImport } from './routes/folders/$folderId'
 import { Route as CodeInboxRouteImport } from './routes/code/inbox'
 import { Route as CodeHomeRouteImport } from './routes/code/home'
 import { Route as CodeArchivedRouteImport } from './routes/code/archived'
+import { Route as CodeAgentsRouteImport } from './routes/code/agents'
+import { Route as CodeInboxIndexRouteImport } from './routes/code/inbox/index'
 import { Route as CodeTasksTaskIdRouteImport } from './routes/code/tasks/$taskId'
+import { Route as CodeInboxRunsRouteImport } from './routes/code/inbox/runs'
+import { Route as CodeInboxReportsRouteImport } from './routes/code/inbox/reports'
+import { Route as CodeInboxPullsRouteImport } from './routes/code/inbox/pulls'
+import { Route as CodeInboxAgentsRouteImport } from './routes/code/inbox/agents'
+import { Route as CodeInboxRunsIndexRouteImport } from './routes/code/inbox/runs.index'
+import { Route as CodeInboxReportsIndexRouteImport } from './routes/code/inbox/reports.index'
+import { Route as CodeInboxPullsIndexRouteImport } from './routes/code/inbox/pulls.index'
 import { Route as CodeTasksPendingKeyRouteImport } from './routes/code/tasks/pending.$key'
+import { Route as CodeInboxRunsReportIdRouteImport } from './routes/code/inbox/runs.$reportId'
+import { Route as CodeInboxReportsReportIdRouteImport } from './routes/code/inbox/reports.$reportId'
+import { Route as CodeInboxPullsReportIdRouteImport } from './routes/code/inbox/pulls.$reportId'
 
 const SkillsRoute = SkillsRouteImport.update({
   id: '/skills',
@@ -78,15 +90,76 @@ const CodeArchivedRoute = CodeArchivedRouteImport.update({
   path: '/code/archived',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CodeAgentsRoute = CodeAgentsRouteImport.update({
+  id: '/code/agents',
+  path: '/code/agents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CodeInboxIndexRoute = CodeInboxIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CodeInboxRoute,
+} as any)
 const CodeTasksTaskIdRoute = CodeTasksTaskIdRouteImport.update({
   id: '/code/tasks/$taskId',
   path: '/code/tasks/$taskId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CodeInboxRunsRoute = CodeInboxRunsRouteImport.update({
+  id: '/runs',
+  path: '/runs',
+  getParentRoute: () => CodeInboxRoute,
+} as any)
+const CodeInboxReportsRoute = CodeInboxReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => CodeInboxRoute,
+} as any)
+const CodeInboxPullsRoute = CodeInboxPullsRouteImport.update({
+  id: '/pulls',
+  path: '/pulls',
+  getParentRoute: () => CodeInboxRoute,
+} as any)
+const CodeInboxAgentsRoute = CodeInboxAgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
+  getParentRoute: () => CodeInboxRoute,
+} as any)
+const CodeInboxRunsIndexRoute = CodeInboxRunsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CodeInboxRunsRoute,
+} as any)
+const CodeInboxReportsIndexRoute = CodeInboxReportsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CodeInboxReportsRoute,
+} as any)
+const CodeInboxPullsIndexRoute = CodeInboxPullsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CodeInboxPullsRoute,
+} as any)
 const CodeTasksPendingKeyRoute = CodeTasksPendingKeyRouteImport.update({
   id: '/code/tasks/pending/$key',
   path: '/code/tasks/pending/$key',
   getParentRoute: () => rootRouteImport,
+} as any)
+const CodeInboxRunsReportIdRoute = CodeInboxRunsReportIdRouteImport.update({
+  id: '/$reportId',
+  path: '/$reportId',
+  getParentRoute: () => CodeInboxRunsRoute,
+} as any)
+const CodeInboxReportsReportIdRoute =
+  CodeInboxReportsReportIdRouteImport.update({
+    id: '/$reportId',
+    path: '/$reportId',
+    getParentRoute: () => CodeInboxReportsRoute,
+  } as any)
+const CodeInboxPullsReportIdRoute = CodeInboxPullsReportIdRouteImport.update({
+  id: '/$reportId',
+  path: '/$reportId',
+  getParentRoute: () => CodeInboxPullsRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -94,30 +167,50 @@ export interface FileRoutesByFullPath {
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
+  '/code/agents': typeof CodeAgentsRoute
   '/code/archived': typeof CodeArchivedRoute
   '/code/home': typeof CodeHomeRoute
-  '/code/inbox': typeof CodeInboxRoute
+  '/code/inbox': typeof CodeInboxRouteWithChildren
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/code/inbox/agents': typeof CodeInboxAgentsRoute
+  '/code/inbox/pulls': typeof CodeInboxPullsRouteWithChildren
+  '/code/inbox/reports': typeof CodeInboxReportsRouteWithChildren
+  '/code/inbox/runs': typeof CodeInboxRunsRouteWithChildren
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/code/inbox/': typeof CodeInboxIndexRoute
+  '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
+  '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
+  '/code/inbox/runs/$reportId': typeof CodeInboxRunsReportIdRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
+  '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
+  '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
+  '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
+  '/code/agents': typeof CodeAgentsRoute
   '/code/archived': typeof CodeArchivedRoute
   '/code/home': typeof CodeHomeRoute
-  '/code/inbox': typeof CodeInboxRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
   '/code': typeof CodeIndexRoute
   '/settings': typeof SettingsIndexRoute
+  '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/code/inbox': typeof CodeInboxIndexRoute
+  '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
+  '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
+  '/code/inbox/runs/$reportId': typeof CodeInboxRunsReportIdRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
+  '/code/inbox/pulls': typeof CodeInboxPullsIndexRoute
+  '/code/inbox/reports': typeof CodeInboxReportsIndexRoute
+  '/code/inbox/runs': typeof CodeInboxRunsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -125,15 +218,27 @@ export interface FileRoutesById {
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
+  '/code/agents': typeof CodeAgentsRoute
   '/code/archived': typeof CodeArchivedRoute
   '/code/home': typeof CodeHomeRoute
-  '/code/inbox': typeof CodeInboxRoute
+  '/code/inbox': typeof CodeInboxRouteWithChildren
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/code/inbox/agents': typeof CodeInboxAgentsRoute
+  '/code/inbox/pulls': typeof CodeInboxPullsRouteWithChildren
+  '/code/inbox/reports': typeof CodeInboxReportsRouteWithChildren
+  '/code/inbox/runs': typeof CodeInboxRunsRouteWithChildren
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
+  '/code/inbox/': typeof CodeInboxIndexRoute
+  '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
+  '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
+  '/code/inbox/runs/$reportId': typeof CodeInboxRunsReportIdRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
+  '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
+  '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
+  '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -142,6 +247,7 @@ export interface FileRouteTypes {
     | '/command-center'
     | '/mcp-servers'
     | '/skills'
+    | '/code/agents'
     | '/code/archived'
     | '/code/home'
     | '/code/inbox'
@@ -149,29 +255,49 @@ export interface FileRouteTypes {
     | '/settings/$category'
     | '/code/'
     | '/settings/'
+    | '/code/inbox/agents'
+    | '/code/inbox/pulls'
+    | '/code/inbox/reports'
+    | '/code/inbox/runs'
     | '/code/tasks/$taskId'
+    | '/code/inbox/'
+    | '/code/inbox/pulls/$reportId'
+    | '/code/inbox/reports/$reportId'
+    | '/code/inbox/runs/$reportId'
     | '/code/tasks/pending/$key'
+    | '/code/inbox/pulls/'
+    | '/code/inbox/reports/'
+    | '/code/inbox/runs/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/command-center'
     | '/mcp-servers'
     | '/skills'
+    | '/code/agents'
     | '/code/archived'
     | '/code/home'
-    | '/code/inbox'
     | '/folders/$folderId'
     | '/settings/$category'
     | '/code'
     | '/settings'
+    | '/code/inbox/agents'
     | '/code/tasks/$taskId'
+    | '/code/inbox'
+    | '/code/inbox/pulls/$reportId'
+    | '/code/inbox/reports/$reportId'
+    | '/code/inbox/runs/$reportId'
     | '/code/tasks/pending/$key'
+    | '/code/inbox/pulls'
+    | '/code/inbox/reports'
+    | '/code/inbox/runs'
   id:
     | '__root__'
     | '/'
     | '/command-center'
     | '/mcp-servers'
     | '/skills'
+    | '/code/agents'
     | '/code/archived'
     | '/code/home'
     | '/code/inbox'
@@ -179,8 +305,19 @@ export interface FileRouteTypes {
     | '/settings/$category'
     | '/code/'
     | '/settings/'
+    | '/code/inbox/agents'
+    | '/code/inbox/pulls'
+    | '/code/inbox/reports'
+    | '/code/inbox/runs'
     | '/code/tasks/$taskId'
+    | '/code/inbox/'
+    | '/code/inbox/pulls/$reportId'
+    | '/code/inbox/reports/$reportId'
+    | '/code/inbox/runs/$reportId'
     | '/code/tasks/pending/$key'
+    | '/code/inbox/pulls/'
+    | '/code/inbox/reports/'
+    | '/code/inbox/runs/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -188,9 +325,10 @@ export interface RootRouteChildren {
   CommandCenterRoute: typeof CommandCenterRoute
   McpServersRoute: typeof McpServersRoute
   SkillsRoute: typeof SkillsRoute
+  CodeAgentsRoute: typeof CodeAgentsRoute
   CodeArchivedRoute: typeof CodeArchivedRoute
   CodeHomeRoute: typeof CodeHomeRoute
-  CodeInboxRoute: typeof CodeInboxRoute
+  CodeInboxRoute: typeof CodeInboxRouteWithChildren
   FoldersFolderIdRoute: typeof FoldersFolderIdRoute
   SettingsCategoryRoute: typeof SettingsCategoryRoute
   CodeIndexRoute: typeof CodeIndexRoute
@@ -278,12 +416,75 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeArchivedRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/code/agents': {
+      id: '/code/agents'
+      path: '/code/agents'
+      fullPath: '/code/agents'
+      preLoaderRoute: typeof CodeAgentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/code/inbox/': {
+      id: '/code/inbox/'
+      path: '/'
+      fullPath: '/code/inbox/'
+      preLoaderRoute: typeof CodeInboxIndexRouteImport
+      parentRoute: typeof CodeInboxRoute
+    }
     '/code/tasks/$taskId': {
       id: '/code/tasks/$taskId'
       path: '/code/tasks/$taskId'
       fullPath: '/code/tasks/$taskId'
       preLoaderRoute: typeof CodeTasksTaskIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/code/inbox/runs': {
+      id: '/code/inbox/runs'
+      path: '/runs'
+      fullPath: '/code/inbox/runs'
+      preLoaderRoute: typeof CodeInboxRunsRouteImport
+      parentRoute: typeof CodeInboxRoute
+    }
+    '/code/inbox/reports': {
+      id: '/code/inbox/reports'
+      path: '/reports'
+      fullPath: '/code/inbox/reports'
+      preLoaderRoute: typeof CodeInboxReportsRouteImport
+      parentRoute: typeof CodeInboxRoute
+    }
+    '/code/inbox/pulls': {
+      id: '/code/inbox/pulls'
+      path: '/pulls'
+      fullPath: '/code/inbox/pulls'
+      preLoaderRoute: typeof CodeInboxPullsRouteImport
+      parentRoute: typeof CodeInboxRoute
+    }
+    '/code/inbox/agents': {
+      id: '/code/inbox/agents'
+      path: '/agents'
+      fullPath: '/code/inbox/agents'
+      preLoaderRoute: typeof CodeInboxAgentsRouteImport
+      parentRoute: typeof CodeInboxRoute
+    }
+    '/code/inbox/runs/': {
+      id: '/code/inbox/runs/'
+      path: '/'
+      fullPath: '/code/inbox/runs/'
+      preLoaderRoute: typeof CodeInboxRunsIndexRouteImport
+      parentRoute: typeof CodeInboxRunsRoute
+    }
+    '/code/inbox/reports/': {
+      id: '/code/inbox/reports/'
+      path: '/'
+      fullPath: '/code/inbox/reports/'
+      preLoaderRoute: typeof CodeInboxReportsIndexRouteImport
+      parentRoute: typeof CodeInboxReportsRoute
+    }
+    '/code/inbox/pulls/': {
+      id: '/code/inbox/pulls/'
+      path: '/'
+      fullPath: '/code/inbox/pulls/'
+      preLoaderRoute: typeof CodeInboxPullsIndexRouteImport
+      parentRoute: typeof CodeInboxPullsRoute
     }
     '/code/tasks/pending/$key': {
       id: '/code/tasks/pending/$key'
@@ -292,17 +493,100 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeTasksPendingKeyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/code/inbox/runs/$reportId': {
+      id: '/code/inbox/runs/$reportId'
+      path: '/$reportId'
+      fullPath: '/code/inbox/runs/$reportId'
+      preLoaderRoute: typeof CodeInboxRunsReportIdRouteImport
+      parentRoute: typeof CodeInboxRunsRoute
+    }
+    '/code/inbox/reports/$reportId': {
+      id: '/code/inbox/reports/$reportId'
+      path: '/$reportId'
+      fullPath: '/code/inbox/reports/$reportId'
+      preLoaderRoute: typeof CodeInboxReportsReportIdRouteImport
+      parentRoute: typeof CodeInboxReportsRoute
+    }
+    '/code/inbox/pulls/$reportId': {
+      id: '/code/inbox/pulls/$reportId'
+      path: '/$reportId'
+      fullPath: '/code/inbox/pulls/$reportId'
+      preLoaderRoute: typeof CodeInboxPullsReportIdRouteImport
+      parentRoute: typeof CodeInboxPullsRoute
+    }
   }
 }
+
+interface CodeInboxPullsRouteChildren {
+  CodeInboxPullsReportIdRoute: typeof CodeInboxPullsReportIdRoute
+  CodeInboxPullsIndexRoute: typeof CodeInboxPullsIndexRoute
+}
+
+const CodeInboxPullsRouteChildren: CodeInboxPullsRouteChildren = {
+  CodeInboxPullsReportIdRoute: CodeInboxPullsReportIdRoute,
+  CodeInboxPullsIndexRoute: CodeInboxPullsIndexRoute,
+}
+
+const CodeInboxPullsRouteWithChildren = CodeInboxPullsRoute._addFileChildren(
+  CodeInboxPullsRouteChildren,
+)
+
+interface CodeInboxReportsRouteChildren {
+  CodeInboxReportsReportIdRoute: typeof CodeInboxReportsReportIdRoute
+  CodeInboxReportsIndexRoute: typeof CodeInboxReportsIndexRoute
+}
+
+const CodeInboxReportsRouteChildren: CodeInboxReportsRouteChildren = {
+  CodeInboxReportsReportIdRoute: CodeInboxReportsReportIdRoute,
+  CodeInboxReportsIndexRoute: CodeInboxReportsIndexRoute,
+}
+
+const CodeInboxReportsRouteWithChildren =
+  CodeInboxReportsRoute._addFileChildren(CodeInboxReportsRouteChildren)
+
+interface CodeInboxRunsRouteChildren {
+  CodeInboxRunsReportIdRoute: typeof CodeInboxRunsReportIdRoute
+  CodeInboxRunsIndexRoute: typeof CodeInboxRunsIndexRoute
+}
+
+const CodeInboxRunsRouteChildren: CodeInboxRunsRouteChildren = {
+  CodeInboxRunsReportIdRoute: CodeInboxRunsReportIdRoute,
+  CodeInboxRunsIndexRoute: CodeInboxRunsIndexRoute,
+}
+
+const CodeInboxRunsRouteWithChildren = CodeInboxRunsRoute._addFileChildren(
+  CodeInboxRunsRouteChildren,
+)
+
+interface CodeInboxRouteChildren {
+  CodeInboxAgentsRoute: typeof CodeInboxAgentsRoute
+  CodeInboxPullsRoute: typeof CodeInboxPullsRouteWithChildren
+  CodeInboxReportsRoute: typeof CodeInboxReportsRouteWithChildren
+  CodeInboxRunsRoute: typeof CodeInboxRunsRouteWithChildren
+  CodeInboxIndexRoute: typeof CodeInboxIndexRoute
+}
+
+const CodeInboxRouteChildren: CodeInboxRouteChildren = {
+  CodeInboxAgentsRoute: CodeInboxAgentsRoute,
+  CodeInboxPullsRoute: CodeInboxPullsRouteWithChildren,
+  CodeInboxReportsRoute: CodeInboxReportsRouteWithChildren,
+  CodeInboxRunsRoute: CodeInboxRunsRouteWithChildren,
+  CodeInboxIndexRoute: CodeInboxIndexRoute,
+}
+
+const CodeInboxRouteWithChildren = CodeInboxRoute._addFileChildren(
+  CodeInboxRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CommandCenterRoute: CommandCenterRoute,
   McpServersRoute: McpServersRoute,
   SkillsRoute: SkillsRoute,
+  CodeAgentsRoute: CodeAgentsRoute,
   CodeArchivedRoute: CodeArchivedRoute,
   CodeHomeRoute: CodeHomeRoute,
-  CodeInboxRoute: CodeInboxRoute,
+  CodeInboxRoute: CodeInboxRouteWithChildren,
   FoldersFolderIdRoute: FoldersFolderIdRoute,
   SettingsCategoryRoute: SettingsCategoryRoute,
   CodeIndexRoute: CodeIndexRoute,

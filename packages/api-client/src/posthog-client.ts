@@ -18,6 +18,7 @@ import type {
   AvailableSuggestedReviewersResponse,
   DismissalArtefact,
   PriorityJudgmentArtefact,
+  RepoSelectionArtefact,
   SandboxEnvironment,
   SandboxEnvironmentInput,
   Signal,
@@ -324,6 +325,7 @@ type AnyArtefact =
   | PriorityJudgmentArtefact
   | ActionabilityJudgmentArtefact
   | SignalFindingArtefact
+  | RepoSelectionArtefact
   | SuggestedReviewersArtefact
   | DismissalArtefact;
 
@@ -434,6 +436,26 @@ function normalizeSignalFindingArtefact(
   };
 }
 
+function normalizeRepoSelectionArtefact(
+  value: Record<string, unknown>,
+): RepoSelectionArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+
+  const contentValue = isObjectRecord(value.content) ? value.content : null;
+  if (!contentValue) return null;
+
+  return {
+    id,
+    type: "repo_selection",
+    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    content: {
+      repository: optionalString(contentValue.repository),
+      reason: optionalString(contentValue.reason) ?? "",
+    },
+  };
+}
+
 function normalizeDismissalArtefact(
   value: Record<string, unknown>,
 ): DismissalArtefact | null {
@@ -481,6 +503,9 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   }
   if (dispatchType === "priority_judgment") {
     return normalizePriorityJudgmentArtefact(value);
+  }
+  if (dispatchType === "repo_selection") {
+    return normalizeRepoSelectionArtefact(value);
   }
   if (dispatchType === "dismissal") {
     return normalizeDismissalArtefact(value);
@@ -1088,7 +1113,7 @@ export class PostHogAPIClient {
     return all;
   }
 
-  async getTask(taskId: string) {
+  async getTask(taskId: string): Promise<Task> {
     const teamId = await this.getTeamId();
     const data = await this.api.get(`/api/projects/{project_id}/tasks/{id}/`, {
       path: { project_id: teamId.toString(), id: taskId },

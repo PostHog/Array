@@ -351,6 +351,23 @@ export const getPrChangedFilesInput = z.object({
 });
 export const getPrChangedFilesOutput = z.array(changedFileSchema);
 
+// getPrDiffStatsBatch schemas
+export const prDiffStatsSchema = z.object({
+  additions: z.number(),
+  deletions: z.number(),
+  changedFiles: z.number(),
+});
+export type PrDiffStats = z.infer<typeof prDiffStatsSchema>;
+
+export const getPrDiffStatsBatchInput = z.object({
+  prUrls: z.array(z.string()),
+});
+export const getPrDiffStatsBatchOutput = z.record(
+  z.string(),
+  prDiffStatsSchema,
+);
+
+// getPrDetailsByUrl schemas
 export const getPrDetailsByUrlInput = z.object({
   prUrl: z.string(),
 });

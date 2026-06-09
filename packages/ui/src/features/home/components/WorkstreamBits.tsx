@@ -38,7 +38,7 @@ export function StatusGlyph({
         backgroundColor: c.tint,
         color: c.fg,
       }}
-      title={`${v.label} — ${v.description}`}
+      title={`${v.label} – ${v.description}`}
     >
       <Icon size={Math.round(size * 0.52)} weight="bold" />
     </span>
@@ -55,7 +55,7 @@ export function StatusDot({ sid }: { sid: SituationId }) {
   );
 }
 
-/** Compact CI signal — icon-only by default, optional inline label. */
+/** Compact CI signal – icon-only by default, optional inline label. */
 export function CiIndicator({
   status,
   showLabel = false,

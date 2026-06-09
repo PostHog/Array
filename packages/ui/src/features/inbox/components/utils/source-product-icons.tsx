@@ -9,16 +9,46 @@ import {
   TicketIcon,
   VideoIcon,
 } from "@phosphor-icons/react";
+import { PgAnalyzeIcon } from "@posthog/ui/features/inbox/components/utils/PgAnalyzeIcon";
+import type { SourceProduct } from "@posthog/ui/features/inbox/stores/inboxSignalsFilterStore";
 import type { ComponentType } from "react";
-import { PgAnalyzeIcon } from "./PgAnalyzeIcon";
+
+interface SourceProductMeta {
+  Icon: ComponentType<IconProps>;
+  color: string;
+  label: string;
+}
 
 /**
- * Shared source product metadata used across inbox components.
- * Consumers render the icon component at whatever size they need.
+ * Shared source product metadata used across inbox components. Keyed on
+ * `SourceProduct` so typo'd lookups (e.g. `signal_scout`) fail to compile
+ * rather than silently returning undefined at runtime.
+ *
+ * `Partial` because the backend may ship a new source product before the
+ * renderer learns about it – callers must handle the `undefined` case.
  */
-export const SOURCE_PRODUCT_META: Record<
-  string,
-  { Icon: ComponentType<IconProps>; color: string; label: string }
+/**
+ * Lookup helper that accepts the loosely-typed `source_products` strings
+ * coming from the backend and returns metadata only when we recognize the
+ * key. Use this instead of `SOURCE_PRODUCT_META[someString]` so an unknown
+ * source product surfaces as `null` rather than a runtime error.
+ */
+export function getSourceProductMeta(
+  value: string | null | undefined,
+): SourceProductMeta | null {
+  if (!value) return null;
+  return SOURCE_PRODUCT_META[value as SourceProduct] ?? null;
+}
+
+/** True if at least one source product in `values` has known display metadata. */
+export function hasKnownSourceProduct(
+  values: string[] | null | undefined,
+): boolean {
+  return (values ?? []).some((value) => getSourceProductMeta(value) !== null);
+}
+
+export const SOURCE_PRODUCT_META: Partial<
+  Record<SourceProduct, SourceProductMeta>
 > = {
   session_replay: {
     Icon: VideoIcon,

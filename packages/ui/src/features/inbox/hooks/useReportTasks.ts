@@ -1,12 +1,19 @@
-import {
-  type ReportTaskData,
-  selectDisplayedReportTasks,
-  sortByRelationship,
-} from "@posthog/core/inbox/reportTasks";
-import type { SignalReportStatus, Task } from "@posthog/shared/domain-types";
-import { useAuthenticatedQuery } from "../../../hooks/useAuthenticatedQuery";
+import type {
+  SignalReportStatus,
+  SignalReportTask,
+  Task,
+} from "@posthog/shared/types";
+import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 
-export { getTaskPrUrl } from "@posthog/core/inbox/reportTasks";
+type Relationship = SignalReportTask["relationship"];
+
+const DISPLAYED_RELATIONSHIPS: Relationship[] = ["implementation", "research"];
+
+interface ReportTaskData {
+  task: Task;
+  relationship: Relationship;
+  startedAt: string;
+}
 
 export function useReportTasks(
   reportId: string,
@@ -21,10 +28,12 @@ export function useReportTasks(
     ["inbox", "report-tasks", reportId],
     async (client) => {
       const reportTasks = await client.getSignalReportTasks(reportId);
-      const relevant = selectDisplayedReportTasks(reportTasks);
+      const relevant = reportTasks.filter((rt) =>
+        DISPLAYED_RELATIONSHIPS.includes(rt.relationship),
+      );
       const tasks = await Promise.all(
         relevant.map(async (rt) => {
-          const task = (await client.getTask(rt.task_id)) as unknown as Task;
+          const task = await client.getTask(rt.task_id);
           return {
             task,
             relationship: rt.relationship,
@@ -32,7 +41,11 @@ export function useReportTasks(
           };
         }),
       );
-      return sortByRelationship(tasks);
+      return tasks.sort(
+        (a, b) =>
+          DISPLAYED_RELATIONSHIPS.indexOf(a.relationship) -
+          DISPLAYED_RELATIONSHIPS.indexOf(b.relationship),
+      );
     },
     {
       enabled: !!reportId,
@@ -40,4 +53,9 @@ export function useReportTasks(
       refetchInterval: isActive ? 5_000 : false,
     },
   );
+}
+
+export function getTaskPrUrl(task: Task): string | null {
+  const prUrl = task.latest_run?.output?.pr_url;
+  return typeof prUrl === "string" && prUrl.length > 0 ? prUrl : null;
 }

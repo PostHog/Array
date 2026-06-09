@@ -6,7 +6,7 @@ import type { IconProps } from "@phosphor-icons/react";
 //
 // Accepts the Phosphor `IconProps` shape so it can be substituted for one in
 // the SOURCE_PRODUCT_META table without a type cast. Only `size` and
-// `className` are honored — `weight`, `mirrored`, etc. are ignored.
+// `className` are honored – `weight`, `mirrored`, etc. are ignored.
 export function PgAnalyzeIcon({ size = 20, className }: IconProps) {
   return (
     <svg

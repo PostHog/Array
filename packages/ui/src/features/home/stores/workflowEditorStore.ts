@@ -9,7 +9,7 @@ import {
 } from "@posthog/core/workflow/schemas";
 import { create } from "zustand";
 
-// Uncommitted editor state for the Config view — the in-flight draft, dirty
+// Uncommitted editor state for the Config view – the in-flight draft, dirty
 // flag, and diagnostics. The persisted workflow lives in the tRPC query cache.
 export type Selection =
   | { kind: "action"; situationId: SituationId; actionId: string }

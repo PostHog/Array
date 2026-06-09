@@ -55,11 +55,11 @@ export const SITUATION_VISUAL: Record<SituationId, SituationVisual> =
     ]),
   ) as Record<SituationId, SituationVisual>;
 
-/** CSS-var passthroughs for a colour scale — used in inline `style`. */
+/** CSS-var passthroughs for a colour scale – used in inline `style`. */
 export interface SituationCss {
   /** Readable text / icon colour, also good on a tinted fill (`--c-11`). */
   fg: string;
-  /** Saturated solid — dots and accent rails (`--c-9`). */
+  /** Saturated solid – dots and accent rails (`--c-9`). */
   solid: string;
   /** Soft translucent fill for chips / glyph backgrounds (`--c-a3`). */
   tint: string;

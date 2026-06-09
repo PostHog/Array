@@ -6,7 +6,7 @@ import {
   stationCentre,
 } from "./workflowMapLayout";
 
-// Decorative flow arrows between stations — not runtime edges (see
+// Decorative flow arrows between stations – not runtime edges (see
 // `FLOW_ARROWS` in workflowMapLayout.ts).
 export function WorkflowMapArrows() {
   return (
@@ -53,7 +53,7 @@ export function WorkflowMapArrows() {
         const start = edgePoint(a, cb);
         const end = edgePoint(b, ca);
 
-        // Slight curve via a quadratic Bézier — control point offset perpendicular from the midpoint.
+        // Slight curve via a quadratic Bézier – control point offset perpendicular from the midpoint.
         const mx = (start.x + end.x) / 2;
         const my = (start.y + end.y) / 2;
         const dx = end.x - start.x;

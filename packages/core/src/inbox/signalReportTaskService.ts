@@ -13,7 +13,7 @@ import { REPORT_MODEL_RESOLVER, type ReportModelResolver } from "./identifiers";
 import {
   buildCreatePrReportPrompt,
   buildDiscussReportPrompt,
-} from "./reportPrompts";
+} from "./reportActions";
 import { buildSignalReportTaskInput } from "./reportTaskCreation";
 
 export type SignalReportTaskKind = "discuss" | "create-pr";

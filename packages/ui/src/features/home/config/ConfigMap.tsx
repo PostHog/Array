@@ -69,7 +69,7 @@ export function ConfigMap() {
         return;
       }
       if (result.status === "invalid") {
-        toast.error("Can't save — fix the errors below");
+        toast.error("Can't save – fix the errors below");
         setDiagnostics(result.diagnostics ?? []);
       }
     } catch (error) {
@@ -243,7 +243,7 @@ export function ConfigMap() {
           <Warning size={14} className="mt-0.5 shrink-0" />
           <div className="flex flex-col gap-0.5">
             <Text className="font-medium">
-              {errors.length} error{errors.length === 1 ? "" : "s"} — fix before
+              {errors.length} error{errors.length === 1 ? "" : "s"} – fix before
               saving
             </Text>
             <ul className="ml-1 list-disc pl-3">

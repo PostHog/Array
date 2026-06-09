@@ -22,7 +22,7 @@ export interface WorkstreamPresentation {
   accent: SituationCss;
   /** PR author login when it's someone else's PR, else null. */
   author: string | null;
-  /** Situations to render as chips — primary + the calm `in_review` are omitted. */
+  /** Situations to render as chips – primary + the calm `in_review` are omitted. */
   extraSituations: SituationId[];
   generating: boolean;
   /** A task in this workstream is blocked awaiting a permission response. */

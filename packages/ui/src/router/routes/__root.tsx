@@ -155,7 +155,7 @@ function RootLayout() {
   ]);
 
   // The /code/home route is only reachable while the home-tab flag is on, but
-  // flags resolve asynchronously — a restored route (or a flag flipping off
+  // flags resolve asynchronously – a restored route (or a flag flipping off
   // mid-session) can leave us on home without access. Redirect to the new-task
   // screen once flags have loaded and home is gated off.
   const [flagsLoaded, setFlagsLoaded] = useState(false);
