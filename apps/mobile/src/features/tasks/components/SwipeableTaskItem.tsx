@@ -11,9 +11,22 @@ import {
 } from "react-native";
 import { useThemeColors } from "@/lib/theme";
 import type { Task } from "../types";
+import {
+  confirmArchiveRunningTask,
+  isTaskRunning,
+} from "../utils/archiveGuard";
 import { TaskItem } from "./TaskItem";
 
 const SWIPE_THRESHOLD = 60;
+
+function springToRest(value: Animated.Value): void {
+  Animated.spring(value, {
+    toValue: 0,
+    useNativeDriver: true,
+    tension: 40,
+    friction: 8,
+  }).start();
+}
 
 interface SwipeableTaskItemProps {
   task: Task;
@@ -104,6 +117,17 @@ export function SwipeableTaskItem({
         if (gesture.dx < -SWIPE_THRESHOLD && !actionTriggeredRef.current) {
           actionTriggeredRef.current = true;
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+          // Archiving a running task stops its agent, so spring the row back
+          // and confirm first — only archive once the user agrees.
+          if (!p.isArchived && isTaskRunning(p.task)) {
+            springToRest(translateX);
+            confirmArchiveRunningTask(p.task.title, () =>
+              p.onArchive(p.task.id),
+            );
+            return;
+          }
+
           Animated.timing(translateX, {
             toValue: -400,
             duration: 150,
@@ -120,12 +144,7 @@ export function SwipeableTaskItem({
             }
           });
         } else {
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true,
-            tension: 40,
-            friction: 8,
-          }).start();
+          springToRest(translateX);
         }
       },
       onPanResponderTerminate: () => {
