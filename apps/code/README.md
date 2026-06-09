@@ -278,3 +278,9 @@ Reference the workspace path:
 echo "Working in: $POSTHOG_CODE_WORKSPACE_NAME"
 echo "Root repo: $POSTHOG_CODE_ROOT_PATH"
 ```
+
+## Troubleshooting
+
+### "Plan & usage" tab is missing
+
+The app couldn't reach PostHog, usually because of a restrictive network, firewall, or tracker blocker. Connect to a VPN (or fix the network) and restart the app.
