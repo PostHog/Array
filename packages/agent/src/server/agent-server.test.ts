@@ -1463,8 +1463,8 @@ describe("AgentServer HTTP Mode", () => {
       });
     });
 
-    describe("PR body guidance (why context + brevity)", () => {
-      it("instructs Why and brevity (no thread link without a URL) when auto-creating a Slack PR", () => {
+    describe("PR body guidance (why context + brevity + footer)", () => {
+      it("instructs Why, brevity, and the plain footer (no Slack link) when auto-creating a Slack PR without a thread URL", () => {
         process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
         try {
           const prompt = (
@@ -1477,14 +1477,17 @@ describe("AgentServer HTTP Mode", () => {
           // brevity
           expect(prompt).toContain("Keep the PR description brief");
           expect(prompt).toContain("do NOT enumerate every change");
-          // no thread link is added when no concrete URL is available
+          // plain footer, no Slack link
+          expect(prompt).toContain(
+            "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
+          );
           expect(prompt).not.toContain("Slack thread");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
       });
 
-      it("embeds the concrete Slack thread link when one is available", () => {
+      it("embeds the Slack thread link in the footer when one is available", () => {
         process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
         try {
           const prompt = (
@@ -1494,14 +1497,18 @@ describe("AgentServer HTTP Mode", () => {
             "https://posthog.slack.com/archives/C123/p456",
           );
           expect(prompt).toContain(
-            "this task started from a Slack thread, also link it: https://posthog.slack.com/archives/C123/p456",
+            "*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
+          );
+          // The Why bullet no longer carries the thread link.
+          expect(prompt).not.toContain(
+            "this task started from a Slack thread, also link it",
           );
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
       });
 
-      it("instructs Why and brevity but omits the thread hint on the non-Slack no-repository path", () => {
+      it("instructs Why, brevity, and the plain footer on the non-Slack no-repository path", () => {
         delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         const prompt = (
           createServer({
@@ -1511,7 +1518,29 @@ describe("AgentServer HTTP Mode", () => {
         expect(prompt).toContain("open a draft pull request");
         expect(prompt).toContain("**Why**");
         expect(prompt).toContain("Keep the PR description brief");
+        expect(prompt).toContain(
+          "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
+        );
         expect(prompt).not.toContain("Slack thread");
+      });
+
+      it("embeds the Slack thread link in the footer on the no-repository path when one is available", () => {
+        process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+        try {
+          const prompt = (
+            createServer({
+              repositoryPath: undefined,
+            }) as unknown as TestableServer
+          ).buildCloudSystemPrompt(
+            null,
+            "https://posthog.slack.com/archives/C123/p456",
+          );
+          expect(prompt).toContain(
+            "*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](https://posthog.slack.com/archives/C123/p456)*",
+          );
+        } finally {
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        }
       });
     });
   });
