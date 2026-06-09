@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { usePreferencesStore } from "./preferencesStore";
+import {
+  FONT_SCALE_BY_PREFERENCE,
+  type FontSizePreference,
+  usePreferencesStore,
+} from "./preferencesStore";
 
 const INITIAL_STATE = usePreferencesStore.getState();
 
@@ -49,4 +53,33 @@ describe("preferencesStore reasoning effort", () => {
     expect(state.defaultReasoningEffort).toBe("low");
     expect(state.lastUsedReasoningEffort).toBe("max");
   });
+});
+
+describe("preferencesStore font size", () => {
+  it("defaults to a known preference with a 'default' scale of 1", () => {
+    const { fontSize } = usePreferencesStore.getState();
+    expect(FONT_SCALE_BY_PREFERENCE[fontSize]).toBeGreaterThanOrEqual(1);
+    expect(FONT_SCALE_BY_PREFERENCE.default).toBe(1);
+  });
+
+  it.each([
+    ["small", true],
+    ["large", false],
+    ["xlarge", false],
+  ] as const)("orders the %s scale relative to default", (size, smaller) => {
+    const scale = FONT_SCALE_BY_PREFERENCE[size];
+    if (smaller) {
+      expect(scale).toBeLessThan(1);
+    } else {
+      expect(scale).toBeGreaterThan(1);
+    }
+  });
+
+  it.each(["small", "default", "large", "xlarge"] as const)(
+    "updates fontSize to %s via setter",
+    (size: FontSizePreference) => {
+      usePreferencesStore.getState().setFontSize(size);
+      expect(usePreferencesStore.getState().fontSize).toBe(size);
+    },
+  );
 });

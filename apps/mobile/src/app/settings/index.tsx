@@ -9,6 +9,7 @@ import { usePushTokenStore } from "@/features/notifications/stores/pushTokenStor
 import {
   type CompletionSound,
   type DefaultReasoningEffort,
+  type FontSizePreference,
   type InitialTaskMode,
   type ThemePreference,
   usePreferencesStore,
@@ -28,6 +29,16 @@ const THEME_OPTIONS = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
 ] as const;
+
+const FONT_SIZE_OPTIONS: ReadonlyArray<{
+  value: FontSizePreference;
+  label: string;
+}> = [
+  { value: "small", label: "Small" },
+  { value: "default", label: "Default" },
+  { value: "large", label: "Large" },
+  { value: "xlarge", label: "Extra Large" },
+];
 
 const SOUND_OPTIONS: ReadonlyArray<{ value: CompletionSound; label: string }> =
   [
@@ -81,6 +92,10 @@ function themeLabel(theme: ThemePreference): string {
   return THEME_OPTIONS.find((o) => o.value === theme)?.label ?? "Match system";
 }
 
+function fontSizeLabel(size: FontSizePreference): string {
+  return FONT_SIZE_OPTIONS.find((o) => o.value === size)?.label ?? "Default";
+}
+
 function soundLabel(sound: CompletionSound): string {
   return SOUND_OPTIONS.find((o) => o.value === sound)?.label ?? "Meep";
 }
@@ -128,6 +143,8 @@ export default function SettingsScreen() {
   );
   const theme = usePreferencesStore((s) => s.theme);
   const setTheme = usePreferencesStore((s) => s.setTheme);
+  const fontSize = usePreferencesStore((s) => s.fontSize);
+  const setFontSize = usePreferencesStore((s) => s.setFontSize);
   const completionSound = usePreferencesStore((s) => s.completionSound);
   const setCompletionSound = usePreferencesStore((s) => s.setCompletionSound);
   const completionVolume = usePreferencesStore((s) => s.completionVolume);
@@ -150,6 +167,7 @@ export default function SettingsScreen() {
   const clearDismissed = useDismissedReportsStore((s) => s.clearDismissed);
 
   const [themeSheetOpen, setThemeSheetOpen] = useState(false);
+  const [fontSizeSheetOpen, setFontSizeSheetOpen] = useState(false);
   const [soundSheetOpen, setSoundSheetOpen] = useState(false);
   const [volumeSheetOpen, setVolumeSheetOpen] = useState(false);
   const [taskModeSheetOpen, setTaskModeSheetOpen] = useState(false);
@@ -225,11 +243,24 @@ export default function SettingsScreen() {
             label="Theme"
             description="Choose light, dark, or follow your system preference"
             onPress={() => setThemeSheetOpen(true)}
-            showDivider={false}
             rightSlot={
               <>
                 <Text className="text-[14px] text-gray-11">
                   {themeLabel(theme)}
+                </Text>
+                <CaretRight size={14} color={themeColors.gray[10]} />
+              </>
+            }
+          />
+          <SettingsRow
+            label="Font size"
+            description="Scale text size across the app"
+            onPress={() => setFontSizeSheetOpen(true)}
+            showDivider={false}
+            rightSlot={
+              <>
+                <Text className="text-[14px] text-gray-11">
+                  {fontSizeLabel(fontSize)}
                 </Text>
                 <CaretRight size={14} color={themeColors.gray[10]} />
               </>
@@ -502,6 +533,18 @@ export default function SettingsScreen() {
         onChange={(value) => setTheme(value as ThemePreference)}
         onClose={() => setThemeSheetOpen(false)}
         options={THEME_OPTIONS.map((option) => ({
+          value: option.value,
+          label: option.label,
+        }))}
+      />
+
+      <SelectSheet
+        open={fontSizeSheetOpen}
+        title="Font size"
+        value={fontSize}
+        onChange={(value) => setFontSize(value as FontSizePreference)}
+        onClose={() => setFontSizeSheetOpen(false)}
+        options={FONT_SIZE_OPTIONS.map((option) => ({
           value: option.value,
           label: option.label,
         }))}
