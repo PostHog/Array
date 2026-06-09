@@ -10,7 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { ConfigMap } from "../config/ConfigMap";
 import { useHomeSnapshot } from "../hooks/useHomeSnapshot";
 import { type HomeViewMode, useHomeUiStore } from "../stores/homeUiStore";
@@ -47,6 +47,10 @@ export function HomeView() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        if (selectedWorkstreamId) setSelectedWorkstreamId(null);
+        return;
+      }
       if (e.key !== "v" || e.metaKey || e.ctrlKey || e.altKey) return;
       // Don't capture `v` while the user is typing.
       const target = e.target as HTMLElement | null;
@@ -59,16 +63,18 @@ export function HomeView() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [viewMode, setViewMode]);
+  }, [viewMode, setViewMode, selectedWorkstreamId, setSelectedWorkstreamId]);
 
-  useEffect(() => {
-    if (!selectedWorkstreamId) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setSelectedWorkstreamId(null);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectedWorkstreamId, setSelectedWorkstreamId]);
+  const { activeAgents, needsAttention, inProgress } = snapshot;
+  const selectedWorkstream = useMemo(
+    () =>
+      selectedWorkstreamId
+        ? (needsAttention.find((ws) => ws.id === selectedWorkstreamId) ??
+          inProgress.find((ws) => ws.id === selectedWorkstreamId) ??
+          null)
+        : null,
+    [selectedWorkstreamId, needsAttention, inProgress],
+  );
 
   if (isLoading) {
     return (
@@ -78,15 +84,8 @@ export function HomeView() {
     );
   }
 
-  const { activeAgents, needsAttention, inProgress } = snapshot;
   const totalRows = needsAttention.length + inProgress.length;
   const hasContent = activeAgents.length > 0 || totalRows > 0;
-
-  const selectedWorkstream = selectedWorkstreamId
-    ? (needsAttention.find((ws) => ws.id === selectedWorkstreamId) ??
-      inProgress.find((ws) => ws.id === selectedWorkstreamId) ??
-      null)
-    : null;
 
   return (
     <Flex direction="column" className="h-full">
