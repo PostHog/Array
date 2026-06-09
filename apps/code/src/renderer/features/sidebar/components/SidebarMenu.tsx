@@ -387,7 +387,6 @@ function SidebarMenuComponent() {
           <NewTaskItem
             isActive={sidebarData.isHomeActive}
             onClick={handleNewTaskClick}
-            variant="primary"
           />
         </Box>
 

@@ -1,5 +1,5 @@
 import { Plus } from "@phosphor-icons/react";
-import { Badge, type ButtonProps } from "@posthog/quill";
+import { Badge } from "@posthog/quill";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
 import { useDraftStore } from "@renderer/features/message-editor/stores/draftStore";
 import { isContentEmpty } from "@renderer/features/message-editor/utils/content";
@@ -9,7 +9,6 @@ import { SidebarKbdHint } from "./SidebarKbdHint";
 interface NewTaskItemProps {
   isActive: boolean;
   onClick: () => void;
-  variant?: ButtonProps["variant"];
 }
 
 export function NewTaskItem({ isActive, onClick }: NewTaskItemProps) {
