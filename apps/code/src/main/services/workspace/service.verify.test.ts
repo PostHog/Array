@@ -63,33 +63,46 @@ describe("WorkspaceService.verifyWorkspaceExists", () => {
     await fsp.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("reports a missing worktree without deleting the association", async () => {
-    const { service, repositoryRepo, workspaceRepo, worktreeRepo } =
-      createService();
+  // The worktree dir lives at the new layout <base>/<name>/<repo>.
+  it.each([
+    { label: "existing worktree", createWorktree: true, expectExists: true },
+    { label: "missing worktree", createWorktree: false, expectExists: false },
+  ])(
+    "$label: reports exists=$expectExists and never deletes the association",
+    async ({ createWorktree, expectExists }) => {
+      const { service, repositoryRepo, workspaceRepo, worktreeRepo } =
+        createService();
 
-    // Repo folder exists, but the worktree directory does not.
-    const repoPath = path.join(tmpDir, REPO_NAME);
-    await fsp.mkdir(repoPath, { recursive: true });
-    const repo = repositoryRepo.create({ path: repoPath });
-    const workspace = workspaceRepo.create({
-      taskId: TASK_ID,
-      repositoryId: repo.id,
-      mode: "worktree",
-    });
-    worktreeRepo.create({
-      workspaceId: workspace.id,
-      name: WORKTREE_NAME,
-      path: path.join(testWorktreeBasePath, REPO_NAME, WORKTREE_NAME),
-    });
+      const repoPath = path.join(tmpDir, REPO_NAME);
+      const worktreePath = path.join(
+        testWorktreeBasePath,
+        WORKTREE_NAME,
+        REPO_NAME,
+      );
+      await fsp.mkdir(repoPath, { recursive: true });
+      if (createWorktree) await fsp.mkdir(worktreePath, { recursive: true });
 
-    const result = await service.verifyWorkspaceExists(TASK_ID);
+      const repo = repositoryRepo.create({ path: repoPath });
+      const workspace = workspaceRepo.create({
+        taskId: TASK_ID,
+        repositoryId: repo.id,
+        mode: "worktree",
+      });
+      worktreeRepo.create({
+        workspaceId: workspace.id,
+        name: WORKTREE_NAME,
+        path: worktreePath,
+      });
 
-    expect(result.exists).toBe(false);
-    expect(result.missingPath).toContain(WORKTREE_NAME);
-    // Association must survive so the task can recover later.
-    expect(workspaceRepo.findByTaskId(TASK_ID)).not.toBeNull();
-    expect(worktreeRepo.findByWorkspaceId(workspace.id)).not.toBeNull();
-  });
+      const result = await service.verifyWorkspaceExists(TASK_ID);
+
+      expect(result.exists).toBe(expectExists);
+      if (!expectExists) expect(result.missingPath).toContain(WORKTREE_NAME);
+      // Association must survive so the task can recover later.
+      expect(workspaceRepo.findByTaskId(TASK_ID)).not.toBeNull();
+      expect(worktreeRepo.findByWorkspaceId(workspace.id)).not.toBeNull();
+    },
+  );
 
   it("reports a missing local folder without deleting the association", async () => {
     const { service, repositoryRepo, workspaceRepo } = createService();
@@ -106,37 +119,6 @@ describe("WorkspaceService.verifyWorkspaceExists", () => {
 
     expect(result.exists).toBe(false);
     expect(result.missingPath).toBe(repoPath);
-    expect(workspaceRepo.findByTaskId(TASK_ID)).not.toBeNull();
-  });
-
-  it("confirms an existing worktree", async () => {
-    const { service, repositoryRepo, workspaceRepo, worktreeRepo } =
-      createService();
-
-    const repoPath = path.join(tmpDir, REPO_NAME);
-    const worktreePath = path.join(
-      testWorktreeBasePath,
-      REPO_NAME,
-      WORKTREE_NAME,
-    );
-    await fsp.mkdir(repoPath, { recursive: true });
-    await fsp.mkdir(worktreePath, { recursive: true });
-
-    const repo = repositoryRepo.create({ path: repoPath });
-    const workspace = workspaceRepo.create({
-      taskId: TASK_ID,
-      repositoryId: repo.id,
-      mode: "worktree",
-    });
-    worktreeRepo.create({
-      workspaceId: workspace.id,
-      name: WORKTREE_NAME,
-      path: worktreePath,
-    });
-
-    const result = await service.verifyWorkspaceExists(TASK_ID);
-
-    expect(result.exists).toBe(true);
     expect(workspaceRepo.findByTaskId(TASK_ID)).not.toBeNull();
   });
 });

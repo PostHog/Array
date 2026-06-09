@@ -26,23 +26,26 @@ describe("deriveWorktreePath", () => {
     await fsp.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("returns the new layout (<base>/<name>/<repo>) when it exists on disk", async () => {
-    const newPath = path.join(tmpDir, NAME, REPO_NAME);
-    await fsp.mkdir(newPath, { recursive: true });
+  it.each([
+    {
+      label: "new layout when it exists on disk",
+      create: () => path.join(tmpDir, NAME, REPO_NAME),
+      expected: () => path.join(tmpDir, NAME, REPO_NAME),
+    },
+    {
+      label: "legacy layout when only it exists",
+      create: () => path.join(tmpDir, REPO_NAME, NAME),
+      expected: () => path.join(tmpDir, REPO_NAME, NAME),
+    },
+    {
+      label: "new layout by default when neither exists (creation case)",
+      create: () => null,
+      expected: () => path.join(tmpDir, NAME, REPO_NAME),
+    },
+  ])("resolves the $label", async ({ create, expected }) => {
+    const dir = create();
+    if (dir) await fsp.mkdir(dir, { recursive: true });
 
-    expect(deriveWorktreePath(REPO, NAME)).toBe(newPath);
-  });
-
-  it("falls back to the legacy layout (<base>/<repo>/<name>) when only it exists", async () => {
-    const legacyPath = path.join(tmpDir, REPO_NAME, NAME);
-    await fsp.mkdir(legacyPath, { recursive: true });
-
-    expect(deriveWorktreePath(REPO, NAME)).toBe(legacyPath);
-  });
-
-  it("defaults to the new layout when neither exists (creation case)", () => {
-    expect(deriveWorktreePath(REPO, NAME)).toBe(
-      path.join(tmpDir, NAME, REPO_NAME),
-    );
+    expect(deriveWorktreePath(REPO, NAME)).toBe(expected());
   });
 });
