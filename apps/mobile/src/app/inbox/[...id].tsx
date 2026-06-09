@@ -51,7 +51,10 @@ import type {
   SignalReportStatus,
   SuggestedReviewersArtefact,
 } from "@/features/inbox/types";
-import { inboxStatusLabel } from "@/features/inbox/utils";
+import {
+  formatSignalReportSummaryMarkdown,
+  inboxStatusLabel,
+} from "@/features/inbox/utils";
 import {
   computeReportAgeHours,
   type InboxReportActionType,
@@ -492,7 +495,9 @@ export default function ReportDetailScreen() {
         {/* Summary */}
         {report.summary && (
           <View className="mb-4" style={{ opacity: isReady ? 1 : 0.7 }}>
-            <MarkdownText content={report.summary} />
+            <MarkdownText
+              content={formatSignalReportSummaryMarkdown(report.summary)}
+            />
           </View>
         )}
 

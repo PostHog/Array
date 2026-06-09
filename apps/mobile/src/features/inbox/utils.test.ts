@@ -8,6 +8,7 @@ import type {
 import {
   buildInboxViewedProperties,
   buildReviewerOptions,
+  formatSignalReportSummaryMarkdown,
   reviewerMatchesAvailable,
   toSuggestedReviewerWriteContent,
 } from "./utils";
@@ -60,6 +61,44 @@ function makeReport(
     ...partial,
   };
 }
+
+describe("formatSignalReportSummaryMarkdown", () => {
+  it.each([
+    {
+      name: "puts section body on a new line after the header",
+      input:
+        "**What's happening:** Error tracking issue keyed on `app:dashboard_query`.",
+      expected:
+        "**What's happening:**\n\nError tracking issue keyed on `app:dashboard_query`.",
+    },
+    {
+      name: "splits consecutive headers packed on one line",
+      input:
+        "**What's happening:** Users hit rate limits. **Root cause:** Limiters are contended. **How to resolve:** Reduce blocking.",
+      expected:
+        "**What's happening:**\n\nUsers hit rate limits.\n\n**Root cause:**\n\nLimiters are contended.\n\n**How to resolve:**\n\nReduce blocking.",
+    },
+    {
+      name: "leaves already-separated headers sane",
+      input:
+        "**What's happening:**\n\nUsers hit rate limits.\n\n**Root cause:**\n\nLimiters are contended.",
+      expected:
+        "**What's happening:**\n\nUsers hit rate limits.\n\n**Root cause:**\n\nLimiters are contended.",
+    },
+    {
+      name: "leaves content without headers unchanged",
+      input: "Plain summary with no structured sections.",
+      expected: "Plain summary with no structured sections.",
+    },
+    {
+      name: "matches headers case-insensitively",
+      input: "**what's happening:** lowercase header body.",
+      expected: "**what's happening:**\n\nlowercase header body.",
+    },
+  ])("$name", ({ input, expected }) => {
+    expect(formatSignalReportSummaryMarkdown(input)).toBe(expected);
+  });
+});
 
 describe("buildInboxViewedProperties", () => {
   it("emits zero counts for an empty list", () => {

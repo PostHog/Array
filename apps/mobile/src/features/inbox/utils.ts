@@ -8,6 +8,32 @@ import type {
   SuggestedReviewerWriteEntry,
 } from "./types";
 
+const SIGNAL_SUMMARY_SECTION_HEADERS = [
+  "What's happening",
+  "Root cause",
+  "How to resolve",
+] as const;
+
+/**
+ * Inserts blank lines around signal report summary section headers so each
+ * label and its body render on their own line (agent output often packs them
+ * together, e.g. `**What's happening:** text **Root cause:** ...`).
+ */
+export function formatSignalReportSummaryMarkdown(content: string): string {
+  let result = content;
+
+  for (const header of SIGNAL_SUMMARY_SECTION_HEADERS) {
+    const boldHeader = `\\*\\*${header}:\\*\\*`;
+    result = result.replace(
+      new RegExp(`([^\\n])\\s*(${boldHeader})`, "gi"),
+      "$1\n\n$2",
+    );
+    result = result.replace(new RegExp(`(${boldHeader})\\s+`, "gi"), "$1\n\n");
+  }
+
+  return result;
+}
+
 export function inboxStatusLabel(status: SignalReportStatus): string {
   switch (status) {
     case "ready":
