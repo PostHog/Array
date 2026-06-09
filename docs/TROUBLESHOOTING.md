@@ -97,6 +97,30 @@ cd apps/code && npx electron-rebuild -f
 
 Then restart the app.
 
+### If `electron-rebuild` itself crashes
+
+The rebuild above can die before it compiles anything, with a stack trace inside yargs:
+
+```
+ReferenceError: require is not defined in ES module scope, you can use import instead
+    at file:///.../node_modules/yargs/yargs:3:69
+```
+
+This happens when the hoisted `@electron/rebuild` resolves to a stale major whose yargs CLI no longer loads (`apps/code` wants `^4`; check yours with `node -p "require('./node_modules/@electron/rebuild/package.json').version"`). Because the rebuild line in `apps/code/scripts/postinstall.sh` ends in `|| true`, the failure is swallowed and the binary is never built.
+
+Compile `better-sqlite3` directly with `node-gyp` against the Electron headers, which sidesteps the broken CLI:
+
+```bash
+ELECTRON_VERSION="$(node -p "require('./node_modules/electron/package.json').version")"
+cd node_modules/better-sqlite3
+npx node-gyp rebuild --release \
+  --arch="$(node -p process.arch)" \
+  --target="$ELECTRON_VERSION" \
+  --dist-url=https://electronjs.org/headers
+```
+
+The ABI comes from the Electron headers (`--target` plus `--dist-url`), not your system Node, so the binary gets the right `NODE_MODULE_VERSION` even when the two differ. It lands at `node_modules/better-sqlite3/build/Release/better_sqlite3.node`. Restart the app.
+
 ## node-gyp failed to rebuild @parcel/watcher
 
 If you see this error after pulling or switching branches:
