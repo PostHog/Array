@@ -103,7 +103,7 @@ export function ConfigMap() {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key === "s") {
         e.preventDefault();
-        if (dirty) void onSave();
+        if (dirty && !saveMutation.isPending) void onSave();
       }
       if (e.key === "Escape") {
         clearSelection();
@@ -111,7 +111,7 @@ export function ConfigMap() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dirty, onSave, clearSelection]);
+  }, [dirty, saveMutation.isPending, onSave, clearSelection]);
 
   if (error) {
     const offline = !isOnline;
