@@ -114,13 +114,29 @@ export const saveInput = z
   .strict();
 export type SaveInput = z.infer<typeof saveInput>;
 
-export const saveResult = z
-  .object({
-    status: z.enum(["saved", "conflict", "invalid"]),
-    config: workflowConfig,
-    diagnostics: z.array(validationDiagnostic).optional(),
-  })
-  .strict();
+export const saveResult = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("saved"),
+      config: workflowConfig,
+      diagnostics: z.array(validationDiagnostic).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("conflict"),
+      config: workflowConfig.optional(),
+      diagnostics: z.array(validationDiagnostic).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("invalid"),
+      config: workflowConfig.optional(),
+      diagnostics: z.array(validationDiagnostic).optional(),
+    })
+    .strict(),
+]);
 export type SaveResult = z.infer<typeof saveResult>;
 
 export const WorkflowEvent = {
