@@ -168,15 +168,16 @@ export function ConfigMap() {
   let panel: React.ReactNode = null;
   if (selection?.kind === "action") {
     const actionsForSituation = draft.bindings[selection.situationId] ?? [];
-    const action = actionsForSituation.find((a) => a.id === selection.actionId);
+    const actionIndex = actionsForSituation.findIndex(
+      (a) => a.id === selection.actionId,
+    );
+    const action = actionsForSituation[actionIndex];
     if (action) {
       panel = (
         <ActionEditorPanel
           situationId={selection.situationId}
           action={action}
-          indexInSituation={actionsForSituation.findIndex(
-            (a) => a.id === action.id,
-          )}
+          indexInSituation={actionIndex}
           totalInSituation={actionsForSituation.length}
         />
       );
