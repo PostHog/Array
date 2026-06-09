@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockExecGh = vi.hoisted(() => vi.fn());
@@ -318,14 +319,19 @@ describe("GitService.getTaskPrStatus (missing worktree directory)", () => {
   it("returns no diff and never touches git when the worktree directory is gone", async () => {
     workspaceService.getWorkspace.mockResolvedValue({
       mode: "worktree",
-      worktreePath: "/tmp/posthog-code-worktree-does-not-exist-xyz",
+      worktreePath: "/some/worktree",
       folderPath: null,
       linkedBranch: null,
     });
+    // Force the missing-dir guard regardless of the real filesystem.
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
     const diffSpy = vi.spyOn(service, "getDiffStats");
 
     // Pre-guard this rejected; now it resolves to no diff.
     const result = await service.getTaskPrStatus("task-1", null);
+    // Drain the fire-and-forget revalidation so the computeTaskPrStatus
+    // guard (background path) is covered too, not just computeWorktreeHasDiff.
+    await new Promise((resolve) => setImmediate(resolve));
 
     expect(result).toEqual({ prState: null, hasDiff: false });
     expect(diffSpy).not.toHaveBeenCalled();
