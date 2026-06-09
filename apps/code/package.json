@@ -10,8 +10,8 @@
   },
   "scripts": {
     "setup": "bash bin/setup",
-    "dev": "electron-forge start",
-    "start": "electron-forge start",
+    "dev": "electron-forge start -- --remote-debugging-port=9222",
+    "start": "electron-forge start -- --remote-debugging-port=9222",
     "start:debug": "electron-forge start -- --inspect=5858 --remote-debugging-port=9222",
     "package": "electron-forge package",
     "package:dev": "FORCE_DEV_MODE=1 SKIP_NOTARIZE=1 electron-forge package",
