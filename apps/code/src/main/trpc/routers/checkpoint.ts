@@ -168,35 +168,66 @@ async function runRestore(input: {
                 },
               );
             }
-            // Fine-trim to the exact prompt boundary regardless of S3 result.
-            // This is the primary defense for Codex sessions (all events are
-            // type:"notification", so the backend may not find turn boundaries).
-            // Cancel any in-flight drain first so our write wins.
-            localLogsSvc.cancelPendingWrite(input.taskRunId);
-            // Preserve the restored turn's own checkpoint notification: the trim
-            // cuts at the prompt response, dropping the git_checkpoint line that
-            // was appended after it on TURN_COMPLETE. Without re-adding it, the
-            // restored turn shows a disabled restore icon after an app restart.
+            // The restored turn's own git_checkpoint notification sits after its
+            // prompt response, so BOTH the S3 truncate and the local prompt-
+            // boundary trim drop it — leaving the restored turn with a disabled
+            // restore icon after a restart. Re-add it to both stores so the
+            // restored turn stays restorable.
             const restoredCheckpointEntry =
               promptId != null
-                ? JSON.stringify({
-                    type: "notification",
+                ? {
+                    type: "notification" as const,
                     timestamp: new Date().toISOString(),
                     notification: {
-                      jsonrpc: "2.0",
+                      jsonrpc: "2.0" as const,
                       method: POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT,
                       params: {
                         checkpointId: input.checkpointId,
                         promptId,
                       },
                     },
-                  })
+                  }
                 : undefined;
+
+            // Re-append to S3 only when the truncate actually removed it (else
+            // the checkpoint is still there and re-appending would duplicate).
+            if (s3Result.truncated && restoredCheckpointEntry) {
+              const appendUrl = `${info.apiHost}/api/projects/${info.projectId}/tasks/${info.taskId}/runs/${input.taskRunId}/append_log/`;
+              await authService
+                .authenticatedFetch(fetch, appendUrl, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ entries: [restoredCheckpointEntry] }),
+                })
+                .then((res) => {
+                  if (!res.ok) {
+                    log.warn("Failed to re-append restored checkpoint to S3", {
+                      taskRunId: input.taskRunId,
+                      status: res.status,
+                    });
+                  }
+                })
+                .catch((err: unknown) => {
+                  log.warn("Failed to re-append restored checkpoint to S3", {
+                    taskRunId: input.taskRunId,
+                    error: err instanceof Error ? err.message : String(err),
+                  });
+                });
+            }
+
+            // Fine-trim the local cache to the exact prompt boundary regardless
+            // of the S3 result (the primary defense for Codex sessions, whose
+            // events are all type:"notification"). Cancel any in-flight drain
+            // first so our write wins, and re-add the restored checkpoint so the
+            // restored turn keeps its icon after a restart.
+            localLogsSvc.cancelPendingWrite(input.taskRunId);
             const boundaryTrimmed = await localLogsSvc
               .truncateLocalLogsAtPromptBoundary(
                 input.taskRunId,
                 promptId ?? -1,
-                restoredCheckpointEntry ? [restoredCheckpointEntry] : [],
+                restoredCheckpointEntry
+                  ? [JSON.stringify(restoredCheckpointEntry)]
+                  : [],
               )
               .catch((err: unknown) => {
                 log.warn(
