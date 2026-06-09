@@ -1,9 +1,16 @@
-import type { Container, ServiceIdentifier } from "inversify";
+import type { BindToFluentSyntax, ServiceIdentifier } from "inversify";
 
-let rootContainer: Container | null = null;
-const pendingBindings: Array<(container: Container) => void> = [];
+export interface ServiceContainer {
+  get(serviceIdentifier: ServiceIdentifier): unknown;
+  getAll(serviceIdentifier: ServiceIdentifier): unknown[];
+  isBound(serviceIdentifier: ServiceIdentifier): boolean;
+  bind(serviceIdentifier: ServiceIdentifier): BindToFluentSyntax<unknown>;
+}
 
-export function setRootContainer(container: Container): void {
+let rootContainer: ServiceContainer | null = null;
+const pendingBindings: Array<(container: ServiceContainer) => void> = [];
+
+export function setRootContainer(container: ServiceContainer): void {
   rootContainer = container;
   for (const bind of pendingBindings) {
     bind(container);
@@ -11,7 +18,9 @@ export function setRootContainer(container: Container): void {
   pendingBindings.length = 0;
 }
 
-export function bindToContainer(bind: (container: Container) => void): void {
+export function bindToContainer(
+  bind: (container: ServiceContainer) => void,
+): void {
   if (rootContainer) {
     bind(rootContainer);
   } else {
@@ -26,7 +35,7 @@ export function resolveService<T>(serviceIdentifier: ServiceIdentifier<T>): T {
     );
   }
 
-  return rootContainer.get<T>(serviceIdentifier);
+  return rootContainer.get(serviceIdentifier) as T;
 }
 
 export function resolveServiceOptional<T>(
@@ -36,5 +45,5 @@ export function resolveServiceOptional<T>(
     return null;
   }
 
-  return rootContainer.get<T>(serviceIdentifier);
+  return rootContainer.get(serviceIdentifier) as T;
 }

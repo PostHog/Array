@@ -85,4 +85,5 @@ export interface ITaskCreationHost {
   setProvisioningActive(taskId: string): void;
   clearProvisioning(taskId: string): void;
   dispatchSetupAction(args: SetupActionDispatch): void;
+  track(event: string, props?: Record<string, unknown>): void;
 }

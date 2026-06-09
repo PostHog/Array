@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@inversifyjs/strongly-typed": "2.2.0",
     "@posthog/core": "workspace:*",
     "@posthog/di": "workspace:*",
     "@posthog/host-router": "workspace:*",

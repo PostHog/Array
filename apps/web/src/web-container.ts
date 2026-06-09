@@ -1,7 +1,11 @@
 import "reflect-metadata";
+import { TypedContainer } from "@inversifyjs/strongly-typed";
 import { setRootContainer } from "@posthog/di/container";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
-import { HOST_TRPC_CLIENT } from "@posthog/host-router/client";
+import {
+  HOST_TRPC_CLIENT,
+  type HostTrpcClient,
+} from "@posthog/host-router/client";
 import { sandboxProxyHtml } from "@posthog/shared/mcp-sandbox-proxy";
 import {
   AUTH_SIDE_EFFECTS,
@@ -15,6 +19,8 @@ import { McpAppHost } from "@posthog/ui/features/mcp-apps/components/McpAppHost"
 import {
   MCP_APP_HOST_COMPONENT,
   MCP_SANDBOX_PROXY_URL,
+  type McpAppHostComponent,
+  type McpSandboxProxyUrlProvider,
 } from "@posthog/ui/features/mcp-apps/identifiers";
 import {
   ANALYTICS_TRACKER,
@@ -25,13 +31,25 @@ import {
   type ImperativeQueryClient,
 } from "@posthog/ui/shell/queryClient";
 import { QueryClient } from "@tanstack/react-query";
-import { Container } from "inversify";
 import { WebAuthSideEffects } from "./web-auth-side-effects";
 import { hostTrpcClient } from "./web-trpc";
 
+interface WebBindings {
+  [HOST_TRPC_CLIENT]: HostTrpcClient;
+  [ROOT_LOGGER]: RootLogger;
+  [FEATURE_FLAGS]: FeatureFlags;
+  [ANALYTICS_TRACKER]: AnalyticsTracker;
+  [IMPERATIVE_QUERY_CLIENT]: ImperativeQueryClient;
+  [AUTH_SIDE_EFFECTS]: IAuthSideEffects;
+  [MCP_APP_HOST_COMPONENT]: McpAppHostComponent;
+  [MCP_SANDBOX_PROXY_URL]: McpSandboxProxyUrlProvider;
+}
+
 export const queryClient = new QueryClient();
 
-export const container = new Container({ defaultScope: "Singleton" });
+export const container = new TypedContainer<WebBindings>({
+  defaultScope: "Singleton",
+});
 
 // Keystone: the same typed host client the renderer binds, over HTTP not IPC.
 container.bind(HOST_TRPC_CLIENT).toConstantValue(hostTrpcClient);
@@ -44,14 +62,14 @@ const scoped = (name?: string): RootLogger => ({
   error: (...a) => console.error(name ? `[${name}]` : "", ...a),
   scope: (n: string) => scoped(n),
 });
-container.bind<RootLogger>(ROOT_LOGGER).toConstantValue(scoped());
+container.bind(ROOT_LOGGER).toConstantValue(scoped());
 
 // ── Stubbed web ports (TODO: real web adapters — posthog-js, localStorage, etc.) ──
-container.bind<FeatureFlags>(FEATURE_FLAGS).toConstantValue({
+container.bind(FEATURE_FLAGS).toConstantValue({
   isEnabled: () => false,
   onFlagsLoaded: () => () => {},
 });
-container.bind<AnalyticsTracker>(ANALYTICS_TRACKER).toConstantValue({
+container.bind(ANALYTICS_TRACKER).toConstantValue({
   track: () => {},
   setActiveTaskContext: () => {},
   captureException: () => {},
@@ -59,14 +77,12 @@ container.bind<AnalyticsTracker>(ANALYTICS_TRACKER).toConstantValue({
   setUserGroups: () => {},
   resetUser: () => {},
 });
-container
-  .bind<ImperativeQueryClient>(IMPERATIVE_QUERY_CLIENT)
-  .toConstantValue(queryClient);
+container.bind(IMPERATIVE_QUERY_CLIENT).toConstantValue(queryClient);
 
 // Interactive MCP App iframe host. Electron isolates the proxy with a custom
 // privileged scheme; web gets a separate origin for free via a blob URL of the
 // same (host-agnostic) proxy HTML. The blob is created once, lazily.
-container.bind<IAuthSideEffects>(AUTH_SIDE_EFFECTS).to(WebAuthSideEffects);
+container.bind(AUTH_SIDE_EFFECTS).to(WebAuthSideEffects);
 
 container.bind(MCP_APP_HOST_COMPONENT).toConstantValue(McpAppHost);
 let sandboxProxyUrl: string | null = null;

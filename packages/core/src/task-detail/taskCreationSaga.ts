@@ -3,7 +3,6 @@ import type {
   ConnectParams,
   SessionService,
 } from "@posthog/core/sessions/sessionService";
-import type { AnalyticsProperties } from "@posthog/platform/analytics";
 import {
   getTaskRepository,
   Saga,
@@ -25,7 +24,7 @@ export interface TaskCreationDeps {
   host: ITaskCreationHost;
   sessionService: SessionService;
   onTaskReady?: (output: TaskCreationOutput) => void;
-  track: (event: string, props?: AnalyticsProperties) => void;
+  track: (event: string, props?: Record<string, unknown>) => void;
 }
 
 export class TaskCreationSaga extends Saga<

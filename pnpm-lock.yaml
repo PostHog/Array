@@ -124,6 +124,9 @@ importers:
       '@fontsource-variable/inter':
         specifier: ^5.2.8
         version: 5.2.8
+      '@inversifyjs/strongly-typed':
+        specifier: 2.2.0
+        version: 2.2.0(inversify@7.11.0(reflect-metadata@0.2.2))
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.27.1(zod@4.3.6)
@@ -630,6 +633,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@inversifyjs/strongly-typed':
+        specifier: 2.2.0
+        version: 2.2.0(inversify@7.11.0(reflect-metadata@0.2.2))
       '@posthog/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -1477,6 +1483,9 @@ importers:
         specifier: 4.3.6
         version: 4.3.6
     devDependencies:
+      '@inversifyjs/strongly-typed':
+        specifier: 2.2.0
+        version: 2.2.0(inversify@7.11.0(reflect-metadata@0.2.2))
       '@posthog/tsconfig':
         specifier: workspace:*
         version: link:../../tooling/typescript
@@ -3407,6 +3416,11 @@ packages:
     resolution: {integrity: sha512-Cp77C4d2wLaHXiUB7iH6Cxb7i1lD/YDuTIHLTDzKINqGSz0DCSoL/Dg2wVkW/6Qx03r/yQMLJ+32Agl32N2X8g==}
     peerDependencies:
       reflect-metadata: ~0.2.2
+
+  '@inversifyjs/strongly-typed@2.2.0':
+    resolution: {integrity: sha512-oDRQAst1noKp8uZ150dIJ5H8n70ZCkK5qptz+T/HDXx8dWIVwZWTeec1SXsoSUsVpofJlpQLTAdv7QU27K8i3w==}
+    peerDependencies:
+      inversify: ^7.6.1
 
   '@isaacs/balanced-match@4.0.1':
     resolution: {integrity: sha512-yzMTt9lEb8Gv7zRioUilSglI0c0smZ9k5D65677DLWLtWJaXIS3CqcGyUFByYKlnUj6TkjLVs54fBl6+TiGQDQ==}
@@ -15782,6 +15796,10 @@ snapshots:
   '@inversifyjs/reflect-metadata-utils@1.4.1(reflect-metadata@0.2.2)':
     dependencies:
       reflect-metadata: 0.2.2
+
+  '@inversifyjs/strongly-typed@2.2.0(inversify@7.11.0(reflect-metadata@0.2.2))':
+    dependencies:
+      inversify: 7.11.0(reflect-metadata@0.2.2)
 
   '@isaacs/balanced-match@4.0.1': {}
 

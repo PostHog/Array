@@ -31,7 +31,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Rebuild native modules for Node
-        run: pnpm rebuild better-sqlite3
+        run: node scripts/rebuild-better-sqlite3-node.mjs
 
       - name: Build dependencies
         run: pnpm --filter @posthog/electron-trpc build

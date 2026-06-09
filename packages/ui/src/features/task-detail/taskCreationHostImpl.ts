@@ -24,6 +24,7 @@ import {
 } from "@posthog/host-router/client";
 import { expandTildePath, type Workspace } from "@posthog/shared";
 import { injectable } from "inversify";
+import { track } from "../../shell/analytics";
 import { getAuthenticatedClient } from "../auth/authClientImperative";
 import { assertCloudUsageAvailable } from "../billing/preflightCloudUsage";
 import { DEFAULT_PANEL_IDS } from "../panels/panelConstants";
@@ -170,5 +171,12 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
         cwd: args.cwd,
         label: args.label,
       });
+  }
+
+  track(event: string, props?: Record<string, unknown>): void {
+    (track as (event: string, props?: Record<string, unknown>) => void)(
+      event,
+      props,
+    );
   }
 }

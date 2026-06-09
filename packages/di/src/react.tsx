@@ -1,11 +1,7 @@
 import type { ServiceIdentifier } from "inversify";
 import type { ReactNode } from "react";
 import { createContext, useContext, useMemo } from "react";
-
-interface ServiceContainer {
-  get<T>(serviceIdentifier: ServiceIdentifier<T>): T;
-  isBound(serviceIdentifier: ServiceIdentifier<unknown>): boolean;
-}
+import type { ServiceContainer } from "./container";
 
 const ServiceContext = createContext<ServiceContainer | null>(null);
 
@@ -29,7 +25,7 @@ export function useService<T>(serviceIdentifier: ServiceIdentifier<T>): T {
     throw new Error("useService must be used within a ServiceProvider");
   }
 
-  return container.get(serviceIdentifier);
+  return container.get(serviceIdentifier) as T;
 }
 
 export function useServiceOptional<T>(
@@ -44,5 +40,5 @@ export function useServiceOptional<T>(
     return null;
   }
 
-  return container.get(serviceIdentifier);
+  return container.get(serviceIdentifier) as T;
 }

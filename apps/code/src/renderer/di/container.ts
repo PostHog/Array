@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { TypedContainer } from "@inversifyjs/strongly-typed";
 import type { TrpcRouter } from "@main/trpc/router";
 import {
   CODE_REVIEW_WORKSPACE_CLIENT,
@@ -49,12 +50,14 @@ import {
 import {
   TASK_CREATION_EFFECTS,
   TASK_CREATION_HOST,
+  WORKSPACE_SETUP_SAGA,
 } from "@posthog/core/task-detail/identifiers";
 import type { ITaskCreationHost } from "@posthog/core/task-detail/taskCreationHost";
 import {
   TASK_SERVICE,
   TaskService,
 } from "@posthog/core/task-detail/taskService";
+import { WorkspaceSetupSaga } from "@posthog/core/task-detail/workspaceSetupSaga";
 import {
   TASK_DELETION_HOST,
   TASK_DELETION_SERVICE,
@@ -127,13 +130,13 @@ import { trpcClient } from "@renderer/trpc";
 import { hostTrpcClient } from "@renderer/trpc/client";
 import type { TRPCClient } from "@trpc/client";
 import { hostLog, logger } from "@utils/logger";
-import { Container } from "inversify";
-import { RENDERER_TOKENS } from "./tokens";
+import type { RendererBindings } from "./bindings";
+import { TASK_SERVICE as RENDERER_TASK_SERVICE, TRPC_CLIENT } from "./tokens";
 
 /**
  * Renderer process dependency injection container
  */
-export const container = new Container({
+export const container = new TypedContainer<RendererBindings>({
   defaultScope: "Singleton",
 });
 
@@ -142,9 +145,7 @@ setRootContainer(container);
 container.bind(HOST_LOGGER).toConstantValue(hostLog);
 
 // Bind infrastructure
-container
-  .bind<TRPCClient<TrpcRouter>>(RENDERER_TOKENS.TRPCClient)
-  .toConstantValue(trpcClient);
+container.bind<TRPCClient<TrpcRouter>>(TRPC_CLIENT).toConstantValue(trpcClient);
 
 container.bind(HOST_TRPC_CLIENT).toConstantValue(hostTrpcClient);
 
@@ -220,10 +221,12 @@ container
 // Bind services
 container.bind<ITaskCreationHost>(TASK_CREATION_HOST).to(TrpcTaskCreationHost);
 container.bind(TASK_CREATION_EFFECTS).toConstantValue(taskCreationEffects);
-container.bind<TaskService>(RENDERER_TOKENS.TaskService).to(TaskService);
+container.bind<TaskService>(RENDERER_TASK_SERVICE).to(TaskService);
+container.bind<TaskService>(TASK_SERVICE).toService(RENDERER_TASK_SERVICE);
 container
-  .bind<TaskService>(TASK_SERVICE)
-  .toService(RENDERER_TOKENS.TaskService);
+  .bind<WorkspaceSetupSaga>(WORKSPACE_SETUP_SAGA)
+  .to(WorkspaceSetupSaga)
+  .inSingletonScope();
 container
   .bind<SessionService>(SESSION_SERVICE)
   .toDynamicValue(() => getSessionService())

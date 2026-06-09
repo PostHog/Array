@@ -1,6 +1,7 @@
 import "reflect-metadata";
 
 import { readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
+import { TypedContainer } from "@inversifyjs/strongly-typed";
 import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import {
   getGatewayInvalidatePlanCacheUrl,
@@ -119,7 +120,7 @@ import {
   WORKTREE_REPOSITORY,
 } from "@posthog/workspace-server/db/identifiers";
 import { repositoriesModule } from "@posthog/workspace-server/db/repositories.module";
-import { TOKENS as WORKSPACE_SERVER_TOKENS } from "@posthog/workspace-server/di/tokens";
+import { GIT_SERVICE as WS_GIT_SERVICE } from "@posthog/workspace-server/di/tokens";
 import { additionalDirectoriesModule } from "@posthog/workspace-server/services/additional-directories/additional-directories.module";
 import type { AgentService } from "@posthog/workspace-server/services/agent/agent";
 import { agentModule } from "@posthog/workspace-server/services/agent/agent.module";
@@ -200,7 +201,6 @@ import type { WorkspaceService } from "@posthog/workspace-server/services/worksp
 import { workspaceModule } from "@posthog/workspace-server/services/workspace/workspace.module";
 import { workspaceMetadataModule } from "@posthog/workspace-server/services/workspace-metadata/workspace-metadata.module";
 import ExternalAppsStoreImpl from "electron-store";
-import { Container } from "inversify";
 import type { FileWatcherBridge } from "../index";
 import { ElectronAppLifecycle } from "../platform-adapters/electron-app-lifecycle";
 import { ElectronAppMeta } from "../platform-adapters/electron-app-meta";
@@ -237,9 +237,46 @@ import { WorkspaceServerService } from "../services/workspace-server/service";
 import { getUserDataDir, isDevBuild } from "../utils/env";
 import { logger } from "../utils/logger";
 import { rendererStore } from "../utils/store";
-import { MAIN_TOKENS } from "./tokens";
+import type { MainBindings } from "./bindings";
+import {
+  APP_LIFECYCLE_SERVICE as MAIN_APP_LIFECYCLE_SERVICE,
+  ARCHIVE_REPOSITORY as MAIN_ARCHIVE_REPOSITORY,
+  AUTH_PREFERENCE_REPOSITORY as MAIN_AUTH_PREFERENCE_REPOSITORY,
+  AUTH_SERVICE as MAIN_AUTH_SERVICE,
+  AUTH_SESSION_REPOSITORY as MAIN_AUTH_SESSION_REPOSITORY,
+  CLOUD_TASK_SERVICE as MAIN_CLOUD_TASK_SERVICE,
+  CONTEXT_MENU_SERVICE as MAIN_CONTEXT_MENU_SERVICE,
+  DATABASE_SERVICE as MAIN_DATABASE_SERVICE,
+  DEEP_LINK_SERVICE as MAIN_DEEP_LINK_SERVICE,
+  DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY as MAIN_DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
+  ENCRYPTION_SERVICE as MAIN_ENCRYPTION_SERVICE,
+  EXTERNAL_APPS_SERVICE as MAIN_EXTERNAL_APPS_SERVICE,
+  FS_SERVICE as MAIN_FS_SERVICE,
+  INBOX_LINK_SERVICE as MAIN_INBOX_LINK_SERVICE,
+  LLM_GATEWAY_SERVICE as MAIN_LLM_GATEWAY_SERVICE,
+  MCP_APPS_SERVICE as MAIN_MCP_APPS_SERVICE,
+  NEW_TASK_LINK_SERVICE as MAIN_NEW_TASK_LINK_SERVICE,
+  POSTHOG_PLUGIN_SERVICE as MAIN_POSTHOG_PLUGIN_SERVICE,
+  PROCESS_TRACKING_SERVICE as MAIN_PROCESS_TRACKING_SERVICE,
+  PROVISIONING_SERVICE as MAIN_PROVISIONING_SERVICE,
+  REPOSITORY_REPOSITORY as MAIN_REPOSITORY_REPOSITORY,
+  SECURE_STORE_BACKEND as MAIN_SECURE_STORE_BACKEND,
+  SECURE_STORE_SERVICE as MAIN_SECURE_STORE_SERVICE,
+  SETTINGS_STORE as MAIN_SETTINGS_STORE,
+  SLEEP_SERVICE as MAIN_SLEEP_SERVICE,
+  SUSPENSION_REPOSITORY as MAIN_SUSPENSION_REPOSITORY,
+  SUSPENSION_SERVICE as MAIN_SUSPENSION_SERVICE,
+  TASK_LINK_SERVICE as MAIN_TASK_LINK_SERVICE,
+  MAIN_TOKENS,
+  UPDATES_SERVICE as MAIN_UPDATES_SERVICE,
+  WATCHER_REGISTRY_SERVICE as MAIN_WATCHER_REGISTRY_SERVICE,
+  WORKSPACE_REPOSITORY as MAIN_WORKSPACE_REPOSITORY,
+  WORKSPACE_SERVER_SERVICE as MAIN_WORKSPACE_SERVER_SERVICE,
+  WORKSPACE_SERVICE as MAIN_WORKSPACE_SERVICE,
+  WORKTREE_REPOSITORY as MAIN_WORKTREE_REPOSITORY,
+} from "./tokens";
 
-export const container = new Container({
+export const container = new TypedContainer<MainBindings>({
   defaultScope: "Singleton",
 });
 
@@ -262,31 +299,26 @@ container.bind(BUNDLED_RESOURCES_SERVICE).to(ElectronBundledResources);
 container.bind(IMAGE_PROCESSOR_SERVICE).to(ElectronImageProcessor);
 container.bind(WORKSPACE_SETTINGS_SERVICE).to(ElectronWorkspaceSettings);
 
-container.load(databaseModule, repositoriesModule);
-container.bind(MAIN_TOKENS.DatabaseService).toService(DATABASE_SERVICE);
+container.load(databaseModule);
+container.load(repositoriesModule);
+container.bind(MAIN_DATABASE_SERVICE).toService(DATABASE_SERVICE);
 container
-  .bind(MAIN_TOKENS.AuthPreferenceRepository)
+  .bind(MAIN_AUTH_PREFERENCE_REPOSITORY)
   .toService(AUTH_PREFERENCE_REPOSITORY);
+container.bind(MAIN_AUTH_SESSION_REPOSITORY).toService(AUTH_SESSION_REPOSITORY);
+container.bind(MAIN_REPOSITORY_REPOSITORY).toService(REPOSITORY_REPOSITORY);
+container.bind(MAIN_WORKSPACE_REPOSITORY).toService(WORKSPACE_REPOSITORY);
+container.bind(MAIN_WORKTREE_REPOSITORY).toService(WORKTREE_REPOSITORY);
+container.bind(MAIN_ARCHIVE_REPOSITORY).toService(ARCHIVE_REPOSITORY);
+container.bind(MAIN_SUSPENSION_REPOSITORY).toService(SUSPENSION_REPOSITORY);
 container
-  .bind(MAIN_TOKENS.AuthSessionRepository)
-  .toService(AUTH_SESSION_REPOSITORY);
-container
-  .bind(MAIN_TOKENS.RepositoryRepository)
-  .toService(REPOSITORY_REPOSITORY);
-container.bind(MAIN_TOKENS.WorkspaceRepository).toService(WORKSPACE_REPOSITORY);
-container.bind(MAIN_TOKENS.WorktreeRepository).toService(WORKTREE_REPOSITORY);
-container.bind(MAIN_TOKENS.ArchiveRepository).toService(ARCHIVE_REPOSITORY);
-container
-  .bind(MAIN_TOKENS.SuspensionRepository)
-  .toService(SUSPENSION_REPOSITORY);
-container
-  .bind(MAIN_TOKENS.DefaultAdditionalDirectoryRepository)
+  .bind(MAIN_DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY)
   .toService(DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY);
 container.load(agentModule);
-container.bind(AGENT_SLEEP_COORDINATOR).toService(MAIN_TOKENS.SleepService);
+container.bind(AGENT_SLEEP_COORDINATOR).toService(MAIN_SLEEP_SERVICE);
 container.bind(AGENT_MCP_APPS).toService(MCP_APPS_SERVICE);
-container.bind(AGENT_REPO_FILES).toService(MAIN_TOKENS.FsService);
-container.bind(AGENT_AUTH).toService(MAIN_TOKENS.AuthService);
+container.bind(AGENT_REPO_FILES).toService(MAIN_FS_SERVICE);
+container.bind(AGENT_AUTH).toService(MAIN_AUTH_SERVICE);
 container.bind(AGENT_LOGGER).toConstantValue(logger);
 container.load(osModule);
 container.bind<RootLogger>(ROOT_LOGGER).toConstantValue(logger);
@@ -298,7 +330,7 @@ container.bind(AUTH_CONNECTIVITY).to(ConnectivityPortAdapter);
 container
   .bind(AUTH_TOKEN_OVERRIDE)
   .toConstantValue(process.env.VITE_POSTHOG_ACCESS_TOKEN_OVERRIDE ?? null);
-container.bind(MAIN_TOKENS.AuthService).to(AuthService);
+container.bind(MAIN_AUTH_SERVICE).to(AuthService);
 container.bind(AUTH_SERVICE).toService(MAIN_TOKENS.AuthService);
 container.load(authProxyModule);
 container.bind(AUTH_PROXY_AUTH).toDynamicValue((ctx) => ({
@@ -340,8 +372,8 @@ container.bind(SUSPENSION_FILE_WATCHER).toDynamicValue((ctx) => ({
       .stopWatching(worktreePath);
   },
 }));
-container.bind(MAIN_TOKENS.SuspensionService).toService(SUSPENSION_SERVICE);
-container.bind(MAIN_TOKENS.AppLifecycleService).to(AppLifecycleService);
+container.bind(MAIN_SUSPENSION_SERVICE).toService(SUSPENSION_SERVICE);
+container.bind(MAIN_APP_LIFECYCLE_SERVICE).to(AppLifecycleService);
 container.load(cloudTaskModule);
 container.bind(CLOUD_TASK_AUTH).toDynamicValue((ctx) => ({
   authenticatedFetch: (url: string, init?: RequestInit) =>
@@ -349,15 +381,13 @@ container.bind(CLOUD_TASK_AUTH).toDynamicValue((ctx) => ({
       .get<AuthService>(MAIN_TOKENS.AuthService)
       .authenticatedFetch(fetch, url, init),
 }));
-container.bind(MAIN_TOKENS.CloudTaskService).toService(CLOUD_TASK_SERVICE);
+container.bind(MAIN_CLOUD_TASK_SERVICE).toService(CLOUD_TASK_SERVICE);
 container.load(contextMenuCoreModule);
 container
   .bind(CONTEXT_MENU_EXTERNAL_APPS_SERVICE)
   .toService(MAIN_TOKENS.ExternalAppsService);
-container
-  .bind(MAIN_TOKENS.ContextMenuService)
-  .toService(CONTEXT_MENU_CONTROLLER);
-container.bind(MAIN_TOKENS.DeepLinkService).to(DeepLinkService);
+container.bind(MAIN_CONTEXT_MENU_SERVICE).toService(CONTEXT_MENU_CONTROLLER);
+container.bind(MAIN_DEEP_LINK_SERVICE).to(DeepLinkService);
 container.bind(DEEP_LINK_SERVICE).toService(MAIN_TOKENS.DeepLinkService);
 container.load(enrichmentModule);
 container.bind(ENRICHMENT_AUTH).toDynamicValue((ctx) => {
@@ -383,7 +413,7 @@ container.bind(ENRICHMENT_FILE_READER).toConstantValue({
   listFilesContainingText: (repoPath: string, text: string) =>
     listFilesContainingText(repoPath, text),
 });
-container.bind(MAIN_TOKENS.ProvisioningService).to(ProvisioningService);
+container.bind(MAIN_PROVISIONING_SERVICE).to(ProvisioningService);
 container.bind(PROVISIONING_SERVICE).toService(MAIN_TOKENS.ProvisioningService);
 
 const externalAppsPrefsStore = new ExternalAppsStoreImpl<{
@@ -399,9 +429,7 @@ container.bind(EXTERNAL_APPS_STORE).toConstantValue({
     externalAppsPrefsStore.set("externalAppsPrefs", prefs),
 });
 container.load(externalAppsModule);
-container
-  .bind(MAIN_TOKENS.ExternalAppsService)
-  .toService(EXTERNAL_APPS_SERVICE);
+container.bind(MAIN_EXTERNAL_APPS_SERVICE).toService(EXTERNAL_APPS_SERVICE);
 container.load(llmGatewayModule);
 container.bind(LLM_GATEWAY_HOST).toDynamicValue((ctx) => {
   const auth = () => ctx.get<AuthService>(MAIN_TOKENS.AuthService);
@@ -417,9 +445,9 @@ container.bind(LLM_GATEWAY_HOST).toDynamicValue((ctx) => {
     defaultModel: DEFAULT_GATEWAY_MODEL,
   };
 });
-container.bind(MAIN_TOKENS.LlmGatewayService).toService(LLM_GATEWAY_SERVICE);
+container.bind(MAIN_LLM_GATEWAY_SERVICE).toService(LLM_GATEWAY_SERVICE);
 container.load(mcpAppsModule);
-container.bind(MAIN_TOKENS.McpAppsService).toService(MCP_APPS_SERVICE);
+container.bind(MAIN_MCP_APPS_SERVICE).toService(MCP_APPS_SERVICE);
 container.load(foldersModule);
 container.load(integrationsModule);
 container.load(gitPrModule);
@@ -478,10 +506,7 @@ container
     };
   });
 container.load(gitHostModule);
-container
-  .bind(WORKSPACE_SERVER_TOKENS.GitService)
-  .to(GitService)
-  .inSingletonScope();
+container.bind(WS_GIT_SERVICE).to(GitService).inSingletonScope();
 container
   .bind<IGitPrStatus>(GIT_PR_STATUS_PROVIDER)
   .to(TaskPrStatusService)
@@ -541,16 +566,14 @@ container
 container.load(processTrackingModule);
 container.load(workspaceMetadataModule);
 container
-  .bind(MAIN_TOKENS.ProcessTrackingService)
+  .bind(MAIN_PROCESS_TRACKING_SERVICE)
   .toService(PROCESS_TRACKING_SERVICE);
 container.load(posthogPluginModule);
-container
-  .bind(MAIN_TOKENS.PosthogPluginService)
-  .toService(POSTHOG_PLUGIN_SERVICE);
+container.bind(MAIN_POSTHOG_PLUGIN_SERVICE).toService(POSTHOG_PLUGIN_SERVICE);
 container.load(skillsModule);
 container.load(onboardingImportModule);
 container.load(additionalDirectoriesModule);
-container.bind(MAIN_TOKENS.SleepService).to(SleepService);
+container.bind(MAIN_SLEEP_SERVICE).to(SleepService);
 container.bind(SLEEP_SERVICE).toService(MAIN_TOKENS.SleepService);
 container.load(shellModule);
 container.load(uiModule);
@@ -564,7 +587,7 @@ container.load(updatesCoreModule);
 container
   .bind(UPDATE_LIFECYCLE_SERVICE)
   .toService(MAIN_TOKENS.AppLifecycleService);
-container.bind(MAIN_TOKENS.UpdatesService).toService(UPDATES_SERVICE);
+container.bind(MAIN_UPDATES_SERVICE).toService(UPDATES_SERVICE);
 container.load(usageMonitorModule);
 container.bind(USAGE_HOST).toDynamicValue((ctx) => {
   const agent = () => ctx.get<AgentService>(AGENT_SERVICE);
@@ -581,15 +604,15 @@ container.bind(USAGE_HOST).toDynamicValue((ctx) => {
       electronUsageThresholdStore.setThresholdsSeen(value),
   };
 });
-container.bind(MAIN_TOKENS.TaskLinkService).to(TaskLinkService);
+container.bind(MAIN_TASK_LINK_SERVICE).to(TaskLinkService);
 container.bind(TASK_LINK_SERVICE).toService(MAIN_TOKENS.TaskLinkService);
-container.bind(MAIN_TOKENS.InboxLinkService).to(InboxLinkService);
+container.bind(MAIN_INBOX_LINK_SERVICE).to(InboxLinkService);
 container.bind(INBOX_LINK_SERVICE).toService(MAIN_TOKENS.InboxLinkService);
-container.bind(MAIN_TOKENS.NewTaskLinkService).to(NewTaskLinkService);
+container.bind(MAIN_NEW_TASK_LINK_SERVICE).to(NewTaskLinkService);
 container.bind(NEW_TASK_LINK_SERVICE).toService(MAIN_TOKENS.NewTaskLinkService);
 container.load(watcherRegistryModule);
 container
-  .bind(MAIN_TOKENS.WatcherRegistryService)
+  .bind(MAIN_WATCHER_REGISTRY_SERVICE)
   .toService(WATCHER_REGISTRY_SERVICE);
 container.load(workspaceModule);
 container.bind(WORKSPACE_AGENT).toDynamicValue((ctx): WorkspaceAgent => {
@@ -633,17 +656,17 @@ container
       emitOutput: (taskId, data) => provisioning.emitOutput(taskId, data),
     };
   });
-container.bind(MAIN_TOKENS.WorkspaceService).toService(WORKSPACE_SERVICE);
+container.bind(MAIN_WORKSPACE_SERVICE).toService(WORKSPACE_SERVICE);
 container
-  .bind(MAIN_TOKENS.WorkspaceServerService)
+  .bind(MAIN_WORKSPACE_SERVER_SERVICE)
   .to(WorkspaceServerService)
   .inSingletonScope();
 
-container.bind(MAIN_TOKENS.SettingsStore).toConstantValue(settingsStore);
+container.bind(MAIN_SETTINGS_STORE).toConstantValue(settingsStore);
 
-container.bind(MAIN_TOKENS.SecureStoreBackend).toConstantValue(rendererStore);
+container.bind(MAIN_SECURE_STORE_BACKEND).toConstantValue(rendererStore);
 container
-  .bind(MAIN_TOKENS.SecureStoreService)
+  .bind(MAIN_SECURE_STORE_SERVICE)
   .to(SecureStoreService)
   .inSingletonScope();
 container.bind(SECURE_STORE_SERVICE).toService(MAIN_TOKENS.SecureStoreService);
@@ -666,4 +689,4 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
       ws.localLogs.write.mutate({ taskRunId, content }),
   };
 });
-container.bind(MAIN_TOKENS.EncryptionService).to(EncryptionService);
+container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);

@@ -2,6 +2,7 @@ import {
   createHashHistory,
   createRouter as createTanStackRouter,
 } from "@tanstack/react-router";
+import { RouteNotFound } from "./RouteNotFound";
 import { RoutePending } from "./RoutePending";
 import { setRouter } from "./routerRef";
 import { routeTree } from "./routeTree.gen";
@@ -31,6 +32,7 @@ export const router = createTanStackRouter({
   // navigation commits immediately instead of stalling on the previous screen.
   defaultPendingMs: 0,
   defaultPendingComponent: RoutePending,
+  defaultNotFoundComponent: RouteNotFound,
   scrollRestoration: false,
 });
 

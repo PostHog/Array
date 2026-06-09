@@ -52,7 +52,7 @@ Hosts:
 9. Use constructor injection only. Do not use `container.get(...)` or `resolveService(...)` inside service methods or components. `resolveService` is allowed only in host composition seams under `apps/`.
 10. Boot side effects are `Contribution`s bound in feature modules and started by `boot()`.
 11. tRPC routers are one-line forwards over services. No inline business logic.
-12. Use plain Inversify. Define `interface` + `Symbol.for(...)` token beside the owning service. Bind in the feature module. Do not use `@provide`, `@inversifyjs/strongly-typed`, or `*Port` naming.
+12. Use Inversify with `@inversifyjs/strongly-typed`. Define each token as a standalone `export const TOKEN = Symbol.for("posthog.<area>.<thing>")` beside its `interface`/service — never an object-literal token bag (`TOKENS = { X: Symbol.for(...) }`), because object properties are not `unique symbol` and cannot key a binding map. Every composition root declares a `BindingMap` interface (token → bound type) and constructs `new TypedContainer<BindingMap>()`, so a mistyped bind or a resolve of an unbound token fails at compile time. Bind in the feature module. Do not use `@provide` or `*Port` naming.
 13. Use `@posthog/quill` for rendering-layer primitives when available. Routing is TanStack Router contributed per feature.
 
 Hard boundary: `@posthog/core` and `@posthog/ui` never import host transports. No `trpcClient`, `electron`, or `node:*`.
@@ -108,6 +108,8 @@ For each new file or meaningful change:
 - Services for trivial passthroughs.
 - Business logic in platform adapters.
 - tRPC routers with inline logic or no backing service.
+- Object-literal DI token bags (`TOKENS = { X: Symbol.for(...) }`); use standalone token consts so a `BindingMap` can key on them.
+- Untyped `new Container()` at a composition root; use `new TypedContainer<BindingMap>()`.
 - Bespoke clients that wrap `trpcClient.x` one-to-one.
 - `*Port`, `*_PORT`, or `ports.ts` naming.
 - Business logic in `apps/<host>`.
@@ -165,8 +167,9 @@ packages/ui/src/features/<feature>/
 
 ## DI and Boot
 
-- Tokens are `Symbol.for("posthog.<area>.<thing>")`, defined beside the interface in the owning package.
-- Services bind in feature `.module.ts` files with `ContainerModule`.
+- Tokens are standalone `export const TOKEN = Symbol.for("posthog.<area>.<thing>")` consts, defined beside the interface in the owning package. Standalone consts infer `unique symbol`, which is what lets a `BindingMap` key on them; object-literal token bags do not and are forbidden.
+- Each composition root (`apps/code` main + renderer, `apps/web`, `packages/workspace-server`) owns a `BindingMap` interface mapping every token it binds to the bound type, and constructs `new TypedContainer<BindingMap>()` (from `@inversifyjs/strongly-typed`). `bind`/`get`/`isBound` are then checked against the map at compile time.
+- Services bind in feature `.module.ts` files with `ContainerModule` (typed via `TypedContainerModule<BindingMap>` where the root is typed).
 - Hosts load modules in `desktop-contributions.ts` or the equivalent web/mobile composition file.
 - Hosts bind platform implementations in `desktop-services.ts`, `main/index.ts`, or host equivalents.
 - Hosts call `setRootContainer(container)` before resolving services through React or host seams.
@@ -221,7 +224,7 @@ See [docs/conventions.md](./docs/conventions.md).
 
 - React 19, Radix UI Themes, Tailwind CSS, `@posthog/quill`
 - TanStack Query, TanStack Router
-- Zustand, InversifyJS, Zod
+- Zustand, InversifyJS (with `@inversifyjs/strongly-typed`), Zod
 - xterm.js, CodeMirror, Tiptap
 - Sonner
 

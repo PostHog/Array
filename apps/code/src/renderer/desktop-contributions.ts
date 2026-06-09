@@ -21,7 +21,7 @@ import {
 import { container } from "@renderer/di/container";
 
 export function registerDesktopContributions(): void {
-  container.load(
+  for (const module of [
     agentUiModule,
     authUiModule,
     billingUiModule,
@@ -37,7 +37,9 @@ export function registerDesktopContributions(): void {
     setupCoreModule,
     setupUiModule,
     workspaceUiModule,
-  );
+  ]) {
+    container.load(module);
+  }
 
   container.bind(CONTRIBUTION).to(AnalyticsBootContribution).inSingletonScope();
   container.bind(CONTRIBUTION).to(InboxDemoDevContribution).inSingletonScope();

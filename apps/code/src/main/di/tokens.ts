@@ -4,62 +4,155 @@
  * IMPORTANT: These tokens are for main process only.
  * Never import this file from renderer code.
  */
+
+// Workspace-server connection (typed client over the ELECTRON_RUN_AS_NODE child)
+export const WORKSPACE_CLIENT = Symbol.for(
+  "posthog.host.main.workspace.client",
+);
+
+// Stores
+export const SETTINGS_STORE = Symbol.for("posthog.host.main.settings.store");
+export const SECURE_STORE_SERVICE = Symbol.for(
+  "posthog.host.main.secure-store.service",
+);
+export const SECURE_STORE_BACKEND = Symbol.for(
+  "posthog.host.main.secure-store.backend",
+);
+export const ENCRYPTION_SERVICE = Symbol.for(
+  "posthog.host.main.encryption.service",
+);
+
+// Database
+export const AUTH_PREFERENCE_REPOSITORY = Symbol.for(
+  "posthog.host.main.auth.preference-repository",
+);
+export const DATABASE_SERVICE = Symbol.for(
+  "posthog.host.main.database.service",
+);
+export const AUTH_SESSION_REPOSITORY = Symbol.for(
+  "posthog.host.main.auth.session-repository",
+);
+export const REPOSITORY_REPOSITORY = Symbol.for(
+  "posthog.host.main.repository.repository",
+);
+export const WORKSPACE_REPOSITORY = Symbol.for(
+  "posthog.host.main.workspace.repository",
+);
+export const WORKTREE_REPOSITORY = Symbol.for(
+  "posthog.host.main.worktree.repository",
+);
+export const ARCHIVE_REPOSITORY = Symbol.for(
+  "posthog.host.main.archive.repository",
+);
+export const SUSPENSION_REPOSITORY = Symbol.for(
+  "posthog.host.main.suspension.repository",
+);
+export const DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY = Symbol.for(
+  "posthog.host.main.additional-directory.default-repository",
+);
+
+// Services
+export const AUTH_SERVICE = Symbol.for("posthog.host.main.auth.service");
+export const SUSPENSION_SERVICE = Symbol.for(
+  "posthog.host.main.suspension.service",
+);
+export const APP_LIFECYCLE_SERVICE = Symbol.for(
+  "posthog.host.main.app-lifecycle.service",
+);
+export const CLOUD_TASK_SERVICE = Symbol.for(
+  "posthog.host.main.cloud-task.service",
+);
+export const CONTEXT_MENU_SERVICE = Symbol.for(
+  "posthog.host.main.context-menu.service",
+);
+
+export const EXTERNAL_APPS_SERVICE = Symbol.for(
+  "posthog.host.main.external-apps.service",
+);
+export const LLM_GATEWAY_SERVICE = Symbol.for(
+  "posthog.host.main.llm-gateway.service",
+);
+export const MCP_APPS_SERVICE = Symbol.for(
+  "posthog.host.main.mcp-apps.service",
+);
+export const FILE_WATCHER_SERVICE = Symbol.for(
+  "posthog.host.main.file-watcher.service",
+);
+export const FS_SERVICE = Symbol.for("posthog.host.main.fs.service");
+export const GIT_SERVICE = Symbol.for("posthog.host.main.git.service");
+export const DEEP_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.deep-link.service",
+);
+export const PROCESS_TRACKING_SERVICE = Symbol.for(
+  "posthog.host.main.process-tracking.service",
+);
+export const SLEEP_SERVICE = Symbol.for("posthog.host.main.sleep.service");
+export const POSTHOG_PLUGIN_SERVICE = Symbol.for(
+  "posthog.host.main.posthog-plugin.service",
+);
+export const UPDATES_SERVICE = Symbol.for("posthog.host.main.updates.service");
+export const TASK_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.task-link.service",
+);
+export const INBOX_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.inbox-link.service",
+);
+export const NEW_TASK_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.new-task-link.service",
+);
+export const WATCHER_REGISTRY_SERVICE = Symbol.for(
+  "posthog.host.main.watcher-registry.service",
+);
+export const PROVISIONING_SERVICE = Symbol.for(
+  "posthog.host.main.provisioning.service",
+);
+export const WORKSPACE_SERVICE = Symbol.for(
+  "posthog.host.main.workspace.service",
+);
+export const WORKSPACE_SERVER_SERVICE = Symbol.for(
+  "posthog.host.main.workspace-server.service",
+);
+
 export const MAIN_TOKENS = Object.freeze({
-  // Workspace-server connection (typed client over the ELECTRON_RUN_AS_NODE child)
-  WorkspaceClient: Symbol.for("posthog.host.main.workspace.client"),
+  WorkspaceClient: WORKSPACE_CLIENT,
 
-  // Stores
-  SettingsStore: Symbol.for("posthog.host.main.settings.store"),
-  SecureStoreService: Symbol.for("posthog.host.main.secure-store.service"),
-  SecureStoreBackend: Symbol.for("posthog.host.main.secure-store.backend"),
-  EncryptionService: Symbol.for("posthog.host.main.encryption.service"),
+  SettingsStore: SETTINGS_STORE,
+  SecureStoreService: SECURE_STORE_SERVICE,
+  SecureStoreBackend: SECURE_STORE_BACKEND,
+  EncryptionService: ENCRYPTION_SERVICE,
 
-  // Database
-  AuthPreferenceRepository: Symbol.for(
-    "posthog.host.main.auth.preference-repository",
-  ),
-  DatabaseService: Symbol.for("posthog.host.main.database.service"),
-  AuthSessionRepository: Symbol.for(
-    "posthog.host.main.auth.session-repository",
-  ),
-  RepositoryRepository: Symbol.for("posthog.host.main.repository.repository"),
-  WorkspaceRepository: Symbol.for("posthog.host.main.workspace.repository"),
-  WorktreeRepository: Symbol.for("posthog.host.main.worktree.repository"),
-  ArchiveRepository: Symbol.for("posthog.host.main.archive.repository"),
-  SuspensionRepository: Symbol.for("posthog.host.main.suspension.repository"),
-  DefaultAdditionalDirectoryRepository: Symbol.for(
-    "posthog.host.main.additional-directory.default-repository",
-  ),
+  AuthPreferenceRepository: AUTH_PREFERENCE_REPOSITORY,
+  DatabaseService: DATABASE_SERVICE,
+  AuthSessionRepository: AUTH_SESSION_REPOSITORY,
+  RepositoryRepository: REPOSITORY_REPOSITORY,
+  WorkspaceRepository: WORKSPACE_REPOSITORY,
+  WorktreeRepository: WORKTREE_REPOSITORY,
+  ArchiveRepository: ARCHIVE_REPOSITORY,
+  SuspensionRepository: SUSPENSION_REPOSITORY,
+  DefaultAdditionalDirectoryRepository: DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
 
-  // Services
-  AuthService: Symbol.for("posthog.host.main.auth.service"),
-  SuspensionService: Symbol.for("posthog.host.main.suspension.service"),
-  AppLifecycleService: Symbol.for("posthog.host.main.app-lifecycle.service"),
-  CloudTaskService: Symbol.for("posthog.host.main.cloud-task.service"),
-  ContextMenuService: Symbol.for("posthog.host.main.context-menu.service"),
+  AuthService: AUTH_SERVICE,
+  SuspensionService: SUSPENSION_SERVICE,
+  AppLifecycleService: APP_LIFECYCLE_SERVICE,
+  CloudTaskService: CLOUD_TASK_SERVICE,
+  ContextMenuService: CONTEXT_MENU_SERVICE,
 
-  ExternalAppsService: Symbol.for("posthog.host.main.external-apps.service"),
-  LlmGatewayService: Symbol.for("posthog.host.main.llm-gateway.service"),
-  McpAppsService: Symbol.for("posthog.host.main.mcp-apps.service"),
-  FileWatcherService: Symbol.for("posthog.host.main.file-watcher.service"),
-  FsService: Symbol.for("posthog.host.main.fs.service"),
-  GitService: Symbol.for("posthog.host.main.git.service"),
-  DeepLinkService: Symbol.for("posthog.host.main.deep-link.service"),
-  ProcessTrackingService: Symbol.for(
-    "posthog.host.main.process-tracking.service",
-  ),
-  SleepService: Symbol.for("posthog.host.main.sleep.service"),
-  PosthogPluginService: Symbol.for("posthog.host.main.posthog-plugin.service"),
-  UpdatesService: Symbol.for("posthog.host.main.updates.service"),
-  TaskLinkService: Symbol.for("posthog.host.main.task-link.service"),
-  InboxLinkService: Symbol.for("posthog.host.main.inbox-link.service"),
-  NewTaskLinkService: Symbol.for("posthog.host.main.new-task-link.service"),
-  WatcherRegistryService: Symbol.for(
-    "posthog.host.main.watcher-registry.service",
-  ),
-  ProvisioningService: Symbol.for("posthog.host.main.provisioning.service"),
-  WorkspaceService: Symbol.for("posthog.host.main.workspace.service"),
-  WorkspaceServerService: Symbol.for(
-    "posthog.host.main.workspace-server.service",
-  ),
+  ExternalAppsService: EXTERNAL_APPS_SERVICE,
+  LlmGatewayService: LLM_GATEWAY_SERVICE,
+  McpAppsService: MCP_APPS_SERVICE,
+  FileWatcherService: FILE_WATCHER_SERVICE,
+  FsService: FS_SERVICE,
+  GitService: GIT_SERVICE,
+  DeepLinkService: DEEP_LINK_SERVICE,
+  ProcessTrackingService: PROCESS_TRACKING_SERVICE,
+  SleepService: SLEEP_SERVICE,
+  PosthogPluginService: POSTHOG_PLUGIN_SERVICE,
+  UpdatesService: UPDATES_SERVICE,
+  TaskLinkService: TASK_LINK_SERVICE,
+  InboxLinkService: INBOX_LINK_SERVICE,
+  NewTaskLinkService: NEW_TASK_LINK_SERVICE,
+  WatcherRegistryService: WATCHER_REGISTRY_SERVICE,
+  ProvisioningService: PROVISIONING_SERVICE,
+  WorkspaceService: WORKSPACE_SERVICE,
+  WorkspaceServerService: WORKSPACE_SERVER_SERVICE,
 });

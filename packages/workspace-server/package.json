@@ -44,6 +44,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@inversifyjs/strongly-typed": "2.2.0",
     "@posthog/tsconfig": "workspace:*",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "catalog:",
