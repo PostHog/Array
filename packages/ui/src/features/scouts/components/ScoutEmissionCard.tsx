@@ -3,9 +3,17 @@ import type { ScoutEmission } from "@posthog/api-client/posthog-client";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { Box, Flex, Text } from "@radix-ui/themes";
+import type { ReactNode } from "react";
 import { SeverityBadge } from "./ScoutBadges";
 
-export function ScoutEmissionCard({ emission }: { emission: ScoutEmission }) {
+export function ScoutEmissionCard({
+  emission,
+  footerEnd,
+}: {
+  emission: ScoutEmission;
+  /** Replaces the default pipeline note at the footer's right edge. */
+  footerEnd?: ReactNode;
+}) {
   return (
     <Box className="min-w-0 overflow-hidden rounded-(--radius-2) border border-(--gray-6) bg-gray-1 p-3">
       <Flex align="center" gap="2" className="mb-2 cursor-default select-none">
@@ -30,10 +38,12 @@ export function ScoutEmissionCard({ emission }: { emission: ScoutEmission }) {
       >
         <Text className="font-mono text-[11px]">{emission.finding_id}</Text>
         <span className="flex-1" />
-        <Text className="text-[11px] text-gray-9">
-          Sent to the signals pipeline – report assignment isn&apos;t traceable
-          here yet
-        </Text>
+        {footerEnd ?? (
+          <Text className="text-[11px] text-gray-9">
+            Sent to the signals pipeline – report assignment isn&apos;t
+            traceable here yet
+          </Text>
+        )}
       </Flex>
     </Box>
   );

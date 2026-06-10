@@ -25,6 +25,7 @@ import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
 import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
 import { ScoutRowCard } from "./ScoutRowCard";
+import { ScoutSignalsSection } from "./ScoutSignalsSection";
 
 const FILTERS: { value: ScoutRunFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -128,6 +129,13 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
                 {rollup.emittedCount === 1 ? "" : "s"} emitted
               </Text>
             ) : null}
+
+            <ScoutSignalsSection
+              runs={scoutRuns}
+              skillSlug={scoutSkillSlug(skillName)}
+              windowLabel={scoutRunsWindowLabel(runsWindow)}
+              loading={runsLoading}
+            />
 
             <Flex direction="column" gap="3">
               <Flex align="center" gap="2" wrap="wrap">
