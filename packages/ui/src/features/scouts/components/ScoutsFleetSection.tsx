@@ -1,4 +1,4 @@
-import { CaretDownIcon, CompassIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, CompassIcon, GearSixIcon } from "@phosphor-icons/react";
 import type { ScoutConfig, ScoutRun } from "@posthog/api-client/posthog-client";
 import {
   computeFleetSummary,
@@ -14,7 +14,7 @@ import {
   scoutRunsWindowLabel,
 } from "@posthog/core/scouts/scoutRunsWindow";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
@@ -26,7 +26,7 @@ import {
   ScoutOriginBadge,
   ScoutStatusDot,
 } from "./ScoutBadges";
-import { ScoutConfigControls } from "./ScoutConfigControls";
+import { ScoutConfigForm, ScoutEnabledSwitch } from "./ScoutConfigControls";
 import { ScoutRunBoxes } from "./ScoutRunBoxes";
 
 /**
@@ -179,42 +179,66 @@ function ScoutRow({
 }) {
   const now = new Date();
   const state = deriveScoutRowState(config, rollup, now);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <Flex
-      align="center"
-      gap="4"
+      direction="column"
       className={`rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-4 py-3 transition duration-150 hover:border-(--gray-6) hover:bg-(--gray-2) ${
         config.enabled ? "" : "opacity-65"
       }`}
     >
-      <Link
-        to="/code/agents/scouts/$skillName"
-        params={{ skillName: scoutSkillSlug(config.skill_name) }}
-        className="flex min-w-0 flex-1 items-center gap-3 no-underline"
-      >
-        <ScoutStatusDot state={state} />
-        <Flex direction="column" gap="1" className="min-w-0">
-          <Flex align="center" gap="2" wrap="wrap">
-            <Text className="font-medium text-[13px] text-gray-12">
-              {prettifyScoutSkillName(config.skill_name)}
-            </Text>
-            <ScoutOriginBadge skillName={config.skill_name} />
-            <DryRunBadge config={config} />
-            <Text className="text-[11px] text-gray-10">
-              {formatRunIntervalShort(config.run_interval_minutes)}
-            </Text>
+      <Flex align="center" gap="4">
+        <Link
+          to="/code/agents/scouts/$skillName"
+          params={{ skillName: scoutSkillSlug(config.skill_name) }}
+          className="flex min-w-0 flex-1 items-center gap-3 no-underline"
+        >
+          <ScoutStatusDot state={state} />
+          <Flex direction="column" gap="1" className="min-w-0">
+            <Flex align="center" gap="2" wrap="wrap">
+              <Text className="font-medium text-[13px] text-gray-12">
+                {prettifyScoutSkillName(config.skill_name)}
+              </Text>
+              <ScoutOriginBadge skillName={config.skill_name} />
+              <DryRunBadge config={config} />
+              <Text className="text-[11px] text-gray-10">
+                {formatRunIntervalShort(config.run_interval_minutes)}
+              </Text>
+            </Flex>
+            <ScoutRowStats
+              config={config}
+              rollup={rollup}
+              state={state}
+              runningRun={rollup?.runningRun ?? null}
+            />
           </Flex>
-          <ScoutRowStats
-            config={config}
-            rollup={rollup}
-            state={state}
-            runningRun={rollup?.runningRun ?? null}
-          />
+        </Link>
+        <ScoutRunBoxes runs={rollup?.runs ?? []} />
+        <Flex align="center" gap="3" className="shrink-0">
+          <ScoutEnabledSwitch config={config} onUpdate={onUpdate} />
+          <Tooltip content="Scout settings">
+            <button
+              type="button"
+              onClick={() => setSettingsOpen((value) => !value)}
+              aria-expanded={settingsOpen}
+              aria-label={`${config.skill_name} settings`}
+              className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
+                settingsOpen
+                  ? "bg-(--gray-4) text-gray-12"
+                  : "text-gray-10 hover:bg-(--gray-3) hover:text-gray-12"
+              }`}
+            >
+              <GearSixIcon size={14} />
+            </button>
+          </Tooltip>
         </Flex>
-      </Link>
-      <ScoutRunBoxes runs={rollup?.runs ?? []} />
-      <ScoutConfigControls config={config} onUpdate={onUpdate} />
+      </Flex>
+      {settingsOpen ? (
+        <Box className="mt-3 border-(--gray-4) border-t pt-3">
+          <ScoutConfigForm config={config} onUpdate={onUpdate} />
+        </Box>
+      ) : null}
     </Flex>
   );
 }
