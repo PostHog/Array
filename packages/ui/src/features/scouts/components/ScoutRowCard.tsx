@@ -54,7 +54,7 @@ export function ScoutRowCard({
   return (
     <Flex
       direction="column"
-      className={`group rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-4 py-3 transition duration-150 hover:border-(--gray-6) hover:bg-(--gray-2) ${
+      className={`group relative rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-4 py-3 transition duration-150 hover:border-(--gray-6) hover:bg-(--gray-2) ${
         config.enabled ? "" : "opacity-65"
       }`}
     >
@@ -64,7 +64,9 @@ export function ScoutRowCard({
             <Link
               to="/code/agents/scouts/$skillName"
               params={{ skillName: scoutSkillSlug(config.skill_name) }}
-              className="flex min-w-0 items-center gap-2 no-underline"
+              className={`flex min-w-0 items-center gap-2 no-underline ${
+                settingsOpen ? "" : "after:absolute after:inset-0"
+              }`}
             >
               {title}
             </Link>
@@ -80,7 +82,7 @@ export function ScoutRowCard({
                 target="_blank"
                 rel="noreferrer"
                 aria-label={`${config.skill_name} skill in PostHog`}
-                className="text-gray-9 transition-colors hover:text-accent-11"
+                className="relative text-gray-9 transition-colors hover:text-accent-11"
               >
                 <ArrowSquareOutIcon size={12} />
               </a>
@@ -98,8 +100,10 @@ export function ScoutRowCard({
             </Text>
           ) : null}
         </Flex>
-        <ScoutRunBoxes runs={rollup?.runs ?? []} />
-        <Flex align="center" gap="3" className="shrink-0">
+        <Box className="relative shrink-0">
+          <ScoutRunBoxes runs={rollup?.runs ?? []} />
+        </Box>
+        <Flex align="center" gap="3" className="relative shrink-0">
           <ScoutEnabledSwitch config={config} onUpdate={onUpdate} />
           <Tooltip content="Scout settings">
             <button
