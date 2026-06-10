@@ -76,6 +76,19 @@ describe("signed-commit tool handler", () => {
     expect(input).toEqual({ message: "chore: bump" });
   });
 
+  it("forwards baseBranch from the tool context", async () => {
+    await signedCommitTool.handler(
+      {
+        cwd: "/tmp/workspace/repos/posthog/code",
+        token: "ghs_x",
+        baseBranch: "master",
+      },
+      { message: "chore: bump" },
+    );
+    const [ctx] = createSignedCommit.mock.calls[0];
+    expect(ctx.baseBranch).toBe("master");
+  });
+
   it("returns the no-token error without invoking createSignedCommit", async () => {
     const savedGh = process.env.GH_TOKEN;
     const savedGithub = process.env.GITHUB_TOKEN;

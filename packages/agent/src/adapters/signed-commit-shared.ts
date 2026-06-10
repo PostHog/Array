@@ -1,9 +1,11 @@
 import {
   createSignedCommit,
+  createSignedMerge,
   createSignedRewrite,
   type SignedCommitCtx,
   type SignedCommitInput,
   type SignedCommitResult,
+  type SignedMergeInput,
   type SignedRewriteInput,
 } from "@posthog/git/signed-commit";
 import { z } from "zod";
@@ -26,7 +28,9 @@ export const SIGNED_COMMIT_TOOL_DESCRIPTION =
   "first (or pass `paths`), then call this instead of `git commit`/`git push` — those are " +
   "blocked because all commits must be signed. The commit is created via GitHub's API and " +
   "your local checkout is kept in sync. For a new branch, pass `branch` (prefixed with " +
-  "`posthog-code/`) and the tool creates it on the remote.";
+  "`posthog-code/`) and the tool creates it on the remote. Refuses while a merge/rebase/" +
+  "cherry-pick is in progress, and refuses staged files that copy base-branch content into " +
+  "the PR — to bring the base branch in, use `git_signed_merge` instead.";
 
 export const signedCommitToolSchema = {
   message: z.string().describe("Commit headline (first line)."),
@@ -60,10 +64,11 @@ export const SIGNED_REWRITE_QUALIFIED_TOOL_NAME = qualifiedLocalToolName(
 
 export const SIGNED_REWRITE_TOOL_DESCRIPTION =
   "Force-update a branch with GitHub-signed (Verified) history, the signed-commit equivalent " +
-  "of `git push --force`. First rebase/merge locally with normal `git` (resolving conflicts and " +
+  "of `git push --force`. First rebase locally with normal `git` (resolving conflicts and " +
   "finishing with `git rebase --continue`, NOT `git commit`); then call this to republish the " +
   "branch's commits as Verified and atomically move the remote branch onto them. Use this to " +
-  "update an existing PR after a rebase or conflict fix. Rewrites the current branch by default.";
+  "update an existing PR after a rebase or conflict fix. Rewrites the current branch by default. " +
+  "Histories containing merge commits are refused — rebase (which flattens merges) first.";
 
 export const signedRewriteToolSchema = {
   branch: z
@@ -82,6 +87,37 @@ export const signedRewriteToolSchema = {
     .optional()
     .describe(
       "Path to the git checkout to rewrite; defaults to the session's working directory. " +
+        "Relative paths resolve against the session cwd.",
+    ),
+};
+
+export const SIGNED_MERGE_TOOL_NAME = "git_signed_merge";
+export const SIGNED_MERGE_QUALIFIED_TOOL_NAME = qualifiedLocalToolName(
+  SIGNED_MERGE_TOOL_NAME,
+);
+
+export const SIGNED_MERGE_TOOL_DESCRIPTION =
+  "Merge the base branch INTO the current PR branch as a GitHub-signed (Verified) " +
+  'two-parent merge commit, created server-side (the API behind GitHub\'s "Update branch" ' +
+  "button). Use this to bring a PR up to date with its base — NEVER run `git merge` and " +
+  "then `git_signed_commit`: that linearizes the merge and floods the PR with base-branch " +
+  "changes. If GitHub reports a conflict, rebase locally (`git rebase origin/<base>`) and " +
+  "use `git_signed_rewrite` instead.";
+
+export const signedMergeToolSchema = {
+  branch: z
+    .string()
+    .optional()
+    .describe("PR branch to update; defaults to the current branch."),
+  base: z
+    .string()
+    .optional()
+    .describe("Branch to merge in; defaults to the repo's base branch."),
+  cwd: z
+    .string()
+    .optional()
+    .describe(
+      "Path to the git checkout to merge in; defaults to the session's working directory. " +
         "Relative paths resolve against the session cwd.",
     ),
 };
@@ -139,4 +175,39 @@ export function runSignedRewriteTool(
     ctx,
     args,
   );
+}
+
+export async function runSignedMergeTool(
+  ctx: SignedCommitCtx,
+  args: SignedMergeInput,
+): Promise<SignedCommitToolResult> {
+  try {
+    const result = await createSignedMerge(ctx, args);
+    if (!result.merged) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `${result.branch} is already up to date with ${result.base} — nothing to merge.`,
+          },
+        ],
+      };
+    }
+    const lines = [
+      `Merged ${result.base} into ${result.branch}:`,
+      `- ${result.commit?.sha} ${result.commit?.url}`,
+    ];
+    if (result.localSyncWarning) {
+      lines.push(`Warning: ${result.localSyncWarning}`);
+    }
+    return { content: [{ type: "text", text: lines.join("\n") }] };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      content: [
+        { type: "text", text: `${SIGNED_MERGE_TOOL_NAME} failed: ${message}` },
+      ],
+      isError: true,
+    };
+  }
 }

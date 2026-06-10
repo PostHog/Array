@@ -1362,7 +1362,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // push` are blocked by the PreToolUse guard (and the sandbox git shim), so
     // the agent commits via the signed-commit tool instead.
     const localToolsServer = createLocalToolsMcpServer(
-      { cwd, token: resolveGithubToken(), taskId },
+      {
+        cwd,
+        token: resolveGithubToken(),
+        taskId,
+        baseBranch: meta?.baseBranch,
+      },
       meta,
     );
     if (localToolsServer) {
