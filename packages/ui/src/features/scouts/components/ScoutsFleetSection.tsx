@@ -1,4 +1,9 @@
-import { CaretDownIcon, CompassIcon, GearSixIcon } from "@phosphor-icons/react";
+import {
+  ArrowSquareOutIcon,
+  CaretDownIcon,
+  CompassIcon,
+  GearSixIcon,
+} from "@phosphor-icons/react";
 import type { ScoutConfig } from "@posthog/api-client/posthog-client";
 import {
   computeFleetSummary,
@@ -14,6 +19,7 @@ import {
   scoutRunsWindowLabel,
 } from "@posthog/core/scouts/scoutRunsWindow";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
+import { skillUrl } from "@posthog/ui/utils/posthogLinks";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -180,30 +186,46 @@ function ScoutRow({
   const now = new Date();
   const state = deriveScoutRowState(config, rollup, now);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const cloudSkillUrl = skillUrl(config.skill_name);
 
   return (
     <Flex
       direction="column"
-      className={`rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-4 py-3 transition duration-150 hover:border-(--gray-6) hover:bg-(--gray-2) ${
+      className={`group rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-4 py-3 transition duration-150 hover:border-(--gray-6) hover:bg-(--gray-2) ${
         config.enabled ? "" : "opacity-65"
       }`}
     >
       <Flex align="center" gap="4">
-        <Link
-          to="/code/agents/scouts/$skillName"
-          params={{ skillName: scoutSkillSlug(config.skill_name) }}
-          className="flex min-w-0 flex-1 items-center gap-2 no-underline"
-        >
-          <ScoutStatusDot state={state} />
-          <Text className="truncate font-medium text-[13px] text-gray-12">
-            {prettifyScoutSkillName(config.skill_name)}
-          </Text>
+        <Flex align="center" gap="2" className="min-w-0 flex-1">
+          <Link
+            to="/code/agents/scouts/$skillName"
+            params={{ skillName: scoutSkillSlug(config.skill_name) }}
+            className="flex min-w-0 items-center gap-2 no-underline"
+          >
+            <ScoutStatusDot state={state} />
+            <Text className="truncate font-medium text-[13px] text-gray-12">
+              {prettifyScoutSkillName(config.skill_name)}
+            </Text>
+          </Link>
+          {cloudSkillUrl ? (
+            <Tooltip content="View skill in PostHog">
+              <a
+                href={cloudSkillUrl}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`${config.skill_name} skill in PostHog`}
+                className="text-gray-9 opacity-0 transition-opacity hover:text-accent-11 focus-visible:opacity-100 group-hover:opacity-100"
+              >
+                <ArrowSquareOutIcon size={12} />
+              </a>
+            </Tooltip>
+          ) : null}
           <ScoutOriginBadge skillName={config.skill_name} />
           <DryRunBadge config={config} />
           <Text className="whitespace-nowrap text-[11px] text-gray-10">
             {formatRunIntervalShort(config.run_interval_minutes)}
           </Text>
-        </Link>
+        </Flex>
         <ScoutRunBoxes runs={rollup?.runs ?? []} />
         <Flex align="center" gap="3" className="shrink-0">
           <ScoutEnabledSwitch config={config} onUpdate={onUpdate} />
