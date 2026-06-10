@@ -225,6 +225,12 @@ function ScoutRow({
           <Text className="whitespace-nowrap text-[11px] text-gray-10">
             {formatRunIntervalShort(config.run_interval_minutes)}
           </Text>
+          {rollup && rollup.emittedCount > 0 ? (
+            <Text className="whitespace-nowrap text-[11px] text-gray-10">
+              · {rollup.emittedCount} signal
+              {rollup.emittedCount === 1 ? "" : "s"} emitted
+            </Text>
+          ) : null}
         </Flex>
         <ScoutRunBoxes runs={rollup?.runs ?? []} />
         <Flex align="center" gap="3" className="shrink-0">
