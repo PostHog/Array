@@ -69,6 +69,7 @@
       "@posthog/cli"
     ],
     "overrides": {
+      "@electron/rebuild": "^4.0.4",
       "zod": "4.3.6"
     }
   }

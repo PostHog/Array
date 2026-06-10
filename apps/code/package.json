@@ -50,7 +50,7 @@
     "@electron-forge/plugin-vite": "^7.11.1",
     "@electron-forge/publisher-github": "^7.11.1",
     "@electron-forge/shared-types": "^7.11.1",
-    "@electron/rebuild": "^4.0.3",
+    "@electron/rebuild": "^4.0.4",
     "@playwright/test": "^1.42.0",
     "@posthog/rollup-plugin": "^1.4.0",
     "@reforged/maker-appimage": "^5.2.0",
