@@ -41,8 +41,8 @@ export interface InboxCloudTaskCopy {
 
 /** Context the variant uses to assemble the TaskCreationInput. */
 export interface InboxCloudTaskInputContext {
-  reportId: string;
-  reportTitle: string | null;
+  reportId?: string;
+  reportTitle?: string | null;
   cloudRepository: string;
   githubUserIntegrationId: string;
   adapter: "claude" | "codex";
@@ -51,8 +51,9 @@ export interface InboxCloudTaskInputContext {
 }
 
 export interface UseInboxCloudTaskRunnerOptions {
-  reportId: string;
-  reportTitle: string | null;
+  /** Backing signal report, when the task is report-scoped (Create PR, Discuss). */
+  reportId?: string;
+  reportTitle?: string | null;
   cloudRepository: string | null;
   copy: InboxCloudTaskCopy;
   /** Logger scope used for failure traces. */
@@ -71,9 +72,10 @@ export interface UseInboxCloudTaskRunnerReturn {
 }
 
 /**
- * Shared driver for the inbox-side "create a cloud task from a report" flows
- * (Create PR, Discuss). Variants supply copy, telemetry, and a `buildInput`
- * callback that assembles the per-variant prompt / branch / metadata.
+ * Shared driver for one-click "create an auto-mode cloud task" flows
+ * (Create PR, Discuss, scout fleet overview). Variants supply copy, telemetry,
+ * and a `buildInput` callback that assembles the per-variant prompt / branch /
+ * metadata; report context is optional for flows not scoped to a report.
  */
 export function useInboxCloudTaskRunner({
   reportId,
@@ -154,9 +156,13 @@ export function useInboxCloudTaskRunner({
           created_from: "command-menu",
           repository_provider: "github",
           workspace_mode: "cloud",
-          cloud_run_source: "signal_report",
-          cloud_pr_authorship_mode: "user",
-          signal_report_id: reportId,
+          ...(reportId
+            ? {
+                cloud_run_source: "signal_report",
+                cloud_pr_authorship_mode: "user",
+                signal_report_id: reportId,
+              }
+            : { cloud_run_source: "manual" }),
           adapter,
           ...analyticsExtras,
         });

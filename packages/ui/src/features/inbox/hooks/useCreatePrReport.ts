@@ -39,7 +39,7 @@ export function useCreatePrReport({
   const buildInput = useCallback(
     (ctx: InboxCloudTaskInputContext): TaskCreationInput => {
       const prompt = buildCreatePrReportPrompt({
-        reportId: ctx.reportId,
+        reportId,
         isDevBuild: import.meta.env.DEV,
       });
       const targetRepo = ctx.cloudRepository.toLowerCase();
@@ -61,10 +61,10 @@ export function useCreatePrReport({
         reasoningLevel: ctx.reasoningLevel,
         cloudPrAuthorshipMode: "user",
         cloudRunSource: "signal_report",
-        signalReportId: ctx.reportId,
+        signalReportId: reportId,
       };
     },
-    [baseBranchOverrides],
+    [baseBranchOverrides, reportId],
   );
 
   const analyticsExtras = useMemo(

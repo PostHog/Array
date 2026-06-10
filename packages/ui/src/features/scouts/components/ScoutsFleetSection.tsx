@@ -10,29 +10,14 @@ import {
   scoutRunsWindowLabel,
 } from "@posthog/core/scouts/scoutRunsWindow";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
-import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
+import { useFleetOverviewTask } from "../hooks/useFleetOverviewTask";
 import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
 import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
 import { ScoutHelperSkillLinks } from "./ScoutHelperSkillLinks";
 import { ScoutRowCard } from "./ScoutRowCard";
-
-// Templated prompt for the fleet-overview chat CTA. The new-task composer is
-// prefilled with this (like the inbox discuss flow's question) so the user can
-// tweak before launching.
-const FLEET_OVERVIEW_PROMPT = `How is my scout fleet performing?
-
-Use the exploring-signals-scouts skill from the PostHog MCP to survey the signals scout fleet on this project and give me a high-level overview:
-
-- The fleet: which scouts exist, enabled vs disabled, and their cadences
-- Recent run health: success rate, failures and timeouts, anything stuck
-- Output: which scouts emitted signals recently, emit rate, signal-to-noise
-- Memory: notable scratchpad entries the fleet has learned
-- Recommendations: anything misconfigured, noisy, or worth tuning
-
-Lead with a short overall verdict, then per-scout notes only where something is notable. If the skill is unavailable, fall back to the signals-scout MCP tools directly (config list, runs list, scratchpad search).`;
 
 /**
  * Expandable scout fleet manager for the agents config page. Collapsed it is
@@ -177,18 +162,23 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
 }
 
 /**
- * Suggestion-chip CTA that opens the new-task composer prefilled with a
- * fleet-overview question driving the exploring-signals-scouts skill.
+ * Suggestion-chip CTA that fires an auto-mode cloud task asking the
+ * exploring-signals-scouts skill for a fleet overview, then navigates to it —
+ * same one-click shape as the inbox discuss / create-PR flows.
  */
 function FleetOverviewChatCta() {
+  const { runFleetOverview, isRunning } = useFleetOverviewTask();
   return (
     <button
       type="button"
-      onClick={() => openTaskInput({ initialPrompt: FLEET_OVERVIEW_PROMPT })}
-      className="flex w-fit items-center gap-1.5 rounded-full border border-border bg-(--color-panel-solid) px-3 py-1 text-[12px] text-gray-11 transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2) hover:text-gray-12"
+      onClick={() => void runFleetOverview()}
+      disabled={isRunning}
+      className="flex w-fit items-center gap-1.5 rounded-full border border-border bg-(--color-panel-solid) px-3 py-1 text-[12px] text-gray-11 transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2) hover:text-gray-12 disabled:cursor-default disabled:opacity-60 disabled:hover:border-border disabled:hover:bg-(--color-panel-solid)"
     >
       <SparkleIcon size={12} className="text-(--iris-9)" />
-      How is my scout fleet performing?
+      {isRunning
+        ? "Starting fleet overview..."
+        : "How is my scout fleet performing?"}
     </button>
   );
 }
