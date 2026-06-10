@@ -3,6 +3,9 @@ name: React Doctor
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    # Workflow-level paths only work because react-doctor is not a required
+    # check. If it ever becomes required, move the skip into a gate job like
+    # test.yml, or path-skipped PRs will wait on it forever.
     paths:
       - "**/*.ts"
       - "**/*.tsx"
@@ -100,9 +103,15 @@ jobs:
           if [ "${STATUS:-1}" = "0" ]; then
             exit 0
           fi
-          if [ -n "${REPORT:-}" ] && jq -e '.ok == false' "$REPORT" >/dev/null 2>&1; then
-            message=$(jq -r '.error.message // "unknown error"' "$REPORT" | tr -d '\n')
-            echo "::warning title=React Doctor::Scanner crashed (${message}); not blocking the PR on a scanner failure."
-            exit 0
+          if [ -n "${REPORT:-}" ]; then
+            if ! jq -e . "$REPORT" >/dev/null 2>&1; then
+              echo "::warning title=React Doctor::Scanner exited ${STATUS:-1} without a valid JSON report; not blocking the PR on a scanner failure."
+              exit 0
+            fi
+            if jq -e '.ok == false' "$REPORT" >/dev/null 2>&1; then
+              message=$(jq -r '.error.message // "unknown error"' "$REPORT" | tr -d '\n')
+              echo "::warning title=React Doctor::Scanner crashed (${message}); not blocking the PR on a scanner failure."
+              exit 0
+            fi
           fi
           exit "${STATUS:-1}"
