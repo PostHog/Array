@@ -12,7 +12,11 @@ import {
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
-import { useFleetOverviewTask } from "../hooks/useFleetOverviewTask";
+import {
+  SCOUT_FLEET_OVERVIEW_PROMPT,
+  SCOUT_RECENT_SIGNALS_PROMPT,
+  useScoutChatTask,
+} from "../hooks/useScoutChatTask";
 import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
 import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
@@ -132,7 +136,20 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
         </button>
       </Flex>
 
-      <FleetOverviewChatCta />
+      <Flex align="center" gap="2" wrap="wrap">
+        <ScoutChatCta
+          label="How is my scout fleet performing?"
+          prompt={SCOUT_FLEET_OVERVIEW_PROMPT}
+          taskLabel="fleet overview"
+          loggerScope="scout-fleet-overview"
+        />
+        <ScoutChatCta
+          label="What signals were emitted recently?"
+          prompt={SCOUT_RECENT_SIGNALS_PROMPT}
+          taskLabel="recent signals recap"
+          loggerScope="scout-recent-signals"
+        />
+      </Flex>
 
       {/* Bounded to roughly 10 rows; larger fleets scroll within the section. */}
       <div className="max-h-[710px] overflow-y-auto">
@@ -163,22 +180,34 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
 
 /**
  * Suggestion-chip CTA that fires an auto-mode cloud task asking the
- * exploring-signals-scouts skill for a fleet overview, then navigates to it —
+ * exploring-signals-scouts skill a templated question, then navigates to it —
  * same one-click shape as the inbox discuss / create-PR flows.
  */
-function FleetOverviewChatCta() {
-  const { runFleetOverview, isRunning } = useFleetOverviewTask();
+function ScoutChatCta({
+  label,
+  prompt,
+  taskLabel,
+  loggerScope,
+}: {
+  label: string;
+  prompt: string;
+  taskLabel: string;
+  loggerScope: string;
+}) {
+  const { runTask, isRunning } = useScoutChatTask({
+    prompt,
+    taskLabel,
+    loggerScope,
+  });
   return (
     <button
       type="button"
-      onClick={() => void runFleetOverview()}
+      onClick={() => void runTask()}
       disabled={isRunning}
       className="flex w-fit items-center gap-1.5 rounded-full border border-border bg-(--color-panel-solid) px-3 py-1 text-[12px] text-gray-11 transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2) hover:text-gray-12 disabled:cursor-default disabled:opacity-60 disabled:hover:border-border disabled:hover:bg-(--color-panel-solid)"
     >
       <SparkleIcon size={12} className="text-(--iris-9)" />
-      {isRunning
-        ? "Starting fleet overview..."
-        : "How is my scout fleet performing?"}
+      {isRunning ? `Starting ${taskLabel}...` : label}
     </button>
   );
 }
