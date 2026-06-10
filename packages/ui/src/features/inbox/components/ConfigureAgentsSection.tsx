@@ -108,7 +108,21 @@ export function ConfigureAgentsSection() {
 
       <Subsection
         title="Scouts"
-        description="Scheduled agents that sweep this project on a cadence and emit findings to your inbox."
+        description={
+          <>
+            Scheduled agents that sweep this project on a cadence and emit
+            findings to your inbox.{" "}
+            {/* Placeholder docs link until a dedicated scouts page exists. */}
+            <a
+              href="https://posthog.com/blog/self-driving-product"
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent-11 no-underline hover:text-accent-12"
+            >
+              Learn more
+            </a>
+          </>
+        }
       >
         <ScoutsFleetSection />
       </Subsection>
