@@ -27,7 +27,7 @@ import {
   useRepositoryIntegration,
   useUserRepositoryIntegration,
 } from "@posthog/ui/features/integrations/useIntegrations";
-import { ScoutsSummaryCard } from "@posthog/ui/features/scouts/components/ScoutsSummaryCard";
+import { ScoutsFleetSection } from "@posthog/ui/features/scouts/components/ScoutsFleetSection";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { GitHubIntegrationSection } from "@posthog/ui/features/settings/sections/GitHubIntegrationSection";
 import { SlackInboxNotificationsSettings } from "@posthog/ui/features/settings/sections/SlackInboxNotificationsSettings";
@@ -108,9 +108,9 @@ export function ConfigureAgentsSection() {
 
       <Subsection
         title="Scouts"
-        description="Scheduled agents that sweep this project on a cadence and emit findings to your inbox. Configure cadence and dry-run posture, and inspect every run."
+        description="Scheduled agents that sweep this project on a cadence and emit findings to your inbox. A quiet run is the healthy outcome – it means the scout looked and found nothing worth your attention."
       >
-        <ScoutsSummaryCard />
+        <ScoutsFleetSection />
       </Subsection>
 
       <Subsection

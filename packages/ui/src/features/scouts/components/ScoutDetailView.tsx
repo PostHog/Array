@@ -12,6 +12,10 @@ import {
   scoutSkillNameFromSlug,
   scoutSkillSlug,
 } from "@posthog/core/scouts/scoutPresentation";
+import {
+  SCOUT_RUNS_WINDOW_HOURS,
+  scoutRunsWindowLabel,
+} from "@posthog/core/scouts/scoutRunsWindow";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
@@ -56,16 +60,17 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
   useSetHeaderContent(headerContent);
 
   const { data: configs } = useScoutConfigs();
-  const { data: runs, isLoading: runsLoading } = useScoutRuns();
+  const { data: runsWindow, isLoading: runsLoading } = useScoutRuns();
   const { updateConfig } = useScoutConfigMutations();
   const [filter, setFilter] = useState<ScoutRunFilter>("all");
 
   const config = configs?.find((entry) => entry.skill_name === skillName);
   // The runs endpoint has no skill_name filter yet (scouts-ui api gap 1), so
-  // select this scout's runs from the recent fleet window client-side.
+  // select this scout's runs from the 24-hour fleet window client-side.
   const scoutRuns = useMemo(
-    () => (runs ?? []).filter((run) => run.skill_name === skillName),
-    [runs, skillName],
+    () =>
+      (runsWindow?.runs ?? []).filter((run) => run.skill_name === skillName),
+    [runsWindow, skillName],
   );
   const rollup = useMemo(
     () => computeScoutRollups(scoutRuns).get(skillName),
@@ -99,11 +104,11 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
         className="cursor-default select-none border-(--gray-5) border-b px-6 pt-5 pb-5"
       >
         <Link
-          to="/code/agents/scouts"
+          to="/code/agents"
           className="mb-1 flex w-fit items-center gap-1 text-[12px] text-gray-10 no-underline hover:text-gray-12"
         >
           <ArrowLeftIcon size={12} />
-          Scouts
+          Agents
         </Link>
         <Flex align="center" gap="3" wrap="wrap">
           <ScoutStatusDot state={state} />
@@ -155,9 +160,9 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
 
             {rollup && rollup.runCount > 0 ? (
               <Text className="text-[12.5px] text-gray-11">
-                Recent window: {rollup.runCount} runs · {rollup.completedCount}{" "}
-                completed · {rollup.failedCount} failed · {rollup.emittedCount}{" "}
-                signal
+                {capitalize(scoutRunsWindowLabel(runsWindow))}:{" "}
+                {rollup.runCount} runs · {rollup.completedCount} completed ·{" "}
+                {rollup.failedCount} failed · {rollup.emittedCount} signal
                 {rollup.emittedCount === 1 ? "" : "s"} emitted
               </Text>
             ) : null}
@@ -189,8 +194,8 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
               ) : filteredRuns.length === 0 ? (
                 <Text className="text-[12.5px] text-gray-11">
                   {scoutRuns.length === 0
-                    ? "No runs in the recent window the API returns."
-                    : "No runs match this filter in the recent window."}
+                    ? `No runs in the ${scoutRunsWindowLabel(runsWindow)}.`
+                    : `No runs match this filter in the ${scoutRunsWindowLabel(runsWindow)}.`}
                 </Text>
               ) : (
                 <Flex direction="column" gap="2">
@@ -205,8 +210,8 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
               )}
 
               <Text className="text-[12px] text-gray-10">
-                Showing this scout&apos;s runs from the most recent fleet runs
-                the API returns (currently capped at 100 fleet-wide).
+                Showing this scout&apos;s runs from the last{" "}
+                {SCOUT_RUNS_WINDOW_HOURS} hours.
               </Text>
             </Flex>
           </Flex>
@@ -284,6 +289,10 @@ function RunGlyph({ status, emitted }: { status: string; emitted: number }) {
     return <Text className="font-medium text-(--iris-9) text-[12px]">◆</Text>;
   }
   return <Text className="text-[12px] text-gray-8">·</Text>;
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function RunListSkeleton() {

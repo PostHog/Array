@@ -5,7 +5,7 @@ import {
   normalizeRunStatus,
   type ScoutRollup,
 } from "@posthog/core/scouts/scoutPresentation";
-import { Badge } from "@radix-ui/themes";
+import { Badge, Tooltip } from "@radix-ui/themes";
 
 export type ScoutRowState = "ok" | "running" | "failing" | "stuck" | "disabled";
 
@@ -35,12 +35,23 @@ const ROW_STATE_DOT_CLASS: Record<ScoutRowState, string> = {
   disabled: "bg-(--gray-7)",
 };
 
+const ROW_STATE_LABELS: Record<ScoutRowState, string> = {
+  ok: "Healthy – last run completed",
+  running: "Running now",
+  failing: "Last run failed",
+  stuck: "Running past the deadline – may be stuck",
+  disabled: "Disabled",
+};
+
 export function ScoutStatusDot({ state }: { state: ScoutRowState }) {
   return (
-    <span
-      className={`inline-block h-2 w-2 shrink-0 rounded-full ${ROW_STATE_DOT_CLASS[state]}`}
-      aria-hidden
-    />
+    <Tooltip content={ROW_STATE_LABELS[state]}>
+      <span
+        role="img"
+        className={`inline-block h-2 w-2 shrink-0 rounded-full ${ROW_STATE_DOT_CLASS[state]}`}
+        aria-label={ROW_STATE_LABELS[state]}
+      />
+    </Tooltip>
   );
 }
 
