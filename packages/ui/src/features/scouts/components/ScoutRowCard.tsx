@@ -145,12 +145,12 @@ function ScoutChatButton({ skillName }: { skillName: string }) {
     loggerScope: "scout-checkin",
   });
   return (
-    <Tooltip content="Ask an agent about this scout">
+    <Tooltip content="Chat with PostHog about this scout">
       <button
         type="button"
         onClick={() => void runTask()}
         disabled={isRunning}
-        aria-label={`Ask about the ${skillName} scout`}
+        aria-label={`Chat with PostHog about the ${skillName} scout`}
         className={`flex h-6 w-6 items-center justify-center rounded transition-colors disabled:cursor-default ${
           isRunning
             ? "animate-pulse text-(--iris-9)"
