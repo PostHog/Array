@@ -580,6 +580,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       tokenResponse.access_token,
       options.cloudRegion,
       scopedOrgIds,
+      this.session?.orgProjectsMap ?? {},
     );
     const lastPrefs = accountKey
       ? this.authPreferenceRepository.get(accountKey, options.cloudRegion)
@@ -609,6 +610,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     accessToken: string,
     cloudRegion: CloudRegion,
     orgIds: string[],
+    previousMap: OrgProjectsMap,
   ): Promise<OrgProjectsMap> {
     const entries = await Promise.all(
       orgIds.map(async (orgId): Promise<[string, OrgProjects]> => {
@@ -617,7 +619,13 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
           cloudRegion,
           orgId,
         );
-        return [orgId, result ?? { orgName: "(unknown)", projects: [] }];
+        if (result) {
+          return [orgId, result];
+        }
+        return [
+          orgId,
+          previousMap[orgId] ?? { orgName: "(unknown)", projects: [] },
+        ];
       }),
     );
 
@@ -640,6 +648,41 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     cloudRegion: CloudRegion,
     orgId: string,
   ): Promise<OrgProjects | null> {
+    for (
+      let attempt = 0;
+      attempt < AuthService.ORG_FETCH_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      const result = await this.fetchOrgWithProjectsOnce(
+        accessToken,
+        cloudRegion,
+        orgId,
+      );
+      if (result.ok) {
+        return result.data;
+      }
+      if (!result.retryable) {
+        break;
+      }
+
+      const isLastAttempt = attempt === AuthService.ORG_FETCH_MAX_ATTEMPTS - 1;
+      if (isLastAttempt) {
+        break;
+      }
+
+      log.warn("Transient org fetch failure, retrying", { orgId, attempt });
+      await sleepWithBackoff(attempt, AuthService.REFRESH_BACKOFF);
+    }
+
+    return null;
+  }
+  private async fetchOrgWithProjectsOnce(
+    accessToken: string,
+    cloudRegion: CloudRegion,
+    orgId: string,
+  ): Promise<
+    { ok: true; data: OrgProjects } | { ok: false; retryable: boolean }
+  > {
     const apiHost = getCloudUrlFromRegion(cloudRegion);
     try {
       const res = await this.executeAuthenticatedFetch(
@@ -648,7 +691,9 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
         {},
         accessToken,
       );
-      if (!res.ok) return null;
+      if (!res.ok) {
+        return { ok: false, retryable: res.status >= 500 };
+      }
       const raw = (await res.json().catch(() => null)) as {
         name?: unknown;
         teams?: unknown;
@@ -662,10 +707,10 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
         .map((t) => t as { id?: unknown; name?: unknown })
         .filter((t) => typeof t.id === "number" && typeof t.name === "string")
         .map((t) => ({ id: t.id as number, name: t.name as string }));
-      return { orgName, projects };
+      return { ok: true, data: { orgName, projects } };
     } catch (error) {
       log.warn("Failed to fetch org with projects", { orgId, error });
-      return null;
+      return { ok: false, retryable: true };
     }
   }
   private async authenticateWithFlow(
@@ -857,6 +902,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     }
   }
   private static readonly REFRESH_MAX_ATTEMPTS = 3;
+  private static readonly ORG_FETCH_MAX_ATTEMPTS = 3;
   private static readonly REFRESH_BACKOFF: BackoffOptions = {
     initialDelayMs: 1_000,
     maxDelayMs: 5_000,

@@ -573,6 +573,180 @@ describe("AuthService", () => {
     });
   });
 
+  describe("transient org fetch failures", () => {
+    it("retries the org fetch on a transient network failure and keeps the selected project", async () => {
+      seedStoredSession({ selectedProjectId: 84 });
+      vi.mocked(oauthService.refreshToken).mockResolvedValue(
+        mockTokenResponse(),
+      );
+
+      let orgCallCount = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | Request) => {
+          const url = typeof input === "string" ? input : input.url;
+
+          if (url.includes("/api/users/@me/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                uuid: "user-1",
+                organization: { id: "org-1" },
+              }),
+            } as unknown as Response;
+          }
+
+          if (/\/api\/organizations\/[^/]+\/$/.test(url)) {
+            orgCallCount++;
+            if (orgCallCount === 1) {
+              throw new TypeError("fetch failed");
+            }
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                name: "Org 1",
+                teams: [
+                  { id: 42, name: "Project 42" },
+                  { id: 84, name: "Project 84" },
+                ],
+              }),
+            } as unknown as Response;
+          }
+
+          return {
+            ok: true,
+            json: vi.fn().mockResolvedValue({ has_access: true }),
+          } as unknown as Response;
+        }) as typeof fetch,
+      );
+
+      await service.initialize();
+
+      expect(orgCallCount).toBe(2);
+      expect(service.getState()).toMatchObject({
+        status: "authenticated",
+        currentProjectId: 84,
+        orgProjectsMap: {
+          "org-1": {
+            orgName: "Org 1",
+            projects: [
+              { id: 42, name: "Project 42" },
+              { id: 84, name: "Project 84" },
+            ],
+          },
+        },
+      });
+    });
+
+    it("preserves previously-known projects and the selected project when the org fetch fails on refresh", async () => {
+      const orgs = {
+        "org-1": {
+          name: "Org 1",
+          projects: [
+            { id: 42, name: "Project 42" },
+            { id: 84, name: "Project 84" },
+          ],
+        },
+      };
+      vi.mocked(oauthService.startFlow).mockResolvedValue(mockTokenResponse());
+      vi.mocked(oauthService.refreshToken).mockResolvedValue(
+        mockTokenResponse(),
+      );
+      stubAuthFetch({ orgs });
+
+      await service.login("us");
+      await service.selectProject(84);
+
+      let orgCallCount = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | Request) => {
+          const url = typeof input === "string" ? input : input.url;
+
+          if (url.includes("/api/users/@me/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                uuid: "user-1",
+                organization: { id: "org-1" },
+              }),
+            } as unknown as Response;
+          }
+
+          if (/\/api\/organizations\/[^/]+\/$/.test(url)) {
+            orgCallCount++;
+            throw new TypeError("fetch failed");
+          }
+
+          return {
+            ok: true,
+            json: vi.fn().mockResolvedValue({ has_access: true }),
+          } as unknown as Response;
+        }) as typeof fetch,
+      );
+
+      await service.refreshAccessToken();
+
+      expect(orgCallCount).toBe(3);
+      expect(service.getState()).toMatchObject({
+        status: "authenticated",
+        currentProjectId: 84,
+        orgProjectsMap: {
+          "org-1": {
+            orgName: "Org 1",
+            projects: [
+              { id: 42, name: "Project 42" },
+              { id: 84, name: "Project 84" },
+            ],
+          },
+        },
+      });
+    });
+
+    it("does not retry org fetch on a 4xx response", async () => {
+      seedStoredSession({ selectedProjectId: 84 });
+      vi.mocked(oauthService.refreshToken).mockResolvedValue(
+        mockTokenResponse(),
+      );
+
+      let orgCallCount = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | Request) => {
+          const url = typeof input === "string" ? input : input.url;
+
+          if (url.includes("/api/users/@me/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                uuid: "user-1",
+                organization: { id: "org-1" },
+              }),
+            } as unknown as Response;
+          }
+
+          if (/\/api\/organizations\/[^/]+\/$/.test(url)) {
+            orgCallCount++;
+            return {
+              ok: false,
+              status: 403,
+              json: vi.fn().mockResolvedValue({}),
+            } as unknown as Response;
+          }
+
+          return {
+            ok: true,
+            json: vi.fn().mockResolvedValue({ has_access: true }),
+          } as unknown as Response;
+        }) as typeof fetch,
+      );
+
+      await service.initialize();
+
+      expect(orgCallCount).toBe(1);
+    });
+  });
+
   describe("switchOrg", () => {
     const twoOrgs = {
       "org-1": {
