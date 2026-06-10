@@ -24,6 +24,8 @@ export interface WindowStateSchema {
   width: number;
   height: number;
   isMaximized: boolean;
+  // Native zoom level (0 = 100%), persisted across reloads and restarts.
+  zoomLevel: number;
 }
 
 const userDataDir = getUserDataDir();
@@ -50,5 +52,6 @@ export const windowStateStore = new Store<WindowStateSchema>({
     width: 1200,
     height: 600,
     isMaximized: true,
+    zoomLevel: 0,
   },
 });

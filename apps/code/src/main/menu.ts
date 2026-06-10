@@ -20,6 +20,7 @@ import { container } from "./di/container";
 import { MAIN_TOKENS } from "./di/tokens";
 import { isDevBuild } from "./utils/env";
 import { getLogFilePath } from "./utils/logger";
+import { adjustZoom, setZoom } from "./utils/zoom";
 
 function findLatestCrashDump(): string | null {
   const pendingDir = path.join(app.getPath("crashDumps"), "pending");
@@ -308,9 +309,40 @@ function buildViewMenu(): MenuItemConstructorOptions {
       },
       { role: "toggleDevTools" },
       { type: "separator" },
-      { role: "resetZoom" },
-      { role: "zoomIn" },
-      { role: "zoomOut" },
+      {
+        label: "Reset Zoom",
+        accelerator: "CmdOrCtrl+0",
+        click: () => {
+          const win = BrowserWindow.getFocusedWindow();
+          if (win) setZoom(win, 0);
+        },
+      },
+      {
+        label: "Zoom In",
+        accelerator: "CmdOrCtrl+Plus",
+        click: () => {
+          const win = BrowserWindow.getFocusedWindow();
+          if (win) adjustZoom(win, 1);
+        },
+      },
+      {
+        // Alias so Cmd+= (no Shift) also zooms in; accelerator fires while hidden.
+        label: "Zoom In",
+        accelerator: "CmdOrCtrl+=",
+        visible: false,
+        click: () => {
+          const win = BrowserWindow.getFocusedWindow();
+          if (win) adjustZoom(win, 1);
+        },
+      },
+      {
+        label: "Zoom Out",
+        accelerator: "CmdOrCtrl+-",
+        click: () => {
+          const win = BrowserWindow.getFocusedWindow();
+          if (win) adjustZoom(win, -1);
+        },
+      },
       { type: "separator" },
       { role: "togglefullscreen" },
       { type: "separator" },

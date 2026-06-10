@@ -17,6 +17,7 @@ import { trpcRouter } from "./trpc/router";
 import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
 import { type WindowStateSchema, windowStateStore } from "./utils/store";
+import { applySavedZoom } from "./utils/zoom";
 
 const log = logger.scope("window");
 
@@ -34,7 +35,7 @@ function isPositionOnScreen(x: number, y: number): boolean {
   });
 }
 
-function getSavedWindowState(): WindowStateSchema {
+function getSavedWindowState(): Omit<WindowStateSchema, "zoomLevel"> {
   const state = {
     x: windowStateStore.get("x"),
     y: windowStateStore.get("y"),
@@ -98,6 +99,11 @@ function setupExternalLinkHandlers(window: BrowserWindow): void {
       shell.openExternal(url);
     }
   });
+}
+
+function setupZoomPersistence(window: BrowserWindow): void {
+  // Native zoom resets on every load (incl. crash-recovery reload); re-apply it.
+  window.webContents.on("did-finish-load", () => applySavedZoom(window));
 }
 
 function setupCrashLogging(window: BrowserWindow): void {
@@ -248,6 +254,7 @@ export function createWindow(): void {
   setupExternalLinkHandlers(mainWindow);
   setupEditableContextMenu(mainWindow);
   setupCrashLogging(mainWindow);
+  setupZoomPersistence(mainWindow);
   buildApplicationMenu();
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
