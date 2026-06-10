@@ -36,6 +36,10 @@ const BLOCKED_MODELS = new Set([
   "anthropic/claude-sonnet-4-5",
   "claude-haiku-4-5",
   "anthropic/claude-haiku-4-5",
+  // Fable is temporarily blocked: it requires data retention to be enabled,
+  // which conflicts with our ZDR requirement, so it fails when selected.
+  "claude-fable-5",
+  "anthropic/claude-fable-5",
 ]);
 
 export function isBlockedModelId(modelId: string): boolean {
