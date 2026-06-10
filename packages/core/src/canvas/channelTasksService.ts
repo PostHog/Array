@@ -4,6 +4,7 @@ import { inject, injectable } from "inversify";
 import type { ChannelTaskRecord } from "./channelTaskSchemas";
 
 const TASK_TYPE = "task";
+const HOME_FOLDER = "Unfiled/Tasks";
 const MAX_PAGES = 50;
 
 interface FsEntry {
@@ -76,57 +77,76 @@ export class ChannelTasksService {
     taskId: string;
     taskTitle: string;
   }): Promise<ChannelTaskRecord> {
-    const channelPath = await this.channelPath(input.channelId);
-    const existing = (await this.list(input.channelId)).find(
-      (r) => r.taskId === input.taskId,
+    const targetChannelPath = await this.channelPath(input.channelId);
+    const targetPath = `${targetChannelPath}/${sanitizeSegment(input.taskTitle)}`;
+
+    const allRows = await this.listByRef(input.taskId);
+    const homeRow = allRows.find((r) => r.path.startsWith(HOME_FOLDER));
+    const channelRows = allRows.filter((r) => r !== homeRow);
+
+    // Already at the target channel — nothing to do.
+    const atTarget = channelRows.find((r) =>
+      r.path.startsWith(`${targetChannelPath}/`),
     );
-    if (existing) return existing;
+    if (atTarget) return toRecord(atTarget, input.channelId);
 
-    // Seed an Unfiled/Tasks home row if this task has none. Tasks created before
-    // posthog's FileSystemSyncMixin landed have no home row; without one, the
-    // channel row would be the only row, and removing it from the channel would
-    // cascade into a soft-delete of the task itself. Idempotent: skipped once
-    // any task row exists.
-    await this.ensureHomeRow(input.taskId, input.taskTitle);
+    // Ensure the home row exists before touching channel rows. Tasks created
+    // before posthog's FileSystemSyncMixin landed have no home row; without
+    // one, mutating the only channel row would cascade into a soft-delete of
+    // the task itself.
+    if (!homeRow) {
+      await this.createRow(
+        `${HOME_FOLDER}/${sanitizeSegment(input.taskTitle)}`,
+        input.taskId,
+      );
+    }
 
+    // If the task is already in some other channel, move that row to the
+    // target instead of creating a duplicate. Defensive: drop any extra
+    // channel rows (shouldn't normally exist with this invariant).
+    if (channelRows.length > 0) {
+      const [moved, ...extras] = channelRows;
+      const movedRow = await this.moveRow(moved.id, targetPath);
+      for (const extra of extras) await this.unfile(extra.id);
+      return toRecord(movedRow, input.channelId);
+    }
+
+    const created = await this.createRow(targetPath, input.taskId);
+    return toRecord(created, input.channelId);
+  }
+
+  private async listByRef(taskId: string): Promise<FsEntry[]> {
+    const res = await this.fsFetch(
+      `?type=${TASK_TYPE}&ref=${encodeURIComponent(taskId)}`,
+    );
+    if (!res.ok) throw new Error(`Failed to list task rows (${res.status})`);
+    const page = (await res.json()) as { results: FsEntry[] };
+    return page.results;
+  }
+
+  private async createRow(path: string, taskId: string): Promise<FsEntry> {
     const res = await this.fsFetch("", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        path: `${channelPath}/${sanitizeSegment(input.taskTitle)}`,
-        type: TASK_TYPE,
-        ref: input.taskId,
-        href: `/tasks/${input.taskId}`,
-      }),
-    });
-    if (!res.ok) throw new Error(`Failed to file task (${res.status})`);
-    return toRecord((await res.json()) as FsEntry, input.channelId);
-  }
-
-  private async ensureHomeRow(
-    taskId: string,
-    taskTitle: string,
-  ): Promise<void> {
-    const res = await this.fsFetch(
-      `?type=${TASK_TYPE}&ref=${encodeURIComponent(taskId)}`,
-    );
-    if (!res.ok)
-      throw new Error(`Failed to check task home row (${res.status})`);
-    const page = (await res.json()) as { results: FsEntry[] };
-    if (page.results.length > 0) return;
-
-    const create = await this.fsFetch("", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        path: `Unfiled/Tasks/${sanitizeSegment(taskTitle)}`,
+        path,
         type: TASK_TYPE,
         ref: taskId,
         href: `/tasks/${taskId}`,
       }),
     });
-    if (!create.ok)
-      throw new Error(`Failed to seed task home row (${create.status})`);
+    if (!res.ok) throw new Error(`Failed to file task (${res.status})`);
+    return (await res.json()) as FsEntry;
+  }
+
+  private async moveRow(id: string, newPath: string): Promise<FsEntry> {
+    const res = await this.fsFetch(`${encodeURIComponent(id)}/move/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ new_path: newPath }),
+    });
+    if (!res.ok) throw new Error(`Failed to move task row (${res.status})`);
+    return (await res.json()) as FsEntry;
   }
 
   async unfile(id: string): Promise<void> {
