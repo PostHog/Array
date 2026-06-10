@@ -1,7 +1,7 @@
 import { Text } from "@components/text";
 import * as Haptics from "expo-haptics";
 import { Play, Plus } from "phosphor-react-native";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -27,11 +27,15 @@ export function CreatePrFeedbackSheet({
 }: CreatePrFeedbackSheetProps) {
   const themeColors = useThemeColors();
   const [feedback, setFeedback] = useState("");
+  const [prevVisible, setPrevVisible] = useState(visible);
   const confirmLabel = isAwaitingInput ? "Implement as new task" : "Start task";
 
-  useEffect(() => {
+  // Reset the draft when the sheet opens. Adjusting during render (rather than
+  // in an effect) avoids a flash of the previous value on the next open.
+  if (visible !== prevVisible) {
+    setPrevVisible(visible);
     if (visible) setFeedback("");
-  }, [visible]);
+  }
 
   const handleSubmit = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
