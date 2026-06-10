@@ -195,7 +195,7 @@ export async function runSignedMergeTool(
     }
     const lines = [
       `Merged ${result.base} into ${result.branch}:`,
-      `- ${result.commit?.sha} ${result.commit?.url}`,
+      `- ${result.commit.sha} ${result.commit.url}`,
     ];
     if (result.localSyncWarning) {
       lines.push(`Warning: ${result.localSyncWarning}`);

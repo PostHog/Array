@@ -995,15 +995,17 @@ export interface SignedMergeInput {
   base?: string;
 }
 
-export interface SignedMergeResult {
-  branch: string;
-  base: string;
-  /** false when the branch already contained the base (HTTP 204). */
-  merged: boolean;
-  commit?: { sha: string; url: string };
-  /** Set when the remote merge succeeded but the local checkout could not be synced. */
-  localSyncWarning?: string;
-}
+export type SignedMergeResult =
+  /** The branch already contained the base (HTTP 204). */
+  | { branch: string; base: string; merged: false }
+  | {
+      branch: string;
+      base: string;
+      merged: true;
+      commit: { sha: string; url: string };
+      /** Set when the remote merge succeeded but the local checkout could not be synced. */
+      localSyncWarning?: string;
+    };
 
 export type MergeApiOutcome =
   | { kind: "merged"; sha: string; url: string }
