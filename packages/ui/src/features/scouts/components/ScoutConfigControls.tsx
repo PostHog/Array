@@ -54,6 +54,7 @@ export function ScoutConfigControls({
             options={MODE_OPTIONS}
             ariaLabel={`${config.skill_name} mode`}
             disabled={!config.enabled}
+            className="w-24"
             onValueChange={(value) =>
               onUpdate(config.id, { emit: value === "live" })
             }
@@ -65,6 +66,7 @@ export function ScoutConfigControls({
         options={intervalOptions}
         ariaLabel={`${config.skill_name} run interval`}
         disabled={!config.enabled}
+        className="w-36"
         onValueChange={(value) =>
           onUpdate(config.id, { run_interval_minutes: Number(value) })
         }
