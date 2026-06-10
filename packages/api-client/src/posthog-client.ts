@@ -171,6 +171,67 @@ export interface SignalSourceConfig {
   status: "running" | "completed" | "failed" | null;
 }
 
+// ── Signals scouts ───────────────────────────────────────────────────────────
+// Backend: posthog `products/signals/backend/scout_harness/views.py`.
+// Endpoints live under /api/projects/{id}/signals/scout/ and require the
+// `signal_scout:read` / `signal_scout:write` scopes.
+
+export interface ScoutConfig {
+  id: string;
+  skill_name: string;
+  enabled: boolean;
+  /** False means dry-run: the scout runs but findings are not emitted. */
+  emit: boolean;
+  run_interval_minutes: number;
+  last_run_at: string | null;
+  created_at: string;
+}
+
+export interface ScoutRun {
+  run_id: string;
+  skill_name: string;
+  skill_version: number;
+  /** TaskRun-derived status, e.g. "completed" | "failed" | "in_progress" | "queued". */
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  task_id: string | null;
+  task_run_id: string | null;
+  /** Relative PostHog cloud path to the backing task run. */
+  task_url: string | null;
+  summary: string;
+  emitted_count: number | null;
+  emitted_finding_ids: string[];
+}
+
+export interface ScoutEmission {
+  id: string;
+  run_id: string;
+  finding_id: string;
+  description: string;
+  weight: number;
+  confidence: number;
+  severity: string | null;
+  source_id: string;
+  emitted_at: string;
+}
+
+export interface ScoutScratchpadEntry {
+  key: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  created_by_run_id: string | null;
+}
+
+export interface ScoutRunsQueryParams {
+  date_from?: string;
+  date_to?: string;
+  text?: string;
+  emitted?: boolean;
+  limit?: number;
+}
+
 export interface ExternalDataSourceSchema {
   id: string;
   name: string;
@@ -1045,6 +1106,112 @@ export class PostHogAPIClient {
       );
     }
     return (await response.json()) as SignalSourceConfig;
+  }
+
+  private async scoutGet<T>(
+    projectId: number,
+    subPath: string,
+    query?: Record<string, string | number | boolean | undefined>,
+  ): Promise<T> {
+    const urlPath = `/api/projects/${projectId}/signals/scout/${subPath}`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    for (const [key, value] of Object.entries(query ?? {})) {
+      if (value !== undefined) url.searchParams.set(key, String(value));
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Scout request failed (${subPath}): ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as T;
+  }
+
+  async listScoutConfigs(projectId: number): Promise<ScoutConfig[]> {
+    const data = await this.scoutGet<
+      { results: ScoutConfig[] } | ScoutConfig[]
+    >(projectId, "configs/");
+    return Array.isArray(data) ? data : (data.results ?? []);
+  }
+
+  async updateScoutConfig(
+    projectId: number,
+    configId: string,
+    updates: {
+      enabled?: boolean;
+      emit?: boolean;
+      run_interval_minutes?: number;
+    },
+  ): Promise<ScoutConfig> {
+    const urlPath = `/api/projects/${projectId}/signals/scout/configs/${configId}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify(updates),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to update scout config: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as ScoutConfig;
+  }
+
+  async listScoutRuns(
+    projectId: number,
+    params?: ScoutRunsQueryParams,
+  ): Promise<ScoutRun[]> {
+    const data = await this.scoutGet<{ results: ScoutRun[] } | ScoutRun[]>(
+      projectId,
+      "runs/",
+      {
+        date_from: params?.date_from,
+        date_to: params?.date_to,
+        text: params?.text,
+        emitted: params?.emitted,
+        limit: params?.limit,
+      },
+    );
+    return Array.isArray(data) ? data : (data.results ?? []);
+  }
+
+  async getScoutRun(projectId: number, runId: string): Promise<ScoutRun> {
+    return await this.scoutGet<ScoutRun>(projectId, `runs/${runId}/`);
+  }
+
+  async listScoutRunEmissions(
+    projectId: number,
+    runId: string,
+  ): Promise<ScoutEmission[]> {
+    const data = await this.scoutGet<
+      { results: ScoutEmission[] } | ScoutEmission[]
+    >(projectId, `runs/${runId}/emissions/`);
+    return Array.isArray(data) ? data : (data.results ?? []);
+  }
+
+  async searchScoutScratchpad(
+    projectId: number,
+    params?: { text?: string; limit?: number },
+  ): Promise<ScoutScratchpadEntry[]> {
+    const data = await this.scoutGet<
+      { results: ScoutScratchpadEntry[] } | ScoutScratchpadEntry[]
+    >(projectId, "scratchpad/", {
+      text: params?.text,
+      limit: params?.limit,
+    });
+    return Array.isArray(data) ? data : (data.results ?? []);
   }
 
   async listEvaluations(projectId: number): Promise<Evaluation[]> {
