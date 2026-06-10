@@ -1,5 +1,5 @@
 import { CaretDownIcon, CompassIcon, GearSixIcon } from "@phosphor-icons/react";
-import type { ScoutConfig, ScoutRun } from "@posthog/api-client/posthog-client";
+import type { ScoutConfig } from "@posthog/api-client/posthog-client";
 import {
   computeFleetSummary,
   computeScoutRollups,
@@ -192,27 +192,17 @@ function ScoutRow({
         <Link
           to="/code/agents/scouts/$skillName"
           params={{ skillName: scoutSkillSlug(config.skill_name) }}
-          className="flex min-w-0 flex-1 items-center gap-3 no-underline"
+          className="flex min-w-0 flex-1 items-center gap-2 no-underline"
         >
           <ScoutStatusDot state={state} />
-          <Flex direction="column" gap="1" className="min-w-0">
-            <Flex align="center" gap="2" wrap="wrap">
-              <Text className="font-medium text-[13px] text-gray-12">
-                {prettifyScoutSkillName(config.skill_name)}
-              </Text>
-              <ScoutOriginBadge skillName={config.skill_name} />
-              <DryRunBadge config={config} />
-              <Text className="text-[11px] text-gray-10">
-                {formatRunIntervalShort(config.run_interval_minutes)}
-              </Text>
-            </Flex>
-            <ScoutRowStats
-              config={config}
-              rollup={rollup}
-              state={state}
-              runningRun={rollup?.runningRun ?? null}
-            />
-          </Flex>
+          <Text className="truncate font-medium text-[13px] text-gray-12">
+            {prettifyScoutSkillName(config.skill_name)}
+          </Text>
+          <ScoutOriginBadge skillName={config.skill_name} />
+          <DryRunBadge config={config} />
+          <Text className="whitespace-nowrap text-[11px] text-gray-10">
+            {formatRunIntervalShort(config.run_interval_minutes)}
+          </Text>
         </Link>
         <ScoutRunBoxes runs={rollup?.runs ?? []} />
         <Flex align="center" gap="3" className="shrink-0">
@@ -239,51 +229,6 @@ function ScoutRow({
           <ScoutConfigForm config={config} onUpdate={onUpdate} />
         </Box>
       ) : null}
-    </Flex>
-  );
-}
-
-function ScoutRowStats({
-  config,
-  rollup,
-  state,
-  runningRun,
-}: {
-  config: ScoutConfig;
-  rollup: ScoutRollup | undefined;
-  state: string;
-  runningRun: ScoutRun | null;
-}) {
-  const parts: string[] = [];
-  if (rollup && rollup.runCount > 0) {
-    parts.push(`${rollup.runCount} runs`);
-    parts.push(`${rollup.completedCount} ok / ${rollup.failedCount} failed`);
-    parts.push(
-      `${rollup.emittedCount} signal${rollup.emittedCount === 1 ? "" : "s"} emitted`,
-    );
-  }
-
-  return (
-    <Flex align="center" gap="2" className="text-[11.5px] text-gray-10">
-      {state === "running" && runningRun ? (
-        <Text className="text-(--blue-11) text-[11.5px]">running now</Text>
-      ) : state === "stuck" ? (
-        <Text className="text-(--red-11) text-[11.5px]">
-          running past the deadline – may be stuck
-        </Text>
-      ) : config.last_run_at ? (
-        <Flex align="center" gap="1">
-          <Text className="text-[11.5px] text-gray-10">last ran</Text>
-          <RelativeTimestamp timestamp={config.last_run_at} />
-        </Flex>
-      ) : (
-        <Text className="text-[11.5px] text-gray-10">never run</Text>
-      )}
-      {parts.length > 0 && (
-        <Text className="text-[11.5px] text-gray-10">
-          · {parts.join(" · ")}
-        </Text>
-      )}
     </Flex>
   );
 }
