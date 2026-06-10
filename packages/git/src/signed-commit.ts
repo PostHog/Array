@@ -814,6 +814,16 @@ export async function createSignedCommit(
 
   const changes = await buildFileChanges(ctx, tip);
   if (changes.additions.length === 0 && changes.deletions.length === 0) {
+    // The staged tree already equals the branch tip. If the index differs from HEAD there ARE
+    // staged changes — they're just already present on `branch` — so this is an idempotent
+    // no-op, not a "forgot to stage" error. Returning success stops the caller from retrying
+    // `git add` against a branch that already has the content.
+    const hasStagedChanges =
+      (await runGit(["diff", "--cached", "--quiet", "HEAD"], ctx.cwd))
+        .exitCode !== 0;
+    if (hasStagedChanges) {
+      return { branch, commits: [] };
+    }
     throw new Error(
       "No staged changes to commit. Stage files with `git add` first (or pass `paths`).",
     );

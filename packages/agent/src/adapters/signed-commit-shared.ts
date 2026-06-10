@@ -139,6 +139,17 @@ async function runSignedTool<A>(
 ): Promise<SignedCommitToolResult> {
   try {
     const result = await op(ctx, args);
+    if (result.commits.length === 0) {
+      // Staged content already present on the branch — idempotent no-op, not a failure.
+      return {
+        content: [
+          {
+            type: "text",
+            text: `${result.branch} already contains the staged changes — nothing to commit.`,
+          },
+        ],
+      };
+    }
     const list = result.commits.map((c) => `- ${c.sha} ${c.url}`).join("\n");
     return { content: [{ type: "text", text: `${lead(result)}:\n${list}` }] };
   } catch (err) {
