@@ -147,6 +147,8 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
         </button>
       </Flex>
 
+      <FleetOverviewChatCta />
+
       {/* Bounded to roughly 10 rows; larger fleets scroll within the section. */}
       <div className="max-h-[710px] overflow-y-auto">
         <Flex direction="column" gap="2">
@@ -160,8 +162,6 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
           ))}
         </Flex>
       </div>
-
-      <FleetOverviewChatCta />
 
       <Flex direction="column" gap="1">
         <Text className="text-[12px] text-gray-10">
