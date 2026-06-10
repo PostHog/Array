@@ -1,4 +1,8 @@
-import { ArrowLeftIcon, CompassIcon } from "@phosphor-icons/react";
+import {
+  ArrowLeftIcon,
+  ArrowSquareOutIcon,
+  CompassIcon,
+} from "@phosphor-icons/react";
 import type { ScoutRun } from "@posthog/api-client/posthog-client";
 import {
   computeScoutRollups,
@@ -18,6 +22,7 @@ import {
 } from "@posthog/core/scouts/scoutRunsWindow";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
+import { skillUrl } from "@posthog/ui/utils/posthogLinks";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -92,6 +97,7 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
   }, [scoutRuns]);
 
   const latestVersion = scoutRuns[0]?.skill_version;
+  const cloudSkillUrl = skillUrl(skillName);
   const state = config
     ? deriveScoutRowState(config, rollup, new Date())
     : "disabled";
@@ -121,7 +127,22 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
             <Text className="text-[12px] text-gray-10">v{latestVersion}</Text>
           ) : null}
         </Flex>
-        <Text className="font-mono text-[11px] text-gray-10">{skillName}</Text>
+        <Flex align="center" gap="3">
+          <Text className="font-mono text-[11px] text-gray-10">
+            {skillName}
+          </Text>
+          {cloudSkillUrl ? (
+            <a
+              href={cloudSkillUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-[11px] text-accent-11 no-underline hover:text-accent-12"
+            >
+              View skill in PostHog
+              <ArrowSquareOutIcon size={11} />
+            </a>
+          ) : null}
+        </Flex>
       </Flex>
 
       <div className="min-h-0 flex-1 overflow-auto">
@@ -255,10 +276,10 @@ function ScoutRunListItem({
           <span className="flex-1" />
           {emitted > 0 ? (
             <Badge variant="soft" color="iris" size="1" className="text-[11px]">
-              {emitted} signal{emitted === 1 ? "" : "s"}
+              {emitted} signal{emitted === 1 ? "" : "s"} emitted
             </Badge>
           ) : status === "completed" ? (
-            <Text className="text-[11.5px] text-gray-9">quiet</Text>
+            <Text className="text-[11.5px] text-gray-9">0 signals emitted</Text>
           ) : null}
         </Flex>
         {run.summary ? (

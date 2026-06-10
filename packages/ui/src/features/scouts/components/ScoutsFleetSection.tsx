@@ -233,9 +233,7 @@ function ScoutRowStats({
     parts.push(`${rollup.runCount} runs`);
     parts.push(`${rollup.completedCount} ok / ${rollup.failedCount} failed`);
     parts.push(
-      rollup.emittedCount > 0
-        ? `${rollup.emittedCount} signal${rollup.emittedCount === 1 ? "" : "s"}`
-        : "0 signals (quiet)",
+      `${rollup.emittedCount} signal${rollup.emittedCount === 1 ? "" : "s"} emitted`,
     );
   }
 
