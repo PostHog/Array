@@ -132,6 +132,8 @@ export interface InboxReportActionProperties {
   task_section?: "research" | "implementation";
   has_question?: boolean;
   question_text?: string;
+  has_feedback?: boolean;
+  feedback_text?: string;
   suggested_reviewer_login?: string;
   suggested_reviewer_uuid?: string;
 }
