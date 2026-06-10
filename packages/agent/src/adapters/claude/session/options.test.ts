@@ -74,6 +74,10 @@ describe("buildSessionOptions", () => {
   describe("CLAUDE_CODE_EXECUTABLE", () => {
     const originalClaudeExecutable = process.env.CLAUDE_CODE_EXECUTABLE;
 
+    beforeEach(() => {
+      delete process.env.CLAUDE_CODE_EXECUTABLE;
+    });
+
     afterEach(() => {
       if (originalClaudeExecutable === undefined) {
         delete process.env.CLAUDE_CODE_EXECUTABLE;
@@ -85,20 +89,36 @@ describe("buildSessionOptions", () => {
     it.each([
       {
         executablePath: "/tmp/claude",
+        expectedPath: "/tmp/claude",
         expectedExecutable: undefined,
         name: "does not force node when Claude executable is a native binary",
       },
       {
         executablePath: "/tmp/cli.js",
+        expectedPath: "/tmp/cli.js",
         expectedExecutable: "node",
         name: "uses node when Claude executable is the legacy JavaScript CLI",
       },
-    ])("$name", ({ executablePath, expectedExecutable }) => {
-      process.env.CLAUDE_CODE_EXECUTABLE = executablePath;
+      {
+        executablePath: undefined,
+        expectedPath: undefined,
+        expectedExecutable: undefined,
+        name: "leaves executable and path unset when CLAUDE_CODE_EXECUTABLE is missing",
+      },
+      {
+        executablePath: "",
+        expectedPath: undefined,
+        expectedExecutable: undefined,
+        name: "leaves executable and path unset when CLAUDE_CODE_EXECUTABLE is empty",
+      },
+    ])("$name", ({ executablePath, expectedPath, expectedExecutable }) => {
+      if (executablePath !== undefined) {
+        process.env.CLAUDE_CODE_EXECUTABLE = executablePath;
+      }
 
       const options = buildSessionOptions(makeParams());
 
-      expect(options.pathToClaudeCodeExecutable).toBe(executablePath);
+      expect(options.pathToClaudeCodeExecutable).toBe(expectedPath);
       expect(options.executable).toBe(expectedExecutable);
     });
   });
