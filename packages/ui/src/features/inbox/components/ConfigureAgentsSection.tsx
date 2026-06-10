@@ -108,7 +108,7 @@ export function ConfigureAgentsSection() {
 
       <Subsection
         title="Scouts"
-        description="Scheduled agents that sweep this project on a cadence and emit findings to your inbox. A quiet run is the healthy outcome – it means the scout looked and found nothing worth your attention."
+        description="Scheduled agents that sweep this project on a cadence and emit findings to your inbox."
       >
         <ScoutsFleetSection />
       </Subsection>

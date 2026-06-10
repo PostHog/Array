@@ -1,8 +1,4 @@
-import {
-  ArrowLeftIcon,
-  ArrowSquareOutIcon,
-  CompassIcon,
-} from "@phosphor-icons/react";
+import { ArrowLeftIcon, CompassIcon } from "@phosphor-icons/react";
 import type { ScoutRun } from "@posthog/api-client/posthog-client";
 import {
   computeScoutRollups,
@@ -22,20 +18,13 @@ import {
 } from "@posthog/core/scouts/scoutRunsWindow";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
-import { skillUrl } from "@posthog/ui/utils/posthogLinks";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
 import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
-import {
-  DryRunBadge,
-  deriveScoutRowState,
-  ScoutOriginBadge,
-  ScoutStatusDot,
-} from "./ScoutBadges";
-import { ScoutConfigControls } from "./ScoutConfigControls";
+import { ScoutRowCard } from "./ScoutRowCard";
 
 const FILTERS: { value: ScoutRunFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -96,12 +85,6 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
     return counts;
   }, [scoutRuns]);
 
-  const latestVersion = scoutRuns[0]?.skill_version;
-  const cloudSkillUrl = skillUrl(skillName);
-  const state = config
-    ? deriveScoutRowState(config, rollup, new Date())
-    : "disabled";
-
   return (
     <Flex direction="column" className="h-full min-h-0">
       <Flex
@@ -116,63 +99,21 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
           <ArrowLeftIcon size={12} />
           Agents
         </Link>
-        <Flex align="center" gap="3" wrap="wrap">
-          <ScoutStatusDot state={state} />
-          <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
-            {displayName}
-          </Text>
-          <ScoutOriginBadge skillName={skillName} />
-          {config ? <DryRunBadge config={config} /> : null}
-          {latestVersion !== undefined ? (
-            <Text className="text-[12px] text-gray-10">v{latestVersion}</Text>
-          ) : null}
-        </Flex>
-        <Flex align="center" gap="3">
-          <Text className="font-mono text-[11px] text-gray-10">
-            {skillName}
-          </Text>
-          {cloudSkillUrl ? (
-            <a
-              href={cloudSkillUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-[11px] text-accent-11 no-underline hover:text-accent-12"
-            >
-              View skill in PostHog
-              <ArrowSquareOutIcon size={11} />
-            </a>
-          ) : null}
-        </Flex>
+        <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
+          {displayName}
+        </Text>
       </Flex>
 
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto max-w-4xl px-6 py-6">
           <Flex direction="column" gap="5">
             {config ? (
-              <Flex
-                align="center"
-                justify="between"
-                gap="4"
-                wrap="wrap"
-                className="rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-4 py-3"
-              >
-                <Flex direction="column" gap="1" className="min-w-0">
-                  <Text className="font-medium text-[13px] text-gray-12">
-                    Configuration
-                  </Text>
-                  <Text className="text-[11.5px] text-gray-10">
-                    {config.last_run_at ? (
-                      <>
-                        Last dispatched{" "}
-                        <RelativeTimestamp timestamp={config.last_run_at} />
-                      </>
-                    ) : (
-                      "Never dispatched"
-                    )}
-                  </Text>
-                </Flex>
-                <ScoutConfigControls config={config} onUpdate={updateConfig} />
-              </Flex>
+              <ScoutRowCard
+                config={config}
+                rollup={rollup}
+                onUpdate={updateConfig}
+                linkToDetail={false}
+              />
             ) : (
               <Text className="text-[12.5px] text-gray-11">
                 No config found for this scout on the current project.
