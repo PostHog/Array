@@ -47,8 +47,9 @@ export function setZoom(window: ZoomableWindow, level: number): void {
   log.info("zoom set", { level: next });
 }
 
-// Adjust zoom by N steps and persist.
+// Adjust zoom by N steps and persist. Baseline comes from the persisted store,
+// not the live webContents, which is reset to 0 during reloads.
 export function adjustZoom(window: ZoomableWindow, steps: number): void {
   if (window.isDestroyed()) return;
-  setZoom(window, window.webContents.getZoomLevel() + steps * ZOOM_STEP);
+  setZoom(window, getSavedZoomLevel() + steps * ZOOM_STEP);
 }
