@@ -18,6 +18,8 @@ import {
 } from "@posthog/core/inbox/identifiers";
 import { selectModelFromOptions } from "@posthog/core/inbox/reportTaskCreation";
 import {
+  GITHUB_CONNECT_CLIENT as INTEGRATIONS_GITHUB_CONNECT_CLIENT,
+  type GithubConnectClient as IntegrationsGithubConnectClient,
   REPOSITORIES_CLIENT,
   REPOSITORIES_SERVICE,
   type RepositoriesClient,
@@ -52,7 +54,10 @@ import {
   type FileWatcherClient,
 } from "@posthog/ui/features/file-watcher/identifiers";
 import { GIT_CACHE_KEY_PROVIDER } from "@posthog/ui/features/git-interaction/gitCacheProvider";
-import { UiRepositoriesClient } from "@posthog/ui/features/integrations/integrationsClientImpl";
+import {
+  UiGithubConnectClient,
+  UiRepositoriesClient,
+} from "@posthog/ui/features/integrations/integrationsClientImpl";
 import { NAVIGATION_TASK_BINDER } from "@posthog/ui/features/navigation/taskBinder";
 import { navigationTaskBinder } from "@posthog/ui/features/navigation/taskBinderImpl";
 import {
@@ -134,6 +139,9 @@ container
   .toConstantValue(new OnboardingGithubConnectClient());
 
 // integrations
+container
+  .bind<IntegrationsGithubConnectClient>(INTEGRATIONS_GITHUB_CONNECT_CLIENT)
+  .toConstantValue(new UiGithubConnectClient());
 container
   .bind<RepositoriesClient>(REPOSITORIES_CLIENT)
   .toConstantValue(new UiRepositoriesClient());
