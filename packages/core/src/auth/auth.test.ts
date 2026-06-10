@@ -305,6 +305,66 @@ describe("AuthService", () => {
     );
   });
 
+  it("completes bootstrap anonymously when the stored-session restore hangs", async () => {
+    vi.useFakeTimers();
+    try {
+      seedStoredSession({ selectedProjectId: 42 });
+      stubAuthFetch();
+      // Half-open socket: the refresh never resolves or rejects.
+      oauthFlow.refreshToken.mockReturnValue(new Promise<never>(() => {}));
+
+      const initPromise = service.initialize();
+      await vi.advanceTimersByTimeAsync(20_001);
+      await initPromise;
+
+      expect(service.getState()).toMatchObject({
+        status: "anonymous",
+        bootstrapComplete: true,
+        cloudRegion: "us",
+        currentProjectId: 42,
+      });
+      expect(sessionPort.getCurrent()).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("upgrades to authenticated when the slow restore lands after the deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      seedStoredSession({ selectedProjectId: 42 });
+      stubAuthFetch();
+      let resolveRefresh!: (value: unknown) => void;
+      oauthFlow.refreshToken.mockReturnValue(
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+      );
+
+      const initPromise = service.initialize();
+      await vi.advanceTimersByTimeAsync(20_001);
+      await initPromise;
+
+      expect(service.getState().status).toBe("anonymous");
+
+      resolveRefresh(
+        mockTokenResponse({
+          accessToken: "late-access-token",
+          refreshToken: "late-refresh-token",
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(service.getState()).toMatchObject({
+        status: "authenticated",
+        bootstrapComplete: true,
+        currentProjectId: 42,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("forces a token refresh when explicitly requested", async () => {
     oauthFlow.startFlow.mockResolvedValue(
       mockTokenResponse({
