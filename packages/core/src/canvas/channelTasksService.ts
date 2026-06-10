@@ -1,19 +1,15 @@
-import type { AuthService } from "@posthog/core/auth/auth";
-import { AUTH_SERVICE } from "@posthog/core/auth/auth.module";
 import { inject, injectable } from "inversify";
 import type { ChannelTaskRecord } from "./channelTaskSchemas";
+import {
+  DESKTOP_FS_CLIENT,
+  type DesktopFsClient,
+  type FsEntryBase,
+} from "./desktopFsClient";
 
 const TASK_TYPE = "task";
 const HOME_FOLDER = "Unfiled/Tasks";
-const MAX_PAGES = 50;
 
-interface FsEntry {
-  id: string;
-  path: string;
-  type?: string;
-  ref?: string | null;
-  created_at?: string;
-}
+type FsEntry = FsEntryBase;
 
 /**
  * Tracks which tasks are filed to a channel by writing a `task` row to the
@@ -25,43 +21,9 @@ interface FsEntry {
 @injectable()
 export class ChannelTasksService {
   constructor(
-    @inject(AUTH_SERVICE)
-    private readonly authService: AuthService,
+    @inject(DESKTOP_FS_CLIENT)
+    private readonly fs: DesktopFsClient,
   ) {}
-
-  private async fsFetch(suffix: string, init?: RequestInit): Promise<Response> {
-    const { apiHost } = await this.authService.getValidAccessToken();
-    const projectId = this.authService.getState().currentProjectId;
-    if (projectId == null) throw new Error("No PostHog project selected");
-    const url = `${apiHost}/api/projects/${projectId}/desktop_file_system/${suffix}`;
-    return this.authService.authenticatedFetch(fetch, url, init);
-  }
-
-  private async listUnderParent(parentPath: string): Promise<FsEntry[]> {
-    const all: FsEntry[] = [];
-    const query = `?parent=${encodeURIComponent(parentPath)}&type=${TASK_TYPE}`;
-    let suffix = query;
-    for (let i = 0; i < MAX_PAGES; i++) {
-      const res = await this.fsFetch(suffix);
-      if (!res.ok)
-        throw new Error(`Failed to list channel tasks (${res.status})`);
-      const page = (await res.json()) as {
-        next: string | null;
-        results: FsEntry[];
-      };
-      all.push(...page.results);
-      if (!page.next) return all;
-      suffix = new URL(page.next).search;
-    }
-    return all;
-  }
-
-  private async getEntry(id: string): Promise<FsEntry | null> {
-    const res = await this.fsFetch(`${encodeURIComponent(id)}/`);
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`Failed to load channel task (${res.status})`);
-    return (await res.json()) as FsEntry;
-  }
 
   async list(channelId: string): Promise<ChannelTaskRecord[]> {
     const channelPath = await this.channelPath(channelId);
@@ -115,8 +77,27 @@ export class ChannelTasksService {
     return toRecord(created, input.channelId);
   }
 
+  async unfile(id: string): Promise<void> {
+    const res = await this.fs.fetch(`${encodeURIComponent(id)}/`, {
+      method: "DELETE",
+    });
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Failed to unfile task (${res.status})`);
+    }
+  }
+
+  private async listUnderParent(parentPath: string): Promise<FsEntry[]> {
+    const res = await this.fs.fetch(
+      `?parent=${encodeURIComponent(parentPath)}&type=${TASK_TYPE}`,
+    );
+    if (!res.ok)
+      throw new Error(`Failed to list channel tasks (${res.status})`);
+    const page = (await res.json()) as { results: FsEntry[] };
+    return page.results;
+  }
+
   private async listByRef(taskId: string): Promise<FsEntry[]> {
-    const res = await this.fsFetch(
+    const res = await this.fs.fetch(
       `?type=${TASK_TYPE}&ref=${encodeURIComponent(taskId)}`,
     );
     if (!res.ok) throw new Error(`Failed to list task rows (${res.status})`);
@@ -125,7 +106,7 @@ export class ChannelTasksService {
   }
 
   private async createRow(path: string, taskId: string): Promise<FsEntry> {
-    const res = await this.fsFetch("", {
+    const res = await this.fs.fetch("", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -140,7 +121,7 @@ export class ChannelTasksService {
   }
 
   private async moveRow(id: string, newPath: string): Promise<FsEntry> {
-    const res = await this.fsFetch(`${encodeURIComponent(id)}/move/`, {
+    const res = await this.fs.fetch(`${encodeURIComponent(id)}/move/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ new_path: newPath }),
@@ -149,17 +130,8 @@ export class ChannelTasksService {
     return (await res.json()) as FsEntry;
   }
 
-  async unfile(id: string): Promise<void> {
-    const res = await this.fsFetch(`${encodeURIComponent(id)}/`, {
-      method: "DELETE",
-    });
-    if (!res.ok && res.status !== 404) {
-      throw new Error(`Failed to unfile task (${res.status})`);
-    }
-  }
-
   private async channelPath(channelId: string): Promise<string> {
-    const entry = await this.getEntry(channelId);
+    const entry = await this.fs.getEntry<FsEntry>(channelId, "channel");
     if (!entry) throw new Error("Channel not found");
     return entry.path;
   }
