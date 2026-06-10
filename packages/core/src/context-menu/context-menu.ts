@@ -116,9 +116,27 @@ export class ContextMenuService {
       isSuspended,
       isInCommandCenter,
       hasEmptyCommandCenterCell,
+      channels,
     } = input;
     const { apps, lastUsedAppId } = await this.getExternalAppsData();
     const hasPath = worktreePath || folderPath;
+    const fileToItems: MenuItemDef<TaskAction>[] =
+      channels && channels.length > 0
+        ? [
+            this.separator(),
+            {
+              type: "submenu",
+              label: "File to…",
+              items: channels.map((c) => ({
+                label: c.name,
+                action: {
+                  type: "file-to-channel" as const,
+                  channelId: c.id,
+                },
+              })),
+            },
+          ]
+        : [];
 
     return this.showMenu<TaskAction>([
       this.item(isPinned ? "Unpin" : "Pin", { type: "pin" }),
@@ -147,6 +165,7 @@ export class ContextMenuService {
             ),
           ]
         : []),
+      ...fileToItems,
       this.separator(),
       this.item("Archive", { type: "archive" }),
       this.item(

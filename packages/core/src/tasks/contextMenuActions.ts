@@ -12,6 +12,7 @@ export type TaskContextMenuIntent =
   | { type: "archive-prior" }
   | { type: "delete" }
   | { type: "add-to-command-center" }
+  | { type: "file-to-channel"; channelId: string }
   | { type: "external-app"; action: ExternalAppAction };
 
 export function resolveTaskContextMenuIntent(
@@ -33,6 +34,8 @@ export function resolveTaskContextMenuIntent(
       return { type: "delete" };
     case "add-to-command-center":
       return { type: "add-to-command-center" };
+    case "file-to-channel":
+      return { type: "file-to-channel", channelId: action.channelId };
     case "external-app":
       return { type: "external-app", action: action.action };
   }

@@ -1,7 +1,12 @@
 import { ContainerModule } from "inversify";
+import { ChannelTasksService } from "./channelTasksService";
 import { DashboardQueryService } from "./dashboardQueryService";
 import { DashboardsService } from "./dashboardsService";
-import { DASHBOARD_QUERY_SERVICE, DASHBOARDS_SERVICE } from "./identifiers";
+import {
+  CHANNEL_TASKS_SERVICE,
+  DASHBOARD_QUERY_SERVICE,
+  DASHBOARDS_SERVICE,
+} from "./identifiers";
 
 // Host-agnostic canvas services (dashboards + their HogQL refresh). They only
 // need AuthService + fetch, so they live in @posthog/core and any host (desktop,
@@ -12,4 +17,7 @@ export const canvasCoreModule = new ContainerModule(({ bind }) => {
 
   bind(DashboardsService).toSelf().inSingletonScope();
   bind(DASHBOARDS_SERVICE).toService(DashboardsService);
+
+  bind(ChannelTasksService).toSelf().inSingletonScope();
+  bind(CHANNEL_TASKS_SERVICE).toService(ChannelTasksService);
 });

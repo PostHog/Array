@@ -1,13 +1,11 @@
 import {
-  CheckCircleIcon,
-  CircleDashedIcon,
-  CircleIcon,
+  CodeIcon,
   DotsThreeIcon,
+  FileIcon,
+  FolderIcon,
   PencilSimpleIcon,
   PlusIcon,
-  RecordIcon,
   TrashIcon,
-  XCircleIcon,
 } from "@phosphor-icons/react";
 import {
   Badge,
@@ -15,6 +13,13 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
   cn,
   DropdownMenu,
   DropdownMenuContent,
@@ -29,12 +34,12 @@ import {
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
-  useChannelTaskIds,
-  useChannelTasksStore,
-} from "@posthog/ui/features/canvas/stores/websiteTasksStore";
+  useChannelTaskMutations,
+  useChannelTasks,
+} from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { toast } from "@posthog/ui/primitives/toast";
-import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
+import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { hostClient } from "../hostClient";
@@ -71,27 +76,6 @@ function NavButton({
   );
 }
 
-// Dummy task-status filters (no behaviour yet) for the channel's Tasks group.
-const SESSION_STATUSES: { label: string; icon: ReactNode }[] = [
-  {
-    label: "Backlog",
-    icon: <CircleDashedIcon size={14} className="text-gray-9" />,
-  },
-  { label: "Todo", icon: <CircleIcon size={14} className="text-gray-9" /> },
-  {
-    label: "Needs Review",
-    icon: <RecordIcon size={14} weight="fill" className="text-orange-9" />,
-  },
-  {
-    label: "Done",
-    icon: <CheckCircleIcon size={14} weight="fill" className="text-violet-9" />,
-  },
-  {
-    label: "Cancelled",
-    icon: <XCircleIcon size={14} weight="fill" className="text-gray-9" />,
-  },
-];
-
 // Hover-revealed "..." menu on a channel header: rename or delete the channel.
 function ChannelMenu({ channel }: { channel: Channel }) {
   const [open, setOpen] = useState(false);
@@ -99,25 +83,27 @@ function ChannelMenu({ channel }: { channel: Channel }) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { deleteChannel, isDeleting } = useChannelMutations();
-  const removeChannel = useChannelTasksStore((s) => s.removeChannel);
 
   const onDelete = async () => {
     try {
-      // Delete the channel's dashboards first: they're separate desktop-FS rows
-      // (type "dashboard"), and the folder delete may not cascade our custom
-      // type, which would orphan them. Best-effort — a failed child shouldn't
-      // block removing the channel.
-      const dashboards = await hostClient().dashboards.list.query({
-        channelId: channel.id,
-      });
-      await Promise.allSettled(
-        dashboards.map((d) =>
+      // Delete the channel's dashboards + filed tasks first: they're separate
+      // desktop-FS rows under custom types, and the folder delete may not
+      // cascade them, which would orphan the rows. Best-effort — a failed
+      // child shouldn't block removing the channel.
+      const [dashboards, channelTasks] = await Promise.all([
+        hostClient().dashboards.list.query({ channelId: channel.id }),
+        hostClient().channelTasks.list.query({ channelId: channel.id }),
+      ]);
+      await Promise.allSettled([
+        ...dashboards.map((d) =>
           hostClient().dashboards.delete.mutate({ id: d.id }),
         ),
-      );
+        ...channelTasks.map((t) =>
+          hostClient().channelTasks.unfile.mutate({ id: t.id }),
+        ),
+      ]);
 
       await deleteChannel(channel.id);
-      removeChannel(channel.id);
       // If we're inside the channel being deleted, fall back to the index.
       if (pathname.startsWith(`/website/${channel.id}`)) {
         void navigate({ to: "/website" });
@@ -179,11 +165,88 @@ function ChannelMenu({ channel }: { channel: Channel }) {
   );
 }
 
-function ChannelSection({ channel }: { channel: Channel }) {
+// Right-click "File to..." submenu on a task row. Files the task to another
+// channel by creating a `channel-task` FS row under that folder.
+function TaskNavRow({
+  channelId,
+  taskId,
+  title,
+  active,
+  onClick,
+  channels,
+}: {
+  channelId: string;
+  taskId: string;
+  title: string;
+  active: boolean;
+  onClick: () => void;
+  channels: Channel[];
+}) {
+  const { fileTask } = useChannelTaskMutations();
+
+  const onFileTo = async (targetChannelId: string) => {
+    try {
+      await fileTask(targetChannelId, taskId);
+    } catch (error) {
+      toast.error("Couldn't file task", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger
+        render={
+          <Box>
+            <NavButton
+              label={title}
+              icon={<CodeIcon size={14} className="text-gray-9" />}
+              active={active}
+              onClick={onClick}
+            />
+          </Box>
+        }
+      />
+      <ContextMenuContent>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <FolderIcon size={14} />
+            File to…
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            {channels.filter((c) => c.id !== channelId).length === 0 ? (
+              <ContextMenuItem disabled>No other channels</ContextMenuItem>
+            ) : (
+              channels
+                .filter((c) => c.id !== channelId)
+                .map((c) => (
+                  <ContextMenuItem
+                    key={c.id}
+                    onClick={() => void onFileTo(c.id)}
+                  >
+                    {c.name}
+                  </ContextMenuItem>
+                ))
+            )}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+function ChannelSection({
+  channel,
+  channels,
+}: {
+  channel: Channel;
+  channels: Channel[];
+}) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { data: tasks } = useTasks();
-  const taskIds = useChannelTaskIds(channel.id);
+  const { tasks: filedTasks } = useChannelTasks(channel.id);
   const base = `/website/${channel.id}`;
 
   return (
@@ -194,6 +257,7 @@ function ChannelSection({ channel }: { channel: Channel }) {
           <Flex direction="column" gap="1" pt="1" pl="3">
             <NavButton
               label="Dashboards"
+              icon={<FileIcon size={14} className="text-gray-9" />}
               active={
                 pathname === base || pathname.startsWith(`${base}/dashboards`)
               }
@@ -204,47 +268,26 @@ function ChannelSection({ channel }: { channel: Channel }) {
                 })
               }
             />
-            <Collapsible variant="folder" defaultOpen>
-              <CollapsibleTrigger>Tasks</CollapsibleTrigger>
-              <CollapsibleContent>
-                <Flex direction="column" gap="1" pt="1" pl="3">
-                  <NavButton
-                    label="New task"
-                    icon={<PlusIcon size={14} className="text-gray-9" />}
-                    active={pathname === `${base}/new`}
-                    onClick={() =>
-                      navigate({
-                        to: "/website/$channelId/new",
-                        params: { channelId: channel.id },
-                      })
-                    }
-                  />
-                  {SESSION_STATUSES.map((status) => (
-                    <NavButton
-                      key={status.label}
-                      label={status.label}
-                      icon={status.icon}
-                    />
-                  ))}
-                  {taskIds.map((taskId) => {
-                    const title = tasks?.find((t) => t.id === taskId)?.title;
-                    return (
-                      <NavButton
-                        key={taskId}
-                        label={title || "Untitled task"}
-                        active={pathname === `${base}/tasks/${taskId}`}
-                        onClick={() =>
-                          navigate({
-                            to: "/website/$channelId/tasks/$taskId",
-                            params: { channelId: channel.id, taskId },
-                          })
-                        }
-                      />
-                    );
-                  })}
-                </Flex>
-              </CollapsibleContent>
-            </Collapsible>
+            {filedTasks.map(({ taskId }) => {
+              const title =
+                tasks?.find((t) => t.id === taskId)?.title || "Untitled task";
+              return (
+                <TaskNavRow
+                  key={taskId}
+                  channelId={channel.id}
+                  taskId={taskId}
+                  title={title}
+                  active={pathname === `${base}/tasks/${taskId}`}
+                  onClick={() =>
+                    navigate({
+                      to: "/website/$channelId/tasks/$taskId",
+                      params: { channelId: channel.id, taskId },
+                    })
+                  }
+                  channels={channels}
+                />
+              );
+            })}
             <NavButton
               label="Settings"
               active={pathname.startsWith(`${base}/settings`)}
@@ -258,9 +301,27 @@ function ChannelSection({ channel }: { channel: Channel }) {
           </Flex>
         </CollapsibleContent>
       </Collapsible>
-      <Box className="absolute top-1 right-1">
+      <Flex gap="1" align="center" className="absolute top-1 right-1">
+        <Box className="opacity-0 transition-opacity group-hover/chan:opacity-100">
+          <Tooltip content="New task" side="top">
+            <IconButton
+              variant="ghost"
+              color="gray"
+              size="1"
+              aria-label={`New task in ${channel.name}`}
+              onClick={() =>
+                navigate({
+                  to: "/website/$channelId/new",
+                  params: { channelId: channel.id },
+                })
+              }
+            >
+              <PlusIcon size={14} weight="bold" />
+            </IconButton>
+          </Tooltip>
+        </Box>
         <ChannelMenu channel={channel} />
-      </Box>
+      </Flex>
     </Box>
   );
 }
@@ -285,7 +346,11 @@ export function ChannelsList() {
         )}
 
         {channels.map((channel) => (
-          <ChannelSection key={channel.id} channel={channel} />
+          <ChannelSection
+            key={channel.id}
+            channel={channel}
+            channels={channels}
+          />
         ))}
       </Flex>
 
