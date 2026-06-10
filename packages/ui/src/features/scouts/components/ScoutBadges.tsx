@@ -1,27 +1,37 @@
 import type { ScoutConfig } from "@posthog/api-client/posthog-client";
 import { getScoutOrigin } from "@posthog/core/scouts/scoutPresentation";
-import { Badge } from "@radix-ui/themes";
+import { Badge, Tooltip } from "@radix-ui/themes";
 
 export function ScoutOriginBadge({ skillName }: { skillName: string }) {
   const origin = getScoutOrigin(skillName);
   return (
-    <Badge
-      variant="soft"
-      color={origin === "canonical" ? "gray" : "iris"}
-      size="1"
-      className="text-[11px]"
+    <Tooltip
+      content={
+        origin === "canonical"
+          ? "Part of the standard scout fleet built and maintained by PostHog"
+          : "A scout your team created as a signals-scout-* skill in this project"
+      }
     >
-      {origin === "canonical" ? "Canonical" : "Custom"}
-    </Badge>
+      <Badge
+        variant="soft"
+        color={origin === "canonical" ? "gray" : "iris"}
+        size="1"
+        className="text-[11px]"
+      >
+        {origin === "canonical" ? "Canonical" : "Custom"}
+      </Badge>
+    </Tooltip>
   );
 }
 
 export function DryRunBadge({ config }: { config: ScoutConfig }) {
   if (config.emit) return null;
   return (
-    <Badge variant="soft" color="amber" size="1" className="text-[11px]">
-      Dry run
-    </Badge>
+    <Tooltip content="Runs on schedule but findings are not emitted to the Signals inbox">
+      <Badge variant="soft" color="amber" size="1" className="text-[11px]">
+        Dry run
+      </Badge>
+    </Tooltip>
   );
 }
 
