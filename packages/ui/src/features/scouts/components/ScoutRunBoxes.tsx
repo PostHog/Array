@@ -10,14 +10,16 @@ import { formatRelativeTimeLong } from "@posthog/shared";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 
+// Quiet is the common, healthy baseline so it recedes to gray; saturated
+// color only means something happened — iris payoff, red/amber trouble.
 const OUTCOME_BOX_CLASS: Record<ScoutRunOutcome, string> = {
   emitted: "bg-(--iris-9)",
-  quiet: "bg-(--green-7)",
+  quiet: "bg-(--gray-5)",
   error: "bg-(--red-9)",
   timed_out: "bg-(--amber-9)",
   running: "bg-(--blue-9) animate-pulse",
   stuck: "bg-(--red-9) animate-pulse",
-  queued: "bg-(--gray-6)",
+  queued: "border border-(--gray-7) bg-transparent",
   unknown: "bg-(--gray-6)",
 };
 
