@@ -1,4 +1,9 @@
-import { ArrowLeftIcon, CompassIcon } from "@phosphor-icons/react";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  CaretRightIcon,
+  CompassIcon,
+} from "@phosphor-icons/react";
 import type { ScoutRun } from "@posthog/api-client/posthog-client";
 import {
   computeScoutRollups,
@@ -16,6 +21,7 @@ import {
   SCOUT_RUNS_WINDOW_HOURS,
   scoutRunsWindowLabel,
 } from "@posthog/core/scouts/scoutRunsWindow";
+import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
@@ -198,6 +204,7 @@ function ScoutRunListItem({
   run: ScoutRun;
   skillSlug: string;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const now = new Date();
   const status = normalizeRunStatus(run.status);
   const failureKind = deriveRunFailureKind(run, now);
@@ -205,44 +212,71 @@ function ScoutRunListItem({
   const emitted = run.emitted_count ?? 0;
 
   return (
-    <Link
-      to="/code/agents/scouts/$skillName/runs/$runId"
-      params={{ skillName: skillSlug, runId: run.run_id }}
-      className="block rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-4 py-3 no-underline transition duration-150 hover:border-(--gray-6) hover:bg-(--gray-2)"
-    >
-      <Flex direction="column" gap="1.5">
-        <Flex align="center" gap="2" wrap="wrap">
-          <RunGlyph status={status} emitted={emitted} />
-          <RelativeTimestamp timestamp={run.started_at} />
-          {duration ? (
-            <Text className="text-[11.5px] text-gray-10">· {duration}</Text>
-          ) : null}
-          {failureKind ? (
-            <Text className="text-(--amber-11) text-[11.5px]">
-              · {failureKind === "timed_out" ? "timed out" : "failed"}
-            </Text>
-          ) : null}
-          <span className="flex-1" />
-          {emitted > 0 ? (
-            <Badge variant="soft" color="iris" size="1" className="text-[11px]">
-              {emitted} signal{emitted === 1 ? "" : "s"} emitted
-            </Badge>
-          ) : status === "completed" ? (
-            <Text className="text-[11.5px] text-gray-9">0 signals emitted</Text>
-          ) : null}
-        </Flex>
-        {run.summary ? (
-          <Text className="line-clamp-2 text-[12.5px] text-gray-11 leading-snug">
-            {run.summary}
-          </Text>
-        ) : status === "failed" ? (
-          <Text className="text-[12.5px] text-gray-10 italic leading-snug">
-            No summary – the run ended before writing its close-out. Open the
-            run for the task log.
+    <Box className="rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-4 py-3 transition duration-150 hover:border-(--gray-6)">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        className="flex w-full select-none items-center gap-2 text-left"
+      >
+        <CaretRightIcon
+          size={11}
+          className={`shrink-0 text-gray-9 transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
+        />
+        <RunGlyph status={status} emitted={emitted} />
+        <RelativeTimestamp timestamp={run.started_at} />
+        {duration ? (
+          <Text className="text-[11.5px] text-gray-10">· {duration}</Text>
+        ) : null}
+        {failureKind ? (
+          <Text className="text-(--amber-11) text-[11.5px]">
+            · {failureKind === "timed_out" ? "timed out" : "failed"}
           </Text>
         ) : null}
-      </Flex>
-    </Link>
+        <span className="flex-1" />
+        {emitted > 0 ? (
+          <Badge variant="soft" color="iris" size="1" className="text-[11px]">
+            {emitted} signal{emitted === 1 ? "" : "s"} emitted
+          </Badge>
+        ) : status === "completed" ? (
+          <Text className="text-[11.5px] text-gray-9">0 signals emitted</Text>
+        ) : null}
+      </button>
+      {run.summary ? (
+        <Box
+          className={`mt-1.5 text-pretty break-words text-[12.5px] text-gray-11 leading-snug [&_code]:text-[11px] [&_p:last-child]:mb-0 [&_p]:mb-1 [&_pre]:text-[11px] ${
+            expanded ? "" : "line-clamp-2"
+          }`}
+        >
+          <MarkdownRenderer content={run.summary} />
+        </Box>
+      ) : status === "failed" ? (
+        <Text className="mt-1.5 block text-[12.5px] text-gray-10 italic leading-snug">
+          No summary – the run ended before writing its close-out. Open the run
+          for the task log.
+        </Text>
+      ) : null}
+      {expanded ? (
+        <Flex
+          align="center"
+          gap="2"
+          mt="2"
+          pt="2"
+          className="border-t border-t-(--gray-5) text-[11px] text-gray-10"
+        >
+          <Text className="font-mono text-[11px]">{run.run_id}</Text>
+          <span className="flex-1" />
+          <Link
+            to="/code/agents/scouts/$skillName/runs/$runId"
+            params={{ skillName: skillSlug, runId: run.run_id }}
+            className="inline-flex shrink-0 items-center gap-1 text-[11px] text-accent-11 no-underline hover:text-accent-12"
+          >
+            View run
+            <ArrowRightIcon size={11} />
+          </Link>
+        </Flex>
+      ) : null}
+    </Box>
   );
 }
 
