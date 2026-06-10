@@ -11,17 +11,12 @@ import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ScoutConfigUpdate } from "../hooks/useScoutConfigMutations";
-import {
-  DryRunBadge,
-  deriveScoutRowState,
-  ScoutOriginBadge,
-  ScoutStatusDot,
-} from "./ScoutBadges";
+import { DryRunBadge, ScoutOriginBadge } from "./ScoutBadges";
 import { ScoutConfigForm, ScoutEnabledSwitch } from "./ScoutConfigControls";
 import { ScoutRunBoxes } from "./ScoutRunBoxes";
 
 /**
- * The one scout card: dot, name, badges, cadence, emitted count, run boxes,
+ * The one scout card: name, badges, cadence, emitted count, run boxes,
  * enable switch, and a gear that expands the settings form. Used both as the
  * fleet list row and as the header card on the scout detail screen, so the
  * two surfaces always look and behave the same.
@@ -37,18 +32,13 @@ export function ScoutRowCard({
   onUpdate: (configId: string, updates: ScoutConfigUpdate) => void;
   linkToDetail?: boolean;
 }) {
-  const now = new Date();
-  const state = deriveScoutRowState(config, rollup, now);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const cloudSkillUrl = skillUrl(config.skill_name);
 
   const title = (
-    <>
-      <ScoutStatusDot state={state} />
-      <Text className="truncate font-medium text-[13px] text-gray-12">
-        {prettifyScoutSkillName(config.skill_name)}
-      </Text>
-    </>
+    <Text className="truncate font-medium text-[13px] text-gray-12">
+      {prettifyScoutSkillName(config.skill_name)}
+    </Text>
   );
 
   return (

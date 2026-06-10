@@ -1,59 +1,6 @@
 import type { ScoutConfig } from "@posthog/api-client/posthog-client";
-import {
-  getScoutOrigin,
-  isRunStuck,
-  normalizeRunStatus,
-  type ScoutRollup,
-} from "@posthog/core/scouts/scoutPresentation";
-import { Badge, Tooltip } from "@radix-ui/themes";
-
-export type ScoutRowState = "ok" | "running" | "failing" | "stuck" | "disabled";
-
-export function deriveScoutRowState(
-  config: ScoutConfig,
-  rollup: ScoutRollup | undefined,
-  now: Date,
-): ScoutRowState {
-  if (!config.enabled) return "disabled";
-  if (rollup?.runningRun) {
-    return isRunStuck(rollup.runningRun, now) ? "stuck" : "running";
-  }
-  if (
-    rollup?.latestRun &&
-    normalizeRunStatus(rollup.latestRun.status) === "failed"
-  ) {
-    return "failing";
-  }
-  return "ok";
-}
-
-const ROW_STATE_DOT_CLASS: Record<ScoutRowState, string> = {
-  ok: "bg-(--green-9)",
-  running: "bg-(--blue-9) animate-pulse",
-  failing: "bg-(--amber-9)",
-  stuck: "bg-(--red-9)",
-  disabled: "bg-(--gray-7)",
-};
-
-const ROW_STATE_LABELS: Record<ScoutRowState, string> = {
-  ok: "Healthy – last run completed",
-  running: "Running now",
-  failing: "Last run failed",
-  stuck: "Running past the deadline – may be stuck",
-  disabled: "Disabled",
-};
-
-export function ScoutStatusDot({ state }: { state: ScoutRowState }) {
-  return (
-    <Tooltip content={ROW_STATE_LABELS[state]}>
-      <span
-        role="img"
-        className={`inline-block h-2 w-2 shrink-0 rounded-full ${ROW_STATE_DOT_CLASS[state]}`}
-        aria-label={ROW_STATE_LABELS[state]}
-      />
-    </Tooltip>
-  );
-}
+import { getScoutOrigin } from "@posthog/core/scouts/scoutPresentation";
+import { Badge } from "@radix-ui/themes";
 
 export function ScoutOriginBadge({ skillName }: { skillName: string }) {
   const origin = getScoutOrigin(skillName);
