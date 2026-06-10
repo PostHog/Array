@@ -82,6 +82,13 @@ export class ChannelTasksService {
     );
     if (existing) return existing;
 
+    // Seed an Unfiled/Tasks home row if this task has none. Tasks created before
+    // posthog's FileSystemSyncMixin landed have no home row; without one, the
+    // channel row would be the only row, and removing it from the channel would
+    // cascade into a soft-delete of the task itself. Idempotent: skipped once
+    // any task row exists.
+    await this.ensureHomeRow(input.taskId, input.taskTitle);
+
     const res = await this.fsFetch("", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -94,6 +101,32 @@ export class ChannelTasksService {
     });
     if (!res.ok) throw new Error(`Failed to file task (${res.status})`);
     return toRecord((await res.json()) as FsEntry, input.channelId);
+  }
+
+  private async ensureHomeRow(
+    taskId: string,
+    taskTitle: string,
+  ): Promise<void> {
+    const res = await this.fsFetch(
+      `?type=${TASK_TYPE}&ref=${encodeURIComponent(taskId)}`,
+    );
+    if (!res.ok)
+      throw new Error(`Failed to check task home row (${res.status})`);
+    const page = (await res.json()) as { results: FsEntry[] };
+    if (page.results.length > 0) return;
+
+    const create = await this.fsFetch("", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: `Unfiled/Tasks/${sanitizeSegment(taskTitle)}`,
+        type: TASK_TYPE,
+        ref: taskId,
+        href: `/tasks/${taskId}`,
+      }),
+    });
+    if (!create.ok)
+      throw new Error(`Failed to seed task home row (${create.status})`);
   }
 
   async unfile(id: string): Promise<void> {
