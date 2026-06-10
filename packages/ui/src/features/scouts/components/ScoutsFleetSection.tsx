@@ -15,6 +15,7 @@ import { useMemo, useState } from "react";
 import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
 import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
+import { ScoutHelperSkillLinks } from "./ScoutHelperSkillLinks";
 import { ScoutRowCard } from "./ScoutRowCard";
 
 /**
@@ -144,12 +145,15 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
         </Flex>
       </div>
 
-      <Text className="text-[12px] text-gray-10">
-        Run counts and emitted totals cover the last {SCOUT_RUNS_WINDOW_HOURS}{" "}
-        hours of fleet runs. New scouts are created as{" "}
-        <span className="font-mono text-[11px]">signals-scout-*</span> skills in
-        your PostHog project.
-      </Text>
+      <Flex direction="column" gap="1">
+        <Text className="text-[12px] text-gray-10">
+          Run counts and emitted totals cover the last {SCOUT_RUNS_WINDOW_HOURS}{" "}
+          hours of fleet runs. New scouts are created as{" "}
+          <span className="font-mono text-[11px]">signals-scout-*</span> skills
+          in your PostHog project.
+        </Text>
+        <ScoutHelperSkillLinks />
+      </Flex>
     </Flex>
   );
 }
@@ -175,6 +179,7 @@ function ScoutsEmptyState() {
         <span className="font-mono text-[11px]">signals-scout-*</span> skills in
         PostHog.
       </Text>
+      <ScoutHelperSkillLinks />
     </Flex>
   );
 }
