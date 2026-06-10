@@ -57,6 +57,7 @@ export interface IChannelTasksService {
   file(input: {
     channelId: string;
     taskId: string;
+    taskTitle: string;
   }): Promise<ChannelTaskRecord>;
   unfile(id: string): Promise<void>;
 }

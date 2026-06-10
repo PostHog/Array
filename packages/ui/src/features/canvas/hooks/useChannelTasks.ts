@@ -33,8 +33,8 @@ export function useChannelTaskMutations() {
   );
 
   return {
-    fileTask: (channelId: string, taskId: string) =>
-      file.mutateAsync({ channelId, taskId }),
+    fileTask: (channelId: string, taskId: string, taskTitle: string) =>
+      file.mutateAsync({ channelId, taskId, taskTitle }),
     unfileTask: (id: string) => unfile.mutateAsync({ id }),
     isFiling: file.isPending,
     isUnfiling: unfile.isPending,

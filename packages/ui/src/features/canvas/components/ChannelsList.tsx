@@ -6,6 +6,7 @@ import {
   PencilSimpleIcon,
   PlusIcon,
   TrashIcon,
+  XIcon,
 } from "@phosphor-icons/react";
 import {
   Badge,
@@ -16,6 +17,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
@@ -26,6 +28,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@posthog/quill";
+import type { Task } from "@posthog/shared/domain-types";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
 import {
@@ -33,11 +36,15 @@ import {
   useChannelMutations,
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import {
   useChannelTaskMutations,
   useChannelTasks,
 } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
+import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
+import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { toast } from "@posthog/ui/primitives/toast";
 import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
@@ -86,10 +93,10 @@ function ChannelMenu({ channel }: { channel: Channel }) {
 
   const onDelete = async () => {
     try {
-      // Delete the channel's dashboards + filed tasks first: they're separate
-      // desktop-FS rows under custom types, and the folder delete may not
-      // cascade them, which would orphan the rows. Best-effort — a failed
-      // child shouldn't block removing the channel.
+      // Unfile the channel's dashboards + filed tasks first. The folder delete
+      // would also cascade, but doing it explicitly via the typed endpoints
+      // surfaces failures clearly. Best-effort — a failed child shouldn't
+      // block removing the channel.
       const [dashboards, channelTasks] = await Promise.all([
         hostClient().dashboards.list.query({ channelId: channel.id }),
         hostClient().channelTasks.list.query({ channelId: channel.id }),
@@ -166,29 +173,79 @@ function ChannelMenu({ channel }: { channel: Channel }) {
 }
 
 // Right-click "File to..." submenu on a task row. Files the task to another
-// channel by creating a `channel-task` FS row under that folder.
+// channel by creating an extra `task` FS row under that folder.
 function TaskNavRow({
+  channelTaskId,
   channelId,
   taskId,
+  task,
   title,
   active,
   onClick,
   channels,
 }: {
+  channelTaskId: string;
   channelId: string;
   taskId: string;
+  task: Task | undefined;
   title: string;
   active: boolean;
   onClick: () => void;
   channels: Channel[];
 }) {
-  const { fileTask } = useChannelTaskMutations();
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { fileTask, unfileTask } = useChannelTaskMutations();
+  const taskData = useChannelTaskData(task);
+  const workspace = useWorkspace(taskId);
+  const workspaceMode =
+    workspace?.mode ??
+    (taskData?.taskRunEnvironment === "cloud" ? "cloud" : undefined);
+  const { prState, hasDiff } = useTaskPrStatus({
+    id: taskId,
+    cloudPrUrl: taskData?.cloudPrUrl ?? null,
+    taskRunEnvironment: taskData?.taskRunEnvironment ?? null,
+  });
+  const icon = taskData ? (
+    <TaskIcon
+      workspaceMode={workspaceMode}
+      isGenerating={taskData.isGenerating}
+      isUnread={taskData.isUnread}
+      isPinned={taskData.isPinned}
+      isSuspended={taskData.isSuspended}
+      needsPermission={taskData.needsPermission}
+      taskRunStatus={taskData.taskRunStatus}
+      originProduct={taskData.originProduct}
+      slackThreadUrl={taskData.slackThreadUrl}
+      prState={prState}
+      hasDiff={hasDiff}
+      size={14}
+    />
+  ) : (
+    <CodeIcon size={14} className="text-gray-9" />
+  );
 
   const onFileTo = async (targetChannelId: string) => {
     try {
-      await fileTask(targetChannelId, taskId);
+      await fileTask(targetChannelId, taskId, title);
     } catch (error) {
       toast.error("Couldn't file task", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const onRemove = async () => {
+    try {
+      await unfileTask(channelTaskId);
+      if (pathname === `/website/${channelId}/tasks/${taskId}`) {
+        void navigate({
+          to: "/website/$channelId",
+          params: { channelId },
+        });
+      }
+    } catch (error) {
+      toast.error("Couldn't remove task from channel", {
         description: error instanceof Error ? error.message : String(error),
       });
     }
@@ -201,7 +258,7 @@ function TaskNavRow({
           <Box>
             <NavButton
               label={title}
-              icon={<CodeIcon size={14} className="text-gray-9" />}
+              icon={icon}
               active={active}
               onClick={onClick}
             />
@@ -231,6 +288,11 @@ function TaskNavRow({
             )}
           </ContextMenuSubContent>
         </ContextMenuSub>
+        <ContextMenuSeparator />
+        <ContextMenuItem variant="destructive" onClick={() => void onRemove()}>
+          <XIcon size={14} />
+          Remove from channel
+        </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -268,14 +330,16 @@ function ChannelSection({
                 })
               }
             />
-            {filedTasks.map(({ taskId }) => {
-              const title =
-                tasks?.find((t) => t.id === taskId)?.title || "Untitled task";
+            {filedTasks.map(({ id: channelTaskId, taskId }) => {
+              const task = tasks?.find((t) => t.id === taskId);
+              const title = task?.title || "Untitled task";
               return (
                 <TaskNavRow
-                  key={taskId}
+                  key={channelTaskId}
+                  channelTaskId={channelTaskId}
                   channelId={channel.id}
                   taskId={taskId}
+                  task={task}
                   title={title}
                   active={pathname === `${base}/tasks/${taskId}`}
                   onClick={() =>

@@ -9,8 +9,8 @@ import { useCallback } from "react";
 
 // A channel's "New task" view. Reuses /code's TaskInput, but routes the created
 // task into the channel (/website/$channelId/tasks/$id) instead of /code, and
-// files the task to the channel by creating a `channel-task` row on the
-// project's desktop_file_system surface.
+// files the task to the channel by creating an extra `task` row under the
+// channel folder on the project's desktop_file_system surface.
 export function WebsiteNewTask({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -21,7 +21,7 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
       // Seed the detail cache so the destination route resolves instantly
       // (mirrors openTask), then file to the channel + navigate.
       queryClient.setQueryData(taskDetailQuery(task.id).queryKey, task);
-      void fileTask(channelId, task.id).catch((error: unknown) => {
+      void fileTask(channelId, task.id, task.title).catch((error: unknown) => {
         toast.error("Couldn't file task to channel", {
           description: error instanceof Error ? error.message : String(error),
         });

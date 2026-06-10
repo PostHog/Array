@@ -1,27 +1,25 @@
 import type { AuthService } from "@posthog/core/auth/auth";
 import { AUTH_SERVICE } from "@posthog/core/auth/auth.module";
 import { inject, injectable } from "inversify";
-import type {
-  ChannelTaskFileMeta,
-  ChannelTaskRecord,
-} from "./channelTaskSchemas";
+import type { ChannelTaskRecord } from "./channelTaskSchemas";
 
-const CHANNEL_TASK_TYPE = "channel-task";
+const TASK_TYPE = "task";
 const MAX_PAGES = 50;
 
 interface FsEntry {
   id: string;
   path: string;
   type?: string;
-  meta?: ChannelTaskFileMeta | null;
+  ref?: string | null;
   created_at?: string;
 }
 
 /**
- * Tracks which tasks have been filed to a channel by writing a `channel-task`
- * row to the project's desktop_file_system, nested under the channel folder.
- * The path's last segment is the taskId (stable); the title is resolved
- * separately by the renderer via useTasks.
+ * Tracks which tasks are filed to a channel by writing a `task` row to the
+ * project's desktop_file_system under the channel folder. The task's "home"
+ * row at Unfiled/Tasks/<title> is created by PostHog's FileSystemSyncMixin on
+ * task save; these rows are additional filings that posthog preserves via the
+ * remaining>0 check on delete.
  */
 @injectable()
 export class ChannelTasksService {
@@ -38,9 +36,10 @@ export class ChannelTasksService {
     return this.authService.authenticatedFetch(fetch, url, init);
   }
 
-  private async listAll(): Promise<FsEntry[]> {
+  private async listUnderParent(parentPath: string): Promise<FsEntry[]> {
     const all: FsEntry[] = [];
-    let suffix = "";
+    const query = `?parent=${encodeURIComponent(parentPath)}&type=${TASK_TYPE}`;
+    let suffix = query;
     for (let i = 0; i < MAX_PAGES; i++) {
       const res = await this.fsFetch(suffix);
       if (!res.ok)
@@ -64,18 +63,18 @@ export class ChannelTasksService {
   }
 
   async list(channelId: string): Promise<ChannelTaskRecord[]> {
-    const entries = await this.listAll();
+    const channelPath = await this.channelPath(channelId);
+    const entries = await this.listUnderParent(channelPath);
     return entries
-      .filter(
-        (e) => e.type === CHANNEL_TASK_TYPE && e.meta?.channelId === channelId,
-      )
-      .map((e) => toRecord(e))
+      .filter((e) => !!e.ref)
+      .map((e) => toRecord(e, channelId))
       .sort((a, b) => b.createdAt - a.createdAt);
   }
 
   async file(input: {
     channelId: string;
     taskId: string;
+    taskTitle: string;
   }): Promise<ChannelTaskRecord> {
     const channelPath = await this.channelPath(input.channelId);
     const existing = (await this.list(input.channelId)).find(
@@ -83,23 +82,18 @@ export class ChannelTasksService {
     );
     if (existing) return existing;
 
-    const now = Date.now();
-    const meta: ChannelTaskFileMeta = {
-      channelId: input.channelId,
-      taskId: input.taskId,
-      createdAt: now,
-    };
     const res = await this.fsFetch("", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        path: `${channelPath}/${sanitizeSegment(input.taskId)}`,
-        type: CHANNEL_TASK_TYPE,
-        meta,
+        path: `${channelPath}/${sanitizeSegment(input.taskTitle)}`,
+        type: TASK_TYPE,
+        ref: input.taskId,
+        href: `/tasks/${input.taskId}`,
       }),
     });
     if (!res.ok) throw new Error(`Failed to file task (${res.status})`);
-    return toRecord((await res.json()) as FsEntry);
+    return toRecord((await res.json()) as FsEntry, input.channelId);
   }
 
   async unfile(id: string): Promise<void> {
@@ -118,25 +112,18 @@ export class ChannelTasksService {
   }
 }
 
-function toRecord(entry: FsEntry): ChannelTaskRecord {
-  const meta = entry.meta ?? {};
-  const createdAt = meta.createdAt ?? toEpoch(entry.created_at);
+function toRecord(entry: FsEntry, channelId: string): ChannelTaskRecord {
   return {
     id: entry.id,
-    channelId: meta.channelId ?? "",
-    taskId: meta.taskId ?? lastSegment(entry.path),
-    createdAt,
+    channelId,
+    taskId: entry.ref ?? "",
+    createdAt: toEpoch(entry.created_at),
   };
 }
 
 function sanitizeSegment(name: string): string {
   const cleaned = name.replace(/\//g, " ").replace(/\s+/g, " ").trim();
-  return cleaned || "untitled-task";
-}
-
-function lastSegment(path: string): string {
-  const i = path.lastIndexOf("/");
-  return i === -1 ? path : path.slice(i + 1);
+  return cleaned || "Untitled";
 }
 
 function toEpoch(iso?: string): number {
