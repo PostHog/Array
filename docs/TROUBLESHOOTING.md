@@ -74,7 +74,7 @@ Then restart the app. This downloads the codex-acp binary to `apps/code/resource
 
 ## Database initialization failed (better-sqlite3)
 
-If you see either of these errors on startup:
+If you see any of these errors on startup:
 
 ```
 Database initialization failed Error: Could not locate the bindings file.
@@ -87,7 +87,14 @@ NODE_MODULE_VERSION 145. This version of Node.js requires
 NODE_MODULE_VERSION 123.
 ```
 
-The `better-sqlite3` native binary wasn't compiled for your Electron version. This commonly happens after a merge, branch switch or Electron upgrade because the postinstall rebuild can fail silently (`|| true`).
+```
+Unhandled rejection Error: Unexpected error found when calling "initialize"
+@postConstruct decorated method on class "DatabaseService"
+```
+
+The last one is the same failure wrapped by the DI container; the underlying cause (with the bindings paths it tried) is in `~/.posthog-code/logs-dev/main.log`.
+
+The `better-sqlite3` native binary wasn't compiled for your Electron version. This commonly happens after a merge, branch switch or Electron upgrade because the postinstall rebuild can fail silently (`|| true`). It also happens whenever the binary was last rebuilt for plain Node, for example to run the workspace-server DB tests (see "One binary, two ABIs" below).
 
 ### Fix
 
@@ -120,6 +127,35 @@ npx node-gyp rebuild --release \
 ```
 
 The ABI comes from the Electron headers (`--target` plus `--dist-url`), not your system Node, so the binary gets the right `NODE_MODULE_VERSION` even when the two differ. It lands at `node_modules/better-sqlite3/build/Release/better_sqlite3.node`. Restart the app.
+
+Alternatively, skip compiling entirely and download the official Electron prebuild (no toolchain needed):
+
+```bash
+ELECTRON_VERSION="$(node -p "require('./node_modules/electron/package.json').version")"
+cd node_modules/better-sqlite3
+rm -rf build prebuilds
+npx prebuild-install --runtime=electron --target="$ELECTRON_VERSION" --arch="$(node -p process.arch)"
+```
+
+### One binary, two ABIs (app vs tests)
+
+There is a single `better-sqlite3` binary in the repo but two runtimes that load it:
+
+- The Electron main process (`pnpm dev`, the packaged app) needs it compiled for **Electron's** ABI. The `apps/code` postinstall does this.
+- The workspace-server DB tests run under plain Node via vitest and need it compiled for **your system Node's** ABI.
+
+These ABIs differ, so the binary can only satisfy one side at a time and rebuilding for one breaks the other. The toggle is deliberate:
+
+```bash
+# Before running the workspace-server DB tests locally (CI does this in test.yml):
+node scripts/rebuild-better-sqlite3-node.mjs
+
+# Before running the app again, restore the Electron build:
+pnpm --filter code postinstall
+# (or any of the fixes above)
+```
+
+Symptoms map directly to the current state: the app failing with `DatabaseService` / `NODE_MODULE_VERSION` errors means the binary is in its Node state; `src/db/repositories/repositories.test.ts` failing with a `NODE_MODULE_VERSION` mismatch means it is in its Electron state. Note that `pnpm rebuild better-sqlite3` compiles for system Node, so it flips the binary to the test state even if you meant to fix the app.
 
 ## node-gyp failed to rebuild @parcel/watcher
 
