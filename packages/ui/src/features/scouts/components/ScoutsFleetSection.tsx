@@ -27,6 +27,7 @@ import {
   ScoutStatusDot,
 } from "./ScoutBadges";
 import { ScoutConfigControls } from "./ScoutConfigControls";
+import { ScoutRunBoxes } from "./ScoutRunBoxes";
 
 /**
  * Expandable scout fleet manager for the agents config page. Collapsed it is
@@ -212,6 +213,7 @@ function ScoutRow({
           />
         </Flex>
       </Link>
+      <ScoutRunBoxes runs={rollup?.runs ?? []} />
       <ScoutConfigControls config={config} onUpdate={onUpdate} />
     </Flex>
   );

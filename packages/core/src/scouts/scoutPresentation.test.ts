@@ -4,6 +4,7 @@ import {
   computeFleetSummary,
   computeScoutRollups,
   deriveRunFailureKind,
+  deriveRunOutcome,
   formatRunDuration,
   formatRunInterval,
   formatRunIntervalShort,
@@ -13,6 +14,7 @@ import {
   prettifyScoutSkillName,
   runDurationSeconds,
   runMatchesFilter,
+  scoutRunOutcomeLabel,
   scoutSkillNameFromSlug,
   scoutSkillSlug,
   sortConfigsForDisplay,
@@ -140,6 +142,63 @@ describe("run status", () => {
   });
 });
 
+describe("run outcomes", () => {
+  it("classifies each run into a single outcome", () => {
+    expect(deriveRunOutcome(makeRun({ emitted_count: 2 }), NOW)).toBe(
+      "emitted",
+    );
+    expect(deriveRunOutcome(makeRun({ emitted_count: 0 }), NOW)).toBe("quiet");
+    expect(
+      deriveRunOutcome(
+        makeRun({ status: "failed", completed_at: "2026-06-10T11:00:30Z" }),
+        NOW,
+      ),
+    ).toBe("error");
+    expect(
+      deriveRunOutcome(
+        makeRun({ status: "failed", completed_at: "2026-06-10T11:30:10Z" }),
+        NOW,
+      ),
+    ).toBe("timed_out");
+    expect(
+      deriveRunOutcome(
+        makeRun({
+          status: "in_progress",
+          started_at: "2026-06-10T11:55:00Z",
+          completed_at: null,
+        }),
+        NOW,
+      ),
+    ).toBe("running");
+    expect(
+      deriveRunOutcome(
+        makeRun({
+          status: "in_progress",
+          started_at: "2026-06-10T11:20:00Z",
+          completed_at: null,
+        }),
+        NOW,
+      ),
+    ).toBe("stuck");
+    expect(deriveRunOutcome(makeRun({ status: "queued" }), NOW)).toBe("queued");
+  });
+
+  it("labels outcomes with emitted counts", () => {
+    expect(scoutRunOutcomeLabel(makeRun({ emitted_count: 1 }), NOW)).toBe(
+      "1 signal emitted",
+    );
+    expect(scoutRunOutcomeLabel(makeRun({ emitted_count: 0 }), NOW)).toBe(
+      "0 signals emitted",
+    );
+    expect(
+      scoutRunOutcomeLabel(
+        makeRun({ status: "failed", completed_at: "2026-06-10T11:30:10Z" }),
+        NOW,
+      ),
+    ).toBe("timed out");
+  });
+});
+
 describe("run filters", () => {
   const emitted = makeRun({ emitted_count: 2 });
   const quiet = makeRun({ emitted_count: 0 });
@@ -188,6 +247,11 @@ describe("rollups", () => {
     expect(errorTracking?.latestRun?.run_id).toBe("b");
     expect(errorTracking?.runningRun).toBeNull();
     expect(rollups.get("signals-scout-logs")?.runningRun?.run_id).toBe("d");
+    expect(errorTracking?.runs.map((run) => run.run_id)).toEqual([
+      "c",
+      "a",
+      "b",
+    ]);
   });
 
   it("computes the fleet summary", () => {

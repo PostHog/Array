@@ -122,6 +122,58 @@ export function isRunStuck(run: ScoutRun, now: Date): boolean {
   return duration !== null && duration >= STUCK_THRESHOLD_SECONDS;
 }
 
+/**
+ * Single classification for "how did this run go", combining status, failure
+ * kind, and emission count. Drives the per-run outcome boxes and tooltips.
+ */
+export type ScoutRunOutcome =
+  | "emitted"
+  | "quiet"
+  | "error"
+  | "timed_out"
+  | "running"
+  | "stuck"
+  | "queued"
+  | "unknown";
+
+export function deriveRunOutcome(run: ScoutRun, now: Date): ScoutRunOutcome {
+  const status = normalizeRunStatus(run.status);
+  if (status === "completed") {
+    return (run.emitted_count ?? 0) > 0 ? "emitted" : "quiet";
+  }
+  if (status === "failed") {
+    return deriveRunFailureKind(run, now) === "timed_out"
+      ? "timed_out"
+      : "error";
+  }
+  if (status === "running") return isRunStuck(run, now) ? "stuck" : "running";
+  if (status === "queued") return "queued";
+  return "unknown";
+}
+
+export function scoutRunOutcomeLabel(run: ScoutRun, now: Date): string {
+  switch (deriveRunOutcome(run, now)) {
+    case "emitted": {
+      const count = run.emitted_count ?? 0;
+      return `${count} signal${count === 1 ? "" : "s"} emitted`;
+    }
+    case "quiet":
+      return "0 signals emitted";
+    case "error":
+      return "failed";
+    case "timed_out":
+      return "timed out";
+    case "running":
+      return "running now";
+    case "stuck":
+      return "running past the deadline – may be stuck";
+    case "queued":
+      return "queued";
+    case "unknown":
+      return run.status;
+  }
+}
+
 export type ScoutRunFilter = "all" | "emitted" | "quiet" | "failed";
 
 export function runMatchesFilter(
@@ -148,6 +200,8 @@ export interface ScoutRollup {
   emittedCount: number;
   latestRun: ScoutRun | null;
   runningRun: ScoutRun | null;
+  /** This scout's runs in the window, oldest first (timeline order). */
+  runs: ScoutRun[];
 }
 
 function emptyRollup(): ScoutRollup {
@@ -158,6 +212,7 @@ function emptyRollup(): ScoutRollup {
     emittedCount: 0,
     latestRun: null,
     runningRun: null,
+    runs: [],
   };
 }
 
@@ -182,12 +237,20 @@ export function computeScoutRollups(
     if (status === "completed") rollup.completedCount += 1;
     if (status === "failed") rollup.failedCount += 1;
     rollup.emittedCount += run.emitted_count ?? 0;
+    rollup.runs.push(run);
     const startedAt = run.started_at ? new Date(run.started_at).getTime() : 0;
     const latestStartedAt = rollup.latestRun?.started_at
       ? new Date(rollup.latestRun.started_at).getTime()
       : -1;
     if (startedAt > latestStartedAt) rollup.latestRun = run;
     if (status === "running" && !rollup.runningRun) rollup.runningRun = run;
+  }
+  for (const rollup of rollups.values()) {
+    rollup.runs.sort((a, b) => {
+      const aStarted = a.started_at ? new Date(a.started_at).getTime() : 0;
+      const bStarted = b.started_at ? new Date(b.started_at).getTime() : 0;
+      return aStarted - bStarted;
+    });
   }
   return rollups;
 }
