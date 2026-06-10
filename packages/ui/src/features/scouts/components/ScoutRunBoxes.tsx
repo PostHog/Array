@@ -5,12 +5,10 @@ import {
   runDurationSeconds,
   type ScoutRunOutcome,
   scoutRunOutcomeLabel,
-  scoutSkillSlug,
 } from "@posthog/core/scouts/scoutPresentation";
 import { formatRelativeTimeLong } from "@posthog/shared";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
-import { Link } from "@tanstack/react-router";
 
 const OUTCOME_BOX_CLASS: Record<ScoutRunOutcome, string> = {
   emitted: "bg-(--iris-9)",
@@ -39,8 +37,8 @@ function runTooltip(run: ScoutRun, now: Date): string {
 
 /**
  * One small box per run in the visible window, oldest on the left. Each box
- * opens the backing task run in PostHog cloud; runs without a task link fall
- * back to the in-app run detail.
+ * opens the backing task run in PostHog cloud; runs without a task link are
+ * tooltip-only.
  */
 export function ScoutRunBoxes({ runs }: { runs: ScoutRun[] }) {
   if (runs.length === 0) return null;
@@ -73,18 +71,12 @@ export function ScoutRunBoxes({ runs }: { runs: ScoutRun[] }) {
               </Tooltip>
             );
           }
-          const tooltip = `${runTooltip(run, now)} · open run detail`;
+          const tooltip = runTooltip(run, now);
           return (
             <Tooltip key={run.run_id} content={tooltip}>
-              <Link
-                to="/code/agents/scouts/$skillName/runs/$runId"
-                params={{
-                  skillName: scoutSkillSlug(run.skill_name),
-                  runId: run.run_id,
-                }}
-                aria-label={`Run ${tooltip}`}
-                className={boxClass}
-              />
+              <span className={boxClass}>
+                <span className="sr-only">Run {tooltip}</span>
+              </span>
             </Tooltip>
           );
         })}

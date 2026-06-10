@@ -45,7 +45,6 @@ import { Route as CodeInboxReportsReportIdRouteImport } from './routes/code/inbo
 import { Route as CodeInboxPullsReportIdRouteImport } from './routes/code/inbox/pulls.$reportId'
 import { Route as CodeAgentsScoutsSkillNameRouteImport } from './routes/code/agents/scouts.$skillName'
 import { Route as CodeAgentsScoutsSkillNameIndexRouteImport } from './routes/code/agents/scouts.$skillName.index'
-import { Route as CodeAgentsScoutsSkillNameRunsRunIdRouteImport } from './routes/code/agents/scouts.$skillName.runs.$runId'
 
 const WebsiteRoute = WebsiteRouteImport.update({
   id: '/website',
@@ -233,12 +232,6 @@ const CodeAgentsScoutsSkillNameIndexRoute =
     path: '/',
     getParentRoute: () => CodeAgentsScoutsSkillNameRoute,
   } as any)
-const CodeAgentsScoutsSkillNameRunsRunIdRoute =
-  CodeAgentsScoutsSkillNameRunsRunIdRouteImport.update({
-    id: '/runs/$runId',
-    path: '/runs/$runId',
-    getParentRoute: () => CodeAgentsScoutsSkillNameRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -277,7 +270,6 @@ export interface FileRoutesByFullPath {
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
-  '/code/agents/scouts/$skillName/runs/$runId': typeof CodeAgentsScoutsSkillNameRunsRunIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -309,7 +301,6 @@ export interface FileRoutesByTo {
   '/code/inbox/reports': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs': typeof CodeInboxRunsIndexRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameIndexRoute
-  '/code/agents/scouts/$skillName/runs/$runId': typeof CodeAgentsScoutsSkillNameRunsRunIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -349,7 +340,6 @@ export interface FileRoutesById {
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
-  '/code/agents/scouts/$skillName/runs/$runId': typeof CodeAgentsScoutsSkillNameRunsRunIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -390,7 +380,6 @@ export interface FileRouteTypes {
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
     | '/code/agents/scouts/$skillName/'
-    | '/code/agents/scouts/$skillName/runs/$runId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -422,7 +411,6 @@ export interface FileRouteTypes {
     | '/code/inbox/reports'
     | '/code/inbox/runs'
     | '/code/agents/scouts/$skillName'
-    | '/code/agents/scouts/$skillName/runs/$runId'
   id:
     | '__root__'
     | '/'
@@ -461,7 +449,6 @@ export interface FileRouteTypes {
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
     | '/code/agents/scouts/$skillName/'
-    | '/code/agents/scouts/$skillName/runs/$runId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -736,13 +723,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeAgentsScoutsSkillNameIndexRouteImport
       parentRoute: typeof CodeAgentsScoutsSkillNameRoute
     }
-    '/code/agents/scouts/$skillName/runs/$runId': {
-      id: '/code/agents/scouts/$skillName/runs/$runId'
-      path: '/runs/$runId'
-      fullPath: '/code/agents/scouts/$skillName/runs/$runId'
-      preLoaderRoute: typeof CodeAgentsScoutsSkillNameRunsRunIdRouteImport
-      parentRoute: typeof CodeAgentsScoutsSkillNameRoute
-    }
   }
 }
 
@@ -770,14 +750,11 @@ const WebsiteRouteWithChildren =
 
 interface CodeAgentsScoutsSkillNameRouteChildren {
   CodeAgentsScoutsSkillNameIndexRoute: typeof CodeAgentsScoutsSkillNameIndexRoute
-  CodeAgentsScoutsSkillNameRunsRunIdRoute: typeof CodeAgentsScoutsSkillNameRunsRunIdRoute
 }
 
 const CodeAgentsScoutsSkillNameRouteChildren: CodeAgentsScoutsSkillNameRouteChildren =
   {
     CodeAgentsScoutsSkillNameIndexRoute: CodeAgentsScoutsSkillNameIndexRoute,
-    CodeAgentsScoutsSkillNameRunsRunIdRoute:
-      CodeAgentsScoutsSkillNameRunsRunIdRoute,
   }
 
 const CodeAgentsScoutsSkillNameRouteWithChildren =

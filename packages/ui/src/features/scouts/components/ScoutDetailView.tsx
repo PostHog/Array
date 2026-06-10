@@ -1,6 +1,6 @@
 import {
   ArrowLeftIcon,
-  ArrowRightIcon,
+  ArrowSquareOutIcon,
   CaretRightIcon,
   CompassIcon,
 } from "@phosphor-icons/react";
@@ -15,7 +15,6 @@ import {
   runMatchesFilter,
   type ScoutRunFilter,
   scoutSkillNameFromSlug,
-  scoutSkillSlug,
 } from "@posthog/core/scouts/scoutPresentation";
 import {
   SCOUT_RUNS_WINDOW_HOURS,
@@ -24,6 +23,7 @@ import {
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
+import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -138,7 +138,6 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
 
             <ScoutSignalsSection
               runs={scoutRuns}
-              skillSlug={scoutSkillSlug(skillName)}
               windowLabel={scoutRunsWindowLabel(runsWindow)}
               loading={runsLoading}
             />
@@ -176,11 +175,7 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
               ) : (
                 <Flex direction="column" gap="2">
                   {filteredRuns.map((run) => (
-                    <ScoutRunListItem
-                      key={run.run_id}
-                      run={run}
-                      skillSlug={scoutSkillSlug(skillName)}
-                    />
+                    <ScoutRunListItem key={run.run_id} run={run} />
                   ))}
                 </Flex>
               )}
@@ -197,14 +192,9 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
   );
 }
 
-function ScoutRunListItem({
-  run,
-  skillSlug,
-}: {
-  run: ScoutRun;
-  skillSlug: string;
-}) {
+function ScoutRunListItem({ run }: { run: ScoutRun }) {
   const [expanded, setExpanded] = useState(false);
+  const taskRunUrl = run.task_url ? getPostHogUrl(run.task_url) : null;
   const now = new Date();
   const status = normalizeRunStatus(run.status);
   const failureKind = deriveRunFailureKind(run, now);
@@ -252,8 +242,8 @@ function ScoutRunListItem({
         </Box>
       ) : status === "failed" ? (
         <Text className="mt-1.5 block text-[12.5px] text-gray-10 italic leading-snug">
-          No summary – the run ended before writing its close-out. Open the run
-          for the task log.
+          No summary – the run ended before writing its close-out. The task run
+          in PostHog is the only diagnostic.
         </Text>
       ) : null}
       {expanded ? (
@@ -266,14 +256,21 @@ function ScoutRunListItem({
         >
           <Text className="font-mono text-[11px]">{run.run_id}</Text>
           <span className="flex-1" />
-          <Link
-            to="/code/agents/scouts/$skillName/runs/$runId"
-            params={{ skillName: skillSlug, runId: run.run_id }}
-            className="inline-flex shrink-0 items-center gap-1 text-[11px] text-accent-11 no-underline hover:text-accent-12"
-          >
-            View run
-            <ArrowRightIcon size={11} />
-          </Link>
+          {taskRunUrl ? (
+            <a
+              href={taskRunUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex shrink-0 items-center gap-1 text-[11px] text-accent-11 no-underline hover:text-accent-12"
+            >
+              Open task run
+              <ArrowSquareOutIcon size={11} />
+            </a>
+          ) : (
+            <Text className="shrink-0 text-[11px] text-gray-9">
+              No task link available
+            </Text>
+          )}
         </Flex>
       ) : null}
     </Box>
