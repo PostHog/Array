@@ -16,7 +16,7 @@ export function ScoutOriginBadge({ skillName }: { skillName: string }) {
         variant="soft"
         color={origin === "canonical" ? "gray" : "iris"}
         size="1"
-        className="text-[11px]"
+        className="relative text-[11px]"
       >
         {origin === "canonical" ? "Canonical" : "Custom"}
       </Badge>
@@ -28,7 +28,12 @@ export function DryRunBadge({ config }: { config: ScoutConfig }) {
   if (config.emit) return null;
   return (
     <Tooltip content="Runs on schedule but findings are not emitted to the Signals inbox">
-      <Badge variant="soft" color="amber" size="1" className="text-[11px]">
+      <Badge
+        variant="soft"
+        color="amber"
+        size="1"
+        className="relative text-[11px]"
+      >
         Dry run
       </Badge>
     </Tooltip>
