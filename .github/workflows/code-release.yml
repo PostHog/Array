@@ -200,7 +200,7 @@ jobs:
 
   publish-windows:
     needs: [prepare-release]
-    runs-on: windows-latest
+    runs-on: windows-2022
     permissions:
       id-token: write
       contents: write
@@ -370,6 +370,10 @@ jobs:
 
   finalize-release:
     needs: [publish-macos, publish-windows, publish-linux]
+    # macOS is the primary platform: publish the release as long as macOS built
+    # successfully, even if Windows or Linux failed. always() is required so this
+    # job isn't skipped when a non-macOS publish job fails.
+    if: always() && needs.publish-macos.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write

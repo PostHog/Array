@@ -1,5 +1,6 @@
 import { billingCoreModule } from "@posthog/core/billing/billing.module";
 import { inboxCoreModule } from "@posthog/core/inbox/inbox.module";
+import { githubConnectModule } from "@posthog/core/integrations/githubConnect.module";
 import { onboardingModule } from "@posthog/core/onboarding/onboarding.module";
 import { setupCoreModule } from "@posthog/core/setup/setup.module";
 import { CONTRIBUTION } from "@posthog/di/contribution";
@@ -30,6 +31,7 @@ export function registerDesktopContributions(): void {
     connectivityUiModule,
     fileWatcherUiModule,
     focusUiModule,
+    githubConnectModule,
     inboxCoreModule,
     notificationsUiModule,
     onboardingModule,

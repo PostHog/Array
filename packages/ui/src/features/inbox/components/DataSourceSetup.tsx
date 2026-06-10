@@ -1,6 +1,4 @@
-import type { DataSourceService } from "@posthog/core/inbox/dataSourceService";
-import { DATA_SOURCE_SERVICE } from "@posthog/core/inbox/identifiers";
-import { useService } from "@posthog/di/react";
+import { useHostTRPC } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -13,11 +11,30 @@ import {
   useGithubRepositories,
   useRepositoryIntegration,
 } from "@posthog/ui/features/integrations/useIntegrations";
-import { toast } from "@posthog/ui/primitives/toast";
 import { Box, Flex, Text, TextField } from "@radix-ui/themes";
+import { useMutation } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 type DataSourceType = "github" | "linear" | "zendesk" | "pganalyze";
+
+const REQUIRED_SCHEMAS: Record<DataSourceType, string[]> = {
+  github: ["issues"],
+  linear: ["issues"],
+  zendesk: ["tickets"],
+  pganalyze: ["issues", "servers"],
+};
+
+/** PostHog DWH: full table replication (non-incremental); API enum value `full_refresh`. */
+const FULL_TABLE_REPLICATION = "full_refresh" as const;
+
+function schemasPayload(source: DataSourceType) {
+  return REQUIRED_SCHEMAS[source].map((name) => ({
+    name,
+    should_sync: true,
+    sync_type: FULL_TABLE_REPLICATION,
+  }));
+}
 
 interface DataSourceSetupProps {
   source: DataSourceType;
@@ -50,7 +67,6 @@ interface SetupFormProps {
 function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
   const projectId = useAuthStateValue((state) => state.currentProjectId);
   const client = useAuthenticatedClient();
-  const dataSourceService = useService<DataSourceService>(DATA_SOURCE_SERVICE);
   const {
     repositories,
     getIntegrationIdForRepo,
@@ -91,7 +107,6 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
     setRepo(null);
   }, [isLoadingRepos, repo, repositories]);
 
-  // Auto-select the first repo once loaded
   useEffect(() => {
     if (repo === null && repositories.length > 0) {
       setRepo(repositories[0]);
@@ -103,9 +118,16 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
 
     setLoading(true);
     try {
-      await dataSourceService.createGithubDataSource(client, projectId, {
-        repository: repo,
-        githubIntegrationId: selectedIntegrationId,
+      await client.createExternalDataSource(projectId, {
+        source_type: "Github",
+        payload: {
+          repository: repo,
+          auth_method: {
+            selection: "oauth",
+            github_integration_id: selectedIntegrationId,
+          },
+          schemas: schemasPayload("github"),
+        },
       });
       toast.success("GitHub data source created");
       onComplete();
@@ -116,14 +138,7 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
     } finally {
       setLoading(false);
     }
-  }, [
-    projectId,
-    client,
-    onComplete,
-    repo,
-    selectedIntegrationId,
-    dataSourceService,
-  ]);
+  }, [projectId, client, onComplete, repo, selectedIntegrationId]);
 
   const handleRefreshRepositories = useCallback(() => {
     void refreshRepositories()
@@ -157,7 +172,7 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
         ? "We didn't hear back from GitHub. If the browser tab was closed, click Try again."
         : connecting
           ? "Waiting for GitHub… finish authorizing in your browser, then return here."
-          : "Connect your GitHub account to import issues as signals.";
+          : "Connect your GitHub account to import issues as Self-driving findings.";
     return (
       <SetupFormContainer title="Connect GitHub">
         <Flex direction="column" gap="3">
@@ -165,7 +180,7 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
             className={
               hasConnectError
                 ? "text-(--red-11) text-sm"
-                : "text-(--gray-11) text-sm"
+                : "text-gray-11 text-sm"
             }
           >
             {statusMessage}
@@ -245,63 +260,94 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
   );
 }
 
+const POLL_INTERVAL_MS = 3_000;
+const POLL_TIMEOUT_MS = 5 * 60 * 1000;
+
 function LinearSetup({ onComplete }: SetupFormProps) {
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const projectId = useAuthStateValue((state) => state.currentProjectId);
   const client = useAuthenticatedClient();
-  const dataSourceService = useService<DataSourceService>(DATA_SOURCE_SERVICE);
+  const trpc = useHostTRPC();
   const [loading, setLoading] = useState(false);
   const [oauthConnected, setOauthConnected] = useState(false);
   const [linearIntegrationId, setLinearIntegrationId] = useState<
     number | string | null
   >(null);
   const [pollError, setPollError] = useState<string | null>(null);
-  const pollAbortRef = useRef<AbortController | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(
-    () => () => {
-      pollAbortRef.current?.abort();
-    },
-    [],
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => stopPolling, [stopPolling]);
+
+  const startLinearFlow = useMutation(
+    trpc.linearIntegration.startFlow.mutationOptions(),
   );
 
   const handleOAuthConnect = useCallback(async () => {
     if (!cloudRegion || !projectId || !client) return;
     setLoading(true);
     setPollError(null);
-    const controller = new AbortController();
-    pollAbortRef.current = controller;
     try {
-      const integrationId =
-        await dataSourceService.connectLinearAndAwaitIntegration(
-          client,
-          cloudRegion,
-          projectId,
-          controller.signal,
-        );
-      setLoading(false);
-      setOauthConnected(true);
-      setLinearIntegrationId(integrationId);
-      toast.success("Linear connected");
+      await startLinearFlow.mutateAsync({
+        region: cloudRegion,
+        projectId,
+      });
+
+      pollTimerRef.current = setInterval(async () => {
+        try {
+          const integrations =
+            await client.getIntegrationsForProject(projectId);
+          const linearIntegration = integrations.find(
+            (i: { kind: string }) => i.kind === "linear",
+          ) as { id: number | string } | undefined;
+          if (linearIntegration) {
+            stopPolling();
+            setLoading(false);
+            setOauthConnected(true);
+            setLinearIntegrationId(linearIntegration.id);
+            toast.success("Linear connected");
+          }
+        } catch {
+          // Ignore individual poll failures
+        }
+      }, POLL_INTERVAL_MS);
+
+      pollTimeoutRef.current = setTimeout(() => {
+        stopPolling();
+        setLoading(false);
+        setPollError("Connection timed out. Please try again.");
+      }, POLL_TIMEOUT_MS);
     } catch (error) {
-      if (controller.signal.aborted) return;
       setLoading(false);
-      setPollError(
+      toast.error(
         error instanceof Error ? error.message : "Failed to connect Linear",
       );
     }
-  }, [cloudRegion, projectId, client, dataSourceService]);
+  }, [cloudRegion, projectId, client, stopPolling, startLinearFlow]);
 
   const handleSubmit = useCallback(async () => {
     if (!projectId || !client || !linearIntegrationId) return;
 
     setLoading(true);
     try {
-      await dataSourceService.createLinearDataSource(
-        client,
-        projectId,
-        linearIntegrationId,
-      );
+      await client.createExternalDataSource(projectId, {
+        source_type: "Linear",
+        payload: {
+          linear_integration_id: linearIntegrationId,
+          schemas: schemasPayload("linear"),
+        },
+      });
       toast.success("Linear data source created");
       onComplete();
     } catch (error) {
@@ -311,7 +357,7 @@ function LinearSetup({ onComplete }: SetupFormProps) {
     } finally {
       setLoading(false);
     }
-  }, [projectId, client, linearIntegrationId, onComplete, dataSourceService]);
+  }, [projectId, client, linearIntegrationId, onComplete]);
 
   return (
     <SetupFormContainer title="Connect Linear">
@@ -353,7 +399,6 @@ function LinearSetup({ onComplete }: SetupFormProps) {
 function ZendeskSetup({ onComplete, onCancel }: SetupFormProps) {
   const projectId = useAuthStateValue((state) => state.currentProjectId);
   const client = useAuthenticatedClient();
-  const dataSourceService = useService<DataSourceService>(DATA_SOURCE_SERVICE);
   const [subdomain, setSubdomain] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [email, setEmail] = useState("");
@@ -368,10 +413,14 @@ function ZendeskSetup({ onComplete, onCancel }: SetupFormProps) {
 
     setLoading(true);
     try {
-      await dataSourceService.createZendeskDataSource(client, projectId, {
-        subdomain: subdomain.trim(),
-        apiKey: apiKey.trim(),
-        email: email.trim(),
+      await client.createExternalDataSource(projectId, {
+        source_type: "Zendesk",
+        payload: {
+          subdomain: subdomain.trim(),
+          api_key: apiKey.trim(),
+          email_address: email.trim(),
+          schemas: schemasPayload("zendesk"),
+        },
       });
       toast.success("Zendesk data source created");
       onComplete();
@@ -382,15 +431,7 @@ function ZendeskSetup({ onComplete, onCancel }: SetupFormProps) {
     } finally {
       setLoading(false);
     }
-  }, [
-    projectId,
-    client,
-    subdomain,
-    apiKey,
-    email,
-    onComplete,
-    dataSourceService,
-  ]);
+  }, [projectId, client, subdomain, apiKey, email, onComplete]);
 
   const canSubmit = subdomain.trim() && apiKey.trim() && email.trim();
 
@@ -443,7 +484,6 @@ function ZendeskSetup({ onComplete, onCancel }: SetupFormProps) {
 function PgAnalyzeSetup({ onComplete, onCancel }: SetupFormProps) {
   const projectId = useAuthStateValue((state) => state.currentProjectId);
   const client = useAuthenticatedClient();
-  const dataSourceService = useService<DataSourceService>(DATA_SOURCE_SERVICE);
   const [apiKey, setApiKey] = useState("");
   const [organizationSlug, setOrganizationSlug] = useState("");
   const [loading, setLoading] = useState(false);
@@ -457,9 +497,13 @@ function PgAnalyzeSetup({ onComplete, onCancel }: SetupFormProps) {
 
     setLoading(true);
     try {
-      await dataSourceService.createPgAnalyzeDataSource(client, projectId, {
-        apiKey: apiKey.trim(),
-        organizationSlug: organizationSlug.trim(),
+      await client.createExternalDataSource(projectId, {
+        source_type: "PgAnalyze",
+        payload: {
+          api_key: apiKey.trim(),
+          organization_slug: organizationSlug.trim(),
+          schemas: schemasPayload("pganalyze"),
+        },
       });
       toast.success("pganalyze data source created");
       onComplete();
@@ -470,14 +514,7 @@ function PgAnalyzeSetup({ onComplete, onCancel }: SetupFormProps) {
     } finally {
       setLoading(false);
     }
-  }, [
-    projectId,
-    client,
-    apiKey,
-    organizationSlug,
-    onComplete,
-    dataSourceService,
-  ]);
+  }, [projectId, client, apiKey, organizationSlug, onComplete]);
 
   const canSubmit = apiKey.trim() && organizationSlug.trim();
 
@@ -529,10 +566,13 @@ function SetupFormContainer({
   children: React.ReactNode;
 }) {
   return (
-    <Box p="4" className="border border-(--gray-4) bg-(--color-panel-solid)">
+    <Box
+      p="4"
+      className="rounded-(--radius-2) border border-border bg-(--color-panel-solid)"
+    >
       <Flex direction="column" gap="3">
         <Flex align="center" justify="between">
-          <Text className="font-medium text-(--gray-12) text-sm">{title}</Text>
+          <Text className="font-medium text-gray-12 text-sm">{title}</Text>
         </Flex>
         {children}
       </Flex>

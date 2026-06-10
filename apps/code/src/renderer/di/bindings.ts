@@ -42,6 +42,8 @@ import {
   type ReportModelResolver,
 } from "@posthog/core/inbox/identifiers";
 import {
+  GITHUB_CONNECT_CLIENT as INTEGRATIONS_GITHUB_CONNECT_CLIENT,
+  type GithubConnectClient as IntegrationsGithubConnectClient,
   REPOSITORIES_CLIENT,
   REPOSITORIES_SERVICE,
   type RepositoriesClient,
@@ -268,6 +270,7 @@ export interface RendererBindings {
   [REPORT_MODEL_RESOLVER]: ReportModelResolver;
   [LINEAR_OAUTH_FLOW]: LinearOAuthFlow;
   [GITHUB_CONNECT_CLIENT]: GithubConnectClient;
+  [INTEGRATIONS_GITHUB_CONNECT_CLIENT]: IntegrationsGithubConnectClient;
   [REPOSITORIES_CLIENT]: RepositoriesClient;
   [REPOSITORIES_SERVICE]: RepositoriesService;
   [HEDGEHOG_MODE_HOST]: HedgehogModeHost;

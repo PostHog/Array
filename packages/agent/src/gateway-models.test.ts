@@ -46,6 +46,12 @@ describe("formatGatewayModelName", () => {
     expect(isBlockedModelId("ANTHROPIC/CLAUDE-HAIKU-4-5")).toBe(true);
   });
 
+  it("blocks Fable until data retention / ZDR is resolved", () => {
+    expect(isBlockedModelId("claude-fable-5")).toBe(true);
+    expect(isBlockedModelId("anthropic/claude-fable-5")).toBe(true);
+    expect(isBlockedModelId("ANTHROPIC/CLAUDE-FABLE-5")).toBe(true);
+  });
+
   it("blocks deprecated Codex gateway models", () => {
     expect(isBlockedModelId("gpt-5.2")).toBe(true);
     expect(isBlockedModelId("gpt-5.3")).toBe(true);

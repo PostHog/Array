@@ -109,6 +109,7 @@ interface NewSessionMeta {
   systemPrompt?: string;
   permissionMode?: string;
   model?: string;
+  baseBranch?: string;
   persistence?: { taskId?: string; runId?: string; logUrl?: string };
   claudeCode?: {
     options?: Record<string, unknown>;
@@ -633,6 +634,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       cwd,
       token: resolveGithubToken(),
       taskId: resolveTaskId(meta),
+      baseBranch: meta?.baseBranch,
     };
     const tools = enabledLocalTools(ctx, meta);
     if (tools.length === 0) {

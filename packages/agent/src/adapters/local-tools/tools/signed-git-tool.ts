@@ -42,7 +42,10 @@ export function defineSignedGitTool<S extends z.ZodRawShape, R>(opts: {
         unknown
       >;
       const cwd = argCwd ? path.resolve(ctx.cwd, argCwd) : ctx.cwd;
-      return opts.run({ cwd, token, taskId: ctx.taskId }, input as R);
+      return opts.run(
+        { cwd, token, taskId: ctx.taskId, baseBranch: ctx.baseBranch },
+        input as R,
+      );
     },
   });
 }

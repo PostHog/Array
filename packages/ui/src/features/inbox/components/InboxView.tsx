@@ -1,9 +1,17 @@
 import { EnvelopeSimpleIcon } from "@phosphor-icons/react";
+import { isInboxDetailPath } from "@posthog/core/inbox/reportMembership";
+import { InboxPageHeader } from "@posthog/ui/features/inbox/components/InboxPageHeader";
+import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Flex, Text } from "@radix-ui/themes";
+import { Outlet, useRouterState } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { InboxSignalsTab } from "./InboxSignalsTab";
 
+/**
+ * Inbox shell. Owns the in-page header (title + RFC subtitle + tab bar) and
+ * the global-header chrome lockup. Tab bodies render via `<Outlet />` so each
+ * sub-route renders the matching tab content full-width below the header.
+ */
 export function InboxView() {
   const headerContent = useMemo(
     () => (
@@ -22,9 +30,16 @@ export function InboxView() {
 
   useSetHeaderContent(headerContent);
 
+  const { counts } = useInboxAllReports();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isDetailView = isInboxDetailPath(pathname);
+
   return (
-    <div className="h-full">
-      <InboxSignalsTab />
-    </div>
+    <Flex direction="column" className="h-full min-h-0">
+      {!isDetailView && <InboxPageHeader counts={counts} />}
+      <div className="min-h-0 flex-1 overflow-auto">
+        <Outlet />
+      </div>
+    </Flex>
   );
 }

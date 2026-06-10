@@ -46,6 +46,8 @@
     "@dnd-kit/dom": "^0.1.21",
     "@dnd-kit/react": "^0.1.21",
     "@joplin/turndown-plugin-gfm": "^1.0.67",
+    "@json-render/core": "^0.19.0",
+    "@json-render/react": "^0.19.0",
     "@lezer/common": "^1.5.1",
     "@lezer/highlight": "^1.2.3",
     "@modelcontextprotocol/ext-apps": "^1.1.2",

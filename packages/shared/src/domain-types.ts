@@ -355,6 +355,19 @@ export interface SignalFindingContent {
   verified: boolean;
 }
 
+/** Artefact with `type: "repo_selection"` - selected repository for the report run. */
+export interface RepoSelectionArtefact {
+  id: string;
+  type: "repo_selection";
+  content: RepoSelectionContent;
+  created_at: string;
+}
+
+export interface RepoSelectionContent {
+  repository: string | null;
+  reason: string;
+}
+
 /** Artefact with `type: "suggested_reviewers"` — content is an enriched reviewer list. */
 export interface SuggestedReviewersArtefact {
   id: string;
@@ -461,6 +474,7 @@ export interface SignalReportArtefactsResponse {
     | PriorityJudgmentArtefact
     | ActionabilityJudgmentArtefact
     | SignalFindingArtefact
+    | RepoSelectionArtefact
     | SuggestedReviewersArtefact
     | DismissalArtefact
   )[];

@@ -28,13 +28,22 @@ interface SignalSlackNotificationsSettingsProps {
   integrationId: number | null;
   channelComboboxModal?: boolean;
   isLoading?: boolean;
+  /** When false, omit the dashed top rule (e.g. inside a parent `divide-y` list). */
+  showTopBorder?: boolean;
+  /** When true, omit the connect-workspace prompt (shown by a parent section). */
+  hideWorkspaceConnect?: boolean;
 }
 
 export function SignalSlackNotificationsSettings({
   integrationId,
   channelComboboxModal = false,
   isLoading = false,
+  showTopBorder = true,
+  hideWorkspaceConnect = false,
 }: SignalSlackNotificationsSettingsProps) {
+  const topBorderClass = showTopBorder
+    ? "border-(--gray-5) border-t border-dashed pt-4"
+    : "";
   const { hasSlackIntegration } = useIntegrationSelectors();
   const { userAutonomyConfig, handleUpdateSlackNotifications } =
     useSignalSourceManager();
@@ -49,7 +58,7 @@ export function SignalSlackNotificationsSettings({
 
   if (isLoading) {
     return (
-      <Flex direction="column" gap="2" pt="2">
+      <Flex direction="column" gap="2" className={topBorderClass}>
         <Flex direction="column" gap="1">
           <Box className="h-[14px] w-[160px] animate-pulse rounded bg-gray-4" />
           <Box className="h-[11px] w-[80%] animate-pulse rounded bg-gray-3" />
@@ -60,8 +69,12 @@ export function SignalSlackNotificationsSettings({
   }
 
   if (!hasSlackIntegration) {
+    if (hideWorkspaceConnect) {
+      return null;
+    }
+
     return (
-      <Flex direction="column" gap="2" pt="2">
+      <Flex direction="column" gap="2" className={topBorderClass}>
         <Flex direction="column" gap="1">
           <Text className="font-medium text-(--gray-12) text-sm">
             Notify me directly
@@ -118,7 +131,7 @@ export function SignalSlackNotificationsSettings({
   };
 
   return (
-    <Flex direction="column" gap="2" pt="2">
+    <Flex direction="column" gap="2" className={topBorderClass}>
       <Flex direction="column" gap="1">
         <Text className="font-medium text-(--gray-12) text-sm">
           Notify me directly

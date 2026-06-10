@@ -1,0 +1,190 @@
+import type { SignalReport } from "@posthog/shared/types";
+
+/**
+ * Statuses that are out of the inbox entirely (user-suppressed or removed).
+ * `failed` is NOT in here: failed runs surface in the Runs tab's Recently
+ * finished section so the user can see what went wrong. Other tabs filter
+ * them out via their own predicates.
+ */
+export const INBOX_EXCLUDED_STATUSES = new Set<SignalReport["status"]>([
+  "suppressed",
+  "deleted",
+]);
+
+export function isExcludedFromInbox(report: SignalReport): boolean {
+  return INBOX_EXCLUDED_STATUSES.has(report.status);
+}
+
+export type InboxScope = "for-you" | "entire-project" | `teammate:${string}`;
+
+export const INBOX_SCOPE_FOR_YOU: InboxScope = "for-you";
+export const INBOX_SCOPE_ENTIRE_PROJECT: InboxScope = "entire-project";
+
+export function teammateInboxScope(uuid: string): InboxScope {
+  return `teammate:${uuid}`;
+}
+
+export function parseTeammateInboxScope(scope: InboxScope): string | null {
+  if (!scope.startsWith("teammate:")) return null;
+  const uuid = scope.slice("teammate:".length).trim();
+  return uuid || null;
+}
+
+export function isTeammateInboxScope(
+  scope: InboxScope,
+): scope is `teammate:${string}` {
+  return parseTeammateInboxScope(scope) != null;
+}
+
+export function inboxScopeTriggerLabel(
+  scope: InboxScope,
+  teammateName?: string | null,
+): string {
+  if (scope === INBOX_SCOPE_FOR_YOU) return "For you";
+  if (scope === INBOX_SCOPE_ENTIRE_PROJECT) return "Entire project";
+  return teammateName?.trim() || "Teammate";
+}
+
+export function matchesInboxScope(
+  report: SignalReport,
+  scope: InboxScope,
+): boolean {
+  if (isExcludedFromInbox(report)) return false;
+  if (scope === INBOX_SCOPE_ENTIRE_PROJECT) return true;
+  if (isTeammateInboxScope(scope)) return true;
+  return report.is_suggested_reviewer === true;
+}
+
+export function countInboxScopeReports(
+  reports: SignalReport[],
+  scope: InboxScope,
+): number {
+  return reports.filter((report) => matchesInboxScope(report, scope)).length;
+}
+
+export type InboxTabKey = "pulls" | "reports" | "runs";
+
+export const INBOX_TAB_KEYS: InboxTabKey[] = ["pulls", "reports", "runs"];
+
+export const INBOX_TAB_LABEL: Record<InboxTabKey, string> = {
+  pulls: "Pull requests",
+  reports: "Reports",
+  runs: "Runs",
+};
+
+/**
+ * Canonical inbox tab list routes. Use these constants instead of hard-coding
+ * `/code/inbox/pulls` etc., so renames stay in one place.
+ *
+ * Detail routes (`/code/inbox/<tab>/$reportId`) stay as TanStack Router
+ * literals at call sites – TanStack's typed-link API needs them as literal
+ * strings to infer params.
+ */
+export const INBOX_TAB_LIST_ROUTE: Record<
+  InboxTabKey,
+  `/code/inbox/${InboxTabKey}`
+> = {
+  pulls: "/code/inbox/pulls",
+  reports: "/code/inbox/reports",
+  runs: "/code/inbox/runs",
+};
+
+const INBOX_DETAIL_PATH_RE = new RegExp(
+  `^/code/inbox/(${INBOX_TAB_KEYS.join("|")})/[^/]+$`,
+);
+
+export function isInboxDetailPath(pathname: string): boolean {
+  return INBOX_DETAIL_PATH_RE.test(pathname);
+}
+
+/** PR tab membership: Responder shipped a draft PR and the report is still in-inbox. */
+export function isPullRequestReport(report: SignalReport): boolean {
+  return !!report.implementation_pr_url && !isExcludedFromInbox(report);
+}
+
+// ── Runs-tab partitioning ─────────────────────────────────────────────────
+// The Runs tab is task-centric: it shows reports whose run is queued, live, or
+// recently finished. Each section uses a different predicate; `isAgentRunReport`
+// stays as the umbrella for "this report's run is in motion or just finished"
+// so other tabs can keep excluding the same set.
+
+const QUEUED_RUN_STATUSES = new Set<SignalReport["status"]>([
+  "potential",
+  "candidate",
+]);
+
+const LIVE_RUN_STATUSES = new Set<SignalReport["status"]>([
+  "in_progress",
+  "pending_input",
+]);
+
+const FINISHED_RUN_STATUSES = new Set<SignalReport["status"]>([
+  "ready",
+  "failed",
+]);
+
+export function isQueuedRunReport(report: SignalReport): boolean {
+  return QUEUED_RUN_STATUSES.has(report.status);
+}
+
+export function isLiveRunReport(report: SignalReport): boolean {
+  return LIVE_RUN_STATUSES.has(report.status);
+}
+
+export function isFinishedRunReport(report: SignalReport): boolean {
+  return FINISHED_RUN_STATUSES.has(report.status);
+}
+
+/**
+ * Used by the Runs tab count chip + cross-tab exclusion: only "in motion"
+ * runs (queued or live). Finished runs surface inside the Runs tab as recent
+ * history but don't inflate the count badge.
+ */
+export function isAgentRunReport(report: SignalReport): boolean {
+  return isQueuedRunReport(report) || isLiveRunReport(report);
+}
+
+export function isReportTabReport(report: SignalReport): boolean {
+  if (isExcludedFromInbox(report)) return false;
+  if (report.status === "failed") return false; // failed runs live in the Runs tab only
+  if (isPullRequestReport(report)) return false;
+  if (isAgentRunReport(report)) return false;
+  return true;
+}
+
+export function matchesReviewerScope(
+  report: SignalReport,
+  scope: InboxScope,
+): boolean {
+  return matchesInboxScope(report, scope);
+}
+
+export interface InboxTabCounts {
+  pulls: number;
+  reports: number;
+  runs: number;
+}
+
+export const EMPTY_TAB_COUNTS: InboxTabCounts = {
+  pulls: 0,
+  reports: 0,
+  runs: 0,
+};
+
+export function computeInboxTabCounts(
+  reports: SignalReport[],
+  scope: InboxScope,
+): InboxTabCounts {
+  const counts: InboxTabCounts = { ...EMPTY_TAB_COUNTS };
+  for (const report of reports) {
+    if (isExcludedFromInbox(report)) continue;
+    // Runs count is project-wide: reviewer assignment is an output of
+    // research, so the For-you / teammate filter is meaningless until a
+    // report reaches a downstream tab.
+    if (isAgentRunReport(report)) counts.runs += 1;
+    if (!matchesReviewerScope(report, scope)) continue;
+    if (isPullRequestReport(report)) counts.pulls += 1;
+    if (isReportTabReport(report)) counts.reports += 1;
+  }
+  return counts;
+}

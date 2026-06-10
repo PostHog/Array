@@ -18,6 +18,7 @@ import type {
   AvailableSuggestedReviewersResponse,
   DismissalArtefact,
   PriorityJudgmentArtefact,
+  RepoSelectionArtefact,
   SandboxEnvironment,
   SandboxEnvironmentInput,
   Signal,
@@ -324,6 +325,7 @@ type AnyArtefact =
   | PriorityJudgmentArtefact
   | ActionabilityJudgmentArtefact
   | SignalFindingArtefact
+  | RepoSelectionArtefact
   | SuggestedReviewersArtefact
   | DismissalArtefact;
 
@@ -434,6 +436,26 @@ function normalizeSignalFindingArtefact(
   };
 }
 
+function normalizeRepoSelectionArtefact(
+  value: Record<string, unknown>,
+): RepoSelectionArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+
+  const contentValue = isObjectRecord(value.content) ? value.content : null;
+  if (!contentValue) return null;
+
+  return {
+    id,
+    type: "repo_selection",
+    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    content: {
+      repository: optionalString(contentValue.repository),
+      reason: optionalString(contentValue.reason) ?? "",
+    },
+  };
+}
+
 function normalizeDismissalArtefact(
   value: Record<string, unknown>,
 ): DismissalArtefact | null {
@@ -481,6 +503,9 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   }
   if (dispatchType === "priority_judgment") {
     return normalizePriorityJudgmentArtefact(value);
+  }
+  if (dispatchType === "repo_selection") {
+    return normalizeRepoSelectionArtefact(value);
   }
   if (dispatchType === "dismissal") {
     return normalizeDismissalArtefact(value);
@@ -662,6 +687,104 @@ export class PostHogAPIClient {
       path: { uuid: "@me" },
     });
     return data;
+  }
+
+  // Desktop file system — the backend surface that backs canvas channels
+  // (top-level folders) and dashboards. These routes aren't in the generated
+  // OpenAPI client, so we use the raw fetcher.
+  async getDesktopFileSystem(): Promise<Schemas.FileSystem[]> {
+    const DESKTOP_FILE_SYSTEM_MAX_PAGES = 50;
+    const teamId = await this.getTeamId();
+    const all: Schemas.FileSystem[] = [];
+    let urlPath: string = `/api/projects/${teamId}/desktop_file_system/`;
+    for (let i = 0; i < DESKTOP_FILE_SYSTEM_MAX_PAGES; i++) {
+      const url = new URL(`${this.api.baseUrl}${urlPath}`);
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: urlPath,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch desktop file system: ${response.statusText}`,
+        );
+      }
+      const page = (await response.json()) as Schemas.PaginatedFileSystemList;
+      all.push(...page.results);
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    log.warn(
+      `getDesktopFileSystem hit MAX_PAGES (${DESKTOP_FILE_SYSTEM_MAX_PAGES}); returning partial results`,
+      { returned: all.length },
+    );
+    return all;
+  }
+
+  // Create a top-level channel (a folder row whose path is a single segment).
+  async createDesktopFileSystemChannel(
+    name: string,
+  ): Promise<Schemas.FileSystem> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ path: name, type: "folder", depth: 1 }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create desktop file system channel: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as Schemas.FileSystem;
+  }
+
+  // Rename a top-level channel: PATCH its path (a single segment) to the new
+  // name. The backend recomputes depth from the path.
+  async renameDesktopFileSystemChannel(
+    id: string,
+    name: string,
+  ): Promise<Schemas.FileSystem> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(id)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ path: name }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to rename desktop file system channel: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as Schemas.FileSystem;
+  }
+
+  // Delete a desktop file system entry by id (used to remove top-level channels).
+  async deleteDesktopFileSystem(id: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(id)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Failed to delete desktop file system channel: ${response.statusText}`,
+      );
+    }
   }
 
   async getGithubLogin(): Promise<string | null> {
@@ -1088,7 +1211,7 @@ export class PostHogAPIClient {
     return all;
   }
 
-  async getTask(taskId: string) {
+  async getTask(taskId: string): Promise<Task> {
     const teamId = await this.getTeamId();
     const data = await this.api.get(`/api/projects/{project_id}/tasks/{id}/`, {
       path: { project_id: teamId.toString(), id: taskId },

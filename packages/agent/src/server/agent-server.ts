@@ -27,6 +27,7 @@ import {
 } from "../adapters/error-classification";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
+  SIGNED_MERGE_QUALIFIED_TOOL_NAME,
   SIGNED_REWRITE_QUALIFIED_TOOL_NAME,
 } from "../adapters/signed-commit-shared";
 import type { PermissionMode } from "../execution-mode";
@@ -1051,6 +1052,7 @@ export class AgentServer {
         allowedDomains: this.config.allowedDomains,
         jsonSchema: preTask?.json_schema ?? null,
         permissionMode: initialPermissionMode,
+        ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
         ...(this.config.claudeCode?.plugins?.length && {
           claudeCode: {
             options: {
@@ -1716,12 +1718,24 @@ It creates a GitHub-signed ("Verified") commit on the branch and keeps your loca
 sync. To start a new branch, pass \`branch\` (prefixed with \`posthog-code/\`) — the tool creates
 it on the remote for you.
 
+## Updating from the base branch
+To bring the base branch into your PR branch, call the \`git_signed_merge\` tool (full name
+\`${SIGNED_MERGE_QUALIFIED_TOOL_NAME}\`) — it creates a Verified two-parent merge commit
+server-side (like GitHub's "Update branch" button). NEVER run \`git merge\` followed by
+\`git_signed_commit\`: a merge in progress is refused, because the commit API would linearize
+the merge and dump every base-branch change into your PR. If \`git_signed_merge\` reports a
+conflict, fix it with a rebase instead: \`git rebase origin/<base>\`, resolve, \`git rebase
+--continue\`, then call \`git_signed_rewrite\`.
+
 ## Rewriting / force-pushing (rebases, conflict fixes)
 \`git push --force\` is also blocked. To update a branch after a local rebase or conflict
-resolution, rebase/merge locally with normal \`git\` (resolve conflicts and finish with
+resolution, rebase locally with normal \`git\` (resolve conflicts and finish with
 \`git rebase --continue\`, NOT \`git commit\`), then call the \`git_signed_rewrite\` tool (full
 name \`${SIGNED_REWRITE_QUALIFIED_TOOL_NAME}\`). It republishes the branch's commits as Verified
 and atomically force-updates the remote branch. This is how you fix conflicts on an existing PR.
+Histories containing merge commits are refused — rebase (which flattens merges) first.
+If a signed-git tool refuses with a "merge in progress" or "leak" error, follow its recovery
+instructions instead of retrying the same call.
 
 ## Attribution
 Do NOT add "Co-Authored-By" trailers or "Generated with [Claude Code]" lines to your
@@ -1759,7 +1773,7 @@ This task already has an open pull request: ${prUrl}
 After completing the requested changes:
 1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). This commits to the existing PR branch.
-   - If the branch has conflicts with its base, fetch and rebase locally (\`git fetch origin <base>\`, \`git rebase origin/<base>\`, resolve, \`git rebase --continue\`), then call the \`git_signed_rewrite\` tool to force-update this same PR branch.
+   - If the branch is behind its base, call the \`git_signed_merge\` tool first — it merges the base in server-side with a Verified merge commit. Only if it reports a conflict: fetch and rebase locally (\`git fetch origin <base>\`, \`git rebase origin/<base>\`, resolve, \`git rebase --continue\`), then call the \`git_signed_rewrite\` tool to force-update this same PR branch.
 3. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:
    - Reply on the thread with a short note describing what changed (reference the commit SHA when useful) using \`gh api -X POST /repos/{owner}/{repo}/pulls/{n}/comments/{id}/replies -f body='...'\`.
    - Resolve the thread via the \`resolveReviewThread\` GraphQL mutation: \`gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id="<thread-node-id>"\`.

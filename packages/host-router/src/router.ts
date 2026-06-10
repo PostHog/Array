@@ -4,9 +4,11 @@ import { agentRouter } from "./routers/agent.router";
 import { analyticsRouter } from "./routers/analytics.router";
 import { archiveRouter } from "./routers/archive.router";
 import { authRouter } from "./routers/auth.router";
+import { canvasGenRouter } from "./routers/canvas-gen.router";
 import { cloudTaskRouter } from "./routers/cloud-task.router";
 import { connectivityRouter } from "./routers/connectivity.router";
 import { contextMenuRouter } from "./routers/context-menu.router";
+import { dashboardsRouter } from "./routers/dashboards.router";
 import { deepLinkRouter } from "./routers/deep-link.router";
 import { enrichmentRouter } from "./routers/enrichment.router";
 import { environmentRouter } from "./routers/environment.router";
@@ -46,9 +48,11 @@ export const hostRouter = router({
   analytics: analyticsRouter,
   archive: archiveRouter,
   auth: authRouter,
+  canvasGen: canvasGenRouter,
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,
+  dashboards: dashboardsRouter,
   deepLink: deepLinkRouter,
   enrichment: enrichmentRouter,
   environment: environmentRouter,

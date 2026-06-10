@@ -15,9 +15,13 @@
     "clean": "node ../../scripts/rimraf.mjs .turbo"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "0.22.1",
+    "@json-render/core": "^0.19.0",
     "@posthog/core": "workspace:*",
+    "@posthog/di": "workspace:*",
     "@posthog/host-trpc": "workspace:*",
     "@posthog/platform": "workspace:*",
+    "@posthog/shared": "workspace:*",
     "@posthog/workspace-client": "workspace:*",
     "@posthog/workspace-server": "workspace:*",
     "@trpc/client": "catalog:"

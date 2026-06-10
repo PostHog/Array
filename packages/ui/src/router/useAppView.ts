@@ -13,6 +13,7 @@ export type AppViewType =
   | "folder-settings"
   | "home"
   | "inbox"
+  | "agents"
   | "archived"
   | "command-center"
   | "skills"
@@ -54,6 +55,8 @@ function deriveFromMatches(matches: Match[]): AppView {
       return { type: "home" };
     case "/code/inbox":
       return { type: "inbox" };
+    case "/code/agents":
+      return { type: "agents" };
     case "/code/archived":
       return { type: "archived" };
     case "/command-center":
@@ -66,6 +69,9 @@ function deriveFromMatches(matches: Match[]): AppView {
     case "/settings/":
       return { type: "settings" };
     default:
+      if (last.routeId.startsWith("/code/inbox")) {
+        return { type: "inbox" };
+      }
       return { type: "task-input" };
   }
 }

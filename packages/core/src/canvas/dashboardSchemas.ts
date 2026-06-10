@@ -1,0 +1,69 @@
+import { z } from "zod";
+
+// A json-render Spec (root + flat element map). Stored verbatim; null = empty.
+export const dashboardSpecSchema = z.record(z.string(), z.unknown()).nullable();
+
+export const dashboardRecordSchema = z.object({
+  id: z.string(),
+  // The channel (desktop file-system folder) this dashboard belongs to.
+  // Defaults to "" so dashboards saved before channel scoping still parse;
+  // they read as orphans and get adopted into the default channel on load.
+  channelId: z.string().default(""),
+  name: z.string(),
+  spec: dashboardSpecSchema,
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+export type DashboardRecord = z.infer<typeof dashboardRecordSchema>;
+
+// What a dashboard stores in its desktop file-system row's free-form `meta` JSON
+// blob. The FileSystem row itself carries id/path/type/created_at; everything
+// below is our own payload that the model has no columns for. Documenting the
+// shape here keeps the otherwise-untyped `meta` honest.
+export const dashboardFileMetaSchema = z.object({
+  // The json-render Spec (root + flat element map). null/absent = empty board.
+  spec: dashboardSpecSchema.optional(),
+  // The channel folder's stable file-system id. Stored here rather than derived
+  // from the path so renaming/moving the channel folder can't reparent the board.
+  channelId: z.string().optional(),
+  // Epoch ms. createdAt mirrors the row's created_at; updatedAt is ours because
+  // the FileSystem row has no updated_at column to sort the dashboards list by.
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
+});
+export type DashboardFileMeta = z.infer<typeof dashboardFileMetaSchema>;
+
+export const dashboardSummarySchema = z.object({
+  id: z.string(),
+  channelId: z.string(),
+  name: z.string(),
+  updatedAt: z.number(),
+  // The full spec is already loaded when listing (it rides in the FS row's
+  // meta), so include it here to render grid previews without an N+1 of get()s.
+  spec: dashboardSpecSchema,
+});
+export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
+
+export const listDashboardsInput = z.object({ channelId: z.string().min(1) });
+
+export const createDashboardInput = z.object({
+  channelId: z.string().min(1),
+  name: z.string().min(1),
+  spec: dashboardSpecSchema,
+});
+
+export const updateDashboardInput = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1).optional(),
+  spec: dashboardSpecSchema,
+});
+
+export const dashboardIdInput = z.object({ id: z.string().min(1) });
+
+export const refreshDashboardInput = z.object({
+  id: z.string().min(1),
+  // Limit the refresh to these elements' subtrees (per-card refresh).
+  elementKeys: z.array(z.string()).optional(),
+  // Skip bumping updatedAt (e.g. for background polling) to avoid reordering.
+  touchUpdatedAt: z.boolean().optional(),
+});
