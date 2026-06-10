@@ -171,6 +171,7 @@ export function ScoutRunDetailView({
                       <ScoutEmissionCard
                         key={emission.id}
                         emission={emission}
+                        defaultExpanded
                       />
                     ))}
                   </Flex>
