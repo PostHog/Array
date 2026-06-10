@@ -1,4 +1,8 @@
-import { ArrowSquareOutIcon, GearSixIcon } from "@phosphor-icons/react";
+import {
+  ArrowSquareOutIcon,
+  GearSixIcon,
+  SparkleIcon,
+} from "@phosphor-icons/react";
 import type { ScoutConfig } from "@posthog/api-client/posthog-client";
 import {
   formatRunIntervalShort,
@@ -9,7 +13,11 @@ import {
 import { skillUrl } from "@posthog/ui/utils/posthogLinks";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import {
+  buildScoutCheckinPrompt,
+  useScoutChatTask,
+} from "../hooks/useScoutChatTask";
 import type { ScoutConfigUpdate } from "../hooks/useScoutConfigMutations";
 import { DryRunBadge, ScoutOriginBadge } from "./ScoutBadges";
 import { ScoutConfigForm, ScoutEnabledSwitch } from "./ScoutConfigControls";
@@ -95,6 +103,7 @@ export function ScoutRowCard({
         </Box>
         <Flex align="center" gap="3" className="relative shrink-0">
           <ScoutEnabledSwitch config={config} onUpdate={onUpdate} />
+          <ScoutChatButton skillName={config.skill_name} />
           <Tooltip content="Scout settings">
             <button
               type="button"
@@ -118,5 +127,38 @@ export function ScoutRowCard({
         </Box>
       ) : null}
     </Flex>
+  );
+}
+
+/**
+ * Icon-only chat CTA on the row: fires a one-click auto-mode cloud task asking
+ * the exploring-signals-scouts skill about this specific scout.
+ */
+function ScoutChatButton({ skillName }: { skillName: string }) {
+  const prompt = useMemo(
+    () => buildScoutCheckinPrompt(skillName, prettifyScoutSkillName(skillName)),
+    [skillName],
+  );
+  const { runTask, isRunning } = useScoutChatTask({
+    prompt,
+    taskLabel: "scout check-in",
+    loggerScope: "scout-checkin",
+  });
+  return (
+    <Tooltip content="Ask an agent about this scout">
+      <button
+        type="button"
+        onClick={() => void runTask()}
+        disabled={isRunning}
+        aria-label={`Ask about the ${skillName} scout`}
+        className={`flex h-6 w-6 items-center justify-center rounded transition-colors disabled:cursor-default ${
+          isRunning
+            ? "animate-pulse text-(--iris-9)"
+            : "text-gray-10 hover:bg-(--gray-3) hover:text-gray-12"
+        }`}
+      >
+        <SparkleIcon size={14} />
+      </button>
+    </Tooltip>
   );
 }

@@ -31,6 +31,24 @@ Use the exploring-signals-scouts skill from the PostHog MCP to pull the most rec
 
 Group by scout, newest first. Close with a short note on overall signal quality and any scouts that look noisy or suspiciously silent. If the skill is unavailable, fall back to the signals-scout MCP tools directly (runs list with emitted filter, run emissions).`;
 
+/** Per-scout variant of the templated questions, scoped to one skill. */
+export function buildScoutCheckinPrompt(
+  skillName: string,
+  displayName: string,
+): string {
+  return `How is my ${displayName} scout performing?
+
+Use the exploring-signals-scouts skill from the PostHog MCP to dig into the \`${skillName}\` scout on this project:
+
+- Its config: enabled, cadence, dry-run posture
+- Recent run history: successes, failures, timeouts, durations
+- Signals it emitted recently and whether they look genuinely actionable
+- Scratchpad memory the fleet holds that relates to this scout
+- Whether its scope, thresholds, and schedule look right — suggest tuning if not
+
+Lead with a short verdict. If the skill is unavailable, fall back to the signals-scout MCP tools directly (config list, runs list, run emissions, scratchpad search).`;
+}
+
 interface UseScoutChatTaskOptions {
   /** The templated question the task is created with. */
   prompt: string;
