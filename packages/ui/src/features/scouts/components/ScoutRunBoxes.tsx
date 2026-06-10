@@ -8,6 +8,7 @@ import {
   scoutSkillSlug,
 } from "@posthog/core/scouts/scoutPresentation";
 import { formatRelativeTimeLong } from "@posthog/shared";
+import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 
@@ -23,6 +24,8 @@ const OUTCOME_BOX_CLASS: Record<ScoutRunOutcome, string> = {
 };
 
 const MAX_BOXES = 24;
+const BOX_CLASS =
+  "block h-3 w-2 rounded-[2px] transition-transform duration-100 hover:scale-y-125 hover:ring-(--gray-8) hover:ring-1";
 
 function runTooltip(run: ScoutRun, now: Date): string {
   const parts = [scoutRunOutcomeLabel(run, now)];
@@ -36,7 +39,8 @@ function runTooltip(run: ScoutRun, now: Date): string {
 
 /**
  * One small box per run in the visible window, oldest on the left. Each box
- * links to the run detail (status, summary, emissions, task log link).
+ * opens the backing task run in PostHog cloud; runs without a task link fall
+ * back to the in-app run detail.
  */
 export function ScoutRunBoxes({ runs }: { runs: ScoutRun[] }) {
   if (runs.length === 0) return null;
@@ -52,7 +56,24 @@ export function ScoutRunBoxes({ runs }: { runs: ScoutRun[] }) {
       <Flex align="center" gap="1">
         {visible.map((run) => {
           const outcome = deriveRunOutcome(run, now);
-          const tooltip = runTooltip(run, now);
+          const boxClass = `${BOX_CLASS} ${OUTCOME_BOX_CLASS[outcome]}`;
+          const taskRunUrl = run.task_url ? getPostHogUrl(run.task_url) : null;
+          if (taskRunUrl) {
+            const tooltip = `${runTooltip(run, now)} · open task run in PostHog`;
+            return (
+              <Tooltip key={run.run_id} content={tooltip}>
+                <a
+                  href={taskRunUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={boxClass}
+                >
+                  <span className="sr-only">Run {tooltip}</span>
+                </a>
+              </Tooltip>
+            );
+          }
+          const tooltip = `${runTooltip(run, now)} · open run detail`;
           return (
             <Tooltip key={run.run_id} content={tooltip}>
               <Link
@@ -62,7 +83,7 @@ export function ScoutRunBoxes({ runs }: { runs: ScoutRun[] }) {
                   runId: run.run_id,
                 }}
                 aria-label={`Run ${tooltip}`}
-                className={`block h-3 w-2 rounded-[2px] transition-transform duration-100 hover:scale-y-125 hover:ring-(--gray-8) hover:ring-1 ${OUTCOME_BOX_CLASS[outcome]}`}
+                className={boxClass}
               />
             </Tooltip>
           );
