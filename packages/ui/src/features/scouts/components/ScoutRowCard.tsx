@@ -80,7 +80,7 @@ export function ScoutRowCard({
                 target="_blank"
                 rel="noreferrer"
                 aria-label={`${config.skill_name} skill in PostHog`}
-                className="text-gray-9 opacity-0 transition-opacity hover:text-accent-11 focus-visible:opacity-100 group-hover:opacity-100"
+                className="text-gray-9 transition-colors hover:text-accent-11"
               >
                 <ArrowSquareOutIcon size={12} />
               </a>
