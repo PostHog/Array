@@ -18,6 +18,7 @@ import { Route as CodeIndexRouteImport } from './routes/code/index'
 import { Route as SettingsCategoryRouteImport } from './routes/settings/$category'
 import { Route as FoldersFolderIdRouteImport } from './routes/folders/$folderId'
 import { Route as CodeInboxRouteImport } from './routes/code/inbox'
+import { Route as CodeHomeRouteImport } from './routes/code/home'
 import { Route as CodeArchivedRouteImport } from './routes/code/archived'
 import { Route as CodeTasksTaskIdRouteImport } from './routes/code/tasks/$taskId'
 import { Route as CodeTasksPendingKeyRouteImport } from './routes/code/tasks/pending.$key'
@@ -67,6 +68,11 @@ const CodeInboxRoute = CodeInboxRouteImport.update({
   path: '/code/inbox',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CodeHomeRoute = CodeHomeRouteImport.update({
+  id: '/code/home',
+  path: '/code/home',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CodeArchivedRoute = CodeArchivedRouteImport.update({
   id: '/code/archived',
   path: '/code/archived',
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/code/archived': typeof CodeArchivedRoute
+  '/code/home': typeof CodeHomeRoute
   '/code/inbox': typeof CodeInboxRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
@@ -103,6 +110,7 @@ export interface FileRoutesByTo {
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/code/archived': typeof CodeArchivedRoute
+  '/code/home': typeof CodeHomeRoute
   '/code/inbox': typeof CodeInboxRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
@@ -118,6 +126,7 @@ export interface FileRoutesById {
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/code/archived': typeof CodeArchivedRoute
+  '/code/home': typeof CodeHomeRoute
   '/code/inbox': typeof CodeInboxRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/mcp-servers'
     | '/skills'
     | '/code/archived'
+    | '/code/home'
     | '/code/inbox'
     | '/folders/$folderId'
     | '/settings/$category'
@@ -148,6 +158,7 @@ export interface FileRouteTypes {
     | '/mcp-servers'
     | '/skills'
     | '/code/archived'
+    | '/code/home'
     | '/code/inbox'
     | '/folders/$folderId'
     | '/settings/$category'
@@ -162,6 +173,7 @@ export interface FileRouteTypes {
     | '/mcp-servers'
     | '/skills'
     | '/code/archived'
+    | '/code/home'
     | '/code/inbox'
     | '/folders/$folderId'
     | '/settings/$category'
@@ -177,6 +189,7 @@ export interface RootRouteChildren {
   McpServersRoute: typeof McpServersRoute
   SkillsRoute: typeof SkillsRoute
   CodeArchivedRoute: typeof CodeArchivedRoute
+  CodeHomeRoute: typeof CodeHomeRoute
   CodeInboxRoute: typeof CodeInboxRoute
   FoldersFolderIdRoute: typeof FoldersFolderIdRoute
   SettingsCategoryRoute: typeof SettingsCategoryRoute
@@ -251,6 +264,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeInboxRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/code/home': {
+      id: '/code/home'
+      path: '/code/home'
+      fullPath: '/code/home'
+      preLoaderRoute: typeof CodeHomeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/code/archived': {
       id: '/code/archived'
       path: '/code/archived'
@@ -281,6 +301,7 @@ const rootRouteChildren: RootRouteChildren = {
   McpServersRoute: McpServersRoute,
   SkillsRoute: SkillsRoute,
   CodeArchivedRoute: CodeArchivedRoute,
+  CodeHomeRoute: CodeHomeRoute,
   CodeInboxRoute: CodeInboxRoute,
   FoldersFolderIdRoute: FoldersFolderIdRoute,
   SettingsCategoryRoute: SettingsCategoryRoute,

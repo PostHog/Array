@@ -35,6 +35,36 @@ if (typeof globalThis.PointerEvent === "undefined") {
   globalThis.PointerEvent = JsdomPointerEvent as unknown as typeof PointerEvent;
 }
 
+// Node 26 defines an experimental `localStorage` global that is disabled
+// without --localstorage-file, and vitest's jsdom window leaves localStorage
+// undefined in its presence; zustand persist stores under test need a working
+// implementation, so back both globals with an in-memory Storage.
+if (typeof window.localStorage?.setItem !== "function") {
+  const store = new Map<string, string>();
+  const localStoragePolyfill: Storage = {
+    get length() {
+      return store.size;
+    },
+    clear: () => store.clear(),
+    getItem: (key) => store.get(key) ?? null,
+    key: (index) => [...store.keys()][index] ?? null,
+    removeItem: (key) => {
+      store.delete(key);
+    },
+    setItem: (key, value) => {
+      store.set(key, String(value));
+    },
+  };
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: localStoragePolyfill,
+  });
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: localStoragePolyfill,
+  });
+}
+
 // jsdom does not implement matchMedia; UI stores (e.g. themeStore) read it at
 // module load to resolve the system color scheme.
 Object.defineProperty(window, "matchMedia", {

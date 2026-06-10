@@ -41,7 +41,7 @@ import {
   captureWorktreeCheckpoint,
   restoreWorktreeFromCheckpoint,
 } from "../worktree-checkpoint/worktree-checkpoint";
-import { resolveWorktreePathByProbe } from "../worktree-path/worktree-path";
+import { deriveWorktreePath as deriveWorktreePathFromBase } from "../worktree-path/worktree-path";
 import { getCurrentBranchName } from "../worktree-query/worktree-query";
 import { ARCHIVE_FILE_WATCHER, ARCHIVE_SESSION_CANCELLER } from "./identifiers";
 import type { ArchiveFileWatcher, SessionCanceller } from "./ports";
@@ -492,11 +492,8 @@ export class ArchiveService {
     };
   }
 
-  private deriveWorktreePath(
-    folderPath: string,
-    worktreeName: string,
-  ): Promise<string> {
-    return resolveWorktreePathByProbe(
+  private deriveWorktreePath(folderPath: string, worktreeName: string): string {
+    return deriveWorktreePathFromBase(
       this.workspaceSettings.getWorktreeLocation(),
       folderPath,
       worktreeName,

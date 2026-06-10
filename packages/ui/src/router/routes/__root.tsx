@@ -1,5 +1,9 @@
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
-import { BILLING_FLAG, SYNC_CLOUD_TASKS_FLAG } from "@posthog/shared";
+import {
+  BILLING_FLAG,
+  HOME_TAB_FLAG,
+  SYNC_CLOUD_TASKS_FLAG,
+} from "@posthog/shared";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
@@ -22,6 +26,7 @@ import { GlobalEventHandlers } from "@posthog/ui/shell/GlobalEventHandlers";
 import { HeaderRow } from "@posthog/ui/shell/HeaderRow";
 import { HedgehogMode } from "@posthog/ui/shell/HedgehogMode";
 import { logger } from "@posthog/ui/shell/logger";
+import { onFeatureFlagsLoaded } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { SpaceSwitcher } from "@posthog/ui/shell/SpaceSwitcher";
 import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
 import { Box, Flex } from "@radix-ui/themes";
@@ -31,7 +36,7 @@ import {
   Outlet,
   useRouterState,
 } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
 // Dynamic import keeps the devtools chunk out of the prod bundle. Without the
 // gate at the import level, conditional render alone still ships the devtools
@@ -95,6 +100,7 @@ function RootLayout() {
   const reconcilingTaskIds = useRef<Set<string>>(new Set());
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
+  const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
 
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
@@ -147,6 +153,18 @@ function RootLayout() {
     hostClient,
     trpc,
   ]);
+
+  // The /code/home route is only reachable while the home-tab flag is on, but
+  // flags resolve asynchronously — a restored route (or a flag flipping off
+  // mid-session) can leave us on home without access. Redirect to the new-task
+  // screen once flags have loaded and home is gated off.
+  const [flagsLoaded, setFlagsLoaded] = useState(false);
+  useEffect(() => onFeatureFlagsLoaded(() => setFlagsLoaded(true)), []);
+  useEffect(() => {
+    if (flagsLoaded && !homeTabEnabled && view.type === "home") {
+      openTaskInput();
+    }
+  }, [flagsLoaded, homeTabEnabled, view.type]);
 
   // Settings is a full-page route — drop the app chrome (header/sidebar/
   // space-switcher) so the panel occupies the full window.

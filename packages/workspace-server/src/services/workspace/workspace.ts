@@ -767,17 +767,13 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
 
     const folderPath = this.getFolderPath(association.folderId);
     if (!folderPath) {
-      this.removeTaskAssociation(taskId);
       return { exists: false, missingPath: "(folder not found)" };
     }
 
     if (association.mode === "local") {
       const exists = fs.existsSync(folderPath);
       if (!exists) {
-        this.log.info(
-          `Folder for task ${taskId} no longer exists, removing association`,
-        );
-        this.removeTaskAssociation(taskId);
+        this.log.info(`Folder for task ${taskId} no longer exists`);
         return { exists: false, missingPath: folderPath };
       }
       return { exists: true };
@@ -790,10 +786,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       );
       const exists = fs.existsSync(worktreePath);
       if (!exists) {
-        this.log.info(
-          `Worktree for task ${taskId} no longer exists, removing association`,
-        );
-        this.removeTaskAssociation(taskId);
+        this.log.info(`Worktree for task ${taskId} no longer exists`);
         return { exists: false, missingPath: worktreePath };
       }
       return { exists: true };

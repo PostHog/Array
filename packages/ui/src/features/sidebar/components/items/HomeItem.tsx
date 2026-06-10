@@ -1,96 +1,35 @@
-import { EnvelopeSimple, Plus } from "@phosphor-icons/react";
-import { Badge, type ButtonProps } from "@posthog/quill";
-import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
-import { isContentEmpty } from "@posthog/ui/features/message-editor/content";
-import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
-import { Tooltip } from "@posthog/ui/primitives/Tooltip";
+import { House } from "@phosphor-icons/react";
+import { Badge } from "@posthog/quill";
 import { SidebarItem } from "../SidebarItem";
-import { SidebarKbdHint } from "./SidebarKbdHint";
+import { SidebarCountBadge } from "./SidebarCountBadge";
 
-interface NewTaskItemProps {
+interface HomeItemProps {
   isActive: boolean;
   onClick: () => void;
-  variant?: ButtonProps["variant"];
+  attentionCount?: number;
 }
 
-export function NewTaskItem({ isActive, onClick }: NewTaskItemProps) {
-  const hasDraft = useDraftStore(
-    (s) => !isContentEmpty(s.drafts["task-input"]),
-  );
+export function HomeItem({
+  isActive,
+  onClick,
+  attentionCount = 0,
+}: HomeItemProps) {
   return (
     <SidebarItem
       depth={0}
-      icon={<Plus size={16} weight={isActive ? "bold" : "regular"} />}
-      label="New task"
-      isActive={isActive}
-      onClick={onClick}
-      endContent={
+      icon={<House size={16} weight={isActive ? "fill" : "regular"} />}
+      label={
         <>
-          {hasDraft ? (
-            <Badge variant="default" title="You have unsubmitted changes">
-              Draft
-            </Badge>
-          ) : null}
-          <SidebarKbdHint keys={SHORTCUTS.NEW_TASK} />
+          Home
+          <SidebarCountBadge
+            count={attentionCount}
+            title={`${attentionCount} item${attentionCount === 1 ? "" : "s"} needing attention`}
+          />
         </>
       }
+      isActive={isActive}
+      onClick={onClick}
+      endContent={<Badge variant="warning">Alpha</Badge>}
     />
-  );
-}
-
-interface InboxItemProps {
-  isActive: boolean;
-  onClick: () => void;
-  signalCount?: number;
-}
-
-function formatSignalCount(count: number): string {
-  if (count > 99) return "99+";
-  return String(count);
-}
-
-export function InboxItem({ isActive, onClick, signalCount }: InboxItemProps) {
-  return (
-    <Tooltip
-      content={
-        signalCount && signalCount > 0
-          ? `${signalCount} actionable report${signalCount === 1 ? "" : "s"} assigned to you`
-          : "No actionable reports assigned to you yet"
-      }
-      side="right"
-    >
-      <div>
-        <SidebarItem
-          depth={0}
-          icon={
-            <EnvelopeSimple size={16} weight={isActive ? "fill" : "regular"} />
-          }
-          label={
-            <>
-              Inbox
-              {signalCount && signalCount > 0 ? (
-                <span
-                  className="ml-2 inline-flex shrink-0 items-center justify-center rounded-full bg-(--red-9) p-1 font-medium text-[10px] leading-none"
-                  style={{
-                    color: "white",
-                  }}
-                  title={`${signalCount} actionable reports for you`}
-                >
-                  {formatSignalCount(signalCount)}
-                </span>
-              ) : null}
-            </>
-          }
-          isActive={isActive}
-          onClick={onClick}
-          endContent={
-            <>
-              <Badge variant="warning">Alpha</Badge>
-              <SidebarKbdHint keys={SHORTCUTS.INBOX} />
-            </>
-          }
-        />
-      </div>
-    </Tooltip>
   );
 }

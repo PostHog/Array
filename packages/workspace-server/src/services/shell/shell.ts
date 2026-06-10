@@ -24,7 +24,7 @@ import type { WorktreeRepository } from "../../db/repositories/worktree-reposito
 import { buildWorkspaceEnv } from "../../workspace-env";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
-import { resolveWorktreePathByProbe } from "../worktree-path/worktree-path";
+import { deriveWorktreePath as deriveWorktreePathFromBase } from "../worktree-path/worktree-path";
 import { type ExecuteOutput, ShellEvent, type ShellEvents } from "./schemas";
 
 // node-pty exposes destroy() at runtime but it's missing from type definitions
@@ -128,11 +128,8 @@ export class ShellService extends TypedEventEmitter<ShellEvents> {
     this.log = logger.scope("shell");
   }
 
-  private deriveWorktreePath(
-    folderPath: string,
-    worktreeName: string,
-  ): Promise<string> {
-    return resolveWorktreePathByProbe(
+  private deriveWorktreePath(folderPath: string, worktreeName: string): string {
+    return deriveWorktreePathFromBase(
       this.workspaceSettings.getWorktreeLocation(),
       folderPath,
       worktreeName,

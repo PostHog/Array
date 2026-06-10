@@ -1,6 +1,7 @@
 import { Text } from "@components/text";
 import type { McpUiDisplayMode } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { isSafeExternalUrl } from "@posthog/shared";
 import * as WebBrowser from "expo-web-browser";
 import { ArrowsIn, ArrowsOut, Warning } from "phosphor-react-native";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -14,6 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import WebView, { type WebViewMessageEvent } from "react-native-webview";
+import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 import { useMcpInstallations } from "../hooks";
 import { sandboxProxyHtml } from "../sandbox/sandboxProxyHtml";
@@ -31,6 +33,8 @@ interface McpAppHostProps {
   toolResult?: unknown;
   status: "pending" | "running" | "completed" | "error";
 }
+
+const log = logger.scope("McpAppHost");
 
 const INLINE_MIN_HEIGHT = 180;
 const INLINE_MAX_HEIGHT = 520;
@@ -108,6 +112,10 @@ export function McpAppHost(props: McpAppHostProps) {
   );
 
   const handleOpenLink = useCallback(async (args: { url: string }) => {
+    if (!isSafeExternalUrl(args.url)) {
+      log.warn("Blocked external URL with unsafe scheme", args.url);
+      return;
+    }
     await WebBrowser.openBrowserAsync(args.url);
   }, []);
 

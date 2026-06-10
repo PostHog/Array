@@ -7,6 +7,7 @@ import {
 } from "@posthog/core/sidebar/selection";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import { Separator } from "@posthog/quill";
+import { HOME_TAB_FLAG } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import {
   archiveTasksImperative,
@@ -14,17 +15,17 @@ import {
   useArchiveTask,
 } from "@posthog/ui/features/archive/useArchiveTask";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxReports } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import {
   INBOX_PIPELINE_STATUS_FILTER,
   INBOX_REFETCH_INTERVAL_MS,
 } from "@posthog/ui/features/inbox/utils/inboxConstants";
 import { CommandCenterItem } from "@posthog/ui/features/sidebar/components/items/CommandCenterItem";
-import {
-  InboxItem,
-  NewTaskItem,
-} from "@posthog/ui/features/sidebar/components/items/HomeItem";
+import { HomeItem } from "@posthog/ui/features/sidebar/components/items/HomeItem";
+import { InboxItem } from "@posthog/ui/features/sidebar/components/items/InboxItem";
 import { McpServersItem } from "@posthog/ui/features/sidebar/components/items/McpServersItem";
+import { NewTaskItem } from "@posthog/ui/features/sidebar/components/items/NewTaskItem";
 import { SearchItem } from "@posthog/ui/features/sidebar/components/items/SearchItem";
 import { SkillsItem } from "@posthog/ui/features/sidebar/components/items/SkillsItem";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
@@ -46,6 +47,7 @@ import { DotsCircleSpinner } from "@posthog/ui/primitives/DotsCircleSpinner";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
   navigateToCommandCenter,
+  navigateToHome,
   navigateToInbox,
   navigateToMcpServers,
   navigateToSkills,
@@ -86,6 +88,8 @@ function SidebarMenuComponent() {
   const archiveCacheKeys = useArchiveCacheKeys();
   const { renameTask } = useRenameTask();
   const { togglePin } = usePinnedTasks();
+
+  const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
 
   const sidebarData = useSidebarData({
     activeView: view,
@@ -135,6 +139,10 @@ function SidebarMenuComponent() {
 
   const handleNewTaskClick = () => {
     openTaskInput();
+  };
+
+  const handleHomeClick = () => {
+    navigateToHome();
   };
 
   const handleInboxClick = () => {
@@ -403,9 +411,17 @@ function SidebarMenuComponent() {
           <NewTaskItem
             isActive={sidebarData.isHomeActive}
             onClick={handleNewTaskClick}
-            variant="primary"
           />
         </Box>
+
+        {homeTabEnabled && (
+          <Box>
+            <HomeItem
+              isActive={sidebarData.isHomeViewActive}
+              onClick={handleHomeClick}
+            />
+          </Box>
+        )}
 
         <Box>
           <SearchItem onClick={handleSearchClick} />

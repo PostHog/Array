@@ -1,8 +1,9 @@
 import { useMemo } from "react";
-import { Linking, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { getCloudUrlFromRegion, useAuthStore } from "@/features/auth";
 import { UNIVERSAL_LINK_PREFIX } from "@/lib/deep-links";
 import { parseGithubIssueUrl } from "@/lib/githubIssueUrl";
+import { openExternalUrl } from "@/lib/openExternalUrl";
 import { type ParsePostHogUrlOptions, parsePostHogUrl } from "@/lib/posthogUrl";
 import { getColorForClass, highlightCode } from "@/lib/syntax-highlight";
 import { useThemeColors } from "@/lib/theme";
@@ -223,7 +224,7 @@ function parseBlocks(text: string): Block[] {
 }
 
 function openUrl(url: string) {
-  Linking.openURL(url);
+  openExternalUrl(url);
 }
 
 function splitTrailingPunctuation(text: string): {

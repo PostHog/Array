@@ -1,5 +1,6 @@
 import { GitMerge, GitPullRequest } from "phosphor-react-native";
-import { Linking, Pressable } from "react-native";
+import { Pressable } from "react-native";
+import { openExternalUrl } from "@/lib/openExternalUrl";
 import { toRgba, useThemeColors } from "@/lib/theme";
 import { usePrStatus } from "../hooks/usePrStatus";
 
@@ -17,7 +18,7 @@ export function PrStatusBadge({ prUrl }: PrStatusBadgeProps) {
   const { data: status } = usePrStatus(prUrl);
 
   const handlePress = () => {
-    Linking.openURL(prUrl).catch(() => {});
+    openExternalUrl(prUrl);
   };
 
   let color: string = themeColors.gray[11];

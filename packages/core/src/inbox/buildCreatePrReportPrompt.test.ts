@@ -40,4 +40,32 @@ describe("buildCreatePrReportPrompt", () => {
     expect(prompt).toMatch(/can't fetch the report/i);
     expect(prompt).toMatch(/instead of guessing/i);
   });
+
+  it("appends user feedback when provided", () => {
+    const prompt = buildCreatePrReportPrompt({
+      reportId: "abc123",
+      isDevBuild: false,
+      feedback: "Use the v2 endpoint, not v1.",
+    });
+    expect(prompt).toMatch(/Additional feedback from the user/i);
+    expect(prompt).toContain("Use the v2 endpoint, not v1.");
+  });
+
+  it.each([
+    { label: "undefined", feedback: undefined },
+    { label: "empty string", feedback: "" },
+    { label: "whitespace only", feedback: "   " },
+  ])("omits the feedback section when feedback is $label", ({ feedback }) => {
+    const base = buildCreatePrReportPrompt({
+      reportId: "abc123",
+      isDevBuild: false,
+    });
+    const prompt = buildCreatePrReportPrompt({
+      reportId: "abc123",
+      isDevBuild: false,
+      feedback,
+    });
+    expect(prompt).toBe(base);
+    expect(prompt).not.toMatch(/Additional feedback/i);
+  });
 });

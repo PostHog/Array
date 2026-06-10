@@ -11,9 +11,36 @@ import {
 } from "react-native";
 import { useThemeColors } from "@/lib/theme";
 import type { Task } from "../types";
+import {
+  confirmArchiveRunningTask,
+  isTaskRunning,
+} from "../utils/archiveGuard";
 import { TaskItem } from "./TaskItem";
 
 const SWIPE_THRESHOLD = 60;
+
+function springToRest(value: Animated.Value): void {
+  Animated.spring(value, {
+    toValue: 0,
+    useNativeDriver: true,
+    tension: 40,
+    friction: 8,
+  }).start();
+}
+
+// Slide the row off-screen, then smooth the list-height change before running
+// the archive/unarchive side effect.
+function slideOut(value: Animated.Value, onDone: () => void): void {
+  Animated.timing(value, {
+    toValue: -400,
+    duration: 150,
+    easing: Easing.in(Easing.ease),
+    useNativeDriver: true,
+  }).start(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    onDone();
+  });
+}
 
 interface SwipeableTaskItemProps {
   task: Task;
@@ -104,15 +131,19 @@ export function SwipeableTaskItem({
         if (gesture.dx < -SWIPE_THRESHOLD && !actionTriggeredRef.current) {
           actionTriggeredRef.current = true;
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          Animated.timing(translateX, {
-            toValue: -400,
-            duration: 150,
-            easing: Easing.in(Easing.ease),
-            useNativeDriver: true,
-          }).start(() => {
-            LayoutAnimation.configureNext(
-              LayoutAnimation.Presets.easeInEaseOut,
+
+          // Archiving a running task stops its agent, so spring the row back
+          // and confirm first — only slide out and archive once the user
+          // agrees, matching the animation of every other archive action.
+          if (!p.isArchived && isTaskRunning(p.task)) {
+            springToRest(translateX);
+            confirmArchiveRunningTask(p.task.title, () =>
+              slideOut(translateX, () => p.onArchive(p.task.id)),
             );
+            return;
+          }
+
+          slideOut(translateX, () => {
             if (p.isArchived) {
               p.onUnarchive(p.task.id);
             } else {
@@ -120,12 +151,7 @@ export function SwipeableTaskItem({
             }
           });
         } else {
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true,
-            tension: 40,
-            friction: 8,
-          }).start();
+          springToRest(translateX);
         }
       },
       onPanResponderTerminate: () => {

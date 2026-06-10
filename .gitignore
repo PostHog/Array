@@ -11,6 +11,9 @@ out/
 storybook-static
 bin/
 
+# tsup bundled config artifacts (temporary files left behind when bundling TS configs)
+*.config.bundled_*.mjs
+
 # Environment
 .env
 .env.local

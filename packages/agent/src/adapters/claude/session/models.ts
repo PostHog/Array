@@ -14,6 +14,7 @@ const MODELS_WITH_1M_CONTEXT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
+  "claude-fable-5",
 ]);
 
 export function supports1MContext(modelId: string): boolean {
@@ -24,11 +25,13 @@ const MODELS_WITH_EFFORT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
+  "claude-fable-5",
 ]);
 
 const MODELS_WITH_XHIGH_EFFORT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
+  "claude-fable-5",
 ]);
 
 export function supportsEffort(modelId: string): boolean {

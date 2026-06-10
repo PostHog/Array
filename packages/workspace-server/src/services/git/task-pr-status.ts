@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { inject, injectable } from "inversify";
 import { WORKSPACE_REPOSITORY } from "../../db/identifiers";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
@@ -54,6 +55,7 @@ export class TaskPrStatusService {
       return false;
     }
     if (workspace.linkedBranch) return false;
+    if (!fs.existsSync(workspace.worktreePath)) return false;
     const [diffStats, syncStatus] = await Promise.all([
       this.gitService.getDiffStats(workspace.worktreePath),
       this.gitService.getGitSyncStatus(workspace.worktreePath),
@@ -131,6 +133,10 @@ export class TaskPrStatusService {
     }
 
     if (isCloud) return { prUrl: null, prState: null, hasDiff: false };
+
+    if (repoPath && !fs.existsSync(repoPath)) {
+      return { prUrl: null, prState: null, hasDiff: false };
+    }
 
     if (linkedBranch && repoPath) {
       const prUrl = await this.gitService.getPrUrlForBranch(

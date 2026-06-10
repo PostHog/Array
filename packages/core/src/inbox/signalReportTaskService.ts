@@ -29,6 +29,7 @@ export interface CreateSignalReportTaskInput {
   modelOverride?: string | null;
   reasoningLevel?: string;
   question?: string;
+  feedback?: string;
   baseBranch?: string | null;
   isDevBuild: boolean;
 }
@@ -83,6 +84,7 @@ export class SignalReportTaskService {
         : buildCreatePrReportPrompt({
             reportId: input.reportId,
             isDevBuild: input.isDevBuild,
+            feedback: input.feedback,
           });
 
     const taskInput = buildSignalReportTaskInput({

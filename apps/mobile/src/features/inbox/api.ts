@@ -45,6 +45,9 @@ export async function getSignalReports(
   if (params?.suggested_reviewers) {
     url.searchParams.set("suggested_reviewers", params.suggested_reviewers);
   }
+  if (params?.priority) {
+    url.searchParams.set("priority", params.priority);
+  }
 
   const response = await authedFetch(url.toString());
 

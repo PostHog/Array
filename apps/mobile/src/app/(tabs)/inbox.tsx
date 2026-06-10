@@ -38,6 +38,7 @@ export default function InboxScreen() {
   );
   const sourceProductFilter = useInboxFilterStore((s) => s.sourceProductFilter);
   const statusFilter = useInboxFilterStore((s) => s.statusFilter);
+  const priorityFilter = useInboxFilterStore((s) => s.priorityFilter);
   const suggestedReviewerFilter = useInboxFilterStore(
     (s) => s.suggestedReviewerFilter,
   );
@@ -66,6 +67,7 @@ export default function InboxScreen() {
         sourceProductFilter,
         statusFilter,
         suggestedReviewerFilter,
+        priorityFilter,
         defaultStatusFilter: DEFAULT_STATUS_FILTER,
       }),
     );
@@ -78,6 +80,7 @@ export default function InboxScreen() {
     sourceProductFilter,
     statusFilter,
     suggestedReviewerFilter,
+    priorityFilter,
   ]);
 
   // ── Tinder mode data ──────────────────────────────────────────────────────

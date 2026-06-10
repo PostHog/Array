@@ -527,9 +527,6 @@ export class AgentServer {
   }
 
   async start(): Promise<void> {
-    this.logger.debug(
-      "🐷 PostHog Code agent build — vojtab/pr-footer-slack-thread-link",
-    );
     await new Promise<void>((resolve) => {
       this.server = serve(
         {

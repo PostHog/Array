@@ -60,9 +60,6 @@ export interface BuildOptionsParams {
   enrichedReadCache?: EnrichedReadCache;
   /** Records PostHog product usage from MCP exec calls (deduped, session-wide). */
   onPostHogResourceUsed?: (subTool: string, commandText?: string) => void;
-  /** Records the `code` product when the agent reads a file from the codebase
-   *  (deduped, session-wide). */
-  onCodeFileRead?: () => void;
   /** Cloud task session — enables the signed-commit guard. */
   cloudMode?: boolean;
   /** Per-session task state populated by createTaskHook from SDK Task* events. */
@@ -168,7 +165,6 @@ function buildHooks(
   onPostHogResourceUsed:
     | ((subTool: string, commandText?: string) => void)
     | undefined,
-  onCodeFileRead: (() => void) | undefined,
   settingsManager: SettingsManager,
   logger: Logger,
   enrichmentDeps: FileEnrichmentDeps | undefined,
@@ -182,7 +178,6 @@ function buildHooks(
     createPostToolUseHook({
       onModeChange,
       onPostHogResourceUsed,
-      onCodeFileRead,
     }),
   ];
   if (enrichmentDeps && enrichedReadCache) {
@@ -365,6 +360,11 @@ function ensureLocalSettings(cwd: string): void {
   }
 }
 
+// The legacy CLI ships as cli.js; native binaries have no file extension.
+function isLegacyJavaScriptClaudeExecutable(executablePath: string): boolean {
+  return executablePath.endsWith(".js");
+}
+
 export function buildSessionOptions(params: BuildOptionsParams): Options {
   ensureLocalSettings(params.cwd);
 
@@ -380,6 +380,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
 
   const agents = buildAgents(params.userProvidedOptions?.agents);
   const registeredAgentNames = new Set(Object.keys(agents));
+  const claudeCodeExecutable = process.env.CLAUDE_CODE_EXECUTABLE;
 
   const options: Options = {
     ...params.userProvidedOptions,
@@ -392,7 +393,6 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     allowDangerouslySkipPermissions: !IS_ROOT || !!process.env.IS_SANDBOX,
     permissionMode: params.permissionMode,
     canUseTool: params.canUseTool,
-    executable: "node",
     tools,
     agents,
     extraArgs: {
@@ -409,7 +409,6 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.userProvidedOptions?.hooks,
       params.onModeChange,
       params.onPostHogResourceUsed,
-      params.onCodeFileRead,
       params.settingsManager,
       params.logger,
       params.enrichmentDeps,
@@ -433,8 +432,11 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     }),
   };
 
-  if (process.env.CLAUDE_CODE_EXECUTABLE) {
-    options.pathToClaudeCodeExecutable = process.env.CLAUDE_CODE_EXECUTABLE;
+  if (claudeCodeExecutable) {
+    options.pathToClaudeCodeExecutable = claudeCodeExecutable;
+    if (isLegacyJavaScriptClaudeExecutable(claudeCodeExecutable)) {
+      options.executable = "node";
+    }
   }
 
   if (params.isResume) {

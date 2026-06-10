@@ -39,6 +39,10 @@ export function navigateToFolderSettings(folderId: string): void {
   });
 }
 
+export function navigateToHome(): void {
+  void getRouterOrNull()?.navigate({ to: "/code/home" });
+}
+
 export function navigateToInbox(): void {
   void getRouterOrNull()?.navigate({ to: "/code/inbox" });
 }

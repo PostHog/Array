@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
-  Linking,
   Pressable,
   ScrollView,
   View,
@@ -13,6 +12,7 @@ import type {
   InboxReportActionProperties,
   InboxReportActionType,
 } from "@/lib/analytics";
+import { openExternalUrl } from "@/lib/openExternalUrl";
 import { useThemeColors } from "@/lib/theme";
 import { useUpdateSuggestedReviewers } from "../hooks/useInboxReports";
 import type {
@@ -21,6 +21,7 @@ import type {
   SuggestedReviewersArtefact,
 } from "../types";
 import {
+  orderSuggestedReviewers,
   reviewerMatchesAvailable,
   toSuggestedReviewerWriteContent,
 } from "../utils";
@@ -54,12 +55,10 @@ export function SuggestedReviewers({
 
   const reviewers = artefact.content;
 
-  const displayReviewers = useMemo(() => {
-    if (!meUuid) return reviewers;
-    const meIndex = reviewers.findIndex((r) => r.user?.uuid === meUuid);
-    if (meIndex <= 0) return reviewers;
-    return [reviewers[meIndex], ...reviewers.filter((_, i) => i !== meIndex)];
-  }, [reviewers, meUuid]);
+  const displayReviewers = useMemo(
+    () => orderSuggestedReviewers(reviewers, meUuid),
+    [reviewers, meUuid],
+  );
 
   const removeReviewer = (target: SuggestedReviewer) => {
     const next = reviewers.filter((r) => r !== target);
@@ -159,7 +158,7 @@ export function SuggestedReviewers({
                     fireAction("click_suggested_reviewer", {
                       suggested_reviewer_login: reviewer.github_login,
                     });
-                    Linking.openURL(
+                    openExternalUrl(
                       `https://github.com/${reviewer.github_login}`,
                     );
                   }}

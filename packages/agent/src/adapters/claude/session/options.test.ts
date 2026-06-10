@@ -71,6 +71,58 @@ describe("buildSessionOptions", () => {
     expect(options.agents?.["ph-explore"]).toEqual(override);
   });
 
+  describe("CLAUDE_CODE_EXECUTABLE", () => {
+    const originalClaudeExecutable = process.env.CLAUDE_CODE_EXECUTABLE;
+
+    beforeEach(() => {
+      delete process.env.CLAUDE_CODE_EXECUTABLE;
+    });
+
+    afterEach(() => {
+      if (originalClaudeExecutable === undefined) {
+        delete process.env.CLAUDE_CODE_EXECUTABLE;
+      } else {
+        process.env.CLAUDE_CODE_EXECUTABLE = originalClaudeExecutable;
+      }
+    });
+
+    it.each([
+      {
+        executablePath: "/tmp/claude",
+        expectedPath: "/tmp/claude",
+        expectedExecutable: undefined,
+        name: "does not force node when Claude executable is a native binary",
+      },
+      {
+        executablePath: "/tmp/cli.js",
+        expectedPath: "/tmp/cli.js",
+        expectedExecutable: "node",
+        name: "uses node when Claude executable is the legacy JavaScript CLI",
+      },
+      {
+        executablePath: undefined,
+        expectedPath: undefined,
+        expectedExecutable: undefined,
+        name: "leaves executable and path unset when CLAUDE_CODE_EXECUTABLE is missing",
+      },
+      {
+        executablePath: "",
+        expectedPath: undefined,
+        expectedExecutable: undefined,
+        name: "leaves executable and path unset when CLAUDE_CODE_EXECUTABLE is empty",
+      },
+    ])("$name", ({ executablePath, expectedPath, expectedExecutable }) => {
+      if (executablePath !== undefined) {
+        process.env.CLAUDE_CODE_EXECUTABLE = executablePath;
+      }
+
+      const options = buildSessionOptions(makeParams());
+
+      expect(options.pathToClaudeCodeExecutable).toBe(expectedPath);
+      expect(options.executable).toBe(expectedExecutable);
+    });
+  });
+
   describe("ANTHROPIC_CUSTOM_HEADERS", () => {
     const originalProjectId = process.env.POSTHOG_PROJECT_ID;
     const originalCustomHeaders = process.env.ANTHROPIC_CUSTOM_HEADERS;

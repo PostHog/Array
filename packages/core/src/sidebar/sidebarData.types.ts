@@ -30,6 +30,7 @@ export type TaskGroup = GenericTaskGroup<TaskData>;
 
 export interface SidebarData {
   isHomeActive: boolean;
+  isHomeViewActive: boolean;
   isInboxActive: boolean;
   isCommandCenterActive: boolean;
   isSkillsActive: boolean;

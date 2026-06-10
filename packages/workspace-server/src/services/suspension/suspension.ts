@@ -38,7 +38,7 @@ import {
   captureWorktreeCheckpoint,
   restoreWorktreeFromCheckpoint,
 } from "../worktree-checkpoint/worktree-checkpoint";
-import { resolveWorktreePathByProbe } from "../worktree-path/worktree-path";
+import { deriveWorktreePath as deriveWorktreePathFromBase } from "../worktree-path/worktree-path";
 import { getCurrentBranchName } from "../worktree-query/worktree-query";
 import {
   SUSPENSION_FILE_WATCHER,
@@ -488,11 +488,8 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
     return newWorktree.worktreeName;
   }
 
-  private deriveWorktreePath(
-    folderPath: string,
-    worktreeName: string,
-  ): Promise<string> {
-    return resolveWorktreePathByProbe(
+  private deriveWorktreePath(folderPath: string, worktreeName: string): string {
+    return deriveWorktreePathFromBase(
       this.workspaceSettings.getWorktreeLocation(),
       folderPath,
       worktreeName,

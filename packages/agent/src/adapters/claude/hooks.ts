@@ -179,16 +179,12 @@ interface CreatePostToolUseHookParams {
   /** Called after a PostHog MCP `call` exec executes, with the sub-tool name
    *  and the raw command (the command embeds the SQL for execute-sql). */
   onPostHogResourceUsed?: (subTool: string, commandText?: string) => void;
-  /** Called after the agent reads a file from the codebase, to surface the
-   *  "Code" resource chip. */
-  onCodeFileRead?: () => void;
 }
 
 export const createPostToolUseHook =
   ({
     onModeChange,
     onPostHogResourceUsed,
-    onCodeFileRead,
   }: CreatePostToolUseHookParams): HookCallback =>
   async (
     input: HookInput,
@@ -199,11 +195,6 @@ export const createPostToolUseHook =
 
       if (onModeChange && toolName === "EnterPlanMode") {
         await onModeChange("plan");
-      }
-
-      // Any file read counts as "used PostHog Code" — surface the Code chip.
-      if (onCodeFileRead && toolName === "Read") {
-        onCodeFileRead();
       }
 
       // Record PostHog product usage from the MCP exec dispatcher. Only the

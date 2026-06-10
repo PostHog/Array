@@ -1,11 +1,28 @@
 import { Text } from "@components/text";
 import { differenceInHours, format, formatDistanceToNow } from "date-fns";
-import { Check } from "phosphor-react-native";
+import { Check, GitPullRequest } from "phosphor-react-native";
 import { memo } from "react";
-import { Pressable, View } from "react-native";
+import { Linking, Pressable, View } from "react-native";
+import { parseGithubIssueUrl } from "@/lib/githubIssueUrl";
 import { useThemeColors } from "@/lib/theme";
 import type { Task } from "../types";
 import { TaskStatusIcon } from "./TaskStatusIcon";
+
+function PrBadge({ prUrl, number }: { prUrl: string; number: number }) {
+  const themeColors = useThemeColors();
+  return (
+    <Pressable
+      onPress={() => Linking.openURL(prUrl).catch(() => {})}
+      hitSlop={8}
+      className="shrink-0 flex-row items-center gap-0.5 rounded border border-gray-6 bg-gray-3 px-1.5 py-0.5 active:opacity-60"
+      accessibilityRole="link"
+      accessibilityLabel={`Open pull request #${number}`}
+    >
+      <GitPullRequest size={11} weight="bold" color={themeColors.gray[11]} />
+      <Text className="text-[11px] text-gray-11">{`#${number}`}</Text>
+    </Pressable>
+  );
+}
 
 interface TaskItemProps {
   task: Task;
@@ -29,6 +46,8 @@ function TaskItemComponent({
     hoursSinceCreated < 24
       ? formatDistanceToNow(createdAt, { addSuffix: true })
       : format(createdAt, "MMM d");
+  const prUrl = task.latest_run?.output?.pr_url;
+  const prRef = typeof prUrl === "string" ? parseGithubIssueUrl(prUrl) : null;
 
   return (
     <Pressable
@@ -61,9 +80,13 @@ function TaskItemComponent({
           >
             {task.title}
           </Text>
-          <Text className="shrink-0 text-[11px] text-gray-9">
-            {timeDisplay}
-          </Text>
+          {prRef?.kind === "pr" ? (
+            <PrBadge prUrl={prRef.normalizedUrl} number={prRef.number} />
+          ) : (
+            <Text className="shrink-0 text-[11px] text-gray-9">
+              {timeDisplay}
+            </Text>
+          )}
         </View>
 
         {task.description ? (

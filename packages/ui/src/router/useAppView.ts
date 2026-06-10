@@ -11,6 +11,7 @@ export type AppViewType =
   | "task-pending"
   | "task-input"
   | "folder-settings"
+  | "home"
   | "inbox"
   | "archived"
   | "command-center"
@@ -49,6 +50,8 @@ function deriveFromMatches(matches: Match[]): AppView {
       return { type: "task-pending", pendingTaskKey: last.params.key };
     case "/folders/$folderId":
       return { type: "folder-settings", folderId: last.params.folderId };
+    case "/code/home":
+      return { type: "home" };
     case "/code/inbox":
       return { type: "inbox" };
     case "/code/archived":

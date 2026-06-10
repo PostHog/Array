@@ -1,4 +1,5 @@
-import { Linking, Text } from "react-native";
+import { Text } from "react-native";
+import { openExternalUrl } from "@/lib/openExternalUrl";
 
 interface GithubRefChipProps {
   href: string;
@@ -13,7 +14,7 @@ interface GithubRefChipProps {
 export function GithubRefChip({ href, kind, label }: GithubRefChipProps) {
   return (
     <Text
-      onPress={() => Linking.openURL(href)}
+      onPress={() => openExternalUrl(href)}
       className="rounded-md bg-gray-3 px-1.5 py-0.5 font-mono text-[11px] text-accent-11"
       accessibilityRole="link"
       accessibilityLabel={`GitHub ${kind === "pr" ? "pull request" : "issue"} ${label}`}

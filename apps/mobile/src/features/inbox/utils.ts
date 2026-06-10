@@ -3,10 +3,37 @@ import type {
   AvailableSuggestedReviewer,
   SignalReport,
   SignalReportOrderingField,
+  SignalReportPriority,
   SignalReportStatus,
   SuggestedReviewer,
   SuggestedReviewerWriteEntry,
 } from "./types";
+
+const SIGNAL_SUMMARY_SECTION_HEADERS = [
+  "What's happening",
+  "Root cause",
+  "How to resolve",
+] as const;
+
+/**
+ * Inserts blank lines around signal report summary section headers so each
+ * label and its body render on their own line (agent output often packs them
+ * together, e.g. `**What's happening:** text **Root cause:** ...`).
+ */
+export function formatSignalReportSummaryMarkdown(content: string): string {
+  let result = content;
+
+  for (const header of SIGNAL_SUMMARY_SECTION_HEADERS) {
+    const boldHeader = `\\*\\*${header}:\\*\\*`;
+    result = result.replace(
+      new RegExp(`([^\\n])\\s*(${boldHeader})`, "gi"),
+      "$1\n\n$2",
+    );
+    result = result.replace(new RegExp(`(${boldHeader})\\s+`, "gi"), "$1\n\n");
+  }
+
+  return result;
+}
 
 export function inboxStatusLabel(status: SignalReportStatus): string {
   switch (status) {
@@ -63,6 +90,13 @@ export function buildSuggestedReviewerFilterParam(
   return Array.from(new Set(normalized)).join(",");
 }
 
+export function buildPriorityFilterParam(
+  priorities: SignalReportPriority[],
+): string | undefined {
+  if (priorities.length === 0) return undefined;
+  return Array.from(new Set(priorities)).join(",");
+}
+
 export function filterReportsBySearch(
   reports: SignalReport[],
   query: string,
@@ -90,6 +124,16 @@ export function getActionableReports(reports: SignalReport[]): SignalReport[] {
       r.actionability === "immediately_actionable" &&
       !r.already_addressed,
   );
+}
+
+export function orderSuggestedReviewers(
+  reviewers: SuggestedReviewer[],
+  meUuid: string | null | undefined,
+): SuggestedReviewer[] {
+  if (!meUuid) return reviewers;
+  const meIndex = reviewers.findIndex((r) => r.user?.uuid === meUuid);
+  if (meIndex <= 0) return reviewers;
+  return [reviewers[meIndex], ...reviewers.filter((_, i) => i !== meIndex)];
 }
 
 export interface ReviewerOption {
@@ -171,6 +215,7 @@ interface InboxViewedFilterState {
   sourceProductFilter: string[];
   statusFilter: SignalReportStatus[];
   suggestedReviewerFilter: string[];
+  priorityFilter: SignalReportPriority[];
   /** Default status filter as defined in the filter store, used to detect whether the user has narrowed it. */
   defaultStatusFilter: SignalReportStatus[];
 }
@@ -227,7 +272,8 @@ export function buildInboxViewedProperties(
   const hasActiveFilters =
     statusFiltered ||
     filters.sourceProductFilter.length > 0 ||
-    filters.suggestedReviewerFilter.length > 0;
+    filters.suggestedReviewerFilter.length > 0 ||
+    filters.priorityFilter.length > 0;
 
   return {
     report_count: reports.length,
@@ -237,7 +283,6 @@ export function buildInboxViewedProperties(
     source_product_filter: filters.sourceProductFilter,
     status_filter_count: filters.statusFilter.length,
     is_empty: totalCount === 0,
-    is_gated_due_to_scale: false,
     priority_p0_count: priorityCounts.P0,
     priority_p1_count: priorityCounts.P1,
     priority_p2_count: priorityCounts.P2,
