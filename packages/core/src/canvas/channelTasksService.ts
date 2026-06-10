@@ -1,8 +1,3 @@
-import {
-  ROOT_LOGGER,
-  type RootLogger,
-  type ScopedLogger,
-} from "@posthog/di/logger";
 import { inject, injectable } from "inversify";
 import type { ChannelTaskRecord } from "./channelTaskSchemas";
 import {
@@ -25,16 +20,10 @@ type FsEntry = FsEntryBase;
  */
 @injectable()
 export class ChannelTasksService {
-  private readonly log: ScopedLogger;
-
   constructor(
     @inject(DESKTOP_FS_CLIENT)
     private readonly fs: DesktopFsClient,
-    @inject(ROOT_LOGGER)
-    rootLogger: RootLogger,
-  ) {
-    this.log = rootLogger.scope("channel-tasks");
-  }
+  ) {}
 
   async list(channelId: string): Promise<ChannelTaskRecord[]> {
     const channelPath = await this.channelPath(channelId);
@@ -56,15 +45,6 @@ export class ChannelTasksService {
     const allRows = await this.listByRef(input.taskId);
     const homeRow = allRows.find((r) => r.path.startsWith(HOME_FOLDER));
     const channelRows = allRows.filter((r) => r !== homeRow);
-
-    // TODO: drop this diagnostic once "File to..." duplication is squashed.
-    this.log.info("file decision", {
-      taskId: input.taskId,
-      targetChannelPath,
-      allRows: allRows.map((r) => ({ id: r.id, path: r.path, ref: r.ref })),
-      homeRowId: homeRow?.id ?? null,
-      channelRowCount: channelRows.length,
-    });
 
     // Already at the target channel — nothing to do.
     const atTarget = channelRows.find((r) =>
