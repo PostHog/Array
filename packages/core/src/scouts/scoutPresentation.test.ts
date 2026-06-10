@@ -275,11 +275,13 @@ describe("rollups", () => {
       emittedCount: 2,
     });
     expect(summary.successRate).toBe(0.5);
+    expect(summary.emitRate).toBe(0.5);
   });
 
-  it("returns a null success rate with no finished runs", () => {
+  it("returns null rates with no runs", () => {
     const summary = computeFleetSummary([], computeScoutRollups([]));
     expect(summary.successRate).toBeNull();
+    expect(summary.emitRate).toBeNull();
   });
 });
 

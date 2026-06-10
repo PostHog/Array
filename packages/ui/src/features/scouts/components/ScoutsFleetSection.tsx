@@ -112,9 +112,12 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
             ? ` · ${Math.round(summary.successRate * 100)}% success`
             : ""}
           {` · ${summary.emittedCount} signal${summary.emittedCount === 1 ? "" : "s"} emitted`}
+          {summary.emitRate !== null
+            ? ` (${Math.round(summary.emitRate * 100)}%)`
+            : ""}
           <span className="text-gray-9">
             {" "}
-            ({scoutRunsWindowLabel(runsWindow)})
+            · {scoutRunsWindowLabel(runsWindow)}
           </span>
         </Text>
         <span className="flex-1" />

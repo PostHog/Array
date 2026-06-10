@@ -29,9 +29,9 @@ export interface ScoutRunsWindow {
   complete: boolean;
 }
 
-/** Label for stats derived from a window, e.g. "last 24 h". */
+/** Label for stats derived from a window, e.g. "last 24h". */
 export function scoutRunsWindowLabel(window?: ScoutRunsWindow): string {
-  const base = `last ${SCOUT_RUNS_WINDOW_HOURS} h`;
+  const base = `last ${SCOUT_RUNS_WINDOW_HOURS}h`;
   return window && !window.complete ? `${base} · truncated` : base;
 }
 

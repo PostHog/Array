@@ -262,6 +262,8 @@ export interface FleetSummary {
   emittedCount: number;
   /** Completed / (completed + failed) over the visible window, or null when no finished runs. */
   successRate: number | null;
+  /** Share of runs in the window that emitted at least one signal, or null when no runs. */
+  emitRate: number | null;
 }
 
 export function computeFleetSummary(
@@ -272,11 +274,17 @@ export function computeFleetSummary(
   let emittedCount = 0;
   let completedCount = 0;
   let failedCount = 0;
+  let runCount = 0;
+  let emittedRunCount = 0;
   for (const rollup of rollups.values()) {
     if (rollup.runningRun) runningCount += 1;
     emittedCount += rollup.emittedCount;
     completedCount += rollup.completedCount;
     failedCount += rollup.failedCount;
+    runCount += rollup.runCount;
+    for (const run of rollup.runs) {
+      if ((run.emitted_count ?? 0) > 0) emittedRunCount += 1;
+    }
   }
   const finished = completedCount + failedCount;
   return {
@@ -285,6 +293,7 @@ export function computeFleetSummary(
     runningCount,
     emittedCount,
     successRate: finished > 0 ? completedCount / finished : null,
+    emitRate: runCount > 0 ? emittedRunCount / runCount : null,
   };
 }
 

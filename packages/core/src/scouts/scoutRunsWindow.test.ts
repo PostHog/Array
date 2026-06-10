@@ -116,12 +116,10 @@ describe("fetchScoutRunsWindow", () => {
 
 describe("scoutRunsWindowLabel", () => {
   it("names the window and flags truncation", () => {
-    expect(scoutRunsWindowLabel({ runs: [], complete: true })).toBe(
-      "last 24 h",
-    );
+    expect(scoutRunsWindowLabel({ runs: [], complete: true })).toBe("last 24h");
     expect(scoutRunsWindowLabel({ runs: [], complete: false })).toBe(
-      "last 24 h · truncated",
+      "last 24h · truncated",
     );
-    expect(scoutRunsWindowLabel(undefined)).toBe("last 24 h");
+    expect(scoutRunsWindowLabel(undefined)).toBe("last 24h");
   });
 });
