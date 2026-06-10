@@ -3,9 +3,11 @@ import { agentRouter } from "@posthog/host-router/routers/agent.router";
 import { analyticsRouter } from "@posthog/host-router/routers/analytics.router";
 import { archiveRouter } from "@posthog/host-router/routers/archive.router";
 import { authRouter } from "@posthog/host-router/routers/auth.router";
+import { canvasGenRouter } from "@posthog/host-router/routers/canvas-gen.router";
 import { cloudTaskRouter } from "@posthog/host-router/routers/cloud-task.router";
 import { connectivityRouter } from "@posthog/host-router/routers/connectivity.router";
 import { contextMenuRouter } from "@posthog/host-router/routers/context-menu.router";
+import { dashboardsRouter } from "@posthog/host-router/routers/dashboards.router";
 import { deepLinkRouter } from "@posthog/host-router/routers/deep-link.router";
 import { enrichmentRouter } from "@posthog/host-router/routers/enrichment.router";
 import { environmentRouter } from "@posthog/host-router/routers/environment.router";
@@ -47,6 +49,8 @@ export const trpcRouter = router({
   analytics: analyticsRouter,
   archive: archiveRouter,
   auth: authRouter,
+  canvasGen: canvasGenRouter,
+  dashboards: dashboardsRouter,
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,

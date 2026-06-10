@@ -84,7 +84,7 @@ export function SignalSourcesSettings({
         <SignalSourceTogglesSkeleton />
       ) : (
         <Tooltip
-          content="Connect code access to configure signal sources"
+          content="Connect code access to configure Self-driving inputs"
           hidden={hasGithubIntegration}
         >
           <Box>

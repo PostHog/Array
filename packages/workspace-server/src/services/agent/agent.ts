@@ -225,12 +225,16 @@ function buildClaudeCodeOptions(args: {
   additionalDirectories?: string[];
   effort?: EffortLevel;
   plugins: { type: "local"; path: string }[];
+  disallowedTools?: string[];
 }) {
   return {
     ...(args.additionalDirectories?.length && {
       additionalDirectories: args.additionalDirectories,
     }),
     ...(args.effort && { effort: args.effort }),
+    ...(args.disallowedTools?.length && {
+      disallowedTools: args.disallowedTools,
+    }),
     plugins: args.plugins,
   };
 }
@@ -248,6 +252,10 @@ interface SessionConfig {
   permissionMode?: string;
   /** Custom instructions injected into the system prompt */
   customInstructions?: string;
+  /** Replaces the PostHog system prompt entirely (constrained surfaces). */
+  systemPromptOverride?: string;
+  /** Tool names denied for this session (passed to the Claude SDK). */
+  disallowedTools?: string[];
   /** Effort level for Claude sessions */
   effort?: EffortLevel;
   /** Model to use for the session (e.g. "claude-sonnet-4-6") */
@@ -511,9 +519,16 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     taskId: string,
     customInstructions?: string,
     additionalDirectories?: string[],
+    systemPromptOverride?: string,
   ): {
     append: string;
   } {
+    // A constrained surface (e.g. the canvas generator) supplies its own prompt
+    // and does NOT want the default coding/attribution guidance.
+    if (systemPromptOverride) {
+      return { append: systemPromptOverride };
+    }
+
     let prompt = `PostHog context: use project ${credentials.projectId} on ${credentials.apiHost}. When using PostHog MCP tools, operate only on this project.`;
 
     prompt += `
@@ -599,6 +614,8 @@ When creating pull requests, add the following footer at the end of the PR descr
       adapter,
       permissionMode,
       customInstructions,
+      systemPromptOverride,
+      disallowedTools,
       effort,
       model,
       jsonSchema,
@@ -662,6 +679,7 @@ When creating pull requests, add the following footer at the end of the PR descr
         taskId,
         customInstructions,
         additionalDirectories,
+        systemPromptOverride,
       );
 
       const acpConnection = await agent.run(taskId, taskRunId, {
@@ -768,6 +786,7 @@ When creating pull requests, add the following footer at the end of the PR descr
         additionalDirectories,
         effort,
         plugins,
+        disallowedTools,
       });
 
       let configOptions: SessionConfigOption[] | undefined;
@@ -1595,6 +1614,12 @@ For git operations while detached:
         "permissionMode" in params ? params.permissionMode : undefined,
       customInstructions:
         "customInstructions" in params ? params.customInstructions : undefined,
+      systemPromptOverride:
+        "systemPromptOverride" in params
+          ? params.systemPromptOverride
+          : undefined,
+      disallowedTools:
+        "disallowedTools" in params ? params.disallowedTools : undefined,
       effort: "effort" in params ? params.effort : undefined,
       model: "model" in params ? params.model : undefined,
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,

@@ -69,7 +69,7 @@ export function SituationStation({ id, bindings }: Props) {
         width: layout.w,
         height: layout.h,
       }}
-      aria-label={`${meta?.label ?? id} — ${actions.length} action${actions.length === 1 ? "" : "s"}`}
+      aria-label={`${meta?.label ?? id} – ${actions.length} action${actions.length === 1 ? "" : "s"}`}
     >
       <div className="flex items-baseline justify-between gap-2">
         <Text

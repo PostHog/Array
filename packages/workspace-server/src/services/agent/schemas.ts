@@ -48,6 +48,18 @@ export const startSessionInput = z.object({
   adapter: z.enum(["claude", "codex"]).optional(),
   additionalDirectories: z.array(z.string()).optional(),
   customInstructions: z.string().max(2000).optional(),
+  /**
+   * Replaces the PostHog system prompt entirely for this session. Used by
+   * constrained, single-purpose surfaces (e.g. the canvas generator) that drive
+   * the agent with their own prompt rather than the default coding prompt.
+   * Uncapped, unlike `customInstructions`.
+   */
+  systemPromptOverride: z.string().optional(),
+  /**
+   * Tool names the agent must not use this session (passed to the Claude SDK).
+   * Lets a sandboxed surface deny file/shell/network tools.
+   */
+  disallowedTools: z.array(z.string()).optional(),
   effort: effortLevelSchema.optional(),
   model: z.string().optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),

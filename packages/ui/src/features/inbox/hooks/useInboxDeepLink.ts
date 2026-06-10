@@ -1,16 +1,19 @@
-import { useHostTRPCClient } from "@posthog/host-router/react";
-import { navigateToInbox } from "@posthog/ui/router/navigationBridge";
-import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef } from "react";
+import { seedInboxReportDetailCache } from "@posthog/core/inbox/inboxQuery";
+import { useHostTRPC } from "@posthog/host-router/react";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
+import { reportKeys } from "@posthog/ui/features/inbox/hooks/useInboxReports";
+import { useInboxSignalsFilterStore } from "@posthog/ui/features/inbox/stores/inboxSignalsFilterStore";
+import {
+  navigateToInboxPullRequestDetail,
+  navigateToInboxReportDetail,
+} from "@posthog/ui/router/navigationBridge";
+import { logger } from "@posthog/ui/shell/logger";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSubscription } from "@trpc/tanstack-react-query";
+import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { logger } from "../../../shell/logger";
-import { useOptionalAuthenticatedClient } from "../../auth/authClient";
-import { useAuthStateValue } from "../../auth/store";
-import { AUTH_SCOPED_QUERY_META } from "../../auth/useCurrentUser";
-import { useInboxReportSelectionStore } from "../inboxReportSelectionStore";
-import { useInboxSignalsFilterStore } from "../inboxSignalsFilterStore";
-import { setPendingInboxOpenMethod } from "../utils/pendingInboxOpenMethod";
-import { reportKeys } from "./useInboxReports";
 
 const log = logger.scope("inbox-deep-link");
 
@@ -25,22 +28,32 @@ const log = logger.scope("inbox-deep-link");
  *    - On 404/403 (wrong team / deleted / suppressed): toast "Report not found
  *      in the current team" and leave the current view untouched.
  *    - On transient failure: toast a generic error and leave state untouched.
- * 2. Only on success: reset inbox-local filters (so the report isn't hidden),
- *    navigate to the inbox view, and select the report id.
+ * 2. Only on success: reset inbox-local filters (so the report isn't hidden)
+ *    and navigate directly to the report's detail view. The tab is picked from
+ *    the report itself – Pulls if it has an implementation PR, otherwise
+ *    Reports – so the user lands on the right surface regardless of which tab
+ *    was last selected. Runs reports also surface in the report detail view,
+ *    where the run logs are visible.
  */
 export function useInboxDeepLink() {
-  const hostClient = useHostTRPCClient();
+  const trpcReact = useHostTRPC();
   const queryClient = useQueryClient();
   const client = useOptionalAuthenticatedClient();
   const isAuthenticated = useAuthStateValue(
     (s) => s.status === "authenticated",
   );
-  const pendingDrainedRef = useRef(false);
 
-  const setSelectedReportIds = useInboxReportSelectionStore(
-    (s) => s.setSelectedReportIds,
-  );
   const resetFilters = useInboxSignalsFilterStore((s) => s.resetFilters);
+
+  const pendingDeepLink = useQuery(
+    trpcReact.deepLink.getPendingReportLink.queryOptions(undefined, {
+      enabled: isAuthenticated && !!client,
+      // Drain once per session – the main process clears its pending entry on read.
+      staleTime: Number.POSITIVE_INFINITY,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    }),
+  );
 
   const openReport = useCallback(
     async (reportId: string) => {
@@ -65,42 +78,32 @@ export function useInboxDeepLink() {
         }
 
         resetFilters();
-        navigateToInbox();
-        setPendingInboxOpenMethod("deeplink");
-        setSelectedReportIds([report.id]);
+        seedInboxReportDetailCache(queryClient, report);
+        if (report.implementation_pr_url) {
+          navigateToInboxPullRequestDetail(report.id);
+        } else {
+          navigateToInboxReportDetail(report.id);
+        }
         log.info(`Successfully opened report from deep link: ${report.id}`);
       } catch (error) {
         log.error("Unexpected error opening report from deep link:", error);
         toast.error("Failed to open report");
       }
     },
-    [client, queryClient, resetFilters, setSelectedReportIds],
+    [client, queryClient, resetFilters],
   );
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      pendingDrainedRef.current = false;
-      return;
+    if (pendingDeepLink.data?.reportId) {
+      void openReport(pendingDeepLink.data.reportId);
     }
-    if (!client || pendingDrainedRef.current) return;
+  }, [pendingDeepLink.data, openReport]);
 
-    pendingDrainedRef.current = true;
-    void (async () => {
-      try {
-        const pending = await hostClient.deepLink.getPendingReportLink.query();
-        if (pending) await openReport(pending.reportId);
-      } catch (error) {
-        log.error("Failed to check for pending inbox deep link:", error);
-      }
-    })();
-  }, [isAuthenticated, client, openReport, hostClient]);
-
-  useEffect(() => {
-    const subscription = hostClient.deepLink.onOpenReport.subscribe(undefined, {
+  useSubscription(
+    trpcReact.deepLink.onOpenReport.subscriptionOptions(undefined, {
       onData: (data) => {
         if (data?.reportId) void openReport(data.reportId);
       },
-    });
-    return () => subscription.unsubscribe();
-  }, [hostClient, openReport]);
+    }),
+  );
 }

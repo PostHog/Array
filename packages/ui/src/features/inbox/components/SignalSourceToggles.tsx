@@ -10,14 +10,21 @@ import {
   VideoIcon,
 } from "@phosphor-icons/react";
 import type { SignalSourceConfig } from "@posthog/api-client/posthog-client";
-import type { SignalSourceValues } from "@posthog/core/inbox/signalSourceService";
 import { Button } from "@posthog/quill";
 import { PgAnalyzeIcon } from "@posthog/ui/features/inbox/components/utils/PgAnalyzeIcon";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Box, Flex, Spinner, Switch, Text, Tooltip } from "@radix-ui/themes";
 import { memo, useCallback } from "react";
 
-export type { SignalSourceValues };
+export interface SignalSourceValues {
+  session_replay: boolean;
+  error_tracking: boolean;
+  github: boolean;
+  linear: boolean;
+  zendesk: boolean;
+  conversations: boolean;
+  pganalyze: boolean;
+}
 
 interface SignalSourceToggleCardProps {
   icon: React.ReactNode;
@@ -81,16 +88,20 @@ const SignalSourceToggleCard = memo(function SignalSourceToggleCard({
             ? onSetup
             : () => onCheckedChange(!checked)
       }
-      className={`rounded-(--radius-3) border border-(--gray-4) bg-(--color-panel-solid) ${disabled || loading ? "cursor-default" : "cursor-pointer"}`}
+      className={[
+        "rounded-(--radius-3) border bg-(--color-panel-solid) transition duration-150",
+        checked ? "border-(--accent-6)" : "border-border",
+        disabled || loading
+          ? "cursor-default"
+          : "cursor-pointer hover:border-(--gray-6) hover:bg-(--gray-2) hover:shadow-sm",
+      ].join(" ")}
     >
       <Flex align="center" justify="between" gap="4">
         <Flex align="center" gap="3">
-          <Box className="shrink-0 text-(--gray-11)">{icon}</Box>
+          <Box className="shrink-0 text-gray-11">{icon}</Box>
           <Flex direction="column" gap="1">
             <Flex align="center" gap="2">
-              <Text className="font-medium text-(--gray-12) text-sm">
-                {label}
-              </Text>
+              <Text className="font-medium text-gray-12 text-sm">{label}</Text>
               {labelSuffix}
               {statusInfo && (
                 <Text
@@ -101,9 +112,9 @@ const SignalSourceToggleCard = memo(function SignalSourceToggleCard({
                 </Text>
               )}
             </Flex>
-            <Text className="text-(--gray-11) text-[13px]">{description}</Text>
+            <Text className="text-[13px] text-gray-11">{description}</Text>
             {docsUrl && (
-              <Text className="text-(--gray-11) text-[13px]">
+              <Text className="text-[13px] text-gray-11">
                 <a
                   href={docsUrl}
                   target="_blank"
@@ -161,26 +172,26 @@ export const EvaluationsSection = memo(function EvaluationsSection({
     <Box
       p="3"
       onClick={() => window.open(evaluationsUrl, "_blank", "noopener")}
-      className="cursor-pointer rounded-(--radius-3) border border-(--gray-4) bg-(--color-panel-solid)"
+      className="cursor-pointer rounded-(--radius-3) border border-border bg-(--color-panel-solid) transition duration-150 hover:border-(--gray-6) hover:bg-(--gray-2) hover:shadow-sm"
     >
       <Flex align="center" justify="between" gap="4">
         <Flex align="center" gap="3">
-          <Box className="shrink-0 text-(--gray-11)">
+          <Box className="shrink-0 text-gray-11">
             <BrainIcon size={20} />
           </Box>
           <Flex direction="column" gap="1">
             <Flex align="center" gap="2">
-              <Text className="font-medium text-(--gray-12) text-sm">
+              <Text className="font-medium text-gray-12 text-sm">
                 AI observability
               </Text>
               <Tooltip content="This is only visible to staff users of PostHog">
                 <Badge color="blue">Internal</Badge>
               </Tooltip>
             </Flex>
-            <Text className="text-(--gray-11) text-[13px]">
+            <Text className="text-[13px] text-gray-11">
               Monitor how your AI features are performing
             </Text>
-            <Text className="text-(--gray-11) text-[13px]">
+            <Text className="text-[13px] text-gray-11">
               <a
                 href="https://posthog.com/docs/ai-observability"
                 target="_blank"
@@ -318,7 +329,7 @@ export function SignalSourceToggles({
           <SignalSourceToggleCard
             icon={<ChatsIcon size={20} />}
             label="Support"
-            description="Turn support conversations into signals"
+            description="Turn support conversations into Self-driving inputs"
             checked={value.conversations}
             onCheckedChange={toggleConversations}
             disabled={disabled}
@@ -414,7 +425,7 @@ function SignalSourceToggleCardSkeleton() {
   return (
     <Box
       p="3"
-      className="rounded-(--radius-3) border border-(--gray-4) bg-(--color-panel-solid)"
+      className="rounded-(--radius-3) border border-border bg-(--color-panel-solid)"
     >
       <Flex align="center" justify="between" gap="4">
         <Flex align="center" gap="3" className="min-w-0 flex-1">

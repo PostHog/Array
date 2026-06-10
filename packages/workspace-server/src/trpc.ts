@@ -83,6 +83,8 @@ import {
   getPrChangedFilesInput,
   getPrDetailsByUrlInput,
   getPrDetailsByUrlOutput,
+  getPrDiffStatsBatchInput,
+  getPrDiffStatsBatchOutput,
   getPrReviewCommentsInput,
   getPrReviewCommentsOutput,
   getPrTemplateInput,
@@ -532,6 +534,11 @@ export const appRouter = t.router({
       .input(getPrChangedFilesInput)
       .output(changedFilesOutput)
       .query(({ input }) => gitService().getPrChangedFiles(input.prUrl)),
+
+    getPrDiffStatsBatch: t.procedure
+      .input(getPrDiffStatsBatchInput)
+      .output(getPrDiffStatsBatchOutput)
+      .query(({ input }) => gitService().getPrDiffStatsBatch(input.prUrls)),
 
     getBranchChangedFiles: t.procedure
       .input(getBranchChangedFilesInput)

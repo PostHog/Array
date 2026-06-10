@@ -1,14 +1,12 @@
-import { isReportUpForReview } from "@posthog/core/inbox/reportFilters";
 import {
-  computeEffectiveBulkIds,
-  computeOrderedVisibleTaskIds,
-  computePriorTaskIds,
-  formatArchiveResult,
-} from "@posthog/core/sidebar/selection";
+  INBOX_PIPELINE_STATUS_FILTER,
+  INBOX_REFETCH_INTERVAL_MS,
+  isReportUpForReview,
+} from "@posthog/core/inbox/reportFiltering";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import { Separator } from "@posthog/quill";
-import { HOME_TAB_FLAG } from "@posthog/shared";
-import type { Task } from "@posthog/shared/domain-types";
+import { HOME_TAB_FLAG } from "@posthog/shared/constants";
+import type { Task } from "@posthog/shared/types";
 import {
   archiveTasksImperative,
   useArchiveCacheKeys,
@@ -17,20 +15,6 @@ import {
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxReports } from "@posthog/ui/features/inbox/hooks/useInboxReports";
-import {
-  INBOX_PIPELINE_STATUS_FILTER,
-  INBOX_REFETCH_INTERVAL_MS,
-} from "@posthog/ui/features/inbox/utils/inboxConstants";
-import { CommandCenterItem } from "@posthog/ui/features/sidebar/components/items/CommandCenterItem";
-import { HomeItem } from "@posthog/ui/features/sidebar/components/items/HomeItem";
-import { InboxItem } from "@posthog/ui/features/sidebar/components/items/InboxItem";
-import { McpServersItem } from "@posthog/ui/features/sidebar/components/items/McpServersItem";
-import { NewTaskItem } from "@posthog/ui/features/sidebar/components/items/NewTaskItem";
-import { SearchItem } from "@posthog/ui/features/sidebar/components/items/SearchItem";
-import { SkillsItem } from "@posthog/ui/features/sidebar/components/items/SkillsItem";
-import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
-import { TaskListView } from "@posthog/ui/features/sidebar/components/TaskListView";
-import { TasksHeader } from "@posthog/ui/features/sidebar/components/TasksHeader";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskSelectionStore } from "@posthog/ui/features/sidebar/taskSelectionStore";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
@@ -46,6 +30,7 @@ import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import { DotsCircleSpinner } from "@posthog/ui/primitives/DotsCircleSpinner";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
+  navigateToAgents,
   navigateToCommandCenter,
   navigateToHome,
   navigateToInbox,
@@ -62,6 +47,17 @@ import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArchiveRunningTaskDialog } from "./ArchiveRunningTaskDialog";
+import { AgentsItem } from "./items/AgentsItem";
+import { CommandCenterItem } from "./items/CommandCenterItem";
+import { HomeItem } from "./items/HomeItem";
+import { InboxItem } from "./items/InboxItem";
+import { McpServersItem } from "./items/McpServersItem";
+import { NewTaskItem } from "./items/NewTaskItem";
+import { SearchItem } from "./items/SearchItem";
+import { SkillsItem } from "./items/SkillsItem";
+import { SidebarItem } from "./SidebarItem";
+import { TaskListView } from "./TaskListView";
+import { TasksHeader } from "./TasksHeader";
 
 const log = logger.scope("sidebar-menu");
 
@@ -70,6 +66,8 @@ function isTaskActivelyRunning(task: TaskData): boolean {
 }
 
 function SidebarMenuComponent() {
+  const hostClient = useHostTRPCClient();
+  const archiveCacheKeys = useArchiveCacheKeys();
   const view = useAppView();
 
   // Must mirror useSidebarData's filters so taskMap covers every rendered
@@ -81,11 +79,9 @@ function SidebarMenuComponent() {
   const { data: workspaces = {} } = useWorkspaces();
   const { markAsViewed } = useTaskViewed();
 
-  const hostClient = useHostTRPCClient();
   const { showContextMenu, editingTaskId, setEditingTaskId } =
     useTaskContextMenu();
   const { archiveTask } = useArchiveTask();
-  const archiveCacheKeys = useArchiveCacheKeys();
   const { renameTask } = useRenameTask();
   const { togglePin } = usePinnedTasks();
 
@@ -149,6 +145,10 @@ function SidebarMenuComponent() {
     navigateToInbox();
   };
 
+  const handleAgentsClick = () => {
+    navigateToAgents();
+  };
+
   const handleCommandCenterClick = () => {
     navigateToCommandCenter();
   };
@@ -198,15 +198,24 @@ function SidebarMenuComponent() {
   // index for shift-click range selection so it matches what the user sees —
   // in by-project mode the chronological flat order would span across project
   // groups and pull in unrelated tasks.
-  const orderedVisibleTaskIds = useMemo(
-    () =>
-      computeOrderedVisibleTaskIds(
-        sidebarData,
-        organizeMode,
-        collapsedSections,
-      ),
-    [sidebarData, organizeMode, collapsedSections],
-  );
+  const orderedVisibleTaskIds = useMemo(() => {
+    const ids: string[] = sidebarData.pinnedTasks.map((t) => t.id);
+    if (organizeMode === "by-project") {
+      for (const group of sidebarData.groupedTasks) {
+        if (collapsedSections.has(group.id)) continue;
+        for (const t of group.tasks) ids.push(t.id);
+      }
+    } else {
+      for (const t of sidebarData.flatTasks) ids.push(t.id);
+    }
+    return ids;
+  }, [
+    sidebarData.pinnedTasks,
+    sidebarData.flatTasks,
+    sidebarData.groupedTasks,
+    organizeMode,
+    collapsedSections,
+  ]);
 
   useEffect(() => {
     pruneSelection(allSidebarTaskIds);
@@ -215,10 +224,12 @@ function SidebarMenuComponent() {
   // The active (routed) task is implicitly part of any bulk selection — the
   // user expects to see and act on it together with cmd/shift-clicked tasks.
   const activeTaskId = sidebarData.activeTaskId;
-  const effectiveBulkIds = useMemo(
-    () => computeEffectiveBulkIds(selectedTaskIds, activeTaskId),
-    [activeTaskId, selectedTaskIds],
-  );
+  const effectiveBulkIds = useMemo(() => {
+    if (selectedTaskIds.length === 0) return [];
+    if (!activeTaskId) return selectedTaskIds;
+    if (selectedTaskIds.includes(activeTaskId)) return selectedTaskIds;
+    return [activeTaskId, ...selectedTaskIds];
+  }, [activeTaskId, selectedTaskIds]);
 
   const handleTaskClick = (taskId: string, e: React.MouseEvent) => {
     if (e.shiftKey) {
@@ -237,6 +248,9 @@ function SidebarMenuComponent() {
     if (task) {
       void openTask(task);
     } else {
+      // Sidebar rows come from the summaries path, which can include tasks the
+      // full-list query (taskMap) doesn't carry. Don't silently bail — navigate
+      // by id; the task-detail route resolves the task from its own query.
       navigateToTaskDetail(taskId);
     }
   };
@@ -252,24 +266,25 @@ function SidebarMenuComponent() {
           });
         if (!result.action) return;
         if (result.action.type === "archive") {
-          const outcome = await archiveTasksImperative(
+          const { archived, failed } = await archiveTasksImperative(
             taskIds,
             queryClient,
             archiveCacheKeys,
           );
           clearSelection();
-          const { kind, message } = formatArchiveResult(outcome);
-          if (kind === "success") {
-            toast.success(message);
+          if (failed === 0) {
+            toast.success(
+              `${archived} ${archived === 1 ? "task" : "tasks"} archived`,
+            );
           } else {
-            toast.error(message);
+            toast.error(`${archived} archived, ${failed} failed`);
           }
         }
       } catch (error) {
         log.error("Failed to show bulk context menu", error);
       }
     },
-    [queryClient, clearSelection, hostClient, archiveCacheKeys],
+    [hostClient, queryClient, clearSelection, archiveCacheKeys],
   );
 
   const handleTaskContextMenu = (
@@ -344,24 +359,31 @@ function SidebarMenuComponent() {
   const handleArchivePrior = useCallback(
     async (taskId: string) => {
       const allVisible = [...sidebarData.pinnedTasks, ...sidebarData.flatTasks];
-      const priorTaskIds = computePriorTaskIds(allVisible, taskId);
+      const clickedTask = allVisible.find((t) => t.id === taskId);
+      if (!clickedTask) return;
+
+      const threshold = clickedTask.createdAt;
+      const priorTaskIds = allVisible
+        .filter((t) => t.id !== taskId && t.createdAt < threshold)
+        .map((t) => t.id);
 
       if (priorTaskIds.length === 0) {
         toast.info("No older tasks to archive");
         return;
       }
 
-      const outcome = await archiveTasksImperative(
+      const { archived, failed } = await archiveTasksImperative(
         priorTaskIds,
         queryClient,
         archiveCacheKeys,
       );
 
-      const { kind, message } = formatArchiveResult(outcome);
-      if (kind === "success") {
-        toast.success(message);
+      if (failed === 0) {
+        toast.success(
+          `${archived} ${archived === 1 ? "task" : "tasks"} archived`,
+        );
       } else {
-        toast.error(message);
+        toast.error(`${archived} archived, ${failed} failed`);
       }
     },
     [
@@ -432,6 +454,13 @@ function SidebarMenuComponent() {
             isActive={sidebarData.isInboxActive}
             onClick={handleInboxClick}
             signalCount={inboxSignalCount}
+          />
+        </Box>
+
+        <Box>
+          <AgentsItem
+            isActive={sidebarData.isAgentsActive}
+            onClick={handleAgentsClick}
           />
         </Box>
 

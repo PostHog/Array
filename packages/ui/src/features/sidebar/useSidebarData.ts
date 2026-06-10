@@ -14,7 +14,7 @@ import type {
   TaskGroup,
 } from "@posthog/core/sidebar/sidebarData.types";
 import { computeSummaryIds } from "@posthog/core/sidebar/summaryIds";
-import type { Task } from "@posthog/shared/domain-types";
+import type { AppView } from "@posthog/ui/router/useAppView";
 import { useEffect, useMemo, useRef } from "react";
 import { useArchivedTaskIds } from "../archive/useArchivedTaskIds";
 import { useProvisioningStore } from "../provisioning/store";
@@ -28,25 +28,8 @@ import { useTaskViewed } from "./useTaskViewed";
 
 export type { SidebarData, TaskData, TaskGroup };
 
-interface ViewState {
-  type:
-    | "task-detail"
-    | "task-pending"
-    | "task-input"
-    | "settings"
-    | "folder-settings"
-    | "home"
-    | "inbox"
-    | "archived"
-    | "command-center"
-    | "skills"
-    | "mcp-servers"
-    | "setup";
-  data?: Task;
-}
-
 interface UseSidebarDataProps {
-  activeView: ViewState;
+  activeView: AppView;
 }
 
 export function useSidebarData({
@@ -149,14 +132,13 @@ export function useSidebarData({
     activeView.type === "task-input" || activeView.type === "task-pending";
   const isHomeViewActive = activeView.type === "home";
   const isInboxActive = activeView.type === "inbox";
+  const isAgentsActive = activeView.type === "agents";
   const isCommandCenterActive = activeView.type === "command-center";
   const isSkillsActive = activeView.type === "skills";
   const isMcpServersActive = activeView.type === "mcp-servers";
 
   const activeTaskId =
-    activeView.type === "task-detail" && activeView.data
-      ? activeView.data.id
-      : null;
+    activeView.type === "task-detail" ? (activeView.taskId ?? null) : null;
 
   const sessionByTaskId = useMemo(() => {
     const map = new Map<string, (typeof sessions)[string]>();
@@ -232,6 +214,7 @@ export function useSidebarData({
     isHomeActive,
     isHomeViewActive,
     isInboxActive,
+    isAgentsActive,
     isCommandCenterActive,
     isSkillsActive,
     isMcpServersActive,

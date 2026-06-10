@@ -70,7 +70,7 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
   { id: "github", label: "GitHub", icon: <GithubLogo size={16} /> },
   { id: "slack", label: "Slack", icon: <SlackLogo size={16} /> },
-  { id: "signals", label: "Signals", icon: <TrafficSignal size={16} /> },
+  { id: "signals", label: "Self-driving", icon: <TrafficSignal size={16} /> },
   { id: "updates", label: "Updates", icon: <ArrowsClockwise size={16} /> },
   { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
 ];
@@ -88,7 +88,7 @@ const CATEGORY_TITLES: Record<SettingsCategory, string> = {
   shortcuts: "Shortcuts",
   github: "GitHub",
   slack: "Slack integration",
-  signals: "Signals",
+  signals: "Self-driving",
   updates: "Updates",
   advanced: "Advanced",
 };

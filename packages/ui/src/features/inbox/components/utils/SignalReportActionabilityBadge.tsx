@@ -1,14 +1,14 @@
 import type { SignalReportActionability } from "@posthog/shared/domain-types";
-import { Badge } from "@posthog/ui/primitives/Badge";
+import { InboxBadge } from "@posthog/ui/features/inbox/components/utils/InboxBadge";
 import type { ReactNode } from "react";
 
 const ACTIONABILITY_STYLE: Record<
   SignalReportActionability,
-  { color: "green" | "amber" | "gray"; label: string }
+  { variant: "success" | "warning" | "default"; label: string }
 > = {
-  immediately_actionable: { color: "green", label: "Actionable" },
-  requires_human_input: { color: "amber", label: "Needs input" },
-  not_actionable: { color: "gray", label: "Not actionable" },
+  immediately_actionable: { variant: "success", label: "Actionable" },
+  requires_human_input: { variant: "warning", label: "Needs input" },
+  not_actionable: { variant: "default", label: "Not actionable" },
 };
 
 interface SignalReportActionabilityBadgeProps {
@@ -22,10 +22,10 @@ export function SignalReportActionabilityBadge({
     return null;
   }
 
-  const s = ACTIONABILITY_STYLE[actionability];
-  if (!s) {
+  const style = ACTIONABILITY_STYLE[actionability];
+  if (!style) {
     return null;
   }
 
-  return <Badge color={s.color}>{s.label}</Badge>;
+  return <InboxBadge variant={style.variant}>{style.label}</InboxBadge>;
 }

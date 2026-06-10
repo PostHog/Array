@@ -127,6 +127,9 @@ importers:
       '@inversifyjs/strongly-typed':
         specifier: 2.2.0
         version: 2.2.0(inversify@7.11.0(reflect-metadata@0.2.2))
+      '@json-render/core':
+        specifier: ^0.19.0
+        version: 0.19.0(zod@4.3.6)
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.27.1(zod@4.3.6)
@@ -967,15 +970,27 @@ importers:
 
   packages/host-router:
     dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 0.22.1
+        version: 0.22.1(zod@4.4.3)
+      '@json-render/core':
+        specifier: ^0.19.0
+        version: 0.19.0(zod@4.4.3)
       '@posthog/core':
         specifier: workspace:*
         version: link:../core
+      '@posthog/di':
+        specifier: workspace:*
+        version: link:../di
       '@posthog/host-trpc':
         specifier: workspace:*
         version: link:../host-trpc
       '@posthog/platform':
         specifier: workspace:*
         version: link:../platform
+      '@posthog/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@posthog/workspace-client':
         specifier: workspace:*
         version: link:../workspace-client
@@ -1138,6 +1153,12 @@ importers:
       '@joplin/turndown-plugin-gfm':
         specifier: ^1.0.67
         version: 1.0.67
+      '@json-render/core':
+        specifier: ^0.19.0
+        version: 0.19.0(zod@4.4.3)
+      '@json-render/react':
+        specifier: ^0.19.0
+        version: 0.19.0(react@19.1.0)(zod@4.4.3)
       '@lezer/common':
         specifier: ^1.5.1
         version: 1.5.1
@@ -3631,6 +3652,16 @@ packages:
 
   '@jsdevtools/ono@7.1.3':
     resolution: {integrity: sha512-4JQNk+3mVzK3xh2rqd6RB4J46qUR19azEHBneZyTZM+c456qOrbbM/5xcR8huNCCcbVt7+UmizG6GuUvPvKUYg==}
+
+  '@json-render/core@0.19.0':
+    resolution: {integrity: sha512-vvcyZ+10EDZKbEyB1J2kXOGfDaiZR2LurZGSqi2r5STHyKr+Te85DWaBxTwRGgM7U1LtIvNx85BzzjElRKoAIg==}
+    peerDependencies:
+      zod: 4.3.6
+
+  '@json-render/react@0.19.0':
+    resolution: {integrity: sha512-kTW6b6cSNRrlEfCUf/69SLoLn+CufC968ruge9tnQlp9pDTGG/SK8pgM541FdgwMFA4zm3s5mpM3G8rdODKc/A==}
+    peerDependencies:
+      react: ^19.2.3
 
   '@jsonjoy.com/base64@1.1.2':
     resolution: {integrity: sha512-q6XAnWQDIMA3+FTiOYajoYqySkO+JSat0ytXGSuRdq9uXE7o92gzuQwQM14xaCRlBLGq3v5miDGC4vkVTn54xA==}
@@ -16117,6 +16148,21 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@jsdevtools/ono@7.1.3': {}
+
+  '@json-render/core@0.19.0(zod@4.3.6)':
+    dependencies:
+      zod: 4.3.6
+
+  '@json-render/core@0.19.0(zod@4.4.3)':
+    dependencies:
+      zod: 4.4.3
+
+  '@json-render/react@0.19.0(react@19.1.0)(zod@4.4.3)':
+    dependencies:
+      '@json-render/core': 0.19.0(zod@4.4.3)
+      react: 19.1.0
+    transitivePeerDependencies:
+      - zod
 
   '@jsonjoy.com/base64@1.1.2(tslib@2.8.1)':
     dependencies:

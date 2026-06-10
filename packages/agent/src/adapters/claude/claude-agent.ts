@@ -1112,7 +1112,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const newAbortController = new AbortController();
     const { sessionId: _drop, ...rest } = prev.queryOptions;
 
-    // parseMcpServers yields only http/sse/stdio — carry over any in-process
+    // parseMcpServers yields only http/sse/stdio – carry over any in-process
     // ("sdk") server so the local-tools server (signed commits) survives.
     const preservedInProcess = Object.fromEntries(
       Object.entries(prev.queryOptions.mcpServers ?? {}).filter(
@@ -1362,7 +1362,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // push` are blocked by the PreToolUse guard (and the sandbox git shim), so
     // the agent commits via the signed-commit tool instead.
     const localToolsServer = createLocalToolsMcpServer(
-      { cwd, token: resolveGithubToken(), taskId },
+      {
+        cwd,
+        token: resolveGithubToken(),
+        taskId,
+        baseBranch: meta?.baseBranch,
+      },
       meta,
     );
     if (localToolsServer) {

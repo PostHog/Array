@@ -24,10 +24,16 @@ const REPO_LIST_TOOLTIP_THRESHOLD = 10;
 export function GitHubIntegrationSection({
   hasGithubIntegration,
   isLoading = false,
+  showBottomBorder = true,
 }: {
   hasGithubIntegration: boolean;
   isLoading?: boolean;
+  /** When false, omit the dashed bottom rule (e.g. inside a parent `divide-y` list). */
+  showBottomBorder?: boolean;
 }) {
+  const borderClass = showBottomBorder
+    ? "border-(--gray-5) border-b border-dashed pb-4"
+    : "";
   const { repositories, isLoadingRepos } = useRepositoryIntegration();
   const ownerSummary = useMemo(
     () =>
@@ -50,13 +56,7 @@ export function GitHubIntegrationSection({
 
   if (isLoading) {
     return (
-      <Flex
-        align="center"
-        justify="between"
-        gap="4"
-        pb="4"
-        className="border-(--gray-5) border-b border-dashed"
-      >
+      <Flex align="center" justify="between" gap="4" className={borderClass}>
         <Flex align="center" gap="3" className="min-w-0 flex-1">
           <Box className="size-[20px] shrink-0 animate-pulse rounded bg-gray-4" />
           <Flex direction="column" gap="2" className="min-w-0 flex-1">
@@ -70,13 +70,7 @@ export function GitHubIntegrationSection({
   }
 
   return (
-    <Flex
-      align="center"
-      justify="between"
-      gap="4"
-      pb="4"
-      className="border-(--gray-5) border-b border-dashed"
-    >
+    <Flex align="center" justify="between" gap="4" className={borderClass}>
       <Flex align="center" gap="3">
         <Box className="shrink-0 text-(--gray-11)">
           <GitBranchIcon size={20} />

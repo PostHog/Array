@@ -30,7 +30,7 @@ import {
   createBranch,
   getBranchNameInputState,
 } from "../../git-interaction/utils/branchCreation";
-import { useInboxReportSelectionStore } from "../../inbox/inboxReportSelectionStore";
+import { useInboxReportSelectionStore } from "../../inbox/stores/inboxReportSelectionStore";
 import {
   useUserGithubBranches,
   useUserGithubRepositories,
@@ -454,15 +454,15 @@ export function TaskInput({
     [effectiveRepoPath, setLastUsedEnvironment],
   );
 
-  useEffect(() => {
+  const [prevEffectiveRepoPath, setPrevEffectiveRepoPath] =
+    useState(effectiveRepoPath);
+  if (effectiveRepoPath !== prevEffectiveRepoPath) {
+    setPrevEffectiveRepoPath(effectiveRepoPath);
     setSelectedBranch(null);
-
-    if (effectiveRepoPath) {
-      setSelectedEnvironmentRaw(getLastUsedEnvironment(effectiveRepoPath));
-    } else {
-      setSelectedEnvironmentRaw(null);
-    }
-  }, [effectiveRepoPath, getLastUsedEnvironment]);
+    setSelectedEnvironmentRaw(
+      effectiveRepoPath ? getLastUsedEnvironment(effectiveRepoPath) : null,
+    );
+  }
 
   const effectiveWorkspaceMode = workspaceMode;
 
