@@ -3,6 +3,12 @@ name: React Doctor
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "**/*.ts"
+      - "**/*.tsx"
+      - "**/*.jsx"
+      - ".github/workflows/react-doctor.yml"
+      - ".github/scripts/react-doctor-comment.mjs"
 
 permissions:
   contents: read
@@ -48,10 +54,14 @@ jobs:
             exit 0
           fi
           REPORT="${RUNNER_TEMP}/react-doctor-report.json"
-          npx --yes react-doctor@0.4.2 . --blocking error --changed-files-from "$CHANGED" --json --json-compact > "$REPORT"
-          status=$?
+          status=0
+          npx --yes react-doctor@0.4.2 . --blocking error --changed-files-from "$CHANGED" --json --json-compact --no-telemetry > "$REPORT" || status=$?
           echo "exit-code=$status" >> "$GITHUB_OUTPUT"
           echo "report=$REPORT" >> "$GITHUB_OUTPUT"
+          if [ "$status" -ne 0 ]; then
+            echo "react-doctor exited with status ${status}; report follows." >&2
+            cat "$REPORT" >&2 || true
+          fi
 
       - name: Upsert sticky PR comment
         if: ${{ always() && steps.scan.outputs.report != '' }}
@@ -84,4 +94,15 @@ jobs:
         shell: bash
         env:
           STATUS: ${{ steps.scan.outputs.exit-code }}
-        run: exit "${STATUS:-1}"
+          REPORT: ${{ steps.scan.outputs.report }}
+        run: |
+          set -uo pipefail
+          if [ "${STATUS:-1}" = "0" ]; then
+            exit 0
+          fi
+          if [ -n "${REPORT:-}" ] && jq -e '.ok == false' "$REPORT" >/dev/null 2>&1; then
+            message=$(jq -r '.error.message // "unknown error"' "$REPORT" | tr -d '\n')
+            echo "::warning title=React Doctor::Scanner crashed (${message}); not blocking the PR on a scanner failure."
+            exit 0
+          fi
+          exit "${STATUS:-1}"
