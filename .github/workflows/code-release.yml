@@ -200,7 +200,7 @@ jobs:
 
   publish-windows:
     needs: [prepare-release]
-    runs-on: windows-latest
+    runs-on: windows-2022
     permissions:
       id-token: write
       contents: write
