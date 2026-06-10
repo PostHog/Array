@@ -1,4 +1,7 @@
 import { ArrowSquareOutIcon } from "@phosphor-icons/react";
+import type { ScoutSurface } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
 
 const HELPER_SKILLS = [
@@ -13,7 +16,7 @@ const HELPER_SKILLS = [
 ];
 
 /** One-line pointer to the two official scout helper skills on GitHub. */
-export function ScoutHelperSkillLinks() {
+export function ScoutHelperSkillLinks({ surface }: { surface: ScoutSurface }) {
   return (
     <Text className="text-[12px] text-gray-10">
       Helper skills:{" "}
@@ -24,6 +27,13 @@ export function ScoutHelperSkillLinks() {
             href={skill.href}
             target="_blank"
             rel="noreferrer"
+            onClick={() =>
+              track(ANALYTICS_EVENTS.SCOUT_ACTION, {
+                action_type: "open_helper_skill",
+                surface,
+                helper_skill: skill.label,
+              })
+            }
             className="inline-flex items-center gap-0.5 text-accent-11 no-underline hover:text-accent-12"
           >
             {skill.label}

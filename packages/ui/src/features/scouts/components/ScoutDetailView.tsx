@@ -9,6 +9,7 @@ import {
   computeScoutRollups,
   deriveRunFailureKind,
   formatRunDuration,
+  getScoutOrigin,
   normalizeRunStatus,
   prettifyScoutSkillName,
   runDurationSeconds,
@@ -20,13 +21,15 @@ import {
   SCOUT_RUNS_WINDOW_HOURS,
   scoutRunsWindowLabel,
 } from "@posthog/core/scouts/scoutRunsWindow";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
+import { track } from "@posthog/ui/shell/analytics";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
 import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
@@ -60,7 +63,7 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
   );
   useSetHeaderContent(headerContent);
 
-  const { data: configs } = useScoutConfigs();
+  const { data: configs, isLoading: configsLoading } = useScoutConfigs();
   const { data: runsWindow, isLoading: runsLoading } = useScoutRuns();
   const { updateConfig } = useScoutConfigMutations();
   const [filter, setFilter] = useState<ScoutRunFilter>("all");
@@ -91,6 +94,26 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
     }
     return counts;
   }, [scoutRuns]);
+
+  // Fire the viewed event once per scout, after both queries settle so the
+  // config and run-window stats are real rather than loading-state zeros.
+  const viewTrackedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (configsLoading || runsLoading) return;
+    if (viewTrackedFor.current === skillName) return;
+    viewTrackedFor.current = skillName;
+    track(ANALYTICS_EVENTS.SCOUT_DETAIL_VIEWED, {
+      skill_name: skillName,
+      scout_origin: getScoutOrigin(skillName),
+      has_config: Boolean(config),
+      enabled: config?.enabled ?? null,
+      emit: config?.emit ?? null,
+      run_interval_minutes: config?.run_interval_minutes ?? null,
+      run_count: rollup?.runCount ?? 0,
+      emitted_signal_count: rollup?.emittedCount ?? 0,
+      failed_run_count: rollup?.failedCount ?? 0,
+    });
+  }, [configsLoading, runsLoading, skillName, config, rollup]);
 
   return (
     <Flex direction="column" className="h-full min-h-0">
@@ -152,7 +175,16 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
                   <button
                     key={entry.value}
                     type="button"
-                    onClick={() => setFilter(entry.value)}
+                    onClick={() => {
+                      setFilter(entry.value);
+                      track(ANALYTICS_EVENTS.SCOUT_ACTION, {
+                        action_type: "filter_runs",
+                        surface: "scout_detail",
+                        skill_name: skillName,
+                        filter: entry.value,
+                        filter_match_count: filterCounts.get(entry.value) ?? 0,
+                      });
+                    }}
                     className={`rounded-full px-2.5 py-0.5 text-[11.5px] transition-colors ${
                       filter === entry.value
                         ? "bg-(--accent-4) text-accent-12"
@@ -205,7 +237,18 @@ function ScoutRunListItem({ run }: { run: ScoutRun }) {
     <Box className="rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-4 py-3 transition duration-150 hover:border-(--gray-6)">
       <button
         type="button"
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => {
+          const next = !expanded;
+          setExpanded(next);
+          track(ANALYTICS_EVENTS.SCOUT_ACTION, {
+            action_type: next ? "expand_run" : "collapse_run",
+            surface: "scout_detail",
+            skill_name: run.skill_name,
+            run_id: run.run_id,
+            run_status: status,
+            emitted_count: emitted,
+          });
+        }}
         aria-expanded={expanded}
         className="flex w-full select-none items-center gap-2 text-left"
       >
@@ -261,6 +304,15 @@ function ScoutRunListItem({ run }: { run: ScoutRun }) {
               href={taskRunUrl}
               target="_blank"
               rel="noreferrer"
+              onClick={() =>
+                track(ANALYTICS_EVENTS.SCOUT_ACTION, {
+                  action_type: "open_task_run",
+                  surface: "scout_detail",
+                  skill_name: run.skill_name,
+                  run_id: run.run_id,
+                  run_status: status,
+                })
+              }
               className="inline-flex shrink-0 items-center gap-1 text-[11px] text-accent-11 no-underline hover:text-accent-12"
             >
               Open task run

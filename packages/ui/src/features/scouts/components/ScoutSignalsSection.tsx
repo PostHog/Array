@@ -1,5 +1,7 @@
 import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import type { ScoutRun } from "@posthog/api-client/posthog-client";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { track } from "@posthog/ui/shell/analytics";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useScoutRunEmissions } from "../hooks/useScoutRunEmissions";
@@ -57,12 +59,21 @@ function RunEmissions({ run }: { run: ScoutRun }) {
         <ScoutEmissionCard
           key={emission.id}
           emission={emission}
+          skillName={run.skill_name}
           footerEnd={
             taskRunUrl ? (
               <a
                 href={taskRunUrl}
                 target="_blank"
                 rel="noreferrer"
+                onClick={() =>
+                  track(ANALYTICS_EVENTS.SCOUT_ACTION, {
+                    action_type: "open_task_run",
+                    surface: "scout_detail",
+                    skill_name: run.skill_name,
+                    run_id: run.run_id,
+                  })
+                }
                 className="inline-flex shrink-0 items-center gap-1 text-[11px] text-accent-11 no-underline hover:text-accent-12"
               >
                 Open task run

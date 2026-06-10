@@ -1,10 +1,13 @@
 import type { TaskCreationInput } from "@posthog/core/task-detail/taskService";
+import type { ScoutChatType, ScoutSurface } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
 import {
   type InboxCloudTaskInputContext,
   useInboxCloudTaskRunner,
 } from "@posthog/ui/features/inbox/hooks/useInboxCloudTaskRunner";
 import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import { track } from "@posthog/ui/shell/analytics";
 import { useCallback, useMemo } from "react";
 
 // Templated prompts behind the scout chat CTA chips. The agent leans on the
@@ -56,6 +59,12 @@ interface UseScoutChatTaskOptions {
   taskLabel: string;
   /** Logger scope used for failure traces. */
   loggerScope: string;
+  /** Which templated question this is, for analytics. */
+  chatType: ScoutChatType;
+  /** Where the CTA lives, for analytics. */
+  surface: ScoutSurface;
+  /** The scout a check-in is scoped to; omit for fleet-level questions. */
+  skillName?: string;
 }
 
 interface UseScoutChatTaskReturn {
@@ -75,6 +84,9 @@ export function useScoutChatTask({
   prompt,
   taskLabel,
   loggerScope,
+  chatType,
+  surface,
+  skillName,
 }: UseScoutChatTaskOptions): UseScoutChatTaskReturn {
   const { repositories } = useUserRepositoryIntegration();
   const lastUsedCloudRepository = useSettingsStore(
@@ -124,5 +136,14 @@ export function useScoutChatTask({
     buildInput,
   });
 
-  return { runTask: run, isRunning };
+  const runTask = useCallback(async () => {
+    track(ANALYTICS_EVENTS.SCOUT_CHAT_STARTED, {
+      chat_type: chatType,
+      surface,
+      ...(skillName ? { skill_name: skillName } : {}),
+    });
+    await run();
+  }, [run, chatType, surface, skillName]);
+
+  return { runTask, isRunning };
 }

@@ -1,17 +1,22 @@
 import { CaretRightIcon, CompassIcon } from "@phosphor-icons/react";
 import type { ScoutEmission } from "@posthog/api-client/posthog-client";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
+import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { type ReactNode, useState } from "react";
 import { SeverityBadge } from "./ScoutBadges";
 
 export function ScoutEmissionCard({
   emission,
+  skillName,
   footerEnd,
   defaultExpanded = false,
 }: {
   emission: ScoutEmission;
+  /** The emitting scout, attached to analytics events when known. */
+  skillName?: string;
   /** Replaces the default pipeline note at the footer's right edge. */
   footerEnd?: ReactNode;
   defaultExpanded?: boolean;
@@ -21,7 +26,16 @@ export function ScoutEmissionCard({
     <Box className="min-w-0 overflow-hidden rounded-(--radius-2) border border-(--gray-6) bg-gray-1 p-3">
       <button
         type="button"
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => {
+          const next = !expanded;
+          setExpanded(next);
+          track(ANALYTICS_EVENTS.SCOUT_ACTION, {
+            action_type: next ? "expand_emission" : "collapse_emission",
+            surface: "scout_detail",
+            skill_name: skillName,
+            severity: emission.severity,
+          });
+        }}
         aria-expanded={expanded}
         className="flex w-full select-none items-center gap-2 text-left"
       >

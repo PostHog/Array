@@ -10,6 +10,9 @@ import {
   type ScoutRollup,
   scoutSkillSlug,
 } from "@posthog/core/scouts/scoutPresentation";
+import type { ScoutSurface } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { track } from "@posthog/ui/shell/analytics";
 import { skillUrl } from "@posthog/ui/utils/posthogLinks";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
@@ -42,6 +45,7 @@ export function ScoutRowCard({
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const cloudSkillUrl = skillUrl(config.skill_name);
+  const surface: ScoutSurface = linkToDetail ? "fleet_list" : "scout_detail";
 
   const title = (
     <Text className="truncate font-medium text-[13px] text-gray-12">
@@ -80,6 +84,13 @@ export function ScoutRowCard({
                 target="_blank"
                 rel="noreferrer"
                 aria-label={`${config.skill_name} skill in PostHog`}
+                onClick={() =>
+                  track(ANALYTICS_EVENTS.SCOUT_ACTION, {
+                    action_type: "open_skill_in_posthog",
+                    surface,
+                    skill_name: config.skill_name,
+                  })
+                }
                 className="relative text-gray-9 transition-colors hover:text-accent-11"
               >
                 <ArrowSquareOutIcon size={12} />
@@ -103,11 +114,19 @@ export function ScoutRowCard({
         </Box>
         <Flex align="center" gap="3" className="relative shrink-0">
           <ScoutEnabledSwitch config={config} onUpdate={onUpdate} />
-          <ScoutChatButton skillName={config.skill_name} />
+          <ScoutChatButton skillName={config.skill_name} surface={surface} />
           <Tooltip content="Scout settings">
             <button
               type="button"
-              onClick={() => setSettingsOpen((value) => !value)}
+              onClick={() => {
+                const next = !settingsOpen;
+                setSettingsOpen(next);
+                track(ANALYTICS_EVENTS.SCOUT_ACTION, {
+                  action_type: next ? "open_settings" : "close_settings",
+                  surface,
+                  skill_name: config.skill_name,
+                });
+              }}
               aria-expanded={settingsOpen}
               aria-label={`${config.skill_name} settings`}
               className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
@@ -134,7 +153,13 @@ export function ScoutRowCard({
  * Icon-only chat CTA on the row: fires a one-click auto-mode cloud task asking
  * the exploring-signals-scouts skill about this specific scout.
  */
-function ScoutChatButton({ skillName }: { skillName: string }) {
+function ScoutChatButton({
+  skillName,
+  surface,
+}: {
+  skillName: string;
+  surface: ScoutSurface;
+}) {
   const prompt = useMemo(
     () => buildScoutCheckinPrompt(skillName, prettifyScoutSkillName(skillName)),
     [skillName],
@@ -143,6 +168,9 @@ function ScoutChatButton({ skillName }: { skillName: string }) {
     prompt,
     taskLabel: "scout check-in",
     loggerScope: "scout-checkin",
+    chatType: "scout_checkin",
+    surface,
+    skillName,
   });
   return (
     <Tooltip content="Chat with PostHog about this scout">

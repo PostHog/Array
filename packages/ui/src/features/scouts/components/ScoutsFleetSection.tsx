@@ -3,15 +3,19 @@ import type { ScoutConfig } from "@posthog/api-client/posthog-client";
 import {
   computeFleetSummary,
   computeScoutRollups,
+  getScoutOrigin,
   sortConfigsForDisplay,
 } from "@posthog/core/scouts/scoutPresentation";
 import {
   SCOUT_RUNS_WINDOW_HOURS,
   scoutRunsWindowLabel,
 } from "@posthog/core/scouts/scoutRunsWindow";
+import type { ScoutChatType } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
+import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   SCOUT_FLEET_OVERVIEW_PROMPT,
   SCOUT_RECENT_SIGNALS_PROMPT,
@@ -22,6 +26,8 @@ import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
 import { ScoutHelperSkillLinks } from "./ScoutHelperSkillLinks";
 import { ScoutRowCard } from "./ScoutRowCard";
+
+const EMPTY_CONFIGS: ScoutConfig[] = [];
 
 /**
  * Expandable scout fleet manager for the agents config page. Collapsed it is
@@ -91,10 +97,28 @@ export function ScoutsFleetSection() {
   );
 }
 
+function useTrackFleetViewed(configs: ScoutConfig[]) {
+  const tracked = useRef(false);
+  useEffect(() => {
+    if (tracked.current) return;
+    tracked.current = true;
+    track(ANALYTICS_EVENTS.SCOUT_FLEET_VIEWED, {
+      scout_count: configs.length,
+      enabled_count: configs.filter((config) => config.enabled).length,
+      dry_run_count: configs.filter((config) => !config.emit).length,
+      custom_count: configs.filter(
+        (config) => getScoutOrigin(config.skill_name) === "custom",
+      ).length,
+      is_empty: configs.length === 0,
+    });
+  }, [configs]);
+}
+
 function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
   const { data: runsWindow } = useScoutRuns();
   const { updateConfig } = useScoutConfigMutations();
   const [hideDisabled, setHideDisabled] = useState(false);
+  useTrackFleetViewed(configs);
 
   const runs = runsWindow?.runs;
   const rollups = useMemo(() => computeScoutRollups(runs ?? []), [runs]);
@@ -129,7 +153,15 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
         <span className="flex-1" />
         <button
           type="button"
-          onClick={() => setHideDisabled((value) => !value)}
+          onClick={() => {
+            const next = !hideDisabled;
+            setHideDisabled(next);
+            track(ANALYTICS_EVENTS.SCOUT_ACTION, {
+              action_type: "toggle_hide_disabled",
+              surface: "fleet_list",
+              hide_disabled: next,
+            });
+          }}
           className="rounded px-1.5 py-0.5 text-[12px] text-gray-10 hover:bg-gray-3 hover:text-gray-12"
         >
           {hideDisabled ? "Show disabled" : "Hide disabled"}
@@ -142,12 +174,14 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
           prompt={SCOUT_FLEET_OVERVIEW_PROMPT}
           taskLabel="fleet overview"
           loggerScope="scout-fleet-overview"
+          chatType="fleet_overview"
         />
         <ScoutChatCta
           label="What signals were emitted recently?"
           prompt={SCOUT_RECENT_SIGNALS_PROMPT}
           taskLabel="recent signals recap"
           loggerScope="scout-recent-signals"
+          chatType="recent_signals"
         />
       </Flex>
 
@@ -172,7 +206,7 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
           <span className="font-mono text-[11px]">signals-scout-*</span> skills
           in your PostHog project.
         </Text>
-        <ScoutHelperSkillLinks />
+        <ScoutHelperSkillLinks surface="fleet_list" />
       </Flex>
     </Flex>
   );
@@ -188,16 +222,20 @@ function ScoutChatCta({
   prompt,
   taskLabel,
   loggerScope,
+  chatType,
 }: {
   label: string;
   prompt: string;
   taskLabel: string;
   loggerScope: string;
+  chatType: ScoutChatType;
 }) {
   const { runTask, isRunning } = useScoutChatTask({
     prompt,
     taskLabel,
     loggerScope,
+    chatType,
+    surface: "fleet_list",
   });
   return (
     <button
@@ -213,6 +251,7 @@ function ScoutChatCta({
 }
 
 function ScoutsEmptyState() {
+  useTrackFleetViewed(EMPTY_CONFIGS);
   return (
     <Flex
       direction="column"
@@ -233,7 +272,7 @@ function ScoutsEmptyState() {
         <span className="font-mono text-[11px]">signals-scout-*</span> skills in
         PostHog.
       </Text>
-      <ScoutHelperSkillLinks />
+      <ScoutHelperSkillLinks surface="empty_state" />
     </Flex>
   );
 }
