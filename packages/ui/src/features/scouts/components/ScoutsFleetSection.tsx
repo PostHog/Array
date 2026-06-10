@@ -1,4 +1,4 @@
-import { CaretDownIcon, CompassIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, CompassIcon, SparkleIcon } from "@phosphor-icons/react";
 import type { ScoutConfig } from "@posthog/api-client/posthog-client";
 import {
   computeFleetSummary,
@@ -10,6 +10,7 @@ import {
   scoutRunsWindowLabel,
 } from "@posthog/core/scouts/scoutRunsWindow";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
+import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
 import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
@@ -17,6 +18,21 @@ import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
 import { ScoutHelperSkillLinks } from "./ScoutHelperSkillLinks";
 import { ScoutRowCard } from "./ScoutRowCard";
+
+// Templated prompt for the fleet-overview chat CTA. The new-task composer is
+// prefilled with this (like the inbox discuss flow's question) so the user can
+// tweak before launching.
+const FLEET_OVERVIEW_PROMPT = `How is my scout fleet performing?
+
+Use the exploring-signals-scouts skill from the PostHog MCP to survey the signals scout fleet on this project and give me a high-level overview:
+
+- The fleet: which scouts exist, enabled vs disabled, and their cadences
+- Recent run health: success rate, failures and timeouts, anything stuck
+- Output: which scouts emitted signals recently, emit rate, signal-to-noise
+- Memory: notable scratchpad entries the fleet has learned
+- Recommendations: anything misconfigured, noisy, or worth tuning
+
+Lead with a short overall verdict, then per-scout notes only where something is notable. If the skill is unavailable, fall back to the signals-scout MCP tools directly (config list, runs list, scratchpad search).`;
 
 /**
  * Expandable scout fleet manager for the agents config page. Collapsed it is
@@ -145,6 +161,8 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
         </Flex>
       </div>
 
+      <FleetOverviewChatCta />
+
       <Flex direction="column" gap="1">
         <Text className="text-[12px] text-gray-10">
           Run counts and emitted totals cover the last {SCOUT_RUNS_WINDOW_HOURS}{" "}
@@ -155,6 +173,23 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
         <ScoutHelperSkillLinks />
       </Flex>
     </Flex>
+  );
+}
+
+/**
+ * Suggestion-chip CTA that opens the new-task composer prefilled with a
+ * fleet-overview question driving the exploring-signals-scouts skill.
+ */
+function FleetOverviewChatCta() {
+  return (
+    <button
+      type="button"
+      onClick={() => openTaskInput({ initialPrompt: FLEET_OVERVIEW_PROMPT })}
+      className="flex w-fit items-center gap-1.5 rounded-full border border-border bg-(--color-panel-solid) px-3 py-1 text-[12px] text-gray-11 transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2) hover:text-gray-12"
+    >
+      <SparkleIcon size={12} className="text-(--iris-9)" />
+      How is my scout fleet performing?
+    </button>
   );
 }
 
