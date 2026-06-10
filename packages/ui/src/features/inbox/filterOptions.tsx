@@ -3,6 +3,7 @@ import {
   BugIcon,
   CalendarPlus,
   Clock,
+  CompassIcon,
   GithubLogoIcon,
   KanbanIcon,
   LifebuoyIcon,
@@ -99,6 +100,7 @@ export const INBOX_SOURCE_OPTIONS: {
     icon: <LifebuoyIcon size={14} />,
   },
   { value: "pganalyze", label: "pganalyze", icon: <PgAnalyzeIcon size={14} /> },
+  { value: "signals_scout", label: "Scout", icon: <CompassIcon size={14} /> },
 ];
 
 export function inboxSortOptionKey(
