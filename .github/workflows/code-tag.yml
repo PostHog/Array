@@ -1,9 +1,8 @@
 name: Tag PostHog Code Release
 
 on:
-  # Scheduled releases temporarily disabled, uncomment to re-enable
-  # schedule:
-  #   - cron: "0 1,17 * * *"
+  schedule:
+    - cron: "0 1,17 * * *"
   workflow_dispatch:
     inputs:
       quiet_retries:
