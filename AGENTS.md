@@ -233,6 +233,7 @@ See [docs/conventions.md](./docs/conventions.md).
 - Unit tests: Vitest.
 - E2E tests: Playwright.
 - Test core/UI services and stores with faked injected dependencies and explicit props.
+- Prefer a parameterised test shape (`it.each`/`test.each`) when several cases exercise the same logic with different inputs and expectations. Keep separate tests when cases differ in setup, assertions, or intent.
 - Colocate tests as `.test.ts` or `.test.tsx`.
 - Put E2E tests in `tests/e2e/`.
 - After touching `@posthog/platform`, rebuild or typecheck its `dist/`.
