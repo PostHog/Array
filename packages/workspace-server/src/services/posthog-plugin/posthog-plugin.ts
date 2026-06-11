@@ -22,6 +22,7 @@ import {
 } from "@posthog/platform/storage-paths";
 import { TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable, postConstruct, preDestroy } from "inversify";
+import { getCodexSkillsDir, mirrorUserSkillsToCodex } from "./codex-mirror";
 import {
   overlayDownloadedSkills,
   syncCodexSkills,
@@ -31,7 +32,8 @@ import {
 const SKILLS_ZIP_URL = process.env.SKILLS_ZIP_URL ?? "";
 const CONTEXT_MILL_ZIP_URL = process.env.CONTEXT_MILL_ZIP_URL ?? "";
 const UPDATE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
-const CODEX_SKILLS_DIR = join(homedir(), ".agents", "skills");
+const CODEX_SKILLS_DIR = getCodexSkillsDir();
+const USER_SKILLS_DIR = join(homedir(), ".claude", "skills");
 
 interface PosthogPluginEvents {
   skillsUpdated: true;
@@ -97,6 +99,7 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
     await overlayDownloadedSkills(this.runtimeSkillsDir, this.runtimePluginDir);
 
     await syncCodexSkills(this.getPluginPath(), CODEX_SKILLS_DIR);
+    await this.mirrorUserSkills();
 
     // Start periodic updates
     this.intervalId = setInterval(() => {
@@ -116,6 +119,19 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
    * - In prod: use the runtime plugin dir (with downloaded updates).
    * - Fallback: bundled plugin path.
    */
+  /**
+   * Mirrors the user's skills out to Codex ("bring your skills, use them
+   * anywhere"). Never fatal: a broken mirror must not affect the official
+   * skills pipeline.
+   */
+  private async mirrorUserSkills(): Promise<void> {
+    try {
+      await mirrorUserSkillsToCodex(USER_SKILLS_DIR, CODEX_SKILLS_DIR);
+    } catch (err) {
+      this.log.warn("Mirroring user skills to Codex failed", { error: err });
+    }
+  }
+
   getPluginPath(): string {
     if (!this.appMeta.isProduction) {
       return this.bundledPluginDir;
@@ -159,6 +175,7 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
       });
 
       if (result.success) {
+        await this.mirrorUserSkills();
         this.emit("skillsUpdated", true);
       } else {
         this.log.warn("Skills update failed", {

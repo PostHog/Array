@@ -1,7 +1,13 @@
 import type { ExportedSkill as SharedExportedSkill } from "@posthog/shared";
 import { z } from "zod";
 
-export const skillSource = z.enum(["bundled", "user", "repo", "marketplace"]);
+export const skillSource = z.enum([
+  "bundled",
+  "user",
+  "repo",
+  "marketplace",
+  "codex",
+]);
 
 export const skillInfo = z.object({
   name: z.string(),
@@ -95,6 +101,11 @@ export const exportSkillOutput = z.object({
   /** Files excluded from the export (binary or oversized). */
   skipped: z.array(z.string()),
 }) satisfies z.ZodType<SharedExportedSkill & { skipped: string[] }>;
+
+export const importCodexSkillInput = z.object({
+  skillPath: z.string(),
+  overwrite: z.boolean().optional(),
+});
 
 export const installTeamSkillInput = z.object({
   name: z.string(),

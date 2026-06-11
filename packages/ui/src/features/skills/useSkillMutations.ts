@@ -57,3 +57,11 @@ export function useDeleteSkill() {
     trpc.skills.delete.mutationOptions({ onSuccess: invalidate }),
   );
 }
+
+export function useImportCodexSkill() {
+  const trpc = useHostTRPC();
+  const invalidate = useInvalidateSkills();
+  return useMutation(
+    trpc.skills.importCodex.mutationOptions({ onSuccess: invalidate }),
+  );
+}

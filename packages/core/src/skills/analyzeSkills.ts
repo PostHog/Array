@@ -26,6 +26,7 @@ const SOURCE_PRECEDENCE: SkillSource[] = [
   "user",
   "marketplace",
   "bundled",
+  "codex",
 ];
 
 const SOURCE_LABEL: Record<SkillSource, string> = {
@@ -33,6 +34,7 @@ const SOURCE_LABEL: Record<SkillSource, string> = {
   user: "user",
   marketplace: "marketplace",
   bundled: "bundled",
+  codex: "Codex",
 };
 
 function precedence(source: SkillSource): number {

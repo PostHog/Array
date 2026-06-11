@@ -27,7 +27,13 @@ import { useSkills } from "./useSkills";
 import { useSkillsWatcher } from "./useSkillsWatcher";
 import { useTeamSkills } from "./useTeamSkills";
 
-const SOURCE_ORDER: SkillSource[] = ["user", "marketplace", "repo", "bundled"];
+const SOURCE_ORDER: SkillSource[] = [
+  "user",
+  "marketplace",
+  "repo",
+  "codex",
+  "bundled",
+];
 
 // Installed = on disk, usable by agents right now. Team and Marketplace are
 // remote catalogs; installing materializes a skill into Installed.

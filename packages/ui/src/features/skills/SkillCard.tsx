@@ -1,6 +1,7 @@
 import {
   Folder,
   Package,
+  Robot,
   Storefront,
   User,
   Warning,
@@ -29,6 +30,7 @@ export const SOURCE_CONFIG: Record<
     label: "Marketplace",
     sectionTitle: "Marketplace",
   },
+  codex: { icon: Robot, label: "Codex", sectionTitle: "Codex" },
 };
 
 interface SkillCardProps {

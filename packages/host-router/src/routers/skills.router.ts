@@ -6,6 +6,7 @@ import {
   deleteSkillInput,
   exportSkillInput,
   exportSkillOutput,
+  importCodexSkillInput,
   installTeamSkillInput,
   listSkillsOutput,
   readSkillFileInput,
@@ -109,6 +110,14 @@ export const skillsRouter = router({
     .output(skillPathOutput)
     .mutation(({ ctx, input }) =>
       ctx.container.get<SkillsService>(SKILLS_SERVICE).installTeamSkill(input),
+    ),
+  importCodex: publicProcedure
+    .input(importCodexSkillInput)
+    .output(skillPathOutput)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<SkillsService>(SKILLS_SERVICE)
+        .importCodexSkill(input.skillPath, input.overwrite ?? false),
     ),
   watch: publicProcedure.subscription(async function* (opts) {
     const service = opts.ctx.container.get<SkillsService>(SKILLS_SERVICE);

@@ -2,11 +2,19 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FoldersService } from "../folders/folders";
 import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import { WatcherService } from "../watcher/service";
 import { SkillsService } from "./skills";
+
+const codexHome = vi.hoisted(() => ({ dir: "" }));
+
+vi.mock("../posthog-plugin/codex-mirror", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../posthog-plugin/codex-mirror")>();
+  return { ...actual, getCodexSkillsDir: () => codexHome.dir };
+});
 
 let root: string;
 let pluginPath: string;
@@ -39,6 +47,7 @@ beforeEach(async () => {
   pluginPath = path.join(root, "plugin");
   folderPath = path.join(root, "repo");
   repoSkillsDir = path.join(folderPath, ".claude", "skills");
+  codexHome.dir = path.join(root, "codex-skills");
   await mkdir(path.join(pluginPath, "skills"), { recursive: true });
   await mkdir(repoSkillsDir, { recursive: true });
 });
@@ -179,6 +188,70 @@ describe("readSkillFile", () => {
     expect(await makeService().readSkillFile(skillPath, "alias.md")).toBe(
       "real content",
     );
+  });
+});
+
+describe("codex skills", () => {
+  it("lists codex skills, hiding bundled-synced and mirrored copies", async () => {
+    await mkdir(codexHome.dir, { recursive: true });
+    await createSkill(codexHome.dir, "codex-only");
+    // Copy synced there by the official bundled pipeline:
+    await createSkill(path.join(pluginPath, "skills"), "bundled-skill");
+    await createSkill(codexHome.dir, "bundled-skill");
+    // Copy mirrored out from the user's skills:
+    await createSkill(codexHome.dir, "mirrored-skill");
+    await writeFile(
+      path.join(codexHome.dir, ".posthog-mirror.json"),
+      JSON.stringify({ version: 1, mirrored: ["mirrored-skill"] }),
+    );
+
+    const skills = await makeService().listSkills();
+    const codexSkills = skills.filter((s) => s.source === "codex");
+
+    expect(codexSkills.map((s) => s.name)).toEqual(["codex-only"]);
+    expect(codexSkills[0]?.editable).toBe(false);
+  });
+
+  it("imports a codex skill into the user skills dir and takes mirror ownership", async () => {
+    await mkdir(codexHome.dir, { recursive: true });
+    await createSkill(codexHome.dir, "codex-only");
+    const service = makeService();
+
+    // The user skills root is the real homedir; intercept the copy by
+    // asserting on the returned path and cleaning up.
+    const { homedir } = await import("node:os");
+    const target = path.join(homedir(), ".claude", "skills", "codex-only");
+    const targetExisted = (await import("node:fs")).existsSync(target);
+    if (targetExisted) {
+      // Avoid clobbering a real local skill with this name.
+      return;
+    }
+    try {
+      const result = await service.importCodexSkill(
+        path.join(codexHome.dir, "codex-only"),
+      );
+      expect(result.path).toBe(target);
+      const content = await service.readSkillFile(target, "SKILL.md");
+      expect(content).toContain("codex-only");
+
+      const state = JSON.parse(
+        await (await import("node:fs/promises")).readFile(
+          path.join(codexHome.dir, ".posthog-mirror.json"),
+          "utf-8",
+        ),
+      );
+      expect(state.mirrored).toContain("codex-only");
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects importing paths outside the codex skills dir", async () => {
+    await createSkill(repoSkillsDir, "alpha");
+
+    await expect(
+      makeService().importCodexSkill(path.join(repoSkillsDir, "alpha")),
+    ).rejects.toThrow("not a Codex skill directory");
   });
 });
 

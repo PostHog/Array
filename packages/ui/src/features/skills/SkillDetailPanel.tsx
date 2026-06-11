@@ -1,5 +1,6 @@
 import {
   CloudArrowUp,
+  DownloadSimple,
   FilePlus,
   Folder,
   LockSimple,
@@ -37,6 +38,7 @@ import { useSkillContents, useSkillFile } from "./useSkillContents";
 import {
   useDeleteSkill,
   useDeleteSkillFile,
+  useImportCodexSkill,
   useRenameSkillFile,
   useSaveSkillFile,
 } from "./useSkillMutations";
@@ -67,6 +69,7 @@ export function SkillDetailPanel({
   const [deleteFileTarget, setDeleteFileTarget] = useState<string | null>(null);
   const [deleteSkillOpen, setDeleteSkillOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [confirmImportOverwrite, setConfirmImportOverwrite] = useState(false);
 
   const { data: contents } = useSkillContents(skill.path);
   const { data: fileContent, isLoading } = useSkillFile(
@@ -79,6 +82,7 @@ export function SkillDetailPanel({
   const deleteFile = useDeleteSkillFile();
   const deleteSkill = useDeleteSkill();
   const publishSkill = usePublishSkill();
+  const importCodexSkill = useImportCodexSkill();
 
   const files = contents?.files ?? [];
   const isSkillMd = selectedFile === "SKILL.md";
@@ -154,6 +158,28 @@ export function SkillDetailPanel({
     } catch (error) {
       toast.error("Failed to publish skill", {
         description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  };
+
+  const handleImport = async (overwrite: boolean) => {
+    try {
+      await importCodexSkill.mutateAsync({
+        skillPath: skill.path,
+        overwrite,
+      });
+      setConfirmImportOverwrite(false);
+      toast.success(`Imported ${skill.name}`, {
+        description: "Now editable under Your skills",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (!overwrite && message.includes("already exists")) {
+        setConfirmImportOverwrite(true);
+        return;
+      }
+      toast.error("Failed to import skill", {
+        description: message || undefined,
       });
     }
   };
@@ -259,6 +285,17 @@ export function SkillDetailPanel({
               <LockSimple size={10} className="text-gray-9" />
               Read-only
             </Badge>
+          )}
+          {skill.source === "codex" && (
+            <Button
+              size="1"
+              variant="solid"
+              onClick={() => void handleImport(false)}
+              disabled={importCodexSkill.isPending}
+            >
+              <DownloadSimple size={12} />
+              Import
+            </Button>
           )}
           {skill.source !== "bundled" && (
             <ExternalAppsOpener targetPath={skill.path} />
@@ -471,6 +508,36 @@ export function SkillDetailPanel({
                 onClick={handleDeleteFile}
               >
                 Delete
+              </Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
+
+      <AlertDialog.Root
+        open={confirmImportOverwrite}
+        onOpenChange={setConfirmImportOverwrite}
+      >
+        <AlertDialog.Content maxWidth="420px" size="2">
+          <AlertDialog.Title size="3">Replace local skill</AlertDialog.Title>
+          <AlertDialog.Description size="1">
+            A skill named "{skill.name}" already exists in your skills.
+            Importing will replace your local version, including any edits.
+          </AlertDialog.Description>
+          <Flex justify="end" gap="2" mt="4">
+            <AlertDialog.Cancel>
+              <Button size="1" variant="soft" color="gray">
+                Cancel
+              </Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button
+                size="1"
+                variant="solid"
+                color="red"
+                onClick={() => void handleImport(true)}
+              >
+                Replace
               </Button>
             </AlertDialog.Action>
           </Flex>
