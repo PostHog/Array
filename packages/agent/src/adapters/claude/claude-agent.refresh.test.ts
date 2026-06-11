@@ -327,6 +327,41 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
     expect(fetchMcpToolMetadataMock.mock.calls[0][0]).toBe(createdQueries[0]);
   });
 
+  it("re-roots the new query on the live session model", async () => {
+    const agent = makeAgent();
+    // Session was created on sonnet (queryOptions.model) but the user
+    // switched to fable mid-session (session.modelId).
+    installFakeSession(agent, "s-model", { modelId: "claude-fable-5" });
+
+    await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpServers: freshMcpServers,
+    });
+
+    expect(lastQueryCall.options?.model).toBe("claude-fable-5");
+  });
+
+  it("maps the live session model to its SDK alias", async () => {
+    const agent = makeAgent();
+    installFakeSession(agent, "s-model-alias", { modelId: "claude-opus-4-8" });
+
+    await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpServers: freshMcpServers,
+    });
+
+    expect(lastQueryCall.options?.model).toBe("opus");
+  });
+
+  it("keeps the creation-time model when the session has no modelId", async () => {
+    const agent = makeAgent();
+    installFakeSession(agent, "s-model-unset");
+
+    await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpServers: freshMcpServers,
+    });
+
+    expect(lastQueryCall.options?.model).toBe("claude-sonnet-4-6");
+  });
+
   it("preserves the in-process local-tools server across refresh", async () => {
     const agent = makeAgent();
     installFakeSession(agent, "s-inprocess");

@@ -712,6 +712,15 @@ export class SessionService {
       const persistedMode =
         modeOpt?.type === "select" ? modeOpt.currentValue : undefined;
 
+      // Resumed SDK sessions don't remember the model — without this the
+      // session silently falls back to the default model on every reconnect.
+      const modelOpt = getConfigOptionByCategory(
+        persistedConfigOptions,
+        "model",
+      );
+      const persistedModel =
+        modelOpt?.type === "select" ? modelOpt.currentValue : undefined;
+
       this.d.trpc.workspace.verify
         .query({ taskId })
         .then((workspaceResult) => {
@@ -743,6 +752,7 @@ export class SessionService {
         sessionId,
         adapter: resolvedAdapter,
         permissionMode: persistedMode,
+        model: persistedModel,
         customInstructions: customInstructions || undefined,
       });
 
