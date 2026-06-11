@@ -634,7 +634,8 @@ export interface InboxReportActionProperties {
 export type ScoutChatType =
   | "fleet_overview"
   | "recent_signals"
-  | "scout_checkin";
+  | "scout_checkin"
+  | "author_scout";
 
 export type ScoutSurface = "fleet_list" | "scout_detail" | "empty_state";
 
