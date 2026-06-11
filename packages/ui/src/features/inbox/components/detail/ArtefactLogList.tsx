@@ -1,4 +1,8 @@
-import { ArrowSquareOutIcon } from "@phosphor-icons/react";
+import {
+  ArrowSquareOutIcon,
+  CaretDownIcon,
+  CaretRightIcon,
+} from "@phosphor-icons/react";
 import type {
   ActionabilityJudgmentContent,
   AnySignalReportArtefact,
@@ -100,6 +104,32 @@ function CodeRefBlock({ code, language }: { code: string; language: string }) {
 function RelevanceNote({ note }: { note: string }) {
   if (!note.trim()) return null;
   return <Text className="block text-(--gray-11) text-[12px]">{note}</Text>;
+}
+
+/** Judgment explanations are often paragraphs — collapsed by default behind a toggle. */
+function CollapsibleReasoning({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!text.trim()) return null;
+  return (
+    <Box>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="-mx-1 flex items-center gap-1 rounded-md px-1 py-0.5 text-(--gray-11) text-[12px] transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
+      >
+        {expanded ? (
+          <CaretDownIcon size={12} className="shrink-0" />
+        ) : (
+          <CaretRightIcon size={12} className="shrink-0" />
+        )}
+        {expanded ? "Hide reasoning" : "Show reasoning"}
+      </button>
+      {expanded ? (
+        <Text className="block text-(--gray-11) text-[12px]">{text}</Text>
+      ) : null}
+    </Box>
+  );
 }
 
 function ReviewersBody({ reviewers }: { reviewers: SuggestedReviewer[] }) {
@@ -224,7 +254,7 @@ function ArtefactBody({
       return (
         <Flex direction="column" gap="1">
           <SignalReportPriorityBadge priority={c.priority} />
-          {c.explanation ? <RelevanceNote note={c.explanation} /> : null}
+          {c.explanation ? <CollapsibleReasoning text={c.explanation} /> : null}
         </Flex>
       );
     }
@@ -240,7 +270,7 @@ function ArtefactBody({
               </Badge>
             ) : null}
           </Flex>
-          {c.explanation ? <RelevanceNote note={c.explanation} /> : null}
+          {c.explanation ? <CollapsibleReasoning text={c.explanation} /> : null}
         </Flex>
       );
     }
