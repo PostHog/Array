@@ -107,39 +107,42 @@ describe("ClaudeAcpAgent session model on resume", () => {
     process.env.CLAUDE_CONFIG_DIR = configDir;
   });
 
-  it("applies meta.model to the SDK when resuming", async () => {
-    const agent = makeAgent();
-
-    const response = await agent.resumeSession({
+  // The SDK does not carry the model across resume — without an explicit
+  // setModel the resumed session silently runs the SDK default (opus).
+  it.each([
+    {
+      name: "applies meta.model to the SDK when resuming",
       sessionId: "0197a000-0000-7000-8000-000000000001",
-      cwd,
-      mcpServers: [],
-      _meta: { taskRunId: "run-1", model: "claude-fable-5" },
-    });
-
-    // The SDK does not carry the model across resume — without an explicit
-    // setModel the resumed session silently runs the SDK default (opus).
-    expect(createdQueries).toHaveLength(1);
-    expect(createdQueries[0].setModel).toHaveBeenCalledWith("claude-fable-5");
-    expect(getModelConfigOption(response)?.currentValue).toBe("claude-fable-5");
-  });
-
-  it("pins the default model explicitly when resuming without meta.model", async () => {
-    const agent = makeAgent();
-
-    const response = await agent.resumeSession({
+      model: "claude-fable-5",
+      expectedSetModel: "claude-fable-5",
+      expectedCurrentValue: "claude-fable-5",
+    },
+    {
+      name: "pins the default model explicitly when resuming without meta.model",
       sessionId: "0197a000-0000-7000-8000-000000000002",
-      cwd,
-      mcpServers: [],
-      _meta: { taskRunId: "run-2" },
-    });
+      model: undefined,
+      expectedSetModel: "opus",
+      expectedCurrentValue: "claude-opus-4-8",
+    },
+  ])(
+    "$name",
+    async ({ sessionId, model, expectedSetModel, expectedCurrentValue }) => {
+      const agent = makeAgent();
 
-    expect(createdQueries).toHaveLength(1);
-    expect(createdQueries[0].setModel).toHaveBeenCalledWith("opus");
-    expect(getModelConfigOption(response)?.currentValue).toBe(
-      "claude-opus-4-8",
-    );
-  });
+      const response = await agent.resumeSession({
+        sessionId,
+        cwd,
+        mcpServers: [],
+        _meta: { taskRunId: "run-1", model },
+      });
+
+      expect(createdQueries).toHaveLength(1);
+      expect(createdQueries[0].setModel).toHaveBeenCalledWith(expectedSetModel);
+      expect(getModelConfigOption(response)?.currentValue).toBe(
+        expectedCurrentValue,
+      );
+    },
+  );
 
   it("does not call setModel for a new session on the default model", async () => {
     const agent = makeAgent();
