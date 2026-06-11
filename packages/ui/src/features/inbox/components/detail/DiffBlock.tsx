@@ -1,5 +1,5 @@
-// Renders unified-diff text with per-line +/- coloring. Shared by the `code_diff`
-// artefact body and the `commit` artefact's commit-vs-parent diff.
+// Renders unified-diff text with per-line +/- coloring, used by the `commit`
+// artefact's commit-vs-parent diff view.
 export function DiffBlock({ diff }: { diff: string }) {
   const lines = diff.replace(/\n$/, "").split("\n");
   return (

@@ -6,7 +6,6 @@ import {
 import type {
   ActionabilityJudgmentContent,
   AnySignalReportArtefact,
-  CodeDiffContent,
   CodeReferenceContent,
   CommitContent,
   DismissalContent,
@@ -22,7 +21,6 @@ import type {
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { ArtefactCommit } from "@posthog/ui/features/inbox/components/detail/ArtefactCommit";
 import { ArtefactTaskRun } from "@posthog/ui/features/inbox/components/detail/ArtefactTaskRun";
-import { DiffBlock } from "@posthog/ui/features/inbox/components/detail/DiffBlock";
 import { SignalReportActionabilityBadge } from "@posthog/ui/features/inbox/components/utils/SignalReportActionabilityBadge";
 import { SignalReportPriorityBadge } from "@posthog/ui/features/inbox/components/utils/SignalReportPriorityBadge";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
@@ -40,7 +38,6 @@ import { useState } from "react";
 // append-only history of changes — the current status lives at the top of the report.
 const TYPE_LABELS: Record<string, string> = {
   code_reference: "Code referenced",
-  code_diff: "Diff proposed",
   line_reference: "Line highlighted",
   commit: "Commit pushed",
   task_run: "Task run",
@@ -95,8 +92,6 @@ function locationLabel(artefact: AnySignalReportArtefact): string | null {
       const c = artefact.content as CodeReferenceContent;
       return `${c.file_path}:${c.start_line}-${c.end_line}`;
     }
-    case "code_diff":
-      return (artefact.content as CodeDiffContent).file_path;
     case "line_reference": {
       const c = artefact.content as LineReferenceContent;
       return `${c.file_path}:${c.line}`;
@@ -271,17 +266,6 @@ function ArtefactBody({
             code={c.contents}
             language={languageFromPath(c.file_path)}
           />
-        </Box>
-      );
-    }
-    case "code_diff": {
-      const c = artefact.content as CodeDiffContent;
-      return (
-        <Box>
-          <RelevanceNote note={c.relevance_note} />
-          <Box className="mt-1.5">
-            <DiffBlock diff={c.diff} />
-          </Box>
         </Box>
       );
     }

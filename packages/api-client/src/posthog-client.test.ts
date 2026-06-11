@@ -499,16 +499,6 @@ describe("PostHogAPIClient", () => {
         created_at: "2026-06-01T00:00:08Z",
       },
       {
-        id: "a10",
-        type: "code_diff",
-        content: {
-          file_path: "src/a.ts",
-          diff: "--- a\n+++ b",
-          relevance_note: "proposed fix",
-        },
-        created_at: "2026-06-01T00:00:09Z",
-      },
-      {
         id: "a11",
         type: "line_reference",
         content: {

@@ -16,7 +16,6 @@ import type {
   ActionabilityJudgmentArtefact,
   AvailableSuggestedReviewer,
   AvailableSuggestedReviewersResponse,
-  CodeDiffArtefact,
   CodeReferenceArtefact,
   CommitArtefact,
   CommitDiffResponse,
@@ -558,7 +557,6 @@ type AnyArtefact =
   | SuggestedReviewersArtefact
   | DismissalArtefact
   | CodeReferenceArtefact
-  | CodeDiffArtefact
   | LineReferenceArtefact
   | CommitArtefact
   | TaskRunArtefact
@@ -804,28 +802,6 @@ function normalizeCodeReferenceArtefact(
   };
 }
 
-function normalizeCodeDiffArtefact(
-  value: Record<string, unknown>,
-): CodeDiffArtefact | null {
-  const id = optionalString(value.id);
-  if (!id) return null;
-  const c = isObjectRecord(value.content) ? value.content : null;
-  if (!c) return null;
-  const file_path = optionalString(c.file_path);
-  if (!file_path) return null;
-
-  return {
-    id,
-    type: "code_diff",
-    ...artefactBase(value),
-    content: {
-      file_path,
-      diff: optionalString(c.diff) ?? "",
-      relevance_note: optionalString(c.relevance_note) ?? "",
-    },
-  };
-}
-
 function normalizeLineReferenceArtefact(
   value: Record<string, unknown>,
 ): LineReferenceArtefact | null {
@@ -1007,9 +983,6 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
     return (
       normalizeCodeReferenceArtefact(value) ?? normalizeFallbackArtefact(value)
     );
-  }
-  if (dispatchType === "code_diff") {
-    return normalizeCodeDiffArtefact(value) ?? normalizeFallbackArtefact(value);
   }
   if (dispatchType === "line_reference") {
     return (

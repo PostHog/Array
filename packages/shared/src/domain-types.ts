@@ -438,18 +438,6 @@ export interface CodeReferenceContent {
   relevance_note: string;
 }
 
-/** Artefact with `type: "code_diff"` — a unified diff for a single file. */
-export interface CodeDiffArtefact extends SignalReportArtefactBase {
-  type: "code_diff";
-  content: CodeDiffContent;
-}
-
-export interface CodeDiffContent {
-  file_path: string;
-  diff: string;
-  relevance_note: string;
-}
-
 /** Artefact with `type: "line_reference"` — a single source line callout (a point). */
 export interface LineReferenceArtefact extends SignalReportArtefactBase {
   type: "line_reference";
@@ -603,7 +591,6 @@ export type AnySignalReportArtefact =
   | SuggestedReviewersArtefact
   | DismissalArtefact
   | CodeReferenceArtefact
-  | CodeDiffArtefact
   | LineReferenceArtefact
   | CommitArtefact
   | TaskRunArtefact
