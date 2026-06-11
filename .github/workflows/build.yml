@@ -22,6 +22,8 @@ jobs:
         with:
           predicate-quantifier: every
           filters: |
+            # Wider excludes than code-quality.yml, which keeps .github/scripts
+            # and .vscode/.claude in scope because Biome lints them.
             code:
               - "!**/*.md"
               - "!docs/**"
@@ -37,7 +39,8 @@ jobs:
 
   build:
     needs: changes
-    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.workflow == 'true'
+    # Fail closed: if change detection itself failed, run instead of skipping.
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true' || needs.changes.outputs.workflow == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
