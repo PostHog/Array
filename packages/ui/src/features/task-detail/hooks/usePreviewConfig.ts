@@ -88,9 +88,7 @@ export function usePreviewConfig(
         // without this the user's last pick (e.g. fable) is lost on every
         // refetch/remount. Restore it through applyConfigChange so the dependent
         // effort options are recomputed for the restored model.
-        const modelOpt = initial.find(
-          (o) => o.id === "model" || o.category === "model",
-        );
+        const modelOpt = getOptionByCategory(initial, "model");
         if (
           lastUsedModel &&
           modelOpt?.type === "select" &&

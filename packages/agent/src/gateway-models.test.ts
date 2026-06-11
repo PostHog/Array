@@ -61,11 +61,13 @@ describe("formatGatewayModelName", () => {
 });
 
 describe("getClaudeModelTier", () => {
-  it("orders flagship tiers ahead of code-named releases", () => {
-    expect(getClaudeModelTier("claude-opus-4-8")).toBe(0);
-    expect(getClaudeModelTier("claude-sonnet-4-6")).toBe(1);
-    expect(getClaudeModelTier("claude-haiku-4-5")).toBe(2);
-    expect(getClaudeModelTier("claude-fable-5")).toBe(3);
+  it.each([
+    ["claude-opus-4-8", 0],
+    ["claude-sonnet-4-6", 1],
+    ["claude-haiku-4-5", 2],
+    ["claude-fable-5", 3],
+  ])("orders %s into tier %i", (modelId, tier) => {
+    expect(getClaudeModelTier(modelId)).toBe(tier);
   });
 
   it("sorts fable last among the available Claude models", () => {
