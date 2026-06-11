@@ -89,6 +89,89 @@ describe("rendererStorage", () => {
     expect(backend.setItem).toHaveBeenCalledTimes(1);
   });
 
+  it("settles concurrent initial reads of the same key once", async () => {
+    const module = await importFreshRendererStorage();
+    const storage = jsonStorageOf(module);
+    const backend = fakeBackend({
+      "settings-storage": JSON.stringify({
+        state: { mode: "saved" },
+        version: 0,
+      }),
+    });
+
+    const first = storage.getItem("settings-storage");
+    const second = storage.getItem("settings-storage");
+    module.registerRendererStateStorage(backend);
+
+    await expect(first).resolves.toMatchObject({ state: { mode: "saved" } });
+    await expect(second).resolves.toMatchObject({ state: { mode: "saved" } });
+
+    await storage.setItem("settings-storage", {
+      state: { mode: "changed" },
+      version: 0,
+    });
+    expect(backend.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks a key settled when the initial read rejects so later writes pass", async () => {
+    const module = await importFreshRendererStorage();
+    const storage = jsonStorageOf(module);
+    const backend = fakeBackend({});
+    backend.getItem.mockRejectedValueOnce(new Error("backend unavailable"));
+
+    const read = storage.getItem("settings-storage");
+    module.registerRendererStateStorage(backend);
+    await expect(read).rejects.toThrow("backend unavailable");
+
+    await storage.setItem("settings-storage", {
+      state: { mode: "changed" },
+      version: 0,
+    });
+    expect(backend.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards removeItem issued before and after registration", async () => {
+    const module = await importFreshRendererStorage();
+    const storage = jsonStorageOf(module);
+    const backend = fakeBackend({});
+
+    const removal = storage.removeItem("settings-storage");
+    module.registerRendererStateStorage(backend);
+    await removal;
+    expect(backend.removeItem).toHaveBeenCalledTimes(1);
+
+    await storage.removeItem("settings-storage");
+    expect(backend.removeItem).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps in-flight waiters on the first backend and routes later calls to the second", async () => {
+    const module = await importFreshRendererStorage();
+    const storage = jsonStorageOf(module);
+    const first = fakeBackend({
+      "settings-storage": JSON.stringify({
+        state: { from: "first" },
+        version: 0,
+      }),
+    });
+    const second = fakeBackend({
+      "settings-storage": JSON.stringify({
+        state: { from: "second" },
+        version: 0,
+      }),
+    });
+
+    const read = storage.getItem("settings-storage");
+    module.registerRendererStateStorage(first);
+    module.registerRendererStateStorage(second);
+
+    await expect(read).resolves.toMatchObject({ state: { from: "first" } });
+
+    await expect(storage.getItem("settings-storage")).resolves.toMatchObject({
+      state: { from: "second" },
+    });
+    expect(second.getItem).toHaveBeenCalledTimes(1);
+  });
+
   it("hydrates a store created before the host storage registers", async () => {
     const module = await importFreshRendererStorage();
     const backend = fakeBackend({

@@ -1,4 +1,7 @@
 import "reflect-metadata";
+// Side effect: registers the web persistence backend for @posthog/ui stores
+// before any of the imports below create them.
+import "./web-storage";
 import "@posthog/ui/styles/globals.css";
 import { boot } from "@posthog/di/contribution";
 import { ServiceProvider } from "@posthog/di/react";

@@ -1,12 +1,20 @@
 import { createJSONStorage, type StateStorage } from "zustand/middleware";
+import { logger } from "./logger";
 
-export interface RendererStateStorage extends StateStorage {}
+export type RendererStateStorage = StateStorage;
+
+const log = logger.scope("renderer-storage");
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
 
 let hostStorage: RendererStateStorage | null = null;
-let resolveHostStorage: ((storage: RendererStateStorage) => void) | null = null;
-const hostStorageReady = new Promise<RendererStateStorage>((resolve) => {
-  resolveHostStorage = resolve;
-});
+const hostStorageReady = deferred<RendererStateStorage>();
 
 const pendingFirstReads = new Set<string>();
 const settledFirstReads = new Set<string>();
@@ -18,13 +26,15 @@ const settledFirstReads = new Set<string>();
  * registration wait for the backend instead of treating "not registered yet"
  * as "no saved data". That fallback hydrated every store with defaults and
  * the next write then overwrote the persisted state with those defaults.
+ *
+ * Registering again replaces the backend for new calls; waiters already in
+ * flight settle against the first registration.
  */
 export function registerRendererStateStorage(
   storage: RendererStateStorage,
 ): void {
   hostStorage = storage;
-  resolveHostStorage?.(storage);
-  resolveHostStorage = null;
+  hostStorageReady.resolve(storage);
 }
 
 const deferredHostStorage: StateStorage = {
@@ -35,7 +45,7 @@ const deferredHostStorage: StateStorage = {
       pendingFirstReads.add(key);
     }
     try {
-      const storage = hostStorage ?? (await hostStorageReady);
+      const storage = hostStorage ?? (await hostStorageReady.promise);
       return await storage.getItem(key);
     } finally {
       if (isFirstRead) {
@@ -52,12 +62,24 @@ const deferredHostStorage: StateStorage = {
     if (pendingFirstReads.has(key)) {
       return;
     }
-    const storage = hostStorage ?? (await hostStorageReady);
-    await storage.setItem(key, value);
+    try {
+      const storage = hostStorage ?? (await hostStorageReady.promise);
+      await storage.setItem(key, value);
+    } catch (error) {
+      // zustand persist fires writes without awaiting them; a rejection here
+      // would only surface as an unhandled rejection.
+      log.error("Failed to persist state", { key, error });
+    }
   },
   removeItem: async (key) => {
-    const storage = hostStorage ?? (await hostStorageReady);
-    await storage.removeItem(key);
+    // Removal is explicit intent rather than a stale state snapshot, so it is
+    // not dropped while the initial read is in flight.
+    try {
+      const storage = hostStorage ?? (await hostStorageReady.promise);
+      await storage.removeItem(key);
+    } catch (error) {
+      log.error("Failed to remove persisted state", { key, error });
+    }
   },
 };
 

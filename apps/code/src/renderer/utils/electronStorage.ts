@@ -1,7 +1,4 @@
-import {
-  electronStorage,
-  registerRendererStateStorage,
-} from "@posthog/ui/shell/rendererStorage";
+import { registerRendererStateStorage } from "@posthog/ui/shell/rendererStorage";
 import { trpcClient } from "../trpc";
 
 registerRendererStateStorage({
@@ -15,5 +12,3 @@ registerRendererStateStorage({
     await trpcClient.secureStore.removeItem.query({ key });
   },
 });
-
-export { electronStorage };
