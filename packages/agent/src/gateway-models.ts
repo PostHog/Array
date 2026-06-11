@@ -174,21 +174,22 @@ export function getProviderName(ownedBy: string): string {
   return PROVIDER_NAMES[ownedBy] ?? ownedBy;
 }
 
-// Display order for Claude model tiers in pickers. Code-named releases such as
-// "claude-fable-5" don't contain a tier keyword, so without an explicit entry
-// they'd land at an arbitrary gateway-determined position. Listing "fable" last
-// keeps it pinned after the flagships; any future unknown model sorts after it
-// while preserving the gateway's relative order. Matching is substring-based
-// and precedence follows array order: the first keyword here that appears in
-// the id wins, so an id containing two keywords resolves to the earlier tier.
-const CLAUDE_TIER_ORDER = ["opus", "sonnet", "haiku", "fable"];
-
-export function getClaudeModelTier(modelId: string): number {
-  const lowerId = modelId.toLowerCase();
-  for (let i = 0; i < CLAUDE_TIER_ORDER.length; i++) {
-    if (lowerId.includes(CLAUDE_TIER_ORDER[i])) return i;
-  }
-  return CLAUDE_TIER_ORDER.length;
+// Sort key for ordering models oldest-to-newest in pickers. The model menu
+// opens upward (side="top"), so the last item sits closest to the trigger —
+// sorting ascending by this key puts the newest model right under the user's
+// cursor. The key is the version embedded in the model id, e.g.
+// "claude-sonnet-4-6" -> 4006, "claude-opus-4-8" -> 4008, "claude-fable-5" ->
+// 5000; a higher number means a newer model. An id with no recognisable
+// version (a brand-new or unexpected release) ranks as newest so it still
+// surfaces at the end rather than at an arbitrary gateway-determined position.
+// Only the first version group is read, so a trailing date suffix (e.g.
+// "-20251001") is ignored; the minor component is assumed to be < 1000.
+export function getClaudeModelRecency(modelId: string): number {
+  const match = modelId.toLowerCase().match(/-(\d+)(?:[-.](\d+))?/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  const major = Number(match[1]);
+  const minor = match[2] ? Number(match[2]) : 0;
+  return major * 1000 + minor;
 }
 
 const PROVIDER_PREFIXES = ["anthropic/", "openai/", "google-vertex/"];

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatGatewayModelName,
-  getClaudeModelTier,
+  getClaudeModelRecency,
   isBlockedModelId,
 } from "./gateway-models";
 
@@ -60,61 +60,52 @@ describe("formatGatewayModelName", () => {
   });
 });
 
-describe("getClaudeModelTier", () => {
+describe("getClaudeModelRecency", () => {
   it.each([
-    ["claude-opus-4-8", 0],
-    ["claude-sonnet-4-6", 1],
-    ["claude-haiku-4-5", 2],
-    ["claude-fable-5", 3],
-  ])("orders %s into tier %i", (modelId, tier) => {
-    expect(getClaudeModelTier(modelId)).toBe(tier);
+    ["claude-haiku-4-5", 4005],
+    ["claude-sonnet-4-6", 4006],
+    ["claude-opus-4-7", 4007],
+    ["claude-opus-4-8", 4008],
+    ["claude-fable-5", 5000],
+  ])("ranks %s by its embedded version (%i)", (modelId, rank) => {
+    expect(getClaudeModelRecency(modelId)).toBe(rank);
   });
 
-  it("sorts fable last among the available Claude models", () => {
-    const ids = ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-4-6"];
-    const sorted = [...ids].sort(
-      (a, b) => getClaudeModelTier(a) - getClaudeModelTier(b),
+  it("ignores a trailing date suffix when reading the version", () => {
+    expect(getClaudeModelRecency("claude-haiku-4-5-20251001")).toBe(4005);
+  });
+
+  it("ranks a model with no recognisable version as newest", () => {
+    expect(getClaudeModelRecency("claude-mystery")).toBe(
+      Number.MAX_SAFE_INTEGER,
     );
-    expect(sorted).toEqual([
-      "claude-opus-4-8",
-      "claude-sonnet-4-6",
-      "claude-fable-5",
-    ]);
+    expect(getClaudeModelRecency("claude-mystery")).toBeGreaterThan(
+      getClaudeModelRecency("claude-fable-5"),
+    );
   });
 
-  it("produces the full picker display order regardless of gateway order", () => {
+  it("produces the full picker display order, oldest to newest", () => {
     // Models as the gateway might return them — arbitrary order.
     const gatewayOrder = [
       "claude-fable-5",
-      "claude-haiku-4-5",
-      "claude-mystery-9",
       "claude-opus-4-8",
+      "claude-mystery",
+      "claude-haiku-4-5",
       "claude-sonnet-4-6",
+      "claude-opus-4-7",
     ];
     const displayed = [...gatewayOrder].sort(
-      (a, b) => getClaudeModelTier(a) - getClaudeModelTier(b),
+      (a, b) => getClaudeModelRecency(a) - getClaudeModelRecency(b),
     );
-    // Picker order: opus → sonnet → haiku → fable → any unknown model last.
+    // The menu opens upward, so the newest model (last here) sits closest to
+    // the trigger. Unknown/unversioned models rank newest and trail the list.
     expect(displayed).toEqual([
-      "claude-opus-4-8",
-      "claude-sonnet-4-6",
       "claude-haiku-4-5",
+      "claude-sonnet-4-6",
+      "claude-opus-4-7",
+      "claude-opus-4-8",
       "claude-fable-5",
-      "claude-mystery-9",
+      "claude-mystery",
     ]);
-  });
-
-  it("sorts unknown models after every known tier", () => {
-    expect(getClaudeModelTier("claude-mystery-9")).toBe(4);
-    expect(getClaudeModelTier("claude-mystery-9")).toBeGreaterThan(
-      getClaudeModelTier("claude-fable-5"),
-    );
-  });
-
-  it("resolves to the earlier tier when an id matches multiple keywords", () => {
-    // Substring match follows CLAUDE_TIER_ORDER: "opus" precedes "fable", so an
-    // id containing both pins to the opus tier. This pins the precedence
-    // contract so the behaviour is intentional rather than coincidental.
-    expect(getClaudeModelTier("claude-opus-fable-experiment")).toBe(0);
   });
 });

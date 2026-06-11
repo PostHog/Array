@@ -21,7 +21,7 @@ import {
   fetchGatewayModels,
   formatGatewayModelName,
   type GatewayModel,
-  getClaudeModelTier,
+  getClaudeModelRecency,
   isAnthropicModel,
 } from "../gateway-models";
 import { Logger } from "../utils/logger";
@@ -144,11 +144,11 @@ export abstract class BaseAcpAgent implements Agent {
         name: formatGatewayModelName(model),
         description: `Context: ${model.context_window.toLocaleString()} tokens`,
       }))
-      // Sort by tier so the picker is deterministic and code-named models
-      // (e.g. fable) stay pinned last instead of floating to wherever the
-      // gateway lists them.
+      // Sort oldest-to-newest so the picker is deterministic and the newest
+      // model lands at the end of the list, closest to the trigger.
       .sort(
-        (a, b) => getClaudeModelTier(a.value) - getClaudeModelTier(b.value),
+        (a, b) =>
+          getClaudeModelRecency(a.value) - getClaudeModelRecency(b.value),
       );
 
     const isAnthropicModelId = (modelId: string): boolean =>

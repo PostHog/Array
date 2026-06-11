@@ -30,7 +30,7 @@ import {
   DEFAULT_GATEWAY_MODEL,
   fetchGatewayModels,
   formatGatewayModelName,
-  getClaudeModelTier,
+  getClaudeModelRecency,
   getProviderName,
   isAnthropicModel,
   isOpenAIModel,
@@ -1812,7 +1812,9 @@ For git operations while detached:
         const bIdx = bProviderIdx === -1 ? 999 : bProviderIdx;
         return aIdx - bIdx;
       }
-      return getClaudeModelTier(a.modelId) - getClaudeModelTier(b.modelId);
+      return (
+        getClaudeModelRecency(a.modelId) - getClaudeModelRecency(b.modelId)
+      );
     });
   }
 
@@ -1833,12 +1835,13 @@ For git operations while detached:
         description: `Context: ${model.context_window.toLocaleString()} tokens`,
       }));
 
-    // The gateway returns models in an arbitrary order. Sort Claude models by
-    // tier so the picker is deterministic and code-named models (e.g. fable)
-    // stay pinned last instead of floating to wherever the gateway lists them.
+    // The gateway returns models in an arbitrary order. Sort Claude models
+    // oldest-to-newest so the picker is deterministic and the newest model
+    // lands at the end of the list, closest to the trigger.
     if (adapter === "claude") {
       modelOptions.sort(
-        (a, b) => getClaudeModelTier(a.value) - getClaudeModelTier(b.value),
+        (a, b) =>
+          getClaudeModelRecency(a.value) - getClaudeModelRecency(b.value),
       );
     }
 
