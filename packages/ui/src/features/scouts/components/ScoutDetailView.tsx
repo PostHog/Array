@@ -224,7 +224,7 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
                   {scoutRuns.length > 0
                     ? `No runs match this filter in the ${scoutRunsWindowLabel(runsWindow)}.`
                     : runsWindow && !runsWindow.complete
-                      ? `No runs fetched in the last ${SCOUT_RUNS_WINDOW_HOURS} hours — the fleet window was truncated before it could cover this scout, so runs may exist beyond what was fetched.`
+                      ? `No runs fetched in the last ${SCOUT_RUNS_WINDOW_HOURS} hours – the fleet window was truncated before it could cover this scout, so runs may exist beyond what was fetched.`
                       : `No runs in the ${scoutRunsWindowLabel(runsWindow)}.`}
                 </Text>
               ) : (

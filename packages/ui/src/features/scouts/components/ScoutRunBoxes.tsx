@@ -11,7 +11,7 @@ import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 
 // Quiet is the common, healthy baseline so it recedes to gray; saturated
-// color only means something happened — iris payoff, red/amber trouble.
+// color only means something happened – iris payoff, red/amber trouble.
 const OUTCOME_BOX_CLASS: Record<ScoutRunOutcome, string> = {
   emitted: "bg-(--iris-9)",
   quiet: "bg-(--gray-5)",

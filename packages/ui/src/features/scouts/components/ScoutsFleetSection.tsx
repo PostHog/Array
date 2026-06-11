@@ -54,7 +54,7 @@ export function ScoutsFleetSection() {
     );
   }
 
-  // A failed request must not masquerade as an empty fleet — a missing scope
+  // A failed request must not masquerade as an empty fleet – a missing scope
   // or regional rollout gap would otherwise be indistinguishable from
   // "no scouts yet".
   if (isError) {
@@ -239,7 +239,7 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
 
 /**
  * Suggestion-chip CTA that fires an auto-mode cloud task asking the
- * exploring-signals-scouts skill a templated question, then navigates to it —
+ * exploring-signals-scouts skill a templated question, then navigates to it –
  * same one-click shape as the inbox discuss / create-PR flows.
  */
 function ScoutChatCta({

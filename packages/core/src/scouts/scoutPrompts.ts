@@ -36,7 +36,7 @@ Use the exploring-signals-scouts skill from the PostHog MCP to dig into the \`${
 - Recent run history: successes, failures, timeouts, durations
 - Signals it emitted recently and whether they look genuinely actionable
 - Scratchpad memory the fleet holds that relates to this scout
-- Whether its scope, thresholds, and schedule look right — suggest tuning if not
+- Whether its scope, thresholds, and schedule look right – suggest tuning if not
 
 Lead with a short verdict. If the skill is unavailable, fall back to the signals-scout MCP tools directly (config list, runs list, run emissions, scratchpad search).`;
 }

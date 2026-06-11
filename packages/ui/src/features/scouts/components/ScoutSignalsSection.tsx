@@ -17,7 +17,7 @@ const INITIAL_EMITTED_RUNS = 10;
 
 /**
  * The signals this scout emitted in the runs window, newest first. Emissions
- * are only fetchable per run, so each emitted run gets its own child query —
+ * are only fetchable per run, so each emitted run gets its own child query –
  * runs beyond the cap stay unmounted (and unfetched) until "Show more".
  */
 export function ScoutSignalsSection({
