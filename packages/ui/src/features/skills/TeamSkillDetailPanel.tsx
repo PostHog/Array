@@ -1,11 +1,22 @@
-import { UsersThree, X } from "@phosphor-icons/react";
+import { DownloadSimple, UsersThree, X } from "@phosphor-icons/react";
 import type { TeamSkillInfo } from "@posthog/core/skills/teamSkillsService";
 import { CodeMirrorEditor } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
-import { Badge, Box, Flex, ScrollArea, Text, Tooltip } from "@radix-ui/themes";
+import { toast } from "@posthog/ui/primitives/toast";
+import {
+  AlertDialog,
+  Badge,
+  Box,
+  Button,
+  Flex,
+  ScrollArea,
+  Text,
+  Tooltip,
+} from "@radix-ui/themes";
 import { useState } from "react";
 import { SkillFileTree } from "./SkillFileTree";
 import { stripFrontmatter } from "./stripFrontmatter";
+import { useInstallTeamSkill } from "./useTeamSkillMutations";
 import { useTeamSkillDetail, useTeamSkillFile } from "./useTeamSkills";
 
 interface TeamSkillDetailPanelProps {
@@ -19,12 +30,33 @@ export function TeamSkillDetailPanel({
   onClose,
 }: TeamSkillDetailPanelProps) {
   const [selectedFile, setSelectedFile] = useState("SKILL.md");
+  const [confirmOverwrite, setConfirmOverwrite] = useState(false);
   const { data: detail, isLoading } = useTeamSkillDetail(skill.name);
   const isSkillMd = selectedFile === "SKILL.md";
   const { data: file, isLoading: isFileLoading } = useTeamSkillFile(
     skill.name,
     isSkillMd ? null : selectedFile,
   );
+  const install = useInstallTeamSkill();
+
+  const handleInstall = async (overwrite: boolean) => {
+    try {
+      await install.mutateAsync({ name: skill.name, overwrite });
+      setConfirmOverwrite(false);
+      toast.success(`Installed ${skill.name}`, {
+        description: "Now available under Your skills",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (!overwrite && message.includes("already exists")) {
+        setConfirmOverwrite(true);
+        return;
+      }
+      toast.error("Failed to install skill", {
+        description: message || undefined,
+      });
+    }
+  };
 
   const treeFiles = [
     { path: "SKILL.md", size: detail?.body.length ?? 0 },
@@ -74,6 +106,15 @@ export function TeamSkillDetailPanel({
               Installed
             </Badge>
           )}
+          <Button
+            size="1"
+            variant="solid"
+            onClick={() => void handleInstall(false)}
+            disabled={install.isPending || isLoading}
+          >
+            <DownloadSimple size={12} />
+            {skill.installedLocally ? "Reinstall" : "Install"}
+          </Button>
         </Flex>
       </Flex>
 
@@ -132,6 +173,36 @@ export function TeamSkillDetailPanel({
           </Box>
         )}
       </Box>
+
+      <AlertDialog.Root
+        open={confirmOverwrite}
+        onOpenChange={setConfirmOverwrite}
+      >
+        <AlertDialog.Content maxWidth="420px" size="2">
+          <AlertDialog.Title size="3">Replace local skill</AlertDialog.Title>
+          <AlertDialog.Description size="1">
+            A skill named "{skill.name}" already exists in your skills.
+            Reinstalling will replace your local version, including any edits.
+          </AlertDialog.Description>
+          <Flex justify="end" gap="2" mt="4">
+            <AlertDialog.Cancel>
+              <Button size="1" variant="soft" color="gray">
+                Cancel
+              </Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button
+                size="1"
+                variant="solid"
+                color="red"
+                onClick={() => void handleInstall(true)}
+              >
+                Replace
+              </Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
     </>
   );
 }

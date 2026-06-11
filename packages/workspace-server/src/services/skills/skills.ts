@@ -11,6 +11,8 @@ import type { WatcherService } from "../watcher/service";
 import { parseSkillFrontmatter } from "./parse-skill-frontmatter";
 import type {
   CreateSkillInput,
+  ExportedSkill,
+  InstallTeamSkillInput,
   SkillContents,
   SkillInfo,
   SkillSource,
@@ -173,6 +175,81 @@ export class SkillsService {
   async deleteSkill(skillPath: string): Promise<void> {
     const skillDir = await this.resolveWritableSkillDir(skillPath);
     await fs.promises.rm(skillDir, { recursive: true, force: true });
+  }
+
+  /**
+   * Reads a writable skill directory into a publishable shape: frontmatter
+   * split out, body without frontmatter, and every text companion file.
+   * Binary or oversized files are skipped and reported.
+   */
+  async exportSkill(skillPath: string): Promise<ExportedSkill> {
+    const skillDir = await this.resolveWritableSkillDir(skillPath);
+    const manifest = await fs.promises.readFile(
+      path.join(skillDir, "SKILL.md"),
+      "utf-8",
+    );
+    const frontmatter = parseSkillFrontmatter(manifest);
+    const name = frontmatter?.name ?? path.basename(skillDir);
+    const description = frontmatter?.description ?? "";
+    const body = stripFrontmatterBlock(manifest);
+
+    const entries = await listSkillFiles(skillDir, MAX_SKILL_FILES);
+    const files: { path: string; content: string }[] = [];
+    const skipped: string[] = [];
+    for (const entry of entries) {
+      if (entry.path === "SKILL.md") continue;
+      if (entry.size > MAX_SKILL_FILE_BYTES) {
+        skipped.push(entry.path);
+        continue;
+      }
+      const bytes = await fs.promises.readFile(
+        path.join(skillDir, ...entry.path.split("/")),
+      );
+      if (bytes.subarray(0, 4096).includes(0)) {
+        skipped.push(entry.path);
+        continue;
+      }
+      files.push({ path: entry.path, content: bytes.toString("utf-8") });
+    }
+
+    return { name, description, body, files, skipped };
+  }
+
+  /**
+   * Materializes a team skill into ~/.claude/skills (agents need files on
+   * disk). From then on it follows the same copy-and-forget rule as
+   * marketplace installs.
+   */
+  async installTeamSkill(
+    input: InstallTeamSkillInput,
+  ): Promise<{ path: string }> {
+    const name = input.name.trim();
+    validateSkillDirName(name);
+    const target = path.join(os.homedir(), ".claude", "skills", name);
+    if (fs.existsSync(target) && !input.overwrite) {
+      throw new Error(
+        `A skill named "${name}" already exists. Installing will replace your local version.`,
+      );
+    }
+    if (fs.existsSync(target)) {
+      await fs.promises.rm(target, { recursive: true, force: true });
+    }
+
+    await fs.promises.mkdir(target, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(target, "SKILL.md"),
+      serializeSkillMarkdown(
+        { name, description: input.description },
+        input.body,
+      ),
+      "utf-8",
+    );
+    for (const file of input.files) {
+      const filePath = resolveSkillFilePath(target, file.path);
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.promises.writeFile(filePath, file.content, "utf-8");
+    }
+    return { path: target };
   }
 
   /**
@@ -362,6 +439,11 @@ async function waitForDir(dir: string, signal?: AbortSignal): Promise<boolean> {
     await delay(MISSING_DIR_POLL_MS, signal);
   }
   return false;
+}
+
+function stripFrontmatterBlock(content: string): string {
+  const match = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+  return match ? content.slice(match[0].length).replace(/^\n+/, "") : content;
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {

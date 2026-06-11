@@ -1,4 +1,5 @@
 import {
+  CloudArrowUp,
   FilePlus,
   Folder,
   LockSimple,
@@ -39,17 +40,21 @@ import {
   useRenameSkillFile,
   useSaveSkillFile,
 } from "./useSkillMutations";
+import { usePublishSkill } from "./useTeamSkillMutations";
 
 interface SkillDetailPanelProps {
   skill: SkillInfo;
   onClose: () => void;
   issues?: SkillIssue[];
+  /** Whether team skills are available for publishing. */
+  canPublish?: boolean;
 }
 
 export function SkillDetailPanel({
   skill,
   onClose,
   issues = [],
+  canPublish = false,
 }: SkillDetailPanelProps) {
   const config = SOURCE_CONFIG[skill.source];
 
@@ -61,6 +66,7 @@ export function SkillDetailPanel({
   const [renameTo, setRenameTo] = useState("");
   const [deleteFileTarget, setDeleteFileTarget] = useState<string | null>(null);
   const [deleteSkillOpen, setDeleteSkillOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
 
   const { data: contents } = useSkillContents(skill.path);
   const { data: fileContent, isLoading } = useSkillFile(
@@ -72,6 +78,7 @@ export function SkillDetailPanel({
   const renameFile = useRenameSkillFile();
   const deleteFile = useDeleteSkillFile();
   const deleteSkill = useDeleteSkill();
+  const publishSkill = usePublishSkill();
 
   const files = contents?.files ?? [];
   const isSkillMd = selectedFile === "SKILL.md";
@@ -134,6 +141,23 @@ export function SkillDetailPanel({
     }
   };
 
+  const handlePublish = async () => {
+    try {
+      const result = await publishSkill.mutateAsync({ skillPath: skill.path });
+      setPublishOpen(false);
+      toast.success(`Published ${skill.name} (v${result.version})`, {
+        description:
+          result.skipped.length > 0
+            ? `Skipped ${result.skipped.length} binary/oversized file(s): ${result.skipped.join(", ")}`
+            : "Teammates can now install it from the Team group",
+      });
+    } catch (error) {
+      toast.error("Failed to publish skill", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  };
+
   const handleDeleteSkill = async () => {
     try {
       await deleteSkill.mutateAsync({ skillPath: skill.path });
@@ -162,6 +186,18 @@ export function SkillDetailPanel({
           <Flex align="center" gap="1" className="shrink-0">
             {skill.editable && !isEditing && (
               <>
+                {canPublish && (
+                  <Tooltip content="Publish to team">
+                    <button
+                      type="button"
+                      aria-label="Publish to team"
+                      onClick={() => setPublishOpen(true)}
+                      className="rounded p-0.5 text-gray-11 hover:bg-gray-3 hover:text-gray-12"
+                    >
+                      <CloudArrowUp size={14} />
+                    </button>
+                  </Tooltip>
+                )}
                 <Tooltip content="Edit skill">
                   <button
                     type="button"
@@ -437,6 +473,31 @@ export function SkillDetailPanel({
                 Delete
               </Button>
             </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
+
+      <AlertDialog.Root open={publishOpen} onOpenChange={setPublishOpen}>
+        <AlertDialog.Content maxWidth="420px" size="2">
+          <AlertDialog.Title size="3">Publish to team</AlertDialog.Title>
+          <AlertDialog.Description size="1">
+            Publish "{skill.name}" to your team? Teammates will be able to view
+            and install it. Re-publishing creates a new version.
+          </AlertDialog.Description>
+          <Flex justify="end" gap="2" mt="4">
+            <AlertDialog.Cancel>
+              <Button size="1" variant="soft" color="gray">
+                Cancel
+              </Button>
+            </AlertDialog.Cancel>
+            <Button
+              size="1"
+              variant="solid"
+              onClick={handlePublish}
+              disabled={publishSkill.isPending}
+            >
+              Publish
+            </Button>
           </Flex>
         </AlertDialog.Content>
       </AlertDialog.Root>

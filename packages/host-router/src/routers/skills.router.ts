@@ -4,6 +4,9 @@ import {
   createSkillInput,
   deleteSkillFileInput,
   deleteSkillInput,
+  exportSkillInput,
+  exportSkillOutput,
+  installTeamSkillInput,
   listSkillsOutput,
   readSkillFileInput,
   readSkillFileOutput,
@@ -92,6 +95,20 @@ export const skillsRouter = router({
       ctx.container
         .get<SkillsService>(SKILLS_SERVICE)
         .deleteSkill(input.skillPath),
+    ),
+  export: publicProcedure
+    .input(exportSkillInput)
+    .output(exportSkillOutput)
+    .query(({ ctx, input }) =>
+      ctx.container
+        .get<SkillsService>(SKILLS_SERVICE)
+        .exportSkill(input.skillPath),
+    ),
+  installTeamSkill: publicProcedure
+    .input(installTeamSkillInput)
+    .output(skillPathOutput)
+    .mutation(({ ctx, input }) =>
+      ctx.container.get<SkillsService>(SKILLS_SERVICE).installTeamSkill(input),
     ),
   watch: publicProcedure.subscription(async function* (opts) {
     const service = opts.ctx.container.get<SkillsService>(SKILLS_SERVICE);

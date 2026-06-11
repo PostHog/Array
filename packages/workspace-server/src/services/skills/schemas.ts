@@ -75,6 +75,36 @@ export const deleteSkillInput = z.object({
   skillPath: z.string(),
 });
 
+export const exportSkillInput = z.object({
+  skillPath: z.string(),
+});
+
+export const exportedSkillFile = z.object({
+  // Path relative to the skill directory, using "/" separators.
+  path: z.string(),
+  content: z.string(),
+});
+
+export const exportSkillOutput = z.object({
+  name: z.string(),
+  description: z.string(),
+  body: z.string(),
+  files: z.array(exportedSkillFile),
+  /** Files excluded from the export (binary or oversized). */
+  skipped: z.array(z.string()),
+});
+
+export const installTeamSkillInput = z.object({
+  name: z.string(),
+  description: z.string(),
+  body: z.string(),
+  files: z.array(exportedSkillFile),
+  overwrite: z.boolean().optional(),
+});
+
+export type ExportedSkill = z.infer<typeof exportSkillOutput>;
+export type InstallTeamSkillInput = z.infer<typeof installTeamSkillInput>;
+
 export type SkillInfo = z.infer<typeof skillInfo>;
 export type SkillScope = z.infer<typeof skillScope>;
 export type CreateSkillInput = z.infer<typeof createSkillInput>;

@@ -238,6 +238,7 @@ export function SkillsView() {
                 key={selectedSkill.path}
                 skill={selectedSkill}
                 issues={analysis[selectedSkill.path] ?? []}
+                canPublish={!!teamListing?.available}
                 onClose={handleCloseSidebar}
               />
             )}

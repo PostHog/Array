@@ -82,3 +82,108 @@ describe("TeamSkillsService.listTeamSkills", () => {
     expect(listing.skills[0]?.id).toBe("skill-1b");
   });
 });
+
+describe("TeamSkillsService.publishSkill", () => {
+  const exported = {
+    name: "pr-shepherd",
+    description: "Shepherds PRs",
+    body: "# Body",
+    files: [{ path: "references/guide.md", content: "guide" }],
+  };
+
+  it("creates a new skill on first publish", async () => {
+    const createLlmSkill = vi.fn().mockResolvedValue(makeItem({ version: 1 }));
+    const client = {
+      listLlmSkills: vi.fn().mockResolvedValue([]),
+      createLlmSkill,
+    } as unknown as PostHogAPIClient;
+
+    const result = await new TeamSkillsService().publishSkill(client, exported);
+
+    expect(createLlmSkill).toHaveBeenCalledWith({
+      name: "pr-shepherd",
+      description: "Shepherds PRs",
+      body: "# Body",
+      files: exported.files,
+    });
+    expect(result).toEqual({ version: 1 });
+  });
+
+  it("publishes a new version against the current latest", async () => {
+    const publishLlmSkillVersion = vi
+      .fn()
+      .mockResolvedValue(makeItem({ version: 3 }));
+    const client = {
+      listLlmSkills: vi
+        .fn()
+        .mockResolvedValue([makeItem({ version: 2, latest_version: 2 })]),
+      publishLlmSkillVersion,
+    } as unknown as PostHogAPIClient;
+
+    const result = await new TeamSkillsService().publishSkill(client, exported);
+
+    expect(publishLlmSkillVersion).toHaveBeenCalledWith("pr-shepherd", {
+      body: "# Body",
+      description: "Shepherds PRs",
+      files: exported.files,
+      base_version: 2,
+    });
+    expect(result).toEqual({ version: 3 });
+  });
+
+  it("rejects publishing without a description", async () => {
+    await expect(
+      new TeamSkillsService().publishSkill(makeClient([]), {
+        ...exported,
+        description: "  ",
+      }),
+    ).rejects.toThrow("Add a description");
+  });
+
+  it("rejects publishing when the feature is unavailable", async () => {
+    await expect(
+      new TeamSkillsService().publishSkill(makeClient(null), exported),
+    ).rejects.toThrow("not enabled");
+  });
+});
+
+describe("TeamSkillsService.fetchSkillForInstall", () => {
+  it("fetches the body plus every companion file", async () => {
+    const client = {
+      getLlmSkillByName: vi.fn().mockResolvedValue({
+        name: "pr-shepherd",
+        description: "Shepherds PRs",
+        body: "# Body",
+        files: [
+          { path: "references/guide.md", content_type: "text/plain" },
+          { path: "scripts/run.sh", content_type: "text/plain" },
+        ],
+      }),
+      getLlmSkillFile: vi
+        .fn()
+        .mockImplementation(async (_name: string, path: string) => ({
+          path,
+          content: `content of ${path}`,
+          content_type: "text/plain",
+        })),
+    } as unknown as PostHogAPIClient;
+
+    const skill = await new TeamSkillsService().fetchSkillForInstall(
+      client,
+      "pr-shepherd",
+    );
+
+    expect(skill).toEqual({
+      name: "pr-shepherd",
+      description: "Shepherds PRs",
+      body: "# Body",
+      files: [
+        {
+          path: "references/guide.md",
+          content: "content of references/guide.md",
+        },
+        { path: "scripts/run.sh", content: "content of scripts/run.sh" },
+      ],
+    });
+  });
+});

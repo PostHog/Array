@@ -183,6 +183,12 @@ export interface LlmSkill extends LlmSkillListItem {
   files: LlmSkillFileManifest[];
 }
 
+export interface LlmSkillFileInput {
+  path: string;
+  content: string;
+  content_type?: string;
+}
+
 export interface LlmSkillResolveResponse {
   skill: LlmSkill;
   versions: Array<{
@@ -3732,6 +3738,68 @@ export class PostHogAPIClient {
       throw new Error(`Failed to resolve team skill: ${response.statusText}`);
     }
     return (await response.json()) as LlmSkillResolveResponse;
+  }
+
+  /** Creates a brand-new team skill (version 1). */
+  async createLlmSkill(input: {
+    name: string;
+    description: string;
+    body: string;
+    files?: LlmSkillFileInput[];
+  }): Promise<LlmSkill> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/environments/${teamId}/llm_skills/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: { body: JSON.stringify(input) },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to create team skill: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as LlmSkill;
+  }
+
+  /**
+   * Publishes a new version of an existing team skill. `base_version` must
+   * match the current latest version (409 otherwise).
+   */
+  async publishLlmSkillVersion(
+    name: string,
+    input: {
+      body: string;
+      description?: string;
+      files?: LlmSkillFileInput[];
+      base_version: number;
+    },
+  ): Promise<LlmSkill> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/environments/${teamId}/llm_skills/name/${encodeURIComponent(name)}`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: urlPath,
+      overrides: { body: JSON.stringify(input) },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to publish team skill: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as LlmSkill;
   }
 
   /** Fetches one companion file of a team skill. */
