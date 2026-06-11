@@ -20,7 +20,7 @@ import type { AcpMessage } from "@posthog/shared";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
-import { type ComponentType, useMemo } from "react";
+import { type ComponentType, useMemo, useState } from "react";
 import { accumulateSessionResources } from "./accumulateSessionResources";
 
 /**
@@ -71,6 +71,13 @@ interface SessionResourcesBarProps {
 }
 
 /**
+ * How many chips to show before collapsing the rest behind a "+N" badge.
+ * Keeps the bar to a single tidy row in the common case; the user can expand
+ * to reveal everything when the agent has touched a lot of products.
+ */
+const MAX_VISIBLE_CHIPS = 6;
+
+/**
  * Persistent bar above the composer listing the PostHog products the agent has
  * touched so far this session — via the MCP `exec` tool, or by reading a file
  * from the codebase (the "Code" chip). Each product appears once and is added
@@ -79,17 +86,28 @@ interface SessionResourcesBarProps {
  */
 export function SessionResourcesBar({ events }: SessionResourcesBarProps) {
   const products = useMemo(() => accumulateSessionResources(events), [events]);
+  const [expanded, setExpanded] = useState(false);
 
   if (products.length === 0) return null;
+
+  const overflowCount = products.length - MAX_VISIBLE_CHIPS;
+  const hasOverflow = overflowCount > 0;
+  const visibleProducts =
+    hasOverflow && !expanded ? products.slice(0, MAX_VISIBLE_CHIPS) : products;
 
   return (
     <Box className="mb-3">
       <Box className="mx-auto" style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}>
-        <Flex align="center" gap="2" wrap="wrap" className="px-3 pt-2">
-          <Text color="gray" className="whitespace-nowrap text-[12px]">
+        <Flex
+          align="center"
+          gap="1"
+          wrap="wrap"
+          className="overflow-hidden px-3 pt-2"
+        >
+          <Text color="gray" className="whitespace-nowrap text-[11px]">
             PostHog resources used
           </Text>
-          {products.map((product) => {
+          {visibleProducts.map((product) => {
             const Icon = PRODUCT_ICON[product.id] ?? SparkleIcon;
             const docUrl = PRODUCT_DOC_URL[product.id];
             return (
@@ -99,18 +117,32 @@ export function SessionResourcesBar({ events }: SessionResourcesBarProps) {
                 color="gray"
                 variant="soft"
                 className={
-                  docUrl ? "cursor-pointer hover:bg-gray-4" : undefined
+                  docUrl
+                    ? "max-w-full cursor-pointer text-[11px] hover:bg-gray-4"
+                    : "max-w-full text-[11px]"
                 }
                 onClick={
                   docUrl ? () => void openUrlInBrowser(docUrl) : undefined
                 }
                 title={docUrl ? `Open ${product.label} docs` : undefined}
               >
-                <Icon size={12} />
-                {product.label}
+                <Icon size={11} className="shrink-0" />
+                <span className="truncate">{product.label}</span>
               </Badge>
             );
           })}
+          {hasOverflow && (
+            <Badge
+              size="1"
+              color="gray"
+              variant="soft"
+              className="cursor-pointer text-[11px] hover:bg-gray-4"
+              onClick={() => setExpanded((prev) => !prev)}
+              title={expanded ? "Show fewer" : "Show all resources used"}
+            >
+              {expanded ? "Show less" : `+${overflowCount} more`}
+            </Badge>
+          )}
         </Flex>
       </Box>
     </Box>
