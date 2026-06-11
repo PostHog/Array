@@ -69,7 +69,11 @@ describe("decideTitleGeneration", () => {
       promptCount: 1,
       lastGeneratedAtCount: 0,
       initialDescriptionHandled: false,
-      task: { title: "Custom", description: "d" },
+      task: {
+        title: "Custom",
+        description: "d",
+        origin_product: "user_created",
+      },
     });
     expect(decision.shouldGenerateFromPrompts).toBe(true);
   });
@@ -79,7 +83,11 @@ describe("decideTitleGeneration", () => {
       promptCount: 1 + REGENERATE_INTERVAL,
       lastGeneratedAtCount: 1,
       initialDescriptionHandled: false,
-      task: { title: "Custom", description: "d" },
+      task: {
+        title: "Custom",
+        description: "d",
+        origin_product: "user_created",
+      },
     });
     expect(decision.shouldGenerateFromPrompts).toBe(true);
   });
@@ -89,9 +97,28 @@ describe("decideTitleGeneration", () => {
       promptCount: 0,
       lastGeneratedAtCount: 0,
       initialDescriptionHandled: false,
-      task: { title: "Fix login", description: "Fix login" },
+      task: {
+        title: "Fix login",
+        description: "Fix login",
+        origin_product: "user_created",
+      },
     });
     expect(decision.shouldGenerateFromTaskDescription).toBe(true);
+  });
+
+  it("never auto-generates for report-scoped tasks", () => {
+    const decision = decideTitleGeneration({
+      promptCount: 1,
+      lastGeneratedAtCount: 0,
+      initialDescriptionHandled: false,
+      task: {
+        title: "Checkout flow throws on empty cart",
+        description: "Act on PostHog inbox report abc …",
+        origin_product: "signal_report",
+      },
+    });
+    expect(decision.shouldGenerateFromPrompts).toBe(false);
+    expect(decision.shouldGenerateFromTaskDescription).toBe(false);
   });
 });
 

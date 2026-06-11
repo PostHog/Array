@@ -36,10 +36,21 @@ export function decideTitleGeneration(input: {
   promptCount: number;
   lastGeneratedAtCount: number;
   initialDescriptionHandled: boolean;
-  task: Pick<Task, "title" | "description">;
+  task: Pick<Task, "title" | "description" | "origin_product">;
 }): TitleGenerationDecision {
   const { promptCount, lastGeneratedAtCount, initialDescriptionHandled, task } =
     input;
+
+  // Report-scoped tasks are seeded with the report's own title at creation. Their
+  // prompt is a generic "Act on PostHog inbox report …" preamble (the agent
+  // fetches the report via MCP), so auto-summarizing it would only replace the
+  // report title with a meaningless one. Leave their title alone.
+  if (task.origin_product === "signal_report") {
+    return {
+      shouldGenerateFromPrompts: false,
+      shouldGenerateFromTaskDescription: false,
+    };
+  }
 
   const shouldGenerateFromPrompts =
     (promptCount === 1 && lastGeneratedAtCount === 0) ||

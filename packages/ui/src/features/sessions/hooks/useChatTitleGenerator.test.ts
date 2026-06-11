@@ -121,6 +121,19 @@ describe("useChatTitleGenerator", () => {
     expect(mockGenerateTitle).not.toHaveBeenCalled();
   });
 
+  it("never generates for report-scoped tasks, even on the first prompt", () => {
+    mockPrompts.value = ["Act on PostHog inbox report abc"];
+    renderHook(() =>
+      useChatTitleGenerator(
+        createTask({
+          title: "Checkout flow throws on empty cart",
+          origin_product: "signal_report",
+        }),
+      ),
+    );
+    expect(mockGenerateTitle).not.toHaveBeenCalled();
+  });
+
   it("generates title from the saved task description before prompt events arrive", async () => {
     mockGenerateTitle.mockResolvedValue({
       title: "Fix login bug",
