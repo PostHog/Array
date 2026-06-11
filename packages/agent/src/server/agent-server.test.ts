@@ -13,7 +13,11 @@ import {
 import { createTestRepo, type TestRepo } from "../test/fixtures/api";
 import { createPostHogHandlers } from "../test/mocks/msw-handlers";
 import type { TaskRun } from "../types";
-import { AgentServer, SSE_KEEPALIVE_INTERVAL_MS } from "./agent-server";
+import {
+  AgentServer,
+  isTurnCompleteNotification,
+  SSE_KEEPALIVE_INTERVAL_MS,
+} from "./agent-server";
 import { type JwtPayload, SANDBOX_CONNECTION_AUDIENCE } from "./jwt";
 
 const mockedClaudeSdk = vi.hoisted(() => {
@@ -657,6 +661,56 @@ describe("AgentServer HTTP Mode", () => {
           stopReason: "end_turn",
         },
       });
+    });
+
+    it("skips one broadcast after the adapter emitted its own turn_complete", () => {
+      const appendRawLine = vi.fn();
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        session: unknown;
+        adapterEmittedTurnComplete: boolean;
+        broadcastTurnComplete(stopReason: string): void;
+      };
+      testServer.session = {
+        acpSessionId: "session-1",
+        payload: { run_id: "run-1" },
+        logWriter: { appendRawLine },
+      };
+      testServer.adapterEmittedTurnComplete = true;
+
+      testServer.broadcastTurnComplete("end_turn");
+      expect(appendRawLine).not.toHaveBeenCalled();
+
+      testServer.broadcastTurnComplete("end_turn");
+      expect(appendRawLine).toHaveBeenCalledTimes(1);
+    });
+
+    it("recognizes adapter turn_complete notifications on the tapped stream", () => {
+      expect(
+        isTurnCompleteNotification({
+          jsonrpc: "2.0",
+          method: "_posthog/turn_complete",
+          params: { sessionId: "s", stopReason: "end_turn" },
+        }),
+      ).toBe(true);
+      expect(
+        isTurnCompleteNotification({
+          jsonrpc: "2.0",
+          method: "_posthog/usage_update",
+          params: {},
+        }),
+      ).toBe(false);
+      expect(isTurnCompleteNotification(null)).toBe(false);
+      expect(isTurnCompleteNotification("turn_complete")).toBe(false);
     });
   });
 
