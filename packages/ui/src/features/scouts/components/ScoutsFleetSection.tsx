@@ -162,7 +162,7 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
         <Text className="text-[12.5px] text-gray-11">
           {summary.runningCount > 0
             ? `${summary.runningCount} running now`
-            : "none running now"}
+            : "None running now"}
           {summary.successRate !== null
             ? ` · ${Math.round(summary.successRate * 100)}% success`
             : ""}
