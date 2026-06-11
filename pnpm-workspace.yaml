@@ -71,6 +71,9 @@ minimumReleaseAgeExclude:
   - '@tanstack/virtual-core'
   - '@tanstack/virtual-file-routes'
 
+overrides:
+  zod: 4.3.6
+
 onlyBuiltDependencies:
   - '@parcel/watcher'
   - '@posthog/cli'
