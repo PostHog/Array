@@ -132,6 +132,55 @@ function CollapsibleReasoning({ text }: { text: string }) {
   );
 }
 
+/**
+ * Notes are free-form markdown and can run long — collapsed to a one-line
+ * preview (the first non-empty line) that expands to the rendered note.
+ */
+function CollapsibleNote({
+  note,
+  author,
+}: {
+  note: string;
+  author?: string | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const preview = note
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  return (
+    <Box>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="-mx-1 flex w-full items-center gap-1 rounded-md px-1 py-0.5 text-left text-(--gray-11) text-[12px] transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
+      >
+        {expanded ? (
+          <CaretDownIcon size={12} className="shrink-0" />
+        ) : (
+          <CaretRightIcon size={12} className="shrink-0" />
+        )}
+        {expanded ? (
+          "Hide note"
+        ) : (
+          <Text className="min-w-0 flex-1 truncate">{preview ?? "Note"}</Text>
+        )}
+      </button>
+      {expanded ? (
+        <Box className="text-[12px]">
+          <MarkdownRenderer content={note} />
+          {author ? (
+            <Text className="block text-(--gray-10) text-[11px]">
+              — {author}
+            </Text>
+          ) : null}
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
 function ReviewersBody({ reviewers }: { reviewers: SuggestedReviewer[] }) {
   if (reviewers.length === 0) {
     return (
@@ -238,16 +287,7 @@ function ArtefactBody({
       );
     case "note": {
       const c = artefact.content as NoteContent;
-      return (
-        <Box className="text-[12px]">
-          <MarkdownRenderer content={c.note} />
-          {c.author ? (
-            <Text className="block text-(--gray-10) text-[11px]">
-              — {c.author}
-            </Text>
-          ) : null}
-        </Box>
-      );
+      return <CollapsibleNote note={c.note} author={c.author} />;
     }
     case "priority_judgment": {
       const c = artefact.content as PriorityJudgmentContent;
