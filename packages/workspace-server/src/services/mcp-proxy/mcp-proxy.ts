@@ -5,20 +5,9 @@ import {
   type ScopedLogger,
 } from "@posthog/di/logger";
 import { inject, injectable, preDestroy } from "inversify";
+import { streamBodyToResponse } from "../proxy-stream/proxy-stream";
 import { MCP_PROXY_AUTH } from "./identifiers";
 import type { McpProxyAuth } from "./ports";
-
-function waitForDrainOrClose(res: http.ServerResponse): Promise<void> {
-  return new Promise<void>((resolve) => {
-    const settle = () => {
-      res.off("drain", settle);
-      res.off("close", settle);
-      resolve();
-    };
-    res.once("drain", settle);
-    res.once("close", settle);
-  });
-}
 
 function truncateRequestBody(body: RequestInit["body"]): string | undefined {
   if (body == null) return undefined;
@@ -323,23 +312,6 @@ export class McpProxyService {
     res: http.ServerResponse,
   ): Promise<void> {
     res.writeHead(response.status, this.buildResponseHeaders(response));
-    if (!response.body) {
-      res.end();
-      return;
-    }
-    const reader = response.body.getReader();
-    res.on("close", () => {
-      void reader.cancel().catch(() => {});
-    });
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        res.end();
-        return;
-      }
-      if (!res.write(value)) {
-        await waitForDrainOrClose(res);
-      }
-    }
+    await streamBodyToResponse(response.body, res);
   }
 }

@@ -5,20 +5,9 @@ import {
   type ScopedLogger,
 } from "@posthog/di/logger";
 import { inject, injectable } from "inversify";
+import { streamBodyToResponse } from "../proxy-stream/proxy-stream";
 import { AUTH_PROXY_AUTH } from "./identifiers";
 import type { AuthProxyAuth } from "./ports";
-
-function waitForDrainOrClose(res: http.ServerResponse): Promise<void> {
-  return new Promise<void>((resolve) => {
-    const settle = () => {
-      res.off("drain", settle);
-      res.off("close", settle);
-      resolve();
-    };
-    res.once("drain", settle);
-    res.once("close", settle);
-  });
-}
 
 @injectable()
 export class AuthProxyService {
@@ -205,22 +194,7 @@ export class AuthProxyService {
 
       res.writeHead(response.status, responseHeaders);
 
-      if (!response.body) {
-        res.end();
-        return;
-      }
-
-      const reader = response.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          res.end();
-          return;
-        }
-        if (!res.write(value)) {
-          await waitForDrainOrClose(res);
-        }
-      }
+      await streamBodyToResponse(response.body, res);
     } catch (err) {
       if (options.signal?.aborted) {
         this.log.debug("Upstream fetch aborted after client disconnect", {
