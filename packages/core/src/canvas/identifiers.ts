@@ -3,9 +3,6 @@
 // without depending on the desktop app's main process (where the concrete
 // service classes are bound).
 export const CANVAS_GEN_SERVICE = Symbol.for("posthog.core.canvas.genService");
-export const CONTEXT_GEN_SERVICE = Symbol.for(
-  "posthog.core.canvas.contextGenService",
-);
 export const DASHBOARDS_SERVICE = Symbol.for(
   "posthog.core.canvas.dashboardsService",
 );

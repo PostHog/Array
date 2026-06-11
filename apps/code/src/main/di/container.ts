@@ -19,10 +19,7 @@ import {
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
 import { canvasCoreModule } from "@posthog/core/canvas/canvas.module";
-import {
-  CANVAS_GEN_SERVICE,
-  CONTEXT_GEN_SERVICE,
-} from "@posthog/core/canvas/identifiers";
+import { CANVAS_GEN_SERVICE } from "@posthog/core/canvas/identifiers";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
   CLOUD_TASK_AUTH,
@@ -93,7 +90,6 @@ import {
   type IGitPrStatus,
 } from "@posthog/host-router/ports/git-pr-status";
 import { CanvasGenService } from "@posthog/host-router/services/canvas-gen.service";
-import { ContextGenService } from "@posthog/host-router/services/context-gen.service";
 import { ANALYTICS_SERVICE } from "@posthog/platform/analytics";
 import { APP_LIFECYCLE_SERVICE } from "@posthog/platform/app-lifecycle";
 import { APP_META_SERVICE } from "@posthog/platform/app-meta";
@@ -705,6 +701,3 @@ container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);
 // host-router routers.
 container.load(canvasCoreModule);
 container.bind(CANVAS_GEN_SERVICE).to(CanvasGenService).inSingletonScope();
-// CONTEXT_GEN_SERVICE drives the per-channel CONTEXT.md generation agent — a
-// singleton holding per-channel agent state + a forwarding loop for app life.
-container.bind(CONTEXT_GEN_SERVICE).to(ContextGenService).inSingletonScope();

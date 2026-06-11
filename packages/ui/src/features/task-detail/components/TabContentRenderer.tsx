@@ -6,6 +6,7 @@ import type { Tab } from "../../panels/panelTypes";
 import { useIsWorkspaceCloudRun } from "../../workspace/useWorkspace";
 import { ActionPanel } from "./ActionPanel";
 import { ChangesPanel } from "./ChangesPanel";
+import { ChannelContextTab } from "./ChannelContextTab";
 import { FileTreePanel } from "./FileTreePanel";
 import { TaskLogsPanel } from "./TaskLogsPanel";
 import { TaskShellPanel } from "./TaskShellPanel";
@@ -58,6 +59,11 @@ export function TabContentRenderer({
           command={data.command}
           cwd={data.cwd}
         />
+      );
+
+    case "context":
+      return (
+        <ChannelContextTab channelName={data.channelName} body={data.body} />
       );
 
     case "other":

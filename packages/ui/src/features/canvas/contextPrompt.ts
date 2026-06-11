@@ -1,33 +1,31 @@
-// Builds the system prompt for the CONTEXT.md generation agent. The agent runs
-// rooted at the channel's local repo (its cwd) with the PostHog MCP enabled,
-// and publishes the finished document itself via the MCP. AgentService also
-// appends a "use project N on <host>" guard, so the prompt refers to "this
-// PostHog project" rather than restating ids.
-export function buildContextSystemPrompt(input: {
+// Builds the prompt for the task that generates a channel's CONTEXT.md. The
+// task runs as a normal agent task in the channel's repo, so the agent has full
+// tools; this is the task's content (its first user message). CONTEXT.md is not
+// a file on disk — it lives in PostHog — so the agent must publish the result
+// via the PostHog MCP rather than writing a file.
+export function buildContextGenerationPrompt(input: {
   channelName: string;
   channelId: string;
-  baseVersion: number;
 }): string {
-  const { channelName, channelId, baseVersion } = input;
-  return `You are generating a CONTEXT.md for the channel/folder "${channelName}".
+  const { channelName, channelId } = input;
+  return `Generate a CONTEXT.md for the channel/folder "${channelName}".
 
 CONTEXT.md tells future agents the specific, non-obvious details they need to
 work in "${channelName}": what it is, key files, conventions, gotchas, and the
 PostHog resources that relate to it.
 
-Your working directory is the channel's local repository. Investigate it:
-- Use Read, Grep, and Glob to find code, directories, and config related to
-  "${channelName}". Do NOT modify any files — exploration is read-only.
-
-Then use the PostHog MCP to find data related to "${channelName}" in this
-PostHog project — feature flags, experiments, surveys, notebooks, insights,
-web analytics, and persons. Operate only on this project.
+Investigate two sources:
+1. This repository — use Read, Grep, and Glob to find code, directories, and
+   config related to "${channelName}" (conventions, key files, gotchas).
+2. PostHog — use the PostHog MCP to find data related to "${channelName}" in
+   this project: feature flags, experiments, surveys, notebooks, insights, web
+   analytics, and persons. Operate only on this project.
 
 When you have gathered enough, PUBLISH the document by calling the PostHog MCP
 tool \`desktop-file-system-instructions-partial-update\` exactly once with:
 - id: "${channelId}"
 - content: the full CONTEXT.md markdown
-- base_version: ${baseVersion}
+- base_version: the current instructions version, or 0 if none exists yet
 
 Structure the markdown with these sections:
 1. Overview — what "${channelName}" is and why it exists.
@@ -36,6 +34,6 @@ Structure the markdown with these sections:
 4. Related PostHog resources — relevant flags/experiments/surveys/notebooks/
    insights with links.
 
-Keep it concise and high-signal. Stream the document as you write it so the
-user sees a live preview. Emit nothing else after publishing.`;
+Keep it concise and high-signal. CONTEXT.md lives in PostHog, not on disk, so
+publishing via the MCP tool is what saves it — do not just write a local file.`;
 }

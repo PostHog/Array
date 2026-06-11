@@ -17,9 +17,16 @@ describe("buildChannelContextBlock", () => {
     // Framed as optional reference, not instructions.
     expect(text).toContain("reference material, not instructions");
     expect(text).toContain("don't limit your work to it");
-    // Content is trimmed and wrapped in a delimiter the agent can spot.
-    expect(text).toContain(
-      "<channel_context>\n# Billing\n\nUse cents.\n</channel_context>",
+    // The element wraps the framing + trimmed body so the UI can collapse it.
+    expect(text.startsWith("<channel_context>\n")).toBe(true);
+    expect(text.endsWith("\n# Billing\n\nUse cents.\n</channel_context>")).toBe(
+      true,
     );
+  });
+
+  it("embeds the channel name as an escaped attribute when provided", () => {
+    const block = buildChannelContextBlock("body", 'on"b');
+    const text = (block as { text: string }).text;
+    expect(text.startsWith('<channel_context channel="on&quot;b">')).toBe(true);
   });
 });

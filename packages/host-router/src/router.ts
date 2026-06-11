@@ -8,7 +8,6 @@ import { canvasGenRouter } from "./routers/canvas-gen.router";
 import { channelTasksRouter } from "./routers/channel-tasks.router";
 import { cloudTaskRouter } from "./routers/cloud-task.router";
 import { connectivityRouter } from "./routers/connectivity.router";
-import { contextGenRouter } from "./routers/context-gen.router";
 import { contextMenuRouter } from "./routers/context-menu.router";
 import { dashboardsRouter } from "./routers/dashboards.router";
 import { deepLinkRouter } from "./routers/deep-link.router";
@@ -54,7 +53,6 @@ export const hostRouter = router({
   channelTasks: channelTasksRouter,
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
-  contextGen: contextGenRouter,
   contextMenu: contextMenuRouter,
   dashboards: dashboardsRouter,
   deepLink: deepLinkRouter,

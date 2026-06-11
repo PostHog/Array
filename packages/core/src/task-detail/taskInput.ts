@@ -18,6 +18,7 @@ export interface PrepareTaskInputOptions {
   signalReportId?: string;
   additionalDirectories?: string[];
   channelContext?: string;
+  channelName?: string;
 }
 
 export function prepareTaskInput(
@@ -51,6 +52,7 @@ export function prepareTaskInput(
     signalReportId: options.signalReportId,
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
     channelContext: options.channelContext,
+    channelName: options.channelName,
   };
 }
 

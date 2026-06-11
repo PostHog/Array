@@ -324,6 +324,7 @@ export class TaskCreationSaga extends Saga<
       // have to rediscover. Kept after the user's prompt so the request leads.
       const channelContextBlock = buildChannelContextBlock(
         input.channelContext,
+        input.channelName,
       );
       if (initialPrompt && channelContextBlock) {
         initialPrompt.push(channelContextBlock);

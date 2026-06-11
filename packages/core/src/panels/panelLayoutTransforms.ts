@@ -216,6 +216,99 @@ export function openTabInSplit(
   return { panelTree: finalTree, focusedPanelId: newPanelId, ...metadata };
 }
 
+// Opens a channel-context snapshot as a tab in the right-side split (creating
+// the split if needed), mirroring openTabInSplit but carrying the content
+// inline in the tab's data instead of deriving it from the tab id. Re-opening
+// the same tab id just activates the existing tab.
+export function openContextInSplit(
+  layout: TaskLayout,
+  tabId: string,
+  label: string,
+  context: { channelName: string | null; body: string },
+): Partial<TaskLayout> {
+  const buildTab = (): Tab => ({
+    id: tabId,
+    label,
+    data: {
+      type: "context",
+      channelName: context.channelName,
+      body: context.body,
+    },
+    component: null,
+    draggable: true,
+    closeable: true,
+  });
+
+  const existingTab = findTabInTree(layout.panelTree, tabId);
+  if (existingTab) {
+    const updatedTree = updateTreeNode(
+      layout.panelTree,
+      existingTab.panelId,
+      (panel) => {
+        if (panel.type !== "leaf") return panel;
+        return {
+          ...panel,
+          content: { ...panel.content, activeTabId: tabId },
+        };
+      },
+    );
+    return { panelTree: updatedTree, focusedPanelId: existingTab.panelId };
+  }
+
+  const nonMainPanel = findNonMainLeafPanel(layout.panelTree);
+  if (nonMainPanel) {
+    const updatedTree = updateTreeNode(
+      layout.panelTree,
+      nonMainPanel.id,
+      (panel) => {
+        if (panel.type !== "leaf") return panel;
+        return {
+          ...panel,
+          content: {
+            ...panel.content,
+            tabs: [...panel.content.tabs, buildTab()],
+            activeTabId: tabId,
+          },
+        };
+      },
+    );
+    return { panelTree: updatedTree, focusedPanelId: nonMainPanel.id };
+  }
+
+  const mainPanel = getLeafPanel(
+    layout.panelTree,
+    DEFAULT_PANEL_IDS.MAIN_PANEL,
+  );
+  if (!mainPanel) return {};
+
+  const newPanelId = generatePanelId();
+  const newPanel: PanelNode = {
+    type: "leaf",
+    id: newPanelId,
+    content: {
+      id: newPanelId,
+      tabs: [buildTab()],
+      activeTabId: tabId,
+      showTabs: true,
+      droppable: true,
+    },
+  };
+
+  const splitTree = updateTreeNode(
+    layout.panelTree,
+    DEFAULT_PANEL_IDS.MAIN_PANEL,
+    (panel) => ({
+      type: "group" as const,
+      id: generatePanelId(),
+      direction: "horizontal" as const,
+      sizes: [50, 50],
+      children: [panel, newPanel],
+    }),
+  );
+
+  return { panelTree: splitTree, focusedPanelId: newPanelId };
+}
+
 export function addRecentFile(
   recentFiles: string[] | undefined,
   filePath: string,

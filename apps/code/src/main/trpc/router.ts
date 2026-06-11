@@ -7,7 +7,6 @@ import { canvasGenRouter } from "@posthog/host-router/routers/canvas-gen.router"
 import { channelTasksRouter } from "@posthog/host-router/routers/channel-tasks.router";
 import { cloudTaskRouter } from "@posthog/host-router/routers/cloud-task.router";
 import { connectivityRouter } from "@posthog/host-router/routers/connectivity.router";
-import { contextGenRouter } from "@posthog/host-router/routers/context-gen.router";
 import { contextMenuRouter } from "@posthog/host-router/routers/context-menu.router";
 import { dashboardsRouter } from "@posthog/host-router/routers/dashboards.router";
 import { deepLinkRouter } from "@posthog/host-router/routers/deep-link.router";
@@ -56,7 +55,6 @@ export const trpcRouter = router({
   dashboards: dashboardsRouter,
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
-  contextGen: contextGenRouter,
   contextMenu: contextMenuRouter,
   enrichment: enrichmentRouter,
   environment: environmentRouter,

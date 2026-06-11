@@ -38,6 +38,8 @@ export interface TaskCreationInput {
    * agent may draw on, not instructions it must follow.
    */
   channelContext?: string;
+  /** Display name of that channel, embedded in the context block for the UI. */
+  channelName?: string;
 }
 
 export interface TaskCreationOutput {

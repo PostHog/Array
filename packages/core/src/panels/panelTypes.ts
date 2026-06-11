@@ -28,6 +28,13 @@ export type TabData =
       type: "review";
     }
   | {
+      // A read-only snapshot of a channel's CONTEXT.md, shown exactly as it was
+      // sent with the task's prompt (carried inline, not fetched from disk).
+      type: "context";
+      channelName: string | null;
+      body: string;
+    }
+  | {
       type: "other";
     };
 

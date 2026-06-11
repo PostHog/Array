@@ -1,9 +1,4 @@
 import type { ChannelTaskRecord } from "./channelTaskSchemas";
-import type {
-  ContextGenEventPayload,
-  ContextGenerateInput,
-  ContextThreadInput,
-} from "./contextGenSchemas";
 import type { DashboardRecord, DashboardSummary } from "./dashboardSchemas";
 import type {
   CanvasGenEventPayload,
@@ -27,16 +22,6 @@ export interface ICanvasGenService {
     event: "canvas-event",
     opts?: { signal?: AbortSignal },
   ): AsyncIterable<CanvasGenEventPayload>;
-}
-
-export interface IContextGenService {
-  generate(input: ContextGenerateInput): Promise<void>;
-  reset(input: ContextThreadInput): Promise<void>;
-  /** Async iterable of context-gen stream events (for the onEvent subscription). */
-  toIterable(
-    event: "context-event",
-    opts?: { signal?: AbortSignal },
-  ): AsyncIterable<ContextGenEventPayload>;
 }
 
 export interface IDashboardsService {

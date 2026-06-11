@@ -6,19 +6,19 @@ import {
 } from "@phosphor-icons/react";
 import { FolderInstructionsConflictError } from "@posthog/api-client/posthog-client";
 import { useHostTRPC } from "@posthog/host-router/react";
-import { buildContextSystemPrompt } from "@posthog/ui/features/canvas/contextPrompt";
-import { registerContextSubscription } from "@posthog/ui/features/canvas/contextSubscriptions";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useFolderInstructions,
   useFolderInstructionsMutations,
   useFolderInstructionsVersions,
 } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
+import { useGenerateContext } from "@posthog/ui/features/canvas/hooks/useGenerateContext";
 import {
-  useContextGenChannel,
-  useContextGenStore,
-} from "@posthog/ui/features/canvas/stores/contextGenStore";
+  useContextGenTaskId,
+  useContextGenTaskStore,
+} from "@posthog/ui/features/canvas/stores/contextGenTaskStore";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
+import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import {
   Box,
@@ -33,6 +33,7 @@ import {
   TextArea,
 } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 
 type Mode = "rendered" | "edit";
@@ -72,18 +73,42 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
   const [draft, setDraft] = useState("");
   const [hasDraft, setHasDraft] = useState(false);
 
-  // Agent CONTEXT.md generation. The subscription streams the agent's progress
-  // into the context-gen store while this view is mounted; the agent publishes
-  // the document itself via the PostHog MCP, so on completion we just refetch.
-  const gen = useContextGenChannel(channelId);
-  const resetGen = useContextGenStore((s) => s.reset);
-  useEffect(() => registerContextSubscription(channelId), [channelId]);
+  const hasInstructions = (latest?.content ?? "").trim().length > 0;
+
+  // CONTEXT.md generation runs as a normal task in the channel's repo. It's
+  // "generating" only while that task's agent session is actively running — if
+  // it's stopped (by the user or otherwise) we fall back to the generate
+  // screen. We record the task when we start it, so its session exists by then.
+  const genTaskId = useContextGenTaskId(channelId);
+  const clearGenTask = useContextGenTaskStore((s) => s.clearTask);
+  const genSession = useSessionForTask(genTaskId);
+  const sessionActive =
+    genSession?.status === "connecting" || genSession?.status === "connected";
+
+  const pollGen = !!genTaskId && !hasInstructions;
+  const isGenerating = pollGen && sessionActive;
+  const isStopped = pollGen && !sessionActive;
+
+  // While the agent runs, poll the published file so it shows up without a
+  // manual refresh once the agent publishes via the MCP.
   useEffect(() => {
-    if (gen.status !== "done") return;
-    void refetchLatest();
-    setMode("rendered");
-    resetGen(channelId);
-  }, [gen.status, channelId, refetchLatest, resetGen]);
+    if (!isGenerating) return;
+    const id = setInterval(() => void refetchLatest(), 5000);
+    return () => clearInterval(id);
+  }, [isGenerating, refetchLatest]);
+
+  // The agent publishes mid-run, just before its session ends — so when the
+  // session goes inactive, refetch once to catch a just-published file before
+  // concluding the run stopped without producing one.
+  useEffect(() => {
+    if (pollGen && !sessionActive) void refetchLatest();
+  }, [pollGen, sessionActive, refetchLatest]);
+
+  // Once the file exists, the generation task has served its purpose — forget it
+  // so we stop tracking status and just render the document.
+  useEffect(() => {
+    if (genTaskId && hasInstructions) clearGenTask(channelId);
+  }, [genTaskId, hasInstructions, channelId, clearGenTask]);
 
   // Seed the editor draft from the latest content the first time we land on
   // edit mode (or whenever latest changes while we're not actively editing).
@@ -172,7 +197,6 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
   // empty state — otherwise MarkdownRenderer paints an invisible empty block
   // and the page looks blank.
   const renderedContent = latest?.content ?? "";
-  const hasInstructions = renderedContent.trim().length > 0;
 
   return (
     <Flex direction="column" height="100%" className="overflow-hidden">
@@ -288,11 +312,8 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
         className="scroll-area-constrain-width min-h-0 flex-1"
       >
         <Box p="4">
-          {gen.status === "running" ? (
-            <GeneratingPanel
-              proseBuffer={gen.proseBuffer}
-              activeTool={gen.activeTool}
-            />
+          {isGenerating && genTaskId ? (
+            <GeneratingState channelId={channelId} taskId={genTaskId} />
           ) : selectedVersion ? (
             <Callout.Root color="gray" size="1">
               <Callout.Text>
@@ -310,8 +331,7 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
               <EmptyState
                 channelId={channelId}
                 channelName={channelName}
-                baseVersion={latest?.version ?? 0}
-                generationError={gen.status === "error" ? gen.error : null}
+                stoppedTaskId={isStopped ? genTaskId : null}
                 onCreate={() => {
                   setDraft(EMPTY_TEMPLATE);
                   setHasDraft(true);
@@ -343,14 +363,13 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
 function EmptyState({
   channelId,
   channelName,
-  baseVersion,
-  generationError,
+  stoppedTaskId,
   onCreate,
 }: {
   channelId: string;
   channelName: string;
-  baseVersion: number;
-  generationError: string | null;
+  /** A prior generation task that stopped without producing a file, if any. */
+  stoppedTaskId: string | null;
   onCreate: () => void;
 }) {
   return (
@@ -374,9 +393,19 @@ function EmptyState({
         </Text>
       </Flex>
 
-      {generationError ? (
-        <Callout.Root color="red" size="1" className="w-full text-left">
-          <Callout.Text>Generation failed: {generationError}</Callout.Text>
+      {stoppedTaskId ? (
+        <Callout.Root color="amber" size="1" className="w-full text-left">
+          <Callout.Text>
+            The previous generation in task{" "}
+            <Link
+              to="/website/$channelId/tasks/$taskId"
+              params={{ channelId, taskId: stoppedTaskId }}
+              className="font-medium text-amber-11 underline"
+            >
+              {shortTaskId(stoppedTaskId)}
+            </Link>{" "}
+            stopped before writing a CONTEXT.md. You can generate again.
+          </Callout.Text>
         </Callout.Root>
       ) : null}
 
@@ -387,29 +416,29 @@ function EmptyState({
         <GenerateWithAgent
           channelId={channelId}
           channelName={channelName}
-          baseVersion={baseVersion}
+          regenerate={!!stoppedTaskId}
         />
       </Flex>
     </Flex>
   );
 }
 
-// Lets the user pick an already-registered local repo and kick off the agent
-// that explores it (plus PostHog data) and publishes CONTEXT.md via the MCP.
+// Lets the user pick an already-registered local repo, then kicks off a normal
+// task in it that explores the code + PostHog data and publishes CONTEXT.md.
 function GenerateWithAgent({
   channelId,
   channelName,
-  baseVersion,
+  regenerate,
 }: {
   channelId: string;
   channelName: string;
-  baseVersion: number;
+  regenerate: boolean;
 }) {
   const trpc = useHostTRPC();
   const { data: folders = [], isLoading } = useQuery(
     trpc.folders.getFolders.queryOptions(),
   );
-  const start = useContextGenStore((s) => s.start);
+  const { generate, isStarting } = useGenerateContext(channelId, channelName);
 
   const [picking, setPicking] = useState(false);
   const [repoPath, setRepoPath] = useState<string | null>(null);
@@ -428,7 +457,7 @@ function GenerateWithAgent({
         disabled={isLoading}
       >
         <SparkleIcon size={14} />
-        Generate with agent
+        {regenerate ? "Generate again" : "Generate with agent"}
       </Button>
     );
   }
@@ -460,52 +489,58 @@ function GenerateWithAgent({
       <Button
         size="2"
         variant="solid"
-        disabled={!selected}
+        disabled={!selected || isStarting}
         onClick={() => {
-          if (!selected) return;
-          void start({
-            channelId,
-            channelName,
-            repoPath: selected,
-            systemPrompt: buildContextSystemPrompt({
-              channelName,
-              channelId,
-              baseVersion,
-            }),
-          });
+          if (selected) void generate(selected);
         }}
       >
-        <SparkleIcon size={14} />
+        {isStarting ? <Spinner size="1" /> : <SparkleIcon size={14} />}
         Generate
       </Button>
     </Flex>
   );
 }
 
-// Live view of the agent's progress: the current tool call plus the markdown it
-// has streamed so far. Replaced by the rendered CONTEXT.md once it publishes.
-function GeneratingPanel({
-  proseBuffer,
-  activeTool,
+// Shown while the generation task is running: a centered status with a spinner
+// and a button to jump to the task that's doing the work.
+function GeneratingState({
+  channelId,
+  taskId,
 }: {
-  proseBuffer: string;
-  activeTool: string | null;
+  channelId: string;
+  taskId: string;
 }) {
   return (
-    <Flex direction="column" gap="3">
-      <Flex align="center" gap="2" className="text-gray-10">
-        <SpinnerGapIcon size={14} className="animate-spin" />
-        <Text className="text-[13px]">
-          {activeTool ?? "Generating CONTEXT.md…"}
+    <Flex
+      direction="column"
+      align="center"
+      gap="4"
+      className="mx-auto max-w-[440px] py-16 text-center"
+    >
+      <Box className="rounded-lg border border-gray-6 border-dashed p-3">
+        <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
+      </Box>
+      <Flex direction="column" gap="1" align="center">
+        <Text className="font-medium text-[14px] text-gray-12">Generating</Text>
+        <Text className="text-[13px] text-gray-10">
+          An agent is writing this CONTEXT.md.
         </Text>
       </Flex>
-      {proseBuffer.trim().length > 0 ? (
-        <Box className="text-[13px]">
-          <MarkdownRenderer content={proseBuffer} />
-        </Box>
-      ) : null}
+      <Button size="2" variant="soft" asChild>
+        <Link
+          to="/website/$channelId/tasks/$taskId"
+          params={{ channelId, taskId }}
+        >
+          View task
+        </Link>
+      </Button>
     </Flex>
   );
+}
+
+// A compact, readable handle for a task uuid in inline text.
+function shortTaskId(taskId: string): string {
+  return taskId.slice(0, 8);
 }
 
 // `created_at` is an ISO timestamp; we render it as a short local string for

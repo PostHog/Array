@@ -7,6 +7,7 @@ import {
   closeTabsToRight as coreCloseTabsToRight,
   keepTab as coreKeepTab,
   moveTab as coreMoveTab,
+  openContextInSplit as coreOpenContextInSplit,
   openTab as coreOpenTab,
   openTabInSplit as coreOpenTabInSplit,
   reorderTabs as coreReorderTabs,
@@ -49,6 +50,10 @@ export interface PanelLayoutStore {
     taskId: string,
     filePath: string,
     asPreview?: boolean,
+  ) => void;
+  openChannelContextInSplit: (
+    taskId: string,
+    context: { channelName: string | null; body: string },
   ) => void;
   keepTab: (taskId: string, panelId: string, tabId: string) => void;
   closeTab: (taskId: string, panelId: string, tabId: string) => void;
@@ -158,6 +163,24 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
           source: "sidebar",
           task_id: taskId,
         });
+      },
+
+      openChannelContextInSplit: (taskId, context) => {
+        const tabId = `context-${context.channelName ?? "channel"}`;
+        const label = `${context.channelName ? `#${context.channelName} ` : ""}CONTEXT.md`;
+        set((state) =>
+          updateTaskLayout(
+            state,
+            taskId,
+            (layout) =>
+              coreOpenContextInSplit(
+                layout,
+                tabId,
+                label,
+                context,
+              ) as Partial<TaskLayout>,
+          ),
+        );
       },
 
       keepTab: (taskId, panelId, tabId) => {
