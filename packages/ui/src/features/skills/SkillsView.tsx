@@ -20,11 +20,13 @@ import {
 } from "./skillsSelectionStore";
 import { useSkillsSidebarStore } from "./skillsSidebarStore";
 import { useSkills } from "./useSkills";
+import { useSkillsWatcher } from "./useSkillsWatcher";
 
 const SOURCE_ORDER: SkillSource[] = ["user", "marketplace", "repo", "bundled"];
 
 export function SkillsView() {
   const { data: skills = [], isLoading } = useSkills();
+  useSkillsWatcher();
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [scrollToPath, setScrollToPath] = useState<string | null>(null);

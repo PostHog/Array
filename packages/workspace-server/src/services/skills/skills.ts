@@ -2,10 +2,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { inject, injectable } from "inversify";
+import { WATCHER_SERVICE } from "../../di/tokens";
 import type { FoldersService } from "../folders/folders";
 import { FOLDERS_SERVICE } from "../folders/identifiers";
 import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
 import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
+import type { WatcherService } from "../watcher/service";
 import { parseSkillFrontmatter } from "./parse-skill-frontmatter";
 import type {
   CreateSkillInput,
@@ -22,6 +24,7 @@ import { serializeSkillMarkdown } from "./write-skill-frontmatter";
 
 const MAX_SKILL_FILES = 500;
 const MAX_SKILL_FILE_BYTES = 2 * 1024 * 1024;
+const SKILLS_WATCH_DEBOUNCE_MS = 300;
 const SKILL_DIR_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 const MAX_SKILL_DIR_NAME_LENGTH = 64;
 
@@ -45,6 +48,8 @@ export class SkillsService {
     private readonly plugin: PosthogPluginService,
     @inject(FOLDERS_SERVICE)
     private readonly folders: FoldersService,
+    @inject(WATCHER_SERVICE)
+    private readonly watcher: WatcherService,
   ) {}
 
   async listSkills(): Promise<SkillInfo[]> {
@@ -169,6 +174,68 @@ export class SkillsService {
     await fs.promises.rm(skillDir, { recursive: true, force: true });
   }
 
+  /**
+   * Emits a debounced "skills changed" event whenever anything inside the
+   * writable skill roots changes on disk (external editors, agent sessions,
+   * `touch` from a terminal, ...).
+   */
+  async *watchSkills(signal?: AbortSignal): AsyncGenerator<{ changed: true }> {
+    const userRoot = path.join(os.homedir(), ".claude", "skills");
+    // The user root is ours to create; repo roots are only watched if present.
+    await fs.promises.mkdir(userRoot, { recursive: true }).catch(() => {});
+    const folders = await this.folders.getFolders();
+    const dirs = [
+      userRoot,
+      ...folders.map((f) => path.join(f.path, ".claude", "skills")),
+    ].filter((dir) => fs.existsSync(dir));
+
+    yield* this.watchSkillDirs(dirs, signal);
+  }
+
+  /** Merges watchers over the given directories into one debounced stream. */
+  async *watchSkillDirs(
+    dirs: string[],
+    signal?: AbortSignal,
+  ): AsyncGenerator<{ changed: true }> {
+    if (dirs.length === 0) return;
+
+    let pending = false;
+    let finished = 0;
+    let notify: (() => void) | undefined;
+    const wake = () => notify?.();
+
+    for (const dir of dirs) {
+      void (async () => {
+        try {
+          for await (const _batch of this.watcher.watch(dir, {}, signal)) {
+            pending = true;
+            wake();
+          }
+        } catch {
+          // A failed watcher on one root must not break the others.
+        } finally {
+          finished++;
+          wake();
+        }
+      })();
+    }
+
+    while (finished < dirs.length && !signal?.aborted) {
+      if (!pending) {
+        await new Promise<void>((resolve) => {
+          notify = resolve;
+        });
+        notify = undefined;
+        continue;
+      }
+      // Collapse bursts of file events into a single notification.
+      await delay(SKILLS_WATCH_DEBOUNCE_MS, signal);
+      if (signal?.aborted) return;
+      pending = false;
+      yield { changed: true };
+    }
+  }
+
   private async getSkillRoots(): Promise<SkillRoot[]> {
     const pluginPath = this.plugin.getPluginPath();
     const folders = await this.folders.getFolders();
@@ -270,6 +337,18 @@ function validateSkillDirName(name: string): void {
       "Skill names must be lowercase letters, numbers, dots, dashes, or underscores",
     );
   }
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, ms);
+    function done() {
+      signal?.removeEventListener("abort", done);
+      clearTimeout(timer);
+      resolve();
+    }
+    signal?.addEventListener("abort", done, { once: true });
+  });
 }
 
 function resolveSkillFilePath(skillDir: string, filePath: string): string {

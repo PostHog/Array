@@ -83,4 +83,10 @@ export const skillsRouter = router({
         .get<SkillsService>(SKILLS_SERVICE)
         .deleteSkill(input.skillPath),
     ),
+  watch: publicProcedure.subscription(async function* (opts) {
+    const service = opts.ctx.container.get<SkillsService>(SKILLS_SERVICE);
+    for await (const event of service.watchSkills(opts.signal)) {
+      yield event;
+    }
+  }),
 });
