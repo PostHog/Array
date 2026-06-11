@@ -3,6 +3,7 @@ import {
   CircleDashedIcon,
   CircleIcon,
   DotsThreeIcon,
+  FileTextIcon,
   PencilSimpleIcon,
   PlusIcon,
   RecordIcon,
@@ -246,11 +247,12 @@ function ChannelSection({ channel }: { channel: Channel }) {
               </CollapsibleContent>
             </Collapsible>
             <NavButton
-              label="Settings"
-              active={pathname.startsWith(`${base}/settings`)}
+              label="CONTEXT.md"
+              icon={<FileTextIcon size={14} className="text-gray-9" />}
+              active={pathname.startsWith(`${base}/context`)}
               onClick={() =>
                 navigate({
-                  to: "/website/$channelId/settings",
+                  to: "/website/$channelId/context",
                   params: { channelId: channel.id },
                 })
               }

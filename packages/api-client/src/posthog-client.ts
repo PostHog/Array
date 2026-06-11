@@ -188,6 +188,52 @@ export interface ExternalDataSource {
   schemas?: ExternalDataSourceSchema[] | string;
 }
 
+export interface FolderInstructionsUser {
+  id?: number;
+  uuid?: string;
+  first_name?: string;
+  last_name?: string | null;
+  email?: string;
+}
+
+export interface FolderInstructions {
+  id: string;
+  content: string;
+  version: number;
+  is_latest: boolean;
+  created_by: FolderInstructionsUser | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FolderInstructionsVersion {
+  id: string;
+  version: number;
+  is_latest: boolean;
+  created_by: FolderInstructionsUser | null;
+  created_at: string;
+}
+
+interface PaginatedFolderInstructionsVersions {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: FolderInstructionsVersion[];
+}
+
+// Thrown when PUT /instructions/ rejects a publish because the caller's
+// `base_version` is older than the current latest. Callers can re-fetch and
+// retry against the new latest.
+export class FolderInstructionsConflictError extends Error {
+  status = 409;
+  constructor(
+    message = "Folder instructions changed since you started editing",
+  ) {
+    super(message);
+    this.name = "FolderInstructionsConflictError";
+  }
+}
+
 export interface TaskArtifactUploadRequest {
   name: string;
   type: "user_attachment";
@@ -785,6 +831,113 @@ export class PostHogAPIClient {
         `Failed to delete desktop file system channel: ${response.statusText}`,
       );
     }
+  }
+
+  // Per-folder, versioned markdown instructions for a desktop folder. The
+  // endpoint is keyed on the FileSystem row id (must be `type === "folder"`).
+  // Returns the current latest version or null when none has been published.
+  async getDesktopFolderInstructions(
+    folderId: string,
+  ): Promise<FolderInstructions | null> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(folderId)}/instructions/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch folder instructions: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as FolderInstructions;
+  }
+
+  // Publish a new version of the folder's instructions. Pass `base_version`
+  // (the latest version the editor was started from) for optimistic
+  // concurrency; use 0 when no instructions exist yet. A 409 turns into a
+  // typed `FolderInstructionsConflictError` so the UI can prompt to reload.
+  async putDesktopFolderInstructions(
+    folderId: string,
+    input: { content: string; base_version?: number },
+  ): Promise<FolderInstructions> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(folderId)}/instructions/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "put",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify(input),
+      },
+    });
+    if (response.status === 409) {
+      throw new FolderInstructionsConflictError();
+    }
+    if (!response.ok) {
+      throw new Error(
+        `Failed to publish folder instructions: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as FolderInstructions;
+  }
+
+  // Soft-delete all versions of this folder's instructions. The folder row
+  // itself is not affected.
+  async deleteDesktopFolderInstructions(folderId: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(folderId)}/instructions/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Failed to delete folder instructions: ${response.statusText}`,
+      );
+    }
+  }
+
+  // List version metadata (no content) newest-first. Single page is enough for
+  // the typical UI; we cap follow-up pages to avoid runaway pagination on
+  // pathological histories.
+  async listDesktopFolderInstructionVersions(
+    folderId: string,
+  ): Promise<FolderInstructionsVersion[]> {
+    const VERSIONS_MAX_PAGES = 20;
+    const teamId = await this.getTeamId();
+    const all: FolderInstructionsVersion[] = [];
+    let urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(folderId)}/instructions/versions/`;
+    for (let i = 0; i < VERSIONS_MAX_PAGES; i++) {
+      const url = new URL(`${this.api.baseUrl}${urlPath}`);
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: urlPath,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch folder instruction versions: ${response.statusText}`,
+        );
+      }
+      const page =
+        (await response.json()) as PaginatedFolderInstructionsVersions;
+      all.push(...page.results);
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    log.warn(
+      `listDesktopFolderInstructionVersions hit MAX_PAGES (${VERSIONS_MAX_PAGES}); returning partial results`,
+      { folderId, returned: all.length },
+    );
+    return all;
   }
 
   async getGithubLogin(): Promise<string | null> {
