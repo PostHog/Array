@@ -82,6 +82,28 @@ describe("getClaudeModelTier", () => {
     ]);
   });
 
+  it("produces the full picker display order regardless of gateway order", () => {
+    // Models as the gateway might return them — arbitrary order.
+    const gatewayOrder = [
+      "claude-fable-5",
+      "claude-haiku-4-5",
+      "claude-mystery-9",
+      "claude-opus-4-8",
+      "claude-sonnet-4-6",
+    ];
+    const displayed = [...gatewayOrder].sort(
+      (a, b) => getClaudeModelTier(a) - getClaudeModelTier(b),
+    );
+    // Picker order: opus → sonnet → haiku → fable → any unknown model last.
+    expect(displayed).toEqual([
+      "claude-opus-4-8",
+      "claude-sonnet-4-6",
+      "claude-haiku-4-5",
+      "claude-fable-5",
+      "claude-mystery-9",
+    ]);
+  });
+
   it("sorts unknown models after every known tier", () => {
     expect(getClaudeModelTier("claude-mystery-9")).toBe(4);
     expect(getClaudeModelTier("claude-mystery-9")).toBeGreaterThan(
