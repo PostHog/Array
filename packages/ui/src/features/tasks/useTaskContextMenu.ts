@@ -5,10 +5,13 @@ import {
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useExternalAppAction } from "@posthog/ui/features/external-apps/useExternalAppAction";
 import { useRestoreTask } from "@posthog/ui/features/suspension/useRestoreTask";
 import { useSuspendTask } from "@posthog/ui/features/suspension/useSuspendTask";
 import { useDeleteTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
+import { toast } from "@posthog/ui/primitives/toast";
 import { logger } from "@posthog/ui/shell/logger";
 import { useCallback, useState } from "react";
 
@@ -22,6 +25,8 @@ export function useTaskContextMenu() {
   const { archiveTask } = useArchiveTask();
   const { suspendTask } = useSuspendTask();
   const { restoreTask } = useRestoreTask();
+  const { channels } = useChannels();
+  const { fileTask } = useChannelTaskMutations();
 
   const showContextMenu = useCallback(
     async (
@@ -65,6 +70,7 @@ export function useTaskContextMenu() {
           isSuspended,
           isInCommandCenter,
           hasEmptyCommandCenterCell,
+          channels: channels.map(({ id, name }) => ({ id, name })),
         });
 
         if (!result.action) return;
@@ -106,6 +112,16 @@ export function useTaskContextMenu() {
           case "add-to-command-center":
             onAddToCommandCenter?.();
             break;
+          case "file-to-channel":
+            try {
+              await fileTask(intent.channelId, task.id, task.title);
+            } catch (error) {
+              toast.error("Couldn't file task to channel", {
+                description:
+                  error instanceof Error ? error.message : String(error),
+              });
+            }
+            break;
           case "external-app": {
             const effectivePath = resolveExternalAppPath(
               worktreePath,
@@ -128,7 +144,9 @@ export function useTaskContextMenu() {
     },
     [
       archiveTask,
+      channels,
       deleteWithConfirm,
+      fileTask,
       restoreTask,
       suspendTask,
       hostClient,

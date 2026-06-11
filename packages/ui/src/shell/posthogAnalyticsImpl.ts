@@ -41,7 +41,9 @@ type PendingFlagListener = {
 // Subscribers added before initializePostHog runs.
 const pendingFlagListeners = new Set<PendingFlagListener>();
 
-export function initializePostHog() {
+const SESSION_IDLE_TIMEOUT_SECONDS = 36_000;
+
+export function initializePostHog(sessionId?: string) {
   const apiKey = import.meta.env.VITE_POSTHOG_API_KEY;
   const apiHost =
     import.meta.env.VITE_POSTHOG_API_HOST || "https://internal-c.posthog.com";
@@ -56,6 +58,8 @@ export function initializePostHog() {
     api_host: apiHost,
     ui_host: uiHost,
     disable_session_recording: false,
+    session_idle_timeout_seconds: SESSION_IDLE_TIMEOUT_SECONDS,
+    ...(sessionId ? { bootstrap: { sessionID: sessionId } } : {}),
     capture_exceptions: import.meta.env.DEV
       ? false
       : {

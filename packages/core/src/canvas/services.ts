@@ -1,3 +1,4 @@
+import type { ChannelTaskRecord } from "./channelTaskSchemas";
 import type { DashboardRecord, DashboardSummary } from "./dashboardSchemas";
 import type {
   CanvasGenEventPayload,
@@ -49,4 +50,14 @@ export interface IDashboardsService {
 
 export interface IDashboardQueryService {
   run(input: DashboardQueryRunInput): Promise<DashboardQueryResult[]>;
+}
+
+export interface IChannelTasksService {
+  list(channelId: string): Promise<ChannelTaskRecord[]>;
+  file(input: {
+    channelId: string;
+    taskId: string;
+    taskTitle: string;
+  }): Promise<ChannelTaskRecord>;
+  unfile(id: string): Promise<void>;
 }

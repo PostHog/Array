@@ -9,3 +9,6 @@ export const DASHBOARDS_SERVICE = Symbol.for(
 export const DASHBOARD_QUERY_SERVICE = Symbol.for(
   "posthog.core.canvas.dashboardQueryService",
 );
+export const CHANNEL_TASKS_SERVICE = Symbol.for(
+  "posthog.core.canvas.channelTasksService",
+);

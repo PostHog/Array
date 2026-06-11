@@ -174,6 +174,24 @@ export function getProviderName(ownedBy: string): string {
   return PROVIDER_NAMES[ownedBy] ?? ownedBy;
 }
 
+// Sort key for ordering models oldest-to-newest in pickers. The model menu
+// opens upward (side="top"), so the last item sits closest to the trigger —
+// sorting ascending by this key puts the newest model right under the user's
+// cursor. The key is the version embedded in the model id, e.g.
+// "claude-sonnet-4-6" -> 4006, "claude-opus-4-8" -> 4008, "claude-fable-5" ->
+// 5000; a higher number means a newer model. An id with no recognisable
+// version (a brand-new or unexpected release) ranks as newest so it still
+// surfaces at the end rather than at an arbitrary gateway-determined position.
+// Only the first version group is read, so a trailing date suffix (e.g.
+// "-20251001") is ignored; the minor component is assumed to be < 1000.
+export function getClaudeModelRecency(modelId: string): number {
+  const match = modelId.toLowerCase().match(/-(\d+)(?:[-.](\d+))?/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  const major = Number(match[1]);
+  const minor = match[2] ? Number(match[2]) : 0;
+  return major * 1000 + minor;
+}
+
 const PROVIDER_PREFIXES = ["anthropic/", "openai/", "google-vertex/"];
 
 export function formatGatewayModelName(model: GatewayModel): string {

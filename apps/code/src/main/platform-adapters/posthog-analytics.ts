@@ -4,10 +4,12 @@ import type {
 } from "@posthog/platform/analytics";
 import { PostHog } from "posthog-node";
 import { getAppVersion } from "../utils/env";
+import { uuidv7 } from "../utils/uuidv7";
 
 export class PosthogNodeAnalytics implements IAnalytics {
   private client: PostHog | null = null;
   private currentUserId: string | null = null;
+  private sessionId: string | null = null;
 
   initialize(): void {
     if (this.client) {
@@ -25,6 +27,8 @@ export class PosthogNodeAnalytics implements IAnalytics {
       host: apiHost || "https://internal-c.posthog.com",
       enableExceptionAutocapture: true,
     });
+
+    this.getOrCreateSessionId();
   }
 
   setCurrentUserId(userId: string | null): void {
@@ -33,6 +37,13 @@ export class PosthogNodeAnalytics implements IAnalytics {
 
   getCurrentUserId(): string | null {
     return this.currentUserId;
+  }
+
+  getOrCreateSessionId(): string {
+    if (!this.sessionId) {
+      this.sessionId = uuidv7();
+    }
+    return this.sessionId;
   }
 
   track(eventName: string, properties?: AnalyticsProperties): void {
@@ -83,6 +94,7 @@ export class PosthogNodeAnalytics implements IAnalytics {
     this.client.captureException(error, distinctId, {
       team: "posthog-code",
       ...additionalProperties,
+      ...(this.sessionId ? { $session_id: this.sessionId } : {}),
       app_version: getAppVersion(),
     });
   }

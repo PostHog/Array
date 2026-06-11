@@ -3,7 +3,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  type ModelInfo as AcpModelInfo,
   type AgentSideConnection,
   type ClientCapabilities,
   type ForkSessionRequest,
@@ -24,12 +23,9 @@ import {
   type SessionConfigOption,
   type SessionConfigOptionCategory,
   type SessionConfigSelectOption,
-  type SessionModelState,
   type SessionModeState,
   type SetSessionConfigOptionRequest,
   type SetSessionConfigOptionResponse,
-  type SetSessionModelRequest,
-  type SetSessionModelResponse,
   type SetSessionModeRequest,
   type SetSessionModeResponse,
   type Usage,
@@ -63,7 +59,12 @@ import {
   type PostHogProductId,
 } from "../../posthog-products";
 import type { PostHogAPIConfig } from "../../types";
-import { isCloudRun, unreachable, withTimeout } from "../../utils/common";
+import {
+  isCloudRun,
+  unreachable,
+  withAbort,
+  withTimeout,
+} from "../../utils/common";
 import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
@@ -130,11 +131,15 @@ import type {
   NewSessionMeta,
   SDKMessageFilter,
   Session,
+  ToolUpdateMeta,
   ToolUseCache,
   ToolUseStreamCache,
 } from "./types";
 
 const SESSION_VALIDATION_TIMEOUT_MS = 30_000;
+
+const DEFAULT_FORCE_CANCEL_GRACE_MS = 30_000;
+
 const MAX_TITLE_LENGTH = 256;
 const LOCAL_ONLY_COMMANDS = new Set(["/context", "/heapdump", "/extra-usage"]);
 
@@ -189,6 +194,19 @@ function shouldEmitRawMessage(
   );
 }
 
+async function fetchContextUsedTokens(
+  sdkQuery: Query,
+  logger: Logger,
+): Promise<number | null> {
+  try {
+    const usage = await sdkQuery.getContextUsage();
+    return usage.totalTokens;
+  } catch (error) {
+    logger.error("Failed to fetch context usage from SDK:", error);
+    return null;
+  }
+}
+
 export interface ClaudeAcpAgentOptions {
   onProcessSpawned?: (info: ProcessSpawnedInfo) => void;
   onProcessExited?: (pid: number) => void;
@@ -204,6 +222,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   toolUseStreamCache: ToolUseStreamCache;
   backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
+  forceCancelGraceMs: number = DEFAULT_FORCE_CANCEL_GRACE_MS;
   private options?: ClaudeAcpAgentOptions;
   private enrichment?: Enrichment;
   private enrichedReadCache: EnrichedReadCache = new Map();
@@ -357,7 +376,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     return {
       modes: response.modes,
-      models: response.models,
       configOptions: response.configOptions,
     };
   }
@@ -446,9 +464,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     await this.broadcastUserMessage(params);
 
     this.session.promptRunning = true;
+    const cancelController = new AbortController();
+    this.session.cancelController = cancelController;
     let handedOff = false;
     let errored = false;
     let lastAssistantTotalUsage: number | null = null;
+    let lastRefusalExplanation: string | null = null;
     let lastStreamUsage = {
       input_tokens: 0,
       output_tokens: 0,
@@ -490,11 +511,31 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       enrichedReadCache: this.enrichedReadCache,
       logger: this.logger,
       supportsTerminalOutput,
+      streamedAssistantBlocks: {
+        textIds: new Set<string>(),
+        thinkingIds: new Set<string>(),
+      },
     };
 
     try {
       while (true) {
-        const { value: message, done } = await this.session.query.next();
+        const nextMessage = this.session.query.next();
+        const next = await withAbort(nextMessage, cancelController.signal);
+        if (next.result === "aborted" || cancelController.signal.aborted) {
+          void nextMessage.catch((err) =>
+            this.logger.warn("in-flight query.next() rejected after cancel", {
+              sessionId: params.sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+          return {
+            stopReason: "cancelled",
+            _meta: this.session.interruptReason
+              ? { interruptReason: this.session.interruptReason }
+              : undefined,
+          };
+        }
+        const { value: message, done } = next.value;
 
         if (done || !message) {
           if (this.session.cancelled) {
@@ -521,18 +562,39 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         switch (message.type) {
           case "system":
             if (message.subtype === "compact_boundary") {
-              // Send used:0 immediately so the client doesn't keep showing
-              // the stale pre-compaction context size until the next turn.
-              lastAssistantTotalUsage = 0;
+              const usedTokens = await withAbort(
+                fetchContextUsedTokens(this.session.query, this.logger),
+                cancelController.signal,
+              );
+              lastAssistantTotalUsage =
+                usedTokens.result === "success" ? (usedTokens.value ?? 0) : 0;
               promptReplayed = true;
               await this.client.sessionUpdate({
                 sessionId: params.sessionId,
                 update: {
                   sessionUpdate: "usage_update",
-                  used: 0,
+                  used: lastAssistantTotalUsage,
                   size: lastContextWindowSize,
                 },
               });
+            }
+            if (message.subtype === "commands_changed") {
+              this.session.knownSlashCommands = collectKnownSlashCommands(
+                message.commands,
+              );
+              const available = getAvailableSlashCommands(message.commands);
+              await this.client.sessionUpdate({
+                sessionId: params.sessionId,
+                update: {
+                  sessionUpdate: "available_commands_update",
+                  availableCommands: available,
+                },
+              });
+              this.updateBreakdownCategory(
+                "skills",
+                estimateSkillsTokens(available),
+              );
+              break;
             }
             if (message.subtype === "local_command_output") {
               promptReplayed = true;
@@ -748,6 +810,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 this.session.accumulatedUsage.cachedWriteTokens,
             };
 
+            if (
+              (message as { stop_reason?: string }).stop_reason === "refusal"
+            ) {
+              if (lastRefusalExplanation) {
+                await this.client.sessionUpdate({
+                  sessionId: params.sessionId,
+                  update: {
+                    sessionUpdate: "agent_message_chunk",
+                    content: { type: "text", text: lastRefusalExplanation },
+                  },
+                });
+              }
+              return { stopReason: "refusal", usage };
+            }
+
             const result = handleResultMessage(message);
             if (result.error) throw result.error;
 
@@ -865,6 +942,17 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               break;
             }
 
+            if (message.type === "assistant") {
+              const inner = message.message as unknown as {
+                stop_reason?: string | null;
+                stop_details?: { explanation?: string | null } | null;
+              };
+              if (inner.stop_reason === "refusal") {
+                lastRefusalExplanation =
+                  inner.stop_details?.explanation ?? null;
+              }
+            }
+
             // Store latest assistant usage (excluding subagents)
             // Sum all token types as a proxy for post-turn context occupancy:
             // current turn's output will become next turn's input.
@@ -908,11 +996,42 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             break;
           }
 
-          case "tool_progress":
+          case "tool_progress": {
+            await this.client.sessionUpdate({
+              sessionId: params.sessionId,
+              update: {
+                sessionUpdate: "tool_call_update",
+                toolCallId: message.tool_use_id,
+                status: "in_progress",
+                _meta: {
+                  claudeCode: {
+                    toolName: message.tool_name,
+                    toolResponse: {
+                      elapsedTimeSeconds: message.elapsed_time_seconds,
+                    },
+                  },
+                } satisfies ToolUpdateMeta,
+              },
+            });
+            break;
+          }
+          case "rate_limit_event": {
+            if (lastAssistantTotalUsage !== null) {
+              await this.client.sessionUpdate({
+                sessionId: params.sessionId,
+                update: {
+                  sessionUpdate: "usage_update",
+                  used: lastAssistantTotalUsage,
+                  size: lastContextWindowSize,
+                  _meta: { "_claude/rateLimit": message.rate_limit_info },
+                },
+              });
+            }
+            break;
+          }
           case "auth_status":
           case "tool_use_summary":
           case "prompt_suggestion":
-          case "rate_limit_event":
             break;
 
           default:
@@ -976,6 +1095,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       }
       throw error;
     } finally {
+      if (this.session.forceCancelTimer) {
+        clearTimeout(this.session.forceCancelTimer);
+        this.session.forceCancelTimer = undefined;
+      }
+      if (this.session.cancelController === cancelController) {
+        this.session.cancelController = undefined;
+      }
       // Drop any leftover streaming-input buffers. Normally cleared per index
       // on `content_block_stop`, but a cancelled or errored turn may leave
       // entries behind; without this they'd carry over into the next turn
@@ -1014,6 +1140,22 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       pending.resolve(true);
     }
     this.session.pendingMessages.clear();
+
+    if (
+      this.session.promptRunning &&
+      this.session.cancelController &&
+      !this.session.cancelController.signal.aborted &&
+      !this.session.forceCancelTimer
+    ) {
+      const cancelController = this.session.cancelController;
+      this.session.forceCancelTimer = setTimeout(() => {
+        this.logger.error(
+          `Session ${this.sessionId}: cancel floor elapsed without the SDK yielding; forcing "cancelled". The underlying query may still be wedged — a new session may be required.`,
+        );
+        cancelController.abort();
+      }, this.forceCancelGraceMs);
+    }
+
     await this.session.query.interrupt();
   }
 
@@ -1146,19 +1288,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     // Re-fetch MCP tool metadata + slash commands — the server list changed.
     this.deferBackgroundFetches(newQuery);
-  }
-
-  async unstable_setSessionModel(
-    params: SetSessionModelRequest,
-  ): Promise<SetSessionModelResponse | undefined> {
-    await this.session.query.setModel(toSdkModelId(params.modelId));
-    this.session.modelId = params.modelId;
-    this.session.lastContextWindowSize = this.getContextWindowForModel(
-      params.modelId,
-    );
-    this.rebuildEffortConfigOption(params.modelId);
-    await this.updateConfigOption("model", params.modelId);
-    return {};
   }
 
   async setSessionMode(
@@ -1309,6 +1438,32 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
   }
 
+  private async validateCwd(cwd: string): Promise<void> {
+    if (!path.isAbsolute(cwd)) {
+      throw RequestError.invalidParams(
+        { cwd },
+        `\`cwd\` must be an absolute path, but received: ${cwd}`,
+      );
+    }
+
+    let stats: fs.Stats;
+    try {
+      stats = await fs.promises.stat(cwd);
+    } catch {
+      throw RequestError.invalidParams(
+        { cwd },
+        `\`cwd\` does not exist on the machine running the agent: ${cwd}`,
+      );
+    }
+
+    if (!stats.isDirectory()) {
+      throw RequestError.invalidParams(
+        { cwd },
+        `\`cwd\` is not a directory: ${cwd}`,
+      );
+    }
+  }
+
   private async createSession(
     params: {
       cwd: string;
@@ -1324,6 +1479,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   ): Promise<NewSessionResponse> {
     const { cwd } = params;
     const { resume, forkSession } = creationOpts;
+
+    await this.validateCwd(cwd);
 
     const isResume = !!resume;
 
@@ -1606,17 +1763,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       })),
     };
 
-    const models: SessionModelState = {
-      currentModelId: resolvedModelId,
-      availableModels: modelOptions.options.map(
-        (opt): AcpModelInfo => ({
-          modelId: opt.value,
-          name: opt.name,
-          description: opt.description,
-        }),
-      ),
-    };
-
     const configOptions = this.buildConfigOptions(
       permissionMode,
       modelOptions,
@@ -1628,7 +1774,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.deferBackgroundFetches(q);
     }
 
-    return { sessionId, modes, models, configOptions };
+    return { sessionId, modes, configOptions };
   }
 
   private createCanUseTool(
@@ -1713,31 +1859,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       })),
     };
 
-    const modelOptions = this.session.configOptions.find(
-      (o) => o.id === "model",
-    );
-    const models: SessionModelState = {
-      currentModelId: this.session.modelId ?? DEFAULT_MODEL,
-      availableModels:
-        modelOptions && "options" in modelOptions
-          ? (
-              modelOptions.options as Array<{
-                value: string;
-                name: string;
-                description?: string;
-              }>
-            ).map((opt) => ({
-              modelId: opt.value,
-              name: opt.name,
-              description: opt.description,
-            }))
-          : [],
-    };
-
     return {
       sessionId,
       modes,
-      models,
       configOptions: this.session.configOptions,
     };
   }

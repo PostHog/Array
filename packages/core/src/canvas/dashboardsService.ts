@@ -1,5 +1,3 @@
-import type { AuthService } from "@posthog/core/auth/auth";
-import { AUTH_SERVICE } from "@posthog/core/auth/auth.module";
 import { inject, injectable } from "inversify";
 import type { DashboardQueryService } from "./dashboardQueryService";
 import type {
@@ -7,22 +5,22 @@ import type {
   DashboardRecord,
   DashboardSummary,
 } from "./dashboardSchemas";
+import {
+  DESKTOP_FS_CLIENT,
+  type DesktopFsClient,
+  type FsEntryBase,
+} from "./desktopFsClient";
 import { DASHBOARD_QUERY_SERVICE } from "./identifiers";
 import type { DashboardQuery } from "./querySchemas";
 
 // Desktop file-system "type" tag for a dashboard entry. Channels are `folder`
 // rows (depth 1); dashboards are these `dashboard` files nested beneath them.
 const DASHBOARD_TYPE = "dashboard";
-const MAX_PAGES = 50;
 
-// The slice of a desktop file-system row we read back. Our payload rides in
+// Dashboard-specific shape on top of the shared FS row. Our payload rides in
 // `meta` — see DashboardFileMeta for what that blob holds.
-interface FsEntry {
-  id: string;
-  path: string;
-  type?: string;
+interface FsEntry extends FsEntryBase {
   meta?: DashboardFileMeta | null;
-  created_at?: string;
 }
 
 /**
@@ -35,44 +33,18 @@ interface FsEntry {
 @injectable()
 export class DashboardsService {
   constructor(
-    @inject(AUTH_SERVICE)
-    private readonly authService: AuthService,
+    @inject(DESKTOP_FS_CLIENT)
+    private readonly fs: DesktopFsClient,
     @inject(DASHBOARD_QUERY_SERVICE)
     private readonly dashboardQuery: DashboardQueryService,
   ) {}
 
-  // Raw fetch against this project's desktop_file_system surface. `suffix` is
-  // appended after `.../desktop_file_system/` (e.g. `<id>/` or a `?offset=` page).
-  private async fsFetch(suffix: string, init?: RequestInit): Promise<Response> {
-    const { apiHost } = await this.authService.getValidAccessToken();
-    const projectId = this.authService.getState().currentProjectId;
-    if (projectId == null) throw new Error("No PostHog project selected");
-    const url = `${apiHost}/api/projects/${projectId}/desktop_file_system/${suffix}`;
-    return this.authService.authenticatedFetch(fetch, url, init);
+  private listAll(): Promise<FsEntry[]> {
+    return this.fs.listAll<FsEntry>("dashboards");
   }
 
-  private async listAll(): Promise<FsEntry[]> {
-    const all: FsEntry[] = [];
-    let suffix = "";
-    for (let i = 0; i < MAX_PAGES; i++) {
-      const res = await this.fsFetch(suffix);
-      if (!res.ok) throw new Error(`Failed to list dashboards (${res.status})`);
-      const page = (await res.json()) as {
-        next: string | null;
-        results: FsEntry[];
-      };
-      all.push(...page.results);
-      if (!page.next) return all;
-      suffix = new URL(page.next).search; // carries the pagination offset
-    }
-    return all;
-  }
-
-  private async getEntry(id: string): Promise<FsEntry | null> {
-    const res = await this.fsFetch(`${encodeURIComponent(id)}/`);
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`Failed to load dashboard (${res.status})`);
-    return (await res.json()) as FsEntry;
+  private getEntry(id: string): Promise<FsEntry | null> {
+    return this.fs.getEntry<FsEntry>(id, "dashboard");
   }
 
   async list(channelId: string): Promise<DashboardSummary[]> {
@@ -110,7 +82,7 @@ export class DashboardsService {
       createdAt: now,
       updatedAt: now,
     };
-    const res = await this.fsFetch("", {
+    const res = await this.fs.fetch("", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -148,7 +120,7 @@ export class DashboardsService {
       if (newPath !== entry.path) body.path = newPath;
     }
 
-    const res = await this.fsFetch(`${encodeURIComponent(input.id)}/`, {
+    const res = await this.fs.fetch(`${encodeURIComponent(input.id)}/`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -158,7 +130,7 @@ export class DashboardsService {
   }
 
   async delete(id: string): Promise<void> {
-    const res = await this.fsFetch(`${encodeURIComponent(id)}/`, {
+    const res = await this.fs.fetch(`${encodeURIComponent(id)}/`, {
       method: "DELETE",
     });
     // Already gone is a successful delete; surface anything else.
@@ -218,7 +190,7 @@ export class DashboardsService {
             ? (prevMeta.updatedAt ?? toEpoch(entry.created_at))
             : Date.now(),
       };
-      await this.fsFetch(`${encodeURIComponent(input.id)}/`, {
+      await this.fs.fetch(`${encodeURIComponent(input.id)}/`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ meta }),

@@ -132,8 +132,8 @@ function assembleItems(
   // so pass them through by reference.
   const activeContext: TurnContext | null = turn
     ? {
-        toolCalls: turn.context.toolCalls,
-        childItems: turn.context.childItems,
+        toolCalls: new Map(turn.context.toolCalls),
+        childItems: new Map(turn.context.childItems),
         turnCancelled: turn.context.turnCancelled,
         turnComplete: turn.context.turnComplete,
       }

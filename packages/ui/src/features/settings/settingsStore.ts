@@ -184,7 +184,7 @@ export const useSettingsStore = create<SettingsStore>()(
       desktopNotifications: true,
       dockBadgeNotifications: true,
       dockBounceNotifications: false,
-      completionSound: "none",
+      completionSound: "meep",
       completionVolume: 80,
       setDesktopNotifications: (enabled) =>
         set({ desktopNotifications: enabled }),
