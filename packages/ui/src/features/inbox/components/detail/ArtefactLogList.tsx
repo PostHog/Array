@@ -13,6 +13,7 @@ import type {
   LineReferenceContent,
   NoteContent,
   PriorityJudgmentContent,
+  SafetyJudgmentContent,
   SignalFindingContent,
   SignalReportArtefactContent,
   SuggestedReviewer,
@@ -324,6 +325,17 @@ function ArtefactBody({
               </Badge>
             ) : null}
           </Flex>
+          {c.explanation ? <CollapsibleReasoning text={c.explanation} /> : null}
+        </Flex>
+      );
+    }
+    case "safety_judgment": {
+      const c = artefact.content as SafetyJudgmentContent;
+      return (
+        <Flex direction="column" gap="1">
+          <Badge color={c.choice ? "green" : "red"} variant="soft">
+            {c.choice ? "Safe to act on" : "Unsafe"}
+          </Badge>
           {c.explanation ? <CollapsibleReasoning text={c.explanation} /> : null}
         </Flex>
       );
