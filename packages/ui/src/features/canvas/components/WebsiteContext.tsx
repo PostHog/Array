@@ -1,11 +1,23 @@
-import { FileTextIcon, HashIcon } from "@phosphor-icons/react";
+import {
+  FileTextIcon,
+  HashIcon,
+  SparkleIcon,
+  SpinnerGapIcon,
+} from "@phosphor-icons/react";
 import { FolderInstructionsConflictError } from "@posthog/api-client/posthog-client";
+import { useHostTRPC } from "@posthog/host-router/react";
+import { buildContextSystemPrompt } from "@posthog/ui/features/canvas/contextPrompt";
+import { registerContextSubscription } from "@posthog/ui/features/canvas/contextSubscriptions";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useFolderInstructions,
   useFolderInstructionsMutations,
   useFolderInstructionsVersions,
 } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
+import {
+  useContextGenChannel,
+  useContextGenStore,
+} from "@posthog/ui/features/canvas/stores/contextGenStore";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import {
@@ -20,6 +32,7 @@ import {
   Text,
   TextArea,
 } from "@radix-ui/themes";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 type Mode = "rendered" | "edit";
@@ -46,6 +59,7 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
     isLoading: isLoadingLatest,
     isFetching: isFetchingLatest,
     error: latestError,
+    refetch: refetchLatest,
   } = useFolderInstructions(channelId);
 
   const { data: versions = [], isLoading: isLoadingVersions } =
@@ -57,6 +71,19 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
   const [mode, setMode] = useState<Mode>("rendered");
   const [draft, setDraft] = useState("");
   const [hasDraft, setHasDraft] = useState(false);
+
+  // Agent CONTEXT.md generation. The subscription streams the agent's progress
+  // into the context-gen store while this view is mounted; the agent publishes
+  // the document itself via the PostHog MCP, so on completion we just refetch.
+  const gen = useContextGenChannel(channelId);
+  const resetGen = useContextGenStore((s) => s.reset);
+  useEffect(() => registerContextSubscription(channelId), [channelId]);
+  useEffect(() => {
+    if (gen.status !== "done") return;
+    void refetchLatest();
+    setMode("rendered");
+    resetGen(channelId);
+  }, [gen.status, channelId, refetchLatest, resetGen]);
 
   // Seed the editor draft from the latest content the first time we land on
   // edit mode (or whenever latest changes while we're not actively editing).
@@ -261,7 +288,12 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
         className="scroll-area-constrain-width min-h-0 flex-1"
       >
         <Box p="4">
-          {selectedVersion ? (
+          {gen.status === "running" ? (
+            <GeneratingPanel
+              proseBuffer={gen.proseBuffer}
+              activeTool={gen.activeTool}
+            />
+          ) : selectedVersion ? (
             <Callout.Root color="gray" size="1">
               <Callout.Text>
                 Viewing v{selectedVersion.version} metadata. Past content is not
@@ -276,7 +308,10 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
               </Box>
             ) : (
               <EmptyState
+                channelId={channelId}
                 channelName={channelName}
+                baseVersion={latest?.version ?? 0}
+                generationError={gen.status === "error" ? gen.error : null}
                 onCreate={() => {
                   setDraft(EMPTY_TEMPLATE);
                   setHasDraft(true);
@@ -306,10 +341,16 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
 }
 
 function EmptyState({
+  channelId,
   channelName,
+  baseVersion,
+  generationError,
   onCreate,
 }: {
+  channelId: string;
   channelName: string;
+  baseVersion: number;
+  generationError: string | null;
   onCreate: () => void;
 }) {
   return (
@@ -332,9 +373,137 @@ function EmptyState({
           files, and anything else that isn't obvious from the code.
         </Text>
       </Flex>
-      <Button size="2" variant="solid" onClick={onCreate}>
-        Create CONTEXT.md
+
+      {generationError ? (
+        <Callout.Root color="red" size="1" className="w-full text-left">
+          <Callout.Text>Generation failed: {generationError}</Callout.Text>
+        </Callout.Root>
+      ) : null}
+
+      <Flex align="center" gap="3">
+        <Button size="2" variant="solid" onClick={onCreate}>
+          Create CONTEXT.md
+        </Button>
+        <GenerateWithAgent
+          channelId={channelId}
+          channelName={channelName}
+          baseVersion={baseVersion}
+        />
+      </Flex>
+    </Flex>
+  );
+}
+
+// Lets the user pick an already-registered local repo and kick off the agent
+// that explores it (plus PostHog data) and publishes CONTEXT.md via the MCP.
+function GenerateWithAgent({
+  channelId,
+  channelName,
+  baseVersion,
+}: {
+  channelId: string;
+  channelName: string;
+  baseVersion: number;
+}) {
+  const trpc = useHostTRPC();
+  const { data: folders = [], isLoading } = useQuery(
+    trpc.folders.getFolders.queryOptions(),
+  );
+  const start = useContextGenStore((s) => s.start);
+
+  const [picking, setPicking] = useState(false);
+  const [repoPath, setRepoPath] = useState<string | null>(null);
+
+  // Only repos that still exist on disk are explorable. Default to the first
+  // (getFolders returns most-recently-used first) so the common case is 1 click.
+  const available = useMemo(() => folders.filter((f) => f.exists), [folders]);
+  const selected = repoPath ?? available[0]?.path ?? null;
+
+  if (!picking) {
+    return (
+      <Button
+        size="2"
+        variant="soft"
+        onClick={() => setPicking(true)}
+        disabled={isLoading}
+      >
+        <SparkleIcon size={14} />
+        Generate with agent
       </Button>
+    );
+  }
+
+  if (available.length === 0) {
+    return (
+      <Text className="text-[12px] text-gray-10">
+        No local repositories registered — open a folder first.
+      </Text>
+    );
+  }
+
+  return (
+    <Flex align="center" gap="2">
+      <Select.Root
+        size="2"
+        value={selected ?? undefined}
+        onValueChange={setRepoPath}
+      >
+        <Select.Trigger placeholder="Select a repository…" />
+        <Select.Content>
+          {available.map((f) => (
+            <Select.Item key={f.id} value={f.path}>
+              {f.name}
+            </Select.Item>
+          ))}
+        </Select.Content>
+      </Select.Root>
+      <Button
+        size="2"
+        variant="solid"
+        disabled={!selected}
+        onClick={() => {
+          if (!selected) return;
+          void start({
+            channelId,
+            channelName,
+            repoPath: selected,
+            systemPrompt: buildContextSystemPrompt({
+              channelName,
+              channelId,
+              baseVersion,
+            }),
+          });
+        }}
+      >
+        <SparkleIcon size={14} />
+        Generate
+      </Button>
+    </Flex>
+  );
+}
+
+// Live view of the agent's progress: the current tool call plus the markdown it
+// has streamed so far. Replaced by the rendered CONTEXT.md once it publishes.
+function GeneratingPanel({
+  proseBuffer,
+  activeTool,
+}: {
+  proseBuffer: string;
+  activeTool: string | null;
+}) {
+  return (
+    <Flex direction="column" gap="3">
+      <Flex align="center" gap="2" className="text-gray-10">
+        <SpinnerGapIcon size={14} className="animate-spin" />
+        <Text className="text-[13px]">
+          {activeTool ?? "Generating CONTEXT.md…"}
+        </Text>
+      </Flex>
+      {proseBuffer.trim().length > 0 ? (
+        <Box className="text-[13px]">
+          <MarkdownRenderer content={proseBuffer} />
+        </Box>
+      ) : null}
     </Flex>
   );
 }
