@@ -1,9 +1,10 @@
+import { PencilSimple, Trash } from "@phosphor-icons/react";
 import type { SkillFileEntry } from "@posthog/shared";
 import {
   TreeDirectoryRow,
   TreeFileRow,
 } from "@posthog/ui/primitives/TreeDirectoryRow";
-import { Flex } from "@radix-ui/themes";
+import { Flex, Tooltip } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
 
 interface TreeDir {
@@ -36,12 +37,17 @@ interface SkillFileTreeProps {
   files: SkillFileEntry[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
+  /** When set, file rows (except SKILL.md) get rename/delete actions. */
+  onRenameFile?: (path: string) => void;
+  onDeleteFile?: (path: string) => void;
 }
 
 export function SkillFileTree({
   files,
   selectedPath,
   onSelect,
+  onRenameFile,
+  onDeleteFile,
 }: SkillFileTreeProps) {
   const tree = useMemo(() => buildTree(files), [files]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -74,16 +80,56 @@ export function SkillFileTree({
           </Flex>
         );
       })}
-      {dir.files.map((file) => (
-        <TreeFileRow
-          key={file.path}
-          fileName={file.name}
-          depth={depth}
-          isActive={selectedPath === file.path}
-          title={file.path}
-          onClick={() => onSelect(file.path)}
-        />
-      ))}
+      {dir.files.map((file) => {
+        const showActions =
+          (onRenameFile || onDeleteFile) && file.path !== "SKILL.md";
+        return (
+          <TreeFileRow
+            key={file.path}
+            fileName={file.name}
+            depth={depth}
+            isActive={selectedPath === file.path}
+            title={file.path}
+            onClick={() => onSelect(file.path)}
+            trailing={
+              showActions ? (
+                <Flex gap="1" className="shrink-0">
+                  {onRenameFile && (
+                    <Tooltip content="Rename file">
+                      <button
+                        type="button"
+                        aria-label="Rename file"
+                        className="rounded p-0.5 text-gray-9 hover:bg-gray-4 hover:text-gray-12"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRenameFile(file.path);
+                        }}
+                      >
+                        <PencilSimple size={12} />
+                      </button>
+                    </Tooltip>
+                  )}
+                  {onDeleteFile && (
+                    <Tooltip content="Delete file">
+                      <button
+                        type="button"
+                        aria-label="Delete file"
+                        className="rounded p-0.5 text-gray-9 hover:bg-gray-4 hover:text-gray-12"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteFile(file.path);
+                        }}
+                      >
+                        <Trash size={12} />
+                      </button>
+                    </Tooltip>
+                  )}
+                </Flex>
+              ) : undefined
+            }
+          />
+        );
+      })}
     </Flex>
   );
 

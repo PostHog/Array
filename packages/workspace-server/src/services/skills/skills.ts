@@ -6,15 +6,31 @@ import type { FoldersService } from "../folders/folders";
 import { FOLDERS_SERVICE } from "../folders/identifiers";
 import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
 import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
-import type { SkillContents, SkillInfo, SkillSource } from "./schemas";
+import { parseSkillFrontmatter } from "./parse-skill-frontmatter";
+import type {
+  CreateSkillInput,
+  SkillContents,
+  SkillInfo,
+  SkillSource,
+} from "./schemas";
 import {
   getMarketplaceInstallPaths,
   listSkillFiles,
   readSkillMetadataFromDir,
 } from "./skill-discovery";
+import { serializeSkillMarkdown } from "./write-skill-frontmatter";
 
 const MAX_SKILL_FILES = 500;
 const MAX_SKILL_FILE_BYTES = 2 * 1024 * 1024;
+const SKILL_DIR_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
+const MAX_SKILL_DIR_NAME_LENGTH = 64;
+
+const SKILL_MD_TEMPLATE_BODY = `Explain when this skill applies and how to use it.
+
+## Instructions
+
+1. ...
+`;
 
 interface SkillRoot {
   dir: string;
@@ -52,10 +68,7 @@ export class SkillsService {
     filePath: string,
   ): Promise<string | null> {
     const skillDir = await this.resolveKnownSkillDir(skillPath);
-    const resolved = path.resolve(skillDir, filePath);
-    if (resolved === skillDir || !resolved.startsWith(skillDir + path.sep)) {
-      throw new Error("Access denied: path outside skill directory");
-    }
+    const resolved = resolveSkillFilePath(skillDir, filePath);
     try {
       // realpath also catches escapes via symlinked intermediate directories.
       const [realFile, realDir] = await Promise.all([
@@ -69,6 +82,108 @@ export class SkillsService {
     } catch {
       return null;
     }
+  }
+
+  async createSkill(options: CreateSkillInput): Promise<{ path: string }> {
+    const name = options.name.trim();
+    validateSkillDirName(name);
+
+    const root = await this.resolveWritableRoot(
+      options.scope,
+      options.repoPath,
+    );
+    const skillPath = path.join(root, name);
+    if (fs.existsSync(skillPath)) {
+      throw new Error(`A skill named "${name}" already exists`);
+    }
+
+    await fs.promises.mkdir(skillPath, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(skillPath, "SKILL.md"),
+      serializeSkillMarkdown({ name, description: "" }, SKILL_MD_TEMPLATE_BODY),
+      "utf-8",
+    );
+    return { path: skillPath };
+  }
+
+  async saveSkillManifest(
+    skillPath: string,
+    manifest: { name: string; description: string; body: string },
+  ): Promise<void> {
+    const skillDir = await this.resolveWritableSkillDir(skillPath);
+    const content = serializeSkillMarkdown(
+      { name: manifest.name.trim(), description: manifest.description.trim() },
+      manifest.body,
+    );
+    // The writer and parser must agree, or the skill vanishes from the list.
+    if (!parseSkillFrontmatter(content)) {
+      throw new Error("Skill name is required");
+    }
+    await fs.promises.writeFile(
+      path.join(skillDir, "SKILL.md"),
+      content,
+      "utf-8",
+    );
+  }
+
+  async saveSkillFile(
+    skillPath: string,
+    filePath: string,
+    content: string,
+  ): Promise<void> {
+    const skillDir = await this.resolveWritableSkillDir(skillPath);
+    const target = resolveSkillFilePath(skillDir, filePath);
+    await fs.promises.mkdir(path.dirname(target), { recursive: true });
+    await fs.promises.writeFile(target, content, "utf-8");
+  }
+
+  async renameSkillFile(
+    skillPath: string,
+    fromPath: string,
+    toPath: string,
+  ): Promise<void> {
+    const skillDir = await this.resolveWritableSkillDir(skillPath);
+    const from = resolveSkillFilePath(skillDir, fromPath);
+    const to = resolveSkillFilePath(skillDir, toPath);
+    if (from === path.join(skillDir, "SKILL.md")) {
+      throw new Error("SKILL.md cannot be renamed");
+    }
+    if (fs.existsSync(to)) {
+      throw new Error(`"${toPath}" already exists`);
+    }
+    await fs.promises.mkdir(path.dirname(to), { recursive: true });
+    await fs.promises.rename(from, to);
+  }
+
+  async deleteSkillFile(skillPath: string, filePath: string): Promise<void> {
+    const skillDir = await this.resolveWritableSkillDir(skillPath);
+    const target = resolveSkillFilePath(skillDir, filePath);
+    if (target === path.join(skillDir, "SKILL.md")) {
+      throw new Error("SKILL.md cannot be deleted");
+    }
+    await fs.promises.rm(target, { force: true });
+  }
+
+  async deleteSkill(skillPath: string): Promise<void> {
+    const skillDir = await this.resolveWritableSkillDir(skillPath);
+    await fs.promises.rm(skillDir, { recursive: true, force: true });
+  }
+
+  async renameSkill(
+    skillPath: string,
+    newName: string,
+  ): Promise<{ path: string }> {
+    const skillDir = await this.resolveWritableSkillDir(skillPath);
+    const name = newName.trim();
+    validateSkillDirName(name);
+
+    const target = path.join(path.dirname(skillDir), name);
+    if (target === skillDir) return { path: skillDir };
+    if (fs.existsSync(target)) {
+      throw new Error(`A skill named "${name}" already exists`);
+    }
+    await fs.promises.rename(skillDir, target);
+    return { path: target };
   }
 
   private async getSkillRoots(): Promise<SkillRoot[]> {
@@ -117,4 +232,67 @@ export class SkillsService {
     }
     return resolved;
   }
+
+  private async getWritableRoots(): Promise<string[]> {
+    const folders = await this.folders.getFolders();
+    return [
+      path.join(os.homedir(), ".claude", "skills"),
+      ...folders.map((f) => path.join(f.path, ".claude", "skills")),
+    ];
+  }
+
+  private async resolveWritableRoot(
+    scope: "user" | "repo",
+    repoPath: string | undefined,
+  ): Promise<string> {
+    if (scope === "user") {
+      return path.join(os.homedir(), ".claude", "skills");
+    }
+    const folders = await this.folders.getFolders();
+    const folder = folders.find(
+      (f) => repoPath && path.resolve(f.path) === path.resolve(repoPath),
+    );
+    if (!folder) {
+      throw new Error("Access denied: not an open workspace folder");
+    }
+    return path.join(folder.path, ".claude", "skills");
+  }
+
+  /**
+   * Hard guard for every mutation: the target must be a skill directory
+   * directly under a writable root (the user's `~/.claude/skills` or a
+   * workspace folder's `.claude/skills`). Bundled skills, plugin install
+   * paths, and anything else are rejected here, not in the UI.
+   */
+  private async resolveWritableSkillDir(skillPath: string): Promise<string> {
+    const resolved = path.resolve(skillPath);
+    const roots = await this.getWritableRoots();
+    const parent = path.dirname(resolved);
+    if (!roots.some((root) => path.resolve(root) === parent)) {
+      throw new Error("Access denied: skill is not in a writable location");
+    }
+    if (!fs.existsSync(path.join(resolved, "SKILL.md"))) {
+      throw new Error("Access denied: not a known skill directory");
+    }
+    return resolved;
+  }
+}
+
+function validateSkillDirName(name: string): void {
+  if (
+    !SKILL_DIR_NAME_PATTERN.test(name) ||
+    name.length > MAX_SKILL_DIR_NAME_LENGTH
+  ) {
+    throw new Error(
+      "Skill names must be lowercase letters, numbers, dots, dashes, or underscores",
+    );
+  }
+}
+
+function resolveSkillFilePath(skillDir: string, filePath: string): string {
+  const resolved = path.resolve(skillDir, filePath);
+  if (resolved === skillDir || !resolved.startsWith(skillDir + path.sep)) {
+    throw new Error("Access denied: path outside skill directory");
+  }
+  return resolved;
 }

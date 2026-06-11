@@ -34,7 +34,54 @@ export const readSkillFileInput = z.object({
 
 export const readSkillFileOutput = z.string().nullable();
 
+export const skillScope = z.enum(["user", "repo"]);
+
+export const createSkillInput = z.object({
+  scope: skillScope,
+  repoPath: z.string().optional(),
+  name: z.string(),
+});
+
+export const skillPathOutput = z.object({
+  path: z.string(),
+});
+
+export const saveSkillManifestInput = z.object({
+  skillPath: z.string(),
+  name: z.string(),
+  description: z.string(),
+  body: z.string(),
+});
+
+export const saveSkillFileInput = z.object({
+  skillPath: z.string(),
+  filePath: z.string(),
+  content: z.string(),
+});
+
+export const renameSkillFileInput = z.object({
+  skillPath: z.string(),
+  fromPath: z.string(),
+  toPath: z.string(),
+});
+
+export const deleteSkillFileInput = z.object({
+  skillPath: z.string(),
+  filePath: z.string(),
+});
+
+export const deleteSkillInput = z.object({
+  skillPath: z.string(),
+});
+
+export const renameSkillInput = z.object({
+  skillPath: z.string(),
+  newName: z.string(),
+});
+
 export type SkillInfo = z.infer<typeof skillInfo>;
+export type SkillScope = z.infer<typeof skillScope>;
+export type CreateSkillInput = z.infer<typeof createSkillInput>;
 export type SkillSource = z.infer<typeof skillSource>;
 export type SkillFileEntry = z.infer<typeof skillFileEntry>;
 export type SkillContents = z.infer<typeof skillContentsOutput>;

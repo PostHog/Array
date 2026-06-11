@@ -179,3 +179,180 @@ describe("readSkillFile", () => {
     );
   });
 });
+
+describe("createSkill", () => {
+  it("scaffolds a directory with a parseable SKILL.md", async () => {
+    const service = makeService();
+
+    const { path: skillPath } = await service.createSkill({
+      scope: "repo",
+      repoPath: folderPath,
+      name: "new-skill",
+    });
+
+    expect(skillPath).toBe(path.join(repoSkillsDir, "new-skill"));
+    const skills = await service.listSkills();
+    const created = skills.find((s) => s.path === skillPath);
+    expect(created).toMatchObject({ name: "new-skill", editable: true });
+  });
+
+  it("rejects invalid names", async () => {
+    await expect(
+      makeService().createSkill({
+        scope: "repo",
+        repoPath: folderPath,
+        name: "../escape",
+      }),
+    ).rejects.toThrow("Skill names must be");
+  });
+
+  it("rejects repo scope for folders that are not open", async () => {
+    await expect(
+      makeService().createSkill({
+        scope: "repo",
+        repoPath: path.join(root, "other-repo"),
+        name: "new-skill",
+      }),
+    ).rejects.toThrow("not an open workspace folder");
+  });
+
+  it("rejects duplicate names", async () => {
+    await createSkill(repoSkillsDir, "alpha");
+
+    await expect(
+      makeService().createSkill({
+        scope: "repo",
+        repoPath: folderPath,
+        name: "alpha",
+      }),
+    ).rejects.toThrow("already exists");
+  });
+});
+
+describe("write-path guard", () => {
+  it.each([
+    ["bundled skill", () => path.join(pluginPath, "skills", "bundled-skill")],
+    ["arbitrary directory", () => path.join(root, "rogue")],
+    [
+      "traversal out of a writable root",
+      () => path.join(repoSkillsDir, "alpha", "..", ".."),
+    ],
+  ])("rejects mutations against a %s", async (_label, target) => {
+    await createSkill(path.join(pluginPath, "skills"), "bundled-skill");
+    await createSkill(repoSkillsDir, "alpha");
+    const { mkdir: mk, writeFile: wf } = await import("node:fs/promises");
+    await mk(path.join(root, "rogue"), { recursive: true });
+    await wf(path.join(root, "rogue", "SKILL.md"), "rogue");
+    const service = makeService();
+
+    await expect(
+      service.saveSkillFile(target(), "SKILL.md", "x"),
+    ).rejects.toThrow("Access denied");
+    await expect(service.deleteSkill(target())).rejects.toThrow(
+      "Access denied",
+    );
+    await expect(service.renameSkill(target(), "other")).rejects.toThrow(
+      "Access denied",
+    );
+  });
+
+  it("rejects file writes that escape the skill directory", async () => {
+    const skillPath = await createSkill(repoSkillsDir, "alpha");
+
+    await expect(
+      makeService().saveSkillFile(skillPath, "../beta.md", "x"),
+    ).rejects.toThrow("path outside skill directory");
+  });
+});
+
+describe("skill mutations", () => {
+  it("round-trips manifest edits through the frontmatter parser", async () => {
+    const skillPath = await createSkill(repoSkillsDir, "alpha");
+    const service = makeService();
+
+    await service.saveSkillManifest(skillPath, {
+      name: "alpha",
+      description: "Use when: testing",
+      body: "# Alpha\n\nBody text",
+    });
+
+    const skills = await service.listSkills();
+    const updated = skills.find((s) => s.path === skillPath);
+    expect(updated).toMatchObject({
+      name: "alpha",
+      description: "Use when: testing",
+    });
+    const content = await service.readSkillFile(skillPath, "SKILL.md");
+    expect(content).toContain("# Alpha");
+  });
+
+  it("rejects manifest saves without a name", async () => {
+    const skillPath = await createSkill(repoSkillsDir, "alpha");
+
+    await expect(
+      makeService().saveSkillManifest(skillPath, {
+        name: "  ",
+        description: "",
+        body: "",
+      }),
+    ).rejects.toThrow("Skill name is required");
+  });
+
+  it("creates, renames, and deletes companion files", async () => {
+    const skillPath = await createSkill(repoSkillsDir, "alpha");
+    const service = makeService();
+
+    await service.saveSkillFile(skillPath, "references/guide.md", "guide");
+    await service.renameSkillFile(
+      skillPath,
+      "references/guide.md",
+      "references/manual.md",
+    );
+    let contents = await service.getSkillContents(skillPath);
+    expect(contents.files.map((f) => f.path)).toEqual([
+      "SKILL.md",
+      "references/manual.md",
+    ]);
+
+    await service.deleteSkillFile(skillPath, "references/manual.md");
+    contents = await service.getSkillContents(skillPath);
+    expect(contents.files.map((f) => f.path)).toEqual(["SKILL.md"]);
+  });
+
+  it("refuses to delete or rename SKILL.md", async () => {
+    const skillPath = await createSkill(repoSkillsDir, "alpha");
+    const service = makeService();
+
+    await expect(
+      service.deleteSkillFile(skillPath, "SKILL.md"),
+    ).rejects.toThrow("SKILL.md cannot be deleted");
+    await expect(
+      service.deleteSkillFile(skillPath, "./SKILL.md"),
+    ).rejects.toThrow("SKILL.md cannot be deleted");
+    await expect(
+      service.renameSkillFile(skillPath, "SKILL.md", "OTHER.md"),
+    ).rejects.toThrow("SKILL.md cannot be renamed");
+  });
+
+  it("deletes a whole skill", async () => {
+    const skillPath = await createSkill(repoSkillsDir, "alpha");
+    const service = makeService();
+
+    await service.deleteSkill(skillPath);
+
+    const skills = await service.listSkills();
+    expect(skills.find((s) => s.path === skillPath)).toBeUndefined();
+  });
+
+  it("renames a skill directory", async () => {
+    const skillPath = await createSkill(repoSkillsDir, "alpha");
+    const service = makeService();
+
+    const { path: newPath } = await service.renameSkill(skillPath, "omega");
+
+    expect(newPath).toBe(path.join(repoSkillsDir, "omega"));
+    const skills = await service.listSkills();
+    expect(skills.some((s) => s.path === newPath)).toBe(true);
+    expect(skills.some((s) => s.path === skillPath)).toBe(false);
+  });
+});

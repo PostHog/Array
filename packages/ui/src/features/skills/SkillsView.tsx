@@ -1,9 +1,17 @@
-import { Lightbulb, MagnifyingGlass } from "@phosphor-icons/react";
+import { Lightbulb, MagnifyingGlass, Plus } from "@phosphor-icons/react";
 import type { SkillInfo, SkillSource } from "@posthog/shared";
-import { Box, Flex, ScrollArea, Text, TextField } from "@radix-ui/themes";
+import {
+  Box,
+  Button,
+  Flex,
+  ScrollArea,
+  Text,
+  TextField,
+} from "@radix-ui/themes";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSetHeaderContent } from "../../hooks/useSetHeaderContent";
 import { ResizableSidebar } from "../../primitives/ResizableSidebar";
+import { NewSkillDialog } from "./NewSkillDialog";
 import { SkillSection, SOURCE_CONFIG } from "./SkillCard";
 import { SkillDetailPanel } from "./SkillDetailPanel";
 import {
@@ -21,6 +29,7 @@ export function SkillsView() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [scrollToPath, setScrollToPath] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [newSkillOpen, setNewSkillOpen] = useState(false);
 
   const {
     width: sidebarWidth,
@@ -106,19 +115,29 @@ export function SkillsView() {
             className="scroll-area-constrain-width h-full"
           >
             <Box px="4" py="3">
-              <Box pb="3">
-                <TextField.Root
+              <Flex pb="3" gap="2" align="center">
+                <Box flexGrow="1">
+                  <TextField.Root
+                    size="2"
+                    placeholder="Search skills..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="text-[13px]"
+                  >
+                    <TextField.Slot>
+                      <MagnifyingGlass size={14} />
+                    </TextField.Slot>
+                  </TextField.Root>
+                </Box>
+                <Button
                   size="2"
-                  placeholder="Search skills..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="text-[13px]"
+                  variant="soft"
+                  onClick={() => setNewSkillOpen(true)}
                 >
-                  <TextField.Slot>
-                    <MagnifyingGlass size={14} />
-                  </TextField.Slot>
-                </TextField.Root>
-              </Box>
+                  <Plus size={14} />
+                  New skill
+                </Button>
+              </Flex>
               {skills.length === 0 && !isLoading ? (
                 <Flex
                   align="center"
@@ -176,6 +195,12 @@ export function SkillsView() {
           )}
         </ResizableSidebar>
       </Flex>
+
+      <NewSkillDialog
+        open={newSkillOpen}
+        onOpenChange={setNewSkillOpen}
+        onCreated={(path) => setSelectedPath(path)}
+      />
     </Flex>
   );
 }
