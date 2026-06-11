@@ -3971,6 +3971,11 @@ export class SessionService {
           this.d.store.clearTailOptimisticItems(taskRunId);
         }
         this.d.store.appendEvents(taskRunId, newEvents, expectedCount);
+        // Snapshots are historical replay (bootstrap, re-subscribe, post-
+        // reconnect), not live activity. Marking them live would fire a
+        // completion notification for every historical turn_complete, e.g.
+        // a fresh install replaying a run's full backlog. Only `logs`
+        // deltas come from the live SSE stream.
         this.updatePromptStateFromEvents(taskRunId, newEvents, {
           isLive: update.kind === "logs",
         });
