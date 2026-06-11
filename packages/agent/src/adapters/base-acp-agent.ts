@@ -147,7 +147,9 @@ export abstract class BaseAcpAgent implements Agent {
       // Sort by tier so the picker is deterministic and code-named models
       // (e.g. fable) stay pinned last instead of floating to wherever the
       // gateway lists them.
-      .sort((a, b) => getClaudeModelTier(a.value) - getClaudeModelTier(b.value));
+      .sort(
+        (a, b) => getClaudeModelTier(a.value) - getClaudeModelTier(b.value),
+      );
 
     const isAnthropicModelId = (modelId: string): boolean =>
       modelId.startsWith("claude-") || modelId.startsWith("anthropic/");
