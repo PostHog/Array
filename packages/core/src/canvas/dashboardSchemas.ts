@@ -11,6 +11,12 @@ export const dashboardRecordSchema = z.object({
   channelId: z.string().default(""),
   name: z.string(),
   spec: dashboardSpecSchema,
+  // The canvas template this board was built with. Defaults to "dashboard" so
+  // boards saved before templating still parse and behave as before.
+  templateId: z.string().default("dashboard"),
+  // Display name of whoever created the file-system row (from the backend's
+  // `created_by` user). Absent for rows the API returns without a creator.
+  createdBy: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -26,6 +32,12 @@ export const dashboardFileMetaSchema = z.object({
   // The channel folder's stable file-system id. Stored here rather than derived
   // from the path so renaming/moving the channel folder can't reparent the board.
   channelId: z.string().optional(),
+  // The canvas template id this board was built with (absent = "dashboard").
+  templateId: z.string().optional(),
+  // Display name of the creator, stamped at create time. We can't rely on the
+  // FS row's `created_by` (the list endpoint doesn't expand it), so we store our
+  // own. Absent on boards created before this field existed.
+  createdBy: z.string().optional(),
   // Epoch ms. createdAt mirrors the row's created_at; updatedAt is ours because
   // the FileSystem row has no updated_at column to sort the dashboards list by.
   createdAt: z.number().optional(),
@@ -37,6 +49,8 @@ export const dashboardSummarySchema = z.object({
   id: z.string(),
   channelId: z.string(),
   name: z.string(),
+  templateId: z.string().default("dashboard"),
+  createdBy: z.string().optional(),
   updatedAt: z.number(),
   // The full spec is already loaded when listing (it rides in the FS row's
   // meta), so include it here to render grid previews without an N+1 of get()s.
@@ -50,6 +64,7 @@ export const createDashboardInput = z.object({
   channelId: z.string().min(1),
   name: z.string().min(1),
   spec: dashboardSpecSchema,
+  templateId: z.string().default("dashboard"),
 });
 
 export const updateDashboardInput = z.object({

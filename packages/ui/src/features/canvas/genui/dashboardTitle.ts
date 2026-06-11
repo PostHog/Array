@@ -2,7 +2,8 @@ import type { Spec } from "@json-render/react";
 
 /**
  * The dashboard's title: the text of the top-level h1 Heading the canvas always
- * starts with (see CANVAS_SYSTEM_PROMPT). This h1 is the dashboard's name —
+ * starts with (see the per-template rules in core/canvas/canvasTemplates). This
+ * h1 is the dashboard's name —
  * editing it (by the agent or inline) renames the saved dashboard. Falls back to
  * the root Page's `title` prop, then to undefined when no title is present.
  */

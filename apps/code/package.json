@@ -111,7 +111,7 @@
     "@posthog/host-router": "workspace:*",
     "@posthog/host-trpc": "workspace:*",
     "@posthog/platform": "workspace:*",
-    "@posthog/quill": "0.3.0-beta.1",
+    "@posthog/quill": "catalog:",
     "@posthog/shared": "workspace:*",
     "@posthog/ui": "workspace:*",
     "@posthog/workspace-client": "workspace:*",

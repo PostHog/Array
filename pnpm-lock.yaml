@@ -19,8 +19,8 @@ catalogs:
       specifier: ^2.1.10
       version: 2.1.10
     '@posthog/quill':
-      specifier: 0.3.0-beta.1
-      version: 0.3.0-beta.1
+      specifier: 0.3.0-beta.14
+      version: 0.3.0-beta.14
     '@radix-ui/themes':
       specifier: ^3.2.1
       version: 3.3.0
@@ -84,6 +84,7 @@ catalogs:
 
 overrides:
   zod: 4.3.6
+  '@posthog/quill>@base-ui/react': ^1.3.0
 
 patchedDependencies:
   node-pty:
@@ -191,8 +192,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/platform
       '@posthog/quill':
-        specifier: 0.3.0-beta.1
-        version: 0.3.0-beta.1(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)
+        specifier: 'catalog:'
+        version: 0.3.0-beta.14(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)
       '@posthog/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -816,6 +817,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@json-render/core':
+        specifier: ^0.19.0
+        version: 0.19.0(zod@4.3.6)
       '@modelcontextprotocol/ext-apps':
         specifier: ^1.1.2
         version: 1.2.2(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(zod@4.3.6)
@@ -1195,6 +1199,9 @@ importers:
       '@posthog/platform':
         specifier: workspace:*
         version: link:../platform
+      '@posthog/quill-charts':
+        specifier: 0.3.0-beta.14
+        version: 0.3.0-beta.14(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@posthog/shared':
         specifier: workspace:*
         version: link:../shared
@@ -1345,7 +1352,7 @@ importers:
         version: 2.1.10(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@posthog/quill':
         specifier: 'catalog:'
-        version: 0.3.0-beta.1(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)
+        version: 0.3.0-beta.14(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)
       '@posthog/tsconfig':
         specifier: workspace:*
         version: link:../../tooling/typescript
@@ -3300,6 +3307,12 @@ packages:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
 
+  '@floating-ui/react@0.27.19':
+    resolution: {integrity: sha512-31B8h5mm8YxotlE7/AU/PhNAl8eWxAmjL/v2QOxroDNkTFLk3Uu82u63N3b6TXa4EGJeeZLVcd/9AlNlVqzeog==}
+    peerDependencies:
+      react: '>=17.0.0'
+      react-dom: '>=17.0.0'
+
   '@floating-ui/utils@0.2.11':
     resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
 
@@ -4472,8 +4485,14 @@ packages:
   '@posthog/plugin-utils@1.0.1':
     resolution: {integrity: sha512-+x3LFZlUVPNUPQBx9kvRV/hXd1j3JcYf9iYClJCORjuuA0RV5FICUZMMFbwsSOPuKoW9rQAaW3zFoQMYEfM+YA==}
 
-  '@posthog/quill@0.3.0-beta.1':
-    resolution: {integrity: sha512-VOW3iuufIvYujBD1GWU9YNdGwWc9p4JkdP7aNaErCF41Lk6gQkwjiu/qNplHTJppjgbgItPSV0FoonwS9WmNrQ==}
+  '@posthog/quill-charts@0.3.0-beta.14':
+    resolution: {integrity: sha512-2TPVMecvAf1+ryhjTuTd7PESe/ZWfQI7uT7eqzwChSa0ZFaULF3gzPsxCUT7oOIsNqynJLDvN7ph1TrANcMB5Q==}
+    peerDependencies:
+      react: ^18.3.1 || ^19.0.0
+      react-dom: ^18.3.1 || ^19.0.0
+
+  '@posthog/quill@0.3.0-beta.14':
+    resolution: {integrity: sha512-TH+PFpPS2jc/U3JifAfzZx0wkjRPxOBoHKc7lzW6zxZi96XC7AjrG5JaB7trRlFoF1ffvmyJKenJYtSpNGdA8Q==}
     engines: {node: '>=20'}
     peerDependencies:
       react: ^18.3.1 || ^19.0.0
@@ -7554,6 +7573,42 @@ packages:
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
 
+  d3-array@3.2.4:
+    resolution: {integrity: sha512-tdQAmyA18i4J7wprpYq8ClcxZy3SC31QMeByyCFyRt7BVHdREQZ5lpzoe5mFEYZUWe+oq8HBvk9JjpibyEV4Jg==}
+    engines: {node: '>=12'}
+
+  d3-color@3.1.0:
+    resolution: {integrity: sha512-zg/chbXyeBtMQ1LbD/WSoW2DpC3I0mpmPdW+ynRTj/x2DAWYrIY7qeZIHidozwV24m4iavr15lNwIwLxRmOxhA==}
+    engines: {node: '>=12'}
+
+  d3-format@3.1.2:
+    resolution: {integrity: sha512-AJDdYOdnyRDV5b6ArilzCPPwc1ejkHcoyFarqlPqT7zRYjhavcT3uSrqcMvsgh2CgoPbK3RCwyHaVyxYcP2Arg==}
+    engines: {node: '>=12'}
+
+  d3-interpolate@3.0.1:
+    resolution: {integrity: sha512-3bYs1rOD33uo8aqJfKP3JWPAibgw8Zm2+L9vBKEHJ2Rg+viTR7o5Mmv5mZcieN+FRYaAOWX5SJATX6k1PWz72g==}
+    engines: {node: '>=12'}
+
+  d3-path@3.1.0:
+    resolution: {integrity: sha512-p3KP5HCf/bvjBSSKuXid6Zqijx7wIfNW+J/maPs+iwR35at5JCbLUT0LzF1cnjbCHWhqzQTIN2Jpe8pRebIEFQ==}
+    engines: {node: '>=12'}
+
+  d3-scale@4.0.2:
+    resolution: {integrity: sha512-GZW464g1SH7ag3Y7hXjf8RoUuAFIqklOAq3MRl4OaWabTFJY9PN/E1YklhXLh+OQ3fM9yS2nOkCoS+WLZ6kvxQ==}
+    engines: {node: '>=12'}
+
+  d3-shape@3.2.0:
+    resolution: {integrity: sha512-SaLBuwGm3MOViRq2ABk3eLoxwZELpH6zhl3FbAoJ7Vm1gofKx6El1Ib5z23NUEhF9AsGl7y+dzLe5Cw2AArGTA==}
+    engines: {node: '>=12'}
+
+  d3-time-format@4.1.0:
+    resolution: {integrity: sha512-dJxPBlzC7NugB2PDLwo9Q8JiTR3M3e4/XANkreKSUxF8vvXKqm1Yfq4Q5dl8budlunRVlUUaDUgFt7eA8D6NLg==}
+    engines: {node: '>=12'}
+
+  d3-time@3.1.0:
+    resolution: {integrity: sha512-VqKjzBLejbSMT4IgbmVgDjpkYrNWUYJnbCGo874u7MMKIWsILRX+OpX/gTk8MqjpT1A/c6HY2dCA77ZN0lkQ2Q==}
+    engines: {node: '>=12'}
+
   data-uri-to-buffer@4.0.1:
     resolution: {integrity: sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==}
     engines: {node: '>= 12'}
@@ -7564,6 +7619,9 @@ packages:
 
   date-fns@4.1.0:
     resolution: {integrity: sha512-Ukq0owbQXxa/U3EGtsdVBkR1w7KOQ5gIBqdH2hkvknzZPYvBxb/aa6E8L7tmjFtkwZBu3UXBbjIgPo/Ez4xaNg==}
+
+  dayjs@1.11.11:
+    resolution: {integrity: sha512-okzr3f11N6WuqYtZSvm+F776mB41wRZMhKP+hc34YdW+KmtYYK9iqvHSwo2k9FEH3fhGXvOPV6yz2IcSrfRUDg==}
 
   dayjs@1.11.21:
     resolution: {integrity: sha512-98IT+HOahAisibz/yjKbzuOBwYcjJ7BCLPzARyHiyEBmRz4fatF+KPJszEHXsGYjUG234aH/cOjW1wwTbKUZlA==}
@@ -9110,6 +9168,10 @@ packages:
 
   inline-style-prefixer@7.0.1:
     resolution: {integrity: sha512-lhYo5qNTQp3EvSSp3sRvXMbVQTLrvGV6DycRMJ5dm2BLMiJ30wpXKdDdgX+GmJZ5uQMucwRKHamXSst3Sj/Giw==}
+
+  internmap@2.0.3:
+    resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
+    engines: {node: '>=12'}
 
   interpret@3.1.1:
     resolution: {integrity: sha512-6xwYfHbajpoF0xLW+iwLkhwgvLoZDfjYfoFNu8ftMoXINzwuymNLd9u/KmwtdT2GbR+/Cz66otEGEVVUHX9QLQ==}
@@ -11929,6 +11991,9 @@ packages:
 
   simple-plist@1.3.1:
     resolution: {integrity: sha512-iMSw5i0XseMnrhtIzRb7XpQEXepa9xhWxGUojHBL43SIpQuDQkh3Wpy67ZbDzZVr6EKxvwVChnVpdl8hEVLDiw==}
+
+  simple-statistics@7.8.9:
+    resolution: {integrity: sha512-YT6MLqYsz7y1rQZOLFlOCCgSRpCi6bqY417yhoOLI7aVoBi29dD39EPrOE03W9DY25H0J0jizVsHZnkLzyGJFg==}
 
   simple-swizzle@0.2.4:
     resolution: {integrity: sha512-nAu1WFPQSMNr2Zn9PGSZK9AGn4t/y97lEm+MXTtUDwfP0ksAIX4nO+6ruD9Jwut4C49SB1Ws+fbXsm/yScWOHw==}
@@ -15606,6 +15671,14 @@ snapshots:
       react: 19.1.0
       react-dom: 19.1.0(react@19.1.0)
 
+  '@floating-ui/react@0.27.19(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
+    dependencies:
+      '@floating-ui/react-dom': 2.1.8(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      '@floating-ui/utils': 0.2.11
+      react: 19.1.0
+      react-dom: 19.1.0(react@19.1.0)
+      tabbable: 6.4.0
+
   '@floating-ui/utils@0.2.11': {}
 
   '@fontsource-variable/inter@5.2.8': {}
@@ -16967,7 +17040,19 @@ snapshots:
     dependencies:
       cross-spawn: 7.0.6
 
-  '@posthog/quill@0.3.0-beta.1(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)':
+  '@posthog/quill-charts@0.3.0-beta.14(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
+    dependencies:
+      '@floating-ui/react': 0.27.19(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      d3-array: 3.2.4
+      d3-color: 3.1.0
+      d3-scale: 4.0.2
+      d3-shape: 3.2.0
+      dayjs: 1.11.11
+      react: 19.1.0
+      react-dom: 19.1.0(react@19.1.0)
+      simple-statistics: 7.8.9
+
+  '@posthog/quill@0.3.0-beta.14(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)':
     dependencies:
       '@base-ui/react': 1.3.0(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       class-variance-authority: 0.7.1
@@ -20442,6 +20527,40 @@ snapshots:
 
   csstype@3.2.3: {}
 
+  d3-array@3.2.4:
+    dependencies:
+      internmap: 2.0.3
+
+  d3-color@3.1.0: {}
+
+  d3-format@3.1.2: {}
+
+  d3-interpolate@3.0.1:
+    dependencies:
+      d3-color: 3.1.0
+
+  d3-path@3.1.0: {}
+
+  d3-scale@4.0.2:
+    dependencies:
+      d3-array: 3.2.4
+      d3-format: 3.1.2
+      d3-interpolate: 3.0.1
+      d3-time: 3.1.0
+      d3-time-format: 4.1.0
+
+  d3-shape@3.2.0:
+    dependencies:
+      d3-path: 3.1.0
+
+  d3-time-format@4.1.0:
+    dependencies:
+      d3-time: 3.1.0
+
+  d3-time@3.1.0:
+    dependencies:
+      d3-array: 3.2.4
+
   data-uri-to-buffer@4.0.1: {}
 
   data-urls@5.0.0:
@@ -20450,6 +20569,8 @@ snapshots:
       whatwg-url: 14.2.0
 
   date-fns@4.1.0: {}
+
+  dayjs@1.11.11: {}
 
   dayjs@1.11.21: {}
 
@@ -22170,6 +22291,8 @@ snapshots:
   inline-style-prefixer@7.0.1:
     dependencies:
       css-in-js-utils: 3.1.0
+
+  internmap@2.0.3: {}
 
   interpret@3.1.1: {}
 
@@ -25701,6 +25824,8 @@ snapshots:
       bplist-creator: 0.1.0
       bplist-parser: 0.3.1
       plist: 3.1.0
+
+  simple-statistics@7.8.9: {}
 
   simple-swizzle@0.2.4:
     dependencies:

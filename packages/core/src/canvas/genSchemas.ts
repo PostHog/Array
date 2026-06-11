@@ -5,11 +5,18 @@ export const canvasGenerateInput = z.object({
   threadId: z.string().min(1),
   prompt: z.string().min(1),
   /**
-   * The json-render system prompt describing the component catalog. Computed in
-   * the renderer from the shared catalog and applied once when the ephemeral
-   * agent session for this thread is created.
+   * The canvas template whose system prompt anchors the agent. Resolved to the
+   * template's prompt in main (CanvasTemplatesService) and applied once when the
+   * ephemeral agent session for this thread is created. Defaults to "dashboard".
    */
-  systemPrompt: z.string().min(1),
+  templateId: z.string().default("dashboard"),
+  /**
+   * The canvas's current spec, sent on the first turn of a thread so the agent
+   * session is seeded with it. Without this, reopening a saved canvas starts the
+   * main-side spec accumulator empty and the agent's first additive patches
+   * would render as if the board were blank (wiping it). null/absent = empty.
+   */
+  currentSpec: z.record(z.string(), z.unknown()).nullish(),
   model: z.string().optional(),
 });
 export type CanvasGenerateInput = z.infer<typeof canvasGenerateInput>;

@@ -345,7 +345,8 @@
                       "!@posthog/workspace-client/client",
                       "!@posthog/platform",
                       "!@posthog/platform/*",
-                      "!@posthog/quill"
+                      "!@posthog/quill",
+                      "!@posthog/quill-charts"
                     ],
                     "message": "ui must run in any JS environment."
                   }

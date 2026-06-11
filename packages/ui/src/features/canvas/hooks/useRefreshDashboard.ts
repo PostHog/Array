@@ -42,7 +42,7 @@ export function useRefreshDashboard(dashboardId: string): {
           );
         }
       } catch (error) {
-        toast.error("Couldn't refresh dashboard", {
+        toast.error("Couldn't refresh canvas", {
           description: error instanceof Error ? error.message : String(error),
         });
       }

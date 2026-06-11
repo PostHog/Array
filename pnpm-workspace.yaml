@@ -8,7 +8,7 @@ catalog:
   '@hono/trpc-server': ^0.3.4
   '@parcel/watcher': ^2.5.6
   '@phosphor-icons/react': ^2.1.10
-  '@posthog/quill': 0.3.0-beta.1
+  '@posthog/quill': 0.3.0-beta.14
   '@radix-ui/themes': ^3.2.1
   '@tanstack/devtools-vite': ^0.7.0
   '@tanstack/react-devtools': ^0.10.5
@@ -53,6 +53,7 @@ minimumReleaseAgeExclude:
   - '@anthropic-ai/sdk'
   - '@pierre/diffs'
   - '@posthog/quill'
+  - '@posthog/quill-charts'
   - '@posthog/quill-tokens'
   - '@tanstack/devtools-core'
   - '@tanstack/devtools-vite'

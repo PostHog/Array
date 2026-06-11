@@ -38,7 +38,7 @@ export function WebsiteChannelsIndex() {
           No channels yet
         </Text>
         <Text size="2" className="text-gray-10">
-          Create a channel to get its own dashboards, tasks, and settings.
+          Create a channel to get its own canvases, tasks, and settings.
         </Text>
       </Flex>
       <Button variant="primary" onClick={() => setModalOpen(true)}>

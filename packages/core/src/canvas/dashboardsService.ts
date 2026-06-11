@@ -23,6 +23,13 @@ interface FsEntry {
   type?: string;
   meta?: DashboardFileMeta | null;
   created_at?: string;
+  // The backend's creator user (standard PostHog UserBasic shape). Absent on
+  // rows the API returns without an expanded creator.
+  created_by?: {
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+  } | null;
 }
 
 /**
@@ -34,12 +41,48 @@ interface FsEntry {
  */
 @injectable()
 export class DashboardsService {
+  // The current user's display label, fetched once and reused (the creator is
+  // the same user for the app's lifetime). `undefined` = not fetched yet;
+  // `null` = fetched but unavailable (don't refetch on every create).
+  private userLabel: string | null | undefined;
+
   constructor(
     @inject(AUTH_SERVICE)
     private readonly authService: AuthService,
     @inject(DASHBOARD_QUERY_SERVICE)
     private readonly dashboardQuery: DashboardQueryService,
   ) {}
+
+  // The signed-in user's display name (or email), for stamping `created by` onto
+  // canvases. Cached after the first lookup; never throws (returns undefined).
+  private async currentUserLabel(): Promise<string | undefined> {
+    if (this.userLabel !== undefined) return this.userLabel ?? undefined;
+    try {
+      const { apiHost } = await this.authService.getValidAccessToken();
+      const res = await this.authService.authenticatedFetch(
+        fetch,
+        `${apiHost}/api/users/@me/`,
+      );
+      if (!res.ok) {
+        this.userLabel = null;
+        return undefined;
+      }
+      const data = (await res.json()) as {
+        first_name?: string | null;
+        last_name?: string | null;
+        email?: string | null;
+      };
+      const name = [data.first_name, data.last_name]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      this.userLabel = name || data.email || null;
+      return this.userLabel ?? undefined;
+    } catch {
+      this.userLabel = null;
+      return undefined;
+    }
+  }
 
   // Raw fetch against this project's desktop_file_system surface. `suffix` is
   // appended after `.../desktop_file_system/` (e.g. `<id>/` or a `?offset=` page).
@@ -83,13 +126,25 @@ export class DashboardsService {
       )
       .map((e) => toRecord(e))
       .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map(({ id, channelId: cid, name, updatedAt, spec }) => ({
-        id,
-        channelId: cid,
-        name,
-        updatedAt,
-        spec,
-      }));
+      .map(
+        ({
+          id,
+          channelId: cid,
+          name,
+          templateId,
+          createdBy,
+          updatedAt,
+          spec,
+        }) => ({
+          id,
+          channelId: cid,
+          name,
+          templateId,
+          createdBy,
+          updatedAt,
+          spec,
+        }),
+      );
   }
 
   async get(id: string): Promise<DashboardRecord | null> {
@@ -101,12 +156,15 @@ export class DashboardsService {
     channelId: string;
     name: string;
     spec: Record<string, unknown> | null;
+    templateId?: string;
   }): Promise<DashboardRecord> {
     const channelPath = await this.channelPath(input.channelId);
     const now = Date.now();
     const meta: DashboardFileMeta = {
       spec: input.spec,
       channelId: input.channelId,
+      templateId: input.templateId ?? "dashboard",
+      createdBy: await this.currentUserLabel(),
       createdAt: now,
       updatedAt: now,
     };
@@ -246,9 +304,23 @@ function toRecord(entry: FsEntry): DashboardRecord {
     channelId: meta.channelId ?? "",
     name: lastSegment(entry.path),
     spec: meta.spec ?? null,
+    templateId: meta.templateId ?? "dashboard",
+    // Prefer our stamped meta; fall back to the FS row's creator if present.
+    createdBy: meta.createdBy ?? creatorName(entry.created_by),
     createdAt,
     updatedAt: meta.updatedAt ?? createdAt,
   };
+}
+
+// Human-readable creator from the backend's `created_by` user: full name when
+// present, else email, else undefined (we don't render an id).
+function creatorName(createdBy?: FsEntry["created_by"]): string | undefined {
+  if (!createdBy) return undefined;
+  const name = [createdBy.first_name, createdBy.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return name || createdBy.email || undefined;
 }
 
 // Path segments are "/"-separated on the backend, so a name can't contain one.

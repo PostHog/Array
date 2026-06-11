@@ -193,7 +193,7 @@ function ChannelSection({ channel }: { channel: Channel }) {
         <CollapsibleContent>
           <Flex direction="column" gap="1" pt="1" pl="3">
             <NavButton
-              label="Dashboards"
+              label="Canvases"
               active={
                 pathname === base || pathname.startsWith(`${base}/dashboards`)
               }

@@ -4,6 +4,7 @@ import { analyticsRouter } from "@posthog/host-router/routers/analytics.router";
 import { archiveRouter } from "@posthog/host-router/routers/archive.router";
 import { authRouter } from "@posthog/host-router/routers/auth.router";
 import { canvasGenRouter } from "@posthog/host-router/routers/canvas-gen.router";
+import { canvasTemplatesRouter } from "@posthog/host-router/routers/canvas-templates.router";
 import { cloudTaskRouter } from "@posthog/host-router/routers/cloud-task.router";
 import { connectivityRouter } from "@posthog/host-router/routers/connectivity.router";
 import { contextMenuRouter } from "@posthog/host-router/routers/context-menu.router";
@@ -50,6 +51,7 @@ export const trpcRouter = router({
   archive: archiveRouter,
   auth: authRouter,
   canvasGen: canvasGenRouter,
+  canvasTemplates: canvasTemplatesRouter,
   dashboards: dashboardsRouter,
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,

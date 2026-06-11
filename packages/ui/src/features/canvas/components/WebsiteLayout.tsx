@@ -5,15 +5,14 @@ import {
   GitForkIcon,
   HashIcon,
   PencilSimpleIcon,
-  PlusIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { DashboardRefreshControl } from "@posthog/ui/features/canvas/components/DashboardRefreshControl";
+import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { dashboardTitleFromSpec } from "@posthog/ui/features/canvas/genui/dashboardTitle";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
-  useCreateAndOpenDashboard,
   useDashboard,
   useDashboardMutations,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
@@ -38,22 +37,6 @@ import { Fragment, useMemo } from "react";
 
 function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
-}
-
-// "New dashboard" action, shown in the top bar on the dashboards grid.
-function NewDashboardButton({ channelId }: { channelId: string }) {
-  const createAndOpen = useCreateAndOpenDashboard(channelId);
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="no-drag"
-      onClick={() => void createAndOpen()}
-    >
-      <PlusIcon size={14} />
-      New dashboard
-    </Button>
-  );
 }
 
 // Edit toggle + (in edit mode) Save / Save-as-fork for the active dashboard.
@@ -99,7 +82,7 @@ function DashboardEditControls({
     if (!hasSpec) return;
     try {
       const title =
-        dashboardTitleFromSpec(liveSpec) ?? dashboard?.name ?? "Dashboard";
+        dashboardTitleFromSpec(liveSpec) ?? dashboard?.name ?? "Canvas";
       const name = `${title} (fork)`;
       const record = await createDashboard(channelId, name, liveSpec);
       setEditing(record.id, true);
@@ -184,6 +167,14 @@ export function WebsiteLayout() {
   // The dashboards grid (a channel with no sub-view selected).
   const isDashboardsGrid = Boolean(channelId) && pathname === base;
   const editing = useIsDashboardEditing(dashboardId ?? "");
+
+  // The data toolbar (mock Filter + query refresh) is dashboard-template chrome:
+  // only Dashboard canvases have refreshable queries. A Blank canvas shows none
+  // of it. Legacy canvases (no templateId) default to "dashboard", so they keep
+  // the toolbar as before.
+  const { dashboard } = useDashboard(dashboardId ?? "");
+  const isDashboardTemplate =
+    (dashboard?.templateId ?? "dashboard") === "dashboard";
   const taskTitle = taskId
     ? tasks?.find((t) => t.id === taskId)?.title
     : undefined;
@@ -209,7 +200,7 @@ export function WebsiteLayout() {
       // dashboard's own name is the h1 below, so it isn't repeated as a crumb.
       crumbs.push(
         <ChannelGridLink key="dashboards" channelId={channelId}>
-          Dashboards
+          Canvases
         </ChannelGridLink>,
       );
     } else if (pathname === `${base}/new`) {
@@ -219,17 +210,19 @@ export function WebsiteLayout() {
     } else if (taskId) {
       crumbs.push(<CrumbText key="task">{taskTitle || "Task"}</CrumbText>);
     } else {
-      // The dashboards grid: "Dashboards" is the current (leaf) crumb, replacing
+      // The canvases grid: "Canvases" is the current (leaf) crumb, replacing
       // the old in-page h1.
-      crumbs.push(<CrumbText key="dashboards">Dashboards</CrumbText>);
+      crumbs.push(<CrumbText key="dashboards">Canvases</CrumbText>);
     }
 
     return (
-      <Flex align="center" gap="1" className="min-w-0">
+      <Flex align="center" gap="1" className="-ml-1 min-w-0">
         {crumbs.map((crumb, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: crumb order is stable
           <Fragment key={i}>
-            {i > 0 && <CaretRightIcon size={12} className="text-gray-8" />}
+            {i > 0 && (
+              <CaretRightIcon size={12} className="text-muted-foreground/50" />
+            )}
             {crumb}
           </Fragment>
         ))}
@@ -262,12 +255,13 @@ export function WebsiteLayout() {
             dashboardId={dashboardId}
           />
         ) : isDashboardsGrid && channelId ? (
-          <NewDashboardButton channelId={channelId} />
+          <NewCanvasMenu channelId={channelId} />
         ) : null}
       </Flex>
       {/* Toolbar: a (dead) Filter on the left, refresh on the right. Only on the
-          dashboards grid and a single dashboard — not on tasks/settings. */}
-      {(isDashboardsGrid || isDashboardDetail) && (
+          canvases grid and a single Dashboard-template canvas — not on a Blank
+          canvas (no queries to refresh), tasks, or settings. */}
+      {(isDashboardsGrid || (isDashboardDetail && isDashboardTemplate)) && (
         <Flex
           align="center"
           justify="between"

@@ -1,25 +1,29 @@
 import { isNonEmptySpec } from "@json-render/core";
 import type { Spec } from "@json-render/react";
-import { DotsThreeIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
+import { DotsThreeIcon, TrashIcon } from "@phosphor-icons/react";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
 import {
   Button,
+  Card,
+  CardContent,
   cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  Text,
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
+import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { CanvasRenderer } from "@posthog/ui/features/canvas/genui/registry";
 import {
-  useCreateAndOpenDashboard,
   useDashboardMutations,
   useDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import { useSeedShowcase } from "@posthog/ui/features/canvas/hooks/useSeedShowcase";
 import { toast } from "@posthog/ui/primitives/toast";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
-import { Box, Flex, Grid, ScrollArea, Text } from "@radix-ui/themes";
+import { Box, Flex, Grid, ScrollArea } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
@@ -31,7 +35,8 @@ const PREVIEW_SCALE = 0.4;
 // live preview. Clicking a card opens the full dashboard.
 export function WebsiteDashboardsIndex({ channelId }: { channelId: string }) {
   const { dashboards, isLoading } = useDashboards(channelId);
-  const createAndOpen = useCreateAndOpenDashboard(channelId);
+  // Seed the built-in component showcase into this channel on first visit.
+  useSeedShowcase(channelId);
 
   if (isLoading) return null;
 
@@ -46,17 +51,14 @@ export function WebsiteDashboardsIndex({ channelId }: { channelId: string }) {
         className="px-6 text-center"
       >
         <Flex direction="column" gap="1">
-          <Text size="3" weight="bold" className="text-gray-12">
-            No dashboards yet
+          <Text size="lg" weight="semibold">
+            No canvases yet
           </Text>
-          <Text size="2" className="text-gray-10">
+          <Text size="sm" variant="muted">
             Create one and build it with the agent, then save it.
           </Text>
         </Flex>
-        <Button variant="primary" onClick={() => void createAndOpen()}>
-          <PlusIcon size={14} />
-          Create dashboard
-        </Button>
+        <NewCanvasMenu channelId={channelId} variant="primary" />
       </Flex>
     );
   }
@@ -92,11 +94,8 @@ function DashboardCard({
         params={{ channelId, dashboardId: summary.id }}
         className="no-underline"
       >
-        <Flex
-          direction="column"
-          className="overflow-hidden rounded-lg border border-gray-6 bg-gray-2 transition-colors hover:border-gray-8"
-        >
-          <Box className="relative h-44 overflow-hidden border-gray-6 border-b bg-gray-1">
+        <Card className="gap-0 overflow-hidden p-0">
+          <Box className="relative h-44 overflow-hidden border-border border-b bg-muted">
             {isNonEmptySpec(spec) ? (
               <Box
                 className="pointer-events-none absolute top-0 left-0 origin-top-left"
@@ -110,22 +109,27 @@ function DashboardCard({
                   resetKey={spec}
                   fallback={<PreviewPlaceholder label="Preview unavailable" />}
                 >
-                  <CanvasRenderer spec={spec} />
+                  <CanvasRenderer spec={spec} state={spec.state} />
                 </ErrorBoundary>
               </Box>
             ) : (
-              <PreviewPlaceholder label="Empty dashboard" />
+              <PreviewPlaceholder label="Empty canvas" />
             )}
           </Box>
-          <Flex direction="column" gap="1" className="p-3">
-            <Text size="2" weight="medium" className="truncate text-gray-12">
+          <CardContent className="flex flex-col gap-0.5 p-3">
+            <Text size="sm" weight="medium" className="truncate">
               {summary.name}
             </Text>
-            <Text size="1" className="text-gray-10">
+            <Text size="xxs" variant="muted">
               Updated {formatRelativeTimeShort(summary.updatedAt)}
             </Text>
-          </Flex>
-        </Flex>
+
+            <Text size="xxs" variant="muted">
+              Created by{" "}
+              {summary.createdBy ? `${summary.createdBy}` : "Unknown"}
+            </Text>
+          </CardContent>
+        </Card>
       </Link>
       {/* Sibling of the Link (not nested) so opening the menu or deleting never
           navigates into the dashboard. */}
@@ -140,7 +144,7 @@ function DashboardCardMenu({ id, name }: { id: string; name: string }) {
 
   const onDelete = () => {
     deleteDashboard(id).catch((error) => {
-      toast.error("Couldn't delete dashboard", {
+      toast.error("Couldn't delete canvas", {
         description: error instanceof Error ? error.message : String(error),
       });
     });
@@ -187,7 +191,7 @@ function PreviewPlaceholder({ label }: { label: string }) {
       justify="center"
       className="absolute inset-0 text-center"
     >
-      <Text size="1" className="text-gray-9">
+      <Text size="xs" variant="muted">
         {label}
       </Text>
     </Flex>
