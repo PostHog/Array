@@ -38,7 +38,6 @@ import {
   type Options,
   type Query,
   query,
-  type SDKMessage,
   type SDKUserMessage,
   type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -60,7 +59,12 @@ import {
   type PostHogProductId,
 } from "../../posthog-products";
 import type { PostHogAPIConfig } from "../../types";
-import { isCloudRun, unreachable, withTimeout } from "../../utils/common";
+import {
+  isCloudRun,
+  unreachable,
+  withAbort,
+  withTimeout,
+} from "../../utils/common";
 import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
@@ -462,11 +466,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     this.session.promptRunning = true;
     const cancelController = new AbortController();
     this.session.cancelController = cancelController;
-    const cancelWake = new Promise<void>((resolve) => {
-      cancelController.signal.addEventListener("abort", () => resolve(), {
-        once: true,
-      });
-    });
     let handedOff = false;
     let errored = false;
     let lastAssistantTotalUsage: number | null = null;
@@ -521,8 +520,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     try {
       while (true) {
         const nextMessage = this.session.query.next();
-        const next = await Promise.race([nextMessage, cancelWake]);
-        if (cancelController.signal.aborted) {
+        const next = await withAbort(nextMessage, cancelController.signal);
+        if (next.result === "aborted" || cancelController.signal.aborted) {
           void nextMessage.catch((err) =>
             this.logger.warn("in-flight query.next() rejected after cancel", {
               sessionId: params.sessionId,
@@ -536,10 +535,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               : undefined,
           };
         }
-        const { value: message, done } = next as IteratorResult<
-          SDKMessage,
-          void
-        >;
+        const { value: message, done } = next.value;
 
         if (done || !message) {
           if (this.session.cancelled) {
@@ -566,11 +562,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         switch (message.type) {
           case "system":
             if (message.subtype === "compact_boundary") {
-              const usedTokens = await Promise.race([
+              const usedTokens = await withAbort(
                 fetchContextUsedTokens(this.session.query, this.logger),
-                cancelWake.then(() => null),
-              ]);
-              lastAssistantTotalUsage = usedTokens ?? 0;
+                cancelController.signal,
+              );
+              lastAssistantTotalUsage =
+                usedTokens.result === "success" ? (usedTokens.value ?? 0) : 0;
               promptReplayed = true;
               await this.client.sessionUpdate({
                 sessionId: params.sessionId,
