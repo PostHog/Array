@@ -1,6 +1,16 @@
-import { Folder, Package, Storefront, User } from "@phosphor-icons/react";
+import {
+  Folder,
+  Package,
+  Storefront,
+  User,
+  Warning,
+} from "@phosphor-icons/react";
+import type {
+  SkillAnalysis,
+  SkillIssue,
+} from "@posthog/core/skills/analyzeSkills";
 import type { SkillInfo, SkillSource } from "@posthog/shared";
-import { Badge, Box, Flex, Text } from "@radix-ui/themes";
+import { Badge, Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useEffect, useRef } from "react";
 
 export const SOURCE_CONFIG: Record<
@@ -28,6 +38,7 @@ interface SkillCardProps {
   /** When true, scroll this card into view once (used for deep-linked skills). */
   scrollIntoView?: boolean;
   onScrolledIntoView?: () => void;
+  issues?: SkillIssue[];
 }
 
 export function SkillCard({
@@ -36,6 +47,7 @@ export function SkillCard({
   onClick,
   scrollIntoView,
   onScrolledIntoView,
+  issues = [],
 }: SkillCardProps) {
   const config = SOURCE_CONFIG[skill.source];
   const Icon = config?.icon ?? Package;
@@ -76,6 +88,12 @@ export function SkillCard({
         )}
       </Flex>
 
+      {issues.length > 0 && (
+        <Tooltip content={issues.map((issue) => issue.message).join("\n")}>
+          <Warning size={14} className="shrink-0 text-amber-11" />
+        </Tooltip>
+      )}
+
       {skill.repoName && (
         <Badge size="1" variant="soft" color="gray" className="shrink-0">
           {skill.repoName}
@@ -92,6 +110,7 @@ interface SkillSectionProps {
   onSelect: (path: string) => void;
   scrollToPath: string | null;
   onScrolledIntoView: () => void;
+  analysis?: SkillAnalysis;
 }
 
 export function SkillSection({
@@ -101,6 +120,7 @@ export function SkillSection({
   onSelect,
   scrollToPath,
   onScrolledIntoView,
+  analysis,
 }: SkillSectionProps) {
   return (
     <Flex direction="column" gap="1">
@@ -116,6 +136,7 @@ export function SkillSection({
             onClick={() => onSelect(skill.path)}
             scrollIntoView={scrollToPath === skill.path}
             onScrolledIntoView={onScrolledIntoView}
+            issues={analysis?.[skill.path]}
           />
         ))}
       </Flex>

@@ -9,6 +9,7 @@ export const skillInfo = z.object({
   path: z.string(),
   repoName: z.string().optional(),
   editable: z.boolean(),
+  skillMdBytes: z.number(),
 });
 
 export const listSkillsOutput = z.array(skillInfo);

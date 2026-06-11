@@ -1,4 +1,5 @@
 import { Lightbulb, MagnifyingGlass, Plus } from "@phosphor-icons/react";
+import { analyzeSkills } from "@posthog/core/skills/analyzeSkills";
 import type { SkillInfo, SkillSource } from "@posthog/shared";
 import {
   Box,
@@ -68,6 +69,8 @@ export function SkillsView() {
   const handleCloseSidebar = useCallback(() => {
     setSelectedPath(null);
   }, []);
+
+  const analysis = useMemo(() => analyzeSkills(skills), [skills]);
 
   const grouped = useMemo(() => {
     const map = new Map<SkillSource, SkillInfo[]>();
@@ -171,6 +174,7 @@ export function SkillsView() {
                         onSelect={handleSelect}
                         scrollToPath={scrollToPath}
                         onScrolledIntoView={handleScrolledIntoView}
+                        analysis={analysis}
                       />
                     );
                   })}
@@ -192,6 +196,7 @@ export function SkillsView() {
             <SkillDetailPanel
               key={selectedSkill.path}
               skill={selectedSkill}
+              issues={analysis[selectedSkill.path] ?? []}
               onClose={handleCloseSidebar}
             />
           )}

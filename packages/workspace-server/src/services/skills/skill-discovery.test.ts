@@ -69,6 +69,9 @@ describe("readSkillMetadataFromDir", () => {
         path: path.join(skillsDir, "my-skill"),
         repoName: "my-repo",
         editable: true,
+        skillMdBytes: Buffer.byteLength(
+          "---\nname: Pretty Name\ndescription: Does a thing\n---\nbody",
+        ),
       },
     ]);
   });

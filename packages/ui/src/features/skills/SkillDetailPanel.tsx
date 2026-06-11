@@ -4,8 +4,10 @@ import {
   LockSimple,
   PencilSimple,
   Trash,
+  Warning,
   X,
 } from "@phosphor-icons/react";
+import type { SkillIssue } from "@posthog/core/skills/analyzeSkills";
 import type { SkillInfo } from "@posthog/shared";
 import { CodeMirrorEditor } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
@@ -16,6 +18,7 @@ import {
   Badge,
   Box,
   Button,
+  Callout,
   Dialog,
   Flex,
   ScrollArea,
@@ -44,9 +47,14 @@ function stripFrontmatter(content: string): string {
 interface SkillDetailPanelProps {
   skill: SkillInfo;
   onClose: () => void;
+  issues?: SkillIssue[];
 }
 
-export function SkillDetailPanel({ skill, onClose }: SkillDetailPanelProps) {
+export function SkillDetailPanel({
+  skill,
+  onClose,
+  issues = [],
+}: SkillDetailPanelProps) {
   const config = SOURCE_CONFIG[skill.source];
 
   const [selectedFile, setSelectedFile] = useState("SKILL.md");
@@ -224,6 +232,26 @@ export function SkillDetailPanel({ skill, onClose }: SkillDetailPanelProps) {
             <ExternalAppsOpener targetPath={skill.path} />
           )}
         </Flex>
+
+        {issues.length > 0 && (
+          <Flex direction="column" gap="1">
+            {issues.map((issue) => (
+              <Callout.Root
+                key={issue.type}
+                size="1"
+                color="amber"
+                variant="surface"
+              >
+                <Callout.Icon>
+                  <Warning size={12} />
+                </Callout.Icon>
+                <Callout.Text className="text-[12px]">
+                  {issue.message}
+                </Callout.Text>
+              </Callout.Root>
+            ))}
+          </Flex>
+        )}
       </Flex>
 
       {files.length > 1 && (

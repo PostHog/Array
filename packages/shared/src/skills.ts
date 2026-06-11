@@ -8,6 +8,8 @@ export interface SkillInfo {
   repoName?: string;
   /** Whether the skill lives in a directory we own on the user's behalf. */
   editable: boolean;
+  /** Size of SKILL.md in bytes (context-cost signal). */
+  skillMdBytes: number;
 }
 
 export interface SkillFileEntry {

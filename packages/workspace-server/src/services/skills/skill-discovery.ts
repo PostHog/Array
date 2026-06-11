@@ -131,6 +131,7 @@ export async function readSkillMetadataFromDir(
           path: skillPath,
           ...(repoName ? { repoName } : {}),
           editable: isEditableSource(source),
+          skillMdBytes: Buffer.byteLength(content, "utf-8"),
         } satisfies SkillInfo;
       } catch {
         return null;
