@@ -113,6 +113,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Rebuild better-sqlite3 for Electron
+        run: node scripts/rebuild-better-sqlite3-electron.mjs
+
       - name: Build packages
         run: |
           pnpm --filter @posthog/electron-trpc build &
