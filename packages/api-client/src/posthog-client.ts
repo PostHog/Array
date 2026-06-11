@@ -922,6 +922,49 @@ function normalizeNoteArtefact(
   };
 }
 
+/** Best human-readable one-liner from arbitrary artefact content. */
+function contentPreview(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (isObjectRecord(content)) {
+    for (const key of ["note", "explanation", "reason", "message", "content"]) {
+      const v = content[key];
+      if (typeof v === "string" && v.trim()) return v;
+    }
+  }
+  try {
+    const text = JSON.stringify(content);
+    return text && text !== "{}" && text !== "null" ? text.slice(0, 300) : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Last-resort normalizer: keeps the row (type, timestamps, attribution, a text
+ * preview) when its content doesn't match the type's expected shape, so an
+ * artefact never silently vanishes from the activity log.
+ */
+function normalizeFallbackArtefact(
+  value: Record<string, unknown>,
+): SignalReportArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+  return {
+    id,
+    type: optionalString(value.type) ?? "unknown",
+    degraded: true,
+    ...artefactBase(value),
+    content: {
+      session_id: "",
+      start_time: "",
+      end_time: "",
+      distinct_id: "",
+      content: contentPreview(value.content),
+      distance_to_centroid: null,
+    },
+  };
+}
+
 function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   if (!isObjectRecord(value)) {
     return null;
@@ -929,40 +972,58 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
 
   const dispatchType = optionalString(value.type);
   if (dispatchType === "signal_finding") {
-    return normalizeSignalFindingArtefact(value);
+    return (
+      normalizeSignalFindingArtefact(value) ?? normalizeFallbackArtefact(value)
+    );
   }
   if (dispatchType === "actionability_judgment") {
-    return normalizeActionabilityJudgmentArtefact(value);
+    return (
+      normalizeActionabilityJudgmentArtefact(value) ??
+      normalizeFallbackArtefact(value)
+    );
   }
   if (dispatchType === "safety_judgment") {
-    return normalizeSafetyJudgmentArtefact(value);
+    return (
+      normalizeSafetyJudgmentArtefact(value) ?? normalizeFallbackArtefact(value)
+    );
   }
   if (dispatchType === "priority_judgment") {
-    return normalizePriorityJudgmentArtefact(value);
+    return (
+      normalizePriorityJudgmentArtefact(value) ??
+      normalizeFallbackArtefact(value)
+    );
   }
   if (dispatchType === "repo_selection") {
-    return normalizeRepoSelectionArtefact(value);
+    return (
+      normalizeRepoSelectionArtefact(value) ?? normalizeFallbackArtefact(value)
+    );
   }
   if (dispatchType === "dismissal") {
-    return normalizeDismissalArtefact(value);
+    return (
+      normalizeDismissalArtefact(value) ?? normalizeFallbackArtefact(value)
+    );
   }
   if (dispatchType === "code_reference") {
-    return normalizeCodeReferenceArtefact(value);
+    return (
+      normalizeCodeReferenceArtefact(value) ?? normalizeFallbackArtefact(value)
+    );
   }
   if (dispatchType === "code_diff") {
-    return normalizeCodeDiffArtefact(value);
+    return normalizeCodeDiffArtefact(value) ?? normalizeFallbackArtefact(value);
   }
   if (dispatchType === "line_reference") {
-    return normalizeLineReferenceArtefact(value);
+    return (
+      normalizeLineReferenceArtefact(value) ?? normalizeFallbackArtefact(value)
+    );
   }
   if (dispatchType === "commit") {
-    return normalizeCommitArtefact(value);
+    return normalizeCommitArtefact(value) ?? normalizeFallbackArtefact(value);
   }
   if (dispatchType === "task_run") {
-    return normalizeTaskRunArtefact(value);
+    return normalizeTaskRunArtefact(value) ?? normalizeFallbackArtefact(value);
   }
   if (dispatchType === "note") {
-    return normalizeNoteArtefact(value);
+    return normalizeNoteArtefact(value) ?? normalizeFallbackArtefact(value);
   }
 
   const id = optionalString(value.id);
@@ -985,7 +1046,7 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   // video_segment and other artefacts with object content
   const contentValue = isObjectRecord(value.content) ? value.content : null;
   if (!contentValue) {
-    return null;
+    return normalizeFallbackArtefact(value);
   }
 
   const content = optionalString(contentValue.content);
@@ -993,7 +1054,7 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
 
   // The backend may return empty content objects when binary decode fails.
   if (!content && !sessionId) {
-    return null;
+    return normalizeFallbackArtefact(value);
   }
 
   return {

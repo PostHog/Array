@@ -322,6 +322,12 @@ export interface SignalReportArtefactBase {
   created_by?: UserBasic | null;
   /** Task the artefact is attributed to, when an agent produced it. */
   task_id?: string | null;
+  /**
+   * True when the row's content did not match its type's expected shape and was
+   * normalized to a plain text preview instead — the entry still renders rather
+   * than silently vanishing from the activity log.
+   */
+  degraded?: boolean;
 }
 
 export interface SignalReportArtefact extends SignalReportArtefactBase {

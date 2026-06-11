@@ -250,6 +250,17 @@ function ArtefactBody({
   reportId: string;
   artefact: AnySignalReportArtefact;
 }) {
+  // Degraded rows carry a plain text preview instead of their type's content
+  // shape — render that rather than feeding mismatched content to a typed body.
+  if (artefact.degraded) {
+    const text = (artefact.content as SignalReportArtefactContent | null)
+      ?.content;
+    return (
+      <Text className="block text-(--gray-10) text-[12px]">
+        {text || "No preview available."}
+      </Text>
+    );
+  }
   switch (artefact.type) {
     case "code_reference": {
       const c = artefact.content as CodeReferenceContent;

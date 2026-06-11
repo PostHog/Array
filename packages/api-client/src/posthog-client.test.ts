@@ -386,6 +386,228 @@ describe("PostHogAPIClient", () => {
     });
   });
 
+  describe("getSignalReportArtefacts", () => {
+    function makeClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = {
+        baseUrl: "http://localhost:8000",
+        fetcher: { fetch },
+      };
+      return client;
+    }
+
+    // One row per backend ArtefactType (products/signals/backend/models.py),
+    // content shapes mirroring artefact_schemas.py / real API payloads.
+    const ROWS = [
+      {
+        id: "a1",
+        type: "video_segment",
+        content: {
+          session_id: "s1",
+          start_time: "2026-06-01T00:00:00Z",
+          end_time: "2026-06-01T00:01:00Z",
+          distinct_id: "d1",
+          content: "user rage-clicked the save button",
+          distance_to_centroid: 0.1,
+        },
+        created_at: "2026-06-01T00:00:00Z",
+      },
+      {
+        id: "a2",
+        type: "safety_judgment",
+        content: { choice: true, explanation: "No prompt injection found." },
+        created_at: "2026-06-01T00:00:01Z",
+        task_id: "t1",
+      },
+      {
+        id: "a3",
+        type: "actionability_judgment",
+        content: {
+          explanation: "Clear repro and code path.",
+          actionability: "immediately_actionable",
+          already_addressed: false,
+        },
+        created_at: "2026-06-01T00:00:02Z",
+      },
+      {
+        id: "a4",
+        type: "priority_judgment",
+        content: { explanation: "Cosmetic race.", priority: "P3" },
+        created_at: "2026-06-01T00:00:03Z",
+      },
+      {
+        id: "a5",
+        type: "signal_finding",
+        content: {
+          signal_id: "sig-1",
+          relevant_code_paths: ["a.ts"],
+          relevant_commit_hashes: { abc1234: "introduced the bug" },
+          data_queried: "execute-sql",
+          verified: true,
+        },
+        created_at: "2026-06-01T00:00:04Z",
+      },
+      {
+        id: "a6",
+        type: "repo_selection",
+        content: { repository: "posthog/posthog", reason: "Caller provided." },
+        created_at: "2026-06-01T00:00:05Z",
+      },
+      {
+        id: "a7",
+        type: "suggested_reviewers",
+        content: [
+          {
+            github_login: "octocat",
+            github_name: "Octo Cat",
+            relevant_commits: [],
+            user: null,
+          },
+        ],
+        created_at: "2026-06-01T00:00:06Z",
+      },
+      {
+        id: "a8",
+        type: "dismissal",
+        content: {
+          reason: "already_fixed",
+          note: "",
+          user_id: 1,
+          user_uuid: null,
+        },
+        created_at: "2026-06-01T00:00:07Z",
+      },
+      {
+        id: "a9",
+        type: "code_reference",
+        content: {
+          file_path: "src/a.ts",
+          start_line: 1,
+          end_line: 3,
+          contents: "let x = 1",
+          relevance_note: "origin",
+        },
+        created_at: "2026-06-01T00:00:08Z",
+      },
+      {
+        id: "a10",
+        type: "code_diff",
+        content: {
+          file_path: "src/a.ts",
+          diff: "--- a\n+++ b",
+          relevance_note: "proposed fix",
+        },
+        created_at: "2026-06-01T00:00:09Z",
+      },
+      {
+        id: "a11",
+        type: "line_reference",
+        content: {
+          file_path: "src/a.ts",
+          line: 2,
+          note: "here",
+          contents: "x++",
+        },
+        created_at: "2026-06-01T00:00:10Z",
+      },
+      {
+        id: "a12",
+        type: "commit",
+        content: {
+          repository: "posthog/posthog",
+          branch: "main",
+          commit_sha: "abc1234",
+          message: "fix",
+          note: null,
+        },
+        created_at: "2026-06-01T00:00:11Z",
+      },
+      {
+        id: "a13",
+        type: "task_run",
+        content: { task_id: "t1", product: "tasks", type: "agent_run" },
+        created_at: "2026-06-01T00:00:12Z",
+        task_id: "t1",
+      },
+      {
+        id: "a14",
+        type: "note",
+        content: { note: "Guinea-pig probe note." },
+        created_at: "2026-06-01T00:00:13Z",
+        task_id: "t1",
+        created_by: null,
+      },
+    ];
+
+    it("normalizes every backend artefact type without dropping rows", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ count: ROWS.length, results: ROWS }),
+      });
+      const client = makeClient(fetch);
+
+      const { results, unavailableReason } =
+        await client.getSignalReportArtefacts("r1");
+
+      expect(unavailableReason).toBeUndefined();
+      expect(results.map((a) => a.id)).toEqual(ROWS.map((r) => r.id));
+      expect(results.map((a) => a.type)).toEqual(ROWS.map((r) => r.type));
+      expect(results.every((a) => !a.degraded)).toBe(true);
+    });
+
+    it("keeps rows whose content does not match the type's shape as degraded previews", async () => {
+      const rows = [
+        // commit missing branch/sha — must not vanish
+        {
+          id: "bad1",
+          type: "commit",
+          content: { repository: "posthog/posthog", message: "where am I" },
+          created_at: "2026-06-01T00:00:00Z",
+          task_id: "t1",
+        },
+        // unknown future type with arbitrary object content
+        {
+          id: "bad2",
+          type: "deploy_event",
+          content: { reason: "rolled back v2" },
+          created_at: "2026-06-01T00:00:01Z",
+        },
+        // empty content
+        {
+          id: "bad3",
+          type: "note",
+          content: {},
+          created_at: "2026-06-01T00:00:02Z",
+        },
+      ];
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ count: rows.length, results: rows }),
+      });
+      const client = makeClient(fetch);
+
+      const { results } = await client.getSignalReportArtefacts("r1");
+
+      expect(results.map((a) => a.id)).toEqual(["bad1", "bad2", "bad3"]);
+      expect(results.every((a) => a.degraded)).toBe(true);
+      expect(results[0].type).toBe("commit");
+      expect((results[1].content as { content: string }).content).toBe(
+        "rolled back v2",
+      );
+      // attribution survives the fallback path
+      expect(results[0].task_id).toBe("t1");
+    });
+  });
+
   describe("updateSignalReportArtefact", () => {
     const ARTEFACT_PATH =
       "/api/projects/123/signals/reports/report-1/artefacts/art-1/";
