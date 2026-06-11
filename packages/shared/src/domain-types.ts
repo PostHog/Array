@@ -26,7 +26,7 @@ export const effortLevelSchema = z.enum([
 ]);
 export type EffortLevel = z.infer<typeof effortLevelSchema>;
 
-interface UserBasic {
+export interface UserBasic {
   id: number;
   uuid: string;
   distinct_id?: string | null;
@@ -309,19 +309,30 @@ export interface SignalReportArtefactContent {
   distance_to_centroid: number | null;
 }
 
-export interface SignalReportArtefact {
+/**
+ * Fields shared by every artefact row. `created_by` / `task_id` carry attribution:
+ * at most one is set — `created_by` for user writes, `task_id` for agent writes,
+ * neither for system (pipeline) writes.
+ */
+export interface SignalReportArtefactBase {
   id: string;
+  created_at: string;
+  updated_at?: string | null;
+  /** User the artefact is attributed to, when a user produced it. */
+  created_by?: UserBasic | null;
+  /** Task the artefact is attributed to, when an agent produced it. */
+  task_id?: string | null;
+}
+
+export interface SignalReportArtefact extends SignalReportArtefactBase {
   type: string;
   content: SignalReportArtefactContent;
-  created_at: string;
 }
 
 /** Artefact with `type: "priority_judgment"` — priority assessment from the agentic report. */
-export interface PriorityJudgmentArtefact {
-  id: string;
+export interface PriorityJudgmentArtefact extends SignalReportArtefactBase {
   type: "priority_judgment";
   content: PriorityJudgmentContent;
-  created_at: string;
 }
 
 export interface PriorityJudgmentContent {
@@ -330,11 +341,10 @@ export interface PriorityJudgmentContent {
 }
 
 /** Artefact with `type: "actionability_judgment"` — actionability assessment from the agentic report. */
-export interface ActionabilityJudgmentArtefact {
-  id: string;
+export interface ActionabilityJudgmentArtefact
+  extends SignalReportArtefactBase {
   type: "actionability_judgment";
   content: ActionabilityJudgmentContent;
-  created_at: string;
 }
 
 export interface ActionabilityJudgmentContent {
@@ -344,11 +354,9 @@ export interface ActionabilityJudgmentContent {
 }
 
 /** Artefact with `type: "signal_finding"` — per-signal research finding from the agentic report. */
-export interface SignalFindingArtefact {
-  id: string;
+export interface SignalFindingArtefact extends SignalReportArtefactBase {
   type: "signal_finding";
   content: SignalFindingContent;
-  created_at: string;
 }
 
 export interface SignalFindingContent {
@@ -360,11 +368,9 @@ export interface SignalFindingContent {
 }
 
 /** Artefact with `type: "repo_selection"` - selected repository for the report run. */
-export interface RepoSelectionArtefact {
-  id: string;
+export interface RepoSelectionArtefact extends SignalReportArtefactBase {
   type: "repo_selection";
   content: RepoSelectionContent;
-  created_at: string;
 }
 
 export interface RepoSelectionContent {
@@ -373,19 +379,15 @@ export interface RepoSelectionContent {
 }
 
 /** Artefact with `type: "suggested_reviewers"` — content is an enriched reviewer list. */
-export interface SuggestedReviewersArtefact {
-  id: string;
+export interface SuggestedReviewersArtefact extends SignalReportArtefactBase {
   type: "suggested_reviewers";
   content: SuggestedReviewer[];
-  created_at: string;
 }
 
 /** Artefact with `type: "dismissal"` — captures the user's rationale when suppressing a report. */
-export interface DismissalArtefact {
-  id: string;
+export interface DismissalArtefact extends SignalReportArtefactBase {
   type: "dismissal";
   content: DismissalContent;
-  created_at: string;
 }
 
 export interface DismissalContent {
@@ -404,12 +406,9 @@ export interface DismissalContent {
 // Content shapes mirror products/signals/backend/artefact_schemas.py.
 
 /** Artefact with `type: "code_reference"` — a contiguous span of source lines. */
-export interface CodeReferenceArtefact {
-  id: string;
+export interface CodeReferenceArtefact extends SignalReportArtefactBase {
   type: "code_reference";
   content: CodeReferenceContent;
-  created_at: string;
-  updated_at?: string | null;
 }
 
 export interface CodeReferenceContent {
@@ -421,12 +420,9 @@ export interface CodeReferenceContent {
 }
 
 /** Artefact with `type: "code_diff"` — a unified diff for a single file. */
-export interface CodeDiffArtefact {
-  id: string;
+export interface CodeDiffArtefact extends SignalReportArtefactBase {
   type: "code_diff";
   content: CodeDiffContent;
-  created_at: string;
-  updated_at?: string | null;
 }
 
 export interface CodeDiffContent {
@@ -436,12 +432,9 @@ export interface CodeDiffContent {
 }
 
 /** Artefact with `type: "line_reference"` — a single source line callout (a point). */
-export interface LineReferenceArtefact {
-  id: string;
+export interface LineReferenceArtefact extends SignalReportArtefactBase {
   type: "line_reference";
   content: LineReferenceContent;
-  created_at: string;
-  updated_at?: string | null;
 }
 
 export interface LineReferenceContent {
@@ -453,14 +446,9 @@ export interface LineReferenceContent {
 }
 
 /** Artefact with `type: "commit"` — one commit pushed in relation to the report. */
-export interface CommitArtefact {
-  id: string;
+export interface CommitArtefact extends SignalReportArtefactBase {
   type: "commit";
   content: CommitContent;
-  created_at: string;
-  updated_at?: string | null;
-  /** Task the artefact is attributed to (the agent session that pushed it), when known. */
-  task_id?: string | null;
 }
 
 export interface CommitContent {
@@ -472,12 +460,9 @@ export interface CommitContent {
 }
 
 /** Artefact with `type: "task_run"` — a reference to a `tasks.Task` run for the report. */
-export interface TaskRunArtefact {
-  id: string;
+export interface TaskRunArtefact extends SignalReportArtefactBase {
   type: "task_run";
   content: TaskRunArtefactContent;
-  created_at: string;
-  updated_at?: string | null;
 }
 
 export interface TaskRunArtefactContent {
@@ -496,12 +481,9 @@ export interface TaskRunArtefactContent {
 }
 
 /** Artefact with `type: "note"` — a free-form note authored by an agent or by code. */
-export interface NoteArtefact {
-  id: string;
+export interface NoteArtefact extends SignalReportArtefactBase {
   type: "note";
   content: NoteContent;
-  created_at: string;
-  updated_at?: string | null;
 }
 
 export interface NoteContent {

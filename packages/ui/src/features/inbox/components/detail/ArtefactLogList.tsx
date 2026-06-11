@@ -68,6 +68,20 @@ function languageFromPath(filePath: string): string {
   return filePath.split(".").pop()?.toLowerCase() ?? "";
 }
 
+/**
+ * Who produced the artefact: a user's name, "agent" for task-attributed writes,
+ * or null for system (pipeline) writes and pre-attribution rows.
+ */
+function attributionLabel(artefact: AnySignalReportArtefact): string | null {
+  if (artefact.created_by) {
+    return artefact.created_by.first_name?.trim() || artefact.created_by.email;
+  }
+  if (artefact.task_id) {
+    return "agent";
+  }
+  return null;
+}
+
 // The generic `SignalReportArtefact` fallback carries `type: string`, so it stays
 // in every narrowed branch and breaks discriminated-union narrowing — the runtime
 // `type` dispatch is authoritative (content is set alongside type in the
@@ -377,6 +391,7 @@ function ArtefactRow({
 }) {
   const [showRaw, setShowRaw] = useState(false);
   const location = locationLabel(artefact);
+  const attribution = attributionLabel(artefact);
 
   return (
     <Box className="rounded-lg border border-gray-6 bg-gray-1 p-3">
@@ -392,6 +407,11 @@ function ArtefactRow({
           ) : null}
         </Flex>
         <Flex align="center" gap="2" className="shrink-0">
+          {attribution ? (
+            <Text className="text-(--gray-10) text-[11px]">
+              by {attribution}
+            </Text>
+          ) : null}
           {/* Dev-only escape hatch for inspecting the raw artefact payload. */}
           {import.meta.env.DEV ? (
             <button
