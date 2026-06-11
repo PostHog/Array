@@ -16,8 +16,6 @@ import { Button } from "@posthog/quill";
 import {
   isTerminalStatus,
   type SignalReport,
-  type SignalReportTaskRelationship,
-  type Task,
   type TaskRunStatus,
 } from "@posthog/shared/types";
 import {
@@ -47,7 +45,10 @@ import {
   hasKnownSourceProduct,
 } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
 import { useInboxReportSignals } from "@posthog/ui/features/inbox/hooks/useInboxReports";
-import { useReportTasks } from "@posthog/ui/features/inbox/hooks/useReportTasks";
+import {
+  type ReportTaskData,
+  useReportTasks,
+} from "@posthog/ui/features/inbox/hooks/useReportTasks";
 import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
 import { TaskLogsPanel } from "@posthog/ui/features/task-detail/components/TaskLogsPanel";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
@@ -72,21 +73,8 @@ export function TaskRunStatusDot({ status }: { status: TaskRunStatus }) {
   );
 }
 
-export const RELATIONSHIP_LABEL: Record<SignalReportTaskRelationship, string> =
-  {
-    research: "Research",
-    implementation: "Implementation",
-    repo_selection: "Repo selection",
-  };
-
-interface RelevantTask {
-  task: Task;
-  relationship: SignalReportTaskRelationship;
-  startedAt: string;
-}
-
 /** Prefer in-motion tasks; tie-break by most-recently-created. */
-function pickPrimaryTask(tasks: RelevantTask[]): RelevantTask | null {
+function pickPrimaryTask(tasks: ReportTaskData[]): ReportTaskData | null {
   if (tasks.length === 0) return null;
   return [...tasks].sort((a, b) => {
     const aInMotion = !isTerminalStatus(a.task.latest_run?.status ?? "");
@@ -261,9 +249,7 @@ function AgentRunDetailContent({ report }: { report: SignalReport }) {
   // regardless of how the first attempt ended.
   const isReResearch = useMemo(() => {
     if (!reportTasks) return false;
-    const researchTasks = reportTasks.filter(
-      (rt) => rt.relationship === "research",
-    );
+    const researchTasks = reportTasks.filter((rt) => rt.purpose === "research");
     if (researchTasks.length < 2) return false;
     const hasInFlight = researchTasks.some(
       (rt) =>
@@ -449,8 +435,8 @@ function TaskLogRightSlot({
   selectedEntry,
   onSelect,
 }: {
-  entries: RelevantTask[];
-  selectedEntry: RelevantTask | null | undefined;
+  entries: ReportTaskData[];
+  selectedEntry: ReportTaskData | null | undefined;
   onSelect: (id: string) => void;
 }) {
   if (!selectedEntry) return null;
@@ -472,7 +458,7 @@ function TaskLogRightSlot({
           <TaskRunStatusDot
             status={selectedEntry.task.latest_run?.status ?? "not_started"}
           />
-          {RELATIONSHIP_LABEL[selectedEntry.relationship]}
+          {selectedEntry.purposeLabel}
           <CaretDownIcon size={12} className="text-gray-10" />
         </button>
       </DropdownMenu.Trigger>
@@ -487,7 +473,7 @@ function TaskLogRightSlot({
               <Flex align="center" gap="2" className="min-w-[200px]">
                 <TaskRunStatusDot status={status} />
                 <Text className="font-medium text-[12.5px]">
-                  {RELATIONSHIP_LABEL[entry.relationship]}
+                  {entry.purposeLabel}
                 </Text>
                 <Text className="ml-auto font-mono text-[11px] text-gray-10">
                   {entry.task.id.slice(0, 8)}

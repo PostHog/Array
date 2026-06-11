@@ -16,10 +16,7 @@ import {
   type Workspace,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import {
-  SIGNAL_REPORT_TASK_IMPLEMENTATION_RELATIONSHIP,
-  type Task,
-} from "@posthog/shared/domain-types";
+import type { Task } from "@posthog/shared/domain-types";
 import type { TaskCreationApiClient } from "./taskCreationApiClient";
 import type { ITaskCreationHost } from "./taskCreationHost";
 
@@ -478,10 +475,9 @@ export class TaskCreationSaga extends Saga<
           origin_product: input.signalReportId
             ? "signal_report"
             : "user_created",
+          // The server associates the task with the report and records the implementation
+          // task_run artefact — no relationship label is sent (associations are unlabelled).
           signal_report: input.signalReportId ?? undefined,
-          signal_report_task_relationship: input.signalReportId
-            ? SIGNAL_REPORT_TASK_IMPLEMENTATION_RELATIONSHIP
-            : undefined,
         });
         return result as unknown as Task;
       },
