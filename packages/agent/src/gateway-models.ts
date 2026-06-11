@@ -178,7 +178,9 @@ export function getProviderName(ownedBy: string): string {
 // "claude-fable-5" don't contain a tier keyword, so without an explicit entry
 // they'd land at an arbitrary gateway-determined position. Listing "fable" last
 // keeps it pinned after the flagships; any future unknown model sorts after it
-// while preserving the gateway's relative order.
+// while preserving the gateway's relative order. Matching is substring-based
+// and precedence follows array order: the first keyword here that appears in
+// the id wins, so an id containing two keywords resolves to the earlier tier.
 const CLAUDE_TIER_ORDER = ["opus", "sonnet", "haiku", "fable"];
 
 export function getClaudeModelTier(modelId: string): number {

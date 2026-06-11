@@ -86,4 +86,11 @@ describe("getClaudeModelTier", () => {
       getClaudeModelTier("claude-fable-5"),
     );
   });
+
+  it("resolves to the earlier tier when an id matches multiple keywords", () => {
+    // Substring match follows CLAUDE_TIER_ORDER: "opus" precedes "fable", so an
+    // id containing both pins to the opus tier. This pins the precedence
+    // contract so the behaviour is intentional rather than coincidental.
+    expect(getClaudeModelTier("claude-opus-fable-experiment")).toBe(0);
+  });
 });
