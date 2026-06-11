@@ -103,6 +103,9 @@ export function createMockQuery(
     stopTask: vi.fn().mockResolvedValue(undefined),
     applyFlagSettings: vi.fn().mockResolvedValue(undefined),
     getContextUsage: vi.fn().mockResolvedValue({}),
+    usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: vi
+      .fn()
+      .mockResolvedValue({}),
     reloadPlugins: vi.fn().mockResolvedValue(undefined),
     reloadSkills: vi.fn().mockResolvedValue(undefined),
     seedReadState: vi.fn().mockResolvedValue(undefined),

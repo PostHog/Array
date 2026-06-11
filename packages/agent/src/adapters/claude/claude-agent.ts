@@ -512,6 +512,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       enrichedReadCache: this.enrichedReadCache,
       logger: this.logger,
       supportsTerminalOutput,
+      streamedAssistantBlocks: {
+        textIds: new Set<string>(),
+        thinkingIds: new Set<string>(),
+      },
     };
 
     try {

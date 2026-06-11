@@ -79,6 +79,22 @@ type ChunkHandlerContext = {
   taskState?: TaskState;
 };
 
+/**
+ * Per-turn record of which top-level assistant message ids actually streamed
+ * text/thinking live via `stream_event` deltas. The consolidated assistant
+ * message normally has its text/thinking blocks dropped as duplicates of the
+ * streamed chunks, but gateways that return a turn as a single non-streamed
+ * block (common with OpenAI-compatible proxies) never fire deltas, so the
+ * assembled block is the only copy the client will ever see. Tracked per
+ * block type so a gateway that streams text but not thinking (or vice versa)
+ * doesn't lose the un-streamed block.
+ */
+export interface StreamedAssistantBlocks {
+  currentStreamMessageId?: string;
+  textIds: Set<string>;
+  thinkingIds: Set<string>;
+}
+
 export interface MessageHandlerContext {
   session: Session;
   sessionId: string;
@@ -91,6 +107,8 @@ export interface MessageHandlerContext {
   logger: Logger;
   registerHooks?: boolean;
   supportsTerminalOutput?: boolean;
+  /** Absent on replay, where the legacy drop-all text/thinking filter applies. */
+  streamedAssistantBlocks?: StreamedAssistantBlocks;
 }
 
 function messageUpdateType(role: Role) {
@@ -495,6 +513,7 @@ function processContentChunk(
     case "compaction_delta":
     case "advisor_tool_result":
     case "mid_conv_system":
+    case "fallback":
       return [];
 
     default:
@@ -930,6 +949,26 @@ export async function handleStreamEvent(
   } = context;
   const parentToolCallId = message.parent_tool_use_id ?? undefined;
 
+  const streamed = context.streamedAssistantBlocks;
+  if (streamed) {
+    if (message.event.type === "message_start") {
+      streamed.currentStreamMessageId = message.event.message.id || undefined;
+    }
+    // Only top-level streams are recorded — subagent text is never streamed
+    // and must stay filtered, as it is internal to the tool call.
+    if (
+      streamed.currentStreamMessageId &&
+      message.parent_tool_use_id === null &&
+      message.event.type === "content_block_delta"
+    ) {
+      if (message.event.delta.type === "text_delta") {
+        streamed.textIds.add(streamed.currentStreamMessageId);
+      } else if (message.event.delta.type === "thinking_delta") {
+        streamed.thinkingIds.add(streamed.currentStreamMessageId);
+      }
+    }
+  }
+
   for (const notification of streamEventToAcpNotifications(
     message,
     sessionId,
@@ -1067,15 +1106,43 @@ function logSpecialMessages(
   }
 }
 
-function filterMessageContent(
-  content: AnthropicMessageContent,
-): AnthropicMessageContent {
-  if (!Array.isArray(content)) {
-    return content;
+/**
+ * Drops assistant `text`/`thinking` blocks that already reached the client as
+ * streamed chunks, while forwarding (as a fallback) any non-empty block that
+ * never streamed — see `StreamedAssistantBlocks`. Subagent assistant content
+ * (`parent_tool_use_id !== null`) is never streamed and stays internal to its
+ * tool call, so it is always dropped, as is everything when no tracker is
+ * available (replay).
+ */
+function filterAssistantContent(
+  message: SDKAssistantMessage,
+  streamed: StreamedAssistantBlocks | undefined,
+): SDKAssistantMessage["message"]["content"] {
+  const content = message.message.content;
+  const isTopLevel =
+    "parent_tool_use_id" in message && message.parent_tool_use_id === null;
+  if (!streamed || !isTopLevel) {
+    return content.filter(
+      (block) => block.type !== "text" && block.type !== "thinking",
+    );
   }
-  return content.filter(
-    (block) => block.type !== "text" && block.type !== "thinking",
-  );
+
+  const id = message.message.id || undefined;
+  return content.filter((block) => {
+    if (block.type !== "text" && block.type !== "thinking") {
+      return true;
+    }
+    const streamedLive =
+      id !== undefined &&
+      (block.type === "text" ? streamed.textIds : streamed.thinkingIds).has(id);
+    if (streamedLive) {
+      return false;
+    }
+    // Some gateways emit an empty `thinking` block before the real text —
+    // don't forward stray empty chunks.
+    const blockText = block.type === "text" ? block.text : block.thinking;
+    return blockText.length > 0;
+  });
 }
 
 export async function handleUserAssistantMessage(
@@ -1137,7 +1204,9 @@ export async function handleUserAssistantMessage(
 
   const content = message.message.content;
   const contentToProcess =
-    message.type === "assistant" ? filterMessageContent(content) : content;
+    message.type === "assistant"
+      ? filterAssistantContent(message, context.streamedAssistantBlocks)
+      : content;
   const parentToolCallId =
     "parent_tool_use_id" in message
       ? (message.parent_tool_use_id ?? undefined)

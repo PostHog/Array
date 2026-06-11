@@ -5,8 +5,8 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 ## Fork Point
 
 - **Forked**: v0.10.9, commit `5411e0f4`, Dec 2 2025
-- **Last sync**: v0.42.0, commit `0dbccf5`, Jun 5 2026
-- **SDK**: `@anthropic-ai/claude-agent-sdk` 0.3.165, `@agentclientprotocol/sdk` 0.25.0, `@anthropic-ai/sdk` 0.100.1
+- **Last sync**: v0.44.0, commit `7de5e4b`, Jun 11 2026
+- **SDK**: `@anthropic-ai/claude-agent-sdk` 0.3.170, `@agentclientprotocol/sdk` 0.25.0, `@anthropic-ai/sdk` 0.104.1
 
 ## File Mapping
 
@@ -54,6 +54,45 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 | Session fingerprinting | Implicit teardown on cwd/mcp change | Explicit `refreshSession()` | Caller-initiated is more predictable |
 | Shutdown on ACP close | Process exits | No standalone process | Agent is embedded in server |
 | Unsupported slash commands | Loops silently on early idle | Emits "Unsupported slash command" chunk, gated on `initializationResult().commands` so plugin/skill commands (e.g. `/skills-store`) whose echoes use a fresh uuid are not false-flagged | The SDK consumes some slash commands without producing output (e.g. `/plugin` in non-interactive mode); without this we hang. The known-commands gate avoids racing plugin/skill loads where idle can arrive before the transformed user-message echo. |
+
+## Changes Ported in v0.44.0 Sync
+
+- **SDK bumps**: claude-agent-sdk 0.3.165 -> 0.3.170 (the 0.3.169 bump #754 was version-only),
+  anthropic SDK 0.100.1 -> 0.104.1 (upstream now carries it as a dev dependency; 0.104.1 matches
+  upstream HEAD), ACP SDK unchanged at 0.25.0.
+- **Forward unstreamed assistant text blocks** (#757, 7ff6b7f): The consolidated assistant
+  message's `text`/`thinking` blocks were always dropped as duplicates of the streamed chunks,
+  which loses the whole answer behind gateways that return a turn as a single non-streamed block
+  (common with OpenAI-compatible proxies). Added a per-turn `StreamedAssistantBlocks` tracker on
+  `MessageHandlerContext` (populated in `handleStreamEvent` from `message_start` ids +
+  `content_block_delta` types, top-level streams only); `filterAssistantContent` (replaces
+  `filterMessageContent`) now drops a block only if its exact (message id, block type) pair
+  streamed live or the block is empty. Subagent assistant text stays always-dropped, and the
+  replay path (no tracker) keeps the legacy drop-all filter — upstream's replay never filtered, so
+  this divergence is contained to `replaySessionHistory`. Covered by new unit tests in
+  `conversion/sdk-to-acp.test.ts`.
+- **`fallback` content block no-op** (#761, d8af943): New @anthropic-ai/sdk block type added to
+  the `processContentChunk` no-op group so it doesn't trip the `unreachable` default (same
+  treatment as `advisor_tool_result` / `mid_conv_system` in the v0.38 sync).
+- **Test mock**: added `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET` to the SDK
+  `MockQuery` (new method on the SDK `Query` interface in 0.3.170).
+
+## Skipped in v0.44.0 Sync
+
+- **Experimental elicitation support** (#756, 12bd276): Upstream re-enables AskUserQuestion by
+  rendering it through ACP's unstable elicitation API (`unstable_createElicitation`, gated on
+  `clientCapabilities.elicitation`) and forwards MCP-server elicitations the same way. Conflicts
+  with our AskUserQuestion divergence (own `questions/` machinery behind
+  `CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL`, plus existing AskUserQuestion rendering in
+  `conversion/tool-use-to-acp.ts`), and our renderer does not advertise elicitation capabilities.
+  Revisit if the renderer adopts ACP elicitation; the `elicitation_complete` system subtype also
+  stays unhandled (we never create elicitations, and `handleSystemMessage` defaults to no-op).
+- **`model_refusal_fallback` system subtype** (#761, d8af943): Upstream adds it to their
+  exhaustive status-TODO case group. Our `handleSystemMessage` ends in `default: break`, so the
+  new subtype already no-ops harmlessly (same precedent as the v0.38 `thinking_tokens` skip).
+- **Release / dep-group / dev-dep bumps** (#752, #758, #759, #763): No fork-relevant code beyond
+  the SDK versions captured above. (#751 `validateCwd` appears in upstream's v0.43.0 changelog but
+  predates our v0.42.0 sync point and is already in the fork at `claude-agent.ts`.)
 
 ## Changes Ported in v0.42.0 Sync
 
@@ -229,7 +268,7 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 
 ## Next Sync
 
-1. Check upstream changelog since v0.42.0
+1. Check upstream changelog since v0.44.0
 2. Diff upstream source against PostHog Code using the file mapping above
 3. Port in phases: bug fixes first, then features
 4. After each phase: `pnpm --filter agent typecheck && pnpm --filter agent build && pnpm lint`

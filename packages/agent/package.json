@@ -129,8 +129,8 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.25.0",
-    "@anthropic-ai/claude-agent-sdk": "0.3.165",
-    "@anthropic-ai/sdk": "0.100.1",
+    "@anthropic-ai/claude-agent-sdk": "0.3.170",
+    "@anthropic-ai/sdk": "0.104.1",
     "@hono/node-server": "^1.19.9",
     "@opentelemetry/api-logs": "^0.208.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.208.0",
