@@ -30,6 +30,7 @@ import {
   DEFAULT_GATEWAY_MODEL,
   fetchGatewayModels,
   formatGatewayModelName,
+  getClaudeModelTier,
   getProviderName,
   isAnthropicModel,
   isOpenAIModel,
@@ -1802,15 +1803,6 @@ For git operations while detached:
       provider: getProviderName(model.owned_by),
     }));
 
-    const CLAUDE_TIER_ORDER = ["opus", "sonnet", "haiku"];
-    const getModelTier = (modelId: string): number => {
-      const lowerId = modelId.toLowerCase();
-      for (let i = 0; i < CLAUDE_TIER_ORDER.length; i++) {
-        if (lowerId.includes(CLAUDE_TIER_ORDER[i])) return i;
-      }
-      return CLAUDE_TIER_ORDER.length;
-    };
-
     return mapped.sort((a, b) => {
       const providerOrder = ["Anthropic", "OpenAI", "Gemini"];
       const aProviderIdx = providerOrder.indexOf(a.provider ?? "");
@@ -1820,7 +1812,7 @@ For git operations while detached:
         const bIdx = bProviderIdx === -1 ? 999 : bProviderIdx;
         return aIdx - bIdx;
       }
-      return getModelTier(a.modelId) - getModelTier(b.modelId);
+      return getClaudeModelTier(a.modelId) - getClaudeModelTier(b.modelId);
     });
   }
 
@@ -1840,6 +1832,15 @@ For git operations while detached:
         name: formatGatewayModelName(model),
         description: `Context: ${model.context_window.toLocaleString()} tokens`,
       }));
+
+    // The gateway returns models in an arbitrary order. Sort Claude models by
+    // tier so the picker is deterministic and code-named models (e.g. fable)
+    // stay pinned last instead of floating to wherever the gateway lists them.
+    if (adapter === "claude") {
+      modelOptions.sort(
+        (a, b) => getClaudeModelTier(a.value) - getClaudeModelTier(b.value),
+      );
+    }
 
     const defaultModel =
       adapter === "codex"

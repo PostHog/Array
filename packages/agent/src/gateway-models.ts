@@ -174,6 +174,21 @@ export function getProviderName(ownedBy: string): string {
   return PROVIDER_NAMES[ownedBy] ?? ownedBy;
 }
 
+// Display order for Claude model tiers in pickers. Code-named releases such as
+// "claude-fable-5" don't contain a tier keyword, so without an explicit entry
+// they'd land at an arbitrary gateway-determined position. Listing "fable" last
+// keeps it pinned after the flagships; any future unknown model sorts after it
+// while preserving the gateway's relative order.
+const CLAUDE_TIER_ORDER = ["opus", "sonnet", "haiku", "fable"];
+
+export function getClaudeModelTier(modelId: string): number {
+  const lowerId = modelId.toLowerCase();
+  for (let i = 0; i < CLAUDE_TIER_ORDER.length; i++) {
+    if (lowerId.includes(CLAUDE_TIER_ORDER[i])) return i;
+  }
+  return CLAUDE_TIER_ORDER.length;
+}
+
 const PROVIDER_PREFIXES = ["anthropic/", "openai/", "google-vertex/"];
 
 export function formatGatewayModelName(model: GatewayModel): string {
