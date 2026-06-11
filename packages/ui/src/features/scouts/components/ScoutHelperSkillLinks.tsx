@@ -1,44 +1,41 @@
-import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import type { ScoutSurface } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { useSkillsSelectionActions } from "@posthog/ui/features/skills/skillsSelectionStore";
 import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
+import { Link } from "@tanstack/react-router";
 
+// The two official scout helper skills are bundled with the PostHog plugin, so
+// they open in the in-app Skills view rather than linking out to GitHub. `name`
+// is the skill's frontmatter name, used to select it once Skills loads.
 const HELPER_SKILLS = [
-  {
-    label: "authoring scouts",
-    href: "https://github.com/PostHog/ai-plugin/tree/main/skills/authoring-signals-scouts",
-  },
-  {
-    label: "exploring scouts",
-    href: "https://github.com/PostHog/ai-plugin/tree/main/skills/exploring-signals-scouts",
-  },
+  { label: "authoring scouts", name: "authoring-signals-scouts" },
+  { label: "exploring scouts", name: "exploring-signals-scouts" },
 ];
 
-/** One-line pointer to the two official scout helper skills on GitHub. */
+/** One-line pointer to the two official scout helper skills, opened in-app. */
 export function ScoutHelperSkillLinks({ surface }: { surface: ScoutSurface }) {
+  const { requestSkill } = useSkillsSelectionActions();
   return (
     <Text className="text-[12px] text-gray-10">
       Helper skills:{" "}
       {HELPER_SKILLS.map((skill, index) => (
-        <span key={skill.href}>
+        <span key={skill.name}>
           {index > 0 ? " · " : null}
-          <a
-            href={skill.href}
-            target="_blank"
-            rel="noreferrer"
-            onClick={() =>
+          <Link
+            to="/skills"
+            onClick={() => {
               track(ANALYTICS_EVENTS.SCOUT_ACTION, {
                 action_type: "open_helper_skill",
                 surface,
                 helper_skill: skill.label,
-              })
-            }
-            className="inline-flex items-center gap-0.5 text-accent-11 no-underline hover:text-accent-12"
+              });
+              requestSkill(skill.name);
+            }}
+            className="text-accent-11 no-underline hover:text-accent-12"
           >
             {skill.label}
-            <ArrowSquareOutIcon size={11} />
-          </a>
+          </Link>
         </span>
       ))}
     </Text>

@@ -1,6 +1,7 @@
 import { Folder, Package, Storefront, User } from "@phosphor-icons/react";
 import type { SkillInfo, SkillSource } from "@posthog/shared";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
+import { useEffect, useRef } from "react";
 
 export const SOURCE_CONFIG: Record<
   SkillSource,
@@ -24,14 +25,31 @@ interface SkillCardProps {
   skill: SkillInfo;
   isSelected: boolean;
   onClick: () => void;
+  /** When true, scroll this card into view once (used for deep-linked skills). */
+  scrollIntoView?: boolean;
+  onScrolledIntoView?: () => void;
 }
 
-export function SkillCard({ skill, isSelected, onClick }: SkillCardProps) {
+export function SkillCard({
+  skill,
+  isSelected,
+  onClick,
+  scrollIntoView,
+  onScrolledIntoView,
+}: SkillCardProps) {
   const config = SOURCE_CONFIG[skill.source];
   const Icon = config?.icon ?? Package;
 
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!scrollIntoView) return;
+    ref.current?.scrollIntoView({ block: "center" });
+    onScrolledIntoView?.();
+  }, [scrollIntoView, onScrolledIntoView]);
+
   return (
     <Flex
+      ref={ref}
       align="center"
       gap="2"
       px="3"
@@ -72,6 +90,8 @@ interface SkillSectionProps {
   skills: SkillInfo[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
+  scrollToPath: string | null;
+  onScrolledIntoView: () => void;
 }
 
 export function SkillSection({
@@ -79,6 +99,8 @@ export function SkillSection({
   skills,
   selectedPath,
   onSelect,
+  scrollToPath,
+  onScrolledIntoView,
 }: SkillSectionProps) {
   return (
     <Flex direction="column" gap="1">
@@ -92,6 +114,8 @@ export function SkillSection({
             skill={skill}
             isSelected={selectedPath === skill.path}
             onClick={() => onSelect(skill.path)}
+            scrollIntoView={scrollToPath === skill.path}
+            onScrolledIntoView={onScrolledIntoView}
           />
         ))}
       </Flex>
