@@ -8,6 +8,18 @@ import { inject, injectable, preDestroy } from "inversify";
 import { MCP_PROXY_AUTH } from "./identifiers";
 import type { McpProxyAuth } from "./ports";
 
+function waitForDrainOrClose(res: http.ServerResponse): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const settle = () => {
+      res.off("drain", settle);
+      res.off("close", settle);
+      resolve();
+    };
+    res.once("drain", settle);
+    res.once("close", settle);
+  });
+}
+
 function truncateRequestBody(body: RequestInit["body"]): string | undefined {
   if (body == null) return undefined;
   if (typeof body === "string") return body.slice(0, 2000);
@@ -151,9 +163,20 @@ export class McpProxyService {
       }
     }
 
+    // The client connection governs the request lifetime. An explicit signal
+    // also opts out of authenticatedFetch's default timeout, which would
+    // abort long-running MCP tool calls that outlive it.
+    const abort = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        abort.abort();
+      }
+    });
+
     const fetchOptions: RequestInit = {
       method: req.method ?? "GET",
       headers,
+      signal: abort.signal,
     };
 
     if (req.method !== "GET" && req.method !== "HEAD") {
@@ -209,7 +232,7 @@ export class McpProxyService {
             this.writeBufferedResponse(response, retryBuf, res);
             return;
           }
-          this.writeStreamingResponse(response, res);
+          await this.writeStreamingResponse(response, res);
           return;
         }
 
@@ -234,15 +257,23 @@ export class McpProxyService {
         return;
       }
 
-      this.writeStreamingResponse(response, res);
+      await this.writeStreamingResponse(response, res);
     } catch (err) {
-      this.log.error("MCP proxy forward error", {
-        id,
-        url,
-        method: options.method,
-        requestBody: truncateRequestBody(options.body),
-        err,
-      });
+      if (options.signal?.aborted) {
+        this.log.debug("Upstream fetch aborted after client disconnect", {
+          id,
+          url,
+          method: options.method,
+        });
+      } else {
+        this.log.error("MCP proxy forward error", {
+          id,
+          url,
+          method: options.method,
+          requestBody: truncateRequestBody(options.body),
+          err,
+        });
+      }
       if (!res.headersSent) {
         res.writeHead(502);
       }
@@ -300,18 +331,15 @@ export class McpProxyService {
     res.on("close", () => {
       void reader.cancel().catch(() => {});
     });
-    const pump = async (): Promise<void> => {
+    while (true) {
       const { done, value } = await reader.read();
       if (done) {
         res.end();
         return;
       }
-      const canContinue = res.write(value);
-      if (canContinue) {
-        return pump();
+      if (!res.write(value)) {
+        await waitForDrainOrClose(res);
       }
-      res.once("drain", () => pump());
-    };
-    await pump();
+    }
   }
 }

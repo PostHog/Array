@@ -8,6 +8,18 @@ import { inject, injectable } from "inversify";
 import { AUTH_PROXY_AUTH } from "./identifiers";
 import type { AuthProxyAuth } from "./ports";
 
+function waitForDrainOrClose(res: http.ServerResponse): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const settle = () => {
+      res.off("drain", settle);
+      res.off("close", settle);
+      resolve();
+    };
+    res.once("drain", settle);
+    res.once("close", settle);
+  });
+}
+
 @injectable()
 export class AuthProxyService {
   private server: http.Server | null = null;
@@ -144,9 +156,20 @@ export class AuthProxyService {
         headers[key] = value;
       }
     }
+    // The client connection governs the request lifetime. An explicit signal
+    // also opts out of authenticatedFetch's default timeout, which would
+    // abort streaming LLM responses that outlive it.
+    const abort = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        abort.abort();
+      }
+    });
+
     const fetchOptions: RequestInit = {
       method: req.method ?? "GET",
       headers,
+      signal: abort.signal,
     };
 
     if (req.method !== "GET" && req.method !== "HEAD") {
@@ -188,22 +211,24 @@ export class AuthProxyService {
       }
 
       const reader = response.body.getReader();
-      const pump = async (): Promise<void> => {
+      while (true) {
         const { done, value } = await reader.read();
         if (done) {
           res.end();
           return;
         }
-        const canContinue = res.write(value);
-        if (canContinue) {
-          return pump();
+        if (!res.write(value)) {
+          await waitForDrainOrClose(res);
         }
-        res.once("drain", () => pump());
-      };
-
-      await pump();
+      }
     } catch (err) {
-      this.log.error("Proxy forward error", { url, err });
+      if (options.signal?.aborted) {
+        this.log.debug("Upstream fetch aborted after client disconnect", {
+          url,
+        });
+      } else {
+        this.log.error("Proxy forward error", { url, err });
+      }
       if (!res.headersSent) {
         res.writeHead(502);
       }
