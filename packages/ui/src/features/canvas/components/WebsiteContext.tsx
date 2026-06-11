@@ -231,7 +231,10 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
               size="1"
               variant="solid"
               onClick={onSave}
-              disabled={isPublishing || (!hasDraft && hasInstructions)}
+              disabled={
+                isPublishing ||
+                (hasInstructions ? !hasDraft : draft.trim().length === 0)
+              }
             >
               {isPublishing ? <Spinner size="1" /> : null}
               Save new version
