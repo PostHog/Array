@@ -1,6 +1,5 @@
 import {
   ArrowLeftIcon,
-  ArrowSquareOutIcon,
   CaretRightIcon,
   CompassIcon,
 } from "@phosphor-icons/react";
@@ -35,6 +34,7 @@ import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";
 import { ScoutRowCard } from "./ScoutRowCard";
 import { ScoutSignalsSection } from "./ScoutSignalsSection";
+import { ScoutTaskRunLink } from "./ScoutTaskRunLink";
 
 const FILTERS: { value: ScoutRunFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -323,24 +323,11 @@ function ScoutRunListItem({ run }: { run: ScoutRun }) {
           <Text className="font-mono text-[11px]">{run.run_id}</Text>
           <span className="flex-1" />
           {taskRunUrl ? (
-            <a
-              href={taskRunUrl}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() =>
-                track(ANALYTICS_EVENTS.SCOUT_ACTION, {
-                  action_type: "open_task_run",
-                  surface: "scout_detail",
-                  skill_name: run.skill_name,
-                  run_id: run.run_id,
-                  run_status: status,
-                })
-              }
-              className="inline-flex shrink-0 items-center gap-1 text-[11px] text-accent-11 no-underline hover:text-accent-12"
-            >
-              Open task run
-              <ArrowSquareOutIcon size={11} />
-            </a>
+            <ScoutTaskRunLink
+              run={run}
+              taskRunUrl={taskRunUrl}
+              runStatus={status}
+            />
           ) : (
             <Text className="shrink-0 text-[11px] text-gray-9">
               No task link available

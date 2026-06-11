@@ -10,6 +10,7 @@ import {
   type ScoutRollup,
   scoutSkillSlug,
 } from "@posthog/core/scouts/scoutPresentation";
+import { buildScoutCheckinPrompt } from "@posthog/core/scouts/scoutPrompts";
 import type { ScoutSurface } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { track } from "@posthog/ui/shell/analytics";
@@ -17,10 +18,7 @@ import { skillUrl } from "@posthog/ui/utils/posthogLinks";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import {
-  buildScoutCheckinPrompt,
-  useScoutChatTask,
-} from "../hooks/useScoutChatTask";
+import { useScoutChatTask } from "../hooks/useScoutChatTask";
 import type { ScoutConfigUpdate } from "../hooks/useScoutConfigMutations";
 import { DryRunBadge, ScoutOriginBadge } from "./ScoutBadges";
 import { ScoutConfigForm, ScoutEnabledSwitch } from "./ScoutConfigControls";

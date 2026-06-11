@@ -1,4 +1,3 @@
-import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import type { ScoutRun } from "@posthog/api-client/posthog-client";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { track } from "@posthog/ui/shell/analytics";
@@ -7,6 +6,7 @@ import { Box, Flex, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import { useScoutRunEmissions } from "../hooks/useScoutRunEmissions";
 import { ScoutEmissionCard } from "./ScoutEmissionCard";
+import { ScoutTaskRunLink } from "./ScoutTaskRunLink";
 
 /**
  * Cadence bounds a scout to ~48 runs per window (30-minute minimum interval),
@@ -108,7 +108,9 @@ function RunEmissions({ run }: { run: ScoutRun }) {
             ? "Couldn't load this run's signals."
             : "No signal details available for this run."}
         </Text>
-        {taskRunUrl ? <TaskRunLink run={run} taskRunUrl={taskRunUrl} /> : null}
+        {taskRunUrl ? (
+          <ScoutTaskRunLink run={run} taskRunUrl={taskRunUrl} />
+        ) : null}
       </Flex>
     );
   }
@@ -122,39 +124,11 @@ function RunEmissions({ run }: { run: ScoutRun }) {
           skillName={run.skill_name}
           footerEnd={
             taskRunUrl ? (
-              <TaskRunLink run={run} taskRunUrl={taskRunUrl} />
+              <ScoutTaskRunLink run={run} taskRunUrl={taskRunUrl} />
             ) : undefined
           }
         />
       ))}
     </Flex>
-  );
-}
-
-function TaskRunLink({
-  run,
-  taskRunUrl,
-}: {
-  run: ScoutRun;
-  taskRunUrl: string;
-}) {
-  return (
-    <a
-      href={taskRunUrl}
-      target="_blank"
-      rel="noreferrer"
-      onClick={() =>
-        track(ANALYTICS_EVENTS.SCOUT_ACTION, {
-          action_type: "open_task_run",
-          surface: "scout_detail",
-          skill_name: run.skill_name,
-          run_id: run.run_id,
-        })
-      }
-      className="inline-flex shrink-0 items-center gap-1 text-[11px] text-accent-11 no-underline hover:text-accent-12"
-    >
-      Open task run
-      <ArrowSquareOutIcon size={11} />
-    </a>
   );
 }

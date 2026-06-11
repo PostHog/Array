@@ -31,7 +31,10 @@ import { ScoutsFleetSection } from "@posthog/ui/features/scouts/components/Scout
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { GitHubIntegrationSection } from "@posthog/ui/features/settings/sections/GitHubIntegrationSection";
 import { SlackInboxNotificationsSettings } from "@posthog/ui/features/settings/sections/SlackInboxNotificationsSettings";
-import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import {
+  resolveDefaultCloudRepository,
+  useSettingsStore,
+} from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -261,13 +264,10 @@ function SetupTaskSection() {
     (state) => state.lastUsedCloudRepository,
   );
 
-  const setupRepository = useMemo(() => {
-    const normalizedLastUsed = lastUsedCloudRepository?.toLowerCase() ?? null;
-    if (normalizedLastUsed && repositories.includes(normalizedLastUsed)) {
-      return normalizedLastUsed;
-    }
-    return repositories[0] ?? null;
-  }, [lastUsedCloudRepository, repositories]);
+  const setupRepository = useMemo(
+    () => resolveDefaultCloudRepository(repositories, lastUsedCloudRepository),
+    [lastUsedCloudRepository, repositories],
+  );
 
   const handleStartSetup = useCallback(async () => {
     if (isStartingSetupTask) return;

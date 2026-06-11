@@ -7,6 +7,10 @@ import {
   sortConfigsForDisplay,
 } from "@posthog/core/scouts/scoutPresentation";
 import {
+  SCOUT_FLEET_OVERVIEW_PROMPT,
+  SCOUT_RECENT_SIGNALS_PROMPT,
+} from "@posthog/core/scouts/scoutPrompts";
+import {
   SCOUT_RUNS_WINDOW_HOURS,
   scoutRunsWindowLabel,
 } from "@posthog/core/scouts/scoutRunsWindow";
@@ -16,11 +20,7 @@ import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  SCOUT_FLEET_OVERVIEW_PROMPT,
-  SCOUT_RECENT_SIGNALS_PROMPT,
-  useScoutChatTask,
-} from "../hooks/useScoutChatTask";
+import { useScoutChatTask } from "../hooks/useScoutChatTask";
 import { useScoutConfigMutations } from "../hooks/useScoutConfigMutations";
 import { useScoutConfigs } from "../hooks/useScoutConfigs";
 import { useScoutRuns } from "../hooks/useScoutRuns";

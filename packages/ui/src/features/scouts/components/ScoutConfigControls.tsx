@@ -55,48 +55,6 @@ export function ScoutEnabledSwitch({
 }
 
 /**
- * The three per-scout controls in one horizontal strip: live vs dry-run,
- * cadence, and on/off. Used in the scout detail header where there is room.
- * Fleet rows show only the switch plus a gear that expands ScoutConfigForm.
- */
-export function ScoutConfigControls({
-  config,
-  onUpdate,
-}: ScoutConfigControlsProps) {
-  const intervalOptions = useIntervalOptions(config);
-
-  return (
-    <Flex align="center" gap="3" className="shrink-0">
-      <Tooltip content="Dry run executes the scout but holds back its findings">
-        <span>
-          <SettingsOptionSelect
-            value={config.emit ? "live" : "dry_run"}
-            options={MODE_OPTIONS}
-            ariaLabel={`${config.skill_name} mode`}
-            disabled={!config.enabled}
-            className="w-24"
-            onValueChange={(value) =>
-              onUpdate(config.id, { emit: value === "live" })
-            }
-          />
-        </span>
-      </Tooltip>
-      <SettingsOptionSelect
-        value={String(config.run_interval_minutes)}
-        options={intervalOptions}
-        ariaLabel={`${config.skill_name} run interval`}
-        disabled={!config.enabled}
-        className="w-36"
-        onValueChange={(value) =>
-          onUpdate(config.id, { run_interval_minutes: Number(value) })
-        }
-      />
-      <ScoutEnabledSwitch config={config} onUpdate={onUpdate} />
-    </Flex>
-  );
-}
-
-/**
  * Labeled settings form for one scout, shown when a fleet row's gear is
  * toggled open. Everything except enablement, which stays on the row.
  */
