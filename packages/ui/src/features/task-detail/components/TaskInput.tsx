@@ -117,6 +117,7 @@ export function TaskInput({
     lastUsedInitialTaskMode,
     setLastUsedReasoningEffort,
     setLastUsedModel,
+    _hasHydrated: settingsHydrated,
   } = useSettingsStore();
 
   const editorRef = useRef<EditorHandle>(null);
@@ -211,7 +212,17 @@ export function TaskInput({
     return lastUsedWorkspaceMode || "local";
   });
 
+  const didResolveWorkspaceModeRef = useRef(false);
+  useEffect(() => {
+    if (didResolveWorkspaceModeRef.current) return;
+    if (!settingsHydrated) return;
+    didResolveWorkspaceModeRef.current = true;
+    if (initialCloudRepository) return;
+    setWorkspaceModeState(lastUsedWorkspaceMode || "local");
+  }, [settingsHydrated, lastUsedWorkspaceMode, initialCloudRepository]);
+
   const setWorkspaceMode = (mode: WorkspaceMode) => {
+    didResolveWorkspaceModeRef.current = true;
     setWorkspaceModeState(mode);
     setLastUsedWorkspaceMode(mode);
     if (mode !== "cloud") {

@@ -130,6 +130,9 @@ interface SettingsStore {
   shouldShowHint: (key: string, max?: number) => boolean;
   recordHintShown: (key: string) => void;
   markHintLearned: (key: string) => void;
+
+  _hasHydrated: boolean;
+  setHasHydrated: (hydrated: boolean) => void;
 }
 
 // ---------- Store ----------
@@ -259,6 +262,9 @@ export const useSettingsStore = create<SettingsStore>()(
             },
           };
         }),
+
+      _hasHydrated: false,
+      setHasHydrated: (hydrated) => set({ _hasHydrated: hydrated }),
     }),
     {
       name: "settings-storage",
@@ -309,6 +315,9 @@ export const useSettingsStore = create<SettingsStore>()(
         // Onboarding hints
         hints: state.hints,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
       merge: (persisted, current) => {
         const merged = {
           ...current,

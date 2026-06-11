@@ -75,6 +75,33 @@ describe("feature settingsStore cloud selections", () => {
 
     expect(useSettingsStore.getState().allowBypassPermissions).toBe(true);
   });
+
+  it.each([
+    ["lastUsedWorkspaceMode", "local", "cloud"],
+    ["debugLogsCloudRuns", false, true],
+  ] as const)("rehydrates %s", async (field, initial, persisted) => {
+    getItem.mockResolvedValue(
+      JSON.stringify({ state: { [field]: persisted }, version: 0 }),
+    );
+
+    useSettingsStore.setState({ [field]: initial } as Parameters<
+      typeof useSettingsStore.setState
+    >[0]);
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState()[field]).toBe(persisted);
+  });
+
+  it("flips _hasHydrated once the persisted snapshot lands", async () => {
+    getItem.mockResolvedValue(JSON.stringify({ state: {}, version: 0 }));
+
+    useSettingsStore.setState({ _hasHydrated: false });
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState()._hasHydrated).toBe(true);
+  });
 });
 
 describe("feature settingsStore terminal font", () => {
