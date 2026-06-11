@@ -10,6 +10,7 @@ import {
 } from "@radix-ui/themes";
 import { useState } from "react";
 import { useFolders } from "../folders/useFolders";
+import { skillErrorDescription } from "./skillErrors";
 import { useCreateSkill } from "./useSkillMutations";
 
 const USER_SCOPE = "user";
@@ -42,7 +43,7 @@ export function NewSkillDialog({
       onCreated(result.path);
     } catch (error) {
       toast.error("Failed to create skill", {
-        description: error instanceof Error ? error.message : undefined,
+        description: skillErrorDescription(error),
       });
     }
   };

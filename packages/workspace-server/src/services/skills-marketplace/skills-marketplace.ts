@@ -1,11 +1,11 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import type { Unzipped } from "fflate";
 import { inject, injectable } from "inversify";
 import { unzipAsync } from "../posthog-plugin/extract-zip";
 import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
 import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
+import { getUserSkillsDir, isProbablyText } from "../skills/skill-discovery";
 import { validateSkillDirName } from "../skills/skills";
 import {
   type MarketplacePreviewFile,
@@ -35,12 +35,8 @@ interface CachedArchive {
   entries: Unzipped;
 }
 
-function userSkillsDir(): string {
-  return path.join(os.homedir(), ".claude", "skills");
-}
-
 function installedStatePath(): string {
-  return path.join(userSkillsDir(), "installed.json");
+  return path.join(getUserSkillsDir(), "installed.json");
 }
 
 /**
@@ -61,7 +57,7 @@ export async function readInstalledState(): Promise<InstalledSkillsFile> {
 }
 
 async function writeInstalledState(state: InstalledSkillsFile): Promise<void> {
-  await fs.promises.mkdir(userSkillsDir(), { recursive: true });
+  await fs.promises.mkdir(getUserSkillsDir(), { recursive: true });
   await fs.promises.writeFile(
     installedStatePath(),
     `${JSON.stringify(state, null, 2)}\n`,
@@ -84,11 +80,6 @@ export function findSkillDirPrefix(
   const match = matches[0];
   if (!match) return null;
   return match.slice(0, match.length - "SKILL.md".length);
-}
-
-function isProbablyText(bytes: Uint8Array): boolean {
-  const sample = bytes.subarray(0, 4096);
-  return !sample.includes(0);
 }
 
 /** Rejects zip entries that would escape the install directory (zip-slip). */
@@ -184,7 +175,7 @@ export class SkillsMarketplaceService {
     overwrite = false,
   ): Promise<{ path: string }> {
     validateSkillDirName(ref.skillId);
-    const target = path.join(userSkillsDir(), ref.skillId);
+    const target = path.join(getUserSkillsDir(), ref.skillId);
     if (fs.existsSync(target) && !overwrite) {
       throw new Error(
         `A skill named "${ref.skillId}" already exists. Reinstalling will replace your local version.`,

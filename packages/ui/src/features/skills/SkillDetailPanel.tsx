@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import type { SkillIssue } from "@posthog/core/skills/analyzeSkills";
 import type { SkillInfo } from "@posthog/shared";
+import { stripFrontmatter } from "@posthog/shared";
 import { CodeMirrorEditor } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { ExternalAppsOpener } from "@posthog/ui/features/task-detail/components/ExternalAppsOpener";
@@ -29,11 +30,12 @@ import {
   Tooltip,
 } from "@radix-ui/themes";
 import { useState } from "react";
+import { ReplaceSkillDialog } from "./ReplaceSkillDialog";
 import { SOURCE_CONFIG } from "./SkillCard";
 import { SkillFileEditor } from "./SkillFileEditor";
 import { SkillFileTree } from "./SkillFileTree";
 import { SkillManifestEditor } from "./SkillManifestEditor";
-import { stripFrontmatter } from "./stripFrontmatter";
+import { isSkillExistsError, skillErrorDescription } from "./skillErrors";
 import { useSkillContents, useSkillFile } from "./useSkillContents";
 import {
   useDeleteSkill,
@@ -103,7 +105,7 @@ export function SkillDetailPanel({
       setIsEditing(true);
     } catch (error) {
       toast.error("Failed to add file", {
-        description: error instanceof Error ? error.message : undefined,
+        description: skillErrorDescription(error),
       });
     }
   };
@@ -121,7 +123,7 @@ export function SkillDetailPanel({
       setRenameFrom(null);
     } catch (error) {
       toast.error("Failed to rename file", {
-        description: error instanceof Error ? error.message : undefined,
+        description: skillErrorDescription(error),
       });
     }
   };
@@ -140,7 +142,7 @@ export function SkillDetailPanel({
       setDeleteFileTarget(null);
     } catch (error) {
       toast.error("Failed to delete file", {
-        description: error instanceof Error ? error.message : undefined,
+        description: skillErrorDescription(error),
       });
     }
   };
@@ -157,7 +159,7 @@ export function SkillDetailPanel({
       });
     } catch (error) {
       toast.error("Failed to publish skill", {
-        description: error instanceof Error ? error.message : undefined,
+        description: skillErrorDescription(error),
       });
     }
   };
@@ -173,13 +175,12 @@ export function SkillDetailPanel({
         description: "Now editable under Your skills",
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      if (!overwrite && message.includes("already exists")) {
+      if (!overwrite && isSkillExistsError(error)) {
         setConfirmImportOverwrite(true);
         return;
       }
       toast.error("Failed to import skill", {
-        description: message || undefined,
+        description: skillErrorDescription(error),
       });
     }
   };
@@ -191,7 +192,7 @@ export function SkillDetailPanel({
       onClose();
     } catch (error) {
       toast.error("Failed to delete skill", {
-        description: error instanceof Error ? error.message : undefined,
+        description: skillErrorDescription(error),
       });
     }
   };
@@ -514,35 +515,13 @@ export function SkillDetailPanel({
         </AlertDialog.Content>
       </AlertDialog.Root>
 
-      <AlertDialog.Root
+      <ReplaceSkillDialog
         open={confirmImportOverwrite}
         onOpenChange={setConfirmImportOverwrite}
-      >
-        <AlertDialog.Content maxWidth="420px" size="2">
-          <AlertDialog.Title size="3">Replace local skill</AlertDialog.Title>
-          <AlertDialog.Description size="1">
-            A skill named "{skill.name}" already exists in your skills.
-            Importing will replace your local version, including any edits.
-          </AlertDialog.Description>
-          <Flex justify="end" gap="2" mt="4">
-            <AlertDialog.Cancel>
-              <Button size="1" variant="soft" color="gray">
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
-            <AlertDialog.Action>
-              <Button
-                size="1"
-                variant="solid"
-                color="red"
-                onClick={() => void handleImport(true)}
-              >
-                Replace
-              </Button>
-            </AlertDialog.Action>
-          </Flex>
-        </AlertDialog.Content>
-      </AlertDialog.Root>
+        skillName={skill.name}
+        verb="Importing"
+        onConfirm={() => void handleImport(true)}
+      />
 
       <AlertDialog.Root open={publishOpen} onOpenChange={setPublishOpen}>
         <AlertDialog.Content maxWidth="420px" size="2">

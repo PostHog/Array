@@ -189,18 +189,6 @@ export interface LlmSkillFileInput {
   content_type?: string;
 }
 
-export interface LlmSkillResolveResponse {
-  skill: LlmSkill;
-  versions: Array<{
-    id: string;
-    version: number;
-    created_by: LlmSkillCreatedBy | null;
-    created_at: string;
-    is_latest: boolean;
-  }>;
-  has_more: boolean;
-}
-
 export interface SignalSourceConfig {
   id: string;
   source_product:
@@ -3722,22 +3710,6 @@ export class PostHogAPIClient {
       throw new Error(`Failed to fetch team skill: ${response.statusText}`);
     }
     return (await response.json()) as LlmSkill;
-  }
-
-  /** Resolves a team skill plus its version history. */
-  async resolveLlmSkill(name: string): Promise<LlmSkillResolveResponse> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/environments/${teamId}/llm_skills/resolve/name/${encodeURIComponent(name)}`;
-    const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to resolve team skill: ${response.statusText}`);
-    }
-    return (await response.json()) as LlmSkillResolveResponse;
   }
 
   /** Creates a brand-new team skill (version 1). */

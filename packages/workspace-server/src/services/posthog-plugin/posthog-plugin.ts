@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   ROOT_LOGGER,
@@ -22,6 +22,7 @@ import {
 } from "@posthog/platform/storage-paths";
 import { TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable, postConstruct, preDestroy } from "inversify";
+import { getUserSkillsDir } from "../skills/skill-discovery";
 import { getCodexSkillsDir, mirrorUserSkillsToCodex } from "./codex-mirror";
 import {
   overlayDownloadedSkills,
@@ -33,7 +34,7 @@ const SKILLS_ZIP_URL = process.env.SKILLS_ZIP_URL ?? "";
 const CONTEXT_MILL_ZIP_URL = process.env.CONTEXT_MILL_ZIP_URL ?? "";
 const UPDATE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const CODEX_SKILLS_DIR = getCodexSkillsDir();
-const USER_SKILLS_DIR = join(homedir(), ".claude", "skills");
+const USER_SKILLS_DIR = getUserSkillsDir();
 
 interface PosthogPluginEvents {
   skillsUpdated: true;
@@ -113,13 +114,6 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
   }
 
   /**
-   * Returns the path to the plugin directory that should be used for agent sessions.
-   *
-   * - In dev mode: Vite already merged shipped + remote + local-dev skills, so use bundled path.
-   * - In prod: use the runtime plugin dir (with downloaded updates).
-   * - Fallback: bundled plugin path.
-   */
-  /**
    * Mirrors the user's skills out to Codex ("bring your skills, use them
    * anywhere"). Never fatal: a broken mirror must not affect the official
    * skills pipeline or the mutation that triggered it.
@@ -132,6 +126,13 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
     }
   }
 
+  /**
+   * Returns the path to the plugin directory that should be used for agent sessions.
+   *
+   * - In dev mode: Vite already merged shipped + remote + local-dev skills, so use bundled path.
+   * - In prod: use the runtime plugin dir (with downloaded updates).
+   * - Fallback: bundled plugin path.
+   */
   getPluginPath(): string {
     if (!this.appMeta.isProduction) {
       return this.bundledPluginDir;

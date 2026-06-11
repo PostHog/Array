@@ -4,6 +4,7 @@ import { useService } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
 import { useQueryClient } from "@tanstack/react-query";
+import { teamSkillsKeys } from "./useTeamSkills";
 
 /** Publishes a local user/repo skill to the team as a new LLMSkill version. */
 export function usePublishSkill() {
@@ -14,7 +15,7 @@ export function usePublishSkill() {
       service.publishLocalSkill(client, variables.skillPath),
     {
       onSuccess: () => {
-        void queryClient.invalidateQueries({ queryKey: ["team-skills"] });
+        void queryClient.invalidateQueries({ queryKey: teamSkillsKeys.all });
       },
     },
   );
@@ -35,7 +36,7 @@ export function useInstallTeamSkill() {
     {
       onSuccess: () => {
         void queryClient.invalidateQueries(trpc.skills.pathFilter());
-        void queryClient.invalidateQueries({ queryKey: ["team-skills"] });
+        void queryClient.invalidateQueries({ queryKey: teamSkillsKeys.all });
       },
     },
   );

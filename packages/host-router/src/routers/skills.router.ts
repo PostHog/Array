@@ -63,11 +63,7 @@ export const skillsRouter = router({
     .mutation(({ ctx, input }) =>
       ctx.container
         .get<SkillsService>(SKILLS_SERVICE)
-        .saveSkillManifest(input.skillPath, {
-          name: input.name,
-          description: input.description,
-          body: input.body,
-        }),
+        .saveSkillManifest(input.skillPath, input),
     ),
   saveFile: publicProcedure
     .input(saveSkillFileInput)

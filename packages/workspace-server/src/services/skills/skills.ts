@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
+import { stripFrontmatter } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import { WATCHER_SERVICE } from "../../di/tokens";
 import type { FoldersService } from "../folders/folders";
@@ -24,6 +24,8 @@ import type {
 } from "./schemas";
 import {
   getMarketplaceInstallPaths,
+  getUserSkillsDir,
+  isProbablyText,
   listSkillFiles,
   readSkillMetadataFromDir,
 } from "./skill-discovery";
@@ -215,7 +217,7 @@ export class SkillsService {
     const name = path.basename(resolved);
     validateSkillDirName(name);
 
-    const target = path.join(os.homedir(), ".claude", "skills", name);
+    const target = path.join(getUserSkillsDir(), name);
     if (fs.existsSync(target) && !overwrite) {
       throw new Error(
         `A skill named "${name}" already exists. Importing will replace your local version.`,
@@ -248,28 +250,35 @@ export class SkillsService {
     const frontmatter = parseSkillFrontmatter(manifest);
     const name = frontmatter?.name ?? path.basename(skillDir);
     const description = frontmatter?.description ?? "";
-    const body = stripFrontmatterBlock(manifest);
+    const body = stripFrontmatter(manifest);
 
-    const entries = await listSkillFiles(skillDir, MAX_SKILL_FILES);
-    const files: { path: string; content: string }[] = [];
-    const skipped: string[] = [];
-    for (const entry of entries) {
-      if (entry.path === "SKILL.md") continue;
-      if (entry.size > MAX_SKILL_FILE_BYTES) {
-        skipped.push(entry.path);
-        continue;
-      }
-      const bytes = await fs.promises.readFile(
-        path.join(skillDir, ...entry.path.split("/")),
-      );
-      if (bytes.subarray(0, 4096).includes(0)) {
-        skipped.push(entry.path);
-        continue;
-      }
-      files.push({ path: entry.path, content: bytes.toString("utf-8") });
-    }
+    const entries = (await listSkillFiles(skillDir, MAX_SKILL_FILES)).filter(
+      (entry) => entry.path !== "SKILL.md",
+    );
+    const results = await Promise.all(
+      entries.map(async (entry) => {
+        if (entry.size > MAX_SKILL_FILE_BYTES) {
+          return { path: entry.path, content: null };
+        }
+        const bytes = await fs.promises.readFile(
+          path.join(skillDir, ...entry.path.split("/")),
+        );
+        return {
+          path: entry.path,
+          content: isProbablyText(bytes) ? bytes.toString("utf-8") : null,
+        };
+      }),
+    );
 
-    return { name, description, body, files, skipped };
+    return {
+      name,
+      description,
+      body,
+      files: results.filter(
+        (r): r is { path: string; content: string } => r.content !== null,
+      ),
+      skipped: results.filter((r) => r.content === null).map((r) => r.path),
+    };
   }
 
   /**
@@ -282,7 +291,7 @@ export class SkillsService {
   ): Promise<{ path: string }> {
     const name = input.name.trim();
     validateSkillDirName(name);
-    const userRoot = path.join(os.homedir(), ".claude", "skills");
+    const userRoot = getUserSkillsDir();
     const target = path.join(userRoot, name);
     if (fs.existsSync(target) && !input.overwrite) {
       throw new Error(
@@ -305,11 +314,13 @@ export class SkillsService {
         ),
         "utf-8",
       );
-      for (const file of input.files) {
-        const filePath = resolveSkillFilePath(staging, file.path);
-        await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-        await fs.promises.writeFile(filePath, file.content, "utf-8");
-      }
+      await Promise.all(
+        input.files.map(async (file) => {
+          const filePath = resolveSkillFilePath(staging, file.path);
+          await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+          await fs.promises.writeFile(filePath, file.content, "utf-8");
+        }),
+      );
 
       const hadExisting = fs.existsSync(target);
       if (hadExisting) {
@@ -338,8 +349,14 @@ export class SkillsService {
    * `touch` from a terminal, ...).
    */
   async *watchSkills(signal?: AbortSignal): AsyncGenerator<{ changed: true }> {
+<<<<<<< HEAD
     const userRoot = path.join(os.homedir(), ".claude", "skills");
     // The user root is ours to create; missing repo roots are polled for.
+=======
+    const userRoot = getUserSkillsDir();
+    // The user root is ours to create; repo roots are watched as soon as
+    // they appear (watchSkillDirs polls for dirs that don't exist yet).
+>>>>>>> c61f657d5 (refactor(skills): apply simplify-pass cleanups across the stack)
     await fs.promises.mkdir(userRoot, { recursive: true }).catch(() => {});
     const folders = await this.folders.getFolders();
     const dirs = [
@@ -409,10 +426,7 @@ export class SkillsService {
 
     return [
       { dir: path.join(pluginPath, "skills"), source: "bundled" as const },
-      {
-        dir: path.join(os.homedir(), ".claude", "skills"),
-        source: "user" as const,
-      },
+      { dir: getUserSkillsDir(), source: "user" as const },
       ...folders.map((f) => ({
         dir: path.join(f.path, ".claude", "skills"),
         source: "repo" as const,
@@ -453,7 +467,7 @@ export class SkillsService {
   private async getWritableRoots(): Promise<string[]> {
     const folders = await this.folders.getFolders();
     return [
-      path.join(os.homedir(), ".claude", "skills"),
+      getUserSkillsDir(),
       ...folders.map((f) => path.join(f.path, ".claude", "skills")),
     ];
   }
@@ -463,7 +477,7 @@ export class SkillsService {
     repoPath: string | undefined,
   ): Promise<string> {
     if (scope === "user") {
-      return path.join(os.homedir(), ".claude", "skills");
+      return getUserSkillsDir();
     }
     const folders = await this.folders.getFolders();
     const folder = folders.find(
@@ -536,18 +550,13 @@ function dedupeCodexSkills(
   );
   return skills.filter((skill) => {
     if (skill.source !== "codex") return true;
-    const dirName = path.basename(skill.path);
+    // The mirror state stores directory names; frontmatter names only
+    // matter for the bundled copies, which keep theirs verbatim.
     return (
       !bundledNames.has(skill.name) &&
-      !mirroredNames.has(dirName) &&
-      !mirroredNames.has(skill.name)
+      !mirroredNames.has(path.basename(skill.path))
     );
   });
-}
-
-function stripFrontmatterBlock(content: string): string {
-  const match = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
-  return match ? content.slice(match[0].length).replace(/^\n+/, "") : content;
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {

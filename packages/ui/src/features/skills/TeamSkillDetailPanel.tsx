@@ -1,10 +1,10 @@
 import { DownloadSimple, UsersThree, X } from "@phosphor-icons/react";
 import type { TeamSkillInfo } from "@posthog/core/skills/teamSkillsService";
+import { stripFrontmatter } from "@posthog/shared";
 import { CodeMirrorEditor } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
-  AlertDialog,
   Badge,
   Box,
   Button,
@@ -14,8 +14,9 @@ import {
   Tooltip,
 } from "@radix-ui/themes";
 import { useState } from "react";
+import { ReplaceSkillDialog } from "./ReplaceSkillDialog";
 import { SkillFileTree } from "./SkillFileTree";
-import { stripFrontmatter } from "./stripFrontmatter";
+import { isSkillExistsError, skillErrorDescription } from "./skillErrors";
 import { useInstallTeamSkill } from "./useTeamSkillMutations";
 import { useTeamSkillDetail, useTeamSkillFile } from "./useTeamSkills";
 
@@ -47,13 +48,12 @@ export function TeamSkillDetailPanel({
         description: "Now available under Your skills",
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      if (!overwrite && message.includes("already exists")) {
+      if (!overwrite && isSkillExistsError(error)) {
         setConfirmOverwrite(true);
         return;
       }
       toast.error("Failed to install skill", {
-        description: message || undefined,
+        description: skillErrorDescription(error),
       });
     }
   };
@@ -174,35 +174,13 @@ export function TeamSkillDetailPanel({
         )}
       </Box>
 
-      <AlertDialog.Root
+      <ReplaceSkillDialog
         open={confirmOverwrite}
         onOpenChange={setConfirmOverwrite}
-      >
-        <AlertDialog.Content maxWidth="420px" size="2">
-          <AlertDialog.Title size="3">Replace local skill</AlertDialog.Title>
-          <AlertDialog.Description size="1">
-            A skill named "{skill.name}" already exists in your skills.
-            Reinstalling will replace your local version, including any edits.
-          </AlertDialog.Description>
-          <Flex justify="end" gap="2" mt="4">
-            <AlertDialog.Cancel>
-              <Button size="1" variant="soft" color="gray">
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
-            <AlertDialog.Action>
-              <Button
-                size="1"
-                variant="solid"
-                color="red"
-                onClick={() => void handleInstall(true)}
-              >
-                Replace
-              </Button>
-            </AlertDialog.Action>
-          </Flex>
-        </AlertDialog.Content>
-      </AlertDialog.Root>
+        skillName={skill.name}
+        verb="Reinstalling"
+        onConfirm={() => void handleInstall(true)}
+      />
     </>
   );
 }

@@ -79,37 +79,41 @@ export async function mirrorUserSkillsToCodex(
   const userNames = await findSkillDirs(userSkillsDir);
   await fs.promises.mkdir(codexDir, { recursive: true });
 
-  const nextMirrored: string[] = [];
-  for (const name of userNames) {
-    const target = path.join(codexDir, name);
-    if (fs.existsSync(target) && !previouslyMirrored.has(name)) {
-      continue;
-    }
-    await fs.promises.rm(target, { recursive: true, force: true });
-    try {
-      // dereference: mirrored skills must be self-contained.
-      await fs.promises.cp(path.join(userSkillsDir, name), target, {
-        recursive: true,
-        dereference: true,
-      });
-      nextMirrored.push(name);
-    } catch {
-      // Skip unreadable skills (e.g. broken symlinks); drop the partial copy.
+  const copied = await Promise.all(
+    userNames.map(async (name) => {
+      const target = path.join(codexDir, name);
+      if (fs.existsSync(target) && !previouslyMirrored.has(name)) {
+        return null;
+      }
       await fs.promises.rm(target, { recursive: true, force: true });
-    }
-  }
+      try {
+        // dereference: mirrored skills must be self-contained.
+        await fs.promises.cp(path.join(userSkillsDir, name), target, {
+          recursive: true,
+          dereference: true,
+        });
+        return name;
+      } catch {
+        // Skip unreadable skills (e.g. broken symlinks); drop the partial copy.
+        await fs.promises.rm(target, { recursive: true, force: true });
+        return null;
+      }
+    }),
+  );
 
-  for (const name of previouslyMirrored) {
-    if (!userNames.includes(name)) {
-      await fs.promises.rm(path.join(codexDir, name), {
-        recursive: true,
-        force: true,
-      });
-    }
-  }
+  await Promise.all(
+    [...previouslyMirrored]
+      .filter((name) => !userNames.includes(name))
+      .map((name) =>
+        fs.promises.rm(path.join(codexDir, name), {
+          recursive: true,
+          force: true,
+        }),
+      ),
+  );
 
   await writeCodexMirrorState(codexDir, {
     version: 1,
-    mirrored: nextMirrored,
+    mirrored: copied.filter((name): name is string => name !== null),
   });
 }

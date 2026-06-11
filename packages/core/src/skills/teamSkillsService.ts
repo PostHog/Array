@@ -35,6 +35,24 @@ export interface SkillsWorkspaceClient {
   ): Promise<{ path: string }>;
 }
 
+/**
+ * Marks team skills that already exist locally by name. Pure, so callers
+ * can re-apply it when the local listing changes without refetching.
+ */
+export function markInstalledTeamSkills(
+  listing: TeamSkillsListing,
+  localSkillNames: string[],
+): TeamSkillsListing {
+  const localNames = new Set(localSkillNames);
+  return {
+    ...listing,
+    skills: listing.skills.map((skill) => ({
+      ...skill,
+      installedLocally: localNames.has(skill.name),
+    })),
+  };
+}
+
 @injectable()
 export class TeamSkillsService {
   constructor(
@@ -63,24 +81,18 @@ export class TeamSkillsService {
   }
 
   /**
-   * Lists team skills merged with the local listing: the availability
-   * decision (flag off → absent group, no errors) and the "already
-   * installed locally" marking both live here, so the UI keeps one hook.
+   * Lists the team's latest skills, owning the availability decision
+   * (flag off → absent group, no errors). Combine with
+   * markInstalledTeamSkills for the merged local+team view.
    */
-  async listTeamSkills(
-    client: PostHogAPIClient,
-    localSkillNames: string[],
-  ): Promise<TeamSkillsListing> {
+  async listTeamSkills(client: PostHogAPIClient): Promise<TeamSkillsListing> {
     const items = await client.listLlmSkills();
     if (items === null) {
       return { available: false, skills: [] };
     }
-    const localNames = new Set(localSkillNames);
     return {
       available: true,
-      skills: items
-        .filter((item) => item.is_latest)
-        .map((item) => toTeamSkillInfo(item, localNames)),
+      skills: items.filter((item) => item.is_latest).map(toTeamSkillInfo),
     };
   }
 
@@ -151,10 +163,7 @@ export class TeamSkillsService {
   }
 }
 
-function toTeamSkillInfo(
-  item: LlmSkillListItem,
-  localNames: Set<string>,
-): TeamSkillInfo {
+function toTeamSkillInfo(item: LlmSkillListItem): TeamSkillInfo {
   return {
     id: item.id,
     name: item.name,
@@ -162,6 +171,6 @@ function toTeamSkillInfo(
     version: item.latest_version ?? item.version,
     updatedAt: item.updated_at,
     createdByEmail: item.created_by?.email ?? null,
-    installedLocally: localNames.has(item.name),
+    installedLocally: false,
   };
 }

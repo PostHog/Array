@@ -11,15 +11,13 @@ import {
 } from "@radix-ui/themes";
 import { useState } from "react";
 import { MarketplaceSkillPanel } from "./MarketplaceSkillPanel";
+import { SkillListCard } from "./SkillListCard";
 import { useSkillsSidebarStore } from "./skillsSidebarStore";
 import {
+  installsFormatter,
   type MarketplaceSkillSummary,
   useMarketplaceSearch,
 } from "./useMarketplace";
-
-const installsFormatter = new Intl.NumberFormat(undefined, {
-  notation: "compact",
-});
 
 export function MarketplaceBrowse() {
   const [query, setQuery] = useState("");
@@ -68,52 +66,41 @@ export function MarketplaceBrowse() {
             ) : (
               <Flex direction="column" gap="1">
                 {results.map((result) => (
-                  <Flex
+                  <SkillListCard
                     key={result.id}
-                    align="center"
-                    gap="2"
-                    px="3"
-                    py="2"
-                    className={`cursor-pointer rounded-lg border transition-colors ${
-                      selected?.id === result.id
-                        ? "border-accent-8 bg-accent-3"
-                        : "border-gray-6 bg-gray-2 hover:border-gray-8 hover:bg-gray-3"
-                    }`}
-                    onClick={() =>
-                      setSelected((prev) =>
-                        prev?.id === result.id ? null : result,
-                      )
-                    }
-                  >
-                    <Box className="flex shrink-0 items-center justify-center rounded bg-gray-4 p-1.5">
+                    icon={
                       <Storefront
                         size={14}
                         weight="duotone"
                         className="text-gray-11"
                       />
-                    </Box>
-                    <Flex direction="column" gap="0" className="min-w-0 flex-1">
-                      <Text className="truncate font-medium text-[13px] text-gray-12">
-                        {result.name}
-                      </Text>
-                      <Text className="truncate text-[12px] text-gray-10">
-                        {result.source}
-                      </Text>
-                    </Flex>
-                    {result.installed && (
-                      <Badge
-                        size="1"
-                        variant="soft"
-                        color="green"
-                        className="shrink-0"
-                      >
-                        Installed
-                      </Badge>
-                    )}
-                    <Text className="shrink-0 text-[12px] text-gray-9 tabular-nums">
-                      {installsFormatter.format(result.installs)}
-                    </Text>
-                  </Flex>
+                    }
+                    title={result.name}
+                    subtitle={result.source}
+                    isSelected={selected?.id === result.id}
+                    onClick={() =>
+                      setSelected((prev) =>
+                        prev?.id === result.id ? null : result,
+                      )
+                    }
+                    trailing={
+                      <>
+                        {result.installed && (
+                          <Badge
+                            size="1"
+                            variant="soft"
+                            color="green"
+                            className="shrink-0"
+                          >
+                            Installed
+                          </Badge>
+                        )}
+                        <Text className="shrink-0 text-[12px] text-gray-9 tabular-nums">
+                          {installsFormatter.format(result.installs)}
+                        </Text>
+                      </>
+                    }
+                  />
                 ))}
               </Flex>
             )}

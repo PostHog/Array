@@ -11,8 +11,9 @@ import type {
   SkillIssue,
 } from "@posthog/core/skills/analyzeSkills";
 import type { SkillInfo, SkillSource } from "@posthog/shared";
-import { Badge, Box, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { Badge, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useEffect, useRef } from "react";
+import { SkillListCard } from "./SkillListCard";
 
 export const SOURCE_CONFIG: Record<
   SkillSource,
@@ -62,56 +63,38 @@ export function SkillCard({
   }, [scrollIntoView, onScrolledIntoView]);
 
   return (
-    <Flex
-      ref={ref}
-      align="center"
-      gap="2"
-      px="3"
-      py="2"
-      className={`cursor-pointer rounded-lg border transition-colors ${
-        isSelected
-          ? "border-accent-8 bg-accent-3"
-          : "border-gray-6 bg-gray-2 hover:border-gray-8 hover:bg-gray-3"
-      }`}
+    <SkillListCard
+      cardRef={ref}
+      icon={<Icon size={14} weight="duotone" className="text-gray-11" />}
+      title={skill.name}
+      subtitle={skill.description || undefined}
+      isSelected={isSelected}
       onClick={onClick}
-    >
-      <Box className="flex shrink-0 items-center justify-center rounded bg-gray-4 p-1.5">
-        <Icon size={14} weight="duotone" className="text-gray-11" />
-      </Box>
-
-      <Flex direction="column" gap="0" className="min-w-0 flex-1">
-        <Text className="truncate font-medium text-[13px] text-gray-12">
-          {skill.name}
-        </Text>
-        {skill.description && (
-          <Text className="truncate text-[12px] text-gray-10">
-            {skill.description}
-          </Text>
-        )}
-      </Flex>
-
-      {issues.length > 0 && (
-        <Tooltip
-          content={
-            <Flex direction="column" gap="1">
-              {issues.map((issue) => (
-                <Text key={issue.message} size="1">
-                  {issue.message}
-                </Text>
-              ))}
-            </Flex>
-          }
-        >
-          <Warning size={14} className="shrink-0 text-amber-11" />
-        </Tooltip>
-      )}
-
-      {skill.repoName && (
-        <Badge size="1" variant="soft" color="gray" className="shrink-0">
-          {skill.repoName}
-        </Badge>
-      )}
-    </Flex>
+      trailing={
+        <>
+          {issues.length > 0 && (
+            <Tooltip
+              content={
+                <Flex direction="column" gap="1">
+                  {issues.map((issue) => (
+                    <Text key={issue.message} size="1">
+                      {issue.message}
+                    </Text>
+                  ))}
+                </Flex>
+              }
+            >
+              <Warning size={14} className="shrink-0 text-amber-11" />
+            </Tooltip>
+          )}
+          {skill.repoName && (
+            <Badge size="1" variant="soft" color="gray" className="shrink-0">
+              {skill.repoName}
+            </Badge>
+          )}
+        </>
+      }
+    />
   );
 }
 

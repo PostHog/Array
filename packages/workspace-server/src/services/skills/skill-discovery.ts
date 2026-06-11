@@ -20,6 +20,16 @@ export function isEditableSource(source: SkillSource): boolean {
   return source === "user" || source === "repo";
 }
 
+/** The user-level skills root (`~/.claude/skills`), owned by us. */
+export function getUserSkillsDir(): string {
+  return path.join(os.homedir(), ".claude", "skills");
+}
+
+/** Heuristic: content with NUL bytes in the first 4 KiB is binary. */
+export function isProbablyText(bytes: Uint8Array): boolean {
+  return !bytes.subarray(0, 4096).includes(0);
+}
+
 export async function findSkillDirs(
   sourceSkillsDir: string,
 ): Promise<string[]> {

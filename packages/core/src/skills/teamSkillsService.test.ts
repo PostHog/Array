@@ -4,7 +4,10 @@ import type {
 } from "@posthog/api-client/posthog-client";
 import { describe, expect, it, vi } from "vitest";
 import type { SkillsWorkspaceClient } from "./teamSkillsService";
-import { TeamSkillsService } from "./teamSkillsService";
+import {
+  markInstalledTeamSkills,
+  TeamSkillsService,
+} from "./teamSkillsService";
 
 function makeService(
   workspace: Partial<SkillsWorkspaceClient> = {},
@@ -39,21 +42,18 @@ function makeClient(result: LlmSkillListItem[] | null): PostHogAPIClient {
 
 describe("TeamSkillsService.listTeamSkills", () => {
   it("reports the feature as unavailable when the API returns null", async () => {
-    const listing = await makeService().listTeamSkills(makeClient(null), []);
+    const listing = await makeService().listTeamSkills(makeClient(null));
 
     expect(listing).toEqual({ available: false, skills: [] });
   });
 
-  it("maps team skills and marks ones that exist locally", async () => {
+  it("maps team skills", async () => {
     const client = makeClient([
       makeItem({}),
       makeItem({ id: "skill-2", name: "release-notes", created_by: null }),
     ]);
 
-    const listing = await makeService().listTeamSkills(client, [
-      "release-notes",
-      "unrelated-local",
-    ]);
+    const listing = await makeService().listTeamSkills(client);
 
     expect(listing.available).toBe(true);
     expect(listing.skills).toEqual([
@@ -66,11 +66,7 @@ describe("TeamSkillsService.listTeamSkills", () => {
         createdByEmail: "dev@posthog.com",
         installedLocally: false,
       },
-      expect.objectContaining({
-        name: "release-notes",
-        createdByEmail: null,
-        installedLocally: true,
-      }),
+      expect.objectContaining({ name: "release-notes", createdByEmail: null }),
     ]);
   });
 
@@ -80,10 +76,31 @@ describe("TeamSkillsService.listTeamSkills", () => {
       makeItem({ id: "skill-1b", version: 2 }),
     ]);
 
-    const listing = await makeService().listTeamSkills(client, []);
+    const listing = await makeService().listTeamSkills(client);
 
     expect(listing.skills).toHaveLength(1);
     expect(listing.skills[0]?.id).toBe("skill-1b");
+  });
+});
+
+describe("markInstalledTeamSkills", () => {
+  it("marks team skills that exist locally by name", async () => {
+    const listing = await makeService().listTeamSkills(
+      makeClient([
+        makeItem({}),
+        makeItem({ id: "skill-2", name: "release-notes" }),
+      ]),
+    );
+
+    const marked = markInstalledTeamSkills(listing, [
+      "release-notes",
+      "unrelated-local",
+    ]);
+
+    expect(marked.skills.map((s) => [s.name, s.installedLocally])).toEqual([
+      ["pr-shepherd", false],
+      ["release-notes", true],
+    ]);
   });
 });
 

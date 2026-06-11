@@ -31,3 +31,13 @@ export interface ExportedSkill {
   body: string;
   files: ExportedSkillFile[];
 }
+
+/**
+ * Strips a leading YAML frontmatter block from a SKILL.md document.
+ * CRLF-aware so render (UI) and export (workspace-server) agree on the body.
+ */
+export function stripFrontmatter(content: string): string {
+  const match = content.match(/^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n?/);
+  if (!match) return content;
+  return content.slice(match[0].length).replace(/^(?:[ \t]*\r?\n)+/, "");
+}

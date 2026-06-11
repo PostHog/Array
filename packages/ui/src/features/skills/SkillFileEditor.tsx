@@ -3,6 +3,7 @@ import { toast } from "@posthog/ui/primitives/toast";
 import { Box, Button, Flex } from "@radix-ui/themes";
 import { useRef, useState } from "react";
 import { SkillCodeEditor } from "./SkillCodeEditor";
+import { skillErrorDescription } from "./skillErrors";
 import { useSaveSkillFile } from "./useSkillMutations";
 
 interface SkillFileEditorProps {
@@ -36,7 +37,7 @@ export function SkillFileEditor({
       onSaved();
     } catch (error) {
       toast.error("Failed to save file", {
-        description: error instanceof Error ? error.message : undefined,
+        description: skillErrorDescription(error),
       });
     }
   };

@@ -1,6 +1,11 @@
 import { useHostTRPC } from "@posthog/host-router/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+/** Compact install-count formatting shared by the marketplace surfaces. */
+export const installsFormatter = new Intl.NumberFormat(undefined, {
+  notation: "compact",
+});
+
 export interface MarketplaceSkillSummary {
   id: string;
   skillId: string;
