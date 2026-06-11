@@ -159,7 +159,7 @@ export type {
   SignalReportOrderingField,
   SignalReportStatus,
 } from "./signal-types";
-export type { SkillInfo, SkillSource } from "./skills";
+export type { SkillFileEntry, SkillInfo, SkillSource } from "./skills";
 export type {
   ArtifactType,
   PostHogAPIConfig,
