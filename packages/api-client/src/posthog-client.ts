@@ -143,6 +143,58 @@ export interface UserGitHubIntegration {
   created_at?: string;
 }
 
+export interface LlmSkillCreatedBy {
+  id?: number;
+  email?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+}
+
+export interface LlmSkillFileManifest {
+  path: string;
+  content_type: string;
+}
+
+export interface LlmSkillFile {
+  path: string;
+  content: string;
+  content_type: string;
+}
+
+export interface LlmSkillListItem {
+  id: string;
+  name: string;
+  description: string;
+  allowed_tools: unknown[];
+  metadata: Record<string, unknown>;
+  version: number;
+  is_latest: boolean;
+  latest_version?: number | null;
+  version_count?: number | null;
+  created_by: LlmSkillCreatedBy | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LlmSkill extends LlmSkillListItem {
+  /** The SKILL.md markdown content. */
+  body: string;
+  /** Companion file manifest (paths only; fetch contents separately). */
+  files: LlmSkillFileManifest[];
+}
+
+export interface LlmSkillResolveResponse {
+  skill: LlmSkill;
+  versions: Array<{
+    id: string;
+    version: number;
+    created_by: LlmSkillCreatedBy | null;
+    created_at: string;
+    is_latest: boolean;
+  }>;
+  has_more: boolean;
+}
+
 export interface SignalSourceConfig {
   id: string;
   source_product:
@@ -3626,5 +3678,78 @@ export class PostHogAPIClient {
       throw new Error(`Failed to fetch spend analysis: ${response.status}`);
     }
     return (await response.json()) as SpendAnalysisResponse;
+  }
+
+  /**
+   * Lists the team's LLM skills (latest versions, no bodies).
+   * Returns null when the feature is unavailable for this org (the
+   * llm-analytics-skills flag gates the endpoint server-side with a 403).
+   */
+  async listLlmSkills(): Promise<LlmSkillListItem[] | null> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/environments/${teamId}/llm_skills/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (response.status === 403) return null;
+    if (!response.ok) {
+      throw new Error(`Failed to fetch team skills: ${response.statusText}`);
+    }
+    const data = (await response.json()) as { results?: LlmSkillListItem[] };
+    return data.results ?? [];
+  }
+
+  /** Fetches the latest version of a team skill, including body and file manifest. */
+  async getLlmSkillByName(name: string): Promise<LlmSkill> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/environments/${teamId}/llm_skills/name/${encodeURIComponent(name)}`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch team skill: ${response.statusText}`);
+    }
+    return (await response.json()) as LlmSkill;
+  }
+
+  /** Resolves a team skill plus its version history. */
+  async resolveLlmSkill(name: string): Promise<LlmSkillResolveResponse> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/environments/${teamId}/llm_skills/resolve/name/${encodeURIComponent(name)}`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to resolve team skill: ${response.statusText}`);
+    }
+    return (await response.json()) as LlmSkillResolveResponse;
+  }
+
+  /** Fetches one companion file of a team skill. */
+  async getLlmSkillFile(name: string, filePath: string): Promise<LlmSkillFile> {
+    const teamId = await this.getTeamId();
+    const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
+    const urlPath = `/api/environments/${teamId}/llm_skills/name/${encodeURIComponent(name)}/files/${encodedPath}`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch team skill file: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as LlmSkillFile;
   }
 }
