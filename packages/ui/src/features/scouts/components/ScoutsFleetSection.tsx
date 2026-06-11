@@ -35,7 +35,7 @@ const EMPTY_CONFIGS: ScoutConfig[] = [];
  * Per-scout drill-down (run history, run detail) stays on its own routes.
  */
 export function ScoutsFleetSection() {
-  const { data: configs, isLoading } = useScoutConfigs();
+  const { data: configs, isLoading, isError, refetch } = useScoutConfigs();
   const [expanded, setExpanded] = useState(false);
 
   const lastRunAt = useMemo(() => {
@@ -51,6 +51,31 @@ export function ScoutsFleetSection() {
   if (isLoading) {
     return (
       <Box className="h-12 w-full animate-pulse rounded-(--radius-2) bg-(--gray-3)" />
+    );
+  }
+
+  // A failed request must not masquerade as an empty fleet — a missing scope
+  // or regional rollout gap would otherwise be indistinguishable from
+  // "no scouts yet".
+  if (isError) {
+    return (
+      <Flex
+        align="center"
+        gap="3"
+        className="rounded-(--radius-2) border border-(--red-6) bg-(--red-2) px-4 py-3.5"
+      >
+        <Text className="flex-1 text-(--red-11) text-[12.5px]">
+          Couldn&apos;t load the scout fleet. The scout API may be unavailable
+          or this token may lack the <code>signal_scout</code> scope.
+        </Text>
+        <button
+          type="button"
+          onClick={() => refetch()}
+          className="shrink-0 rounded-(--radius-2) border border-(--red-7) px-2.5 py-1 text-(--red-11) text-[12px] transition-colors hover:bg-(--red-3)"
+        >
+          Retry
+        </button>
+      </Flex>
     );
   }
 

@@ -63,8 +63,16 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
   );
   useSetHeaderContent(headerContent);
 
-  const { data: configs, isLoading: configsLoading } = useScoutConfigs();
-  const { data: runsWindow, isLoading: runsLoading } = useScoutRuns();
+  const {
+    data: configs,
+    isLoading: configsLoading,
+    isError: configsError,
+  } = useScoutConfigs();
+  const {
+    data: runsWindow,
+    isLoading: runsLoading,
+    isError: runsError,
+  } = useScoutRuns();
   const { updateConfig } = useScoutConfigMutations();
   const [filter, setFilter] = useState<ScoutRunFilter>("all");
 
@@ -137,7 +145,13 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto max-w-4xl px-6 py-6">
           <Flex direction="column" gap="5">
-            {config ? (
+            {configsLoading ? (
+              <Box className="h-20 w-full animate-pulse rounded-(--radius-3) bg-(--gray-3)" />
+            ) : configsError ? (
+              <Text className="text-(--red-11) text-[12.5px]">
+                Couldn&apos;t load this scout&apos;s config.
+              </Text>
+            ) : config ? (
               <ScoutRowCard
                 config={config}
                 rollup={rollup}
@@ -163,6 +177,7 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
               runs={scoutRuns}
               windowLabel={scoutRunsWindowLabel(runsWindow)}
               loading={runsLoading}
+              error={runsError}
             />
 
             <Flex direction="column" gap="3">
@@ -198,11 +213,19 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
 
               {runsLoading ? (
                 <RunListSkeleton />
+              ) : runsError ? (
+                <Text className="text-(--red-11) text-[12.5px]">
+                  Couldn&apos;t load runs for this scout. The scout API may be
+                  unavailable or this token may lack the{" "}
+                  <code>signal_scout</code> scope.
+                </Text>
               ) : filteredRuns.length === 0 ? (
                 <Text className="text-[12.5px] text-gray-11">
-                  {scoutRuns.length === 0
-                    ? `No runs in the ${scoutRunsWindowLabel(runsWindow)}.`
-                    : `No runs match this filter in the ${scoutRunsWindowLabel(runsWindow)}.`}
+                  {scoutRuns.length > 0
+                    ? `No runs match this filter in the ${scoutRunsWindowLabel(runsWindow)}.`
+                    : runsWindow && !runsWindow.complete
+                      ? `No runs fetched in the last ${SCOUT_RUNS_WINDOW_HOURS} hours — the fleet window was truncated before it could cover this scout, so runs may exist beyond what was fetched.`
+                      : `No runs in the ${scoutRunsWindowLabel(runsWindow)}.`}
                 </Text>
               ) : (
                 <Flex direction="column" gap="2">

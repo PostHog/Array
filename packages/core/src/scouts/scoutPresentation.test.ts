@@ -14,6 +14,7 @@ import {
   prettifyScoutSkillName,
   runDurationSeconds,
   runMatchesFilter,
+  type ScoutRunFilter,
   scoutRunOutcomeLabel,
   scoutSkillNameFromSlug,
   scoutSkillSlug,
@@ -83,12 +84,14 @@ describe("naming", () => {
 });
 
 describe("run status", () => {
-  it("normalizes TaskRun statuses case-insensitively", () => {
-    expect(normalizeRunStatus("COMPLETED")).toBe("completed");
-    expect(normalizeRunStatus("failed")).toBe("failed");
-    expect(normalizeRunStatus("IN_PROGRESS")).toBe("running");
-    expect(normalizeRunStatus("queued")).toBe("queued");
-    expect(normalizeRunStatus("something-else")).toBe("unknown");
+  it.each([
+    ["COMPLETED", "completed"],
+    ["failed", "failed"],
+    ["IN_PROGRESS", "running"],
+    ["queued", "queued"],
+    ["something-else", "unknown"],
+  ])("normalizes TaskRun status %s to %s", (raw, normalized) => {
+    expect(normalizeRunStatus(raw)).toBe(normalized);
   });
 
   it("computes duration, falling back to now for unfinished runs", () => {
@@ -102,11 +105,13 @@ describe("run status", () => {
     expect(runDurationSeconds(makeRun({ started_at: null }), NOW)).toBeNull();
   });
 
-  it("formats durations", () => {
-    expect(formatRunDuration(42)).toBe("42s");
-    expect(formatRunDuration(134)).toBe("2m 14s");
-    expect(formatRunDuration(3 * 3600)).toBe("3h");
-    expect(formatRunDuration(null)).toBe("");
+  it.each([
+    [42, "42s"],
+    [134, "2m 14s"],
+    [3 * 3600, "3h"],
+    [null, ""],
+  ])("formats a duration of %s seconds as %j", (seconds, label) => {
+    expect(formatRunDuration(seconds)).toBe(label);
   });
 
   it("classifies long failed runs as timeouts", () => {
@@ -143,59 +148,50 @@ describe("run status", () => {
 });
 
 describe("run outcomes", () => {
-  it("classifies each run into a single outcome", () => {
-    expect(deriveRunOutcome(makeRun({ emitted_count: 2 }), NOW)).toBe(
-      "emitted",
-    );
-    expect(deriveRunOutcome(makeRun({ emitted_count: 0 }), NOW)).toBe("quiet");
-    expect(
-      deriveRunOutcome(
-        makeRun({ status: "failed", completed_at: "2026-06-10T11:00:30Z" }),
-        NOW,
-      ),
-    ).toBe("error");
-    expect(
-      deriveRunOutcome(
-        makeRun({ status: "failed", completed_at: "2026-06-10T11:30:10Z" }),
-        NOW,
-      ),
-    ).toBe("timed_out");
-    expect(
-      deriveRunOutcome(
-        makeRun({
-          status: "in_progress",
-          started_at: "2026-06-10T11:55:00Z",
-          completed_at: null,
-        }),
-        NOW,
-      ),
-    ).toBe("running");
-    expect(
-      deriveRunOutcome(
-        makeRun({
-          status: "in_progress",
-          started_at: "2026-06-10T11:20:00Z",
-          completed_at: null,
-        }),
-        NOW,
-      ),
-    ).toBe("stuck");
-    expect(deriveRunOutcome(makeRun({ status: "queued" }), NOW)).toBe("queued");
+  it.each<{
+    overrides: Partial<ScoutRun>;
+    outcome: ReturnType<typeof deriveRunOutcome>;
+  }>([
+    { overrides: { emitted_count: 2 }, outcome: "emitted" },
+    { overrides: { emitted_count: 0 }, outcome: "quiet" },
+    {
+      overrides: { status: "failed", completed_at: "2026-06-10T11:00:30Z" },
+      outcome: "error",
+    },
+    {
+      overrides: { status: "failed", completed_at: "2026-06-10T11:30:10Z" },
+      outcome: "timed_out",
+    },
+    {
+      overrides: {
+        status: "in_progress",
+        started_at: "2026-06-10T11:55:00Z",
+        completed_at: null,
+      },
+      outcome: "running",
+    },
+    {
+      overrides: {
+        status: "in_progress",
+        started_at: "2026-06-10T11:20:00Z",
+        completed_at: null,
+      },
+      outcome: "stuck",
+    },
+    { overrides: { status: "queued" }, outcome: "queued" },
+  ])("classifies the run as $outcome", ({ overrides, outcome }) => {
+    expect(deriveRunOutcome(makeRun(overrides), NOW)).toBe(outcome);
   });
 
-  it("labels outcomes with emitted counts", () => {
-    expect(scoutRunOutcomeLabel(makeRun({ emitted_count: 1 }), NOW)).toBe(
-      "1 signal emitted",
-    );
-    expect(scoutRunOutcomeLabel(makeRun({ emitted_count: 0 }), NOW)).toBe(
-      "0 signals emitted",
-    );
-    expect(
-      scoutRunOutcomeLabel(
-        makeRun({ status: "failed", completed_at: "2026-06-10T11:30:10Z" }),
-        NOW,
-      ),
-    ).toBe("timed out");
+  it.each<{ overrides: Partial<ScoutRun>; label: string }>([
+    { overrides: { emitted_count: 1 }, label: "1 signal emitted" },
+    { overrides: { emitted_count: 0 }, label: "0 signals emitted" },
+    {
+      overrides: { status: "failed", completed_at: "2026-06-10T11:30:10Z" },
+      label: "timed out",
+    },
+  ])('labels the outcome "$label"', ({ overrides, label }) => {
+    expect(scoutRunOutcomeLabel(makeRun(overrides), NOW)).toBe(label);
   });
 });
 
@@ -204,14 +200,24 @@ describe("run filters", () => {
   const quiet = makeRun({ emitted_count: 0 });
   const failed = makeRun({ status: "failed", emitted_count: 0 });
 
-  it("matches runs to filter chips", () => {
-    expect(runMatchesFilter(emitted, "emitted")).toBe(true);
-    expect(runMatchesFilter(quiet, "emitted")).toBe(false);
-    expect(runMatchesFilter(quiet, "quiet")).toBe(true);
-    expect(runMatchesFilter(failed, "quiet")).toBe(false);
-    expect(runMatchesFilter(failed, "failed")).toBe(true);
-    expect(runMatchesFilter(emitted, "all")).toBe(true);
-  });
+  it.each<{
+    name: string;
+    run: ScoutRun;
+    filter: ScoutRunFilter;
+    matches: boolean;
+  }>([
+    { name: "emitted", run: emitted, filter: "emitted", matches: true },
+    { name: "quiet", run: quiet, filter: "emitted", matches: false },
+    { name: "quiet", run: quiet, filter: "quiet", matches: true },
+    { name: "failed", run: failed, filter: "quiet", matches: false },
+    { name: "failed", run: failed, filter: "failed", matches: true },
+    { name: "emitted", run: emitted, filter: "all", matches: true },
+  ])(
+    "$name run matching the $filter chip is $matches",
+    ({ run, filter, matches }) => {
+      expect(runMatchesFilter(run, filter)).toBe(matches);
+    },
+  );
 });
 
 describe("rollups", () => {
@@ -286,12 +292,19 @@ describe("rollups", () => {
 });
 
 describe("intervals and ordering", () => {
-  it("formats intervals", () => {
-    expect(formatRunInterval(60)).toBe("Hourly");
-    expect(formatRunInterval(90)).toBe("Every 90 minutes");
-    expect(formatRunInterval(2880)).toBe("Every 2 days");
-    expect(formatRunIntervalShort(60)).toBe("hourly");
-    expect(formatRunIntervalShort(180)).toBe("every 3h");
+  it.each([
+    [60, "Hourly"],
+    [90, "Every 90 minutes"],
+    [2880, "Every 2 days"],
+  ])("formats a %i-minute interval as %s", (minutes, label) => {
+    expect(formatRunInterval(minutes)).toBe(label);
+  });
+
+  it.each([
+    [60, "hourly"],
+    [180, "every 3h"],
+  ])("formats a %i-minute interval as %s in short form", (minutes, label) => {
+    expect(formatRunIntervalShort(minutes)).toBe(label);
   });
 
   it("sorts enabled scouts first, then alphabetically", () => {

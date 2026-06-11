@@ -4,7 +4,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { track } from "@posthog/ui/shell/analytics";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { useAuthStateValue } from "../../auth/store";
 import { scoutQueryKeys } from "./scoutQueryKeys";
@@ -45,18 +45,21 @@ export function useScoutConfigMutations() {
   const client = useAuthenticatedClient();
   const queryClient = useQueryClient();
   const projectId = useAuthStateValue((state) => state.currentProjectId);
+  const inFlightCount = useRef(0);
 
   const updateConfig = useCallback(
     async (configId: string, updates: ScoutConfigUpdate) => {
       if (!client || !projectId) return;
       const queryKey = scoutQueryKeys.configs(projectId);
-      const previous = queryClient.getQueryData<ScoutConfig[]>(queryKey);
-      const previousConfig = previous?.find((config) => config.id === configId);
+      const previousConfig = queryClient
+        .getQueryData<ScoutConfig[]>(queryKey)
+        ?.find((config) => config.id === configId);
       queryClient.setQueryData<ScoutConfig[]>(queryKey, (configs) =>
         configs?.map((config) =>
           config.id === configId ? { ...config, ...updates } : config,
         ),
       );
+      inFlightCount.current++;
       try {
         const updated = await client.updateScoutConfig(
           projectId,
@@ -68,13 +71,28 @@ export function useScoutConfigMutations() {
         );
         trackConfigChange(previousConfig, updates, true);
       } catch (error: unknown) {
-        queryClient.setQueryData(queryKey, previous);
+        // Roll back only this config so concurrent edits to other scouts
+        // survive; same-scout overlap reconciles via the settle invalidation.
+        if (previousConfig) {
+          queryClient.setQueryData<ScoutConfig[]>(queryKey, (configs) =>
+            configs?.map((config) =>
+              config.id === configId ? previousConfig : config,
+            ),
+          );
+        }
         trackConfigChange(previousConfig, updates, false);
         const message =
           error instanceof Error
             ? error.message
             : "Failed to update scout config";
         toast.error(message);
+      } finally {
+        // Concurrent PATCHes to one scout can settle out of order; once the
+        // last one lands, reconcile the cache against the server.
+        inFlightCount.current--;
+        if (inFlightCount.current === 0) {
+          void queryClient.invalidateQueries({ queryKey });
+        }
       }
     },
     [client, projectId, queryClient],
