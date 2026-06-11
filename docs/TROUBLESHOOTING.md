@@ -102,11 +102,11 @@ pnpm rebuild:sqlite-electron
 
 Then restart the app.
 
-The script (`scripts/rebuild-electron-natives.mjs`) downloads the official Electron prebuild via `prebuild-install` and falls back to compiling with `node-gyp` against the Electron headers. It deliberately avoids `@electron/rebuild`: its CLI crashes on Node 26 and newer (it requires the legacy `yargs/yargs` entry, which new Node parses as ESM) and its module walker cannot find packages hoisted to the root `node_modules` by pnpm's `node-linker=hoisted` layout. The ABI comes from the Electron target, not your system Node, so the binary gets the right `NODE_MODULE_VERSION` even when the two differ. It lands at `node_modules/better-sqlite3/build/Release/better_sqlite3.node`.
+The script (`scripts/rebuild-better-sqlite3-electron.mjs`) downloads the official Electron prebuild via `prebuild-install` and falls back to compiling with `node-gyp` against the Electron headers. It deliberately avoids `@electron/rebuild`: its CLI crashes on Node 26 and newer (it requires the legacy `yargs/yargs` entry, which new Node parses as ESM) and its module walker cannot find packages hoisted to the root `node_modules` by pnpm's `node-linker=hoisted` layout. The ABI comes from the Electron target, not your system Node, so the binary gets the right `NODE_MODULE_VERSION` even when the two differ. It lands at `node_modules/better-sqlite3/build/Release/better_sqlite3.node`.
 
 Also check that build scripts are allowed to run at all: if `~/.npmrc` contains `ignore-scripts=true`, pnpm silently skips every native build and postinstall, and nothing above can work.
 
-Alternatively, skip compiling entirely and download the official Electron prebuild (no toolchain needed):
+If the script itself won't run, the same prebuild download works manually (no toolchain needed):
 
 ```bash
 ELECTRON_VERSION="$(node -p "require('./node_modules/electron/package.json').version")"

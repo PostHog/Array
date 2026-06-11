@@ -25,7 +25,7 @@
     "test:e2e": "pnpm --filter code test:e2e",
     "test:e2e:headed": "pnpm --filter code test:e2e:headed",
     "rebuild:sqlite-node": "node scripts/rebuild-better-sqlite3-node.mjs",
-    "rebuild:sqlite-electron": "node scripts/rebuild-electron-natives.mjs",
+    "rebuild:sqlite-electron": "node scripts/rebuild-better-sqlite3-electron.mjs",
     "typecheck": "turbo typecheck",
     "boundaries": "node scripts/check-host-boundaries.mjs",
     "lint": "biome check --write --unsafe",

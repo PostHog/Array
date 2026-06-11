@@ -24,7 +24,7 @@ fi
 echo "Rebuilding native modules for Electron..."
 
 cd "$REPO_ROOT"
-node scripts/rebuild-electron-natives.mjs
+node scripts/rebuild-better-sqlite3-electron.mjs
 
 echo "Patching Electron app name..."
 bash "$SCRIPTS_DIR/patch-electron-name.sh"
