@@ -15,6 +15,16 @@ import {
   skillPathOutput,
 } from "@posthog/workspace-server/services/skills/schemas";
 import type { SkillsService } from "@posthog/workspace-server/services/skills/skills";
+import { SKILLS_MARKETPLACE_SERVICE } from "@posthog/workspace-server/services/skills-marketplace/identifiers";
+import {
+  marketplaceInstallInput,
+  marketplaceInstallOutput,
+  marketplacePreviewOutput,
+  marketplaceSearchInput,
+  marketplaceSearchOutput,
+  marketplaceSkillRef,
+} from "@posthog/workspace-server/services/skills-marketplace/schemas";
+import type { SkillsMarketplaceService } from "@posthog/workspace-server/services/skills-marketplace/skills-marketplace";
 
 export const skillsRouter = router({
   list: publicProcedure
@@ -88,5 +98,34 @@ export const skillsRouter = router({
     for await (const event of service.watchSkills(opts.signal)) {
       yield event;
     }
+  }),
+  marketplace: router({
+    search: publicProcedure
+      .input(marketplaceSearchInput)
+      .output(marketplaceSearchOutput)
+      .query(({ ctx, input }) =>
+        ctx.container
+          .get<SkillsMarketplaceService>(SKILLS_MARKETPLACE_SERVICE)
+          .search(input.query),
+      ),
+    preview: publicProcedure
+      .input(marketplaceSkillRef)
+      .output(marketplacePreviewOutput)
+      .query(({ ctx, input }) =>
+        ctx.container
+          .get<SkillsMarketplaceService>(SKILLS_MARKETPLACE_SERVICE)
+          .preview(input),
+      ),
+    install: publicProcedure
+      .input(marketplaceInstallInput)
+      .output(marketplaceInstallOutput)
+      .mutation(({ ctx, input }) =>
+        ctx.container
+          .get<SkillsMarketplaceService>(SKILLS_MARKETPLACE_SERVICE)
+          .install(
+            { source: input.source, skillId: input.skillId },
+            input.overwrite ?? false,
+          ),
+      ),
   }),
 });

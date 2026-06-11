@@ -337,7 +337,7 @@ export class SkillsService {
   }
 }
 
-function validateSkillDirName(name: string): void {
+export function validateSkillDirName(name: string): void {
   if (
     !SKILL_DIR_NAME_PATTERN.test(name) ||
     name.length > MAX_SKILL_DIR_NAME_LENGTH

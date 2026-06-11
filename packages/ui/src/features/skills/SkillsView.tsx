@@ -1,5 +1,6 @@
 import { Lightbulb, MagnifyingGlass, Plus } from "@phosphor-icons/react";
 import { analyzeSkills } from "@posthog/core/skills/analyzeSkills";
+import { Tabs, TabsList, TabsTrigger } from "@posthog/quill";
 import type { SkillInfo, SkillSource } from "@posthog/shared";
 import {
   Box,
@@ -12,6 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSetHeaderContent } from "../../hooks/useSetHeaderContent";
 import { ResizableSidebar } from "../../primitives/ResizableSidebar";
+import { MarketplaceBrowse } from "./MarketplaceBrowse";
 import { NewSkillDialog } from "./NewSkillDialog";
 import { SkillSection, SOURCE_CONFIG } from "./SkillCard";
 import { SkillDetailPanel } from "./SkillDetailPanel";
@@ -25,10 +27,13 @@ import { useSkillsWatcher } from "./useSkillsWatcher";
 
 const SOURCE_ORDER: SkillSource[] = ["user", "marketplace", "repo", "bundled"];
 
+type SkillsTab = "installed" | "marketplace";
+
 export function SkillsView() {
   const { data: skills = [], isLoading } = useSkills();
   useSkillsWatcher();
 
+  const [tab, setTab] = useState<SkillsTab>("installed");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [scrollToPath, setScrollToPath] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -113,95 +118,115 @@ export function SkillsView() {
 
   return (
     <Flex direction="column" height="100%" className="overflow-hidden">
-      <Flex className="min-h-0 flex-1">
-        <Box flexGrow="1" className="min-w-0">
-          <ScrollArea
-            type="auto"
-            className="scroll-area-constrain-width h-full"
-          >
-            <Box px="4" py="3">
-              <Flex pb="3" gap="2" align="center">
-                <Box flexGrow="1">
-                  <TextField.Root
-                    size="2"
-                    placeholder="Search skills..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="text-[13px]"
-                  >
-                    <TextField.Slot>
-                      <MagnifyingGlass size={14} />
-                    </TextField.Slot>
-                  </TextField.Root>
-                </Box>
-                <Button
-                  size="2"
-                  variant="soft"
-                  onClick={() => setNewSkillOpen(true)}
-                >
-                  <Plus size={14} />
-                  New skill
-                </Button>
-              </Flex>
-              {skills.length === 0 && !isLoading ? (
-                <Flex
-                  align="center"
-                  justify="center"
-                  direction="column"
-                  gap="3"
-                  className="py-12"
-                >
-                  <Box className="rounded-lg border border-gray-6 border-dashed p-4">
-                    <Lightbulb size={24} className="text-gray-8" />
-                  </Box>
-                  <Text className="text-[13px] text-gray-10">
-                    No skills found
-                  </Text>
-                </Flex>
-              ) : (
-                <Flex direction="column" gap="5">
-                  {SOURCE_ORDER.map((source) => {
-                    const items = grouped.get(source);
-                    if (!items || items.length === 0) return null;
-                    const config = SOURCE_CONFIG[source];
-
-                    return (
-                      <SkillSection
-                        key={source}
-                        title={config.sectionTitle}
-                        skills={items}
-                        selectedPath={selectedSkill?.path ?? null}
-                        onSelect={handleSelect}
-                        scrollToPath={scrollToPath}
-                        onScrolledIntoView={handleScrolledIntoView}
-                        analysis={analysis}
-                      />
-                    );
-                  })}
-                </Flex>
-              )}
-            </Box>
-          </ScrollArea>
-        </Box>
-
-        <ResizableSidebar
-          open={!!selectedSkill}
-          width={sidebarWidth}
-          setWidth={setSidebarWidth}
-          isResizing={isResizing}
-          setIsResizing={setIsResizing}
-          side="right"
+      <Box px="4" className="shrink-0 border-b border-b-(--gray-5)">
+        <Tabs
+          value={tab}
+          onValueChange={(value: string) => setTab(value as SkillsTab)}
         >
-          {selectedSkill && (
-            <SkillDetailPanel
-              key={selectedSkill.path}
-              skill={selectedSkill}
-              issues={analysis[selectedSkill.path] ?? []}
-              onClose={handleCloseSidebar}
-            />
-          )}
-        </ResizableSidebar>
-      </Flex>
+          <TabsList variant="line" className="h-auto gap-0.5">
+            <TabsTrigger value="installed" className="gap-1.5 px-2.5 py-2">
+              <span className="font-medium text-[13px]">Installed</span>
+            </TabsTrigger>
+            <TabsTrigger value="marketplace" className="gap-1.5 px-2.5 py-2">
+              <span className="font-medium text-[13px]">Marketplace</span>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </Box>
+
+      {tab === "marketplace" ? (
+        <MarketplaceBrowse />
+      ) : (
+        <Flex className="min-h-0 flex-1">
+          <Box flexGrow="1" className="min-w-0">
+            <ScrollArea
+              type="auto"
+              className="scroll-area-constrain-width h-full"
+            >
+              <Box px="4" py="3">
+                <Flex pb="3" gap="2" align="center">
+                  <Box flexGrow="1">
+                    <TextField.Root
+                      size="2"
+                      placeholder="Search skills..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="text-[13px]"
+                    >
+                      <TextField.Slot>
+                        <MagnifyingGlass size={14} />
+                      </TextField.Slot>
+                    </TextField.Root>
+                  </Box>
+                  <Button
+                    size="2"
+                    variant="soft"
+                    onClick={() => setNewSkillOpen(true)}
+                  >
+                    <Plus size={14} />
+                    New skill
+                  </Button>
+                </Flex>
+                {skills.length === 0 && !isLoading ? (
+                  <Flex
+                    align="center"
+                    justify="center"
+                    direction="column"
+                    gap="3"
+                    className="py-12"
+                  >
+                    <Box className="rounded-lg border border-gray-6 border-dashed p-4">
+                      <Lightbulb size={24} className="text-gray-8" />
+                    </Box>
+                    <Text className="text-[13px] text-gray-10">
+                      No skills found
+                    </Text>
+                  </Flex>
+                ) : (
+                  <Flex direction="column" gap="5">
+                    {SOURCE_ORDER.map((source) => {
+                      const items = grouped.get(source);
+                      if (!items || items.length === 0) return null;
+                      const config = SOURCE_CONFIG[source];
+
+                      return (
+                        <SkillSection
+                          key={source}
+                          title={config.sectionTitle}
+                          skills={items}
+                          selectedPath={selectedSkill?.path ?? null}
+                          onSelect={handleSelect}
+                          scrollToPath={scrollToPath}
+                          onScrolledIntoView={handleScrolledIntoView}
+                          analysis={analysis}
+                        />
+                      );
+                    })}
+                  </Flex>
+                )}
+              </Box>
+            </ScrollArea>
+          </Box>
+
+          <ResizableSidebar
+            open={!!selectedSkill}
+            width={sidebarWidth}
+            setWidth={setSidebarWidth}
+            isResizing={isResizing}
+            setIsResizing={setIsResizing}
+            side="right"
+          >
+            {selectedSkill && (
+              <SkillDetailPanel
+                key={selectedSkill.path}
+                skill={selectedSkill}
+                issues={analysis[selectedSkill.path] ?? []}
+                onClose={handleCloseSidebar}
+              />
+            )}
+          </ResizableSidebar>
+        </Flex>
+      )}
 
       <NewSkillDialog
         open={newSkillOpen}

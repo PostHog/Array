@@ -31,6 +31,7 @@ import { SOURCE_CONFIG } from "./SkillCard";
 import { SkillFileEditor } from "./SkillFileEditor";
 import { SkillFileTree } from "./SkillFileTree";
 import { SkillManifestEditor } from "./SkillManifestEditor";
+import { stripFrontmatter } from "./stripFrontmatter";
 import { useSkillContents, useSkillFile } from "./useSkillContents";
 import {
   useDeleteSkill,
@@ -38,11 +39,6 @@ import {
   useRenameSkillFile,
   useSaveSkillFile,
 } from "./useSkillMutations";
-
-function stripFrontmatter(content: string): string {
-  const match = content.match(/^---\s*\n[\s\S]*?\n---\s*\n/);
-  return match ? content.slice(match[0].length).trimStart() : content;
-}
 
 interface SkillDetailPanelProps {
   skill: SkillInfo;

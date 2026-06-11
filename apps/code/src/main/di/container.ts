@@ -178,6 +178,7 @@ import { processTrackingModule } from "@posthog/workspace-server/services/proces
 import { SECURE_STORE_SERVICE } from "@posthog/workspace-server/services/secure-store/identifiers";
 import { shellModule } from "@posthog/workspace-server/services/shell/shell.module";
 import { skillsModule } from "@posthog/workspace-server/services/skills/skills.module";
+import { skillsMarketplaceModule } from "@posthog/workspace-server/services/skills-marketplace/skills-marketplace.module";
 import {
   SUSPENSION_FILE_WATCHER,
   SUSPENSION_SERVICE,
@@ -574,6 +575,7 @@ container
 container.load(posthogPluginModule);
 container.bind(MAIN_POSTHOG_PLUGIN_SERVICE).toService(POSTHOG_PLUGIN_SERVICE);
 container.load(skillsModule);
+container.load(skillsMarketplaceModule);
 container.load(onboardingImportModule);
 container.load(additionalDirectoriesModule);
 container.bind(MAIN_SLEEP_SERVICE).to(SleepService);
