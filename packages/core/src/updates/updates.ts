@@ -99,8 +99,13 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   }
 
   private get feedUrl(): string {
+    return this.feedUrlForVersion(this.appMeta.version);
+  }
+
+  private feedUrlForVersion(version: string): string {
     const ctor = this.constructor as typeof UpdatesService;
-    return `${ctor.SERVER_HOST}/${ctor.REPO_OWNER}/${ctor.REPO_NAME}/${this.appMeta.platform}-${this.appMeta.arch}/${this.appMeta.version}`;
+    const normalized = version.replace(/^v/, "");
+    return `${ctor.SERVER_HOST}/${ctor.REPO_OWNER}/${ctor.REPO_NAME}/${this.appMeta.platform}-${this.appMeta.arch}/${normalized}`;
   }
 
   @postConstruct()
@@ -151,19 +156,39 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       return { success: false, errorMessage: reason, errorCode: "disabled" };
     }
 
-    if (this.isUpdateStaged()) {
+    if (this.state === "installing") {
       this.logStateTransition(this.state, {
         source,
         skippedBecauseUpdateStaged: true,
-        reason: "check skipped because update is already staged",
+        reason: "check skipped because update install is in progress",
       });
+      return { success: true };
+    }
 
+    if (this.isUpdateStaged()) {
       if (source === "user") {
         this.pendingNotification = true;
         this.flushPendingNotification();
         this.emitStatus(this.stagedStatusPayload());
       }
 
+      if (this.downloadedVersion === null) {
+        this.logStateTransition(this.state, {
+          source,
+          skippedBecauseUpdateStaged: true,
+          reason: "check skipped because staged update version is unknown",
+        });
+        return { success: true };
+      }
+
+      // Keep looking for newer releases while an update sits staged, otherwise
+      // the user installs a stale version and immediately gets prompted again.
+      // State stays "ready" so the install prompt never flickers away.
+      this.logStateTransition(this.state, {
+        source,
+        reason: "refreshing staged update against latest release",
+      });
+      this.performCheck();
       return { success: true };
     }
 
@@ -308,17 +333,17 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   }
 
   private handleUpdateAvailable(): void {
+    this.clearCheckTimeout();
+
     if (this.isUpdateStaged()) {
       this.log.info(
-        "Ignoring update-available because an update is already staged",
+        "Newer update available while one is staged, downloading replacement",
         {
           downloadedVersion: this.downloadedVersion,
         },
       );
       return;
     }
-
-    this.clearCheckTimeout();
     this.transitionTo("downloading", { reason: "update available" });
     this.log.info("Update available, downloading...");
     this.emitStatus({ checking: true, downloading: true });
@@ -350,20 +375,46 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   private handleUpdateDownloaded(releaseName?: string): void {
     this.clearCheckTimeout();
 
-    if (this.isUpdateStaged()) {
-      this.log.info("Ignoring duplicate update-downloaded event", {
+    const incomingVersion = releaseName ?? null;
+
+    if (this.state === "installing") {
+      this.log.info("Ignoring update-downloaded while install is in progress", {
         existingVersion: this.downloadedVersion,
-        incomingVersion: releaseName,
+        incomingVersion,
       });
       return;
     }
 
-    this.downloadedVersion = releaseName ?? null;
+    if (this.state === "ready") {
+      if (
+        incomingVersion === null ||
+        incomingVersion === this.downloadedVersion
+      ) {
+        this.log.info("Ignoring duplicate update-downloaded event", {
+          existingVersion: this.downloadedVersion,
+          incomingVersion,
+        });
+        return;
+      }
+
+      this.logStateTransition("ready", {
+        reason: "staged update replaced with newer release",
+        incomingVersion,
+      });
+      this.downloadedVersion = incomingVersion;
+      this.pointFeedAtStagedVersion(incomingVersion);
+      this.emitStatus(this.stagedStatusPayload());
+      return;
+    }
+
+    this.downloadedVersion = incomingVersion;
     this.transitionTo("ready", {
       reason: "update downloaded",
-      incomingVersion: releaseName ?? null,
+      incomingVersion,
     });
-    this.clearCheckInterval();
+    if (incomingVersion !== null) {
+      this.pointFeedAtStagedVersion(incomingVersion);
+    }
     this.emitStatus(this.stagedStatusPayload());
 
     this.log.info("Update downloaded, awaiting user confirmation", {
@@ -377,6 +428,20 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     } else {
       this.log.info("Skipping notification - same version already notified", {
         version: this.downloadedVersion,
+      });
+    }
+  }
+
+  private pointFeedAtStagedVersion(version: string): void {
+    // Re-point the feed at the staged version so subsequent checks only
+    // report releases newer than what is already downloaded, instead of
+    // re-downloading the same update on every periodic check.
+    try {
+      this.updater.setFeedUrl(this.feedUrlForVersion(version));
+    } catch (error) {
+      this.log.error("Failed to point feed URL at staged version", {
+        error,
+        version,
       });
     }
   }
@@ -415,6 +480,10 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     } catch (error) {
       this.clearCheckTimeout();
       this.log.error("Failed to check for updates", { error });
+      if (this.isUpdateStaged()) {
+        // A failed background refresh must not clobber the staged update.
+        return;
+      }
       this.lastError = "Failed to check for updates. Please try again.";
       this.transitionTo("error", {
         error: error instanceof Error ? error.message : String(error),

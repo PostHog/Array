@@ -537,7 +537,7 @@ describe("UpdatesService", () => {
       });
     });
 
-    it("ignores later update events once an update is already downloaded", () => {
+    it("refreshes silently once an update is already downloaded", () => {
       // Simulate update already downloaded
       const downloadedHandler = updaterHandlers.updateDownloaded;
       if (downloadedHandler) {
@@ -551,9 +551,13 @@ describe("UpdatesService", () => {
 
       mockUpdater.check.mockClear();
 
-      // Periodic checks should be suppressed once an update is staged.
+      // Periodic checks keep running while an update is staged so a newer
+      // release can replace the stale one, but they stay invisible to the UI.
       service.checkForUpdates("periodic");
-      expect(mockUpdater.check).not.toHaveBeenCalled();
+      expect(mockUpdater.check).toHaveBeenCalled();
+      expect(statusHandler).not.toHaveBeenCalledWith(
+        expect.objectContaining({ checking: true }),
+      );
 
       const notAvailableHandler = updaterHandlers.noUpdate;
       if (notAvailableHandler) {
@@ -565,6 +569,7 @@ describe("UpdatesService", () => {
         expect.objectContaining({ upToDate: true }),
       );
       expect(readyHandler).not.toHaveBeenCalled();
+      expect(service.hasUpdateReady).toBe(true);
     });
 
     it("handles update-downloaded event with version info", () => {
@@ -809,23 +814,23 @@ describe("UpdatesService", () => {
       expect(mockUpdater.check.mock.calls.length).toBe(initialCallCount + 2);
     });
 
-    it("stops the periodic interval once an update is staged", async () => {
+    it("keeps the periodic interval running once an update is staged", async () => {
       await initializeService(service);
 
       updaterHandlers.updateDownloaded?.("v2.0.0");
 
       const baselineCallCount = mockUpdater.check.mock.calls.length;
 
-      // The interval would normally fire every hour; with the update staged it
-      // should be cleared so no further wake-ups occur.
+      // The interval keeps firing so a staged update can be replaced by a
+      // newer release before the user clicks install.
       await vi.advanceTimersByTimeAsync(60 * 60 * 1000 * 3);
 
-      expect(mockUpdater.check.mock.calls.length).toBe(baselineCallCount);
+      expect(mockUpdater.check.mock.calls.length).toBe(baselineCallCount + 3);
     });
   });
 
   describe("staged update guards", () => {
-    it("does not re-check on periodic checks when update is ready", async () => {
+    it("re-checks on periodic checks when update is ready without touching staged state", async () => {
       await initializeService(service);
 
       // Simulate update downloaded
@@ -837,11 +842,28 @@ describe("UpdatesService", () => {
       // Clear the checkForUpdates calls from initialization
       mockUpdater.check.mockClear();
 
-      // Periodic check should not overwrite or refresh the staged update.
+      // Periodic check refreshes against the feed but leaves the staged
+      // update installable the whole time.
+      const result = service.checkForUpdates("periodic");
+      expect(result).toEqual({ success: true });
+      expect(mockUpdater.check).toHaveBeenCalled();
+      expect(service.hasUpdateReady).toBe(true);
+    });
+
+    it("skips the refresh when the staged version is unknown", async () => {
+      await initializeService(service);
+
+      // Downloaded event without a release name (no version info)
+      const downloadedHandler = updaterHandlers.updateDownloaded;
+      if (downloadedHandler) {
+        (downloadedHandler as unknown as () => void)();
+      }
+      expect(service.hasUpdateReady).toBe(true);
+
+      mockUpdater.check.mockClear();
       const result = service.checkForUpdates("periodic");
       expect(result).toEqual({ success: true });
       expect(mockUpdater.check).not.toHaveBeenCalled();
-      // Update should still be ready (state not reset)
       expect(service.hasUpdateReady).toBe(true);
     });
 
@@ -857,11 +879,12 @@ describe("UpdatesService", () => {
       const readyHandler = vi.fn();
       service.on(UpdatesEvent.Ready, readyHandler);
 
-      // User check should show existing notification, not re-check
+      // User check shows the existing notification and refreshes in the
+      // background.
       mockUpdater.check.mockClear();
       const result = service.checkForUpdates("user");
       expect(result).toEqual({ success: true });
-      expect(mockUpdater.check).not.toHaveBeenCalled();
+      expect(mockUpdater.check).toHaveBeenCalled();
       expect(readyHandler).toHaveBeenCalledWith({ version: "v2.0.0" });
     });
 
@@ -876,7 +899,6 @@ describe("UpdatesService", () => {
 
       mockUpdater.check.mockClear();
       service.checkForUpdates("periodic");
-      expect(mockUpdater.check).not.toHaveBeenCalled();
 
       // Simulate a stale updater error after staging.
       const errorHandler = updaterHandlers.error;
@@ -886,6 +908,26 @@ describe("UpdatesService", () => {
 
       // Update should still be ready
       expect(service.hasUpdateReady).toBe(true);
+    });
+
+    it("preserves staged update when the refresh check throws synchronously", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+
+      const statusHandler = vi.fn();
+      service.on(UpdatesEvent.Status, statusHandler);
+
+      mockUpdater.check.mockImplementation(() => {
+        throw new Error("Network down");
+      });
+
+      const result = service.checkForUpdates("periodic");
+      expect(result).toEqual({ success: true });
+      expect(service.hasUpdateReady).toBe(true);
+      expect(statusHandler).not.toHaveBeenCalledWith(
+        expect.objectContaining({ error: expect.any(String) }),
+      );
     });
 
     it("does not re-notify when same version is re-downloaded after staging", async () => {
@@ -911,11 +953,13 @@ describe("UpdatesService", () => {
       expect(readyHandler).not.toHaveBeenCalled();
     });
 
-    it("does not overwrite staged version when a later download event arrives", async () => {
+    it("replaces the staged version when a newer download arrives", async () => {
       await initializeService(service);
 
       const readyHandler = vi.fn();
+      const statusHandler = vi.fn();
       service.on(UpdatesEvent.Ready, readyHandler);
+      service.on(UpdatesEvent.Status, statusHandler);
 
       // Simulate update downloaded
       const downloadedHandler = updaterHandlers.updateDownloaded;
@@ -925,17 +969,71 @@ describe("UpdatesService", () => {
       expect(readyHandler).toHaveBeenCalledWith({ version: "v2.0.0" });
 
       readyHandler.mockClear();
+      statusHandler.mockClear();
 
       if (downloadedHandler) {
         downloadedHandler("v3.0.0");
       }
 
-      // User checks should still surface the originally staged update.
-      service.checkForUpdates("user");
-      expect(readyHandler).toHaveBeenCalledWith({ version: "v2.0.0" });
-
-      // Update should still be ready (state not corrupted)
+      // The newer release replaces the stale staged update so the user
+      // installs the latest version, without a second toast.
+      expect(readyHandler).not.toHaveBeenCalled();
+      expect(statusHandler).toHaveBeenCalledWith({
+        checking: false,
+        updateReady: true,
+        installing: false,
+        version: "v3.0.0",
+      });
+      expect(service.getStatus()).toEqual({
+        checking: false,
+        updateReady: true,
+        installing: false,
+        version: "v3.0.0",
+      });
       expect(service.hasUpdateReady).toBe(true);
+    });
+
+    it("points the feed at the staged version after a download", async () => {
+      await initializeService(service);
+
+      mockUpdater.setFeedUrl.mockClear();
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+
+      expect(mockUpdater.setFeedUrl).toHaveBeenCalledWith(
+        "https://update.electronjs.org/PostHog/code/darwin-arm64/2.0.0",
+      );
+
+      mockUpdater.setFeedUrl.mockClear();
+      updaterHandlers.updateDownloaded?.("v3.0.0");
+
+      expect(mockUpdater.setFeedUrl).toHaveBeenCalledWith(
+        "https://update.electronjs.org/PostHog/code/darwin-arm64/3.0.0",
+      );
+    });
+
+    it("ignores update-downloaded while an install is in progress", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      mockLifecycleService.shutdownWithoutContainer.mockReturnValue(
+        new Promise(() => {}),
+      );
+
+      void service.installUpdate();
+      await Promise.resolve();
+
+      const statusHandler = vi.fn();
+      service.on(UpdatesEvent.Status, statusHandler);
+
+      updaterHandlers.updateDownloaded?.("v3.0.0");
+
+      expect(statusHandler).not.toHaveBeenCalled();
+      expect(service.getStatus()).toEqual({
+        checking: false,
+        updateReady: true,
+        installing: true,
+        version: "v2.0.0",
+      });
     });
   });
 
@@ -955,7 +1053,7 @@ describe("UpdatesService", () => {
       );
     });
 
-    it("logs skipped checks after an update is staged", async () => {
+    it("logs staged refresh checks after an update is staged", async () => {
       await initializeService(service);
       updaterHandlers.updateDownloaded?.("v2.0.0");
 
@@ -969,7 +1067,7 @@ describe("UpdatesService", () => {
           fromState: "ready",
           toState: "ready",
           downloadedVersion: "v2.0.0",
-          skippedBecauseUpdateStaged: true,
+          reason: "refreshing staged update against latest release",
         }),
       );
     });
