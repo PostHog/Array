@@ -71,44 +71,30 @@ interface BuiltInTemplate {
   suggestions: CanvasSuggestion[];
 }
 
-// Interactivity test chips (Phase 2.5): each `label` names the capability under
-// test; clicking drops the full `prompt` into the composer. Handy for repeatedly
-// exercising state/bindings/visible/actions on a Blank canvas.
-const INTERACTIVITY_TESTS: CanvasSuggestion[] = [
+// Starter chips for the Blank canvas — user-facing prompts (not internal
+// capability tests), since these show in the empty-chat suggestions panel.
+const BLANK_SUGGESTIONS: CanvasSuggestion[] = [
   {
-    label: "$bindState + {$state}",
+    label: "Landing page",
     prompt:
-      "Build a name-tag tool: a TextInput labelled 'Your name' bound two-way to /name, and a big Heading below it that reads /name and shows \"Hello, <name>\".",
+      "Build a marketing landing page with a hero (headline, subtitle, call to action), a grid of feature cards, and a closing section.",
   },
   {
-    label: "on.click setState + visible",
+    label: "Pricing page",
     prompt:
-      "Build a signup confirmation: a TextInput for email bound to /email, and a Submit button that sets /done to true on click. Below it, show a Text 'You are signed up!' that is only visible when /done is true.",
+      "Build a pricing page with three tiers (Free, Pro, Enterprise) as cards, each with a price, a short description, and a list of features.",
   },
   {
-    label: "Checkbox → visible",
+    label: "Changelog",
     prompt:
-      "Add a Checkbox labelled 'Show advanced options' bound to /advanced, and a muted Section with two Text lines that is only visible when /advanced is true.",
+      "Build a changelog page with the three most recent releases, each with a date, a version badge, and a short markdown summary of what changed.",
   },
   {
-    label: "validateForm",
+    label: "Feedback form",
     prompt:
-      "Build a feedback form with a required TextInput for email bound to /form/email and a required TextInput for message bound to /form/message, plus a Send button that runs validateForm. Show a Text 'Please fill all fields' only visible when /formValidation/valid is false.",
-  },
-  {
-    label: "pushState + clear",
-    prompt:
-      "Build a quick-capture box: a TextInput bound to /draft and an Add button that pushes /draft onto /items and clears /draft after adding.",
+      "Build a feedback page: a heading, a short intro, a text field for the message, and a Send button.",
   },
 ];
-
-// Same prompt on both templates verifies the allow-list: Blank may emit
-// Hero/Markdown, Dashboard may not (they aren't in its catalog).
-const ALLOW_LIST_TEST: CanvasSuggestion = {
-  label: "Allow-list (Hero/Markdown)",
-  prompt:
-    "Add a full-width marketing hero with a big headline and a subtitle, plus a paragraph of markdown copy below it.",
-};
 
 const BUILT_INS: BuiltInTemplate[] = [
   {
@@ -130,7 +116,6 @@ const BUILT_INS: BuiltInTemplate[] = [
         label: "Revenue (7d)",
         prompt: "Revenue over the last 7 days",
       },
-      ALLOW_LIST_TEST,
     ],
   },
   {
@@ -142,7 +127,7 @@ const BUILT_INS: BuiltInTemplate[] = [
       "You are PostHog Canvas, an agent that builds whatever the user asks — a dashboard, a tool, a form, a report, or a whole mini-site — for the user's current PostHog project.",
     rules: BLANK_RULES,
     allow: ALL_CANVAS_COMPONENTS,
-    suggestions: [...INTERACTIVITY_TESTS, ALLOW_LIST_TEST],
+    suggestions: BLANK_SUGGESTIONS,
   },
 ];
 

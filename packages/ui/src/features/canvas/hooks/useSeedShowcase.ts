@@ -21,6 +21,11 @@ export function useSeedShowcase(channelId: string | undefined): void {
   const { createDashboard } = useDashboardMutations();
   const claimed = useRef(new Set<string>());
 
+  // `createDashboard` is a fresh closure each render; keep it in a ref so it
+  // isn't an effect dependency (otherwise the effect re-runs every render).
+  const createRef = useRef(createDashboard);
+  createRef.current = createDashboard;
+
   useEffect(() => {
     if (!channelId || isLoading || claimed.current.has(channelId)) return;
     if (dashboards.some((d) => d.name === SHOWCASE_CANVAS_NAME)) {
@@ -29,14 +34,11 @@ export function useSeedShowcase(channelId: string | undefined): void {
     }
     // Claim before the async create so a re-render mid-flight can't double-seed.
     claimed.current.add(channelId);
-    createDashboard(
-      channelId,
-      SHOWCASE_CANVAS_NAME,
-      SHOWCASE_SPEC,
-      "dashboard",
-    ).catch(() => {
-      // Creation failed — release the claim so a later render can retry.
-      claimed.current.delete(channelId);
-    });
-  }, [channelId, isLoading, dashboards, createDashboard]);
+    createRef
+      .current(channelId, SHOWCASE_CANVAS_NAME, SHOWCASE_SPEC, "dashboard")
+      .catch(() => {
+        // Creation failed — release the claim so a later render can retry.
+        claimed.current.delete(channelId);
+      });
+  }, [channelId, isLoading, dashboards]);
 }
