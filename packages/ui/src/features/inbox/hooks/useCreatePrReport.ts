@@ -51,6 +51,10 @@ export function useCreatePrReport({
       return {
         content: prompt,
         taskDescription: prompt,
+        // The prompt is intentionally generic (the agent fetches the report via
+        // MCP), so label the task with the report title instead of letting the
+        // backend auto-generate one from the preamble.
+        title: ctx.reportTitle ?? undefined,
         repository: ctx.cloudRepository,
         githubUserIntegrationId: ctx.githubUserIntegrationId,
         workspaceMode: "cloud",

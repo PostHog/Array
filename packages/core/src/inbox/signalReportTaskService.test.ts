@@ -76,6 +76,30 @@ describe("SignalReportTaskService", () => {
     expect(result.status).toBe("created");
   });
 
+  it("labels the task with the report title", async () => {
+    const { service, createTask } = makeService();
+    const result = await service.createSignalReportTask(
+      makeInput({ reportTitle: "Checkout flow throws on empty cart" }),
+      vi.fn(),
+    );
+    expect(result.status).toBe("created");
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Checkout flow throws on empty cart",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("omits the title when the report has none", async () => {
+    const { service, createTask } = makeService();
+    await service.createSignalReportTask(
+      makeInput({ reportTitle: null }),
+      vi.fn(),
+    );
+    expect(createTask.mock.calls[0]?.[0]?.title).toBeUndefined();
+  });
+
   it("aborts with missing-model when no model can be resolved", async () => {
     const { service, createTask } = makeService(
       {},

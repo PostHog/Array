@@ -400,8 +400,13 @@ export class TaskCreationSaga extends Saga<
       name: "task_creation",
       execute: async () => {
         const description = input.taskDescription ?? input.content ?? "";
+        const title = input.title?.trim();
         const result = await this.deps.posthogClient.createTask({
           description,
+          // Only forward an explicit title; otherwise the backend derives one
+          // from the description. Keep the key absent (not undefined) so callers
+          // that never set a title send no title field at all.
+          ...(title ? { title } : {}),
           repository: repository ?? undefined,
           github_integration:
             input.workspaceMode === "cloud" &&

@@ -39,6 +39,9 @@ export function useDiscussReport({
       return {
         content: prompt,
         taskDescription: prompt,
+        // Label the task with the report title rather than the generic prompt
+        // preamble the backend would otherwise summarize.
+        title: ctx.reportTitle ?? undefined,
         repository: ctx.cloudRepository,
         githubUserIntegrationId: ctx.githubUserIntegrationId,
         workspaceMode: "cloud",

@@ -15,6 +15,10 @@ export interface TaskCreationInput {
   // For creating new task (required if no taskId)
   content?: string;
   taskDescription?: string;
+  // Explicit task title. When omitted, the backend auto-generates one from the
+  // description; report-scoped flows pass the report title so the task is
+  // labelled with the report instead of the generic prompt preamble.
+  title?: string | null;
   filePaths?: string[];
   repoPath?: string;
   repository?: string | null;

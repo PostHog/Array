@@ -419,6 +419,43 @@ describe("TaskCreationSaga", () => {
     expect(createTaskMock.mock.calls[0]?.[0]).not.toHaveProperty("title");
   });
 
+  it("forwards an explicit title to createTask", async () => {
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+
+    const saga = new TaskCreationSaga({
+      posthogClient: {
+        createTask: createTaskMock,
+        deleteTask: vi.fn(),
+        getTask: vi.fn(),
+        createTaskRun: createTaskRunMock,
+        startTaskRun: startTaskRunMock,
+        sendRunCommand: vi.fn(),
+        updateTask: vi.fn(),
+      } as never,
+      host,
+      sessionService,
+      track: vi.fn(),
+    });
+
+    await saga.run({
+      content: "Act on PostHog inbox report abc",
+      title: "Checkout flow throws on empty cart",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+    });
+
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Checkout flow throws on empty cart",
+      }),
+    );
+  });
+
   it("uses user authorship for repo-less cloud tasks with a selected user GitHub integration", async () => {
     const createdTask = createTask({
       repository: null,

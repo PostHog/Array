@@ -90,6 +90,7 @@ export class SignalReportTaskService {
     const taskInput = buildSignalReportTaskInput({
       prompt,
       reportId: input.reportId,
+      reportTitle: input.reportTitle,
       cloudRepository: input.cloudRepository,
       githubUserIntegrationId: input.githubUserIntegrationId,
       adapter: input.adapter,

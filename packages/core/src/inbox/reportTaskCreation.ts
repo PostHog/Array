@@ -28,6 +28,7 @@ export function selectModelFromOptions(
 export interface BuildSignalReportTaskInput {
   prompt: string;
   reportId: string;
+  reportTitle?: string | null;
   cloudRepository: string;
   githubUserIntegrationId: string;
   adapter: "claude" | "codex";
@@ -43,6 +44,7 @@ export function buildSignalReportTaskInput(
   const {
     prompt,
     reportId,
+    reportTitle,
     cloudRepository,
     githubUserIntegrationId,
     adapter,
@@ -53,6 +55,8 @@ export function buildSignalReportTaskInput(
   return {
     content: prompt,
     taskDescription: prompt,
+    // Label the task with the report title; the prompt itself is generic.
+    title: reportTitle ?? undefined,
     repository: cloudRepository,
     githubUserIntegrationId,
     workspaceMode: "cloud",
