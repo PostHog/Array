@@ -630,6 +630,82 @@ export interface InboxReportActionProperties {
   feedback_text?: string;
 }
 
+// Scout events
+export type ScoutChatType =
+  | "fleet_overview"
+  | "recent_signals"
+  | "scout_checkin";
+
+export type ScoutSurface = "fleet_list" | "scout_detail" | "empty_state";
+
+export type ScoutActionType =
+  | "expand_run"
+  | "collapse_run"
+  | "expand_emission"
+  | "collapse_emission"
+  | "open_task_run"
+  | "open_skill_in_posthog"
+  | "open_helper_skill"
+  | "show_more_emitted_runs"
+  | "filter_runs"
+  | "toggle_hide_disabled"
+  | "open_settings"
+  | "close_settings";
+
+export interface ScoutFleetViewedProperties {
+  scout_count: number;
+  enabled_count: number;
+  dry_run_count: number;
+  custom_count: number;
+  is_empty: boolean;
+}
+
+export interface ScoutDetailViewedProperties {
+  skill_name: string;
+  scout_origin: "canonical" | "custom";
+  /** False when the runs window has data but no config exists for this scout. */
+  has_config: boolean;
+  enabled: boolean | null;
+  /** Live (true) vs dry run (false); null when no config was found. */
+  emit: boolean | null;
+  run_interval_minutes: number | null;
+  /** Run stats cover the fleet runs window (currently 24h). */
+  run_count: number;
+  emitted_signal_count: number;
+  failed_run_count: number;
+}
+
+export interface ScoutConfigChangedProperties {
+  skill_name: string;
+  scout_origin: "canonical" | "custom";
+  setting: "enabled" | "emit" | "run_interval_minutes";
+  new_value: boolean | number;
+  old_value: boolean | number;
+  /** False when the server rejected the update and the change rolled back. */
+  success: boolean;
+}
+
+export interface ScoutChatStartedProperties {
+  chat_type: ScoutChatType;
+  surface: ScoutSurface;
+  /** Set for per-scout check-ins; absent for fleet-level questions. */
+  skill_name?: string;
+}
+
+export interface ScoutActionProperties {
+  action_type: ScoutActionType;
+  surface: ScoutSurface;
+  skill_name?: string;
+  run_id?: string;
+  run_status?: string;
+  emitted_count?: number;
+  severity?: string | null;
+  filter?: string;
+  filter_match_count?: number;
+  helper_skill?: string;
+  hide_disabled?: boolean;
+}
+
 export interface SignalSourceConnectedProperties {
   source_product:
     | "session_replay"
@@ -793,6 +869,13 @@ export const ANALYTICS_EVENTS = {
   INBOX_REPORT_SCROLLED: "Inbox report scrolled",
   SIGNAL_SOURCE_CONNECTED: "Signal source connected",
 
+  // Scout events
+  SCOUT_FLEET_VIEWED: "Scout fleet viewed",
+  SCOUT_DETAIL_VIEWED: "Scout detail viewed",
+  SCOUT_CONFIG_CHANGED: "Scout config changed",
+  SCOUT_CHAT_STARTED: "Scout chat started",
+  SCOUT_ACTION: "Scout action",
+
   // Spend analysis events
   SPEND_ANALYSIS_TASK_OPENED: "Spend analysis task opened",
 
@@ -915,6 +998,13 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
   [ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED]: SignalSourceConnectedProperties;
+
+  // Scout events
+  [ANALYTICS_EVENTS.SCOUT_FLEET_VIEWED]: ScoutFleetViewedProperties;
+  [ANALYTICS_EVENTS.SCOUT_DETAIL_VIEWED]: ScoutDetailViewedProperties;
+  [ANALYTICS_EVENTS.SCOUT_CONFIG_CHANGED]: ScoutConfigChangedProperties;
+  [ANALYTICS_EVENTS.SCOUT_CHAT_STARTED]: ScoutChatStartedProperties;
+  [ANALYTICS_EVENTS.SCOUT_ACTION]: ScoutActionProperties;
 
   // Spend analysis events
   [ANALYTICS_EVENTS.SPEND_ANALYSIS_TASK_OPENED]: SpendAnalysisTaskOpenedProperties;

@@ -326,3 +326,19 @@ export const useSettingsStore = create<SettingsStore>()(
     },
   ),
 );
+
+/**
+ * The repository a one-click cloud task should default to: the last-used cloud
+ * repository when it's still connected, otherwise the first connected one.
+ * `repositories` is expected to be normalized (lowercased) already.
+ */
+export function resolveDefaultCloudRepository(
+  repositories: string[],
+  lastUsedCloudRepository: string | null,
+): string | null {
+  const normalizedLastUsed = lastUsedCloudRepository?.toLowerCase() ?? null;
+  if (normalizedLastUsed && repositories.includes(normalizedLastUsed)) {
+    return normalizedLastUsed;
+  }
+  return repositories[0] ?? null;
+}

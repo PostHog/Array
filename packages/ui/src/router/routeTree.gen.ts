@@ -25,6 +25,7 @@ import { Route as CodeArchivedRouteImport } from './routes/code/archived'
 import { Route as CodeAgentsRouteImport } from './routes/code/agents'
 import { Route as WebsiteChannelIdIndexRouteImport } from './routes/website/$channelId/index'
 import { Route as CodeInboxIndexRouteImport } from './routes/code/inbox/index'
+import { Route as CodeAgentsIndexRouteImport } from './routes/code/agents/index'
 import { Route as WebsiteChannelIdNewRouteImport } from './routes/website/$channelId/new'
 import { Route as WebsiteChannelIdContextRouteImport } from './routes/website/$channelId/context'
 import { Route as CodeTasksTaskIdRouteImport } from './routes/code/tasks/$taskId'
@@ -32,6 +33,7 @@ import { Route as CodeInboxRunsRouteImport } from './routes/code/inbox/runs'
 import { Route as CodeInboxReportsRouteImport } from './routes/code/inbox/reports'
 import { Route as CodeInboxPullsRouteImport } from './routes/code/inbox/pulls'
 import { Route as CodeInboxAgentsRouteImport } from './routes/code/inbox/agents'
+import { Route as CodeAgentsScoutsRouteImport } from './routes/code/agents/scouts'
 import { Route as CodeInboxRunsIndexRouteImport } from './routes/code/inbox/runs.index'
 import { Route as CodeInboxReportsIndexRouteImport } from './routes/code/inbox/reports.index'
 import { Route as CodeInboxPullsIndexRouteImport } from './routes/code/inbox/pulls.index'
@@ -41,6 +43,8 @@ import { Route as CodeTasksPendingKeyRouteImport } from './routes/code/tasks/pen
 import { Route as CodeInboxRunsReportIdRouteImport } from './routes/code/inbox/runs.$reportId'
 import { Route as CodeInboxReportsReportIdRouteImport } from './routes/code/inbox/reports.$reportId'
 import { Route as CodeInboxPullsReportIdRouteImport } from './routes/code/inbox/pulls.$reportId'
+import { Route as CodeAgentsScoutsSkillNameRouteImport } from './routes/code/agents/scouts.$skillName'
+import { Route as CodeAgentsScoutsSkillNameIndexRouteImport } from './routes/code/agents/scouts.$skillName.index'
 
 const WebsiteRoute = WebsiteRouteImport.update({
   id: '/website',
@@ -122,6 +126,11 @@ const CodeInboxIndexRoute = CodeInboxIndexRouteImport.update({
   path: '/',
   getParentRoute: () => CodeInboxRoute,
 } as any)
+const CodeAgentsIndexRoute = CodeAgentsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CodeAgentsRoute,
+} as any)
 const WebsiteChannelIdNewRoute = WebsiteChannelIdNewRouteImport.update({
   id: '/$channelId/new',
   path: '/$channelId/new',
@@ -156,6 +165,11 @@ const CodeInboxAgentsRoute = CodeInboxAgentsRouteImport.update({
   id: '/agents',
   path: '/agents',
   getParentRoute: () => CodeInboxRoute,
+} as any)
+const CodeAgentsScoutsRoute = CodeAgentsScoutsRouteImport.update({
+  id: '/scouts',
+  path: '/scouts',
+  getParentRoute: () => CodeAgentsRoute,
 } as any)
 const CodeInboxRunsIndexRoute = CodeInboxRunsIndexRouteImport.update({
   id: '/',
@@ -205,6 +219,18 @@ const CodeInboxPullsReportIdRoute = CodeInboxPullsReportIdRouteImport.update({
   path: '/$reportId',
   getParentRoute: () => CodeInboxPullsRoute,
 } as any)
+const CodeAgentsScoutsSkillNameRoute =
+  CodeAgentsScoutsSkillNameRouteImport.update({
+    id: '/$skillName',
+    path: '/$skillName',
+    getParentRoute: () => CodeAgentsScoutsRoute,
+  } as any)
+const CodeAgentsScoutsSkillNameIndexRoute =
+  CodeAgentsScoutsSkillNameIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => CodeAgentsScoutsSkillNameRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -212,7 +238,7 @@ export interface FileRoutesByFullPath {
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/website': typeof WebsiteRouteWithChildren
-  '/code/agents': typeof CodeAgentsRoute
+  '/code/agents': typeof CodeAgentsRouteWithChildren
   '/code/archived': typeof CodeArchivedRoute
   '/code/home': typeof CodeHomeRoute
   '/code/inbox': typeof CodeInboxRouteWithChildren
@@ -221,6 +247,7 @@ export interface FileRoutesByFullPath {
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
+  '/code/agents/scouts': typeof CodeAgentsScoutsRouteWithChildren
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/inbox/pulls': typeof CodeInboxPullsRouteWithChildren
   '/code/inbox/reports': typeof CodeInboxReportsRouteWithChildren
@@ -228,8 +255,10 @@ export interface FileRoutesByFullPath {
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
+  '/code/agents/': typeof CodeAgentsIndexRoute
   '/code/inbox/': typeof CodeInboxIndexRoute
   '/website/$channelId/': typeof WebsiteChannelIdIndexRoute
+  '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameRouteWithChildren
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
   '/code/inbox/runs/$reportId': typeof CodeInboxRunsReportIdRoute
@@ -239,13 +268,13 @@ export interface FileRoutesByFullPath {
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
+  '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
-  '/code/agents': typeof CodeAgentsRoute
   '/code/archived': typeof CodeArchivedRoute
   '/code/home': typeof CodeHomeRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
@@ -253,10 +282,12 @@ export interface FileRoutesByTo {
   '/code': typeof CodeIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/website': typeof WebsiteIndexRoute
+  '/code/agents/scouts': typeof CodeAgentsScoutsRouteWithChildren
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
+  '/code/agents': typeof CodeAgentsIndexRoute
   '/code/inbox': typeof CodeInboxIndexRoute
   '/website/$channelId': typeof WebsiteChannelIdIndexRoute
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
@@ -268,6 +299,7 @@ export interface FileRoutesByTo {
   '/code/inbox/pulls': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs': typeof CodeInboxRunsIndexRoute
+  '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -276,7 +308,7 @@ export interface FileRoutesById {
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/website': typeof WebsiteRouteWithChildren
-  '/code/agents': typeof CodeAgentsRoute
+  '/code/agents': typeof CodeAgentsRouteWithChildren
   '/code/archived': typeof CodeArchivedRoute
   '/code/home': typeof CodeHomeRoute
   '/code/inbox': typeof CodeInboxRouteWithChildren
@@ -285,6 +317,7 @@ export interface FileRoutesById {
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
+  '/code/agents/scouts': typeof CodeAgentsScoutsRouteWithChildren
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/inbox/pulls': typeof CodeInboxPullsRouteWithChildren
   '/code/inbox/reports': typeof CodeInboxReportsRouteWithChildren
@@ -292,8 +325,10 @@ export interface FileRoutesById {
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
+  '/code/agents/': typeof CodeAgentsIndexRoute
   '/code/inbox/': typeof CodeInboxIndexRoute
   '/website/$channelId/': typeof WebsiteChannelIdIndexRoute
+  '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameRouteWithChildren
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
   '/code/inbox/runs/$reportId': typeof CodeInboxRunsReportIdRoute
@@ -303,6 +338,7 @@ export interface FileRoutesById {
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
+  '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -321,6 +357,7 @@ export interface FileRouteTypes {
     | '/code/'
     | '/settings/'
     | '/website/'
+    | '/code/agents/scouts'
     | '/code/inbox/agents'
     | '/code/inbox/pulls'
     | '/code/inbox/reports'
@@ -328,8 +365,10 @@ export interface FileRouteTypes {
     | '/code/tasks/$taskId'
     | '/website/$channelId/context'
     | '/website/$channelId/new'
+    | '/code/agents/'
     | '/code/inbox/'
     | '/website/$channelId/'
+    | '/code/agents/scouts/$skillName'
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
     | '/code/inbox/runs/$reportId'
@@ -339,13 +378,13 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
+    | '/code/agents/scouts/$skillName/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/command-center'
     | '/mcp-servers'
     | '/skills'
-    | '/code/agents'
     | '/code/archived'
     | '/code/home'
     | '/folders/$folderId'
@@ -353,10 +392,12 @@ export interface FileRouteTypes {
     | '/code'
     | '/settings'
     | '/website'
+    | '/code/agents/scouts'
     | '/code/inbox/agents'
     | '/code/tasks/$taskId'
     | '/website/$channelId/context'
     | '/website/$channelId/new'
+    | '/code/agents'
     | '/code/inbox'
     | '/website/$channelId'
     | '/code/inbox/pulls/$reportId'
@@ -368,6 +409,7 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls'
     | '/code/inbox/reports'
     | '/code/inbox/runs'
+    | '/code/agents/scouts/$skillName'
   id:
     | '__root__'
     | '/'
@@ -384,6 +426,7 @@ export interface FileRouteTypes {
     | '/code/'
     | '/settings/'
     | '/website/'
+    | '/code/agents/scouts'
     | '/code/inbox/agents'
     | '/code/inbox/pulls'
     | '/code/inbox/reports'
@@ -391,8 +434,10 @@ export interface FileRouteTypes {
     | '/code/tasks/$taskId'
     | '/website/$channelId/context'
     | '/website/$channelId/new'
+    | '/code/agents/'
     | '/code/inbox/'
     | '/website/$channelId/'
+    | '/code/agents/scouts/$skillName'
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
     | '/code/inbox/runs/$reportId'
@@ -402,6 +447,7 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
+    | '/code/agents/scouts/$skillName/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -410,7 +456,7 @@ export interface RootRouteChildren {
   McpServersRoute: typeof McpServersRoute
   SkillsRoute: typeof SkillsRoute
   WebsiteRoute: typeof WebsiteRouteWithChildren
-  CodeAgentsRoute: typeof CodeAgentsRoute
+  CodeAgentsRoute: typeof CodeAgentsRouteWithChildren
   CodeArchivedRoute: typeof CodeArchivedRoute
   CodeHomeRoute: typeof CodeHomeRoute
   CodeInboxRoute: typeof CodeInboxRouteWithChildren
@@ -536,6 +582,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeInboxIndexRouteImport
       parentRoute: typeof CodeInboxRoute
     }
+    '/code/agents/': {
+      id: '/code/agents/'
+      path: '/'
+      fullPath: '/code/agents/'
+      preLoaderRoute: typeof CodeAgentsIndexRouteImport
+      parentRoute: typeof CodeAgentsRoute
+    }
     '/website/$channelId/new': {
       id: '/website/$channelId/new'
       path: '/$channelId/new'
@@ -584,6 +637,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/code/inbox/agents'
       preLoaderRoute: typeof CodeInboxAgentsRouteImport
       parentRoute: typeof CodeInboxRoute
+    }
+    '/code/agents/scouts': {
+      id: '/code/agents/scouts'
+      path: '/scouts'
+      fullPath: '/code/agents/scouts'
+      preLoaderRoute: typeof CodeAgentsScoutsRouteImport
+      parentRoute: typeof CodeAgentsRoute
     }
     '/code/inbox/runs/': {
       id: '/code/inbox/runs/'
@@ -648,6 +708,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeInboxPullsReportIdRouteImport
       parentRoute: typeof CodeInboxPullsRoute
     }
+    '/code/agents/scouts/$skillName': {
+      id: '/code/agents/scouts/$skillName'
+      path: '/$skillName'
+      fullPath: '/code/agents/scouts/$skillName'
+      preLoaderRoute: typeof CodeAgentsScoutsSkillNameRouteImport
+      parentRoute: typeof CodeAgentsScoutsRoute
+    }
+    '/code/agents/scouts/$skillName/': {
+      id: '/code/agents/scouts/$skillName/'
+      path: '/'
+      fullPath: '/code/agents/scouts/$skillName/'
+      preLoaderRoute: typeof CodeAgentsScoutsSkillNameIndexRouteImport
+      parentRoute: typeof CodeAgentsScoutsSkillNameRoute
+    }
   }
 }
 
@@ -672,6 +746,45 @@ const WebsiteRouteChildren: WebsiteRouteChildren = {
 
 const WebsiteRouteWithChildren =
   WebsiteRoute._addFileChildren(WebsiteRouteChildren)
+
+interface CodeAgentsScoutsSkillNameRouteChildren {
+  CodeAgentsScoutsSkillNameIndexRoute: typeof CodeAgentsScoutsSkillNameIndexRoute
+}
+
+const CodeAgentsScoutsSkillNameRouteChildren: CodeAgentsScoutsSkillNameRouteChildren =
+  {
+    CodeAgentsScoutsSkillNameIndexRoute: CodeAgentsScoutsSkillNameIndexRoute,
+  }
+
+const CodeAgentsScoutsSkillNameRouteWithChildren =
+  CodeAgentsScoutsSkillNameRoute._addFileChildren(
+    CodeAgentsScoutsSkillNameRouteChildren,
+  )
+
+interface CodeAgentsScoutsRouteChildren {
+  CodeAgentsScoutsSkillNameRoute: typeof CodeAgentsScoutsSkillNameRouteWithChildren
+}
+
+const CodeAgentsScoutsRouteChildren: CodeAgentsScoutsRouteChildren = {
+  CodeAgentsScoutsSkillNameRoute: CodeAgentsScoutsSkillNameRouteWithChildren,
+}
+
+const CodeAgentsScoutsRouteWithChildren =
+  CodeAgentsScoutsRoute._addFileChildren(CodeAgentsScoutsRouteChildren)
+
+interface CodeAgentsRouteChildren {
+  CodeAgentsScoutsRoute: typeof CodeAgentsScoutsRouteWithChildren
+  CodeAgentsIndexRoute: typeof CodeAgentsIndexRoute
+}
+
+const CodeAgentsRouteChildren: CodeAgentsRouteChildren = {
+  CodeAgentsScoutsRoute: CodeAgentsScoutsRouteWithChildren,
+  CodeAgentsIndexRoute: CodeAgentsIndexRoute,
+}
+
+const CodeAgentsRouteWithChildren = CodeAgentsRoute._addFileChildren(
+  CodeAgentsRouteChildren,
+)
 
 interface CodeInboxPullsRouteChildren {
   CodeInboxPullsReportIdRoute: typeof CodeInboxPullsReportIdRoute
@@ -740,7 +853,7 @@ const rootRouteChildren: RootRouteChildren = {
   McpServersRoute: McpServersRoute,
   SkillsRoute: SkillsRoute,
   WebsiteRoute: WebsiteRouteWithChildren,
-  CodeAgentsRoute: CodeAgentsRoute,
+  CodeAgentsRoute: CodeAgentsRouteWithChildren,
   CodeArchivedRoute: CodeArchivedRoute,
   CodeHomeRoute: CodeHomeRoute,
   CodeInboxRoute: CodeInboxRouteWithChildren,

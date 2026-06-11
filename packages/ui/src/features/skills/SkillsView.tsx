@@ -1,11 +1,15 @@
 import { Lightbulb, MagnifyingGlass } from "@phosphor-icons/react";
 import type { SkillInfo, SkillSource } from "@posthog/shared";
 import { Box, Flex, ScrollArea, Text, TextField } from "@radix-ui/themes";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSetHeaderContent } from "../../hooks/useSetHeaderContent";
 import { ResizableSidebar } from "../../primitives/ResizableSidebar";
 import { SkillSection, SOURCE_CONFIG } from "./SkillCard";
 import { SkillDetailPanel } from "./SkillDetailPanel";
+import {
+  useRequestedSkillName,
+  useSkillsSelectionActions,
+} from "./skillsSelectionStore";
 import { useSkillsSidebarStore } from "./skillsSidebarStore";
 import { useSkills } from "./useSkills";
 
@@ -15,6 +19,7 @@ export function SkillsView() {
   const { data: skills = [], isLoading } = useSkills();
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [scrollToPath, setScrollToPath] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
   const {
@@ -32,6 +37,22 @@ export function SkillsView() {
   const handleSelect = useCallback((path: string) => {
     setSelectedPath((prev) => (prev === path ? null : path));
   }, []);
+
+  // Another surface (e.g. the scout helper links) can ask to open a specific
+  // skill by name; honor it once the skill list has loaded, then clear it.
+  const requestedSkillName = useRequestedSkillName();
+  const { clearRequestedSkill } = useSkillsSelectionActions();
+  useEffect(() => {
+    if (!requestedSkillName || skills.length === 0) return;
+    const match = skills.find((s) => s.name === requestedSkillName);
+    if (match) {
+      setSelectedPath(match.path);
+      setScrollToPath(match.path);
+    }
+    clearRequestedSkill();
+  }, [requestedSkillName, skills, clearRequestedSkill]);
+
+  const handleScrolledIntoView = useCallback(() => setScrollToPath(null), []);
 
   const handleCloseSidebar = useCallback(() => {
     setSelectedPath(null);
@@ -127,6 +148,8 @@ export function SkillsView() {
                         skills={items}
                         selectedPath={selectedSkill?.path ?? null}
                         onSelect={handleSelect}
+                        scrollToPath={scrollToPath}
+                        onScrolledIntoView={handleScrolledIntoView}
                       />
                     );
                   })}

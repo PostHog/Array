@@ -66,6 +66,16 @@ export function featureFlagsIndexUrl(overrides?: LinkOverrides): string | null {
   return withProjectId((pid) => `/project/${pid}/feature_flags`, overrides);
 }
 
+export function skillUrl(
+  skillName: string,
+  overrides?: LinkOverrides,
+): string | null {
+  return withProjectId(
+    (pid) => `/project/${pid}/skills/${encodeURIComponent(skillName)}`,
+    overrides,
+  );
+}
+
 export function errorTrackingIssueUrl(
   issueId: string,
   overrides?: LinkOverrides,

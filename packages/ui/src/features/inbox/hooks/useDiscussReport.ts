@@ -31,8 +31,8 @@ export function useDiscussReport({
   const buildInput = useCallback(
     (ctx: InboxCloudTaskInputContext): TaskCreationInput => {
       const prompt = buildDiscussReportPrompt({
-        reportId: ctx.reportId,
-        reportTitle: ctx.reportTitle,
+        reportId,
+        reportTitle,
         question: pendingQuestionRef.current,
         isDevBuild: import.meta.env.DEV,
       });
@@ -48,10 +48,10 @@ export function useDiscussReport({
         reasoningLevel: ctx.reasoningLevel,
         cloudPrAuthorshipMode: "user",
         cloudRunSource: "signal_report",
-        signalReportId: ctx.reportId,
+        signalReportId: reportId,
       };
     },
-    [],
+    [reportId, reportTitle],
   );
 
   const { run, isRunning } = useInboxCloudTaskRunner({
