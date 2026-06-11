@@ -643,17 +643,6 @@ export interface SignalReportsQueryParams {
   has_implementation_pr?: boolean;
 }
 
-/**
- * An unlabelled task↔report association. A task's purpose (research / implementation / …)
- * is derived from the report's `task_run` artefacts, not stored on the link.
- */
-export interface SignalReportTask {
-  id: string;
-  report_id: string;
-  task_id: string;
-  created_at: string;
-}
-
 export interface SignalTeamConfig {
   id: string;
   default_autostart_priority: SignalReportPriority;

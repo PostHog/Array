@@ -23,14 +23,10 @@ function humanizeIdentifier(value: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function derivePurpose(
-  taskRun: { product: string; type: string } | undefined,
-): { purpose: ReportTaskPurpose; purposeLabel: string } | null {
-  if (!taskRun) {
-    // Freely-associated task with no task_run artefact (e.g. an agent that associated itself
-    // mid-run) — surface it generically rather than hiding it.
-    return { purpose: "other", purposeLabel: "Agent task" };
-  }
+function derivePurpose(taskRun: {
+  product: string;
+  type: string;
+}): { purpose: ReportTaskPurpose; purposeLabel: string } | null {
   if (taskRun.product === "signals") {
     if (taskRun.type === "research") {
       return { purpose: "research", purposeLabel: "Research" };
@@ -66,40 +62,44 @@ export function useReportTasks(
   return useAuthenticatedQuery<ReportTaskData[]>(
     ["inbox", "report-tasks", reportId],
     async (client) => {
-      const [reportTasks, artefacts] = await Promise.all([
-        client.getSignalReportTasks(reportId),
-        client.getSignalReportArtefacts(reportId),
-      ]);
-      // task id → its (product, type) from the report's task_run artefacts. The runtime
-      // `type` check is authoritative (the generic fallback artefact keeps `type: string`
-      // and defeats static narrowing).
+      // task_run artefacts ARE the task↔report association — one entry per associated task,
+      // keyed by content.task_id (earliest artefact wins for startedAt). The runtime `type`
+      // check is authoritative (the generic fallback artefact keeps `type: string` and
+      // defeats static narrowing).
+      const artefacts = await client.getSignalReportArtefacts(reportId);
       const taskRunByTaskId = new Map<
         string,
-        { product: string; type: string }
+        { product: string; type: string; startedAt: string }
       >();
       for (const artefact of artefacts.results) {
-        if (artefact.type === "task_run") {
-          const content = artefact.content as TaskRunArtefactContent;
-          taskRunByTaskId.set(content.task_id, {
-            product: content.product,
-            type: content.type,
-          });
-        }
+        if (artefact.type !== "task_run") continue;
+        const content = artefact.content as TaskRunArtefactContent;
+        const existing = taskRunByTaskId.get(content.task_id);
+        if (existing && existing.startedAt <= artefact.created_at) continue;
+        taskRunByTaskId.set(content.task_id, {
+          product: content.product,
+          type: content.type,
+          startedAt: artefact.created_at,
+        });
       }
 
-      const relevant = reportTasks.flatMap((rt) => {
-        const derived = derivePurpose(taskRunByTaskId.get(rt.task_id));
-        return derived ? [{ rt, ...derived }] : [];
-      });
+      const relevant = [...taskRunByTaskId.entries()].flatMap(
+        ([taskId, run]) => {
+          const derived = derivePurpose(run);
+          return derived
+            ? [{ taskId, startedAt: run.startedAt, ...derived }]
+            : [];
+        },
+      );
 
       const tasks = await Promise.all(
-        relevant.map(async ({ rt, purpose, purposeLabel }) => {
-          const task = await client.getTask(rt.task_id);
+        relevant.map(async ({ taskId, startedAt, purpose, purposeLabel }) => {
+          const task = await client.getTask(taskId);
           return {
             task,
             purpose,
             purposeLabel,
-            startedAt: rt.created_at,
+            startedAt,
           };
         }),
       );

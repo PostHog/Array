@@ -37,7 +37,6 @@ import type {
   SignalReportStatus,
   SignalReportsQueryParams,
   SignalReportsResponse,
-  SignalReportTask,
   SignalTeamConfig,
   SignalUserAutonomyConfig,
   SlackChannelsQueryParams,
@@ -3305,29 +3304,6 @@ export class PostHogAPIClient {
       status: "reingestion_started" | "already_running";
       report_id: string;
     };
-  }
-
-  async getSignalReportTasks(reportId: string): Promise<SignalReportTask[]> {
-    const teamId = await this.getTeamId();
-    const url = new URL(
-      `${this.api.baseUrl}/api/projects/${teamId}/signals/reports/${reportId}/tasks/`,
-    );
-    const path = `/api/projects/${teamId}/signals/reports/${reportId}/tasks/`;
-
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path,
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch signal report tasks: ${response.statusText}`,
-      );
-    }
-
-    const data = (await response.json()) as { results?: SignalReportTask[] };
-    return data.results ?? [];
   }
 
   async getSignalTeamConfig(): Promise<SignalTeamConfig> {
