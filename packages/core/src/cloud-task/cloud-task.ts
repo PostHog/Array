@@ -1452,11 +1452,14 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
   private async resolveStreamTarget(watcher: WatcherState): Promise<void> {
     const url = `${watcher.apiHost}/api/projects/${watcher.teamId}/tasks/${watcher.taskId}/runs/${watcher.runId}/stream_token/`;
-    this.log.info("[agent-proxy debug] resolveStreamTarget → GET stream_token", {
-      url,
-      taskId: watcher.taskId,
-      runId: watcher.runId,
-    });
+    this.log.info(
+      "[agent-proxy debug] resolveStreamTarget → GET stream_token",
+      {
+        url,
+        taskId: watcher.taskId,
+        runId: watcher.runId,
+      },
+    );
     try {
       const response = await this.auth.authenticatedFetch(url, {
         method: "GET",
