@@ -439,16 +439,17 @@ function handleToolResultChunk(
     toolCallId: chunk.tool_use_id,
     sessionUpdate: "tool_call_update",
     status: chunk.is_error ? "failed" : "completed",
-    rawOutput: ctx.mcpToolUseResult
-      ? { ...ctx.mcpToolUseResult, isError: chunk.is_error ?? false }
-      : {
-          content: Array.isArray(chunk.content)
-            ? chunk.content
-            : typeof chunk.content === "string"
-              ? [{ type: "text" as const, text: chunk.content }]
-              : [],
-          isError: chunk.is_error ?? false,
-        },
+    // Only MCP tools need rawOutput: their App bridge replays it. Standard
+    // tools (Read, Bash, ...) render from `content`, so forwarding the full
+    // result here would duplicate large payloads to the renderer.
+    ...(ctx.mcpToolUseResult
+      ? {
+          rawOutput: {
+            ...ctx.mcpToolUseResult,
+            isError: chunk.is_error ?? false,
+          },
+        }
+      : {}),
     ...toolUpdate,
   });
 

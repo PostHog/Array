@@ -5,6 +5,7 @@ import type {
 import type {
   SDKAssistantMessage,
   SDKPartialAssistantMessage,
+  SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vitest";
 import { Logger } from "../../../utils/logger";
@@ -258,5 +259,84 @@ describe("assembled assistant text fallback", () => {
       context,
     );
     expect(chunkTexts(updates, "agent_message_chunk")).toEqual([]);
+  });
+});
+
+async function registerToolUse(
+  context: MessageHandlerContext,
+  toolUseId: string,
+  name: string,
+  input: Record<string, unknown> = {},
+): Promise<void> {
+  await handleUserAssistantMessage(
+    assistantMessage("msg_tool", [
+      { type: "tool_use", id: toolUseId, name, input },
+    ]),
+    context,
+  );
+}
+
+function userToolResult(
+  toolUseId: string,
+  content: unknown,
+  toolUseResult?: Record<string, unknown>,
+): SDKUserMessage {
+  return {
+    type: "user",
+    parent_tool_use_id: null,
+    uuid: "00000000-0000-0000-0000-000000000003",
+    session_id: "test-session",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: toolUseId, content }],
+    },
+    ...(toolUseResult ? { tool_use_result: toolUseResult } : {}),
+  } as unknown as SDKUserMessage;
+}
+
+function toolUpdate(updates: SessionNotification[]) {
+  return updates.find((u) => u.update.sessionUpdate === "tool_call_update")
+    ?.update as
+    | (Extract<
+        SessionNotification["update"],
+        { sessionUpdate: "tool_call_update" }
+      > & { rawOutput?: unknown })
+    | undefined;
+}
+
+describe("tool_call_update rawOutput", () => {
+  it("omits rawOutput for standard tool results so content is not duplicated", async () => {
+    const { context, updates } = createHandlerContext();
+    await registerToolUse(context, "tool_read", "Read", {
+      file_path: "/test/a.ts",
+    });
+    updates.length = 0;
+    await handleUserAssistantMessage(
+      userToolResult("tool_read", "line one\nline two"),
+      context,
+    );
+    const update = toolUpdate(updates);
+    expect(update?.status).toBe("completed");
+    expect(update && "rawOutput" in update).toBe(false);
+  });
+
+  it("forwards rawOutput for MCP tool results consumed by the App bridge", async () => {
+    const { context, updates } = createHandlerContext();
+    await registerToolUse(context, "tool_mcp", "mcp__srv__do");
+    updates.length = 0;
+    await handleUserAssistantMessage(
+      userToolResult("tool_mcp", "ignored", {
+        content: [{ type: "text", text: "mcp payload" }],
+        structuredContent: { ok: true },
+      }),
+      context,
+    );
+    const update = toolUpdate(updates);
+    expect(update?.status).toBe("completed");
+    expect(update?.rawOutput).toEqual({
+      content: [{ type: "text", text: "mcp payload" }],
+      structuredContent: { ok: true },
+      isError: false,
+    });
   });
 });
