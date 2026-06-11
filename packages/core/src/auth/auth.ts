@@ -11,6 +11,7 @@ import {
   OAUTH_SCOPE_VERSION,
   sleepWithBackoff,
   TypedEventEmitter,
+  withTimeout,
 } from "@posthog/shared";
 import { inject, injectable, postConstruct, preDestroy } from "inversify";
 import {
@@ -40,6 +41,8 @@ import {
 } from "./schemas";
 
 const TOKEN_EXPIRY_SKEW_MS = 60_000;
+const AUTH_FETCH_TIMEOUT_MS = 30_000;
+const AUTH_BOOTSTRAP_DEADLINE_MS = 20_000;
 type FetchLike = (
   input: string | Request,
   init?: RequestInit,
@@ -386,6 +389,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     return fetchImpl(input, {
       ...init,
       headers,
+      signal: init.signal ?? AbortSignal.timeout(AUTH_FETCH_TIMEOUT_MS),
     });
   }
   private async doInitialize(): Promise<void> {
@@ -416,16 +420,35 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     }
 
     try {
-      await this.refreshAndSyncSession(storedSession);
+      const restore = this.refreshAndSyncSession(storedSession);
+      const outcome = await withTimeout(restore, AUTH_BOOTSTRAP_DEADLINE_MS);
+      if (outcome.result === "timeout") {
+        this.logger.warn(
+          "Auth bootstrap exceeded deadline; completing anonymously and restoring in the background",
+        );
+        // Keep awaiting so a late success still upgrades state; swallow rejection.
+        restore.catch((error) => {
+          this.logger.warn("Background auth restore failed after deadline", {
+            error,
+          });
+        });
+        this.completeBootstrapAnonymously(storedSession);
+      }
     } catch (error) {
       this.logger.warn("Failed to restore stored auth session", { error });
-      this.session = null;
-      this.setAnonymousState({
-        bootstrapComplete: true,
-        cloudRegion: storedSession.cloudRegion,
-        currentProjectId: storedSession.selectedProjectId,
-      });
+      this.completeBootstrapAnonymously(storedSession);
     }
+  }
+  private completeBootstrapAnonymously(
+    storedSession: StoredSessionInput,
+  ): void {
+    // Stored session stays on disk so connectivity/resume recovery can retry.
+    this.session = null;
+    this.setAnonymousState({
+      bootstrapComplete: true,
+      cloudRegion: storedSession.cloudRegion,
+      currentProjectId: storedSession.selectedProjectId,
+    });
   }
   private async ensureValidSession(
     forceRefresh = false,

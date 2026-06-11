@@ -133,6 +133,23 @@ describe("resolveModelPreference", () => {
     expect(resolveModelPreference("gpt-5", options)).toBeNull();
   });
 
+  it("does not inherit a cross-family match from the context hint alone", () => {
+    const sonnetOnly = [
+      { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (1M context)" },
+    ];
+    expect(resolveModelPreference("opus[1m]", sonnetOnly)).toBeNull();
+  });
+
+  it("resolves a hinted alias to the right family when a family token matches", () => {
+    const withHints = [
+      { value: "claude-opus-4-8", name: "Claude Opus 4.8 (1M context)" },
+      { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (1M context)" },
+    ];
+    expect(resolveModelPreference("opus[1m]", withHints)).toBe(
+      "claude-opus-4-8",
+    );
+  });
+
   it("treats `best` and `default` as wildcards (no tokens contribute)", () => {
     expect(resolveModelPreference("best", options)).toBeNull();
     expect(resolveModelPreference("default", options)).toBeNull();

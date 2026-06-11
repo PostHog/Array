@@ -114,6 +114,24 @@ describe("McpProxyService", () => {
       expect(url).toBe("https://upstream.example");
     });
 
+    it("passes a connection-lifetime signal so authenticatedFetch's default timeout does not apply", async () => {
+      authServiceMock.authenticatedFetch.mockResolvedValue(
+        new Response('{"ok":true}', {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+      await service.start();
+      const proxyUrl = service.register("alpha", "https://upstream.example");
+
+      await fetch(proxyUrl);
+
+      const [, options] = authServiceMock.authenticatedFetch.mock.calls[0];
+      expect(options.signal).toBeInstanceOf(AbortSignal);
+      expect(options.signal.aborted).toBe(false);
+    });
+
     it("forwards POST body bytes to the upstream URL", async () => {
       authServiceMock.authenticatedFetch.mockResolvedValue(
         new Response('{"ok":true}', {

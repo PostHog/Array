@@ -172,3 +172,52 @@ describe("ClaudeAcpAgent.prompt — early idle handling", () => {
     }
   });
 });
+
+describe("ClaudeAcpAgent.prompt — force-cancel backstop", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns 'cancelled' when the SDK never yields after interrupt (issue #680)", async () => {
+    const { agent } = makeAgent();
+    const sessionId = "s-wedged";
+    const query = installFakeSession(agent, sessionId);
+    query.interrupt.mockImplementation(async () => {});
+    (agent as unknown as { forceCancelGraceMs: number }).forceCancelGraceMs = 5;
+
+    const promptPromise = agent.prompt({
+      sessionId,
+      prompt: [{ type: "text", text: "do something slow" }],
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    await agent.cancel({ sessionId });
+
+    const result = await promptPromise;
+    expect(result.stopReason).toBe("cancelled");
+  });
+
+  it("clears the backstop timer on a healthy cancel (interrupt yields)", async () => {
+    const { agent } = makeAgent();
+    const sessionId = "s-healthy";
+    installFakeSession(agent, sessionId);
+    (agent as unknown as { forceCancelGraceMs: number }).forceCancelGraceMs =
+      50_000;
+
+    const promptPromise = agent.prompt({
+      sessionId,
+      prompt: [{ type: "text", text: "do something" }],
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    await agent.cancel({ sessionId });
+
+    const result = await promptPromise;
+    expect(result.stopReason).toBe("cancelled");
+    expect(
+      (agent as unknown as { session: { forceCancelTimer?: unknown } }).session
+        .forceCancelTimer,
+    ).toBeUndefined();
+  });
+});

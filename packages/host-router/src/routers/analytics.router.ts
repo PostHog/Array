@@ -24,6 +24,14 @@ export const analyticsRouter = router({
       }
     }),
 
+  getSessionId: publicProcedure
+    .output(z.object({ sessionId: z.string() }))
+    .query(({ ctx }) => ({
+      sessionId: ctx.container
+        .get<IAnalytics>(ANALYTICS_SERVICE)
+        .getOrCreateSessionId(),
+    })),
+
   resetUser: publicProcedure.mutation(({ ctx }) => {
     ctx.container.get<IAnalytics>(ANALYTICS_SERVICE).resetUser();
   }),

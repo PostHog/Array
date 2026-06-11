@@ -5,6 +5,7 @@ import {
   type ScopedLogger,
 } from "@posthog/di/logger";
 import { inject, injectable, preDestroy } from "inversify";
+import { streamBodyToResponse } from "../proxy-stream/proxy-stream";
 import { MCP_PROXY_AUTH } from "./identifiers";
 import type { McpProxyAuth } from "./ports";
 
@@ -151,9 +152,20 @@ export class McpProxyService {
       }
     }
 
+    // The client connection governs the request lifetime. An explicit signal
+    // also opts out of authenticatedFetch's default timeout, which would
+    // abort long-running MCP tool calls that outlive it.
+    const abort = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        abort.abort();
+      }
+    });
+
     const fetchOptions: RequestInit = {
       method: req.method ?? "GET",
       headers,
+      signal: abort.signal,
     };
 
     if (req.method !== "GET" && req.method !== "HEAD") {
@@ -209,7 +221,7 @@ export class McpProxyService {
             this.writeBufferedResponse(response, retryBuf, res);
             return;
           }
-          this.writeStreamingResponse(response, res);
+          await this.writeStreamingResponse(response, res);
           return;
         }
 
@@ -234,15 +246,23 @@ export class McpProxyService {
         return;
       }
 
-      this.writeStreamingResponse(response, res);
+      await this.writeStreamingResponse(response, res);
     } catch (err) {
-      this.log.error("MCP proxy forward error", {
-        id,
-        url,
-        method: options.method,
-        requestBody: truncateRequestBody(options.body),
-        err,
-      });
+      if (options.signal?.aborted) {
+        this.log.debug("Upstream fetch aborted after client disconnect", {
+          id,
+          url,
+          method: options.method,
+        });
+      } else {
+        this.log.error("MCP proxy forward error", {
+          id,
+          url,
+          method: options.method,
+          requestBody: truncateRequestBody(options.body),
+          err,
+        });
+      }
       if (!res.headersSent) {
         res.writeHead(502);
       }
@@ -292,26 +312,6 @@ export class McpProxyService {
     res: http.ServerResponse,
   ): Promise<void> {
     res.writeHead(response.status, this.buildResponseHeaders(response));
-    if (!response.body) {
-      res.end();
-      return;
-    }
-    const reader = response.body.getReader();
-    res.on("close", () => {
-      void reader.cancel().catch(() => {});
-    });
-    const pump = async (): Promise<void> => {
-      const { done, value } = await reader.read();
-      if (done) {
-        res.end();
-        return;
-      }
-      const canContinue = res.write(value);
-      if (canContinue) {
-        return pump();
-      }
-      res.once("drain", () => pump());
-    };
-    await pump();
+    await streamBodyToResponse(response.body, res);
   }
 }
