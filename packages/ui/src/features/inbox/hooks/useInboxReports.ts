@@ -225,15 +225,17 @@ export function useInboxReportSignals(
 
 interface UpdateSuggestedReviewersVariables {
   artefactId: string;
-  /** Full-replacement payload sent to the server. */
+  /** Reviewer list sent to the server (it appends a new suggested_reviewers status row). */
   content: SuggestedReviewerWriteEntry[];
-  /** Read-shape list used to optimistically patch the cache for immediate-apply UI. */
+  /** Read-shape list used to optimistically show the new current reviewers. */
   optimisticReviewers: SuggestedReviewersArtefact["content"];
 }
 
 /**
- * Persists a full replacement of a report's `suggested_reviewers` artefact and optimistically
- * patches the cached artefacts so the detail pane reflects the change instantly (immediate apply).
+ * Edits a report's suggested reviewers. The server appends a new `suggested_reviewers` status
+ * artefact (latest-wins), so the work-log keeps the full history of changes. We optimistically
+ * append a synthetic latest row — mirroring the server — so the detail pane reflects the change
+ * instantly (immediate apply); the refetch on settle reconciles it with the real row.
  */
 export function useUpdateSuggestedReviewers(reportId: string) {
   const queryClient = useQueryClient();
@@ -247,23 +249,25 @@ export function useUpdateSuggestedReviewers(reportId: string) {
     (client, { artefactId, content }) =>
       client.updateSignalReportArtefact(reportId, artefactId, content),
     {
-      onMutate: async ({ artefactId, optimisticReviewers }) => {
+      onMutate: async ({ optimisticReviewers }) => {
         await queryClient.cancelQueries({ queryKey });
         const previous =
           queryClient.getQueryData<SignalReportArtefactsResponse>(queryKey);
 
         if (previous) {
+          // Append a synthetic latest row rather than mutating the current one — "current
+          // reviewers" is derived as the latest suggested_reviewers artefact, so a row stamped
+          // now wins, and the prior row stays in the log as history (matching the server).
+          const optimisticRow: SuggestedReviewersArtefact = {
+            id: `optimistic-${Date.now()}`,
+            type: "suggested_reviewers",
+            content: optimisticReviewers,
+            created_at: new Date().toISOString(),
+          };
           queryClient.setQueryData<SignalReportArtefactsResponse>(queryKey, {
             ...previous,
-            results: previous.results.map((artefact) =>
-              artefact.id === artefactId &&
-              artefact.type === "suggested_reviewers"
-                ? ({
-                    ...artefact,
-                    content: optimisticReviewers,
-                  } as SuggestedReviewersArtefact)
-                : artefact,
-            ),
+            results: [...previous.results, optimisticRow],
+            count: previous.count + 1,
           });
         }
 

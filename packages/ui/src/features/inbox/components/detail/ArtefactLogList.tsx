@@ -1,0 +1,379 @@
+import { ArrowSquareOutIcon } from "@phosphor-icons/react";
+import type {
+  ActionabilityJudgmentContent,
+  AnySignalReportArtefact,
+  CodeDiffContent,
+  CodeReferenceContent,
+  CommitContent,
+  DismissalContent,
+  LineReferenceContent,
+  NoteContent,
+  PriorityJudgmentContent,
+  SignalFindingContent,
+  SignalReportArtefactContent,
+  SuggestedReviewer,
+  TaskRunArtefactContent,
+} from "@posthog/shared/types";
+import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
+import { ArtefactCommit } from "@posthog/ui/features/inbox/components/detail/ArtefactCommit";
+import { ArtefactTaskRun } from "@posthog/ui/features/inbox/components/detail/ArtefactTaskRun";
+import { DiffBlock } from "@posthog/ui/features/inbox/components/detail/DiffBlock";
+import { SignalReportActionabilityBadge } from "@posthog/ui/features/inbox/components/utils/SignalReportActionabilityBadge";
+import { SignalReportPriorityBadge } from "@posthog/ui/features/inbox/components/utils/SignalReportPriorityBadge";
+import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
+import { HighlightedCode } from "@posthog/ui/primitives/HighlightedCode";
+import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
+import { Badge, Box, Flex, Text } from "@radix-ui/themes";
+import { useState } from "react";
+
+// A chronological log of every artefact on a report. Each known type renders a
+// tailored body; unrecognized types fall back to a plain text preview (never raw
+// JSON). Timeline chrome (rails, grouping) is a follow-up — this is the polished
+// content layer.
+
+// Each entry is framed as a point-in-time action ("what happened"), since the log is an
+// append-only history of changes — the current status lives at the top of the report.
+const TYPE_LABELS: Record<string, string> = {
+  code_reference: "Code referenced",
+  code_diff: "Diff proposed",
+  line_reference: "Line highlighted",
+  commit: "Commit pushed",
+  task_run: "Task run",
+  note: "Note added",
+  priority_judgment: "Priority assessed",
+  actionability_judgment: "Actionability assessed",
+  safety_judgment: "Safety assessed",
+  signal_finding: "Signal investigated",
+  suggested_reviewers: "Reviewers suggested",
+  repo_selection: "Repo selected",
+  dismissal: "Report dismissed",
+  video_segment: "Video segment",
+};
+
+function typeLabel(type: string): string {
+  return TYPE_LABELS[type] ?? type;
+}
+
+function prettify(value: string): string {
+  const cleaned = value.replace(/[-_]/g, " ").trim();
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+/** Map a file path to a syntax-highlight language key (extension-based). */
+function languageFromPath(filePath: string): string {
+  return filePath.split(".").pop()?.toLowerCase() ?? "";
+}
+
+// The generic `SignalReportArtefact` fallback carries `type: string`, so it stays
+// in every narrowed branch and breaks discriminated-union narrowing — the runtime
+// `type` dispatch is authoritative (content is set alongside type in the
+// normalizers), so we read `content` through the matching content type.
+
+/** Short, monospace location shown next to the type label (file path / span). */
+function locationLabel(artefact: AnySignalReportArtefact): string | null {
+  switch (artefact.type) {
+    case "code_reference": {
+      const c = artefact.content as CodeReferenceContent;
+      return `${c.file_path}:${c.start_line}-${c.end_line}`;
+    }
+    case "code_diff":
+      return (artefact.content as CodeDiffContent).file_path;
+    case "line_reference": {
+      const c = artefact.content as LineReferenceContent;
+      return `${c.file_path}:${c.line}`;
+    }
+    default:
+      return null;
+  }
+}
+
+function CodeRefBlock({ code, language }: { code: string; language: string }) {
+  return (
+    <Box className="mt-1.5">
+      <CodeBlock size="1">
+        <HighlightedCode code={code} language={language} />
+      </CodeBlock>
+    </Box>
+  );
+}
+
+function RelevanceNote({ note }: { note: string }) {
+  if (!note.trim()) return null;
+  return <Text className="block text-(--gray-11) text-[12px]">{note}</Text>;
+}
+
+function ReviewersBody({ reviewers }: { reviewers: SuggestedReviewer[] }) {
+  if (reviewers.length === 0) {
+    return (
+      <Text className="block text-(--gray-10) text-[12px]">
+        No reviewers assigned.
+      </Text>
+    );
+  }
+  return (
+    <Flex direction="column" gap="1">
+      {reviewers.map((reviewer) => (
+        <Flex
+          key={reviewer.user?.uuid ?? reviewer.github_login}
+          align="center"
+          gap="2"
+          wrap="wrap"
+        >
+          {reviewer.github_login ? (
+            <img
+              src={`https://github.com/${reviewer.github_login}.png?size=28`}
+              alt=""
+              className="github-avatar h-[18px] w-[18px] shrink-0 rounded-full"
+              onLoad={(e) => e.currentTarget.classList.add("loaded")}
+            />
+          ) : null}
+          <Text className="text-[12px]">
+            {reviewer.user?.first_name ??
+              reviewer.github_name ??
+              reviewer.github_login}
+          </Text>
+          {reviewer.github_login ? (
+            <a
+              href={`https://github.com/${reviewer.github_login}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-0.5 text-[11px] text-gray-9 hover:text-gray-11"
+            >
+              @{reviewer.github_login}
+              <ArrowSquareOutIcon size={10} />
+            </a>
+          ) : null}
+        </Flex>
+      ))}
+    </Flex>
+  );
+}
+
+function ArtefactBody({
+  reportId,
+  artefact,
+}: {
+  reportId: string;
+  artefact: AnySignalReportArtefact;
+}) {
+  switch (artefact.type) {
+    case "code_reference": {
+      const c = artefact.content as CodeReferenceContent;
+      return (
+        <Box>
+          <RelevanceNote note={c.relevance_note} />
+          <CodeRefBlock
+            code={c.contents}
+            language={languageFromPath(c.file_path)}
+          />
+        </Box>
+      );
+    }
+    case "code_diff": {
+      const c = artefact.content as CodeDiffContent;
+      return (
+        <Box>
+          <RelevanceNote note={c.relevance_note} />
+          <Box className="mt-1.5">
+            <DiffBlock diff={c.diff} />
+          </Box>
+        </Box>
+      );
+    }
+    case "line_reference": {
+      const c = artefact.content as LineReferenceContent;
+      return (
+        <Box>
+          <RelevanceNote note={c.note} />
+          {c.contents ? (
+            <CodeRefBlock
+              code={c.contents}
+              language={languageFromPath(c.file_path)}
+            />
+          ) : null}
+        </Box>
+      );
+    }
+    case "commit":
+      return (
+        <ArtefactCommit
+          reportId={reportId}
+          artefactId={artefact.id}
+          content={artefact.content as CommitContent}
+        />
+      );
+    case "task_run":
+      return (
+        <ArtefactTaskRun content={artefact.content as TaskRunArtefactContent} />
+      );
+    case "note": {
+      const c = artefact.content as NoteContent;
+      return (
+        <Box className="text-[12px]">
+          <MarkdownRenderer content={c.note} />
+          {c.author ? (
+            <Text className="block text-(--gray-10) text-[11px]">
+              — {c.author}
+            </Text>
+          ) : null}
+        </Box>
+      );
+    }
+    case "priority_judgment": {
+      const c = artefact.content as PriorityJudgmentContent;
+      return (
+        <Flex direction="column" gap="1">
+          <SignalReportPriorityBadge priority={c.priority} />
+          {c.explanation ? <RelevanceNote note={c.explanation} /> : null}
+        </Flex>
+      );
+    }
+    case "actionability_judgment": {
+      const c = artefact.content as ActionabilityJudgmentContent;
+      return (
+        <Flex direction="column" gap="1">
+          <Flex align="center" gap="2" wrap="wrap">
+            <SignalReportActionabilityBadge actionability={c.actionability} />
+            {c.already_addressed ? (
+              <Badge color="amber" variant="soft">
+                Already addressed
+              </Badge>
+            ) : null}
+          </Flex>
+          {c.explanation ? <RelevanceNote note={c.explanation} /> : null}
+        </Flex>
+      );
+    }
+    case "signal_finding": {
+      const c = artefact.content as SignalFindingContent;
+      return (
+        <Flex direction="column" gap="1">
+          <Flex align="center" gap="2" wrap="wrap">
+            <Text className="font-mono text-(--gray-10) text-[11px]">
+              {c.signal_id}
+            </Text>
+            <Badge color={c.verified ? "green" : "gray"} variant="soft">
+              {c.verified ? "Verified" : "Unverified"}
+            </Badge>
+          </Flex>
+          {c.relevant_code_paths.length > 0 ? (
+            <Flex direction="column">
+              {c.relevant_code_paths.map((path) => (
+                <Text
+                  key={path}
+                  className="truncate font-mono text-(--gray-11) text-[11px]"
+                >
+                  {path}
+                </Text>
+              ))}
+            </Flex>
+          ) : null}
+        </Flex>
+      );
+    }
+    case "suggested_reviewers":
+      return (
+        <ReviewersBody reviewers={artefact.content as SuggestedReviewer[]} />
+      );
+    case "dismissal": {
+      const c = artefact.content as DismissalContent;
+      return (
+        <Flex direction="column" gap="1">
+          <Badge color="gray" variant="soft">
+            {prettify(c.reason)}
+          </Badge>
+          {c.note ? <RelevanceNote note={c.note} /> : null}
+        </Flex>
+      );
+    }
+    default: {
+      const c = artefact.content as SignalReportArtefactContent | null;
+      const text = typeof c?.content === "string" ? c.content : "";
+      return (
+        <Text className="block text-(--gray-10) text-[12px]">
+          {text || "No preview available."}
+        </Text>
+      );
+    }
+  }
+}
+
+function ArtefactRow({
+  reportId,
+  artefact,
+}: {
+  reportId: string;
+  artefact: AnySignalReportArtefact;
+}) {
+  const [showRaw, setShowRaw] = useState(false);
+  const location = locationLabel(artefact);
+
+  return (
+    <Box className="rounded-lg border border-gray-6 bg-gray-1 p-3">
+      <Flex align="center" justify="between" gap="2" className="mb-1.5">
+        <Flex align="center" gap="2" className="min-w-0">
+          <Text className="shrink-0 font-medium text-[12px]">
+            {typeLabel(artefact.type)}
+          </Text>
+          {location ? (
+            <Text className="truncate font-mono text-(--gray-10) text-[11px]">
+              {location}
+            </Text>
+          ) : null}
+        </Flex>
+        <Flex align="center" gap="2" className="shrink-0">
+          {/* Dev-only escape hatch for inspecting the raw artefact payload. */}
+          {import.meta.env.DEV ? (
+            <button
+              type="button"
+              onClick={() => setShowRaw((v) => !v)}
+              title="View raw JSON (dev only)"
+              aria-pressed={showRaw}
+              className={`rounded-sm px-1 font-mono text-[11px] transition-colors hover:bg-(--gray-3) ${
+                showRaw ? "text-(--gray-12)" : "text-(--gray-9)"
+              }`}
+            >
+              {"{ }"}
+            </button>
+          ) : null}
+          <RelativeTimestamp timestamp={artefact.created_at} />
+        </Flex>
+      </Flex>
+      <ArtefactBody reportId={reportId} artefact={artefact} />
+      {showRaw ? (
+        <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-md border border-(--gray-6) bg-(--gray-2) p-2 font-mono text-(--gray-11) text-[11px]">
+          {JSON.stringify(artefact, null, 2)}
+        </pre>
+      ) : null}
+    </Box>
+  );
+}
+
+export function ArtefactLogList({
+  reportId,
+  artefacts,
+}: {
+  reportId: string;
+  artefacts: AnySignalReportArtefact[];
+}) {
+  if (artefacts.length === 0) {
+    return null;
+  }
+
+  const sorted = [...artefacts].sort(
+    (a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+
+  return (
+    <Flex direction="column" gap="2">
+      {sorted.map((artefact) => (
+        <ArtefactRow
+          key={artefact.id}
+          reportId={reportId}
+          artefact={artefact}
+        />
+      ))}
+    </Flex>
+  );
+}

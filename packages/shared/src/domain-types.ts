@@ -398,6 +398,125 @@ export interface DismissalContent {
   user_uuid: string | null;
 }
 
+// ── Log artefacts ────────────────────────────────────────────────────────────
+// Append-but-deletable "work log" entries that accumulate on a report. Distinct
+// from the status artefacts above (judgments, reviewers) which are latest-wins.
+// Content shapes mirror products/signals/backend/artefact_schemas.py.
+
+/** Artefact with `type: "code_reference"` — a contiguous span of source lines. */
+export interface CodeReferenceArtefact {
+  id: string;
+  type: "code_reference";
+  content: CodeReferenceContent;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface CodeReferenceContent {
+  file_path: string;
+  start_line: number;
+  end_line: number;
+  contents: string;
+  relevance_note: string;
+}
+
+/** Artefact with `type: "code_diff"` — a unified diff for a single file. */
+export interface CodeDiffArtefact {
+  id: string;
+  type: "code_diff";
+  content: CodeDiffContent;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface CodeDiffContent {
+  file_path: string;
+  diff: string;
+  relevance_note: string;
+}
+
+/** Artefact with `type: "line_reference"` — a single source line callout (a point). */
+export interface LineReferenceArtefact {
+  id: string;
+  type: "line_reference";
+  content: LineReferenceContent;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface LineReferenceContent {
+  file_path: string;
+  line: number;
+  note: string;
+  /** The exact source text of the referenced line, if available. */
+  contents?: string | null;
+}
+
+/** Artefact with `type: "commit"` — one commit pushed in relation to the report. */
+export interface CommitArtefact {
+  id: string;
+  type: "commit";
+  content: CommitContent;
+  created_at: string;
+  updated_at?: string | null;
+  /** Task the artefact is attributed to (the agent session that pushed it), when known. */
+  task_id?: string | null;
+}
+
+export interface CommitContent {
+  repository: string;
+  branch: string;
+  commit_sha: string;
+  message: string;
+  note?: string | null;
+}
+
+/** Artefact with `type: "task_run"` — a reference to a `tasks.Task` run for the report. */
+export interface TaskRunArtefact {
+  id: string;
+  type: "task_run";
+  content: TaskRunArtefactContent;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface TaskRunArtefactContent {
+  task_id: string;
+  run_id?: string | null;
+  /**
+   * Product that ran the task — `signals` for the built-in pipeline, or a custom agent's
+   * product identifier (mirrors backend TaskRunArtefact).
+   */
+  product: string;
+  /**
+   * Task type within the product — e.g. `research` / `implementation` / `repo_selection` for the
+   * signals pipeline, or a custom agent's type identifier.
+   */
+  type: string;
+}
+
+/** Artefact with `type: "note"` — a free-form note authored by an agent or by code. */
+export interface NoteArtefact {
+  id: string;
+  type: "note";
+  content: NoteContent;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface NoteContent {
+  note: string;
+  author?: string | null;
+}
+
+/** Response from the `commit` artefact diff endpoint — the commit rendered against its parent. */
+export interface CommitDiffResponse {
+  /** Unified diff (patch) text introduced by the commit. */
+  diff: string;
+  /** True when the diff was too large to return in full and has been truncated. */
+  truncated: boolean;
+}
+
 export interface SuggestedReviewerCommit {
   sha: string;
   url: string;
@@ -472,16 +591,24 @@ export interface SignalReportSignalsResponse {
   signals: Signal[];
 }
 
+/** Any artefact returned by the report `artefacts/` endpoint, discriminated on `type`. */
+export type AnySignalReportArtefact =
+  | SignalReportArtefact
+  | PriorityJudgmentArtefact
+  | ActionabilityJudgmentArtefact
+  | SignalFindingArtefact
+  | RepoSelectionArtefact
+  | SuggestedReviewersArtefact
+  | DismissalArtefact
+  | CodeReferenceArtefact
+  | CodeDiffArtefact
+  | LineReferenceArtefact
+  | CommitArtefact
+  | TaskRunArtefact
+  | NoteArtefact;
+
 export interface SignalReportArtefactsResponse {
-  results: (
-    | SignalReportArtefact
-    | PriorityJudgmentArtefact
-    | ActionabilityJudgmentArtefact
-    | SignalFindingArtefact
-    | RepoSelectionArtefact
-    | SuggestedReviewersArtefact
-    | DismissalArtefact
-  )[];
+  results: AnySignalReportArtefact[];
   count: number;
   unavailableReason?:
     | "forbidden"
@@ -516,23 +643,13 @@ export interface SignalReportsQueryParams {
   has_implementation_pr?: boolean;
 }
 
-/** Values match `SignalReportTask.Relationship` on the PostHog API. */
-export const SIGNAL_REPORT_TASK_RELATIONSHIPS = [
-  "repo_selection",
-  "research",
-  "implementation",
-] as const;
-
-export type SignalReportTaskRelationship =
-  (typeof SIGNAL_REPORT_TASK_RELATIONSHIPS)[number];
-
-/** Inbox / cloud PR tasks must use this when creating the `SignalReportTask` link. */
-export const SIGNAL_REPORT_TASK_IMPLEMENTATION_RELATIONSHIP: SignalReportTaskRelationship =
-  "implementation";
-
+/**
+ * An unlabelled task↔report association. A task's purpose (research / implementation / …)
+ * is derived from the report's `task_run` artefacts, not stored on the link.
+ */
 export interface SignalReportTask {
   id: string;
-  relationship: SignalReportTaskRelationship;
+  report_id: string;
   task_id: string;
   created_at: string;
 }
