@@ -67,6 +67,8 @@ interface TaskInputProps {
   initialModel?: string;
   initialMode?: string;
   reportAssociation?: TaskInputReportAssociation;
+  /** Optional channel CONTEXT.md, appended to the initial prompt as background. */
+  channelContext?: string;
 }
 
 export function TaskInput({
@@ -78,6 +80,7 @@ export function TaskInput({
   initialModel,
   initialMode,
   reportAssociation,
+  channelContext,
 }: TaskInputProps = {}) {
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const trpc = useHostTRPC();
@@ -523,6 +526,7 @@ export function TaskInput({
         ? selectedCloudEnvId
         : undefined,
     signalReportId: activeReportAssociation?.reportId,
+    channelContext,
   });
 
   const handleModeChange = useCallback(

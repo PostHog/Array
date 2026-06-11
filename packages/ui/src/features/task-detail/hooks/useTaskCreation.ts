@@ -60,6 +60,7 @@ interface UseTaskCreationOptions {
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
   signalReportId?: string;
+  channelContext?: string;
   onTaskCreated?: (task: Task) => void;
 }
 
@@ -137,6 +138,7 @@ export function useTaskCreation({
   environmentId,
   sandboxEnvironmentId,
   signalReportId,
+  channelContext,
   onTaskCreated,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
@@ -227,6 +229,7 @@ export function useTaskCreation({
           sandboxEnvironmentId,
           signalReportId,
           additionalDirectories,
+          channelContext,
         });
 
         if (executionMode) {
@@ -313,6 +316,7 @@ export function useTaskCreation({
       sandboxEnvironmentId,
       signalReportId,
       additionalDirectories,
+      channelContext,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,

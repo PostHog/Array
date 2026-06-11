@@ -1,4 +1,7 @@
-import { buildPromptBlocks } from "@posthog/core/editor/prompt-builder";
+import {
+  buildChannelContextBlock,
+  buildPromptBlocks,
+} from "@posthog/core/editor/prompt-builder";
 import type {
   ConnectParams,
   SessionService,
@@ -315,6 +318,16 @@ export class TaskCreationSaga extends Saga<
               ),
             )
           : undefined;
+
+      // Append the channel's CONTEXT.md as optional background, so tasks made
+      // in a channel start with the shared context the agent would otherwise
+      // have to rediscover. Kept after the user's prompt so the request leads.
+      const channelContextBlock = buildChannelContextBlock(
+        input.channelContext,
+      );
+      if (initialPrompt && channelContextBlock) {
+        initialPrompt.push(channelContextBlock);
+      }
 
       await this.step({
         name: "agent_session",

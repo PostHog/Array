@@ -32,6 +32,12 @@ export interface TaskCreationInput {
   cloudRunSource?: CloudRunSource;
   signalReportId?: string;
   additionalDirectories?: string[];
+  /**
+   * CONTEXT.md of the channel a task was created in, if any. Appended to the
+   * agent's initial prompt as optional background — reference material the
+   * agent may draw on, not instructions it must follow.
+   */
+  channelContext?: string;
 }
 
 export interface TaskCreationOutput {
