@@ -1,12 +1,10 @@
 import {
   electronStorage,
-  RENDERER_STATE_STORAGE,
-  type RendererStateStorage,
+  registerRendererStateStorage,
 } from "@posthog/ui/shell/rendererStorage";
-import { container } from "@renderer/di/container";
 import { trpcClient } from "../trpc";
 
-const electronStorageRaw: RendererStateStorage = {
+registerRendererStateStorage({
   getItem: async (key: string): Promise<string | null> => {
     return await trpcClient.secureStore.getItem.query({ key });
   },
@@ -16,10 +14,6 @@ const electronStorageRaw: RendererStateStorage = {
   removeItem: async (key: string): Promise<void> => {
     await trpcClient.secureStore.removeItem.query({ key });
   },
-};
-
-container
-  .bind<RendererStateStorage>(RENDERER_STATE_STORAGE)
-  .toConstantValue(electronStorageRaw);
+});
 
 export { electronStorage };

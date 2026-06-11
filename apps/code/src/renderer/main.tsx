@@ -1,10 +1,13 @@
 import "reflect-metadata";
-// Side effect: registers the host (electron-trpc-backed) storage with @posthog/ui
-// before any persisted store hydrates.
+// Side effect: registers the host (electron-trpc-backed) storage with @posthog/ui.
+// Persisted stores hydrate from it once it registers, wherever in the import
+// graph they are created.
 import "@utils/electronStorage";
+// Side effect: composes the renderer container and calls setRootContainer.
+// Must precede the updates adapter below, which resolves UPDATES_CLIENT at
+// module scope.
+import "@renderer/di/container";
 // Side effect: drives the updates subscription + toast via the core update store.
-// Resolves UPDATES_CLIENT, which renderer/di/container.ts binds (loaded via the
-// electronStorage import above).
 import "@renderer/platform-adapters/updates";
 // Side effect: attaches window focus/visibility listeners so `focused` is accurate before inbox queries mount.
 import "@posthog/ui/shell/rendererWindowFocusStore";

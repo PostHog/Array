@@ -1,16 +1,12 @@
+import { registerRendererStateStorage } from "@posthog/ui/shell/rendererStorage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const { getItem, setItem, removeItem } = vi.hoisted(() => ({
-  getItem: vi.fn(),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-}));
-
-vi.mock("@posthog/di/container", () => ({
-  resolveService: () => ({ getItem, setItem, removeItem }),
-}));
-
 import { useSettingsStore } from "./settingsStore";
+
+const getItem = vi.fn();
+const setItem = vi.fn();
+const removeItem = vi.fn();
+
+registerRendererStateStorage({ getItem, setItem, removeItem });
 
 describe("feature settingsStore cloud selections", () => {
   beforeEach(() => {
