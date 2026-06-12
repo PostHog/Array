@@ -261,7 +261,7 @@ describe("operationInProgressError", () => {
 });
 
 describe("behindRemoteError", () => {
-  it("names the branch, the short tip, and the sync recovery", () => {
+  it("names the branch and short tip, gives the recovery, and stays generic", () => {
     const msg = behindRemoteError(
       "posthog-code/feature",
       "0123456789abcdef0123456789abcdef01234567",
@@ -274,10 +274,7 @@ describe("behindRemoteError", () => {
     expect(msg).toContain("git reset --hard origin/posthog-code/feature");
     expect(msg).toContain("git stash pop");
     expect(msg).toContain("REVERTING");
-  });
-
-  it("stays generic — no repo-specific bot or codegen names", () => {
-    const msg = behindRemoteError("feature", "abc123");
+    // Generic — no repo-specific bot or codegen names.
     expect(msg).not.toContain("tests-posthog");
     expect(msg).not.toContain("OpenAPI");
   });
@@ -398,29 +395,41 @@ describe("assertNotBehindRemote", () => {
     return git(dir, "rev-parse", "HEAD");
   }
 
-  // Scenario: an agent clone whose checkout is one commit behind a branch that
-  // a "bot" advanced on the shared remote.
-  function setupBranchAdvancedByBot(): {
-    agent: string;
-    branch: string;
-    botTip: string;
-  } {
+  // Bare remote + an agent clone with an initial main commit pushed.
+  function setupBaseRepo(): { remote: string; agent: string } {
     const remote = tmp("remote");
     git(remote, "init", "--bare", "--initial-branch", "main");
-
-    const branch = "posthog-code/feature";
-
-    // Agent: initial commit on main, branch off, first commit, push the branch.
     const agent = tmp("agent");
     initRepo(agent);
     git(agent, "remote", "add", "origin", remote);
     commit(agent, "base.txt", "base\n");
     git(agent, "push", "origin", "main");
-    git(agent, "checkout", "-b", branch);
-    commit(agent, "feature.txt", "v1\n");
-    git(agent, "push", "origin", branch);
+    return { remote, agent };
+  }
 
-    // Bot: separate clone pushes a regen commit onto the same branch.
+  // setupBaseRepo plus a feature branch committed and pushed; `tip` is its head.
+  function setupPushedBranch(): {
+    remote: string;
+    agent: string;
+    branch: string;
+    tip: string;
+  } {
+    const { remote, agent } = setupBaseRepo();
+    const branch = "posthog-code/feature";
+    git(agent, "checkout", "-b", branch);
+    const tip = commit(agent, "feature.txt", "v1\n");
+    git(agent, "push", "origin", branch);
+    return { remote, agent, branch, tip };
+  }
+
+  // Scenario that bit us: a "bot" advances the pushed branch on the remote, so
+  // the agent's checkout sits one commit behind.
+  function setupBranchAdvancedByBot(): {
+    agent: string;
+    branch: string;
+    botTip: string;
+  } {
+    const { remote, agent, branch } = setupPushedBranch();
     const bot = tmp("bot");
     git(bot, "clone", remote, ".");
     git(bot, "config", "user.name", "tests-posthog[bot]");
@@ -429,7 +438,6 @@ describe("assertNotBehindRemote", () => {
     git(bot, "checkout", branch);
     const botTip = commit(bot, "generated.ts", "// regenerated\n");
     git(bot, "push", "origin", branch);
-
     return { agent, branch, botTip };
   }
 
@@ -457,17 +465,7 @@ describe("assertNotBehindRemote", () => {
   });
 
   it("is a no-op when the remote has not advanced, leaving staged work ready", async () => {
-    const remote = tmp("remote");
-    git(remote, "init", "--bare", "--initial-branch", "main");
-    const branch = "posthog-code/feature";
-    const agent = tmp("agent");
-    initRepo(agent);
-    git(agent, "remote", "add", "origin", remote);
-    commit(agent, "base.txt", "base\n");
-    git(agent, "push", "origin", "main");
-    git(agent, "checkout", "-b", branch);
-    const tip = commit(agent, "feature.txt", "v1\n");
-    git(agent, "push", "origin", branch);
+    const { agent, branch, tip } = setupPushedBranch();
 
     // Agent stages its next change; no bot has pushed since.
     writeFileSync(path.join(agent, "docs.md"), "edit\n");
@@ -482,13 +480,8 @@ describe("assertNotBehindRemote", () => {
   });
 
   it("allows committing when the local checkout is ahead of the remote tip", async () => {
-    const remote = tmp("remote");
-    git(remote, "init", "--bare", "--initial-branch", "main");
-    const agent = tmp("agent");
-    initRepo(agent);
-    git(agent, "remote", "add", "origin", remote);
-    const tip = commit(agent, "base.txt", "base\n");
-    git(agent, "push", "origin", "main");
+    const { agent } = setupBaseRepo();
+    const tip = git(agent, "rev-parse", "HEAD");
     // Local advances past the pushed tip without publishing — tip is an ancestor
     // of HEAD, so there is nothing to revert.
     commit(agent, "more.txt", "local\n");
