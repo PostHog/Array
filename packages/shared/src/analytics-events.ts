@@ -712,6 +712,7 @@ export interface SignalSourceConnectedProperties {
   source_product:
     | "session_replay"
     | "error_tracking"
+    | "signals_scout"
     | "github"
     | "linear"
     | "zendesk"

@@ -4,6 +4,7 @@ import {
   BugIcon,
   ChatsIcon,
   CircleNotchIcon,
+  CompassIcon,
   GithubLogoIcon,
   KanbanIcon,
   TicketIcon,
@@ -19,6 +20,7 @@ import { memo, useCallback } from "react";
 export interface SignalSourceValues {
   session_replay: boolean;
   error_tracking: boolean;
+  signals_scout: boolean;
   github: boolean;
   linear: boolean;
   zendesk: boolean;
@@ -298,6 +300,10 @@ export function SignalSourceToggles({
     (checked: boolean) => onToggle("conversations", checked),
     [onToggle],
   );
+  const toggleScouts = useCallback(
+    (checked: boolean) => onToggle("signals_scout", checked),
+    [onToggle],
+  );
   const togglePgAnalyze = useCallback(
     (checked: boolean) => onToggle("pganalyze", checked),
     [onToggle],
@@ -354,6 +360,18 @@ export function SignalSourceToggles({
                 />
               ) : undefined
             }
+          />
+          <SignalSourceToggleCard
+            icon={<CompassIcon size={20} />}
+            label="Scouts"
+            labelSuffix={<Badge color="orange">Beta</Badge>}
+            description="Scheduled agents that sweep this project and surface findings"
+            checked={value.signals_scout}
+            onCheckedChange={toggleScouts}
+            disabled={disabled}
+            syncStatus={sourceStates?.signals_scout?.syncStatus}
+            docsUrl="https://posthog.com/docs/self-driving"
+            docsLabel="Scouts"
           />
           {evaluationsUrl && (
             <EvaluationsSection evaluationsUrl={evaluationsUrl} />
@@ -449,7 +467,7 @@ export function SignalSourceTogglesSkeleton() {
           PostHog data
         </Text>
         <Flex direction="column" gap="3">
-          {Array.from({ length: 3 }).map((_, index) => (
+          {Array.from({ length: 4 }).map((_, index) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: static loading placeholders
             <SignalSourceToggleCardSkeleton key={index} />
           ))}

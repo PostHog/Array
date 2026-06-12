@@ -15,10 +15,11 @@ type SourceType = SignalSourceConfig["source_type"];
 type SetupSourceProduct = "github" | "linear" | "zendesk" | "pganalyze";
 
 const SOURCE_TYPE_MAP: Record<
-  Exclude<SourceProduct, "error_tracking" | "llm_analytics" | "signals_scout">,
+  Exclude<SourceProduct, "error_tracking" | "llm_analytics">,
   SourceType
 > = {
   session_replay: "session_analysis_cluster",
+  signals_scout: "cross_source_issue",
   github: "issue",
   linear: "issue",
   zendesk: "ticket",
@@ -35,6 +36,7 @@ const ERROR_TRACKING_SOURCE_TYPES: SourceType[] = [
 const SOURCE_LABELS: Record<keyof SignalSourceValues, string> = {
   session_replay: "Session replay",
   error_tracking: "Error tracking",
+  signals_scout: "Scouts",
   github: "GitHub Issues",
   linear: "Linear Issues",
   zendesk: "Zendesk Tickets",
@@ -55,6 +57,7 @@ const DATA_WAREHOUSE_SOURCES: Record<
 const ALL_SOURCE_PRODUCTS: (keyof SignalSourceValues)[] = [
   "session_replay",
   "error_tracking",
+  "signals_scout",
   "github",
   "linear",
   "zendesk",
@@ -74,6 +77,7 @@ function computeValues(
   const result: SignalSourceValues = {
     session_replay: false,
     error_tracking: false,
+    signals_scout: false,
     github: false,
     linear: false,
     zendesk: false,
@@ -312,7 +316,7 @@ export function useSignalSourceToggles() {
                 SOURCE_TYPE_MAP[
                   product as Exclude<
                     SourceProduct,
-                    "error_tracking" | "llm_analytics" | "signals_scout"
+                    "error_tracking" | "llm_analytics"
                   >
                 ],
               enabled: true,
