@@ -35,6 +35,7 @@ export function ScoutFindingDiscussButton({
       buildScoutFindingDiscussPrompt({
         skillName,
         displayName,
+        runId: emission.run_id,
         findingId: emission.finding_id,
         description: emission.description,
         severity: emission.severity,
@@ -44,6 +45,7 @@ export function ScoutFindingDiscussButton({
     [
       skillName,
       displayName,
+      emission.run_id,
       emission.finding_id,
       emission.description,
       emission.severity,
@@ -62,15 +64,14 @@ export function ScoutFindingDiscussButton({
   });
 
   const submit = useCallback(() => {
-    if (question.trim().length === 0) return;
-    // `runTask` closes over the current question-laden prompt, so clearing
-    // state afterwards is safe and leaves the popover ready for next time.
+    if (isRunning) return;
+    // A question is optional: an empty submit resolves to the "brief readout"
+    // prompt. `runTask` closes over the current prompt, so clearing state
+    // afterwards is safe and leaves the popover ready for next time.
     void runTask();
     setQuestion("");
     setOpen(false);
-  }, [question, runTask]);
-
-  const submitDisabled = question.trim().length === 0 || isRunning;
+  }, [isRunning, runTask]);
 
   return (
     <Popover.Root
@@ -87,11 +88,7 @@ export function ScoutFindingDiscussButton({
           title="Discuss this finding with your agent"
           className="inline-flex shrink-0 items-center gap-1 text-[11px] text-accent-11 no-underline transition-colors hover:text-accent-12 disabled:cursor-default disabled:opacity-60"
         >
-          {isRunning ? (
-            <Spinner size="1" />
-          ) : (
-            <ChatCircleIcon size={11} />
-          )}
+          {isRunning ? <Spinner size="1" /> : <ChatCircleIcon size={11} />}
           Discuss
         </button>
       </Popover.Trigger>
@@ -111,7 +108,7 @@ export function ScoutFindingDiscussButton({
           <TextArea
             aria-label="Question to discuss about this finding"
             autoFocus
-            placeholder="Ask about this finding…"
+            placeholder="Ask about this finding… (optional)"
             resize="vertical"
             rows={5}
             size="2"
@@ -141,7 +138,7 @@ export function ScoutFindingDiscussButton({
                 type="submit"
                 variant="primary"
                 size="sm"
-                disabled={submitDisabled}
+                disabled={isRunning}
               >
                 Discuss
               </Button>

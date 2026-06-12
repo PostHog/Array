@@ -42,6 +42,7 @@ Group by scout, newest first. Close with a short note on overall signal quality 
 export function buildScoutFindingDiscussPrompt({
   skillName,
   displayName,
+  runId,
   findingId,
   description,
   severity,
@@ -50,6 +51,7 @@ export function buildScoutFindingDiscussPrompt({
 }: {
   skillName: string;
   displayName: string;
+  runId: string;
   findingId: string;
   description: string;
   severity: string | null;
@@ -59,6 +61,7 @@ export function buildScoutFindingDiscussPrompt({
   const trimmedQuestion = question?.trim();
   const meta = [
     `Scout: \`${skillName}\` (${displayName})`,
+    `Run ID: ${runId}`,
     `Finding ID: ${findingId}`,
     severity ? `Severity: ${severity}` : null,
     `Confidence: ${Math.round(confidence * 100)}%`,
@@ -79,7 +82,7 @@ ${
     : "Give me a brief readout on what this finding means and whether it looks genuinely actionable or like noise, then ask what I want to dig into."
 }
 
-Use the exploring-signals-scouts skill from the PostHog MCP to ground your investigation: pull the \`${skillName}\` scout's recent runs and this finding's context, cross-reference the relevant product data, and assess whether it's real and worth acting on. If the skill is unavailable, fall back to the signals-scout MCP tools directly (config list, runs list, run emissions) plus the read-data and insight tools.`;
+Use the exploring-signals-scouts skill from the PostHog MCP to ground your investigation: fetch this exact run's emissions (run ${runId}) for the finding's full context, pull the \`${skillName}\` scout's recent runs, cross-reference the relevant product data, and assess whether it's real and worth acting on. If the skill is unavailable, fall back to the signals-scout MCP tools directly (config list, runs list, run emissions) plus the read-data and insight tools.`;
 }
 
 /** Per-scout variant of the templated questions, scoped to one skill. */
