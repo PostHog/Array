@@ -19,7 +19,7 @@ import {
 } from "@tanstack/react-router";
 import { createTRPCClient } from "@trpc/client";
 import { Container } from "inversify";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 
 // A host-agnostic stand-in for the host tRPC client. Components that resolve
 // HOST_TRPC_CLIENT from DI get these no-op responses; queries issued through the
@@ -109,30 +109,46 @@ function storyContainer(bindings: Container): ServiceContainer {
  * useService, useRouterState, …) then render in Storybook instead of throwing
  * "must be used within a <Provider>".
  */
+interface ProviderStack {
+  queryClient: QueryClient;
+  hostTrpcClient: ReturnType<typeof createTRPCClient<HostRouter>>;
+  container: ServiceContainer;
+}
+
+function createProviderStack(): ProviderStack {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, refetchOnWindowFocus: false },
+    },
+  });
+
+  const hostTrpcClient = createTRPCClient<HostRouter>({
+    links: [ipcLink()],
+  });
+
+  const bindings = new Container();
+  bindings
+    .bind<HostTrpcClient>(HOST_TRPC_CLIENT)
+    .toConstantValue(noopHostClient);
+  bindings.bind(IMPERATIVE_QUERY_CLIENT).toConstantValue(queryClient);
+  bindings.bind(DIFF_WORKER_FACTORY).toConstantValue(() => stubWorker);
+  const container = storyContainer(bindings);
+  setRootContainer(container);
+
+  return { queryClient, hostTrpcClient, container };
+}
+
 export const withAppProviders: Decorator = (Story) => {
-  // The provider singletons don't depend on the story; build them once per mount.
-  const { queryClient, hostTrpcClient, container } = useMemo(() => {
-    const queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false, refetchOnWindowFocus: false },
-      },
-    });
-
-    const hostTrpcClient = createTRPCClient<HostRouter>({
-      links: [ipcLink()],
-    });
-
-    const bindings = new Container();
-    bindings
-      .bind<HostTrpcClient>(HOST_TRPC_CLIENT)
-      .toConstantValue(noopHostClient);
-    bindings.bind(IMPERATIVE_QUERY_CLIENT).toConstantValue(queryClient);
-    bindings.bind(DIFF_WORKER_FACTORY).toConstantValue(() => stubWorker);
-    const container = storyContainer(bindings);
-    setRootContainer(container);
-
-    return { queryClient, hostTrpcClient, container };
-  }, []);
+  // The provider singletons don't depend on the story; build them once per
+  // mount. Lazy ref rather than useMemo: setRootContainer mutates a global, and
+  // Strict Mode double-invokes useMemo initializers, which would build (and
+  // globally register) a container that React then abandons. The ref object is
+  // stable across the double render, so this runs exactly once.
+  const stackRef = useRef<ProviderStack | null>(null);
+  if (stackRef.current === null) {
+    stackRef.current = createProviderStack();
+  }
+  const { queryClient, hostTrpcClient, container } = stackRef.current;
 
   // The router's root route renders the story, so it's keyed on the story.
   const router = useMemo(
