@@ -24,14 +24,16 @@ export function ScoutFindingShareButton({
     )}?finding=${encodeURIComponent(emission.id)}`;
     navigator.clipboard
       .writeText(url)
-      .then(() => toast.success("Finding link copied"))
+      .then(() => {
+        toast.success("Finding link copied");
+        track(ANALYTICS_EVENTS.SCOUT_ACTION, {
+          action_type: "copy_finding_link",
+          surface: "scout_detail",
+          skill_name: skillName,
+          severity: emission.severity,
+        });
+      })
       .catch(() => toast.error("Couldn't copy link"));
-    track(ANALYTICS_EVENTS.SCOUT_ACTION, {
-      action_type: "copy_finding_link",
-      surface: "scout_detail",
-      skill_name: skillName,
-      severity: emission.severity,
-    });
   };
 
   return (
