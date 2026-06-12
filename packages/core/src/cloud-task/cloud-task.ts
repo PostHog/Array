@@ -1282,6 +1282,21 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     if (!watcher) return;
     if (watcher.failed) return;
 
+    const { reconnectOnDisconnect } = options;
+
+    // Bootstrap owns the snapshot lifecycle, so it must be consulted before the
+    // stream-end stop: stopping mid-bootstrap deletes the watcher before the
+    // snapshot is emitted and silently discards the backlog plus any live
+    // entries buffered during bootstrap. Record intent and let bootstrap finish.
+    if (watcher.isBootstrapping) {
+      if (watcher.streamEnded || !reconnectOnDisconnect) {
+        watcher.needsStopAfterBootstrap = true;
+      } else {
+        watcher.needsPostBootstrapReconnect = true;
+      }
+      return;
+    }
+
     // The durable end-of-stream sentinel is the ONLY signal that ends the watch. The client is
     // unaware of sandbox/run status and assumes the transport breaks mid-message constantly, so any
     // disconnect without stream-end is just transport churn to ride out by reconnecting. We never
@@ -1291,18 +1306,6 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     if (watcher.streamEnded) {
       this.emitStatusUpdate(watcher);
       this.stopWatcher(key);
-      return;
-    }
-
-    const { reconnectOnDisconnect } = options;
-
-    if (watcher.isBootstrapping) {
-      // Bootstrap still owns the snapshot lifecycle; record reconnect intent and let it finish.
-      if (reconnectOnDisconnect) {
-        watcher.needsPostBootstrapReconnect = true;
-      } else {
-        watcher.needsStopAfterBootstrap = true;
-      }
       return;
     }
 

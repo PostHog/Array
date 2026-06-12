@@ -667,6 +667,86 @@ describe("CloudTaskService", () => {
     await waitFor(() => !hasWatcher());
   });
 
+  it("emits the bootstrap snapshot when stream-end arrives mid-bootstrap", async () => {
+    vi.useFakeTimers();
+
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    const historicalEntry = {
+      type: "notification",
+      timestamp: "2026-01-01T00:00:01Z",
+      notification: {
+        jsonrpc: "2.0",
+        method: "_posthog/console",
+        params: { sessionId: "run-1", level: "info", message: "backlog" },
+      },
+    };
+
+    // Hold the session_logs fetch open until the stream has already delivered
+    // stream-end and closed, so completion races the bootstrap snapshot.
+    let releaseSessionLogs: (() => void) | undefined;
+    const sessionLogsGate = new Promise<void>((resolve) => {
+      releaseSessionLogs = resolve;
+    });
+
+    mockNetFetch.mockImplementation(async (input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        await sessionLogsGate;
+        return createJsonResponse([historicalEntry], 200, {
+          "X-Has-More": "false",
+        });
+      }
+      return createJsonResponse({
+        id: "run-1",
+        status: "in_progress",
+        stage: "build",
+        output: null,
+        error_message: null,
+        branch: "main",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+    });
+
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(createSseResponse("event: stream-end\ndata: {}\n\n")),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    // Stream connects, delivers stream-end and EOFs while session_logs hangs.
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    releaseSessionLogs?.();
+
+    const hasWatcher = (): boolean =>
+      (service as unknown as { watchers: Map<string, unknown> }).watchers.has(
+        "task-1:run-1",
+      );
+    await waitFor(() => !hasWatcher());
+
+    const snapshots = updates.filter(
+      (u) =>
+        typeof u === "object" &&
+        u !== null &&
+        (u as { kind?: string }).kind === "snapshot",
+    );
+    expect(snapshots).toHaveLength(1);
+    expect(
+      (snapshots[0] as { newEntries: unknown[] }).newEntries,
+    ).toContainEqual(historicalEntry);
+    // The stream-end stop must not schedule another connection.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(mockStreamFetch.mock.calls.length).toBe(1);
+  });
+
   it("reads via the agent-proxy with a Bearer token when the server resolves a base url", async () => {
     vi.useFakeTimers();
 
