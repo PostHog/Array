@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildGatewayPropertyHeaders, resolveGatewayProduct } from "./gateway";
+import {
+  buildGatewayPropertyHeaders,
+  getLlmGatewayUrl,
+  resolveGatewayProduct,
+} from "./gateway";
 
 describe("resolveGatewayProduct", () => {
   it.each([
@@ -109,5 +113,28 @@ describe("buildGatewayPropertyHeaders", () => {
     expect(buildGatewayPropertyHeaders({ task_title: "café" })).toBe(
       "x-posthog-property-task_title: café",
     );
+  });
+});
+
+describe("getLlmGatewayUrl", () => {
+  it.each([
+    {
+      posthogHost: "https://us.posthog.com",
+      expected: "https://gateway.us.posthog.com/posthog_code",
+    },
+    {
+      posthogHost: "https://eu.posthog.com",
+      expected: "https://gateway.eu.posthog.com/posthog_code",
+    },
+    {
+      posthogHost: "https://app.dev.posthog.dev",
+      expected: "https://gateway.dev.posthog.dev/posthog_code",
+    },
+    {
+      posthogHost: "http://localhost:8000",
+      expected: "http://localhost:3308/posthog_code",
+    },
+  ] as const)("$posthogHost -> $expected", ({ posthogHost, expected }) => {
+    expect(getLlmGatewayUrl(posthogHost)).toBe(expected);
   });
 });
