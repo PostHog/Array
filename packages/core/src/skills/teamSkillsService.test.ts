@@ -24,8 +24,10 @@ function makeItem(overrides: Partial<LlmSkillListItem>): LlmSkillListItem {
 
 function makeClient(result: LlmSkillListItem[] | null): PostHogAPIClient {
   return {
-    listLlmSkills: vi.fn().mockResolvedValue(result),
-  } as unknown as PostHogAPIClient;
+    listLlmSkills: vi
+      .fn<PostHogAPIClient["listLlmSkills"]>()
+      .mockResolvedValue(result),
+  } satisfies Partial<PostHogAPIClient> as unknown as PostHogAPIClient;
 }
 
 describe("TeamSkillsService.listTeamSkills", () => {

@@ -45,6 +45,9 @@ export function SkillsView() {
 
   const { data: teamListing } = useTeamSkills(skills);
   const teamAvailable = teamListing?.available ?? false;
+  // Team access revoked mid-session: fall back to Installed.
+  const activeTab: SkillsTab =
+    tab === "team" && !teamAvailable ? "installed" : tab;
 
   const {
     width: sidebarWidth,
@@ -127,7 +130,7 @@ export function SkillsView() {
     <Flex direction="column" height="100%" className="overflow-hidden">
       <Box px="4" className="shrink-0 border-b border-b-(--gray-5)">
         <Tabs
-          value={tab}
+          value={activeTab}
           onValueChange={(value: string) => setTab(value as SkillsTab)}
         >
           <TabsList variant="line" className="h-auto gap-0.5">
@@ -146,9 +149,9 @@ export function SkillsView() {
         </Tabs>
       </Box>
 
-      {tab === "marketplace" ? (
+      {activeTab === "marketplace" ? (
         <MarketplaceBrowse />
-      ) : tab === "team" && teamAvailable ? (
+      ) : activeTab === "team" ? (
         <TeamSkillsTab skills={teamListing?.skills ?? []} />
       ) : (
         <Flex className="min-h-0 flex-1">
