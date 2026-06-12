@@ -5,7 +5,7 @@ import { MarkdownRenderer } from "@posthog/ui/features/editor/components/Markdow
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { SeverityBadge } from "./ScoutBadges";
 
 export function ScoutEmissionCard({
@@ -14,6 +14,7 @@ export function ScoutEmissionCard({
   actions,
   footerEnd,
   defaultExpanded = false,
+  highlighted = false,
 }: {
   emission: ScoutEmission;
   /** The emitting scout, attached to analytics events when known. */
@@ -23,10 +24,21 @@ export function ScoutEmissionCard({
   /** Replaces the default pipeline note at the footer's right edge. */
   footerEnd?: ReactNode;
   defaultExpanded?: boolean;
+  /** True when a shared finding link targets this card – scrolls it into view. */
+  highlighted?: boolean;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlighted) cardRef.current?.scrollIntoView({ block: "center" });
+  }, [highlighted]);
   return (
-    <Box className="min-w-0 overflow-hidden rounded-(--radius-2) border border-(--gray-6) bg-gray-1 p-3">
+    <Box
+      ref={cardRef}
+      className={`min-w-0 overflow-hidden rounded-(--radius-2) border bg-gray-1 p-3 ${
+        highlighted ? "border-(--accent-8)" : "border-(--gray-6)"
+      }`}
+    >
       <button
         type="button"
         onClick={() => {

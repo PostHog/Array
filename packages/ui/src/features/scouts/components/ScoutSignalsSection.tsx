@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useScoutRunEmissions } from "../hooks/useScoutRunEmissions";
 import { ScoutEmissionCard } from "./ScoutEmissionCard";
 import { ScoutFindingDiscussButton } from "./ScoutFindingDiscussButton";
+import { ScoutFindingShareButton } from "./ScoutFindingShareButton";
 import { ScoutTaskRunLink } from "./ScoutTaskRunLink";
 
 /**
@@ -26,11 +27,14 @@ export function ScoutSignalsSection({
   windowLabel,
   loading,
   error,
+  highlightFindingId,
 }: {
   runs: ScoutRun[];
   windowLabel: string;
   loading: boolean;
   error?: boolean;
+  /** Emission id from a shared finding link – expanded and scrolled to when present. */
+  highlightFindingId?: string;
 }) {
   const [showAll, setShowAll] = useState(false);
   const emittedRuns = runs.filter((run) => (run.emitted_count ?? 0) > 0);
@@ -56,7 +60,11 @@ export function ScoutSignalsSection({
       ) : (
         <Flex direction="column" gap="2">
           {visibleRuns.map((run) => (
-            <RunEmissions key={run.run_id} run={run} />
+            <RunEmissions
+              key={run.run_id}
+              run={run}
+              highlightFindingId={highlightFindingId}
+            />
           ))}
           {hiddenCount > 0 ? (
             <button
@@ -81,7 +89,13 @@ export function ScoutSignalsSection({
   );
 }
 
-function RunEmissions({ run }: { run: ScoutRun }) {
+function RunEmissions({
+  run,
+  highlightFindingId,
+}: {
+  run: ScoutRun;
+  highlightFindingId?: string;
+}) {
   const {
     data: emissions,
     isLoading,
@@ -123,11 +137,19 @@ function RunEmissions({ run }: { run: ScoutRun }) {
           key={emission.id}
           emission={emission}
           skillName={run.skill_name}
+          defaultExpanded={emission.id === highlightFindingId}
+          highlighted={emission.id === highlightFindingId}
           actions={
-            <ScoutFindingDiscussButton
-              emission={emission}
-              skillName={run.skill_name}
-            />
+            <>
+              <ScoutFindingDiscussButton
+                emission={emission}
+                skillName={run.skill_name}
+              />
+              <ScoutFindingShareButton
+                emission={emission}
+                skillName={run.skill_name}
+              />
+            </>
           }
           footerEnd={
             taskRunUrl ? (

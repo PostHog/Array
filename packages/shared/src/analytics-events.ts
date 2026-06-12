@@ -648,6 +648,7 @@ export type ScoutActionType =
   | "open_task_run"
   | "open_skill_in_posthog"
   | "open_helper_skill"
+  | "copy_finding_link"
   | "show_more_emitted_runs"
   | "filter_runs"
   | "toggle_hide_disabled"

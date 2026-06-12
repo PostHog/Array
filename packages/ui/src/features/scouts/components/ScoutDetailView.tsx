@@ -43,7 +43,14 @@ const FILTERS: { value: ScoutRunFilter; label: string }[] = [
   { value: "failed", label: "Failed" },
 ];
 
-export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
+export function ScoutDetailView({
+  skillSlug,
+  highlightFindingId,
+}: {
+  skillSlug: string;
+  /** Emission id from a shared finding link – expanded and scrolled to when present. */
+  highlightFindingId?: string;
+}) {
   const skillName = scoutSkillNameFromSlug(skillSlug);
   const displayName = prettifyScoutSkillName(skillName);
 
@@ -178,6 +185,7 @@ export function ScoutDetailView({ skillSlug }: { skillSlug: string }) {
               windowLabel={scoutRunsWindowLabel(runsWindow)}
               loading={runsLoading}
               error={runsError}
+              highlightFindingId={highlightFindingId}
             />
 
             <Flex direction="column" gap="3">
