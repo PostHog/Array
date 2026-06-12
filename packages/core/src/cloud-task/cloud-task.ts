@@ -827,6 +827,21 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         dataEventsReceived: watcher.connDataEventsReceived,
         lastEventId: watcher.lastEventId,
       });
+
+      // A long-lived connection that closed cleanly is healthy transport churn, not a
+      // reconnect loop. Clear the cumulative budget so an idle run (keepalives only —
+      // nothing else resets it) can ride out proxy timeout cycles indefinitely, while
+      // instant-EOF loops still exhaust it.
+      const completedWatcher = this.watchers.get(key);
+      if (
+        completedWatcher &&
+        streamWasEstablished &&
+        Date.now() - connectedAt >= SSE_HEALTHY_CONNECTION_MS
+      ) {
+        completedWatcher.cumulativeReconnectAttempts = 0;
+      }
+
+
       await this.handleStreamCompletion(key, { reconnectOnDisconnect: true });
     } catch (error) {
       this.flushLogBatch(key);
@@ -858,6 +873,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           watcher.streamErrorAttempts += 1;
         } else if (wasHealthyStream) {
           watcher.streamErrorAttempts = 0;
+          // Same as the clean-EOF path: a healthy-length connection proves this is
+          // timeout cycling, not a loop, so an idle run never exhausts the budget.
+          watcher.cumulativeReconnectAttempts = 0;
         }
       }
 

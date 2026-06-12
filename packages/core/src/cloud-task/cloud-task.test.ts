@@ -1459,6 +1459,80 @@ describe("CloudTaskService", () => {
     expect(watcher?.reconnectAttempts).toBe(0);
   });
 
+  it("never fails an idle run riding healthy clean-EOF reconnect cycles", async () => {
+    vi.useFakeTimers();
+
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    // An idle run: every connection delivers only a keepalive, lives a healthy
+    // 65s, then the server closes it cleanly. No data events ever arrive, so
+    // nothing else resets the cumulative budget across the cycles.
+    mockStreamFetch.mockImplementation(() => {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode('event: keepalive\ndata: {"type":"keepalive"}\n\n'),
+          );
+          setTimeout(() => controller.close(), 65_000);
+        },
+      });
+      return Promise.resolve(
+        new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      );
+    });
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+    // Ride out more cycles than the cumulative budget allows for loops.
+    await vi.advanceTimersByTimeAsync(67_000 * 35);
+    await waitFor(() => mockStreamFetch.mock.calls.length >= 32, 20_000);
+
+    expect(
+      updates.some(
+        (u) =>
+          typeof u === "object" &&
+          u !== null &&
+          (u as { kind?: string }).kind === "error",
+      ),
+    ).toBe(false);
+    expect(
+      (service as unknown as { watchers: Map<string, unknown> }).watchers.has(
+        "task-1:run-1",
+      ),
+    ).toBe(true);
+  });
+
   it("resets the transport reconnect budget once a keepalive proves recovery", async () => {
     vi.useFakeTimers();
 
