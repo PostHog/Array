@@ -870,7 +870,7 @@ describe("CloudTaskService", () => {
     );
   });
 
-  it("fails the watcher after exhausting the cumulative reconnect budget on clean-EOF loops", async () => {
+  it("re-bootstraps once on a clean-EOF loop and fails when it persists", async () => {
     vi.useFakeTimers();
 
     const updates: unknown[] = [];
@@ -931,6 +931,18 @@ describe("CloudTaskService", () => {
         "Could not maintain a connection to the cloud run after many attempts. Click retry once the issue is resolved.",
       retryable: true,
     });
+
+    // The first budget exhaustion self-heals with a full rebuild (fresh read-leg
+    // resolution and a second snapshot); only the second exhaustion fails.
+    expect(
+      updates.filter(
+        (u) =>
+          typeof u === "object" &&
+          u !== null &&
+          (u as { kind?: string }).kind === "snapshot",
+      ),
+    ).toHaveLength(2);
+    expect(mockStreamTokenFetch.mock.calls.length).toBe(2);
   });
 
   it("retry rebuilds the watcher from scratch after a failure", async () => {
