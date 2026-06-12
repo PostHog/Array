@@ -261,22 +261,29 @@ describe("operationInProgressError", () => {
 });
 
 describe("behindRemoteError", () => {
-  it("names the branch and short tip, gives the recovery, and stays generic", () => {
-    const msg = behindRemoteError(
-      "posthog-code/feature",
-      "0123456789abcdef0123456789abcdef01234567",
-    );
-    expect(msg).toContain("posthog-code/feature");
-    expect(msg).toContain("0123456789ab"); // 12-char short tip
-    expect(msg).not.toContain("0123456789abc"); // not the full oid
-    expect(msg).toContain("git stash --include-untracked");
-    expect(msg).toContain("git fetch origin posthog-code/feature");
-    expect(msg).toContain("git reset --hard origin/posthog-code/feature");
-    expect(msg).toContain("git stash pop");
-    expect(msg).toContain("REVERTING");
-    // Generic — no repo-specific bot or codegen names.
-    expect(msg).not.toContain("tests-posthog");
-    expect(msg).not.toContain("OpenAPI");
+  const msg = behindRemoteError(
+    "posthog-code/feature",
+    "0123456789abcdef0123456789abcdef01234567",
+  );
+
+  it.each([
+    "posthog-code/feature", // names the branch
+    "0123456789ab", // 12-char short tip
+    "git stash --include-untracked", // work-preserving recovery
+    "git fetch origin posthog-code/feature",
+    "git reset --hard origin/posthog-code/feature",
+    "git stash pop",
+    "REVERTING",
+  ])("mentions %j", (needle) => {
+    expect(msg).toContain(needle);
+  });
+
+  it.each([
+    "0123456789abc", // the full oid — tip is truncated to 12 chars
+    "tests-posthog", // repo-specific bot name
+    "OpenAPI", // repo-specific artifact name
+  ])("stays generic: omits %j", (needle) => {
+    expect(msg).not.toContain(needle);
   });
 });
 
