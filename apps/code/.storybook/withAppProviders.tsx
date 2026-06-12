@@ -80,10 +80,12 @@ const stubWorker = {
 // the external-apps service behind a "open in editor" button. Property access
 // yields another stub and calls return one, so `service.foo().bar` never throws.
 // Methods invoked from event handlers are simply no-ops in Storybook.
+// `then` must be undefined: otherwise the stub is thenable and `await
+// service.foo()` would never settle (the stubbed `then` never calls resolve).
 function inertServiceStub(): unknown {
   const target = () => undefined;
   return new Proxy(target, {
-    get: () => inertServiceStub(),
+    get: (_target, prop) => (prop === "then" ? undefined : inertServiceStub()),
     apply: () => inertServiceStub(),
   });
 }
