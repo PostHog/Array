@@ -17,3 +17,17 @@ export interface SkillFileEntry {
   path: string;
   size: number;
 }
+
+export interface ExportedSkillFile {
+  /** Path relative to the skill directory, using "/" separators. */
+  path: string;
+  content: string;
+}
+
+/** A skill serialized for transport: team publish and install. */
+export interface ExportedSkill {
+  name: string;
+  description: string;
+  body: string;
+  files: ExportedSkillFile[];
+}

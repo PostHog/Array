@@ -2,7 +2,11 @@ import type {
   LlmSkillListItem,
   PostHogAPIClient,
 } from "@posthog/api-client/posthog-client";
-import { injectable } from "inversify";
+import type { ExportedSkill } from "@posthog/shared";
+import { inject, injectable } from "inversify";
+import { SKILLS_WORKSPACE_CLIENT } from "./identifiers";
+
+export type { ExportedSkill };
 
 export interface TeamSkillInfo {
   id: string;
@@ -21,15 +25,43 @@ export interface TeamSkillsListing {
   skills: TeamSkillInfo[];
 }
 
-export interface ExportedSkill {
-  name: string;
-  description: string;
-  body: string;
-  files: { path: string; content: string }[];
+/** The slice of workspace-server this service needs, bound by the host. */
+export interface SkillsWorkspaceClient {
+  exportSkill(
+    skillPath: string,
+  ): Promise<ExportedSkill & { skipped: string[] }>;
+  installTeamSkill(
+    input: ExportedSkill & { overwrite: boolean },
+  ): Promise<{ path: string }>;
 }
 
 @injectable()
 export class TeamSkillsService {
+  constructor(
+    @inject(SKILLS_WORKSPACE_CLIENT)
+    private readonly workspace: SkillsWorkspaceClient,
+  ) {}
+
+  /** Exports the local skill from disk, then creates or versions the team copy. */
+  async publishLocalSkill(
+    client: PostHogAPIClient,
+    skillPath: string,
+  ): Promise<{ version: number; skipped: string[] }> {
+    const exported = await this.workspace.exportSkill(skillPath);
+    const { version } = await this.publishSkill(client, exported);
+    return { version, skipped: exported.skipped };
+  }
+
+  /** Materializes a team skill into the local user skills dir (copy-and-forget). */
+  async installTeamSkillLocally(
+    client: PostHogAPIClient,
+    name: string,
+    overwrite = false,
+  ): Promise<{ path: string }> {
+    const skill = await this.fetchSkillForInstall(client, name);
+    return this.workspace.installTeamSkill({ ...skill, overwrite });
+  }
+
   /**
    * Lists team skills merged with the local listing: the availability
    * decision (flag off → absent group, no errors) and the "already

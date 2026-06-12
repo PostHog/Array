@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -269,6 +270,31 @@ describe("installTeamSkill", () => {
           files: [{ path: "../evil.md", content: "bad" }],
         }),
       ).rejects.toThrow("path outside skill directory");
+      expect(existsSync(target)).toBe(false);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the existing skill when an overwrite payload is invalid", async () => {
+    const name = "posthog-code-test-skill-f4e84f1a";
+    const { homedir } = await import("node:os");
+    const target = path.join(homedir(), ".claude", "skills", name);
+    const service = makeService();
+    try {
+      await service.installTeamSkill({ ...input, name });
+
+      await expect(
+        service.installTeamSkill({
+          ...input,
+          name,
+          overwrite: true,
+          files: [{ path: "../evil.md", content: "bad" }],
+        }),
+      ).rejects.toThrow("path outside skill directory");
+
+      const manifest = await service.readSkillFile(target, "SKILL.md");
+      expect(manifest).toContain("# Team body");
     } finally {
       await rm(target, { recursive: true, force: true });
     }

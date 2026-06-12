@@ -79,6 +79,8 @@ import {
   TITLE_GENERATOR_LOGGER,
 } from "@posthog/core/sessions/titleGeneratorIdentifiers";
 import { type ISetupStore, SETUP_STORE } from "@posthog/core/setup/identifiers";
+import { SKILLS_WORKSPACE_CLIENT } from "@posthog/core/skills/identifiers";
+import type { SkillsWorkspaceClient } from "@posthog/core/skills/teamSkillsService";
 import {
   TASK_CREATION_EFFECTS,
   TASK_CREATION_HOST,
@@ -254,6 +256,7 @@ export interface RendererBindings {
   [NEW_TASK_LINK_RESOLVER]: NewTaskLinkResolver;
   [CODE_REVIEW_WORKSPACE_CLIENT]: CodeReviewWorkspaceClient;
   [REVERT_HUNK_SERVICE]: RevertHunkService;
+  [SKILLS_WORKSPACE_CLIENT]: SkillsWorkspaceClient;
   [CLOUD_ARTIFACT_READ_FILE_AS_BASE64]: ReadFileAsBase64;
   [LLM_GATEWAY_SERVICE]: LlmGatewayService;
   [TITLE_GENERATOR_FILE_READ_CLIENT]: FileReadClient;

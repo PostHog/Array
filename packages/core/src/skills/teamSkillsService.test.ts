@@ -3,7 +3,14 @@ import type {
   PostHogAPIClient,
 } from "@posthog/api-client/posthog-client";
 import { describe, expect, it, vi } from "vitest";
+import type { SkillsWorkspaceClient } from "./teamSkillsService";
 import { TeamSkillsService } from "./teamSkillsService";
+
+function makeService(
+  workspace: Partial<SkillsWorkspaceClient> = {},
+): TeamSkillsService {
+  return new TeamSkillsService(workspace as SkillsWorkspaceClient);
+}
 
 function makeItem(overrides: Partial<LlmSkillListItem>): LlmSkillListItem {
   return {
@@ -32,10 +39,7 @@ function makeClient(result: LlmSkillListItem[] | null): PostHogAPIClient {
 
 describe("TeamSkillsService.listTeamSkills", () => {
   it("reports the feature as unavailable when the API returns null", async () => {
-    const listing = await new TeamSkillsService().listTeamSkills(
-      makeClient(null),
-      [],
-    );
+    const listing = await makeService().listTeamSkills(makeClient(null), []);
 
     expect(listing).toEqual({ available: false, skills: [] });
   });
@@ -46,7 +50,7 @@ describe("TeamSkillsService.listTeamSkills", () => {
       makeItem({ id: "skill-2", name: "release-notes", created_by: null }),
     ]);
 
-    const listing = await new TeamSkillsService().listTeamSkills(client, [
+    const listing = await makeService().listTeamSkills(client, [
       "release-notes",
       "unrelated-local",
     ]);
@@ -76,7 +80,7 @@ describe("TeamSkillsService.listTeamSkills", () => {
       makeItem({ id: "skill-1b", version: 2 }),
     ]);
 
-    const listing = await new TeamSkillsService().listTeamSkills(client, []);
+    const listing = await makeService().listTeamSkills(client, []);
 
     expect(listing.skills).toHaveLength(1);
     expect(listing.skills[0]?.id).toBe("skill-1b");
@@ -98,7 +102,7 @@ describe("TeamSkillsService.publishSkill", () => {
       createLlmSkill,
     } as unknown as PostHogAPIClient;
 
-    const result = await new TeamSkillsService().publishSkill(client, exported);
+    const result = await makeService().publishSkill(client, exported);
 
     expect(createLlmSkill).toHaveBeenCalledWith({
       name: "pr-shepherd",
@@ -120,7 +124,7 @@ describe("TeamSkillsService.publishSkill", () => {
       publishLlmSkillVersion,
     } as unknown as PostHogAPIClient;
 
-    const result = await new TeamSkillsService().publishSkill(client, exported);
+    const result = await makeService().publishSkill(client, exported);
 
     expect(publishLlmSkillVersion).toHaveBeenCalledWith("pr-shepherd", {
       body: "# Body",
@@ -133,7 +137,7 @@ describe("TeamSkillsService.publishSkill", () => {
 
   it("rejects publishing without a description", async () => {
     await expect(
-      new TeamSkillsService().publishSkill(makeClient([]), {
+      makeService().publishSkill(makeClient([]), {
         ...exported,
         description: "  ",
       }),
@@ -142,7 +146,7 @@ describe("TeamSkillsService.publishSkill", () => {
 
   it("rejects publishing when the feature is unavailable", async () => {
     await expect(
-      new TeamSkillsService().publishSkill(makeClient(null), exported),
+      makeService().publishSkill(makeClient(null), exported),
     ).rejects.toThrow("not enabled");
   });
 });
@@ -168,7 +172,7 @@ describe("TeamSkillsService.fetchSkillForInstall", () => {
         })),
     } as unknown as PostHogAPIClient;
 
-    const skill = await new TeamSkillsService().fetchSkillForInstall(
+    const skill = await makeService().fetchSkillForInstall(
       client,
       "pr-shepherd",
     );
@@ -185,5 +189,61 @@ describe("TeamSkillsService.fetchSkillForInstall", () => {
         { path: "scripts/run.sh", content: "content of scripts/run.sh" },
       ],
     });
+  });
+});
+
+describe("TeamSkillsService.publishLocalSkill", () => {
+  it("exports from disk, publishes, and reports skipped files", async () => {
+    const exportSkill = vi.fn().mockResolvedValue({
+      name: "pr-shepherd",
+      description: "Shepherds PRs",
+      body: "# Body",
+      files: [],
+      skipped: ["assets/logo.png"],
+    });
+    const createLlmSkill = vi.fn().mockResolvedValue(makeItem({ version: 1 }));
+    const client = {
+      listLlmSkills: vi.fn().mockResolvedValue([]),
+      createLlmSkill,
+    } as unknown as PostHogAPIClient;
+
+    const result = await makeService({ exportSkill }).publishLocalSkill(
+      client,
+      "/home/.claude/skills/pr-shepherd",
+    );
+
+    expect(exportSkill).toHaveBeenCalledWith(
+      "/home/.claude/skills/pr-shepherd",
+    );
+    expect(result).toEqual({ version: 1, skipped: ["assets/logo.png"] });
+  });
+});
+
+describe("TeamSkillsService.installTeamSkillLocally", () => {
+  it("fetches the skill and materializes it with the overwrite flag", async () => {
+    const installTeamSkill = vi
+      .fn()
+      .mockResolvedValue({ path: "/home/.claude/skills/pr-shepherd" });
+    const client = {
+      getLlmSkillByName: vi.fn().mockResolvedValue({
+        name: "pr-shepherd",
+        description: "Shepherds PRs",
+        body: "# Body",
+        files: [],
+      }),
+    } as unknown as PostHogAPIClient;
+
+    const result = await makeService({
+      installTeamSkill,
+    }).installTeamSkillLocally(client, "pr-shepherd", true);
+
+    expect(installTeamSkill).toHaveBeenCalledWith({
+      name: "pr-shepherd",
+      description: "Shepherds PRs",
+      body: "# Body",
+      files: [],
+      overwrite: true,
+    });
+    expect(result).toEqual({ path: "/home/.claude/skills/pr-shepherd" });
   });
 });

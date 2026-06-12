@@ -225,29 +225,51 @@ export class SkillsService {
   ): Promise<{ path: string }> {
     const name = input.name.trim();
     validateSkillDirName(name);
-    const target = path.join(os.homedir(), ".claude", "skills", name);
+    const userRoot = path.join(os.homedir(), ".claude", "skills");
+    const target = path.join(userRoot, name);
     if (fs.existsSync(target) && !input.overwrite) {
       throw new Error(
         `A skill named "${name}" already exists. Installing will replace your local version.`,
       );
     }
-    if (fs.existsSync(target)) {
-      await fs.promises.rm(target, { recursive: true, force: true });
-    }
 
-    await fs.promises.mkdir(target, { recursive: true });
-    await fs.promises.writeFile(
-      path.join(target, "SKILL.md"),
-      serializeSkillMarkdown(
-        { name, description: input.description },
-        input.body,
-      ),
-      "utf-8",
+    // Stage first: a bad payload must not corrupt or delete the existing skill.
+    await fs.promises.mkdir(userRoot, { recursive: true });
+    const staging = await fs.promises.mkdtemp(
+      path.join(userRoot, `.install-${name}-`),
     );
-    for (const file of input.files) {
-      const filePath = resolveSkillFilePath(target, file.path);
-      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-      await fs.promises.writeFile(filePath, file.content, "utf-8");
+    const previous = `${staging}-previous`;
+    try {
+      await fs.promises.writeFile(
+        path.join(staging, "SKILL.md"),
+        serializeSkillMarkdown(
+          { name, description: input.description },
+          input.body,
+        ),
+        "utf-8",
+      );
+      for (const file of input.files) {
+        const filePath = resolveSkillFilePath(staging, file.path);
+        await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.promises.writeFile(filePath, file.content, "utf-8");
+      }
+
+      const hadExisting = fs.existsSync(target);
+      if (hadExisting) {
+        await fs.promises.rename(target, previous);
+      }
+      try {
+        await fs.promises.rename(staging, target);
+      } catch (error) {
+        if (hadExisting) {
+          await fs.promises.rename(previous, target).catch(() => {});
+        }
+        throw error;
+      }
+      await fs.promises.rm(previous, { recursive: true, force: true });
+    } catch (error) {
+      await fs.promises.rm(staging, { recursive: true, force: true });
+      throw error;
     }
     return { path: target };
   }

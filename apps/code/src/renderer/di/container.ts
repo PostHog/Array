@@ -47,6 +47,8 @@ import {
   TITLE_GENERATOR_FILE_READ_CLIENT,
   TITLE_GENERATOR_LOGGER,
 } from "@posthog/core/sessions/titleGeneratorIdentifiers";
+import { SKILLS_WORKSPACE_CLIENT } from "@posthog/core/skills/identifiers";
+import type { SkillsWorkspaceClient } from "@posthog/core/skills/teamSkillsService";
 import {
   TASK_CREATION_EFFECTS,
   TASK_CREATION_HOST,
@@ -319,6 +321,13 @@ container.bind(CODE_REVIEW_WORKSPACE_CLIENT).toConstantValue({
   },
 } satisfies CodeReviewWorkspaceClient);
 container.bind(REVERT_HUNK_SERVICE).to(RevertHunkService).inSingletonScope();
+
+// skills (team publish/install reach workspace-server through this slice)
+container.bind(SKILLS_WORKSPACE_CLIENT).toConstantValue({
+  exportSkill: (skillPath: string) =>
+    trpcClient.skills.export.query({ skillPath }),
+  installTeamSkill: (input) => trpcClient.skills.installTeamSkill.mutate(input),
+} satisfies SkillsWorkspaceClient);
 
 // sessions (cloud-artifact + title-generator)
 container.load(sessionsModule);
