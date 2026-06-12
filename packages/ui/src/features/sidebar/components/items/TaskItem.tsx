@@ -211,7 +211,8 @@ export function TaskItem({
       label={label}
       isActive={isActive}
       isSelected={isSelected}
-      draggable
+      isDimmed={isArchiving}
+      draggable={!isArchiving}
       onDragStart={handleDragStart}
       onClick={onClick}
       onDoubleClick={onDoubleClick}

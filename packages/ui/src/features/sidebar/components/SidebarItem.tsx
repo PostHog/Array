@@ -70,6 +70,7 @@ export function SidebarItem({
   subtitle,
   isActive,
   isSelected,
+  isDimmed,
   draggable,
   onDragStart,
   onClick,
@@ -85,6 +86,7 @@ export function SidebarItem({
         "group flex w-full cursor-default text-left text-[13px] leading-snug transition-colors",
         "focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent-8",
         "disabled:opacity-100 data-active:bg-fill-selected data-selected:bg-(--gray-3)",
+        isDimmed && "opacity-50",
       )}
       data-active={isActive || undefined}
       data-selected={(isSelected && !isActive) || undefined}
