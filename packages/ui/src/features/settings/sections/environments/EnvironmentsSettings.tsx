@@ -22,8 +22,11 @@ export function EnvironmentsSettings() {
     activeCategory === "cloud-environments" ? "cloud" : "local";
 
   const handleSegmentChange = (value: string) => {
+    // Replace rather than push so switching tabs doesn't pile up history
+    // entries that "Back to app" would otherwise step back through.
     navigateToSettings(
       value === "cloud" ? "cloud-environments" : "environments",
+      { replace: true },
     );
   };
 
