@@ -16,9 +16,12 @@ import {
 const SKILLS_SH_SEARCH_URL = "https://skills.sh/api/search";
 const REPO_SOURCE_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const MAX_ARCHIVE_BYTES = 100 * 1024 * 1024;
+const MAX_UNZIPPED_BYTES = 500 * 1024 * 1024;
 const MAX_PREVIEW_FILE_BYTES = 256 * 1024;
 const ARCHIVE_CACHE_TTL_MS = 5 * 60_000;
 const ARCHIVE_CACHE_MAX_ENTRIES = 4;
+const SEARCH_TIMEOUT_MS = 10_000;
+const ARCHIVE_DOWNLOAD_TIMEOUT_MS = 60_000;
 
 interface InstalledSkillsFile {
   version: number;
@@ -119,7 +122,9 @@ export class SkillsMarketplaceService {
 
     const url = new URL(SKILLS_SH_SEARCH_URL);
     url.searchParams.set("q", trimmed);
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+    });
     if (!response.ok) {
       throw new Error(`skills.sh search failed: ${response.status}`);
     }
@@ -221,20 +226,26 @@ export class SkillsMarketplaceService {
 
     const cached = this.archives.get(source);
     if (cached && Date.now() - cached.fetchedAt < ARCHIVE_CACHE_TTL_MS) {
+      // LRU: refresh recency on hit.
+      this.archives.delete(source);
+      this.archives.set(source, cached);
       return cached.entries;
     }
 
     const response = await fetch(
       `https://codeload.github.com/${source}/zip/HEAD`,
+      { signal: AbortSignal.timeout(ARCHIVE_DOWNLOAD_TIMEOUT_MS) },
     );
     if (!response.ok) {
       throw new Error(`Failed to download ${source}: ${response.status}`);
     }
-    const buffer = await response.arrayBuffer();
-    if (buffer.byteLength > MAX_ARCHIVE_BYTES) {
+    const declaredBytes = Number(response.headers.get("content-length") ?? 0);
+    if (declaredBytes > MAX_ARCHIVE_BYTES) {
       throw new Error(`Repository ${source} is too large to download`);
     }
-    const entries = await unzipAsync(new Uint8Array(buffer));
+    // codeload responses are chunked; the cap is enforced while streaming.
+    const buffer = await readBodyWithLimit(response, MAX_ARCHIVE_BYTES, source);
+    const entries = await unzipWithLimit(buffer, MAX_UNZIPPED_BYTES, source);
 
     this.archives.set(source, { fetchedAt: Date.now(), entries });
     while (this.archives.size > ARCHIVE_CACHE_MAX_ENTRIES) {
@@ -244,4 +255,61 @@ export class SkillsMarketplaceService {
     }
     return entries;
   }
+}
+
+async function readBodyWithLimit(
+  response: Response,
+  maxBytes: number,
+  source: string,
+): Promise<Uint8Array> {
+  const tooLarge = () =>
+    new Error(`Repository ${source} is too large to download`);
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const buffer = new Uint8Array(await response.arrayBuffer());
+    if (buffer.byteLength > maxBytes) throw tooLarge();
+    return buffer;
+  }
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+/** Inflates the archive within a decompressed-bytes budget (zip-bomb guard). */
+export function unzipWithLimit(
+  data: Uint8Array,
+  maxTotalBytes: number,
+  source: string,
+): Promise<Unzipped> {
+  let total = 0;
+  let exceeded = false;
+  return unzipAsync(data, {
+    filter: (file) => {
+      total += file.originalSize;
+      if (total > maxTotalBytes) exceeded = true;
+      return !exceeded;
+    },
+  }).then((entries) => {
+    if (exceeded) {
+      throw new Error(`Repository ${source} is too large to unpack`);
+    }
+    return entries;
+  });
 }

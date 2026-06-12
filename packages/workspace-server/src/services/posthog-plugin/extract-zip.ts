@@ -1,15 +1,20 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { type Unzipped, unzip } from "fflate";
+import { type UnzipOptions, type Unzipped, unzip } from "fflate";
 
 // fflate's async unzip yields the event loop so the Electron main thread
 // stays responsive on large archives. Do not switch back to unzipSync.
-export function unzipAsync(data: Uint8Array): Promise<Unzipped> {
+export function unzipAsync(
+  data: Uint8Array,
+  opts?: UnzipOptions,
+): Promise<Unzipped> {
   return new Promise((resolve, reject) => {
-    unzip(data, (err, unzipped) => {
+    const done = (err: Error | null, unzipped: Unzipped) => {
       if (err) reject(err);
       else resolve(unzipped);
-    });
+    };
+    if (opts) unzip(data, opts, done);
+    else unzip(data, done);
   });
 }
 

@@ -16,6 +16,7 @@ import {
   collectSkillFiles,
   findSkillDirPrefix,
   SkillsMarketplaceService,
+  unzipWithLimit,
 } from "./skills-marketplace";
 
 let root: string;
@@ -278,5 +279,54 @@ describe("install", () => {
         skillId: "../escape",
       }),
     ).rejects.toThrow("Skill names must be");
+  });
+});
+
+describe("archive download guards", () => {
+  it("rejects archives whose declared content-length exceeds the cap", async () => {
+    stubFetch(
+      () =>
+        new Response(new Uint8Array(makeRepoZip()), {
+          status: 200,
+          headers: { "content-length": String(101 * 1024 * 1024) },
+        }),
+    );
+
+    await expect(
+      new SkillsMarketplaceService().preview({
+        source: "getsentry/skills",
+        skillId: "commit",
+      }),
+    ).rejects.toThrow("too large to download");
+  });
+
+  it("reuses the cached archive within the TTL", async () => {
+    stubFetch(() => zipResponse(makeRepoZip()));
+    const service = new SkillsMarketplaceService();
+
+    await service.preview({ source: "getsentry/skills", skillId: "commit" });
+    await service.preview({ source: "getsentry/skills", skillId: "other" });
+
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("unzipWithLimit", () => {
+  it("rejects archives that decompress past the budget", async () => {
+    const zip = zipSync({
+      "repo-HEAD/big.bin": new Uint8Array(64 * 1024),
+    });
+
+    await expect(
+      unzipWithLimit(new Uint8Array(zip), 16 * 1024, "a/b"),
+    ).rejects.toThrow("too large to unpack");
+  });
+
+  it("inflates archives within the budget", async () => {
+    const zip = zipSync({ "repo-HEAD/small.txt": strToU8("hello") });
+
+    const entries = await unzipWithLimit(new Uint8Array(zip), 16 * 1024, "a/b");
+
+    expect(Object.keys(entries)).toContain("repo-HEAD/small.txt");
   });
 });
