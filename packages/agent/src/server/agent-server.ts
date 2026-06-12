@@ -1751,6 +1751,18 @@ Histories containing merge commits are refused — rebase (which flattens merges
 If a signed-git tool refuses with a "merge in progress" or "leak" error, follow its recovery
 instructions instead of retrying the same call.
 
+## Re-committing to a branch with an open PR
+Before committing again to a branch that already has an open PR, fetch it first. The remote
+branch can advance between your commits — CI automation often auto-commits regenerated
+artifacts (codegen, lockfiles, formatting) onto open PR branches, and collaborators can push
+too. Committing from a stale local checkout silently reverts those commits, so
+\`git_signed_commit\` refuses when the remote branch is ahead of your checkout. If it does, or
+before your next commit, update your checkout — stash any uncommitted work across the update so
+you don't lose it: \`git stash --include-untracked\`, \`git fetch origin <branch>\`,
+\`git reset --hard origin/<branch>\`, \`git stash pop\` (resolve any conflicts), then re-stage
+and commit. A soft/mixed reset would keep your stale files and re-commit the revert, so the
+hard reset is the safe one here — your work is held in the stash.
+
 ## Attribution
 Do NOT add "Co-Authored-By" trailers or "Generated with [Claude Code]" lines to your
 commit messages. The \`git_signed_commit\` tool automatically appends the only trailers

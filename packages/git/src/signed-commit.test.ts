@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  assertNotBehindRemote,
+  behindRemoteError,
   chunkFileChanges,
   detectBaseLeaks,
   interpretMergeApiResult,
@@ -254,6 +260,29 @@ describe("operationInProgressError", () => {
   });
 });
 
+describe("behindRemoteError", () => {
+  it("names the branch, the short tip, and the sync recovery", () => {
+    const msg = behindRemoteError(
+      "posthog-code/feature",
+      "0123456789abcdef0123456789abcdef01234567",
+    );
+    expect(msg).toContain("posthog-code/feature");
+    expect(msg).toContain("0123456789ab"); // 12-char short tip
+    expect(msg).not.toContain("0123456789abc"); // not the full oid
+    expect(msg).toContain("git stash --include-untracked");
+    expect(msg).toContain("git fetch origin posthog-code/feature");
+    expect(msg).toContain("git reset --hard origin/posthog-code/feature");
+    expect(msg).toContain("git stash pop");
+    expect(msg).toContain("REVERTING");
+  });
+
+  it("stays generic — no repo-specific bot or codegen names", () => {
+    const msg = behindRemoteError("feature", "abc123");
+    expect(msg).not.toContain("tests-posthog");
+    expect(msg).not.toContain("OpenAPI");
+  });
+});
+
 describe("interpretMergeApiResult", () => {
   it.each([
     {
@@ -326,5 +355,146 @@ describe("interpretMergeApiResult", () => {
       exitCode: 0,
     });
     expect(outcome.kind).toBe("error");
+  });
+});
+
+describe("assertNotBehindRemote", () => {
+  const cleanups: string[] = [];
+
+  afterEach(() => {
+    while (cleanups.length) {
+      const dir = cleanups.pop();
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  function git(cwd: string, ...args: string[]): string {
+    return execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      // The cloud sandbox installs a git-guard shim that blocks `commit`/`push`;
+      // its documented escape hatch lets the fixture build real history here.
+      env: { ...process.env, POSTHOG_ALLOW_UNSIGNED_GIT: "1" },
+    }).trim();
+  }
+
+  function tmp(label: string): string {
+    const dir = mkdtempSync(path.join(tmpdir(), `posthog-${label}-`));
+    cleanups.push(dir);
+    return dir;
+  }
+
+  function initRepo(dir: string): void {
+    git(dir, "init", "--initial-branch", "main");
+    git(dir, "config", "user.name", "Test");
+    git(dir, "config", "user.email", "test@example.com");
+    git(dir, "config", "commit.gpgsign", "false");
+  }
+
+  function commit(dir: string, file: string, contents: string): string {
+    writeFileSync(path.join(dir, file), contents);
+    git(dir, "add", file);
+    git(dir, "commit", "-m", `add ${file}`);
+    return git(dir, "rev-parse", "HEAD");
+  }
+
+  // Scenario: an agent clone whose checkout is one commit behind a branch that
+  // a "bot" advanced on the shared remote.
+  function setupBranchAdvancedByBot(): {
+    agent: string;
+    branch: string;
+    botTip: string;
+  } {
+    const remote = tmp("remote");
+    git(remote, "init", "--bare", "--initial-branch", "main");
+
+    const branch = "posthog-code/feature";
+
+    // Agent: initial commit on main, branch off, first commit, push the branch.
+    const agent = tmp("agent");
+    initRepo(agent);
+    git(agent, "remote", "add", "origin", remote);
+    commit(agent, "base.txt", "base\n");
+    git(agent, "push", "origin", "main");
+    git(agent, "checkout", "-b", branch);
+    commit(agent, "feature.txt", "v1\n");
+    git(agent, "push", "origin", branch);
+
+    // Bot: separate clone pushes a regen commit onto the same branch.
+    const bot = tmp("bot");
+    git(bot, "clone", remote, ".");
+    git(bot, "config", "user.name", "tests-posthog[bot]");
+    git(bot, "config", "user.email", "bot@example.com");
+    git(bot, "config", "commit.gpgsign", "false");
+    git(bot, "checkout", branch);
+    const botTip = commit(bot, "generated.ts", "// regenerated\n");
+    git(bot, "push", "origin", branch);
+
+    return { agent, branch, botTip };
+  }
+
+  it("refuses a second commit from a checkout that never pulled the bot commit", () => {
+    const { agent, branch, botTip } = setupBranchAdvancedByBot();
+
+    // Fetches the tip (as createSignedCommit does) but HEAD still predates it.
+    git(agent, "fetch", "--no-tags", "origin", branch);
+
+    return expect(
+      assertNotBehindRemote({ cwd: agent, token: "x" }, branch, botTip),
+    ).rejects.toThrow(/advanced past your local checkout/);
+  });
+
+  it("allows committing when the checkout is up to date with the remote tip", async () => {
+    const { agent, branch } = setupBranchAdvancedByBot();
+    git(agent, "fetch", "--no-tags", "origin", branch);
+    // Sync the checkout to the advanced remote tip, mirroring the recovery path.
+    git(agent, "reset", "--hard", `origin/${branch}`);
+    const tip = git(agent, "rev-parse", "HEAD");
+
+    await expect(
+      assertNotBehindRemote({ cwd: agent, token: "x" }, branch, tip),
+    ).resolves.toBeUndefined();
+  });
+
+  it("is a no-op when the remote has not advanced, leaving staged work ready", async () => {
+    const remote = tmp("remote");
+    git(remote, "init", "--bare", "--initial-branch", "main");
+    const branch = "posthog-code/feature";
+    const agent = tmp("agent");
+    initRepo(agent);
+    git(agent, "remote", "add", "origin", remote);
+    commit(agent, "base.txt", "base\n");
+    git(agent, "push", "origin", "main");
+    git(agent, "checkout", "-b", branch);
+    const tip = commit(agent, "feature.txt", "v1\n");
+    git(agent, "push", "origin", branch);
+
+    // Agent stages its next change; no bot has pushed since.
+    writeFileSync(path.join(agent, "docs.md"), "edit\n");
+    git(agent, "add", "docs.md");
+    git(agent, "fetch", "--no-tags", "origin", branch);
+
+    await expect(
+      assertNotBehindRemote({ cwd: agent, token: "x" }, branch, tip),
+    ).resolves.toBeUndefined();
+    // The guard only reads git state — the staged change is still ready to commit.
+    expect(git(agent, "diff", "--cached", "--name-only")).toBe("docs.md");
+  });
+
+  it("allows committing when the local checkout is ahead of the remote tip", async () => {
+    const remote = tmp("remote");
+    git(remote, "init", "--bare", "--initial-branch", "main");
+    const agent = tmp("agent");
+    initRepo(agent);
+    git(agent, "remote", "add", "origin", remote);
+    const tip = commit(agent, "base.txt", "base\n");
+    git(agent, "push", "origin", "main");
+    // Local advances past the pushed tip without publishing — tip is an ancestor
+    // of HEAD, so there is nothing to revert.
+    commit(agent, "more.txt", "local\n");
+
+    await expect(
+      assertNotBehindRemote({ cwd: agent, token: "x" }, "main", tip),
+    ).resolves.toBeUndefined();
   });
 });

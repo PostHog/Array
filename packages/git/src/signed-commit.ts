@@ -255,6 +255,52 @@ async function remoteTip(
   return out.split("\t")[0]?.trim() || null;
 }
 
+/** Agent-facing refusal when the remote branch has advanced past the local checkout. */
+export function behindRemoteError(branch: string, tip: string): string {
+  const shortTip = tip.slice(0, 12);
+  return (
+    `Refusing to commit: remote branch '${branch}' has advanced past your local checkout ` +
+    `(remote tip ${shortTip} is not in your local history). Something pushed to the branch ` +
+    `after your last commit — often CI automation that auto-commits regenerated artifacts ` +
+    `(codegen, lockfiles, formatting) onto open PRs, or another collaborator. Committing now ` +
+    `would build the new commit on the remote tip while taking file contents from your stale ` +
+    `tree, silently REVERTING those commits. Recovery (preserves your uncommitted work): ` +
+    `\`git stash --include-untracked\`, then \`git fetch origin ${branch}\` and ` +
+    `\`git reset --hard origin/${branch}\`, then \`git stash pop\` — resolve any pop conflicts, ` +
+    `as they mark real overlaps with the new commits — then re-stage and retry ` +
+    `git_signed_commit. The hard reset is safe here: your work is saved in the stash, and only ` +
+    `a hard reset pulls the new commits' files into your working tree (a soft/mixed reset would ` +
+    `keep your stale copies and re-commit the revert). If you were integrating the base branch, ` +
+    `use git_signed_merge / git_signed_rewrite instead.`
+  );
+}
+
+/**
+ * Refuse when the remote `tip` has commits the local checkout lacks: the commit
+ * builds on `tip` but takes file contents from the index (based on local HEAD),
+ * so the staged diff would re-express every remotely-changed file as its stale
+ * local blob, silently reverting them. No-op on an unborn HEAD or an
+ * unresolvable relationship, so a missing object never blocks a real commit.
+ * Caller must have fetched `tip` first.
+ */
+export async function assertNotBehindRemote(
+  ctx: SignedCommitCtx,
+  branch: string,
+  tip: string,
+): Promise<void> {
+  const head = await runGit(["rev-parse", "HEAD"], ctx.cwd);
+  if (head.exitCode !== 0) return;
+  if (head.stdout.toString("utf8").trim() === tip) return;
+  // exit 1 ⇒ tip not reachable from HEAD ⇒ remote has commits we lack ⇒ refuse.
+  const reachable = await runGit(
+    ["merge-base", "--is-ancestor", tip, "HEAD"],
+    ctx.cwd,
+  );
+  if (reachable.exitCode === 1) {
+    throw new Error(behindRemoteError(branch, tip));
+  }
+}
+
 async function refApi(
   ctx: SignedCommitCtx,
   args: string[],
@@ -810,6 +856,9 @@ export async function createSignedCommit(
     // Existing branch: make its tip object local so the staged diff (and any
     // later reset) can resolve it.
     await runGit(["fetch", "--no-tags", "origin", branch], ctx.cwd);
+    // Committing a stale tree onto an advanced tip would silently revert the
+    // commits we never pulled.
+    await assertNotBehindRemote(ctx, branch, tip);
   }
 
   const changes = await buildFileChanges(ctx, tip);
