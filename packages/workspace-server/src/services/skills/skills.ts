@@ -25,6 +25,7 @@ import { serializeSkillMarkdown } from "./write-skill-frontmatter";
 const MAX_SKILL_FILES = 500;
 const MAX_SKILL_FILE_BYTES = 2 * 1024 * 1024;
 const SKILLS_WATCH_DEBOUNCE_MS = 300;
+const MISSING_DIR_POLL_MS = 2000;
 const SKILL_DIR_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 const MAX_SKILL_DIR_NAME_LENGTH = 64;
 
@@ -181,18 +182,21 @@ export class SkillsService {
    */
   async *watchSkills(signal?: AbortSignal): AsyncGenerator<{ changed: true }> {
     const userRoot = path.join(os.homedir(), ".claude", "skills");
-    // The user root is ours to create; repo roots are only watched if present.
+    // The user root is ours to create; missing repo roots are polled for.
     await fs.promises.mkdir(userRoot, { recursive: true }).catch(() => {});
     const folders = await this.folders.getFolders();
     const dirs = [
       userRoot,
       ...folders.map((f) => path.join(f.path, ".claude", "skills")),
-    ].filter((dir) => fs.existsSync(dir));
+    ];
 
     yield* this.watchSkillDirs(dirs, signal);
   }
 
-  /** Merges watchers over the given directories into one debounced stream. */
+  /**
+   * Merges watchers over the given directories into one debounced stream.
+   * Directories that don't exist yet are polled until they appear.
+   */
   async *watchSkillDirs(
     dirs: string[],
     signal?: AbortSignal,
@@ -207,6 +211,11 @@ export class SkillsService {
     for (const dir of dirs) {
       void (async () => {
         try {
+          if (!(await dirExists(dir))) {
+            if (!(await waitForDir(dir, signal))) return;
+            pending = true;
+            wake();
+          }
           for await (const _batch of this.watcher.watch(dir, {}, signal)) {
             pending = true;
             wake();
@@ -337,6 +346,22 @@ function validateSkillDirName(name: string): void {
       "Skill names must be lowercase letters, numbers, dots, dashes, or underscores",
     );
   }
+}
+
+function dirExists(dir: string): Promise<boolean> {
+  return fs.promises
+    .access(dir)
+    .then(() => true)
+    .catch(() => false);
+}
+
+/** Polls until the directory exists. Resolves false if aborted first. */
+async function waitForDir(dir: string, signal?: AbortSignal): Promise<boolean> {
+  while (!signal?.aborted) {
+    if (await dirExists(dir)) return true;
+    await delay(MISSING_DIR_POLL_MS, signal);
+  }
+  return false;
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
