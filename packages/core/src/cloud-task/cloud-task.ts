@@ -148,6 +148,10 @@ interface WatcherState {
   streamTargetResolved: boolean;
   streamBaseUrl: string | null;
   streamReadToken: string | null;
+  // True once stream_token resolved OK: servers with that endpoint always emit the stream-end
+  // sentinel. False for old servers (404), where the client must fall back to legacy status
+  // polling to detect the end of a run.
+  durableStreamEnabled: boolean;
 }
 
 function watcherKey(taskId: string, runId: string): string {
@@ -375,6 +379,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.streamTargetResolved = false;
     watcher.streamBaseUrl = null;
     watcher.streamReadToken = null;
+    watcher.durableStreamEnabled = false;
   }
 
   async sendCommand(input: SendCommandInput): Promise<SendCommandOutput> {
@@ -507,6 +512,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       streamTargetResolved: false,
       streamBaseUrl: null,
       streamReadToken: null,
+      durableStreamEnabled: false,
     };
 
     this.watchers.set(key, watcher);
@@ -1377,14 +1383,42 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return;
     }
 
-    // The durable end-of-stream sentinel is the ONLY signal that ends the watch. The client is
-    // unaware of sandbox/run status and assumes the transport breaks mid-message constantly, so any
-    // disconnect without stream-end is just transport churn to ride out by reconnecting. We never
-    // poll run status to decide whether to stop — that would drop the tail if the stream cut right as
-    // the run went terminal but before stream-end arrived. Status is updated for display only, from
-    // the task_run_state events the stream itself carries.
+    // On a durable stream the end-of-stream sentinel is the ONLY signal that ends the watch. The
+    // client is unaware of sandbox/run status and assumes the transport breaks mid-message
+    // constantly, so any disconnect without stream-end is just transport churn to ride out by
+    // reconnecting. We never poll run status to decide whether to stop — that would drop the tail
+    // if the stream cut right as the run went terminal but before stream-end arrived. Status is
+    // updated for display only, from the task_run_state events the stream itself carries.
     if (watcher.streamEnded) {
       await this.finalizeWatcherStop(key);
+      return;
+    }
+
+    // Legacy mode (old server or rollout flag off): the stream carries no end-of-run sentinel,
+    // so a disconnect is the old contract — poll run status to decide between stopping and
+    // reconnecting. The reconnect budgets deliberately keep the new semantics (no reset on
+    // polled progress; that defeated the runaway-loop cap and let a poisoned stream churn for
+    // hours), so the self-heal recovery stays active here too.
+    if (!watcher.durableStreamEnabled && reconnectOnDisconnect) {
+      const run = await this.fetchTaskRun(watcher);
+      const legacyWatcher = this.watchers.get(key);
+      if (!legacyWatcher || legacyWatcher !== watcher) return;
+      if (watcher.failed) return;
+
+      if (run) {
+        this.applyTaskRunState(watcher, run);
+      }
+      if (isTerminalStatus(watcher.lastStatus)) {
+        this.emitStatusUpdate(watcher);
+        this.stopWatcher(key);
+        return;
+      }
+      if (run) {
+        this.emitStatusUpdate(watcher);
+      }
+      this.scheduleReconnect(key, options.reconnectError, {
+        countAttempt: options.countReconnectAttempt ?? false,
+      });
       return;
     }
 
@@ -1560,9 +1594,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         method: "GET",
       });
       if (!response.ok) {
-        // Reachable but refused: read from Django and don't retry resolution.
+        // Reachable but refused (or an old server without the endpoint): read from Django
+        // with legacy status-polling semantics and don't retry resolution.
         watcher.streamBaseUrl = null;
         watcher.streamReadToken = null;
+        watcher.durableStreamEnabled = false;
         watcher.streamTargetResolved = true;
         this.log.info("Cloud task stream reading from API host", {
           taskId: watcher.taskId,
@@ -1577,12 +1613,17 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       };
       watcher.streamReadToken = data.token ?? null;
       watcher.streamBaseUrl = data.stream_base_url ?? null;
+      // Every server with the stream_token endpoint emits the stream-end sentinel, so the
+      // endpoint resolving at all is the capability signal that opts this watcher into the
+      // status-unaware contract. Old servers 404 above and stay on legacy status polling.
+      watcher.durableStreamEnabled = true;
       watcher.streamTargetResolved = true;
       this.log.info("Cloud task stream target resolved", {
         taskId: watcher.taskId,
         runId: watcher.runId,
         streamBaseUrl: watcher.streamBaseUrl,
         hasToken: Boolean(watcher.streamReadToken),
+        durableStream: watcher.durableStreamEnabled,
       });
     } catch (error) {
       // Transient failure: leave unresolved so the next reconnect retries; connectSse falls back

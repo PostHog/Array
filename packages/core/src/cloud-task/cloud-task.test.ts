@@ -106,6 +106,8 @@ describe("CloudTaskService", () => {
     mockStreamFetch.mockReset();
     mockStreamTokenFetch.mockReset();
     // Default read-leg resolution: no proxy URL, so the stream reads from Django directly.
+    // A resolving stream_token endpoint implies the durable-stream contract (stream-end);
+    // legacy-mode tests override this with a 404 to model old servers.
     mockStreamTokenFetch.mockImplementation(() =>
       Promise.resolve(
         createJsonResponse({ token: "test-token", stream_base_url: null }),
@@ -943,6 +945,132 @@ describe("CloudTaskService", () => {
       (secondInit?.headers as Record<string, string>)?.["Last-Event-ID"],
     ).toBeUndefined();
     expect(String(secondUrl)).toContain("start=latest");
+  });
+
+  it("old servers without stream_token use legacy polling to reconnect and stop", async () => {
+    vi.useFakeTimers();
+
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    // Old server: the endpoint does not exist, so no stream-end ever arrives and the
+    // client must poll run status on each clean EOF to decide stop vs reconnect.
+    mockStreamTokenFetch.mockImplementation(() =>
+      Promise.resolve(createJsonResponse({ detail: "Not found" }, 404)),
+    );
+
+    let runFetchCount = 0;
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      runFetchCount += 1;
+      // Calls 1-3 (bootstrap, post-bootstrap verify, first legacy poll) report an
+      // active run; the second legacy poll reports terminal.
+      const terminal = runFetchCount >= 4;
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: terminal ? "completed" : "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: terminal
+            ? "2026-01-01T00:00:05Z"
+            : "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    // The flag-off server never emits stream-end; every connection just EOFs.
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(createSseResponse("")),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    const hasWatcher = (): boolean =>
+      (service as unknown as { watchers: Map<string, unknown> }).watchers.has(
+        "task-1:run-1",
+      );
+    await waitFor(() => !hasWatcher(), 10_000);
+
+    // At least one legacy reconnect happened while the run was active, then the
+    // terminal poll stopped the watcher; no further connections after that.
+    const connectionsAtStop = mockStreamFetch.mock.calls.length;
+    expect(connectionsAtStop).toBeGreaterThanOrEqual(2);
+    expect(updates).toContainEqual(
+      expect.objectContaining({ kind: "status", status: "completed" }),
+    );
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(mockStreamFetch.mock.calls.length).toBe(connectionsAtStop);
+    // The refused resolution is cached: one stream_token call for the whole watch.
+    expect(mockStreamTokenFetch.mock.calls.length).toBe(1);
+  });
+
+  it("stream-end still stops the watcher in legacy mode", async () => {
+    vi.useFakeTimers();
+
+    // Old server detected via 404, yet the stream delivers stream-end anyway (e.g. a
+    // server upgraded mid-watch). The sentinel is honored in both modes.
+    mockStreamTokenFetch.mockImplementation(() =>
+      Promise.resolve(createJsonResponse({ detail: "Not found" }, 404)),
+    );
+
+    let runFetchCount = 0;
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      runFetchCount += 1;
+      // Bootstrap sees an active run so the stream actually opens; the
+      // stream-end stop path then repairs the status to terminal.
+      const terminal = runFetchCount >= 2;
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: terminal ? "completed" : "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: terminal
+            ? "2026-01-01T00:00:05Z"
+            : "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(createSseResponse("event: stream-end\ndata: {}\n\n")),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    const hasWatcher = (): boolean =>
+      (service as unknown as { watchers: Map<string, unknown> }).watchers.has(
+        "task-1:run-1",
+      );
+    await waitFor(() => !hasWatcher(), 10_000);
+
+    expect(mockStreamFetch.mock.calls.length).toBe(1);
   });
 
   it("re-bootstraps once on a clean-EOF loop and fails when it persists", async () => {
