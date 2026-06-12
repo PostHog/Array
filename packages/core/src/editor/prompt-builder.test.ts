@@ -5,10 +5,12 @@ import {
 } from "./prompt-builder";
 
 describe("buildChannelContextText", () => {
-  it("returns null for empty or whitespace content", () => {
-    expect(buildChannelContextText(undefined)).toBeNull();
-    expect(buildChannelContextText("   \n ")).toBeNull();
-  });
+  it.each([[undefined], ["   \n "]] as const)(
+    "returns null for empty or whitespace content (%s)",
+    (input) => {
+      expect(buildChannelContextText(input)).toBeNull();
+    },
+  );
 
   it("wraps the trimmed body, optionally with an escaped channel name", () => {
     expect(
@@ -27,12 +29,12 @@ describe("buildChannelContextText", () => {
 });
 
 describe("buildChannelContextBlock", () => {
-  it("returns null for empty or whitespace content", () => {
-    expect(buildChannelContextBlock(undefined)).toBeNull();
-    expect(buildChannelContextBlock(null)).toBeNull();
-    expect(buildChannelContextBlock("")).toBeNull();
-    expect(buildChannelContextBlock("   \n  ")).toBeNull();
-  });
+  it.each([[undefined], [null], [""], ["   \n  "]] as const)(
+    "returns null for empty or whitespace content (%s)",
+    (input) => {
+      expect(buildChannelContextBlock(input)).toBeNull();
+    },
+  );
 
   it("wraps trimmed content in a labeled, non-binding background block", () => {
     const block = buildChannelContextBlock("  # Billing\n\nUse cents.  ");
