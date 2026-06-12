@@ -228,6 +228,12 @@ export interface ScoutConfig {
   enabled: boolean;
   /** False means dry-run: the scout runs but findings are not emitted. */
   emit: boolean;
+  /**
+   * Summary of what the scout investigates, from the skill's description
+   * metadata. Empty string when the skill is absent or carries no description;
+   * absent entirely on backends predating the field.
+   */
+  description?: string;
   run_interval_minutes: number;
   last_run_at: string | null;
   created_at: string;

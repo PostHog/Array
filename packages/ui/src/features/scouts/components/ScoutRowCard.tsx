@@ -45,10 +45,16 @@ export function ScoutRowCard({
   const cloudSkillUrl = skillUrl(config.skill_name);
   const surface: ScoutSurface = linkToDetail ? "fleet_list" : "scout_detail";
 
-  const title = (
+  const description = config.description?.trim();
+  const titleText = (
     <Text className="truncate font-medium text-[13px] text-gray-12">
       {prettifyScoutSkillName(config.skill_name)}
     </Text>
+  );
+  const title = description ? (
+    <Tooltip content={description}>{titleText}</Tooltip>
+  ) : (
+    titleText
   );
 
   return (
