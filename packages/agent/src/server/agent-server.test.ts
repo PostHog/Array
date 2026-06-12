@@ -1486,6 +1486,50 @@ describe("AgentServer HTTP Mode", () => {
         },
       );
 
+      it.each([
+        {
+          label: "no repository, no PR",
+          config: { repositoryPath: undefined },
+        },
+        { label: "repository, no PR", config: {} },
+      ])(
+        "injects concise response-style guidance for Slack-origin runs ($label)",
+        ({ config }) => {
+          process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+          const s = createServer(config);
+          const prompt = (
+            s as unknown as TestableServer
+          ).buildCloudSystemPrompt();
+          expect(prompt).toContain("# Response Style");
+          expect(prompt).toContain("be concise by default");
+          expect(prompt).toContain(
+            "Answer simple questions in a single sentence",
+          );
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        },
+      );
+
+      it.each([
+        { label: "no origin set", origin: undefined },
+        { label: "signal_report origin", origin: "signal_report" },
+        { label: "posthog_code origin", origin: "posthog_code" },
+      ])(
+        "omits response-style guidance for non-Slack runs ($label)",
+        ({ origin }) => {
+          if (origin) {
+            process.env.POSTHOG_CODE_INTERACTION_ORIGIN = origin;
+          } else {
+            delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+          }
+          const s = createServer();
+          const prompt = (
+            s as unknown as TestableServer
+          ).buildCloudSystemPrompt();
+          expect(prompt).not.toContain("# Response Style");
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        },
+      );
+
       it("injects identity for Slack-origin runs with an existing PR", () => {
         process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
         const s = createServer();
@@ -1535,7 +1579,7 @@ describe("AgentServer HTTP Mode", () => {
           expect(prompt).toContain(
             "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
           );
-          expect(prompt).not.toContain("Slack thread");
+          expect(prompt).not.toContain("from a [Slack thread]");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }
