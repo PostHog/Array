@@ -64,6 +64,35 @@ describe("archiveTask", () => {
     expect(harness.list.some((a) => a.taskId === TASK_ID)).toBe(true);
   });
 
+  it("with optimistic:false, defers cache writes until archive resolves", async () => {
+    let idsWhenArchiveCalled: string[] = ["sentinel"];
+    harness.deps.archive = vi.fn().mockImplementation(async () => {
+      // Snapshot the cache at the moment the request is made — the row must
+      // still be present (not yet marked archived) while it's in flight.
+      idsWhenArchiveCalled = [...harness.ids];
+    });
+
+    await archiveTask(TASK_ID, harness.deps, { optimistic: false });
+
+    expect(idsWhenArchiveCalled).not.toContain(TASK_ID);
+    // Once the archive resolves, the row is removed from the list.
+    expect(harness.ids).toContain(TASK_ID);
+    expect(harness.list.some((a) => a.taskId === TASK_ID)).toBe(true);
+  });
+
+  it("with optimistic:false, leaves caches untouched when archive fails", async () => {
+    harness.deps.getPinnedTaskIds = vi.fn().mockResolvedValue([TASK_ID]);
+    harness.deps.archive = vi.fn().mockRejectedValue(new Error("boom"));
+
+    await expect(
+      archiveTask(TASK_ID, harness.deps, { optimistic: false }),
+    ).rejects.toThrow("boom");
+
+    expect(harness.ids).not.toContain(TASK_ID);
+    expect(harness.list).toEqual([]);
+    expect(harness.deps.togglePin).toHaveBeenCalledWith(TASK_ID);
+  });
+
   it("rolls back caches and re-pins when archive fails", async () => {
     harness.deps.getPinnedTaskIds = vi.fn().mockResolvedValue([TASK_ID]);
     harness.deps.archive = vi.fn().mockRejectedValue(new Error("boom"));

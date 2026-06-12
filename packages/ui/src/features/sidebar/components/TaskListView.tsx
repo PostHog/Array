@@ -10,6 +10,7 @@ import type {
 import { MenuLabel } from "@posthog/quill";
 import { normalizeRepoKey } from "@posthog/shared";
 import { builderHog } from "@posthog/ui/assets/hedgehogs";
+import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { DraggableFolder } from "@posthog/ui/features/sidebar/components/DraggableFolder";
 import { TaskItem } from "@posthog/ui/features/sidebar/components/items/TaskItem";
@@ -88,6 +89,9 @@ function TaskRow({
     workspace?.mode ??
     (task.taskRunEnvironment === "cloud" ? "cloud" : undefined);
   const { prState, hasDiff } = useTaskPrStatus(task);
+  const isArchiving = useArchivingTasksStore((s) =>
+    s.archivingTaskIds.has(task.id),
+  );
 
   return (
     <TaskItem
@@ -96,6 +100,7 @@ function TaskRow({
       label={task.title}
       isActive={isActive}
       isSelected={isSelected}
+      isArchiving={isArchiving}
       hideHoverActions={hideHoverActions}
       isEditing={isEditing}
       workspaceMode={effectiveMode}

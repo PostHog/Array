@@ -143,7 +143,7 @@ export async function archiveTaskImperative(
   taskId: string,
   queryClient: QueryClient,
   keys: ArchiveCacheKeys,
-  options?: { skipNavigate?: boolean },
+  options?: { skipNavigate?: boolean; optimistic?: boolean },
 ): Promise<void> {
   await archiveTask(
     taskId,
@@ -174,7 +174,11 @@ export function useArchiveTask() {
   const keys = useArchiveCacheKeys();
 
   const archiveTask = async ({ taskId }: { taskId: string }) => {
-    await archiveTaskImperative(taskId, queryClient, keys);
+    // Non-optimistic: keep the row in place (with a spinner) until the archive
+    // is confirmed, rather than removing it instantly and rolling back on error.
+    await archiveTaskImperative(taskId, queryClient, keys, {
+      optimistic: false,
+    });
     toast.success("Task archived");
   };
 

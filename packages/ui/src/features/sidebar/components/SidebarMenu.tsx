@@ -12,6 +12,7 @@ import {
   useArchiveCacheKeys,
   useArchiveTask,
 } from "@posthog/ui/features/archive/useArchiveTask";
+import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxReports } from "@posthog/ui/features/inbox/hooks/useInboxReports";
@@ -232,6 +233,11 @@ function SidebarMenuComponent() {
   }, [activeTaskId, selectedTaskIds]);
 
   const handleTaskClick = (taskId: string, e: React.MouseEvent) => {
+    // Ignore clicks on a row that's mid-archive.
+    if (useArchivingTasksStore.getState().isArchiving(taskId)) {
+      e.preventDefault();
+      return;
+    }
     if (e.shiftKey) {
       e.preventDefault();
       selectRange(taskId, orderedVisibleTaskIds, activeTaskId);
@@ -292,6 +298,12 @@ function SidebarMenuComponent() {
     e: React.MouseEvent,
     isPinned: boolean,
   ) => {
+    // Right-clicking a row that's mid-archive is a no-op.
+    if (useArchivingTasksStore.getState().isArchiving(taskId)) {
+      e.preventDefault();
+      return;
+    }
+
     // Bulk menu when 2+ tasks are in the effective selection (active + cmd/shift-clicked)
     // and the right-clicked task is one of them. Otherwise clear and fall through.
     if (effectiveBulkIds.length > 1) {
@@ -320,7 +332,7 @@ function SidebarMenuComponent() {
         isSuspended: taskData?.isSuspended,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
-        onTogglePin: () => togglePin(taskId),
+        onTogglePin: () => handleTaskTogglePin(taskId),
         onArchive: handleTaskArchive,
         onArchivePrior: handleArchivePrior,
         onAddToCommandCenter: () => {
@@ -337,24 +349,54 @@ function SidebarMenuComponent() {
     }
   };
 
+  // Runs the archive while marking the row as in-flight, so its sidebar entry
+  // shows a spinner and ignores clicks/pins/right-clicks until it resolves.
+  // Guards against repeated clicks: a second call while archiving is a no-op.
+  const runArchive = useCallback(
+    (taskId: string) => {
+      const store = useArchivingTasksStore.getState();
+      if (store.isArchiving(taskId)) return;
+      store.startArchiving(taskId);
+      void archiveTask({ taskId })
+        .catch((error) => {
+          log.error("Failed to archive task", error);
+          toast.error("Failed to archive task");
+        })
+        .finally(() => {
+          useArchivingTasksStore.getState().stopArchiving(taskId);
+        });
+    },
+    [archiveTask],
+  );
+
   const handleTaskArchive = useCallback(
     (taskId: string) => {
+      if (useArchivingTasksStore.getState().isArchiving(taskId)) return;
       const task = allSidebarTasks.find((t) => t.id === taskId);
       if (task && isTaskActivelyRunning(task)) {
         setArchiveConfirm({ taskId, taskTitle: task.title });
         return;
       }
-      void archiveTask({ taskId });
+      runArchive(taskId);
     },
-    [allSidebarTasks, archiveTask],
+    [allSidebarTasks, runArchive],
   );
 
   const handleConfirmArchive = useCallback(() => {
     if (!archiveConfirm) return;
     const { taskId } = archiveConfirm;
     setArchiveConfirm(null);
-    void archiveTask({ taskId });
-  }, [archiveConfirm, archiveTask]);
+    runArchive(taskId);
+  }, [archiveConfirm, runArchive]);
+
+  const handleTaskTogglePin = useCallback(
+    (taskId: string) => {
+      // Pinning/unpinning a row that's mid-archive is a no-op.
+      if (useArchivingTasksStore.getState().isArchiving(taskId)) return;
+      togglePin(taskId);
+    },
+    [togglePin],
+  );
 
   const handleArchivePrior = useCallback(
     async (taskId: string) => {
@@ -512,7 +554,7 @@ function SidebarMenuComponent() {
               onTaskDoubleClick={handleTaskDoubleClick}
               onTaskContextMenu={handleTaskContextMenu}
               onTaskArchive={handleTaskArchive}
-              onTaskTogglePin={togglePin}
+              onTaskTogglePin={handleTaskTogglePin}
               onTaskEditSubmit={handleTaskEditSubmit}
               onTaskEditCancel={handleTaskEditCancel}
               hasMore={sidebarData.hasMore}

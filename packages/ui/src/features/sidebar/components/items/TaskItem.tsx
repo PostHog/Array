@@ -4,12 +4,13 @@ import type { WorkspaceMode } from "@posthog/shared";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DotsCircleSpinner } from "../../../../primitives/DotsCircleSpinner";
 import { NestedButton } from "../../../../primitives/NestedButton";
 import { Tooltip } from "../../../../primitives/Tooltip";
 import { openExternalUrl } from "../../../../shell/openExternal";
 import type { SidebarPrState } from "../../useTaskPrStatus";
 import { SidebarItem } from "../SidebarItem";
-import { TaskIcon } from "./TaskIcon";
+import { ICON_SIZE, TaskIcon } from "./TaskIcon";
 
 function PrBadge({ url, number }: { url: string; number: number }) {
   return (
@@ -34,6 +35,8 @@ interface TaskItemProps {
   label: string;
   isActive: boolean;
   isSelected?: boolean;
+  /** Archive request in flight: show a spinner and suppress hover actions. */
+  isArchiving?: boolean;
   hideHoverActions?: boolean;
   workspaceMode?: WorkspaceMode;
   worktreePath?: string;
@@ -106,6 +109,7 @@ export function TaskItem({
   label,
   isActive,
   isSelected = false,
+  isArchiving = false,
   hideHoverActions = false,
   workspaceMode,
   isSuspended = false,
@@ -129,7 +133,9 @@ export function TaskItem({
   onEditSubmit,
   onEditCancel,
 }: TaskItemProps) {
-  const icon = (
+  const icon = isArchiving ? (
+    <DotsCircleSpinner size={ICON_SIZE} className="text-gray-10" />
+  ) : (
     <TaskIcon
       workspaceMode={workspaceMode}
       isGenerating={isGenerating}
@@ -160,7 +166,7 @@ export function TaskItem({
     ) : null;
 
   const toolbar =
-    !hideHoverActions && (onArchive || onTogglePin) ? (
+    !isArchiving && !hideHoverActions && (onArchive || onTogglePin) ? (
       <TaskHoverToolbar
         isPinned={isPinned}
         onTogglePin={onTogglePin}

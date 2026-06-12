@@ -46,6 +46,13 @@ export interface ArchiveOrchestrationDeps {
 
 export interface ArchiveTaskOptions {
   skipNavigate?: boolean;
+  /**
+   * When true (default), the task is removed from the sidebar list immediately
+   * via an optimistic cache write and rolled back on failure. When false, the
+   * row stays put until the archive actually succeeds — used by the interactive
+   * single-archive flow so the row can show a spinner until it's confirmed gone.
+   */
+  optimistic?: boolean;
 }
 
 export async function archiveTask(
@@ -53,6 +60,7 @@ export async function archiveTask(
   deps: ArchiveOrchestrationDeps,
   options?: ArchiveTaskOptions,
 ): Promise<void> {
+  const optimistic = options?.optimistic ?? true;
   const workspace = await deps.getWorkspace(taskId);
   const pinnedTaskIds = await deps.getPinnedTaskIds();
   const wasPinned = pinnedTaskIds.includes(taskId);
@@ -70,12 +78,18 @@ export async function archiveTask(
 
   await deps.cache.cancelPathFilter();
 
-  deps.cache.setArchivedTaskIds((old) => appendArchivedTaskId(old, taskId));
-
   const optimisticArchived = buildOptimisticArchivedTask(taskId, workspace);
-  deps.cache.setArchiveList((old) =>
-    appendOptimisticArchivedTask(old, optimisticArchived),
-  );
+
+  const applyArchivedCacheWrites = () => {
+    deps.cache.setArchivedTaskIds((old) => appendArchivedTaskId(old, taskId));
+    deps.cache.setArchiveList((old) =>
+      appendOptimisticArchivedTask(old, optimisticArchived),
+    );
+  };
+
+  if (optimistic) {
+    applyArchivedCacheWrites();
+  }
 
   if (
     workspace?.worktreePath &&
@@ -87,6 +101,11 @@ export async function archiveTask(
   try {
     await deps.disconnectFromTask(taskId);
     await deps.archive(taskId);
+    // Non-optimistic flows keep the row visible during the request, then remove
+    // it the moment the archive succeeds.
+    if (!optimistic) {
+      applyArchivedCacheWrites();
+    }
     deps.cache.invalidatePathFilter();
   } catch (error) {
     deps.logError("Failed to archive task", error);
