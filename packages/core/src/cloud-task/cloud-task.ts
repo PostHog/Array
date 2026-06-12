@@ -330,6 +330,23 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       watcher.batchFlushTimeoutId = null;
     }
 
+    this.log.info("Retrying cloud task watcher", {
+      key,
+      hasSnapshot: watcher.hasEmittedSnapshot,
+    });
+
+    // Retry means "start over from scratch". A watcher usually fails because its resume
+    // state is poisoned (e.g. a Last-Event-ID the server answers with instant empty
+    // streams); reconnecting with that state preserved loops straight back into the same
+    // failure. Re-bootstrapping re-resolves the read leg and re-emits a fresh snapshot,
+    // which also heals any entries missed while the stream was broken.
+    this.resetWatcherForRebootstrap(watcher);
+    void this.bootstrapWatcher(key);
+  }
+
+  // Returns a watcher to its pre-bootstrap state so bootstrapWatcher can rebuild it from
+  // server truth: budgets, buffers, resume position and read-leg routing all reset.
+  private resetWatcherForRebootstrap(watcher: WatcherState): void {
     watcher.reconnectAttempts = 0;
     watcher.streamErrorAttempts = 0;
     watcher.cumulativeReconnectAttempts = 0;
@@ -338,21 +355,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.bufferedLogBatches = [];
     watcher.needsPostBootstrapReconnect = false;
     watcher.needsStopAfterBootstrap = false;
-
-    this.log.info("Retrying cloud task watcher", {
-      key,
-      hasSnapshot: watcher.hasEmittedSnapshot,
-    });
-
-    if (!watcher.hasEmittedSnapshot) {
-      watcher.lastEventId = null;
-      watcher.totalEntryCount = 0;
-      watcher.isBootstrapping = false;
-      void this.bootstrapWatcher(key);
-      return;
-    }
-
-    void this.connectSse(key, { startLatest: !watcher.lastEventId });
+    watcher.streamEnded = false;
+    watcher.lastEventId = null;
+    watcher.totalEntryCount = 0;
+    watcher.isBootstrapping = false;
+    watcher.streamTargetResolved = false;
+    watcher.streamBaseUrl = null;
+    watcher.streamReadToken = null;
   }
 
   async sendCommand(input: SendCommandInput): Promise<SendCommandOutput> {

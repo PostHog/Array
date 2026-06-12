@@ -933,6 +933,100 @@ describe("CloudTaskService", () => {
     });
   });
 
+  it("retry rebuilds the watcher from scratch after a failure", async () => {
+    vi.useFakeTimers();
+
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    // Every connection records a resume position, then dies on a backend error
+    // frame until the error budget fails the watcher.
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(
+        createSseResponse(
+          'id: 42\nevent: keepalive\ndata: {"type":"keepalive"}\n\nevent: error\ndata: {"error":"boom"}\n\n',
+        ),
+      ),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+    await vi.advanceTimersByTimeAsync(70_000);
+    await waitFor(
+      () =>
+        updates.some(
+          (u) =>
+            typeof u === "object" &&
+            u !== null &&
+            (u as { kind?: string }).kind === "error",
+        ),
+      10_000,
+    );
+
+    const countSnapshots = (): number =>
+      updates.filter(
+        (u) =>
+          typeof u === "object" &&
+          u !== null &&
+          (u as { kind?: string }).kind === "snapshot",
+      ).length;
+    const tokenCallsBeforeRetry = mockStreamTokenFetch.mock.calls.length;
+    const snapshotsBeforeRetry = countSnapshots();
+    const streamCallsBeforeRetry = mockStreamFetch.mock.calls.length;
+
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(
+        createOpenSseResponse(
+          'event: keepalive\ndata: {"type":"keepalive"}\n\n',
+        ),
+      ),
+    );
+
+    service.retry("task-1", "run-1");
+
+    await waitFor(
+      () => mockStreamFetch.mock.calls.length === streamCallsBeforeRetry + 1,
+    );
+    await waitFor(() => countSnapshots() === snapshotsBeforeRetry + 1);
+
+    // Retry must rebuild from server truth: re-resolve the read leg, re-emit a
+    // fresh snapshot and drop the poisoned resume position instead of resuming
+    // from the failed stream's Last-Event-ID.
+    expect(mockStreamTokenFetch.mock.calls.length).toBe(
+      tokenCallsBeforeRetry + 1,
+    );
+    const [, init] = mockStreamFetch.mock.calls[streamCallsBeforeRetry];
+    expect(
+      (init?.headers as Record<string, string>)?.["Last-Event-ID"],
+    ).toBeUndefined();
+  });
+
   it("emits a retryable cloud error after repeated stream failures", async () => {
     vi.useFakeTimers();
 
