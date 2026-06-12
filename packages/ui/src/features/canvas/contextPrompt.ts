@@ -34,6 +34,9 @@ Structure the markdown with these sections:
 4. Related PostHog resources — relevant flags/experiments/surveys/notebooks/
    insights with links.
 
-Keep it concise and high-signal. CONTEXT.md lives in PostHog, not on disk, so
-publishing via the MCP tool is what saves it — do not just write a local file.`;
+Write the document in terse, high-signal language: drop articles and filler,
+prefer fragments and short phrases over full sentences, cut anything that does
+not carry technical substance. Keep it concise. CONTEXT.md lives in PostHog, not
+on disk, so publishing via the MCP tool is what saves it — do not just write a
+local file.`;
 }
