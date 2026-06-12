@@ -19,7 +19,11 @@ export function ScoutFindingShareButton({
   skillName: string;
 }) {
   const handleCopyLink = () => {
-    const url = `${window.location.origin}/code/agents/scouts/${scoutSkillSlug(
+    // The app router uses hash history, so the route (and its search params)
+    // must live after the `#`. Keep the pre-hash part of the current URL so
+    // host-level query params survive in the copied link.
+    const base = window.location.href.split("#")[0];
+    const url = `${base}#/code/agents/scouts/${scoutSkillSlug(
       skillName,
     )}?finding=${encodeURIComponent(emission.id)}`;
     navigator.clipboard

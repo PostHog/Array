@@ -29,8 +29,14 @@ export function ScoutEmissionCard({
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const cardRef = useRef<HTMLDivElement>(null);
+  // setExpanded too: when a shared link targets a different finding on an
+  // already-mounted route, only the search param changes, so the useState
+  // initializer's defaultExpanded never re-runs.
   useEffect(() => {
-    if (highlighted) cardRef.current?.scrollIntoView({ block: "center" });
+    if (highlighted) {
+      setExpanded(true);
+      cardRef.current?.scrollIntoView({ block: "center" });
+    }
   }, [highlighted]);
   return (
     <Box
