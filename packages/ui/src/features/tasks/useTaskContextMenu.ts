@@ -3,11 +3,13 @@ import {
   resolveTaskContextMenuIntent,
 } from "@posthog/core/tasks/contextMenuActions";
 import { useHostTRPCClient } from "@posthog/host-router/react";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useExternalAppAction } from "@posthog/ui/features/external-apps/useExternalAppAction";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useRestoreTask } from "@posthog/ui/features/suspension/useRestoreTask";
 import { useSuspendTask } from "@posthog/ui/features/suspension/useSuspendTask";
 import { useDeleteTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
@@ -25,7 +27,13 @@ export function useTaskContextMenu() {
   const { archiveTask } = useArchiveTask();
   const { suspendTask } = useSuspendTask();
   const { restoreTask } = useRestoreTask();
-  const { channels } = useChannels();
+  // "File to…" is a Project Bluebird feature. Gate the channel fetch behind the
+  // flag so the submenu (and its API request) never reaches ungated users.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const { channels } = useChannels({ enabled: bluebirdEnabled });
   const { fileTask } = useChannelTaskMutations();
 
   const showContextMenu = useCallback(
