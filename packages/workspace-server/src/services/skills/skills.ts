@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { stripFrontmatter } from "@posthog/shared";
+import { SKILL_EXISTS_MARKER, stripFrontmatter } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import { WATCHER_SERVICE } from "../../di/tokens";
 import type { FoldersService } from "../folders/folders";
@@ -116,7 +116,7 @@ export class SkillsService {
     );
     const skillPath = path.join(root, name);
     if (fs.existsSync(skillPath)) {
-      throw new Error(`A skill named "${name}" already exists`);
+      throw new Error(`A skill named "${name}" ${SKILL_EXISTS_MARKER}`);
     }
 
     await fs.promises.mkdir(skillPath, { recursive: true });
@@ -220,7 +220,7 @@ export class SkillsService {
     const target = path.join(getUserSkillsDir(), name);
     if (fs.existsSync(target) && !overwrite) {
       throw new Error(
-        `A skill named "${name}" already exists. Importing will replace your local version.`,
+        `A skill named "${name}" ${SKILL_EXISTS_MARKER}. Importing will replace your local version.`,
       );
     }
     if (fs.existsSync(target)) {
@@ -295,7 +295,7 @@ export class SkillsService {
     const target = path.join(userRoot, name);
     if (fs.existsSync(target) && !input.overwrite) {
       throw new Error(
-        `A skill named "${name}" already exists. Installing will replace your local version.`,
+        `A skill named "${name}" ${SKILL_EXISTS_MARKER}. Installing will replace your local version.`,
       );
     }
 
@@ -349,14 +349,8 @@ export class SkillsService {
    * `touch` from a terminal, ...).
    */
   async *watchSkills(signal?: AbortSignal): AsyncGenerator<{ changed: true }> {
-<<<<<<< HEAD
-    const userRoot = path.join(os.homedir(), ".claude", "skills");
-    // The user root is ours to create; missing repo roots are polled for.
-=======
     const userRoot = getUserSkillsDir();
-    // The user root is ours to create; repo roots are watched as soon as
-    // they appear (watchSkillDirs polls for dirs that don't exist yet).
->>>>>>> c61f657d5 (refactor(skills): apply simplify-pass cleanups across the stack)
+    // The user root is ours to create; missing repo roots are polled for.
     await fs.promises.mkdir(userRoot, { recursive: true }).catch(() => {});
     const folders = await this.folders.getFolders();
     const dirs = [

@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { SKILL_EXISTS_MARKER } from "@posthog/shared";
 import type { Unzipped } from "fflate";
 import { inject, injectable } from "inversify";
 import { unzipAsync } from "../posthog-plugin/extract-zip";
@@ -178,7 +179,7 @@ export class SkillsMarketplaceService {
     const target = path.join(getUserSkillsDir(), ref.skillId);
     if (fs.existsSync(target) && !overwrite) {
       throw new Error(
-        `A skill named "${ref.skillId}" already exists. Reinstalling will replace your local version.`,
+        `A skill named "${ref.skillId}" ${SKILL_EXISTS_MARKER}. Reinstalling will replace your local version.`,
       );
     }
 

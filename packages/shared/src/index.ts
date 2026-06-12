@@ -166,7 +166,7 @@ export type {
   SkillInfo,
   SkillSource,
 } from "./skills";
-export { stripFrontmatter } from "./skills";
+export { SKILL_EXISTS_MARKER, stripFrontmatter } from "./skills";
 export type {
   ArtifactType,
   PostHogAPIConfig,
