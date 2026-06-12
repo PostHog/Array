@@ -1,5 +1,6 @@
 import {
   buildChannelContextBlock,
+  buildChannelContextText,
   buildPromptBlocks,
 } from "@posthog/core/editor/prompt-builder";
 import type {
@@ -238,6 +239,20 @@ export class TaskCreationSaga extends Saga<
                   input.filePaths,
                 )
               : null;
+
+          // The local connect path appends channel CONTEXT.md to initialPrompt;
+          // cloud sends its first message as text, so fold the same block into
+          // pendingUserMessage here. The conversation UI parses it identically.
+          const channelContextText = buildChannelContextText(
+            input.channelContext,
+            input.channelName,
+          );
+          const messageText = transport?.messageText;
+          const pendingUserMessage = channelContextText
+            ? messageText
+              ? `${messageText}\n\n${channelContextText}`
+              : channelContextText
+            : messageText;
           const taskRun = await this.deps.posthogClient.createTaskRun(task.id, {
             environment: "cloud",
             mode: "interactive",
@@ -271,7 +286,7 @@ export class TaskCreationSaga extends Saga<
             task.id,
             taskRun.id,
             {
-              pendingUserMessage: transport?.messageText,
+              pendingUserMessage,
               pendingUserArtifactIds:
                 pendingUserArtifactIds.length > 0
                   ? pendingUserArtifactIds

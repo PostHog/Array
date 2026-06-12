@@ -1001,6 +1001,56 @@ export class PostHogAPIClient {
     return all;
   }
 
+  // The task currently generating this folder's CONTEXT.md, shared across the
+  // project so any user sees an in-progress generation (instead of fragile
+  // local state). Keyed on the folder row (which always exists), not the
+  // instructions object (which doesn't until the first version is published).
+  // Returns null when nothing is generating — or, until the backend ships this
+  // endpoint, on 404 (the feature degrades to no shared indicator).
+  async getDesktopFolderGenerationTask(
+    folderId: string,
+  ): Promise<string | null> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(folderId)}/context_generation/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch folder generation task: ${response.statusText}`,
+      );
+    }
+    const data = (await response.json()) as { task_id?: string | null };
+    return data.task_id ?? null;
+  }
+
+  // Record (or clear, with null) the task generating this folder's CONTEXT.md.
+  async setDesktopFolderGenerationTask(
+    folderId: string,
+    taskId: string | null,
+  ): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(folderId)}/context_generation/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "put",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ task_id: taskId }),
+      },
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Failed to set folder generation task: ${response.statusText}`,
+      );
+    }
+  }
+
   async getGithubLogin(): Promise<string | null> {
     const data = (await this.api.get("/api/users/{uuid}/github_login/", {
       path: { uuid: "@me" },

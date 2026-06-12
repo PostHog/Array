@@ -1,5 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { buildChannelContextBlock } from "./prompt-builder";
+import {
+  buildChannelContextBlock,
+  buildChannelContextText,
+} from "./prompt-builder";
+
+describe("buildChannelContextText", () => {
+  it("returns null for empty or whitespace content", () => {
+    expect(buildChannelContextText(undefined)).toBeNull();
+    expect(buildChannelContextText("   \n ")).toBeNull();
+  });
+
+  it("wraps the trimmed body, optionally with an escaped channel name", () => {
+    expect(
+      buildChannelContextText("body")?.startsWith("<channel_context>"),
+    ).toBe(true);
+    expect(buildChannelContextText("body", 'a"b')).toContain(
+      'channel="a&quot;b"',
+    );
+  });
+
+  it("backs the ContentBlock form", () => {
+    const text = buildChannelContextText("# Billing", "billing");
+    const block = buildChannelContextBlock("# Billing", "billing");
+    expect(block).toEqual({ type: "text", text });
+  });
+});
 
 describe("buildChannelContextBlock", () => {
   it("returns null for empty or whitespace content", () => {

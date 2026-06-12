@@ -5,20 +5,28 @@ import {
   SpinnerGapIcon,
 } from "@phosphor-icons/react";
 import { FolderInstructionsConflictError } from "@posthog/api-client/posthog-client";
-import { useHostTRPC } from "@posthog/host-router/react";
+import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import {
+  useFolderGenerationTask,
+  useFolderGenerationTaskMutation,
+} from "@posthog/ui/features/canvas/hooks/useFolderGenerationTask";
 import {
   useFolderInstructions,
   useFolderInstructionsMutations,
   useFolderInstructionsVersions,
 } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
-import { useGenerateContext } from "@posthog/ui/features/canvas/hooks/useGenerateContext";
 import {
-  useContextGenTaskId,
-  useContextGenTaskStore,
-} from "@posthog/ui/features/canvas/stores/contextGenTaskStore";
+  type GenerateContextTarget,
+  useGenerateContext,
+} from "@posthog/ui/features/canvas/hooks/useGenerateContext";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
+import { FolderPicker } from "@posthog/ui/features/folder-picker/FolderPicker";
+import { GitHubRepoPicker } from "@posthog/ui/features/folder-picker/GitHubRepoPicker";
+import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
 import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import {
   Box,
@@ -75,19 +83,42 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
 
   const hasInstructions = (latest?.content ?? "").trim().length > 0;
 
-  // CONTEXT.md generation runs as a normal task in the channel's repo. It's
-  // "generating" only while that task's agent session is actively running — if
-  // it's stopped (by the user or otherwise) we fall back to the generate
-  // screen. We record the task when we start it, so its session exists by then.
-  const genTaskId = useContextGenTaskId(channelId);
-  const clearGenTask = useContextGenTaskStore((s) => s.clearTask);
-  const genSession = useSessionForTask(genTaskId);
-  const sessionActive =
-    genSession?.status === "connecting" || genSession?.status === "connected";
+  // CONTEXT.md generation runs as a normal task (local or cloud) in the
+  // channel's repo. The "which task" association is stored server-side (shared
+  // across the project) so any user sees an in-progress generation. We poll it
+  // and the file while there's no published content yet.
+  const pollGen = !hasInstructions;
+  const { data: genTaskId } = useFolderGenerationTask(channelId, {
+    refetchInterval: pollGen ? 5000 : false,
+  });
+  const { set: setGenerationTask } = useFolderGenerationTaskMutation(channelId);
 
-  const pollGen = !!genTaskId && !hasInstructions;
-  const isGenerating = pollGen && sessionActive;
-  const isStopped = pollGen && !sessionActive;
+  const genTaskQuery = useQuery({
+    ...taskDetailQuery(genTaskId ?? ""),
+    enabled: !!genTaskId && pollGen,
+    refetchInterval: genTaskId && pollGen ? 5000 : false,
+  });
+  const genTask = genTaskQuery.data;
+  const genSession = useSessionForTask(genTaskId ?? undefined);
+
+  // Running is environment-aware: cloud runs report status via cloudStatus /
+  // latest_run.status (a cloud session stays "connected" while polling), while
+  // local runs are tied to the live ACP session. While the task record is still
+  // loading we assume running to avoid a flash of "stopped".
+  const running = (() => {
+    if (!genTaskId) return false;
+    if (genTaskQuery.isLoading) return true;
+    if (genTask?.latest_run?.environment === "cloud") {
+      const cloudStatus =
+        genSession?.cloudStatus ?? genTask?.latest_run?.status ?? null;
+      return !isTerminalStatus(cloudStatus);
+    }
+    return (
+      genSession?.status === "connecting" || genSession?.status === "connected"
+    );
+  })();
+  const isGenerating = !!genTaskId && pollGen && running;
+  const isStopped = !!genTaskId && pollGen && !running;
 
   // While the agent runs, poll the published file so it shows up without a
   // manual refresh once the agent publishes via the MCP.
@@ -97,18 +128,20 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
     return () => clearInterval(id);
   }, [isGenerating, refetchLatest]);
 
-  // The agent publishes mid-run, just before its session ends — so when the
-  // session goes inactive, refetch once to catch a just-published file before
-  // concluding the run stopped without producing one.
+  // The agent publishes mid-run, just before its run ends — so when the run
+  // stops, refetch once to catch a just-published file before concluding it
+  // stopped without producing one.
   useEffect(() => {
-    if (pollGen && !sessionActive) void refetchLatest();
-  }, [pollGen, sessionActive, refetchLatest]);
+    if (isStopped) void refetchLatest();
+  }, [isStopped, refetchLatest]);
 
-  // Once the file exists, the generation task has served its purpose — forget it
-  // so we stop tracking status and just render the document.
+  // Once the file exists, the generation task has served its purpose — clear the
+  // server association so everyone stops tracking it. (The backend should also
+  // auto-clear on publish; this covers clients that observe content first.)
   useEffect(() => {
-    if (genTaskId && hasInstructions) clearGenTask(channelId);
-  }, [genTaskId, hasInstructions, channelId, clearGenTask]);
+    if (genTaskId && hasInstructions)
+      void setGenerationTask(null).catch(() => {});
+  }, [genTaskId, hasInstructions, setGenerationTask]);
 
   // Seed the editor draft from the latest content the first time we land on
   // edit mode (or whenever latest changes while we're not actively editing).
@@ -331,7 +364,7 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
               <EmptyState
                 channelId={channelId}
                 channelName={channelName}
-                stoppedTaskId={isStopped ? genTaskId : null}
+                stoppedTaskId={isStopped ? (genTaskId ?? null) : null}
                 onCreate={() => {
                   setDraft(EMPTY_TEMPLATE);
                   setHasDraft(true);
@@ -423,8 +456,11 @@ function EmptyState({
   );
 }
 
-// Lets the user pick an already-registered local repo, then kicks off a normal
-// task in it that explores the code + PostHog data and publishes CONTEXT.md.
+type GenMode = "local" | "cloud";
+
+// Lets the user pick a local repo or a connected GitHub repo (cloud), then kicks
+// off a normal task that explores the code + PostHog data and publishes
+// CONTEXT.md via the MCP. Reuses the same pickers as the task input bar.
 function GenerateWithAgent({
   channelId,
   channelName,
@@ -434,64 +470,111 @@ function GenerateWithAgent({
   channelName: string;
   regenerate: boolean;
 }) {
-  const trpc = useHostTRPC();
-  const { data: folders = [], isLoading } = useQuery(
-    trpc.folders.getFolders.queryOptions(),
-  );
   const { generate, isStarting } = useGenerateContext(channelId, channelName);
+  const lastUsedRunMode = useSettingsStore((s) => s.lastUsedRunMode);
 
   const [picking, setPicking] = useState(false);
-  const [repoPath, setRepoPath] = useState<string | null>(null);
-
-  // Only repos that still exist on disk are explorable. Default to the first
-  // (getFolders returns most-recently-used first) so the common case is 1 click.
-  const available = useMemo(() => folders.filter((f) => f.exists), [folders]);
-  const selected = repoPath ?? available[0]?.path ?? null;
+  const [genMode, setGenMode] = useState<GenMode>(
+    lastUsedRunMode === "cloud" ? "cloud" : "local",
+  );
 
   if (!picking) {
     return (
-      <Button
-        size="2"
-        variant="soft"
-        onClick={() => setPicking(true)}
-        disabled={isLoading}
-      >
+      <Button size="2" variant="soft" onClick={() => setPicking(true)}>
         <SparkleIcon size={14} />
         {regenerate ? "Generate again" : "Generate with agent"}
       </Button>
     );
   }
 
-  if (available.length === 0) {
+  return (
+    <Flex direction="column" align="center" gap="2">
+      <SegmentedControl.Root
+        size="1"
+        value={genMode}
+        onValueChange={(v) => setGenMode(v as GenMode)}
+      >
+        <SegmentedControl.Item value="local">Local</SegmentedControl.Item>
+        <SegmentedControl.Item value="cloud">Cloud</SegmentedControl.Item>
+      </SegmentedControl.Root>
+      {genMode === "local" ? (
+        <GenerateLocal generate={generate} isStarting={isStarting} />
+      ) : (
+        <GenerateCloud generate={generate} isStarting={isStarting} />
+      )}
+    </Flex>
+  );
+}
+
+interface GenerateSubProps {
+  generate: (target: GenerateContextTarget) => Promise<string | null>;
+  isStarting: boolean;
+}
+
+function GenerateLocal({ generate, isStarting }: GenerateSubProps) {
+  const [repoPath, setRepoPath] = useState("");
+  return (
+    <Flex align="center" gap="2">
+      <FolderPicker value={repoPath} onChange={setRepoPath} />
+      <Button
+        size="2"
+        variant="solid"
+        disabled={!repoPath || isStarting}
+        onClick={() => {
+          if (repoPath) void generate({ mode: "local", repoPath });
+        }}
+      >
+        {isStarting ? <Spinner size="1" /> : <SparkleIcon size={14} />}
+        Generate
+      </Button>
+    </Flex>
+  );
+}
+
+function GenerateCloud({ generate, isStarting }: GenerateSubProps) {
+  const {
+    repositories,
+    getUserIntegrationIdForRepo,
+    isLoadingRepos,
+    hasGithubIntegration,
+  } = useUserRepositoryIntegration();
+  const lastUsedCloudRepository = useSettingsStore(
+    (s) => s.lastUsedCloudRepository,
+  );
+  const [repo, setRepo] = useState<string | null>(
+    lastUsedCloudRepository ?? null,
+  );
+  const integrationId = repo ? getUserIntegrationIdForRepo(repo) : undefined;
+
+  if (!hasGithubIntegration && !isLoadingRepos) {
     return (
       <Text className="text-[12px] text-gray-10">
-        No local repositories registered — open a folder first.
+        Connect GitHub to generate in the cloud.
       </Text>
     );
   }
 
   return (
     <Flex align="center" gap="2">
-      <Select.Root
+      <GitHubRepoPicker
+        value={repo}
+        onChange={setRepo}
+        repositories={repositories}
+        isLoading={isLoadingRepos}
         size="2"
-        value={selected ?? undefined}
-        onValueChange={setRepoPath}
-      >
-        <Select.Trigger placeholder="Select a repository…" />
-        <Select.Content>
-          {available.map((f) => (
-            <Select.Item key={f.id} value={f.path}>
-              {f.name}
-            </Select.Item>
-          ))}
-        </Select.Content>
-      </Select.Root>
+      />
       <Button
         size="2"
         variant="solid"
-        disabled={!selected || isStarting}
+        disabled={!repo || !integrationId || isStarting}
         onClick={() => {
-          if (selected) void generate(selected);
+          if (repo && integrationId) {
+            void generate({
+              mode: "cloud",
+              repository: repo,
+              githubUserIntegrationId: integrationId,
+            });
+          }
         }}
       >
         {isStarting ? <Spinner size="1" /> : <SparkleIcon size={14} />}

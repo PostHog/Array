@@ -5,32 +5,55 @@ import {
 import { useService } from "@posthog/di/react";
 import { buildContextGenerationPrompt } from "@posthog/ui/features/canvas/contextPrompt";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
-import { useContextGenTaskStore } from "@posthog/ui/features/canvas/stores/contextGenTaskStore";
+import { useFolderGenerationTaskMutation } from "@posthog/ui/features/canvas/hooks/useFolderGenerationTask";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useCallback, useState } from "react";
 
-// Kicks off CONTEXT.md generation as a normal task in the channel's repo. The
-// task is filed to the channel and recorded as the channel's generation task so
-// the CONTEXT.md view can track its status. Returns the created task id.
+// Where the generation task runs: a local clone or a connected GitHub repo
+// (cloud sandbox). Cloud needs the user-integration id; both omit the branch
+// (defaults).
+export type GenerateContextTarget =
+  | { mode: "local"; repoPath: string }
+  | {
+      mode: "cloud";
+      repository: string;
+      githubUserIntegrationId: string;
+      branch?: string | null;
+    };
+
+// Kicks off CONTEXT.md generation as a normal task (local or cloud) in the
+// channel's repo. The task is filed to the channel and recorded server-side as
+// the channel's generation task so every user's CONTEXT.md view can track it.
 export function useGenerateContext(channelId: string, channelName: string) {
   const taskService = useService<TaskService>(TASK_SERVICE);
   const { invalidateTasks } = useCreateTask();
   const { fileTask } = useChannelTaskMutations();
-  const setTask = useContextGenTaskStore((s) => s.setTask);
+  const { set: setGenerationTask } = useFolderGenerationTaskMutation(channelId);
   const [isStarting, setIsStarting] = useState(false);
 
   const generate = useCallback(
-    async (repoPath: string): Promise<string | null> => {
+    async (target: GenerateContextTarget): Promise<string | null> => {
       setIsStarting(true);
       try {
+        const base = {
+          content: buildContextGenerationPrompt({ channelName, channelId }),
+          taskDescription: `Generate CONTEXT.md for #${channelName}`,
+        };
         const result = await taskService.createTask(
-          {
-            content: buildContextGenerationPrompt({ channelName, channelId }),
-            taskDescription: `Generate CONTEXT.md for #${channelName}`,
-            repoPath,
-            workspaceMode: "local",
-          },
+          target.mode === "cloud"
+            ? {
+                ...base,
+                repository: target.repository,
+                githubUserIntegrationId: target.githubUserIntegrationId,
+                workspaceMode: "cloud",
+                branch: target.branch ?? null,
+              }
+            : {
+                ...base,
+                repoPath: target.repoPath,
+                workspaceMode: "local",
+              },
           (output) => invalidateTasks(output.task),
         );
 
@@ -42,15 +65,23 @@ export function useGenerateContext(channelId: string, channelName: string) {
         }
 
         const task = result.data.task;
-        setTask(channelId, task.id);
-        // File into the channel so it shows up alongside the channel's tasks.
+        // File into the channel + record as the (shared) generation task. Both
+        // are best-effort: a failure here shouldn't undo a started task.
         void fileTask(channelId, task.id, task.title).catch(() => {});
+        void setGenerationTask(task.id).catch(() => {});
         return task.id;
       } finally {
         setIsStarting(false);
       }
     },
-    [taskService, invalidateTasks, fileTask, setTask, channelId, channelName],
+    [
+      taskService,
+      invalidateTasks,
+      fileTask,
+      setGenerationTask,
+      channelId,
+      channelName,
+    ],
   );
 
   return { generate, isStarting };
