@@ -98,6 +98,24 @@ describe("analyzeSkills", () => {
       expect(analyzeSkills([a, b])).toEqual({});
     });
 
+    it("flags the later repo when two open repos share a skill name", () => {
+      const first = makeSkill({
+        source: "repo",
+        repoName: "repo-a",
+        path: "/roots/repo-a/.claude/skills/my-skill",
+      });
+      const second = makeSkill({
+        source: "repo",
+        repoName: "repo-b",
+        path: "/roots/repo-b/.claude/skills/my-skill",
+      });
+
+      const analysis = analyzeSkills([first, second]);
+
+      expect(analysis[first.path]).toBeUndefined();
+      expect(analysis[second.path]?.[0]?.message).toContain("repo-a");
+    });
+
     it("marks every loser when three sources collide", () => {
       const repo = makeSkill({ source: "repo", path: "/roots/repo/my-skill" });
       const user = makeSkill({ source: "user", path: "/roots/user/my-skill" });

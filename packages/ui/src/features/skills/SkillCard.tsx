@@ -89,7 +89,17 @@ export function SkillCard({
       </Flex>
 
       {issues.length > 0 && (
-        <Tooltip content={issues.map((issue) => issue.message).join("\n")}>
+        <Tooltip
+          content={
+            <Flex direction="column" gap="1">
+              {issues.map((issue) => (
+                <Text key={issue.message} size="1">
+                  {issue.message}
+                </Text>
+              ))}
+            </Flex>
+          }
+        >
           <Warning size={14} className="shrink-0 text-amber-11" />
         </Tooltip>
       )}

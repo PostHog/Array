@@ -92,10 +92,13 @@ export function analyzeSkills(skills: SkillInfo[]): SkillAnalysis {
     );
     const winner = sorted[0];
     if (!winner) continue;
+    const winnerLabel = winner.repoName
+      ? `${SOURCE_LABEL[winner.source]} (${winner.repoName})`
+      : SOURCE_LABEL[winner.source];
     for (const shadowed of sorted.slice(1)) {
       push(shadowed, {
         type: "shadowed",
-        message: `Shadowed by the ${SOURCE_LABEL[winner.source]} skill named "${name}"`,
+        message: `Shadowed by the ${winnerLabel} skill named "${name}"`,
       });
     }
   }
