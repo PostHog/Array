@@ -12,7 +12,31 @@ export const ANALYTICS_EVENTS = {
   INBOX_REPORT_CLOSED: "Inbox report closed",
   INBOX_REPORT_SCROLLED: "Inbox report scrolled",
   INBOX_REPORT_ACTION: "Inbox report action",
+  SIGN_IN_STARTED: "Sign in started",
+  SIGN_IN_COMPLETED: "Sign in completed",
+  SIGN_IN_FAILED: "Sign in failed",
 } as const;
+
+export type SignInMethod = "oauth" | "dev_api_key" | "qr_scan";
+
+export type SignInFailureReason = "cancelled" | "timeout" | "error";
+
+export interface SignInStartedProperties {
+  method: SignInMethod;
+  region: string;
+}
+
+export interface SignInCompletedProperties {
+  method: SignInMethod;
+  region: string;
+}
+
+export interface SignInFailedProperties {
+  method: SignInMethod;
+  region: string;
+  reason: SignInFailureReason;
+  error_message: string;
+}
 
 export type InboxReportOpenMethod =
   | "click"
@@ -144,6 +168,9 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
+  [ANALYTICS_EVENTS.SIGN_IN_STARTED]: SignInStartedProperties;
+  [ANALYTICS_EVENTS.SIGN_IN_COMPLETED]: SignInCompletedProperties;
+  [ANALYTICS_EVENTS.SIGN_IN_FAILED]: SignInFailedProperties;
 };
 
 export interface Analytics {

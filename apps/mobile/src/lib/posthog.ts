@@ -15,7 +15,9 @@ export const POSTHOG_OPTIONS = {
   captureAppLifecycleEvents: true,
   enableSessionReplay: true,
   sessionReplayConfig: {
-    maskAllTextInputs: false,
+    // Recordings land in the shared posthog.com project; the auth flow takes
+    // credentials, so text inputs must stay masked.
+    maskAllTextInputs: true,
     maskAllImages: false,
     captureLog: true,
     captureNetworkTelemetry: true,
@@ -43,31 +45,36 @@ export function getAppVersion(): string | null {
 }
 
 type PostHogRegisterClient = {
-  register: (properties: { app_version: string }) => unknown;
+  register: (properties: Record<string, string>) => unknown;
 };
 
 /**
- * Register the app version as a PostHog super property so it is attached to
- * every event the client emits. No-op if the client is not yet ready or no
- * version is available.
+ * Register the super properties attached to every event the client emits:
+ * `team` (mirrors the desktop app so mobile and desktop events are segmentable
+ * in the shared posthog.com project) and `app_version` when one is available.
+ * No-op if the client is not yet ready.
  */
-export function registerAppVersion(
+export function registerPersistentSuperProperties(
   client: PostHogRegisterClient | null | undefined,
   version: string | null = getAppVersion(),
 ) {
-  if (!client || version === null) return;
-  client.register({ app_version: version });
+  if (!client) return;
+  client.register({
+    team: "posthog-code",
+    ...(version !== null ? { app_version: version } : {}),
+  });
 }
 
 /**
- * Hook variant of `registerAppVersion`. Runs once per client instance so the
- * super property is re-applied if the PostHog client is recreated.
+ * Hook variant of `registerPersistentSuperProperties`. Runs once per client
+ * instance so the super properties are re-applied if the PostHog client is
+ * recreated.
  */
-export function useRegisterAppVersion() {
+export function useRegisterSuperProperties() {
   const posthog = usePostHog();
 
   useEffect(() => {
-    registerAppVersion(posthog);
+    registerPersistentSuperProperties(posthog);
   }, [posthog]);
 }
 
@@ -120,6 +127,8 @@ export function useIdentifyUser() {
       // anonymous distinct id on every render before sign-in.
       if (lastIdentity.current) {
         posthog.reset();
+        // reset() wipes super properties.
+        registerPersistentSuperProperties(posthog);
         lastIdentity.current = null;
       }
       return;

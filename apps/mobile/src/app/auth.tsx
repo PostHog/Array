@@ -11,6 +11,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { QrScanModal, type QrScanResult } from "@/components/QrScanModal";
 import { type CloudRegion, useAuthStore } from "@/features/auth";
+import {
+  ANALYTICS_EVENTS,
+  type SignInFailureReason,
+  type SignInMethod,
+  useAnalytics,
+} from "@/lib/analytics";
 import { useThemeColors } from "@/lib/theme";
 
 type RegionOption = { value: CloudRegion; label: string };
@@ -42,6 +48,35 @@ export default function AuthScreen() {
   const [scannerVisible, setScannerVisible] = useState(false);
 
   const { loginWithOAuth, loginWithPersonalApiKey } = useAuthStore();
+  const analytics = useAnalytics();
+
+  const trackSignInStarted = (method: SignInMethod) => {
+    analytics.track(ANALYTICS_EVENTS.SIGN_IN_STARTED, {
+      method,
+      region: selectedRegion,
+    });
+  };
+
+  const trackSignInCompleted = (method: SignInMethod) => {
+    analytics.track(ANALYTICS_EVENTS.SIGN_IN_COMPLETED, {
+      method,
+      region: selectedRegion,
+    });
+  };
+
+  const trackSignInFailed = (method: SignInMethod, message: string) => {
+    const reason: SignInFailureReason = message.includes("cancel")
+      ? "cancelled"
+      : message.includes("timed out")
+        ? "timeout"
+        : "error";
+    analytics.track(ANALYTICS_EVENTS.SIGN_IN_FAILED, {
+      method,
+      region: selectedRegion,
+      reason,
+      error_message: message,
+    });
+  };
 
   // After successful sign-in, resume the originally-requested deep link if
   // there was one, otherwise drop into the default tab. Guards against `next`
@@ -62,15 +97,19 @@ export default function AuthScreen() {
     setDevProjectId(String(result.projectId));
     setIsLoading(true);
     setError(null);
+    trackSignInStarted("qr_scan");
     try {
       await loginWithPersonalApiKey({
         token: result.apiKey,
         projectId: result.projectId,
         region: selectedRegion,
       });
+      trackSignInCompleted("qr_scan");
       navigateAfterLogin();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to sign in");
+      const message = err instanceof Error ? err.message : "Failed to sign in";
+      trackSignInFailed("qr_scan", message);
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -79,6 +118,7 @@ export default function AuthScreen() {
   const handleDevSignIn = async () => {
     setIsLoading(true);
     setError(null);
+    trackSignInStarted("dev_api_key");
     try {
       const projectIdNum = Number(devProjectId);
       if (!Number.isFinite(projectIdNum) || projectIdNum <= 0) {
@@ -89,9 +129,12 @@ export default function AuthScreen() {
         projectId: projectIdNum,
         region: selectedRegion,
       });
+      trackSignInCompleted("dev_api_key");
       navigateAfterLogin();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to sign in");
+      const message = err instanceof Error ? err.message : "Failed to sign in";
+      trackSignInFailed("dev_api_key", message);
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -100,14 +143,17 @@ export default function AuthScreen() {
   const handleSignIn = async () => {
     setIsLoading(true);
     setError(null);
+    trackSignInStarted("oauth");
 
     try {
       await loginWithOAuth(selectedRegion);
+      trackSignInCompleted("oauth");
       // Navigate to tabs on success
       navigateAfterLogin();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to authenticate";
+      trackSignInFailed("oauth", message);
 
       if (message.includes("cancelled") || message.includes("cancel")) {
         setError("Authorization cancelled.");
