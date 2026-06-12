@@ -327,6 +327,35 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
     expect(fetchMcpToolMetadataMock.mock.calls[0][0]).toBe(createdQueries[0]);
   });
 
+  // The fake session is created on sonnet (queryOptions.model); modelId
+  // simulates the user switching models mid-session.
+  it.each([
+    {
+      name: "re-roots the new query on the live session model",
+      modelId: "claude-fable-5",
+      expected: "claude-fable-5",
+    },
+    {
+      name: "maps the live session model to its SDK alias",
+      modelId: "claude-opus-4-8",
+      expected: "opus",
+    },
+    {
+      name: "keeps the creation-time model when the session has no modelId",
+      modelId: undefined,
+      expected: "claude-sonnet-4-6",
+    },
+  ])("$name", async ({ modelId, expected }) => {
+    const agent = makeAgent();
+    installFakeSession(agent, "s-model", { modelId });
+
+    await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpServers: freshMcpServers,
+    });
+
+    expect(lastQueryCall.options?.model).toBe(expected);
+  });
+
   it("preserves the in-process local-tools server across refresh", async () => {
     const agent = makeAgent();
     installFakeSession(agent, "s-inprocess");

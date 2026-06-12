@@ -1,3 +1,7 @@
+import {
+  inboxReportKeys,
+  resolveInboxReportDetailCache,
+} from "@posthog/core/inbox/inboxQuery";
 import type {
   AvailableSuggestedReviewersResponse,
   SignalProcessingStateResponse,
@@ -8,38 +12,22 @@ import type {
   SignalReportsResponse,
   SuggestedReviewersArtefact,
   SuggestedReviewerWriteEntry,
-} from "@posthog/shared/domain-types";
+} from "@posthog/shared/types";
+import {
+  getAuthIdentity,
+  useAuthStateValue,
+} from "@posthog/ui/features/auth/store";
+import { useInboxAvailableSuggestedReviewersStore } from "@posthog/ui/features/inbox/inboxAvailableSuggestedReviewersStore";
+import { useAuthenticatedInfiniteQuery } from "@posthog/ui/hooks/useAuthenticatedInfiniteQuery";
+import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
+import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { toast } from "sonner";
-import { useAuthenticatedInfiniteQuery } from "../../../hooks/useAuthenticatedInfiniteQuery";
-import { useAuthenticatedMutation } from "../../../hooks/useAuthenticatedMutation";
-import { useAuthenticatedQuery } from "../../../hooks/useAuthenticatedQuery";
-import { getAuthIdentity, useAuthStateValue } from "../../auth/store";
-import { useInboxAvailableSuggestedReviewersStore } from "../inboxAvailableSuggestedReviewersStore";
 
 const REPORTS_PAGE_SIZE = 100;
 
-export const reportKeys = {
-  all: ["inbox", "signal-reports"] as const,
-  list: (params?: SignalReportsQueryParams) =>
-    [...reportKeys.all, "list", params ?? {}] as const,
-  infiniteList: (params?: SignalReportsQueryParams) =>
-    [...reportKeys.all, "infinite-list", params ?? {}] as const,
-  detail: (reportId: string) =>
-    [...reportKeys.all, reportId, "detail"] as const,
-  artefacts: (reportId: string) =>
-    [...reportKeys.all, reportId, "artefacts"] as const,
-  signals: (reportId: string) =>
-    [...reportKeys.all, reportId, "signals"] as const,
-  availableSuggestedReviewers: (authIdentity: string | null) =>
-    [
-      ...reportKeys.all,
-      authIdentity ?? "anonymous",
-      "available-reviewers",
-    ] as const,
-  signalProcessingState: ["inbox", "signal-processing-state"] as const,
-};
+export const reportKeys = inboxReportKeys;
 
 export function useInboxReports(
   params?: SignalReportsQueryParams,
@@ -178,11 +166,26 @@ export function useInboxReportById(
     staleTime?: number;
   },
 ) {
+  const queryClient = useQueryClient();
+
   return useAuthenticatedQuery<SignalReport | null>(
     reportKeys.detail(reportId ?? ""),
     (client) => client.getSignalReport(reportId ?? ""),
     {
       enabled: !!reportId && (options?.enabled ?? true),
+      initialData: () => {
+        if (!reportId) return undefined;
+        return (
+          resolveInboxReportDetailCache(queryClient, reportId) ?? undefined
+        );
+      },
+      initialDataUpdatedAt: () => {
+        if (!reportId) return undefined;
+        return resolveInboxReportDetailCache(queryClient, reportId)
+          ? 0
+          : undefined;
+      },
+      placeholderData: (previous) => previous,
       refetchInterval: options?.refetchInterval,
       refetchIntervalInBackground: options?.refetchIntervalInBackground,
       staleTime: options?.staleTime,
@@ -192,12 +195,20 @@ export function useInboxReportById(
 
 export function useInboxReportArtefacts(
   reportId: string,
-  options?: { enabled?: boolean },
+  options?: {
+    enabled?: boolean;
+    staleTime?: number;
+    refetchOnWindowFocus?: boolean;
+  },
 ) {
+  const { enabled, ...queryOptions } = options ?? {};
   return useAuthenticatedQuery<SignalReportArtefactsResponse>(
     reportKeys.artefacts(reportId),
     (client) => client.getSignalReportArtefacts(reportId),
-    { enabled: !!reportId && (options?.enabled ?? true) },
+    {
+      enabled: !!reportId && (enabled ?? true),
+      ...queryOptions,
+    },
   );
 }
 
@@ -214,10 +225,16 @@ export function useInboxReportSignals(
 
 interface UpdateSuggestedReviewersVariables {
   artefactId: string;
+  /** Full-replacement payload sent to the server. */
   content: SuggestedReviewerWriteEntry[];
+  /** Read-shape list used to optimistically patch the cache for immediate-apply UI. */
   optimisticReviewers: SuggestedReviewersArtefact["content"];
 }
 
+/**
+ * Persists a full replacement of a report's `suggested_reviewers` artefact and optimistically
+ * patches the cached artefacts so the detail pane reflects the change instantly (immediate apply).
+ */
 export function useUpdateSuggestedReviewers(reportId: string) {
   const queryClient = useQueryClient();
   const queryKey = reportKeys.artefacts(reportId);

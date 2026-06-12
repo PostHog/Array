@@ -2,9 +2,12 @@ import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
   BILLING_FLAG,
   HOME_TAB_FLAG,
+  PROJECT_BLUEBIRD_FLAG,
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
+import { AppNav } from "@posthog/ui/features/canvas/components/AppNav";
+import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
@@ -29,7 +32,7 @@ import { logger } from "@posthog/ui/shell/logger";
 import { onFeatureFlagsLoaded } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { SpaceSwitcher } from "@posthog/ui/shell/SpaceSwitcher";
 import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
-import { Box, Flex } from "@radix-ui/themes";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createRootRoute,
@@ -155,7 +158,7 @@ function RootLayout() {
   ]);
 
   // The /code/home route is only reachable while the home-tab flag is on, but
-  // flags resolve asynchronously — a restored route (or a flag flipping off
+  // flags resolve asynchronously – a restored route (or a flag flipping off
   // mid-session) can leave us on home without access. Redirect to the new-task
   // screen once flags have loaded and home is gated off.
   const [flagsLoaded, setFlagsLoaded] = useState(false);
@@ -171,6 +174,78 @@ function RootLayout() {
   const isSettingsRoute = useRouterState({
     select: (s) => s.matches.some((m) => m.routeId.startsWith("/settings")),
   });
+
+  // The canvas "Channels" space (gated by project-bluebird). It owns its own
+  // layout (channel sidebar + content via WebsiteLayout), so it drops the Code
+  // chrome (header / main sidebar / space-switcher) and shows only the app rail.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const onWebsitePath = useRouterState({
+    select: (s) =>
+      s.location.pathname === "/website" ||
+      s.location.pathname.startsWith("/website/"),
+  });
+  const isChannelsSpace = bluebirdEnabled && onWebsitePath;
+
+  // The /website (Channels) routes stay registered regardless of the flag, so a
+  // stale URL or restored session could strand a flag-off user there (rendering
+  // the channel layout inside the Code chrome). Once flags resolve, redirect
+  // them back to Code so the off state is indistinguishable from before canvas.
+  useEffect(() => {
+    if (flagsLoaded && !bluebirdEnabled && onWebsitePath) {
+      openTaskInput();
+    }
+  }, [flagsLoaded, bluebirdEnabled, onWebsitePath]);
+
+  if (isChannelsSpace) {
+    return (
+      <Flex height="100vh">
+        <AppNav />
+        <Flex direction="column" flexGrow="1" overflow="hidden">
+          <Flex flexGrow="1" overflow="hidden">
+            <Flex
+              direction="column"
+              className="w-[260px] shrink-0 border-gray-6 border-r bg-gray-2"
+            >
+              {/* Aligns the channel list with the outlet's breadcrumb bar (same
+                  h-10) so both columns start at the same line, like /code. */}
+              <Flex
+                align="center"
+                className="h-10 shrink-0 border-gray-6 border-b px-3"
+              >
+                <Text size="1" weight="medium" className="text-gray-12">
+                  Channels
+                </Text>
+              </Flex>
+              <Box className="min-h-0 flex-1 overflow-hidden">
+                <ChannelsList />
+              </Box>
+            </Flex>
+            <Box flexGrow="1" overflow="hidden">
+              <Outlet />
+            </Box>
+          </Flex>
+        </Flex>
+        <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+        <KeyboardShortcutsSheet
+          open={shortcutsSheetOpen}
+          onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
+        />
+        <GlobalEventHandlers
+          onToggleCommandMenu={toggleCommandMenu}
+          onToggleShortcutsSheet={toggleShortcutsSheet}
+        />
+        {billingEnabled && <UsageLimitModal />}
+        {import.meta.env.DEV && (
+          <Suspense fallback={null}>
+            <TanStackDevtools />
+          </Suspense>
+        )}
+      </Flex>
+    );
+  }
 
   if (isSettingsRoute) {
     return (
@@ -196,40 +271,45 @@ function RootLayout() {
   }
 
   return (
-    <Flex direction="column" height="100vh">
-      <HeaderRow />
-      <Flex flexGrow="1" overflow="hidden">
-        <MainSidebar />
-        <Box flexGrow="1" overflow="hidden">
-          <Outlet />
-        </Box>
-      </Flex>
+    <Flex height="100vh">
+      {bluebirdEnabled && <AppNav />}
+      <Flex direction="column" flexGrow="1" overflow="hidden">
+        <HeaderRow />
+        <Flex flexGrow="1" overflow="hidden">
+          <MainSidebar />
+          <Box flexGrow="1" overflow="hidden">
+            <Outlet />
+          </Box>
+        </Flex>
 
-      <SpaceSwitcher
-        tasks={visualTaskOrder}
-        activeTaskId={activeTaskId}
-        allTasks={tasks ?? []}
-        isOnNewTask={view.type === "task-input" || view.type === "task-pending"}
-        onNavigateToTask={openTask}
-        onNewTask={openTaskInput}
-      />
-      <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
-      <KeyboardShortcutsSheet
-        open={shortcutsSheetOpen}
-        onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
-      />
-      <GlobalEventHandlers
-        onToggleCommandMenu={toggleCommandMenu}
-        onToggleShortcutsSheet={toggleShortcutsSheet}
-      />
-      <TourOverlay />
-      {billingEnabled && <UsageLimitModal />}
-      <HedgehogMode />
-      {import.meta.env.DEV && (
-        <Suspense fallback={null}>
-          <TanStackDevtools />
-        </Suspense>
-      )}
+        <SpaceSwitcher
+          tasks={visualTaskOrder}
+          activeTaskId={activeTaskId}
+          allTasks={tasks ?? []}
+          isOnNewTask={
+            view.type === "task-input" || view.type === "task-pending"
+          }
+          onNavigateToTask={openTask}
+          onNewTask={openTaskInput}
+        />
+        <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+        <KeyboardShortcutsSheet
+          open={shortcutsSheetOpen}
+          onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
+        />
+        <GlobalEventHandlers
+          onToggleCommandMenu={toggleCommandMenu}
+          onToggleShortcutsSheet={toggleShortcutsSheet}
+        />
+        <TourOverlay />
+        {billingEnabled && <UsageLimitModal />}
+        <HedgehogMode />
+        {import.meta.env.DEV && (
+          <Suspense fallback={null}>
+            <TanStackDevtools />
+          </Suspense>
+        )}
+      </Flex>
     </Flex>
   );
 }

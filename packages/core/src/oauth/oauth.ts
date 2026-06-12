@@ -34,6 +34,7 @@ import type {
 } from "./schemas";
 
 const OAUTH_TIMEOUT_MS = 180_000; // 3 minutes
+const TOKEN_FETCH_TIMEOUT_MS = 30_000;
 const DEV_CALLBACK_PORT = 8237;
 
 const NETWORK_ERROR_MESSAGE =
@@ -211,6 +212,7 @@ export class OAuthService {
           refresh_token: refreshToken,
           client_id: getOauthClientIdFromRegion(region),
         }),
+        signal: AbortSignal.timeout(TOKEN_FETCH_TIMEOUT_MS),
       });
 
       if (!response.ok) {
@@ -365,6 +367,7 @@ export class OAuthService {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body,
+          signal: AbortSignal.timeout(TOKEN_FETCH_TIMEOUT_MS),
         });
       } catch (error) {
         // fetch threw — DNS/TLS/socket failure. The raw message ("Failed to fetch",

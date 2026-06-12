@@ -26,11 +26,11 @@ export const STATION_LAYOUT: Record<SituationId, StationLayout> = {
 export interface FlowArrow {
   from: SituationId;
   to: SituationId;
-  /** Visual hint — `branch` arrows are drawn dotted to suggest "and/or". */
+  /** Visual hint – `branch` arrows are drawn dotted to suggest "and/or". */
   kind: "main" | "branch";
 }
 
-// Decorative hints about the typical progression of work — NOT runtime edges.
+// Decorative hints about the typical progression of work – NOT runtime edges.
 // The system doesn't enforce or observe these transitions.
 export const FLOW_ARROWS: FlowArrow[] = [
   { from: "working", to: "in_review", kind: "main" },
@@ -92,7 +92,7 @@ export const SITUATION_TONE: Record<
   },
 };
 
-/** Centre point of a station — used to anchor arrows. */
+/** Centre point of a station – used to anchor arrows. */
 export function stationCentre(s: StationLayout): { x: number; y: number } {
   return { x: s.x + s.w / 2, y: s.y + s.h / 2 };
 }

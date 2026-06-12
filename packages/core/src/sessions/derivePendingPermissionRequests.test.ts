@@ -1,6 +1,9 @@
 import type { StoredLogEntry } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
-import { derivePendingPermissionRequests } from "./sessionService";
+import {
+  derivePendingPermissionRequests,
+  isPermissionRequestAlreadySurfaced,
+} from "./sessionService";
 
 describe("derivePendingPermissionRequests", () => {
   const request = (requestId: string, toolCallId: string): StoredLogEntry => ({
@@ -61,5 +64,52 @@ describe("derivePendingPermissionRequests", () => {
     ]);
 
     expect(pending).toEqual([]);
+  });
+});
+
+describe("isPermissionRequestAlreadySurfaced", () => {
+  const update = (requestId: string, toolCallId: string) => ({
+    requestId,
+    toolCall: { toolCallId, title: "Ready to code?", kind: "execute" },
+    options: [],
+  });
+
+  it.each([
+    {
+      name: "same request still pending is a snapshot re-surface",
+      pendingToolCallIds: ["t1"],
+      trackedRequestId: "r1",
+      expected: true,
+    },
+    {
+      name: "request never surfaced notifies",
+      pendingToolCallIds: [],
+      trackedRequestId: undefined,
+      expected: false,
+    },
+    {
+      name: "new requestId for the same tool call is a new ask",
+      pendingToolCallIds: ["t1"],
+      trackedRequestId: "r0",
+      expected: false,
+    },
+    {
+      name: "tracked id without a pending entry notifies again",
+      pendingToolCallIds: [],
+      trackedRequestId: "r1",
+      expected: false,
+    },
+  ])("$name", ({ pendingToolCallIds, trackedRequestId, expected }) => {
+    const pendingPermissions = new Map(
+      pendingToolCallIds.map((id) => [id, {}]),
+    );
+
+    expect(
+      isPermissionRequestAlreadySurfaced(
+        pendingPermissions,
+        trackedRequestId,
+        update("r1", "t1"),
+      ),
+    ).toBe(expected);
   });
 });

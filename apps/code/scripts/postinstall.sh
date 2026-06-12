@@ -24,8 +24,7 @@ fi
 echo "Rebuilding native modules for Electron..."
 
 cd "$REPO_ROOT"
-npx @electron/rebuild -f -m node_modules/node-pty
-npx @electron/rebuild -f -m node_modules/better-sqlite3 || echo "⚠ better-sqlite3 electron rebuild FAILED — app DB will not load"
+node scripts/rebuild-better-sqlite3-electron.mjs
 
 echo "Patching Electron app name..."
 bash "$SCRIPTS_DIR/patch-electron-name.sh"

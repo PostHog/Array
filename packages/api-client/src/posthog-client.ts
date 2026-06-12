@@ -18,6 +18,7 @@ import type {
   AvailableSuggestedReviewersResponse,
   DismissalArtefact,
   PriorityJudgmentArtefact,
+  RepoSelectionArtefact,
   SandboxEnvironment,
   SandboxEnvironmentInput,
   Signal,
@@ -170,6 +171,67 @@ export interface SignalSourceConfig {
   status: "running" | "completed" | "failed" | null;
 }
 
+// ── Signals scouts ───────────────────────────────────────────────────────────
+// Backend: posthog `products/signals/backend/scout_harness/views.py`.
+// Endpoints live under /api/projects/{id}/signals/scout/ and require the
+// `signal_scout:read` / `signal_scout:write` scopes.
+
+export interface ScoutConfig {
+  id: string;
+  skill_name: string;
+  enabled: boolean;
+  /** False means dry-run: the scout runs but findings are not emitted. */
+  emit: boolean;
+  run_interval_minutes: number;
+  last_run_at: string | null;
+  created_at: string;
+}
+
+export interface ScoutRun {
+  run_id: string;
+  skill_name: string;
+  skill_version: number;
+  /** TaskRun-derived status, e.g. "completed" | "failed" | "in_progress" | "queued". */
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  task_id: string | null;
+  task_run_id: string | null;
+  /** Relative PostHog cloud path to the backing task run. */
+  task_url: string | null;
+  summary: string;
+  emitted_count: number | null;
+  emitted_finding_ids: string[];
+}
+
+export interface ScoutEmission {
+  id: string;
+  run_id: string;
+  finding_id: string;
+  description: string;
+  weight: number;
+  confidence: number;
+  severity: string | null;
+  source_id: string;
+  emitted_at: string;
+}
+
+export interface ScoutScratchpadEntry {
+  key: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  created_by_run_id: string | null;
+}
+
+export interface ScoutRunsQueryParams {
+  date_from?: string;
+  date_to?: string;
+  text?: string;
+  emitted?: boolean;
+  limit?: number;
+}
+
 export interface ExternalDataSourceSchema {
   id: string;
   name: string;
@@ -185,6 +247,52 @@ export interface ExternalDataSource {
   // The generated `ExternalDataSourceSerializers` types this as `string`,
   // but the actual API returns an array of schema objects
   schemas?: ExternalDataSourceSchema[] | string;
+}
+
+export interface FolderInstructionsUser {
+  id?: number;
+  uuid?: string;
+  first_name?: string;
+  last_name?: string | null;
+  email?: string;
+}
+
+export interface FolderInstructions {
+  id: string;
+  content: string;
+  version: number;
+  is_latest: boolean;
+  created_by: FolderInstructionsUser | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FolderInstructionsVersion {
+  id: string;
+  version: number;
+  is_latest: boolean;
+  created_by: FolderInstructionsUser | null;
+  created_at: string;
+}
+
+interface PaginatedFolderInstructionsVersions {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: FolderInstructionsVersion[];
+}
+
+// Thrown when PUT /instructions/ rejects a publish because the caller's
+// `base_version` is older than the current latest. Callers can re-fetch and
+// retry against the new latest.
+export class FolderInstructionsConflictError extends Error {
+  status = 409;
+  constructor(
+    message = "Folder instructions changed since you started editing",
+  ) {
+    super(message);
+    this.name = "FolderInstructionsConflictError";
+  }
 }
 
 export interface TaskArtifactUploadRequest {
@@ -324,6 +432,7 @@ type AnyArtefact =
   | PriorityJudgmentArtefact
   | ActionabilityJudgmentArtefact
   | SignalFindingArtefact
+  | RepoSelectionArtefact
   | SuggestedReviewersArtefact
   | DismissalArtefact;
 
@@ -434,6 +543,26 @@ function normalizeSignalFindingArtefact(
   };
 }
 
+function normalizeRepoSelectionArtefact(
+  value: Record<string, unknown>,
+): RepoSelectionArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+
+  const contentValue = isObjectRecord(value.content) ? value.content : null;
+  if (!contentValue) return null;
+
+  return {
+    id,
+    type: "repo_selection",
+    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    content: {
+      repository: optionalString(contentValue.repository),
+      reason: optionalString(contentValue.reason) ?? "",
+    },
+  };
+}
+
 function normalizeDismissalArtefact(
   value: Record<string, unknown>,
 ): DismissalArtefact | null {
@@ -481,6 +610,9 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   }
   if (dispatchType === "priority_judgment") {
     return normalizePriorityJudgmentArtefact(value);
+  }
+  if (dispatchType === "repo_selection") {
+    return normalizeRepoSelectionArtefact(value);
   }
   if (dispatchType === "dismissal") {
     return normalizeDismissalArtefact(value);
@@ -662,6 +794,211 @@ export class PostHogAPIClient {
       path: { uuid: "@me" },
     });
     return data;
+  }
+
+  // Desktop file system — the backend surface that backs canvas channels
+  // (top-level folders) and dashboards. These routes aren't in the generated
+  // OpenAPI client, so we use the raw fetcher.
+  async getDesktopFileSystem(): Promise<Schemas.FileSystem[]> {
+    const DESKTOP_FILE_SYSTEM_MAX_PAGES = 50;
+    const teamId = await this.getTeamId();
+    const all: Schemas.FileSystem[] = [];
+    let urlPath: string = `/api/projects/${teamId}/desktop_file_system/`;
+    for (let i = 0; i < DESKTOP_FILE_SYSTEM_MAX_PAGES; i++) {
+      const url = new URL(`${this.api.baseUrl}${urlPath}`);
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: urlPath,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch desktop file system: ${response.statusText}`,
+        );
+      }
+      const page = (await response.json()) as Schemas.PaginatedFileSystemList;
+      all.push(...page.results);
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    log.warn(
+      `getDesktopFileSystem hit MAX_PAGES (${DESKTOP_FILE_SYSTEM_MAX_PAGES}); returning partial results`,
+      { returned: all.length },
+    );
+    return all;
+  }
+
+  // Create a top-level channel (a folder row whose path is a single segment).
+  async createDesktopFileSystemChannel(
+    name: string,
+  ): Promise<Schemas.FileSystem> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ path: name, type: "folder", depth: 1 }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create desktop file system channel: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as Schemas.FileSystem;
+  }
+
+  // Rename a top-level channel: PATCH its path (a single segment) to the new
+  // name. The backend recomputes depth from the path.
+  async renameDesktopFileSystemChannel(
+    id: string,
+    name: string,
+  ): Promise<Schemas.FileSystem> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(id)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ path: name }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to rename desktop file system channel: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as Schemas.FileSystem;
+  }
+
+  // Delete a desktop file system entry by id (used to remove top-level channels).
+  async deleteDesktopFileSystem(id: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(id)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Failed to delete desktop file system channel: ${response.statusText}`,
+      );
+    }
+  }
+
+  // Per-folder, versioned markdown instructions for a desktop folder. The
+  // endpoint is keyed on the FileSystem row id (must be `type === "folder"`).
+  // Returns the current latest version or null when none has been published.
+  async getDesktopFolderInstructions(
+    folderId: string,
+  ): Promise<FolderInstructions | null> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(folderId)}/instructions/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch folder instructions: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as FolderInstructions;
+  }
+
+  // Publish a new version of the folder's instructions. Pass `base_version`
+  // (the latest version the editor was started from) for optimistic
+  // concurrency; use 0 when no instructions exist yet. A 409 turns into a
+  // typed `FolderInstructionsConflictError` so the UI can prompt to reload.
+  async putDesktopFolderInstructions(
+    folderId: string,
+    input: { content: string; base_version?: number },
+  ): Promise<FolderInstructions> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(folderId)}/instructions/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "put",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify(input),
+      },
+    });
+    if (response.status === 409) {
+      throw new FolderInstructionsConflictError();
+    }
+    if (!response.ok) {
+      throw new Error(
+        `Failed to publish folder instructions: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as FolderInstructions;
+  }
+
+  // Soft-delete all versions of this folder's instructions. The folder row
+  // itself is not affected.
+  async deleteDesktopFolderInstructions(folderId: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(folderId)}/instructions/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Failed to delete folder instructions: ${response.statusText}`,
+      );
+    }
+  }
+
+  // List version metadata (no content) newest-first. Single page is enough for
+  // the typical UI; we cap follow-up pages to avoid runaway pagination on
+  // pathological histories.
+  async listDesktopFolderInstructionVersions(
+    folderId: string,
+  ): Promise<FolderInstructionsVersion[]> {
+    const VERSIONS_MAX_PAGES = 20;
+    const teamId = await this.getTeamId();
+    const all: FolderInstructionsVersion[] = [];
+    let urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(folderId)}/instructions/versions/`;
+    for (let i = 0; i < VERSIONS_MAX_PAGES; i++) {
+      const url = new URL(`${this.api.baseUrl}${urlPath}`);
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: urlPath,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch folder instruction versions: ${response.statusText}`,
+        );
+      }
+      const page =
+        (await response.json()) as PaginatedFolderInstructionsVersions;
+      all.push(...page.results);
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    log.warn(
+      `listDesktopFolderInstructionVersions hit MAX_PAGES (${VERSIONS_MAX_PAGES}); returning partial results`,
+      { folderId, returned: all.length },
+    );
+    return all;
   }
 
   async getGithubLogin(): Promise<string | null> {
@@ -924,6 +1261,112 @@ export class PostHogAPIClient {
     return (await response.json()) as SignalSourceConfig;
   }
 
+  private async scoutGet<T>(
+    projectId: number,
+    subPath: string,
+    query?: Record<string, string | number | boolean | undefined>,
+  ): Promise<T> {
+    const urlPath = `/api/projects/${projectId}/signals/scout/${subPath}`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    for (const [key, value] of Object.entries(query ?? {})) {
+      if (value !== undefined) url.searchParams.set(key, String(value));
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Scout request failed (${subPath}): ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as T;
+  }
+
+  async listScoutConfigs(projectId: number): Promise<ScoutConfig[]> {
+    const data = await this.scoutGet<
+      { results: ScoutConfig[] } | ScoutConfig[]
+    >(projectId, "configs/");
+    return Array.isArray(data) ? data : (data.results ?? []);
+  }
+
+  async updateScoutConfig(
+    projectId: number,
+    configId: string,
+    updates: {
+      enabled?: boolean;
+      emit?: boolean;
+      run_interval_minutes?: number;
+    },
+  ): Promise<ScoutConfig> {
+    const urlPath = `/api/projects/${projectId}/signals/scout/configs/${configId}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify(updates),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to update scout config: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as ScoutConfig;
+  }
+
+  async listScoutRuns(
+    projectId: number,
+    params?: ScoutRunsQueryParams,
+  ): Promise<ScoutRun[]> {
+    const data = await this.scoutGet<{ results: ScoutRun[] } | ScoutRun[]>(
+      projectId,
+      "runs/",
+      {
+        date_from: params?.date_from,
+        date_to: params?.date_to,
+        text: params?.text,
+        emitted: params?.emitted,
+        limit: params?.limit,
+      },
+    );
+    return Array.isArray(data) ? data : (data.results ?? []);
+  }
+
+  async getScoutRun(projectId: number, runId: string): Promise<ScoutRun> {
+    return await this.scoutGet<ScoutRun>(projectId, `runs/${runId}/`);
+  }
+
+  async listScoutRunEmissions(
+    projectId: number,
+    runId: string,
+  ): Promise<ScoutEmission[]> {
+    const data = await this.scoutGet<
+      { results: ScoutEmission[] } | ScoutEmission[]
+    >(projectId, `runs/${runId}/emissions/`);
+    return Array.isArray(data) ? data : (data.results ?? []);
+  }
+
+  async searchScoutScratchpad(
+    projectId: number,
+    params?: { text?: string; limit?: number },
+  ): Promise<ScoutScratchpadEntry[]> {
+    const data = await this.scoutGet<
+      { results: ScoutScratchpadEntry[] } | ScoutScratchpadEntry[]
+    >(projectId, "scratchpad/", {
+      text: params?.text,
+      limit: params?.limit,
+    });
+    return Array.isArray(data) ? data : (data.results ?? []);
+  }
+
   async listEvaluations(projectId: number): Promise<Evaluation[]> {
     const data = await this.api.get(
       "/api/environments/{project_id}/evaluations/",
@@ -1088,7 +1531,7 @@ export class PostHogAPIClient {
     return all;
   }
 
-  async getTask(taskId: string) {
+  async getTask(taskId: string): Promise<Task> {
     const teamId = await this.getTeamId();
     const data = await this.api.get(`/api/projects/{project_id}/tasks/{id}/`, {
       path: { project_id: teamId.toString(), id: taskId },

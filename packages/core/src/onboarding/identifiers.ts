@@ -3,9 +3,9 @@ export interface GithubConnectClient {
 }
 
 export const GITHUB_CONNECT_CLIENT = Symbol.for(
-  "posthog.core.githubConnectClient",
+  "posthog.core.onboarding.githubConnectClient",
 );
 
 export const GITHUB_CONNECT_SERVICE = Symbol.for(
-  "posthog.core.githubConnectService",
+  "posthog.core.onboarding.githubConnectService",
 );

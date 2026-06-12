@@ -18,6 +18,8 @@ import {
   AUTH_TOKEN_CIPHER,
   AUTH_TOKEN_OVERRIDE,
 } from "@posthog/core/auth/identifiers";
+import { canvasCoreModule } from "@posthog/core/canvas/canvas.module";
+import { CANVAS_GEN_SERVICE } from "@posthog/core/canvas/identifiers";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
   CLOUD_TASK_AUTH,
@@ -87,6 +89,7 @@ import {
   GIT_PR_STATUS_PROVIDER,
   type IGitPrStatus,
 } from "@posthog/host-router/ports/git-pr-status";
+import { CanvasGenService } from "@posthog/host-router/services/canvas-gen.service";
 import { ANALYTICS_SERVICE } from "@posthog/platform/analytics";
 import { APP_LIFECYCLE_SERVICE } from "@posthog/platform/app-lifecycle";
 import { APP_META_SERVICE } from "@posthog/platform/app-meta";
@@ -175,6 +178,7 @@ import { processTrackingModule } from "@posthog/workspace-server/services/proces
 import { SECURE_STORE_SERVICE } from "@posthog/workspace-server/services/secure-store/identifiers";
 import { shellModule } from "@posthog/workspace-server/services/shell/shell.module";
 import { skillsModule } from "@posthog/workspace-server/services/skills/skills.module";
+import { skillsMarketplaceModule } from "@posthog/workspace-server/services/skills-marketplace/skills-marketplace.module";
 import {
   SUSPENSION_FILE_WATCHER,
   SUSPENSION_SERVICE,
@@ -571,6 +575,7 @@ container
 container.load(posthogPluginModule);
 container.bind(MAIN_POSTHOG_PLUGIN_SERVICE).toService(POSTHOG_PLUGIN_SERVICE);
 container.load(skillsModule);
+container.load(skillsMarketplaceModule);
 container.load(onboardingImportModule);
 container.load(additionalDirectoriesModule);
 container.bind(MAIN_SLEEP_SERVICE).to(SleepService);
@@ -690,3 +695,11 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
   };
 });
 container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);
+
+// Canvas / dashboards (project-bluebird). The host-agnostic dashboard services
+// live in @posthog/core (bound via canvasCoreModule); CanvasGenService is the
+// desktop-bound agent surface (a singleton holding per-thread agent state + a
+// forwarding loop for app life). Both resolve through ctx.container in the
+// host-router routers.
+container.load(canvasCoreModule);
+container.bind(CANVAS_GEN_SERVICE).to(CanvasGenService).inSingletonScope();

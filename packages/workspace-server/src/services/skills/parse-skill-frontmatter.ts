@@ -59,10 +59,20 @@ function extractYamlValue(yaml: string, key: string): string | null {
 
 function collectIndentedLines(lines: string[], startIndex: number): string[] {
   const result: string[] = [];
+  let pendingBlanks = 0;
   for (let i = startIndex; i < lines.length; i++) {
     const line = lines[i];
+    // Blank lines only count if more indented content follows.
+    if (/^\s*$/.test(line)) {
+      pendingBlanks++;
+      continue;
+    }
     // Continuation lines must be indented
     if (line.match(/^\s+\S/)) {
+      if (result.length > 0) {
+        for (let b = 0; b < pendingBlanks; b++) result.push("");
+      }
+      pendingBlanks = 0;
       result.push(line.trim());
     } else {
       break;

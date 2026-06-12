@@ -30,7 +30,7 @@ import {
   createBranch,
   getBranchNameInputState,
 } from "../../git-interaction/utils/branchCreation";
-import { useInboxReportSelectionStore } from "../../inbox/inboxReportSelectionStore";
+import { useInboxReportSelectionStore } from "../../inbox/stores/inboxReportSelectionStore";
 import {
   useUserGithubBranches,
   useUserGithubRepositories,
@@ -116,6 +116,8 @@ export function TaskInput({
     defaultInitialTaskMode,
     lastUsedInitialTaskMode,
     setLastUsedReasoningEffort,
+    setLastUsedModel,
+    _hasHydrated: settingsHydrated,
   } = useSettingsStore();
 
   const editorRef = useRef<EditorHandle>(null);
@@ -210,7 +212,17 @@ export function TaskInput({
     return lastUsedWorkspaceMode || "local";
   });
 
+  const didResolveWorkspaceModeRef = useRef(false);
+  useEffect(() => {
+    if (didResolveWorkspaceModeRef.current) return;
+    if (!settingsHydrated) return;
+    didResolveWorkspaceModeRef.current = true;
+    if (initialCloudRepository) return;
+    setWorkspaceModeState(lastUsedWorkspaceMode || "local");
+  }, [settingsHydrated, lastUsedWorkspaceMode, initialCloudRepository]);
+
   const setWorkspaceMode = (mode: WorkspaceMode) => {
+    didResolveWorkspaceModeRef.current = true;
     setWorkspaceModeState(mode);
     setLastUsedWorkspaceMode(mode);
     if (mode !== "cloud") {
@@ -454,15 +466,15 @@ export function TaskInput({
     [effectiveRepoPath, setLastUsedEnvironment],
   );
 
-  useEffect(() => {
+  const [prevEffectiveRepoPath, setPrevEffectiveRepoPath] =
+    useState(effectiveRepoPath);
+  if (effectiveRepoPath !== prevEffectiveRepoPath) {
+    setPrevEffectiveRepoPath(effectiveRepoPath);
     setSelectedBranch(null);
-
-    if (effectiveRepoPath) {
-      setSelectedEnvironmentRaw(getLastUsedEnvironment(effectiveRepoPath));
-    } else {
-      setSelectedEnvironmentRaw(null);
-    }
-  }, [effectiveRepoPath, getLastUsedEnvironment]);
+    setSelectedEnvironmentRaw(
+      effectiveRepoPath ? getLastUsedEnvironment(effectiveRepoPath) : null,
+    );
+  }
 
   const effectiveWorkspaceMode = workspaceMode;
 
@@ -526,9 +538,10 @@ export function TaskInput({
     (value: string) => {
       if (modelOption) {
         setConfigOption(modelOption.id, value);
+        setLastUsedModel(value);
       }
     },
-    [modelOption, setConfigOption],
+    [modelOption, setConfigOption, setLastUsedModel],
   );
 
   const handleThoughtChange = useCallback(

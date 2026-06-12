@@ -6,6 +6,8 @@ export interface IAnalytics {
   identify(userId: string, properties?: AnalyticsProperties): void;
   setCurrentUserId(userId: string | null): void;
   getCurrentUserId(): string | null;
+  /** Host-owned analytics session id, minted lazily on first request. */
+  getOrCreateSessionId(): string;
   resetUser(): void;
   captureException(
     error: unknown,

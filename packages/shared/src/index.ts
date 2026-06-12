@@ -83,7 +83,7 @@ export {
   parseImageDataUrl,
 } from "./image";
 export { buildDiscussReportPrompt } from "./inbox-prompts";
-export type { AvailableSuggestedReviewer } from "./inbox-types";
+export type { AvailableSuggestedReviewer, SourceProduct } from "./inbox-types";
 export { EXTERNAL_LINKS } from "./links";
 export {
   getOauthClientIdFromRegion,
@@ -159,7 +159,7 @@ export type {
   SignalReportOrderingField,
   SignalReportStatus,
 } from "./signal-types";
-export type { SkillInfo, SkillSource } from "./skills";
+export type { SkillFileEntry, SkillInfo, SkillSource } from "./skills";
 export type {
   ArtifactType,
   PostHogAPIConfig,

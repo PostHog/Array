@@ -60,6 +60,8 @@ import {
   getPrChangedFilesOutput,
   getPrDetailsByUrlInput,
   getPrDetailsByUrlOutput,
+  getPrDiffStatsBatchInput,
+  getPrDiffStatsBatchOutput,
   getPrReviewCommentsInput,
   getPrReviewCommentsOutput,
   getPrTemplateInput,
@@ -486,6 +488,15 @@ export const gitRouter = router({
     .query(({ ctx, input }) =>
       getWorkspaceClient(ctx.container).git.getPrChangedFiles.query({
         prUrl: input.prUrl,
+      }),
+    ),
+
+  getPrDiffStatsBatch: publicProcedure
+    .input(getPrDiffStatsBatchInput)
+    .output(getPrDiffStatsBatchOutput)
+    .query(({ ctx, input }) =>
+      getWorkspaceClient(ctx.container).git.getPrDiffStatsBatch.query({
+        prUrls: input.prUrls,
       }),
     ),
 

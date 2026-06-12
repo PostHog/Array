@@ -13,6 +13,7 @@ export type AppViewType =
   | "folder-settings"
   | "home"
   | "inbox"
+  | "agents"
   | "archived"
   | "command-center"
   | "skills"
@@ -54,6 +55,8 @@ function deriveFromMatches(matches: Match[]): AppView {
       return { type: "home" };
     case "/code/inbox":
       return { type: "inbox" };
+    case "/code/agents":
+      return { type: "agents" };
     case "/code/archived":
       return { type: "archived" };
     case "/command-center":
@@ -66,6 +69,15 @@ function deriveFromMatches(matches: Match[]): AppView {
     case "/settings/":
       return { type: "settings" };
     default:
+      if (last.routeId.startsWith("/code/inbox")) {
+        return { type: "inbox" };
+      }
+      // /code/agents is now an Outlet layout; the view lives at the index
+      // child (/code/agents/) and scout detail routes nest deeper, so match
+      // the whole subtree rather than only the bare layout route.
+      if (last.routeId.startsWith("/code/agents")) {
+        return { type: "agents" };
+      }
       return { type: "task-input" };
   }
 }

@@ -130,6 +130,9 @@ interface SettingsStore {
   shouldShowHint: (key: string, max?: number) => boolean;
   recordHintShown: (key: string) => void;
   markHintLearned: (key: string) => void;
+
+  _hasHydrated: boolean;
+  setHasHydrated: (hydrated: boolean) => void;
 }
 
 // ---------- Store ----------
@@ -184,7 +187,7 @@ export const useSettingsStore = create<SettingsStore>()(
       desktopNotifications: true,
       dockBadgeNotifications: true,
       dockBounceNotifications: false,
-      completionSound: "none",
+      completionSound: "meep",
       completionVolume: 80,
       setDesktopNotifications: (enabled) =>
         set({ desktopNotifications: enabled }),
@@ -259,6 +262,9 @@ export const useSettingsStore = create<SettingsStore>()(
             },
           };
         }),
+
+      _hasHydrated: false,
+      setHasHydrated: (hydrated) => set({ _hasHydrated: hydrated }),
     }),
     {
       name: "settings-storage",
@@ -309,6 +315,9 @@ export const useSettingsStore = create<SettingsStore>()(
         // Onboarding hints
         hints: state.hints,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
       merge: (persisted, current) => {
         const merged = {
           ...current,
@@ -326,3 +335,19 @@ export const useSettingsStore = create<SettingsStore>()(
     },
   ),
 );
+
+/**
+ * The repository a one-click cloud task should default to: the last-used cloud
+ * repository when it's still connected, otherwise the first connected one.
+ * `repositories` is expected to be normalized (lowercased) already.
+ */
+export function resolveDefaultCloudRepository(
+  repositories: string[],
+  lastUsedCloudRepository: string | null,
+): string | null {
+  const normalizedLastUsed = lastUsedCloudRepository?.toLowerCase() ?? null;
+  if (normalizedLastUsed && repositories.includes(normalizedLastUsed)) {
+    return normalizedLastUsed;
+  }
+  return repositories[0] ?? null;
+}

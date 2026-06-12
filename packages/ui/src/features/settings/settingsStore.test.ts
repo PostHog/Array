@@ -1,16 +1,12 @@
+import { registerRendererStateStorage } from "@posthog/ui/shell/rendererStorage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const { getItem, setItem, removeItem } = vi.hoisted(() => ({
-  getItem: vi.fn(),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-}));
-
-vi.mock("@posthog/di/container", () => ({
-  resolveService: () => ({ getItem, setItem, removeItem }),
-}));
-
 import { useSettingsStore } from "./settingsStore";
+
+const getItem = vi.fn();
+const setItem = vi.fn();
+const removeItem = vi.fn();
+
+registerRendererStateStorage({ getItem, setItem, removeItem });
 
 describe("feature settingsStore cloud selections", () => {
   beforeEach(() => {
@@ -74,6 +70,33 @@ describe("feature settingsStore cloud selections", () => {
     await useSettingsStore.persist.rehydrate();
 
     expect(useSettingsStore.getState().allowBypassPermissions).toBe(true);
+  });
+
+  it.each([
+    ["lastUsedWorkspaceMode", "local", "cloud"],
+    ["debugLogsCloudRuns", false, true],
+  ] as const)("rehydrates %s", async (field, initial, persisted) => {
+    getItem.mockResolvedValue(
+      JSON.stringify({ state: { [field]: persisted }, version: 0 }),
+    );
+
+    useSettingsStore.setState({ [field]: initial } as Parameters<
+      typeof useSettingsStore.setState
+    >[0]);
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState()[field]).toBe(persisted);
+  });
+
+  it("flips _hasHydrated once the persisted snapshot lands", async () => {
+    getItem.mockResolvedValue(JSON.stringify({ state: {}, version: 0 }));
+
+    useSettingsStore.setState({ _hasHydrated: false });
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState()._hasHydrated).toBe(true);
   });
 });
 

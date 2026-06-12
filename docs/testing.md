@@ -98,6 +98,22 @@ describe("store", () => {
 });
 ```
 
+## Parameterised Tests
+
+Prefer a parameterised test shape when several cases exercise the same logic with different inputs and expectations. Use Vitest's `it.each` / `test.each` instead of copy-pasting near-identical `it` blocks.
+
+```ts
+it.each([
+  { input: "main", expected: true },
+  { input: "feature/x", expected: false },
+  { input: "", expected: false },
+])("isDefaultBranch($input) === $expected", ({ input, expected }) => {
+  expect(isDefaultBranch(input)).toBe(expected);
+});
+```
+
+Keep cases as separate `it` blocks when they differ in setup, assertions, or intent — parameterise repetition, not distinct behaviors.
+
 ## Mocking
 
 Hoist mocks for modules that must be mocked before import evaluation.

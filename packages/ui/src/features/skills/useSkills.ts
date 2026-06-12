@@ -3,7 +3,5 @@ import { useQuery } from "@tanstack/react-query";
 
 export function useSkills() {
   const trpc = useHostTRPC();
-  return useQuery(
-    trpc.skills.list.queryOptions(undefined, { staleTime: 30_000 }),
-  );
+  return useQuery(trpc.skills.list.queryOptions());
 }

@@ -19,6 +19,7 @@ import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBann
 import { LoginTransition } from "@posthog/ui/primitives/LoginTransition";
 import { router } from "@posthog/ui/router/router";
 import { track } from "@posthog/ui/shell/analytics";
+import { BootstrapFallback } from "@posthog/ui/shell/BootstrapFallback";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
@@ -95,14 +96,7 @@ function App() {
   };
 
   if (!isBootstrapped) {
-    return (
-      <Flex align="center" justify="center" minHeight="100vh">
-        <Flex align="center" gap="3">
-          <Spinner size="3" />
-          <Text color="gray">Loading...</Text>
-        </Flex>
-      </Flex>
-    );
+    return <BootstrapFallback />;
   }
 
   // Rendering: onboarding (includes auth + invite code gate) → main app

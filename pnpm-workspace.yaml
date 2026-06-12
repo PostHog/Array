@@ -31,7 +31,6 @@ catalog:
   superjson: ^2.2.2
   tsup: ^8.5.1
   typescript: ^5.5.0
-  zod: ^3.24.1
 
 ignoredBuiltDependencies:
   - msw
@@ -71,12 +70,16 @@ minimumReleaseAgeExclude:
   - '@tanstack/virtual-core'
   - '@tanstack/virtual-file-routes'
 
+overrides:
+  zod: 4.3.6
+
 onlyBuiltDependencies:
   - '@parcel/watcher'
   - '@posthog/cli'
   - better-sqlite3
   - core-js
   - electron
+  - electron-winstaller
   - esbuild
   - fs-xattr
   - macos-alias

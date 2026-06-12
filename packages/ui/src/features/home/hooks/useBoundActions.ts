@@ -8,7 +8,7 @@ import { useWorkflow } from "@posthog/ui/features/home/hooks/useWorkflow";
 import { useMemo } from "react";
 
 export interface BoundAction extends WorkflowAction {
-  /** Situation this action came from — used for telemetry + tooltips. */
+  /** Situation this action came from – used for telemetry + tooltips. */
   situationId: SituationId;
   situationLabel: string;
 }

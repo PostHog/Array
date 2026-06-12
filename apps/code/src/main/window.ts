@@ -14,6 +14,7 @@ import { container } from "./di/container";
 import { buildApplicationMenu } from "./menu";
 import type { ElectronMainWindow } from "./platform-adapters/electron-main-window";
 import { trpcRouter } from "./trpc/router";
+import { collectMemorySnapshot } from "./utils/crash-diagnostics";
 import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
 import { type WindowStateSchema, windowStateStore } from "./utils/store";
@@ -106,6 +107,7 @@ function setupCrashLogging(window: BrowserWindow): void {
       reason: details.reason,
       exitCode: details.exitCode,
       url: window.webContents.getURL(),
+      memory: collectMemorySnapshot(() => app.getAppMetrics()),
       chromiumLogTail: readChromiumLogTail(),
     });
   });
@@ -113,6 +115,7 @@ function setupCrashLogging(window: BrowserWindow): void {
   window.on("unresponsive", () => {
     log.warn("Window unresponsive", {
       url: window.webContents.getURL(),
+      memory: collectMemorySnapshot(() => app.getAppMetrics()),
       chromiumLogTail: readChromiumLogTail(),
     });
   });

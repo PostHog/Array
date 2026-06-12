@@ -69,6 +69,7 @@ import type {
   OpenPrOutput,
   PrActionType,
   PrDetailsByUrlOutput,
+  PrDiffStats,
   PrReviewComment,
   PrReviewThread,
   PrStatusOutput,
@@ -82,6 +83,22 @@ import type {
 } from "./schemas";
 
 const FETCH_THROTTLE_MS = 30_000;
+/** Max PRs per GraphQL request – stays well under GitHub's complexity ceiling. */
+const PR_DIFF_STATS_BATCH_CHUNK_SIZE = 25;
+
+/**
+ * Escape a string for embedding in a GraphQL double-quoted literal. GitHub
+ * repo names already conform to a safe subset, but defense-in-depth so a
+ * pathological owner/repo can never break out of the query envelope.
+ */
+function escapeGraphqlString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
+}
 
 /**
  * GitHub's compare/files API returns a bare hunk body. Reconstruct a full
@@ -973,6 +990,111 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
           : undefined,
       };
     });
+  }
+
+  /**
+   * Batch-fetch coarse diff stats (additions / deletions / changedFiles) for
+   * many GitHub PR URLs via GitHub GraphQL alias-batching.
+   */
+  async getPrDiffStatsBatch(
+    prUrls: string[],
+  ): Promise<Record<string, PrDiffStats>> {
+    if (prUrls.length === 0) return {};
+
+    interface ParsedPr {
+      owner: string;
+      repo: string;
+      number: number;
+    }
+
+    const grouped = new Map<string, { parsed: ParsedPr; urls: string[] }>();
+    for (const url of prUrls) {
+      const pr = parseGithubUrl(url);
+      if (pr?.kind !== "pr") continue;
+      const key = `${pr.owner.toLowerCase()}/${pr.repo.toLowerCase()}#${pr.number}`;
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.urls.push(url);
+      } else {
+        grouped.set(key, {
+          parsed: { owner: pr.owner, repo: pr.repo, number: pr.number },
+          urls: [url],
+        });
+      }
+    }
+
+    if (grouped.size === 0) return {};
+
+    const entries = Array.from(grouped.entries());
+    const chunks: Array<typeof entries> = [];
+    for (let i = 0; i < entries.length; i += PR_DIFF_STATS_BATCH_CHUNK_SIZE) {
+      chunks.push(entries.slice(i, i + PR_DIFF_STATS_BATCH_CHUNK_SIZE));
+    }
+
+    const out: Record<string, PrDiffStats> = {};
+    const chunkResults = await Promise.all(
+      chunks.map((chunk) => this.fetchPrDiffStatsChunk(chunk)),
+    );
+    for (const chunkOut of chunkResults) {
+      Object.assign(out, chunkOut);
+    }
+    return out;
+  }
+
+  private async fetchPrDiffStatsChunk(
+    chunk: Array<
+      [
+        string,
+        {
+          parsed: { owner: string; repo: string; number: number };
+          urls: string[];
+        },
+      ]
+    >,
+  ): Promise<Record<string, PrDiffStats>> {
+    const aliasFragments = chunk
+      .map(([, { parsed }], index) => {
+        return `pr${index}: repository(owner: "${escapeGraphqlString(parsed.owner)}", name: "${escapeGraphqlString(parsed.repo)}") { pullRequest(number: ${parsed.number}) { additions deletions changedFiles } }`;
+      })
+      .join("\n");
+    const query = `query InboxPrDiffStatsBatch {\n${aliasFragments}\n}`;
+
+    const result = await execGh(["api", "graphql", "-f", `query=${query}`]);
+
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `Failed to fetch PR diff stats batch: ${result.stderr || result.error || "Unknown error"}`,
+      );
+    }
+
+    const parsed = JSON.parse(result.stdout) as {
+      data?: Record<
+        string,
+        {
+          pullRequest?: {
+            additions: number;
+            deletions: number;
+            changedFiles: number;
+          } | null;
+        } | null
+      >;
+    };
+
+    const out: Record<string, PrDiffStats> = {};
+    for (let i = 0; i < chunk.length; i += 1) {
+      const [, { urls }] = chunk[i];
+      const node = parsed.data?.[`pr${i}`]?.pullRequest;
+      if (!node) continue;
+      const stats: PrDiffStats = {
+        additions: node.additions,
+        deletions: node.deletions,
+        changedFiles: node.changedFiles,
+      };
+      for (const url of urls) {
+        out[url] = stats;
+      }
+    }
+    return out;
   }
 
   async getBranchChangedFiles(

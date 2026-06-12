@@ -8,6 +8,10 @@ import { useIntegrationSelectors } from "@posthog/ui/features/integrations/store
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { SignalDefaultChannelSettings } from "@posthog/ui/features/settings/sections/SignalDefaultChannelSettings";
 import { SignalSlackNotificationsSettings } from "@posthog/ui/features/settings/sections/SignalSlackNotificationsSettings";
+import {
+  SlackWorkspaceConnection,
+  SlackWorkspaceConnectionCallouts,
+} from "@posthog/ui/features/settings/sections/SlackWorkspaceConnection";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useMemo } from "react";
 
@@ -16,11 +20,17 @@ const WORKSPACE_CONTROL_CLASS = "min-w-[160px] max-w-[240px]";
 interface SlackInboxNotificationsSettingsProps {
   channelComboboxModal?: boolean;
   isLoading?: boolean;
+  /** When false, omit the section header (parent already titles this block). */
+  showHeader?: boolean;
+  /** When false, omit the dashed top rule (nested under a parent section). */
+  showTopBorder?: boolean;
 }
 
 export function SlackInboxNotificationsSettings({
   channelComboboxModal = false,
   isLoading = false,
+  showHeader = true,
+  showTopBorder = true,
 }: SlackInboxNotificationsSettingsProps) {
   const { slackIntegrations, hasSlackIntegration } = useIntegrationSelectors();
   const { userAutonomyConfig, handleUpdateSlackNotifications } =
@@ -53,26 +63,32 @@ export function SlackInboxNotificationsSettings({
     void handleUpdateSlackNotifications({ integrationId, channel: null });
   };
 
+  const topBorderClass = showTopBorder
+    ? "border-(--gray-5) border-t border-dashed pt-3"
+    : "";
+
   return (
-    <Flex
-      direction="column"
-      gap="1"
-      pt="3"
-      style={{ borderTop: "1px dashed var(--gray-5)" }}
-    >
-      <Flex align="center" gap="2">
-        <Box className="shrink-0 text-(--gray-11)">
-          <SlackLogoIcon size={16} />
-        </Box>
-        <Text className="font-medium text-(--gray-12) text-sm">
-          Inbox notifications
-        </Text>
-      </Flex>
-      <Text className="text-(--gray-11) text-[13px]">
-        New inbox reports are posted to Slack with the suggested reviewers
-        @mentioned. PostHog must be in the channel, so invite it with{" "}
-        <code className="text-[13px]">/invite @PostHog</code>.
-      </Text>
+    <Flex direction="column" gap="3" className={topBorderClass}>
+      {showHeader ? (
+        <>
+          <Flex align="center" gap="2">
+            <Box className="shrink-0 text-(--gray-11)">
+              <SlackLogoIcon size={16} />
+            </Box>
+            <Text className="font-medium text-(--gray-12) text-sm">
+              Inbox notifications
+            </Text>
+          </Flex>
+          <Text className="text-(--gray-11) text-[13px]">
+            New inbox reports are posted to Slack with the suggested reviewers
+            @mentioned. PostHog must be in the channel, so invite it with{" "}
+            <code className="text-[13px]">/invite @PostHog</code>.
+          </Text>
+        </>
+      ) : null}
+
+      <SlackWorkspaceConnection isLoading={isLoading} />
+      <SlackWorkspaceConnectionCallouts />
 
       {!isLoading && hasSlackIntegration ? (
         <Flex align="center" gap="2" pt="2" className="min-w-0">
@@ -107,6 +123,7 @@ export function SlackInboxNotificationsSettings({
         integrationId={effectiveIntegrationId}
         channelComboboxModal={channelComboboxModal}
         isLoading={isLoading}
+        hideWorkspaceConnect
       />
     </Flex>
   );

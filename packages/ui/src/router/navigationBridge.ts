@@ -47,6 +47,24 @@ export function navigateToInbox(): void {
   void getRouterOrNull()?.navigate({ to: "/code/inbox" });
 }
 
+export function navigateToInboxPullRequestDetail(reportId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/inbox/pulls/$reportId",
+    params: { reportId },
+  });
+}
+
+export function navigateToInboxReportDetail(reportId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/inbox/reports/$reportId",
+    params: { reportId },
+  });
+}
+
+export function navigateToAgents(): void {
+  void getRouterOrNull()?.navigate({ to: "/code/agents" });
+}
+
 export function navigateToArchived(): void {
   void getRouterOrNull()?.navigate({ to: "/code/archived" });
 }

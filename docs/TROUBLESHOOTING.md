@@ -45,12 +45,10 @@ If the app crashes with something like:
 libc++abi: terminating due to uncaught exception of type Napi::Error
 ```
 
-Native modules (like node-pty) need to be rebuilt for your Electron version.
-
-### Fix
+A native module was built for the wrong runtime. Re-run the install, which rebuilds what Electron needs via `apps/code/scripts/postinstall.sh`:
 
 ```bash
-cd apps/code && npx electron-rebuild -f
+pnpm install
 ```
 
 ## Codex agent crashes with GPU process errors
@@ -94,41 +92,21 @@ Unhandled rejection Error: Unexpected error found when calling "initialize"
 
 The last one is the same failure wrapped by the DI container; the underlying cause (with the bindings paths it tried) is in `~/.posthog-code/logs-dev/main.log`.
 
-The `better-sqlite3` native binary wasn't compiled for your Electron version. This commonly happens after a merge, branch switch or Electron upgrade because the postinstall rebuild can fail silently (`|| true`). It also happens whenever the binary was last rebuilt for plain Node, for example to run the workspace-server DB tests (see "One binary, two ABIs" below).
+The `better-sqlite3` native binary wasn't compiled for your Electron version. This commonly happens after a merge, branch switch or Electron upgrade. It also happens whenever the binary was last rebuilt for plain Node, for example to run the workspace-server DB tests (see "One binary, two ABIs" below).
 
 ### Fix
 
 ```bash
-cd apps/code && npx electron-rebuild -f
+pnpm rebuild:sqlite-electron
 ```
 
 Then restart the app.
 
-### If `electron-rebuild` itself crashes
+The script (`scripts/rebuild-better-sqlite3-electron.mjs`) downloads the official Electron prebuild via `prebuild-install` and falls back to compiling with `node-gyp` against the Electron headers. It deliberately avoids `@electron/rebuild`: its CLI crashes on Node 26 and newer (it requires the legacy `yargs/yargs` entry, which new Node parses as ESM) and its module walker cannot find packages hoisted to the root `node_modules` by pnpm's `node-linker=hoisted` layout. The ABI comes from the Electron target, not your system Node, so the binary gets the right `NODE_MODULE_VERSION` even when the two differ. It lands at `node_modules/better-sqlite3/build/Release/better_sqlite3.node`.
 
-The rebuild above can die before it compiles anything, with a stack trace inside yargs:
+Also check that build scripts are allowed to run at all: if `~/.npmrc` contains `ignore-scripts=true`, pnpm silently skips every native build and postinstall, and nothing above can work.
 
-```
-ReferenceError: require is not defined in ES module scope, you can use import instead
-    at file:///.../node_modules/yargs/yargs:3:69
-```
-
-This happens when the hoisted `@electron/rebuild` resolves to a stale major whose yargs CLI no longer loads (`apps/code` wants `^4`; check yours with `node -p "require('./node_modules/@electron/rebuild/package.json').version"`). Because the rebuild line in `apps/code/scripts/postinstall.sh` ends in `|| true`, the failure is swallowed and the binary is never built.
-
-Compile `better-sqlite3` directly with `node-gyp` against the Electron headers, which sidesteps the broken CLI:
-
-```bash
-ELECTRON_VERSION="$(node -p "require('./node_modules/electron/package.json').version")"
-cd node_modules/better-sqlite3
-npx node-gyp rebuild --release \
-  --arch="$(node -p process.arch)" \
-  --target="$ELECTRON_VERSION" \
-  --dist-url=https://electronjs.org/headers
-```
-
-The ABI comes from the Electron headers (`--target` plus `--dist-url`), not your system Node, so the binary gets the right `NODE_MODULE_VERSION` even when the two differ. It lands at `node_modules/better-sqlite3/build/Release/better_sqlite3.node`. Restart the app.
-
-Alternatively, skip compiling entirely and download the official Electron prebuild (no toolchain needed):
+If the script itself won't run, the same prebuild download works manually (no toolchain needed):
 
 ```bash
 ELECTRON_VERSION="$(node -p "require('./node_modules/electron/package.json').version")"

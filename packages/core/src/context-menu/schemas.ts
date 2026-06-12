@@ -8,6 +8,9 @@ export const taskContextMenuInput = z.object({
   isSuspended: z.boolean().optional(),
   isInCommandCenter: z.boolean().optional(),
   hasEmptyCommandCenterCell: z.boolean().optional(),
+  // Top-level desktop_file_system channels available as "File to…" targets.
+  // Omit (or pass empty) to hide the submenu entirely.
+  channels: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
 });
 
 export const bulkTaskContextMenuInput = z.object({
@@ -47,6 +50,7 @@ const taskAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("delete") }),
   z.object({ type: z.literal("add-to-command-center") }),
   z.object({ type: z.literal("external-app"), action: externalAppAction }),
+  z.object({ type: z.literal("file-to-channel"), channelId: z.string() }),
 ]);
 
 const bulkTaskAction = z.discriminatedUnion("type", [

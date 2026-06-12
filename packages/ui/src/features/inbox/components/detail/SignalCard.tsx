@@ -5,23 +5,20 @@ import {
   CheckCircleIcon,
   TagIcon,
 } from "@phosphor-icons/react";
-import type {
-  Signal,
-  SignalFindingContent,
-} from "@posthog/shared/domain-types";
+import type { Signal, SignalFindingContent } from "@posthog/shared/types";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
-import {
-  type SignalInteractionAction,
-  SignalInteractionContext,
-  useSignalInteraction,
-} from "@posthog/ui/features/inbox/components/detail/signalInteractionContext";
-import { SOURCE_PRODUCT_META } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
+import { getSourceProductMeta } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { errorTrackingIssueUrl } from "@posthog/ui/utils/posthogLinks";
 import { Badge, Box, Flex, Text } from "@radix-ui/themes";
 import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  type SignalInteractionAction,
+  SignalInteractionContext,
+  useSignalInteraction,
+} from "./signalInteractionContext";
 
 const COLLAPSE_THRESHOLD = 300;
 
@@ -275,10 +272,10 @@ function SignalCardHeader({
   signal: Signal;
   verified?: boolean;
 }) {
-  const meta = SOURCE_PRODUCT_META[signal.source_product];
+  const meta = getSourceProductMeta(signal.source_product);
 
   return (
-    <Flex align="center" gap="2" className="mb-2">
+    <Flex align="center" gap="2" className="mb-2 cursor-default select-none">
       <span
         className="shrink-0"
         style={{ color: meta?.color ?? "var(--gray-9)" }}
@@ -289,7 +286,7 @@ function SignalCardHeader({
           <span className="inline-block h-2.5 w-2.5 rounded-full bg-(--gray-9)" />
         )}
       </span>
-      <Text className="font-medium text-(--gray-10) text-[13px]">
+      <Text className="font-medium text-[13px] text-gray-10">
         {signalCardSourceLine({ ...signal, extra: parseExtra(signal.extra) })}
       </Text>
       <span className="flex-1" />
@@ -312,7 +309,7 @@ function CollapsibleBody({ body }: { body: string }) {
 
   return (
     <Box>
-      <Box className="text-pretty break-words text-(--gray-11) text-[13px] leading-relaxed [&_code]:text-[11px] [&_p:last-child]:mb-0 [&_p]:mb-1 [&_pre]:text-[11px]">
+      <Box className="text-pretty break-words text-[13px] text-gray-11 leading-relaxed [&_code]:text-[11px] [&_p:last-child]:mb-0 [&_p]:mb-1 [&_pre]:text-[11px]">
         <MarkdownRenderer content={displayBody} />
       </Box>
       {isLong && (
@@ -360,7 +357,7 @@ function GitHubIssueSignalCard({
   const issueUrl = extra.html_url ?? null;
 
   return (
-    <Box className="min-w-0 overflow-hidden rounded-lg border border-gray-6 bg-gray-1 p-3">
+    <Box className="min-w-0 overflow-hidden rounded-(--radius-2) border border-(--gray-6) bg-gray-1 p-3">
       <SignalCardHeader signal={signal} verified={verified} />
       <CollapsibleBody body={signal.content} />
       <Flex
@@ -368,7 +365,7 @@ function GitHubIssueSignalCard({
         gap="2"
         wrap="wrap"
         mt="2"
-        className="text-(--gray-10) text-[11px]"
+        className="text-[11px] text-gray-10"
       >
         <Text className="font-medium text-[11px]">#{extra.number}</Text>
         {labels.map((label) => (
@@ -407,7 +404,7 @@ function GitHubIssueSignalCard({
         )}
       </Flex>
       {extra.created_at && (
-        <Text className="mt-1 block text-(--gray-10) text-[11px]">
+        <Text className="mt-1 block text-[11px] text-gray-10">
           Opened: {new Date(extra.created_at).toLocaleString()}
         </Text>
       )}
@@ -431,7 +428,7 @@ function ZendeskTicketSignalCard({
   dataQueried?: string;
 }) {
   return (
-    <Box className="min-w-0 overflow-hidden rounded-lg border border-gray-6 bg-gray-1 p-3">
+    <Box className="min-w-0 overflow-hidden rounded-(--radius-2) border border-(--gray-6) bg-gray-1 p-3">
       <SignalCardHeader signal={signal} verified={verified} />
       <CollapsibleBody body={signal.content} />
       <Flex
@@ -439,7 +436,7 @@ function ZendeskTicketSignalCard({
         gap="2"
         wrap="wrap"
         mt="2"
-        className="text-(--gray-10) text-[11px]"
+        className="text-[11px] text-gray-10"
       >
         {extra.priority && (
           <Badge variant="soft" color="gray" size="1" className="text-[11px]">
@@ -495,21 +492,16 @@ function LlmEvalSignalCard({
   dataQueried?: string;
 }) {
   return (
-    <Box className="min-w-0 overflow-hidden rounded-lg border border-gray-6 bg-gray-1 p-3">
+    <Box className="min-w-0 overflow-hidden rounded-(--radius-2) border border-(--gray-6) bg-gray-1 p-3">
       <SignalCardHeader signal={signal} verified={verified} />
       <CollapsibleBody body={signal.content} />
-      <Flex
-        align="center"
-        gap="2"
-        mt="2"
-        className="text-(--gray-10) text-[11px]"
-      >
+      <Flex align="center" gap="2" mt="2" className="text-[11px] text-gray-10">
         {extra.model && <span>Model: {extra.model}</span>}
         {extra.model && extra.provider && <span>·</span>}
         {extra.provider && <span>Provider: {extra.provider}</span>}
       </Flex>
       {extra.trace_id && (
-        <Text className="mt-1 block text-(--gray-10) text-[11px]">
+        <Text className="mt-1 block text-[11px] text-gray-10">
           Trace:{" "}
           <span className="font-mono">{extra.trace_id.slice(0, 12)}...</span>
         </Text>
@@ -562,7 +554,7 @@ function SessionProblemSignalCard({
     : null;
 
   return (
-    <Box className="min-w-0 overflow-hidden rounded-lg border border-gray-6 bg-gray-1 p-3">
+    <Box className="min-w-0 overflow-hidden rounded-(--radius-2) border border-(--gray-6) bg-gray-1 p-3">
       <SignalCardHeader signal={signal} verified={verified} />
       {extra.segment_title && (
         <Text mt="1" className="font-medium text-[13px] text-gray-11" as="p">
@@ -583,7 +575,7 @@ function SessionProblemSignalCard({
         gap="2"
         wrap="wrap"
         mt="2"
-        className="text-(--gray-10) text-[11px]"
+        className="text-[11px] text-gray-10"
       >
         {problemInfo && (
           <Badge
@@ -712,7 +704,7 @@ function ErrorTrackingSignalCard({
     : null;
 
   return (
-    <Box className="min-w-0 overflow-hidden rounded-lg border border-gray-6 bg-gray-1 p-3">
+    <Box className="min-w-0 overflow-hidden rounded-(--radius-2) border border-(--gray-6) bg-gray-1 p-3">
       <SignalCardHeader signal={signal} verified={verified} />
       <CollapsibleBody body={signal.content} />
       {issueUrl && (
@@ -720,7 +712,7 @@ function ErrorTrackingSignalCard({
           align="center"
           justify="end"
           mt="2"
-          className="text-(--gray-10) text-[11px]"
+          className="text-[11px] text-gray-10"
         >
           <a
             href={issueUrl}
@@ -751,7 +743,7 @@ function GenericSignalCard({
   dataQueried?: string;
 }) {
   return (
-    <Box className="min-w-0 overflow-hidden rounded-lg border border-gray-6 bg-gray-1 p-3">
+    <Box className="min-w-0 overflow-hidden rounded-(--radius-2) border border-(--gray-6) bg-gray-1 p-3">
       <SignalCardHeader signal={signal} verified={verified} />
       <CollapsibleBody body={signal.content} />
       <CodePathsCollapsible paths={codePaths ?? []} />
@@ -797,7 +789,7 @@ function CodePathsCollapsible({ paths }: { paths: string[] }) {
             const comment = parenIdx >= 0 ? trimmed.slice(parenIdx + 1) : null;
             return (
               <Text key={raw} className="text-[11px]">
-                <span className="font-mono text-(--gray-12)">{filePath}</span>
+                <span className="font-mono text-gray-12">{filePath}</span>
                 {comment && (
                   <span className="ml-1 text-(--gray-9)">{comment}</span>
                 )}

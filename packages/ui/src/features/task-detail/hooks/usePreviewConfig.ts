@@ -1,5 +1,6 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { getReasoningEffortOptions } from "@posthog/agent/adapters/reasoning-effort";
+import { flattenConfigValues } from "@posthog/core/task-detail/configOptions";
 import {
   applyConfigChange,
   deriveInitialConfig,
@@ -69,20 +70,47 @@ export function usePreviewConfig(
           lastUsedInitialTaskMode,
           defaultReasoningEffort,
           lastUsedReasoningEffort,
+          lastUsedModel,
         } = useSettingsStore.getState();
 
-        setConfigOptions(
-          deriveInitialConfig(
-            options,
-            {
-              defaultInitialTaskMode,
-              lastUsedInitialTaskMode,
+        let initial = deriveInitialConfig(
+          options,
+          {
+            defaultInitialTaskMode,
+            lastUsedInitialTaskMode,
+            defaultReasoningEffort,
+            lastUsedReasoningEffort,
+          },
+          adapter,
+        );
+
+        // The server always returns its default model as the current value, so
+        // without this the user's last pick (e.g. fable) is lost on every
+        // refetch/remount. Restore it through applyConfigChange so the dependent
+        // effort options are recomputed for the restored model.
+        const modelOpt = getOptionByCategory(initial, "model");
+        if (
+          lastUsedModel &&
+          modelOpt?.type === "select" &&
+          modelOpt.currentValue !== lastUsedModel &&
+          flattenConfigValues(modelOpt).includes(lastUsedModel)
+        ) {
+          initial = applyConfigChange(initial, {
+            adapter,
+            configId: modelOpt.id,
+            value: lastUsedModel,
+            effortOptions:
+              getReasoningEffortOptions(adapter, lastUsedModel) ?? undefined,
+            settings: {
+              defaultInitialTaskMode: "",
+              lastUsedInitialTaskMode: undefined,
               defaultReasoningEffort,
               lastUsedReasoningEffort,
             },
-            adapter,
-          ),
-        );
+          });
+        }
+
+        setConfigOptions(initial);
         setIsLoading(false);
       })
       .catch((error) => {

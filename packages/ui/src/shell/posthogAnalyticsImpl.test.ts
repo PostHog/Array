@@ -148,4 +148,29 @@ describe("initializePostHog", () => {
     expect(mockPosthog.init).not.toHaveBeenCalled();
     expect(mockPosthog.onFeatureFlags).not.toHaveBeenCalled();
   });
+
+  it("bootstraps posthog with the main-owned session id", async () => {
+    const { initializePostHog } = await loadAnalytics();
+
+    initializePostHog("0190abcd-1234-7890-8abc-def012345678");
+
+    expect(mockPosthog.init).toHaveBeenCalledWith(
+      "test-key",
+      expect.objectContaining({
+        bootstrap: { sessionID: "0190abcd-1234-7890-8abc-def012345678" },
+        session_idle_timeout_seconds: 36_000,
+      }),
+    );
+  });
+
+  it("omits bootstrap when no session id is provided", async () => {
+    const { initializePostHog } = await loadAnalytics();
+
+    initializePostHog();
+
+    expect(mockPosthog.init).toHaveBeenCalledWith(
+      "test-key",
+      expect.not.objectContaining({ bootstrap: expect.anything() }),
+    );
+  });
 });

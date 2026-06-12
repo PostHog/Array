@@ -19,6 +19,43 @@ export async function withTimeout<T>(
   return Promise.race([operationPromise, timeoutPromise]);
 }
 
+/**
+ * Races an operation against an AbortSignal.
+ * Returns success with the value if the operation settles before the signal
+ * aborts, or aborted otherwise. The operation itself is not cancelled: a
+ * settle after abort is ignored, and a rejection is always observed so it
+ * never surfaces as an unhandled rejection.
+ *
+ * Use this instead of `Promise.race([operation, abortPromise])` when racing
+ * in a loop: each race call parks a reaction on the long-lived abort promise
+ * that retains that iteration's settled value until the abort promise itself
+ * settles. The abort listener here is removed as soon as the operation
+ * settles, so per-call state is reclaimed immediately.
+ */
+export function withAbort<T>(
+  operation: Promise<T>,
+  signal: AbortSignal,
+): Promise<{ result: "success"; value: T } | { result: "aborted" }> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => resolve({ result: "aborted" });
+    if (signal.aborted) {
+      onAbort();
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+    operation.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve({ result: "success", value });
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 export const IS_ROOT =
   typeof process !== "undefined" &&
   (process.geteuid?.() ?? process.getuid?.()) === 0;

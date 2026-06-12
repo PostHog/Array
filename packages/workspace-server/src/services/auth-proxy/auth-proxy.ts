@@ -5,6 +5,7 @@ import {
   type ScopedLogger,
 } from "@posthog/di/logger";
 import { inject, injectable } from "inversify";
+import { streamBodyToResponse } from "../proxy-stream/proxy-stream";
 import { AUTH_PROXY_AUTH } from "./identifiers";
 import type { AuthProxyAuth } from "./ports";
 
@@ -144,9 +145,20 @@ export class AuthProxyService {
         headers[key] = value;
       }
     }
+    // The client connection governs the request lifetime. An explicit signal
+    // also opts out of authenticatedFetch's default timeout, which would
+    // abort streaming LLM responses that outlive it.
+    const abort = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        abort.abort();
+      }
+    });
+
     const fetchOptions: RequestInit = {
       method: req.method ?? "GET",
       headers,
+      signal: abort.signal,
     };
 
     if (req.method !== "GET" && req.method !== "HEAD") {
@@ -182,28 +194,15 @@ export class AuthProxyService {
 
       res.writeHead(response.status, responseHeaders);
 
-      if (!response.body) {
-        res.end();
-        return;
-      }
-
-      const reader = response.body.getReader();
-      const pump = async (): Promise<void> => {
-        const { done, value } = await reader.read();
-        if (done) {
-          res.end();
-          return;
-        }
-        const canContinue = res.write(value);
-        if (canContinue) {
-          return pump();
-        }
-        res.once("drain", () => pump());
-      };
-
-      await pump();
+      await streamBodyToResponse(response.body, res);
     } catch (err) {
-      this.log.error("Proxy forward error", { url, err });
+      if (options.signal?.aborted) {
+        this.log.debug("Upstream fetch aborted after client disconnect", {
+          url,
+        });
+      } else {
+        this.log.error("Proxy forward error", { url, err });
+      }
       if (!res.headersSent) {
         res.writeHead(502);
       }
