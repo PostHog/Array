@@ -11,7 +11,13 @@ import { Text } from "@radix-ui/themes";
  * has no artefacts.
  */
 export function ReportActivitySection({ reportId }: { reportId: string }) {
-  const { data: artefactsResp } = useInboxReportArtefacts(reportId);
+  // The log is a live work record — agents append artefacts while the report is
+  // open, so don't let the app-wide 5-minute staleTime sit on it. Poll gently
+  // while mounted.
+  const { data: artefactsResp } = useInboxReportArtefacts(reportId, {
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+  });
   const artefacts = artefactsResp?.results ?? [];
 
   if (artefacts.length === 0) return null;

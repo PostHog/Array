@@ -198,6 +198,7 @@ export function useInboxReportArtefacts(
   options?: {
     enabled?: boolean;
     staleTime?: number;
+    refetchInterval?: number;
     refetchOnWindowFocus?: boolean;
   },
 ) {
