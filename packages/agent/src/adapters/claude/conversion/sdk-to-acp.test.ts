@@ -305,38 +305,57 @@ function toolUpdate(updates: SessionNotification[]) {
 }
 
 describe("tool_call_update rawOutput", () => {
-  it("omits rawOutput for standard tool results so content is not duplicated", async () => {
-    const { context, updates } = createHandlerContext();
-    await registerToolUse(context, "tool_read", "Read", {
-      file_path: "/test/a.ts",
-    });
-    updates.length = 0;
-    await handleUserAssistantMessage(
-      userToolResult("tool_read", "line one\nline two"),
-      context,
-    );
-    const update = toolUpdate(updates);
-    expect(update?.status).toBe("completed");
-    expect(update && "rawOutput" in update).toBe(false);
-  });
-
-  it("forwards rawOutput for MCP tool results consumed by the App bridge", async () => {
-    const { context, updates } = createHandlerContext();
-    await registerToolUse(context, "tool_mcp", "mcp__srv__do");
-    updates.length = 0;
-    await handleUserAssistantMessage(
-      userToolResult("tool_mcp", "ignored", {
+  it.each([
+    {
+      name: "omits rawOutput for standard tool results so content is not duplicated",
+      toolName: "Read",
+      toolUseId: "tool_read",
+      content: "line one\nline two",
+      toolUseResult: undefined,
+      expectedRawOutput: false,
+    },
+    {
+      name: "forwards rawOutput for MCP tool results consumed by the App bridge",
+      toolName: "mcp__srv__do",
+      toolUseId: "tool_mcp",
+      content: "ignored",
+      toolUseResult: {
         content: [{ type: "text", text: "mcp payload" }],
         structuredContent: { ok: true },
-      }),
-      context,
-    );
-    const update = toolUpdate(updates);
-    expect(update?.status).toBe("completed");
-    expect(update?.rawOutput).toEqual({
-      content: [{ type: "text", text: "mcp payload" }],
-      structuredContent: { ok: true },
-      isError: false,
-    });
-  });
+      },
+      expectedRawOutput: {
+        content: [{ type: "text", text: "mcp payload" }],
+        structuredContent: { ok: true },
+        isError: false,
+      },
+    },
+  ])(
+    "$name",
+    async ({
+      toolName,
+      toolUseId,
+      content,
+      toolUseResult,
+      expectedRawOutput,
+    }) => {
+      const { context, updates } = createHandlerContext();
+      await registerToolUse(context, toolUseId, toolName);
+      updates.length = 0;
+      await handleUserAssistantMessage(
+        userToolResult(
+          toolUseId,
+          content,
+          toolUseResult as Record<string, unknown> | undefined,
+        ),
+        context,
+      );
+      const update = toolUpdate(updates);
+      expect(update?.status).toBe("completed");
+      if (expectedRawOutput === false) {
+        expect(update && "rawOutput" in update).toBe(false);
+      } else {
+        expect(update?.rawOutput).toEqual(expectedRawOutput);
+      }
+    },
+  );
 });
