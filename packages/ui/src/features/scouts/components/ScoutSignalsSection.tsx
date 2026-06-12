@@ -6,6 +6,7 @@ import { Box, Flex, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import { useScoutRunEmissions } from "../hooks/useScoutRunEmissions";
 import { ScoutEmissionCard } from "./ScoutEmissionCard";
+import { ScoutFindingDiscussButton } from "./ScoutFindingDiscussButton";
 import { ScoutTaskRunLink } from "./ScoutTaskRunLink";
 
 /**
@@ -122,6 +123,12 @@ function RunEmissions({ run }: { run: ScoutRun }) {
           key={emission.id}
           emission={emission}
           skillName={run.skill_name}
+          actions={
+            <ScoutFindingDiscussButton
+              emission={emission}
+              skillName={run.skill_name}
+            />
+          }
           footerEnd={
             taskRunUrl ? (
               <ScoutTaskRunLink run={run} taskRunUrl={taskRunUrl} />

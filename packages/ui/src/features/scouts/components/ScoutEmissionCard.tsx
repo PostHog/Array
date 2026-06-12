@@ -11,12 +11,15 @@ import { SeverityBadge } from "./ScoutBadges";
 export function ScoutEmissionCard({
   emission,
   skillName,
+  actions,
   footerEnd,
   defaultExpanded = false,
 }: {
   emission: ScoutEmission;
   /** The emitting scout, attached to analytics events when known. */
   skillName?: string;
+  /** Interactive controls shown after the finding id at the footer's left. */
+  actions?: ReactNode;
   /** Replaces the default pipeline note at the footer's right edge. */
   footerEnd?: ReactNode;
   defaultExpanded?: boolean;
@@ -68,6 +71,7 @@ export function ScoutEmissionCard({
           className="border-t border-t-(--gray-5) text-[11px] text-gray-10"
         >
           <Text className="font-mono text-[11px]">{emission.finding_id}</Text>
+          {actions}
           <span className="flex-1" />
           {footerEnd ?? (
             <Text className="text-[11px] text-gray-9">
