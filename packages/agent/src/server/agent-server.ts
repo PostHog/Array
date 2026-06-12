@@ -55,8 +55,8 @@ import { resourceLink } from "../utils/acp-content";
 import { AsyncMutex } from "../utils/async-mutex";
 import {
   buildGatewayPropertyHeaders,
-  getLlmGatewayUrl,
   resolveGatewayProduct,
+  resolveLlmGatewayUrl,
 } from "../utils/gateway";
 import { Logger } from "../utils/logger";
 import { logAgentshRuntimeInfo } from "./agentsh-runtime";
@@ -1995,8 +1995,11 @@ ${signedCommitInstructions}
   } = {}): void {
     const { apiKey, apiUrl, projectId } = this.config;
     const product = resolveGatewayProduct({ isInternal, originProduct });
-    const gatewayUrl =
-      process.env.LLM_GATEWAY_URL || getLlmGatewayUrl(apiUrl, product);
+    const gatewayUrl = resolveLlmGatewayUrl(
+      process.env.LLM_GATEWAY_URL,
+      apiUrl,
+      product,
+    );
     const openaiBaseUrl = gatewayUrl.endsWith("/v1")
       ? gatewayUrl
       : `${gatewayUrl}/v1`;

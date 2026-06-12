@@ -3,6 +3,7 @@ import {
   buildGatewayPropertyHeaders,
   getLlmGatewayUrl,
   resolveGatewayProduct,
+  resolveLlmGatewayUrl,
 } from "./gateway";
 
 describe("resolveGatewayProduct", () => {
@@ -112,6 +113,44 @@ describe("buildGatewayPropertyHeaders", () => {
   it("keeps latin1 characters such as accents", () => {
     expect(buildGatewayPropertyHeaders({ task_title: "café" })).toBe(
       "x-posthog-property-task_title: café",
+    );
+  });
+});
+
+describe("resolveLlmGatewayUrl", () => {
+  it("appends the product slug to an env-provided base URL", () => {
+    expect(
+      resolveLlmGatewayUrl(
+        "https://gateway.dev.posthog.dev",
+        "https://app.dev.posthog.dev",
+        "slack_app",
+      ),
+    ).toBe("https://gateway.dev.posthog.dev/slack_app");
+  });
+
+  it("appends the product slug after a trailing slash on the env URL", () => {
+    expect(
+      resolveLlmGatewayUrl(
+        "https://gateway.dev.posthog.dev/",
+        "https://app.dev.posthog.dev",
+        "posthog_code",
+      ),
+    ).toBe("https://gateway.dev.posthog.dev/posthog_code");
+  });
+
+  it("falls back to the region-aware default when no env URL is provided", () => {
+    expect(
+      resolveLlmGatewayUrl(
+        undefined,
+        "https://us.posthog.com",
+        "background_agents",
+      ),
+    ).toBe("https://gateway.us.posthog.com/background_agents");
+  });
+
+  it("treats an empty string env URL as unset", () => {
+    expect(resolveLlmGatewayUrl("", "https://eu.posthog.com", "signals")).toBe(
+      "https://gateway.eu.posthog.com/signals",
     );
   });
 });

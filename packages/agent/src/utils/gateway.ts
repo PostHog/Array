@@ -82,6 +82,26 @@ export function getLlmGatewayUrl(
   return `${getGatewayBaseUrl(posthogHost)}/${product}`;
 }
 
+/**
+ * Resolve the gateway URL for a request, preferring an explicit
+ * `LLM_GATEWAY_URL` override over the region-aware default. The override is
+ * treated as a *base* URL — the product slug is always appended so the gateway
+ * can route to the correct product config. Without this, a bare-host override
+ * (e.g. `https://gateway.dev.posthog.dev`) lost the product suffix and every
+ * request fell into the catch-all `llm_gateway` product which OAuth tokens
+ * cannot use (403).
+ */
+export function resolveLlmGatewayUrl(
+  envUrl: string | undefined,
+  posthogHost: string,
+  product: GatewayProduct = "posthog_code",
+): string {
+  if (envUrl) {
+    return `${envUrl.replace(/\/$/, "")}/${product}`;
+  }
+  return getLlmGatewayUrl(posthogHost, product);
+}
+
 export function getGatewayUsageUrl(
   posthogHost: string,
   product: GatewayProduct = "posthog_code",
