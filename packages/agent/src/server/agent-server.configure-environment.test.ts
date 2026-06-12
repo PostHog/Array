@@ -98,6 +98,11 @@ describe("AgentServer.configureEnvironment", () => {
     buildServer("background").configureEnvironment({ isInternal: false });
     const fromBackground = process.env.LLM_GATEWAY_URL;
 
+    // Clear the env var the first call wrote — resolveLlmGatewayUrl now treats
+    // a set LLM_GATEWAY_URL as an override base and appends the product on top
+    // of it, which would double up the product slug across back-to-back calls
+    // in the same process.
+    delete process.env.LLM_GATEWAY_URL;
     buildServer("interactive").configureEnvironment({ isInternal: false });
     const fromInteractive = process.env.LLM_GATEWAY_URL;
 
@@ -226,13 +231,23 @@ describe("AgentServer.configureEnvironment", () => {
     );
   });
 
-  it("respects the LLM_GATEWAY_URL override regardless of internal flag", () => {
+  it("appends the resolved product to a LLM_GATEWAY_URL override base", () => {
+    // The override is treated as a base URL. The product slug is always
+    // appended so the gateway routes to the correct product config — a bare
+    // host like http://ngrok.test/proxy would otherwise hit the catch-all
+    // llm_gateway product, which OAuth tokens cannot use.
     process.env.LLM_GATEWAY_URL = "http://ngrok.test/proxy";
 
     buildServer("background").configureEnvironment({ isInternal: true });
 
-    expect(process.env.LLM_GATEWAY_URL).toBe("http://ngrok.test/proxy");
-    expect(process.env.ANTHROPIC_BASE_URL).toBe("http://ngrok.test/proxy");
-    expect(process.env.OPENAI_BASE_URL).toBe("http://ngrok.test/proxy/v1");
+    expect(process.env.LLM_GATEWAY_URL).toBe(
+      "http://ngrok.test/proxy/background_agents",
+    );
+    expect(process.env.ANTHROPIC_BASE_URL).toBe(
+      "http://ngrok.test/proxy/background_agents",
+    );
+    expect(process.env.OPENAI_BASE_URL).toBe(
+      "http://ngrok.test/proxy/background_agents/v1",
+    );
   });
 });
