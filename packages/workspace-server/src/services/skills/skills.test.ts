@@ -251,9 +251,6 @@ describe("write-path guard", () => {
     await expect(service.deleteSkill(target())).rejects.toThrow(
       "Access denied",
     );
-    await expect(service.renameSkill(target(), "other")).rejects.toThrow(
-      "Access denied",
-    );
   });
 
   it("rejects file writes that escape the skill directory", async () => {
@@ -342,17 +339,5 @@ describe("skill mutations", () => {
 
     const skills = await service.listSkills();
     expect(skills.find((s) => s.path === skillPath)).toBeUndefined();
-  });
-
-  it("renames a skill directory", async () => {
-    const skillPath = await createSkill(repoSkillsDir, "alpha");
-    const service = makeService();
-
-    const { path: newPath } = await service.renameSkill(skillPath, "omega");
-
-    expect(newPath).toBe(path.join(repoSkillsDir, "omega"));
-    const skills = await service.listSkills();
-    expect(skills.some((s) => s.path === newPath)).toBe(true);
-    expect(skills.some((s) => s.path === skillPath)).toBe(false);
   });
 });

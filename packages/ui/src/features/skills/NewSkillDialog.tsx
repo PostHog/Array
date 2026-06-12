@@ -65,7 +65,7 @@ export function NewSkillDialog({
               }}
             />
             <Text className="mt-1 block text-[11px] text-gray-9">
-              Lowercase letters, numbers, and dashes
+              Lowercase letters, numbers, dashes, dots, and underscores
             </Text>
           </Box>
           <Box>

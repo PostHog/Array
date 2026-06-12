@@ -163,7 +163,7 @@ export function SkillDetailPanel({ skill, onClose }: SkillDetailPanelProps) {
                     type="button"
                     aria-label="Edit skill"
                     onClick={() => setIsEditing(true)}
-                    disabled={isLoading}
+                    disabled={isLoading || fileContent == null}
                     className="rounded p-0.5 text-gray-11 hover:bg-gray-3 hover:text-gray-12"
                   >
                     <PencilSimple size={14} />

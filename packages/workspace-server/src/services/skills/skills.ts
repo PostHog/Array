@@ -169,23 +169,6 @@ export class SkillsService {
     await fs.promises.rm(skillDir, { recursive: true, force: true });
   }
 
-  async renameSkill(
-    skillPath: string,
-    newName: string,
-  ): Promise<{ path: string }> {
-    const skillDir = await this.resolveWritableSkillDir(skillPath);
-    const name = newName.trim();
-    validateSkillDirName(name);
-
-    const target = path.join(path.dirname(skillDir), name);
-    if (target === skillDir) return { path: skillDir };
-    if (fs.existsSync(target)) {
-      throw new Error(`A skill named "${name}" already exists`);
-    }
-    await fs.promises.rename(skillDir, target);
-    return { path: target };
-  }
-
   private async getSkillRoots(): Promise<SkillRoot[]> {
     const pluginPath = this.plugin.getPluginPath();
     const folders = await this.folders.getFolders();

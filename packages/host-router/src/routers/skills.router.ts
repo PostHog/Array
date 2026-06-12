@@ -8,7 +8,6 @@ import {
   readSkillFileInput,
   readSkillFileOutput,
   renameSkillFileInput,
-  renameSkillInput,
   saveSkillFileInput,
   saveSkillManifestInput,
   skillContentsInput,
@@ -83,13 +82,5 @@ export const skillsRouter = router({
       ctx.container
         .get<SkillsService>(SKILLS_SERVICE)
         .deleteSkill(input.skillPath),
-    ),
-  rename: publicProcedure
-    .input(renameSkillInput)
-    .output(skillPathOutput)
-    .mutation(({ ctx, input }) =>
-      ctx.container
-        .get<SkillsService>(SKILLS_SERVICE)
-        .renameSkill(input.skillPath, input.newName),
     ),
 });

@@ -74,11 +74,6 @@ export const deleteSkillInput = z.object({
   skillPath: z.string(),
 });
 
-export const renameSkillInput = z.object({
-  skillPath: z.string(),
-  newName: z.string(),
-});
-
 export type SkillInfo = z.infer<typeof skillInfo>;
 export type SkillScope = z.infer<typeof skillScope>;
 export type CreateSkillInput = z.infer<typeof createSkillInput>;
