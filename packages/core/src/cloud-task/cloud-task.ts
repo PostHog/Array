@@ -624,7 +624,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
     if (watcher.needsStopAfterBootstrap) {
       watcher.needsStopAfterBootstrap = false;
-      this.stopWatcher(key);
+      await this.finalizeWatcherStop(key);
       return;
     }
 
@@ -1304,8 +1304,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     // the run went terminal but before stream-end arrived. Status is updated for display only, from
     // the task_run_state events the stream itself carries.
     if (watcher.streamEnded) {
-      this.emitStatusUpdate(watcher);
-      this.stopWatcher(key);
+      await this.finalizeWatcherStop(key);
       return;
     }
 
@@ -1327,6 +1326,27 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       connDurationMs:
         watcher.connStartedAt !== 0 ? Date.now() - watcher.connStartedAt : 0,
     });
+
+    await this.finalizeWatcherStop(key);
+  }
+
+  // Stops a watcher whose stream is durably complete. Status normally arrives via the
+  // task_run_state events the stream carries, but if the stream ended without a terminal
+  // status (dropped final frame or a server bug), fetch it once so the session is not left
+  // permanently "in progress" with no watcher behind it. The poll never decides WHETHER to
+  // stop — stream-end already did — it only repairs the displayed status.
+  private async finalizeWatcherStop(key: string): Promise<void> {
+    const watcher = this.watchers.get(key);
+    if (!watcher) return;
+
+    if (!isTerminalStatus(watcher.lastStatus)) {
+      const run = await this.fetchTaskRun(watcher);
+      const currentWatcher = this.watchers.get(key);
+      if (!currentWatcher || currentWatcher !== watcher) return;
+      if (run) {
+        this.applyTaskRunState(watcher, run);
+      }
+    }
 
     this.emitStatusUpdate(watcher);
     this.stopWatcher(key);

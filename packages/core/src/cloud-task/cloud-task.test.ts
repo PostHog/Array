@@ -747,6 +747,75 @@ describe("CloudTaskService", () => {
     expect(mockStreamFetch.mock.calls.length).toBe(1);
   });
 
+  it("repairs the final status when stream-end arrives without a terminal state event", async () => {
+    vi.useFakeTimers();
+
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    let runFetchCount = 0;
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      runFetchCount += 1;
+      // First fetch bootstraps an active run; the stream then ends without ever
+      // carrying a terminal task_run_state event, so the stop path must fetch
+      // the completed status itself.
+      return Promise.resolve(
+        createJsonResponse(
+          runFetchCount === 1
+            ? {
+                id: "run-1",
+                status: "in_progress",
+                stage: "build",
+                output: null,
+                error_message: null,
+                branch: "main",
+                updated_at: "2026-01-01T00:00:00Z",
+              }
+            : {
+                id: "run-1",
+                status: "completed",
+                stage: null,
+                output: { pr_url: "https://github.com/PostHog/code/pull/9" },
+                error_message: null,
+                branch: "main",
+                updated_at: "2026-01-01T00:00:05Z",
+              },
+        ),
+      );
+    });
+
+    mockStreamFetch.mockImplementation(() =>
+      Promise.resolve(createSseResponse("event: stream-end\ndata: {}\n\n")),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    const hasWatcher = (): boolean =>
+      (service as unknown as { watchers: Map<string, unknown> }).watchers.has(
+        "task-1:run-1",
+      );
+    await waitFor(() => !hasWatcher());
+
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        kind: "status",
+        status: "completed",
+        output: { pr_url: "https://github.com/PostHog/code/pull/9" },
+      }),
+    );
+  });
+
   it("reads via the agent-proxy with a Bearer token when the server resolves a base url", async () => {
     vi.useFakeTimers();
 
