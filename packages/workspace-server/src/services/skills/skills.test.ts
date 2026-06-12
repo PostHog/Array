@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -143,5 +143,39 @@ describe("readSkillFile", () => {
     const skillPath = await createSkill(repoSkillsDir, "alpha");
 
     expect(await makeService().readSkillFile(skillPath, "nope.md")).toBeNull();
+  });
+
+  it("returns null for symlinks escaping the skill directory", async () => {
+    const skillPath = await createSkill(repoSkillsDir, "alpha");
+    const secret = path.join(root, "secret.txt");
+    await writeFile(secret, "top secret");
+    await symlink(secret, path.join(skillPath, "leak.md"));
+
+    expect(await makeService().readSkillFile(skillPath, "leak.md")).toBeNull();
+  });
+
+  it("returns null for files reached through a symlinked directory", async () => {
+    const skillPath = await createSkill(repoSkillsDir, "alpha");
+    const outside = path.join(root, "outside");
+    await mkdir(outside, { recursive: true });
+    await writeFile(path.join(outside, "secret.txt"), "top secret");
+    await symlink(outside, path.join(skillPath, "evil"));
+
+    expect(
+      await makeService().readSkillFile(skillPath, "evil/secret.txt"),
+    ).toBeNull();
+  });
+
+  it("reads symlinks that stay inside the skill directory", async () => {
+    const skillPath = await createSkill(repoSkillsDir, "alpha");
+    await writeFile(path.join(skillPath, "real.md"), "real content");
+    await symlink(
+      path.join(skillPath, "real.md"),
+      path.join(skillPath, "alias.md"),
+    );
+
+    expect(await makeService().readSkillFile(skillPath, "alias.md")).toBe(
+      "real content",
+    );
   });
 });

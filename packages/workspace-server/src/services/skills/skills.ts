@@ -57,9 +57,15 @@ export class SkillsService {
       throw new Error("Access denied: path outside skill directory");
     }
     try {
-      const stat = await fs.promises.stat(resolved);
+      // realpath also catches escapes via symlinked intermediate directories.
+      const [realFile, realDir] = await Promise.all([
+        fs.promises.realpath(resolved),
+        fs.promises.realpath(skillDir),
+      ]);
+      if (!realFile.startsWith(realDir + path.sep)) return null;
+      const stat = await fs.promises.stat(realFile);
       if (!stat.isFile() || stat.size > MAX_SKILL_FILE_BYTES) return null;
-      return await fs.promises.readFile(resolved, "utf-8");
+      return await fs.promises.readFile(realFile, "utf-8");
     } catch {
       return null;
     }
@@ -100,7 +106,13 @@ export class SkillsService {
     const isUnderKnownRoot = roots.some(
       (root) => path.resolve(root.dir) === parent,
     );
-    if (!isUnderKnownRoot || !fs.existsSync(path.join(resolved, "SKILL.md"))) {
+    const hasSkillMd =
+      isUnderKnownRoot &&
+      (await fs.promises
+        .access(path.join(resolved, "SKILL.md"))
+        .then(() => true)
+        .catch(() => false));
+    if (!hasSkillMd) {
       throw new Error("Access denied: not a known skill directory");
     }
     return resolved;
