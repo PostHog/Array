@@ -40,7 +40,7 @@ const baseAliases: Alias[] = [
   { find: "@shared", replacement: path.resolve(__dirname, "./src/shared") },
 ];
 
-const workspaceAliases: Alias[] = [
+export const workspaceAliases: Alias[] = [
   {
     find: /^@posthog\/agent\/(.+)$/,
     replacement: path.resolve(__dirname, "../../packages/agent/src/$1.ts"),

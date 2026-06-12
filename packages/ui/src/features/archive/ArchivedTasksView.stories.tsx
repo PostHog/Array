@@ -1,4 +1,4 @@
-import type { ArchivedTask } from "@posthog/shared/archive-domain";
+import type { ArchivedTask } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import {
   ArchivedTasksViewPresentation,
