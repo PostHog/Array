@@ -889,6 +889,32 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         return;
       }
 
+      // Proxy-leg 401: the run-scoped read token expired mid-watch (short TTL) or its signing
+      // key rotated. Re-resolve the read target — which mints a fresh token, or routes back to
+      // Django if the rollout flag was turned off meanwhile — instead of failing. Django-leg
+      // 401 stays fatal below (the user session expired). Counting the attempt bounds
+      // persistent proxy 401s by the transport reconnect budget.
+      const unauthorizedWatcher = this.watchers.get(key);
+      if (
+        error instanceof CloudTaskStreamError &&
+        error.status === 401 &&
+        unauthorizedWatcher?.streamBaseUrl
+      ) {
+        unauthorizedWatcher.streamTargetResolved = false;
+        unauthorizedWatcher.streamBaseUrl = null;
+        unauthorizedWatcher.streamReadToken = null;
+        unauthorizedWatcher.durableStreamEnabled = false;
+        this.log.info("Cloud task stream proxy token rejected, re-resolving", {
+          key,
+        });
+        await this.handleStreamCompletion(key, {
+          reconnectOnDisconnect: true,
+          reconnectError: error,
+          countReconnectAttempt: true,
+        });
+        return;
+      }
+
       if (
         error instanceof CloudTaskStreamError &&
         error.details.autoRetry === false

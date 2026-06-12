@@ -1017,6 +1017,155 @@ describe("CloudTaskService", () => {
     expect(mockStreamTokenFetch.mock.calls.length).toBe(1);
   });
 
+  it("proxy 401 re-resolves the read target and resumes with a fresh token", async () => {
+    vi.useFakeTimers();
+
+    mockStreamTokenFetch
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          createJsonResponse({
+            token: "expired-token",
+            stream_base_url: "https://proxy.example",
+          }),
+        ),
+      )
+      .mockImplementation(() =>
+        Promise.resolve(
+          createJsonResponse({
+            token: "fresh-token",
+            stream_base_url: "https://proxy.example",
+          }),
+        ),
+      );
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    mockStreamFetch
+      .mockImplementationOnce(() =>
+        Promise.resolve(createJsonResponse({ detail: "expired" }, 401)),
+      )
+      .mockImplementation(() =>
+        Promise.resolve(
+          createOpenSseResponse(
+            'event: keepalive\ndata: {"type":"keepalive"}\n\n',
+          ),
+        ),
+      );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamFetch.mock.calls.length >= 2, 10_000);
+
+    expect(mockStreamTokenFetch.mock.calls.length).toBe(2);
+    const [secondUrl, secondInit] = mockStreamFetch.mock.calls[1];
+    expect(String(secondUrl)).toMatch(
+      /^https:\/\/proxy\.example\/v1\/runs\/run-1\/stream/,
+    );
+    expect((secondInit?.headers as Record<string, string>)?.Authorization).toBe(
+      "Bearer fresh-token",
+    );
+    expect(
+      (service as unknown as { watchers: Map<string, unknown> }).watchers.has(
+        "task-1:run-1",
+      ),
+    ).toBe(true);
+  });
+
+  it("proxy 401 falls back to Django when the proxy is withdrawn", async () => {
+    vi.useFakeTimers();
+
+    // The re-resolution after the 401 no longer offers a proxy (rollout flag turned
+    // off mid-run); the watcher continues on the Django leg, which still emits the
+    // stream-end sentinel.
+    mockStreamTokenFetch
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          createJsonResponse({
+            token: "expired-token",
+            stream_base_url: "https://proxy.example",
+          }),
+        ),
+      )
+      .mockImplementation(() =>
+        Promise.resolve(
+          createJsonResponse({ token: "django-token", stream_base_url: null }),
+        ),
+      );
+
+    let runFetchCount = 0;
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      runFetchCount += 1;
+      const terminal = runFetchCount >= 2;
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: terminal ? "completed" : "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: terminal
+            ? "2026-01-01T00:00:05Z"
+            : "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    mockStreamFetch
+      .mockImplementationOnce(() =>
+        Promise.resolve(createJsonResponse({ detail: "expired" }, 401)),
+      )
+      .mockImplementation(() =>
+        Promise.resolve(createSseResponse("event: stream-end\ndata: {}\n\n")),
+      );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    const hasWatcher = (): boolean =>
+      (service as unknown as { watchers: Map<string, unknown> }).watchers.has(
+        "task-1:run-1",
+      );
+    await waitFor(() => !hasWatcher(), 10_000);
+
+    expect(mockStreamTokenFetch.mock.calls.length).toBe(2);
+    const [secondUrl] = mockStreamFetch.mock.calls[1];
+    expect(String(secondUrl)).toContain("https://app.example.com/api/");
+  });
+
   it("stream-end still stops the watcher in legacy mode", async () => {
     vi.useFakeTimers();
 
