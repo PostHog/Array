@@ -758,7 +758,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       headers.Authorization = `Bearer ${watcher.streamReadToken}`;
     }
 
-    this.log.info("[agent-proxy debug] opening SSE stream", {
+    // Debug level: this fires on every reconnect, which during transport churn is
+    // multiple times per second and would otherwise dominate the log file.
+    this.log.debug("Opening cloud task stream", {
       usingProxy,
       streamUrl: url.toString(),
     });
@@ -1553,14 +1555,6 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
   private async resolveStreamTarget(watcher: WatcherState): Promise<void> {
     const url = `${watcher.apiHost}/api/projects/${watcher.teamId}/tasks/${watcher.taskId}/runs/${watcher.runId}/stream_token/`;
-    this.log.info(
-      "[agent-proxy debug] resolveStreamTarget → GET stream_token",
-      {
-        url,
-        taskId: watcher.taskId,
-        runId: watcher.runId,
-      },
-    );
     try {
       const response = await this.auth.authenticatedFetch(url, {
         method: "GET",
@@ -1570,10 +1564,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         watcher.streamBaseUrl = null;
         watcher.streamReadToken = null;
         watcher.streamTargetResolved = true;
-        this.log.info(
-          "[agent-proxy debug] stream_token refused → reading from Django",
-          { status: response.status },
-        );
+        this.log.info("Cloud task stream reading from API host", {
+          taskId: watcher.taskId,
+          runId: watcher.runId,
+          status: response.status,
+        });
         return;
       }
       const data = (await response.json()) as {
@@ -1583,7 +1578,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       watcher.streamReadToken = data.token ?? null;
       watcher.streamBaseUrl = data.stream_base_url ?? null;
       watcher.streamTargetResolved = true;
-      this.log.info("[agent-proxy debug] stream_token resolved", {
+      this.log.info("Cloud task stream target resolved", {
+        taskId: watcher.taskId,
+        runId: watcher.runId,
         streamBaseUrl: watcher.streamBaseUrl,
         hasToken: Boolean(watcher.streamReadToken),
       });

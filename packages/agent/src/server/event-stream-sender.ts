@@ -100,7 +100,7 @@ export class TaskRunEventStreamSender {
       : `${ingestBase}/api/projects/${config.projectId}/tasks/${encodeURIComponent(
           config.taskId,
         )}/runs/${encodeURIComponent(config.runId)}/event_stream/`;
-    config.logger.info("[agent-proxy debug] event ingest target resolved", {
+    config.logger.info("Event ingest target resolved", {
       ingestUrl: this.ingestUrl,
       routedToProxy: usingProxy,
     });
