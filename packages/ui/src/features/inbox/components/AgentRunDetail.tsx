@@ -23,6 +23,7 @@ import {
   resolveRunVariant,
 } from "@posthog/ui/features/inbox/components/AgentRunCard";
 import { DetailSection } from "@posthog/ui/features/inbox/components/DetailSection";
+import { ReportActivitySection } from "@posthog/ui/features/inbox/components/detail/ReportActivitySection";
 import { InboxDetailPageHeader } from "@posthog/ui/features/inbox/components/InboxDetailPageHeader";
 import {
   InboxMetaSeparator,
@@ -423,6 +424,7 @@ function AgentRunDetailContent({ report }: { report: SignalReport }) {
                 )}
               </RightColumnSection>
             )}
+            <ReportActivitySection reportId={report.id} />
           </Flex>
         </div>
       </div>
