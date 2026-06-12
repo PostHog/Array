@@ -10,8 +10,8 @@ import type {
 import { MenuLabel } from "@posthog/quill";
 import { normalizeRepoKey } from "@posthog/shared";
 import { builderHog } from "@posthog/ui/assets/hedgehogs";
-import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
+import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { DraggableFolder } from "@posthog/ui/features/sidebar/components/DraggableFolder";
 import { TaskItem } from "@posthog/ui/features/sidebar/components/items/TaskItem";
 import { SidebarSection } from "@posthog/ui/features/sidebar/components/SidebarSection";

@@ -7,8 +7,7 @@ describe("archivingTasksStore", () => {
   });
 
   it("marks a task as archiving and back", () => {
-    const { startArchiving, stopArchiving } =
-      useArchivingTasksStore.getState();
+    const { startArchiving, stopArchiving } = useArchivingTasksStore.getState();
 
     startArchiving("task-1");
     expect(useArchivingTasksStore.getState().isArchiving("task-1")).toBe(true);
@@ -30,8 +29,7 @@ describe("archivingTasksStore", () => {
   });
 
   it("is idempotent and keeps a stable reference when nothing changes", () => {
-    const { startArchiving, stopArchiving } =
-      useArchivingTasksStore.getState();
+    const { startArchiving, stopArchiving } = useArchivingTasksStore.getState();
 
     startArchiving("task-1");
     const setAfterStart = useArchivingTasksStore.getState().archivingTaskIds;

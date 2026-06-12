@@ -12,10 +12,10 @@ import {
   useArchiveCacheKeys,
   useArchiveTask,
 } from "@posthog/ui/features/archive/useArchiveTask";
-import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxReports } from "@posthog/ui/features/inbox/hooks/useInboxReports";
+import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskSelectionStore } from "@posthog/ui/features/sidebar/taskSelectionStore";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
