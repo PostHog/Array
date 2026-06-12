@@ -122,9 +122,9 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
   /**
    * Mirrors the user's skills out to Codex ("bring your skills, use them
    * anywhere"). Never fatal: a broken mirror must not affect the official
-   * skills pipeline.
+   * skills pipeline or the mutation that triggered it.
    */
-  private async mirrorUserSkills(): Promise<void> {
+  async mirrorUserSkills(): Promise<void> {
     try {
       await mirrorUserSkillsToCodex(USER_SKILLS_DIR, CODEX_SKILLS_DIR);
     } catch (err) {

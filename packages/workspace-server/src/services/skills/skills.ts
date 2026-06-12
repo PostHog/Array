@@ -60,6 +60,11 @@ export class SkillsService {
     private readonly watcher: WatcherService,
   ) {}
 
+  /** Fire-and-forget Codex mirror after local mutations. */
+  private queueCodexMirror(): void {
+    void this.plugin.mirrorUserSkills().catch(() => {});
+  }
+
   async listSkills(): Promise<SkillInfo[]> {
     const roots = await this.getSkillRoots();
     const results = await Promise.all(
@@ -118,6 +123,7 @@ export class SkillsService {
       serializeSkillMarkdown({ name, description: "" }, SKILL_MD_TEMPLATE_BODY),
       "utf-8",
     );
+    this.queueCodexMirror();
     return { path: skillPath };
   }
 
@@ -139,6 +145,7 @@ export class SkillsService {
       content,
       "utf-8",
     );
+    this.queueCodexMirror();
   }
 
   async saveSkillFile(
@@ -150,6 +157,7 @@ export class SkillsService {
     const target = resolveSkillFilePath(skillDir, filePath);
     await fs.promises.mkdir(path.dirname(target), { recursive: true });
     await fs.promises.writeFile(target, content, "utf-8");
+    this.queueCodexMirror();
   }
 
   async renameSkillFile(
@@ -168,6 +176,7 @@ export class SkillsService {
     }
     await fs.promises.mkdir(path.dirname(to), { recursive: true });
     await fs.promises.rename(from, to);
+    this.queueCodexMirror();
   }
 
   async deleteSkillFile(skillPath: string, filePath: string): Promise<void> {
@@ -177,11 +186,13 @@ export class SkillsService {
       throw new Error("SKILL.md cannot be deleted");
     }
     await fs.promises.rm(target, { force: true });
+    this.queueCodexMirror();
   }
 
   async deleteSkill(skillPath: string): Promise<void> {
     const skillDir = await this.resolveWritableSkillDir(skillPath);
     await fs.promises.rm(skillDir, { recursive: true, force: true });
+    this.queueCodexMirror();
   }
 
   /**
@@ -214,8 +225,12 @@ export class SkillsService {
       await fs.promises.rm(target, { recursive: true, force: true });
     }
     await fs.promises.mkdir(path.dirname(target), { recursive: true });
-    await fs.promises.cp(resolved, target, { recursive: true });
+    await fs.promises.cp(resolved, target, {
+      recursive: true,
+      dereference: true,
+    });
     await addMirroredName(codexRoot, name);
+    this.queueCodexMirror();
     return { path: target };
   }
 
@@ -313,6 +328,7 @@ export class SkillsService {
       await fs.promises.rm(staging, { recursive: true, force: true });
       throw error;
     }
+    this.queueCodexMirror();
     return { path: target };
   }
 

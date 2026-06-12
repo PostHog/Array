@@ -86,10 +86,17 @@ export async function mirrorUserSkillsToCodex(
       continue;
     }
     await fs.promises.rm(target, { recursive: true, force: true });
-    await fs.promises.cp(path.join(userSkillsDir, name), target, {
-      recursive: true,
-    });
-    nextMirrored.push(name);
+    try {
+      // dereference: mirrored skills must be self-contained.
+      await fs.promises.cp(path.join(userSkillsDir, name), target, {
+        recursive: true,
+        dereference: true,
+      });
+      nextMirrored.push(name);
+    } catch {
+      // Skip unreadable skills (e.g. broken symlinks); drop the partial copy.
+      await fs.promises.rm(target, { recursive: true, force: true });
+    }
   }
 
   for (const name of previouslyMirrored) {

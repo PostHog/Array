@@ -12,12 +12,20 @@ vi.mock("node:os", async (importOriginal) => {
 });
 
 import { existsSync } from "node:fs";
+import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import {
   collectSkillFiles,
   findSkillDirPrefix,
   SkillsMarketplaceService,
   unzipWithLimit,
 } from "./skills-marketplace";
+
+function makeService(): SkillsMarketplaceService {
+  const plugin = {
+    mirrorUserSkills: async () => {},
+  } as unknown as PosthogPluginService;
+  return new SkillsMarketplaceService(plugin);
+}
 
 let root: string;
 
@@ -93,7 +101,7 @@ describe("collectSkillFiles", () => {
 
 describe("search", () => {
   it("maps skills.sh results and marks installed skills", async () => {
-    const service = new SkillsMarketplaceService();
+    const service = makeService();
     // Install state: "commit" is already installed.
     const stateDir = path.join(root, ".claude", "skills");
     await import("node:fs/promises").then((fsp) =>
@@ -149,7 +157,7 @@ describe("search", () => {
       throw new Error("should not fetch");
     });
 
-    expect(await new SkillsMarketplaceService().search(" a ")).toEqual({
+    expect(await makeService().search(" a ")).toEqual({
       results: [],
     });
   });
@@ -158,7 +166,7 @@ describe("search", () => {
 describe("preview", () => {
   it("returns the full file list with contents and a scripts flag", async () => {
     stubFetch(() => zipResponse(makeRepoZip()));
-    const service = new SkillsMarketplaceService();
+    const service = makeService();
 
     const preview = await service.preview({
       source: "getsentry/skills",
@@ -185,7 +193,7 @@ describe("preview", () => {
       ),
     );
 
-    const preview = await new SkillsMarketplaceService().preview({
+    const preview = await makeService().preview({
       source: "getsentry/skills",
       skillId: "commit",
     });
@@ -198,7 +206,7 @@ describe("preview", () => {
     stubFetch(() => zipResponse(makeRepoZip()));
 
     await expect(
-      new SkillsMarketplaceService().preview({
+      makeService().preview({
         source: "getsentry/skills",
         skillId: "nope",
       }),
@@ -209,7 +217,7 @@ describe("preview", () => {
     stubFetch(() => zipResponse(makeRepoZip()));
 
     await expect(
-      new SkillsMarketplaceService().preview({
+      makeService().preview({
         source: "https://evil.example/x",
         skillId: "commit",
       }),
@@ -220,7 +228,7 @@ describe("preview", () => {
 describe("install", () => {
   it("copies the skill into the user skills dir and records the badge state", async () => {
     stubFetch(() => zipResponse(makeRepoZip()));
-    const service = new SkillsMarketplaceService();
+    const service = makeService();
 
     const { path: installedPath } = await service.install({
       source: "getsentry/skills",
@@ -249,7 +257,7 @@ describe("install", () => {
 
   it("requires overwrite when the skill already exists, then replaces it", async () => {
     stubFetch(() => zipResponse(makeRepoZip()));
-    const service = new SkillsMarketplaceService();
+    const service = makeService();
 
     const { path: installedPath } = await service.install({
       source: "getsentry/skills",
@@ -274,7 +282,7 @@ describe("install", () => {
     stubFetch(() => zipResponse(makeRepoZip()));
 
     await expect(
-      new SkillsMarketplaceService().install({
+      makeService().install({
         source: "getsentry/skills",
         skillId: "../escape",
       }),
@@ -293,7 +301,7 @@ describe("archive download guards", () => {
     );
 
     await expect(
-      new SkillsMarketplaceService().preview({
+      makeService().preview({
         source: "getsentry/skills",
         skillId: "commit",
       }),
@@ -302,7 +310,7 @@ describe("archive download guards", () => {
 
   it("reuses the cached archive within the TTL", async () => {
     stubFetch(() => zipResponse(makeRepoZip()));
-    const service = new SkillsMarketplaceService();
+    const service = makeService();
 
     await service.preview({ source: "getsentry/skills", skillId: "commit" });
     await service.preview({ source: "getsentry/skills", skillId: "other" });

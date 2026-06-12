@@ -24,6 +24,7 @@ let repoSkillsDir: string;
 function makeService(): SkillsService {
   const plugin = {
     getPluginPath: () => pluginPath,
+    mirrorUserSkills: async () => {},
   } as unknown as PosthogPluginService;
   const folders = {
     getFolders: async () => [{ path: folderPath, name: "my-repo" }],
