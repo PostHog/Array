@@ -1268,6 +1268,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       resume: this.sessionId,
       forkSession: false,
       abortController: newAbortController,
+      // `rest.model` is the creation-time value; the user may have switched
+      // models since, so re-root the new Query on the live session model.
+      ...(prev.modelId && { model: toSdkModelId(prev.modelId) }),
     };
 
     const newInput = new Pushable<SDKUserMessage>();
@@ -1745,7 +1748,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const resolvedSdkModel = toSdkModelId(resolvedModelId);
 
-    if (!isResume && resolvedSdkModel !== DEFAULT_MODEL) {
+    // New sessions start with options.model = DEFAULT_MODEL, so only a
+    // non-default pick needs a setModel call. Resumed sessions always need
+    // it: the SDK does not carry the model across resume and would silently
+    // run its default otherwise.
+    if (isResume || resolvedSdkModel !== DEFAULT_MODEL) {
       await this.session.query.setModel(resolvedSdkModel);
     }
 

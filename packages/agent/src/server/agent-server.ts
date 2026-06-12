@@ -198,6 +198,15 @@ function createTappedWritableStream(
   });
 }
 
+export function isTurnCompleteNotification(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { method?: unknown }).method ===
+      POSTHOG_NOTIFICATIONS.TURN_COMPLETE
+  );
+}
+
 interface SseController {
   send: (data: unknown) => void;
   close: () => void;
@@ -241,6 +250,7 @@ export class AgentServer {
   private posthogAPI: PostHogAPIClient;
   private eventStreamSender: TaskRunEventStreamSender | null = null;
   private questionRelayedToSlack = false;
+  private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
@@ -997,7 +1007,11 @@ export class AgentServer {
     });
 
     // Tap both streams to broadcast all ACP messages via SSE (mimics local transport)
+    this.adapterEmittedTurnComplete = false;
     const onAcpMessage = (message: unknown) => {
+      if (isTurnCompleteNotification(message)) {
+        this.adapterEmittedTurnComplete = true;
+      }
       this.broadcastEvent({
         type: "notification",
         timestamp: new Date().toISOString(),
@@ -2493,6 +2507,10 @@ ${signedCommitInstructions}
 
   private broadcastTurnComplete(stopReason: string): void {
     if (!this.session) return;
+    if (this.adapterEmittedTurnComplete) {
+      this.adapterEmittedTurnComplete = false;
+      return;
+    }
     const notification = {
       jsonrpc: "2.0",
       method: POSTHOG_NOTIFICATIONS.TURN_COMPLETE,

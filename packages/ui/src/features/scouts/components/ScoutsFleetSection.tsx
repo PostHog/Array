@@ -1,4 +1,10 @@
-import { CaretDownIcon, CompassIcon, SparkleIcon } from "@phosphor-icons/react";
+import type { Icon } from "@phosphor-icons/react";
+import {
+  CaretDownIcon,
+  CompassIcon,
+  PlusIcon,
+  SparkleIcon,
+} from "@phosphor-icons/react";
 import type { ScoutConfig } from "@posthog/api-client/posthog-client";
 import {
   computeFleetSummary,
@@ -7,6 +13,7 @@ import {
   sortConfigsForDisplay,
 } from "@posthog/core/scouts/scoutPresentation";
 import {
+  SCOUT_AUTHOR_PROMPT,
   SCOUT_FLEET_OVERVIEW_PROMPT,
   SCOUT_RECENT_SIGNALS_PROMPT,
 } from "@posthog/core/scouts/scoutPrompts";
@@ -208,6 +215,14 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
           loggerScope="scout-recent-signals"
           chatType="recent_signals"
         />
+        <ScoutChatCta
+          label="Make a scout"
+          prompt={SCOUT_AUTHOR_PROMPT}
+          taskLabel="scout authoring"
+          loggerScope="scout-author"
+          chatType="author_scout"
+          icon={PlusIcon}
+        />
       </Flex>
 
       {/* Bounded to roughly 10 rows; larger fleets scroll within the section. */}
@@ -248,12 +263,14 @@ function ScoutChatCta({
   taskLabel,
   loggerScope,
   chatType,
+  icon: IconComponent = SparkleIcon,
 }: {
   label: string;
   prompt: string;
   taskLabel: string;
   loggerScope: string;
   chatType: ScoutChatType;
+  icon?: Icon;
 }) {
   const { runTask, isRunning } = useScoutChatTask({
     prompt,
@@ -269,7 +286,7 @@ function ScoutChatCta({
       disabled={isRunning}
       className="flex w-fit items-center gap-1.5 rounded-full border border-border bg-(--color-panel-solid) px-3 py-1 text-[12px] text-gray-11 transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2) hover:text-gray-12 disabled:cursor-default disabled:opacity-60 disabled:hover:border-border disabled:hover:bg-(--color-panel-solid)"
     >
-      <SparkleIcon size={12} className="text-(--iris-9)" />
+      <IconComponent size={12} className="text-(--iris-9)" />
       {isRunning ? `Starting ${taskLabel}...` : label}
     </button>
   );
