@@ -870,6 +870,81 @@ describe("CloudTaskService", () => {
     );
   });
 
+  it("drops the resume position when the stream leg changes", async () => {
+    vi.useFakeTimers();
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    // First resolution fails transiently (connection falls back to Django and
+    // records a Django-id-space resume position); the retried resolution routes
+    // to the proxy, whose id space is unrelated.
+    mockStreamTokenFetch
+      .mockRejectedValueOnce(new Error("network blip"))
+      .mockImplementation(() =>
+        Promise.resolve(
+          createJsonResponse({
+            token: "proxy-token",
+            stream_base_url: "https://proxy.example",
+          }),
+        ),
+      );
+
+    mockStreamFetch
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          createSseResponse(
+            'id: 7\nevent: keepalive\ndata: {"type":"keepalive"}\n\n',
+          ),
+        ),
+      )
+      .mockImplementation(() =>
+        Promise.resolve(
+          createOpenSseResponse(
+            'event: keepalive\ndata: {"type":"keepalive"}\n\n',
+          ),
+        ),
+      );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamFetch.mock.calls.length >= 2, 10_000);
+
+    const [firstUrl] = mockStreamFetch.mock.calls[0];
+    const [secondUrl, secondInit] = mockStreamFetch.mock.calls[1];
+    expect(String(firstUrl)).toContain("https://app.example.com/api/");
+    expect(String(secondUrl)).toMatch(
+      /^https:\/\/proxy\.example\/v1\/runs\/run-1\/stream/,
+    );
+    // The Django resume position must not leak into the proxy leg.
+    expect(
+      (secondInit?.headers as Record<string, string>)?.["Last-Event-ID"],
+    ).toBeUndefined();
+    expect(String(secondUrl)).toContain("start=latest");
+  });
+
   it("re-bootstraps once on a clean-EOF loop and fails when it persists", async () => {
     vi.useFakeTimers();
 
