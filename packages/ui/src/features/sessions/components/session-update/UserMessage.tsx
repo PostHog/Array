@@ -7,11 +7,13 @@ import {
   FileText,
   SlackLogo,
 } from "@phosphor-icons/react";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { Box, Flex, IconButton } from "@radix-ui/themes";
 import { motion } from "framer-motion";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Tooltip } from "../../../../primitives/Tooltip";
 import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
+import { useFeatureFlag } from "../../../feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "../../../panels/panelLayoutStore";
 import type { UserMessageAttachment } from "../../userMessageTypes";
 import { extractChannelContext } from "./channelContext";
@@ -59,12 +61,19 @@ export const UserMessage = memo(function UserMessage({
 }: UserMessageProps) {
   // A channel's CONTEXT.md, if injected into this prompt, is collapsed into a
   // clickable tag instead of rendered inline; the rest of the prompt renders
-  // normally. Clicking the tag opens the snapshot as a file tab.
+  // normally. Clicking the tag opens the snapshot as a file tab. The clickable
+  // tag + split tab is a project-bluebird feature, but we always strip the block
+  // so the raw <channel_context> XML never leaks for flag-off viewers.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
   const channelContext = useMemo(
     () => extractChannelContext(content),
     [content],
   );
   const displayContent = channelContext ? channelContext.stripped : content;
+  const showChannelContextTag = !!channelContext && bluebirdEnabled;
   const openChannelContextInSplit = usePanelLayoutStore(
     (s) => s.openChannelContextInSplit,
   );
@@ -120,7 +129,7 @@ export const UserMessage = memo(function UserMessage({
           ) : (
             <MarkdownRenderer content={displayContent} />
           )}
-          {channelContext && (
+          {showChannelContextTag && channelContext && (
             <Flex
               wrap="wrap"
               gap="1"
