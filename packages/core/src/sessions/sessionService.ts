@@ -2941,6 +2941,24 @@ export class SessionService {
       return () => {};
     }
 
+    // An already-finished run we've already hydrated has no live stream to
+    // attach to: the snapshot in the store is the complete, final conversation.
+    // Re-watching it refetches the same logs, immediately stops again on the
+    // terminal snapshot, and that snapshot rewrites session.configOptions,
+    // which re-fires the reconcile effect and spins a start/stop loop. Skip it.
+    // Gated on no live watcher: a stale watcher for a different run still needs
+    // the stop-and-restart below.
+    if (!existingWatcher) {
+      const hydrated = this.d.store.getSessionByTaskId(taskId);
+      if (
+        hydrated?.taskRunId === taskRunId &&
+        isTerminalStatus(hydrated.cloudStatus) &&
+        hydrated.processedLineCount !== undefined
+      ) {
+        return () => {};
+      }
+    }
+
     // Different run — full cleanup of old watcher first
     if (existingWatcher) {
       this.stopCloudTaskWatch(taskId);

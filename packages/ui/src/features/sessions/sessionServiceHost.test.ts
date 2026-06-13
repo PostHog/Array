@@ -943,6 +943,89 @@ describe("SessionService", () => {
       expect(unsubscribe).not.toHaveBeenCalled();
     });
 
+    it.each<[string, Partial<AgentSession>, boolean]>([
+      [
+        "skips a hydrated terminal (completed) run",
+        { cloudStatus: "completed", processedLineCount: 5 },
+        false,
+      ],
+      [
+        "skips a hydrated terminal (failed) run",
+        { cloudStatus: "failed", processedLineCount: 5 },
+        false,
+      ],
+      [
+        "watches a terminal run that is not yet hydrated",
+        { cloudStatus: "completed", processedLineCount: undefined },
+        true,
+      ],
+      [
+        "watches a hydrated run that is still in progress",
+        { cloudStatus: "in_progress", processedLineCount: 5 },
+        true,
+      ],
+      [
+        "watches when the hydrated terminal session is for a different run",
+        {
+          taskRunId: "run-999",
+          cloudStatus: "completed",
+          processedLineCount: 5,
+        },
+        true,
+      ],
+    ])("watchCloudTask %s", (_name, sessionOverrides, shouldWatch) => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          taskId: "task-123",
+          taskRunId: "run-123",
+          ...sessionOverrides,
+        }),
+      );
+
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+      );
+
+      expect(mockTrpcCloudTask.onUpdate.subscribe).toHaveBeenCalledTimes(
+        shouldWatch ? 1 : 0,
+      );
+      expect(mockTrpcCloudTask.watch.mutate).toHaveBeenCalledTimes(
+        shouldWatch ? 1 : 0,
+      );
+    });
+
+    it("does not re-subscribe across repeated calls for a hydrated terminal run", () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          taskId: "task-123",
+          taskRunId: "run-123",
+          cloudStatus: "completed",
+          processedLineCount: 5,
+        }),
+      );
+
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+      );
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+      );
+
+      expect(mockTrpcCloudTask.onUpdate.subscribe).not.toHaveBeenCalled();
+      expect(mockTrpcCloudTask.watch.mutate).not.toHaveBeenCalled();
+    });
+
     it("preserves an existing status callback when reusing a watcher without one", () => {
       const service = getSessionService();
       const onStatusChange = vi.fn();
