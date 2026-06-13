@@ -10,7 +10,17 @@ import type {
  * pattern). A fixed window gives users a stable frame for every number;
  * "the most recent 100 runs" does not.
  */
-export const SCOUT_RUNS_WINDOW_HOURS = 24;
+export const SCOUT_RUNS_WINDOW_HOURS = 72;
+
+/**
+ * Human-friendly span the window covers, e.g. "3 days" or "24h". Reads as days
+ * when the window is a whole number of days, otherwise falls back to hours.
+ */
+export const SCOUT_RUNS_WINDOW_SPAN = (() => {
+  if (SCOUT_RUNS_WINDOW_HOURS % 24 !== 0) return `${SCOUT_RUNS_WINDOW_HOURS}h`;
+  const days = SCOUT_RUNS_WINDOW_HOURS / 24;
+  return `${days} day${days === 1 ? "" : "s"}`;
+})();
 
 const PAGE_LIMIT = 100;
 const MAX_PAGES = 10;
@@ -29,9 +39,9 @@ export interface ScoutRunsWindow {
   complete: boolean;
 }
 
-/** Label for stats derived from a window, e.g. "last 24h". */
+/** Label for stats derived from a window, e.g. "last 3 days". */
 export function scoutRunsWindowLabel(window?: ScoutRunsWindow): string {
-  const base = `last ${SCOUT_RUNS_WINDOW_HOURS}h`;
+  const base = `last ${SCOUT_RUNS_WINDOW_SPAN}`;
   return window && !window.complete ? `${base} · truncated` : base;
 }
 

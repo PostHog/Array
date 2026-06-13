@@ -18,7 +18,7 @@ import {
   SCOUT_RECENT_SIGNALS_PROMPT,
 } from "@posthog/core/scouts/scoutPrompts";
 import {
-  SCOUT_RUNS_WINDOW_HOURS,
+  SCOUT_RUNS_WINDOW_SPAN,
   scoutRunsWindowLabel,
 } from "@posthog/core/scouts/scoutRunsWindow";
 import type { ScoutChatType } from "@posthog/shared";
@@ -241,8 +241,8 @@ function ScoutsFleetList({ configs }: { configs: ScoutConfig[] }) {
 
       <Flex direction="column" gap="1">
         <Text className="text-[12px] text-gray-10">
-          Run counts and emitted totals cover the last {SCOUT_RUNS_WINDOW_HOURS}{" "}
-          hours of fleet runs. New scouts are created as{" "}
+          Run counts and emitted totals cover the last {SCOUT_RUNS_WINDOW_SPAN}{" "}
+          of fleet runs. New scouts are created as{" "}
           <span className="font-mono text-[11px]">signals-scout-*</span> skills
           in your PostHog project.
         </Text>

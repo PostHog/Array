@@ -17,7 +17,7 @@ import {
   scoutSkillNameFromSlug,
 } from "@posthog/core/scouts/scoutPresentation";
 import {
-  SCOUT_RUNS_WINDOW_HOURS,
+  SCOUT_RUNS_WINDOW_SPAN,
   scoutRunsWindowLabel,
 } from "@posthog/core/scouts/scoutRunsWindow";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
@@ -85,7 +85,7 @@ export function ScoutDetailView({
 
   const config = configs?.find((entry) => entry.skill_name === skillName);
   // The runs endpoint has no skill_name filter yet (scouts-ui api gap 1), so
-  // select this scout's runs from the 24-hour fleet window client-side.
+  // select this scout's runs from the fleet window client-side.
   const scoutRuns = useMemo(
     () =>
       (runsWindow?.runs ?? []).filter((run) => run.skill_name === skillName),
@@ -232,7 +232,7 @@ export function ScoutDetailView({
                   {scoutRuns.length > 0
                     ? `No runs match this filter in the ${scoutRunsWindowLabel(runsWindow)}.`
                     : runsWindow && !runsWindow.complete
-                      ? `No runs fetched in the last ${SCOUT_RUNS_WINDOW_HOURS} hours – the fleet window was truncated before it could cover this scout, so runs may exist beyond what was fetched.`
+                      ? `No runs fetched in the last ${SCOUT_RUNS_WINDOW_SPAN} – the fleet window was truncated before it could cover this scout, so runs may exist beyond what was fetched.`
                       : `No runs in the ${scoutRunsWindowLabel(runsWindow)}.`}
                 </Text>
               ) : (
@@ -245,7 +245,7 @@ export function ScoutDetailView({
 
               <Text className="text-[12px] text-gray-10">
                 Showing this scout&apos;s runs from the last{" "}
-                {SCOUT_RUNS_WINDOW_HOURS} hours.
+                {SCOUT_RUNS_WINDOW_SPAN}.
               </Text>
             </Flex>
           </Flex>

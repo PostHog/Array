@@ -7,7 +7,7 @@ import { useAuthStateValue } from "../../auth/store";
 import { scoutQueryKeys } from "./scoutQueryKeys";
 
 /**
- * Fleet-wide scout runs from the last 24 hours (newest first), assembled in
+ * Fleet-wide scout runs from the recent window (newest first), assembled in
  * core by walking the backend's 100-row pages. The backend has no per-scout
  * filter yet (scouts-ui api gap 1), so per-scout views filter this window
  * client-side. `complete` is false if pagination had to stop early.
