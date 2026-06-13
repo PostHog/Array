@@ -1,29 +1,23 @@
 /**
- * Fast Playwright captures of the PostHog Code Vite preview (?previewMode=true).
+ * Fast screenshots of the PostHog Code Vite preview (?previewMode=true) via agent-browser.
  *
- * Batch / repeated captures (fast — one browser, hash navigation between routes):
- *   pnpm --filter code screenshot:preview:serve          # background
+ * Repeated captures reuse one warm browser session, so batches are fast with no
+ * separate serve step:
  *   pnpm --filter code screenshot:preview -- --route /code/inbox/pulls -o a.png
+ *   pnpm --filter code screenshot:preview -- --route /code/inbox/reports -o b.png
  *
- * One-shot (launches Chromium once, then exits):
- *   pnpm --filter code screenshot:preview -- --route /code/inbox/pulls -o a.png
+ * Requires agent-browser (npm i -g agent-browser && agent-browser install) and the
+ * Vite dev server on :5173 (pnpm dev:code / pnpm dev:mprocs). Free the warm browser
+ * with `agent-browser --session screenshot-preview close` when finished.
  */
 
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { createServer, type IncomingMessage } from "node:http";
+import { execFileSync } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { type Browser, chromium, type Page } from "@playwright/test";
 
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const SERVER_FILE = resolve(
-  SCRIPT_DIR,
-  "../node_modules/.cache/screenshot-preview-server.json",
-);
 const DEFAULT_BASE = "http://localhost:5173/?previewMode=true";
-const DEFAULT_VIEWPORT = { width: 1280, height: 900 };
 const DEFAULT_TIMEOUT_MS = 10_000;
-const LOADING_TIMEOUT_MS = 2_000;
+const SESSION = "screenshot-preview";
 
 interface CaptureRequest {
   baseUrl: string;
@@ -35,30 +29,22 @@ interface CaptureRequest {
   timeoutMs: number;
 }
 
-interface ServerInfo {
-  port: number;
-}
-
-interface CliOptions extends CaptureRequest {
-  mode: "capture" | "serve";
-}
-
 function printUsage(): void {
   process.stderr.write(`Usage:
   screenshot-dev-preview.ts --route <hash-route> [-o <file.png>] [options]
   screenshot-dev-preview.ts --url <full-preview-url> [-o <file.png>] [options]
-  screenshot-dev-preview.ts --serve
 
 Options:
   --route, --url, -o/--output, --full-page, --wait-for, --base-url, --timeout
-  --serve   Persistent browser + HTTP capture API (use screenshot:preview:serve)
   -h, --help
+
+Repeated runs reuse one warm browser; close it with:
+  agent-browser --session ${SESSION} close
 `);
 }
 
-function parseArgs(argv: string[]): CliOptions {
+function parseArgs(argv: string[]): CaptureRequest {
   const args = argv[0] === "--" ? argv.slice(1) : argv;
-  let mode: CliOptions["mode"] = "capture";
   let baseUrl = DEFAULT_BASE;
   let route: string | null = null;
   let url: string | null = null;
@@ -76,9 +62,6 @@ function parseArgs(argv: string[]): CliOptions {
       case "-h":
         printUsage();
         process.exit(0);
-        break;
-      case "--serve":
-        mode = "serve";
         break;
       case "--route":
         route = next ?? null;
@@ -115,8 +98,8 @@ function parseArgs(argv: string[]): CliOptions {
     }
   }
 
-  if (mode === "capture" && !route && !url) {
-    process.stderr.write("Provide --route or --url (or --serve).\n");
+  if (!route && !url) {
+    process.stderr.write("Provide --route or --url.\n");
     printUsage();
     process.exit(1);
   }
@@ -126,16 +109,7 @@ function parseArgs(argv: string[]): CliOptions {
     process.exit(1);
   }
 
-  return {
-    mode,
-    baseUrl,
-    route,
-    url,
-    output,
-    fullPage,
-    waitFor,
-    timeoutMs,
-  };
+  return { baseUrl, route, url, output, fullPage, waitFor, timeoutMs };
 }
 
 function buildPreviewUrl(request: CaptureRequest): string {
@@ -153,240 +127,67 @@ function buildPreviewUrl(request: CaptureRequest): string {
   return `${request.baseUrl}#${hashPath}`;
 }
 
-function previewBaseKey(baseUrl: string): string {
-  const url = new URL(baseUrl);
-  return `${url.origin}${url.pathname}${url.search}`;
-}
-
-function readServerInfo(): ServerInfo | null {
+function runAgentBrowser(
+  args: string[],
+  timeoutMs: number,
+  optional = false,
+): void {
   try {
-    return JSON.parse(readFileSync(SERVER_FILE, "utf8")) as ServerInfo;
-  } catch {
-    return null;
-  }
-}
-
-function writeServerInfo(info: ServerInfo): void {
-  mkdirSync(dirname(SERVER_FILE), { recursive: true });
-  writeFileSync(SERVER_FILE, JSON.stringify(info), "utf8");
-}
-
-function clearServerInfo(): void {
-  try {
-    unlinkSync(SERVER_FILE);
-  } catch {
-    // already gone
-  }
-}
-
-async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as T;
-}
-
-async function waitForPaint(page: Page): Promise<void> {
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => resolve());
-        });
-      }),
-  );
-}
-
-async function waitForReady(
-  page: Page,
-  request: CaptureRequest,
-): Promise<void> {
-  await page.waitForSelector("#root > *", { timeout: request.timeoutMs });
-
-  const loading = page.locator("text=Loading").first();
-  if (await loading.isVisible().catch(() => false)) {
-    await loading
-      .waitFor({ state: "hidden", timeout: LOADING_TIMEOUT_MS })
-      .catch(() => {});
-  }
-
-  if (request.waitFor) {
-    await page
-      .getByText(request.waitFor, { exact: false })
-      .first()
-      .waitFor({ state: "visible", timeout: request.timeoutMs });
-  }
-
-  await waitForPaint(page);
-}
-
-async function navigatePreview(
-  page: Page,
-  targetUrl: string,
-  request: CaptureRequest,
-): Promise<void> {
-  const target = new URL(targetUrl);
-  const baseKey = previewBaseKey(request.baseUrl);
-  const current = page.url();
-  const onPreviewBase =
-    current.startsWith(baseKey) || current.startsWith(`${baseKey}#`);
-
-  if (onPreviewBase && target.hash) {
-    const currentHash = new URL(current).hash;
-    if (currentHash !== target.hash) {
-      await page.evaluate((hash) => {
-        window.location.hash = hash;
-      }, target.hash);
+    execFileSync("agent-browser", ["--session", SESSION, ...args], {
+      env: { ...process.env, AGENT_BROWSER_DEFAULT_TIMEOUT: String(timeoutMs) },
+      stdio: ["ignore", "ignore", "inherit"],
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      process.stderr.write(
+        "agent-browser is not installed. Run: npm i -g agent-browser && agent-browser install\n",
+      );
+      process.exit(1);
     }
-    await waitForReady(page, request);
-    return;
+    if (optional) {
+      return;
+    }
+    throw error;
   }
-
-  await page.goto(targetUrl, {
-    waitUntil: "commit",
-    timeout: request.timeoutMs,
-  });
-  await waitForReady(page, request);
 }
 
-async function captureToFile(
-  page: Page,
-  request: CaptureRequest,
-): Promise<string> {
+function capture(request: CaptureRequest): string {
   const targetUrl = buildPreviewUrl(request);
   const outputPath = resolve(process.cwd(), request.output);
   mkdirSync(dirname(outputPath), { recursive: true });
 
-  await navigatePreview(page, targetUrl, request);
-  await page.screenshot({ path: outputPath, fullPage: request.fullPage });
+  runAgentBrowser(["open", targetUrl], request.timeoutMs);
+  runAgentBrowser(["wait", "#root > *"], request.timeoutMs);
+  runAgentBrowser(
+    ["wait", "--fn", "!document.body.innerText.includes('Loading')"],
+    request.timeoutMs,
+    true,
+  );
+  if (request.waitFor) {
+    runAgentBrowser(["wait", "--text", request.waitFor], request.timeoutMs);
+  }
+  runAgentBrowser(["wait", "200"], request.timeoutMs, true);
+
+  const screenshotArgs = ["screenshot", outputPath];
+  if (request.fullPage) {
+    screenshotArgs.push("--full");
+  }
+  runAgentBrowser(screenshotArgs, request.timeoutMs);
+
   return outputPath;
 }
 
-async function captureViaServer(
-  request: CaptureRequest,
-): Promise<string | null> {
-  const info = readServerInfo();
-  if (!info) {
-    return null;
-  }
+function main(): void {
+  const request = parseArgs(process.argv.slice(2));
 
-  try {
-    const response = await fetch(`http://127.0.0.1:${info.port}/capture`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(request),
-      signal: AbortSignal.timeout(request.timeoutMs + 5_000),
-    });
-
-    if (!response.ok) {
-      throw new Error(await response.text());
-    }
-
-    return (await response.text()).trim();
-  } catch {
-    clearServerInfo();
-    return null;
-  }
-}
-
-async function captureOneShot(request: CaptureRequest): Promise<string> {
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--disable-dev-shm-usage"],
-  });
-  const context = await browser.newContext({ viewport: DEFAULT_VIEWPORT });
-  const page = await context.newPage();
-
-  try {
-    return await captureToFile(page, request);
-  } finally {
-    await context.close();
-    await browser.close();
-  }
-}
-
-async function runServe(): Promise<void> {
-  const browser: Browser = await chromium.launch({
-    headless: true,
-    args: ["--disable-dev-shm-usage"],
-  });
-  const context = await browser.newContext({ viewport: DEFAULT_VIEWPORT });
-  const page = await context.newPage();
-
-  const server = createServer(async (req, res) => {
-    if (req.method !== "POST" || req.url !== "/capture") {
-      res.writeHead(404);
-      res.end();
-      return;
-    }
-
-    try {
-      const request = await readJsonBody<CaptureRequest>(req);
-      const outputPath = await captureToFile(page, request);
-      res.writeHead(200, { "content-type": "text/plain" });
-      res.end(outputPath);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      res.writeHead(500, { "content-type": "text/plain" });
-      res.end(message);
-    }
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    server.listen(0, "127.0.0.1", () => resolve());
-    server.on("error", reject);
-  });
-
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Failed to bind screenshot preview server");
-  }
-
-  writeServerInfo({ port: address.port });
-  process.stderr.write(
-    `screenshot preview server on http://127.0.0.1:${address.port}\n`,
-  );
-
-  const shutdown = async () => {
-    clearServerInfo();
-    server.close();
-    await context.close().catch(() => {});
-    await browser.close().catch(() => {});
-    process.exit(0);
-  };
-
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
-
-  await new Promise<void>(() => {});
-}
-
-async function runCapture(options: CliOptions): Promise<void> {
-  if (options.url && !options.url.includes("previewMode=true")) {
+  if (request.url && !request.url.includes("previewMode=true")) {
     process.stderr.write(
       "Warning: URL missing ?previewMode=true — app may not boot.\n",
     );
   }
 
-  const outputPath =
-    (await captureViaServer(options)) ?? (await captureOneShot(options));
+  const outputPath = capture(request);
   process.stdout.write(`${outputPath}\n`);
 }
 
-async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
-
-  if (options.mode === "serve") {
-    await runServe();
-    return;
-  }
-
-  await runCapture(options);
-}
-
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`screenshot-dev-preview failed: ${message}\n`);
-  process.exit(1);
-});
+main();

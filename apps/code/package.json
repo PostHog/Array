@@ -27,7 +27,6 @@
     "test:e2e": "playwright test --config=tests/e2e/playwright.config.ts",
     "test:e2e:headed": "playwright test --config=tests/e2e/playwright.config.ts --headed",
     "screenshot:preview": "tsx scripts/screenshot-dev-preview.ts",
-    "screenshot:preview:serve": "tsx scripts/screenshot-dev-preview.ts --serve",
     "postinstall": "bash scripts/postinstall.sh",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
