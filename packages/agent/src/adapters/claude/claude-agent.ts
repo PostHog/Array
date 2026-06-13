@@ -774,6 +774,17 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               });
             }
 
+            if (this.session.taskRunId) {
+              await this.client.extNotification(
+                POSTHOG_NOTIFICATIONS.TURN_COMPLETE,
+                {
+                  sessionId: params.sessionId,
+                  stopReason: result.stopReason ?? "end_turn",
+                  usage,
+                },
+              );
+            }
+
             return { stopReason: result.stopReason ?? "end_turn", usage };
           }
 
