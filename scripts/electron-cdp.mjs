@@ -73,5 +73,5 @@ if (connect.status !== 0) {
 }
 
 console.log(
-  `\nConnected. Next: agent-browser --color-scheme dark snapshot -i\nLoad the workflow with: agent-browser skills get electron`,
+  `\nConnected. Next: agent-browser snapshot -i\nLoad the workflow with: agent-browser skills get electron`,
 );

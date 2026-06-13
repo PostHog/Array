@@ -47,7 +47,7 @@ agent-browser skills get core         # snapshot/interact/screenshot reference
 
 ```bash
 agent-browser connect 9222                      # attach (skip if you ran pnpm app:cdp)
-agent-browser --color-scheme dark snapshot -i   # interactive elements only (app is dark by default)
+agent-browser snapshot -i                       # interactive elements only (the app is already dark)
 agent-browser click @e5                          # act on a ref from the snapshot
 agent-browser snapshot -i                        # ALWAYS re-snapshot after the UI changes
 agent-browser screenshot /tmp/app-state.png      # capture; read the PNG back to verify
@@ -69,7 +69,7 @@ agent-browser find text "Settings" click
 ## Screenshots
 
 ```bash
-agent-browser --color-scheme dark screenshot out.png   # viewport (dark to match the app)
+agent-browser screenshot out.png                       # viewport
 agent-browser screenshot --full out.png                # full page instead of viewport
 ```
 
@@ -83,8 +83,11 @@ Navigate to the target view first (click through the UI), then capture. agent-br
 - **Multiple targets:** the app has a main renderer window (page title contains
   "PostHog Code") plus possible webviews/devtools. `agent-browser tab` lists them;
   switch with `agent-browser tab <index>`.
-- **Dark mode:** CDP defaults to `light`; pass `--color-scheme dark` (or set
-  `AGENT_BROWSER_COLOR_SCHEME=dark`) so screenshots match the real app.
+- **Never pass `--color-scheme dark`:** that global flag makes agent-browser apply
+  device emulation that forces a 1280x720 viewport and renders this Electron window
+  blank, and it sticks in the daemon (only restarting the agent-browser daemon
+  clears it, not `close`). The app is already dark, so plain `agent-browser
+  snapshot` / `agent-browser screenshot` is what you want.
 - **Auth / data:** you drive whatever is signed into `~/.posthog-code`. If the app
   shows onboarding or sign-in, that is the real boot state. Do not mutate
   production data (don't create real tasks/PRs) while exploring.

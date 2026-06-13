@@ -184,7 +184,7 @@ npm i -g agent-browser && agent-browser install   # once
 pnpm dev                                            # run the app (exposes CDP on :9222)
 pnpm app:cdp                                         # preflight + connect
 agent-browser skills get electron                   # load the canonical commands
-agent-browser --color-scheme dark snapshot -i       # then click/type/screenshot
+agent-browser snapshot -i                           # then click/type/screenshot
 ```
 
 This drives whatever profile is signed into `~/.posthog-code`; do not mutate production data while exploring. See the `test-electron-app` skill.
