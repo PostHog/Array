@@ -236,7 +236,7 @@ See [docs/conventions.md](./docs/conventions.md).
 - Prefer a parameterised test shape (`it.each`/`test.each`) when several cases exercise the same logic with different inputs and expectations. Keep separate tests when cases differ in setup, assertions, or intent.
 - Colocate tests as `.test.ts` or `.test.tsx`.
 - Put E2E tests in `tests/e2e/`.
-- Drive and screenshot the real running app (live data) with agent-browser over CDP `:9222`: run `pnpm app:cdp`, or use the `test-electron-app` skill.
+- Drive and screenshot the real running app (live data) with agent-browser over CDP `:9222`: run `pnpm app:cdp`, or use the `test-electron-app` (drive/interact) and `screenshot-dev-app` (capture) skills.
 - After touching `@posthog/platform`, rebuild or typecheck its `dist/`.
 - After touching `packages/core`, run `biome lint packages/core` and verify zero `noRestrictedImports`.
 
