@@ -1,0 +1,65 @@
+#!/usr/bin/env node
+
+/**
+ * Preflight + connect for driving the running Electron app with agent-browser.
+ *
+ * Usage: pnpm app:cdp [port]
+ *
+ * Verifies agent-browser is installed and the dev app is exposing a Chrome
+ * DevTools Protocol endpoint (the dev scripts launch with
+ * --remote-debugging-port=9222), then connects so subsequent agent-browser
+ * commands target the app. Port defaults to 9222 or POSTHOG_CODE_CDP_PORT.
+ */
+
+import { spawnSync } from "node:child_process";
+
+const port = Number(
+  process.argv[2] ?? process.env.POSTHOG_CODE_CDP_PORT ?? 9222,
+);
+
+function fail(message) {
+  console.error(`\n✗ ${message}\n`);
+  process.exit(1);
+}
+
+const version = spawnSync("agent-browser", ["--version"], { encoding: "utf8" });
+if (version.error?.code === "ENOENT") {
+  fail(
+    "agent-browser is not installed.\n  Install it once with:\n    npm i -g agent-browser && agent-browser install",
+  );
+}
+
+let targets;
+try {
+  const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
+    signal: AbortSignal.timeout(2000),
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  targets = await response.json();
+} catch {
+  fail(
+    `Electron app is not reachable on :${port}.\n  Start it with \`pnpm dev\` (or \`pnpm dev:code\`) — it launches with --remote-debugging-port=${port}.`,
+  );
+}
+
+const pages = targets.filter((t) => t.type === "page");
+console.log(`✓ agent-browser ${version.stdout.trim()}`);
+console.log(
+  `✓ Electron app reachable on :${port} (${pages.length} page target${pages.length === 1 ? "" : "s"})`,
+);
+for (const page of pages) {
+  console.log(`    - ${page.title || "(untitled)"} ${page.url}`);
+}
+
+const connect = spawnSync("agent-browser", ["connect", String(port)], {
+  stdio: "inherit",
+});
+if (connect.status !== 0) {
+  process.exit(connect.status ?? 1);
+}
+
+console.log(
+  `\nConnected. Next: agent-browser --color-scheme dark snapshot -i\nLoad the workflow with: agent-browser skills get electron`,
+);

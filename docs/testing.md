@@ -166,6 +166,30 @@ Keep E2E tests focused:
 - assert visible outcomes
 - capture regression conditions explicitly
 
+## Interactive App Testing
+
+To drive the **real running app** (live tRPC, workspace-server, real data) instead of writing a spec, use [agent-browser](https://github.com/vercel-labs/agent-browser) over the Chrome DevTools Protocol. The dev app already launches with `--remote-debugging-port=9222`, so an agent can connect, snapshot the accessibility tree, click/type, and screenshot the live UI.
+
+Three surfaces, pick by intent:
+
+| Goal | Tool |
+| --- | --- |
+| Verify a change in the real app, live data | agent-browser + CDP `:9222` (`test-electron-app` skill) |
+| Fast mocked layout check, no app boot | Vite preview `:5173` (`screenshot-dev-app` skill) |
+| Regression coverage in CI | Playwright E2E (`tests/e2e/`) |
+
+Workflow:
+
+```bash
+npm i -g agent-browser && agent-browser install   # once
+pnpm dev                                            # run the app (exposes CDP on :9222)
+pnpm app:cdp                                         # preflight + connect
+agent-browser skills get electron                   # load the canonical commands
+agent-browser --color-scheme dark snapshot -i       # then click/type/screenshot
+```
+
+This drives whatever profile is signed into `~/.posthog-code`; do not mutate production data while exploring. See `.claude/skills/test-electron-app/SKILL.md`.
+
 ## Boundary Checks
 
 After touching `@posthog/platform`, rebuild or typecheck its `dist/` before relying on downstream typechecks.
