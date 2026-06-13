@@ -8,10 +8,13 @@
  * Verifies agent-browser is installed and the dev app is exposing a Chrome
  * DevTools Protocol endpoint (the dev scripts launch with
  * --remote-debugging-port=9222), then connects so subsequent agent-browser
- * commands target the app. Port defaults to 9222 or POSTHOG_CODE_CDP_PORT.
+ * commands target the app. Port resolution: first positional arg, then
+ * POSTHOG_CODE_CDP_PORT, then 9222.
  */
 
 import { spawnSync } from "node:child_process";
+
+const CDP_FETCH_TIMEOUT_MS = 2000;
 
 const port = Number(
   process.argv[2] ?? process.env.POSTHOG_CODE_CDP_PORT ?? 9222,
@@ -20,6 +23,12 @@ const port = Number(
 function fail(message) {
   console.error(`\n✗ ${message}\n`);
   process.exit(1);
+}
+
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  fail(
+    `Invalid port "${process.argv[2] ?? process.env.POSTHOG_CODE_CDP_PORT}". Pass an integer 1-65535 (or set POSTHOG_CODE_CDP_PORT).`,
+  );
 }
 
 const version = spawnSync("agent-browser", ["--version"], { encoding: "utf8" });
@@ -35,7 +44,7 @@ if (version.error) {
 let targets;
 try {
   const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
-    signal: AbortSignal.timeout(2000),
+    signal: AbortSignal.timeout(CDP_FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
@@ -43,7 +52,7 @@ try {
   targets = await response.json();
 } catch {
   fail(
-    `Electron app is not reachable on :${port}.\n  Start it with \`pnpm dev\` (or \`pnpm dev:code\`) — it launches with --remote-debugging-port=${port}.`,
+    `Electron app is not reachable on :${port}.\n  Start it with \`pnpm dev\` (or \`pnpm dev:code\`); it launches with --remote-debugging-port=${port}.`,
   );
 }
 

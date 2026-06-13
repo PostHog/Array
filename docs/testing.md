@@ -168,7 +168,7 @@ Keep E2E tests focused:
 
 ## Interactive App Testing
 
-To drive the **real running app** (live tRPC, workspace-server, real data) instead of writing a spec, use [agent-browser](https://github.com/vercel-labs/agent-browser) over the Chrome DevTools Protocol. The dev app already launches with `--remote-debugging-port=9222`, so an agent can connect, snapshot the accessibility tree, click/type, and screenshot the live UI.
+To drive the **real running app** (live tRPC, workspace-server, real data) instead of writing a spec, use [agent-browser](https://github.com/vercel-labs/agent-browser) over the Chrome DevTools Protocol. The dev app already launches with `--remote-debugging-port=9222`, so an agent can connect, snapshot the accessibility tree, click/type and screenshot the live UI.
 
 Two surfaces, pick by intent:
 
