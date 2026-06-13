@@ -1286,7 +1286,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       SESSION_VALIDATION_TIMEOUT_MS,
     );
     if (result.result === "timeout") {
-      throw new Error(`Session refresh timed out for ${this.sessionId}`);
+      this.terminateQuery(newQuery, newAbortController);
+      throw new RequestError(
+        -32603,
+        `Session refresh timed out after ${SESSION_VALIDATION_TIMEOUT_MS}ms`,
+        { sessionId: this.sessionId },
+      );
     }
 
     // Re-fetch MCP tool metadata + slash commands — the server list changed.
@@ -1464,6 +1469,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         { cwd },
         `\`cwd\` is not a directory: ${cwd}`,
       );
+    }
+  }
+
+  /**
+   * Terminate a query whose initialization failed or timed out: abort the
+   * controller (killing the CLI subprocess via the spawn signal) and close the
+   * SDK query so no further messages are read. Without this a timed-out session
+   * leaks an orphaned `claude` process that the retry loop then multiplies.
+   */
+  private terminateQuery(sdkQuery: Query, controller: AbortController): void {
+    controller.abort();
+    try {
+      sdkQuery.close();
+    } catch {
+      // Query may already be closed.
     }
   }
 
@@ -1655,8 +1675,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           SESSION_VALIDATION_TIMEOUT_MS,
         );
         if (result.result === "timeout") {
-          throw new Error(
-            `Session ${forkSession ? "fork" : "resumption"} timed out for sessionId=${sessionId}`,
+          throw new RequestError(
+            -32603,
+            `Session ${forkSession ? "fork" : "resumption"} timed out after ${SESSION_VALIDATION_TIMEOUT_MS}ms`,
+            { sessionId, taskId, taskRunId: meta?.taskRunId },
           );
         }
         session.knownSlashCommands = collectKnownSlashCommands(
@@ -1664,6 +1686,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         );
       } catch (err) {
         settingsManager.dispose();
+        this.terminateQuery(q, abortController);
         if (
           err instanceof Error &&
           err.message === "Query closed before response received"
@@ -1718,9 +1741,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       try {
         const initResult = await initPromise;
         if (initResult.result === "timeout") {
-          settingsManager.dispose();
-          throw new Error(
-            `Session initialization timed out for sessionId=${sessionId}`,
+          throw new RequestError(
+            -32603,
+            `Session initialization timed out after ${SESSION_VALIDATION_TIMEOUT_MS}ms`,
+            { sessionId, taskId, taskRunId: meta?.taskRunId },
           );
         }
         session.knownSlashCommands = collectKnownSlashCommands(
@@ -1728,6 +1752,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         );
       } catch (err) {
         settingsManager.dispose();
+        this.terminateQuery(q, abortController);
         this.logger.error("Session initialization failed", {
           sessionId,
           taskId,

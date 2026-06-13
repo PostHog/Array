@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  fetchGatewayModels,
   formatGatewayModelName,
   getClaudeModelRecency,
   isBlockedModelId,
@@ -107,5 +108,31 @@ describe("getClaudeModelRecency", () => {
       "claude-fable-5",
       "claude-mystery",
     ]);
+  });
+});
+
+describe("fetchGatewayModels", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("bounds the request with an abort signal and returns [] when it times out", async () => {
+    // Simulate a stalled gateway: the request rejects the way
+    // AbortSignal.timeout would once the deadline passes. fetchGatewayModels
+    // runs inside the Promise.all that gates session-init, so it must degrade
+    // to "no models" rather than hang.
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(
+        new DOMException("The operation was aborted.", "TimeoutError"),
+      );
+
+    await expect(
+      fetchGatewayModels({ gatewayUrl: "https://gateway.timeout-test" }),
+    ).resolves.toEqual([]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
   });
 });

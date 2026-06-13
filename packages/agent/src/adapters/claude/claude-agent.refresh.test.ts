@@ -1,4 +1,7 @@
-import type { AgentSideConnection } from "@agentclientprotocol/sdk";
+import {
+  type AgentSideConnection,
+  RequestError,
+} from "@agentclientprotocol/sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POSTHOG_METHODS } from "../../acp-extensions";
 import { Pushable } from "../../utils/streams";
@@ -15,6 +18,7 @@ type SdkQueryHandle = {
   setMcpServers: ReturnType<typeof vi.fn>;
   supportedCommands: ReturnType<typeof vi.fn>;
   initializationResult: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
   [Symbol.asyncIterator]: () => AsyncIterator<never>;
 };
 
@@ -31,6 +35,7 @@ function makeQueryHandle(): SdkQueryHandle {
     setMcpServers: vi.fn().mockResolvedValue(undefined),
     supportedCommands: vi.fn().mockResolvedValue([]),
     initializationResult: vi.fn().mockImplementation(() => nextInitPromise),
+    close: vi.fn(),
     [Symbol.asyncIterator]: async function* () {
       /* never yields */
     } as never,
@@ -192,7 +197,7 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
     ).rejects.toThrow(/does not support MCP injection/);
   });
 
-  it("throws when initialization of the new query times out", async () => {
+  it("throws a RequestError and closes the timed-out query so it cannot leak", async () => {
     vi.useFakeTimers();
     try {
       const agent = makeAgent();
@@ -209,9 +214,12 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
 
       await vi.advanceTimersByTimeAsync(30_001);
 
-      await expect(promise).rejects.toThrow(
-        /Session refresh timed out for s-timeout/,
-      );
+      // A RequestError (not a plain Error) is what survives the ACP layer
+      // instead of being collapsed into a generic "Internal error".
+      await expect(promise).rejects.toBeInstanceOf(RequestError);
+      await expect(promise).rejects.toThrow(/Session refresh timed out after/);
+      // The new query is closed so its CLI subprocess does not leak.
+      expect(createdQueries[0]?.close).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
