@@ -223,6 +223,39 @@ export async function branchExists(
   );
 }
 
+/**
+ * Checks whether a branch exists on the remote without fetching it.
+ * Uses `git ls-remote --heads`, which is read-only and reaches the remote.
+ */
+export async function remoteBranchExists(
+  baseDir: string,
+  branchName: string,
+  options?: CreateGitClientOptions & { remote?: string },
+): Promise<boolean> {
+  const manager = getGitOperationManager();
+  const remote = options?.remote ?? "origin";
+  return manager.executeRead(
+    baseDir,
+    async (git) => {
+      try {
+        const output = await git.raw([
+          "ls-remote",
+          "--heads",
+          remote,
+          branchName,
+        ]);
+        const target = `refs/heads/${branchName}`;
+        return output
+          .split("\n")
+          .some((line) => line.trim().endsWith(`\t${target}`));
+      } catch {
+        return false;
+      }
+    },
+    { signal: options?.abortSignal },
+  );
+}
+
 export async function listWorktrees(
   baseDir: string,
   options?: CreateGitClientOptions,

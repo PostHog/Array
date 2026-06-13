@@ -260,6 +260,99 @@ export class WorktreeManager {
     };
   }
 
+  /**
+   * Fetches a branch that exists on the remote but not locally, then creates a
+   * worktree with a new local branch tracking `origin/<branch>`. Used when the
+   * user opts in to checking out a remote-only branch (e.g. a contributor's PR).
+   */
+  async createWorktreeForRemoteBranch(
+    branch: string,
+    preferredName?: string,
+    options?: { onOutput?: (data: string) => void; remote?: string },
+  ): Promise<WorktreeInfo> {
+    const manager = getGitOperationManager();
+    const remote = options?.remote ?? "origin";
+    const remoteRef = `${remote}/${branch}`;
+
+    options?.onOutput?.(`Fetching ${remoteRef}...\n`);
+    const fetched = await manager.executeWrite(this.mainRepoPath, (git) =>
+      fetchRef(git, remote, branch),
+    );
+    if (!fetched) {
+      throw new Error(`Failed to fetch branch '${branch}' from ${remote}`);
+    }
+
+    const worktreeName = await this.resolveAvailableWorktreeName(preferredName);
+
+    if (!this.usesExternalPath()) {
+      await this.ensureArrayDirIgnored();
+    }
+
+    const worktreePath = this.getWorktreePath(worktreeName);
+    const parentDir = path.dirname(worktreePath);
+    await fs.mkdir(parentDir, { recursive: true });
+
+    const targetPath = this.usesExternalPath()
+      ? worktreePath
+      : `./${WORKTREE_FOLDER_NAME}/${worktreeName}/${this.repoName}`;
+
+    // `-b <branch> <remoteRef>` creates a local branch at the fetched remote ref
+    // and sets it up to track the remote branch.
+    const output = await manager.executeWrite(this.mainRepoPath, async () => {
+      return this.spawnWorktreeAdd(["-b", branch, targetPath, remoteRef], {
+        onOutput: options?.onOutput,
+      });
+    });
+
+    await this.symlinkClaudeConfig(worktreePath);
+    await processWorktreeLink(this.mainRepoPath, worktreePath, {
+      onOutput: options?.onOutput,
+    });
+    await processWorktreeInclude(this.mainRepoPath, worktreePath, {
+      onOutput: options?.onOutput,
+    });
+    await runPostCheckoutHook(this.mainRepoPath, worktreePath, {
+      onOutput: options?.onOutput,
+    });
+
+    return {
+      worktreePath,
+      worktreeName,
+      branchName: branch,
+      baseBranch: remoteRef,
+      createdAt: new Date().toISOString(),
+      output: output.trim() || undefined,
+    };
+  }
+
+  /**
+   * Resolves a worktree name that does not collide with an existing worktree,
+   * falling back to a freshly generated unique name when the preferred (or
+   * default) name is already registered or present on disk.
+   */
+  private async resolveAvailableWorktreeName(
+    preferredName?: string,
+  ): Promise<string> {
+    let worktreeName = preferredName ?? this.generateWorktreeName();
+
+    if (preferredName) {
+      const worktreePath = this.getWorktreePath(preferredName);
+      const existingWorktrees = await this.listWorktrees();
+      const isRegistered = existingWorktrees.some(
+        (wt) => wt.worktreePath === worktreePath,
+      );
+      const existsOnDisk = await this.worktreeExists(preferredName);
+
+      if (isRegistered || existsOnDisk) {
+        worktreeName = `${this.generateWorktreeName()}${Date.now()}`;
+      }
+    } else if (await this.worktreeExists(worktreeName)) {
+      worktreeName = `${this.generateWorktreeName()}${Date.now()}`;
+    }
+
+    return worktreeName;
+  }
+
   async createDetachedWorktreeAtCommit(
     commit: string,
     preferredName?: string,

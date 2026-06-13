@@ -9,6 +9,7 @@ export interface PrepareTaskInputOptions {
   githubUserIntegrationId?: string;
   workspaceMode: WorkspaceMode;
   branch?: string | null;
+  allowRemoteBranchCheckout?: boolean;
   executionMode?: ExecutionMode;
   adapter?: "claude" | "codex";
   model?: string;
@@ -39,6 +40,7 @@ export function prepareTaskInput(
     githubUserIntegrationId: options.githubUserIntegrationId,
     workspaceMode: options.workspaceMode,
     branch: options.branch,
+    allowRemoteBranchCheckout: options.allowRemoteBranchCheckout,
     executionMode: options.executionMode,
     adapter: options.adapter,
     model: options.model,

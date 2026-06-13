@@ -15,6 +15,7 @@ export interface CreateWorkspaceArgs {
   folderPath: string;
   mode: WorkspaceMode;
   branch?: string;
+  allowRemoteBranchCheckout?: boolean;
 }
 
 export interface CreatedWorkspaceInfo {

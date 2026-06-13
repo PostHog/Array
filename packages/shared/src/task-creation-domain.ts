@@ -20,6 +20,9 @@ export interface TaskCreationInput {
   repository?: string | null;
   workspaceMode?: WorkspaceMode;
   branch?: string | null;
+  // When the branch exists only on the remote, opt in to fetching and checking
+  // it out locally into the worktree (set after the user confirms).
+  allowRemoteBranchCheckout?: boolean;
   githubIntegrationId?: number;
   githubUserIntegrationId?: string;
   executionMode?: ExecutionMode;

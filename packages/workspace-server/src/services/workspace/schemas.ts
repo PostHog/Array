@@ -23,6 +23,9 @@ export const createWorkspaceInput = z
     mode: workspaceModeSchema,
     branch: z.string().optional(),
     useExistingBranch: z.boolean().optional(),
+    // When set, a worktree branch that exists only on the remote is fetched and
+    // checked out locally instead of failing. Gated behind a user confirmation.
+    allowRemoteBranchCheckout: z.boolean().optional(),
   })
   .refine(
     (data) =>
@@ -32,6 +35,18 @@ export const createWorkspaceInput = z
       message: "Repository and folder paths must be valid for non-cloud mode",
     },
   );
+
+export const checkWorktreeBranchInput = z.object({
+  mainRepoPath: z.string(),
+  branch: z.string(),
+});
+
+export const checkWorktreeBranchOutput = z.object({
+  // "trunk": the default branch (handled by the normal detached-worktree path).
+  // "local": branch exists locally. "remote-only": exists on the remote but not
+  // locally. "missing": found neither locally nor on the remote.
+  status: z.enum(["trunk", "local", "remote-only", "missing"]),
+});
 
 export const reconcileCloudWorkspacesInput = z.object({
   taskIds: z.array(z.string()),
@@ -268,6 +283,10 @@ export type {
 } from "@posthog/shared";
 
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceInput>;
+export type CheckWorktreeBranchInput = z.infer<typeof checkWorktreeBranchInput>;
+export type CheckWorktreeBranchOutput = z.infer<
+  typeof checkWorktreeBranchOutput
+>;
 export type ReconcileCloudWorkspacesInput = z.infer<
   typeof reconcileCloudWorkspacesInput
 >;

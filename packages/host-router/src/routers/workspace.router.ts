@@ -4,6 +4,8 @@ import { WORKSPACE_SERVICE } from "@posthog/workspace-server/services/workspace/
 import {
   cachedPrUrlInput,
   cachedPrUrlOutput,
+  checkWorktreeBranchInput,
+  checkWorktreeBranchOutput,
   createWorkspaceInput,
   createWorkspaceOutput,
   deleteWorkspaceInput,
@@ -79,6 +81,13 @@ export const workspaceRouter = router({
     .output(createWorkspaceOutput)
     .mutation(({ ctx, input }) =>
       getService(ctx.container).createWorkspace(input),
+    ),
+
+  checkWorktreeBranch: publicProcedure
+    .input(checkWorktreeBranchInput)
+    .output(checkWorktreeBranchOutput)
+    .query(({ ctx, input }) =>
+      getService(ctx.container).checkWorktreeBranch(input),
     ),
 
   reconcileCloudWorkspaces: publicProcedure
