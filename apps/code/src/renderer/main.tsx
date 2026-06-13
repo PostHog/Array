@@ -16,6 +16,7 @@ import { preloadHighlighter } from "@pierre/diffs";
 import { boot } from "@posthog/di/contribution";
 import { ServiceProvider } from "@posthog/di/react";
 import App from "@posthog/ui/shell/App";
+import { initializePostHog } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { registerDesktopContributions } from "@renderer/desktop-contributions";
 import { container } from "@renderer/di/container";
 import "@renderer/desktop-services";
@@ -73,6 +74,11 @@ void preloadHighlighter({
 document.title = import.meta.env.DEV
   ? "PostHog Code (Development)"
   : "PostHog Code";
+
+const bootstrapSessionId = window.__posthogBootstrap?.sessionId;
+if (bootstrapSessionId) {
+  initializePostHog(bootstrapSessionId);
+}
 
 registerDesktopContributions();
 void boot(container);
