@@ -1,6 +1,6 @@
 ---
 name: test-electron-app
-description: Drive the real running PostHog Code Electron app (live tRPC, workspace-server, real data) over CDP with agent-browser. Connect to the running app on port 9222, snapshot the accessibility tree, click/type/navigate and screenshot to verify a change in the actual desktop app. Use when asked to test, verify, dogfood, screenshot or interact with the running app. For regression specs use the Playwright E2E suite.
+description: Drive the real running PostHog Code Electron app (live tRPC, workspace-server, real data) over CDP with agent-browser. Connect to the running app on port 9222, snapshot the accessibility tree to verify changes, click/type/navigate, and screenshot the actual desktop app only when explicitly asked. Use when asked to test, verify, dogfood, screenshot or interact with the running app. For regression specs use the Playwright E2E suite.
 allowed-tools: Bash(agent-browser:*), Bash(npx agent-browser:*), Bash(pnpm app:cdp*)
 ---
 
@@ -9,7 +9,7 @@ allowed-tools: Bash(agent-browser:*), Bash(npx agent-browser:*), Bash(pnpm app:c
 Drive the actual running app over the Chrome DevTools Protocol with
 [agent-browser](https://github.com/vercel-labs/agent-browser). The dev app
 already launches with `--remote-debugging-port=9222` (see `apps/code/package.json`),
-so an agent can connect, snapshot the UI, interact and screenshot the live app.
+so an agent can connect, snapshot the UI, interact, and (only when asked) screenshot the live app.
 
 This exercises **real** state: live tRPC, workspace-server, GitHub/Slack and
 whatever profile is signed into `~/.posthog-code`. Pick the right surface:
@@ -69,26 +69,56 @@ until curl -s localhost:9222/json/version >/dev/null; do sleep 1; done
 agent-browser connect 9222
 ```
 
-### Clean up what you started
+### After you launch it: leave it up, then idle-shutdown
 
-Only tear the app down **if you launched it**. If `pnpm app:cdp` found it already
-up on `:9222`, it is the user's own instance — leave it running, just
-`agent-browser close` your session.
+**Never auto-kill an instance you didn't start.** If `pnpm app:cdp` found the app
+already up on `:9222`, it's the user's own — when you're done just `agent-browser
+close` your session and leave the app running.
 
-When you started it, shut it down once you're done:
+When *you* launched it, don't tear it down the instant you finish. The app
+survives between turns, so leave it up and end your turn by telling the user it's
+still running and asking if they want anything else — a follow-up needs no
+relaunch.
+
+So a forgotten app doesn't linger, arm a **10-minute idle watchdog** at launch.
+Touch a marker file on launch and after every interaction; the watchdog tears the
+app down once that file sits untouched for 10 minutes (re-touching resets the
+clock):
 
 ```bash
-agent-browser close                      # free the CDP session
-pkill -f "remote-debugging-port=9222"    # kill only the dev app you launched
+touch /tmp/posthog-dev-lastuse        # arm now; re-run after each interaction
 ```
 
-Matching on `remote-debugging-port=9222` targets only your dev instance — prod has
-no debug port and uses a separate `posthog-code-dev` profile, so this never
-touches the user's running app. Then stop the background launcher: killing the app
-leaves `tail -f /dev/null` alive, so stop that task too (`TaskStop`, or kill the
-`tail … | pnpm dev:code` pipeline). Verify teardown with
-`curl -s localhost:9222/json/version` (should fail) and
-`pgrep -fl posthog-code-dev` (should be empty).
+Then start the watchdog once, as a background task (touch the marker *first* or it
+fires immediately). It polls, then self-exits after it fires or once the marker is
+removed:
+
+```bash
+while sleep 30; do
+  last=$(stat -f %m /tmp/posthog-dev-lastuse 2>/dev/null || echo 0)
+  [ $(( $(date +%s) - last )) -ge 600 ] && break
+done
+pid=$(pgrep -f "remote-debugging-port=9222" | head -1)
+[ -n "$pid" ] && kill -TERM "-$(ps -o pgid= -p "$pid" | tr -d ' ')" 2>/dev/null
+```
+
+To stop early (user says "done" / "shut it down"): close the session, group-kill
+the app, and drop the marker so the watchdog exits:
+
+```bash
+agent-browser close
+pid=$(pgrep -f "remote-debugging-port=9222" | head -1)
+[ -n "$pid" ] && kill -TERM "-$(ps -o pgid= -p "$pid" | tr -d ' ')" 2>/dev/null
+rm -f /tmp/posthog-dev-lastuse
+```
+
+Group-killing the launcher (`kill -TERM -PGID`) takes down `tail`, `pnpm`,
+`electron-forge` and Electron together, so nothing — not even the
+`tail -f /dev/null` stdin pipe — lingers. Matching `remote-debugging-port=9222`
+hits only your dev instance (prod has no debug port and a separate
+`posthog-code-dev` profile), so it never touches the user's app. Verify with
+`curl -s localhost:9222/json/version` (fails) and `pgrep -fl posthog-code-dev`
+(empty).
 
 ## Load the canonical commands
 
@@ -105,10 +135,14 @@ agent-browser skills get core         # snapshot/interact/screenshot reference
 agent-browser connect 9222                      # attach (skip if you ran pnpm app:cdp)
 agent-browser snapshot -i                       # interactive elements only (the app is already dark)
 agent-browser click @e5                          # act on a ref from the snapshot
-agent-browser snapshot -i                        # ALWAYS re-snapshot after the UI changes
-agent-browser screenshot /tmp/app-state.png      # capture the current view
+agent-browser snapshot -i                        # ALWAYS re-snapshot after the UI changes — this is how you verify
 agent-browser close                              # done; free the session
 ```
+
+**Verifying a change is `snapshot`, not `screenshot`.** The accessibility tree
+tells you what is on screen for almost no tokens, and it is how you confirm a test
+worked. Do not capture a screenshot to check your own work — only run `screenshot`
+when the user explicitly asks to see the app (see [Screenshots](#screenshots)).
 
 Refs (`@e1`, `@e2`, …) are reassigned on every snapshot and go stale the moment
 the UI changes. Re-snapshot before the next ref interaction.
@@ -123,6 +157,12 @@ agent-browser find text "Settings" click
 ```
 
 ## Screenshots
+
+**Only screenshot when the user explicitly asks for one** ("screenshot", "show
+me", "what does it look like"). To confirm a change worked, use `agent-browser
+snapshot` — the accessibility tree is the cheap default and is almost always
+enough. Auto-capturing a screenshot to "confirm" your work just burns image
+tokens.
 
 ```bash
 agent-browser screenshot /tmp/app.png                  # viewport (absolute path = clickable)
