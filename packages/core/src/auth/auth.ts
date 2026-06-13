@@ -1014,6 +1014,10 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
         session.orgProjectsMap,
       );
 
+      // The session may have been replaced (logout, re-login) while the fetch
+      // was in flight; committing the stale one would resurrect it.
+      if (this.session !== session) return;
+
       if (!incomplete) {
         const lastPrefs = session.accountKey
           ? this.authPreference.get(session.accountKey, session.cloudRegion)
@@ -1047,6 +1051,8 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
 
       await sleepWithBackoff(attempt, AuthService.REFRESH_BACKOFF);
     }
+
+    this.logger.warn("Org/projects recovery exhausted retries");
   }
 
   private updateState(partial: Partial<AuthState>): void {
