@@ -243,7 +243,7 @@ function VirtualizedListInner<T>(
       <div
         ref={parentRef}
         onScroll={handleScroll}
-        className="scroll-mask-8 flex-1 overflow-auto"
+        className="scroll-mask-8 flex-1 overflow-y-auto overflow-x-hidden"
         style={{ scrollbarGutter: "stable" }}
       >
         <div
