@@ -118,7 +118,15 @@ export class GitHandoffTracker {
         checkpoint.checkpointId,
       );
 
-      const packBaseline = localGitState?.upstreamHead ?? null;
+      const packBaselineRaw = localGitState?.upstreamHead ?? null;
+      // Verify the baseline exists before using as a negative ref. The sender's
+      // upstream HEAD may be a commit this repo doesn't have (e.g. pushed after
+      // the sandbox was created), which would make git pack-objects fail with
+      // "fatal: bad object <hash>". Fall back to a full pack if absent.
+      const packBaseline =
+        packBaselineRaw && (await this.refExists(git, packBaselineRaw))
+          ? packBaselineRaw
+          : null;
       const packRefs = [
         checkpoint.head,
         reconciledIndex.indexTree,
@@ -558,6 +566,63 @@ export class GitHandoffTracker {
     return exitCode === 0;
   }
 
+  /**
+   * Packs an existing local checkpoint commit for cloud upload. Reads the
+   * checkpoint ref from local git, parses its metadata from the commit message,
+   * creates a pack from its objects, and returns the artifact + full metadata.
+   * Returns null if the ref doesn't exist or packing fails.
+   */
+  async packExistingCheckpoint(
+    checkpointId: string,
+    baseline?: string | null,
+  ): Promise<{
+    artifact: GitHandoffArtifactFile;
+    checkpoint: GitHandoffCheckpoint;
+  } | null> {
+    const checkpointRef = `${CHECKPOINT_REF_PREFIX}${checkpointId}`;
+    const git = createGitClient(this.repositoryPath);
+
+    let commit: string;
+    try {
+      commit = (await git.revparse([checkpointRef])).trim();
+    } catch {
+      return null;
+    }
+
+    const rawMessage = await git.raw(["show", "-s", "--format=%B", commit]);
+    const meta = parseHandoffCheckpointMeta(rawMessage);
+    const tracking = await getTrackingMetadata(git, meta.branch);
+
+    const tempDir = await this.createTempDir(checkpointId);
+    const packPrefix = path.join(tempDir, checkpointId);
+
+    // Pack the checkpoint ref + head commit; exclude baseline to keep packs differential.
+    const packRefs = [
+      checkpointRef,
+      meta.head,
+      baseline ? `^${baseline}` : null,
+    ].filter((r): r is string => !!r);
+
+    const artifact = await this.captureObjectPack(packPrefix, packRefs);
+
+    return {
+      artifact,
+      checkpoint: {
+        checkpointId,
+        commit,
+        checkpointRef,
+        head: meta.head,
+        branch: meta.branch,
+        indexTree: meta.indexTree ?? "",
+        worktreeTree: meta.worktreeTree ?? "",
+        timestamp: meta.timestamp ?? new Date().toISOString(),
+        upstreamRemote: tracking.upstreamRemote,
+        upstreamMergeRef: tracking.upstreamMergeRef,
+        remoteUrl: tracking.remoteUrl,
+      },
+    };
+  }
+
   private async createTempDir(checkpointId: string): Promise<string> {
     return mkdtemp(joinTempPrefix(checkpointId));
   }
@@ -685,6 +750,35 @@ export class GitHandoffTracker {
 
 function joinTempPrefix(checkpointId: string): string {
   return path.join(tmpdir(), `posthog-code-handoff-${checkpointId}-`);
+}
+
+function parseHandoffCheckpointMeta(message: string): {
+  head: string | null;
+  branch: string | null;
+  indexTree: string | null;
+  worktreeTree: string | null;
+  timestamp: string | null;
+} {
+  const result = {
+    head: null as string | null,
+    branch: null as string | null,
+    indexTree: null as string | null,
+    worktreeTree: null as string | null,
+    timestamp: null as string | null,
+  };
+  for (const line of message.split("\n")) {
+    const eqIdx = line.indexOf("=");
+    if (eqIdx < 0) continue;
+    const key = line.slice(0, eqIdx).trim();
+    const value = line.slice(eqIdx + 1).trim();
+    if (!value || value === "null") continue;
+    if (key === "head") result.head = value;
+    else if (key === "branch") result.branch = value;
+    else if (key === "index") result.indexTree = value;
+    else if (key === "worktree") result.worktreeTree = value;
+    else if (key === "timestamp") result.timestamp = value;
+  }
+  return result;
 }
 
 export async function readHandoffLocalGitState(

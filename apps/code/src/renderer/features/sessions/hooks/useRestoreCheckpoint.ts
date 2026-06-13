@@ -29,15 +29,17 @@ export function useRestoreCheckpoint({
   const confirmRestore = useCallback(async () => {
     if (!pendingCheckpointId || !repoPath) return;
 
-    // Checkpoint restore only works for local sessions: it reverts local git
-    // state and truncates the on-disk rollout/logs. Cloud sessions have no
-    // local agent to reconnect, so block here (before any destructive revert)
-    // and tell the user why instead of failing silently.
     const session = taskId
       ? sessionStoreSetters.getSessionByTaskId(taskId)
       : undefined;
+
+    // Checkpoint packs from cloud turns are only available in local git after
+    // the cloud→local handoff (syncCloudCheckpointsFromLog). If the task is
+    // still running in the cloud, guide the user to continue locally first.
     if (session?.isCloud) {
-      toast.error("Checkpoint restore isn't available for cloud sessions");
+      toast.info(
+        "To restore a cloud checkpoint, continue the task locally first.",
+      );
       setDialogOpen(false);
       setPendingCheckpointId(null);
       return;

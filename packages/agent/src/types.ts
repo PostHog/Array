@@ -201,6 +201,12 @@ export interface GitCheckpoint extends GitHandoffCheckpoint {
 
 export interface GitCheckpointEvent extends GitCheckpoint {
   device?: DeviceInfo;
+  /**
+   * For cloud checkpoints: the turn index at which this checkpoint was captured
+   * (1-based, incremented per TURN_COMPLETE). Used by the desktop to associate
+   * the checkpoint with the correct conversation boundary for log truncation.
+   */
+  promptId?: number;
 }
 
 /**

@@ -71,6 +71,7 @@ function createDeps(overrides: Partial<HandoffSagaDeps> = {}): HandoffSagaDeps {
     }),
     closeCloudRun: vi.fn().mockResolvedValue(undefined),
     seedLocalLogs: vi.fn().mockResolvedValue(undefined),
+    syncCloudCheckpoints: vi.fn().mockResolvedValue(undefined),
     killSession: vi.fn().mockResolvedValue(undefined),
     setPendingContext: vi.fn(),
     onProgress: vi.fn(),

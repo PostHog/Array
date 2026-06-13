@@ -1074,6 +1074,19 @@ When creating pull requests, add the following footer at the end of the PR descr
    * Get the promptId for a checkpoint. Used when truncating S3 log so the
    * backend can find the correct turn boundary by promptId.
    */
+  /**
+   * Returns all stored checkpoint entries for a session in capture order.
+   * Used during local→cloud handoff to seed the cloud run log with prior
+   * local checkpoints so they survive the next cloud→local handoff.
+   */
+  getCheckpointEntries(
+    taskRunId: string,
+  ): Array<{ checkpointId: string; promptId: number | undefined }> {
+    return (this.sessionCheckpoints.get(taskRunId) ?? []).map(
+      ({ checkpointId, promptId }) => ({ checkpointId, promptId }),
+    );
+  }
+
   getCheckpointPromptId(
     taskRunId: string,
     checkpointId: string,
@@ -1102,6 +1115,57 @@ When creating pull requests, add the following footer at the end of the PR descr
       removed: checkpoints.length - idx - 1,
     });
     return idx + 1;
+  }
+
+  /**
+   * Register a cloud-originated checkpoint into the local sessionCheckpoints map
+   * so it participates in replayCheckpoints, getCheckpointPromptId, and
+   * truncateCheckpoints exactly like a locally captured checkpoint.
+   *
+   * Called by HandoffService after cloud→local handoff so all cloud turn
+   * checkpoints show enabled restore buttons on the local session.
+   */
+  registerCloudCheckpoint(
+    taskRunId: string,
+    entry: { checkpointId: string; promptId: number | undefined; ts: number },
+  ): void {
+    const existing = this.sessionCheckpoints.get(taskRunId) ?? [];
+    // Deduplicate: don't add the same checkpoint twice (e.g. if handoff is
+    // retried or the sync runs twice).
+    if (existing.some((c) => c.checkpointId === entry.checkpointId)) {
+      log.debug("Skipping duplicate cloud checkpoint registration", {
+        taskRunId,
+        checkpointId: entry.checkpointId,
+      });
+      return;
+    }
+    existing.push(entry);
+    this.sessionCheckpoints.set(taskRunId, existing);
+
+    log.info("Registered cloud checkpoint for local session", {
+      taskRunId,
+      checkpointId: entry.checkpointId,
+      promptId: entry.promptId,
+      totalStored: existing.length,
+    });
+
+    // Emit to renderer so the restore button activates immediately without
+    // needing a replayCheckpoints call.
+    this.emit(AgentServiceEvent.SessionEvent, {
+      taskRunId,
+      payload: {
+        type: "acp_message",
+        ts: entry.ts,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT,
+          params: {
+            checkpointId: entry.checkpointId,
+            promptId: entry.promptId,
+          },
+        },
+      },
+    });
   }
 
   /**

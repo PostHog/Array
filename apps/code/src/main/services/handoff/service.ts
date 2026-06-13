@@ -197,7 +197,16 @@ export class HandoffService extends TypedEventEmitter<HandoffServiceEvents> {
       },
 
       seedLocalLogs: async (runId: string, logUrl: string) => {
-        const response = await fetch(logUrl);
+        let response: Response;
+        try {
+          response = await fetch(logUrl);
+        } catch (err) {
+          log.warn("Failed to fetch cloud logs for seeding (network error)", {
+            runId,
+            err: err instanceof Error ? err.message : String(err),
+          });
+          return;
+        }
         if (!response.ok) {
           log.warn("Failed to fetch cloud logs for seeding", {
             status: response.status,
@@ -227,6 +236,20 @@ export class HandoffService extends TypedEventEmitter<HandoffServiceEvents> {
 
       killSession: async (taskRunId: string) => {
         await this.agentService.cancelSession(taskRunId);
+      },
+
+      syncCloudCheckpoints: async (
+        taskId: string,
+        runId: string,
+        repoPath: string,
+        apiClient: PostHogAPIClient,
+      ) => {
+        await this.syncCloudCheckpointsFromLog(
+          taskId,
+          runId,
+          repoPath,
+          apiClient,
+        );
       },
 
       setPendingContext: (taskRunId: string, context: string) => {
@@ -322,6 +345,44 @@ export class HandoffService extends TypedEventEmitter<HandoffServiceEvents> {
           POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT,
           checkpoint as unknown as Record<string, unknown>,
         ),
+
+      uploadPriorLocalCheckpoints: async (currentCheckpoint, baseline) => {
+        const currentId = currentCheckpoint?.checkpointId ?? null;
+        const entries = this.agentService.getCheckpointEntries(runId);
+        const priorIds = entries
+          .map((e) => e.checkpointId)
+          .filter((id) => id !== currentId);
+
+        if (priorIds.length === 0) {
+          log.debug("No prior local checkpoints to upload", { runId });
+          return;
+        }
+
+        log.info("Uploading prior local checkpoints to cloud log", {
+          runId,
+          count: priorIds.length,
+        });
+
+        const checkpoints =
+          await checkpointTracker.packAndUploadLocalCheckpoints(
+            priorIds,
+            baseline,
+          );
+
+        for (const cp of checkpoints) {
+          const entry = entries.find((e) => e.checkpointId === cp.checkpointId);
+          await appendNotification(POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT, {
+            ...(cp as unknown as Record<string, unknown>),
+            device: { type: "local" },
+            promptId: entry?.promptId ?? undefined,
+          });
+        }
+
+        log.info("Prior local checkpoints uploaded to cloud log", {
+          runId,
+          uploaded: checkpoints.length,
+        });
+      },
 
       countLocalLogEntries: (taskRunId) => {
         const logPath = join(
@@ -481,5 +542,122 @@ export class HandoffService extends TypedEventEmitter<HandoffServiceEvents> {
         "Cancel if you want to keep the current local branch tip.",
     });
     return response === CONTINUE_DIVERGENCE_BUTTON;
+  }
+
+  /**
+   * After cloud→local handoff's seedLocalLogs step, parse the seeded logs.ndjson
+   * for ALL _posthog/git_checkpoint notifications (not just the latest), apply each
+   * checkpoint pack from S3 to the local git repo, and register them in the local
+   * agentService so every cloud turn shows an enabled restore button.
+   *
+   * Non-fatal: failures are logged but don't abort the handoff.
+   */
+  private async syncCloudCheckpointsFromLog(
+    taskId: string,
+    runId: string,
+    repoPath: string,
+    apiClient: PostHogAPIClient,
+  ): Promise<void> {
+    const logPath = join(
+      homedir(),
+      ".posthog-code",
+      "sessions",
+      runId,
+      "logs.ndjson",
+    );
+
+    let content: string;
+    try {
+      content = readFileSync(logPath, "utf-8");
+    } catch {
+      log.debug("No seeded logs found for cloud checkpoint sync — skipping", {
+        runId,
+      });
+      return;
+    }
+
+    const checkpointEvents: AgentTypes.GitCheckpointEvent[] = [];
+    for (const line of content.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line) as {
+          type?: string;
+          notification?: {
+            method?: string;
+            params?: Record<string, unknown>;
+          };
+        };
+        if (
+          entry.notification?.method === POSTHOG_NOTIFICATIONS.GIT_CHECKPOINT
+        ) {
+          const params = entry.notification.params;
+          // Only process events that have S3 artifact paths (cloud captures) and
+          // that weren't already applied by the main apply_git_checkpoint step.
+          if (params?.checkpointId && params?.artifactPath) {
+            checkpointEvents.push(
+              params as unknown as AgentTypes.GitCheckpointEvent,
+            );
+          }
+        }
+      } catch {
+        // Skip malformed lines
+      }
+    }
+
+    log.info("Syncing cloud checkpoints from seeded logs", {
+      runId,
+      count: checkpointEvents.length,
+    });
+
+    if (checkpointEvents.length === 0) {
+      return;
+    }
+
+    const tracker = new HandoffCheckpointTracker({
+      repositoryPath: repoPath,
+      taskId,
+      runId,
+      apiClient,
+    });
+
+    for (const event of checkpointEvents) {
+      const checkpointId = event.checkpointId;
+      try {
+        // Apply the pack to local git so RevertCheckpointSaga can use the ref.
+        // onDivergedBranch returns false (don't reset) for intermediate checkpoints;
+        // working-tree state is managed by the caller's apply_git_checkpoint step.
+        await tracker.applyFromHandoff(event, {
+          localGitState: undefined,
+          onDivergedBranch: async () => false,
+        });
+
+        // Register in agentService so the restore button appears immediately.
+        this.agentService.registerCloudCheckpoint(runId, {
+          checkpointId,
+          promptId:
+            typeof event.promptId === "number" ? event.promptId : undefined,
+          ts: event.timestamp
+            ? new Date(event.timestamp).getTime()
+            : Date.now(),
+        });
+
+        log.info("Synced cloud checkpoint to local session", {
+          runId,
+          checkpointId,
+          promptId: event.promptId,
+        });
+      } catch (err) {
+        log.warn("Failed to sync cloud checkpoint (non-fatal)", {
+          runId,
+          checkpointId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    log.info("Cloud checkpoint sync complete", {
+      runId,
+      synced: checkpointEvents.length,
+    });
   }
 }

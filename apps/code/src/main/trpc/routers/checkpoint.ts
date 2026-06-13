@@ -1,4 +1,5 @@
 import { POSTHOG_NOTIFICATIONS } from "@posthog/agent";
+import { getSessionJsonlPath } from "@posthog/agent/adapters/claude/session/jsonl-hydration";
 import { truncateCodexRollout } from "@posthog/agent/adapters/codex/rollout";
 import { createGitClient } from "@posthog/git/client";
 import {
@@ -317,6 +318,32 @@ async function runRestore(input: {
               });
             },
           );
+        } else if (info.adapter === "claude") {
+          // Delete the stale local Claude JSONL so the SDK doesn't read full
+          // conversation history before hydrateSessionJsonl re-fetches the
+          // truncated version from S3. This fixes a race where an immediate
+          // page-reload after restore causes the agent to remember turns that
+          // should have been forgotten. Non-fatal if the file is already gone.
+          const jsonlPath = getSessionJsonlPath(info.sessionId, info.repoPath);
+          try {
+            const { unlink } = await import("node:fs/promises");
+            await unlink(jsonlPath);
+            log.info("Deleted stale Claude JSONL for checkpoint restore", {
+              taskRunId: input.taskRunId,
+              sessionId: info.sessionId,
+              jsonlPath,
+            });
+          } catch (err: unknown) {
+            // ENOENT is fine — file may already be absent
+            const code = (err as NodeJS.ErrnoException).code;
+            if (code !== "ENOENT") {
+              log.warn("Failed to delete Claude JSONL (non-fatal)", {
+                taskRunId: input.taskRunId,
+                jsonlPath,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
         }
       } else {
         log.warn("No active session found for checkpoint restore", {

@@ -289,6 +289,100 @@ export class HandoffCheckpointTracker {
     return Object.fromEntries(downloads) as Downloads;
   }
 
+  /**
+   * Packs existing local checkpoint commits and uploads them to S3, returning
+   * GitCheckpoint objects with artifactPath populated. Called during local→cloud
+   * handoff so the cloud run log includes the full local checkpoint history —
+   * enabling restore after any future cloud→local handoff (Fix 5).
+   *
+   * Non-fatal per checkpoint: errors are logged and the checkpoint is skipped.
+   */
+  async packAndUploadLocalCheckpoints(
+    checkpointIds: string[],
+    baseline?: string | null,
+  ): Promise<GitCheckpoint[]> {
+    if (!this.apiClient || checkpointIds.length === 0) return [];
+
+    const gitTracker = this.createGitTracker();
+    const results: GitCheckpoint[] = [];
+
+    for (const checkpointId of checkpointIds) {
+      let artifactPath: string | undefined;
+      let packed: {
+        artifact: { path: string; rawBytes: number };
+        checkpoint: {
+          checkpointId: string;
+          commit: string;
+          checkpointRef: string;
+          head: string | null;
+          branch: string | null;
+          indexTree: string;
+          worktreeTree: string;
+          timestamp: string;
+          upstreamRemote: string | null;
+          upstreamMergeRef: string | null;
+          remoteUrl: string | null;
+        };
+      } | null = null;
+
+      try {
+        packed = await gitTracker.packExistingCheckpoint(
+          checkpointId,
+          baseline,
+        );
+        if (!packed) {
+          this.logger.debug("Skipping local checkpoint — ref not found", {
+            checkpointId,
+          });
+          continue;
+        }
+
+        try {
+          const uploads = await this.uploadArtifacts([
+            {
+              key: "pack",
+              filePath: packed.artifact.path,
+              name: `handoff/${checkpointId}.pack`,
+              contentType: "application/x-git-packed-objects",
+            },
+          ]);
+          artifactPath = uploads.pack?.storagePath;
+        } finally {
+          await this.removeIfPresent(packed.artifact.path);
+          await rm(dirname(packed.artifact.path), {
+            recursive: true,
+            force: true,
+          }).catch(() => {});
+        }
+
+        if (!artifactPath) {
+          this.logger.warn("Pack upload returned no storage path", {
+            checkpointId,
+          });
+          continue;
+        }
+
+        results.push({ ...packed.checkpoint, artifactPath });
+        this.logger.debug("Packed and uploaded local checkpoint for cloud", {
+          checkpointId,
+          artifactPath,
+        });
+      } catch (err) {
+        this.logger.warn("Failed to pack/upload local checkpoint (non-fatal)", {
+          checkpointId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    this.logger.info("Local checkpoint upload complete", {
+      requested: checkpointIds.length,
+      uploaded: results.length,
+    });
+
+    return results;
+  }
+
   private createGitTracker(): GitHandoffTracker {
     return new GitHandoffTracker({
       repositoryPath: this.repositoryPath,

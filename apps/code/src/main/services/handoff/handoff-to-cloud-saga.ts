@@ -16,6 +16,14 @@ export interface HandoffToCloudSagaDeps extends HandoffBaseDeps {
   persistCheckpointToLog(
     checkpoint: AgentTypes.GitCheckpointEvent,
   ): Promise<void>;
+  /**
+   * Packs all prior local checkpoints (excluding the one just captured) and
+   * appends them to the cloud run log, so they survive after cloud→local handoff.
+   */
+  uploadPriorLocalCheckpoints(
+    currentCheckpoint: AgentTypes.GitCheckpointEvent | null,
+    baseline?: string | null,
+  ): Promise<void>;
   countLocalLogEntries(runId: string): number;
   resumeRunInCloud(): Promise<void>;
 }
@@ -54,6 +62,15 @@ export class HandoffToCloudSaga extends Saga<
       );
       checkpointCaptured = true;
     }
+
+    // Upload all prior local turn checkpoints to S3 and append them to the
+    // cloud run log so they're available after any future cloud→local handoff.
+    await this.readOnlyStep("upload_prior_local_checkpoints", () =>
+      this.deps.uploadPriorLocalCheckpoints(
+        checkpoint,
+        input.localGitState?.upstreamHead ?? null,
+      ),
+    );
 
     this.deps.onProgress("starting_cloud_run", "Starting cloud sandbox...");
 

@@ -206,18 +206,14 @@ export function ConversationView({
                   : undefined
               }
               onRestoreCheckpoint={
-                item.turnContext?.lastCheckpointId && !isCloud
+                item.turnContext?.lastCheckpointId
                   ? () =>
                       restore.requestRestore(
                         item.turnContext?.lastCheckpointId as string,
                       )
                   : undefined
               }
-              restoreDisabledReason={
-                isCloud
-                  ? "Checkpoint restore isn't available for cloud tasks"
-                  : "No checkpoint was captured for this turn"
-              }
+              restoreDisabledReason="No checkpoint was captured for this turn"
             />
           );
         case "git_action":
@@ -268,7 +264,6 @@ export function ConversationView({
       firstUserMessageId,
       initialItemIds,
       restore.requestRestore,
-      isCloud,
     ],
   );
 
@@ -345,6 +340,7 @@ export function ConversationView({
         onConfirm={restore.confirmRestore}
         isLoading={restore.isRestoring}
         isTurnInProgress={!!isPromptPending}
+        isCloud={isCloud}
       />
     </WorkerPoolContextProvider>
   );

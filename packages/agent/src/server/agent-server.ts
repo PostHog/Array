@@ -212,6 +212,8 @@ interface ActiveSession {
   /** Whether a desktop client has ever connected via SSE during this session */
   hasDesktopConnected: boolean;
   pendingHandoffGitState?: HandoffLocalGitState;
+  /** 1-based turn counter — incremented each time broadcastTurnComplete fires. Used as promptId in per-turn cloud checkpoints. */
+  turnIndex: number;
 }
 
 function getTaskRunStateString(
@@ -1017,6 +1019,7 @@ export class AgentServer {
       permissionMode: initialPermissionMode,
       hasDesktopConnected: sseController !== null,
       pendingHandoffGitState: undefined,
+      turnIndex: 0,
     };
 
     this.logger = new Logger({
@@ -2324,6 +2327,7 @@ ${signedCommitInstructions}
 
   private async captureCheckpointState(
     localGitState?: HandoffLocalGitState,
+    promptId?: number,
   ): Promise<void> {
     if (!this.session || !this.config.repositoryPath) {
       return;
@@ -2334,6 +2338,11 @@ ${signedCommitInstructions}
       );
       return;
     }
+
+    this.logger.debug("Capturing cloud checkpoint state", {
+      runId: this.session.payload.run_id,
+      promptId,
+    });
 
     const tracker = new HandoffCheckpointTracker({
       repositoryPath: this.config.repositoryPath ?? "/tmp/workspace",
@@ -2349,7 +2358,14 @@ ${signedCommitInstructions}
     const checkpointWithDevice: GitCheckpointEvent = {
       ...checkpoint,
       device: this.session.deviceInfo,
+      ...(promptId != null ? { promptId } : {}),
     };
+
+    this.logger.info("Cloud checkpoint captured", {
+      runId: this.session.payload.run_id,
+      checkpointId: checkpoint.checkpointId,
+      promptId,
+    });
 
     const notification = {
       jsonrpc: "2.0" as const,
@@ -2378,6 +2394,16 @@ ${signedCommitInstructions}
 
   private broadcastTurnComplete(stopReason: string): void {
     if (!this.session) return;
+
+    this.session.turnIndex += 1;
+    const turnIndex = this.session.turnIndex;
+
+    this.logger.debug("broadcastTurnComplete", {
+      runId: this.session.payload.run_id,
+      stopReason,
+      turnIndex,
+    });
+
     const notification = {
       jsonrpc: "2.0",
       method: POSTHOG_NOTIFICATIONS.TURN_COMPLETE,
@@ -2397,6 +2423,16 @@ ${signedCommitInstructions}
       this.session.payload.run_id,
       JSON.stringify(notification),
     );
+
+    // Capture a per-turn git checkpoint so every cloud turn gets a restore point.
+    // Fire-and-forget — don't block the turn response on S3 upload.
+    void this.captureCheckpointState(undefined, turnIndex).catch((err) => {
+      this.logger.warn("Per-turn cloud checkpoint capture failed (non-fatal)", {
+        runId: this.session?.payload.run_id,
+        turnIndex,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
   }
 
   private broadcastEvent(event: Record<string, unknown>): void {

@@ -48,6 +48,17 @@ export interface HandoffSagaDeps extends HandoffBaseDeps {
     localGitState?: AgentTypes.HandoffLocalGitState,
   ): Promise<void>;
   seedLocalLogs(runId: string, logUrl: string): Promise<void>;
+  /**
+   * After seeding the cloud logs locally, parse all GIT_CHECKPOINT notifications
+   * from the log, apply each checkpoint pack to the local git repo, and register
+   * them in the local session so restore buttons appear for every cloud turn.
+   */
+  syncCloudCheckpoints(
+    taskId: string,
+    runId: string,
+    repoPath: string,
+    apiClient: PostHogAPIClient,
+  ): Promise<void>;
   setPendingContext(taskRunId: string, context: string): void;
 }
 
@@ -141,6 +152,12 @@ export class HandoffSaga extends Saga<HandoffSagaInput, HandoffSagaOutput> {
         rollback: async () => {},
       });
     }
+
+    // After seeding logs, download and register all per-turn cloud checkpoints
+    // so the user can restore to any cloud turn after handoff.
+    await this.readOnlyStep("sync_cloud_checkpoints", async () => {
+      await this.deps.syncCloudCheckpoints(taskId, runId, repoPath, apiClient);
+    });
 
     this.deps.onProgress("spawning_agent", "Starting local agent...");
 

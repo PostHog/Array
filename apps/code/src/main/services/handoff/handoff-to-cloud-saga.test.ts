@@ -13,6 +13,7 @@ function createDeps(
       checkpointRef: "refs/posthog-code-checkpoint/checkpoint-1",
     }),
     persistCheckpointToLog: vi.fn().mockResolvedValue(undefined),
+    uploadPriorLocalCheckpoints: vi.fn().mockResolvedValue(undefined),
     countLocalLogEntries: vi.fn().mockReturnValue(7),
     resumeRunInCloud: vi.fn().mockResolvedValue(undefined),
     killSession: vi.fn().mockResolvedValue(undefined),
