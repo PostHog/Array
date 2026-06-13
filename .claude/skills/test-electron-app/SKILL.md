@@ -1,7 +1,7 @@
 ---
 name: test-electron-app
 description: Drive the real running PostHog Code Electron app (live tRPC, workspace-server, real data) over CDP with agent-browser. Connect to the running app on port 9222, snapshot the accessibility tree, click/type/navigate, and screenshot to verify a change in the actual desktop app. Use when asked to test, verify, dogfood, screenshot, or interact with the running app. For regression specs use the Playwright E2E suite.
-allowed-tools: Bash(agent-browser:*), Bash(npx agent-browser:*), Bash(pnpm app:cdp:*)
+allowed-tools: Bash(agent-browser:*), Bash(npx agent-browser:*), Bash(pnpm app:cdp*)
 ---
 
 # Test the real PostHog Code Electron app

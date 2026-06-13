@@ -23,10 +23,13 @@ function fail(message) {
 }
 
 const version = spawnSync("agent-browser", ["--version"], { encoding: "utf8" });
-if (version.error?.code === "ENOENT") {
-  fail(
-    "agent-browser is not installed.\n  Install it once with:\n    npm i -g agent-browser && agent-browser install",
-  );
+if (version.error) {
+  if (version.error.code === "ENOENT") {
+    fail(
+      "agent-browser is not installed.\n  Install it once with:\n    npm i -g agent-browser && agent-browser install",
+    );
+  }
+  fail(`Failed to run agent-browser: ${version.error.message}`);
 }
 
 let targets;
@@ -45,7 +48,7 @@ try {
 }
 
 const pages = targets.filter((t) => t.type === "page");
-console.log(`✓ agent-browser ${version.stdout.trim()}`);
+console.log(`✓ ${version.stdout.trim()}`);
 console.log(
   `✓ Electron app reachable on :${port} (${pages.length} page target${pages.length === 1 ? "" : "s"})`,
 );
