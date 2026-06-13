@@ -1,6 +1,6 @@
 ---
 name: test-electron-app
-description: Drive the real running PostHog Code Electron app (live tRPC, workspace-server, real data) over CDP with agent-browser. Connect to the running app on port 9222, snapshot the accessibility tree, click/type/navigate, and screenshot to verify a change in the actual desktop app. Use when asked to test, verify, dogfood, or interact with the running app (not the mocked Vite preview). For mocked layout-only checks use screenshot-dev-app instead; for regression specs use the Playwright E2E suite.
+description: Drive the real running PostHog Code Electron app (live tRPC, workspace-server, real data) over CDP with agent-browser. Connect to the running app on port 9222, snapshot the accessibility tree, click/type/navigate, and screenshot to verify a change in the actual desktop app. Use when asked to test, verify, dogfood, screenshot, or interact with the running app. For regression specs use the Playwright E2E suite.
 allowed-tools: Bash(agent-browser:*), Bash(npx agent-browser:*), Bash(pnpm app:cdp:*)
 ---
 
@@ -16,8 +16,7 @@ whatever profile is signed into `~/.posthog-code`. Pick the right surface:
 
 | Goal | Tool |
 | --- | --- |
-| Verify a change in the **real** app, live data | this skill (agent-browser + CDP :9222) |
-| Fast **mocked** layout check, no app boot | `screenshot-dev-app` (Vite preview :5173) |
+| Verify or screenshot a change in the **real** app, live data | this skill (agent-browser + CDP :9222) |
 | **Regression** coverage in CI | Playwright E2E (`apps/code/tests/e2e/`) |
 
 ## Prerequisites
