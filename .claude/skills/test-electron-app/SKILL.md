@@ -106,7 +106,7 @@ agent-browser connect 9222                      # attach (skip if you ran pnpm a
 agent-browser snapshot -i                       # interactive elements only (the app is already dark)
 agent-browser click @e5                          # act on a ref from the snapshot
 agent-browser snapshot -i                        # ALWAYS re-snapshot after the UI changes
-agent-browser screenshot /tmp/app-state.png      # capture; read the PNG back to verify
+agent-browser screenshot /tmp/app-state.png      # capture the current view
 agent-browser close                              # done; free the session
 ```
 
@@ -129,16 +129,15 @@ agent-browser screenshot /tmp/app.png                  # viewport (absolute path
 agent-browser screenshot --full /tmp/app.png           # full page instead of viewport
 ```
 
-Navigate to the target view first (click through the UI), then capture. agent-browser prints the saved path; read the PNG back to verify. Repeated captures reuse the connected session, so batches are fast.
+Navigate to the target view first (click through the UI), then capture. agent-browser prints the saved path. Repeated captures reuse the connected session, so batches are fast.
 
 ### Always let the user open the capture
 
 When the user asked for a screenshot, they want to look at it, so close the loop every time:
 
 1. Save to and report an **absolute** path (`/tmp/app.png`, never a bare `out.png`). Claude Code renders absolute paths as clickable links, so the path itself opens the PNG on click.
-2. Read the PNG back yourself first so you can describe what's in it.
-3. Then offer to open it for them, and on a yes run `open /tmp/app.png` (macOS opens it in Preview). If the request was clearly "screenshot it so I can see it", just open it instead of asking.
-4. The user can also open it themselves at any time with `!open /tmp/app.png`.
+2. Offer to open it for them, and on a yes run `open /tmp/app.png` (macOS opens it in Preview). If the request was clearly "screenshot it so I can see it", just open it instead of asking.
+3. The user can also open it themselves at any time with `!open /tmp/app.png`.
 
 ## Repo specifics
 
