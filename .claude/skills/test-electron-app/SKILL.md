@@ -32,7 +32,63 @@ already passes `--remote-debugging-port=9222`. Preflight + connect:
 pnpm app:cdp        # checks agent-browser + that the app is up on :9222, then connects
 ```
 
-If it reports the app is not reachable, start it with `pnpm dev` and retry.
+If it reports the app is not reachable, the app isn't running. Start it, then
+retry `pnpm app:cdp`.
+
+### Launching the app yourself (background / no TTY)
+
+Do **not** use `pnpm dev` from a non-interactive shell. It builds deps then hands
+off to the `phrocs` TUI process-multiplexer, which aborts without a controlling
+terminal (`bubbletea: could not open TTY: /dev/tty: device not configured`). An
+agent in a background shell has no TTY, so `pnpm dev` cannot launch it headlessly.
+
+Build the workspace deps (TTY-safe, the same step `pnpm dev` runs first), then
+launch only the Electron app with its stdin held open:
+
+```bash
+pnpm build:deps                        # turbo build of @posthog/code deps
+tail -f /dev/null | pnpm dev:code      # run in the background; leave it running
+```
+
+`pnpm dev:code` is `electron-forge start -- --remote-debugging-port=9222` — just
+the app, no TUI and no watch rebuilders (fine for screenshotting/interacting).
+
+**The `tail -f /dev/null |` is required, do not drop it.** `electron-forge start`
+runs an interactive "type `rs` to restart" stdin reader. With no stdin it hits
+EOF immediately, treats that as quit, tears down the Electron window, and exits
+**0** before the CDP port ever opens — so the app looks like it launched
+("✔ Launched Electron app") and then silently vanishes. Piping from
+`tail -f /dev/null` gives it a stdin that never closes, so it stays up. A
+pseudo-TTY via `script` does **not** help: `script` forwards the EOF (`^D`) and
+the app still quits.
+
+Then wait for the port and connect (poll, don't sleep blindly):
+
+```bash
+until curl -s localhost:9222/json/version >/dev/null; do sleep 1; done
+agent-browser connect 9222
+```
+
+### Clean up what you started
+
+Only tear the app down **if you launched it**. If `pnpm app:cdp` found it already
+up on `:9222`, it is the user's own instance — leave it running, just
+`agent-browser close` your session.
+
+When you started it, shut it down once you're done:
+
+```bash
+agent-browser close                      # free the CDP session
+pkill -f "remote-debugging-port=9222"    # kill only the dev app you launched
+```
+
+Matching on `remote-debugging-port=9222` targets only your dev instance — prod has
+no debug port and uses a separate `posthog-code-dev` profile, so this never
+touches the user's running app. Then stop the background launcher: killing the app
+leaves `tail -f /dev/null` alive, so stop that task too (`TaskStop`, or kill the
+`tail … | pnpm dev:code` pipeline). Verify teardown with
+`curl -s localhost:9222/json/version` (should fail) and
+`pgrep -fl posthog-code-dev` (should be empty).
 
 ## Load the canonical commands
 
@@ -115,8 +171,13 @@ PostHog Code orchestrates the agent, so the usual loop is: **prod** (the install
 ## Troubleshooting
 
 - **Connection refused on :9222:** the app isn't running with the debug flag.
-  Start `pnpm dev`. Verify the port: `lsof -i :9222` or
-  `curl -s localhost:9222/json/version`.
+  Start it (see *Launching the app yourself* for the headless recipe). Verify the
+  port: `lsof -i :9222` or `curl -s localhost:9222/json/version`.
+- **App launches then immediately exits 0; CDP never opens:** you started it with
+  no stdin (background / no TTY) and `electron-forge` quit on stdin EOF. Relaunch
+  with `tail -f /dev/null | pnpm dev:code` so stdin never closes (see *Launching
+  the app yourself*). Note `pnpm dev` cannot run headlessly at all — its `phrocs`
+  TUI needs a TTY; use `pnpm dev:code`.
 - **Snapshot is empty / wrong window:** you're on the wrong target. Run
   `agent-browser tab` and switch to the "PostHog Code" page.
 - **Can't type into an input:** try `agent-browser keyboard type "text"` (types at
