@@ -927,10 +927,13 @@ When creating pull requests, add the following footer at the end of the PR descr
       // log names the actual cause.
       const maskedDetail = (err as { data?: { details?: unknown } })?.data
         ?.details;
+      const detailSuffix =
+        typeof maskedDetail === "string" && maskedDetail
+          ? `: ${maskedDetail}`
+          : "";
+      const action = isReconnect ? "reconnect" : "create";
       this.log.error(
-        `Failed to ${isReconnect ? "reconnect" : "create"} session${
-          isRetry ? " after retry" : ""
-        }${typeof maskedDetail === "string" && maskedDetail ? `: ${maskedDetail}` : ""}`,
+        `Failed to ${action} session${isRetry ? " after retry" : ""}${detailSuffix}`,
         err,
       );
       // Non-auth reconnect failure on first attempt: fall back to a fresh session.

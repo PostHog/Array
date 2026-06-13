@@ -10,8 +10,15 @@ type SdkQueryHandle = {
   setMcpServers: ReturnType<typeof vi.fn>;
   supportedCommands: ReturnType<typeof vi.fn>;
   initializationResult: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
   [Symbol.asyncIterator]: () => AsyncIterator<never>;
 };
+
+let nextInitPromise: Promise<unknown> = Promise.resolve({
+  result: "success",
+  commands: [],
+  models: [],
+});
 
 function makeQueryHandle(): SdkQueryHandle {
   return {
@@ -19,11 +26,8 @@ function makeQueryHandle(): SdkQueryHandle {
     setModel: vi.fn().mockResolvedValue(undefined),
     setMcpServers: vi.fn().mockResolvedValue(undefined),
     supportedCommands: vi.fn().mockResolvedValue([]),
-    initializationResult: vi.fn().mockResolvedValue({
-      result: "success",
-      commands: [],
-      models: [],
-    }),
+    initializationResult: vi.fn().mockImplementation(() => nextInitPromise),
+    close: vi.fn(),
     [Symbol.asyncIterator]: async function* () {
       /* never yields */
     } as never,
@@ -101,6 +105,11 @@ afterAll(() => {
 describe("ClaudeAcpAgent session model on resume", () => {
   beforeEach(() => {
     createdQueries.length = 0;
+    nextInitPromise = Promise.resolve({
+      result: "success",
+      commands: [],
+      models: [],
+    });
     // No gateway: fetchGatewayModels returns [] and the requested model is
     // kept as a custom option — mirrors the gateway-outage failure mode.
     delete process.env.ANTHROPIC_BASE_URL;
@@ -156,5 +165,44 @@ describe("ClaudeAcpAgent session model on resume", () => {
     // New sessions already pass options.model to the SDK at spawn.
     expect(createdQueries).toHaveLength(1);
     expect(createdQueries[0].setModel).not.toHaveBeenCalled();
+  });
+
+  // The timeout *message* (RequestError "... timed out after ...") is covered
+  // by claude-agent.refresh.test.ts. Here we cover the leak fix on the
+  // new-session and resume paths: any init failure must close the query so the
+  // CLI subprocess can't leak and be multiplied by the retry loop.
+  it("closes the query and rethrows when new-session init fails", async () => {
+    const failedInit = Promise.reject(new Error("init boom"));
+    failedInit.catch(() => {});
+    nextInitPromise = failedInit;
+    const agent = makeAgent();
+
+    await expect(
+      agent.newSession({
+        cwd,
+        mcpServers: [],
+        _meta: { taskRunId: "run-init-fail-new" },
+      }),
+    ).rejects.toThrow(/init boom/);
+
+    expect(createdQueries[0]?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the query and rethrows when resume init fails", async () => {
+    const failedInit = Promise.reject(new Error("resume boom"));
+    failedInit.catch(() => {});
+    nextInitPromise = failedInit;
+    const agent = makeAgent();
+
+    await expect(
+      agent.resumeSession({
+        sessionId: "0197a000-0000-7000-8000-0000000000ff",
+        cwd,
+        mcpServers: [],
+        _meta: { taskRunId: "run-init-fail-resume" },
+      }),
+    ).rejects.toThrow(/resume boom/);
+
+    expect(createdQueries[0]?.close).toHaveBeenCalledTimes(1);
   });
 });

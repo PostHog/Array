@@ -1473,10 +1473,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   }
 
   /**
-   * Terminate a query whose initialization failed or timed out: abort the
-   * controller (killing the CLI subprocess via the spawn signal) and close the
-   * SDK query so no further messages are read. Without this a timed-out session
-   * leaks an orphaned `claude` process that the retry loop then multiplies.
+   * Without this, a timed-out session leaks an orphaned `claude` process that
+   * the retry loop then multiplies. Aborting the controller kills the
+   * subprocess via the spawn signal; closing the query stops further reads.
    */
   private terminateQuery(sdkQuery: Query, controller: AbortController): void {
     controller.abort();

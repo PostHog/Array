@@ -52,8 +52,9 @@ type ModelsListResponse =
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 // Bound the gateway /v1/models request so a stalled connection cannot hold up
-// session init: this fetch runs inside the Promise.all that gates the SDK
-// initialization timeout. On abort the callers fall through to `return []`.
+// session init: this fetch runs inside the Promise.all that gates the 30s SDK
+// initialization timeout, so it must resolve well within that window. On abort
+// the callers fall through to `return []`.
 const GATEWAY_FETCH_TIMEOUT_MS = 10_000;
 
 let gatewayModelsCache: {
