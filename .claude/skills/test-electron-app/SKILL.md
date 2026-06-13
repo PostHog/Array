@@ -91,6 +91,15 @@ Navigate to the target view first (click through the UI), then capture. agent-br
 - **Boot timing:** after launching the app, give it a few seconds before
   connecting; the renderer settles after `#root > *` appears and "Loading" clears.
 
+## Running alongside prod
+
+PostHog Code orchestrates the agent, so the usual loop is: **prod** (the installed app) runs the agent, and the **dev** build (`pnpm dev`) is the system under test. They coexist by design (`apps/code/src/main/bootstrap.ts`) — dev runs as `posthog-code-dev` with its own app name, userData, and single-instance lock, so it never collides with prod.
+
+- **agent-browser always targets dev.** Only the dev build exposes CDP on `:9222`; prod has no debug port, so `connect 9222` can't accidentally drive prod.
+- **Separate auth/state.** The dev instance has its own `posthog-code-dev` profile — it is not signed in just because prod is. Sign into the dev window once; its state persists.
+- **One dev instance only.** Dev's single-instance lock, fixed dev callback port (`8238`), and `:9222` mean a second `pnpm dev` collides and quits. Run prod + one dev.
+- **What reloads.** Renderer/UI changes hot-reload — just re-snapshot. Main-process/Electron changes need a dev restart to take effect.
+
 ## Troubleshooting
 
 - **Connection refused on :9222** — the app isn't running with the debug flag.
