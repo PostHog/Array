@@ -66,6 +66,15 @@ agent-browser find role button click --name "New task"
 agent-browser find text "Settings" click
 ```
 
+## Screenshots
+
+```bash
+agent-browser --color-scheme dark screenshot out.png   # viewport (dark to match the app)
+agent-browser screenshot --full out.png                # full page instead of viewport
+```
+
+Navigate to the target view first (click through the UI), then capture. agent-browser prints the saved path — read the PNG back to verify. Repeated captures reuse the connected session, so batches are fast.
+
 ## Repo specifics
 
 - **Port:** `9222` (override with `POSTHOG_CODE_CDP_PORT`). Collides with Chrome's

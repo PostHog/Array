@@ -174,7 +174,7 @@ Two surfaces, pick by intent:
 
 | Goal | Tool |
 | --- | --- |
-| Verify or screenshot a change in the real app, live data | agent-browser + CDP `:9222` (`test-electron-app` to drive, `screenshot-dev-app` to capture) |
+| Verify or screenshot a change in the real app, live data | agent-browser + CDP `:9222` (`test-electron-app` skill) |
 | Regression coverage in CI | Playwright E2E (`tests/e2e/`) |
 
 Workflow:
@@ -187,7 +187,7 @@ agent-browser skills get electron                   # load the canonical command
 agent-browser --color-scheme dark snapshot -i       # then click/type/screenshot
 ```
 
-This drives whatever profile is signed into `~/.posthog-code`; do not mutate production data while exploring. See the `test-electron-app` (drive/interact) and `screenshot-dev-app` (capture) skills.
+This drives whatever profile is signed into `~/.posthog-code`; do not mutate production data while exploring. See the `test-electron-app` skill.
 
 ## Boundary Checks
 
