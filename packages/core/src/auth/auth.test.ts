@@ -837,6 +837,136 @@ describe("AuthService", () => {
     });
   });
 
+  describe("project-less recovery", () => {
+    function stubOrgFetch(state: { succeeds: boolean; orgCalls: number }) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | Request) => {
+          const url = typeof input === "string" ? input : input.url;
+
+          if (url.includes("/api/users/@me/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                uuid: "user-1",
+                organization: { id: "org-1" },
+              }),
+            } as unknown as Response;
+          }
+
+          if (/\/api\/organizations\/[^/]+\/$/.test(url)) {
+            state.orgCalls++;
+            if (!state.succeeds) {
+              throw new TypeError("fetch failed");
+            }
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                name: "Org 1",
+                teams: [
+                  { id: 42, name: "Project 42" },
+                  { id: 84, name: "Project 84" },
+                ],
+              }),
+            } as unknown as Response;
+          }
+
+          return {
+            ok: true,
+            json: vi.fn().mockResolvedValue({ has_access: true }),
+          } as unknown as Response;
+        }) as unknown as typeof fetch,
+      );
+    }
+
+    it("authenticates without a project when a scoped org fails to load, then recovers and restores the previous project on reconnect", async () => {
+      seedStoredSession({
+        selectedProjectId: 84,
+        scopeVersion: OAUTH_SCOPE_VERSION - 1,
+      });
+      await service.initialize();
+      expect(service.getState()).toMatchObject({
+        status: "anonymous",
+        needsScopeReauth: true,
+        currentProjectId: 84,
+      });
+
+      const fetchState = { succeeds: false, orgCalls: 0 };
+      stubOrgFetch(fetchState);
+      oauthFlow.startFlow.mockResolvedValue(mockTokenResponse());
+      vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: false });
+
+      await service.login("us");
+
+      expect(service.getState()).toMatchObject({
+        status: "authenticated",
+        currentProjectId: null,
+        orgProjectsMap: { "org-1": { projects: [] } },
+      });
+
+      await new Promise((r) => setTimeout(r, 0));
+
+      fetchState.succeeds = true;
+      vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: true });
+      emitStatus(true);
+
+      await vi.waitFor(() => {
+        expect(service.getState().currentProjectId).toBe(84);
+      });
+      expect(service.getState().orgProjectsMap).toMatchObject({
+        "org-1": {
+          orgName: "Org 1",
+          projects: [
+            { id: 42, name: "Project 42" },
+            { id: 84, name: "Project 84" },
+          ],
+        },
+      });
+    });
+
+    it("recovers org/projects on power-monitor resume", async () => {
+      const fetchState = { succeeds: false, orgCalls: 0 };
+      stubOrgFetch(fetchState);
+      oauthFlow.startFlow.mockResolvedValue(mockTokenResponse());
+      vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: false });
+
+      await service.login("us");
+      expect(service.getState().currentProjectId).toBeNull();
+
+      await new Promise((r) => setTimeout(r, 0));
+
+      fetchState.succeeds = true;
+      vi.mocked(connectivity.getStatus).mockReturnValue({ isOnline: true });
+      getResumeHandler()();
+
+      await vi.waitFor(() => {
+        expect(service.getState().currentProjectId).toBe(42);
+      });
+    });
+
+    it("does not attempt recovery when the token grants no scoped organizations", async () => {
+      const fetchState = { succeeds: true, orgCalls: 0 };
+      stubOrgFetch(fetchState);
+      oauthFlow.startFlow.mockResolvedValue(
+        mockTokenResponse({ scopedOrgs: [] }),
+      );
+
+      await service.login("us");
+
+      expect(service.getState()).toMatchObject({
+        status: "authenticated",
+        currentProjectId: null,
+        orgProjectsMap: {},
+      });
+
+      emitStatus(true);
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(fetchState.orgCalls).toBe(0);
+      expect(service.getState().currentProjectId).toBeNull();
+    });
+  });
+
   describe("switchOrg", () => {
     const twoOrgs = {
       "org-1": {

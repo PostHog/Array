@@ -57,6 +57,7 @@ interface InMemorySession {
   orgProjectsMap: OrgProjectsMap;
   currentOrgId: string | null;
   currentProjectId: number | null;
+  orgProjectsIncomplete: boolean;
 }
 
 interface StoredSessionInput {
@@ -338,6 +339,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       orgProjectsMap: next.orgProjectsMap,
       currentOrgId: next.currentOrgId,
       currentProjectId: next.currentProjectId,
+      orgProjectsIncomplete: false,
     };
 
     this.persistProjectPreference(this.session);
@@ -557,12 +559,13 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       tokenResponse.access_token,
       options.cloudRegion,
     );
-    const orgProjectsMap = await this.buildOrgProjectsMap(
-      tokenResponse.access_token,
-      options.cloudRegion,
-      scopedOrgIds,
-      this.session?.orgProjectsMap ?? {},
-    );
+    const { map: orgProjectsMap, incomplete: orgProjectsIncomplete } =
+      await this.buildOrgProjectsMap(
+        tokenResponse.access_token,
+        options.cloudRegion,
+        scopedOrgIds,
+        this.session?.orgProjectsMap ?? {},
+      );
     const lastPrefs = accountKey
       ? this.authPreference.get(accountKey, options.cloudRegion)
       : null;
@@ -583,6 +586,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       orgProjectsMap,
       currentOrgId,
       currentProjectId,
+      orgProjectsIncomplete,
     };
 
     return session;
@@ -592,43 +596,48 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     cloudRegion: CloudRegion,
     orgIds: string[],
     previousMap: OrgProjectsMap,
-  ): Promise<OrgProjectsMap> {
+  ): Promise<{ map: OrgProjectsMap; incomplete: boolean }> {
+    let incomplete = false;
     const entries = await Promise.all(
       orgIds.map(async (orgId): Promise<[string, OrgProjects]> => {
-        const result = await this.fetchOrgWithProjects(
+        const { org, transient } = await this.fetchOrgWithProjects(
           accessToken,
           cloudRegion,
           orgId,
         );
-        if (result) {
-          return [orgId, result];
+        if (org) {
+          return [orgId, org];
         }
-        return [
-          orgId,
-          previousMap[orgId] ?? { orgName: "(unknown)", projects: [] },
-        ];
+        const fallback = previousMap[orgId] ?? {
+          orgName: "(unknown)",
+          projects: [],
+        };
+        if (transient && fallback.projects.length === 0) {
+          incomplete = true;
+        }
+        return [orgId, fallback];
       }),
     );
 
-    return Object.fromEntries(entries);
+    return { map: Object.fromEntries(entries), incomplete };
   }
   private async fetchOrgProjects(
     accessToken: string,
     cloudRegion: CloudRegion,
     orgId: string,
   ): Promise<{ id: number; name: string }[] | null> {
-    const result = await this.fetchOrgWithProjects(
+    const { org } = await this.fetchOrgWithProjects(
       accessToken,
       cloudRegion,
       orgId,
     );
-    return result?.projects ?? null;
+    return org?.projects ?? null;
   }
   private async fetchOrgWithProjects(
     accessToken: string,
     cloudRegion: CloudRegion,
     orgId: string,
-  ): Promise<OrgProjects | null> {
+  ): Promise<{ org: OrgProjects | null; transient: boolean }> {
     for (
       let attempt = 0;
       attempt < AuthService.ORG_FETCH_MAX_ATTEMPTS;
@@ -640,10 +649,10 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
         orgId,
       );
       if (result.ok) {
-        return result.data;
+        return { org: result.data, transient: false };
       }
       if (!result.retryable) {
-        break;
+        return { org: null, transient: false };
       }
 
       const isLastAttempt = attempt === AuthService.ORG_FETCH_MAX_ATTEMPTS - 1;
@@ -658,7 +667,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       await sleepWithBackoff(attempt, AuthService.REFRESH_BACKOFF);
     }
 
-    return null;
+    return { org: null, transient: true };
   }
   private async fetchOrgWithProjectsOnce(
     accessToken: string,
@@ -744,21 +753,27 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       needsScopeReauth: false,
     });
     await this.updateCodeAccessFromSession();
+
+    if (session.orgProjectsIncomplete) {
+      void this.refreshOrgProjects();
+    }
   }
   private persistSession(input: {
     refreshToken: string;
     cloudRegion: CloudRegion;
     selectedProjectId: number | null;
   }): void {
+    const priorSelected =
+      this.authSession.getCurrent()?.selectedProjectId ?? null;
     this.authSession.saveCurrent({
       refreshTokenEncrypted: this.cipher.encrypt(input.refreshToken),
       cloudRegion: input.cloudRegion,
-      selectedProjectId: input.selectedProjectId,
+      selectedProjectId: input.selectedProjectId ?? priorSelected,
       scopeVersion: OAUTH_SCOPE_VERSION,
     });
   }
   private persistProjectPreference(session: InMemorySession): void {
-    if (!session.accountKey) {
+    if (!session.accountKey || session.currentProjectId === null) {
       return;
     }
 
@@ -885,12 +900,14 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   }
   private static readonly REFRESH_MAX_ATTEMPTS = 3;
   private static readonly ORG_FETCH_MAX_ATTEMPTS = 3;
+  private static readonly ORG_RECOVERY_MAX_ATTEMPTS = 5;
   private static readonly REFRESH_BACKOFF: BackoffOptions = {
     initialDelayMs: 1_000,
     maxDelayMs: 5_000,
     multiplier: 2,
   };
   private recoveryPromise: Promise<void> | null = null;
+  private orgProjectsRefreshPromise: Promise<void> | null = null;
   private connectivityUnsubscribe: (() => void) | null = null;
   private resumeUnsubscribe: (() => void) | null = null;
   @postConstruct()
@@ -929,7 +946,12 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     };
   }
   private attemptSessionRecovery(): void {
-    if (this.session) return;
+    if (this.session) {
+      if (this.session.orgProjectsIncomplete) {
+        void this.refreshOrgProjects();
+      }
+      return;
+    }
     if (this.recoveryPromise) return;
 
     const stored = this.authSession.getCurrent();
@@ -946,6 +968,85 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       .finally(() => {
         this.recoveryPromise = null;
       });
+  }
+
+  private refreshOrgProjects(): Promise<void> {
+    if (this.orgProjectsRefreshPromise) {
+      return this.orgProjectsRefreshPromise;
+    }
+
+    this.orgProjectsRefreshPromise = this.doRefreshOrgProjects()
+      .catch((error) => {
+        this.logger.warn("Org/projects recovery failed", { error });
+      })
+      .finally(() => {
+        this.orgProjectsRefreshPromise = null;
+      });
+    return this.orgProjectsRefreshPromise;
+  }
+
+  private async doRefreshOrgProjects(): Promise<void> {
+    for (
+      let attempt = 0;
+      attempt < AuthService.ORG_RECOVERY_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      if (!this.session?.orgProjectsIncomplete) return;
+      if (!this.connectivity.getStatus().isOnline) return;
+
+      let session: InMemorySession;
+      try {
+        session = await this.ensureValidSession();
+      } catch (error) {
+        this.logger.warn("Org/projects recovery aborted: session invalid", {
+          error,
+        });
+        return;
+      }
+
+      if (!session.orgProjectsIncomplete) return;
+
+      const orgIds = Object.keys(session.orgProjectsMap);
+      const { map, incomplete } = await this.buildOrgProjectsMap(
+        session.accessToken,
+        session.cloudRegion,
+        orgIds,
+        session.orgProjectsMap,
+      );
+
+      if (!incomplete) {
+        const lastPrefs = session.accountKey
+          ? this.authPreference.get(session.accountKey, session.cloudRegion)
+          : null;
+        const storedSelected =
+          this.authSession.getCurrent()?.selectedProjectId ?? null;
+        const currentProjectId = pickInitialProjectId({
+          orgProjectsMap: map,
+          currentOrgId: session.currentOrgId,
+          preferredProjectId:
+            session.currentProjectId ??
+            storedSelected ??
+            lastPrefs?.lastSelectedProjectId ??
+            null,
+          lastSelectedOrgId: lastPrefs?.lastSelectedOrgId ?? null,
+        });
+        this.commitSessionState(session, {
+          orgProjectsMap: map,
+          currentOrgId: session.currentOrgId,
+          currentProjectId,
+        });
+        this.logger.info(
+          "Recovered organizations/projects after incomplete sync",
+        );
+        return;
+      }
+
+      const isLastAttempt =
+        attempt === AuthService.ORG_RECOVERY_MAX_ATTEMPTS - 1;
+      if (isLastAttempt) break;
+
+      await sleepWithBackoff(attempt, AuthService.REFRESH_BACKOFF);
+    }
   }
 
   private updateState(partial: Partial<AuthState>): void {
