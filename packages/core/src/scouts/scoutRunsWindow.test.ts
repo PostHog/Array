@@ -4,6 +4,7 @@ import {
   fetchScoutRunsWindow,
   SCOUT_RUNS_WINDOW_HOURS,
   type ScoutRunsClient,
+  type ScoutRunsWindow,
   scoutRunsWindowLabel,
 } from "./scoutRunsWindow";
 
@@ -115,13 +116,23 @@ describe("fetchScoutRunsWindow", () => {
 });
 
 describe("scoutRunsWindowLabel", () => {
-  it("names the window and flags truncation", () => {
-    expect(scoutRunsWindowLabel({ runs: [], complete: true })).toBe(
-      "last 3 days",
-    );
-    expect(scoutRunsWindowLabel({ runs: [], complete: false })).toBe(
-      "last 3 days · truncated",
-    );
-    expect(scoutRunsWindowLabel(undefined)).toBe("last 3 days");
+  it.each([
+    {
+      name: "complete window",
+      window: { runs: [], complete: true } as ScoutRunsWindow,
+      expected: "last 3 days",
+    },
+    {
+      name: "truncated window",
+      window: { runs: [], complete: false } as ScoutRunsWindow,
+      expected: "last 3 days · truncated",
+    },
+    {
+      name: "undefined window",
+      window: undefined,
+      expected: "last 3 days",
+    },
+  ])("names the $name", ({ window, expected }) => {
+    expect(scoutRunsWindowLabel(window)).toBe(expected);
   });
 });
