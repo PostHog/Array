@@ -5,15 +5,15 @@ import {
   GitForkIcon,
   HashIcon,
   PencilSimpleIcon,
-  PlusIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
+import { DashboardDateRangeControl } from "@posthog/ui/features/canvas/components/DashboardDateRangeControl";
 import { DashboardRefreshControl } from "@posthog/ui/features/canvas/components/DashboardRefreshControl";
+import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { dashboardTitleFromSpec } from "@posthog/ui/features/canvas/genui/dashboardTitle";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
-  useCreateAndOpenDashboard,
   useDashboard,
   useDashboardMutations,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
@@ -40,21 +40,9 @@ function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
 }
 
-// "New dashboard" action, shown in the top bar on the dashboards grid.
-function NewDashboardButton({ channelId }: { channelId: string }) {
-  const createAndOpen = useCreateAndOpenDashboard(channelId);
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="no-drag"
-      onClick={() => void createAndOpen()}
-    >
-      <PlusIcon size={14} />
-      New dashboard
-    </Button>
-  );
-}
+// Templates whose canvases carry the data toolbar (Filter + date range +
+// refresh) — the ones with refreshable, time-scoped queries.
+const DATA_TEMPLATES = ["dashboard", "web-analytics"];
 
 // Edit toggle + (in edit mode) Save / Save-as-fork for the active dashboard.
 // Lives in the top bar; refresh is a separate control in the toolbar below.
@@ -99,7 +87,7 @@ function DashboardEditControls({
     if (!hasSpec) return;
     try {
       const title =
-        dashboardTitleFromSpec(liveSpec) ?? dashboard?.name ?? "Dashboard";
+        dashboardTitleFromSpec(liveSpec) ?? dashboard?.name ?? "Canvas";
       const name = `${title} (fork)`;
       const record = await createDashboard(channelId, name, liveSpec);
       setEditing(record.id, true);
@@ -184,6 +172,15 @@ export function WebsiteLayout() {
   // The dashboards grid (a channel with no sub-view selected).
   const isDashboardsGrid = Boolean(channelId) && pathname === base;
   const editing = useIsDashboardEditing(dashboardId ?? "");
+
+  // The data toolbar (Filter + date range + query refresh) is data-template
+  // chrome: only the data-driven templates (Dashboard, Web analytics) have
+  // refreshable, time-scoped queries. A Blank canvas shows none of it. Legacy
+  // canvases (no templateId) default to "dashboard", so they keep the toolbar.
+  const { dashboard } = useDashboard(dashboardId ?? "");
+  const isDataTemplate = DATA_TEMPLATES.includes(
+    dashboard?.templateId ?? "dashboard",
+  );
   const taskTitle = taskId
     ? tasks?.find((t) => t.id === taskId)?.title
     : undefined;
@@ -209,7 +206,7 @@ export function WebsiteLayout() {
       // dashboard's own name is the h1 below, so it isn't repeated as a crumb.
       crumbs.push(
         <ChannelGridLink key="dashboards" channelId={channelId}>
-          Dashboards
+          Canvases
         </ChannelGridLink>,
       );
     } else if (pathname === `${base}/new`) {
@@ -219,17 +216,19 @@ export function WebsiteLayout() {
     } else if (taskId) {
       crumbs.push(<CrumbText key="task">{taskTitle || "Task"}</CrumbText>);
     } else {
-      // The dashboards grid: "Dashboards" is the current (leaf) crumb, replacing
+      // The canvases grid: "Canvases" is the current (leaf) crumb, replacing
       // the old in-page h1.
-      crumbs.push(<CrumbText key="dashboards">Dashboards</CrumbText>);
+      crumbs.push(<CrumbText key="dashboards">Canvases</CrumbText>);
     }
 
     return (
-      <Flex align="center" gap="1" className="min-w-0">
+      <Flex align="center" gap="1" className="-ml-1 min-w-0">
         {crumbs.map((crumb, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: crumb order is stable
           <Fragment key={i}>
-            {i > 0 && <CaretRightIcon size={12} className="text-gray-8" />}
+            {i > 0 && (
+              <CaretRightIcon size={12} className="text-muted-foreground/50" />
+            )}
             {crumb}
           </Fragment>
         ))}
@@ -262,22 +261,31 @@ export function WebsiteLayout() {
             dashboardId={dashboardId}
           />
         ) : isDashboardsGrid && channelId ? (
-          <NewDashboardButton channelId={channelId} />
+          <NewCanvasMenu channelId={channelId} />
         ) : null}
       </Flex>
-      {/* Toolbar: a (dead) Filter on the left, refresh on the right. Only on the
-          dashboards grid and a single dashboard — not on tasks/settings. */}
-      {(isDashboardsGrid || isDashboardDetail) && (
+      {/* Toolbar: Filter + date-range picker on the left, refresh on the right.
+          Only on the canvases grid and a single data-template canvas (Dashboard,
+          Web analytics) — not on a Blank canvas (no queries), tasks, or settings. */}
+      {(isDashboardsGrid || (isDashboardDetail && isDataTemplate)) && (
         <Flex
           align="center"
           justify="between"
           gap="2"
           className="h-10 shrink-0 border-gray-6 border-b px-3"
         >
-          <Button variant="outline" size="sm">
-            <FunnelIcon size={14} />
-            Filter
-          </Button>
+          <Flex align="center" gap="2">
+            {/* Placeholder — filtering isn't wired up yet, so keep it disabled. */}
+            <Button variant="outline" size="sm" disabled>
+              <FunnelIcon size={14} />
+              Filter
+            </Button>
+            {/* Shown in edit too: changing it directs the agent's next build at
+                the chosen window (refresh in view, prompt hint in edit). */}
+            {isDashboardDetail && dashboardId && (
+              <DashboardDateRangeControl dashboardId={dashboardId} />
+            )}
+          </Flex>
           {isDashboardDetail && dashboardId && !editing && (
             <DashboardRefreshControl dashboardId={dashboardId} />
           )}

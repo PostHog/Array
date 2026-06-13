@@ -14,6 +14,8 @@ const EDITABLE_TEXT_PROPS: Record<string, readonly string[]> = {
   Text: ["/text"],
   Stat: ["/label"],
   Badge: ["/text"],
+  Hero: ["/title", "/eyebrow", "/subtitle", "/ctaText"],
+  Button: ["/text"],
 };
 
 export function isEditableTextProp(

@@ -1,5 +1,7 @@
+import { isNonEmptySpec } from "@json-render/core";
 import { PaperPlaneRightIcon, SpinnerGapIcon } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
+import { useCanvasTemplates } from "@posthog/ui/features/canvas/hooks/useCanvasTemplates";
 import {
   useCanvasChatStore,
   useCanvasThread,
@@ -10,11 +12,24 @@ import { useEffect, useRef, useState } from "react";
 // Chat panel hugging the right of the canvas: a thread plus a composer that
 // drives the canvas generation agent.
 export function CanvasChat({ threadId }: { threadId: string }) {
-  const { messages, isStreaming, lastTool, error } = useCanvasThread(threadId);
+  const { messages, isStreaming, lastTool, error, templateId, spec } =
+    useCanvasThread(threadId);
   const send = useCanvasChatStore((s) => s.send);
+  const templates = useCanvasTemplates();
+  // Suggestions only while the canvas itself is still empty (nothing built yet).
+  const suggestions = isNonEmptySpec(spec)
+    ? []
+    : (templates.find((t) => t.id === templateId)?.suggestions ?? []);
 
   const [draft, setDraft] = useState("");
   const threadRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Drop a suggestion into the composer and focus it (ready to edit or send).
+  const fillSuggestion = (text: string) => {
+    setDraft(text);
+    inputRef.current?.focus();
+  };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on new content
   useEffect(() => {
@@ -44,10 +59,27 @@ export function CanvasChat({ threadId }: { threadId: string }) {
       <ScrollArea ref={threadRef} className="flex-1">
         <Flex direction="column" gap="3" p="3">
           {messages.length === 0 && (
-            <Text size="1" className="text-gray-10">
-              Describe the dashboard or app you want. The agent queries your
-              PostHog project and builds it live on the canvas.
-            </Text>
+            <Flex direction="column" gap="3">
+              <Text size="1" className="text-gray-10">
+                Describe the canvas or app you want. The agent queries your
+                PostHog project and builds it live on the canvas.
+              </Text>
+              {suggestions.length > 0 && draft.trim().length === 0 && (
+                <Flex direction="column" align="start" gap="1">
+                  {suggestions.map((suggestion) => (
+                    <Button
+                      key={suggestion.label}
+                      variant="outline"
+                      size="sm"
+                      className="max-w-full justify-start text-left"
+                      onClick={() => fillSuggestion(suggestion.prompt)}
+                    >
+                      {suggestion.label}
+                    </Button>
+                  ))}
+                </Flex>
+              )}
+            </Flex>
           )}
           {messages.map((message) => (
             <Flex
@@ -97,8 +129,9 @@ export function CanvasChat({ threadId }: { threadId: string }) {
       <Box className="shrink-0 border-gray-6 border-t p-2">
         <Flex gap="2" align="end">
           <TextArea
+            ref={inputRef}
             className="flex-1"
-            placeholder="Build a dashboard of…"
+            placeholder="Build a canvas of…"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {

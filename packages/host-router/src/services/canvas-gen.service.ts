@@ -14,6 +14,8 @@ import {
   type CanvasStreamEvent,
   type CanvasThreadInput,
 } from "@posthog/core/canvas/genSchemas";
+import { CANVAS_TEMPLATES_SERVICE } from "@posthog/core/canvas/identifiers";
+import type { ICanvasTemplatesService } from "@posthog/core/canvas/services";
 import {
   ROOT_LOGGER,
   type RootLogger,
@@ -71,6 +73,8 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
     private readonly agentService: AgentService,
     @inject(AUTH_SERVICE)
     private readonly authService: AuthService,
+    @inject(CANVAS_TEMPLATES_SERVICE)
+    private readonly templatesService: ICanvasTemplatesService,
     @inject(ROOT_LOGGER)
     rootLogger: RootLogger,
   ) {
@@ -79,19 +83,38 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
   }
 
   async generate(input: CanvasGenerateInput): Promise<void> {
-    const { threadId, prompt, systemPrompt, model } = input;
+    const { threadId, prompt, templateId, model, currentSpec } = input;
     const taskRunId = `${TASK_RUN_PREFIX}${threadId}`;
+    const systemPrompt = this.templatesService.systemPromptFor(templateId);
 
     this.ensureForwarding();
 
     try {
-      await this.ensureSession(threadId, taskRunId, systemPrompt, model);
+      await this.ensureSession(
+        threadId,
+        taskRunId,
+        systemPrompt,
+        model,
+        currentSpec,
+      );
     } catch (err) {
       this.emitEvent(threadId, {
         type: "error",
         message: err instanceof Error ? err.message : String(err),
       });
       return;
+    }
+
+    // Re-seed the working spec from what the renderer currently shows, EVERY
+    // turn. Main keeps its own accumulator separate from the renderer; after a
+    // renderer reload (main process survives) or for a session started before
+    // the board hydrated, that accumulator is empty/stale. Without this, an edit
+    // patch like `add /elements/table` lands in a spec with no `root`, and the
+    // emit gate (root must exist) silently drops every update — the agent's
+    // changes never reach the canvas. The renderer's spec is the source of truth.
+    if (currentSpec) {
+      const thread = this.threads.get(threadId);
+      if (thread) thread.spec = { ...currentSpec };
     }
 
     this.emitEvent(threadId, { type: "started" });
@@ -123,6 +146,7 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
     taskRunId: string,
     systemPrompt: string,
     model?: string,
+    currentSpec?: Record<string, unknown> | null,
   ): Promise<void> {
     if (this.startedSessions.has(threadId)) return;
 
@@ -147,13 +171,18 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
       ...(model ? { model } : {}),
     });
 
-    this.threads.set(threadId, this.createThreadState(threadId));
+    this.threads.set(threadId, this.createThreadState(threadId, currentSpec));
     this.startedSessions.add(threadId);
   }
 
-  private createThreadState(threadId: string): ThreadState {
+  private createThreadState(
+    threadId: string,
+    initialSpec?: Record<string, unknown> | null,
+  ): ThreadState {
     const state: ThreadState = {
-      spec: {},
+      // Seed with the saved spec so the agent appends onto the existing board
+      // instead of rebuilding from empty (which would wipe a reopened canvas).
+      spec: initialSpec ? { ...initialSpec } : {},
       parser: createMixedStreamParser({
         onText: (text) => {
           if (text.trim().length === 0) return;

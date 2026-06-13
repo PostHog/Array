@@ -4,6 +4,7 @@ import type {
   DashboardSummary,
 } from "@posthog/core/canvas/dashboardSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
+import { useCanvasChatStore } from "@posthog/ui/features/canvas/stores/canvasChatStore";
 import { useDashboardEditStore } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { logger } from "@posthog/ui/shell/logger";
@@ -71,11 +72,17 @@ export function useDashboardMutations() {
         spec: spec as Record<string, unknown> | null,
         name,
       }),
-    createDashboard: (channelId: string, name: string, spec: Spec | null) =>
+    createDashboard: (
+      channelId: string,
+      name: string,
+      spec: Spec | null,
+      templateId?: string,
+    ) =>
       create.mutateAsync({
         channelId,
         name,
         spec: spec as Record<string, unknown> | null,
+        templateId,
       }),
     deleteDashboard: (id: string) => remove.mutateAsync({ id }),
     isSaving: save.isPending,
@@ -84,31 +91,37 @@ export function useDashboardMutations() {
   };
 }
 
-/** Create a blank dashboard in a channel, enter edit mode, and navigate to it. */
+/** Create an empty canvas in a channel, enter edit mode, and navigate to it. */
 export function useCreateAndOpenDashboard(
   channelId: string | undefined,
-): (name?: string) => Promise<void> {
+): (opts?: { templateId?: string; name?: string }) => Promise<void> {
   const navigate = useNavigate();
   const { createDashboard } = useDashboardMutations();
   const setEditing = useDashboardEditStore((s) => s.setEditing);
+  const setTemplate = useCanvasChatStore((s) => s.setTemplate);
 
   return useCallback(
-    async (name = "Untitled dashboard") => {
+    async (opts) => {
       if (!channelId) return;
+      const templateId = opts?.templateId ?? "dashboard";
+      const name = opts?.name ?? "Untitled canvas";
       try {
-        const record = await createDashboard(channelId, name, null);
+        const record = await createDashboard(channelId, name, null, templateId);
+        // Anchor the thread's agent to the chosen template before the first
+        // message (WebsiteDashboard re-asserts it once the record loads).
+        setTemplate(`dashboard:${record.id}`, templateId);
         setEditing(record.id, true);
         await navigate({
           to: "/website/$channelId/dashboards/$dashboardId",
           params: { channelId, dashboardId: record.id },
         });
       } catch (error) {
-        log.error("Failed to create dashboard", { error });
-        toast.error("Couldn't create dashboard", {
+        log.error("Failed to create canvas", { error });
+        toast.error("Couldn't create canvas", {
           description: error instanceof Error ? error.message : String(error),
         });
       }
     },
-    [channelId, createDashboard, navigate, setEditing],
+    [channelId, createDashboard, navigate, setEditing, setTemplate],
   );
 }

@@ -9,6 +9,7 @@ import type {
   DashboardQueryResult,
   DashboardQueryRunInput,
 } from "./querySchemas";
+import type { CanvasTemplate, CanvasTemplateSummary } from "./templateSchemas";
 
 // Structural service interfaces the host-router routers depend on. The concrete
 // implementations live in the desktop app's main process and are bound to the
@@ -24,6 +25,13 @@ export interface ICanvasGenService {
   ): AsyncIterable<CanvasGenEventPayload>;
 }
 
+export interface ICanvasTemplatesService {
+  list(): CanvasTemplateSummary[];
+  get(id: string): CanvasTemplate | undefined;
+  /** The system prompt for a template, falling back to the default template. */
+  systemPromptFor(id: string | undefined): string;
+}
+
 export interface IDashboardsService {
   list(channelId: string): Promise<DashboardSummary[]>;
   get(id: string): Promise<DashboardRecord | null>;
@@ -31,6 +39,7 @@ export interface IDashboardsService {
     channelId: string;
     name: string;
     spec: Record<string, unknown> | null;
+    templateId?: string;
   }): Promise<DashboardRecord>;
   update(input: {
     id: string;

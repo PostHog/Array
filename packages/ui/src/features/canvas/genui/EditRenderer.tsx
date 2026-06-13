@@ -1,13 +1,22 @@
 import type { Spec } from "@json-render/react";
 import {
   type BodyCtx,
+  type ElementOn,
   PLAIN_CTX,
   renderBody,
 } from "@posthog/ui/features/canvas/genui/bodies";
+import {
+  CanvasProviders,
+  useResolvedProps,
+} from "@posthog/ui/features/canvas/genui/CanvasProviders";
 import { isEditableTextProp } from "@posthog/ui/features/canvas/genui/editable";
 import { useCanvasChatStore } from "@posthog/ui/features/canvas/stores/canvasChatStore";
 import { Tooltip } from "@radix-ui/themes";
 import { type ReactNode, useRef } from "react";
+
+// Stable empty-props ref so the resolve hook can run unconditionally (even for a
+// missing element) without re-resolving on every render.
+const EMPTY_PROPS: Record<string, unknown> = {};
 
 // Edit-mode renderer: a thin recursive walk over the json-render Spec (the map
 // key IS the element id, which createRenderer doesn't expose). Each element is
@@ -26,13 +35,15 @@ export function EditRenderer({
   interactive: boolean;
 }) {
   return (
-    <EditNode
-      spec={spec}
-      threadId={threadId}
-      elementKey={spec.root}
-      parentKey={null}
-      interactive={interactive}
-    />
+    <CanvasProviders spec={spec}>
+      <EditNode
+        spec={spec}
+        threadId={threadId}
+        elementKey={spec.root}
+        parentKey={null}
+        interactive={interactive}
+      />
+    </CanvasProviders>
   );
 }
 
@@ -50,7 +61,19 @@ function EditNode({
   interactive: boolean;
 }) {
   const element = spec.elements[elementKey];
-  if (!element) return null;
+  // Resolve {$state} reads for display (live echo while building). Hooks must run
+  // unconditionally, so call before the missing-element guard. Editability still
+  // keys off the RAW props (makeEditCtx below), so a {$state} value stays
+  // non-editable — only literal text is inline-editable.
+  const resolvedProps = useResolvedProps(element?.props ?? EMPTY_PROPS);
+  if (!element) {
+    // A parent lists this key in `children` but no element is defined for it
+    // (a dangling reference). View mode renders nothing; edit mode surfaces it
+    // so the gap is obvious instead of a mysterious empty card.
+    return interactive ? (
+      <BrokenRef label={`missing element "${elementKey}"`} />
+    ) : null;
+  }
 
   const childKeys = element.children ?? [];
   const children =
@@ -71,7 +94,20 @@ function EditNode({
     ? makeEditCtx(threadId, elementKey, element.type, element.props)
     : PLAIN_CTX;
 
-  const body = renderBody(element.type, element.props, children, ctx);
+  const body = renderBody(
+    element.type,
+    resolvedProps,
+    children,
+    ctx,
+    element.on as ElementOn | undefined,
+  );
+  // renderBody returns null for a component type not in the catalog. Stay silent
+  // in view mode; flag it in edit mode so unknown types aren't invisible.
+  if (body == null) {
+    return interactive ? (
+      <BrokenRef label={`unknown component "${element.type}"`} />
+    ) : null;
+  }
 
   // Root renders bare; children get a hover frame to signal they're editable.
   if (!interactive || parentKey === null) return body;
@@ -100,10 +136,21 @@ function makeEditCtx(
   };
 }
 
+// Edit-mode-only marker for a structural gap (dangling child / unknown type) so
+// it reads as a clear warning instead of an unexplained empty space.
+function BrokenRef({ label }: { label: string }) {
+  return (
+    <div className="rounded border border-amber-6 border-dashed bg-amber-2 px-3 py-2 text-amber-11 text-xs">
+      ⚠ {label}
+    </div>
+  );
+}
+
 function HoverFrame({ children }: { children: ReactNode }) {
   return (
-    <div className="group/edit relative">
-      <div className="rounded outline-1 outline-transparent outline-offset-2 transition-[outline-color] group-hover/edit:outline-accent-7">
+    // h-full on both layers so a Card child fills its stretched grid cell.
+    <div className="group/edit relative h-full">
+      <div className="h-full rounded outline-1 outline-transparent outline-offset-2 transition-[outline-color] group-hover/edit:outline-accent-7">
         {children}
       </div>
     </div>

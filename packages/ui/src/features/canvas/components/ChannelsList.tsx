@@ -49,8 +49,35 @@ import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { toast } from "@posthog/ui/primitives/toast";
 import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import { hostClient } from "../hostClient";
+
+// Per-channel collapsed/expanded state, persisted across reloads. Channels are
+// CLOSED by default (absent key reads as closed); only an explicit open is stored.
+const CHANNEL_OPEN_PREFIX = "posthog.canvas.channelOpen.";
+
+function useChannelOpen(channelId: string): [boolean, (open: boolean) => void] {
+  const key = `${CHANNEL_OPEN_PREFIX}${channelId}`;
+  const [open, setOpenState] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const setOpen = useCallback(
+    (next: boolean) => {
+      setOpenState(next);
+      try {
+        localStorage.setItem(key, next ? "1" : "0");
+      } catch {
+        // Ignore storage failures (private mode, quota) — state still works in-session.
+      }
+    },
+    [key],
+  );
+  return [open, setOpen];
+}
 
 function NavButton({
   label,
@@ -311,15 +338,16 @@ function ChannelSection({
   const { data: tasks } = useTasks();
   const { tasks: filedTasks } = useChannelTasks(channel.id);
   const base = `/website/${channel.id}`;
+  const [open, setOpen] = useChannelOpen(channel.id);
 
   return (
     <Box className="group/chan relative">
-      <Collapsible variant="folder" defaultOpen>
+      <Collapsible variant="folder" open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger>{channel.name}</CollapsibleTrigger>
         <CollapsibleContent>
           <Flex direction="column" gap="1" pt="1" pl="3">
             <NavButton
-              label="Dashboards"
+              label="Canvases"
               icon={<FileIcon size={14} className="text-gray-9" />}
               active={
                 pathname === base || pathname.startsWith(`${base}/dashboards`)

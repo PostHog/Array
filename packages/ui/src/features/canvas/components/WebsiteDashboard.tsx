@@ -15,9 +15,11 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
   const editing = useIsDashboardEditing(dashboardId);
   const { dashboard, isLoading } = useDashboard(dashboardId);
   const ensureSpec = useCanvasChatStore((s) => s.ensureSpec);
+  const setTemplate = useCanvasChatStore((s) => s.setTemplate);
 
   const threadId = `dashboard:${dashboardId}`;
   const spec = dashboard?.spec as Spec | null | undefined;
+  const templateId = dashboard?.templateId;
 
   // Entering edit on an existing dashboard: seed the canvas thread with the
   // saved spec so the agent refines the current board instead of a blank
@@ -26,12 +28,18 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
     if (editing && isNonEmptySpec(spec)) ensureSpec(threadId, spec);
   }, [editing, threadId, spec, ensureSpec]);
 
+  // Anchor the thread's agent to this canvas's template (so it builds with the
+  // right context — Dashboard vs Blank — from the first message).
+  useEffect(() => {
+    if (templateId) setTemplate(threadId, templateId);
+  }, [threadId, templateId, setTemplate]);
+
   if (editing) {
     return <WebsiteCanvas threadId={threadId} />;
   }
 
   return (
-    <ScrollArea className="h-full bg-gray-1">
+    <ScrollArea className="scroll-mask-4 h-full bg-background">
       {isNonEmptySpec(spec) ? (
         <ErrorBoundary name="dashboard-renderer" resetKey={spec}>
           <ViewRenderer spec={spec} dashboardId={dashboardId} />
@@ -46,11 +54,11 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
           className="px-6 text-center"
         >
           <Text size="3" weight="bold" className="text-gray-12">
-            {isLoading ? "Loading…" : "Empty dashboard"}
+            {isLoading ? "Loading…" : "Empty canvas"}
           </Text>
           {!isLoading && (
             <Text size="2" className="text-gray-10">
-              Hit Edit to build this dashboard with the agent, then Save.
+              Hit Edit to build this canvas with the agent, then Save.
             </Text>
           )}
         </Flex>
