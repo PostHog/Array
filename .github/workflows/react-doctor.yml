@@ -59,7 +59,7 @@ jobs:
           fi
           REPORT="${RUNNER_TEMP}/react-doctor-report.json"
           status=0
-          npx --yes react-doctor@0.4.2 . --blocking error --changed-files-from "$CHANGED" --json --json-compact --no-telemetry > "$REPORT" || status=$?
+          npx --yes react-doctor@0.5.4 . --blocking error --changed-files-from "$CHANGED" --json --json-compact --no-telemetry > "$REPORT" || status=$?
           echo "exit-code=$status" >> "$GITHUB_OUTPUT"
           echo "report=$REPORT" >> "$GITHUB_OUTPUT"
           if [ "$status" -ne 0 ]; then
