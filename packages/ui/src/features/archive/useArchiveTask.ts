@@ -184,11 +184,16 @@ export function useArchiveTask() {
     await archiveTaskImperative(taskId, queryClient, keys, {
       optimistic: false,
     });
+    const toastId = `archive-undo-${taskId}`;
     toast.success("Task archived", {
+      id: toastId,
       duration: UNDO_TOAST_DURATION_MS,
       action: {
         label: "Undo",
-        onClick: () => void undoArchive(taskId, restore),
+        onClick: () => {
+          toast.dismiss(toastId);
+          void undoArchive(taskId, restore);
+        },
       },
     });
   };

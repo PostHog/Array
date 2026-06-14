@@ -4,10 +4,14 @@ import type { UseUnarchiveTask } from "./useUnarchiveTask";
 
 const log = logger.scope("undo-archive");
 
+const inFlight = new Set<string>();
+
 export async function undoArchive(
   taskId: string,
   restore: UseUnarchiveTask["restore"],
 ): Promise<void> {
+  if (inFlight.has(taskId)) return;
+  inFlight.add(taskId);
   try {
     let outcome = await restore(taskId, true);
     // Undo is a transient toast action: silently recreate a missing branch
@@ -16,7 +20,7 @@ export async function undoArchive(
       outcome = await restore(taskId, true, { recreateBranch: true });
     }
     if (outcome.kind === "restored") {
-      toast.success("Task restored");
+      toast.success("Task undone");
       return;
     }
     const reason =
@@ -28,5 +32,7 @@ export async function undoArchive(
   } catch (error) {
     log.error("Failed to restore archived task", error);
     toast.error("Failed to restore task");
+  } finally {
+    inFlight.delete(taskId);
   }
 }

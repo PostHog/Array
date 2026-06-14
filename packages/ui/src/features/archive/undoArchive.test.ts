@@ -21,7 +21,7 @@ describe("undoArchive", () => {
     toastError.mockClear();
   });
 
-  it("restores on the first attempt and confirms with a success toast", async () => {
+  it("restores on the first attempt and confirms with a toast", async () => {
     const restore = vi
       .fn()
       .mockResolvedValue({ kind: "restored", navigateToTaskId: "task-1" });
@@ -30,7 +30,7 @@ describe("undoArchive", () => {
 
     expect(restore).toHaveBeenCalledTimes(1);
     expect(restore).toHaveBeenCalledWith("task-1", true);
-    expect(toastSuccess).toHaveBeenCalledWith("Task restored");
+    expect(toastSuccess).toHaveBeenCalledWith("Task undone");
     expect(toastError).not.toHaveBeenCalled();
   });
 
@@ -50,7 +50,7 @@ describe("undoArchive", () => {
     expect(restore).toHaveBeenNthCalledWith(2, "task-1", true, {
       recreateBranch: true,
     });
-    expect(toastSuccess).toHaveBeenCalledWith("Task restored");
+    expect(toastSuccess).toHaveBeenCalledWith("Task undone");
     expect(toastError).not.toHaveBeenCalled();
   });
 
@@ -89,5 +89,23 @@ describe("undoArchive", () => {
 
     expect(toastError).toHaveBeenCalledWith("Failed to restore task");
     expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it("ignores a repeated undo while the first is still in flight", async () => {
+    let resolveRestore: (value: unknown) => void = () => {};
+    const restore = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRestore = resolve;
+        }),
+    );
+
+    const first = undoArchive("task-1", restore as unknown as Restore);
+    const second = undoArchive("task-1", restore as unknown as Restore);
+    resolveRestore({ kind: "restored", navigateToTaskId: "task-1" });
+    await Promise.all([first, second]);
+
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(toastSuccess).toHaveBeenCalledTimes(1);
   });
 });

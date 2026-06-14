@@ -86,6 +86,8 @@ function ToastComponent(props: ToastProps) {
 }
 
 export const toast = {
+  dismiss: (id?: string | number) => sonnerToast.dismiss(id),
+
   loading: (title: ReactNode, description?: string) => {
     return sonnerToast.custom((id) => (
       <ToastComponent
