@@ -45,7 +45,9 @@ export const agentRouter = router({
     .mutation(({ ctx, input }) =>
       ctx.container
         .get<AgentService>(AGENT_SERVICE)
-        .prompt(input.sessionId, input.prompt as ContentBlock[]),
+        .prompt(input.sessionId, input.prompt as ContentBlock[], {
+          steer: input.steer,
+        }),
     ),
 
   cancel: publicProcedure

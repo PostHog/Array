@@ -1255,6 +1255,21 @@ export class SessionService {
     this.idleKilledSubscription = null;
   }
 
+  /**
+   * A steer message rides on `session/prompt` with `_meta.steer`. It is folded
+   * into the running turn, so its request must not participate in turn-state
+   * bookkeeping (currentPromptId / isPromptPending) or the live turn would be
+   * cut short. Its response carries a foreign request id, so the currentPromptId
+   * guard ignores it without needing a marker here.
+   */
+  private isSteerMessage(msg: AcpMessage["message"]): boolean {
+    if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
+      const params = msg.params as { _meta?: { steer?: boolean } } | undefined;
+      return params?._meta?.steer === true;
+    }
+    return false;
+  }
+
   private updatePromptStateFromEvents(
     taskRunId: string,
     events: AcpMessage[],
@@ -1262,6 +1277,12 @@ export class SessionService {
   ): void {
     for (const acpMsg of events) {
       const msg = acpMsg.message;
+      // A steer is injected into the running turn, not a turn of its own. Skip
+      // its request so it never claims currentPromptId. Otherwise the steer's
+      // instant response would clear the live turn's pending state.
+      if (this.isSteerMessage(msg)) {
+        continue;
+      }
       if (isJsonRpcRequest(msg) && msg.method === "session/prompt") {
         this.d.store.updateSession(taskRunId, {
           isPromptPending: true,
@@ -1648,6 +1669,7 @@ export class SessionService {
   async sendPrompt(
     taskId: string,
     prompt: string | ContentBlock[],
+    options?: { steer?: boolean },
   ): Promise<{ stopReason: string }> {
     if (!this.d.getIsOnline()) {
       throw new Error(
@@ -1665,6 +1687,23 @@ export class SessionService {
       throw new Error(
         "Confirm the folder access dialog before sending your message.",
       );
+    }
+
+    // Steer: the user sent a message mid-turn and asked to fold it into the
+    // running turn rather than queue it. Native (Claude) injects at the next
+    // tool boundary; everything else interrupts the turn and resends below as a
+    // fresh prompt. Compaction always falls through to the queue.
+    if (options?.steer && session.isPromptPending && !session.isCompacting) {
+      const supportsNativeSteer =
+        !session.isCloud && session.adapter === "claude";
+      if (supportsNativeSteer) {
+        return this.sendSteerPrompt(session, prompt);
+      }
+      await this.cancelPrompt(taskId);
+      const refreshed = this.d.store.getSessionByTaskId(taskId);
+      if (refreshed) {
+        session = refreshed;
+      }
     }
 
     if (session.isCloud) {
@@ -1748,6 +1787,33 @@ export class SessionService {
 
     return this.sendLocalPrompt(session, blocks, promptText, {
       optimisticApplied: true,
+    });
+  }
+
+  /**
+   * Send a steer message: folded into the turn already running rather than
+   * queued. It renders when its `session/prompt` echo arrives and is injected
+   * by the agent at the next tool boundary. The running turn keeps ownership of
+   * the prompt lifecycle, so this never touches isPromptPending.
+   */
+  private async sendSteerPrompt(
+    session: AgentSession,
+    prompt: string | ContentBlock[],
+  ): Promise<{ stopReason: string }> {
+    const blocks = normalizePromptToBlocks(prompt);
+    const promptText = extractPromptText(prompt);
+
+    this.d.track(ANALYTICS_EVENTS.PROMPT_SENT, {
+      task_id: session.taskId,
+      is_initial: false,
+      execution_type: "local",
+      prompt_length_chars: promptText.length,
+    });
+
+    return this.d.trpc.agent.prompt.mutate({
+      sessionId: session.taskRunId,
+      prompt: blocks,
+      steer: true,
     });
   }
 

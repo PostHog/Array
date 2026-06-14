@@ -56,6 +56,24 @@ describe("promptToClaude", () => {
     expect(text).toContain("pages");
   });
 
+  it("tags a steer message with priority 'next' for tool-boundary delivery", () => {
+    const result = promptToClaude({
+      sessionId: "session-1",
+      prompt: [{ type: "text", text: "use a different approach" }],
+      _meta: { steer: true },
+    });
+    expect(result.priority).toBe("next");
+  });
+
+  it("leaves priority and shouldQuery unset for a normal message", () => {
+    const result = promptToClaude({
+      sessionId: "session-1",
+      prompt: [{ type: "text", text: "hello" }],
+    });
+    expect(result.priority).toBeUndefined();
+    expect(result.shouldQuery).toBeUndefined();
+  });
+
   it("drops embedded body for file:// resource but keeps attachment:// payload", () => {
     const hugeInline = `${"y".repeat(30_000)}KEEP_ATTACH${"y".repeat(30_000)}`;
     const fileRes = promptToClaude({

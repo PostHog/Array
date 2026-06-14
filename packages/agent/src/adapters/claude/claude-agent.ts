@@ -274,6 +274,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         _meta: {
           posthog: {
             resumeSession: true,
+            steering: "native",
           },
           claudeCode: {
             promptQueueing: true,
@@ -433,6 +434,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
 
     if (this.session.promptRunning) {
+      const isSteer =
+        (params._meta as Record<string, unknown> | undefined)?.steer === true;
+      if (isSteer) {
+        // Fold this message into the turn already running instead of queueing a
+        // new turn. promptToClaude tagged it priority:"next" so the SDK delivers
+        // it at the next tool-call boundary. Return immediately with a benign
+        // end_turn: the in-flight turn (not this call) owns the loop and the
+        // real stop reason. The client tells steers apart by the request's
+        // _meta.steer, not by this value.
+        this.session.input.push(userMessage);
+        await this.broadcastUserMessage(params);
+        return { stopReason: "end_turn" };
+      }
       this.session.input.push(userMessage);
       const order = this.session.nextPendingOrder++;
       const cancelled = await new Promise<boolean>((resolve) => {

@@ -13,6 +13,7 @@ export type DefaultRunMode = "local" | "cloud" | "last_used";
 export type LocalWorkspaceMode = "worktree" | "local";
 export type AgentAdapter = "claude" | "codex";
 export type DefaultInitialTaskMode = "plan" | "last_used";
+export type DefaultMessagingMode = "queue" | "steer";
 export type DefaultReasoningEffort =
   | "low"
   | "medium"
@@ -68,6 +69,8 @@ interface SettingsStore {
   defaultInitialTaskMode: DefaultInitialTaskMode;
   lastUsedInitialTaskMode: ExecutionMode;
   defaultReasoningEffort: DefaultReasoningEffort;
+  defaultMessagingMode: DefaultMessagingMode;
+  setDefaultMessagingMode: (mode: DefaultMessagingMode) => void;
   setDefaultRunMode: (mode: DefaultRunMode) => void;
   setLastUsedRunMode: (mode: "local" | "cloud") => void;
   setLastUsedLocalWorkspaceMode: (mode: LocalWorkspaceMode) => void;
@@ -163,6 +166,7 @@ export const useSettingsStore = create<SettingsStore>()(
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
       defaultReasoningEffort: "last_used",
+      defaultMessagingMode: "queue",
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
       setLastUsedRunMode: (mode) => set({ lastUsedRunMode: mode }),
       setLastUsedLocalWorkspaceMode: (mode) =>
@@ -192,6 +196,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedInitialTaskMode: mode }),
       setDefaultReasoningEffort: (effort) =>
         set({ defaultReasoningEffort: effort }),
+      setDefaultMessagingMode: (mode) => set({ defaultMessagingMode: mode }),
 
       // Notifications
       desktopNotifications: true,
@@ -301,6 +306,7 @@ export const useSettingsStore = create<SettingsStore>()(
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,
         defaultReasoningEffort: state.defaultReasoningEffort,
+        defaultMessagingMode: state.defaultMessagingMode,
 
         // Notifications
         desktopNotifications: state.desktopNotifications,

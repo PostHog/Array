@@ -22,7 +22,9 @@ import { PlanStatusBar } from "@posthog/ui/features/sessions/components/PlanStat
 import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components/ReasoningLevelSelector";
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
+import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
   useAdapterForTask,
   useModeConfigOptionForTask,
@@ -161,6 +163,7 @@ export function SessionView({
   const modeOption = useModeConfigOptionForTask(taskId);
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
   const adapter = useAdapterForTask(taskId);
+  const toggleMessagingMode = useToggleMessagingMode(taskId);
   const { allowBypassPermissions } = useSettingsStore();
   const { isOnline } = useConnectivity();
   const currentModeId = modeOption?.currentValue;
@@ -625,6 +628,12 @@ export function SessionView({
                               />
                             ) : null
                           }
+                          messagingModeToggle={
+                            taskId ? (
+                              <SteerQueueToggle taskId={taskId} />
+                            ) : undefined
+                          }
+                          onToggleMessagingMode={toggleMessagingMode}
                           onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
                           onBashCommand={onBashCommand}

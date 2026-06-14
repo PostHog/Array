@@ -1041,10 +1041,26 @@ When creating pull requests, add the following footer at the end of the PR descr
   async prompt(
     sessionId: string,
     prompt: ContentBlock[],
+    options?: { steer?: boolean },
   ): Promise<PromptOutput> {
     const session = this.sessions.get(sessionId);
     if (!session) {
       throw new Error(`Session not found: ${sessionId}`);
+    }
+
+    // A steer is injected into the turn that is already running, which owns the
+    // promptPending/sleep/idle lifecycle. Forward it fire-and-forget so this
+    // call does not flip that shared state out from under the live turn.
+    if (options?.steer) {
+      const result = await session.clientSideConnection.prompt({
+        sessionId: getAgentSessionId(session),
+        prompt,
+        _meta: { steer: true },
+      });
+      return {
+        stopReason: result.stopReason,
+        _meta: result._meta as PromptOutput["_meta"],
+      };
     }
 
     // Prepend pending context if present

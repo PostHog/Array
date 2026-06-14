@@ -138,6 +138,7 @@ export const contentBlockSchema = z.looseObject({
 export const promptInput = z.object({
   sessionId: z.string(),
   prompt: z.array(contentBlockSchema),
+  steer: z.boolean().optional(),
 });
 
 export type PromptInput = z.infer<typeof promptInput>;

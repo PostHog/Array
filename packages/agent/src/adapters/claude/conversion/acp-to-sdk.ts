@@ -154,8 +154,8 @@ export function promptToClaude(prompt: PromptRequest): SDKUserMessage {
   const content: ContentBlockParam[] = [];
   const context: ContentBlockParam[] = [];
 
-  const prContext = (prompt._meta as Record<string, unknown> | undefined)
-    ?.prContext;
+  const meta = prompt._meta as Record<string, unknown> | undefined;
+  const prContext = meta?.prContext;
   if (typeof prContext === "string") {
     content.push(sdkText(prContext));
   }
@@ -166,10 +166,18 @@ export function promptToClaude(prompt: PromptRequest): SDKUserMessage {
 
   content.push(...context);
 
-  return {
+  const message: SDKUserMessage = {
     type: "user",
     message: { role: "user", content },
     session_id: prompt.sessionId,
     parent_tool_use_id: null,
   };
+
+  // A steer is folded into the turn already running: priority "next" tells the
+  // SDK to deliver it at the next tool-call boundary rather than as a new turn.
+  if (meta?.steer === true) {
+    message.priority = "next";
+  }
+
+  return message;
 }

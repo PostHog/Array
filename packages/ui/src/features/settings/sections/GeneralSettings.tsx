@@ -12,6 +12,7 @@ import {
   type AutoConvertLongText,
   type CompletionSound,
   type DefaultInitialTaskMode,
+  type DefaultMessagingMode,
   type DefaultReasoningEffort,
   type DiffOpenMode,
   type SendMessagesWith,
@@ -82,6 +83,7 @@ export function GeneralSettings() {
     completionVolume,
     autoConvertLongText,
     defaultInitialTaskMode,
+    defaultMessagingMode,
     defaultReasoningEffort,
     diffOpenMode,
     sendMessagesWith,
@@ -94,6 +96,7 @@ export function GeneralSettings() {
     setCompletionVolume,
     setAutoConvertLongText,
     setDefaultInitialTaskMode,
+    setDefaultMessagingMode,
     setDefaultReasoningEffort,
     setDiffOpenMode,
     setSendMessagesWith,
@@ -197,6 +200,18 @@ export function GeneralSettings() {
       setDefaultInitialTaskMode(value);
     },
     [defaultInitialTaskMode, setDefaultInitialTaskMode],
+  );
+
+  const handleDefaultMessagingModeChange = useCallback(
+    (value: DefaultMessagingMode) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "default_messaging_mode",
+        new_value: value,
+        old_value: defaultMessagingMode,
+      });
+      setDefaultMessagingMode(value);
+    },
+    [defaultMessagingMode, setDefaultMessagingMode],
   );
 
   const handleDefaultReasoningEffortChange = useCallback(
@@ -416,6 +431,25 @@ export function GeneralSettings() {
           <Select.Content>
             <Select.Item value="plan">Plan</Select.Item>
             <Select.Item value="last_used">Last used</Select.Item>
+          </Select.Content>
+        </Select.Root>
+      </SettingRow>
+
+      <SettingRow
+        label="Default messaging mode"
+        description="Mode new sessions start in. Steer applies messages mid-turn. Queue holds them until the turn ends."
+      >
+        <Select.Root
+          value={defaultMessagingMode}
+          onValueChange={(value) =>
+            handleDefaultMessagingModeChange(value as DefaultMessagingMode)
+          }
+          size="1"
+        >
+          <Select.Trigger className="min-w-[100px]" />
+          <Select.Content>
+            <Select.Item value="queue">Queue</Select.Item>
+            <Select.Item value="steer">Steer</Select.Item>
           </Select.Content>
         </Select.Root>
       </SettingRow>
