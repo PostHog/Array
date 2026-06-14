@@ -29,9 +29,12 @@ import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { logger } from "@posthog/ui/shell/logger";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { type UseUnarchiveTask, useUnarchiveTask } from "./useUnarchiveTask";
+import { undoArchive } from "./undoArchive";
+import { useUnarchiveTask } from "./useUnarchiveTask";
 
 const log = logger.scope("archive-task");
+
+const UNDO_TOAST_DURATION_MS = 8000;
 
 export interface ArchiveCacheKeys {
   archivedTaskIdsQueryKey: readonly unknown[];
@@ -170,19 +173,6 @@ export async function archiveTasksImperative(
   );
 }
 
-async function undoArchive(
-  taskId: string,
-  restore: UseUnarchiveTask["restore"],
-) {
-  let outcome = await restore(taskId, true);
-  if (outcome.kind === "branch-not-found") {
-    outcome = await restore(taskId, true, { recreateBranch: true });
-  }
-  if (outcome.kind === "error") {
-    toast.error(`Failed to restore task: ${outcome.message}`);
-  }
-}
-
 export function useArchiveTask() {
   const queryClient = useQueryClient();
   const keys = useArchiveCacheKeys();
@@ -195,7 +185,7 @@ export function useArchiveTask() {
       optimistic: false,
     });
     toast.success("Task archived", {
-      duration: 8000,
+      duration: UNDO_TOAST_DURATION_MS,
       action: {
         label: "Undo",
         onClick: () => void undoArchive(taskId, restore),
