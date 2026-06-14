@@ -27,12 +27,18 @@ export function useToggleMessagingMode(taskId: string | undefined): () => void {
     setMode(taskId, next);
 
     if (next === "steer") {
+      // Flush buffered messages into the running turn in queued order so a
+      // message typed first lands first. rawPrompt preserves rich content.
       const queued = sessionStoreSetters.dequeueMessages(taskId);
-      for (const message of queued) {
-        void sessionService.sendPrompt(taskId, message.content, {
-          steer: true,
-        });
-      }
+      void (async () => {
+        for (const message of queued) {
+          await sessionService
+            .sendPrompt(taskId, message.rawPrompt ?? message.content, {
+              steer: true,
+            })
+            .catch(() => {});
+        }
+      })();
     }
   }, [taskId, mode, setMode, sessionService]);
 }

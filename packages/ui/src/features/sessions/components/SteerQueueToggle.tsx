@@ -14,10 +14,9 @@ import { Tooltip } from "@radix-ui/themes";
 
 interface SteerQueueToggleProps {
   taskId: string;
-  disabled?: boolean;
 }
 
-export function SteerQueueToggle({ taskId, disabled }: SteerQueueToggleProps) {
+export function SteerQueueToggle({ taskId }: SteerQueueToggleProps) {
   const mode = useMessagingMode(taskId);
   const supportsNativeSteer = useSupportsNativeSteer(taskId);
   const queuedCount = useQueuedMessagesForTask(taskId).length;
@@ -45,7 +44,6 @@ export function SteerQueueToggle({ taskId, disabled }: SteerQueueToggleProps) {
         type="button"
         variant="default"
         size="sm"
-        disabled={disabled}
         aria-label={`Messaging mode: ${label}`}
         onClick={toggle}
       >

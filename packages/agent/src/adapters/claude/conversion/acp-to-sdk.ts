@@ -150,6 +150,15 @@ function processPromptChunk(
   }
 }
 
+/** True when an ACP request's `_meta` marks it as a mid-turn steer. */
+export function isSteerMeta(meta: unknown): boolean {
+  return (
+    typeof meta === "object" &&
+    meta !== null &&
+    (meta as Record<string, unknown>).steer === true
+  );
+}
+
 export function promptToClaude(prompt: PromptRequest): SDKUserMessage {
   const content: ContentBlockParam[] = [];
   const context: ContentBlockParam[] = [];
@@ -175,7 +184,7 @@ export function promptToClaude(prompt: PromptRequest): SDKUserMessage {
 
   // A steer is folded into the turn already running: priority "next" tells the
   // SDK to deliver it at the next tool-call boundary rather than as a new turn.
-  if (meta?.steer === true) {
+  if (isSteerMeta(meta)) {
     message.priority = "next";
   }
 

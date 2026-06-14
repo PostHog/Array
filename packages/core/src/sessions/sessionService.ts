@@ -1808,6 +1808,7 @@ export class SessionService {
       is_initial: false,
       execution_type: "local",
       prompt_length_chars: promptText.length,
+      is_steer: true,
     });
 
     return this.d.trpc.agent.prompt.mutate({

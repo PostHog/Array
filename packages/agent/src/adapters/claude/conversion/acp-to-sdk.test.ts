@@ -1,6 +1,7 @@
 import type { PromptRequest } from "@agentclientprotocol/sdk";
 import { describe, expect, it } from "vitest";
 import {
+  isSteerMeta,
   promptToClaude,
   readToolGuidanceForPath,
   workspacePromptFromFileUri,
@@ -24,6 +25,19 @@ describe("workspacePromptFromFileUri", () => {
     const s = workspacePromptFromFileUri("file:///tmp/x.pdf");
     expect(s).toContain("Read");
     expect(s).toContain("file_path: /tmp/x.pdf");
+  });
+});
+
+describe("isSteerMeta", () => {
+  it.each([
+    [{ steer: true }, true],
+    [{ steer: false }, false],
+    [{}, false],
+    [undefined, false],
+    [null, false],
+    [{ steer: "true" }, false],
+  ])("detects steer in %o as %s", (meta, expected) => {
+    expect(isSteerMeta(meta)).toBe(expected);
   });
 });
 

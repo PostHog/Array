@@ -79,7 +79,7 @@ import {
   estimateSkillsTokens,
   estimateSystemPrompt,
 } from "./context-breakdown";
-import { promptToClaude } from "./conversion/acp-to-sdk";
+import { isSteerMeta, promptToClaude } from "./conversion/acp-to-sdk";
 import {
   handleResultMessage,
   handleStreamEvent,
@@ -434,8 +434,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
 
     if (this.session.promptRunning) {
-      const isSteer =
-        (params._meta as Record<string, unknown> | undefined)?.steer === true;
+      const isSteer = isSteerMeta(params._meta);
       if (isSteer) {
         // Fold this message into the turn already running instead of queueing a
         // new turn. promptToClaude tagged it priority:"next" so the SDK delivers
