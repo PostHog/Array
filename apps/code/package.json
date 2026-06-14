@@ -68,7 +68,7 @@
     "@types/react-dom": "^19.1.0",
     "@types/semver": "^7.7.1",
     "@vitejs/plugin-react": "^4.2.1",
-    "@vitest/ui": "^4.0.10",
+    "@vitest/ui": "^4.1.8",
     "adm-zip": "^0.5.16",
     "electron": "^41.0.0",
     "husky": "^9.1.7",
@@ -84,7 +84,7 @@
     "typescript": "^5.9.3",
     "vite": "^6.0.7",
     "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "^4.0.10",
+    "vitest": "^4.1.8",
     "yaml": "^2.8.1"
   },
   "dependencies": {
