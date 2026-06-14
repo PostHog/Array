@@ -30,7 +30,7 @@ describe("undoArchive", () => {
 
     expect(restore).toHaveBeenCalledTimes(1);
     expect(restore).toHaveBeenCalledWith("task-1", true);
-    expect(toastSuccess).toHaveBeenCalledWith("Task undone");
+    expect(toastSuccess).toHaveBeenCalledWith("Task Archive Undone");
     expect(toastError).not.toHaveBeenCalled();
   });
 
@@ -50,7 +50,7 @@ describe("undoArchive", () => {
     expect(restore).toHaveBeenNthCalledWith(2, "task-1", true, {
       recreateBranch: true,
     });
-    expect(toastSuccess).toHaveBeenCalledWith("Task undone");
+    expect(toastSuccess).toHaveBeenCalledWith("Task Archive Undone");
     expect(toastError).not.toHaveBeenCalled();
   });
 
