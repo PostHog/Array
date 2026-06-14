@@ -29,6 +29,7 @@ import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { logger } from "@posthog/ui/shell/logger";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { type UseUnarchiveTask, useUnarchiveTask } from "./useUnarchiveTask";
 
 const log = logger.scope("archive-task");
 
@@ -169,9 +170,23 @@ export async function archiveTasksImperative(
   );
 }
 
+async function undoArchive(
+  taskId: string,
+  restore: UseUnarchiveTask["restore"],
+) {
+  let outcome = await restore(taskId, true);
+  if (outcome.kind === "branch-not-found") {
+    outcome = await restore(taskId, true, { recreateBranch: true });
+  }
+  if (outcome.kind === "error") {
+    toast.error(`Failed to restore task: ${outcome.message}`);
+  }
+}
+
 export function useArchiveTask() {
   const queryClient = useQueryClient();
   const keys = useArchiveCacheKeys();
+  const { restore } = useUnarchiveTask();
 
   const archiveTask = async ({ taskId }: { taskId: string }) => {
     // Non-optimistic: keep the row in place (with a spinner) until the archive
@@ -179,7 +194,13 @@ export function useArchiveTask() {
     await archiveTaskImperative(taskId, queryClient, keys, {
       optimistic: false,
     });
-    toast.success("Task archived");
+    toast.success("Task archived", {
+      duration: 8000,
+      action: {
+        label: "Undo",
+        onClick: () => void undoArchive(taskId, restore),
+      },
+    });
   };
 
   return { archiveTask };

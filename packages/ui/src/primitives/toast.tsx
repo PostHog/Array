@@ -103,6 +103,7 @@ export const toast = {
       description?: string;
       id?: string | number;
       action?: ToastAction;
+      duration?: number;
     },
   ) => {
     return sonnerToast.custom(
@@ -115,7 +116,7 @@ export const toast = {
           action={options?.action}
         />
       ),
-      { id: options?.id },
+      { id: options?.id, duration: options?.duration },
     );
   },
 
