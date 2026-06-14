@@ -20,7 +20,7 @@ export async function undoArchive(
       outcome = await restore(taskId, true, { recreateBranch: true });
     }
     if (outcome.kind === "restored") {
-      toast.success("Task Archive Undone");
+      toast.success("Task archive undone");
       return;
     }
     const reason =
