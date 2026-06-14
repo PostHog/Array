@@ -29,14 +29,24 @@ export function useToggleMessagingMode(taskId: string | undefined): () => void {
     if (next === "steer") {
       // Flush buffered messages into the running turn in queued order so a
       // message typed first lands first. rawPrompt preserves rich content.
+      // They are already dequeued, so roll any failed send back onto the queue
+      // rather than dropping it silently.
       const queued = sessionStoreSetters.dequeueMessages(taskId);
       void (async () => {
+        const failed: typeof queued = [];
         for (const message of queued) {
-          await sessionService
-            .sendPrompt(taskId, message.rawPrompt ?? message.content, {
-              steer: true,
-            })
-            .catch(() => {});
+          try {
+            await sessionService.sendPrompt(
+              taskId,
+              message.rawPrompt ?? message.content,
+              { steer: true },
+            );
+          } catch {
+            failed.push(message);
+          }
+        }
+        if (failed.length > 0) {
+          sessionStoreSetters.prependQueuedMessages(taskId, failed);
         }
       })();
     }
