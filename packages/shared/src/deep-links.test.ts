@@ -98,42 +98,59 @@ describe("buildInboxDeeplink", () => {
 });
 
 describe("buildScoutDeeplink", () => {
-  it("builds a bare scout link with no finding", () => {
-    expect(
-      buildScoutDeeplink("error-tracking", null, { isDevBuild: false }),
-    ).toBe("posthog-code://scout/error-tracking");
-    expect(
-      buildScoutDeeplink("error-tracking", undefined, { isDevBuild: false }),
-    ).toBe("posthog-code://scout/error-tracking");
-  });
-
-  it("appends the finding id as a query param", () => {
-    expect(
-      buildScoutDeeplink("error-tracking", "abc-123", { isDevBuild: false }),
-    ).toBe("posthog-code://scout/error-tracking?finding=abc-123");
-  });
-
-  it("strips the signals-scout- prefix from a full skill name", () => {
-    expect(
-      buildScoutDeeplink("signals-scout-error-tracking", "f-1", {
-        isDevBuild: false,
-      }),
-    ).toBe("posthog-code://scout/error-tracking?finding=f-1");
-  });
-
-  it("uses the dev scheme for dev builds", () => {
-    expect(
-      buildScoutDeeplink("web-analytics", null, { isDevBuild: true }),
-    ).toBe("posthog-code-dev://scout/web-analytics");
-  });
-
-  it("encodes special characters in the finding id", () => {
-    expect(
-      buildScoutDeeplink("error-tracking", "id with spaces&=", {
-        isDevBuild: false,
-      }),
-    ).toBe(
-      "posthog-code://scout/error-tracking?finding=id%20with%20spaces%26%3D",
+  it.each<{
+    name: string;
+    skillName: string;
+    findingId: string | null | undefined;
+    isDevBuild: boolean;
+    expected: string;
+  }>([
+    {
+      name: "builds a bare scout link when finding is null",
+      skillName: "error-tracking",
+      findingId: null,
+      isDevBuild: false,
+      expected: "posthog-code://scout/error-tracking",
+    },
+    {
+      name: "builds a bare scout link when finding is undefined",
+      skillName: "error-tracking",
+      findingId: undefined,
+      isDevBuild: false,
+      expected: "posthog-code://scout/error-tracking",
+    },
+    {
+      name: "appends the finding id as a query param",
+      skillName: "error-tracking",
+      findingId: "abc-123",
+      isDevBuild: false,
+      expected: "posthog-code://scout/error-tracking?finding=abc-123",
+    },
+    {
+      name: "strips the signals-scout- prefix from a full skill name",
+      skillName: "signals-scout-error-tracking",
+      findingId: "f-1",
+      isDevBuild: false,
+      expected: "posthog-code://scout/error-tracking?finding=f-1",
+    },
+    {
+      name: "uses the dev scheme for dev builds",
+      skillName: "web-analytics",
+      findingId: null,
+      isDevBuild: true,
+      expected: "posthog-code-dev://scout/web-analytics",
+    },
+    {
+      name: "encodes special characters in the finding id",
+      skillName: "error-tracking",
+      findingId: "id with spaces&=",
+      isDevBuild: false,
+      expected:
+        "posthog-code://scout/error-tracking?finding=id%20with%20spaces%26%3D",
+    },
+  ])("$name", ({ skillName, findingId, isDevBuild, expected }) => {
+    expect(buildScoutDeeplink(skillName, findingId, { isDevBuild })).toBe(
+      expected,
     );
   });
 });

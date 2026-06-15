@@ -1,3 +1,5 @@
+import { scoutSkillSlug } from "./scout-naming";
+
 export const DEEPLINK_PROTOCOL_PRODUCTION = "posthog-code";
 export const DEEPLINK_PROTOCOL_DEVELOPMENT = "posthog-code-dev";
 
@@ -53,7 +55,7 @@ export function buildScoutDeeplink(
   findingId: string | null | undefined,
   { isDevBuild }: { isDevBuild: boolean },
 ): string {
-  const slug = skillName.replace(/^signals-scout-/, "");
+  const slug = scoutSkillSlug(skillName);
   const base = `${getDeeplinkProtocol(isDevBuild)}://scout/${encodeURIComponent(slug)}`;
   return findingId ? `${base}?finding=${encodeURIComponent(findingId)}` : base;
 }

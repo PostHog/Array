@@ -1,5 +1,9 @@
 import type { ScoutConfig, ScoutRun } from "@posthog/api-client/posthog-client";
 
+// Single source of truth lives in `@posthog/shared` so `buildScoutDeeplink`
+// (which cannot import core) and the UI share one slug implementation.
+export { scoutSkillNameFromSlug, scoutSkillSlug } from "@posthog/shared";
+
 /**
  * Canonical scouts shipped in the PostHog repo (products/signals/skills).
  * The configs endpoint does not yet distinguish canonical from hand-authored
@@ -38,15 +42,6 @@ export function prettifyScoutSkillName(skillName: string): string {
     .trim();
   if (!cleaned) return skillName;
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-}
-
-/** Route param form: "signals-scout-error-tracking" → "error-tracking" */
-export function scoutSkillSlug(skillName: string): string {
-  return skillName.replace(/^signals-scout-/, "");
-}
-
-export function scoutSkillNameFromSlug(slug: string): string {
-  return slug.startsWith("signals-scout-") ? slug : `signals-scout-${slug}`;
 }
 
 export type ScoutRunStatus =

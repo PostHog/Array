@@ -4,7 +4,11 @@ import type {
 } from "@posthog/platform/deep-link";
 import type { IMainWindow } from "@posthog/platform/main-window";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ScoutLinkEvent, ScoutLinkService } from "./scout-link";
+import {
+  ScoutLinkEvent,
+  type ScoutLinkPayload,
+  ScoutLinkService,
+} from "./scout-link";
 
 function makeLogger() {
   const logger = {
@@ -64,33 +68,44 @@ describe("ScoutLinkService", () => {
     );
   });
 
-  it("emits OpenScout with the finding id when a listener is attached", () => {
+  it.each<{
+    name: string;
+    path: string;
+    search: string;
+    expected: ScoutLinkPayload;
+  }>([
+    {
+      name: "emits OpenScout with the finding id from the query param",
+      path: "error-tracking",
+      search: "finding=abc-123",
+      expected: { skillSlug: "error-tracking", findingId: "abc-123" },
+    },
+    {
+      name: "emits OpenScout without a finding id when none is supplied",
+      path: "error-tracking",
+      search: "",
+      expected: { skillSlug: "error-tracking", findingId: undefined },
+    },
+    {
+      name: "takes only the first path segment as the skill slug",
+      path: "error-tracking/extra/segments",
+      search: "",
+      expected: { skillSlug: "error-tracking", findingId: undefined },
+    },
+    {
+      name: "decodes a percent-encoded skill slug",
+      path: "error%2Dtracking",
+      search: "",
+      expected: { skillSlug: "error-tracking", findingId: undefined },
+    },
+  ])("$name", ({ path, search, expected }) => {
     const listener = vi.fn();
     service.on(ScoutLinkEvent.OpenScout, listener);
 
-    const result = deepLinkService.trigger(
-      "scout",
-      "error-tracking",
-      "finding=abc-123",
-    );
+    const result = deepLinkService.trigger("scout", path, search);
 
     expect(result).toBe(true);
-    expect(listener).toHaveBeenCalledWith({
-      skillSlug: "error-tracking",
-      findingId: "abc-123",
-    });
-  });
-
-  it("emits OpenScout without a finding id when none is supplied", () => {
-    const listener = vi.fn();
-    service.on(ScoutLinkEvent.OpenScout, listener);
-
-    deepLinkService.trigger("scout", "error-tracking");
-
-    expect(listener).toHaveBeenCalledWith({
-      skillSlug: "error-tracking",
-      findingId: undefined,
-    });
+    expect(listener).toHaveBeenCalledWith(expected);
   });
 
   it("queues a pending deep link when no listener is attached", () => {
@@ -103,30 +118,6 @@ describe("ScoutLinkService", () => {
     expect(service.consumePendingDeepLink()).toBeNull();
   });
 
-  it("takes only the first path segment as the skill slug", () => {
-    const listener = vi.fn();
-    service.on(ScoutLinkEvent.OpenScout, listener);
-
-    deepLinkService.trigger("scout", "error-tracking/extra/segments");
-
-    expect(listener).toHaveBeenCalledWith({
-      skillSlug: "error-tracking",
-      findingId: undefined,
-    });
-  });
-
-  it("decodes a percent-encoded skill slug", () => {
-    const listener = vi.fn();
-    service.on(ScoutLinkEvent.OpenScout, listener);
-
-    deepLinkService.trigger("scout", "error%2Dtracking");
-
-    expect(listener).toHaveBeenCalledWith({
-      skillSlug: "error-tracking",
-      findingId: undefined,
-    });
-  });
-
   it("returns false and does not emit when the path is empty", () => {
     const listener = vi.fn();
     service.on(ScoutLinkEvent.OpenScout, listener);
@@ -137,19 +128,27 @@ describe("ScoutLinkService", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
-  it("focuses the main window on link arrival", () => {
+  it.each<{ name: string; minimized: boolean; expectRestore: boolean }>([
+    {
+      name: "focuses the main window on link arrival",
+      minimized: false,
+      expectRestore: false,
+    },
+    {
+      name: "restores then focuses the main window when it is minimized",
+      minimized: true,
+      expectRestore: true,
+    },
+  ])("$name", ({ minimized, expectRestore }) => {
+    mainWindow.isMinimized.mockReturnValue(minimized);
+
     deepLinkService.trigger("scout", "error-tracking");
 
     expect(mainWindow.focus).toHaveBeenCalledTimes(1);
-    expect(mainWindow.restore).not.toHaveBeenCalled();
-  });
-
-  it("restores the main window when it is minimized", () => {
-    mainWindow.isMinimized.mockReturnValue(true);
-
-    deepLinkService.trigger("scout", "error-tracking");
-
-    expect(mainWindow.restore).toHaveBeenCalledTimes(1);
-    expect(mainWindow.focus).toHaveBeenCalledTimes(1);
+    if (expectRestore) {
+      expect(mainWindow.restore).toHaveBeenCalledTimes(1);
+    } else {
+      expect(mainWindow.restore).not.toHaveBeenCalled();
+    }
   });
 });
