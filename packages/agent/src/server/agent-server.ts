@@ -1975,25 +1975,29 @@ ${signedCommitInstructions}
       return;
     }
 
-    const status = isError ? "failed" : "completed";
+    // Only a clean `end_turn` means the run actually finished its work. Any
+    // other stop reason (error, or an early stop like `max_tokens`/`refusal`)
+    // means the agent halted before completing the task, so report it as
+    // failed rather than completed.
+    const isCompleted = stopReason === "end_turn";
+    const status = isCompleted ? "completed" : "failed";
+    const failureMessage = isError
+      ? (errorMessage ?? "Agent error")
+      : `Agent stopped before completing the task (stop reason: ${stopReason})`;
 
     this.enqueueTaskTerminalEvent(
-      isError
-        ? POSTHOG_NOTIFICATIONS.ERROR
-        : POSTHOG_NOTIFICATIONS.TASK_COMPLETE,
-      isError
-        ? {
-            source: "agent_server",
-            stopReason,
-            error: errorMessage ?? "Agent error",
-          }
-        : { source: "agent_server", stopReason },
+      isCompleted
+        ? POSTHOG_NOTIFICATIONS.TASK_COMPLETE
+        : POSTHOG_NOTIFICATIONS.ERROR,
+      isCompleted
+        ? { source: "agent_server", stopReason }
+        : { source: "agent_server", stopReason, error: failureMessage },
     );
 
     try {
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
         status,
-        ...(isError && { error_message: errorMessage ?? "Agent error" }),
+        ...(isCompleted ? {} : { error_message: failureMessage }),
       });
       this.logger.debug("Task completion signaled", { status, stopReason });
     } catch (error) {
