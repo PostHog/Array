@@ -1,0 +1,65 @@
+import type { Schemas } from "@posthog/api-client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mockClient = vi.hoisted(() => ({
+  getDesktopFileSystem: vi.fn(),
+  createDesktopFileSystemChannel: vi.fn(),
+}));
+vi.mock("@posthog/ui/features/auth/authClient", () => ({
+  useOptionalAuthenticatedClient: () => mockClient,
+}));
+
+import { useChannelMutations, useChannels } from "./useChannels";
+
+function folder(id: string, path: string): Schemas.FileSystem {
+  return { id, path, type: "folder" } as unknown as Schemas.FileSystem;
+}
+
+let queryClient: QueryClient;
+function wrapper({ children }: { children: ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+}
+
+describe("useChannelMutations", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+  });
+
+  it("shows the created channel immediately, before the refetch resolves", async () => {
+    // Seed the list with one existing channel.
+    mockClient.getDesktopFileSystem.mockResolvedValue([folder("1", "alpha")]);
+
+    const list = renderHook(() => useChannels(), { wrapper });
+    await waitFor(() => expect(list.result.current.isLoading).toBe(false));
+    expect(list.result.current.channels.map((c) => c.name)).toEqual(["alpha"]);
+
+    // Make the create return the new channel, but hang any subsequent refetch
+    // so we can prove the list updates without waiting on it.
+    const created = folder("2", "beta");
+    mockClient.createDesktopFileSystemChannel.mockResolvedValue(created);
+    mockClient.getDesktopFileSystem.mockReturnValue(new Promise(() => {}));
+
+    const mutations = renderHook(() => useChannelMutations(), { wrapper });
+    await act(async () => {
+      await mutations.result.current.createChannel("beta");
+    });
+
+    // The new channel is present from the optimistic cache write, sorted
+    // alphabetically alongside the existing one — without the hung refetch
+    // having resolved.
+    await waitFor(() =>
+      expect(list.result.current.channels.map((c) => c.name)).toEqual([
+        "alpha",
+        "beta",
+      ]),
+    );
+  });
+});
