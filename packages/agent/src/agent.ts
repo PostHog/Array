@@ -135,6 +135,7 @@ export class Agent {
               apiKey: gatewayConfig.apiKey,
               binaryPath: options.codexBinaryPath,
               model: sanitizedModel,
+              reasoningEffort: options.reasoningEffort,
               instructions: options.instructions,
               additionalDirectories: options.additionalDirectories,
             }

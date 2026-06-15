@@ -290,6 +290,23 @@ describe("AgentService", () => {
       const codexMcp = mockNewSession.mock.calls[1][0].mcpServers;
       expect(codexMcp).toEqual(claudeMcp);
     });
+
+    it("passes reasoning effort to local Codex startup options", async () => {
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "codex",
+        effort: "xhigh",
+      });
+
+      expect(mockAgentRun).toHaveBeenCalledWith(
+        "task-1",
+        "run-1",
+        expect.objectContaining({
+          adapter: "codex",
+          reasoningEffort: "xhigh",
+        }),
+      );
+    });
   });
 
   describe("idle timeout", () => {

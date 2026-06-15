@@ -3,6 +3,7 @@ import type {
   HandoffLocalGitState as GitHandoffLocalGitState,
   PostHogAPIConfig,
 } from "@posthog/shared";
+import type { EffortLevel } from "@posthog/shared/domain-types";
 
 export type {
   ArtifactType,
@@ -52,6 +53,7 @@ export interface TaskExecutionOptions {
   model?: string;
   gatewayUrl?: string;
   codexBinaryPath?: string;
+  reasoningEffort?: EffortLevel;
   instructions?: string;
   processCallbacks?: ProcessSpawnedCallback;
   /** Callback invoked when the agent calls the create_output tool for structured output */
