@@ -128,7 +128,7 @@ const agentComponents: Partial<Components> = {
     return (
       <Code
         variant="ghost"
-        className="border border-border bg-gray-5 text-[13px]"
+        className="border border-border bg-gray-3 text-[13px]"
       >
         {children}
       </Code>
