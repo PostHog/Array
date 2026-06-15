@@ -12,11 +12,16 @@ export interface Channel {
   id: string;
   /** Display name — the channel's single-segment path. */
   name: string;
+  /**
+   * Raw file-system path of the folder. Used as the `ref` when starring the
+   * channel, so the desktop shortcut links back to this exact folder.
+   */
+  path: string;
 }
 
 function toChannel(fs: Schemas.FileSystem): Channel {
   // Top-level channels have a single-segment path; strip any leading slash.
-  return { id: fs.id, name: fs.path.replace(/^\/+/, "") };
+  return { id: fs.id, name: fs.path.replace(/^\/+/, ""), path: fs.path };
 }
 
 /** List the project's channels (top-level desktop file-system folders). */

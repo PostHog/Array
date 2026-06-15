@@ -951,6 +951,88 @@ export class PostHogAPIClient {
     }
   }
 
+  // Desktop file system shortcuts — the user-scoped "starred" items on the
+  // desktop surface (e.g. starred channels). Unlike the file system rows above,
+  // shortcuts are per-user, so they back cross-device starring without leaking
+  // one user's stars to their teammates. Not in the generated OpenAPI client,
+  // so we use the raw fetcher.
+  async getDesktopFileSystemShortcuts(): Promise<Schemas.FileSystemShortcut[]> {
+    const SHORTCUTS_MAX_PAGES = 50;
+    const SHORTCUTS_PAGE_SIZE = 200;
+    const teamId = await this.getTeamId();
+    const all: Schemas.FileSystemShortcut[] = [];
+    let urlPath: string = `/api/projects/${teamId}/desktop_file_system_shortcut/?limit=${SHORTCUTS_PAGE_SIZE}`;
+    for (let i = 0; i < SHORTCUTS_MAX_PAGES; i++) {
+      const url = new URL(`${this.api.baseUrl}${urlPath}`);
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: urlPath,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch desktop file system shortcuts: ${response.statusText}`,
+        );
+      }
+      const page =
+        (await response.json()) as Schemas.PaginatedFileSystemShortcutList;
+      all.push(...page.results);
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    log.warn(
+      `getDesktopFileSystemShortcuts hit MAX_PAGES (${SHORTCUTS_MAX_PAGES}); returning partial results`,
+      { returned: all.length },
+    );
+    return all;
+  }
+
+  // Create a desktop shortcut for the current user. For a folder/channel the
+  // backend links by `ref` (the folder's full path), with `path` as the label.
+  async createDesktopFileSystemShortcut(input: {
+    path: string;
+    type: string;
+    ref?: string;
+    href?: string;
+  }): Promise<Schemas.FileSystemShortcut> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system_shortcut/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify(input),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create desktop file system shortcut: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as Schemas.FileSystemShortcut;
+  }
+
+  // Delete a desktop shortcut by id (used to unstar). A 404 means it's already
+  // gone, which is the desired end state, so we treat it as success.
+  async deleteDesktopFileSystemShortcut(id: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system_shortcut/${encodeURIComponent(id)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Failed to delete desktop file system shortcut: ${response.statusText}`,
+      );
+    }
+  }
+
   // Per-folder, versioned markdown instructions for a desktop folder. The
   // endpoint is keyed on the FileSystem row id (must be `type === "folder"`).
   // Returns the current latest version or null when none has been published.

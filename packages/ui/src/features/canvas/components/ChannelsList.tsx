@@ -35,6 +35,10 @@ import type { Task } from "@posthog/shared/domain-types";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
 import {
+  useChannelStars,
+  useChannelStarToggle,
+} from "@posthog/ui/features/canvas/hooks/useChannelStars";
+import {
   type Channel,
   useChannelMutations,
   useChannels,
@@ -44,7 +48,6 @@ import {
   useChannelTaskMutations,
   useChannelTasks,
 } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
-import { useStarredChannelsStore } from "@posthog/ui/features/canvas/starredChannelsStore";
 import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
@@ -95,11 +98,7 @@ function ChannelMenu({ channel }: { channel: Channel }) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { deleteChannel, isDeleting } = useChannelMutations();
-  const isStarred = useStarredChannelsStore((s) =>
-    s.starredIds.includes(channel.id),
-  );
-  const toggleStar = useStarredChannelsStore((s) => s.toggle);
-  const unstar = useStarredChannelsStore((s) => s.unstar);
+  const { isStarred, toggleStar, removeStar } = useChannelStarToggle(channel);
 
   const onDelete = async () => {
     try {
@@ -121,7 +120,7 @@ function ChannelMenu({ channel }: { channel: Channel }) {
       ]);
 
       await deleteChannel(channel.id);
-      unstar(channel.id);
+      removeStar();
       // If we're inside the channel being deleted, fall back to the index.
       if (pathname.startsWith(`/website/${channel.id}`)) {
         void navigate({ to: "/website" });
@@ -159,7 +158,7 @@ function ChannelMenu({ channel }: { channel: Channel }) {
           sideOffset={4}
           className="w-auto min-w-fit"
         >
-          <DropdownMenuItem onClick={() => toggleStar(channel.id)}>
+          <DropdownMenuItem onClick={() => toggleStar()}>
             <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />
             {isStarred ? "Unstar channel" : "Star channel"}
           </DropdownMenuItem>
@@ -328,10 +327,7 @@ function ChannelSection({
   const base = `/website/${channel.id}`;
   // Channels always start collapsed on load; expansion is session-only.
   const [open, setOpen] = useState(false);
-  const isStarred = useStarredChannelsStore((s) =>
-    s.starredIds.includes(channel.id),
-  );
-  const toggleStar = useStarredChannelsStore((s) => s.toggle);
+  const { isStarred, toggleStar } = useChannelStarToggle(channel);
 
   return (
     <Box className="group/chan relative">
@@ -431,7 +427,7 @@ function ChannelSection({
               aria-label={
                 isStarred ? `Unstar ${channel.name}` : `Star ${channel.name}`
               }
-              onClick={() => toggleStar(channel.id)}
+              onClick={() => toggleStar()}
             >
               <StarIcon
                 size={14}
@@ -484,12 +480,15 @@ function ChannelGroupLabel({ children }: { children: ReactNode }) {
 // channels are user-specific and surface in their own section at the top.
 export function ChannelsList() {
   const { channels, isLoading } = useChannels();
+  const { starredRefToShortcutId } = useChannelStars();
   const [modalOpen, setModalOpen] = useState(false);
-  const starredIds = useStarredChannelsStore((s) => s.starredIds);
 
-  const starredSet = new Set(starredIds);
-  const starredChannels = channels.filter((c) => starredSet.has(c.id));
-  const otherChannels = channels.filter((c) => !starredSet.has(c.id));
+  const starredChannels = channels.filter((c) =>
+    starredRefToShortcutId.has(c.path),
+  );
+  const otherChannels = channels.filter(
+    (c) => !starredRefToShortcutId.has(c.path),
+  );
 
   return (
     <Flex direction="column" className="h-full min-h-0">
