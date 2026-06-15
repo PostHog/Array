@@ -3,6 +3,7 @@ import { Box, Code, IconButton } from "@radix-ui/themes";
 import { memo, useCallback, useMemo, useState } from "react";
 import type { Components } from "react-markdown";
 import { HighlightedCode } from "../../../../primitives/HighlightedCode";
+import { useSmoothText } from "../../../../primitives/hooks/useSmoothText";
 import { Tooltip } from "../../../../primitives/Tooltip";
 import { usePendingScrollStore } from "../../../code-editor/pendingScrollStore";
 import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
@@ -144,6 +145,9 @@ export const AgentMessage = memo(function AgentMessage({
   content,
 }: AgentMessageProps) {
   const [copied, setCopied] = useState(false);
+  // Reveal streamed tokens at a steady rate so bursty chunks read as smooth
+  // typing. Copy always uses the full `content`, not the partial reveal.
+  const displayedContent = useSmoothText(content);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(content);
@@ -154,7 +158,7 @@ export const AgentMessage = memo(function AgentMessage({
   return (
     <Box className="group/msg relative pl-3 text-[13px] [&>*:last-child]:mb-0 [&_p]:leading-[1.9]">
       <MarkdownRenderer
-        content={content}
+        content={displayedContent}
         componentsOverride={agentComponents}
       />
       <Box className="absolute top-1 left-full ml-2 opacity-0 transition-opacity group-hover/msg:opacity-100">
