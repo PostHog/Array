@@ -2,6 +2,7 @@ import { Spinner } from "@posthog/quill";
 import type { SignalReport } from "@posthog/shared/types";
 import { DetailBackLink } from "@posthog/ui/features/inbox/components/DetailBackLink";
 import { useInboxReportById } from "@posthog/ui/features/inbox/hooks/useInboxReports";
+import { useReportOpenTracker } from "@posthog/ui/features/inbox/hooks/useReportOpenTracker";
 import { Flex, Text } from "@radix-ui/themes";
 import type { ReactNode } from "react";
 
@@ -53,5 +54,19 @@ export function InboxReportDetailGate({
     );
   }
 
-  return <>{children(resolvedReport)}</>;
+  return (
+    <>
+      <ReportOpenTracker report={resolvedReport} />
+      {children(resolvedReport)}
+    </>
+  );
+}
+
+/**
+ * Mounts only once a report is resolved, so the OPENED/CLOSED engagement events
+ * bracket the time the detail body is actually on screen. Renders nothing.
+ */
+function ReportOpenTracker({ report }: { report: SignalReport }) {
+  useReportOpenTracker(report);
+  return null;
 }

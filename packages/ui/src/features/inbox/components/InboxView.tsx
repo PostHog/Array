@@ -2,6 +2,7 @@ import { EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { isInboxDetailPath } from "@posthog/core/inbox/reportMembership";
 import { InboxPageHeader } from "@posthog/ui/features/inbox/components/InboxPageHeader";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
+import { useTrackInboxViewed } from "@posthog/ui/features/inbox/hooks/useTrackInboxViewed";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Flex, Text } from "@radix-ui/themes";
 import { Outlet, useRouterState } from "@tanstack/react-router";
@@ -29,6 +30,8 @@ export function InboxView() {
   );
 
   useSetHeaderContent(headerContent);
+
+  useTrackInboxViewed();
 
   const { counts } = useInboxAllReports();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
