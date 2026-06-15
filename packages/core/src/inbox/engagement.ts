@@ -3,6 +3,37 @@ import type {
   InboxViewedProperties,
 } from "@posthog/shared/analytics-events";
 import type { SignalReport } from "@posthog/shared/domain-types";
+import {
+  isAgentRunReport,
+  isFinishedRunReport,
+  isPullRequestReport,
+  isReportTabReport,
+} from "./reportMembership";
+
+/** Originating inbox tab a report detail was opened from, derived from the route. */
+export type InboxDetailTab = "pulls" | "reports" | "runs";
+
+/**
+ * The list of reports a detail screen's `rank` / `list_size` should be measured
+ * against — i.e. the rows the originating tab actually rendered. Pure so it can
+ * be unit-tested and stays aligned with the tab components.
+ *
+ * The Runs tab also renders a "Recently finished" section, so finished runs are
+ * included here; without them, opening a recently-finished run would report
+ * `rank: -1` against a list it isn't part of.
+ */
+export function inboxDetailTabReports(
+  tab: InboxDetailTab,
+  reports: SignalReport[],
+): SignalReport[] {
+  if (tab === "runs") {
+    return reports.filter((r) => isAgentRunReport(r) || isFinishedRunReport(r));
+  }
+  if (tab === "pulls") {
+    return reports.filter(isPullRequestReport);
+  }
+  return reports.filter(isReportTabReport);
+}
 
 /** Report age at fire time in hours, rounded to one decimal. Clamped at 0 to guard against clock skew. */
 export function reportAgeHours(createdAt: string | null | undefined): number {

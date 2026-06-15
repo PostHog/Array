@@ -1,6 +1,9 @@
 import type { SignalReport } from "@posthog/shared/types";
 import { describe, expect, it } from "vitest";
-import { buildInboxViewedProperties } from "./engagement";
+import {
+  buildInboxViewedProperties,
+  inboxDetailTabReports,
+} from "./engagement";
 
 function fakeReport(overrides: Partial<SignalReport> = {}): SignalReport {
   return {
@@ -121,5 +124,47 @@ describe("buildInboxViewedProperties", () => {
     });
 
     expect(props.has_active_filters).toBe(false);
+  });
+});
+
+describe("inboxDetailTabReports", () => {
+  const pull = fakeReport({
+    id: "pr",
+    status: "ready",
+    implementation_pr_url: "https://github.com/x/y/pull/1",
+  });
+  const reportRow = fakeReport({ id: "rep", status: "ready" });
+  const queuedRun = fakeReport({ id: "queued", status: "candidate" });
+  const liveRun = fakeReport({ id: "live", status: "in_progress" });
+  const failedRun = fakeReport({ id: "failed", status: "failed" });
+
+  it("keeps only PR-tab rows for the pulls tab", () => {
+    expect(
+      inboxDetailTabReports("pulls", [pull, queuedRun, reportRow]),
+    ).toEqual([pull]);
+  });
+
+  it("keeps only report-tab rows for the reports tab", () => {
+    expect(
+      inboxDetailTabReports("reports", [reportRow, pull, queuedRun, failedRun]),
+    ).toEqual([reportRow]);
+  });
+
+  it("includes queued, live, and finished runs for the runs tab", () => {
+    expect(
+      inboxDetailTabReports("runs", [queuedRun, liveRun, failedRun]),
+    ).toEqual([queuedRun, liveRun, failedRun]);
+  });
+
+  it("ranks a recently-finished run against the runs list (not rank -1)", () => {
+    // The regression: `failed`/`ready` runs render in the Runs tab's "Recently
+    // finished" section but aren't `isAgentRunReport`, so they used to fall out
+    // of the tracked list and report rank -1.
+    const visible = inboxDetailTabReports("runs", [
+      queuedRun,
+      liveRun,
+      failedRun,
+    ]);
+    expect(visible.findIndex((r) => r.id === failedRun.id)).toBe(2);
   });
 });

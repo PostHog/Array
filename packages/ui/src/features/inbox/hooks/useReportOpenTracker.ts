@@ -1,9 +1,8 @@
-import { reportAgeHours } from "@posthog/core/inbox/engagement";
 import {
-  isAgentRunReport,
-  isPullRequestReport,
-  isReportTabReport,
-} from "@posthog/core/inbox/reportMembership";
+  type InboxDetailTab,
+  inboxDetailTabReports,
+  reportAgeHours,
+} from "@posthog/core/inbox/engagement";
 import type { InboxReportCloseMethod } from "@posthog/shared/analytics-events";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { SignalReport } from "@posthog/shared/types";
@@ -11,8 +10,7 @@ import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAll
 import { track } from "@posthog/ui/shell/analytics";
 import { useEffect, useRef } from "react";
 
-/** Originating inbox tab, derived from the detail route. */
-export type InboxDetailTab = "pulls" | "reports" | "runs";
+export type { InboxDetailTab };
 
 /**
  * Last report id opened during the current inbox visit, used to populate
@@ -53,20 +51,13 @@ export function useReportOpenTracker(
   tab: InboxDetailTab,
 ): void {
   // The Pull requests / Reports tabs render the scoped+filtered list; the Runs
-  // tab is project-wide. Build the list matching the originating tab so rank is
-  // relative to the rows the user actually saw (and runs aren't reported as
-  // rank -1 just because they're absent from the scoped list).
-  const scoped = useInboxAllReports().scopedReports;
-  const projectWide = useInboxAllReports({
-    ignoreScope: true,
-    ignoreFilters: true,
-  }).scopedReports;
-  const visible =
-    tab === "runs"
-      ? projectWide.filter(isAgentRunReport)
-      : tab === "pulls"
-        ? scoped.filter(isPullRequestReport)
-        : scoped.filter(isReportTabReport);
+  // tab is project-wide. Mount only the query matching the originating tab so
+  // rank is relative to the rows the user actually saw (and so a non-run detail
+  // doesn't start the unused project-wide poll alongside the scoped one).
+  const { scopedReports } = useInboxAllReports(
+    tab === "runs" ? { ignoreScope: true, ignoreFilters: true } : undefined,
+  );
+  const visible = inboxDetailTabReports(tab, scopedReports);
 
   // Keep the visible list reachable from the mount effect without making the
   // effect re-run (and thus re-fire OPENED) on every list refetch.

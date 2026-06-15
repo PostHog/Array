@@ -20,7 +20,7 @@ export function useTrackInboxViewed(): void {
     totalCount,
     counts,
     scope,
-    isLoading,
+    isSuccess,
     sourceProductFilter,
     priorityFilter,
     searchQuery,
@@ -29,7 +29,10 @@ export function useTrackInboxViewed(): void {
   const firedRef = useRef(false);
   useEffect(() => {
     if (firedRef.current) return;
-    if (isLoading) return;
+    // Gate on a successful load, not just `!isLoading`: an errored initial
+    // request also leaves `isLoading` false with an empty list, and `firedRef`
+    // would then lock in a bogus empty-inbox view that a later refetch can't fix.
+    if (!isSuccess) return;
     firedRef.current = true;
     track(
       ANALYTICS_EVENTS.INBOX_VIEWED,
@@ -46,7 +49,7 @@ export function useTrackInboxViewed(): void {
       }),
     );
   }, [
-    isLoading,
+    isSuccess,
     scopedReports,
     totalCount,
     counts,
