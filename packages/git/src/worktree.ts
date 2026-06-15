@@ -203,22 +203,7 @@ export class WorktreeManager {
       throw new Error(`Branch '${branch}' does not exist`);
     }
 
-    let worktreeName = preferredName ?? this.generateWorktreeName();
-
-    if (preferredName) {
-      const worktreePath = this.getWorktreePath(preferredName);
-      const existingWorktrees = await this.listWorktrees();
-      const isRegistered = existingWorktrees.some(
-        (wt) => wt.worktreePath === worktreePath,
-      );
-      const existsOnDisk = await this.worktreeExists(preferredName);
-
-      if (isRegistered || existsOnDisk) {
-        worktreeName = `${this.generateWorktreeName()}${Date.now()}`;
-      }
-    } else if (await this.worktreeExists(worktreeName)) {
-      worktreeName = `${this.generateWorktreeName()}${Date.now()}`;
-    }
+    const worktreeName = await this.resolveAvailableWorktreeName(preferredName);
 
     if (!this.usesExternalPath()) {
       await this.ensureArrayDirIgnored();
@@ -360,22 +345,7 @@ export class WorktreeManager {
   ): Promise<WorktreeInfo> {
     const manager = getGitOperationManager();
 
-    let worktreeName = preferredName ?? this.generateWorktreeName();
-
-    if (preferredName) {
-      const worktreePath = this.getWorktreePath(preferredName);
-      const existingWorktrees = await this.listWorktrees();
-      const isRegistered = existingWorktrees.some(
-        (wt) => wt.worktreePath === worktreePath,
-      );
-      const existsOnDisk = await this.worktreeExists(preferredName);
-
-      if (isRegistered || existsOnDisk) {
-        worktreeName = `${this.generateWorktreeName()}${Date.now()}`;
-      }
-    } else if (await this.worktreeExists(worktreeName)) {
-      worktreeName = `${this.generateWorktreeName()}${Date.now()}`;
-    }
+    const worktreeName = await this.resolveAvailableWorktreeName(preferredName);
 
     if (!this.usesExternalPath()) {
       await this.ensureArrayDirIgnored();

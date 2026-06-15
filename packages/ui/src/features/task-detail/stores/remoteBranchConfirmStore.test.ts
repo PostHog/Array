@@ -23,22 +23,21 @@ describe("remoteBranchConfirmStore", () => {
     expect(state.branch).toBe("feature/x");
   });
 
-  it("accept resolves the pending promise with true and closes", async () => {
-    const promise = useRemoteBranchConfirmStore.getState().confirm("feature/x");
-    useRemoteBranchConfirmStore.getState().accept();
-    await expect(promise).resolves.toBe(true);
-    const state = useRemoteBranchConfirmStore.getState();
-    expect(state.isOpen).toBe(false);
-    expect(state.branch).toBeNull();
-    expect(state.resolve).toBeNull();
-  });
-
-  it("cancel resolves the pending promise with false and closes", async () => {
-    const promise = useRemoteBranchConfirmStore.getState().confirm("feature/x");
-    useRemoteBranchConfirmStore.getState().cancel();
-    await expect(promise).resolves.toBe(false);
-    expect(useRemoteBranchConfirmStore.getState().isOpen).toBe(false);
-  });
+  it.each([
+    { action: "accept" as const, expected: true },
+    { action: "cancel" as const, expected: false },
+  ])(
+    "$action resolves the pending promise with $expected and closes",
+    async ({ action, expected }) => {
+      const promise = useRemoteBranchConfirmStore.getState().confirm("feature/x");
+      useRemoteBranchConfirmStore.getState()[action]();
+      await expect(promise).resolves.toBe(expected);
+      const state = useRemoteBranchConfirmStore.getState();
+      expect(state.isOpen).toBe(false);
+      expect(state.branch).toBeNull();
+      expect(state.resolve).toBeNull();
+    },
+  );
 
   it("opening a second dialog resolves the first as cancelled", async () => {
     const first = useRemoteBranchConfirmStore.getState().confirm("first");
