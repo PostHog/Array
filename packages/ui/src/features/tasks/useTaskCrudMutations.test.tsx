@@ -93,12 +93,47 @@ describe("useCreateTask.invalidateTasks", () => {
     vi.clearAllMocks();
   });
 
-  it("seeds plain list caches but not the slack-origin list", () => {
+  it.each([
+    { name: "plain list", filters: undefined, expectedLength: 1 },
+    {
+      name: "repository-scoped list",
+      filters: { repository: "owner/repo" },
+      expectedLength: 1,
+    },
+    {
+      name: "slack-origin list",
+      filters: { originProduct: "slack" },
+      expectedLength: 0,
+    },
+  ])(
+    "seeds the $name with the new task ($expectedLength entr(y/ies))",
+    ({ filters, expectedLength }) => {
+      const queryClient = new QueryClient();
+      const key = taskKeys.list(filters);
+      queryClient.setQueryData<Task[]>(key, []);
+
+      const localWrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      );
+      const { result } = renderHook(() => useCreateTask(), {
+        wrapper: localWrapper,
+      });
+
+      result.current.invalidateTasks(createTask());
+
+      // Origin-less lists mirror the new task; origin-scoped lists (read by the
+      // sidebar to brand icons by id membership) must not be seeded.
+      expect(queryClient.getQueryData<Task[]>(key)).toHaveLength(
+        expectedLength,
+      );
+    },
+  );
+
+  it("still invalidates every list, including the slack-origin one", () => {
     const queryClient = new QueryClient();
-    const plainKey = taskKeys.list();
-    const slackKey = taskKeys.list({ originProduct: "slack" });
-    queryClient.setQueryData<Task[]>(plainKey, []);
-    queryClient.setQueryData<Task[]>(slackKey, []);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     const localWrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -109,10 +144,9 @@ describe("useCreateTask.invalidateTasks", () => {
 
     result.current.invalidateTasks(createTask());
 
-    // The new, non-slack task lands in the plain list...
-    expect(queryClient.getQueryData<Task[]>(plainKey)).toHaveLength(1);
-    // ...but never pollutes the slack-origin list, which the sidebar reads to
-    // brand task icons by id membership.
-    expect(queryClient.getQueryData<Task[]>(slackKey)).toHaveLength(0);
+    // Seeding is scoped, but the refetch is not: all lists (slack included) are
+    // invalidated so they reconcile with the server. A future refactor must not
+    // "fix" the no-seed expectation above by dropping a list from refetch.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: taskKeys.lists() });
   });
 });
