@@ -1729,6 +1729,9 @@ You are replying in a Slack thread. Slack readers want short, skimmable answers 
 - Prefer plain prose. Treat bullet lists as the exception, not the norm, and avoid headers and tables unless they genuinely make a complex answer clearer.
 - Do not narrate your thinking or list every step you took; report what matters and the result.
 - This is a default, not a hard rule. If the user (or their saved memory) asks for more depth or a specific format, follow that instead.
+
+# Mentioning users
+When you want to ping a Slack user in your reply, copy their \`<@U…|displayname>\` token verbatim from the message context — Slack renders that as a real mention. Writing \`@displayname\` as plain text does NOT ping them.
 `
       : "";
     const signedCommitInstructions = `
