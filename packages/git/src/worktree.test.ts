@@ -276,5 +276,13 @@ describe("WorktreeManager.createWorktreeForRemoteBranch", () => {
     const remoteTip = await shaOfBranch(localDir, "origin/contributor/pr");
     const worktreeHead = await shaOfBranch(info.worktreePath, "HEAD");
     expect(worktreeHead).toBe(remoteTip);
+
+    const upstream = (
+      await createGitClient(info.worktreePath).revparse([
+        "--abbrev-ref",
+        "contributor/pr@{upstream}",
+      ])
+    ).trim();
+    expect(upstream).toBe("origin/contributor/pr");
   });
 });

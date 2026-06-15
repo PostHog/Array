@@ -239,6 +239,7 @@ function RootLayout() {
           onToggleShortcutsSheet={toggleShortcutsSheet}
         />
         {billingEnabled && <UsageLimitModal />}
+        <RemoteBranchCheckoutDialog />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
             <TanStackDevtools />
@@ -262,6 +263,7 @@ function RootLayout() {
           onToggleShortcutsSheet={toggleShortcutsSheet}
         />
         {billingEnabled && <UsageLimitModal />}
+        <RemoteBranchCheckoutDialog />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
             <TanStackDevtools />
