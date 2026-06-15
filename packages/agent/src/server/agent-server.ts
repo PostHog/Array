@@ -1277,6 +1277,11 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
+
+      // Mark the run terminal. No-op for interactive sessions (they stay open
+      // for follow-ups); for background cloud-task runs this flips the run from
+      // "in_progress" to "completed".
+      await this.signalTaskComplete(payload, result.stopReason);
     } catch (error) {
       this.logger.error("Failed to send initial task message", error);
       if (this.session) {
@@ -1400,6 +1405,11 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
+
+      // Mark the run terminal. No-op for interactive sessions (they stay open
+      // for follow-ups); for background cloud-task runs this flips the run from
+      // "in_progress" to "completed".
+      await this.signalTaskComplete(payload, result.stopReason);
     } catch (error) {
       this.logger.error("Failed to send resume message", error);
       if (this.session) {
@@ -1951,25 +1961,39 @@ ${signedCommitInstructions}
       }
     }
 
-    if (stopReason !== "error") {
+    const isError = stopReason === "error";
+
+    // Interactive sessions stay open after a normal turn so the user can send
+    // follow-up messages — only an error is terminal there. Background
+    // (headless cloud-task) runs have no follow-up sender, so a normal
+    // end-of-turn IS the run's terminal state and must be reported as
+    // completed; otherwise the run stays "in_progress" forever.
+    if (!isError && this.getEffectiveMode(payload) !== "background") {
       this.logger.debug("Skipping status update for non-error stop reason", {
         stopReason,
       });
       return;
     }
 
-    const status = "failed";
+    const status = isError ? "failed" : "completed";
 
-    this.enqueueTaskTerminalEvent(POSTHOG_NOTIFICATIONS.ERROR, {
-      source: "agent_server",
-      stopReason,
-      error: errorMessage ?? "Agent error",
-    });
+    this.enqueueTaskTerminalEvent(
+      isError
+        ? POSTHOG_NOTIFICATIONS.ERROR
+        : POSTHOG_NOTIFICATIONS.TASK_COMPLETE,
+      isError
+        ? {
+            source: "agent_server",
+            stopReason,
+            error: errorMessage ?? "Agent error",
+          }
+        : { source: "agent_server", stopReason },
+    );
 
     try {
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
         status,
-        error_message: errorMessage ?? "Agent error",
+        ...(isError && { error_message: errorMessage ?? "Agent error" }),
       });
       this.logger.debug("Task completion signaled", { status, stopReason });
     } catch (error) {

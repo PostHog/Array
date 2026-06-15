@@ -627,6 +627,79 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
 
+    it("marks background runs completed on a normal stop reason", async () => {
+      const order: string[] = [];
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "background",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        eventStreamSender: {
+          enqueue: (event: Record<string, unknown>) => void;
+          stop: () => Promise<void>;
+        };
+        posthogAPI: {
+          updateTaskRun: (
+            taskId: string,
+            runId: string,
+            payload: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+        signalTaskComplete(
+          payload: JwtPayload,
+          stopReason: string,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(() => {
+          order.push("enqueue");
+        }),
+        stop: vi.fn(async () => {
+          order.push("stop");
+        }),
+      };
+      testServer.posthogAPI = {
+        updateTaskRun: vi.fn(async () => {
+          order.push("update");
+          return {};
+        }),
+      };
+
+      await testServer.signalTaskComplete(
+        {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "background",
+        },
+        "end_turn",
+      );
+
+      expect(order).toEqual(["enqueue", "update", "stop"]);
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "notification",
+          notification: expect.objectContaining({
+            method: "_posthog/task_complete",
+            params: expect.objectContaining({ stopReason: "end_turn" }),
+          }),
+        }),
+      );
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledWith(
+        "task-1",
+        "run-1",
+        { status: "completed" },
+      );
+    });
+
     it("persists structured turn completion notifications", () => {
       const appendRawLine = vi.fn();
       const testServer = new AgentServer({
