@@ -27,83 +27,84 @@ function query(shape: DashboardQuery["shape"]): DashboardQuery {
 }
 
 describe("DashboardQueryService shape mapping", () => {
-  it("scalar reads row 0, col 0", async () => {
-    const [r] = await serviceReturning([[42]]).run({
-      queries: [query("scalar")],
-    });
-    expect(r).toMatchObject({ ok: true, value: 42 });
-  });
-
-  it("column collects the first cell of every row", async () => {
-    const [r] = await serviceReturning([[1], [2], [3]]).run({
-      queries: [query("column")],
-    });
-    expect(r).toMatchObject({ ok: true, value: [1, 2, 3] });
-  });
-
-  it("labels stringifies the first column", async () => {
-    const [r] = await serviceReturning([["Jun 4"], ["Jun 5"]]).run({
-      queries: [query("labels")],
-    });
-    expect(r).toMatchObject({ ok: true, value: ["Jun 4", "Jun 5"] });
-  });
-
-  it("matrix keeps every row as an array", async () => {
-    const [r] = await serviceReturning([
-      ["/", 10, 20],
-      ["/pricing", 5, 8],
-    ]).run({ queries: [query("matrix")] });
-    expect(r).toMatchObject({
-      ok: true,
+  it.each<{
+    name: string;
+    shape: DashboardQuery["shape"];
+    rows: unknown[];
+    value: unknown;
+  }>([
+    {
+      name: "scalar reads row 0, col 0",
+      shape: "scalar",
+      rows: [[42]],
+      value: 42,
+    },
+    {
+      name: "column collects the first cell of every row",
+      shape: "column",
+      rows: [[1], [2], [3]],
+      value: [1, 2, 3],
+    },
+    {
+      name: "labels stringifies the first column",
+      shape: "labels",
+      rows: [["Jun 4"], ["Jun 5"]],
+      value: ["Jun 4", "Jun 5"],
+    },
+    {
+      name: "matrix keeps every row as an array",
+      shape: "matrix",
+      rows: [
+        ["/", 10, 20],
+        ["/pricing", 5, 8],
+      ],
       value: [
         ["/", 10, 20],
         ["/pricing", 5, 8],
       ],
-    });
-  });
-
-  it("pairs maps rows to {label,value}", async () => {
-    const [r] = await serviceReturning([
-      ["Direct", 5],
-      ["Organic", 3],
-    ]).run({ queries: [query("pairs")] });
-    expect(r).toMatchObject({
-      ok: true,
+    },
+    {
+      name: "pairs maps rows to {label,value}",
+      shape: "pairs",
+      rows: [
+        ["Direct", 5],
+        ["Organic", 3],
+      ],
       value: [
         { label: "Direct", value: 5 },
         { label: "Organic", value: 3 },
       ],
-    });
-  });
-
-  it("retention maps rows to {label,size,values}", async () => {
-    const [r] = await serviceReturning([["Jun 1", 100, 100, 9]]).run({
-      queries: [query("retention")],
-    });
-    expect(r).toMatchObject({
-      ok: true,
+    },
+    {
+      name: "retention maps rows to {label,size,values}",
+      shape: "retention",
+      rows: [["Jun 1", 100, 100, 9]],
       value: [{ label: "Jun 1", size: 100, values: [100, 9] }],
-    });
+    },
+    {
+      name: "treats null column cells as empty buckets (0), not a failure",
+      shape: "column",
+      rows: [[5], [null], [3]],
+      value: [5, 0, 3],
+    },
+  ])("$name", async ({ shape, rows, value }) => {
+    const [r] = await serviceReturning(rows).run({ queries: [query(shape)] });
+    expect(r).toMatchObject({ ok: true, value });
   });
 
-  it("fails a scalar that isn't a string/number", async () => {
-    const [r] = await serviceReturning([[{ nested: true }]]).run({
-      queries: [query("scalar")],
-    });
+  it.each<{ name: string; shape: DashboardQuery["shape"]; rows: unknown[] }>([
+    {
+      name: "fails a scalar that isn't a string/number",
+      shape: "scalar",
+      rows: [[{ nested: true }]],
+    },
+    {
+      name: "fails a column whose cells are non-numeric (mis-shaped query)",
+      shape: "column",
+      rows: [["Direct"], ["Organic"]],
+    },
+  ])("$name", async ({ shape, rows }) => {
+    const [r] = await serviceReturning(rows).run({ queries: [query(shape)] });
     expect(r.ok).toBe(false);
-  });
-
-  it("fails a column whose cells are non-numeric (mis-shaped query)", async () => {
-    const [r] = await serviceReturning([["Direct"], ["Organic"]]).run({
-      queries: [query("column")],
-    });
-    expect(r.ok).toBe(false);
-  });
-
-  it("treats null column cells as empty buckets (0), not a failure", async () => {
-    const [r] = await serviceReturning([[5], [null], [3]]).run({
-      queries: [query("column")],
-    });
-    expect(r).toMatchObject({ ok: true, value: [5, 0, 3] });
   });
 });

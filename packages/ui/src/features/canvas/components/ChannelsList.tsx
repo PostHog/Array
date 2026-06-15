@@ -69,7 +69,11 @@ function useChannelOpen(channelId: string): [boolean, (open: boolean) => void] {
     (next: boolean) => {
       setOpenState(next);
       try {
-        localStorage.setItem(key, next ? "1" : "0");
+        if (next) {
+          localStorage.setItem(key, "1");
+        } else {
+          localStorage.removeItem(key);
+        }
       } catch {
         // Ignore storage failures (private mode, quota) — state still works in-session.
       }

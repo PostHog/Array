@@ -59,7 +59,7 @@ export function NewCanvasMenu({
             generating UI.
           </DialogDescription>
         </DialogHeader>
-        <DialogBody className="flex flex-col gap-2">
+        <DialogBody className="flex flex-col gap-2 [&_*[data-slot=scroll-area-viewport]]:py-0">
           {templates.map((t) => (
             <Button
               key={t.id}
