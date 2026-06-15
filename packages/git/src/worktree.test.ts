@@ -221,3 +221,60 @@ describe("WorktreeManager lifecycle (add / exists / list / remove / prune)", () 
     expect(await manager.listWorktrees()).toEqual([]);
   });
 });
+
+describe("WorktreeManager.createWorktreeForRemoteBranch", () => {
+  let remoteDir: string;
+  let localDir: string;
+  let worktreeBaseDir: string;
+
+  beforeEach(async () => {
+    remoteDir = await initBareRemote();
+
+    const seedDir = await mkdtemp(path.join(tmpdir(), "posthog-code-seed-"));
+    const seedGit = createGitClient(seedDir);
+    await seedGit.init(["--initial-branch", "main"]);
+    await seedGit.addConfig("user.name", "Test");
+    await seedGit.addConfig("user.email", "test@example.com");
+    await seedGit.addConfig("commit.gpgsign", "false");
+    await commit(seedDir, "initial.txt", "initial\n");
+    await seedGit.addRemote("origin", remoteDir);
+    await seedGit.push(["origin", "main"]);
+
+    // Push a branch that will only exist on the remote from the local clone's POV.
+    await seedGit.checkoutLocalBranch("contributor/pr");
+    await commit(seedDir, "pr.txt", "pr content\n");
+    await seedGit.push(["origin", "contributor/pr"]);
+
+    await rm(seedDir, { recursive: true, force: true });
+
+    localDir = await realpath(await initLocalClone(remoteDir));
+    worktreeBaseDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), "posthog-code-wts-")),
+    );
+  });
+
+  afterEach(async () => {
+    for (const d of [remoteDir, localDir, worktreeBaseDir]) {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  it("fetches a remote-only branch and creates a tracking worktree", async () => {
+    const localBranches = await createGitClient(localDir).branch();
+    expect(localBranches.all).not.toContain("contributor/pr");
+
+    const manager = new WorktreeManager({
+      mainRepoPath: localDir,
+      worktreeBasePath: worktreeBaseDir,
+    });
+
+    const info = await manager.createWorktreeForRemoteBranch("contributor/pr");
+
+    expect(await dirExists(info.worktreePath)).toBe(true);
+    expect(info.branchName).toBe("contributor/pr");
+
+    const remoteTip = await shaOfBranch(localDir, "origin/contributor/pr");
+    const worktreeHead = await shaOfBranch(info.worktreePath, "HEAD");
+    expect(worktreeHead).toBe(remoteTip);
+  });
+});

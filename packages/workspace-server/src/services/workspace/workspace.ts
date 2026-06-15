@@ -623,7 +623,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
             );
           } else if (
             allowRemoteBranchCheckout &&
-            errorMessage.includes("does not exist")
+            errorMessage.includes(`Branch '${selectedBranch}' does not exist`)
           ) {
             this.log.info(
               `Branch ${selectedBranch} is not local; checking it out from the remote`,

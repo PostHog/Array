@@ -29,7 +29,9 @@ describe("remoteBranchConfirmStore", () => {
   ])(
     "$action resolves the pending promise with $expected and closes",
     async ({ action, expected }) => {
-      const promise = useRemoteBranchConfirmStore.getState().confirm("feature/x");
+      const promise = useRemoteBranchConfirmStore
+        .getState()
+        .confirm("feature/x");
       useRemoteBranchConfirmStore.getState()[action]();
       await expect(promise).resolves.toBe(expected);
       const state = useRemoteBranchConfirmStore.getState();

@@ -267,6 +267,17 @@ export class WorktreeManager {
       throw new Error(`Failed to fetch branch '${branch}' from ${remote}`);
     }
 
+    // Verify the remote-tracking ref was created. Restricted refspecs can cause
+    // git fetch to succeed (updating only FETCH_HEAD) without writing
+    // refs/remotes/<remote>/<branch>, which makes the subsequent worktree add
+    // fail with an opaque "invalid reference" error.
+    const trackingRefCreated = await branchExists(this.mainRepoPath, remoteRef);
+    if (!trackingRefCreated) {
+      throw new Error(
+        `Fetch succeeded but remote-tracking ref '${remoteRef}' was not created. Check the remote's fetch refspec configuration.`,
+      );
+    }
+
     const worktreeName = await this.resolveAvailableWorktreeName(preferredName);
 
     if (!this.usesExternalPath()) {
