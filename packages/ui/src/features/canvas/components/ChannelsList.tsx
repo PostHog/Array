@@ -541,19 +541,21 @@ export function ChannelsList() {
               ))}
             </ChannelGroup>
 
-            <ChannelGroup
-              label="Channels"
-              icon={<HashIcon size={14} className="text-gray-9" />}
-              className="mt-3"
-            >
-              {otherChannels.map((channel) => (
-                <ChannelSection
-                  key={channel.id}
-                  channel={channel}
-                  channels={channels}
-                />
-              ))}
-            </ChannelGroup>
+            {otherChannels.length > 0 && (
+              <ChannelGroup
+                label="Channels"
+                icon={<HashIcon size={14} className="text-gray-9" />}
+                className="mt-3"
+              >
+                {otherChannels.map((channel) => (
+                  <ChannelSection
+                    key={channel.id}
+                    channel={channel}
+                    channels={channels}
+                  />
+                ))}
+              </ChannelGroup>
+            )}
           </>
         )}
       </Flex>
