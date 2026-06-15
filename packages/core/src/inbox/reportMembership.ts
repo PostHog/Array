@@ -144,6 +144,53 @@ export function isAgentRunReport(report: SignalReport): boolean {
   return isQueuedRunReport(report) || isLiveRunReport(report);
 }
 
+function runReportTimestampMs(report: SignalReport): number {
+  const value = report.updated_at ?? report.created_at;
+  if (!value) return 0;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+export interface RunsTabSections {
+  queued: SignalReport[];
+  live: SignalReport[];
+  finished: SignalReport[];
+}
+
+/**
+ * Partition reports into the Runs tab's three rendered sections, each sorted
+ * newest-first. The single source of truth shared by `RunsTab` (section
+ * rendering) and the open tracker (so `INBOX_REPORT_OPENED.rank` is measured
+ * against the row order the user actually saw, not raw query order).
+ */
+export function partitionRunsTabReports(
+  reports: SignalReport[],
+): RunsTabSections {
+  const queued: SignalReport[] = [];
+  const live: SignalReport[] = [];
+  const finished: SignalReport[] = [];
+  for (const report of reports) {
+    if (isQueuedRunReport(report)) queued.push(report);
+    else if (isLiveRunReport(report)) live.push(report);
+    else if (isFinishedRunReport(report)) finished.push(report);
+  }
+  const newestFirst = (a: SignalReport, b: SignalReport) =>
+    runReportTimestampMs(b) - runReportTimestampMs(a);
+  queued.sort(newestFirst);
+  live.sort(newestFirst);
+  finished.sort(newestFirst);
+  return { queued, live, finished };
+}
+
+/**
+ * Flat Runs-tab order — Queued, then Live, then Recently finished — matching the
+ * top-to-bottom order of the rendered sections.
+ */
+export function orderedRunsTabReports(reports: SignalReport[]): SignalReport[] {
+  const { queued, live, finished } = partitionRunsTabReports(reports);
+  return [...queued, ...live, ...finished];
+}
+
 export function isReportTabReport(report: SignalReport): boolean {
   if (isExcludedFromInbox(report)) return false;
   if (report.status === "failed") return false; // failed runs live in the Runs tab only

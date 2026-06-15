@@ -2,6 +2,7 @@ import type { SignalReport } from "@posthog/shared/types";
 import { describe, expect, it } from "vitest";
 import {
   buildInboxViewedProperties,
+  type InboxDetailTab,
   inboxDetailTabReports,
 } from "./engagement";
 
@@ -138,22 +139,52 @@ describe("inboxDetailTabReports", () => {
   const liveRun = fakeReport({ id: "live", status: "in_progress" });
   const failedRun = fakeReport({ id: "failed", status: "failed" });
 
-  it("keeps only PR-tab rows for the pulls tab", () => {
-    expect(
-      inboxDetailTabReports("pulls", [pull, queuedRun, reportRow]),
-    ).toEqual([pull]);
+  const cases: Array<[InboxDetailTab, SignalReport[], SignalReport[]]> = [
+    ["pulls", [pull, queuedRun, reportRow], [pull]],
+    ["reports", [reportRow, pull, queuedRun, failedRun], [reportRow]],
+    ["runs", [queuedRun, liveRun, failedRun], [queuedRun, liveRun, failedRun]],
+  ];
+  it.each(cases)(
+    "keeps the rows the %s tab renders",
+    (tab, input, expected) => {
+      expect(inboxDetailTabReports(tab, input)).toEqual(expected);
+    },
+  );
+
+  it("treats a ready non-run report as a finished run on the runs tab", () => {
+    // `ready` is shared by isReportTabReport and isFinishedRunReport, so a ready
+    // report renders in both the Reports tab and the Runs tab's "Recently
+    // finished" section. The runs list reflects that overlap.
+    expect(inboxDetailTabReports("runs", [queuedRun, reportRow])).toEqual([
+      queuedRun,
+      reportRow,
+    ]);
   });
 
-  it("keeps only report-tab rows for the reports tab", () => {
-    expect(
-      inboxDetailTabReports("reports", [reportRow, pull, queuedRun, failedRun]),
-    ).toEqual([reportRow]);
-  });
-
-  it("includes queued, live, and finished runs for the runs tab", () => {
-    expect(
-      inboxDetailTabReports("runs", [queuedRun, liveRun, failedRun]),
-    ).toEqual([queuedRun, liveRun, failedRun]);
+  it("orders runs Queued → Live → Finished, newest-first within a section", () => {
+    const olderFinished = fakeReport({
+      id: "fin-old",
+      status: "ready",
+      updated_at: "2026-06-01T00:00:00Z",
+    });
+    const newerFinished = fakeReport({
+      id: "fin-new",
+      status: "failed",
+      updated_at: "2026-06-09T00:00:00Z",
+    });
+    // Deliberately shuffled input; output must follow the rendered order.
+    const visible = inboxDetailTabReports("runs", [
+      olderFinished,
+      liveRun,
+      newerFinished,
+      queuedRun,
+    ]);
+    expect(visible.map((r) => r.id)).toEqual([
+      "queued",
+      "live",
+      "fin-new",
+      "fin-old",
+    ]);
   });
 
   it("ranks a recently-finished run against the runs list (not rank -1)", () => {

@@ -4,10 +4,9 @@ import type {
 } from "@posthog/shared/analytics-events";
 import type { SignalReport } from "@posthog/shared/domain-types";
 import {
-  isAgentRunReport,
-  isFinishedRunReport,
   isPullRequestReport,
   isReportTabReport,
+  orderedRunsTabReports,
 } from "./reportMembership";
 
 /** Originating inbox tab a report detail was opened from, derived from the route. */
@@ -15,19 +14,22 @@ export type InboxDetailTab = "pulls" | "reports" | "runs";
 
 /**
  * The list of reports a detail screen's `rank` / `list_size` should be measured
- * against — i.e. the rows the originating tab actually rendered. Pure so it can
- * be unit-tested and stays aligned with the tab components.
+ * against — i.e. the rows the originating tab actually rendered, in the order it
+ * rendered them. Pure so it can be unit-tested and stays aligned with the tab
+ * components.
  *
- * The Runs tab also renders a "Recently finished" section, so finished runs are
- * included here; without them, opening a recently-finished run would report
- * `rank: -1` against a list it isn't part of.
+ * The Runs tab partitions and sorts into Queued → Live → Recently finished, so
+ * runs reuse {@link orderedRunsTabReports} (the same selector `RunsTab` renders
+ * from) rather than raw query order. That also pulls in finished runs, which
+ * otherwise would report `rank: -1` against a list they aren't part of. The
+ * Pull requests / Reports tabs render their filtered list in query order.
  */
 export function inboxDetailTabReports(
   tab: InboxDetailTab,
   reports: SignalReport[],
 ): SignalReport[] {
   if (tab === "runs") {
-    return reports.filter((r) => isAgentRunReport(r) || isFinishedRunReport(r));
+    return orderedRunsTabReports(reports);
   }
   if (tab === "pulls") {
     return reports.filter(isPullRequestReport);

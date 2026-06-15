@@ -12,6 +12,7 @@ import {
   isPullRequestReport,
   isReportTabReport,
   matchesReviewerScope,
+  partitionRunsTabReports,
   teammateInboxScope,
 } from "./reportMembership";
 
@@ -266,5 +267,60 @@ describe("tabFilters", () => {
         runs: 2,
       });
     });
+  });
+});
+
+describe("partitionRunsTabReports", () => {
+  it("buckets queued / live / finished and sorts each newest-first", () => {
+    const queuedOld = fakeReport({
+      id: "q-old",
+      status: "potential",
+      updated_at: "2026-06-01T00:00:00Z",
+    });
+    const queuedNew = fakeReport({
+      id: "q-new",
+      status: "candidate",
+      updated_at: "2026-06-08T00:00:00Z",
+    });
+    const live = fakeReport({ id: "live", status: "in_progress" });
+    const finishedReady = fakeReport({
+      id: "fin-ready",
+      status: "ready",
+      updated_at: "2026-06-02T00:00:00Z",
+    });
+    const finishedFailed = fakeReport({
+      id: "fin-failed",
+      status: "failed",
+      updated_at: "2026-06-09T00:00:00Z",
+    });
+    const pull = fakeReport({
+      id: "pr",
+      status: "ready",
+      updated_at: "2026-06-05T00:00:00Z",
+      implementation_pr_url: "https://github.com/x/y/pull/1",
+    });
+
+    const {
+      queued,
+      live: liveBucket,
+      finished,
+    } = partitionRunsTabReports([
+      queuedOld,
+      finishedReady,
+      live,
+      queuedNew,
+      finishedFailed,
+      pull,
+    ]);
+
+    expect(queued.map((r) => r.id)).toEqual(["q-new", "q-old"]);
+    expect(liveBucket.map((r) => r.id)).toEqual(["live"]);
+    // A ready PR row is also a finished run, so it lands in the finished bucket
+    // and is ordered purely by recency (06-09 > 06-05 > 06-02).
+    expect(finished.map((r) => r.id)).toEqual([
+      "fin-failed",
+      "pr",
+      "fin-ready",
+    ]);
   });
 });
