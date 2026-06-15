@@ -15,7 +15,14 @@ vi.mock("@posthog/ui/features/auth/authClient", () => ({
 import { useChannelMutations, useChannels } from "./useChannels";
 
 function folder(id: string, path: string): Schemas.FileSystem {
-  return { id, path, type: "folder" } as unknown as Schemas.FileSystem;
+  return {
+    id,
+    path,
+    type: "folder",
+    depth: 1,
+    created_at: "2026-01-01T00:00:00Z",
+    last_viewed_at: null,
+  };
 }
 
 let queryClient: QueryClient;
@@ -65,5 +72,30 @@ describe("useChannelMutations", () => {
         "beta",
       ]),
     );
+  });
+
+  it("does not duplicate a channel the poll already landed", async () => {
+    // The poll has already surfaced the channel we're about to create.
+    const existing = folder("1", "alpha");
+    mockClient.getDesktopFileSystemChannels.mockResolvedValue([existing]);
+
+    const list = renderHook(() => useChannels(), { wrapper });
+    await waitFor(() => expect(list.result.current.isLoading).toBe(false));
+    expect(list.result.current.channels.map((c) => c.id)).toEqual(["1"]);
+
+    // Create returns the same id; hang the refetch so only the optimistic
+    // cache write is exercised.
+    mockClient.createDesktopFileSystemChannel.mockResolvedValue(existing);
+    mockClient.getDesktopFileSystemChannels.mockReturnValue(
+      new Promise(() => {}),
+    );
+
+    const mutations = renderHook(() => useChannelMutations(), { wrapper });
+    await act(async () => {
+      await mutations.result.current.createChannel("alpha");
+    });
+
+    // The duplicate-id guard keeps the list at one entry.
+    expect(list.result.current.channels.map((c) => c.id)).toEqual(["1"]);
   });
 });
