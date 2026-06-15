@@ -431,21 +431,28 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
    */
   async checkWorktreeBranch(
     options: CheckWorktreeBranchInput,
+    signal?: AbortSignal,
   ): Promise<CheckWorktreeBranchOutput> {
     const { mainRepoPath, branch } = options;
 
-    const defaultBranch = await getDefaultBranch(mainRepoPath).catch(() =>
-      getCurrentBranch(mainRepoPath).then((b) => b ?? "main"),
+    const defaultBranch = await getDefaultBranch(mainRepoPath, {
+      abortSignal: signal,
+    }).catch(() =>
+      getCurrentBranch(mainRepoPath, { abortSignal: signal }).then(
+        (b) => b ?? "main",
+      ),
     );
     if (branch === defaultBranch) {
       return { status: "trunk" };
     }
 
-    if (await branchExists(mainRepoPath, branch)) {
+    if (await branchExists(mainRepoPath, branch, { abortSignal: signal })) {
       return { status: "local" };
     }
 
-    if (await remoteBranchExists(mainRepoPath, branch)) {
+    if (
+      await remoteBranchExists(mainRepoPath, branch, { abortSignal: signal })
+    ) {
       return { status: "remote-only" };
     }
 

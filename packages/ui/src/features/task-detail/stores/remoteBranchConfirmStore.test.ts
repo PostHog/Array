@@ -17,10 +17,13 @@ describe("remoteBranchConfirmStore", () => {
   });
 
   it("confirm opens the dialog with the branch", () => {
-    void useRemoteBranchConfirmStore.getState().confirm("feature/x");
+    const promise = useRemoteBranchConfirmStore.getState().confirm("feature/x");
     const state = useRemoteBranchConfirmStore.getState();
     expect(state.isOpen).toBe(true);
     expect(state.branch).toBe("feature/x");
+    // Resolve the pending promise so it doesn't dangle past this test.
+    useRemoteBranchConfirmStore.getState().cancel();
+    return expect(promise).resolves.toBe(false);
   });
 
   it.each([

@@ -86,8 +86,8 @@ export const workspaceRouter = router({
   checkWorktreeBranch: publicProcedure
     .input(checkWorktreeBranchInput)
     .output(checkWorktreeBranchOutput)
-    .query(({ ctx, input }) =>
-      getService(ctx.container).checkWorktreeBranch(input),
+    .query(({ ctx, input, signal }) =>
+      getService(ctx.container).checkWorktreeBranch(input, signal),
     ),
 
   reconcileCloudWorkspaces: publicProcedure
