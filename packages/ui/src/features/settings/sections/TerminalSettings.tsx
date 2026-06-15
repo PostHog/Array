@@ -6,7 +6,7 @@ import {
 } from "@posthog/ui/features/settings/settingsStore";
 import { useDebounce } from "@posthog/ui/primitives/hooks/useDebounce";
 import { track } from "@posthog/ui/shell/analytics";
-import { Flex, Select, Text, TextField } from "@radix-ui/themes";
+import { Flex, Select, Switch, Text, TextField } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
 
 export function TerminalSettings() {
@@ -17,6 +17,10 @@ export function TerminalSettings() {
   );
   const setTerminalCustomFontFamily = useSettingsStore(
     (s) => s.setTerminalCustomFontFamily,
+  );
+  const terminalGpuRendering = useSettingsStore((s) => s.terminalGpuRendering);
+  const setTerminalGpuRendering = useSettingsStore(
+    (s) => s.setTerminalGpuRendering,
   );
 
   const [draftCustomFont, setDraftCustomFont] = useState(
@@ -54,6 +58,15 @@ export function TerminalSettings() {
     setTerminalFont(value);
   };
 
+  const handleGpuRenderingChange = (enabled: boolean) => {
+    track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+      setting_name: "terminal_gpu_rendering",
+      new_value: enabled,
+      old_value: terminalGpuRendering,
+    });
+    setTerminalGpuRendering(enabled);
+  };
+
   const showCustomInput = terminalFont === "custom";
 
   return (
@@ -61,7 +74,6 @@ export function TerminalSettings() {
       <SettingRow
         label="Font"
         description="Font used to render the terminal output"
-        noBorder={!showCustomInput}
       >
         <Select.Root
           value={terminalFont}
@@ -82,7 +94,6 @@ export function TerminalSettings() {
         <SettingRow
           label="Custom font family"
           description="Any CSS font-family value. Example: Fira Code, Cascadia Code"
-          noBorder
         >
           <Flex direction="column" align="end" gap="1">
             <TextField.Root
@@ -98,6 +109,18 @@ export function TerminalSettings() {
           </Flex>
         </SettingRow>
       )}
+
+      <SettingRow
+        label="GPU rendering"
+        description="Render the terminal with WebGL for smoother output under heavy load. Disable if you hit graphical glitches."
+        noBorder
+      >
+        <Switch
+          checked={terminalGpuRendering}
+          onCheckedChange={handleGpuRenderingChange}
+          size="1"
+        />
+      </SettingRow>
     </Flex>
   );
 }

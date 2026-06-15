@@ -40,6 +40,7 @@ export function Terminal({
   const terminalCustomFontFamily = useSettingsStore(
     (s) => s.terminalCustomFontFamily,
   );
+  const terminalGpuRendering = useSettingsStore((s) => s.terminalGpuRendering);
 
   // Create instance (idempotent)
   useEffect(() => {
@@ -78,6 +79,11 @@ export function Terminal({
       resolveTerminalFontFamily(terminalFont, terminalCustomFontFamily),
     );
   }, [terminalFont, terminalCustomFontFamily]);
+
+  // GPU rendering sync
+  useEffect(() => {
+    terminalManager.setUseWebgl(terminalGpuRendering);
+  }, [terminalGpuRendering]);
 
   // Subscribe to shell data + exit events via the host shell client.
   useEffect(() => {

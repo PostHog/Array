@@ -116,8 +116,10 @@ interface SettingsStore {
   // Terminal
   terminalFont: TerminalFont;
   terminalCustomFontFamily: string;
+  terminalGpuRendering: boolean;
   setTerminalFont: (font: TerminalFont) => void;
   setTerminalCustomFontFamily: (value: string) => void;
+  setTerminalGpuRendering: (enabled: boolean) => void;
 
   // Experimental / misc
   hedgehogMode: boolean;
@@ -224,9 +226,12 @@ export const useSettingsStore = create<SettingsStore>()(
       // Terminal
       terminalFont: "berkeley-mono",
       terminalCustomFontFamily: "",
+      terminalGpuRendering: true,
       setTerminalFont: (font) => set({ terminalFont: font }),
       setTerminalCustomFontFamily: (value) =>
         set({ terminalCustomFontFamily: value }),
+      setTerminalGpuRendering: (enabled) =>
+        set({ terminalGpuRendering: enabled }),
 
       // Experimental / misc
       hedgehogMode: false,
@@ -307,6 +312,7 @@ export const useSettingsStore = create<SettingsStore>()(
         // Terminal
         terminalFont: state.terminalFont,
         terminalCustomFontFamily: state.terminalCustomFontFamily,
+        terminalGpuRendering: state.terminalGpuRendering,
 
         // Experimental / misc
         hedgehogMode: state.hedgehogMode,

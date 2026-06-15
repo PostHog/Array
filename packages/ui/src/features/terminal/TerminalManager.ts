@@ -166,6 +166,7 @@ class TerminalManagerImpl {
   private listeners = new Map<EventType, Set<Listener<EventType>>>();
   private isDarkMode = true;
   private fontFamily: string = DEFAULT_TERMINAL_FONT_FAMILY;
+  private useWebgl = true;
 
   has(sessionId: string): boolean {
     return this.instances.has(sessionId);
@@ -437,7 +438,7 @@ class TerminalManagerImpl {
   // the terminal creates on attach. Without it xterm falls back to its DOM
   // renderer, which is dramatically slower under heavy output.
   private loadWebglRenderer(instance: TerminalInstance): void {
-    if (instance.webglAddon) {
+    if (!this.useWebgl || instance.webglAddon) {
       return;
     }
     try {
@@ -618,6 +619,28 @@ class TerminalManagerImpl {
         instance.fitAddon.fit();
       } catch (error) {
         log.error("Failed to refit after font change:", error);
+      }
+    }
+  }
+
+  setUseWebgl(enabled: boolean): void {
+    if (this.useWebgl === enabled) {
+      return;
+    }
+
+    this.useWebgl = enabled;
+
+    for (const instance of this.instances.values()) {
+      if (enabled) {
+        // Only opened terminals have the canvas WebGL needs; the rest pick it
+        // up the first time they attach.
+        if (instance.hasOpened) {
+          this.loadWebglRenderer(instance);
+        }
+      } else if (instance.webglAddon) {
+        // Disposing the addon makes xterm fall back to its DOM renderer.
+        instance.webglAddon.dispose();
+        instance.webglAddon = null;
       }
     }
   }
