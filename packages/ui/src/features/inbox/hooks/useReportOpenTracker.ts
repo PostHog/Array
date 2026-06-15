@@ -1,9 +1,18 @@
 import { reportAgeHours } from "@posthog/core/inbox/engagement";
+import {
+  isAgentRunReport,
+  isPullRequestReport,
+  isReportTabReport,
+} from "@posthog/core/inbox/reportMembership";
+import type { InboxReportCloseMethod } from "@posthog/shared/analytics-events";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { SignalReport } from "@posthog/shared/types";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { track } from "@posthog/ui/shell/analytics";
 import { useEffect, useRef } from "react";
+
+/** Originating inbox tab, derived from the detail route. */
+export type InboxDetailTab = "pulls" | "reports" | "runs";
 
 /**
  * Last report id opened during the current inbox visit, used to populate
@@ -24,35 +33,68 @@ export function resetReportOpenTrackerHistory(): void {
 
 /**
  * Fires `INBOX_REPORT_OPENED` when a detail screen mounts (or switches to a new
- * report) and `INBOX_REPORT_CLOSED` with the dwell time when it unmounts.
+ * report) and `INBOX_REPORT_CLOSED` with the dwell time when it closes.
  *
  * Restores the open/close engagement events dropped when Inbox 2.0 deleted
  * `useInboxEngagementTracker`. Driven by the detail route lifecycle via
  * `InboxReportDetailGate`, so it covers reports, pull requests, and runs.
  *
+ * `rank` / `list_size` mirror the originating tab's membership: the Runs tab is
+ * project-wide (`ignoreScope`/`ignoreFilters`), while the Pull requests and
+ * Reports tabs use the scoped/filtered list — so a report's rank is measured
+ * against the list it was actually opened from.
+ *
  * `open_method` and `scrolled` are not yet wired in the route-based UI (the v1
  * open-method plumbing and scroll tracker were removed), so they report
  * "unknown" and `false` respectively.
  */
-export function useReportOpenTracker(report: SignalReport): void {
-  const { scopedReports } = useInboxAllReports();
+export function useReportOpenTracker(
+  report: SignalReport,
+  tab: InboxDetailTab,
+): void {
+  // The Pull requests / Reports tabs render the scoped+filtered list; the Runs
+  // tab is project-wide. Build the list matching the originating tab so rank is
+  // relative to the rows the user actually saw (and runs aren't reported as
+  // rank -1 just because they're absent from the scoped list).
+  const scoped = useInboxAllReports().scopedReports;
+  const projectWide = useInboxAllReports({
+    ignoreScope: true,
+    ignoreFilters: true,
+  }).scopedReports;
+  const visible =
+    tab === "runs"
+      ? projectWide.filter(isAgentRunReport)
+      : tab === "pulls"
+        ? scoped.filter(isPullRequestReport)
+        : scoped.filter(isReportTabReport);
 
   // Keep the visible list reachable from the mount effect without making the
   // effect re-run (and thus re-fire OPENED) on every list refetch.
-  const scopedReportsRef = useRef(scopedReports);
-  scopedReportsRef.current = scopedReports;
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
-  // Snapshot report fields so the unmount cleanup reports the values as they
-  // were at open time, not whatever the prop is at teardown.
+  // Snapshot report fields so the close cleanup reports the values as they were
+  // at open time, not whatever the prop is at teardown.
   const reportRef = useRef(report);
   reportRef.current = report;
+
+  // Detect a report→report switch during render so the close cleanup can label
+  // it `next_report` rather than `navigated_away`. Writing a ref during render
+  // is the React-sanctioned "track the previous prop" pattern, and crucially it
+  // runs before the outgoing effect's cleanup, which is where we read it.
+  const renderedIdRef = useRef<string | null>(null);
+  const closeMethodRef = useRef<InboxReportCloseMethod>("navigated_away");
+  if (renderedIdRef.current !== null && renderedIdRef.current !== report.id) {
+    closeMethodRef.current = "next_report";
+  }
+  renderedIdRef.current = report.id;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: report.id is the trigger — the detail route stays mounted across report→report navigation, so we re-bracket OPENED/CLOSED on id change while reading the rest from refs.
   useEffect(() => {
     const openedAt = Date.now();
     const opened = reportRef.current;
-    const visible = scopedReportsRef.current;
-    const rank = visible.findIndex((r) => r.id === opened.id);
+    const list = visibleRef.current;
+    const rank = list.findIndex((r) => r.id === opened.id);
 
     track(ANALYTICS_EVENTS.INBOX_REPORT_OPENED, {
       report_id: opened.id,
@@ -63,7 +105,7 @@ export function useReportOpenTracker(report: SignalReport): void {
       actionability: opened.actionability ?? null,
       source_products: opened.source_products ?? [],
       rank,
-      list_size: visible.length,
+      list_size: list.length,
       open_method: "unknown",
       previous_report_id: lastOpenedReportId,
     });
@@ -78,8 +120,10 @@ export function useReportOpenTracker(report: SignalReport): void {
         actionability: opened.actionability ?? null,
         time_spent_ms: Date.now() - openedAt,
         scrolled: false,
-        close_method: "navigated_away",
+        close_method: closeMethodRef.current,
       });
+      // Reset to the exit default; a subsequent switch re-sets it during render.
+      closeMethodRef.current = "navigated_away";
     };
   }, [report.id]);
 }
