@@ -310,9 +310,9 @@ class TerminalManagerImpl {
     }
 
     // Coalesce bursts of pty output into a single term.write() per animation
-    // frame. A heavy stream (build logs, cat-ing a file) otherwise produces one
-    // synchronous write — and DOM reflow — per IPC chunk, which pins the
-    // renderer.
+    // frame instead of one call per IPC chunk, cutting the per-call parse and
+    // write-buffer overhead that piles up on the main thread under a heavy
+    // stream (build logs, cat-ing a file).
     instance.writeBuffer += data;
     if (instance.flushHandle === null) {
       instance.flushHandle = requestAnimationFrame(() => {
@@ -436,7 +436,7 @@ class TerminalManagerImpl {
 
   // The WebGL renderer must be loaded after term.open() — it needs the canvas
   // the terminal creates on attach. Without it xterm falls back to its DOM
-  // renderer, which is dramatically slower under heavy output.
+  // renderer, which is slower under heavy output.
   private loadWebglRenderer(instance: TerminalInstance): void {
     if (!this.useWebgl || instance.webglAddon) {
       return;
