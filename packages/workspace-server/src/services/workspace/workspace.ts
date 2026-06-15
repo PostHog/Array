@@ -623,6 +623,9 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
             );
           } else if (
             allowRemoteBranchCheckout &&
+            // Matches the exact message createWorktreeForExistingBranch throws
+            // for a missing local branch, mirroring the occupied-branch check
+            // above. Both keys off the controlled git/worktree error text.
             errorMessage.includes(`Branch '${selectedBranch}' does not exist`)
           ) {
             this.log.info(

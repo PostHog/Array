@@ -238,10 +238,12 @@ export async function remoteBranchExists(
     baseDir,
     async (git) => {
       try {
+        // `--` keeps a branch name beginning with `-` from being parsed as an option.
         const output = await git.raw([
           "ls-remote",
           "--heads",
           remote,
+          "--",
           branchName,
         ]);
         const target = `refs/heads/${branchName}`;
