@@ -6,11 +6,21 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useEffect, useRef } from "react";
 
 /**
- * Last report id opened in this session, used to populate
+ * Last report id opened during the current inbox visit, used to populate
  * `previous_report_id` on the next `INBOX_REPORT_OPENED`. Module-scoped so it
- * survives the detail screen unmounting between reports.
+ * survives the detail screen unmounting between reports, but reset per visit
+ * via {@link resetReportOpenTrackerHistory} so report-to-report navigation
+ * pairs never span separate visits.
  */
 let lastOpenedReportId: string | null = null;
+
+/**
+ * Clears the cross-report navigation history. Call when the inbox shell mounts
+ * so the first report opened in a new visit reports `previous_report_id: null`.
+ */
+export function resetReportOpenTrackerHistory(): void {
+  lastOpenedReportId = null;
+}
 
 /**
  * Fires `INBOX_REPORT_OPENED` when a detail screen mounts (or switches to a new

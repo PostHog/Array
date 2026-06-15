@@ -2,7 +2,6 @@ import { buildInboxViewedProperties } from "@posthog/core/inbox/engagement";
 import { INBOX_SCOPE_FOR_YOU } from "@posthog/core/inbox/reportMembership";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
-import { useInboxSignalsFilterStore } from "@posthog/ui/features/inbox/stores/inboxSignalsFilterStore";
 import { track } from "@posthog/ui/shell/analytics";
 import { useEffect, useRef } from "react";
 
@@ -16,13 +15,16 @@ import { useEffect, useRef } from "react";
  * shell stays mounted while the `<Outlet />` swaps tab bodies).
  */
 export function useTrackInboxViewed(): void {
-  const { scopedReports, totalCount, counts, scope, isLoading } =
-    useInboxAllReports();
-  const sourceProductFilter = useInboxSignalsFilterStore(
-    (s) => s.sourceProductFilter,
-  );
-  const priorityFilter = useInboxSignalsFilterStore((s) => s.priorityFilter);
-  const searchQuery = useInboxSignalsFilterStore((s) => s.searchQuery);
+  const {
+    scopedReports,
+    totalCount,
+    counts,
+    scope,
+    isLoading,
+    sourceProductFilter,
+    priorityFilter,
+    searchQuery,
+  } = useInboxAllReports();
 
   const firedRef = useRef(false);
   useEffect(() => {

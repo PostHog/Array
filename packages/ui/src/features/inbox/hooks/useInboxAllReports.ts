@@ -92,5 +92,12 @@ export function useInboxAllReports(options?: {
     scopedReports,
     counts,
     scope,
+    // The effective filter values used for this query. Surfaced so consumers
+    // (e.g. analytics) can read them without subscribing to the filter store a
+    // second time. Reflect `ignoreFilters`, so they are empty when filters are
+    // ignored.
+    searchQuery,
+    sourceProductFilter,
+    priorityFilter,
   };
 }

@@ -2,11 +2,12 @@ import { EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { isInboxDetailPath } from "@posthog/core/inbox/reportMembership";
 import { InboxPageHeader } from "@posthog/ui/features/inbox/components/InboxPageHeader";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
+import { resetReportOpenTrackerHistory } from "@posthog/ui/features/inbox/hooks/useReportOpenTracker";
 import { useTrackInboxViewed } from "@posthog/ui/features/inbox/hooks/useTrackInboxViewed";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Flex, Text } from "@radix-ui/themes";
 import { Outlet, useRouterState } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 
 /**
  * Inbox shell. Owns the in-page header (title + RFC subtitle + tab bar) and
@@ -30,6 +31,12 @@ export function InboxView() {
   );
 
   useSetHeaderContent(headerContent);
+
+  // Scope report-to-report navigation history to this inbox visit so the first
+  // report opened after (re)entering the inbox has no stale previous_report_id.
+  useEffect(() => {
+    resetReportOpenTrackerHistory();
+  }, []);
 
   useTrackInboxViewed();
 
