@@ -7,11 +7,24 @@ import {
   HOST_TRPC_CLIENT,
   type HostTrpcClient,
 } from "@posthog/host-router/client";
+import {
+  IMPERATIVE_QUERY_CLIENT,
+  type ImperativeQueryClient,
+} from "@posthog/ui/shell/queryClient";
 
 export type { TaskTimestamps };
 
+// Outer array partial-matches tRPC's `[["workspace", "getAllTaskTimestamps"], { type }]`.
+const TASK_TIMESTAMPS_QUERY_KEY = [["workspace", "getAllTaskTimestamps"]];
+
 function workspace() {
   return resolveService<HostTrpcClient>(HOST_TRPC_CLIENT).workspace;
+}
+
+function invalidateTimestamps(): void {
+  void resolveService<ImperativeQueryClient>(
+    IMPERATIVE_QUERY_CLIENT,
+  ).invalidateQueries({ queryKey: TASK_TIMESTAMPS_QUERY_KEY });
 }
 
 export const taskViewedApi = {
@@ -20,11 +33,11 @@ export const taskViewedApi = {
   },
 
   markAsViewed(taskId: string): void {
-    void workspace().markViewed.mutate({ taskId });
+    void workspace().markViewed.mutate({ taskId }).then(invalidateTimestamps);
   },
 
   markActivity(taskId: string): void {
-    void workspace().markActivity.mutate({ taskId });
+    void workspace().markActivity.mutate({ taskId }).then(invalidateTimestamps);
   },
 };
 
