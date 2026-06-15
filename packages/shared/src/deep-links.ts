@@ -55,9 +55,7 @@ export function buildScoutDeeplink(
 ): string {
   const slug = skillName.replace(/^signals-scout-/, "");
   const base = `${getDeeplinkProtocol(isDevBuild)}://scout/${encodeURIComponent(slug)}`;
-  return findingId
-    ? `${base}?finding=${encodeURIComponent(findingId)}`
-    : base;
+  return findingId ? `${base}?finding=${encodeURIComponent(findingId)}` : base;
 }
 
 export interface GitHubIssueRef {

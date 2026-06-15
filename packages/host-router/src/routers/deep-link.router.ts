@@ -10,15 +10,15 @@ import {
   type PendingInboxDeepLink,
 } from "@posthog/core/links/inbox-link";
 import {
-  ScoutLinkEvent,
-  type ScoutLinkPayload,
-  type ScoutLinkService,
-} from "@posthog/core/links/scout-link";
-import {
   NewTaskLinkEvent,
   type NewTaskLinkPayload,
   type NewTaskLinkService,
 } from "@posthog/core/links/new-task-link";
+import {
+  ScoutLinkEvent,
+  type ScoutLinkPayload,
+  type ScoutLinkService,
+} from "@posthog/core/links/scout-link";
 import {
   type PendingDeepLink,
   TaskLinkEvent,

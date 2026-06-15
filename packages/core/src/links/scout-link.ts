@@ -88,7 +88,9 @@ export class ScoutLinkService extends TypedEventEmitter<ScoutLinkEvents> {
     const pending = this.pendingDeepLink;
     this.pendingDeepLink = null;
     if (pending) {
-      this.log.info(`Consumed pending scout link: skillSlug=${pending.skillSlug}`);
+      this.log.info(
+        `Consumed pending scout link: skillSlug=${pending.skillSlug}`,
+      );
     }
     return pending;
   }
