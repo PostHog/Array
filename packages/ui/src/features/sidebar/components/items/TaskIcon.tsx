@@ -1,6 +1,5 @@
 import {
   ChatCircle,
-  Circle,
   Cloud as CloudIcon,
   GitBranch,
   GitMerge,
@@ -9,6 +8,7 @@ import {
   Pause,
   PushPin,
   SlackLogo,
+  WarningCircle,
 } from "@phosphor-icons/react";
 import type { WorkspaceMode } from "@posthog/shared";
 import {
@@ -276,6 +276,23 @@ export function TaskIcon({
       </Tooltip>
     );
   }
+  if (isGenerating) {
+    return <DotsCircleSpinner size={size} className="text-accent-11" />;
+  }
+  // Unread outranks the cloud/PR/diff status icons: when an agent finishes a
+  // task there is fresh activity the user has not seen, and that "needs
+  // attention" signal must win over the completed-cloud or PR icon that would
+  // otherwise hide it. Viewing the task clears `isUnread`, so the normal status
+  // icon returns automatically.
+  if (isUnread) {
+    return (
+      <Tooltip content="Unread — new activity" side="right">
+        <span className="flex items-center justify-center">
+          <WarningCircle size={size} weight="fill" color="var(--amber-11)" />
+        </span>
+      </Tooltip>
+    );
+  }
   if (isTerminalCloud) {
     return (
       <CloudStatusIcon
@@ -286,9 +303,6 @@ export function TaskIcon({
       />
     );
   }
-  if (isGenerating) {
-    return <DotsCircleSpinner size={size} className="text-accent-11" />;
-  }
   if (isSuspended) {
     return (
       <Tooltip content="Suspended" side="right">
@@ -296,13 +310,6 @@ export function TaskIcon({
           <Pause size={size} color="var(--gray-9)" />
         </span>
       </Tooltip>
-    );
-  }
-  if (isUnread) {
-    return (
-      <span className="flex items-center justify-center">
-        <Circle size={8} weight="fill" color="var(--green-11)" />
-      </span>
     );
   }
   if (prState || hasDiff) {
