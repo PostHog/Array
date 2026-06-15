@@ -1,20 +1,21 @@
 import {
+  CaretDownIcon,
+  CaretRightIcon,
   CodeIcon,
   DotsThreeIcon,
   FileIcon,
   FileTextIcon,
   FolderIcon,
+  HashIcon,
   PencilSimpleIcon,
   PlusIcon,
+  StarIcon,
   TrashIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import {
   Badge,
   Button,
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -27,6 +28,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
@@ -42,46 +44,17 @@ import {
   useChannelTaskMutations,
   useChannelTasks,
 } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
+import { useStarredChannelsStore } from "@posthog/ui/features/canvas/starredChannelsStore";
 import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { toast } from "@posthog/ui/primitives/toast";
+import * as Collapsible from "@radix-ui/react-collapsible";
 import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useCallback, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { hostClient } from "../hostClient";
-
-// Per-channel collapsed/expanded state, persisted across reloads. Channels are
-// CLOSED by default (absent key reads as closed); only an explicit open is stored.
-const CHANNEL_OPEN_PREFIX = "posthog.canvas.channelOpen.";
-
-function useChannelOpen(channelId: string): [boolean, (open: boolean) => void] {
-  const key = `${CHANNEL_OPEN_PREFIX}${channelId}`;
-  const [open, setOpenState] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(key) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const setOpen = useCallback(
-    (next: boolean) => {
-      setOpenState(next);
-      try {
-        if (next) {
-          localStorage.setItem(key, "1");
-        } else {
-          localStorage.removeItem(key);
-        }
-      } catch {
-        // Ignore storage failures (private mode, quota) — state still works in-session.
-      }
-    },
-    [key],
-  );
-  return [open, setOpen];
-}
 
 function NavButton({
   label,
@@ -122,6 +95,11 @@ function ChannelMenu({ channel }: { channel: Channel }) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { deleteChannel, isDeleting } = useChannelMutations();
+  const isStarred = useStarredChannelsStore((s) =>
+    s.starredIds.includes(channel.id),
+  );
+  const toggleStar = useStarredChannelsStore((s) => s.toggle);
+  const unstar = useStarredChannelsStore((s) => s.unstar);
 
   const onDelete = async () => {
     try {
@@ -143,6 +121,7 @@ function ChannelMenu({ channel }: { channel: Channel }) {
       ]);
 
       await deleteChannel(channel.id);
+      unstar(channel.id);
       // If we're inside the channel being deleted, fall back to the index.
       if (pathname.startsWith(`/website/${channel.id}`)) {
         void navigate({ to: "/website" });
@@ -180,6 +159,11 @@ function ChannelMenu({ channel }: { channel: Channel }) {
           sideOffset={4}
           className="w-auto min-w-fit"
         >
+          <DropdownMenuItem onClick={() => toggleStar(channel.id)}>
+            <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />
+            {isStarred ? "Unstar channel" : "Star channel"}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setRenameOpen(true)}>
             <PencilSimpleIcon size={14} />
             Rename channel
@@ -342,13 +326,41 @@ function ChannelSection({
   const { data: tasks } = useTasks();
   const { tasks: filedTasks } = useChannelTasks(channel.id);
   const base = `/website/${channel.id}`;
-  const [open, setOpen] = useChannelOpen(channel.id);
+  // Channels always start collapsed on load; expansion is session-only.
+  const [open, setOpen] = useState(false);
+  const isStarred = useStarredChannelsStore((s) =>
+    s.starredIds.includes(channel.id),
+  );
+  const toggleStar = useStarredChannelsStore((s) => s.toggle);
 
   return (
     <Box className="group/chan relative">
-      <Collapsible variant="folder" open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger>{channel.name}</CollapsibleTrigger>
-        <CollapsibleContent>
+      <Collapsible.Root open={open} onOpenChange={setOpen}>
+        <Collapsible.Trigger asChild>
+          <Button
+            variant="default"
+            size="sm"
+            className="w-full justify-start gap-2 pr-16"
+          >
+            {/* `#` by default; swaps to the expand/collapse caret on hover. */}
+            <span className="flex size-[18px] shrink-0 items-center justify-center text-gray-10">
+              <HashIcon size={14} className="block group-hover/chan:hidden" />
+              {open ? (
+                <CaretDownIcon
+                  size={12}
+                  className="hidden group-hover/chan:block"
+                />
+              ) : (
+                <CaretRightIcon
+                  size={12}
+                  className="hidden group-hover/chan:block"
+                />
+              )}
+            </span>
+            <span className="truncate font-medium">{channel.name}</span>
+          </Button>
+        </Collapsible.Trigger>
+        <Collapsible.Content>
           <Flex direction="column" gap="1" pt="1" pl="3">
             <NavButton
               label="Canvases"
@@ -397,9 +409,38 @@ function ChannelSection({
               }
             />
           </Flex>
-        </CollapsibleContent>
-      </Collapsible>
+        </Collapsible.Content>
+      </Collapsible.Root>
       <Flex gap="1" align="center" className="absolute top-1 right-1">
+        <Box
+          className={cn(
+            "transition-opacity",
+            isStarred
+              ? "opacity-100"
+              : "opacity-0 group-hover/chan:opacity-100",
+          )}
+        >
+          <Tooltip
+            content={isStarred ? "Unstar channel" : "Star channel"}
+            side="top"
+          >
+            <IconButton
+              variant="ghost"
+              color="gray"
+              size="1"
+              aria-label={
+                isStarred ? `Unstar ${channel.name}` : `Star ${channel.name}`
+              }
+              onClick={() => toggleStar(channel.id)}
+            >
+              <StarIcon
+                size={14}
+                weight={isStarred ? "fill" : "regular"}
+                className={isStarred ? "text-amber-9" : undefined}
+              />
+            </IconButton>
+          </Tooltip>
+        </Box>
         <Box className="opacity-0 transition-opacity group-hover/chan:opacity-100">
           <Tooltip content="New task" side="top">
             <IconButton
@@ -424,11 +465,31 @@ function ChannelSection({
   );
 }
 
+// A small uppercase divider label between channel groups (Slack-style).
+function ChannelGroupLabel({ children }: { children: ReactNode }) {
+  return (
+    <Text
+      as="div"
+      size="1"
+      weight="medium"
+      className="px-2 pt-1 text-gray-9 uppercase tracking-wide"
+    >
+      {children}
+    </Text>
+  );
+}
+
 // The channel list — the Channels space sidebar. Channels are server-backed;
-// selecting one opens its dashboards under /website/$channelId.
+// selecting one opens its dashboards under /website/$channelId. Starred
+// channels are user-specific and surface in their own section at the top.
 export function ChannelsList() {
   const { channels, isLoading } = useChannels();
   const [modalOpen, setModalOpen] = useState(false);
+  const starredIds = useStarredChannelsStore((s) => s.starredIds);
+
+  const starredSet = new Set(starredIds);
+  const starredChannels = channels.filter((c) => starredSet.has(c.id));
+  const otherChannels = channels.filter((c) => !starredSet.has(c.id));
 
   return (
     <Flex direction="column" className="h-full min-h-0">
@@ -443,7 +504,21 @@ export function ChannelsList() {
           </Text>
         )}
 
-        {channels.map((channel) => (
+        {starredChannels.length > 0 && (
+          <>
+            <ChannelGroupLabel>Starred</ChannelGroupLabel>
+            {starredChannels.map((channel) => (
+              <ChannelSection
+                key={channel.id}
+                channel={channel}
+                channels={channels}
+              />
+            ))}
+            <ChannelGroupLabel>Channels</ChannelGroupLabel>
+          </>
+        )}
+
+        {otherChannels.map((channel) => (
           <ChannelSection
             key={channel.id}
             channel={channel}
