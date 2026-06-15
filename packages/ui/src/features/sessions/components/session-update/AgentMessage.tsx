@@ -96,7 +96,7 @@ function BareFileLink({ text }: { text: string }) {
 
   if (!resolved) {
     return (
-      <Code variant="ghost" className="text-(--accent-11) text-[13px]">
+      <Code variant="ghost" className="border border-border text-[13px]">
         {text}
       </Code>
     );
@@ -126,7 +126,10 @@ const agentComponents: Partial<Components> = {
     }
 
     return (
-      <Code variant="ghost" className="text-(--accent-11) text-[13px]">
+      <Code
+        variant="ghost"
+        className="border border-border bg-gray-5 text-[13px]"
+      >
         {children}
       </Code>
     );

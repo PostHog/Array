@@ -1,12 +1,10 @@
 import { Globe } from "@phosphor-icons/react";
-import { Box, Flex, Link } from "@radix-ui/themes";
-import { useState } from "react";
+import { Link } from "@radix-ui/themes";
+import { ToolRow } from "./ToolRow";
 import {
   ContentPre,
-  ExpandableIcon,
   findResourceLink,
   getContentText,
-  StatusIndicators,
   ToolTitle,
   type ToolViewProps,
   truncateText,
@@ -20,7 +18,6 @@ export function FetchToolView({
   turnCancelled,
   turnComplete,
 }: ToolViewProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
   const { status, content, title } = toolCall;
   const { isLoading, isFailed, wasCancelled } = useToolCallStatus(
     status,
@@ -33,61 +30,48 @@ export function FetchToolView({
   const hasContent = fetchedContent.trim().length > 0;
 
   const url = resourceLink?.uri ?? "";
-  const isExpandable = hasContent || url.length > MAX_URL_LENGTH;
+  const showUrl = url.length > MAX_URL_LENGTH;
+  const hasBody = hasContent || showUrl;
 
-  const handleClick = () => {
-    if (isExpandable) {
-      setIsExpanded(!isExpanded);
-    }
-  };
+  const body = hasBody ? (
+    <>
+      {showUrl && (
+        <div
+          className={
+            hasContent ? "border-gray-6 border-b px-3 py-2" : "px-3 py-2"
+          }
+        >
+          <Link
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="break-all text-[13px]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {url}
+          </Link>
+        </div>
+      )}
+      {hasContent && <ContentPre>{fetchedContent}</ContentPre>}
+    </>
+  ) : undefined;
 
   return (
-    <Box>
-      <Flex
-        align="center"
-        gap="2"
-        className={`group min-w-0 py-0.5 ${isExpandable ? "cursor-pointer" : ""}`}
-        onClick={handleClick}
-      >
-        <ExpandableIcon
-          icon={Globe}
-          isLoading={isLoading}
-          isExpandable={isExpandable}
-          isExpanded={isExpanded}
-        />
-        <ToolTitle>{title || "Fetch"}</ToolTitle>
-        {url && (
-          <ToolTitle>
-            <span className="font-mono text-accent-11">
-              {truncateText(url, MAX_URL_LENGTH)}
-            </span>
-          </ToolTitle>
-        )}
-        <StatusIndicators isFailed={isFailed} wasCancelled={wasCancelled} />
-      </Flex>
-
-      {isExpanded && (
-        <Box className="max-w-4xl overflow-hidden rounded-lg border border-gray-6">
-          {url.length > MAX_URL_LENGTH && (
-            <Box
-              className={
-                hasContent ? "border-gray-6 border-b px-3 py-2" : "px-3 py-2"
-              }
-            >
-              <Link
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="break-all text-[13px]"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {url}
-              </Link>
-            </Box>
-          )}
-          {hasContent && <ContentPre>{fetchedContent}</ContentPre>}
-        </Box>
+    <ToolRow
+      icon={Globe}
+      isLoading={isLoading}
+      isFailed={isFailed}
+      wasCancelled={wasCancelled}
+      content={body}
+    >
+      <ToolTitle>{title || "Fetch"}</ToolTitle>
+      {url && (
+        <ToolTitle>
+          <span className="font-mono text-accent-11">
+            {truncateText(url, MAX_URL_LENGTH)}
+          </span>
+        </ToolTitle>
       )}
-    </Box>
+    </ToolRow>
   );
 }

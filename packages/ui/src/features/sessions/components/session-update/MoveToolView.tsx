@@ -2,6 +2,7 @@ import { ArrowsLeftRight } from "@phosphor-icons/react";
 import { ToolRow } from "./ToolRow";
 import {
   getFilename,
+  ToolTitle,
   type ToolViewProps,
   useToolCallStatus,
 } from "./toolCallUtils";
@@ -28,15 +29,17 @@ export function MoveToolView({
       isFailed={isFailed}
       wasCancelled={wasCancelled}
     >
-      {title ||
-        (sourcePath && destPath ? (
-          <>
-            Move <span className="font-mono">{getFilename(sourcePath)}</span> →{" "}
-            <span className="font-mono">{getFilename(destPath)}</span>
-          </>
-        ) : (
-          "Move file"
-        ))}
+      <ToolTitle>
+        {title ||
+          (sourcePath && destPath ? (
+            <>
+              Move <span className="font-mono">{getFilename(sourcePath)}</span>{" "}
+              → <span className="font-mono">{getFilename(destPath)}</span>
+            </>
+          ) : (
+            "Move file"
+          ))}
+      </ToolTitle>
     </ToolRow>
   );
 }

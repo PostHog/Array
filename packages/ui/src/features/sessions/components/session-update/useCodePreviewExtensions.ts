@@ -32,7 +32,6 @@ export function useCodePreviewExtensions(
 
 export const CODE_PREVIEW_CONTAINER_STYLE: React.CSSProperties = {
   overflow: "hidden",
-  borderTop: "1px solid var(--gray-6)",
   "--color-background": "transparent",
 } as React.CSSProperties;
 

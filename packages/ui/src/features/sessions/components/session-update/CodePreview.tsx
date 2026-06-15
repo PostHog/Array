@@ -158,13 +158,20 @@ function DiffPreview({
   return (
     <div style={CODE_PREVIEW_CONTAINER_STYLE}>
       {showPath && filePath && (
-        <div style={CODE_PREVIEW_PATH_STYLE} title={filePath}>
+        <div
+          style={CODE_PREVIEW_PATH_STYLE}
+          className="scroll-mask-2"
+          title={filePath}
+        >
           <Code variant="ghost" className="truncate text-[13px]">
             {compactHomePath(filePath)}
           </Code>
         </div>
       )}
-      <div style={maxHeight ? { maxHeight, overflow: "auto" } : undefined}>
+      <div
+        className="scroll-mask-2"
+        style={maxHeight ? { maxHeight, overflow: "auto" } : undefined}
+      >
         <MultiFileDiff oldFile={oldFile} newFile={newFile} options={options} />
       </div>
     </div>

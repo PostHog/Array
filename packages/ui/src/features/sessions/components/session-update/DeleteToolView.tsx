@@ -1,11 +1,10 @@
 import { Trash } from "@phosphor-icons/react";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Text } from "@radix-ui/themes";
 import { FileMentionChip } from "./FileMentionChip";
+import { ToolRow } from "./ToolRow";
 import {
   type DiffContent,
   findDiffContent,
-  LoadingIcon,
-  StatusIndicators,
   type ToolViewProps,
   useToolCallStatus,
 } from "./toolCallUtils";
@@ -32,17 +31,18 @@ export function DeleteToolView({
   const deletedLines = getDeletedLineCount(diff);
 
   return (
-    <Box className="max-w-4xl overflow-hidden rounded-lg border border-gray-6">
-      <Flex align="center" gap="2" className="px-3 py-2">
-        <LoadingIcon icon={Trash} isLoading={isLoading} />
-        {filePath && <FileMentionChip filePath={filePath} />}
-        {deletedLines !== null && (
-          <Text className="font-mono text-[13px]">
-            <span className="text-red-11">-{deletedLines}</span>
-          </Text>
-        )}
-        <StatusIndicators isFailed={isFailed} wasCancelled={wasCancelled} />
-      </Flex>
-    </Box>
+    <ToolRow
+      icon={Trash}
+      isLoading={isLoading}
+      isFailed={isFailed}
+      wasCancelled={wasCancelled}
+    >
+      {filePath && <FileMentionChip filePath={filePath} />}
+      {deletedLines !== null && (
+        <Text className="font-mono text-[13px]">
+          <span className="text-red-11">-{deletedLines}</span>
+        </Text>
+      )}
+    </ToolRow>
   );
 }

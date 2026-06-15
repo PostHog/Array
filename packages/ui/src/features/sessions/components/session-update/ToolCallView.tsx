@@ -15,16 +15,13 @@ import {
 } from "@phosphor-icons/react";
 import { compactHomePath } from "@posthog/shared";
 import type { CodeToolKind } from "@posthog/ui/features/sessions/types";
-import { Box, Flex } from "@radix-ui/themes";
-import { useState } from "react";
+import { ToolRow } from "./ToolRow";
 import {
+  ContentPre,
   compactInput,
-  ExpandableIcon,
-  ExpandedContentBox,
   formatInput,
   getContentText,
   getFilename,
-  StatusIndicators,
   stripCodeFences,
   ToolTitle,
   type ToolViewProps,
@@ -69,7 +66,6 @@ export function ToolCallView({
   agentToolName,
   expanded = false,
 }: ToolCallViewProps) {
-  const [isExpanded, setIsExpanded] = useState(expanded);
   const { title, kind, status, locations, content, rawInput } = toolCall;
   const { isLoading, isFailed, wasCancelled, isComplete } = useToolCallStatus(
     status,
@@ -107,49 +103,36 @@ export function ToolCallView({
 
   const output = stripCodeFences(getContentText(content) ?? "");
   const hasOutput = output.trim().length > 0;
-  const isExpandable = !!fullInput || hasOutput;
+  const showOutput = isComplete && hasOutput;
 
-  const handleClick = () => {
-    if (isExpandable) {
-      setIsExpanded(!isExpanded);
-    }
-  };
+  const body =
+    fullInput || showOutput ? (
+      <>
+        {fullInput && <ContentPre>{fullInput}</ContentPre>}
+        {showOutput && (
+          <div className={fullInput ? "border-gray-6 border-t" : undefined}>
+            <ContentPre>{output}</ContentPre>
+          </div>
+        )}
+      </>
+    ) : undefined;
 
   return (
-    <Box className="py-0.5">
-      <Flex
-        gap="2"
-        className={`group min-w-0 ${isExpandable ? "cursor-pointer" : ""}`}
-        onClick={handleClick}
-      >
-        <Box className="shrink-0 pt-px">
-          <ExpandableIcon
-            icon={KindIcon}
-            isLoading={isLoading}
-            isExpandable={isExpandable}
-            isExpanded={isExpanded}
-          />
-        </Box>
-        <Flex align="center" gap="1" wrap="wrap" className="min-w-0">
-          <ToolTitle>{displayText}</ToolTitle>
-          {inputPreview && (
-            <ToolTitle>
-              <span className="font-mono text-accent-11">{inputPreview}</span>
-            </ToolTitle>
-          )}
-          {specialDisplay && <ToolTitle>{specialDisplay.suffix}</ToolTitle>}
-          <StatusIndicators isFailed={isFailed} wasCancelled={wasCancelled} />
-        </Flex>
-      </Flex>
-
-      {isExpanded && (
-        <>
-          {fullInput && <ExpandedContentBox>{fullInput}</ExpandedContentBox>}
-          {isComplete && hasOutput && (
-            <ExpandedContentBox>{output}</ExpandedContentBox>
-          )}
-        </>
+    <ToolRow
+      icon={KindIcon}
+      isLoading={isLoading}
+      isFailed={isFailed}
+      wasCancelled={wasCancelled}
+      defaultOpen={expanded}
+      content={body}
+    >
+      {displayText && <ToolTitle>{displayText}</ToolTitle>}
+      {inputPreview && (
+        <ToolTitle>
+          <span className="font-mono text-accent-11">{inputPreview}</span>
+        </ToolTitle>
       )}
-    </Box>
+      {specialDisplay && <ToolTitle>{specialDisplay.suffix}</ToolTitle>}
+    </ToolRow>
   );
 }

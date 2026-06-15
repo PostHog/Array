@@ -17,6 +17,12 @@ import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
+import {
+  buildThreadGroups,
+  type ThreadGrouping,
+  type ThreadRow,
+} from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
+import { ToolCallGroupChip } from "@posthog/ui/features/sessions/components/new-thread/ToolCallGroupChip";
 import { SessionFooter } from "@posthog/ui/features/sessions/components/SessionFooter";
 import { QueuedMessageView } from "@posthog/ui/features/sessions/components/session-update/QueuedMessageView";
 import {
@@ -40,6 +46,10 @@ import {
   useQueuedMessagesForTask,
   useSessionForTask,
 } from "@posthog/ui/features/sessions/sessionStore";
+import {
+  useGroupOverrides,
+  useSessionViewActions,
+} from "@posthog/ui/features/sessions/sessionViewStore";
 import { SessionTaskIdProvider } from "@posthog/ui/features/sessions/useSessionTaskId";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { SkillButtonActionMessage } from "@posthog/ui/features/skill-buttons/components/SkillButtonActionMessage";
@@ -89,6 +99,10 @@ export function ConversationView({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const debugLogsCloudRuns = useSettingsStore((s) => s.debugLogsCloudRuns);
   const showDebugLogs = debugLogsCloudRuns;
+
+  const collapseMode = useSettingsStore((s) => s.conversationCollapseMode);
+  const groupOverrides = useGroupOverrides();
+  const sessionViewActions = useSessionViewActions();
 
   const contextUsage = useContextUsage(events);
 
@@ -152,27 +166,46 @@ export function ConversationView({
     [conversationItems, optimisticItems, queuedItems, isCloud],
   );
 
-  // Keep MCP App tool call items mounted so their iframes and bridges
-  // survive scrolling out of the virtualized viewport.
-  const mcpAppIndices = useMemo(() => {
-    const indices: number[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.type !== "session_update") continue;
-      const update = item.update;
-      if (!("_meta" in update)) continue;
-      const meta = update._meta as
-        | { claudeCode?: { toolName?: string } }
-        | undefined;
-      if (meta?.claudeCode?.toolName?.startsWith("mcp__")) {
-        indices.push(i);
-      }
-    }
-    return indices;
-  }, [items]);
+  // Fold each completed turn's tool-call work into a collapsible chip, and emit
+  // the keepMounted indices (standalone MCP-app rows, whose iframes must survive
+  // scrolling) + the item→row map in the same pass.
+  const grouping = useMemo<ThreadGrouping>(
+    () => buildThreadGroups(items, collapseMode, groupOverrides),
+    [items, collapseMode, groupOverrides],
+  );
+  const threadRows = grouping.rows;
+  const rowKeepMounted = grouping.keepMounted;
+  const itemIdToRowIndex = grouping.idToRowIndex;
+
+  // Changing the global mode wipes ephemeral per-chip overrides.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on collapseMode only
+  useEffect(() => {
+    sessionViewActions.clearGroupOverrides();
+  }, [collapseMode]);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const search = useConversationSearch({ items, containerRef, listRef });
+
+  // Adapter so search (which scrolls by item index) lands on the right row,
+  // since grouped rows != items.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const itemIdToRowIndexRef = useRef(itemIdToRowIndex);
+  itemIdToRowIndexRef.current = itemIdToRowIndex;
+  const searchListRef = useRef<VirtualizedListHandle>({
+    scrollToBottom: () => listRef.current?.scrollToBottom(),
+    scrollToIndex: (index: number) => {
+      const id = itemsRef.current[index]?.id;
+      const rowIdx =
+        id != null ? itemIdToRowIndexRef.current.get(id) : undefined;
+      listRef.current?.scrollToIndex(rowIdx ?? index);
+    },
+  });
+
+  const search = useConversationSearch({
+    items,
+    containerRef,
+    listRef: searchListRef,
+  });
 
   const handleScrollStateChange = useCallback((isAtBottom: boolean) => {
     isAtBottomRef.current = isAtBottom;
@@ -258,7 +291,65 @@ export function ConversationView({
     [repoPath, taskId, slackThreadUrl, firstUserMessageId, initialItemIds],
   );
 
-  const getItemKey = useCallback((item: ConversationItem) => item.id, []);
+  const getRowKey = useCallback((row: ThreadRow) => row.id, []);
+
+  const renderRow = useCallback(
+    (row: ThreadRow) => {
+      if (row.kind === "item") return renderItem(row.item);
+      return (
+        <ToolCallGroupChip
+          summary={row.summary}
+          expanded={row.expanded}
+          turnComplete={row.turnComplete}
+          onToggle={() =>
+            sessionViewActions.setGroupOverride(row.id, !row.expanded)
+          }
+        >
+          {row.expanded
+            ? row.items.map((it) => {
+                // Plain assistant text inside the group has no leading icon, so
+                // pad it to line up with the tool titles (the text-next-to-icon
+                // column = ToolCallBlock's pl-3 + the icon/gap width). Tool and
+                // thought rows already carry their own icon indent.
+                const isPlainMessage =
+                  it.type === "session_update" &&
+                  it.update.sessionUpdate === "agent_message_chunk";
+                return (
+                  <div
+                    key={it.id}
+                    className={isPlainMessage ? "pl-5" : undefined}
+                  >
+                    {renderItem(it)}
+                  </div>
+                );
+              })
+            : null}
+        </ToolCallGroupChip>
+      );
+    },
+    [renderItem, sessionViewActions],
+  );
+
+  const footer = (
+    <div className={compact ? "pb-1" : "pb-16"}>
+      <SessionFooter
+        task={task}
+        isPromptPending={isPromptPending}
+        promptStartedAt={promptStartedAt}
+        lastGenerationDuration={
+          lastTurnInfo?.isComplete
+            ? Math.max(0, lastTurnInfo.durationMs - pausedDurationMs)
+            : null
+        }
+        lastStopReason={lastTurnInfo?.stopReason}
+        queuedCount={queuedMessages.length}
+        hasPendingPermission={pendingPermissionsCount > 0}
+        pausedDurationMs={pausedDurationMs}
+        isCompacting={isCompacting}
+        usage={contextUsage}
+      />
+    </div>
+  );
 
   return (
     <WorkerPoolContextProvider
@@ -284,36 +375,17 @@ export function ConversationView({
         )}
 
         <SessionTaskIdProvider taskId={taskId}>
-          <VirtualizedList
+          <VirtualizedList<ThreadRow>
             ref={listRef}
-            items={items}
-            getItemKey={getItemKey}
-            renderItem={renderItem}
+            items={threadRows}
+            getItemKey={getRowKey}
+            renderItem={renderRow}
             onScrollStateChange={handleScrollStateChange}
-            keepMounted={mcpAppIndices}
+            keepMounted={rowKeepMounted}
             className="absolute inset-0 bg-background"
             itemClassName="mx-auto px-2 py-1.5"
             itemStyle={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
-            footer={
-              <div className={compact ? "pb-1" : "pb-16"}>
-                <SessionFooter
-                  task={task}
-                  isPromptPending={isPromptPending}
-                  promptStartedAt={promptStartedAt}
-                  lastGenerationDuration={
-                    lastTurnInfo?.isComplete
-                      ? Math.max(0, lastTurnInfo.durationMs - pausedDurationMs)
-                      : null
-                  }
-                  lastStopReason={lastTurnInfo?.stopReason}
-                  queuedCount={queuedMessages.length}
-                  hasPendingPermission={pendingPermissionsCount > 0}
-                  pausedDurationMs={pausedDurationMs}
-                  isCompacting={isCompacting}
-                  usage={contextUsage}
-                />
-              </div>
-            }
+            footer={footer}
           />
         </SessionTaskIdProvider>
         {showScrollButton && (

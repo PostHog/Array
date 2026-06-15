@@ -1,12 +1,8 @@
 import { MagnifyingGlass } from "@phosphor-icons/react";
-import { Box, Flex } from "@radix-ui/themes";
-import { useState } from "react";
 import { ToolRow } from "./ToolRow";
 import {
-  ExpandableIcon,
-  ExpandedContentBox,
+  ContentPre,
   getContentText,
-  StatusIndicators,
   ToolTitle,
   type ToolViewProps,
   useToolCallStatus,
@@ -17,7 +13,6 @@ export function SearchToolView({
   turnCancelled,
   turnComplete,
 }: ToolViewProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
   const { status, content, title } = toolCall;
   const { isLoading, isFailed, wasCancelled } = useToolCallStatus(
     status,
@@ -27,52 +22,28 @@ export function SearchToolView({
 
   const searchResults = getContentText(content) ?? "";
   const hasResults = searchResults.trim().length > 0;
-  const resultLines = hasResults
-    ? searchResults.split("\n").filter((line) => line.trim().length > 0)
-    : [];
-  const resultCount = resultLines.length;
-
-  if (!hasResults) {
-    return (
-      <ToolRow
-        icon={MagnifyingGlass}
-        isLoading={isLoading}
-        isFailed={isFailed}
-        wasCancelled={wasCancelled}
-      >
-        {title || "Search"}
-      </ToolRow>
-    );
-  }
-
-  const handleClick = () => {
-    setIsExpanded(!isExpanded);
-  };
+  const resultCount = hasResults
+    ? searchResults.split("\n").filter((line) => line.trim().length > 0).length
+    : 0;
 
   return (
-    <Box>
-      <Flex
-        align="center"
-        gap="2"
-        className="group min-w-0 cursor-pointer py-0.5"
-        onClick={handleClick}
-      >
-        <ExpandableIcon
-          icon={MagnifyingGlass}
-          isLoading={isLoading}
-          isExpandable
-          isExpanded={isExpanded}
-        />
-        <ToolTitle className="min-w-0 truncate">
-          <span className="font-mono">{title || "Search"}</span>
-        </ToolTitle>
+    <ToolRow
+      icon={MagnifyingGlass}
+      isLoading={isLoading}
+      isFailed={isFailed}
+      wasCancelled={wasCancelled}
+      content={
+        hasResults ? <ContentPre>{searchResults}</ContentPre> : undefined
+      }
+    >
+      <ToolTitle className="min-w-0 truncate">
+        <span className="font-mono">{title || "Search"}</span>
+      </ToolTitle>
+      {hasResults && (
         <ToolTitle className="shrink-0 whitespace-nowrap">
           {resultCount} {resultCount === 1 ? "result" : "results"}
         </ToolTitle>
-        <StatusIndicators isFailed={isFailed} wasCancelled={wasCancelled} />
-      </Flex>
-
-      {isExpanded && <ExpandedContentBox>{searchResults}</ExpandedContentBox>}
-    </Box>
+      )}
+    </ToolRow>
   );
 }

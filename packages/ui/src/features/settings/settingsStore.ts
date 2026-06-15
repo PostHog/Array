@@ -1,4 +1,8 @@
 import type { ExecutionMode, WorkspaceMode } from "@posthog/shared";
+import {
+  COLLAPSE_MODE_DEFAULT,
+  type CollapseMode,
+} from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
 import { electronStorage } from "@posthog/ui/shell/rendererStorage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -119,6 +123,10 @@ interface SettingsStore {
   setTerminalFont: (font: TerminalFont) => void;
   setTerminalCustomFontFamily: (value: string) => void;
 
+  // Conversation thread (new-thread)
+  conversationCollapseMode: CollapseMode;
+  setConversationCollapseMode: (mode: CollapseMode) => void;
+
   // Experimental / misc
   hedgehogMode: boolean;
   mcpAppsDisabledServers: string[];
@@ -228,6 +236,11 @@ export const useSettingsStore = create<SettingsStore>()(
       setTerminalCustomFontFamily: (value) =>
         set({ terminalCustomFontFamily: value }),
 
+      // Conversation thread (new-thread)
+      conversationCollapseMode: COLLAPSE_MODE_DEFAULT,
+      setConversationCollapseMode: (mode) =>
+        set({ conversationCollapseMode: mode }),
+
       // Experimental / misc
       hedgehogMode: false,
       mcpAppsDisabledServers: [],
@@ -307,6 +320,9 @@ export const useSettingsStore = create<SettingsStore>()(
         // Terminal
         terminalFont: state.terminalFont,
         terminalCustomFontFamily: state.terminalCustomFontFamily,
+
+        // Conversation thread (new-thread)
+        conversationCollapseMode: state.conversationCollapseMode,
 
         // Experimental / misc
         hedgehogMode: state.hedgehogMode,

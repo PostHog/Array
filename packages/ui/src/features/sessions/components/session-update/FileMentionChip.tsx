@@ -85,7 +85,7 @@ export const FileMentionChip = memo(function FileMentionChip({
       <Text className="text-[13px]">
         <FileIcon filename={filename} size={12} />
         <span className="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden font-mono text-[13px] leading-none">
-          <span className="flex-shrink-0 whitespace-nowrap font-semibold">
+          <span className="shrink-0 whitespace-nowrap font-semibold">
             {filename}
           </span>
           {directory && (

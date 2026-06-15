@@ -1,16 +1,10 @@
-import {
-  ArrowsInSimple as ArrowsInSimpleIcon,
-  ArrowsOutSimple as ArrowsOutSimpleIcon,
-  PencilSimple,
-} from "@phosphor-icons/react";
-import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
-import { useEffect, useState } from "react";
+import { PencilSimple } from "@phosphor-icons/react";
+import { Text } from "@radix-ui/themes";
 import { CodePreview } from "./CodePreview";
 import { FileMentionChip } from "./FileMentionChip";
+import { ToolRow } from "./ToolRow";
 import {
   findDiffContent,
-  LoadingIcon,
-  StatusIndicators,
   type ToolViewProps,
   useToolCallStatus,
 } from "./toolCallUtils";
@@ -73,54 +67,33 @@ export function EditToolView({
   const diffStats = diff ? getDiffStats(oldText, newText) : null;
 
   const isPlanFile = filePath.includes("claude/plans/");
-  const [isExpanded, setIsExpanded] = useState(!isPlanFile);
-
-  useEffect(() => {
-    if (isPlanFile) {
-      setIsExpanded(false);
-    }
-  }, [isPlanFile]);
 
   return (
-    <Box className="max-w-4xl overflow-hidden rounded-lg border border-gray-6">
-      <button
-        type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="flex w-full cursor-pointer items-center justify-between border-none bg-transparent px-3 py-2"
-      >
-        <Flex align="center" gap="2">
-          <LoadingIcon icon={PencilSimple} isLoading={isLoading} />
-          {filePath && <FileMentionChip filePath={filePath} />}
-          {diffStats && (
-            <Text className="font-mono text-[13px]">
-              <span className="text-green-11">+{diffStats.added}</span>{" "}
-              <span className="text-red-11">-{diffStats.removed}</span>
-            </Text>
-          )}
-          <StatusIndicators isFailed={isFailed} wasCancelled={wasCancelled} />
-        </Flex>
-        {hasDiff && (
-          <IconButton asChild size="1" variant="ghost" color="gray">
-            <span>
-              {isExpanded ? (
-                <ArrowsInSimpleIcon size={12} />
-              ) : (
-                <ArrowsOutSimpleIcon size={12} />
-              )}
-            </span>
-          </IconButton>
-        )}
-      </button>
-
-      {isExpanded && hasDiff && (
-        <CodePreview
-          content={newText ?? ""}
-          filePath={filePath}
-          oldContent={isNewFile ? null : oldText}
-          maxHeight="700px"
-          cacheKey={toolCall.toolCallId}
-        />
+    <ToolRow
+      icon={PencilSimple}
+      isLoading={isLoading}
+      isFailed={isFailed}
+      wasCancelled={wasCancelled}
+      defaultOpen={!isPlanFile}
+      content={
+        hasDiff ? (
+          <CodePreview
+            content={newText ?? ""}
+            filePath={filePath}
+            oldContent={isNewFile ? null : oldText}
+            maxHeight="700px"
+            cacheKey={toolCall.toolCallId}
+          />
+        ) : undefined
+      }
+    >
+      {filePath && <FileMentionChip filePath={filePath} />}
+      {diffStats && (
+        <Text className="font-mono text-[13px]">
+          <span className="text-green-11">+{diffStats.added}</span>{" "}
+          <span className="text-red-11">-{diffStats.removed}</span>
+        </Text>
       )}
-    </Box>
+    </ToolRow>
   );
 }

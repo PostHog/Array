@@ -245,7 +245,7 @@ export function ExpandableIcon({
 
 export function ContentPre({ children }: { children: React.ReactNode }) {
   return (
-    <Box className="max-h-64 overflow-auto px-3 py-2">
+    <Box className="scroll-mask-2 max-h-64 overflow-auto px-3 py-2">
       <Text asChild className="text-[13px] text-gray-11">
         <pre className="m-0 whitespace-pre-wrap break-all font-mono">
           {children}

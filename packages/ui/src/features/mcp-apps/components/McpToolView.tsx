@@ -1,17 +1,14 @@
 import { Plugs } from "@phosphor-icons/react";
-import { Box, Flex } from "@radix-ui/themes";
-import { useState } from "react";
 import {
   getPostHogExecDisplay,
   isPostHogExecTool,
 } from "../../posthog-mcp/utils/posthog-exec-display";
+import { ToolRow } from "../../sessions/components/session-update/ToolRow";
 import {
+  ContentPre,
   compactInput,
-  ExpandableIcon,
-  ExpandedContentBox,
   formatInput,
   getContentText,
-  StatusIndicators,
   stripCodeFences,
   ToolTitle,
   type ToolViewProps,
@@ -33,7 +30,6 @@ export function McpToolView({
   mcpToolName,
   expanded = false,
 }: McpToolViewProps) {
-  const [isExpanded, setIsExpanded] = useState(expanded);
   const { status, rawInput, content } = toolCall;
   const { isLoading, isFailed, wasCancelled, isComplete } = useToolCallStatus(
     status,
@@ -60,52 +56,40 @@ export function McpToolView({
 
   const output = stripCodeFences(getContentText(content) ?? "");
   const hasOutput = output.trim().length > 0;
-  const isExpandable = !!fullInput || hasOutput;
+  const showOutput = isComplete && hasOutput;
 
-  const handleClick = () => {
-    if (isExpandable) {
-      setIsExpanded(!isExpanded);
-    }
-  };
+  const body =
+    fullInput || showOutput ? (
+      <>
+        {fullInput && <ContentPre>{fullInput}</ContentPre>}
+        {showOutput && (
+          <div className={fullInput ? "border-gray-6 border-t" : undefined}>
+            <ContentPre>{output}</ContentPre>
+          </div>
+        )}
+      </>
+    ) : undefined;
 
   return (
-    <Box
-      className={`group py-0.5 ${isExpandable ? "cursor-pointer" : ""}`}
-      onClick={handleClick}
+    <ToolRow
+      icon={Plugs}
+      isLoading={isLoading}
+      isFailed={isFailed}
+      wasCancelled={wasCancelled}
+      defaultOpen={expanded}
+      content={body}
     >
-      <Flex gap="2">
-        <Box className="shrink-0 pt-px">
-          <ExpandableIcon
-            icon={Plugs}
-            isLoading={isLoading}
-            isExpandable={isExpandable}
-            isExpanded={isExpanded}
-          />
-        </Box>
-        <Flex align="center" gap="1" wrap="wrap" className="min-w-0">
-          <ToolTitle>
-            <span className="text-gray-10">{serverName}</span>
-            {" - "}
-            {toolName}
-            <span className="text-gray-10">{" (MCP)"}</span>
-          </ToolTitle>
-          {inputPreview && (
-            <ToolTitle>
-              <span className="text-accent-11">{inputPreview}</span>
-            </ToolTitle>
-          )}
-          <StatusIndicators isFailed={isFailed} wasCancelled={wasCancelled} />
-        </Flex>
-      </Flex>
-
-      {isExpanded && (
-        <>
-          {fullInput && <ExpandedContentBox>{fullInput}</ExpandedContentBox>}
-          {isComplete && hasOutput && (
-            <ExpandedContentBox>{output}</ExpandedContentBox>
-          )}
-        </>
+      <ToolTitle>
+        <span className="text-gray-10">{serverName}</span>
+        {" - "}
+        {toolName}
+        <span className="text-gray-10">{" (MCP)"}</span>
+      </ToolTitle>
+      {inputPreview && (
+        <ToolTitle>
+          <span className="text-accent-11">{inputPreview}</span>
+        </ToolTitle>
       )}
-    </Box>
+    </ToolRow>
   );
 }

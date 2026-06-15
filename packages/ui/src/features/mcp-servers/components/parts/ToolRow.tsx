@@ -18,11 +18,7 @@ export function ToolRow({ tool, onChange }: ToolRowProps) {
   const removed = !!tool.removed_at;
 
   return (
-    <div
-      className={`rounded border bg-gray-1 transition-colors ${
-        open ? "border-gray-7" : "border-gray-5"
-      }`}
-    >
+    <div className={`rounded border border-border bg-gray-1 transition-colors`}>
       <div className="flex w-full min-w-0 items-center gap-3 px-3 py-2">
         <button
           type="button"
@@ -47,7 +43,7 @@ export function ToolRow({ tool, onChange }: ToolRowProps) {
             <Flex align="center" gap="2" minWidth="0">
               <Text
                 truncate
-                className="select-text font-[var(--code-font-family)] font-medium text-sm"
+                className="select-text font-medium text-sm"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
               >

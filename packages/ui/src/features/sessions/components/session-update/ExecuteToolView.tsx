@@ -1,12 +1,9 @@
 import { Terminal } from "@phosphor-icons/react";
 import { compactHomePath } from "@posthog/shared";
-import { Box, Flex } from "@radix-ui/themes";
-import { useState } from "react";
+import { ToolRow } from "./ToolRow";
 import {
-  ExpandableIcon,
-  ExpandedContentBox,
+  ContentPre,
   getContentText,
-  StatusIndicators,
   stripCodeFences,
   ToolTitle,
   type ToolViewProps,
@@ -28,7 +25,6 @@ export function ExecuteToolView({
   turnComplete,
   expanded = false,
 }: ToolViewProps) {
-  const [isExpanded, setIsExpanded] = useState(expanded);
   const { status, rawInput, content, title } = toolCall;
   const { isLoading, isFailed, wasCancelled } = useToolCallStatus(
     status,
@@ -46,45 +42,27 @@ export function ExecuteToolView({
     "",
   );
   const hasOutput = output.trim().length > 0;
-  const isExpandable = hasOutput;
-
-  const handleClick = () => {
-    if (isExpandable) {
-      setIsExpanded(!isExpanded);
-    }
-  };
 
   return (
-    <Box className="py-0.5">
-      <Flex
-        gap="2"
-        className={`group min-w-0 ${isExpandable ? "cursor-pointer" : ""}`}
-        onClick={handleClick}
-      >
-        <Box className="shrink-0 pt-px">
-          <ExpandableIcon
-            icon={Terminal}
-            isLoading={isLoading}
-            isExpandable={isExpandable}
-            isExpanded={isExpanded}
-          />
-        </Box>
-        <Flex align="center" gap="2" wrap="wrap" className="min-w-0">
-          {description && <ToolTitle>{description}</ToolTitle>}
-          {command && (
-            <ToolTitle className="min-w-0 truncate">
-              <span className="font-mono text-accent-11" title={command}>
-                {truncateText(compactHomePath(command), MAX_COMMAND_LENGTH)}
-              </span>
-            </ToolTitle>
-          )}
-          <StatusIndicators isFailed={isFailed} wasCancelled={wasCancelled} />
-        </Flex>
-      </Flex>
-
-      {isExpanded && hasOutput && (
-        <ExpandedContentBox>{output}</ExpandedContentBox>
+    <ToolRow
+      icon={Terminal}
+      isLoading={isLoading}
+      isFailed={isFailed}
+      wasCancelled={wasCancelled}
+      defaultOpen={expanded}
+      content={hasOutput ? <ContentPre>{output}</ContentPre> : undefined}
+    >
+      {description && <ToolTitle>{description}</ToolTitle>}
+      {command && (
+        <ToolTitle className="min-w-0 truncate">
+          <span
+            className="block truncate border border-border bg-gray-5 font-mono"
+            title={command}
+          >
+            {truncateText(compactHomePath(command), MAX_COMMAND_LENGTH)}
+          </span>
+        </ToolTitle>
       )}
-    </Box>
+    </ToolRow>
   );
 }
