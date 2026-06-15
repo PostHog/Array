@@ -1,9 +1,12 @@
-import type { ScoutRun } from "@posthog/api-client/posthog-client";
+import type {
+  LinkedSignalReport,
+  ScoutRun,
+} from "@posthog/api-client/posthog-client";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { track } from "@posthog/ui/shell/analytics";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useScoutEmissionReports } from "../hooks/useScoutEmissionReports";
 import { useScoutRunEmissions } from "../hooks/useScoutRunEmissions";
 import { ScoutEmissionCard } from "./ScoutEmissionCard";
@@ -105,11 +108,13 @@ function RunEmissions({
   // Best-effort reverse lookup of which inbox report each finding grouped into.
   // A failure here is non-fatal: the cards still render, just without the chip.
   const { data: emissionReports } = useScoutEmissionReports(run.run_id);
-  const reportBySourceId = new Map(
-    (emissionReports ?? [])
-      .filter((link) => link.report)
-      .map((link) => [link.source_id, link.report]),
-  );
+  const reportBySourceId = useMemo(() => {
+    const map = new Map<string, LinkedSignalReport>();
+    for (const link of emissionReports ?? []) {
+      if (link.report) map.set(link.source_id, link.report);
+    }
+    return map;
+  }, [emissionReports]);
   const taskRunUrl = run.task_url ? getPostHogUrl(run.task_url) : null;
 
   if (isLoading) {
