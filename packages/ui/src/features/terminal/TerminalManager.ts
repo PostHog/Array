@@ -10,6 +10,7 @@ import { isMac } from "@posthog/ui/utils/platform";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal as XTerm } from "@xterm/xterm";
 
 const log = logger.scope("terminal-manager");
@@ -35,6 +36,9 @@ export interface TerminalInstance {
   term: XTerm;
   fitAddon: FitAddon;
   serializeAddon: SerializeAddon;
+  webglAddon: WebglAddon | null;
+  writeBuffer: string;
+  flushHandle: number | null;
   attachedElement: HTMLElement | null;
   terminalElement: HTMLElement | null;
   isReady: boolean;
@@ -197,6 +201,9 @@ class TerminalManagerImpl {
       term,
       fitAddon: fit,
       serializeAddon: serialize,
+      webglAddon: null,
+      writeBuffer: "",
+      flushHandle: null,
       attachedElement: null,
       terminalElement: null,
       isReady: false,
@@ -297,10 +304,35 @@ class TerminalManagerImpl {
 
   writeData(sessionId: string, data: string): void {
     const instance = this.instances.get(sessionId);
-    if (instance) {
-      instance.term.write(data);
-      this.scheduleSave(sessionId, instance);
+    if (!instance) {
+      return;
     }
+
+    // Coalesce bursts of pty output into a single term.write() per animation
+    // frame. A heavy stream (build logs, cat-ing a file) otherwise produces one
+    // synchronous write — and DOM reflow — per IPC chunk, which pins the
+    // renderer.
+    instance.writeBuffer += data;
+    if (instance.flushHandle === null) {
+      instance.flushHandle = requestAnimationFrame(() => {
+        instance.flushHandle = null;
+        this.flushWrite(sessionId, instance);
+      });
+    }
+  }
+
+  private flushWrite(sessionId: string, instance: TerminalInstance): void {
+    if (instance.flushHandle !== null) {
+      cancelAnimationFrame(instance.flushHandle);
+      instance.flushHandle = null;
+    }
+    if (instance.writeBuffer.length === 0) {
+      return;
+    }
+    const data = instance.writeBuffer;
+    instance.writeBuffer = "";
+    instance.term.write(data);
+    this.scheduleSave(sessionId, instance);
   }
 
   handleExit(sessionId: string, exitCode?: number): void {
@@ -401,6 +433,31 @@ class TerminalManagerImpl {
     }, 500);
   }
 
+  // The WebGL renderer must be loaded after term.open() — it needs the canvas
+  // the terminal creates on attach. Without it xterm falls back to its DOM
+  // renderer, which is dramatically slower under heavy output.
+  private loadWebglRenderer(instance: TerminalInstance): void {
+    if (instance.webglAddon) {
+      return;
+    }
+    try {
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        // GPU context lost (e.g. driver reset). Drop the addon so xterm falls
+        // back to the DOM renderer rather than rendering nothing.
+        webglAddon.dispose();
+        instance.webglAddon = null;
+      });
+      instance.term.loadAddon(webglAddon);
+      instance.webglAddon = webglAddon;
+    } catch (error) {
+      log.warn(
+        "WebGL renderer unavailable, using DOM renderer instead:",
+        error,
+      );
+    }
+  }
+
   attach(sessionId: string, element: HTMLElement): void {
     const instance = this.instances.get(sessionId);
     if (!instance) {
@@ -420,6 +477,7 @@ class TerminalManagerImpl {
       instance.term.open(element);
       instance.hasOpened = true;
       instance.terminalElement = element.querySelector(".xterm") as HTMLElement;
+      this.loadWebglRenderer(instance);
     } else if (instance.terminalElement) {
       element.appendChild(instance.terminalElement);
       instance.term.refresh(0, instance.term.rows - 1);
@@ -461,6 +519,9 @@ class TerminalManagerImpl {
 
     this.disconnectResizeObserver(instance);
 
+    // Drain buffered output so the serialized snapshot reflects the latest data.
+    this.flushWrite(sessionId, instance);
+
     const serialized = instance.serializeAddon.serialize();
     this.emit("stateChange", {
       sessionId,
@@ -488,6 +549,14 @@ class TerminalManagerImpl {
     if (instance.saveTimeout) {
       clearTimeout(instance.saveTimeout);
     }
+
+    if (instance.flushHandle !== null) {
+      cancelAnimationFrame(instance.flushHandle);
+      instance.flushHandle = null;
+    }
+
+    instance.webglAddon?.dispose();
+    instance.webglAddon = null;
 
     for (const cleanup of instance.cleanups) {
       cleanup();
