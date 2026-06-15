@@ -4,6 +4,7 @@ import {
   formatCodexModelName,
   getReasoningEffortOptions,
   modelIdFromConfigOptions,
+  supportsXhighEffort,
 } from "./models";
 
 describe("formatCodexModelName", () => {
@@ -29,6 +30,21 @@ describe("getReasoningEffortOptions", () => {
       expect(values(modelId)).toEqual(["low", "medium", "high"]);
     },
   );
+
+  it('labels the extra tier "Extra High"', () => {
+    const xhigh = getReasoningEffortOptions("gpt-5.5").find(
+      (o) => o.value === "xhigh",
+    );
+    expect(xhigh?.name).toBe("Extra High");
+  });
+});
+
+describe("supportsXhighEffort", () => {
+  it("is true for the gpt-5.5 family and false for other models", () => {
+    expect(supportsXhighEffort("gpt-5.5-codex")).toBe(true);
+    expect(supportsXhighEffort("GPT-5.5")).toBe(true);
+    expect(supportsXhighEffort("gpt-5.3-codex")).toBe(false);
+  });
 });
 
 describe("modelIdFromConfigOptions", () => {
