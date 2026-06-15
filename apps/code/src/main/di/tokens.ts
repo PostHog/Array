@@ -97,6 +97,9 @@ export const TASK_LINK_SERVICE = Symbol.for(
 export const INBOX_LINK_SERVICE = Symbol.for(
   "posthog.host.main.inbox-link.service",
 );
+export const SCOUT_LINK_SERVICE = Symbol.for(
+  "posthog.host.main.scout-link.service",
+);
 export const NEW_TASK_LINK_SERVICE = Symbol.for(
   "posthog.host.main.new-task-link.service",
 );
@@ -150,6 +153,7 @@ export const MAIN_TOKENS = Object.freeze({
   UpdatesService: UPDATES_SERVICE,
   TaskLinkService: TASK_LINK_SERVICE,
   InboxLinkService: INBOX_LINK_SERVICE,
+  ScoutLinkService: SCOUT_LINK_SERVICE,
   NewTaskLinkService: NEW_TASK_LINK_SERVICE,
   WatcherRegistryService: WATCHER_REGISTRY_SERVICE,
   ProvisioningService: PROVISIONING_SERVICE,

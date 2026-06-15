@@ -4,6 +4,7 @@ import {
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
+import { buildInboxDeeplink } from "@posthog/shared/deeplink";
 import type { SignalReport } from "@posthog/shared/types";
 import { InboxDetailFrame } from "@posthog/ui/features/inbox/components/InboxDetailFrame";
 import { InboxReportDetailGate } from "@posthog/ui/features/inbox/components/InboxReportDetailGate";
@@ -36,7 +37,9 @@ export function ReportDetail({
 
 function ReportDetailContent({ report }: { report: SignalReport }) {
   const handleCopyLink = () => {
-    const url = `${window.location.origin}/code/inbox/reports/${report.id}`;
+    const url = buildInboxDeeplink(report.id, report.title, {
+      isDevBuild: import.meta.env.DEV,
+    });
     navigator.clipboard
       .writeText(url)
       .then(() => toast.success("Link copied"))

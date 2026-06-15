@@ -40,6 +40,26 @@ export function buildInboxDeeplink(
   return slug ? `${base}/${slug}` : base;
 }
 
+/**
+ * Build a canonical deep link to a scout's detail page, optionally focused on a
+ * specific finding (`<scheme>://scout/<skillSlug>?finding=<id>`).
+ *
+ * `skillName` may be the full scout skill name (`signals-scout-error-tracking`)
+ * or an already-stripped route slug (`error-tracking`); the `signals-scout-`
+ * prefix is removed so the path always matches the renderer route param.
+ */
+export function buildScoutDeeplink(
+  skillName: string,
+  findingId: string | null | undefined,
+  { isDevBuild }: { isDevBuild: boolean },
+): string {
+  const slug = skillName.replace(/^signals-scout-/, "");
+  const base = `${getDeeplinkProtocol(isDevBuild)}://scout/${encodeURIComponent(slug)}`;
+  return findingId
+    ? `${base}?finding=${encodeURIComponent(findingId)}`
+    : base;
+}
+
 export interface GitHubIssueRef {
   owner: string;
   repo: string;

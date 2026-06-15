@@ -61,6 +61,17 @@ export function navigateToInboxReportDetail(reportId: string): void {
   });
 }
 
+export function navigateToScoutDetail(
+  skillSlug: string,
+  findingId?: string,
+): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/agents/scouts/$skillName",
+    params: { skillName: skillSlug },
+    search: findingId ? { finding: findingId } : {},
+  });
+}
+
 export function navigateToAgents(): void {
   void getRouterOrNull()?.navigate({ to: "/code/agents" });
 }

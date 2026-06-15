@@ -50,10 +50,12 @@ import { integrationsModule } from "@posthog/core/integrations/integrations.modu
 import {
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
+  SCOUT_LINK_SERVICE,
   TASK_LINK_SERVICE,
 } from "@posthog/core/links/identifiers";
 import { InboxLinkService } from "@posthog/core/links/inbox-link";
 import { NewTaskLinkService } from "@posthog/core/links/new-task-link";
+import { ScoutLinkService } from "@posthog/core/links/scout-link";
 import { TaskLinkService } from "@posthog/core/links/task-link";
 import {
   LLM_GATEWAY_HOST,
@@ -264,6 +266,7 @@ import {
   PROCESS_TRACKING_SERVICE as MAIN_PROCESS_TRACKING_SERVICE,
   PROVISIONING_SERVICE as MAIN_PROVISIONING_SERVICE,
   REPOSITORY_REPOSITORY as MAIN_REPOSITORY_REPOSITORY,
+  SCOUT_LINK_SERVICE as MAIN_SCOUT_LINK_SERVICE,
   SECURE_STORE_BACKEND as MAIN_SECURE_STORE_BACKEND,
   SECURE_STORE_SERVICE as MAIN_SECURE_STORE_SERVICE,
   SETTINGS_STORE as MAIN_SETTINGS_STORE,
@@ -613,6 +616,8 @@ container.bind(MAIN_TASK_LINK_SERVICE).to(TaskLinkService);
 container.bind(TASK_LINK_SERVICE).toService(MAIN_TOKENS.TaskLinkService);
 container.bind(MAIN_INBOX_LINK_SERVICE).to(InboxLinkService);
 container.bind(INBOX_LINK_SERVICE).toService(MAIN_TOKENS.InboxLinkService);
+container.bind(MAIN_SCOUT_LINK_SERVICE).to(ScoutLinkService);
+container.bind(SCOUT_LINK_SERVICE).toService(MAIN_TOKENS.ScoutLinkService);
 container.bind(MAIN_NEW_TASK_LINK_SERVICE).to(NewTaskLinkService);
 container.bind(NEW_TASK_LINK_SERVICE).toService(MAIN_TOKENS.NewTaskLinkService);
 container.load(watcherRegistryModule);

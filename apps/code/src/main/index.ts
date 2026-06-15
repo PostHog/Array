@@ -24,6 +24,7 @@ import {
 import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
 import type { InboxLinkService } from "@posthog/core/links/inbox-link";
 import type { NewTaskLinkService } from "@posthog/core/links/new-task-link";
+import type { ScoutLinkService } from "@posthog/core/links/scout-link";
 import type { TaskLinkService } from "@posthog/core/links/task-link";
 import { NOTIFICATION_SERVICE } from "@posthog/core/notification/identifiers";
 import type { NotificationService } from "@posthog/core/notification/notification";
@@ -223,6 +224,7 @@ async function initializeServices(): Promise<void> {
   container.get<UpdatesService>(MAIN_TOKENS.UpdatesService);
   container.get<TaskLinkService>(MAIN_TOKENS.TaskLinkService);
   container.get<InboxLinkService>(MAIN_TOKENS.InboxLinkService);
+  container.get<ScoutLinkService>(MAIN_TOKENS.ScoutLinkService);
   container.get<NewTaskLinkService>(MAIN_TOKENS.NewTaskLinkService);
   container.get<GitHubIntegrationService>(GITHUB_INTEGRATION_SERVICE);
   container.get<SlackIntegrationService>(SLACK_INTEGRATION_SERVICE);

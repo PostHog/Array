@@ -1,6 +1,7 @@
 import {
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
+  SCOUT_LINK_SERVICE,
   TASK_LINK_SERVICE,
 } from "@posthog/core/links/identifiers";
 import {
@@ -8,6 +9,11 @@ import {
   type InboxLinkService,
   type PendingInboxDeepLink,
 } from "@posthog/core/links/inbox-link";
+import {
+  ScoutLinkEvent,
+  type ScoutLinkPayload,
+  type ScoutLinkService,
+} from "@posthog/core/links/scout-link";
 import {
   NewTaskLinkEvent,
   type NewTaskLinkPayload,
@@ -54,6 +60,25 @@ export const deepLinkRouter = router({
     ({ ctx }): PendingInboxDeepLink | null => {
       return ctx.container
         .get<InboxLinkService>(INBOX_LINK_SERVICE)
+        .consumePendingDeepLink();
+    },
+  ),
+
+  onOpenScout: publicProcedure.subscription(async function* (opts) {
+    const service =
+      opts.ctx.container.get<ScoutLinkService>(SCOUT_LINK_SERVICE);
+    const iterable = service.toIterable(ScoutLinkEvent.OpenScout, {
+      signal: opts.signal,
+    });
+    for await (const data of iterable) {
+      yield data;
+    }
+  }),
+
+  getPendingScoutLink: publicProcedure.query(
+    ({ ctx }): ScoutLinkPayload | null => {
+      return ctx.container
+        .get<ScoutLinkService>(SCOUT_LINK_SERVICE)
         .consumePendingDeepLink();
     },
   ),

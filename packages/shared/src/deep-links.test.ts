@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildInboxDeeplink,
+  buildScoutDeeplink,
   decodePlanBase64,
   getDeeplinkProtocol,
   isPostHogCodeDeeplink,
@@ -93,6 +94,47 @@ describe("buildInboxDeeplink", () => {
         isDevBuild: false,
       }),
     ).toBe("posthog-code://inbox/abc-123/Hello-world");
+  });
+});
+
+describe("buildScoutDeeplink", () => {
+  it("builds a bare scout link with no finding", () => {
+    expect(
+      buildScoutDeeplink("error-tracking", null, { isDevBuild: false }),
+    ).toBe("posthog-code://scout/error-tracking");
+    expect(
+      buildScoutDeeplink("error-tracking", undefined, { isDevBuild: false }),
+    ).toBe("posthog-code://scout/error-tracking");
+  });
+
+  it("appends the finding id as a query param", () => {
+    expect(
+      buildScoutDeeplink("error-tracking", "abc-123", { isDevBuild: false }),
+    ).toBe("posthog-code://scout/error-tracking?finding=abc-123");
+  });
+
+  it("strips the signals-scout- prefix from a full skill name", () => {
+    expect(
+      buildScoutDeeplink("signals-scout-error-tracking", "f-1", {
+        isDevBuild: false,
+      }),
+    ).toBe("posthog-code://scout/error-tracking?finding=f-1");
+  });
+
+  it("uses the dev scheme for dev builds", () => {
+    expect(
+      buildScoutDeeplink("web-analytics", null, { isDevBuild: true }),
+    ).toBe("posthog-code-dev://scout/web-analytics");
+  });
+
+  it("encodes special characters in the finding id", () => {
+    expect(
+      buildScoutDeeplink("error-tracking", "id with spaces&=", {
+        isDevBuild: false,
+      }),
+    ).toBe(
+      "posthog-code://scout/error-tracking?finding=id%20with%20spaces%26%3D",
+    );
   });
 });
 

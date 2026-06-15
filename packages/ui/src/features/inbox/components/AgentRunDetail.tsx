@@ -13,6 +13,7 @@ import {
   parsePrUrl,
 } from "@posthog/core/inbox/reportPresentation";
 import { Button } from "@posthog/quill";
+import { buildInboxDeeplink } from "@posthog/shared/deeplink";
 import {
   isTerminalStatus,
   type SignalReport,
@@ -277,7 +278,9 @@ function AgentRunDetailContent({ report }: { report: SignalReport }) {
   }, [reportTasks]);
 
   const handleCopyLink = () => {
-    const url = `${window.location.origin}/code/inbox/runs/${report.id}`;
+    const url = buildInboxDeeplink(report.id, report.title, {
+      isDevBuild: import.meta.env.DEV,
+    });
     navigator.clipboard
       .writeText(url)
       .then(() => toast.success("Link copied"))
@@ -369,6 +372,7 @@ function AgentRunDetailContent({ report }: { report: SignalReport }) {
               variant="outline"
               size="sm"
               onClick={handleCopyLink}
+              title="Copy a deep link to this run"
             >
               <CopyIcon size={12} />
               Copy link

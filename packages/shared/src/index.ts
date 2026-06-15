@@ -24,6 +24,7 @@ export {
 } from "./cloud-prompt";
 export {
   buildInboxDeeplink,
+  buildScoutDeeplink,
   DEEPLINK_PROTOCOL_DEVELOPMENT,
   DEEPLINK_PROTOCOL_PRODUCTION,
   decodePlanBase64,
